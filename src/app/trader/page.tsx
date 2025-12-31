@@ -1,7 +1,7 @@
 // /src/app/trader/page.tsx
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Layers, Bot, CandlestickChart, Settings2, Laptop, Smartphone } from "lucide-react";
+import { Layers, Bot, CandlestickChart, Settings2, Laptop, Smartphone, Wand2 } from "lucide-react";
 import Link from "next/link";
 
 const platforms = [
@@ -11,6 +11,13 @@ const platforms = [
     description: "Plataforma web para negociação de opções e multiplicadores.",
     href: "/deriv-trader",
     comingSoon: false,
+  },
+  {
+    icon: <Wand2 className="w-8 h-8 text-primary" />,
+    title: "Deriv Trader 2.0",
+    description: "Uma nova abordagem para trading com IA (Em Desenvolvimento).",
+    href: "#",
+    comingSoon: true,
   },
   {
     icon: <CandlestickChart className="w-8 h-8 text-primary" />,
