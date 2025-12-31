@@ -82,6 +82,17 @@ export interface PerformanceMetrics {
   winRate: number;
 }
 
+export interface MicrostructureFeatures {
+  spreadPercentage: number;
+  volumeImbalance: number;
+  tickVelocity: number;
+  priceAcceleration: number;
+  parkinsonVolatility: number;
+  yangZhangVolatility: number;
+  gapRatio: number;
+  meanReversion: number;
+}
+
 // ════════════════════════════════════════════════════════════════════
 // 🎯 REGIME DETECTION (Hidden Markov Model)
 // ════════════════════════════════════════════════════════════════════
@@ -738,4 +749,162 @@ export const walkForwardAnalysis = (
   }
   
   return results;
+};
+
+
+// ════════════════════════════════════════════════════════════════════
+// 🧠 MICROSTRUCTURE ANALYSIS
+// ════════════════════════════════════════════════════════════════════
+export const extractMicrostructureFeatures = (
+  ticks: TickData[],
+  candles: CandleData[]
+): MicrostructureFeatures => {
+  const MICROSTRUCTURE_WINDOW = 20;
+  if (ticks.length < MICROSTRUCTURE_WINDOW) {
+    return {
+      spreadPercentage: 0,
+      volumeImbalance: 0,
+      tickVelocity: 0,
+      priceAcceleration: 0,
+      parkinsonVolatility: 0,
+      yangZhangVolatility: 0,
+      gapRatio: 0,
+      meanReversion: 0,
+    };
+  }
+
+  const recentTicks = ticks.slice(-MICROSTRUCTURE_WINDOW);
+  const recentCandles = candles.slice(-MICROSTRUCTURE_WINDOW);
+
+  const prices = recentTicks.map(t => t.price);
+  const avgPrice = prices.reduce((sum, p) => sum + p, 0) / prices.length;
+  const spreadEstimate = (Math.max(...prices) - Math.min(...prices)) / avgPrice;
+
+  let upTicks = 0, downTicks = 0;
+  for (let i = 1; i < recentTicks.length; i++) {
+    if (recentTicks[i].price > recentTicks[i - 1].price) upTicks++;
+    else if (recentTicks[i].price < recentTicks[i - 1].price) downTicks++;
+  }
+  const volumeImbalance = (upTicks - downTicks) / recentTicks.length;
+
+  const timeSpan = recentTicks[recentTicks.length - 1].epoch - recentTicks[0].epoch;
+  const tickVelocity = timeSpan > 0 ? recentTicks.length / timeSpan : 0;
+
+  const returns = [];
+  for (let i = 1; i < recentTicks.length; i++) {
+    returns.push(recentTicks[i].price - recentTicks[i - 1].price);
+  }
+  let acceleration = 0;
+  if (returns.length >= 2) {
+    const velocityChanges = [];
+    for (let i = 1; i < returns.length; i++) {
+      velocityChanges.push(returns[i] - returns[i - 1]);
+    }
+    acceleration = velocityChanges.reduce((sum, v) => sum + v, 0) / velocityChanges.length;
+  }
+  
+  const vol = calculateVolatilityMetrics(recentCandles);
+  
+  let gapCount = 0;
+  const avgTickSize = prices.reduce((sum, p, i, arr) => {
+    if (i === 0) return sum;
+    return sum + Math.abs(p - arr[i - 1]);
+  }, 0) / (prices.length - 1);
+
+  for (let i = 1; i < recentTicks.length; i++) {
+    const gap = Math.abs(recentTicks[i].price - recentTicks[i - 1].price);
+    if (gap > avgTickSize * 2) gapCount++;
+  }
+  const gapRatio = gapCount / recentTicks.length;
+
+  const stdDev = Math.sqrt(
+    prices.reduce((sum, p) => sum + Math.pow(p - avgPrice, 2), 0) / prices.length
+  );
+  const currentPrice = recentTicks[recentTicks.length - 1].price;
+  const meanReversion = stdDev > 0 ? (currentPrice - avgPrice) / stdDev : 0;
+
+  return {
+    spreadPercentage: spreadEstimate,
+    volumeImbalance,
+    tickVelocity,
+    priceAcceleration: acceleration,
+    parkinsonVolatility: vol.parkinson,
+    yangZhangVolatility: vol.yangZhang,
+    gapRatio,
+    meanReversion,
+  };
+};
+
+// ════════════════════════════════════════════════════════════════════
+// 💡 POSITION SIZING (KELLY CRITERION)
+// ════════════════════════════════════════════════════════════════════
+
+export const calculateKellyStake = (
+  balance: number,
+  winRate: number,
+  payoff: number,
+  maxRisk: number = 0.05
+): number => {
+  if (winRate <= 0.52 || payoff <= 1) return 0.35;
+  const p = winRate;
+  const q = 1 - p;
+  const b = payoff - 1;
+
+  const kellyFraction = (p * b - q) / b;
+  const safeFraction = kellyFraction * 0.25;
+  const finalFraction = Math.min(safeFraction, maxRisk);
+
+  return Math.max(0.35, Math.floor(balance * Math.max(0, finalFraction) * 100) / 100);
+};
+
+
+// ════════════════════════════════════════════════════════════════════
+// 🤖 STRATEGY ANALYSIS BY REGIME
+// ════════════════════════════════════════════════════════════════════
+
+/**
+ * Analisa a performance de uma estratégia em diferentes regimes
+ * @returns Lista de regimes onde a estratégia é efetiva
+ */
+export const analyzeStrategyByRegime = (
+  trades: Array<{ regime: MarketRegime; profit: number }>
+): MarketRegime[] => {
+  const regimeStats: Record<
+    MarketRegime,
+    { wins: number; losses: number; totalProfit: number }
+  > = {
+    trending_bull: { wins: 0, losses: 0, totalProfit: 0 },
+    trending_bear: { wins: 0, losses: 0, totalProfit: 0 },
+    ranging: { wins: 0, losses: 0, totalProfit: 0 },
+    high_volatility: { wins: 0, losses: 0, totalProfit: 0 },
+    breakout: { wins: 0, losses: 0, totalProfit: 0 },
+  };
+
+  for (const trade of trades) {
+    const stat = regimeStats[trade.regime];
+    if (trade.profit > 0) {
+      stat.wins++;
+    } else {
+      stat.losses++;
+    }
+    stat.totalProfit += trade.profit;
+  }
+
+  const effectiveRegimes: MarketRegime[] = [];
+
+  for (const regime in regimeStats) {
+    const stats = regimeStats[regime as MarketRegime];
+    const totalTrades = stats.wins + stats.losses;
+    
+    if (totalTrades < 10) continue; // Amostra pequena
+
+    const winRate = (stats.wins / totalTrades) * 100;
+    
+    // Critério: win rate > 55% E lucro positivo
+    if (winRate > 55 && stats.totalProfit > 0) {
+      effectiveRegimes.push(regime as MarketRegime);
+    }
+  }
+
+  return effectiveRegimes;
 };
