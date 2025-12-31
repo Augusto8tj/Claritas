@@ -26,6 +26,7 @@ import { IndicatorPanel } from "@/components/deriv-trader/indicator-panel";
 import { TradingDesk } from "@/components/deriv-trader/trading-desk";
 import { HallOfFame } from "@/components/deriv-trader/hall-of-fame";
 import { EvolutionLab } from "@/components/deriv-trader/evolution-lab";
+import { CouncilDashboard } from "@/components/deriv-trader/CouncilDashboard";
 
 
 /**
@@ -64,6 +65,7 @@ function DerivTraderCore({ activeSymbol }: { activeSymbol: string | null }) {
 
   return (
     <>
+      <CouncilDashboard data={robotCouncil.dashboardData} />
       <div className="space-y-6">
         <IndicatorPanel indicators={robotCouncil.indicators} latestDataPoint={latestDataPoint} />
         
