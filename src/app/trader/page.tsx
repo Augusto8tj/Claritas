@@ -16,8 +16,8 @@ const platforms = [
     icon: <Wand2 className="w-8 h-8 text-primary" />,
     title: "Deriv Trader 2.0",
     description: "Uma nova abordagem para trading com IA (Em Desenvolvimento).",
-    href: "#",
-    comingSoon: true,
+    href: "/deriv-trader-v2",
+    comingSoon: false,
   },
   {
     icon: <CandlestickChart className="w-8 h-8 text-primary" />,
