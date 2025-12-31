@@ -4,10 +4,11 @@ import type { RobotStrategy } from '@/lib/types';
 // This file contains the pre-defined, local configuration for the 22 robot analysts.
 // Each robot now has its own optimal duration and unit, making the system's time-based decisions dynamic.
 
-export const initialCouncilStrategies: Omit<RobotStrategy, 'id' | 'justification'>[] = [
+export const initialCouncilStrategies: Omit<RobotStrategy, 'id'>[] = [
   // --- Momentum & Trend (Short-Term Specialists) ---
   {
     strategyType: "RSI",
+    justification: "Usa RSI curto (10) para scalp em {{timePeriod}}.",
     strongConfidence: 90,
     weakConfidence: 60,
     period: 10,
@@ -21,6 +22,7 @@ export const initialCouncilStrategies: Omit<RobotStrategy, 'id' | 'justification
   },
   {
     strategyType: "STOCHASTIC",
+    justification: "Identifica sobrecompra/ sobrevenda em {{timePeriod}}.",
     strongConfidence: 90,
     weakConfidence: 70,
     period: 14,
@@ -34,6 +36,7 @@ export const initialCouncilStrategies: Omit<RobotStrategy, 'id' | 'justification
   },
   {
     strategyType: "MACD_CROSS",
+    justification: "Confirma momentum de tendência em {{timePeriod}}.",
     strongConfidence: 80,
     weakConfidence: 50,
     fastPeriod: 12,
@@ -45,6 +48,7 @@ export const initialCouncilStrategies: Omit<RobotStrategy, 'id' | 'justification
   },
   {
     strategyType: "ADX_TREND",
+    justification: "Mede a força da tendência, ignorando mercados laterais em {{timePeriod}}.",
     strongConfidence: 85,
     weakConfidence: 60,
     period: 14,
@@ -55,6 +59,7 @@ export const initialCouncilStrategies: Omit<RobotStrategy, 'id' | 'justification
   },
   {
     strategyType: "AWESOME_OSCILLATOR",
+    justification: "Mede o momentum do mercado em {{timePeriod}}.",
     strongConfidence: 75,
     weakConfidence: 50,
     optimalDuration: 1,
@@ -63,6 +68,7 @@ export const initialCouncilStrategies: Omit<RobotStrategy, 'id' | 'justification
   },
   {
     strategyType: "TRIX",
+    justification: "Média móvel triplamente suavizada para filtrar ruído em {{timePeriod}}.",
     strongConfidence: 70,
     weakConfidence: 45,
     period: 15,
@@ -72,6 +78,7 @@ export const initialCouncilStrategies: Omit<RobotStrategy, 'id' | 'justification
   },
   {
     strategyType: "ROC",
+    justification: "Mede a taxa de variação do preço em {{timePeriod}}.",
     strongConfidence: 70,
     weakConfidence: 45,
     period: 12,
@@ -81,6 +88,7 @@ export const initialCouncilStrategies: Omit<RobotStrategy, 'id' | 'justification
   },
   {
     strategyType: "RVI",
+    justification: "Índice de Vigor Relativo para medir a convicção do movimento em {{timePeriod}}.",
     strongConfidence: 80,
     weakConfidence: 55,
     period: 10,
@@ -94,6 +102,7 @@ export const initialCouncilStrategies: Omit<RobotStrategy, 'id' | 'justification
   },
   {
     strategyType: "PARABOLIC_SAR",
+    justification: "Segue a tendência do preço e indica reversões em {{timePeriod}}.",
     strongConfidence: 85,
     weakConfidence: 60,
     acceleration: 0.02,
@@ -105,6 +114,7 @@ export const initialCouncilStrategies: Omit<RobotStrategy, 'id' | 'justification
   // --- Volatility & Structure ---
   {
     strategyType: "BOLLINGER_BANDS",
+    justification: "Opera em reversões à média ou rompimentos de volatilidade em {{timePeriod}}.",
     strongConfidence: 85,
     weakConfidence: 65,
     period: 20,
@@ -115,6 +125,7 @@ export const initialCouncilStrategies: Omit<RobotStrategy, 'id' | 'justification
   },
   {
     strategyType: "ICHIMOKU_CLOUD",
+    justification: "Análise completa de tendência, suporte e resistência em {{timePeriod}}.",
     strongConfidence: 88,
     weakConfidence: 60,
     optimalDuration: 5,
@@ -123,6 +134,7 @@ export const initialCouncilStrategies: Omit<RobotStrategy, 'id' | 'justification
   },
   {
     strategyType: "KAMA",
+    justification: "Média móvel adaptativa que se ajusta à volatilidade em {{timePeriod}}.",
     strongConfidence: 80,
     weakConfidence: 55,
     period: 10,
@@ -134,6 +146,7 @@ export const initialCouncilStrategies: Omit<RobotStrategy, 'id' | 'justification
   },
   {
     strategyType: "DONCHIAN_CHANNELS",
+    justification: "Identifica rompimentos de máximas e mínimas em {{timePeriod}}.",
     strongConfidence: 80,
     weakConfidence: 55,
     period: 20,
@@ -143,6 +156,7 @@ export const initialCouncilStrategies: Omit<RobotStrategy, 'id' | 'justification
   },
   {
     strategyType: "CHANDELIER_EXIT",
+    justification: "Trailing stop baseado em volatilidade (ATR) em {{timePeriod}}.",
     strongConfidence: 85,
     weakConfidence: 60,
     period: 22,
@@ -154,6 +168,7 @@ export const initialCouncilStrategies: Omit<RobotStrategy, 'id' | 'justification
   // --- Volume & Order Flow ---
   {
     strategyType: "VOLUME_PROFILE",
+    justification: "Identifica zonas de alta liquidez (POC) como suporte/resistência em {{timePeriod}}.",
     strongConfidence: 75,
     weakConfidence: 50,
     profileBars: 100,
@@ -163,6 +178,7 @@ export const initialCouncilStrategies: Omit<RobotStrategy, 'id' | 'justification
   },
   {
     strategyType: "VWAP",
+    justification: "Usa o preço médio ponderado por volume como referência de valor em {{timePeriod}}.",
     strongConfidence: 85,
     weakConfidence: 60,
     optimalDuration: 1,
@@ -171,6 +187,7 @@ export const initialCouncilStrategies: Omit<RobotStrategy, 'id' | 'justification
   },
   {
     strategyType: "MFI",
+    justification: "RSI ponderado pelo volume para medir o fluxo de dinheiro em {{timePeriod}}.",
     strongConfidence: 80,
     weakConfidence: 60,
     period: 14,
@@ -184,6 +201,7 @@ export const initialCouncilStrategies: Omit<RobotStrategy, 'id' | 'justification
   },
   {
     strategyType: "OBV",
+    justification: "Segue o fluxo de volume acumulado para confirmar tendências em {{timePeriod}}.",
     strongConfidence: 75,
     weakConfidence: 50,
     optimalDuration: 2,
@@ -193,6 +211,7 @@ export const initialCouncilStrategies: Omit<RobotStrategy, 'id' | 'justification
   // --- Statistical & Mean Reversion ---
   {
     strategyType: "Z_SCORE",
+    justification: "Identifica desvios estatísticos extremos do preço em {{timePeriod}}.",
     strongConfidence: 80,
     weakConfidence: 55,
     period: 20,
@@ -203,6 +222,7 @@ export const initialCouncilStrategies: Omit<RobotStrategy, 'id' | 'justification
   },
   {
     strategyType: "STOCH_RSI",
+    justification: "Combina Estocástico e RSI para sinais de sobrecompra/venda mais sensíveis em {{timePeriod}}.",
     strongConfidence: 90,
     weakConfidence: 70,
     period: 14,
@@ -217,6 +237,7 @@ export const initialCouncilStrategies: Omit<RobotStrategy, 'id' | 'justification
   // --- Patterns ---
   {
     strategyType: "PRICE_ACTION_PATTERN",
+    justification: "Busca por padrões de vela de reversão como 'hammer' em {{timePeriod}}.",
     strongConfidence: 95,
     weakConfidence: 75,
     pattern: "hammer",
@@ -227,6 +248,7 @@ export const initialCouncilStrategies: Omit<RobotStrategy, 'id' | 'justification
   // --- Moving Average ---
   {
     strategyType: "MOVING_AVERAGE_CROSS",
+    justification: "Cruzamento clássico de médias para identificar mudanças de tendência em {{timePeriod}}.",
     strongConfidence: 78,
     weakConfidence: 52,
     shortPeriod: 10,
@@ -237,6 +259,4 @@ export const initialCouncilStrategies: Omit<RobotStrategy, 'id' | 'justification
   }
 ].map((strat) => ({
     ...strat,
-    // O ID e a justificação são gerados dinamicamente para manter a consistência.
-    // 'id' será gerado no hook, 'justification' pode ser adicionado lá também.
 }));
