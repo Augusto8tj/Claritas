@@ -17,7 +17,7 @@ import { riseFallSchema, type RiseFallFormValues } from "@/components/deriv-trad
 import { CouncilAutopilotInterface } from "@/components/deriv-trader/council-autopilot-interface";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { useTradeAnalysis } from "@/hooks/use-trade-analysis";
-import { useRobotCouncilV2 as useRobotCouncil } from "@/hooks/use-robot-council-v2";
+import { useRobotCouncilV2 } from "@/hooks/use-robot-council-v2";
 import { SystemStatusSummary } from "@/components/deriv-trader/system-status-summary";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { AITradeSuggestion } from "@/components/deriv-trader/ai-trade-suggestion";
@@ -72,9 +72,9 @@ const Header = () => {
     );
 };
 
-const MainDashboard = ({ robotCouncil }: { robotCouncil: ReturnType<typeof useRobotCouncil> }) => {
+const MainDashboard = ({ robotCouncil }: { robotCouncil: ReturnType<typeof useRobotCouncilV2> }) => {
     const { 
-        operationsLog, chartData, priceTicks, isChartLoading, chartError, 
+        operationsLog, chartData, isChartLoading, chartError, 
         chartType, setChartType, timePeriod, setTimePeriod, activeSymbol, tradeAnnotations
     } = useDerivApi();
     
@@ -126,7 +126,7 @@ const MainDashboard = ({ robotCouncil }: { robotCouncil: ReturnType<typeof useRo
     );
 };
 
-const SidePanel = ({ robotCouncil }: { robotCouncil: ReturnType<typeof useRobotCouncil> }) => {
+const SidePanel = ({ robotCouncil }: { robotCouncil: ReturnType<typeof useRobotCouncilV2> }) => {
     const { activeSymbol, operationsLog } = useDerivApi();
     const tradeAnalysis = useTradeAnalysis(activeSymbol, operationsLog);
 
@@ -162,7 +162,7 @@ const SidePanel = ({ robotCouncil }: { robotCouncil: ReturnType<typeof useRobotC
 // --- Componente Principal da Página ---
 const DerivTraderV2Core = () => {
     const { activeSymbol, priceTicks } = useDerivApi();
-    const robotCouncil = useRobotCouncil(activeSymbol, priceTicks);
+    const robotCouncil = useRobotCouncilV2(activeSymbol, priceTicks);
 
     return (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mt-6">

@@ -1,7 +1,55 @@
 // src/lib/types/trading.types.ts
 import { z } from 'zod';
-import type { MarketRegime, MicrostructureFeatures, BayesianVote, EnhancedRobotPerformance } from '@/services/advanced-trading-services';
 
+export type MarketRegime = 
+  | 'trending_bull'
+  | 'trending_bear'
+  | 'ranging'
+  | 'high_volatility'
+  | 'breakout';
+
+export interface MicrostructureFeatures {
+  spreadPercentage: number;
+  volumeImbalance: number;
+  tickVelocity: number;
+  priceAcceleration: number;
+  parkinsonVolatility: number;
+  yangZhangVolatility: number;
+  gapRatio: number;
+  meanReversion: number;
+}
+
+export interface BayesianVote {
+  vote: 'RISE' | 'FALL' | 'HOLD';
+  rawConfidence: number;
+  calibratedConfidence: number;
+  bayesianProbability: number;
+  weight: number;
+  optimalDuration: number;
+  optimalDurationUnit: z.infer<typeof RobotStrategySchema['shape']['optimalDurationUnit']>;
+  suggestedStake: number;
+  regime: MarketRegime;
+}
+
+export interface EnhancedRobotPerformance {
+  id: string;
+  strategyType: RobotStrategy['strategyType'];
+  strategy: RobotStrategy;
+  wins: number;
+  losses: number;
+  totalProfit: number;
+  winRate: number;
+  sharpeRatio: number;
+  maxDrawdown: number;
+  avgWin: number;
+  avgLoss: number;
+  profitFactor: number;
+  kellyFraction: number;
+  effectiveRegimes: MarketRegime[];
+  monteCarloScore: number;
+  lastUpdated: number;
+  tradeHistory: number[];
+}
 
 export const RobotStrategySchema = z.object({
     id: z.string().describe("A unique identifier for the robot, e.g., 'RSI_BOT_1'."),
@@ -109,9 +157,3 @@ export const RobotPerformanceSchema = z.object({
 });
 
 export type RobotPerformance = z.infer<typeof RobotPerformanceSchema>;
-
-
-// ════════════════════════════════════════════════════════════════════
-// 📊 TIPOS E INTERFACES AVANÇADOS - V2.0
-// ════════════════════════════════════════════════════════════════════
-export type { MarketRegime, MicrostructureFeatures, BayesianVote, EnhancedRobotPerformance };
