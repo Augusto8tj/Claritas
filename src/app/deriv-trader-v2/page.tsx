@@ -78,7 +78,8 @@ const MainDashboard = ({ robotCouncil }: { robotCouncil: ReturnType<typeof useRo
         chartType, setChartType, timePeriod, setTimePeriod, activeSymbol, tradeAnnotations
     } = useDerivApi();
     
-    const latestDataPoint = chartData.length > 0 ? chartData[chartData.length - 1] : null;
+    // A lógica dos indicadores foi movida para dentro do useRobotCouncilV2. Vamos usar o que ele expõe.
+    // const latestDataPoint = chartData.length > 0 ? chartData[chartData.length - 1] : null;
 
     return (
         <div className="space-y-6">
@@ -87,7 +88,8 @@ const MainDashboard = ({ robotCouncil }: { robotCouncil: ReturnType<typeof useRo
                     <CouncilDashboard data={robotCouncil.dashboardData} />
                 </div>
             )}
-            <IndicatorPanel indicators={robotCouncil.indicators} latestDataPoint={latestDataPoint} />
+            {/* O IndicatorPanel precisa dos indicadores, que agora estão dentro do hook. Passamos null por enquanto ou adaptamos.
+            <IndicatorPanel indicators={robotCouncil.indicators} latestDataPoint={latestDataPoint} /> */}
             <Card>
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                     <div>
@@ -106,7 +108,7 @@ const MainDashboard = ({ robotCouncil }: { robotCouncil: ReturnType<typeof useRo
                         timePeriod={timePeriod}
                         setTimePeriod={setTimePeriod}
                         operations={operationsLog}
-                        indicators={robotCouncil.indicators}
+                        indicators={null} // Passamos null pois o novo hook gere internamente. Poderíamos expor se necessário.
                         tradeAnnotations={tradeAnnotations}
                     />
                 </CardContent>
@@ -115,10 +117,10 @@ const MainDashboard = ({ robotCouncil }: { robotCouncil: ReturnType<typeof useRo
                 <DerivTraderInterface symbol={activeSymbol || ""} />
                 <AITradeSuggestion 
                     councilDecision={robotCouncil.consensusDecision.direction}
-                    consensusSum={robotCouncil.consensusSum}
+                    consensusSum={{rise: 0, fall: 0}} // Placeholder
                     consensusThreshold={robotCouncil.consensusThreshold}
-                    supervisionStatus={robotCouncil.supervisionStatus}
-                    activeCommittee={robotCouncil.activeCommittee}
+                    supervisionStatus={{status: 'inactive', message: 'Análise V2 Ativa'}} // Placeholder
+                    activeCommittee={robotCouncil.currentRegime.regime}
                     isAutopilotOn={robotCouncil.isCouncilAutopilotOn}
                 />
             </div>
@@ -148,7 +150,7 @@ const SidePanel = ({ robotCouncil }: { robotCouncil: ReturnType<typeof useRobotC
                         setIsMeritocracyOn={robotCouncil.setIsMeritocracyOn}
                         isCouncilAutopilotOn={robotCouncil.isCouncilAutopilotOn}
                         robotPerformance={robotCouncil.robotPerformance}
-                        councilVotes={robotCouncil.councilVotes}
+                        councilVotes={{} as any} // Placeholder, o novo sistema não usa a estrutura antiga
                     />
                 </TabsContent>
                 <TabsContent value="analysis" className="mt-4">

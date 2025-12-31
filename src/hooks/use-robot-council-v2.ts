@@ -155,10 +155,17 @@ export function useRobotCouncilV2(
   const [currentRegime, setCurrentRegime] = useState<{
     regime: MarketRegime;
     confidence: number;
-    probabilities?: Record<MarketRegime, number>;
+    probabilities: Record<MarketRegime, number>;
   }>({
     regime: 'ranging',
     confidence: 0.5,
+    probabilities: {
+        trending_bull: 0.2,
+        trending_bear: 0.2,
+        ranging: 0.4,
+        high_volatility: 0.1,
+        breakout: 0.1
+      }
   });
   
   const [microstructure, setMicrostructure] = useState<MicrostructureFeatures | null>(null);
@@ -314,7 +321,12 @@ export function useRobotCouncilV2(
     const currentIndicators = calculateAllIndicators(tickCandles, strategyCouncil, timePeriod);
     if (!currentIndicators) return;
 
-    const regimeResult = detectMarketRegime(tickCandles, { adx: currentIndicators.adx, pdi: currentIndicators.pdi, ndi: currentIndicators.ndi, bbw: currentIndicators.bbw, roc: currentIndicators.roc, atr: currentIndicators.atr }, currentRegime.regime, transitionMatrixRef.current);
+    const regimeResult = detectMarketRegime(
+        tickCandles, 
+        { adx: currentIndicators.adx, pdi: currentIndicators.pdi, ndi: currentIndicators.ndi, bbw: currentIndicators.bbw, roc: currentIndicators.roc, atr: currentIndicators.atr }, 
+        currentRegime.regime, 
+        transitionMatrixRef.current
+    );
     setCurrentRegime({ regime: regimeResult.regime, confidence: regimeResult.confidence, probabilities: regimeResult.probabilities });
     transitionMatrixRef.current = regimeResult.transitionMatrix;
 
@@ -325,13 +337,12 @@ export function useRobotCouncilV2(
     activeCouncilContracts.forEach(contract => {
         if (councilExecutionRef.current.sellingContracts.has(contract.id)) return;
         
-        // --- NOVO: Lógica de Chandelier Exit ---
         if (currentIndicators.chandelierExit && contract.entryPrice) {
             if (contract.direction === 'rise' && currentTick.price < currentIndicators.chandelierExit) {
                  councilExecutionRef.current.sellingContracts.add(contract.id);
                  sellContract(contract.id);
                  toast({ title: "🛡️ Stop Loss Atingido (Chandelier)", description: `Contrato #${contract.id} fechado para proteger capital.`, variant: "destructive" });
-                 return; // Sai da iteração para este contrato
+                 return;
             }
         }
     });
@@ -400,8 +411,8 @@ export function useRobotCouncilV2(
         let prior = 0.5;
         if (perf && (perf.wins + perf.losses) >= MIN_TRADES_FOR_STATS) prior = perf.winRate / 100;
         let likelihood = technicalVote.confidence / 100;
-        if (microFeatures.yangZhangVolatility > 0.05) likelihood *= 0.8;
-        if (Math.abs(microFeatures.meanReversion) > 2) {
+        if (microFeatures && microFeatures.yangZhangVolatility > 0.05) likelihood *= 0.8;
+        if (microFeatures && Math.abs(microFeatures.meanReversion) > 2) {
             const isContrarian = (technicalVote.vote === 'RISE' && microFeatures.meanReversion > 2) || (technicalVote.vote === 'FALL' && microFeatures.meanReversion < -2);
             if (isContrarian) likelihood *= 0.7;
         }
@@ -449,7 +460,7 @@ export function useRobotCouncilV2(
     }
 
     let effectiveThreshold = consensusThreshold;
-    if (isDynamicConsensusOn) {
+    if (isDynamicConsensusOn && microFeatures) {
         const volatilityFactor = (microFeatures.yangZhangVolatility > 0.05) ? 1.3 : 1.0;
         effectiveThreshold = (totalWeight * 0.6) * volatilityFactor;
     }
@@ -500,7 +511,7 @@ export function useRobotCouncilV2(
     councilExecutionRef.current.isExecuting = true;
     toast({ title: "🚀 Ordem Executada", description: `${consensusDirection} com $${kellyStake.toFixed(2)} (${(consensusProbability * 100).toFixed(1)}% confiança)` });
     executeTrade(consensusDirection === 'RISE' ? 'CALL' : 'PUT', kellyStake, activeSymbol!, consensusDirection.toLowerCase() as 'rise' | 'fall', finalDuration, finalDurationUnit, 'Conselho').finally(() => setTimeout(() => { councilExecutionRef.current.isExecuting = false; }, 5000));
-  }, [priceTicks, isConnected, isCouncilAutopilotOn, strategyCouncil, robotPerformance, isMeritocracyOn, activeSymbol, operationsLog, user, toast, executeTrade, timePeriod, dailyBalance, dailyTarget, isDynamicConsensusOn, isDynamicRiskOn, consensusThreshold, sellContract, portfolioStats.maxDrawdown, evolveTrigger]);
+  }, [priceTicks, isConnected, isCouncilAutopilotOn, strategyCouncil, robotPerformance, isMeritocracyOn, activeSymbol, operationsLog, user, toast, executeTrade, timePeriod, dailyBalance, dailyTarget, isDynamicConsensusOn, isDynamicRiskOn, consensusThreshold, sellContract, portfolioStats.maxDrawdown, evolveTrigger, currentRegime.regime, durationLimits]);
 
   return {
     isCouncilAutopilotOn, setIsCouncilAutopilotOn,

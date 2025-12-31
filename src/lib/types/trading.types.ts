@@ -51,6 +51,7 @@ export interface EnhancedRobotPerformance {
   tradeHistory: number[];
 }
 
+
 export const RobotStrategySchema = z.object({
     id: z.string().describe("A unique identifier for the robot, e.g., 'RSI_BOT_1'."),
     strategyType: z.enum([

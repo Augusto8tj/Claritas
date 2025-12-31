@@ -731,10 +731,8 @@ export const walkForwardAnalysis = (
     const trainEnd = i + trainSize;
     const testEnd = trainEnd + testSize;
     
-    // Simulação: em um cenário real, você retreinaria seu modelo aqui
     const trainData = data.slice(i, trainEnd);
     
-    // Testa na janela seguinte
     const testData = data.slice(trainEnd, testEnd);
     const testTrades = testData.map(d => ({ profit: d.result || 0, timestamp: d.timestamp }));
     
