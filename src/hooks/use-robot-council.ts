@@ -117,7 +117,7 @@ const calculateKellyStake = (balance: number, prob: number, payoff: number = 0.9
     return Math.max(0.35, Math.floor(balance * Math.max(0, finalFraction) * 100) / 100);
 };
 
-const calculateRobotVote = (robot: RobotStrategy, indicators: Indicators): Omit<RobotVote, 'weight'> => {
+const calculateRobotVote = (robot: RobotStrategy, indicators: Indicators, tickCandles: CandleData[]): Omit<RobotVote, 'weight'> => {
     let vote: 'RISE' | 'FALL' | 'HOLD' = 'HOLD';
     let confidence = 0;
     const { strongConfidence, weakConfidence, optimalDuration, optimalDurationUnit, suggestedStake } = robot;
@@ -137,8 +137,8 @@ const calculateRobotVote = (robot: RobotStrategy, indicators: Indicators): Omit<
     } else if (robot.strategyType === 'MACD_CROSS' && isValid(indicators.macd.macd) && isValid(indicators.macd.signal)) {
         if (indicators.macd.macd! > indicators.macd.signal!) { vote = 'RISE'; confidence = weakConfidence; }
         if (indicators.macd.signal! > indicators.macd.macd!) { vote = 'FALL'; confidence = weakConfidence; }
-    } else if (robot.strategyType === 'BOLLINGER_BANDS' && isValid(indicators.bb.lower) && indicators.bb.upper && priceTicks.length > 0) {
-        const lastPrice = priceTicks[priceTicks.length-1].price;
+    } else if (robot.strategyType === 'BOLLINGER_BANDS' && isValid(indicators.bb.lower) && indicators.bb.upper && tickCandles.length > 0) {
+        const lastPrice = tickCandles[tickCandles.length-1].close;
         if(isValid(lastPrice)) {
             if(lastPrice <= indicators.bb.lower) { vote = 'RISE'; confidence = weakConfidence; }
             if(lastPrice >= indicators.bb.upper) { vote = 'FALL'; confidence = weakConfidence; }
@@ -152,7 +152,7 @@ const calculateRobotVote = (robot: RobotStrategy, indicators: Indicators): Omit<
     return { vote, confidence, optimalDuration, optimalDurationUnit, suggestedStake };
 };
 
-const getVoteForRegime = (robot: RobotStrategy, indicators: Indicators, regime: MarketRegime): Omit<RobotVote, 'weight'> => {
+const getVoteForRegime = (robot: RobotStrategy, indicators: Indicators, regime: MarketRegime, tickCandles: CandleData[]): Omit<RobotVote, 'weight'> => {
     const isOscillator = ['RSI', 'STOCHASTIC', 'STOCH_RSI', 'MFI', 'Z_SCORE', 'BOLLINGER_BANDS'].includes(robot.strategyType);
     const isTrendFollower = ['MOVING_AVERAGE_CROSS', 'MACD_CROSS', 'ADX_TREND', 'PARABOLIC_SAR', 'ICHIMOKU_CLOUD', 'KAMA'].includes(robot.strategyType);
     
@@ -160,7 +160,7 @@ const getVoteForRegime = (robot: RobotStrategy, indicators: Indicators, regime: 
         return { vote: 'HOLD', confidence: 0, optimalDuration: robot.optimalDuration, optimalDurationUnit: robot.optimalDurationUnit, suggestedStake: robot.suggestedStake };
     }
 
-    return calculateRobotVote(robot, indicators);
+    return calculateRobotVote(robot, indicators, tickCandles);
 };
 
 // --- HOOK PRINCIPAL ---
@@ -187,7 +187,7 @@ export function useRobotCouncil(activeSymbol: string | null, priceTicks: TickDat
     const [consensusSum, setConsensusSum] = useState({ rise: 0, fall: 0 });
     const [consensusDecision, setConsensusDecision] = useState<'RISE' | 'FALL' | 'HOLD'>('HOLD');
     const [activeCommittee, setActiveCommittee] = useState<string | null>(null);
-    const [supervisionStatus, setSupervisionStatus] = useState({ status: 'inactive', message: 'Aguardando consenso.', analysis: '' });
+    const [supervisionStatus, setSupervisionStatus] = useState({ status: 'inactive' as 'inactive' | 'approved' | 'veto', message: 'Aguardando consenso.', analysis: '' });
     const [indicators, setIndicators] = useState<Indicators | null>(null);
 
     const [dashboardData, setDashboardData] = useState<DashboardData>({
@@ -317,7 +317,7 @@ export function useRobotCouncil(activeSymbol: string | null, priceTicks: TickDat
         
 
         strategyCouncil.forEach(robot => {
-            const voteData = getVoteForRegime(robot, indicators, regime);
+            const voteData = getVoteForRegime(robot, indicators, regime, tickCandles);
             const perf = robotPerformance.find(p => p.id === robot.id);
             const historicalWinRate = perf ? (regime.includes('TREND') ? (perf.winRateTrend || 50) : (perf.winRateRange || 50)) / 100 : 0.5;
             
