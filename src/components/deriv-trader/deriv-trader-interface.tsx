@@ -58,29 +58,35 @@ function DerivTraderInterface({ symbol }: DerivTraderInterfaceProps) {
   const form = useFormContext<RiseFallFormValues>();
   const durationUnit = form.watch('duration_unit');
 
-  // Guardar a referência dos limites para evitar o loop
+  // Usamos uma ref para evitar re-renderizações desnecessárias e comparar os limites
   const durationLimitsRef = useRef<DurationLimits | null>(null);
 
   useEffect(() => {
-    // Se os limites não existem ou não mudaram, não faz nada
-    if (!durationLimits || JSON.stringify(durationLimitsRef.current) === JSON.stringify(durationLimits)) {
+    // Se não há limites, ou os limites não mudaram, não faz nada
+    if (!durationLimits || JSON.stringify(durationLimits) === JSON.stringify(durationLimitsRef.current)) {
       return;
     }
     
-    // Atualiza a referência com os novos limites
+    // Atualiza a ref com os novos limites
     durationLimitsRef.current = durationLimits;
     
-    // Ajusta a duração para estar dentro dos novos limites
+    // Se a unidade de duração atual não está nos novos limites, não faz nada (espera o usuário trocar)
+    if (!durationLimits[durationUnit]) {
+        return;
+    }
+
+    // Ajusta a duração para estar dentro dos novos limites da unidade atual
     const currentDuration = form.getValues('duration');
     const { min, max } = durationLimits[durationUnit];
     let newDuration = currentDuration;
+
     if (newDuration < min) newDuration = min;
     if (newDuration > max) newDuration = max;
 
     if (newDuration !== currentDuration) {
         form.setValue('duration', newDuration);
     }
-  }, [durationLimits, durationUnit, form]);
+}, [durationLimits, durationUnit, form]);
 
 
   const handleDurationChange = (amount: number) => {
@@ -206,6 +212,11 @@ function DerivTraderInterface({ symbol }: DerivTraderInterfaceProps) {
                                               onValueChange={(value) => {
                                                 const newUnit = value as DurationUnit;
                                                 field.onChange(newUnit);
+
+                                                if (durationLimits && durationLimits[newUnit]) {
+                                                    const { min } = durationLimits[newUnit];
+                                                    form.setValue('duration', min);
+                                                }
                                               }}
                                               value={field.value}
                                             >
