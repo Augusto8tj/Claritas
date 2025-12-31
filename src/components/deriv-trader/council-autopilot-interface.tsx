@@ -213,18 +213,20 @@ export function CouncilAutopilotInterface(props: CouncilAutopilotInterfaceProps)
         }
   }
 
-  const groupedRobots = Array.isArray(strategyCouncil) ? strategyCouncil.reduce((acc, robot) => {
-    for (const category in robotCategories) {
-        if (robotCategories[category].includes(robot.strategyType)) {
+  const groupedRobots = Array.isArray(strategyCouncil)
+    ? strategyCouncil.reduce((acc, robot) => {
+        for (const category in robotCategories) {
+          if (robotCategories[category].includes(robot.strategyType)) {
             if (!acc[category]) {
-                acc[category] = [];
+              acc[category] = [];
             }
             acc[category].push(robot);
             break;
+          }
         }
-    }
-    return acc;
-  }, {} as Record<string, RobotStrategy[]>) : {};
+        return acc;
+      }, {} as Record<string, RobotStrategy[]>)
+    : {};
 
 
   const supervisionIcon = supervisionStatus ? {
