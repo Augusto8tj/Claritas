@@ -1,24 +1,10 @@
-
+// /src/hooks/use-robot-council.ts
 'use client';
-
-/**
- * @fileoverview CÉREBRO QUANTITATIVO DA MESA OPERACIONAL (DERIV API)
- * 
- * Este hook implementa uma arquitetura de "Ensemble Learning" (Aprendizado em Conjunto)
- * com consciência de contexto ("Regime-Aware").
- * 
- * PILARES DA ESTRATÉGIA:
- * 1. HMM (Hidden Markov Model Lite): Identifica o regime de mercado (Tendência, Lateral, etc.).
- * 2. Microestrutura: Analisa a física do movimento dos ticks.
- * 3. Consenso Bayesiano: Calcula a probabilidade de sucesso com base no histórico dos robôs.
- * 4. Critério de Kelly: Define o tamanho da posição (stake) matematicamente.
- * 5. Evolução Genética: Adapta e melhora as estratégias dos robôs ao longo do tempo.
- */
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useDerivApi } from './use-deriv-api';
 import { useToast } from './use-toast';
-import type { RobotStrategy, DurationUnit, ChartData, TickData, CandleData, RobotVote as RobotVoteType } from '@/lib/types';
+import type { RobotStrategy, DurationUnit, ChartData, TickData, CandleData, Operation, RobotVote as RobotVoteType, RobotPerformance as RobotPerformanceType } from '@/lib/types';
 import { calculateAllIndicators, type Indicators } from '@/services/indicator-service';
 import { initialCouncilStrategies } from '@/services/council-strategies';
 import { useAuth } from '@/features/auth/hooks/use-auth';
@@ -27,8 +13,6 @@ import { useStrategyEvolution } from './use-strategy-evolution';
 import { useFormContext } from 'react-hook-form';
 import type { RiseFallFormValues } from '@/components/deriv-trader/deriv-trader-interface.types';
 
-
-// --- TIPOS AVANÇADOS ---
 
 export type MarketRegime = 'TREND_UP' | 'TREND_DOWN' | 'RANGING' | 'VOLATILE' | 'CRASH_BOOM_SPIKE';
 
@@ -48,17 +32,7 @@ export type DashboardData = {
     consensusDirection: 'RISE' | 'FALL' | 'HOLD';
 };
 
-export type RobotPerformance = {
-    id: string;
-    strategyType: RobotStrategy['strategyType'];
-    strategy: RobotStrategy;
-    wins: number;
-    losses: number;
-    totalProfit: number;
-    winRate: number;
-    winRateTrend: number;
-    winRateRange: number;
-};
+export type RobotPerformance = RobotPerformanceType;
 
 export type RobotVote = RobotVoteType;
 
@@ -72,9 +46,7 @@ type VirtualTrade = {
     regime: MarketRegime;
 };
 
-const CALIBRATION_TICKS = 200; // Número de ticks para aquecer o sistema.
-
-// --- FUNÇÕES MATEMÁTICAS PURAS (QUANT CORE) ---
+const CALIBRATION_TICKS = 200;
 
 const isValid = (value: any): value is number => value !== null && value !== undefined && !isNaN(value);
 
@@ -167,20 +139,19 @@ const getVoteForRegime = (robot: RobotStrategy, indicators: Indicators, regime: 
     return calculateRobotVote(robot, indicators);
 };
 
-// --- HOOK PRINCIPAL ---
-
 export function useRobotCouncil(activeSymbol: string | null, priceTicks: TickData[]) {
-    const { executeTrade, isConnected, timePeriod } = useDerivApi();
+    const { executeTrade, isConnected, timePeriod, operationsLog } = useDerivApi();
     const { user, loading: isAuthLoading } = useAuth();
     const { toast } = useToast();
     const { evolvedStrategies, evolveTrigger, evolutionHistory } = useStrategyEvolution(initialCouncilStrategies);
     
     const [isCouncilAutopilotOn, setIsCouncilAutopilotOn] = useState(false);
     const [dailyBalance, setDailyBalance] = useState(1000);
+    const [dailyTarget, setDailyTarget] = useState(50);
     const [strategyCouncil, setStrategyCouncil] = useState<RobotStrategy[]>([]);
     const [robotPerformance, setRobotPerformance] = useState<RobotPerformance[]>([]);
     const [isFetchingCouncil, setIsFetchingCouncil] = useState(false);
-    const [isCalibrated, setIsCalibrated] = useState(false); // NOVO: Estado de calibração
+    const [isCalibrated, setIsCalibrated] = useState(false);
 
     const [dashboardData, setDashboardData] = useState<DashboardData>({
         regime: 'RANGING', bayesianProbability: 0.5, kellyStake: 0.35,
@@ -261,18 +232,17 @@ export function useRobotCouncil(activeSymbol: string | null, priceTicks: TickDat
         const indicators = calculateAllIndicators(tickCandles, strategyCouncil, timePeriod);
         if (!indicators) return;
 
-        // --- Arena Virtual: Julgamento ---
-        const stillActiveTrades: VirtualTrade[] = [];
         const performanceMap = new Map<string, RobotPerformance>(robotPerformance.map(p => [p.id, { ...p }]));
         let performanceChanged = false;
 
-        virtualTradesRef.current.forEach((trade) => {
+        const stillActiveTrades = virtualTradesRef.current.filter((trade) => {
             if (currentTick.epoch >= trade.exitEpoch) {
                 const exitTick = priceTicks.reduce((prev, curr) => Math.abs(curr.epoch - trade.exitEpoch) < Math.abs(prev.epoch - trade.exitEpoch) ? curr : prev);
                 const isWin = (trade.vote === 'RISE' && exitTick.price > trade.entryPrice) || (trade.vote === 'FALL' && exitTick.price < trade.entryPrice);
                 const perf = performanceMap.get(trade.robotId);
                 
                 if (perf) {
+                    performanceChanged = true;
                     perf.totalProfit = (perf.totalProfit || 0) + (isWin ? 0.95 : -1.0);
                     if(isWin) perf.wins = (perf.wins || 0) + 1; else perf.losses = (perf.losses || 0) + 1;
                     const totalTrades = perf.wins + perf.losses;
@@ -285,13 +255,12 @@ export function useRobotCouncil(activeSymbol: string | null, priceTicks: TickDat
                          const rangeTradesCount = ((perf.winRateRange || 0) / 100 * (totalTrades-1)) || 0;
                          perf.winRateRange = ((rangeTradesCount + (isWin ? 1 : 0)) / totalTrades) * 100;
                     }
-                    performanceChanged = true;
                 }
-            } else {
-                stillActiveTrades.push(trade);
+                return false;
             }
+            return true;
         });
-        
+
         if (performanceChanged) {
             const updatedPerformance = Array.from(performanceMap.values());
             setRobotPerformance(updatedPerformance);
@@ -300,13 +269,12 @@ export function useRobotCouncil(activeSymbol: string | null, priceTicks: TickDat
         }
         virtualTradesRef.current = stillActiveTrades;
         
-        // --- Análise de Contexto e Votação ---
         const regime = detectMarketRegime(indicators, activeSymbol);
         const microstructure = analyzeMicrostructure(priceTicks);
         
         let riseLikelihoodSum = 0, fallLikelihoodSum = 0, activeRobots = 0;
-        const riseVotes: RobotVote[] = [];
-        const fallVotes: RobotVote[] = [];
+        const riseVotes: Omit<RobotVote, 'weight'>[] = [];
+        const fallVotes: Omit<RobotVote, 'weight'>[] = [];
 
         strategyCouncil.forEach(robot => {
             const voteData = getVoteForRegime(robot, indicators, regime);
@@ -318,10 +286,9 @@ export function useRobotCouncil(activeSymbol: string | null, priceTicks: TickDat
             if (voteData.vote !== 'HOLD') {
                 activeRobots++;
                 const weight = (voteData.confidence / 100) * historicalWinRate;
-                const fullVote = { ...voteData, weight };
                 
-                if (voteData.vote === 'RISE') { riseLikelihoodSum += weight; riseVotes.push(fullVote); }
-                if (voteData.vote === 'FALL') { fallLikelihoodSum += weight; fallVotes.push(fullVote); }
+                if (voteData.vote === 'RISE') { riseLikelihoodSum += weight; riseVotes.push(voteData); }
+                if (voteData.vote === 'FALL') { fallLikelihoodSum += weight; fallVotes.push(voteData); }
                 
                 const durationInSeconds = durationToSeconds(voteData.optimalDuration, voteData.optimalDurationUnit);
                 virtualTradesRef.current.push({
@@ -332,7 +299,6 @@ export function useRobotCouncil(activeSymbol: string | null, priceTicks: TickDat
             }
         });
         
-        // --- Consenso e Decisão ---
         const totalWeight = riseLikelihoodSum + fallLikelihoodSum;
         const riseProb = totalWeight > 0 ? riseLikelihoodSum / totalWeight : 0.5;
         let decision: 'RISE' | 'FALL' | 'HOLD' = 'HOLD', finalProbability = 0.5;
@@ -351,47 +317,44 @@ export function useRobotCouncil(activeSymbol: string | null, priceTicks: TickDat
             microstructure, activeRobotsCount: activeRobots, consensusDirection: decision
         });
 
-        // --- Execução de Trade Real ---
         const now = Math.floor(Date.now() / 1000);
         if (isCalibrated && decision !== 'HOLD' && suggestedStake > 0 && !executionRef.current.isProcessing && (now - executionRef.current.lastTradeEpoch > 5)) {
             executionRef.current.isProcessing = true;
             
-            // Lógica para stake e duração ponderados
             const winningVotes = decision === 'RISE' ? riseVotes : fallVotes;
             const totalConfidence = winningVotes.reduce((sum, v) => sum + v.confidence, 0);
 
             const finalStake = totalConfidence > 0 ? winningVotes.reduce((sum, v) => sum + v.suggestedStake * (v.confidence / totalConfidence), 0) : suggestedStake;
             const finalDurationInSeconds = totalConfidence > 0 ? winningVotes.reduce((sum, v) => sum + durationToSeconds(v.optimalDuration, v.optimalDurationUnit) * (v.confidence / totalConfidence), 0) : durationToSeconds(5, 't');
             
-            // Lógica para converter segundos de volta para a melhor unidade (simplificado para ticks)
-            const finalDuration = Math.round(finalDurationInSeconds / 2); // Assumindo 2s/tick
+            const finalDuration = Math.max(5, Math.round(finalDurationInSeconds / 2));
             const finalDurationUnit: DurationUnit = 't';
-
 
             toast({ title: "🤖 Ordem do Conselho Quant", description: `${decision} | Stake: $${finalStake.toFixed(2)} | Dur: ${finalDuration}t | Prob: ${(finalProbability*100).toFixed(1)}%` });
             
             executeTrade(
                 decision === 'RISE' ? 'CALL' : 'PUT', finalStake, activeSymbol, decision.toLowerCase() as 'rise' | 'fall', 
-                Math.max(5, finalDuration), finalDurationUnit, 'Conselho'
+                finalDuration, finalDurationUnit, 'Conselho'
             ).finally(() => {
                 executionRef.current.lastTradeEpoch = now;
-                setTimeout(() => { executionRef.current.isProcessing = false }, 3000); // Cooldown maior após trade
+                setTimeout(() => { executionRef.current.isProcessing = false }, 3000);
             });
         }
 
     }, [priceTicks, activeSymbol, isCouncilAutopilotOn, strategyCouncil, robotPerformance, dailyBalance, executeTrade, toast, isConnected, user, evolveTrigger, timePeriod, isCalibrated]);
 
-    // Retornos para a UI
-    const { consensusDirection } = dashboardData;
     return {
         dashboardData,
-        isCouncilAutopilotOn, setIsCouncilAutopilotOn, fetchStrategyCouncil, dissolveCouncil,
+        isCouncilAutopilotOn, setIsCouncilAutopilotOn,
+        dailyBalance, setDailyBalance,
+        dailyTarget, setDailyTarget,
+        fetchStrategyCouncil,
+        dissolveCouncil,
         strategyCouncil, isFetchingCouncil, robotPerformance, evolutionHistory,
-        // Mantém a compatibilidade com a UI antiga por enquanto
-        councilVotes: {}, dailyTarget: 0, setDailyTarget: () => {}, consensusThreshold: 0, setConsensusThreshold: () => {},
+        councilVotes: {}, consensusThreshold: 0, setConsensusThreshold: () => {},
         isDynamicConsensusOn: true, setIsDynamicConsensusOn: () => {}, isDynamicRiskOn: true, setIsDynamicRiskOn: () => {},
         isMeritocracyOn: true, setIsMeritocracyOn: () => {}, indicators: null, activeCommittee: null,
         supervisionStatus: {status: isCalibrated ? 'approved' : 'inactive', message: isCalibrated ? 'Operacional' : 'Calibrando...'},
-        consensusSum: {rise: 0, fall: 0}, consensusDecision: consensusDirection, 
+        consensusSum: {rise: 0, fall: 0}, consensusDecision: dashboardData.consensusDirection, 
     };
 }
