@@ -48,6 +48,7 @@ export type DashboardData = {
 
 export type RobotPerformance = RobotPerformanceType;
 export type RobotVote = RobotVoteType;
+export type CouncilVotes = { [key: string]: RobotVote };
 
 type VirtualTrade = {
     id: string;
@@ -136,8 +137,17 @@ const calculateRobotVote = (robot: RobotStrategy, indicators: Indicators): Omit<
     } else if (robot.strategyType === 'MACD_CROSS' && isValid(indicators.macd.macd) && isValid(indicators.macd.signal)) {
         if (indicators.macd.macd! > indicators.macd.signal!) { vote = 'RISE'; confidence = weakConfidence; }
         if (indicators.macd.signal! > indicators.macd.macd!) { vote = 'FALL'; confidence = weakConfidence; }
+    } else if (robot.strategyType === 'BOLLINGER_BANDS' && isValid(indicators.bb.lower) && indicators.bb.upper && priceTicks.length > 0) {
+        const lastPrice = priceTicks[priceTicks.length-1].price;
+        if(isValid(lastPrice)) {
+            if(lastPrice <= indicators.bb.lower) { vote = 'RISE'; confidence = weakConfidence; }
+            if(lastPrice >= indicators.bb.upper) { vote = 'FALL'; confidence = weakConfidence; }
+        }
+    } else if (robot.strategyType === 'MOVING_AVERAGE_CROSS' && isValid(indicators.ma.short) && isValid(indicators.ma.long)) {
+        if (indicators.ma.short > indicators.ma.long) { vote = 'RISE'; confidence = weakConfidence; }
+        if (indicators.ma.long > indicators.ma.short) { vote = 'FALL'; confidence = weakConfidence; }
     }
-    // Adicionar a lógica para as outras 19 estratégias aqui...
+    // ... Lógica para as outras 18 estratégias
 
     return { vote, confidence, optimalDuration, optimalDurationUnit, suggestedStake };
 };
@@ -167,6 +177,18 @@ export function useRobotCouncil(activeSymbol: string | null, priceTicks: TickDat
     const [robotPerformance, setRobotPerformance] = useState<RobotPerformance[]>([]);
     const [isFetchingCouncil, setIsFetchingCouncil] = useState(false);
     const [isCalibrated, setIsCalibrated] = useState(false);
+    const [isMeritocracyOn, setIsMeritocracyOn] = useState(true);
+    const [isDynamicRiskOn, setIsDynamicRiskOn] = useState(true);
+    const [isDynamicConsensusOn, setIsDynamicConsensusOn] = useState(true);
+    const [consensusThreshold, setConsensusThreshold] = useState(300);
+    const [baseStake, setBaseStake] = useState(1);
+    const [baseDuration, setBaseDuration] = useState(5);
+    const [councilVotes, setCouncilVotes] = useState<CouncilVotes>({});
+    const [consensusSum, setConsensusSum] = useState({ rise: 0, fall: 0 });
+    const [consensusDecision, setConsensusDecision] = useState<'RISE' | 'FALL' | 'HOLD'>('HOLD');
+    const [activeCommittee, setActiveCommittee] = useState<string | null>(null);
+    const [supervisionStatus, setSupervisionStatus] = useState({ status: 'inactive', message: 'Aguardando consenso.', analysis: '' });
+    const [indicators, setIndicators] = useState<Indicators | null>(null);
 
     const [dashboardData, setDashboardData] = useState<DashboardData>({
         regime: 'RANGING', bayesianProbability: 0.5, kellyStake: 0.35,
@@ -246,6 +268,7 @@ export function useRobotCouncil(activeSymbol: string | null, priceTicks: TickDat
         const currentTick = tickCandles[tickCandles.length - 1];
         const indicators = calculateAllIndicators(tickCandles, strategyCouncil, timePeriod);
         if (!indicators) return;
+        setIndicators(indicators);
 
         const performanceMap = new Map<string, RobotPerformance>(robotPerformance.map(p => [p.id, { ...p }]));
         let performanceChanged = false;
@@ -288,22 +311,34 @@ export function useRobotCouncil(activeSymbol: string | null, priceTicks: TickDat
         const microstructure = analyzeMicrostructure(priceTicks);
         
         let riseLikelihoodSum = 0, fallLikelihoodSum = 0, activeRobots = 0;
-        const riseVotes: Omit<RobotVote, 'weight'>[] = [];
-        const fallVotes: Omit<RobotVote, 'weight'>[] = [];
+        const newVotes: CouncilVotes = {};
+        const riseVotesData: Omit<RobotVote, 'weight'>[] = [];
+        const fallVotesData: Omit<RobotVote, 'weight'>[] = [];
+        
 
         strategyCouncil.forEach(robot => {
             const voteData = getVoteForRegime(robot, indicators, regime);
             const perf = robotPerformance.find(p => p.id === robot.id);
             const historicalWinRate = perf ? (regime.includes('TREND') ? (perf.winRateTrend || 50) : (perf.winRateRange || 50)) / 100 : 0.5;
             
-            if (historicalWinRate < 0.45) return; 
+            if (historicalWinRate < 0.45) {
+                newVotes[robot.id] = { ...voteData, weight: 0 };
+                return;
+            }; 
 
             if (voteData.vote !== 'HOLD') {
                 activeRobots++;
                 const weight = (voteData.confidence / 100) * historicalWinRate;
+                newVotes[robot.id] = { ...voteData, weight };
                 
-                if (voteData.vote === 'RISE') { riseLikelihoodSum += weight; riseVotes.push(voteData); }
-                if (voteData.vote === 'FALL') { fallLikelihoodSum += weight; fallVotes.push(voteData); }
+                if (voteData.vote === 'RISE') { 
+                    riseLikelihoodSum += weight;
+                    riseVotesData.push(voteData);
+                }
+                if (voteData.vote === 'FALL') { 
+                    fallLikelihoodSum += weight;
+                    fallVotesData.push(voteData);
+                }
                 
                 const durationInSeconds = durationToSeconds(voteData.optimalDuration, voteData.optimalDurationUnit);
                 virtualTradesRef.current.push({
@@ -311,15 +346,23 @@ export function useRobotCouncil(activeSymbol: string | null, priceTicks: TickDat
                     entryPrice: currentTick.close, entryEpoch: currentTick.epoch,
                     exitEpoch: currentTick.epoch + durationInSeconds, regime: regime
                 });
+            } else {
+                 newVotes[robot.id] = { ...voteData, weight: 0 };
             }
         });
         
+        setCouncilVotes(newVotes);
+        setConsensusSum({ rise: riseLikelihoodSum, fall: fallLikelihoodSum });
+        
         const totalWeight = riseLikelihoodSum + fallLikelihoodSum;
         const riseProb = totalWeight > 0 ? riseLikelihoodSum / totalWeight : 0.5;
-        let decision: 'RISE' | 'FALL' | 'HOLD' = 'HOLD', finalProbability = 0.5;
+        
+        let decision: 'RISE' | 'FALL' | 'HOLD' = 'HOLD';
+        let finalProbability = 0.5;
 
         if (riseProb > fallLikelihoodSum / totalWeight && riseProb > 0.65) { decision = 'RISE'; finalProbability = riseProb; }
         else if (fallLikelihoodSum / totalWeight > riseProb && fallLikelihoodSum / totalWeight > 0.65) { decision = 'FALL'; finalProbability = 1 - riseProb; }
+        setConsensusDecision(decision);
         
         if ((decision === 'RISE' && microstructure.pressure < 0.2) || (decision === 'FALL' && microstructure.pressure > 0.8) || microstructure.isSpike) {
             decision = 'HOLD';
@@ -336,14 +379,15 @@ export function useRobotCouncil(activeSymbol: string | null, priceTicks: TickDat
         if (isCalibrated && decision !== 'HOLD' && suggestedStake > 0 && !executionRef.current.isProcessing && (now - executionRef.current.lastTradeEpoch > 5)) {
             executionRef.current.isProcessing = true;
             
-            const winningVotes = decision === 'RISE' ? riseVotes : fallVotes;
+            const winningVotes = decision === 'RISE' ? riseVotesData : fallVotesData;
             const totalConfidence = winningVotes.reduce((sum, v) => sum + v.confidence, 0);
 
             const finalStake = totalConfidence > 0 ? winningVotes.reduce((sum, v) => sum + v.suggestedStake * (v.confidence / totalConfidence), 0) : suggestedStake;
             const finalDurationInSeconds = totalConfidence > 0 ? winningVotes.reduce((sum, v) => sum + durationToSeconds(v.optimalDuration, v.optimalDurationUnit) * (v.confidence / totalConfidence), 0) : durationToSeconds(5, 't');
             
-            const finalDuration = Math.max(5, Math.round(finalDurationInSeconds / 2));
+            let finalDuration = Math.max(1, Math.round(finalDurationInSeconds / 2));
             const finalDurationUnit: DurationUnit = 't';
+            if (finalDuration > 10) finalDuration = 10; // Clamp duration for ticks
 
             toast({ title: "🤖 Ordem do Conselho Quant", description: `${decision} | Stake: $${finalStake.toFixed(2)} | Dur: ${finalDuration}t | Prob: ${(finalProbability*100).toFixed(1)}%` });
             
@@ -366,5 +410,17 @@ export function useRobotCouncil(activeSymbol: string | null, priceTicks: TickDat
         fetchStrategyCouncil,
         dissolveCouncil,
         strategyCouncil, isFetchingCouncil, robotPerformance, evolutionHistory,
+        isMeritocracyOn, setIsMeritocracyOn,
+        isDynamicRiskOn, setIsDynamicRiskOn,
+        isDynamicConsensusOn, setIsDynamicConsensusOn,
+        consensusThreshold, setConsensusThreshold,
+        baseStake, setBaseStake,
+        baseDuration, setBaseDuration,
+        councilVotes,
+        indicators,
+        activeCommittee,
+        supervisionStatus,
+        consensusSum,
+        consensusDecision
     };
 }

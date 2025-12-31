@@ -62,12 +62,21 @@ function DerivTraderInterface({ symbol }: DerivTraderInterfaceProps) {
   // NOVO: Atualiza a duração quando a unidade ou os limites mudam
   useEffect(() => {
     if (durationLimits) {
-      const { min } = durationLimits[durationUnit];
-      const currentDuration = form.getValues('duration');
-      if (currentDuration < min) {
-        form.setValue('duration', min);
-        form.trigger('duration');
-      }
+        const limits = durationLimits[durationUnit];
+        const currentDuration = form.getValues('duration');
+        let newDuration = currentDuration;
+
+        if (newDuration < limits.min) {
+            newDuration = limits.min;
+        }
+        if (newDuration > limits.max) {
+            newDuration = limits.max;
+        }
+
+        if (newDuration !== currentDuration) {
+            form.setValue('duration', newDuration);
+            form.trigger('duration');
+        }
     }
   }, [durationUnit, durationLimits, form]);
 
