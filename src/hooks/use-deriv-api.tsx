@@ -387,10 +387,13 @@ const subscribeToMarketData = useCallback(async (symbol: string) => {
             throw new Error("A conexão com a API da Deriv não está ativa.");
           }
 
+          // Garantir que o stake tem no máximo 2 casas decimais
+          const sanitizedStake = parseFloat(stake.toFixed(2));
+
           try {
             const proposalResponse: any = await makeRequest({ 
                 "proposal": 1,
-                "amount": stake,
+                "amount": sanitizedStake,
                 "basis": "stake",
                 "contract_type": contractType,
                 "currency": "USD",
@@ -415,7 +418,7 @@ const subscribeToMarketData = useCallback(async (symbol: string) => {
                 id: buyResult.contract_id,
                 asset: symbol,
                 direction: tradeDirection,
-                stake: stake,
+                stake: sanitizedStake,
                 status: 'pending',
                 timestamp: new Date().toISOString(),
                 duration: duration,
@@ -434,13 +437,13 @@ const subscribeToMarketData = useCallback(async (symbol: string) => {
                 entryPrice,
                 direction: tradeDirection,
                 status: 'pending',
-                stake,
+                stake: sanitizedStake,
                 symbol,
             });
 
             return {
               success: true,
-              message: `Ordem do tipo "${contractType}" para ${symbol} no valor de ${stake} USD executada com sucesso.`,
+              message: `Ordem do tipo "${contractType}" para ${symbol} no valor de ${sanitizedStake} USD executada com sucesso.`,
               contractId: buyResult.contract_id,
             };
           } catch (error) {

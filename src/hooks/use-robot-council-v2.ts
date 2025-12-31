@@ -115,7 +115,9 @@ const calculateKellyStake = (balance: number, prob: number, payoff: number = 0.9
     const kellyFraction = (prob * payoff - q) / payoff;
     const safeFraction = kellyFraction * 0.25; // Quarter Kelly
     const finalFraction = Math.min(safeFraction, maxRisk);
-    return Math.max(0.35, Math.floor(balance * Math.max(0, finalFraction) * 100) / 100);
+    const calculatedStake = balance * Math.max(0, finalFraction);
+    // Arredonda para 2 casas decimais para garantir compatibilidade com a API
+    return Math.max(0.35, Math.floor(calculatedStake * 100) / 100);
 };
 
 const calculateRobotVote = (robot: RobotStrategy, indicators: Indicators, tickCandles: CandleData[]): Omit<RobotVote, 'weight'> => {
@@ -166,7 +168,7 @@ const getVoteForRegime = (robot: RobotStrategy, indicators: Indicators, regime: 
 
 // --- HOOK PRINCIPAL ---
 export function useRobotCouncil(activeSymbol: string | null, priceTicks: TickData[]) {
-    const { executeTrade, isConnected, timePeriod } = useDerivApi();
+    const { executeTrade, isConnected, timePeriod, durationLimits } = useDerivApi();
     const { user, loading: isAuthLoading } = useAuth();
     const { toast } = useToast();
     const { evolvedStrategies, evolveTrigger, evolutionHistory } = useStrategyEvolution(initialCouncilStrategies);
@@ -379,12 +381,15 @@ export function useRobotCouncil(activeSymbol: string | null, priceTicks: TickDat
             const winningVotes = decision === 'RISE' ? riseVotesData : fallVotesData;
             const totalConfidence = winningVotes.reduce((sum, v) => sum + v.confidence, 0);
 
-            const finalStake = totalConfidence > 0 ? winningVotes.reduce((sum, v) => sum + v.suggestedStake * (v.confidence / totalConfidence), 0) : suggestedStake;
-            const finalDurationInSeconds = totalConfidence > 0 ? winningVotes.reduce((sum, v) => sum + durationToSeconds(v.optimalDuration, v.optimalDurationUnit) * (v.confidence / totalConfidence), 0) : durationToSeconds(5, 't');
-            
-            let finalDuration = Math.max(1, Math.round(finalDurationInSeconds / 2));
-            const finalDurationUnit: DurationUnit = 't';
-            if (finalDuration > 10) finalDuration = 10; // Clamp duration for ticks
+            let finalStake = totalConfidence > 0 ? winningVotes.reduce((sum, v) => sum + v.suggestedStake * (v.confidence / totalConfidence), 0) : suggestedStake;
+            finalStake = parseFloat(finalStake.toFixed(2)); // Garantir 2 casas decimais
+
+            let finalDuration = 5; // Default de 5 ticks
+            let finalDurationUnit: DurationUnit = 't';
+
+            if(durationLimits && durationLimits.t) {
+                finalDuration = durationLimits.t.min;
+            }
 
             toast({ title: "🤖 Ordem do Conselho Quant", description: `${decision} | Stake: $${finalStake.toFixed(2)} | Dur: ${finalDuration}t | Prob: ${(finalProbability*100).toFixed(1)}%` });
             
@@ -397,7 +402,7 @@ export function useRobotCouncil(activeSymbol: string | null, priceTicks: TickDat
             });
         }
 
-    }, [priceTicks, activeSymbol, isCouncilAutopilotOn, strategyCouncil, robotPerformance, dailyBalance, executeTrade, toast, isConnected, user, evolveTrigger, timePeriod, isCalibrated, dailyTarget]);
+    }, [priceTicks, activeSymbol, isCouncilAutopilotOn, strategyCouncil, robotPerformance, dailyBalance, executeTrade, toast, isConnected, user, evolveTrigger, timePeriod, isCalibrated, dailyTarget, durationLimits]);
 
     return {
         dashboardData,
