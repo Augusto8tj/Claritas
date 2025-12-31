@@ -43,6 +43,28 @@ export function AITradeSuggestion({
     isAutopilotOn 
 }: AITradeSuggestionProps) {
 
+    // Adicionado guarda de segurança para evitar erro de renderização
+    if (!consensusSum) {
+        return (
+             <Card>
+                <CardHeader>
+                    <CardTitle className="font-headline flex items-center gap-2">
+                        <Eye className="h-5 w-5 text-primary" />
+                        Consenso da Mesa Operacional
+                    </CardTitle>
+                    <CardDescription>
+                      Aguardando inicialização do conselho...
+                    </CardDescription>
+                </CardHeader>
+                <CardContent>
+                    <div className="text-center text-muted-foreground p-4 border rounded-md bg-muted/50">
+                        A calcular...
+                    </div>
+                </CardContent>
+            </Card>
+        )
+    }
+
     const totalConsensus = Math.max(consensusThreshold, consensusSum.rise + consensusSum.fall);
     const risePercentage = totalConsensus > 0 ? (consensusSum.rise / totalConsensus) * 100 : 0;
     const fallPercentage = totalConsensus > 0 ? (consensusSum.fall / totalConsensus) * 100 : 0;
