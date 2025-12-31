@@ -382,7 +382,7 @@ export function CouncilAutopilotInterface(props: CouncilAutopilotInterfaceProps)
                                     const optimalDurationUnit = voteData?.optimalDurationUnit || robot.optimalDurationUnit;
 
                                     return (
-                                        <Fragment key={robot.id}>
+                                        <div key={robot.id}>
                                             <div className="text-xs space-y-1">
                                                 <div className="flex justify-between items-center">
                                                     <p className="font-bold flex items-center gap-1.5">{indicatorIcons[robot.strategyType] || <Bot />} Analista de {robot.strategyType}</p>
@@ -412,7 +412,7 @@ export function CouncilAutopilotInterface(props: CouncilAutopilotInterfaceProps)
                                                 </div>
                                             </div>
                                             {index < robots.length - 1 && <Separator className="bg-primary/10 my-2" />}
-                                        </Fragment>
+                                        </div>
                                     )
                                 })}
                                 <Separator className="bg-primary/20 mt-3" />
