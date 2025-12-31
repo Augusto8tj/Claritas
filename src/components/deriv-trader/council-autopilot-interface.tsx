@@ -227,11 +227,11 @@ export function CouncilAutopilotInterface(props: CouncilAutopilotInterfaceProps)
   }, {} as Record<string, RobotStrategy[]>);
 
 
-  const supervisionIcon = {
+  const supervisionIcon = supervisionStatus ? {
       'inactive': <HelpCircle className="h-4 w-4 text-muted-foreground" />,
       'veto': <ShieldX className="h-4 w-4 text-destructive" />,
       'approved': <ShieldCheck className="h-4 w-4 text-green-600" />,
-  }[supervisionStatus.status]
+  }[supervisionStatus.status] : <HelpCircle className="h-4 w-4 text-muted-foreground" />;
 
   return (
     <Card>
@@ -250,7 +250,7 @@ export function CouncilAutopilotInterface(props: CouncilAutopilotInterfaceProps)
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
-        {isCouncilAutopilotOn && (
+        {isCouncilAutopilotOn && supervisionStatus && (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
                 <div className="rounded-lg border bg-card p-3">
                     <p className="font-semibold flex items-center gap-1.5"><Group className="h-4 w-4" /> Gestor de Turno</p>
@@ -322,7 +322,7 @@ export function CouncilAutopilotInterface(props: CouncilAutopilotInterfaceProps)
                 placeholder="Ex: 300"
                 disabled={isCouncilAutopilotOn || isDynamicConsensusOn}
             />
-            {isCouncilAutopilotOn && (
+            {isCouncilAutopilotOn && consensusSum && (
                 <div className="flex items-center justify-center gap-4 text-sm font-semibold rounded-md border p-2 bg-muted/50">
                     <div className="flex items-center gap-1.5 text-green-600">
                         <ArrowUpCircle className="h-4 w-4" />
@@ -374,7 +374,7 @@ export function CouncilAutopilotInterface(props: CouncilAutopilotInterfaceProps)
                             <div key={category}>
                                 <h4 className="font-semibold text-sm text-primary/100 mb-2">{category}</h4>
                                 {robots.map((robot, index) => {
-                                    const voteData = councilVotes[robot.id];
+                                    const voteData = councilVotes ? councilVotes[robot.id] : null;
                                     const vote = voteData?.vote || 'HOLD';
                                     const weight = voteData?.weight || 1.0;
                                     const confidence = voteData?.confidence || 0;
