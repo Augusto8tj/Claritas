@@ -213,7 +213,7 @@ export function CouncilAutopilotInterface(props: CouncilAutopilotInterfaceProps)
         }
   }
 
-  const groupedRobots = strategyCouncil.reduce((acc, robot) => {
+  const groupedRobots = Array.isArray(strategyCouncil) ? strategyCouncil.reduce((acc, robot) => {
     for (const category in robotCategories) {
         if (robotCategories[category].includes(robot.strategyType)) {
             if (!acc[category]) {
@@ -224,7 +224,7 @@ export function CouncilAutopilotInterface(props: CouncilAutopilotInterfaceProps)
         }
     }
     return acc;
-  }, {} as Record<string, RobotStrategy[]>);
+  }, {} as Record<string, RobotStrategy[]>) : {};
 
 
   const supervisionIcon = supervisionStatus ? {
@@ -354,7 +354,7 @@ export function CouncilAutopilotInterface(props: CouncilAutopilotInterfaceProps)
 
          <div className="flex justify-between items-center text-xs text-muted-foreground pt-2">
             <span>Analistas em Posição</span>
-            <Badge variant="outline">{strategyCouncil.length}</Badge>
+            <Badge variant="outline">{Array.isArray(strategyCouncil) ? strategyCouncil.length : 0}</Badge>
         </div>
         
         {isCouncilAutopilotOn && (
@@ -363,7 +363,7 @@ export function CouncilAutopilotInterface(props: CouncilAutopilotInterfaceProps)
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                     <span>Convocando o conselho de analistas...</span>
                 </div>
-            ) : strategyCouncil.length > 0 ? (
+            ) : Array.isArray(strategyCouncil) && strategyCouncil.length > 0 ? (
                 <Alert className="bg-primary/5 border-primary/20 max-h-96 overflow-y-auto">
                     <AlertTitle className="text-primary flex items-center gap-2">
                         <Bot className="h-4 w-4" />
@@ -427,14 +427,14 @@ export function CouncilAutopilotInterface(props: CouncilAutopilotInterfaceProps)
                 </div>
             )
         )}
-        {!isCouncilAutopilotOn && strategyCouncil.length < 1 && (
+        {!isCouncilAutopilotOn && Array.isArray(strategyCouncil) && strategyCouncil.length < 1 && (
             <div className="text-center text-muted-foreground p-4 border rounded-md bg-muted/50">
                 <Info className="h-5 w-5 mx-auto mb-2" />
                 <p className="text-sm">A Mesa Operacional está aguardando a convocação.</p>
                 <p className="text-xs">Use o botão acima para iniciar.</p>
             </div>
         )}
-        {!isCouncilAutopilotOn && strategyCouncil.length > 0 && (
+        {!isCouncilAutopilotOn && Array.isArray(strategyCouncil) && strategyCouncil.length > 0 && (
              <div className="text-center text-muted-foreground p-4 border rounded-md bg-muted/50">
                 <Info className="h-5 w-5 mx-auto mb-2" />
                 <p className="text-sm">A Mesa Operacional está pronta. Ative-a para começar.</p>
