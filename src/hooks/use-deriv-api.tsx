@@ -4,7 +4,7 @@
 import { createContext, useContext, useState, useEffect, type ReactNode, useCallback, useRef } from 'react';
 import type { TradeResult } from '@/services/deriv-api-service';
 import { useToast } from '@/hooks/use-toast';
-import type { Operation, OperationInitiator, DurationUnit, ChartType, TimePeriod, ChartData, CandleData, TradeAnnotation, TickData } from '@/lib/types';
+import type { Operation, OperationInitiator, DurationUnit, ChartType, TimePeriod, ChartData, CandleData, TradeAnnotation, TickData, DurationLimits } from '@/lib/types';
 import { FirebaseErrorListener } from '@/components/firebase-error-listener';
 
 
@@ -49,9 +49,6 @@ export type ApiHistoricalData = {
     close?: number;
 };
 
-// NOVO: Tipo para os limites de duração
-export type DurationLimits = Record<DurationUnit, { min: number, max: number }>;
-
 interface DerivApiContextType {
   ws: WebSocket | null;
   isConnected: boolean;
@@ -94,8 +91,6 @@ interface DerivApiContextType {
   sellContract: (contractId: number) => Promise<TradeResult>;
   clearActiveContracts: () => void;
   tradeAnnotations: TradeAnnotation[];
-
-  // NOVO: Exportar os limites de duração para o ativo atual
   durationLimits: DurationLimits | null;
 }
 
@@ -141,28 +136,32 @@ const addDataPoint = (prevData: ChartData[], newPoint: ChartData): ChartData[] =
     return data;
 };
 
-// NOVO: Função utilitária para extrair limites de duração
+// Função central para obter os limites de duração de um ativo
 const getDurationLimitsForAsset = (minDurationStr: string | undefined): DurationLimits => {
     const defaultLimits: DurationLimits = {
         t: { min: 5, max: 10 },
-        s: { min: 15, max: 3600 },
-        m: { min: 1, max: 1440 },
-        h: { min: 1, max: 24 },
+        s: { min: 15, max: 365 * 24 * 3600 },
+        m: { min: 1, max: 365 * 24 * 60 },
+        h: { min: 1, max: 365 * 24 },
         d: { min: 1, max: 365 },
     };
 
     if (!minDurationStr) return defaultLimits;
-
-    const unit = minDurationStr.slice(-1) as DurationUnit;
-    const value = parseInt(minDurationStr.slice(0, -1), 10);
-
-    if (isNaN(value) || !defaultLimits[unit]) return defaultLimits;
     
-    // Atualiza o mínimo para a unidade específica, mantendo os outros padrão
-    const specificLimits = { ...defaultLimits };
-    specificLimits[unit].min = value;
-
-    return specificLimits;
+    try {
+        const unit = minDurationStr.slice(-1) as DurationUnit;
+        const value = parseInt(minDurationStr.slice(0, -1), 10);
+    
+        if (isNaN(value) || !defaultLimits[unit]) return defaultLimits;
+        
+        // Cria uma cópia para não mutar o default
+        const specificLimits = JSON.parse(JSON.stringify(defaultLimits));
+        specificLimits[unit].min = value;
+    
+        return specificLimits;
+    } catch {
+        return defaultLimits;
+    }
 };
 
 
@@ -186,8 +185,6 @@ export const DerivApiProvider = ({ children }: { children: ReactNode }) => {
   const [timePeriod, setTimePeriod] = useState<TimePeriod>('5m');
   const activeSubscriptionIdRef = useRef<string | null>(null);
   const [tradeAnnotations, setTradeAnnotations] = useState<TradeAnnotation[]>([]);
-  
-  // NOVO: Estado para os limites de duração do ativo atual
   const [durationLimits, setDurationLimits] = useState<DurationLimits | null>(null);
 
   const wsRef = useRef<WebSocket | null>(null);
@@ -218,7 +215,6 @@ export const DerivApiProvider = ({ children }: { children: ReactNode }) => {
   
   const activeToken = accountType === 'demo' ? demoToken : realToken;
 
-  // NOVO: Efeito para atualizar os limites de duração quando o ativo muda
   useEffect(() => {
     if (activeSymbol && assetGroups.length > 0) {
       const allAssets = assetGroups.flatMap(g => g.options);
@@ -791,3 +787,5 @@ export function useDerivApi() {
   }
   return context;
 }
+
+    

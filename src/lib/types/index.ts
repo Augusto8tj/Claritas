@@ -53,6 +53,8 @@ export type ChartData = TickData | CandleData;
 
 export type DurationUnit = 't' | 's' | 'm' | 'h' | 'd';
 
+export type DurationLimits = Record<DurationUnit, { min: number; max: number }>;
+
 export interface TradeAnnotation {
   id: string;
   contractId: string;
@@ -200,3 +202,5 @@ export const GenerateGoalImageOutputSchema = z.object({
   imageUrl: z.string().describe('The data URI of the generated image.'),
 });
 export type GenerateGoalImageOutput = z.infer<typeof GenerateGoalImageOutputSchema>;
+
+    
