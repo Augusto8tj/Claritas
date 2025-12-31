@@ -195,20 +195,25 @@ export function useRobotCouncil(
     const councilExecutionRef = useRef({ isExecuting: false });
 
     // ========================================================================
-    // CARREGAR DESEMPENHO PERSISTIDO (localStorage)
+    // CARREGAR DESEMPENHO PERSISTIDO DO FIREBASE
     // ========================================================================
     useEffect(() => {
         if (!user || isAuthLoading) return;
 
-        try {
-            const storedPerformance = localStorage.getItem(`robotPerformance_${user.uid}`);
-            if (storedPerformance) {
-                setRobotPerformance(JSON.parse(storedPerformance));
-                console.log("[Performance] Dados de desempenho carregados do localStorage.");
+        const doLoad = async () => {
+            try {
+                const storedPerformance = await loadRobotPerformance(user.uid);
+                if (storedPerformance && storedPerformance.length > 0) {
+                    setRobotPerformance(storedPerformance);
+                    console.log("[Performance] Dados de desempenho carregados do Firebase.");
+                } else {
+                     console.log("[Performance] Nenhum dado de desempenho encontrado no Firebase para este usuário.");
+                }
+            } catch (error) {
+                console.error('Erro ao carregar desempenho do Firebase:', error);
             }
-        } catch (error) {
-            console.error('Erro ao carregar desempenho do localStorage:', error);
-        }
+        };
+        doLoad();
     }, [user, isAuthLoading]);
 
     // ========================================================================
@@ -251,7 +256,7 @@ export function useRobotCouncil(
                 totalProfit: 0,
             }));
             setRobotPerformance(initialPerformance);
-            localStorage.setItem(`robotPerformance_${user.uid}`, JSON.stringify(initialPerformance));
+            await saveRobotPerformance(user.uid, initialPerformance);
         }
 
         toast({
@@ -522,7 +527,9 @@ export function useRobotCouncil(
         if (performanceChanged) {
             const updatedPerformance = Array.from(performanceMap.values());
             setRobotPerformance(updatedPerformance);
-            localStorage.setItem(`robotPerformance_${user.uid}`, JSON.stringify(updatedPerformance));
+            if (user) {
+                saveRobotPerformance(user.uid, updatedPerformance);
+            }
         }
 
         // ====================================================================
@@ -684,3 +691,5 @@ export function useRobotCouncil(
         robotPerformance,
     };
 }
+
+    
