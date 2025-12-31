@@ -4,14 +4,13 @@
 /**
  * @fileOverview A financial data service that interacts with Firebase Firestore.
  */
-import { db, auth } from '@/lib/firebase';
-import { collection, getDocs, addDoc, query, where, doc, updateDoc, deleteDoc, writeBatch, getDoc, setDoc } from 'firebase/firestore';
+import { db } from '@/lib/firebase';
+import { collection, getDocs, addDoc, doc, updateDoc, deleteDoc, getDoc, setDoc } from 'firebase/firestore';
 import type { Goal, BudgetCategory, Transaction, RobotPerformance } from '@/lib/types';
 import { generateGoalImage } from '@/ai/flows/goal-image-generation';
 
 import { errorEmitter } from '@/firebase/error-emitter';
 import { FirestorePermissionError } from '@/firebase/errors';
-
 
 const PROMOTION_THRESHOLD_WINS = 10;
 const PROMOTION_THRESHOLD_PROFIT = 0;
@@ -29,7 +28,6 @@ export async function getTransactions(userId: string): Promise<Transaction[]> {
             operation: 'list',
         });
         errorEmitter.emit('permission-error', permissionError);
-        // Retornar um array vazio para evitar que a UI quebre
         return [];
     }
 }
@@ -91,11 +89,9 @@ export async function addGoal(userId: string, name: string, targetAmount: number
             requestResourceData: newGoalData,
         });
         errorEmitter.emit('permission-error', permissionError);
-        // Re-lança o erro para que a Server Action que chama esta função possa apanhá-lo
         throw serverError;
     });
 
-    // A geração de imagem continua em segundo plano, sem bloquear a resposta.
     generateGoalImage({ goalName: name })
         .then(imageResult => {
             if (imageResult?.imageUrl) {
@@ -126,7 +122,6 @@ export async function deleteGoal(userId: string, goalId: string): Promise<{ succ
     return { success: true };
 }
 
-
 // --- Budget ---
 
 async function getBudgetLimits(userId: string): Promise<{ [key: string]: number }> {
@@ -136,7 +131,6 @@ async function getBudgetLimits(userId: string): Promise<{ [key: string]: number 
         if (docSnap.exists()) {
             return docSnap.data().limits || {};
         }
-        // Return default if not exists
         return {
             "Moradia": 2000, "Alimentação": 1000, "Transporte": 500,
             "Lazer": 400, "Compras": 600, "Outros": 300, "Contas": 800,
@@ -147,7 +141,7 @@ async function getBudgetLimits(userId: string): Promise<{ [key: string]: number 
             operation: 'get',
         });
         errorEmitter.emit('permission-error', permissionError);
-        return {}; // Return empty on error
+        return {};
     }
 }
 
@@ -203,7 +197,6 @@ export async function getExpenseCategories(userId: string): Promise<string[]> {
 
 // --- General Insights (Still Mocked) ---
 export async function getInsights(): Promise<string[]> {
-    // This can be enhanced later to be dynamic based on user data
     return [
       "Você gastou R$150 em restaurantes. Tente cozinhar em casa para economizar.",
       "Sua maior despesa é o aluguel. Considere procurar opções mais baratas, se possível.",
@@ -216,7 +209,18 @@ export async function getInsights(): Promise<string[]> {
 
 export async function saveRobotPerformance(userId: string, performanceData: RobotPerformance[]): Promise<void> {
     const performanceDocRef = doc(db, 'users', userId, 'trading', 'robotPerformance');
-    const dataToSave = { performance: performanceData };
+    // Assegura que todos os campos, incluindo os novos, são enviados
+    const dataToSave = { performance: performanceData.map(p => ({
+        id: p.id,
+        strategyType: p.strategyType,
+        wins: p.wins || 0,
+        losses: p.losses || 0,
+        totalProfit: p.totalProfit || 0,
+        winRate: p.winRate || 0,
+        winRateTrend: p.winRateTrend || 0,
+        winRateRange: p.winRateRange || 0,
+        strategy: p.strategy
+    })) };
 
     setDoc(performanceDocRef, dataToSave, { merge: true })
         .catch(async (serverError) => {
@@ -237,7 +241,14 @@ export async function loadRobotPerformance(userId: string): Promise<RobotPerform
     try {
         const docSnap = await getDoc(performanceDocRef);
         if (docSnap.exists()) {
-            return docSnap.data().performance as RobotPerformance[];
+            const data = docSnap.data().performance as any[];
+            // Garante que os novos campos existam ao carregar, evitando undefined
+            return data.map(p => ({
+                ...p,
+                winRate: p.winRate || 0,
+                winRateTrend: p.winRateTrend || 0,
+                winRateRange: p.winRateRange || 0,
+            }));
         }
         return null;
     } catch (serverError) {
@@ -249,7 +260,6 @@ export async function loadRobotPerformance(userId: string): Promise<RobotPerform
         throw serverError;
     }
 }
-
 
 export async function getHallOfFame(userId: string): Promise<RobotPerformance[]> {
     try {
@@ -266,8 +276,6 @@ export async function getHallOfFame(userId: string): Promise<RobotPerformance[]>
         
         return promotedRobots;
     } catch(e) {
-        // Se loadRobotPerformance falhar (e agora ele lança um erro), a exceção será apanhada aqui.
-        // Como o Hall da Fama é um recurso de "nice-to-have", podemos simplesmente registar e retornar um array vazio.
         console.error("Não foi possível carregar o Hall da Fama devido a um erro de acesso aos dados:", e);
         return [];
     }

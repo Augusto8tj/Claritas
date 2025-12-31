@@ -1,4 +1,3 @@
-// /src/app/deriv-trader/page.tsx
 'use client';
 
 import React, { useState, useEffect } from "react";
@@ -214,8 +213,8 @@ export default function DerivTraderPage() {
     resolver: zodResolver(riseFallSchema),
     defaultValues: {
       stake: 1,
-      duration: 25,
-      duration_unit: "s",
+      duration: 5,
+      duration_unit: "t",
       allowEquals: false,
     },
   });
