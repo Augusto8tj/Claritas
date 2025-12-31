@@ -4,7 +4,18 @@ Este documento regista a jornada de desenvolvimento e as principais funcionalida
 
 ---
 
-### v1.5.0 (Atual) - A Evolução da Inteligência: Aprendizado Contínuo e Gestão de Risco Multidimensional
+### v2.0.0 (Atual) - O Cérebro Quantitativo: Arquitetura Adaptativa e Gestão de Risco Científica
+
+**Funcionalidades Principais:**
+- **Arquitetura "Regime-Aware" (Consciente do Contexto):** O sistema agora utiliza um modelo (HMM Lite) para identificar o regime de mercado em tempo real (ex: `TREND_UP`, `RANGING`). Robôs que são inadequados para um certo regime (ex: osciladores em forte tendência) são automaticamente silenciados, eliminando um dos maiores erros de robôs amadores.
+- **Consenso Bayesiano Ponderado por Desempenho de Regime:** A votação deixou de ser uma simples contagem. O sistema agora calcula a probabilidade de sucesso de uma operação usando um consenso que dá mais peso aos robôs que historicamente têm melhor desempenho *naquele regime de mercado específico* (`winRateTrend` vs `winRateRange`).
+- **Gestão de Risco Dinâmica com "Quarter Kelly":** O valor da aposta (`stake`) já não é fixo. É calculado cientificamente a cada oportunidade usando o Critério de Kelly Fracionado, que aposta mais agressivamente quando a probabilidade Bayesiana é alta e protege o capital quando a vantagem é baixa.
+- **Veto de Microestrutura ("O Guarda-Costas"):** Uma camada final de proteção foi implementada. Mesmo com um consenso forte, o sistema vetará uma operação se a análise dos últimos 10 ticks revelar uma pressão de mercado contrária perigosa (ex: vetar uma compra durante um "crash" súbito).
+- **Sistema Totalmente Adaptativo ao Timeframe:** A aplicação inteira, da interface ao núcleo da IA, agora consulta os limites de duração do contrato diretamente da API da corretora. Se o utilizador muda de "ticks" para "segundos", todo o sistema se recalibra para operar dentro das novas regras de tempo (ex: de `5 ticks` para `15 segundos`), garantindo que todas as operações são sempre válidas.
+
+---
+
+### v1.5.0 - A Evolução da Inteligência: Aprendizado Contínuo e Gestão de Risco Multidimensional
 
 **Funcionalidades Principais:**
 - **Laboratório de Evolução Genética:** Implementação do `useStrategyEvolution`, um cérebro de aprendizado contínuo. A cada 50 trades virtuais, o sistema identifica os robôs de pior desempenho e os substitui por "mutações" genéticas dos robôs de elite, garantindo que o conselho se adapte e melhore autonomamente.
@@ -17,7 +28,7 @@ Este documento regista a jornada de desenvolvimento e as principais funcionalida
 ### v1.0.0 - A Ascensão da IA: Autonomia e Persistência
 
 **Funcionalidades Principais:**
-- **Autonomia Total da Mesa:** A Mesa Operacional agora ajusta dinamicamente não só o **limiar de consenso**, mas também o **valor da aposta (`stake`)** e a **duração do contrato** a cada tick. A IA analisa a volatilidade (ATR, Z-Score) e a força da tendência (ADX) para tomar decisões de risco em tempo real.
+- **Autonomia Total da Mesa:** A Mesa Operacional agora ajusta dinamicamente não só o **limiar de consenso**, but também o **valor da aposta (`stake`)** e a **duração do contrato** a cada tick. A IA analisa a volatilidade (ATR, Z-Score) e a força da tendência (ADX) para tomar decisões de risco em tempo real.
 - **Memória Persistente com Firebase:** A Arena Virtual agora é "imortal". O desempenho de cada um dos 22 robôs (vitórias, derrotas, P&L) é guardado de forma segura no **Firestore**, associado à sua conta de utilizador. O progresso já não se perde ao fechar o navegador.
 - **Hall da Fama Integrado:** O Hall da Fama foi movido da sua página isolada para um separador dedicado diretamente dentro da página **Deriv Trader**, centralizando todo o ecossistema de trading num único local. Ele busca os dados do Firebase, mostrando um placar de líderes persistente.
 - **Consenso Relativo e Inteligente:** O limiar de consenso deixou de ser um número absoluto. Agora é calculado como uma **percentagem do potencial de voto máximo** disponível a cada momento, tornando-o verdadeiramente adaptativo à quantidade de robôs que têm uma opinião formada (`RISE` ou `FALL`).
