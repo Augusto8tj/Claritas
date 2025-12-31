@@ -1,4 +1,3 @@
-// /src/app/deriv-trader-v2/page.tsx
 'use client';
 
 import React from "react";
@@ -18,7 +17,7 @@ import { riseFallSchema, type RiseFallFormValues } from "@/components/deriv-trad
 import { CouncilAutopilotInterface } from "@/components/deriv-trader/council-autopilot-interface";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { useTradeAnalysis } from "@/hooks/use-trade-analysis";
-import { useRobotCouncil } from "@/hooks/use-robot-council-v2";
+import { useRobotCouncilV2 as useRobotCouncil } from "@/hooks/use-robot-council-v2";
 import { SystemStatusSummary } from "@/components/deriv-trader/system-status-summary";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { AITradeSuggestion } from "@/components/deriv-trader/ai-trade-suggestion";
@@ -115,7 +114,7 @@ const MainDashboard = ({ robotCouncil }: { robotCouncil: ReturnType<typeof useRo
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <DerivTraderInterface symbol={activeSymbol || ""} />
                 <AITradeSuggestion 
-                    councilDecision={robotCouncil.consensusDecision}
+                    councilDecision={robotCouncil.consensusDecision.direction}
                     consensusSum={robotCouncil.consensusSum}
                     consensusThreshold={robotCouncil.consensusThreshold}
                     supervisionStatus={robotCouncil.supervisionStatus}

@@ -1,5 +1,7 @@
 // src/lib/types/trading.types.ts
 import { z } from 'zod';
+import type { MarketRegime, MicrostructureFeatures, BayesianVote, EnhancedRobotPerformance } from '@/services/advanced-trading-services';
+
 
 export const RobotStrategySchema = z.object({
     id: z.string().describe("A unique identifier for the robot, e.g., 'RSI_BOT_1'."),
@@ -107,3 +109,9 @@ export const RobotPerformanceSchema = z.object({
 });
 
 export type RobotPerformance = z.infer<typeof RobotPerformanceSchema>;
+
+
+// ════════════════════════════════════════════════════════════════════
+// 📊 TIPOS E INTERFACES AVANÇADOS - V2.0
+// ════════════════════════════════════════════════════════════════════
+export type { MarketRegime, MicrostructureFeatures, BayesianVote, EnhancedRobotPerformance };
