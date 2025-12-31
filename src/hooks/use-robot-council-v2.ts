@@ -359,6 +359,7 @@ export function useRobotCouncilV2(
             const perf = performanceMap.get(trade.robotId);
             if (perf) {
                 perf.totalProfit += pnl;
+                if (!perf.tradeHistory) perf.tradeHistory = [];
                 perf.tradeHistory.push(pnl);
                 if (isWin) perf.wins++; else perf.losses++;
                 const totalTrades = perf.wins + perf.losses;
@@ -399,7 +400,7 @@ export function useRobotCouncilV2(
     strategyCouncil.forEach(robot => {
         const perf = performanceMap.get(robot.id);
         const technicalVote = calculateTechnicalVote(robot, currentIndicators, tickCandles);
-        if (perf && perf.effectiveRegimes.length > 0 && !perf.effectiveRegimes.includes(regimeResult.regime)) {
+        if (perf && perf.effectiveRegimes && perf.effectiveRegimes.length > 0 && !perf.effectiveRegimes.includes(regimeResult.regime)) {
             newVotes[robot.id] = { vote: 'HOLD', rawConfidence: 0, calibratedConfidence: 0, bayesianProbability: 0.5, weight: 0, optimalDuration: robot.optimalDuration, optimalDurationUnit: robot.optimalDurationUnit, suggestedStake: 0, regime: regimeResult.regime };
             return;
         }
@@ -470,10 +471,10 @@ export function useRobotCouncilV2(
         return;
     }
 
-    const avgWinRate = robotPerformance.reduce((sum, r) => sum + r.winRate, 0) / robotPerformance.length / 100;
-    const avgWinAmount = robotPerformance.reduce((sum, r) => sum + (r.avgWin || 1), 0) / robotPerformance.length;
-    const avgLossAmount = robotPerformance.reduce((sum, r) => sum + (r.avgLoss || 1), 0) / robotPerformance.length;
-    let kellyStake = calculateKellyStake(dailyBalance, consensusProbability, 0.95);
+    const avgWinRate = robotPerformance.reduce((sum, r) => sum + (r.winRate || 0), 0) / (robotPerformance.length || 1) / 100;
+    const payoff = 0.95; // Simplified payoff for this logic
+    let kellyStake = calculateKellyStake(dailyBalance, consensusProbability, payoff);
+
     if (isDynamicRiskOn) {
         if (currentIndicators.adx && currentIndicators.adx < 20) kellyStake *= 0.5;
         const currentDrawdown = Math.abs(dailyPnL / dailyBalance * 100);
@@ -495,6 +496,7 @@ export function useRobotCouncilV2(
         finalDuration = Math.max(min, Math.min(max, finalDuration));
     } else {
         finalDuration = 5;
+        finalDurationUnit = 't';
     }
 
     setConsensusDecision({ direction: consensusDirection, probability: consensusProbability, stake: kellyStake });
@@ -511,7 +513,12 @@ export function useRobotCouncilV2(
     councilExecutionRef.current.isExecuting = true;
     toast({ title: "🚀 Ordem Executada", description: `${consensusDirection} com $${kellyStake.toFixed(2)} (${(consensusProbability * 100).toFixed(1)}% confiança)` });
     executeTrade(consensusDirection === 'RISE' ? 'CALL' : 'PUT', kellyStake, activeSymbol!, consensusDirection.toLowerCase() as 'rise' | 'fall', finalDuration, finalDurationUnit, 'Conselho').finally(() => setTimeout(() => { councilExecutionRef.current.isExecuting = false; }, 5000));
-  }, [priceTicks, isConnected, isCouncilAutopilotOn, strategyCouncil, robotPerformance, isMeritocracyOn, activeSymbol, operationsLog, user, toast, executeTrade, timePeriod, dailyBalance, dailyTarget, isDynamicConsensusOn, isDynamicRiskOn, consensusThreshold, sellContract, portfolioStats.maxDrawdown, evolveTrigger, currentRegime.regime, durationLimits]);
+  }, [
+    priceTicks, tickCandles, isConnected, isCouncilAutopilotOn, strategyCouncil, robotPerformance, 
+    isMeritocracyOn, isDynamicConsensusOn, isDynamicRiskOn, activeSymbol, operationsLog, 
+    currentRegime, user, toast, executeTrade, sellContract, timePeriod, durationLimits, 
+    consensusThreshold, dailyBalance, dailyTarget, evolveTrigger, portfolioStats.maxDrawdown
+  ]);
 
   return {
     isCouncilAutopilotOn, setIsCouncilAutopilotOn,
@@ -528,3 +535,5 @@ export function useRobotCouncilV2(
     fetchStrategyCouncil, dissolveCouncil
   };
 }
+
+    
