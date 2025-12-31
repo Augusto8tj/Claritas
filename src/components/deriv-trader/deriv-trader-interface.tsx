@@ -53,36 +53,13 @@ function DerivTraderInterface({ symbol }: DerivTraderInterfaceProps) {
   const { toast } = useToast();
   const [loading, setLoading] = useState<"rise" | "fall" | null>(null);
   const [tradeType, setTradeType] = useState<TradeType>('rise_fall');
-  const { isConnected, executeTrade, durationLimits } = useDerivApi(); // NOVO: Obter limites
+  const { isConnected, executeTrade, durationLimits } = useDerivApi();
 
   const form = useFormContext<RiseFallFormValues>();
-
   const durationUnit = form.watch('duration_unit');
 
-  // NOVO: Atualiza a duração quando a unidade ou os limites mudam
-  useEffect(() => {
-    if (durationLimits) {
-        const limits = durationLimits[durationUnit];
-        const currentDuration = form.getValues('duration');
-        let newDuration = currentDuration;
-
-        if (newDuration < limits.min) {
-            newDuration = limits.min;
-        }
-        if (newDuration > limits.max) {
-            newDuration = limits.max;
-        }
-
-        if (newDuration !== currentDuration) {
-            form.setValue('duration', newDuration);
-            form.trigger('duration');
-        }
-    }
-  }, [durationUnit, durationLimits, form]);
-
-
   const handleDurationChange = (amount: number) => {
-    if (!durationLimits) return; // Guarda de segurança
+    if (!durationLimits) return;
     const currentDuration = form.getValues('duration');
     const { min, max } = durationLimits[durationUnit];
     let newDuration = currentDuration + amount;
@@ -200,11 +177,20 @@ function DerivTraderInterface({ symbol }: DerivTraderInterfaceProps) {
                                     name="duration_unit"
                                     render={({ field }) => (
                                         <FormItem className="w-2/5">
-                                            <Select onValueChange={(value) => {
+                                            <Select
+                                              onValueChange={(value) => {
                                                 const newUnit = value as DurationUnit;
                                                 field.onChange(newUnit);
-                                                // A lógica de atualização da duração agora está num useEffect
-                                            }} value={field.value}>
+                                                if (durationLimits) {
+                                                  const limits = durationLimits[newUnit];
+                                                  let newDuration = form.getValues('duration');
+                                                  if (newDuration < limits.min) newDuration = limits.min;
+                                                  if (newDuration > limits.max) newDuration = limits.max;
+                                                  form.setValue('duration', newDuration);
+                                                }
+                                              }}
+                                              value={field.value}
+                                            >
                                                 <FormControl>
                                                     <SelectTrigger>
                                                         <SelectValue placeholder="Unidade" />
