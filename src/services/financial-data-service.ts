@@ -226,7 +226,7 @@ export const saveRobotPerformance = async (userId: string, performance: RobotPer
       }))
     };
 
-    await setDoc(docRef, dataToSave, { merge: true }).catch((serverError) => {
+    await setDoc(docRef, dataToSave).catch((serverError) => {
        const permissionError = new FirestorePermissionError({
           path: docRef.path,
           operation: 'update',

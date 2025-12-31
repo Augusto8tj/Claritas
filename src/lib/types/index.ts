@@ -1,6 +1,6 @@
 // /src/lib/types/index.ts
 import { z } from 'zod';
-import type { RobotStrategy as RobotStrategyT } from './trading.types';
+import type { RobotStrategy as RobotStrategyT, RobotVote as RobotVoteT, RobotPerformance as RobotPerformanceT } from './trading.types';
 
 // =================================================================
 // Financial Types
@@ -30,7 +30,7 @@ export type Transaction = {
 };
 
 // =================================================================
-// Chart & Trading Hook Types (from hooks/types.ts)
+// Chart & Trading Hook Types
 // =================================================================
 
 export type TimePeriod = '1m' | '2m' | '3m' | '5m' | '10m' | '15m' | '30m' | '1h' | '8h' | '1d';
@@ -83,21 +83,19 @@ export interface Operation {
   initiator: OperationInitiator;
   entryPrice?: number;
   exitPrice?: number;
-  isSellable?: boolean; // NOVO: Campo para indicar se o contrato pode ser vendido
+  isSellable?: boolean;
 }
 
-export interface RobotPerformance {
-    id: string;
-    strategyType: RobotStrategyT['strategyType'];
-    strategy: RobotStrategyT;
-    wins: number;
-    losses: number;
-    totalProfit: number;
-}
+// =================================================================
+// Re-exporting trading types for central access
+// =================================================================
+export type RobotStrategy = RobotStrategyT;
+export type RobotVote = RobotVoteT;
+export type RobotPerformance = RobotPerformanceT;
 
 
 // =================================================================
-// Trading AI Flow Types (from lib/types/trading.types.ts)
+// Trading AI Flow Types
 // =================================================================
 
 // Base Operation for reuse
@@ -190,11 +188,8 @@ export const riseFallSchema = z.object({
 export type RiseFallFormValues = z.infer<typeof riseFallSchema>;
 
 
-// From strategy-council.types.ts
-export * from './trading.types';
-
 // =================================================================
-// Goal Image Generation Types (from ai/flows/goal-image.types.ts)
+// Goal Image Generation Types
 // =================================================================
 export const GenerateGoalImageInputSchema = z.object({
   goalName: z.string().describe('The name of the financial goal.'),

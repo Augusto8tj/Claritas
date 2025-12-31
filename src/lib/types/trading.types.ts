@@ -74,14 +74,14 @@ export const RobotStrategySchema = z.object({
     // AutoTrader specific
     suggestedStake: z.number().describe("The suggested stake amount for this trade, based on risk analysis. Should be a percentage of the balance, e.g., 1-2%."),
     
-    // DYNAMIC DURATION - NEW
+    // DYNAMIC DURATION
     optimalDuration: z.number().describe("The optimal duration for this specific strategy."),
     optimalDurationUnit: z.enum(['t', 's', 'm', 'h', 'd']).describe("The optimal duration unit for this strategy."),
 });
 
 export type RobotStrategy = z.infer<typeof RobotStrategySchema>;
 
-// NOVO: Tipo para o voto do robô, que agora inclui sugestões de stake e duração
+// Voto do robô, que agora inclui sugestões de stake e duração
 export const RobotVoteSchema = z.object({
   vote: z.enum(['RISE', 'FALL', 'HOLD']),
   confidence: z.number(),
@@ -92,3 +92,18 @@ export const RobotVoteSchema = z.object({
 });
 
 export type RobotVote = z.infer<typeof RobotVoteSchema>;
+
+// Desempenho do robô, incluindo win rates por regime
+export const RobotPerformanceSchema = z.object({
+    id: z.string(),
+    strategyType: z.string(),
+    strategy: RobotStrategySchema,
+    wins: z.number(),
+    losses: z.number(),
+    totalProfit: z.number(),
+    winRate: z.number().optional(),
+    winRateTrend: z.number().optional(),
+    winRateRange: z.number().optional(),
+});
+
+export type RobotPerformance = z.infer<typeof RobotPerformanceSchema>;

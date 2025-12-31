@@ -1,4 +1,3 @@
-
 // /src/services/indicator-service.ts
 
 /**
@@ -19,7 +18,9 @@ export interface Indicators {
     macd: { macd: number | null; signal: number | null; histogram: number | null };
     ma: { short: number | null; long: number | null; };
     sma: (number | null)[];
-    ema: (number | null)[];
+    ema: (number | null)[]; // Changed to ema20
+    ema20?: number | null;
+    ema50?: number | null;
     vwap: (number | null)[];
     
     bb: { upper: number | null; middle: number | null; lower: number | null };
@@ -331,7 +332,6 @@ export function calculateAllIndicators(chartData: ChartData[], strategyCouncil: 
 
     let candles: CandleData[];
     if (chartData.length > 0 && !isCandle(chartData[0])) {
-        // If data is TickData, convert to simple CandleData
         candles = chartData.map(d => {
             const price = (d as { price: number }).price;
             return { epoch: d.epoch, open: price, high: price, low: price, close: price, volume: (d as any).volume || 1 };
@@ -377,6 +377,11 @@ export function calculateAllIndicators(chartData: ChartData[], strategyCouncil: 
         short: indicators.ema.length > 0 ? indicators.ema[indicators.ema.length - 1] : null,
         long: indicators.sma.length > 0 ? indicators.sma[indicators.sma.length - 1] : null,
     };
+    
+    const ema20Values = calculateEMA(candles, 20);
+    indicators.ema20 = ema20Values.length > 0 ? ema20Values[ema20Values.length - 1] : null;
+    const ema50Values = calculateEMA(candles, 50);
+    indicators.ema50 = ema50Values.length > 0 ? ema50Values[ema50Values.length - 1] : null;
     
     const bbPeriod = getParam('BOLLINGER_BANDS', 'period', 20);
     const bbStdDev = getParam('BOLLINGER_BANDS', 'stdDev', 2);
