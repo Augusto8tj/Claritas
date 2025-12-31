@@ -42,7 +42,7 @@ interface TradingDeskProps {
     setIsMeritocracyOn: (isOn: boolean) => void;
     isCouncilAutopilotOn: boolean;
     robotPerformance: RobotPerformance[];
-    councilVotes: CouncilVotes; // Added for debugging
+    councilVotes: CouncilVotes; 
 }
 
 // ============================================================================
@@ -293,7 +293,7 @@ export function TradingDesk({
                                 const winRate =
                                     totalTrades > 0 ? ((robot.wins || 0) / totalTrades) * 100 : 0;
                                 const isTopPerformer = index < 3;
-                                const voteData = councilVotes[robot.id];
+                                const voteData = councilVotes ? councilVotes[robot.id] : null;
                                 const currentVote = voteData?.vote || 'HOLD';
                                 const confidence = voteData?.confidence || 0;
 
@@ -317,15 +317,17 @@ export function TradingDesk({
                                             {renderStrategyParams(robot.strategy)}
                                         </TableCell>
                                         <TableCell className="text-center font-semibold">
-                                            <div className={cn("flex items-center justify-center gap-1.5",
-                                                currentVote === 'RISE' && 'text-green-600',
-                                                currentVote === 'FALL' && 'text-red-600',
-                                                currentVote === 'HOLD' && 'text-yellow-600',
-                                            )}>
-                                                {voteIcons[currentVote]}
-                                                <span>{currentVote}</span>
-                                                {confidence > 0 && <span className="text-xs text-muted-foreground">({confidence})</span>}
-                                            </div>
+                                            {councilVotes && (
+                                                <div className={cn("flex items-center justify-center gap-1.5",
+                                                    currentVote === 'RISE' && 'text-green-600',
+                                                    currentVote === 'FALL' && 'text-red-600',
+                                                    currentVote === 'HOLD' && 'text-yellow-600',
+                                                )}>
+                                                    {voteIcons[currentVote]}
+                                                    <span>{currentVote}</span>
+                                                    {confidence > 0 && <span className="text-xs text-muted-foreground">({confidence})</span>}
+                                                </div>
+                                            )}
                                         </TableCell>
                                         <TableCell className="text-center">
                                             <div className="flex items-center justify-center gap-2">

@@ -27,9 +27,10 @@ import { TradingDesk } from "@/components/deriv-trader/trading-desk";
 import { HallOfFame } from "@/components/deriv-trader/hall-of-fame";
 import { EvolutionLab } from "@/components/deriv-trader/evolution-lab";
 import { CouncilDashboard } from "@/components/deriv-trader/CouncilDashboard";
+import type { CouncilVotes } from "@/hooks/use-robot-council";
 
 
-function DerivTraderCore({ activeSymbol }: { activeSymbol: string | null }) {
+function DerivTraderCore({ activeSymbol, robotCouncil }: { activeSymbol: string | null, robotCouncil: any }) {
   const { 
     operationsLog,
     chartData,
@@ -43,7 +44,6 @@ function DerivTraderCore({ activeSymbol }: { activeSymbol: string | null }) {
     tradeAnnotations,
   } = useDerivApi();
   
-  const robotCouncil = useRobotCouncil(activeSymbol, priceTicks);
   const tradeAnalysis = useTradeAnalysis(activeSymbol, operationsLog);
 
   const [activeTab, setActiveTab] = useState("log");
@@ -227,7 +227,10 @@ export default function DerivTraderPage() {
     assetGroups,
     activeSymbol,
     setActiveSymbol,
+    priceTicks,
   } = useDerivApi();
+
+  const robotCouncil = useRobotCouncil(activeSymbol, priceTicks);
   
   const handleAssetChange = (asset: string) => {
     setActiveSymbol(asset);
@@ -273,7 +276,7 @@ export default function DerivTraderPage() {
 
         <SystemStatusSummary />
 
-        <DerivTraderCore activeSymbol={activeSymbol} />
+        <DerivTraderCore activeSymbol={activeSymbol} robotCouncil={robotCouncil} />
       </div>
     </FormProvider>
   );
