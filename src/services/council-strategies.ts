@@ -235,8 +235,8 @@ export const initialCouncilStrategies: Omit<RobotStrategy, 'id' | 'justification
     optimalDurationUnit: 'm',
     suggestedStake: 1.0,
   }
-].map((strat, index) => ({
+].map((strat) => ({
     ...strat,
-    id: `${strat.strategyType}_BOT_${index + 1}`,
-    justification: `Especialista em ${strat.strategyType} para o horizonte de tempo de {{timePeriod}}.`
+    // O ID e a justificação são gerados dinamicamente para manter a consistência.
+    // 'id' será gerado no hook, 'justification' pode ser adicionado lá também.
 }));

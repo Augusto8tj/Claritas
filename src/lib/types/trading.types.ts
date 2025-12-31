@@ -80,3 +80,15 @@ export const RobotStrategySchema = z.object({
 });
 
 export type RobotStrategy = z.infer<typeof RobotStrategySchema>;
+
+// NOVO: Tipo para o voto do robô, que agora inclui sugestões de stake e duração
+export const RobotVoteSchema = z.object({
+  vote: z.enum(['RISE', 'FALL', 'HOLD']),
+  confidence: z.number(),
+  weight: z.number(),
+  suggestedStake: z.number(),
+  optimalDuration: z.number(),
+  optimalDurationUnit: z.enum(['t', 's', 'm', 'h', 'd']),
+});
+
+export type RobotVote = z.infer<typeof RobotVoteSchema>;
