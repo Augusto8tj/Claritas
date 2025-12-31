@@ -59,7 +59,7 @@ function DerivTraderCore({ activeSymbol, robotCouncil }: { activeSymbol: string 
 
   return (
     <>
-      {robotCouncil.isCouncilAutopilotOn && (
+      {robotCouncil.isCouncilAutopilotOn && robotCouncil.dashboardData && (
         <div className="animate-in fade-in slide-in-from-top-4 duration-500">
            <CouncilDashboard data={robotCouncil.dashboardData} />
         </div>

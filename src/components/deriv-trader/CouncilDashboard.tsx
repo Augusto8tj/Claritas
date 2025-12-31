@@ -3,7 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
 import { Badge } from '@/components/ui/badge';
 import { Activity, Brain, TrendingUp, Zap, ShieldAlert } from 'lucide-react';
-import type { DashboardData } from '@/hooks/use-robot-council';
+import type { DashboardData } from '@/hooks/use-robot-council-v2';
 
 interface CouncilDashboardProps {
   data: DashboardData;

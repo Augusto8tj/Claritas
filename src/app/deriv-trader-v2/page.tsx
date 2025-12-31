@@ -24,6 +24,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { AITradeSuggestion } from "@/components/deriv-trader/ai-trade-suggestion";
 import { IndicatorPanel } from "@/components/deriv-trader/indicator-panel";
 import { TradingDesk } from "@/components/deriv-trader/trading-desk";
+import { CouncilDashboard } from '@/components/deriv-trader/CouncilDashboard';
 
 // --- Sub-componentes para melhor organização ---
 
@@ -82,6 +83,11 @@ const MainDashboard = ({ robotCouncil }: { robotCouncil: ReturnType<typeof useRo
 
     return (
         <div className="space-y-6">
+             {robotCouncil.isCouncilAutopilotOn && robotCouncil.dashboardData && (
+                <div className="animate-in fade-in slide-in-from-top-4 duration-500">
+                    <CouncilDashboard data={robotCouncil.dashboardData} />
+                </div>
+            )}
             <IndicatorPanel indicators={robotCouncil.indicators} latestDataPoint={latestDataPoint} />
             <Card>
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
