@@ -372,7 +372,7 @@ export function CouncilAutopilotInterface(props: CouncilAutopilotInterfaceProps)
                         Conselho em Sessão
                     </AlertTitle>
                     <AlertDescription className="text-primary/90 space-y-3 mt-2">
-                         {Object.entries(groupedRobots).map(([category, robots]) => (
+                        {Object.entries(groupedRobots).map(([category, robots]) => (
                             <div key={category}>
                                 <h4 className="font-semibold text-sm text-primary/100 mb-2">{category}</h4>
                                 {robots.map((robot, index) => {
