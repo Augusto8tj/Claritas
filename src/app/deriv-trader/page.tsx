@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import { useForm, FormProvider } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import DerivTraderInterface from "@/components/deriv-trader/deriv-trader-interface";
@@ -28,15 +28,11 @@ import { EvolutionLab } from "@/components/deriv-trader/evolution-lab";
 import { CouncilDashboard } from "@/components/deriv-trader/CouncilDashboard";
 
 
-/**
- * This core component is now separate to ensure that all hooks using
- * `useFormContext` are called within the <FormProvider> of the parent page.
- */
 function DerivTraderCore({ activeSymbol }: { activeSymbol: string | null }) {
   const { 
     operationsLog,
     chartData,
-    priceTicks, // Get price ticks here
+    priceTicks,
     isChartLoading,
     chartError,
     chartType,
@@ -46,14 +42,12 @@ function DerivTraderCore({ activeSymbol }: { activeSymbol: string | null }) {
     tradeAnnotations,
   } = useDerivApi();
   
-  // CENTRALIZED HOOKS - Pass priceTicks to robotCouncil
   const robotCouncil = useRobotCouncil(activeSymbol, priceTicks);
   const tradeAnalysis = useTradeAnalysis(activeSymbol, operationsLog);
 
   const [activeTab, setActiveTab] = useState("log");
 
   useEffect(() => {
-    // Automatically switch to the Arena Virtual tab when the council is activated
     if (robotCouncil.isCouncilAutopilotOn) {
       setActiveTab("desk");
     }
@@ -64,7 +58,11 @@ function DerivTraderCore({ activeSymbol }: { activeSymbol: string | null }) {
 
   return (
     <>
-      <CouncilDashboard data={robotCouncil.dashboardData} />
+      {robotCouncil.isCouncilAutopilotOn && (
+        <div className="animate-in fade-in slide-in-from-top-4 duration-500">
+           <CouncilDashboard data={robotCouncil.dashboardData} />
+        </div>
+      )}
       <div className="space-y-6">
         <IndicatorPanel indicators={robotCouncil.indicators} latestDataPoint={latestDataPoint} />
         
@@ -97,7 +95,6 @@ function DerivTraderCore({ activeSymbol }: { activeSymbol: string | null }) {
         </Card>
       </div>
       
-       {/* Layout para telas maiores */}
        <div className="hidden lg:grid lg:grid-cols-3 gap-6 mt-6">
             <div className="lg:col-span-2 space-y-6">
                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -151,7 +148,6 @@ function DerivTraderCore({ activeSymbol }: { activeSymbol: string | null }) {
             </div>
        </div>
 
-       {/* Layout com Abas para telas pequenas */}
        <div className="lg:hidden mt-6">
            <Tabs value={activeTab} onValueChange={setActiveTab}>
                 <TabsList className="grid w-full grid-cols-6">
@@ -239,7 +235,6 @@ export default function DerivTraderPage() {
   return (
     <FormProvider {...form}>
       <div className="flex-1 space-y-4 p-4 sm:p-8 pt-6">
-        {/* Header */}
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div className="flex items-center gap-4 flex-1">
               <h1 className="text-3xl font-bold tracking-tight font-headline shrink-0">

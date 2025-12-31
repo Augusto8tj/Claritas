@@ -207,59 +207,67 @@ export async function getInsights(): Promise<string[]> {
 
 // --- Trading Robot Performance ---
 
-export async function saveRobotPerformance(userId: string, performanceData: RobotPerformance[]): Promise<void> {
-    const performanceDocRef = doc(db, 'users', userId, 'trading', 'robotPerformance');
-    // Assegura que todos os campos, incluindo os novos, são enviados
-    const dataToSave = { performance: performanceData.map(p => ({
+export const saveRobotPerformance = async (userId: string, performance: RobotPerformance[]) => {
+  try {
+    const docRef = doc(db, 'users', userId, 'trading_data', 'robot_council_performance');
+    
+    const dataToSave = {
+      updatedAt: new Date().toISOString(),
+      robots: performance.map(p => ({
         id: p.id,
         strategyType: p.strategyType,
-        wins: p.wins || 0,
-        losses: p.losses || 0,
-        totalProfit: p.totalProfit || 0,
-        winRate: p.winRate || 0,
+        strategy: p.strategy, 
+        wins: p.wins,
+        losses: p.losses,
+        totalProfit: p.totalProfit,
+        winRate: p.winRate,
         winRateTrend: p.winRateTrend || 0,
-        winRateRange: p.winRateRange || 0,
-        strategy: p.strategy
-    })) };
+        winRateRange: p.winRateRange || 0
+      }))
+    };
 
-    setDoc(performanceDocRef, dataToSave, { merge: true })
-        .catch(async (serverError) => {
-            const permissionError = new FirestorePermissionError({
-                path: performanceDocRef.path,
-                operation: 'update',
-                requestResourceData: dataToSave,
-            });
-            errorEmitter.emit('permission-error', permissionError);
-            throw serverError;
-        });
-}
+    await setDoc(docRef, dataToSave, { merge: true }).catch((serverError) => {
+       const permissionError = new FirestorePermissionError({
+          path: docRef.path,
+          operation: 'update',
+          requestResourceData: dataToSave,
+       });
+       errorEmitter.emit('permission-error', permissionError);
+       throw serverError;
+    });
 
+  } catch (error) {
+    console.error("Erro ao salvar performance dos robôs:", error);
+  }
+};
 
-export async function loadRobotPerformance(userId: string): Promise<RobotPerformance[] | null> {
-    const performanceDocRef = doc(db, 'users', userId, 'trading', 'robotPerformance');
-    
-    try {
-        const docSnap = await getDoc(performanceDocRef);
-        if (docSnap.exists()) {
-            const data = docSnap.data().performance as any[];
-            // Garante que os novos campos existam ao carregar, evitando undefined
-            return data.map(p => ({
-                ...p,
-                winRate: p.winRate || 0,
-                winRateTrend: p.winRateTrend || 0,
-                winRateRange: p.winRateRange || 0,
-            }));
-        }
-        return null;
-    } catch (serverError) {
-        const permissionError = new FirestorePermissionError({
-            path: performanceDocRef.path,
-            operation: 'get',
-        });
-        errorEmitter.emit('permission-error', permissionError);
-        throw serverError;
+export const loadRobotPerformance = async (userId: string): Promise<RobotPerformance[] | null> => {
+  try {
+    const docRef = doc(db, 'users', userId, 'trading_data', 'robot_council_performance');
+    const docSnap = await getDoc(docRef).catch((serverError) => {
+       const permissionError = new FirestorePermissionError({
+          path: docRef.path,
+          operation: 'get',
+       });
+       errorEmitter.emit('permission-error', permissionError);
+       throw serverError;
+    });
+
+    if (docSnap.exists()) {
+      const data = docSnap.data();
+      return data.robots.map((r: any) => ({
+        ...r,
+        winRateTrend: r.winRateTrend ?? 0, 
+        winRateRange: r.winRateRange ?? 0
+      }));
     }
-}
+    return null;
+  } catch (error) {
+    console.error("Erro ao carregar performance:", error);
+    return null;
+  }
+};
+
 
 export async function getHallOfFame(userId: string): Promise<RobotPerformance[]> {
     try {
