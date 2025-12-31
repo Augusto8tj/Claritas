@@ -134,7 +134,7 @@ const SidePanel = ({ robotCouncil }: { robotCouncil: ReturnType<typeof useRobotC
 
     return (
         <div className="space-y-6">
-            <CouncilAutopilotInterface {...robotCouncil} />
+            {/* <CouncilAutopilotInterface {...robotCouncil} /> */}
             <Tabs defaultValue="log">
                 <TabsList className="grid w-full grid-cols-3">
                     <TabsTrigger value="log">Operações</TabsTrigger>
