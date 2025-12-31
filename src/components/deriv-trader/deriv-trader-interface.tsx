@@ -1,7 +1,7 @@
 // /src/components/deriv-trader/deriv-trader-interface.tsx
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useFormContext } from "react-hook-form";
 import {
   Card,
@@ -57,6 +57,31 @@ function DerivTraderInterface({ symbol }: DerivTraderInterfaceProps) {
 
   const form = useFormContext<RiseFallFormValues>();
   const durationUnit = form.watch('duration_unit');
+
+  // Guardar a referência dos limites para evitar o loop
+  const durationLimitsRef = useRef<DurationLimits | null>(null);
+
+  useEffect(() => {
+    // Se os limites não existem ou não mudaram, não faz nada
+    if (!durationLimits || JSON.stringify(durationLimitsRef.current) === JSON.stringify(durationLimits)) {
+      return;
+    }
+    
+    // Atualiza a referência com os novos limites
+    durationLimitsRef.current = durationLimits;
+    
+    // Ajusta a duração para estar dentro dos novos limites
+    const currentDuration = form.getValues('duration');
+    const { min, max } = durationLimits[durationUnit];
+    let newDuration = currentDuration;
+    if (newDuration < min) newDuration = min;
+    if (newDuration > max) newDuration = max;
+
+    if (newDuration !== currentDuration) {
+        form.setValue('duration', newDuration);
+    }
+  }, [durationLimits, durationUnit, form]);
+
 
   const handleDurationChange = (amount: number) => {
     if (!durationLimits) return;
@@ -181,13 +206,6 @@ function DerivTraderInterface({ symbol }: DerivTraderInterfaceProps) {
                                               onValueChange={(value) => {
                                                 const newUnit = value as DurationUnit;
                                                 field.onChange(newUnit);
-                                                if (durationLimits) {
-                                                  const limits = durationLimits[newUnit];
-                                                  let newDuration = form.getValues('duration');
-                                                  if (newDuration < limits.min) newDuration = limits.min;
-                                                  if (newDuration > limits.max) newDuration = limits.max;
-                                                  form.setValue('duration', newDuration);
-                                                }
                                               }}
                                               value={field.value}
                                             >
