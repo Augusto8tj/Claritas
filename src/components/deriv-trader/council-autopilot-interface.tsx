@@ -1,7 +1,7 @@
 // /src/components/deriv-trader/council-autopilot-interface.tsx
 'use client';
 
-import { useState, Fragment } from "react";
+import { Fragment } from "react";
 import {
   Card,
   CardContent,
@@ -363,7 +363,7 @@ export function CouncilAutopilotInterface(props: CouncilAutopilotInterfaceProps)
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                     <span>Convocando o conselho de analistas...</span>
                 </div>
-            ) : Array.isArray(strategyCouncil) && strategyCouncil.length > 0 ? (
+            ) : Array.isArray(strategyCouncil) && strategyCouncil.length > 0 && groupedRobots ? (
                 <Alert className="bg-primary/5 border-primary/20 max-h-96 overflow-y-auto">
                     <AlertTitle className="text-primary flex items-center gap-2">
                         <Bot className="h-4 w-4" />
