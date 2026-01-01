@@ -497,7 +497,6 @@ export function useRobotCouncil(
             volume: 1,
         }));
         
-        // Passa a duração do último contrato aberto, ou a do formulário se não houver
         const lastOpenContract = operationsLog.find(op => op.status === 'pending');
         const contractDurationForIndicators = lastOpenContract 
             ? { duration: lastOpenContract.duration, unit: lastOpenContract.durationUnit }
@@ -519,7 +518,7 @@ export function useRobotCouncil(
         const activeCouncilContracts = operationsLog.filter(op => 
             op.status === 'pending' && 
             op.initiator === 'Conselho' &&
-            op.durationUnit !== 't' // Ignora contratos de ticks
+            op.durationUnit !== 't' // Ignora contratos de ticks para gestão ativa
         );
         
         activeCouncilContracts.forEach(contract => {
