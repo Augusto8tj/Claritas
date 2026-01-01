@@ -1,40 +1,41 @@
 // /src/components/deriv-trader/deriv-trader-interface-v2.tsx
-"use client";
+'use client';
 
-import { useState, useEffect, useRef, useMemo } from "react";
-import { useFormContext, useWatch } from "react-hook-form";
+import * as React from 'react';
+import { useEffect, useMemo, useRef } from 'react';
+import { useForm, FormProvider, useWatch } from 'react-hook-form';
+
 import {
-  Card,
-  CardContent,
-} from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import {
-  Form,
-  FormControl,
   FormField,
   FormItem,
-  FormMessage,
-} from "@/components/ui/form";
-import { ArrowDown, ArrowUp, Info, Loader2, Minus, Plus, ChevronDown, Repeat } from "lucide-react";
-import { useToast } from "@/hooks/use-toast";
-import { Input } from "../ui/input";
-import { Checkbox } from "../ui/checkbox";
-import { Label } from "../ui/label";
-import { Separator } from "../ui/separator";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Popover, PopoverContent, PopoverTrigger } from "../ui/popover";
-import { RadioGroup, RadioGroupItem } from "../ui/radio-group";
+  FormControl,
+  FormLabel,
+} from '@/components/ui/form';
 
-import type { DurationUnit, RiseFallFormValues } from "@/lib/types";
-import { useDerivApi, type DurationLimits } from "@/hooks/use-deriv-api";
-import { Switch } from "../ui/switch";
+import {
+  Select,
+  SelectTrigger,
+  SelectValue,
+  SelectContent,
+  SelectItem,
+} from '@/components/ui/select';
+
+import { Input } from '@/components/ui/input';
+import { Checkbox } from '@/components/ui/checkbox';
+import { ArrowDown, ArrowUp, ChevronDown, Info, Loader2, Minus, Plus } from 'lucide-react';
+import { useToast } from '@/hooks/use-toast';
+import { useDerivApi, type DurationLimits } from '@/hooks/use-deriv-api';
+import { Button } from '../ui/button';
+import { Card, CardContent } from '../ui/card';
+import { Separator } from '../ui/separator';
+import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover';
+import { RadioGroup, RadioGroupItem } from '../ui/radio-group';
+import { Switch } from '../ui/switch';
+import type { DurationUnit, RiseFallFormValues } from '@/lib/types';
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '../ui/tabs';
+
 
 type TradeType = 'rise_fall' | 'higher_lower' | 'touch_no_touch';
-
-interface DerivTraderInterfaceProps {
-  symbol: string;
-}
 
 const durationUnitLabels: Record<DurationUnit, string> = {
   t: "Ticks",
@@ -50,7 +51,12 @@ const tradeTypeLabels: Record<TradeType, string> = {
   touch_no_touch: "Touch/No Touch",
 };
 
-function DerivTraderInterfaceV2({ symbol }: DerivTraderInterfaceProps) {
+interface DerivTraderInterfaceV2Props {
+  symbol: string;
+}
+
+
+export default function DerivTraderInterfaceV2({ symbol }: DerivTraderInterfaceV2Props) {
   const { toast } = useToast();
   const [loading, setLoading] = useState<"rise" | "fall" | null>(null);
   const [tradeType, setTradeType] = useState<TradeType>('rise_fall');
@@ -80,40 +86,49 @@ function DerivTraderInterfaceV2({ symbol }: DerivTraderInterfaceProps) {
     return (stake * 1.942).toFixed(2);
   }, [stake]);
 
-
+  // Efeito para garantir que o `value` do Select é sempre válido
   useEffect(() => {
     if (!durationLimits || !durationUnit) return;
     
-    // Garante que o valor do Select não é um item desabilitado
-    if (durationLimits[durationUnit]?.min === 0) {
-        const firstValid = Object.entries(durationLimits)
-            .find(([, v]) => v.min > 0)?.[0];
+    const isUnitDisabled = durationLimits[durationUnit]?.min === 0;
+
+    if (isUnitDisabled) {
+        const firstValid = (Object.keys(durationLimits) as DurationUnit[]).find(
+            (unit) => durationLimits[unit]?.min > 0
+        );
         
         if (firstValid) {
-            form.setValue('duration_unit', firstValid as DurationUnit, {
+            form.setValue('duration_unit', firstValid, {
                 shouldDirty: false,
                 shouldValidate: false,
             });
         }
-        return; // Retorna para esperar o novo render com a unidade válida
     }
+  }, [durationLimits, durationUnit, form]);
 
-    // Lógica de ajuste de duração apenas quando a unidade muda
+
+  // Efeito para ajustar a DURAÇÃO quando a UNIDADE muda
+  useEffect(() => {
+    if (!durationLimits || !durationUnit) return;
+    
+    // Proteção para não re-executar com o mesmo valor
     if (lastUnitRef.current === durationUnit) return;
     lastUnitRef.current = durationUnit;
   
     const currentDuration = form.getValues('duration');
-    const { min, max } = durationLimits[durationUnit];
-  
+    const limits = durationLimits[durationUnit];
+    
+    if (!limits) return;
+
     let newDuration = currentDuration;
-    if (newDuration < min) newDuration = min;
-    if (newDuration > max) newDuration = max;
+    if (newDuration < limits.min) newDuration = limits.min;
+    if (newDuration > limits.max) newDuration = limits.max;
   
     if (newDuration !== currentDuration) {
       form.setValue('duration', newDuration, {
         shouldDirty: true,
         shouldTouch: false,
-        shouldValidate: false,
+        shouldValidate: false, // Previne re-validação que poderia causar loop
       });
     }
   }, [durationUnit, durationLimits, form]);
@@ -164,7 +179,6 @@ function DerivTraderInterfaceV2({ symbol }: DerivTraderInterfaceProps) {
     const data = form.getValues();
     setLoading(tradeDirection);
 
-    // LÓGICA DE INVERSÃO
     let finalTradeDirection = tradeDirection;
     if (isInversionModeOn) {
         finalTradeDirection = tradeDirection === 'rise' ? 'fall' : 'rise';
@@ -300,7 +314,6 @@ function DerivTraderInterfaceV2({ symbol }: DerivTraderInterfaceProps) {
                                             </div>
                                             <Button type="button" variant="outline" size="icon" className="h-10 w-10" onClick={() => handleDurationChange(1)}><Plus className="h-4 w-4"/></Button>
                                         </div>
-                                        <FormMessage />
                                     </FormItem>
                                     )}
                                 />
@@ -334,7 +347,6 @@ function DerivTraderInterfaceV2({ symbol }: DerivTraderInterfaceProps) {
                                         </div>
                                         <Button type="button" variant="outline" size="icon" onClick={() => handleStakeChange(1)}><Plus className="h-4 w-4"/></Button>
                                     </div>
-                                    <FormMessage />
                                 </FormItem>
                                 )}
                             />
@@ -343,21 +355,24 @@ function DerivTraderInterfaceV2({ symbol }: DerivTraderInterfaceProps) {
 
                     <div className="flex items-center justify-between pt-2">
                         <div className="flex flex-row items-center space-x-2 space-y-0">
-                            <Checkbox
-                                checked={!!allowEquals}
-                                onCheckedChange={(checked) =>
-                                  form.setValue('allowEquals', !!checked, {
-                                    shouldDirty: true,
-                                    shouldTouch: false,
-                                    shouldValidate: false,
-                                  })
-                                }
-                                disabled={isButtonDisabled}
-                                id="allowEqualsV2"
+                            <FormField
+                                control={form.control}
+                                name="allowEquals"
+                                render={({ field }) => (
+                                    <FormItem className="flex items-center gap-2">
+                                        <FormControl>
+                                            <Checkbox
+                                            checked={field.value}
+                                            onCheckedChange={(v) => field.onChange(!!v)}
+                                            disabled={isButtonDisabled}
+                                            />
+                                        </FormControl>
+                                        <Label htmlFor="allowEqualsV2" className="text-sm font-normal text-muted-foreground cursor-pointer">
+                                            Permitir "Equals"
+                                        </Label>
+                                    </FormItem>
+                                )}
                             />
-                            <Label htmlFor="allowEqualsV2" className="text-sm font-normal text-muted-foreground cursor-pointer">
-                                Permitir "Equals"
-                            </Label>
                             <Info className="h-3 w-3 text-muted-foreground" />
                         </div>
                         <div className="flex items-center space-x-2">
@@ -418,5 +433,3 @@ function DerivTraderInterfaceV2({ symbol }: DerivTraderInterfaceProps) {
     </div>
   );
 }
-
-export default DerivTraderInterfaceV2;
