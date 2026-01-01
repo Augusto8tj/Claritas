@@ -2,7 +2,7 @@
 'use client';
 
 import * as React from 'react';
-import { useEffect, useMemo, useRef } from 'react';
+import { useMemo } from 'react';
 import { useForm, FormProvider, useWatch } from 'react-hook-form';
 
 import {
@@ -24,15 +24,15 @@ import { Input } from '@/components/ui/input';
 import { Checkbox } from '@/components/ui/checkbox';
 import { ArrowDown, ArrowUp, ChevronDown, Info, Loader2, Minus, Plus } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
-import { useDerivApi, type DurationLimits } from '@/hooks/use-deriv-api';
+import { useDerivApi } from '@/hooks/use-deriv-api';
 import { Button } from '../ui/button';
 import { Card, CardContent } from '../ui/card';
 import { Separator } from '../ui/separator';
 import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover';
 import { RadioGroup, RadioGroupItem } from '../ui/radio-group';
-import { Switch } from '../ui/switch';
 import type { DurationUnit, RiseFallFormValues } from '@/lib/types';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '../ui/tabs';
+import { Switch } from '../ui/switch';
 
 
 type TradeType = 'rise_fall' | 'higher_lower' | 'touch_no_touch';
@@ -58,13 +58,13 @@ interface DerivTraderInterfaceV2Props {
 
 export default function DerivTraderInterfaceV2({ symbol }: DerivTraderInterfaceV2Props) {
   const { toast } = useToast();
-  const [loading, setLoading] = useState<"rise" | "fall" | null>(null);
-  const [tradeType, setTradeType] = useState<TradeType>('rise_fall');
-  const [isInversionModeOn, setIsInversionModeOn] = useState(false);
+  const [loading, setLoading] = React.useState<"rise" | "fall" | null>(null);
+  const [tradeType, setTradeType] = React.useState<TradeType>('rise_fall');
+  const [isInversionModeOn, setIsInversionModeOn] = React.useState(false);
   const { isConnected, executeTrade, durationLimits } = useDerivApi();
 
   const form = useFormContext<RiseFallFormValues>();
-  const lastUnitRef = useRef<DurationUnit | null>(null);
+  const lastUnitRef = React.useRef<DurationUnit | null>(null);
   
   const durationUnit = useWatch({
     control: form.control,
@@ -87,7 +87,7 @@ export default function DerivTraderInterfaceV2({ symbol }: DerivTraderInterfaceV
   }, [stake]);
 
   // Efeito para garantir que o `value` do Select é sempre válido
-  useEffect(() => {
+  React.useEffect(() => {
     if (!durationLimits || !durationUnit) return;
     
     const isUnitDisabled = durationLimits[durationUnit]?.min === 0;
@@ -108,7 +108,7 @@ export default function DerivTraderInterfaceV2({ symbol }: DerivTraderInterfaceV
 
 
   // Efeito para ajustar a DURAÇÃO quando a UNIDADE muda
-  useEffect(() => {
+  React.useEffect(() => {
     if (!durationLimits || !durationUnit) return;
     
     // Proteção para não re-executar com o mesmo valor
@@ -280,7 +280,8 @@ export default function DerivTraderInterfaceV2({ symbol }: DerivTraderInterfaceV
                                                 </FormControl>
                                                 <SelectContent>
                                                     {Object.entries(durationUnitLabels).map(([value, label]) => {
-                                                        const isUnitDisabled = durationLimits?.[value as DurationUnit]?.min === 0;
+                                                        const isUnitDisabled =
+                                                          durationLimits?.[value as DurationUnit]?.min === 0;
                                                         return (
                                                             <SelectItem key={value} value={value} disabled={isUnitDisabled}>
                                                                 {label}
