@@ -2,8 +2,8 @@
 'use client';
 
 import * as React from 'react';
-import { useMemo } from 'react';
-import { useForm, FormProvider, useFormContext, useWatch } from 'react-hook-form';
+import { useMemo, useEffect, useRef } from 'react';
+import { useFormContext, useWatch } from 'react-hook-form';
 import { ArrowDown, ArrowUp, Info, Loader2, Minus, Plus, ChevronDown } from "lucide-react";
 
 import {
@@ -128,7 +128,7 @@ export default function DerivTraderInterfaceV2({ symbol }: DerivTraderInterfaceV
       form.setValue('duration', newDuration, {
         shouldDirty: true,
         shouldTouch: false,
-        shouldValidate: false, // Previne re-validação que poderia causar loop
+        shouldValidate: false,
       });
     }
   }, [durationUnit, durationLimits, form]);
@@ -217,6 +217,22 @@ export default function DerivTraderInterfaceV2({ symbol }: DerivTraderInterfaceV
   const payoutPercentage = "94.20%";
   const isButtonDisabled = !!loading || !isConnected;
 
+  // --- STATE LOCAL HF-SAFE ---
+  const [localDurationUnit, setLocalDurationUnit] = React.useState<DurationUnit | undefined>(
+    form.getValues("duration_unit")
+  );
+
+  // sincroniza RHF → UI (apenas quando realmente muda)
+  React.useEffect(() => {
+    const subscription = form.watch((values, { name }) => {
+      if (name === "duration_unit" && values.duration_unit !== localDurationUnit) {
+        setLocalDurationUnit(values.duration_unit);
+      }
+    });
+    return () => subscription.unsubscribe();
+  }, [form, localDurationUnit]);
+
+
   return (
     <div className="space-y-6">
       <Card className="bg-card/50">
@@ -260,32 +276,53 @@ export default function DerivTraderInterfaceV2({ symbol }: DerivTraderInterfaceV
                         
                             <div className="flex gap-2">
                                 <FormField
-                                    control={form.control}
-                                    name="duration_unit"
-                                    render={({ field }) => (
-                                        <FormItem className="w-2/5">
-                                            <Select
-                                              onValueChange={field.onChange}
-                                              value={field.value}
-                                            >
-                                                <FormControl>
-                                                    <SelectTrigger>
-                                                        <SelectValue placeholder="Unidade" />
-                                                    </SelectTrigger>
-                                                </FormControl>
-                                                <SelectContent>
-                                                    {Object.entries(durationUnitLabels).map(([value, label]) => {
-                                                         const isUnitDisabled = durationLimits?.[value as DurationUnit]?.min === 0;
-                                                        return (
-                                                            <SelectItem key={value} value={value} disabled={isUnitDisabled}>
-                                                                {label}
-                                                            </SelectItem>
-                                                        );
-                                                    })}
-                                                </SelectContent>
-                                            </Select>
-                                        </FormItem>
-                                    )}
+                                  control={form.control}
+                                  name="duration_unit"
+                                  render={() => (
+                                    <FormItem className="w-2/5">
+                                      <Select
+                                        value={localDurationUnit}
+                                        onValueChange={(val) => {
+                                          const next = val as DurationUnit;
+
+                                          // atualiza UI primeiro
+                                          setLocalDurationUnit(next);
+
+                                          // atualiza RHF fora do ciclo de render do Select
+                                          queueMicrotask(() => {
+                                            form.setValue("duration_unit", next, {
+                                              shouldDirty: true,
+                                              shouldTouch: false,
+                                              shouldValidate: false,
+                                            });
+                                          });
+                                        }}
+                                      >
+                                        <FormControl>
+                                          <SelectTrigger>
+                                            <SelectValue placeholder="Unidade" />
+                                          </SelectTrigger>
+                                        </FormControl>
+
+                                        <SelectContent>
+                                          {Object.entries(durationUnitLabels).map(([value, label]) => {
+                                            const disabled =
+                                              durationLimits?.[value as DurationUnit]?.min === 0;
+
+                                            return (
+                                              <SelectItem
+                                                key={value}
+                                                value={value}
+                                                disabled={disabled}
+                                              >
+                                                {label}
+                                              </SelectItem>
+                                            );
+                                          })}
+                                        </SelectContent>
+                                      </Select>
+                                    </FormItem>
+                                  )}
                                 />
                                 <FormField
                                     control={form.control}
