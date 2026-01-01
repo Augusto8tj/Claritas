@@ -42,7 +42,7 @@ export interface Indicators {
     rvi: number | null;
 }
 
-const isCandle = (d: ChartData): d is CandleData => 'close' in d;
+const isCandle = (d: ChartData): d is CandleData => d !== null && 'close' in d;
 
 const calculateSMA = (data: CandleData[], period: number): (number | null)[] => {
     if (data.length < period) return Array(data.length).fill(null);
@@ -354,95 +354,98 @@ export function calculateAllIndicators(
 
     const indicators: Partial<Indicators> = {};
 
-    const rsiValues = calculateRSI(candles, getParam('RSI', 'period', 14));
-    indicators.rsi = rsiValues.length > 0 ? rsiValues[rsiValues.length - 1] : null;
+    try {
+        const rsiValues = calculateRSI(candles, getParam('RSI', 'period', 14));
+        indicators.rsi = rsiValues.length > 0 ? rsiValues[rsiValues.length - 1] : 0;
 
-    const stochValues = calculateStochastic(candles, getParam('STOCHASTIC', 'period', 14));
-    indicators.stoch = stochValues.length > 0 ? stochValues[stochValues.length - 1] : null;
-    
-    const macdValues = calculateMACD(candles, getParam('MACD_CROSS', 'fastPeriod', 12), getParam('MACD_CROSS', 'slowPeriod', 26), getParam('MACD_CROSS', 'signalPeriod', 9));
-    indicators.macd = { 
-        macd: macdValues.macd.length > 0 ? macdValues.macd[macdValues.macd.length - 1] : null,
-        signal: macdValues.signal.length > 0 ? macdValues.signal[macdValues.signal.length - 1] : null,
-        histogram: macdValues.histogram.length > 0 ? macdValues.histogram[macdValues.histogram.length - 1] : null,
-    };
+        const stochValues = calculateStochastic(candles, getParam('STOCHASTIC', 'period', 14));
+        indicators.stoch = stochValues.length > 0 ? stochValues[stochValues.length - 1] : 0;
+        
+        const macdValues = calculateMACD(candles, getParam('MACD_CROSS', 'fastPeriod', 12), getParam('MACD_CROSS', 'slowPeriod', 26), getParam('MACD_CROSS', 'signalPeriod', 9));
+        indicators.macd = { 
+            macd: macdValues.macd.length > 0 ? macdValues.macd[macdValues.macd.length - 1] : 0,
+            signal: macdValues.signal.length > 0 ? macdValues.signal[macdValues.signal.length - 1] : 0,
+            histogram: macdValues.histogram.length > 0 ? macdValues.histogram[macdValues.histogram.length - 1] : 0,
+        };
 
-    const adxValues = calculateADX(candles, getParam('ADX_TREND', 'period', 14));
-    indicators.adx = adxValues.adx.length > 0 ? adxValues.adx[adxValues.adx.length - 1] : null;
-    indicators.pdi = adxValues.pdi.length > 0 ? adxValues.pdi[adxValues.pdi.length - 1] : null;
-    indicators.ndi = adxValues.ndi.length > 0 ? adxValues.ndi[adxValues.ndi.length - 1] : null;
+        const adxValues = calculateADX(candles, getParam('ADX_TREND', 'period', 14));
+        indicators.adx = adxValues.adx.length > 0 ? adxValues.adx[adxValues.adx.length - 1] : 0;
+        indicators.pdi = adxValues.pdi.length > 0 ? adxValues.pdi[adxValues.pdi.length - 1] : 0;
+        indicators.ndi = adxValues.ndi.length > 0 ? adxValues.ndi[adxValues.ndi.length - 1] : 0;
 
-    const shortPeriod = getParam('MOVING_AVERAGE_CROSS', 'shortPeriod', 20);
-    const longPeriod = getParam('MOVING_AVERAGE_CROSS', 'longPeriod', 50);
-    indicators.ema = calculateEMA(candles, shortPeriod);
-    indicators.sma = calculateSMA(candles, longPeriod);
-    indicators.ma = {
-        short: indicators.ema.length > 0 ? indicators.ema[indicators.ema.length - 1] : null,
-        long: indicators.sma.length > 0 ? indicators.sma[indicators.sma.length - 1] : null,
-    };
-    
-    const ema20Values = calculateEMA(candles, 20);
-    indicators.ema20 = ema20Values.length > 0 ? ema20Values[ema20Values.length - 1] : null;
-    const ema50Values = calculateEMA(candles, 50);
-    indicators.ema50 = ema50Values.length > 0 ? ema50Values[ema50Values.length - 1] : null;
-    
-    const bbPeriod = getParam('BOLLINGER_BANDS', 'period', 20);
-    const bbStdDev = getParam('BOLLINGER_BANDS', 'stdDev', 2);
-    indicators.bollingerBands = calculateBollingerBands(candles, bbPeriod, bbStdDev);
-    const lastBB = indicators.bollingerBands.length > 0 ? indicators.bollingerBands[indicators.bollingerBands.length - 1] : null;
-    indicators.bb = lastBB || { upper: null, middle: null, lower: null };
+        const shortPeriod = getParam('MOVING_AVERAGE_CROSS', 'shortPeriod', 20);
+        const longPeriod = getParam('MOVING_AVERAGE_CROSS', 'longPeriod', 50);
+        indicators.ema = calculateEMA(candles, shortPeriod);
+        indicators.sma = calculateSMA(candles, longPeriod);
+        indicators.ma = {
+            short: indicators.ema.length > 0 ? indicators.ema[indicators.ema.length - 1] : 0,
+            long: indicators.sma.length > 0 ? indicators.sma[indicators.sma.length - 1] : 0,
+        };
+        
+        const ema20Values = calculateEMA(candles, 20);
+        indicators.ema20 = ema20Values.length > 0 ? ema20Values[ema20Values.length - 1] : 0;
+        const ema50Values = calculateEMA(candles, 50);
+        indicators.ema50 = ema50Values.length > 0 ? ema50Values[ema50Values.length - 1] : 0;
+        
+        const bbPeriod = getParam('BOLLINGER_BANDS', 'period', 20);
+        const bbStdDev = getParam('BOLLINGER_BANDS', 'stdDev', 2);
+        indicators.bollingerBands = calculateBollingerBands(candles, bbPeriod, bbStdDev);
+        const lastBB = indicators.bollingerBands.length > 0 ? indicators.bollingerBands[indicators.bollingerBands.length - 1] : null;
+        indicators.bb = lastBB || { upper: 0, middle: 0, lower: 0 };
 
-    const bbwValues = DerivIndicators.bollingerBandwidth(candles, bbPeriod, bbStdDev);
-    indicators.bbw = bbwValues.length > 0 ? bbwValues[bbwValues.length-1] : null;
+        const bbwValues = DerivIndicators.bollingerBandwidth(candles, bbPeriod, bbStdDev);
+        indicators.bbw = bbwValues.length > 0 ? bbwValues[bbwValues.length-1] : 0;
 
-    indicators.donchianChannels = DerivIndicators.donchian(candles, getParam('DONCHIAN_CHANNELS', 'period', 20));
+        indicators.donchianChannels = DerivIndicators.donchian(candles, getParam('DONCHIAN_CHANNELS', 'period', 20));
 
-    // --- CÁLCULO ADAPTATIVO DO CHANDELIER EXIT ---
-    const isLongTerm = contractDuration?.unit !== 't';
-    const chandelierPeriod = isLongTerm ? 44 : 22; // Dobra o período para longo prazo
-    const chandelierMultiplier = isLongTerm ? 4.5 : 3.0; // Aumenta o multiplicador
+        const chandelierPeriod = getParam('CHANDELIER_EXIT', 'chandelierPeriod', 22);
+        const chandelierMultiplier = getParam('CHANDELIER_EXIT', 'chandelierMultiplier', 3);
+        const chandelierValues = DerivIndicators.chandelierExit(candles, chandelierPeriod, chandelierMultiplier);
+        indicators.chandelierExit = chandelierValues.length > 0 ? chandelierValues[chandelierValues.length - 1] : 0;
+        
+        const atrValues = DerivIndicators.atr(candles);
+        indicators.atr = atrValues.length > 0 ? atrValues[atrValues.length - 1] : 0;
 
-    const chandelierValues = DerivIndicators.chandelierExit(candles, chandelierPeriod, chandelierMultiplier);
-    indicators.chandelierExit = chandelierValues.length > 0 ? chandelierValues[chandelierValues.length - 1] : null;
-    
-    const atrValues = DerivIndicators.atr(candles);
-    indicators.atr = atrValues.length > 0 ? atrValues[atrValues.length - 1] : null;
+        const vwapValues = DerivIndicators.vwap(candles);
+        indicators.vwap = vwapValues;
 
-    const vwapValues = DerivIndicators.vwap(candles);
-    indicators.vwap = vwapValues;
+        const kamaValues = DerivIndicators.kama(candles, getParam('KAMA', 'period', 10));
+        indicators.kama = kamaValues.length > 0 ? kamaValues[kamaValues.length - 1] : 0;
+        
+        const stochRSIValues = DerivIndicators.stochRSI(candles, getParam('STOCH_RSI', 'period', 14));
+        indicators.stochRSI = stochRSIValues.length > 0 ? stochRSIValues[stochRSIValues.length - 1] : 0;
 
-    const kamaValues = DerivIndicators.kama(candles, getParam('KAMA', 'period', 10));
-    indicators.kama = kamaValues.length > 0 ? kamaValues[kamaValues.length - 1] : null;
-    
-    const stochRSIValues = DerivIndicators.stochRSI(candles, getParam('STOCH_RSI', 'period', 14));
-    indicators.stochRSI = stochRSIValues.length > 0 ? stochRSIValues[stochRSIValues.length - 1] : null;
+        const zScoreValues = DerivIndicators.zScore(candles, getParam('Z_SCORE', 'period', 20));
+        indicators.zScore = zScoreValues.length > 0 ? zScoreValues[zScoreValues.length - 1] : 0;
 
-    const zScoreValues = DerivIndicators.zScore(candles, getParam('Z_SCORE', 'period', 20));
-    indicators.zScore = zScoreValues.length > 0 ? zScoreValues[zScoreValues.length - 1] : null;
+        const aoValues = calculateAwesomeOscillator(candles);
+        indicators.awesomeOscillator = aoValues.length > 0 ? aoValues[aoValues.length - 1] : 0;
+        
+        const trixValues = DerivIndicators.trix(candles, getParam('TRIX', 'period', 15));
+        indicators.trix = trixValues.length > 0 ? trixValues[trixValues.length - 1] : 0;
 
-    const aoValues = calculateAwesomeOscillator(candles);
-    indicators.awesomeOscillator = aoValues.length > 0 ? aoValues[aoValues.length - 1] : null;
-    
-    const trixValues = DerivIndicators.trix(candles, getParam('TRIX', 'period', 15));
-    indicators.trix = trixValues.length > 0 ? trixValues[trixValues.length - 1] : null;
+        const rocValues = DerivIndicators.roc(candles, getParam('ROC', 'period', 12));
+        indicators.roc = rocValues.length > 0 ? rocValues[rocValues.length - 1] : 0;
 
-    const rocValues = DerivIndicators.roc(candles, getParam('ROC', 'period', 12));
-    indicators.roc = rocValues.length > 0 ? rocValues[rocValues.length - 1] : null;
+        const sarValues = calculateParabolicSAR(candles, getParam('PARABOLIC_SAR', 'acceleration', 0.02), getParam('PARABOLIC_SAR', 'maxAcceleration', 0.2));
+        indicators.parabolicSAR = sarValues.length > 0 ? sarValues[sarValues.length - 1] : 0;
 
-    const sarValues = calculateParabolicSAR(candles, getParam('PARABOLIC_SAR', 'acceleration', 0.02), getParam('PARABOLIC_SAR', 'maxAcceleration', 0.2));
-    indicators.parabolicSAR = sarValues.length > 0 ? sarValues[sarValues.length - 1] : null;
+        const ichimokuValues = DerivIndicators.ichimoku(candles);
+        indicators.ichimoku = ichimokuValues.length > 0 ? ichimokuValues[ichimokuValues.length - 1] : { tenkan: 0, kijun: 0, senkouA: 0, senkouB: 0 };
 
-    const ichimokuValues = DerivIndicators.ichimoku(candles);
-    indicators.ichimoku = ichimokuValues.length > 0 ? ichimokuValues[ichimokuValues.length - 1] : { tenkan: null, kijun: null, senkouA: null, senkouB: null };
+        const mfiValues = DerivIndicators.mfi(candles, getParam('MFI', 'period', 14));
+        indicators.mfi = mfiValues.length > 0 ? mfiValues[mfiValues.length - 1] : 0;
 
-    const mfiValues = DerivIndicators.mfi(candles, getParam('MFI', 'period', 14));
-    indicators.mfi = mfiValues.length > 0 ? mfiValues[mfiValues.length - 1] : null;
+        const obvValues = DerivIndicators.obv(candles);
+        indicators.obv = obvValues.length > 0 ? obvValues[obvValues.length - 1] : 0;
 
-    const obvValues = DerivIndicators.obv(candles);
-    indicators.obv = obvValues.length > 0 ? obvValues[obvValues.length - 1] : null;
+        const rviValues = DerivIndicators.rvi(candles, getParam('RVI', 'period', 10));
+        indicators.rvi = rviValues.length > 0 ? rviValues[rviValues.length-1] : 0;
 
-    const rviValues = DerivIndicators.rvi(candles, getParam('RVI', 'period', 10));
-    indicators.rvi = rviValues.length > 0 ? rviValues[rviValues.length-1] : null;
+    } catch (e) {
+        console.error("Error calculating indicators:", e);
+        return emptyIndicators;
+    }
 
 
     return { ...emptyIndicators, ...indicators };
