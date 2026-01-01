@@ -433,7 +433,6 @@ export function useRobotCouncil(
 
                  finalStake = weightedAvgStake * Math.max(0.5, 1 - volatilityFactor * 5);
                  
-                 // A duração já está em segundos
                  finalDuration = Math.round(weightedAvgDuration);
 
             }
@@ -633,7 +632,7 @@ export function useRobotCouncil(
             const voteData = calculateRobotVote(robot, currentIndicators, tickCandles);
             
             if (voteData.vote !== 'HOLD') {
-                const durationInSeconds = voteData.optimalDuration; // Já está em segundos
+                const durationInSeconds = durationToSeconds(voteData.optimalDuration, voteData.optimalDurationUnit);
                 const tradeId = `vt_${Date.now()}_${tradeCounterRef.current++}`;
                 const virtualTrade: VirtualTrade = {
                     id: tradeId,
