@@ -260,6 +260,7 @@ export function useRobotCouncilV2(
   const { toast } = useToast();
   const { evolvedStrategies, evolveTrigger, evolutionHistory } = useStrategyEvolution(initialCouncilStrategies);
   const lastExecutionTimeRef = useRef(0); // Para o throttle
+  const contractsInAlertRef = useRef<Map<number, 'breached' | 'confirmed'>>(new Map());
 
   // ────────────────────────────────────────────────────────────────
   // ESTADOS DO CONSELHO
@@ -488,11 +489,12 @@ export function useRobotCouncilV2(
     // ══════════════════════════════════════════════════════════════
     // ETAPA 1: CÁLCULO DE INDICADORES TÉCNICOS
     // ══════════════════════════════════════════════════════════════
+    const contractDurationForIndicators = { duration: 5, unit: 'm' as DurationUnit };
     const currentIndicators = calculateAllIndicators(
       tickCandles, 
       strategyCouncil, 
       timePeriod,
-      { duration: 5, unit: 'm'} // Usa um valor padrão aqui, já que a duração final é dinâmica
+      contractDurationForIndicators
     );
     setIndicators(currentIndicators);
 
@@ -537,36 +539,45 @@ export function useRobotCouncilV2(
     const activeCouncilContracts = operationsLog.filter(
       op => op.status === 'pending' && op.initiator === 'Conselho'
     );
-
+    
     activeCouncilContracts.forEach(contract => {
-      if (councilExecutionRef.current.sellingContracts.has(contract.id)) return;
+        if (councilExecutionRef.current.sellingContracts.has(contract.id)) return;
 
-      // Stop Loss Técnico: Chandelier Exit
-      if (currentIndicators.chandelierExit && contract.entryPrice) {
-        if (contract.direction === 'rise' && currentTick.price < currentIndicators.chandelierExit) {
-          councilExecutionRef.current.sellingContracts.add(contract.id);
-          sellContract(contract.id);
-          toast({
-            title: "🛡️ Stop Loss Atingido (Chandelier)",
-            description: `Contrato #${contract.id} fechado para proteger capital.`,
-            variant: "destructive"
-          });
-          return;
+        const contractId = contract.id;
+
+        // --- TAKE PROFIT ---
+        const potentialProfit = contract.stake * 0.90; // Approx payout
+        const currentProfit = contract.result || 0;
+        
+        if (currentProfit > 0 && potentialProfit > 0 && (currentProfit / potentialProfit) >= 0.10) {
+            councilExecutionRef.current.sellingContracts.add(contractId);
+            sellContract(contractId).finally(() => setTimeout(() => councilExecutionRef.current.sellingContracts.delete(contractId), 5000));
+            toast({ title: "💰 Take Profit de 10% Atingido", description: `Contrato #${contractId} fechado para garantir lucro.` });
+            return;
         }
-      }
 
-      // Take Profit Dinâmico: 75% do lucro potencial
-      const potentialProfit = contract.stake * 0.90;
-      const currentProfit = contract.result || 0;
+        // --- STOP LOSS (2-BAR CONFIRMATION) ---
+        const chandelierExit = currentIndicators.chandelierExit;
+        if (chandelierExit && contract.entryPrice) {
+            const isBreached = contract.direction === 'rise' 
+                ? currentTick.price < chandelierExit 
+                : currentTick.price > chandelierExit;
 
-      if (currentProfit >= potentialProfit * 0.75) {
-        councilExecutionRef.current.sellingContracts.add(contract.id);
-        sellContract(contract.id);
-        toast({
-          title: "💰 Lucro Garantido",
-          description: `Contrato #${contract.id} fechado com +$${currentProfit.toFixed(2)}`
-        });
-      }
+            if (isBreached) {
+                if (!contractsInAlertRef.current.has(contractId)) {
+                    contractsInAlertRef.current.set(contractId, 'breached');
+                } else if (contractsInAlertRef.current.get(contractId) === 'breached') {
+                    councilExecutionRef.current.sellingContracts.add(contractId);
+                    sellContract(contractId).finally(() => setTimeout(() => councilExecutionRef.current.sellingContracts.delete(contractId), 5000));
+                    toast({ title: "🛡️ Stop Loss Confirmado", description: `Contrato #${contractId} fechado para proteger capital.`, variant: "destructive" });
+                    contractsInAlertRef.current.delete(contractId);
+                }
+            } else {
+                if (contractsInAlertRef.current.has(contractId)) {
+                    contractsInAlertRef.current.delete(contractId);
+                }
+            }
+        }
     });
 
     // ══════════════════════════════════════════════════════════════
@@ -673,12 +684,11 @@ export function useRobotCouncilV2(
       const technicalVote = calculateTechnicalVote(robot, currentIndicators, tickCandles);
       const durationInSeconds = durationToSeconds(technicalVote.optimalDuration, technicalVote.optimalDurationUnit);
 
-      // FILTRO DE REGIME: Só permite voto se o robô for eficaz no regime atual (ou se não tiver histórico)
-      const isRegimeEffective = (perf?.effectiveRegimes?.length === 0) || (perf?.effectiveRegimes?.includes(regimeResult.regime));
+      const isRegimeEffective = !perf?.effectiveRegimes?.length || perf.effectiveRegimes.includes(regimeResult.regime);
 
       // FILTRO DE HORIZONTE TEMPORAL: Só permite voto se a duração sugerida estiver no range do usuário
       const isDurationInRange = durationInSeconds >= durationRange[0] && durationInSeconds <= durationRange[1];
-
+      
       if (technicalVote.vote === 'HOLD' || !isRegimeEffective || !isDurationInRange) {
         newVotes[robot.id] = {
           ...technicalVote,

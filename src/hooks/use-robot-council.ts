@@ -538,10 +538,10 @@ export function useRobotCouncil(
                 const potentialProfit = contract.stake * 0.90; // Aproximação de payout
                 const currentProfit = contract.result || 0; // O hook da API atualiza este valor
                 
-                if (currentProfit > 0 && potentialProfit > 0 && (currentProfit / potentialProfit) >= 0.10) {
+                if (currentProfit > 0 && potentialProfit > 0 && (currentProfit / potentialProfit) >= 0.75) {
                      councilExecutionRef.current.sellingContracts.add(contractId);
                      sellContract(contractId).finally(() => setTimeout(() => councilExecutionRef.current.sellingContracts.delete(contractId), 5000));
-                     toast({ title: "💰 Take Profit de 10% Atingido", description: `Contrato #${contractId} fechado para garantir lucro.`, className: "bg-green-100 dark:bg-green-900" });
+                     toast({ title: "💰 Take Profit Atingido", description: `Contrato #${contractId} fechado para garantir lucro.`, className: "bg-green-100 dark:bg-green-900" });
                      return; // Sai para não acionar stop loss no mesmo ciclo
                 }
 
