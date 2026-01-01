@@ -23,6 +23,7 @@ import {
   Trophy,
   PanelLeftClose,
   PanelRightClose,
+  Archive,
 } from "lucide-react";
 import {
   Sidebar,
@@ -77,6 +78,11 @@ const navItems = [
     href: "/backtesting",
     icon: TestTube,
     label: "Backtesting",
+  },
+   {
+    href: "/audit-log",
+    icon: Archive,
+    label: "Arquivo de Auditoria",
   },
   {
     href: "/chat-insights",

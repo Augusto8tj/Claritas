@@ -6,7 +6,7 @@
  * This service now includes non-blocking writes and contextual error handling for security rules.
  */
 import { db } from '@/lib/firebase';
-import { collection, getDocs, addDoc, doc, updateDoc, deleteDoc, getDoc, setDoc, query, where } from 'firebase/firestore';
+import { collection, getDocs, addDoc, doc, updateDoc, deleteDoc, getDoc, setDoc, query, where, orderBy } from 'firebase/firestore';
 import type { Goal, BudgetCategory, Transaction, RobotPerformance, TradeDecisionLog, EnhancedRobotPerformance } from '@/lib/types';
 import { generateGoalImage } from '@/ai/flows/goal-image-generation';
 import { FirestorePermissionError } from '@/firebase/errors';
@@ -23,6 +23,10 @@ export async function getTransactions(userId: string): Promise<Transaction[]> {
     } catch (serverError) {
         // Propagate the original error for client-side handling
         console.error(`[Service Error] getTransactions failed for user ${userId}:`, serverError);
+        errorEmitter.emit('permission-error', new FirestorePermissionError({
+            path: `users/${userId}/transactions`,
+            operation: 'list',
+        }));
         throw serverError;
     }
 }
@@ -35,6 +39,11 @@ export async function addTransaction(userId: string, data: Omit<Transaction, 'id
         return `Transação "${data.description}" de R$${data.amount.toFixed(2)} adicionada com sucesso.`;
     } catch (serverError) {
         console.error(`[Service Error] addTransaction failed for user ${userId}:`, serverError);
+        errorEmitter.emit('permission-error', new FirestorePermissionError({
+            path: `users/${userId}/transactions`,
+            operation: 'create',
+            requestResourceData: data,
+        }));
         throw serverError;
     }
 }
@@ -58,6 +67,10 @@ export async function getGoals(userId: string): Promise<Goal[]> {
         return snapshot.docs.map(d => ({ id: d.id, ...d.data() } as Goal));
     } catch (serverError) {
         console.error(`[Service Error] getGoals failed for user ${userId}:`, serverError);
+         errorEmitter.emit('permission-error', new FirestorePermissionError({
+            path: `users/${userId}/goals`,
+            operation: 'list',
+        }));
         throw serverError;
     }
 }
@@ -95,6 +108,11 @@ export async function addGoal(userId: string, name: string, targetAmount: number
         return { id: docRef.id, ...newGoalData };
     } catch (serverError) {
         console.error(`[Service Error] addGoal failed for user ${userId}:`, serverError);
+        errorEmitter.emit('permission-error', new FirestorePermissionError({
+            path: `users/${userId}/goals`,
+            operation: 'create',
+            requestResourceData: newGoalData,
+        }));
         throw serverError;
     }
 }
@@ -107,6 +125,10 @@ export async function deleteGoal(userId: string, goalId: string): Promise<{ succ
         return { success: true };
     } catch (serverError) {
         console.error(`[Service Error] deleteGoal failed for user ${userId}, goal ${goalId}:`, serverError);
+        errorEmitter.emit('permission-error', new FirestorePermissionError({
+            path: `users/${userId}/goals/${goalId}`,
+            operation: 'delete',
+        }));
         throw serverError;
     }
 }
@@ -127,6 +149,10 @@ async function getBudgetLimits(userId: string): Promise<{ [key: string]: number 
         };
     } catch (serverError) {
          console.error(`[Service Error] getBudgetLimits failed for user ${userId}:`, serverError);
+         errorEmitter.emit('permission-error', new FirestorePermissionError({
+            path: `users/${userId}/settings/budget`,
+            operation: 'get',
+        }));
          throw serverError;
     }
 }
@@ -168,6 +194,11 @@ export async function updateBudgetLimit(userId: string, name: string, newLimit: 
         return { name, budgeted: newLimit, spent };
     } catch (serverError) {
         console.error(`[Service Error] updateBudgetLimit failed for user ${userId}:`, serverError);
+        errorEmitter.emit('permission-error', new FirestorePermissionError({
+            path: `users/${userId}/settings/budget`,
+            operation: 'update',
+            requestResourceData: dataToSet
+        }));
         throw serverError;
     }
 }
@@ -195,7 +226,7 @@ export const saveRobotPerformance = async (userId: string, performance: Enhanced
   const dataToSave = {
     updatedAt: new Date().toISOString(),
     robots: performance.map(p => {
-      const sanitizedValue = (value: number | undefined) => (value === undefined || isNaN(value)) ? 0 : value;
+       const sanitizedValue = (value: number | undefined) => (value === undefined || isNaN(value)) ? 0 : value;
       return {
         id: p.id,
         strategyType: p.strategyType,
@@ -222,6 +253,11 @@ export const saveRobotPerformance = async (userId: string, performance: Enhanced
     await setDoc(docRef, dataToSave, { merge: true });
   } catch(error) {
     console.error(`[Service Error] saveRobotPerformance failed for user ${userId}:`, error);
+     errorEmitter.emit('permission-error', new FirestorePermissionError({
+        path: `users/${userId}/trading_data/robot_council_performance`,
+        operation: 'write',
+        requestResourceData: dataToSave
+    }));
     throw error;
   }
 };
@@ -241,6 +277,10 @@ export const loadRobotPerformance = async (userId: string): Promise<EnhancedRobo
     return null;
   } catch (error) {
     console.error(`[Service Error] loadRobotPerformance failed for user ${userId}:`, error);
+    errorEmitter.emit('permission-error', new FirestorePermissionError({
+        path: `users/${userId}/trading_data/robot_council_performance`,
+        operation: 'get',
+    }));
     throw error;
   }
 };
@@ -279,6 +319,29 @@ export async function saveTradeDecision(userId: string, log: TradeDecisionLog): 
         await setDoc(logDocRef, log);
     } catch (error) {
         console.error(`[Service Error] saveTradeDecision failed for user ${userId}:`, error);
+        errorEmitter.emit('permission-error', new FirestorePermissionError({
+            path: `users/${userId}/decision_logs/${log.id}`,
+            operation: 'write',
+            requestResourceData: log
+        }));
         throw error;
+    }
+}
+
+export async function getTradeDecisionLogs(userId: string): Promise<TradeDecisionLog[]> {
+    if (!userId) return [];
+    const logCollectionRef = collection(db, `users/${userId}/decision_logs`);
+    const q = query(logCollectionRef, orderBy('timestamp', 'desc'));
+
+    try {
+        const snapshot = await getDocs(q);
+        return snapshot.docs.map(d => d.data() as TradeDecisionLog);
+    } catch (serverError) {
+        console.error(`[Service Error] getTradeDecisionLogs failed for user ${userId}:`, serverError);
+        errorEmitter.emit('permission-error', new FirestorePermissionError({
+            path: `users/${userId}/decision_logs`,
+            operation: 'list',
+        }));
+        throw serverError;
     }
 }
