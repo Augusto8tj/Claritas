@@ -50,7 +50,7 @@ import type {
   RobotVote as RobotVoteType,
   MarketRegime,
   MicrostructureFeatures,
-  BayesianVote,
+  BayesianVote as BayesianVoteType,
   EnhancedRobotPerformance as EnhancedRobotPerformanceType,
   TimePeriod,
   TradeDecisionLog,
@@ -110,6 +110,7 @@ type VirtualTrade = {
 
 export type EnhancedRobotPerformance = EnhancedRobotPerformanceType;
 export type RobotVote = RobotVoteType;
+export type BayesianVote = BayesianVoteType;
 export type CouncilVotes = { [key: string]: RobotVote };
 
 export interface DashboardData {
@@ -160,87 +161,91 @@ const calculateTechnicalVote = (
 ): {
   vote: 'RISE' | 'FALL' | 'HOLD';
   confidence: number;
+  reason: string;
   optimalDuration: number;
   optimalDurationUnit: DurationUnit;
   suggestedStake: number;
 } => {
   let vote: 'RISE' | 'FALL' | 'HOLD' = 'HOLD';
   let confidence = 0;
+  let reason = 'Nenhum sinal claro';
   let suggestedStake = 0;
   
   // Retorna a duração ótima do robô, sem clamping.
   const { optimalDuration, optimalDurationUnit, suggestedStake: baseStake } = robot;
 
-  const setVote = (newVote: 'RISE' | 'FALL', newConfidence: number) => {
+  const setVote = (newVote: 'RISE' | 'FALL', newConfidence: number, newReason: string) => {
     if (newConfidence <= 0) return;
     vote = newVote;
     confidence = newConfidence;
+    reason = newReason;
     suggestedStake = confidence === robot.strongConfidence ? baseStake : baseStake * 0.5;
   };
 
   if (!indicators) {
-    return { vote: 'HOLD', confidence: 0, optimalDuration, optimalDurationUnit, suggestedStake: 0 };
+    return { vote: 'HOLD', confidence: 0, reason, optimalDuration, optimalDurationUnit, suggestedStake: 0 };
   }
 
   // Extrai indicadores para facilitar leitura
   const { rsi, stoch, macd, bb, ma, adx, pdi, ndi, stochRSI, mfi, rvi } = indicators;
+  const format = (val: number | null) => (val !== null ? val.toFixed(2) : 'N/A');
 
   // ────────────────────────────────────────────────────────────────
   // LÓGICA DE VOTAÇÃO POR ESTRATÉGIA
   // ────────────────────────────────────────────────────────────────
   if (robot.strategyType === 'RSI' && isValid(rsi) && robot.strongBuyThreshold) {
-    if (rsi <= robot.strongBuyThreshold!) setVote('RISE', robot.strongConfidence);
-    else if (rsi <= robot.weakBuyThreshold!) setVote('RISE', robot.weakConfidence);
-    else if (rsi >= robot.strongSellThreshold!) setVote('FALL', robot.strongConfidence);
-    else if (rsi >= robot.weakSellThreshold!) setVote('FALL', robot.weakConfidence);
+    if (rsi <= robot.strongBuyThreshold!) setVote('RISE', robot.strongConfidence, `RSI(${format(rsi)}) <= Forte(${robot.strongBuyThreshold})`);
+    else if (rsi <= robot.weakBuyThreshold!) setVote('RISE', robot.weakConfidence, `RSI(${format(rsi)}) <= Fraco(${robot.weakBuyThreshold})`);
+    else if (rsi >= robot.strongSellThreshold!) setVote('FALL', robot.strongConfidence, `RSI(${format(rsi)}) >= Forte(${robot.strongSellThreshold})`);
+    else if (rsi >= robot.weakSellThreshold!) setVote('FALL', robot.weakConfidence, `RSI(${format(rsi)}) >= Fraco(${robot.weakSellThreshold})`);
   } 
   else if (robot.strategyType === 'STOCHASTIC' && isValid(stoch) && robot.strongBuyThreshold) {
-    if (stoch <= robot.strongBuyThreshold!) setVote('RISE', robot.strongConfidence);
-    else if (stoch <= robot.weakBuyThreshold!) setVote('RISE', robot.weakConfidence);
-    else if (stoch >= robot.strongSellThreshold!) setVote('FALL', robot.strongConfidence);
-    else if (stoch >= robot.weakSellThreshold!) setVote('FALL', robot.weakConfidence);
+    if (stoch <= robot.strongBuyThreshold!) setVote('RISE', robot.strongConfidence, `Stoch(${format(stoch)}) <= Forte(${robot.strongBuyThreshold})`);
+    else if (stoch <= robot.weakBuyThreshold!) setVote('RISE', robot.weakConfidence, `Stoch(${format(stoch)}) <= Fraco(${robot.weakBuyThreshold})`);
+    else if (stoch >= robot.strongSellThreshold!) setVote('FALL', robot.strongConfidence, `Stoch(${format(stoch)}) >= Forte(${robot.strongSellThreshold})`);
+    else if (stoch >= robot.weakSellThreshold!) setVote('FALL', robot.weakConfidence, `Stoch(${format(stoch)}) >= Fraco(${robot.weakSellThreshold})`);
   }
   else if (robot.strategyType === 'MACD_CROSS' && isValid(macd.macd) && isValid(macd.signal)) {
-    if (macd.macd > macd.signal) setVote('RISE', robot.weakConfidence);
-    else if (macd.signal > macd.macd) setVote('FALL', robot.weakConfidence);
+    if (macd.macd > macd.signal) setVote('RISE', robot.weakConfidence, `Cruzamento MACD para cima`);
+    else if (macd.signal > macd.macd) setVote('FALL', robot.weakConfidence, `Cruzamento MACD para baixo`);
   }
   else if (robot.strategyType === 'BOLLINGER_BANDS' && isValid(bb.lower) && isValid(bb.upper) && tickCandles.length > 0) {
     const lastPrice = tickCandles[tickCandles.length - 1].close;
     if (isValid(lastPrice)) {
-      if (lastPrice <= bb.lower) setVote('RISE', robot.weakConfidence);
-      if (lastPrice >= bb.upper) setVote('FALL', robot.weakConfidence);
+      if (lastPrice <= bb.lower) setVote('RISE', robot.weakConfidence, `Preço tocou Banda Inferior`);
+      if (lastPrice >= bb.upper) setVote('FALL', robot.weakConfidence, `Preço tocou Banda Superior`);
     }
   }
   else if (robot.strategyType === 'MOVING_AVERAGE_CROSS' && isValid(ma.short) && isValid(ma.long)) {
-    if (ma.short > ma.long) setVote('RISE', robot.weakConfidence);
-    else if (ma.long > ma.short) setVote('FALL', robot.weakConfidence);
+    if (ma.short > ma.long) setVote('RISE', robot.weakConfidence, `Cruzamento de Médias para cima`);
+    else if (ma.long > ma.short) setVote('FALL', robot.weakConfidence, `Cruzamento de Médias para baixo`);
   }
   else if (robot.strategyType === 'ADX_TREND' && isValid(adx) && adx > (robot.trendStrengthThreshold || 25)) {
     if (isValid(pdi) && isValid(ndi)) {
-      if (pdi > ndi) setVote('RISE', robot.weakConfidence);
-      else if (ndi > pdi) setVote('FALL', robot.weakConfidence);
+      if (pdi > ndi) setVote('RISE', robot.weakConfidence, `ADX > ${robot.trendStrengthThreshold} e +DI > -DI`);
+      else if (ndi > pdi) setVote('FALL', robot.weakConfidence, `ADX > ${robot.trendStrengthThreshold} e -DI > +DI`);
     }
   }
   else if (robot.strategyType === 'MFI' && isValid(mfi) && robot.strongBuyThreshold) {
-    if (mfi <= robot.strongBuyThreshold!) setVote('RISE', robot.strongConfidence);
-    else if (mfi <= robot.weakBuyThreshold!) setVote('RISE', robot.weakConfidence);
-    else if (mfi >= robot.strongSellThreshold!) setVote('FALL', robot.strongConfidence);
-    else if (mfi >= robot.weakSellThreshold!) setVote('FALL', robot.weakConfidence);
+    if (mfi <= robot.strongBuyThreshold!) setVote('RISE', robot.strongConfidence, `MFI(${format(mfi)}) <= Forte(${robot.strongBuyThreshold})`);
+    else if (mfi <= robot.weakBuyThreshold!) setVote('RISE', robot.weakConfidence, `MFI(${format(mfi)}) <= Fraco(${robot.weakBuyThreshold})`);
+    else if (mfi >= robot.strongSellThreshold!) setVote('FALL', robot.strongConfidence, `MFI(${format(mfi)}) >= Forte(${robot.strongSellThreshold})`);
+    else if (mfi >= robot.weakSellThreshold!) setVote('FALL', robot.weakConfidence, `MFI(${format(mfi)}) >= Fraco(${robot.weakSellThreshold})`);
   }
   else if (robot.strategyType === 'STOCH_RSI' && isValid(stochRSI) && robot.strongBuyThreshold) {
-    if (stochRSI <= robot.strongBuyThreshold!) setVote('RISE', robot.strongConfidence);
-    else if (stochRSI <= robot.weakBuyThreshold!) setVote('RISE', robot.weakConfidence);
-    else if (stochRSI >= robot.strongSellThreshold!) setVote('FALL', robot.strongConfidence);
-    else if (stochRSI >= robot.weakSellThreshold!) setVote('FALL', robot.weakConfidence);
+    if (stochRSI <= robot.strongBuyThreshold!) setVote('RISE', robot.strongConfidence, `StochRSI(${format(stochRSI)}) <= Forte(${robot.strongBuyThreshold})`);
+    else if (stochRSI <= robot.weakBuyThreshold!) setVote('RISE', robot.weakConfidence, `StochRSI(${format(stochRSI)}) <= Fraco(${robot.weakBuyThreshold})`);
+    else if (stochRSI >= robot.strongSellThreshold!) setVote('FALL', robot.strongConfidence, `StochRSI(${format(stochRSI)}) >= Forte(${robot.strongSellThreshold})`);
+    else if (stochRSI >= robot.weakSellThreshold!) setVote('FALL', robot.weakConfidence, `StochRSI(${format(stochRSI)}) >= Fraco(${robot.weakSellThreshold})`);
   }
   else if (robot.strategyType === 'RVI' && isValid(rvi) && robot.strongBuyThreshold) {
-    if (rvi <= robot.strongBuyThreshold!) setVote('RISE', robot.strongConfidence);
-    else if (rvi <= robot.weakBuyThreshold!) setVote('RISE', robot.weakConfidence);
-    else if (rvi >= robot.strongSellThreshold!) setVote('FALL', robot.strongConfidence);
-    else if (rvi >= robot.weakSellThreshold!) setVote('FALL', robot.weakConfidence);
+    if (rvi <= robot.strongBuyThreshold!) setVote('RISE', robot.strongConfidence, `RVI(${format(rvi)}) <= Forte(${robot.strongBuyThreshold})`);
+    else if (rvi <= robot.weakBuyThreshold!) setVote('RISE', robot.weakConfidence, `RVI(${format(rvi)}) <= Fraco(${robot.weakBuyThreshold})`);
+    else if (rvi >= robot.strongSellThreshold!) setVote('FALL', robot.strongConfidence, `RVI(${format(rvi)}) >= Forte(${robot.strongSellThreshold})`);
+    else if (rvi >= robot.weakSellThreshold!) setVote('FALL', robot.weakConfidence, `RVI(${format(rvi)}) >= Fraco(${robot.weakSellThreshold})`);
   }
 
-  return { vote, confidence, optimalDuration, optimalDurationUnit, suggestedStake };
+  return { vote, confidence, reason, optimalDuration, optimalDurationUnit, suggestedStake };
 };
 
 
@@ -703,7 +708,7 @@ export function useRobotCouncilV2(
         bayesianVotes[robot.id] = {
           ...technicalVote,
           rawConfidence: 0, calibratedConfidence: 0, bayesianProbability: 0.5,
-          weight: 0, regime: regimeResult.regime
+          weight: 0, regime: regimeResult.regime, reason: 'Inativo/Fora de Regime'
         };
         return;
       }
@@ -742,7 +747,7 @@ export function useRobotCouncilV2(
         vote: technicalVote.vote, rawConfidence: technicalVote.confidence,
         calibratedConfidence: calibratedConf * 100, bayesianProbability: posterior, weight,
         optimalDuration: technicalVote.optimalDuration, optimalDurationUnit: technicalVote.optimalDurationUnit,
-        suggestedStake: technicalVote.suggestedStake * posterior, regime: regimeResult.regime
+        suggestedStake: technicalVote.suggestedStake * posterior, regime: regimeResult.regime, reason: technicalVote.reason,
       };
       bayesianVotes[robot.id] = finalVote;
 

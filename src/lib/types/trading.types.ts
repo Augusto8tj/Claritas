@@ -22,6 +22,7 @@ export interface MicrostructureFeatures {
 
 export const BayesianVoteSchema = z.object({
     vote: z.enum(['RISE', 'FALL', 'HOLD']),
+    reason: z.string().describe("Justificativa técnica para o voto, ex: 'RSI (28.5) < 30' ou 'Cruzamento de Médias'"),
     rawConfidence: z.number(),
     calibratedConfidence: z.number(),
     bayesianProbability: z.number(),
@@ -183,11 +184,14 @@ export const IndicatorsSchema = z.object({
   }),
   ema20: z.number().nullable(),
   ema50: z.number().nullable(),
+  vwap: z.array(z.number().nullable()),
   bb: z.object({
     upper: z.number().nullable(),
     middle: z.number().nullable(),
     lower: z.number().nullable(),
   }),
+  bollingerBands: z.array(z.object({ upper: z.number(), middle: z.number(), lower: z.number() }).nullable()),
+  donchianChannels: z.array(z.object({ upper: z.number(), middle: z.number(), lower: z.number() }).nullable()),
   kama: z.number().nullable(),
   bbw: z.number().nullable(),
   stochRSI: z.number().nullable(),
@@ -210,6 +214,7 @@ export const IndicatorsSchema = z.object({
 
 // Full audit log for a single trade decision
 export const TradeDecisionLogSchema = z.object({
+  id: z.string(),
   timestamp: z.string(),
   asset: z.string(),
   timePeriod: z.custom<TimePeriod>(),
@@ -223,13 +228,13 @@ export const TradeDecisionLogSchema = z.object({
     marketRegime: z.string(),
     regimeConfidence: z.number(),
     microstructure: z.custom<MicrostructureFeatures | null>(),
-    indicators: IndicatorsSchema,
+    indicators: IndicatorsSchema.nullable(),
   }),
   consensus: z.object({
     bayesianProbability: z.number(),
     kellyStake: z.number(),
     activeRobots: z.number(),
-    votes: z.record(BayesianVoteSchema),
+    votes: z.record(z.string(), BayesianVoteSchema),
   }),
   result: z.enum(['pending', 'won', 'lost']),
   pnl: z.number().optional(),

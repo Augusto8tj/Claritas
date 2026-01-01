@@ -17,12 +17,21 @@ import {
 } from '@/components/ui/accordion';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Badge } from '@/components/ui/badge';
-import { CheckCircle, XCircle, Bot, Archive } from 'lucide-react';
+import { CheckCircle, XCircle, Bot, Archive, TrendingUp, TrendingDown, HelpCircle, Brain, Activity, CircleDot, Sigma } from 'lucide-react';
 import type { TradeDecisionLog } from '@/lib/types';
 import { cn } from '@/lib/utils';
+import { Separator } from '../ui/separator';
 
 interface TradingDecisionLogViewerProps {
   logs: TradeDecisionLog[];
+}
+
+const getVoteIcon = (vote: string) => {
+    switch (vote) {
+        case 'RISE': return <TrendingUp className="h-4 w-4 text-green-500" />;
+        case 'FALL': return <TrendingDown className="h-4 w-4 text-red-500" />;
+        default: return <HelpCircle className="h-4 w-4 text-yellow-500" />;
+    }
 }
 
 export const TradingDecisionLogViewer: React.FC<TradingDecisionLogViewerProps> = ({
@@ -50,9 +59,9 @@ export const TradingDecisionLogViewer: React.FC<TradingDecisionLogViewerProps> =
           </div>
         ) : (
           <ScrollArea className="h-[400px] w-full pr-4">
-            <Accordion type="single" collapsible className="w-full">
+            <Accordion type="single" collapsible className="w-full" defaultValue="item-0">
               {reversedLogs.map((log, index) => (
-                <AccordionItem value={`item-${index}`} key={log.timestamp}>
+                <AccordionItem value={`item-${index}`} key={log.id}>
                   <AccordionTrigger>
                     <div className="flex items-center justify-between w-full text-sm">
                       <div className="flex items-center gap-2">
@@ -65,18 +74,49 @@ export const TradingDecisionLogViewer: React.FC<TradingDecisionLogViewerProps> =
                       <Badge variant={log.result === 'won' ? 'default' : log.result === 'lost' ? 'destructive' : 'secondary'}
                         className={cn(log.result === 'won' && 'bg-green-600/20 text-green-800 border-green-600/30')}
                       >
-                         {log.pnl > 0 ? `+${log.pnl.toFixed(2)}` : log.pnl.toFixed(2)} USD
+                         {log.pnl !== undefined && log.pnl !== null ? `${log.pnl > 0 ? '+' : ''}${log.pnl.toFixed(2)} USD` : 'Pendente'}
                       </Badge>
                     </div>
                   </AccordionTrigger>
                   <AccordionContent>
                     <div className="space-y-4 text-xs p-2 bg-muted/50 rounded-md">
+                        <div className='grid grid-cols-2 gap-2 text-center'>
+                             <div className='p-2 bg-background rounded'>
+                                <p className='text-muted-foreground'>Prob. Bayesiana</p>
+                                <p className='font-bold text-base text-primary'>{(log.consensus.bayesianProbability * 100).toFixed(1)}%</p>
+                            </div>
+                             <div className='p-2 bg-background rounded'>
+                                <p className='text-muted-foreground'>Regime de Mercado</p>
+                                <p className='font-bold text-base'>{log.context.marketRegime}</p>
+                            </div>
+                        </div>
                         <p><strong>ID da Decisão:</strong> {log.id}</p>
                         <p><strong>Ativo:</strong> {log.asset} ({log.timePeriod})</p>
-                        <p><strong>Regime de Mercado:</strong> {log.context.marketRegime} (Confiança: {(log.context.regimeConfidence * 100).toFixed(1)}%)</p>
-                        <p><strong>Probabilidade Bayesiana:</strong> {(log.consensus.bayesianProbability * 100).toFixed(1)}%</p>
                         <p><strong>Stake (Kelly):</strong> ${log.consensus.kellyStake.toFixed(2)}</p>
-                        <p className="italic text-muted-foreground">Em breve: Detalhes completos dos votos e indicadores...</p>
+                        <p><strong>Duração:</strong> {log.tradeParams.duration} {log.tradeParams.durationUnit}</p>
+
+                        <Separator />
+                        
+                        <h4 className='font-semibold flex items-center gap-2'><Brain className='h-4 w-4'/>Análise dos Robôs ({log.consensus.activeRobots} ativos):</h4>
+                        <div className="space-y-2">
+                             {Object.entries(log.consensus.votes).filter(([, vote]) => vote.vote !== 'HOLD').map(([robotId, voteData]) => (
+                                <div key={robotId} className="p-2 rounded bg-background/50 border">
+                                    <div className='flex justify-between items-center font-semibold'>
+                                        <span className='flex items-center gap-1.5'><CircleDot className='h-3 w-3'/> {robotId.split('_')[0]}</span>
+                                        <span className={cn(
+                                            voteData.vote === 'RISE' && 'text-green-600',
+                                            voteData.vote === 'FALL' && 'text-red-600'
+                                        )}>{voteData.vote}</span>
+                                    </div>
+                                    <p className='text-muted-foreground italic text-[11px] pl-5'>Motivo: {voteData.reason}</p>
+                                    <div className='grid grid-cols-3 gap-1 pl-5 text-[11px] mt-1'>
+                                        <span>Conf: {(voteData.rawConfidence).toFixed(0)}</span>
+                                        <span>Bayes: {(voteData.bayesianProbability * 100).toFixed(0)}%</span>
+                                        <span>Peso: {voteData.weight.toFixed(2)}x</span>
+                                    </div>
+                                </div>
+                             ))}
+                        </div>
                     </div>
                   </AccordionContent>
                 </AccordionItem>
