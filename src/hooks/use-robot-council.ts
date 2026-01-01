@@ -245,38 +245,6 @@ export function useRobotCouncil(
     }, [user, isAuthLoading]);
 
     // ========================================================================
-    // AMNÉSIA DA ARENA: RESETAR PERFORMANCE QUANDO O ATIVO MUDA
-    // ========================================================================
-    const resetArenaPerformance = useCallback(() => {
-        if (strategyCouncil.length === 0) return;
-
-        console.log(`[Amnesia] Ativo mudou para ${activeSymbol}. A reiniciar Arena Virtual.`);
-        toast({
-            title: "Arena Reiniciada",
-            description: `A performance dos robôs foi zerada para o ativo ${activeSymbol}.`
-        });
-
-        const initialPerformance: RobotPerformance[] = strategyCouncil.map(robot => ({
-            id: robot.id,
-            strategyType: robot.strategyType,
-            strategy: robot,
-            wins: 0,
-            losses: 0,
-            totalProfit: 0,
-            winRate: 0,
-            winRateTrend: 0,
-            winRateRange: 0
-        }));
-        
-        setRobotPerformance(initialPerformance);
-        virtualTradesRef.current = []; // Limpa trades virtuais pendentes
-    }, [strategyCouncil, activeSymbol, toast]);
-
-    useEffect(() => {
-        resetArenaPerformance();
-    }, [activeSymbol, resetArenaPerformance]); // A dependência chave
-
-    // ========================================================================
     // CONSTRUIR O CONSELHO
     // ========================================================================
     const fetchStrategyCouncil = useCallback(async () => {
@@ -290,19 +258,38 @@ export function useRobotCouncil(
         }
 
         setIsFetchingCouncil(true);
-        resetArenaPerformance(); // Garante que a arena está limpa ao convocar
+
+        // Limpa a arena
+        virtualTradesRef.current = [];
+        tradeCounterRef.current = 0;
 
         await new Promise((resolve) => setTimeout(resolve, 500));
-
-        const durationUnit = form.getValues('duration_unit');
         
-        const council = initialCouncilStrategies.map((strategy, index) => ({
+        const council = evolvedStrategies.map((strategy, index) => ({
             ...strategy,
             id: `${strategy.strategyType}_BOT_${index+1}`,
             justification: strategy.justification.replace('{{timePeriod}}', timePeriod),
         })) as RobotStrategy[];
 
         setStrategyCouncil(council);
+
+        // Inicializa o desempenho se não houver dados
+        if (robotPerformance.length === 0) {
+            const initialPerformance: RobotPerformance[] = council.map((robot) => ({
+                id: robot.id,
+                strategyType: robot.strategyType,
+                strategy: robot,
+                wins: 0,
+                losses: 0,
+                totalProfit: 0,
+                winRate: 0,
+                winRateTrend: 0,
+                winRateRange: 0,
+            }));
+            setRobotPerformance(initialPerformance);
+            await saveRobotPerformance(user.uid, initialPerformance);
+        }
+
 
         toast({
             title: 'Conselho de IA Montado!',
@@ -311,7 +298,7 @@ export function useRobotCouncil(
 
         setIsCouncilAutopilotOn(true);
         setIsFetchingCouncil(false);
-    }, [activeSymbol, form, timePeriod, toast, user, resetArenaPerformance]);
+    }, [activeSymbol, timePeriod, toast, user, robotPerformance, evolvedStrategies]);
 
     // ========================================================================
     // DISSOLVER O CONSELHO
@@ -358,127 +345,83 @@ export function useRobotCouncil(
         ): {
             finalStake: number;
             finalDuration: number;
+            finalDurationUnit: 't' | 's' | 'm' | 'h' | 'd';
             status: 'approved' | 'veto' | 'inactive';
             message: string;
             analysis?: string;
         } => {
-            const { duration_unit } = form.getValues();
             let finalStake = baseStake;
             let finalDuration = baseDuration;
+            let finalDurationUnit: 't' | 's' | 'm' | 'h' | 'd' = 't';
 
-            if (!indicators) {
-                 return { status: 'inactive', message: 'Aguardando indicadores.', finalStake, finalDuration };
-            }
+            const defaultReturn = { finalStake, finalDuration, finalDurationUnit, status: 'inactive' as 'inactive', message: 'Aguardando indicadores.' };
+            
+            if (!indicators) return defaultReturn;
 
             // Limites diários
             if (dailyPnl <= -dailyBalance) {
                 setIsCouncilAutopilotOn(false);
-                return {
-                    status: 'veto',
-                    message: 'VETO: Limite de perda diário atingido.',
-                    finalStake,
-                    finalDuration,
-                    analysis: `Prejuízo de $${Math.abs(dailyPnl).toFixed(2)} atingiu o limite de $${dailyBalance}.`
-                };
+                return { ...defaultReturn, status: 'veto', message: 'VETO: Limite de perda diário atingido.', analysis: `Prejuízo de $${Math.abs(dailyPnl).toFixed(2)} atingiu o limite de $${dailyBalance}.` };
             }
             if (dailyPnl >= dailyTarget) {
                 setIsCouncilAutopilotOn(false);
-                return {
-                    status: 'veto',
-                    message: 'VETO: Meta de lucro diária atingida.',
-                    finalStake,
-                    finalDuration,
-                    analysis: `Lucro de $${dailyPnl.toFixed(2)} atingiu a meta de $${dailyTarget}.`
-                };
+                return { ...defaultReturn, status: 'veto', message: 'VETO: Meta de lucro diária atingida.', analysis: `Lucro de $${dailyPnl.toFixed(2)} atingiu a meta de $${dailyTarget}.` };
             }
             
             // ================== CONSENSO DINÂMICO (RELATIVO) ==================
-            let effectiveThreshold;
+            let effectiveThreshold = consensusThreshold;
             if (isDynamicConsensusOn) {
-                const totalPossibleConsensus = Object.values(currentVotes)
-                    .filter(v => v.vote !== 'HOLD')
-                    .reduce((sum, v) => sum + (v.confidence * v.weight), 0);
-
+                const totalPossibleConsensus = Object.values(currentVotes).filter(v => v.vote !== 'HOLD').reduce((sum, v) => sum + (v.confidence * v.weight), 0);
                 let requiredPercentage = 0.60;
-                let analysisParts: string[] = [];
-
-                if (indicators.adx && indicators.adx < 20) {
-                     requiredPercentage += 0.15;
-                     analysisParts.push("mercado sem tendência");
-                }
-                if (indicators.bbw && indicators.bbw > 0.08) {
-                    requiredPercentage += 0.20;
-                    analysisParts.push("alta volatilidade");
-                }
-                
+                if (indicators.adx && indicators.adx < 20) requiredPercentage += 0.15;
+                if (indicators.bbw && indicators.bbw > 0.08) requiredPercentage += 0.20;
                 requiredPercentage = Math.min(requiredPercentage, 0.85);
                 effectiveThreshold = totalPossibleConsensus * requiredPercentage;
                 setConsensusThreshold(Math.round(effectiveThreshold));
-
-            } else {
-                effectiveThreshold = consensusThreshold;
             }
-
 
             // Verifica consenso
             const consensusReached = Math.max(riseSum, fallSum) >= effectiveThreshold;
             if (!consensusReached) {
-                return {
-                    status: 'inactive',
-                    message: 'Aguardando consenso tático.',
-                    finalStake,
-                    finalDuration,
-                };
+                return { ...defaultReturn, status: 'inactive', message: 'Aguardando consenso tático.' };
             }
 
             // AJUSTE DE RISCO PARA STAKE E DURATION
-            let analysis = 'Risco padrão.';
-            let riskFactor = 1.0;
-            let durationAdjustment = 0;
-            let analysisParts: string[] = [];
+            const direction = riseSum > fallSum ? 'RISE' : 'FALL';
+            const votingRobots = Object.values(currentVotes).filter(v => v.vote === direction);
+            const totalConfidence = votingRobots.reduce((sum, v) => sum + v.confidence, 0);
 
-            if (isDynamicRiskOn) { // NOVO: Só ajusta se a opção estiver ligada
-                if (indicators.adx && indicators.adx < 20) {
-                    riskFactor *= 0.75;
-                    analysisParts.push("sem tendência (ADX baixo)");
-                }
-                if (indicators.bbw && indicators.bbw > 0.1) {
-                    riskFactor *= 0.8;
-                    durationAdjustment += 2;
-                    analysisParts.push("alta volatilidade (BBW alto)");
-                }
-                const lastPrice = getPrice(priceTicks[priceTicks.length - 1]);
-                if (indicators.atr && lastPrice && (indicators.atr / lastPrice) > 0.00015) {
-                    riskFactor *= 0.8;
-                    durationAdjustment += 1;
-                    analysisParts.push("ATR elevado");
-                }
-                
-                finalStake = baseStake * riskFactor;
-                finalDuration = baseDuration + durationAdjustment;
+            if (isDynamicRiskOn && totalConfidence > 0) {
+                 const weightedAvgDuration = votingRobots.reduce((sum, v) => sum + durationToSeconds(v.optimalDuration, v.optimalDurationUnit) * v.confidence, 0) / totalConfidence;
+                 const weightedAvgStake = votingRobots.reduce((sum, v) => sum + v.suggestedStake * v.confidence, 0) / totalConfidence;
 
-                if(analysisParts.length > 0) {
-                    analysis = `Risco e/ou duração ajustados: ${analysisParts.join(', ')}.`;
-                }
+                 const atr = indicators.atr || 0;
+                 const bbw = indicators.bbw || 0;
+                 const volatilityFactor = (atr / (getPrice(priceTicks[priceTicks.length - 1]) || 1) + bbw) / 2;
+
+                 finalStake = weightedAvgStake * Math.max(0.5, 1 - volatilityFactor * 5);
+
+                 if (weightedAvgDuration <= 10 * 2) { finalDuration = Math.max(1, Math.round(weightedAvgDuration / 2)); finalDurationUnit = 't'; }
+                 else if (weightedAvgDuration < 60) { finalDuration = Math.round(weightedAvgDuration); finalDurationUnit = 's'; }
+                 else { finalDuration = Math.round(weightedAvgDuration / 60); finalDurationUnit = 'm'; }
             } else {
-                 analysis = 'Gestão de risco dinâmica desativada.';
+                 finalDurationUnit = form.getValues('duration_unit');
             }
 
             // Aplicar restrições finais
             finalStake = Math.max(0.35, finalStake);
-            if (duration_unit === 't') {
-                finalDuration = Math.round(Math.max(1, Math.min(10, finalDuration)));
-            }
+            finalDuration = Math.max(1, Math.min(10, finalDuration))
 
             return {
                 status: 'approved',
                 message: 'Aprovado. Risco avaliado.',
-                analysis,
+                analysis: isDynamicRiskOn ? `Risco ajustado pela volatilidade.` : 'Risco padrão.',
                 finalStake,
                 finalDuration,
+                finalDurationUnit
             };
         },
-        [form, dailyBalance, dailyTarget, priceTicks, isDynamicConsensusOn, isDynamicRiskOn, consensusThreshold, baseStake, baseDuration]
+        [dailyBalance, dailyTarget, priceTicks, isDynamicConsensusOn, isDynamicRiskOn, consensusThreshold, baseStake, baseDuration, form]
     );
 
     // ========================================================================
@@ -575,8 +518,7 @@ export function useRobotCouncil(
         let riseConfidenceSum = 0;
         let fallConfidenceSum = 0;
         const newVotes: CouncilVotes = {};
-        const { duration: formDuration } = form.getValues();
-
+        
         strategyCouncil.forEach((robot) => {
             const voteData = calculateRobotVote(robot, currentIndicators, tickCandles);
 
@@ -654,40 +596,18 @@ export function useRobotCouncil(
         if (supervisionDecision.status === 'approved') {
             councilExecutionRef.current.isExecuting = true;
             const direction = riseConfidenceSum > fallConfidenceSum ? 'RISE' : 'FALL';
+            const { finalStake, finalDuration, finalDurationUnit } = supervisionDecision;
             
-            const votingRobots = Object.values(newVotes).filter(v => v.vote === direction);
-            const totalConfidence = votingRobots.reduce((sum, v) => sum + v.confidence, 0);
-
-            const weightedAvgDuration = totalConfidence > 0 
-                ? votingRobots.reduce((sum, v) => sum + durationToSeconds(v.optimalDuration, v.optimalDurationUnit) * v.confidence, 0) / totalConfidence
-                : durationToSeconds(baseDuration, form.getValues('duration_unit'));
-
-            const weightedAvgStake = totalConfidence > 0 
-                ? votingRobots.reduce((sum, v) => sum + v.suggestedStake * v.confidence, 0) / totalConfidence
-                : baseStake;
-
-            const { duration: finalDuration, unit: finalDurationUnit } = (() => {
-                if (weightedAvgDuration <= 10 * 2 && form.getValues('duration_unit') === 't') return { duration: Math.max(1, Math.round(weightedAvgDuration / 2)), unit: 't'};
-                if (weightedAvgDuration < 60) return { duration: Math.round(weightedAvgDuration), unit: 's'};
-                return { duration: Math.round(weightedAvgDuration / 60), unit: 'm'};
-            })();
-            
-            const atr = currentIndicators.atr || 0;
-            const bbw = currentIndicators.bbw || 0;
-            const volatilityFactor = (atr / getPrice(currentTick)! + bbw) / 2;
-            const adjustedStake = weightedAvgStake * Math.max(0.5, 1 - volatilityFactor * 5);
-
-
             toast({
                 title: 'Conselho Executou Ordem!',
-                description: `Direção: ${direction}, Stake: $${adjustedStake.toFixed(
+                description: `Direção: ${direction}, Stake: $${finalStake.toFixed(
                     2
                 )}, Duração: ${finalDuration} ${finalDurationUnit}.`,
             });
 
             executeTrade(
                 direction === 'RISE' ? 'CALL' : 'PUT',
-                adjustedStake,
+                finalStake,
                 activeSymbol,
                 direction.toLowerCase() as 'rise' | 'fall',
                 finalDuration,
@@ -713,9 +633,7 @@ export function useRobotCouncil(
         timePeriod,
         committeeOfSpecialists,
         user,
-        evolveTrigger,
-        baseDuration,
-        baseStake
+        evolveTrigger
     ]);
 
     return {

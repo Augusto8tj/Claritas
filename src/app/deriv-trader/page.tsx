@@ -14,7 +14,7 @@ import { useDerivApi } from "@/hooks/use-deriv-api";
 import { Skeleton } from "@/components/ui/skeleton";
 import { OperationsLog } from "@/components/deriv-trader/operations-log";
 import { AIAnalysisInterface } from "@/components/deriv-trader/ai-analysis-interface";
-import { riseFallSchema, type RiseFallFormValues } from "@/components/deriv-trader/deriv-trader-interface.types";
+import { riseFallSchema, type RiseFallFormValues } from "@/lib/types";
 import { CouncilAutopilotInterface } from "@/components/deriv-trader/council-autopilot-interface";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { useTradeAnalysis } from "@/hooks/use-trade-analysis";
@@ -28,7 +28,7 @@ import { HallOfFame } from "@/components/deriv-trader/hall-of-fame";
 import { EvolutionLab } from "@/components/deriv-trader/evolution-lab";
 
 
-function DerivTraderCore({ activeSymbol, robotCouncil }: { activeSymbol: string | null, robotCouncil: any }) {
+function DerivTraderCore({ activeSymbol, robotCouncil }: { activeSymbol: string | null, robotCouncil: ReturnType<typeof useRobotCouncil> }) {
   const { 
     operationsLog,
     chartData,
