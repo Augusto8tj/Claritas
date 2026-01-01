@@ -243,12 +243,13 @@ const calculateTechnicalVote = (
 
 export function useRobotCouncilV2(
   activeSymbol: string | null,
-  priceTicks: TickData[]
+  priceTicks: TickData[],
+  dataVersion: number,
 ) {
   // ────────────────────────────────────────────────────────────────
   // DEPENDENCIES
   // ────────────────────────────────────────────────────────────────
-  const { operationsLog, executeTrade, timePeriod, isConnected, durationLimits, sellContract, dataVersion } = useDerivApi();
+  const { operationsLog, executeTrade, timePeriod, isConnected, durationLimits, sellContract } = useDerivApi();
   const { user, loading: isAuthLoading } = useAuth();
   const { toast } = useToast();
   const { evolvedStrategies, evolveTrigger, evolutionHistory } = useStrategyEvolution(initialCouncilStrategies);
@@ -864,6 +865,7 @@ export function useRobotCouncilV2(
       avgWinRate,
       avgWinAmount,
       avgLossAmount,
+      volAdjustment
     );
 
     // Validação de segurança
@@ -1018,7 +1020,7 @@ export function useRobotCouncilV2(
     ).finally(() => {
       // Cooldown progressivo baseado em número de trades recentes
       const recentTrades = operationsLog.filter(
-        (op: any) => op.initiator === 'Conselho' &&
+        op => op.initiator === 'Conselho' &&
         Date.now() - new Date(op.timestamp).getTime() < 300000 // Últimos 5 minutos
       ).length;
 

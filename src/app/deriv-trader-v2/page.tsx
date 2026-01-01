@@ -3,7 +3,7 @@
 import React from "react";
 import { useForm, FormProvider } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import DerivTraderInterface from "@/components/deriv-trader/deriv-trader-interface";
+import DerivTraderInterfaceV2 from "@/components/deriv-trader/deriv-trader-interface-v2";
 import { AssetSelector } from "@/components/deriv-trader/asset-selector";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { MarketChart } from "@/components/deriv-trader/market-chart";
@@ -109,7 +109,7 @@ const MainDashboard = ({ robotCouncil }: { robotCouncil: ReturnType<typeof useRo
                 </CardContent>
             </Card>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <DerivTraderInterface symbol={activeSymbol || ""} />
+                <DerivTraderInterfaceV2 symbol={activeSymbol || ""} />
                 <AITradeSuggestion 
                     councilDecision={robotCouncil.consensusDecision.direction}
                     consensusSum={{rise: robotCouncil.consensusDecision.probability, fall: 1 - robotCouncil.consensusDecision.probability}} 
@@ -155,8 +155,8 @@ const SidePanel = ({ robotCouncil }: { robotCouncil: ReturnType<typeof useRobotC
 
 // --- Componente Principal da Página ---
 const DerivTraderV2Core = () => {
-    const { activeSymbol, priceTicks } = useDerivApi();
-    const robotCouncil = useRobotCouncilV2(activeSymbol, priceTicks);
+    const { activeSymbol, priceTicks, dataVersion } = useDerivApi();
+    const robotCouncil = useRobotCouncilV2(activeSymbol, priceTicks, dataVersion);
 
     return (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mt-6">
