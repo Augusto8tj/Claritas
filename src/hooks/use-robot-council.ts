@@ -100,7 +100,7 @@ const calculateRobotVote = (
     if (robot.strategyType === 'STOCHASTIC' && isValid(indicators.stoch)) {
         if (indicators.stoch! <= robot.weakBuyThreshold!) { vote = 'RISE'; confidence = robot.weakConfidence; }
         if (indicators.stoch! <= robot.strongBuyThreshold!) { vote = 'RISE'; confidence = robot.strongConfidence; }
-        if (indicators.stoch! >= robot.strongSellThreshold!) { vote = 'FALL'; confidence = robot.weakConfidence; }
+        if (indicators.stoch! >= robot.weakSellThreshold!) { vote = 'FALL'; confidence = robot.weakConfidence; }
         if (indicators.stoch! >= robot.strongSellThreshold!) { vote = 'FALL'; confidence = robot.strongConfidence; }
     }
 
@@ -516,7 +516,11 @@ export function useRobotCouncil(
         // ====================================================================
         // GESTOR DE POSIÇÕES ATIVAS (STOP LOSS / TAKE PROFIT)
         // ====================================================================
-        const activeCouncilContracts = operationsLog.filter(op => op.status === 'pending' && op.initiator === 'Conselho');
+        const activeCouncilContracts = operationsLog.filter(op => 
+            op.status === 'pending' && 
+            op.initiator === 'Conselho' &&
+            op.durationUnit !== 't' // Ignora contratos de ticks
+        );
         
         activeCouncilContracts.forEach(contract => {
             if(councilExecutionRef.current.sellingContracts.has(contract.id)) return;
