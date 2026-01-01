@@ -135,24 +135,22 @@ export function OperationsLog({ operations }: OperationsLogProps) {
                         </p>
                         <div className="text-xs text-muted-foreground pl-9 space-y-1">
                             <p>Entrada: ${op.stake.toFixed(2)} | Duração: {op.duration} {durationUnitLabels[op.durationUnit] || op.durationUnit}</p>
-                             <div className="flex items-center gap-4">
-                                <div className="flex items-center gap-1.5">
-                                    <Clock className="h-3 w-3" />
-                                    <span>{formatTime(op.timestamp)}</span>
-                                    {op.exitTimestamp && (
-                                        <span className="flex items-center gap-1.5"><MoveRight className="h-3 w-3" /> {formatTime(op.exitTimestamp)}</span>
-                                    )}
-                                </div>
-                                {op.entryPrice && (
-                                    <div className="flex items-center gap-1.5 font-mono">
-                                        <DollarSign className="h-3 w-3"/>
-                                        <span>{op.entryPrice.toFixed(4)}</span>
-                                        {op.exitPrice && (
-                                           <span className="flex items-center gap-1.5"><MoveRight className="h-3 w-3" /> {op.exitPrice.toFixed(4)}</span>
-                                        )}
-                                    </div>
+                             <div className="flex items-center gap-1.5">
+                                <Clock className="h-3 w-3" />
+                                <span>{formatTime(op.timestamp)}</span>
+                                {op.exitTimestamp && (
+                                    <span className="flex items-center gap-1.5"><MoveRight className="h-3 w-3" /> {formatTime(op.exitTimestamp)}</span>
                                 )}
                             </div>
+                            {op.entryPrice && (
+                                <div className="flex items-center gap-1.5 font-mono">
+                                    <DollarSign className="h-3 w-3"/>
+                                    <span>{op.entryPrice.toFixed(4)}</span>
+                                    {op.exitPrice && (
+                                       <span className="flex items-center gap-1.5"><MoveRight className="h-3 w-3" /> {op.exitPrice.toFixed(4)}</span>
+                                    )}
+                                </div>
+                            )}
                         </div>
                     </div>
                     <div
