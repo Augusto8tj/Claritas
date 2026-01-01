@@ -1,7 +1,7 @@
 // /src/components/deriv-trader/deriv-trader-interface-v2.tsx
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { useFormContext, useWatch } from "react-hook-form";
 import {
   Card,
@@ -63,12 +63,27 @@ function DerivTraderInterfaceV2({ symbol }: DerivTraderInterfaceProps) {
     control: form.control,
     name: 'duration_unit',
   });
+  
+  const allowEquals = useWatch({
+    control: form.control,
+    name: 'allowEquals',
+  });
+
+  const stake = useWatch({
+    control: form.control,
+    name: 'stake',
+  });
+
+  const payout = useMemo(() => {
+    if (!stake) return "0.00";
+    return (stake * 1.942).toFixed(2);
+  }, [stake]);
+
   const lastUnitRef = useRef<DurationUnit | null>(null);
 
   useEffect(() => {
     if (!durationLimits || !durationUnit) return;
   
-    // Evita re-execução para o mesmo valor de unidade
     if (lastUnitRef.current === durationUnit) return;
     lastUnitRef.current = durationUnit;
   
@@ -96,9 +111,21 @@ function DerivTraderInterfaceV2({ symbol }: DerivTraderInterfaceProps) {
     let newDuration = currentDuration + amount;
     if (newDuration < min) newDuration = min;
     if (newDuration > max) newDuration = max;
-    form.setValue('duration', newDuration);
-    form.trigger('duration');
+    form.setValue('duration', newDuration, {
+      shouldDirty: true,
+      shouldTouch: false,
+      shouldValidate: true,
+    });
   };
+
+  const handleStakeChange = (amount: number) => {
+    const currentStake = form.getValues('stake');
+    form.setValue('stake', Math.max(0.35, currentStake + amount), {
+        shouldDirty: true,
+        shouldTouch: false,
+        shouldValidate: false,
+    });
+  }
 
   const handleTrade = async (tradeDirection: "rise" | "fall") => {
     const isValid = await form.trigger();
@@ -157,8 +184,7 @@ function DerivTraderInterfaceV2({ symbol }: DerivTraderInterfaceProps) {
       });
     }
   };
-
-  const payout = (form.watch('stake') * 1.942).toFixed(2);
+  
   const payoutPercentage = "94.20%";
   const isButtonDisabled = !!loading || !isConnected;
 
@@ -249,7 +275,10 @@ function DerivTraderInterfaceV2({ symbol }: DerivTraderInterfaceProps) {
                                                     <Input 
                                                         type="number"
                                                         {...field}
-                                                        onChange={e => field.onChange(parseInt(e.target.value))}
+                                                        onChange={e => {
+                                                          const value = Number(e.target.value);
+                                                          field.onChange(isNaN(value) ? 0 : value);
+                                                        }}
                                                         className="font-semibold text-lg text-center border-y border-x-0 rounded-none focus-visible:ring-0 h-10"
                                                     />
                                                 </FormControl>
@@ -278,14 +307,17 @@ function DerivTraderInterfaceV2({ symbol }: DerivTraderInterfaceProps) {
                                 render={({ field }) => (
                                 <FormItem>
                                     <div className="flex items-center justify-center gap-2">
-                                        <Button type="button" variant="outline" size="icon" onClick={() => form.setValue('stake', Math.max(0.35, field.value - 1))}><Minus className="h-4 w-4"/></Button>
+                                        <Button type="button" variant="outline" size="icon" onClick={() => handleStakeChange(-1)}><Minus className="h-4 w-4"/></Button>
                                         <div className="relative flex-1">
                                             <FormControl>
-                                                <Input type="number" {...field} className="text-center font-bold text-lg pr-12"/>
+                                                <Input type="number" {...field} onChange={e => {
+                                                  const value = Number(e.target.value);
+                                                  field.onChange(isNaN(value) ? 0 : value);
+                                                }} className="text-center font-bold text-lg pr-12"/>
                                             </FormControl>
                                             <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">USD</span>
                                         </div>
-                                        <Button type="button" variant="outline" size="icon" onClick={() => form.setValue('stake', field.value + 1)}><Plus className="h-4 w-4"/></Button>
+                                        <Button type="button" variant="outline" size="icon" onClick={() => handleStakeChange(1)}><Plus className="h-4 w-4"/></Button>
                                     </div>
                                     <FormMessage />
                                 </FormItem>
@@ -297,21 +329,27 @@ function DerivTraderInterfaceV2({ symbol }: DerivTraderInterfaceProps) {
                     <div className="flex items-center justify-between pt-2">
                         <div className="flex flex-row items-center space-x-2 space-y-0">
                             <Checkbox
-                                checked={form.getValues('allowEquals')}
-                                onCheckedChange={(checked) => form.setValue('allowEquals', !!checked)}
+                                checked={!!allowEquals}
+                                onCheckedChange={(checked) =>
+                                  form.setValue('allowEquals', !!checked, {
+                                    shouldDirty: true,
+                                    shouldTouch: false,
+                                    shouldValidate: false,
+                                  })
+                                }
                                 disabled={isButtonDisabled}
-                                id="allowEquals"
+                                id="allowEqualsV2"
                             />
-                            <Label htmlFor="allowEquals" className="text-sm font-normal text-muted-foreground cursor-pointer">
+                            <Label htmlFor="allowEqualsV2" className="text-sm font-normal text-muted-foreground cursor-pointer">
                                 Permitir "Equals"
                             </Label>
                             <Info className="h-3 w-3 text-muted-foreground" />
                         </div>
                         <div className="flex items-center space-x-2">
-                            <Label htmlFor="inversion-mode" className="text-sm font-normal text-muted-foreground cursor-pointer">
+                            <Label htmlFor="inversion-modeV2" className="text-sm font-normal text-muted-foreground cursor-pointer">
                                 Inverter Direção
                             </Label>
-                            <Switch id="inversion-mode" checked={isInversionModeOn} onCheckedChange={setIsInversionModeOn} />
+                            <Switch id="inversion-modeV2" checked={isInversionModeOn} onCheckedChange={setIsInversionModeOn} />
                         </div>
                     </div>
                 </form>
