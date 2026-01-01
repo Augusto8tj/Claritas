@@ -17,7 +17,7 @@ export const initialCouncilStrategies: Omit<RobotStrategy, 'id'>[] = [
     weakBuyThreshold: 35,
     strongSellThreshold: 75,
     weakSellThreshold: 65,
-    optimalDuration: 10, // 5 ticks -> 10s
+    optimalDuration: 45, // 45 segundos
     optimalDurationUnit: 's',
     suggestedStake: 1.5,
     chandelierPeriod: 15,
@@ -33,7 +33,7 @@ export const initialCouncilStrategies: Omit<RobotStrategy, 'id'>[] = [
     weakBuyThreshold: 30,
     strongSellThreshold: 80,
     weakSellThreshold: 70,
-    optimalDuration: 10, // 5 ticks -> 10s
+    optimalDuration: 45, // 45 segundos
     optimalDurationUnit: 's',
     suggestedStake: 1.5,
     chandelierPeriod: 15,
@@ -47,7 +47,7 @@ export const initialCouncilStrategies: Omit<RobotStrategy, 'id'>[] = [
     fastPeriod: 12,
     slowPeriod: 26,
     signalPeriod: 9,
-    optimalDuration: 120, // 2 minutes
+    optimalDuration: 120, // 2 minutos
     optimalDurationUnit: 's',
     suggestedStake: 1.0,
     chandelierPeriod: 25,
@@ -60,7 +60,7 @@ export const initialCouncilStrategies: Omit<RobotStrategy, 'id'>[] = [
     weakConfidence: 60,
     period: 14,
     trendStrengthThreshold: 25,
-    optimalDuration: 180, // 3 minutes
+    optimalDuration: 120, // 2 minutos
     optimalDurationUnit: 's',
     suggestedStake: 1.2,
     chandelierPeriod: 30,
@@ -71,7 +71,7 @@ export const initialCouncilStrategies: Omit<RobotStrategy, 'id'>[] = [
     justification: "Mede o momentum do mercado em {{timePeriod}}.",
     strongConfidence: 75,
     weakConfidence: 50,
-    optimalDuration: 60, // 1 minute
+    optimalDuration: 60, // 1 minuto
     optimalDurationUnit: 's',
     suggestedStake: 0.8,
     chandelierPeriod: 20,
@@ -83,7 +83,7 @@ export const initialCouncilStrategies: Omit<RobotStrategy, 'id'>[] = [
     strongConfidence: 70,
     weakConfidence: 45,
     period: 15,
-    optimalDuration: 120, // 2 minutes
+    optimalDuration: 120, // 2 minutos
     optimalDurationUnit: 's',
     suggestedStake: 0.7,
     chandelierPeriod: 25,
@@ -95,7 +95,7 @@ export const initialCouncilStrategies: Omit<RobotStrategy, 'id'>[] = [
     strongConfidence: 70,
     weakConfidence: 45,
     period: 12,
-    optimalDuration: 45, // 45 seconds
+    optimalDuration: 45, // 45 segundos
     optimalDurationUnit: 's',
     suggestedStake: 0.9,
     chandelierPeriod: 20,
@@ -111,7 +111,7 @@ export const initialCouncilStrategies: Omit<RobotStrategy, 'id'>[] = [
     weakBuyThreshold: 50,
     strongSellThreshold: 60,
     weakSellThreshold: 50,
-    optimalDuration: 60, // 1 minute
+    optimalDuration: 60, // 1 minuto
     optimalDurationUnit: 's',
     suggestedStake: 1.0,
     chandelierPeriod: 22,
@@ -124,7 +124,7 @@ export const initialCouncilStrategies: Omit<RobotStrategy, 'id'>[] = [
     weakConfidence: 60,
     acceleration: 0.02,
     maxAcceleration: 0.2,
-    optimalDuration: 20, // 10 ticks -> 20s
+    optimalDuration: 90, // 90 segundos
     optimalDurationUnit: 's',
     suggestedStake: 1.3,
     chandelierPeriod: 18,
@@ -138,7 +138,7 @@ export const initialCouncilStrategies: Omit<RobotStrategy, 'id'>[] = [
     weakConfidence: 65,
     period: 20,
     stdDev: 2.0,
-    optimalDuration: 14, // 7 ticks -> 14s
+    optimalDuration: 60, // 1 minuto
     optimalDurationUnit: 's',
     suggestedStake: 1.4,
     chandelierPeriod: 20,
@@ -149,7 +149,7 @@ export const initialCouncilStrategies: Omit<RobotStrategy, 'id'>[] = [
     justification: "Análise completa de tendência, suporte e resistência em {{timePeriod}}.",
     strongConfidence: 88,
     weakConfidence: 60,
-    optimalDuration: 300, // 5 minutes
+    optimalDuration: 120, // 2 minutos
     optimalDurationUnit: 's',
     suggestedStake: 1.5,
     chandelierPeriod: 40,
@@ -163,7 +163,7 @@ export const initialCouncilStrategies: Omit<RobotStrategy, 'id'>[] = [
     period: 10,
     fastEnd: 2,
     slowEnd: 30,
-    optimalDuration: 180, // 3 minutes
+    optimalDuration: 120, // 2 minutos
     optimalDurationUnit: 's',
     suggestedStake: 1.1,
     chandelierPeriod: 30,
@@ -175,7 +175,7 @@ export const initialCouncilStrategies: Omit<RobotStrategy, 'id'>[] = [
     strongConfidence: 80,
     weakConfidence: 55,
     period: 20,
-    optimalDuration: 60, // 1 minute
+    optimalDuration: 60, // 1 minuto
     optimalDurationUnit: 's',
     suggestedStake: 1.0,
     chandelierPeriod: 22,
@@ -188,7 +188,7 @@ export const initialCouncilStrategies: Omit<RobotStrategy, 'id'>[] = [
     weakConfidence: 60,
     period: 22,
     multiplier: 3,
-    optimalDuration: 120, // 2 minutes
+    optimalDuration: 120, // 2 minutos
     optimalDurationUnit: 's',
     suggestedStake: 1.2,
     chandelierPeriod: 22,
@@ -201,7 +201,7 @@ export const initialCouncilStrategies: Omit<RobotStrategy, 'id'>[] = [
     strongConfidence: 75,
     weakConfidence: 50,
     profileBars: 100,
-    optimalDuration: 300, // 5 minutes
+    optimalDuration: 120, // 2 minutos
     optimalDurationUnit: 's',
     suggestedStake: 0.9,
     chandelierPeriod: 35,
@@ -212,7 +212,7 @@ export const initialCouncilStrategies: Omit<RobotStrategy, 'id'>[] = [
     justification: "Usa o preço médio ponderado por volume como referência de valor em {{timePeriod}}.",
     strongConfidence: 85,
     weakConfidence: 60,
-    optimalDuration: 60, // 1 minute
+    optimalDuration: 60, // 1 minuto
     optimalDurationUnit: 's',
     suggestedStake: 1.3,
     chandelierPeriod: 25,
@@ -228,7 +228,7 @@ export const initialCouncilStrategies: Omit<RobotStrategy, 'id'>[] = [
     weakBuyThreshold: 30,
     strongSellThreshold: 80,
     weakSellThreshold: 70,
-    optimalDuration: 10, // 5 ticks -> 10s
+    optimalDuration: 45, // 45 segundos
     optimalDurationUnit: 's',
     suggestedStake: 1.2,
     chandelierPeriod: 15,
@@ -239,7 +239,7 @@ export const initialCouncilStrategies: Omit<RobotStrategy, 'id'>[] = [
     justification: "Segue o fluxo de volume acumulado para confirmar tendências em {{timePeriod}}.",
     strongConfidence: 75,
     weakConfidence: 50,
-    optimalDuration: 120, // 2 minutes
+    optimalDuration: 120, // 2 minutos
     optimalDurationUnit: 's',
     suggestedStake: 0.8,
     chandelierPeriod: 28,
@@ -253,7 +253,7 @@ export const initialCouncilStrategies: Omit<RobotStrategy, 'id'>[] = [
     weakConfidence: 55,
     period: 20,
     zScoreThreshold: 2.0,
-    optimalDuration: 14, // 7 ticks -> 14s
+    optimalDuration: 30, // 30 segundos
     optimalDurationUnit: 's',
     suggestedStake: 1.1,
     chandelierPeriod: 20,
@@ -269,7 +269,7 @@ export const initialCouncilStrategies: Omit<RobotStrategy, 'id'>[] = [
     weakBuyThreshold: 0.30,
     strongSellThreshold: 0.80,
     weakSellThreshold: 0.70,
-    optimalDuration: 10, // 5 ticks -> 10s
+    optimalDuration: 30, // 30 segundos
     optimalDurationUnit: 's',
     suggestedStake: 1.4,
     chandelierPeriod: 15,
@@ -282,7 +282,7 @@ export const initialCouncilStrategies: Omit<RobotStrategy, 'id'>[] = [
     strongConfidence: 95,
     weakConfidence: 75,
     pattern: "hammer",
-    optimalDuration: 10, // 5 ticks -> 10s
+    optimalDuration: 15, // 15 segundos
     optimalDurationUnit: 's',
     suggestedStake: 1.8,
     chandelierPeriod: 12,

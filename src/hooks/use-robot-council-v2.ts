@@ -893,18 +893,21 @@ export function useRobotCouncilV2(
     // ══════════════════════════════════════════════════════════════
     // ETAPA 10: DURAÇÃO ÓTIMA
     // ══════════════════════════════════════════════════════════════
-    const avgDurationSeconds = totalWeight > 0 ? weightedDurationSum / totalWeight : 300;
+    const avgDurationSeconds = totalWeight > 0 ? weightedDurationSum / totalWeight : 60; // Default de 1 minuto
 
-    let finalDuration = Math.round(avgDurationSeconds / 60);
-    let finalDurationUnit: DurationUnit = 'm';
+    let finalDuration = Math.round(avgDurationSeconds);
+    let finalDurationUnit: DurationUnit = 's';
 
     if (durationLimits) {
-      if (avgDurationSeconds <= durationLimits.t.max * 2) {
+      if (avgDurationSeconds <= durationLimits.t.max * 2 && durationLimits.t.min > 0) {
         finalDurationUnit = 't';
         finalDuration = Math.round(avgDurationSeconds / 2);
-      } else if (avgDurationSeconds < 60) {
+      } else if (avgDurationSeconds < 60 && durationLimits.s.min > 0) {
         finalDurationUnit = 's';
         finalDuration = Math.round(avgDurationSeconds);
+      } else if (durationLimits.m.min > 0) {
+        finalDurationUnit = 'm';
+        finalDuration = Math.round(avgDurationSeconds / 60);
       }
 
       const { min, max } = durationLimits[finalDurationUnit];
