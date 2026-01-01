@@ -304,7 +304,7 @@ export function useRobotCouncilV2(
   const [dailyBalance, setDailyBalance] = useState(100);
   const [dailyTarget, setDailyTarget] = useState(50);
   const [consensusSensitivity, setConsensusSensitivity] = useState(60); 
-  const [confidenceFactor, setConfidenceFactor] = useState(1.0); 
+  const [confidenceFactor, setConfidenceFactor] = useState(100); 
   const [durationRange, setDurationRange] = useState<[number, number]>([15, 180]);
   const [takeProfitThreshold, setTakeProfitThreshold] = useState(10);
   const [stopLossThreshold, setStopLossThreshold] = useState(20);
@@ -332,9 +332,10 @@ export function useRobotCouncilV2(
     maxDrawdown: 0,
     dailyPnL: 0
   });
-
+  
+  const [councilConfidence, setCouncilConfidence] = useState(0);
   const [dashboardData, setDashboardData] = useState<DashboardData | null>(null);
-  const [effectiveThreshold, setEffectiveThreshold] = useState(0); // NOVO ESTADO
+  const [effectiveThreshold, setEffectiveThreshold] = useState(0); 
 
   const councilExecutionRef = useRef<{ 
     isExecuting: boolean;
@@ -495,8 +496,7 @@ export function useRobotCouncilV2(
     const currentIndicators = calculateAllIndicators(
       tickCandles, 
       strategyCouncil, 
-      timePeriod,
-      contractDurationForIndicators
+      timePeriod
     );
     setIndicators(currentIndicators);
 
@@ -664,8 +664,6 @@ export function useRobotCouncilV2(
 
     strategyCouncil.forEach(robot => {
       const perf = performanceMap.get(robot.id);
-
-      // Voto técnico puro, agora sem clamping de duração
       const technicalVote = calculateTechnicalVote(robot, currentIndicators, tickCandles);
       const durationInSeconds = durationToSeconds(technicalVote.optimalDuration, technicalVote.optimalDurationUnit);
       
@@ -719,13 +717,14 @@ export function useRobotCouncilV2(
       };
       newVotes[robot.id] = finalVote;
 
-      const voteWeight = calibratedConf * weight * confidenceFactor;
+      const voteWeight = calibratedConf * weight * (confidenceFactor / 100);
       if (technicalVote.vote === 'RISE') riseSum += voteWeight;
       if (technicalVote.vote === 'FALL') fallSum += voteWeight;
       weightedStakeSum += finalVote.suggestedStake * voteWeight;
       weightedDurationSum += durationInSeconds * voteWeight;
       totalWeight += voteWeight;
     });
+    setCouncilConfidence(totalWeight);
 
     // ══════════════════════════════════════════════════════════════
     // ETAPA 7: CONSENSO BAYESIANO
@@ -762,7 +761,7 @@ export function useRobotCouncilV2(
     } else {
         calculatedEffectiveThreshold = consensusSensitivity; 
     }
-    setEffectiveThreshold(calculatedEffectiveThreshold); // Atualiza o estado
+    setEffectiveThreshold(calculatedEffectiveThreshold); 
     
     const consensusReached = Math.max(riseSum, fallSum) >= calculatedEffectiveThreshold;
 
@@ -879,6 +878,7 @@ export function useRobotCouncilV2(
     setStopLossThreshold, isDynamicConsensusOn, setIsDynamicConsensusOn,
     isDynamicRiskOn, setIsDynamicRiskOn, isMeritocracyOn, setIsMeritocracyOn,
     dashboardData,
-    effectiveThreshold, // Exporta o novo valor
+    effectiveThreshold,
+    councilConfidence
   };
 }

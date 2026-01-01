@@ -49,7 +49,8 @@ export function CouncilAutopilotInterfaceV2(props: CouncilAutopilotInterfaceV2Pr
     setTakeProfitThreshold,
     stopLossThreshold,
     setStopLossThreshold,
-    effectiveThreshold, // NOVO: valor efetivo
+    effectiveThreshold,
+    councilConfidence,
  } = props;
   const { toast } = useToast();
 
@@ -198,18 +199,24 @@ export function CouncilAutopilotInterfaceV2(props: CouncilAutopilotInterfaceV2Pr
                      <div>
                         <div className="flex justify-between items-center mb-1">
                             <Label htmlFor="confidence-factor">Fator de Confiança</Label>
-                            <span className="text-sm font-mono text-primary font-semibold">{confidenceFactor.toFixed(1)}</span>
+                             <div className="flex items-center gap-2 text-sm">
+                                <span>Definido:</span>
+                                <span className="font-mono text-primary font-semibold">{confidenceFactor.toFixed(0)}%</span>
+                            </div>
                         </div>
                         <Slider
                             id="confidence-factor"
-                            min={0.5}
-                            max={2.0}
-                            step={0.1}
+                            min={50}
+                            max={200}
+                            step={10}
                             value={[confidenceFactor]}
                             onValueChange={(value) => setConfidenceFactor(value[0])}
                             disabled={isCouncilAutopilotOn}
                         />
-                         <p className="text-xs text-muted-foreground mt-2">Ajusta o peso da confiança dos robôs no consenso final.</p>
+                         <div className="flex justify-between items-center text-xs text-muted-foreground mt-2">
+                             <span>Confiança Bruta (Conselho):</span>
+                             <span className="font-mono font-bold text-foreground">{councilConfidence.toFixed(2)}</span>
+                         </div>
                     </div>
                 </div>
             )}
