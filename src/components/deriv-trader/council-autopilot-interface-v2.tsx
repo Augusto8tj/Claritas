@@ -17,6 +17,7 @@ import { Separator } from "../ui/separator";
 import { Badge } from "../ui/badge";
 import { Input } from "../ui/input";
 import type { useRobotCouncilV2 } from "@/hooks/use-robot-council-v2";
+import { Slider } from "../ui/slider";
 
 interface CouncilAutopilotInterfaceV2Props extends ReturnType<typeof useRobotCouncilV2> {}
 
@@ -38,6 +39,10 @@ export function CouncilAutopilotInterfaceV2(props: CouncilAutopilotInterfaceV2Pr
     isMeritocracyOn,
     setIsMeritocracyOn,
     strategyCouncil,
+    consensusSensitivity,
+    setConsensusSensitivity,
+    confidenceFactor,
+    setConfidenceFactor,
  } = props;
   const { toast } = useToast();
 
@@ -84,14 +89,52 @@ export function CouncilAutopilotInterfaceV2(props: CouncilAutopilotInterfaceV2Pr
                 <p className="text-xs text-muted-foreground">Sua meta de lucro no dia.</p>
             </div>
         </div>
-
+        
         <Separator />
         
         <div className="space-y-4">
-            <div className="flex items-center justify-between">
+             <div className="flex items-center justify-between">
                 <Label htmlFor="dynamic-consensus-switch" className="flex-1">Consenso Dinâmico</Label>
                 <Switch id="dynamic-consensus-switch" checked={isDynamicConsensusOn} onCheckedChange={setIsDynamicConsensusOn} disabled={isCouncilAutopilotOn} />
             </div>
+
+            {isDynamicConsensusOn && (
+                <div className="space-y-6 rounded-lg border bg-muted/50 p-4">
+                    <div>
+                        <div className="flex justify-between items-center mb-1">
+                             <Label htmlFor="consensus-sensitivity">Sensibilidade do Consenso</Label>
+                             <span className="text-sm font-mono">{consensusSensitivity}</span>
+                        </div>
+                        <Slider
+                            id="consensus-sensitivity"
+                            min={10}
+                            max={100}
+                            step={5}
+                            value={[consensusSensitivity]}
+                            onValueChange={(value) => setConsensusSensitivity(value[0])}
+                            disabled={isCouncilAutopilotOn}
+                        />
+                         <p className="text-xs text-muted-foreground mt-2">Valores mais altos exigem um consenso mais forte.</p>
+                    </div>
+                     <div>
+                        <div className="flex justify-between items-center mb-1">
+                            <Label htmlFor="confidence-factor">Fator de Confiança</Label>
+                            <span className="text-sm font-mono">{confidenceFactor.toFixed(1)}</span>
+                        </div>
+                        <Slider
+                            id="confidence-factor"
+                            min={0.5}
+                            max={2.0}
+                            step={0.1}
+                            value={[confidenceFactor]}
+                            onValueChange={(value) => setConfidenceFactor(value[0])}
+                            disabled={isCouncilAutopilotOn}
+                        />
+                         <p className="text-xs text-muted-foreground mt-2">Ajusta o peso da confiança dos robôs no consenso final.</p>
+                    </div>
+                </div>
+            )}
+
              <div className="flex items-center justify-between">
                 <Label htmlFor="dynamic-risk-switch" className="flex-1">Gestão de Risco Dinâmica</Label>
                 <Switch id="dynamic-risk-switch" checked={isDynamicRiskOn} onCheckedChange={setIsDynamicRiskOn} disabled={isCouncilAutopilotOn} />

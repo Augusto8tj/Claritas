@@ -299,7 +299,8 @@ export function useRobotCouncilV2(
   // ────────────────────────────────────────────────────────────────
   const [dailyBalance, setDailyBalance] = useState(100);
   const [dailyTarget, setDailyTarget] = useState(50);
-  const [consensusThreshold, setConsensusThreshold] = useState(300);
+  const [consensusSensitivity, setConsensusSensitivity] = useState(60); // NOVO
+  const [confidenceFactor, setConfidenceFactor] = useState(1.0); // NOVO
   const [isDynamicConsensusOn, setIsDynamicConsensusOn] = useState(true);
   const [isDynamicRiskOn, setIsDynamicRiskOn] = useState(true);
   const [isMeritocracyOn, setIsMeritocracyOn] = useState(true);
@@ -783,7 +784,7 @@ export function useRobotCouncilV2(
       newVotes[robot.id] = finalVote;
 
       // Acumula para consenso
-      const voteWeight = calibratedConf * weight;
+      const voteWeight = calibratedConf * weight * confidenceFactor;
 
       if (technicalVote.vote === 'RISE') riseSum += voteWeight;
       if (technicalVote.vote === 'FALL') fallSum += voteWeight;
@@ -838,87 +839,56 @@ export function useRobotCouncilV2(
       return;
     }
 
-    // Consenso Dinâmico
-    let effectiveThreshold = consensusThreshold;
-    if (isDynamicConsensusOn && microFeatures) {
-      const volatilityFactor = (microFeatures.yangZhangVolatility > 0.05) ? 1.3 : 1.0;
-      effectiveThreshold = (totalWeight * 0.6) * volatilityFactor;
+    // Consenso Dinâmico Exponencial
+    let effectiveThreshold;
+    if (isDynamicConsensusOn) {
+        const baseThreshold = totalWeight * (consensusSensitivity / 100);
+        const volFactor = 1 + (microFeatures ? Math.min(microFeatures.yangZhangVolatility * 5, 1) : 0);
+        // Fórmula exponencial para dar mais peso a valores altos de sensibilidade
+        effectiveThreshold = baseThreshold * Math.pow(volFactor, 1.5);
+    } else {
+        effectiveThreshold = consensusSensitivity; 
     }
 
     const consensusReached = Math.max(riseSum, fallSum) >= effectiveThreshold;
+
 
     // ══════════════════════════════════════════════════════════════
     // ETAPA 9: KELLY CRITERION POSITION SIZING (CORRIGIDO)
     // ══════════════════════════════════════════════════════════════
     
-    // Calcula win rate médio do conselho
     const avgWinRate = robotPerformance.length > 0
       ? robotPerformance.reduce((sum, r) => sum + r.winRate, 0) / robotPerformance.length / 100
       : consensusProbability;
 
-    // Calcula payoff médio (avg win / avg loss)
     const validPerformance = robotPerformance.filter(r => r.avgWin > 0 && r.avgLoss > 0);
 
     const avgWinAmount = validPerformance.length > 0
       ? validPerformance.reduce((sum, r) => sum + r.avgWin, 0) / validPerformance.length
-      : 1.5; // Default conservador
+      : 1.5;
 
     const avgLossAmount = validPerformance.length > 0
       ? validPerformance.reduce((sum, r) => sum + r.avgLoss, 0) / validPerformance.length
       : 1.0;
-
-    // Ajuste por volatilidade
-    const volAdjustment = microFeatures && microFeatures.yangZhangVolatility > 0
-      ? Math.max(1.0, microFeatures.yangZhangVolatility * 10)
-      : 1.0;
-
-    // Calcula Kelly Stake
+      
     let kellyStake = calculateKellyStake(
-      dailyBalance,
+      dailyBalance - portfolioStats.totalExposure, // Usa capital disponível
       avgWinRate,
       avgWinAmount,
-      avgLossAmount
+      avgLossAmount,
+      KELLY_FRACTION
     );
 
-    // Validação de segurança
     if (!isFinite(kellyStake) || isNaN(kellyStake) || kellyStake < 0) {
-      console.warn('⚠️ Kelly stake inválido:', kellyStake, '- usando mínimo');
       kellyStake = 0.35;
     }
 
-    // Ajustes dinâmicos de risco
     if (isDynamicRiskOn) {
-      // Reduz em mercado lateral (ADX < 20)
-      if (currentIndicators.adx && currentIndicators.adx < 20) {
-        kellyStake *= 0.5;
-      }
-
-      // Reduz se drawdown está alto
-      const currentDrawdown = Math.abs(dailyPnL / dailyBalance * 100);
-      if (currentDrawdown > 5) {
-        kellyStake *= 0.7;
-      }
-
-      // Reduz em alta volatilidade
-      if (microFeatures && microFeatures.yangZhangVolatility > 0.05) {
-        kellyStake *= 0.8;
-      }
+      if (currentIndicators.adx && currentIndicators.adx < 20) kellyStake *= 0.5;
+      if (microFeatures && microFeatures.yangZhangVolatility > 0.05) kellyStake *= 0.8;
     }
 
-    // Limites finais de segurança
     kellyStake = Math.max(0.35, Math.min(kellyStake, dailyBalance * 0.05));
-
-    // Log para debug (apenas em dev)
-    if (process.env.NODE_ENV === 'development') {
-      console.log('💰 Kelly Calculation:', {
-        avgWinRate: (avgWinRate * 100).toFixed(1) + '%',
-        avgWin: avgWinAmount.toFixed(2),
-        avgLoss: avgLossAmount.toFixed(2),
-        payoffRatio: (avgWinAmount / avgLossAmount).toFixed(2),
-        volatility: volAdjustment.toFixed(3),
-        finalStake: kellyStake.toFixed(2)
-      });
-    }
 
     // ══════════════════════════════════════════════════════════════
     // ETAPA 10: DURAÇÃO ÓTIMA
@@ -995,25 +965,14 @@ export function useRobotCouncilV2(
     // ══════════════════════════════════════════════════════════════
     if (councilExecutionRef.current.isExecuting) return;
 
-    // Verifica exposição máxima
     if (activeStakes + kellyStake > dailyBalance * 0.3) {
-      toast({
-        title: "⚠️ Limite de Exposição",
-        description: "Aguardando fechamento de posições.",
-        variant: "default"
-      });
       return;
     }
 
-    // Verifica probabilidade mínima
     if (consensusProbability < 0.65) {
-      if (process.env.NODE_ENV === 'development') {
-        console.log('⏸️ Consenso fraco, aguardando melhor oportunidade');
-      }
       return;
     }
 
-    // EXECUTA TRADE
     councilExecutionRef.current.isExecuting = true;
 
     toast({
@@ -1030,10 +989,9 @@ export function useRobotCouncilV2(
       finalDurationUnit,
       'Conselho'
     ).finally(() => {
-      // Cooldown progressivo baseado em número de trades recentes
       const recentTrades = operationsLog.filter(
         op => op.initiator === 'Conselho' &&
-        Date.now() - new Date(op.timestamp).getTime() < 300000 // Últimos 5 minutos
+        Date.now() - new Date(op.timestamp).getTime() < 300000
       ).length;
 
       const cooldownTime = Math.min(5000 + (recentTrades * 2000), 30000);
@@ -1044,28 +1002,11 @@ export function useRobotCouncilV2(
     });
 
   }, [
-    dataVersion,
-    isConnected,
-    isCouncilAutopilotOn,
-    strategyCouncil,
-    robotPerformance,
-    isMeritocracyOn,
-    isDynamicConsensusOn,
-    isDynamicRiskOn,
-    activeSymbol,
-    operationsLog,
-    currentRegime,
-    user,
-    toast,
-    executeTrade,
-    sellContract,
-    timePeriod,
-    durationLimits,
-    consensusThreshold,
-    dailyBalance,
-    dailyTarget,
-    evolveTrigger,
-    portfolioStats.maxDrawdown
+    dataVersion, isConnected, isCouncilAutopilotOn, strategyCouncil,
+    robotPerformance, isMeritocracyOn, isDynamicConsensusOn, isDynamicRiskOn,
+    activeSymbol, operationsLog, currentRegime, user, toast, executeTrade, sellContract,
+    timePeriod, durationLimits, dailyBalance, dailyTarget, evolveTrigger,
+    portfolioStats.maxDrawdown, consensusSensitivity, confidenceFactor
   ]);
 
   // ════════════════════════════════════════════════════════════════════
@@ -1098,8 +1039,10 @@ export function useRobotCouncilV2(
     setDailyBalance,
     dailyTarget,
     setDailyTarget,
-    consensusThreshold,
-    setConsensusThreshold,
+    consensusSensitivity,
+    setConsensusSensitivity,
+    confidenceFactor,
+    setConfidenceFactor,
     isDynamicConsensusOn,
     setIsDynamicConsensusOn,
     isDynamicRiskOn,
