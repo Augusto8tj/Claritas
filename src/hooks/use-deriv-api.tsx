@@ -412,7 +412,7 @@ const subscribeToMarketData = useCallback(async (symbol: string) => {
             
             const entryPrice = buyResult.entry_tick_display_value ? parseFloat(buyResult.entry_tick_display_value) : buyResult.buy_price;
 
-            const isSellable = durationUnit === 's';
+            const isSellable = durationUnit !== 't'; // Qualquer contrato baseado em tempo é vendável
 
             const newOperation: Operation = {
                 id: buyResult.contract_id,

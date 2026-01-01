@@ -16,8 +16,6 @@ interface PendingOperationCounterProps {
   currentStatus: 'winning' | 'losing' | 'even';
 }
 
-const SELL_WINDOW_SECONDS = 15;
-
 const formatTime = (ms: number): string => {
     if (ms < 0) ms = 0;
     const totalSeconds = Math.floor(ms / 1000);
@@ -72,7 +70,7 @@ export function PendingOperationCounter({ operation, onSell, isSelling, currentS
     return () => clearInterval(interval);
   }, [endTime, durationUnit]);
 
-  const isSellableNow = isSellable && remainingMs !== null && remainingMs > (SELL_WINDOW_SECONDS * 1000);
+  const isSellableNow = isSellable && remainingMs !== null && remainingMs > 1000; // Allow selling until the last second
   
   const renderCounter = () => {
     if (durationUnit === 't') {
