@@ -154,8 +154,7 @@ const isValid = (value: any): value is number =>
 const calculateTechnicalVote = (
   robot: RobotStrategy,
   indicators: Indicators,
-  tickCandles: CandleData[],
-  durationRange: [number, number] // NOVO: Recebe o range do slider
+  tickCandles: CandleData[]
 ): {
   vote: 'RISE' | 'FALL' | 'HOLD';
   confidence: number;
@@ -167,16 +166,8 @@ const calculateTechnicalVote = (
   let confidence = 0;
   let suggestedStake = 0;
   
-  // Clamps the duration to the user-defined range
-  let optimalDuration = Math.max(
-    durationRange[0],
-    Math.min(durationRange[1], robot.optimalDuration)
-  );
-
-  // A unidade é sempre segundos agora
-  const optimalDurationUnit: DurationUnit = 's';
-
-  const { suggestedStake: baseStake } = robot;
+  // Retorna a duração ótima do robô, sem clamping.
+  const { optimalDuration, optimalDurationUnit, suggestedStake: baseStake } = robot;
 
   const setVote = (newVote: 'RISE' | 'FALL', newConfidence: number) => {
     if (newConfidence <= 0) return;
@@ -195,14 +186,14 @@ const calculateTechnicalVote = (
   // ────────────────────────────────────────────────────────────────
   // LÓGICA DE VOTAÇÃO POR ESTRATÉGIA
   // ────────────────────────────────────────────────────────────────
-
-  if (robot.strategyType === 'RSI' && isValid(rsi)) {
+  // Blindagem de parâmetros: se faltar, vota HOLD
+  if (robot.strategyType === 'RSI' && isValid(rsi) && robot.strongBuyThreshold) {
     if (rsi <= robot.strongBuyThreshold!) setVote('RISE', robot.strongConfidence);
     else if (rsi <= robot.weakBuyThreshold!) setVote('RISE', robot.weakConfidence);
     else if (rsi >= robot.strongSellThreshold!) setVote('FALL', robot.strongConfidence);
     else if (rsi >= robot.weakSellThreshold!) setVote('FALL', robot.weakConfidence);
   } 
-  else if (robot.strategyType === 'STOCHASTIC' && isValid(stoch)) {
+  else if (robot.strategyType === 'STOCHASTIC' && isValid(stoch) && robot.strongBuyThreshold) {
     if (stoch <= robot.strongBuyThreshold!) setVote('RISE', robot.strongConfidence);
     else if (stoch <= robot.weakBuyThreshold!) setVote('RISE', robot.weakConfidence);
     else if (stoch >= robot.strongSellThreshold!) setVote('FALL', robot.strongConfidence);
@@ -229,19 +220,19 @@ const calculateTechnicalVote = (
       else if (ndi > pdi) setVote('FALL', robot.weakConfidence);
     }
   }
-  else if (robot.strategyType === 'MFI' && isValid(mfi)) {
+  else if (robot.strategyType === 'MFI' && isValid(mfi) && robot.strongBuyThreshold) {
     if (mfi <= robot.strongBuyThreshold!) setVote('RISE', robot.strongConfidence);
     else if (mfi <= robot.weakBuyThreshold!) setVote('RISE', robot.weakConfidence);
     else if (mfi >= robot.strongSellThreshold!) setVote('FALL', robot.strongConfidence);
     else if (mfi >= robot.weakSellThreshold!) setVote('FALL', robot.weakConfidence);
   }
-  else if (robot.strategyType === 'STOCH_RSI' && isValid(stochRSI)) {
+  else if (robot.strategyType === 'STOCH_RSI' && isValid(stochRSI) && robot.strongBuyThreshold) {
     if (stochRSI <= robot.strongBuyThreshold!) setVote('RISE', robot.strongConfidence);
     else if (stochRSI <= robot.weakBuyThreshold!) setVote('RISE', robot.weakConfidence);
     else if (stochRSI >= robot.strongSellThreshold!) setVote('FALL', robot.strongConfidence);
     else if (stochRSI >= robot.weakSellThreshold!) setVote('FALL', robot.weakConfidence);
   }
-  else if (robot.strategyType === 'RVI' && isValid(rvi)) {
+  else if (robot.strategyType === 'RVI' && isValid(rvi) && robot.strongBuyThreshold) {
     if (rvi <= robot.strongBuyThreshold!) setVote('RISE', robot.strongConfidence);
     else if (rvi <= robot.weakBuyThreshold!) setVote('RISE', robot.weakConfidence);
     else if (rvi >= robot.strongSellThreshold!) setVote('FALL', robot.strongConfidence);
@@ -501,7 +492,7 @@ export function useRobotCouncilV2(
       tickCandles, 
       strategyCouncil, 
       timePeriod,
-      { duration: 5, unit: 'm'}
+      { duration: 5, unit: 'm'} // Usa um valor padrão aqui, já que a duração final é dinâmica
     );
     setIndicators(currentIndicators);
 
@@ -678,37 +669,23 @@ export function useRobotCouncilV2(
     strategyCouncil.forEach(robot => {
       const perf = performanceMap.get(robot.id);
 
-      // Voto técnico puro, agora respeitando o durationRange
-      const technicalVote = calculateTechnicalVote(robot, currentIndicators, tickCandles, durationRange);
+      // Voto técnico puro, agora sem clamping de duração
+      const technicalVote = calculateTechnicalVote(robot, currentIndicators, tickCandles);
+      const durationInSeconds = durationToSeconds(technicalVote.optimalDuration, technicalVote.optimalDurationUnit);
 
-      // Se robô não é efetivo neste regime, ignora (mas permite voto se não tiver histórico)
-      if (perf?.effectiveRegimes?.length > 0) {
-        if (!perf.effectiveRegimes.includes(regimeResult.regime)) {
-          newVotes[robot.id] = {
-            vote: 'HOLD',
-            rawConfidence: 0,
-            calibratedConfidence: 0,
-            bayesianProbability: 0.5,
-            weight: 0,
-            optimalDuration: robot.optimalDuration,
-            optimalDurationUnit: robot.optimalDurationUnit,
-            suggestedStake: 0,
-            regime: regimeResult.regime
-          };
-          return; // Silencia o robô
-        }
-      }
+      // FILTRO DE REGIME: Só permite voto se o robô for eficaz no regime atual (ou se não tiver histórico)
+      const isRegimeEffective = (perf?.effectiveRegimes?.length === 0) || (perf?.effectiveRegimes?.includes(regimeResult.regime));
 
-      if (technicalVote.vote === 'HOLD') {
+      // FILTRO DE HORIZONTE TEMPORAL: Só permite voto se a duração sugerida estiver no range do usuário
+      const isDurationInRange = durationInSeconds >= durationRange[0] && durationInSeconds <= durationRange[1];
+
+      if (technicalVote.vote === 'HOLD' || !isRegimeEffective || !isDurationInRange) {
         newVotes[robot.id] = {
           ...technicalVote,
-          rawConfidence: 0,
-          calibratedConfidence: 0,
-          bayesianProbability: 0.5,
-          weight: 1.0,
-          regime: regimeResult.regime
+          rawConfidence: 0, calibratedConfidence: 0, bayesianProbability: 0.5,
+          weight: 0, regime: regimeResult.regime
         };
-        return;
+        return; // Voto não é computado para o consenso
       }
 
       activeRobotsCount++;
@@ -726,14 +703,6 @@ export function useRobotCouncilV2(
       // Ajuste por microestrutura
       if (microFeatures && microFeatures.yangZhangVolatility > 0.05) {
         likelihood *= 0.8; // Reduz confiança em alta volatilidade
-      }
-
-      if (microFeatures && Math.abs(microFeatures.meanReversion) > 2) {
-        const isContrarian =
-          (technicalVote.vote === 'RISE' && microFeatures.meanReversion > 2) ||
-          (technicalVote.vote === 'FALL' && microFeatures.meanReversion < -2);
-
-        if (isContrarian) likelihood *= 0.7;
       }
 
       // Bayesian Update
@@ -759,11 +728,6 @@ export function useRobotCouncilV2(
       // ────────────────────────────────────────────────────────────
       // CRIA TRADE VIRTUAL
       // ────────────────────────────────────────────────────────────
-      const durationInSeconds = durationToSeconds(
-        technicalVote.optimalDuration,
-        technicalVote.optimalDurationUnit
-      );
-
       const tradeId = `vt_${Date.now()}_${tradeCounterRef.current++}`;
       const virtualTrade: VirtualTrade = {
         id: tradeId,
@@ -813,7 +777,7 @@ export function useRobotCouncilV2(
     let consensusDirection: 'RISE' | 'FALL' | 'HOLD' = 'HOLD';
     let consensusProbability = 0.5;
 
-    if (totalWeight > 0) {
+    if (totalWeight > 0 && (riseSum + fallSum) > 0) {
       consensusProbability = Math.max(riseSum, fallSum) / (riseSum + fallSum);
 
       if (riseSum > fallSum && riseSum > 0) {
