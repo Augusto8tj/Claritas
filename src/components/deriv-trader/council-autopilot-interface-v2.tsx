@@ -9,7 +9,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Button } from "../ui/button";
-import { Loader2, LayoutGrid, Power, PowerOff, Clock } from "lucide-react";
+import { Loader2, LayoutGrid, Power, PowerOff, Clock, TrendingUp, TrendingDown } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Label } from "../ui/label";
 import { Switch } from "../ui/switch";
@@ -45,6 +45,10 @@ export function CouncilAutopilotInterfaceV2(props: CouncilAutopilotInterfaceV2Pr
     setConfidenceFactor,
     durationRange,
     setDurationRange,
+    takeProfitThreshold,
+    setTakeProfitThreshold,
+    stopLossThreshold,
+    setStopLossThreshold,
  } = props;
   const { toast } = useToast();
 
@@ -94,26 +98,70 @@ export function CouncilAutopilotInterfaceV2(props: CouncilAutopilotInterfaceV2Pr
 
         <Separator />
 
-        <div className="space-y-2">
-             <div className="flex justify-between items-center mb-1">
-                 <Label htmlFor="duration-range-slider" className="flex items-center gap-2">
-                    <Clock className="h-4 w-4" />
-                    Horizonte Temporal
-                 </Label>
-                 <span className="text-sm font-mono">{durationRange[0]}s - {durationRange[1]}s</span>
+        <div className="space-y-6 rounded-lg border bg-card p-4">
+            <div className="space-y-2">
+                <div className="flex justify-between items-center mb-1">
+                    <Label htmlFor="duration-range-slider" className="flex items-center gap-2">
+                        <Clock className="h-4 w-4" />
+                        Horizonte Temporal
+                    </Label>
+                    <span className="text-sm font-mono">{durationRange[0]}s - {durationRange[1]}s</span>
+                </div>
+                <Slider
+                    id="duration-range-slider"
+                    min={1}
+                    max={600}
+                    step={5}
+                    value={durationRange}
+                    onValueChange={(value: [number, number]) => setDurationRange(value)}
+                    disabled={isCouncilAutopilotOn}
+                />
+                <p className="text-xs text-muted-foreground pt-1">Filtra os robôs cujo tempo ótimo de operação está dentro deste intervalo.</p>
             </div>
-             <Slider
-                id="duration-range-slider"
-                min={1}
-                max={600}
-                step={5}
-                value={durationRange}
-                onValueChange={(value: [number, number]) => setDurationRange(value)}
-                disabled={isCouncilAutopilotOn}
-            />
-            <p className="text-xs text-muted-foreground pt-1">Define a faixa de tempo (min/max) para as operações dos robôs.</p>
+            
+            <div className="space-y-2">
+                <div className="flex justify-between items-center mb-1">
+                    <Label htmlFor="take-profit-slider" className="flex items-center gap-2 text-green-600">
+                        <TrendingUp className="h-4 w-4" />
+                        Take Profit
+                    </Label>
+                    <span className="text-sm font-mono text-green-600">{takeProfitThreshold}%</span>
+                </div>
+                <Slider
+                    id="take-profit-slider"
+                    min={5}
+                    max={100}
+                    step={5}
+                    value={[takeProfitThreshold]}
+                    onValueChange={(value) => setTakeProfitThreshold(value[0])}
+                    disabled={!isCouncilAutopilotOn}
+                    className="[&>span]:bg-green-500 [&>div>span]:border-green-600"
+                />
+                <p className="text-xs text-muted-foreground pt-1">Percentual do lucro máximo para realizar o ganho.</p>
+            </div>
+
+            <div className="space-y-2">
+                <div className="flex justify-between items-center mb-1">
+                    <Label htmlFor="stop-loss-slider" className="flex items-center gap-2 text-red-600">
+                        <TrendingDown className="h-4 w-4" />
+                        Stop Loss
+                    </Label>
+                    <span className="text-sm font-mono text-red-600">{stopLossThreshold}%</span>
+                </div>
+                <Slider
+                    id="stop-loss-slider"
+                    min={5}
+                    max={100}
+                    step={5}
+                    value={[stopLossThreshold]}
+                    onValueChange={(value) => setStopLossThreshold(value[0])}
+                    disabled={!isCouncilAutopilotOn}
+                    className="[&>span]:bg-red-500 [&>div>span]:border-red-600"
+                />
+                <p className="text-xs text-muted-foreground pt-1">Percentual de perda máxima para fechar a operação.</p>
+            </div>
         </div>
-        
+
         <Separator />
         
         <div className="space-y-4">
