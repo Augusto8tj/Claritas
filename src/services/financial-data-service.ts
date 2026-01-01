@@ -3,7 +3,7 @@
 
 /**
  * @fileOverview A financial data service that interacts with Firebase Firestore.
- * This service now includes non-blocking writes and contextual error handling for security rules.
+ * This service now propagates raw Firestore errors to be handled by the client.
  */
 import { db } from '@/lib/firebase';
 import { collection, getDocs, addDoc, doc, updateDoc, deleteDoc, getDoc, setDoc, query, where, orderBy } from 'firebase/firestore';
@@ -19,7 +19,7 @@ export async function getTransactions(userId: string): Promise<Transaction[]> {
         const snapshot = await getDocs(transactionsCol);
         return snapshot.docs.map(d => ({ id: d.id, ...d.data() } as Transaction));
     } catch (serverError) {
-        // Propagate the original error for client-side handling
+        // Propagate the original error for client-side contextual handling
         console.error(`[Service Error] getTransactions failed for user ${userId}:`, serverError);
         throw serverError;
     }

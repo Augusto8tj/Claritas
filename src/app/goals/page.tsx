@@ -8,6 +8,7 @@ import { getGoals } from "@/app/actions/financial-data-actions";
 import type { Goal } from "@/lib/types";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAuth } from "@/features/auth/hooks/use-auth";
+import { FirestorePermissionError, errorEmitter } from "@/firebase";
 
 export default function GoalsPage() {
   const { user } = useAuth();
@@ -19,8 +20,16 @@ export default function GoalsPage() {
     
     const fetchGoals = async () => {
       setLoading(true);
-      const fetchedGoals = await getGoals(user.uid);
-      setGoals(fetchedGoals);
+      try {
+        const fetchedGoals = await getGoals(user.uid);
+        setGoals(fetchedGoals);
+      } catch (error) {
+        console.error(error);
+        errorEmitter.emit('permission-error', new FirestorePermissionError({
+          path: `users/${user.uid}/goals`,
+          operation: 'list'
+        }));
+      }
       setLoading(false);
     };
 

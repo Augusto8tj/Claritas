@@ -15,6 +15,7 @@ import type { Transaction } from "@/lib/types";
 import { useEffect, useState } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { FirestorePermissionError, errorEmitter } from "@/firebase";
 
 interface ChartDataPoint {
   name: string;
@@ -67,9 +68,17 @@ export function NetWorthChart() {
 
         const fetchData = async () => {
             setLoading(true);
-            const transactions = await getTransactions(user.uid);
-            const processed = processData(transactions);
-            setData(processed);
+            try {
+              const transactions = await getTransactions(user.uid);
+              const processed = processData(transactions);
+              setData(processed);
+            } catch (error) {
+              console.error(error); // Log the raw error
+              errorEmitter.emit('permission-error', new FirestorePermissionError({
+                path: `users/${user.uid}/transactions`,
+                operation: 'list'
+              }));
+            }
             setLoading(false);
         };
         fetchData();

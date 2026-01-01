@@ -21,6 +21,7 @@ import {
 } from "@/components/ui/carousel";
 import { GoalProgressChart } from "./goal-progress-chart";
 import { Skeleton } from "@/components/ui/skeleton";
+import { FirestorePermissionError, errorEmitter } from "@/firebase";
 
 function MainGoalSkeleton() {
   return (
@@ -52,7 +53,11 @@ export function MainGoal() {
         const userGoals = await getGoals(user.uid);
         setGoals(userGoals);
     } catch (error) {
-        console.error("Failed to fetch goals:", error);
+        console.error(error); // Log the raw error
+        errorEmitter.emit('permission-error', new FirestorePermissionError({
+          path: `users/${user.uid}/goals`,
+          operation: 'list'
+        }));
         setGoals([]); // Reset goals on error
     } finally {
         setLoading(false);
