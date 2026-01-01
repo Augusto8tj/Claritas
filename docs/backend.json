@@ -1,0 +1,311 @@
+{
+  "entities": {
+    "UserProfile": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "UserProfile",
+      "type": "object",
+      "description": "Represents a user's profile in the Claritas AI application.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the UserProfile entity."
+        },
+        "email": {
+          "type": "string",
+          "description": "User's email address.",
+          "format": "email"
+        },
+        "firstName": {
+          "type": "string",
+          "description": "User's first name."
+        },
+        "lastName": {
+          "type": "string",
+          "description": "User's last name."
+        },
+        "createdAt": {
+          "type": "string",
+          "description": "Timestamp indicating when the user profile was created.",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "email",
+        "firstName",
+        "lastName",
+        "createdAt"
+      ]
+    },
+    "FinancialAccount": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "FinancialAccount",
+      "type": "object",
+      "description": "Represents a financial account (e.g., bank account, credit card) associated with a user.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the FinancialAccount entity."
+        },
+        "userId": {
+          "type": "string",
+          "description": "Reference to UserProfile. (Relationship: UserProfile 1:N FinancialAccount)"
+        },
+        "accountName": {
+          "type": "string",
+          "description": "Name of the financial account (e.g., 'Checking Account', 'Visa Card')."
+        },
+        "accountType": {
+          "type": "string",
+          "description": "Type of the financial account (e.g., 'bank', 'creditCard', 'investment')."
+        },
+        "balance": {
+          "type": "number",
+          "description": "Current balance of the financial account."
+        },
+        "currency": {
+          "type": "string",
+          "description": "Currency of the account (e.g., 'USD', 'EUR')."
+        }
+      },
+      "required": [
+        "id",
+        "userId",
+        "accountName",
+        "accountType",
+        "balance",
+        "currency"
+      ]
+    },
+    "Transaction": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "Transaction",
+      "type": "object",
+      "description": "Represents a financial transaction.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the Transaction entity."
+        },
+        "accountId": {
+          "type": "string",
+          "description": "Reference to FinancialAccount. (Relationship: FinancialAccount 1:N Transaction)"
+        },
+        "date": {
+          "type": "string",
+          "description": "Date of the transaction.",
+          "format": "date-time"
+        },
+        "description": {
+          "type": "string",
+          "description": "Description of the transaction."
+        },
+        "amount": {
+          "type": "number",
+          "description": "Amount of the transaction."
+        },
+        "category": {
+          "type": "string",
+          "description": "Category of the transaction (e.g., 'Food', 'Transportation', 'Entertainment')."
+        }
+      },
+      "required": [
+        "id",
+        "accountId",
+        "date",
+        "description",
+        "amount",
+        "category"
+      ]
+    },
+    "FinancialGoal": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "FinancialGoal",
+      "type": "object",
+      "description": "Represents a user's financial goal.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the FinancialGoal entity."
+        },
+        "userId": {
+          "type": "string",
+          "description": "Reference to UserProfile. (Relationship: UserProfile 1:N FinancialGoal)"
+        },
+        "goalName": {
+          "type": "string",
+          "description": "Name of the financial goal (e.g., 'Save for a down payment', 'Pay off debt')."
+        },
+        "targetAmount": {
+          "type": "number",
+          "description": "Target amount for the financial goal."
+        },
+        "currentAmount": {
+          "type": "number",
+          "description": "Current amount saved towards the financial goal."
+        },
+        "targetDate": {
+          "type": "string",
+          "description": "Target date for achieving the financial goal.",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "userId",
+        "goalName",
+        "targetAmount",
+        "currentAmount",
+        "targetDate"
+      ]
+    },
+    "AiInsight": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "AiInsight",
+      "type": "object",
+      "description": "Represents an AI-generated financial insight for a user.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the AiInsight entity."
+        },
+        "userId": {
+          "type": "string",
+          "description": "Reference to UserProfile. (Relationship: UserProfile 1:N AiInsight)"
+        },
+        "insightText": {
+          "type": "string",
+          "description": "Text of the AI-generated financial insight."
+        },
+        "insightType": {
+          "type": "string",
+          "description": "Type of the AI insight (e.g., 'SpendingSuggestion', 'InvestmentRecommendation', 'GoalProgress')."
+        },
+        "relevanceScore": {
+          "type": "number",
+          "description": "Score indicating the relevance of the insight to the user."
+        },
+        "generatedAt": {
+          "type": "string",
+          "description": "Timestamp indicating when the AI insight was generated.",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "userId",
+        "insightText",
+        "insightType",
+        "relevanceScore",
+        "generatedAt"
+      ]
+    }
+  },
+  "auth": {
+    "providers": [
+      "password",
+      "anonymous"
+    ]
+  },
+  "firestore": {
+    "structure": [
+      {
+        "path": "/users/{userId}",
+        "definition": {
+          "entityName": "UserProfile",
+          "schema": {
+            "$ref": "#/backend/entities/UserProfile"
+          },
+          "description": "Stores user profile information. Uses path-based ownership for security.",
+          "params": [
+            {
+              "name": "userId",
+              "description": "The unique identifier for the user."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/users/{userId}/financialAccounts/{accountId}",
+        "definition": {
+          "entityName": "FinancialAccount",
+          "schema": {
+            "$ref": "#/backend/entities/FinancialAccount"
+          },
+          "description": "Stores financial account information for a specific user. Uses path-based ownership for security.",
+          "params": [
+            {
+              "name": "userId",
+              "description": "The unique identifier for the user."
+            },
+            {
+              "name": "accountId",
+              "description": "The unique identifier for the financial account."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/users/{userId}/transactions/{transactionId}",
+        "definition": {
+          "entityName": "Transaction",
+          "schema": {
+            "$ref": "#/backend/entities/Transaction"
+          },
+          "description": "Stores transaction data for a specific user. Uses path-based ownership for security.",
+          "params": [
+            {
+              "name": "userId",
+              "description": "The unique identifier for the user."
+            },
+            {
+              "name": "transactionId",
+              "description": "The unique identifier for the transaction."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/users/{userId}/financialGoals/{financialGoalId}",
+        "definition": {
+          "entityName": "FinancialGoal",
+          "schema": {
+            "$ref": "#/backend/entities/FinancialGoal"
+          },
+          "description": "Stores financial goal information for a specific user. Uses path-based ownership for security.",
+          "params": [
+            {
+              "name": "userId",
+              "description": "The unique identifier for the user."
+            },
+            {
+              "name": "financialGoalId",
+              "description": "The unique identifier for the financial goal."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/users/{userId}/aiInsights/{aiInsightId}",
+        "definition": {
+          "entityName": "AiInsight",
+          "schema": {
+            "$ref": "#/backend/entities/AiInsight"
+          },
+          "description": "Stores AI-generated financial insights for a specific user. Uses path-based ownership for security.",
+          "params": [
+            {
+              "name": "userId",
+              "description": "The unique identifier for the user."
+            },
+            {
+              "name": "aiInsightId",
+              "description": "The unique identifier for the AI insight."
+            }
+          ]
+        }
+      }
+    ],
+    "reasoning": "The Firestore structure is designed to support a financial application with AI insights, focusing on user-specific data and ensuring authorization independence. User profiles are stored under `/users/{userId}`. Each user's financial accounts, transactions, financial goals, and AI insights are stored as subcollections under their respective user document, following the pattern `/users/{userId}/financialAccounts/{accountId}`, `/users/{userId}/transactions/{transactionId}`, `/users/{userId}/financialGoals/{financialGoalId}`, and `/users/{userId}/aiInsights/{aiInsightId}`. This structure uses path-based ownership, which is a simple, secure, and efficient way to manage user data. There is no denormalization needed for simple path-based ownership. Segregation is achieved by storing all user-specific data within the `/users/{userId}` path, ensuring homogeneous security posture for each subcollection. This structure supports QAPs because list operations are naturally scoped to a user's data. This eliminates the need for rules to act as filters."
+  }
+}
