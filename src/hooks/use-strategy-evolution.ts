@@ -75,11 +75,11 @@ const mutateStrategy = (eliteRobot: RobotStrategy): Omit<RobotStrategy, 'id' | '
 // O HOOK DE EVOLUÇÃO
 // ============================================================================
 
-export function useStrategyEvolution(initialStrategies: Omit<RobotStrategy, 'id' | 'justification'>[]) {
+export function useStrategyEvolution(initialStrategies: Omit<RobotStrategy, 'id'>[]) {
     const { toast } = useToast();
     
     // O estado que guarda as estratégias atuais, começando com as iniciais
-    const [evolvedStrategies, setEvolvedStrategies] = useState<Omit<RobotStrategy, 'id' | 'justification'>[]>(initialStrategies);
+    const [evolvedStrategies, setEvolvedStrategies] = useState<Omit<RobotStrategy, 'id'>[]>(initialStrategies);
     // NOVO: Estado para guardar o histórico de eventos de evolução
     const [evolutionHistory, setEvolutionHistory] = useState<EvolutionEvent[]>([]);
 
@@ -132,7 +132,7 @@ export function useStrategyEvolution(initialStrategies: Omit<RobotStrategy, 'id'
         };
         
         // Cria um mapa das novas estratégias
-        const newStrategiesMap = new Map<string, Omit<RobotStrategy, 'id' | 'justification'>>(
+        const newStrategiesMap = new Map<string, Omit<RobotStrategy, 'id'>>(
             evolvedStrategies.map(s => [(s as any).id, s])
         );
 
@@ -169,5 +169,3 @@ export function useStrategyEvolution(initialStrategies: Omit<RobotStrategy, 'id'
         evolutionHistory, // EXPORTA O HISTÓRICO
     };
 }
-
-    

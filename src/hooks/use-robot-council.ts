@@ -4,7 +4,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useDerivApi } from './use-deriv-api';
 import { useToast } from '@/hooks/use-toast';
-import type { RobotStrategy, ChartData, TickData, CandleData, RiseFallFormValues } from '@/lib/types';
+import type { RobotStrategy, ChartData, TickData, CandleData, RiseFallFormValues, DurationUnit } from '@/lib/types';
 import { useFormContext } from 'react-hook-form';
 import type { Indicators } from '@/services/indicator-service';
 import { calculateAllIndicators } from '@/services/indicator-service';
@@ -12,6 +12,7 @@ import { initialCouncilStrategies } from '@/services/council-strategies';
 import { useAuth } from '@/features/auth/hooks/use-auth';
 import { saveRobotPerformance, loadRobotPerformance } from '@/services/financial-data-service';
 import { useStrategyEvolution } from './use-strategy-evolution';
+
 
 export type RobotVote = {
     vote: 'RISE' | 'FALL' | 'HOLD';
@@ -213,6 +214,7 @@ export function useRobotCouncil(
     // Controle de execução
     const councilExecutionRef = useRef({ isExecuting: false });
 
+    // Sincroniza as estratégias evoluídas com o estado do conselho
     useEffect(() => {
         const councilWithIds = evolvedStrategies.map((strat, index) => ({
             ...strat,
@@ -223,9 +225,9 @@ export function useRobotCouncil(
     
 
     // ========================================================================
-    // CARREGAR DESEMPENHO PERSISTIDO DO FIREBASE
+    // CARREGAR/RESETAR DESEMPENHO
     // ========================================================================
-    useEffect(() => {
+     useEffect(() => {
         if (!user || isAuthLoading) return;
 
         const doLoad = async () => {
@@ -244,6 +246,40 @@ export function useRobotCouncil(
         doLoad();
     }, [user, isAuthLoading]);
 
+    const resetArenaPerformance = useCallback(() => {
+        if (strategyCouncil.length === 0) return;
+
+        toast({
+            title: "Memória da Arena Reiniciada",
+            description: `O desempenho para ${activeSymbol} foi zerado para uma nova análise.`
+        });
+        
+        const initialPerformance: RobotPerformance[] = strategyCouncil.map((robot) => ({
+            id: robot.id,
+            strategyType: robot.strategyType,
+            strategy: robot,
+            wins: 0,
+            losses: 0,
+            totalProfit: 0,
+            winRate: 0,
+            winRateTrend: 0,
+            winRateRange: 0,
+        }));
+        setRobotPerformance(initialPerformance);
+        virtualTradesRef.current = [];
+        
+        if (user) {
+            saveRobotPerformance(user.uid, initialPerformance);
+        }
+    }, [strategyCouncil, activeSymbol, toast, user]);
+
+    // "Amnésia Seletiva": Reseta a arena quando o ativo muda
+    useEffect(() => {
+        if (isCouncilAutopilotOn) { // Só reseta se a mesa estiver ativa
+            resetArenaPerformance();
+        }
+    }, [activeSymbol, isCouncilAutopilotOn, resetArenaPerformance]);
+
     // ========================================================================
     // CONSTRUIR O CONSELHO
     // ========================================================================
@@ -259,10 +295,6 @@ export function useRobotCouncil(
 
         setIsFetchingCouncil(true);
 
-        // Limpa a arena
-        virtualTradesRef.current = [];
-        tradeCounterRef.current = 0;
-
         await new Promise((resolve) => setTimeout(resolve, 500));
         
         const council = evolvedStrategies.map((strategy, index) => ({
@@ -273,32 +305,17 @@ export function useRobotCouncil(
 
         setStrategyCouncil(council);
 
-        // Inicializa o desempenho se não houver dados
-        if (robotPerformance.length === 0) {
-            const initialPerformance: RobotPerformance[] = council.map((robot) => ({
-                id: robot.id,
-                strategyType: robot.strategyType,
-                strategy: robot,
-                wins: 0,
-                losses: 0,
-                totalProfit: 0,
-                winRate: 0,
-                winRateTrend: 0,
-                winRateRange: 0,
-            }));
-            setRobotPerformance(initialPerformance);
-            await saveRobotPerformance(user.uid, initialPerformance);
-        }
-
+        // A lógica de resetar agora é centralizada no `resetArenaPerformance`
+        resetArenaPerformance();
 
         toast({
             title: 'Conselho de IA Montado!',
-            description: `${council.length} analistas foram convocados. Arena Virtual ativa.`,
+            description: `${council.length} analistas foram convocados. Arena Virtual ativa para ${activeSymbol}.`,
         });
 
         setIsCouncilAutopilotOn(true);
         setIsFetchingCouncil(false);
-    }, [activeSymbol, timePeriod, toast, user, robotPerformance, evolvedStrategies]);
+    }, [activeSymbol, timePeriod, toast, user, evolvedStrategies, resetArenaPerformance]);
 
     // ========================================================================
     // DISSOLVER O CONSELHO
@@ -345,14 +362,14 @@ export function useRobotCouncil(
         ): {
             finalStake: number;
             finalDuration: number;
-            finalDurationUnit: 't' | 's' | 'm' | 'h' | 'd';
+            finalDurationUnit: DurationUnit;
             status: 'approved' | 'veto' | 'inactive';
             message: string;
             analysis?: string;
         } => {
             let finalStake = baseStake;
             let finalDuration = baseDuration;
-            let finalDurationUnit: 't' | 's' | 'm' | 'h' | 'd' = 't';
+            let finalDurationUnit: DurationUnit = 't';
 
             const defaultReturn = { finalStake, finalDuration, finalDurationUnit, status: 'inactive' as 'inactive', message: 'Aguardando indicadores.' };
             
@@ -410,7 +427,11 @@ export function useRobotCouncil(
 
             // Aplicar restrições finais
             finalStake = Math.max(0.35, finalStake);
-            finalDuration = Math.max(1, Math.min(10, finalDuration))
+            if(finalDurationUnit === 't') {
+              finalDuration = Math.round(Math.max(1, Math.min(10, finalDuration)));
+            } else {
+               finalDuration = Math.max(15, finalDuration); // Min 15 segundos para outras unidades
+            }
 
             return {
                 status: 'approved',
