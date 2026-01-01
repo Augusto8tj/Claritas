@@ -496,7 +496,8 @@ export function useRobotCouncilV2(
     const currentIndicators = calculateAllIndicators(
       tickCandles, 
       strategyCouncil, 
-      timePeriod
+      timePeriod,
+      contractDurationForIndicators
     );
     setIndicators(currentIndicators);
 

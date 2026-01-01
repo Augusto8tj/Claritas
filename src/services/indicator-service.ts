@@ -398,7 +398,7 @@ export function calculateAllIndicators(
     indicators.donchianChannels = DerivIndicators.donchian(candles, getParam('DONCHIAN_CHANNELS', 'period', 20));
 
     // --- CÁLCULO ADAPTATIVO DO CHANDELIER EXIT ---
-    const isLongTerm = contractDuration.unit !== 't';
+    const isLongTerm = contractDuration?.unit !== 't';
     const chandelierPeriod = isLongTerm ? 44 : 22; // Dobra o período para longo prazo
     const chandelierMultiplier = isLongTerm ? 4.5 : 3.0; // Aumenta o multiplicador
 
