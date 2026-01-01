@@ -10,7 +10,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Button } from "../ui/button";
-import { Loader2, Users, Bot, Info, BrainCircuit, CheckCircle, XCircle, HelpCircle, CandlestickChart, Activity, Waves, Cloud, BarChart, TrendingUp, Award, Wand, Trash2, ShieldCheck, ShieldX, Group, ArrowUpCircle, ArrowDownCircle, LayoutGrid, Power, PowerOff, Clock } from "lucide-react";
+import { Loader2, Users, Bot, Info, BrainCircuit, CheckCircle, XCircle, HelpCircle, CandlestickChart, Activity, Waves, Cloud, BarChart, TrendingUp, Award, Wand, Trash2, ShieldCheck, ShieldX, Group, ArrowUpCircle, ArrowDownCircle, LayoutGrid, Power, PowerOff, Clock, Repeat } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "../ui/alert";
 import { useToast } from "@/hooks/use-toast";
 import { Label } from "../ui/label";
@@ -94,6 +94,8 @@ export function CouncilAutopilotInterface(props: CouncilAutopilotInterfaceProps)
     setIsMeritocracyOn,
     isStopLossOn,
     setIsStopLossOn,
+    isInversionModeOn, // NOVO
+    setIsInversionModeOn, // NOVO
     indicators,
     activeCommittee,
     supervisionStatus,
@@ -300,6 +302,15 @@ export function CouncilAutopilotInterface(props: CouncilAutopilotInterfaceProps)
             <div className="flex items-center justify-between">
                 <Label htmlFor="stop-loss-switch" className="flex-1">Stop-Loss Dinâmico</Label>
                 <Switch id="stop-loss-switch" checked={isStopLossOn} onCheckedChange={setIsStopLossOn} disabled={!isCouncilAutopilotOn} />
+            </div>
+             <div className="flex items-center justify-between">
+                <Label htmlFor="inversion-mode-switch" className="flex flex-col space-y-1 flex-1">
+                    <span>Inverter Decisões (Modo Contrário)</span>
+                    <span className="font-normal leading-snug text-muted-foreground text-xs">
+                        Se ativado, o piloto automático executará a ordem oposta à do consenso.
+                    </span>
+                </Label>
+                <Switch id="inversion-mode-switch" checked={isInversionModeOn} onCheckedChange={setIsInversionModeOn} disabled={!isCouncilAutopilotOn} />
             </div>
         </div>
 

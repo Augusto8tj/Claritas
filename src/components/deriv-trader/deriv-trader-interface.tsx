@@ -15,7 +15,7 @@ import {
   FormItem,
   FormMessage,
 } from "@/components/ui/form";
-import { ArrowDown, ArrowUp, Info, Loader2, Minus, Plus, ChevronDown } from "lucide-react";
+import { ArrowDown, ArrowUp, Info, Loader2, Minus, Plus, ChevronDown, Repeat } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Input } from "../ui/input";
 import { Checkbox } from "../ui/checkbox";
@@ -28,6 +28,7 @@ import { RadioGroup, RadioGroupItem } from "../ui/radio-group";
 
 import type { DurationUnit, RiseFallFormValues } from "@/lib/types";
 import { useDerivApi, type DurationLimits } from "@/hooks/use-deriv-api";
+import { Switch } from "../ui/switch";
 
 type TradeType = 'rise_fall' | 'higher_lower' | 'touch_no_touch';
 
@@ -53,29 +54,25 @@ function DerivTraderInterface({ symbol }: DerivTraderInterfaceProps) {
   const { toast } = useToast();
   const [loading, setLoading] = useState<"rise" | "fall" | null>(null);
   const [tradeType, setTradeType] = useState<TradeType>('rise_fall');
+  const [isInversionModeOn, setIsInversionModeOn] = useState(false); // NOVO ESTADO
   const { isConnected, executeTrade, durationLimits } = useDerivApi();
 
   const form = useFormContext<RiseFallFormValues>();
   const durationUnit = form.watch('duration_unit');
 
-  // Usamos uma ref para evitar re-renderizações desnecessárias e comparar os limites
   const durationLimitsRef = useRef<DurationLimits | null>(null);
 
   useEffect(() => {
-    // Se não há limites, ou os limites não mudaram, não faz nada
     if (!durationLimits || JSON.stringify(durationLimits) === JSON.stringify(durationLimitsRef.current)) {
       return;
     }
     
-    // Atualiza a ref com os novos limites
     durationLimitsRef.current = durationLimits;
     
-    // Se a unidade de duração atual não está nos novos limites, não faz nada (espera o usuário trocar)
     if (!durationLimits[durationUnit]) {
         return;
     }
 
-    // Ajusta a duração para estar dentro dos novos limites da unidade atual
     const currentDuration = form.getValues('duration');
     const { min, max } = durationLimits[durationUnit];
     let newDuration = currentDuration;
@@ -122,9 +119,15 @@ function DerivTraderInterface({ symbol }: DerivTraderInterfaceProps) {
     const data = form.getValues();
     setLoading(tradeDirection);
 
+    // LÓGICA DE INVERSÃO
+    let finalTradeDirection = tradeDirection;
+    if (isInversionModeOn) {
+        finalTradeDirection = tradeDirection === 'rise' ? 'fall' : 'rise';
+    }
+
     let contractType: string;
     if (tradeType === 'rise_fall') {
-      if (tradeDirection === 'rise') {
+      if (finalTradeDirection === 'rise') {
         contractType = data.allowEquals ? 'CALLE' : 'CALL';
       } else { // 'fall'
         contractType = data.allowEquals ? 'PUTE' : 'PUT';
@@ -135,13 +138,13 @@ function DerivTraderInterface({ symbol }: DerivTraderInterfaceProps) {
         return;
     }
 
-    const result = await executeTrade(contractType, data.stake, symbol, tradeDirection, data.duration, data.duration_unit, 'Manual');
+    const result = await executeTrade(contractType, data.stake, symbol, finalTradeDirection, data.duration, data.duration_unit, 'Manual');
     setLoading(null);
 
     if (result.success && result.contractId) {
       toast({
         title: "Ordem Executada!",
-        description: `Sua negociação para ${symbol} foi aberta.`,
+        description: `Sua negociação para ${symbol} foi aberta. ${isInversionModeOn ? '(Direção Invertida)' : ''}`,
       });
     } else {
       toast({
@@ -293,26 +296,26 @@ function DerivTraderInterface({ symbol }: DerivTraderInterfaceProps) {
                         </TabsContent>
                     </Tabs>
 
-                    <FormField
-                        control={form.control}
-                        name="allowEquals"
-                        render={({ field }) => (
-                        <FormItem className="flex flex-row items-center space-x-2 space-y-0 pt-2">
-                            <FormControl>
-                                <Checkbox
-                                    checked={field.value}
-                                    onCheckedChange={field.onChange}
-                                    disabled={isButtonDisabled}
-                                    id="allowEquals"
-                                />
-                            </FormControl>
+                    <div className="flex items-center justify-between pt-2">
+                        <div className="flex flex-row items-center space-x-2 space-y-0">
+                            <Checkbox
+                                checked={form.getValues('allowEquals')}
+                                onCheckedChange={(checked) => form.setValue('allowEquals', !!checked)}
+                                disabled={isButtonDisabled}
+                                id="allowEquals"
+                            />
                             <Label htmlFor="allowEquals" className="text-sm font-normal text-muted-foreground cursor-pointer">
                                 Permitir "Equals"
                             </Label>
                             <Info className="h-3 w-3 text-muted-foreground" />
-                        </FormItem>
-                        )}
-                    />
+                        </div>
+                        <div className="flex items-center space-x-2">
+                            <Label htmlFor="inversion-mode" className="text-sm font-normal text-muted-foreground cursor-pointer">
+                                Inverter Direção
+                            </Label>
+                            <Switch id="inversion-mode" checked={isInversionModeOn} onCheckedChange={setIsInversionModeOn} />
+                        </div>
+                    </div>
                 </form>
             </Form>
             

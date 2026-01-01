@@ -195,6 +195,7 @@ export function useRobotCouncil(
     const [isDynamicRiskOn, setIsDynamicRiskOn] = useState(true);
     const [isMeritocracyOn, setIsMeritocracyOn] = useState(true);
     const [isStopLossOn, setIsStopLossOn] = useState(true);
+    const [isInversionModeOn, setIsInversionModeOn] = useState(false); // NOVO ESTADO
 
     // Estados da Arena Virtual
     const [robotPerformance, setRobotPerformance] = useState<RobotPerformance[]>([]);
@@ -695,11 +696,17 @@ export function useRobotCouncil(
 
         if (supervisionDecision.status === 'approved') {
             councilExecutionRef.current.isExecuting = true;
-            const direction = riseConfidenceSum > fallConfidenceSum ? 'RISE' : 'FALL';
+            let direction = riseConfidenceSum > fallConfidenceSum ? 'RISE' : 'FALL';
+
+            // LÓGICA DE INVERSÃO PARA O AUTOPILOTO
+            if (isInversionModeOn) {
+                direction = direction === 'RISE' ? 'FALL' : 'RISE';
+            }
+
             const { finalStake, finalDuration, finalDurationUnit } = supervisionDecision;
             
             toast({
-                title: 'Conselho Executou Ordem!',
+                title: `Conselho Executou Ordem ${isInversionModeOn ? 'INVERTIDA' : ''}!`,
                 description: `Direção: ${direction}, Stake: $${finalStake.toFixed(
                     2
                 )}, Duração: ${finalDuration} ${finalDurationUnit}. ${supervisionDecision.analysis || ''}`,
@@ -735,7 +742,8 @@ export function useRobotCouncil(
         timePeriod,
         committeeOfSpecialists,
         user,
-        evolveTrigger
+        evolveTrigger,
+        isInversionModeOn // Adiciona ao array de dependências
     ]);
 
     return {
@@ -764,6 +772,8 @@ export function useRobotCouncil(
         setIsMeritocracyOn,
         isStopLossOn,
         setIsStopLossOn,
+        isInversionModeOn, // Exporta o estado e o setter
+        setIsInversionModeOn,
         indicators,
         activeCommittee,
         supervisionStatus,
