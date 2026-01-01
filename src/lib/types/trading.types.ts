@@ -87,7 +87,7 @@ export const RobotStrategySchema = z.object({
     strongBuyThreshold: z.number().optional().describe("The threshold for a strong buy signal (e.g., RSI < 20)."),
     weakBuyThreshold: z.number().optional().describe("The threshold for a weak buy signal (e.g., RSI < 30)."),
     strongSellThreshold: z.number().optional().describe("The threshold for a strong sell signal (e.g., RSI > 80)."),
-    weakSellThreshold: z.number().optional().describe("The threshold for a weak sell signal (e.g., RSI > 70)."),
+    weakSellThreshold: z.number().optional().describe("The threshold for a weak buy signal (e.g., RSI > 70)."),
 
     // Moving Averages & MACD
     shortPeriod: z.number().optional().describe("The short period for moving average crosses."),

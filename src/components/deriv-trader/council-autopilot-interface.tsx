@@ -372,8 +372,8 @@ export function CouncilAutopilotInterface(props: CouncilAutopilotInterfaceProps)
                                     const vote = voteData?.vote || 'HOLD';
                                     const weight = voteData?.weight || 1.0;
                                     const confidence = voteData?.confidence || 0;
-                                    const optimalDuration = voteData?.optimalDuration || robot.optimalDuration;
-                                    const optimalDurationUnit = voteData?.optimalDurationUnit || robot.optimalDurationUnit;
+                                    const optimalDuration = voteData?.optimalDuration;
+                                    const optimalDurationUnit = voteData?.optimalDurationUnit;
 
                                     return (
                                         <Fragment key={robot.id}>
@@ -397,10 +397,10 @@ export function CouncilAutopilotInterface(props: CouncilAutopilotInterfaceProps)
                                                 )}>
                                                     <span className="flex items-center gap-1">Voto: {vote} {voteIcons[vote]}</span>
                                                     {confidence > 0 && <span className="font-normal">(Conf: {confidence})</span>}
-                                                    {vote !== 'HOLD' && (
+                                                    {vote !== 'HOLD' && optimalDuration && optimalDurationUnit && durationUnitLabels[optimalDurationUnit] && (
                                                         <Badge variant="outline" className="flex items-center gap-1">
                                                             <Clock className="h-3 w-3"/>
-                                                            {optimalDuration} {durationUnitLabels[optimalDurationUnit]?.slice(0, -1)}
+                                                            {optimalDuration} {durationUnitLabels[optimalDurationUnit].slice(0, -1)}
                                                         </Badge>
                                                     )}
                                                 </div>
