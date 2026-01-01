@@ -6,7 +6,7 @@
  */
 import { db } from '@/lib/firebase';
 import { collection, getDocs, addDoc, doc, updateDoc, deleteDoc, getDoc, setDoc } from 'firebase/firestore';
-import type { Goal, BudgetCategory, Transaction, RobotPerformance } from '@/lib/types';
+import type { Goal, BudgetCategory, Transaction, RobotPerformance, TradeDecisionLog } from '@/lib/types';
 import { generateGoalImage } from '@/ai/flows/goal-image-generation';
 
 import { errorEmitter } from '@/firebase/error-emitter';
@@ -286,5 +286,30 @@ export async function getHallOfFame(userId: string): Promise<RobotPerformance[]>
     } catch(e) {
         console.error("Não foi possível carregar o Hall da Fama devido a um erro de acesso aos dados:", e);
         return [];
+    }
+}
+
+// --- Trading Decision Log ---
+
+export async function saveTradeDecision(userId: string, log: TradeDecisionLog): Promise<void> {
+    try {
+        const logCollectionRef = collection(db, 'users', userId, 'decision_logs');
+        // Usar o ID do log como ID do documento para evitar duplicatas
+        const logDocRef = doc(logCollectionRef, log.id);
+        
+        await setDoc(logDocRef, log).catch((serverError) => {
+            const permissionError = new FirestorePermissionError({
+                path: logDocRef.path,
+                operation: 'create',
+                requestResourceData: log,
+            });
+            errorEmitter.emit('permission-error', permissionError);
+            throw serverError;
+        });
+        console.log(`[Firebase] Log de Decisão ${log.id} salvo com sucesso.`);
+
+    } catch (error) {
+        console.error("Erro ao salvar o log de decisão no Firebase:", error);
+        // Não lançar erro para não quebrar a aplicação principal, apenas registrar.
     }
 }
