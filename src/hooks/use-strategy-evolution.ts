@@ -169,3 +169,5 @@ export function useStrategyEvolution(initialStrategies: Omit<RobotStrategy, 'id'
         evolutionHistory, // EXPORTA O HISTÓRICO
     };
 }
+
+    

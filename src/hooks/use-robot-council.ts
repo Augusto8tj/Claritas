@@ -274,7 +274,7 @@ export function useRobotCouncil(
 
     useEffect(() => {
         resetArenaPerformance();
-    }, [activeSymbol]); // A dependência chave
+    }, [activeSymbol, resetArenaPerformance]); // A dependência chave
 
     // ========================================================================
     // CONSTRUIR O CONSELHO
@@ -531,10 +531,10 @@ export function useRobotCouncil(
         let performanceChanged = false;
 
         virtualTradesRef.current.forEach((trade) => {
-            const isExpired = currentTickIndex >= trade.exitTickIndex;
+            const isExpired = currentTick.epoch >= trade.exitEpoch;
 
             if (isExpired) {
-                const exitTick = priceTicks[trade.exitTickIndex];
+                const exitTick = priceTicks.find(t => t.epoch >= trade.exitEpoch) || currentTick;
                 if (exitTick) {
                     const isWin =
                         (trade.vote === 'RISE' && exitTick.price > trade.entryPrice) ||
@@ -656,29 +656,44 @@ export function useRobotCouncil(
         if (supervisionDecision.status === 'approved') {
             councilExecutionRef.current.isExecuting = true;
             const direction = riseConfidenceSum > fallConfidenceSum ? 'RISE' : 'FALL';
-            const { duration_unit } = form.getValues();
-            const { finalStake, finalDuration } = supervisionDecision;
             
-            const totalConfidenceForDirection = Object.values(newVotes).filter(v => v.vote === direction).reduce((acc, v) => acc + v.confidence, 0);
+            const votingRobots = Object.values(newVotes).filter(v => v.vote === direction);
+            const totalConfidence = votingRobots.reduce((sum, v) => sum + v.confidence, 0);
 
-            const weightedAvgDuration = Object.values(newVotes).filter(v => v.vote === direction).reduce((acc, v) => acc + (v.optimalDuration * (v.confidence / totalConfidenceForDirection)), 0);
+            const weightedAvgDuration = totalConfidence > 0 
+                ? votingRobots.reduce((sum, v) => sum + durationToSeconds(v.optimalDuration, v.optimalDurationUnit) * v.confidence, 0) / totalConfidence
+                : durationToSeconds(baseDuration, form.getValues('duration_unit'));
+
+            const weightedAvgStake = totalConfidence > 0 
+                ? votingRobots.reduce((sum, v) => sum + v.suggestedStake * v.confidence, 0) / totalConfidence
+                : baseStake;
+
+            const { duration: finalDuration, unit: finalDurationUnit } = (() => {
+                if (weightedAvgDuration <= 10 * 2 && form.getValues('duration_unit') === 't') return { duration: Math.max(1, Math.round(weightedAvgDuration / 2)), unit: 't'};
+                if (weightedAvgDuration < 60) return { duration: Math.round(weightedAvgDuration), unit: 's'};
+                return { duration: Math.round(weightedAvgDuration / 60), unit: 'm'};
+            })();
             
-            const weightedAvgStake = Object.values(newVotes).filter(v => v.vote === direction).reduce((acc, v) => acc + (v.suggestedStake * (v.confidence / totalConfidenceForDirection)), 0);
+            const atr = currentIndicators.atr || 0;
+            const bbw = currentIndicators.bbw || 0;
+            const volatilityFactor = (atr / getPrice(currentTick)! + bbw) / 2;
+            const adjustedStake = weightedAvgStake * Math.max(0.5, 1 - volatilityFactor * 5);
+
 
             toast({
                 title: 'Conselho Executou Ordem!',
-                description: `Direção: ${direction}, Stake: $${weightedAvgStake.toFixed(
+                description: `Direção: ${direction}, Stake: $${adjustedStake.toFixed(
                     2
-                )}, Duração: ${Math.round(weightedAvgDuration)} ${duration_unit}.`,
+                )}, Duração: ${finalDuration} ${finalDurationUnit}.`,
             });
 
             executeTrade(
                 direction === 'RISE' ? 'CALL' : 'PUT',
-                weightedAvgStake,
+                adjustedStake,
                 activeSymbol,
                 direction.toLowerCase() as 'rise' | 'fall',
-                Math.round(weightedAvgDuration),
-                duration_unit,
+                finalDuration,
+                finalDurationUnit,
                 'Conselho'
             ).finally(() =>
                 setTimeout(() => (councilExecutionRef.current.isExecuting = false), 10000)
@@ -700,7 +715,9 @@ export function useRobotCouncil(
         timePeriod,
         committeeOfSpecialists,
         user,
-        evolveTrigger
+        evolveTrigger,
+        baseDuration,
+        baseStake
     ]);
 
     return {
@@ -736,3 +753,5 @@ export function useRobotCouncil(
         evolutionHistory
     };
 }
+
+    

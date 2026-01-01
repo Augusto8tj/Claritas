@@ -26,8 +26,6 @@ import { IndicatorPanel } from "@/components/deriv-trader/indicator-panel";
 import { TradingDesk } from "@/components/deriv-trader/trading-desk";
 import { HallOfFame } from "@/components/deriv-trader/hall-of-fame";
 import { EvolutionLab } from "@/components/deriv-trader/evolution-lab";
-import { CouncilDashboard } from "@/components/deriv-trader/CouncilDashboard";
-import type { CouncilVotes } from "@/hooks/use-robot-council";
 
 
 function DerivTraderCore({ activeSymbol, robotCouncil }: { activeSymbol: string | null, robotCouncil: any }) {
@@ -59,11 +57,6 @@ function DerivTraderCore({ activeSymbol, robotCouncil }: { activeSymbol: string 
 
   return (
     <>
-      {robotCouncil.isCouncilAutopilotOn && robotCouncil.dashboardData && (
-        <div className="animate-in fade-in slide-in-from-top-4 duration-500">
-           <CouncilDashboard data={robotCouncil.dashboardData} />
-        </div>
-      )}
       <div className="space-y-6">
         <IndicatorPanel indicators={robotCouncil.indicators} latestDataPoint={latestDataPoint} />
         
@@ -269,6 +262,7 @@ function DerivTraderPageContent() {
     );
 }
 
+
 export default function DerivTraderPage() {
   const form = useForm<RiseFallFormValues>({
     resolver: zodResolver(riseFallSchema),
@@ -286,3 +280,5 @@ export default function DerivTraderPage() {
     </FormProvider>
   );
 }
+
+    

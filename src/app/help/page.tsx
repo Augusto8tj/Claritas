@@ -212,31 +212,21 @@ export default function HelpPage() {
             
             <AccordionItem value="item-13">
               <AccordionTrigger className="text-lg font-semibold">
-                A Arena Virtual: Meritocracia na Mesa Operacional
+                A Arena Virtual e o Laboratório de Evolução
               </AccordionTrigger>
               <AccordionContent className="text-base leading-relaxed space-y-4">
-                <p>Para elevar a inteligência do sistema, implementámos uma "Arena Virtual". Em vez de tratar todos os 22 analistas como iguais, criámos um sistema competitivo que promove os melhores em tempo real.</p>
+                <p>Para elevar a inteligência do sistema, implementámos uma "Arena Virtual" e um "Laboratório de Evolução".</p>
                 <div>
-                    <h4 className="font-semibold text-md mb-2">Painel "Arena Virtual" e o Leaderboard</h4>
+                    <h4 className="font-semibold text-md mb-2">Arena Virtual: Meritocracia em Tempo Real</h4>
                     <p className="text-sm">
-                      O painel <strong>Arena Virtual</strong>, agora uma aba dentro do Deriv Trader, funciona como um *leaderboard* da sua equipa de robôs. Para cada um, ela mostra:
+                      O painel <strong>Arena Virtual</strong> funciona como um *leaderboard* da sua equipa de robôs. Quando o modo <strong>Meritocracia</strong> está ativo, os robôs com melhor desempenho ganham mais peso na votação, tornando o sistema auto-otimizável.
                     </p>
-                    <ul className="list-disc pl-6 mt-2 space-y-1 text-sm">
-                      <li><strong>Estratégia e Parâmetros:</strong> A configuração atual do analista.</li>
-                      <li><strong>Desempenho:</strong> Número de vitórias e derrotas. O progresso é guardado no <strong>Firebase</strong>, persistindo entre sessões.</li>
-                      <li><strong>Taxa de Acerto:</strong> A percentagem de previsões corretas.</li>
-                      <li><strong>Resultado Financeiro:</strong> O lucro ou prejuízo virtual que aquele robô gerou.</li>
-                    </ul>
                 </div>
                  <div>
-                    <h4 className="font-semibold text-md mb-2">O Modo "Meritocracia"</h4>
+                    <h4 className="font-semibold text-md mb-2">Laboratório de Evolução Genética</h4>
                     <p className="text-sm">
-                      Na interface da Arena, você encontrará um interruptor para ativar a **Meritocracia**. Quando ligado, o sistema muda fundamentalmente a forma como os votos são contados:
+                      Este é o próximo nível. A cada 50 trades virtuais, o sistema identifica os robôs de pior desempenho e os **substitui por mutações genéticas dos robôs de elite**. Isto garante que o sistema não só promove os melhores, mas também se adapta e melhora autonomamente ao longo do tempo. Pode acompanhar este processo na aba <strong>Evolução</strong>.
                     </p>
-                     <ul className="list-disc pl-6 mt-2 space-y-1 text-sm">
-                      <li><strong>Voto Ponderado:</strong> O voto de um robô com alto desempenho (alta taxa de acerto e lucro) passa a ter **mais peso** na decisão final.</li>
-                      <li>**Auto-Otimização:** O sistema adapta-se automaticamente às condições de mercado. Se os robôs de tendência começam a perder pontos num mercado lateral, o seu peso diminui, e o peso dos robôs de oscilação (RSI, Estocástico) aumenta, tornando o sistema mais inteligente.</li>
-                    </ul>
                 </div>
                  <div>
                     <h4 className="font-semibold text-md mb-2">Hall da Fama</h4>
@@ -269,6 +259,10 @@ export default function HelpPage() {
                      <li>
                       <strong className="font-mono">src/services/financial-data-service.ts</strong><br/>
                       O serviço de persistência. Contém as funções para guardar e carregar o desempenho dos robôs no banco de dados Firebase Firestore, garantindo que o progresso da Arena e do Hall da Fama não se perca.
+                    </li>
+                     <li>
+                      <strong className="font-mono">src/hooks/use-strategy-evolution.ts</strong><br/>
+                      O Laboratório de Evolução. Este novo hook contém a lógica para substituir os robôs de baixo desempenho por mutações dos robôs de elite, garantindo a adaptação do sistema.
                     </li>
                     <li>
                       <strong className="font-mono">src/app/deriv-trader/page.tsx</strong><br/>
@@ -334,3 +328,5 @@ export default function HelpPage() {
     </div>
   );
 }
+
+    
