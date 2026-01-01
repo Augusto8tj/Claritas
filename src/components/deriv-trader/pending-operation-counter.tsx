@@ -25,12 +25,8 @@ const formatTime = (ms: number): string => {
 };
 
 export function PendingOperationCounter({ operation, onSell, isSelling, currentStatus }: PendingOperationCounterProps) {
-  const { priceTicks } = useDerivApi();
-  const [ticksSinceEntry, setTicksSinceEntry] = useState(0);
   const [remainingMs, setRemainingMs] = useState<number | null>(null);
-
-  const { duration, durationUnit, timestamp: entryTimeISO, isSellable, expirationTime } = operation;
-  const entryTime = useMemo(() => new Date(entryTimeISO).getTime(), [entryTimeISO]);
+  const { isSellable, expirationTime } = operation;
 
   const buttonStyle = useMemo(() => {
     return getGradientStyle({
@@ -40,13 +36,8 @@ export function PendingOperationCounter({ operation, onSell, isSelling, currentS
   }, [currentStatus]);
 
   useEffect(() => {
-    if (durationUnit !== 't' || !priceTicks) return;
-    const relevantTicks = priceTicks.filter(tick => tick.epoch * 1000 > entryTime);
-    setTicksSinceEntry(relevantTicks.length);
-  }, [priceTicks, entryTime, durationUnit]);
-  
-  useEffect(() => {
-    if (durationUnit === 't' || !expirationTime) return;
+    if (!expirationTime) return;
+
     const interval = setInterval(() => {
         const newRemainingMs = expirationTime - Date.now();
         setRemainingMs(newRemainingMs);
@@ -54,27 +45,20 @@ export function PendingOperationCounter({ operation, onSell, isSelling, currentS
             clearInterval(interval);
         }
     }, 1000);
+
+    // Set initial value immediately
     setRemainingMs(expirationTime - Date.now());
+
     return () => clearInterval(interval);
-  }, [expirationTime, durationUnit]);
+  }, [expirationTime]);
 
   // Contrato vendável se for temporal e tiver mais de 1 segundo de vida
   const isSellableNow = isSellable && remainingMs !== null && remainingMs > 1000;
   
   const renderCounter = () => {
-    if (durationUnit === 't') {
-      const ticksRemaining = Math.max(0, duration - ticksSinceEntry);
-      return (
-        <div className="flex items-center gap-1.5">
-          <Loader2 className="h-3 w-3 animate-spin" />
-          <span className="font-mono text-xs">{ticksRemaining} Ticks</span>
-        </div>
-      );
-    }
-
     if (remainingMs === null) {
       return (
-        <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-1.5 text-muted-foreground">
           <Loader2 className="h-3 w-3 animate-spin" />
           <span className="text-xs">Calculando...</span>
         </div>

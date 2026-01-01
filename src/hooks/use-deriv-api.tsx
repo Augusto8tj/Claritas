@@ -165,6 +165,17 @@ const getDurationLimitsForAsset = (minDurationStr: string | undefined): Duration
     }
 };
 
+const getDurationInSeconds = (duration: number, unit: DurationUnit): number => {
+    switch (unit) {
+        case 't': return duration * 2; // Aproximação de 1 tick = 2 segundos
+        case 's': return duration;
+        case 'm': return duration * 60;
+        case 'h': return duration * 3600;
+        case 'd': return duration * 86400;
+        default: return duration * 2; // Fallback seguro
+    }
+};
+
 
 export const DerivApiProvider = ({ children }: { children: ReactNode }) => {
   const [demoToken, setDemoToken] = useState<string | null>(null);
@@ -415,7 +426,10 @@ const subscribeToMarketData = useCallback(async (symbol: string) => {
 
             const isSellable = durationUnit !== 't';
             
-            const expirationTimeMs = buyResult.expiration_time ? buyResult.expiration_time * 1000 : undefined;
+            // Calcula o tempo de expiração em milissegundos
+            const durationInSeconds = getDurationInSeconds(duration, durationUnit);
+            const purchaseTimeMs = (buyResult.purchase_time || Math.floor(Date.now() / 1000)) * 1000;
+            const expirationTimeMs = purchaseTimeMs + durationInSeconds * 1000;
 
             const newOperation: Operation = {
                 id: buyResult.contract_id,
@@ -423,7 +437,7 @@ const subscribeToMarketData = useCallback(async (symbol: string) => {
                 direction: tradeDirection,
                 stake: sanitizedStake,
                 status: 'pending',
-                timestamp: new Date().toISOString(),
+                timestamp: new Date(purchaseTimeMs).toISOString(),
                 duration: duration,
                 durationUnit: durationUnit,
                 initiator,
