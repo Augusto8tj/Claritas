@@ -11,6 +11,7 @@ import { calculateAllIndicators } from '@/services/indicator-service';
 import { useAuth } from '@/features/auth/hooks/use-auth';
 import { saveRobotPerformance, loadRobotPerformance } from '@/services/financial-data-service';
 import { useStrategyEvolution } from './use-strategy-evolution';
+import { initialCouncilStrategies } from '@/services/council-strategies';
 
 
 export type RobotVote = {
@@ -175,7 +176,7 @@ export function useRobotCouncil(
     const { operationsLog, executeTrade, timePeriod, isConnected, sellContract } = useDerivApi();
     const { user, loading: isAuthLoading } = useAuth();
     const { toast } = useToast();
-    const { evolvedStrategies, evolveTrigger, evolutionHistory } = useStrategyEvolution();
+    const { evolvedStrategies, evolveTrigger, evolutionHistory } = useStrategyEvolution(initialCouncilStrategies);
     const form = useFormContext<RiseFallFormValues>();
 
     // Estados do Conselho
