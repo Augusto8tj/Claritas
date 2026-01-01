@@ -49,6 +49,7 @@ export function CouncilAutopilotInterfaceV2(props: CouncilAutopilotInterfaceV2Pr
     setTakeProfitThreshold,
     stopLossThreshold,
     setStopLossThreshold,
+    effectiveThreshold, // NOVO: valor efetivo
  } = props;
   const { toast } = useToast();
 
@@ -174,8 +175,11 @@ export function CouncilAutopilotInterfaceV2(props: CouncilAutopilotInterfaceV2Pr
                 <div className="space-y-6 rounded-lg border bg-muted/50 p-4">
                     <div>
                         <div className="flex justify-between items-center mb-1">
-                             <Label htmlFor="consensus-sensitivity">Sensibilidade do Consenso</Label>
-                             <span className="text-sm font-mono text-primary font-semibold">{consensusSensitivity}</span>
+                            <Label htmlFor="consensus-sensitivity">Sensibilidade do Consenso</Label>
+                            <div className="flex items-center gap-2 text-sm">
+                                <span>Definido:</span>
+                                <span className="font-mono text-primary font-semibold">{consensusSensitivity}</span>
+                            </div>
                         </div>
                         <Slider
                             id="consensus-sensitivity"
@@ -186,7 +190,10 @@ export function CouncilAutopilotInterfaceV2(props: CouncilAutopilotInterfaceV2Pr
                             onValueChange={(value) => setConsensusSensitivity(value[0])}
                             disabled={isCouncilAutopilotOn}
                         />
-                         <p className="text-xs text-muted-foreground mt-2">Valores mais altos exigem um consenso mais forte.</p>
+                         <div className="flex justify-between items-center text-xs text-muted-foreground mt-2">
+                             <span>Limiar Efetivo (Calculado):</span>
+                             <span className="font-mono font-bold text-foreground">{effectiveThreshold.toFixed(0)}</span>
+                         </div>
                     </div>
                      <div>
                         <div className="flex justify-between items-center mb-1">

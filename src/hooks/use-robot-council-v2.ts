@@ -334,6 +334,7 @@ export function useRobotCouncilV2(
   });
 
   const [dashboardData, setDashboardData] = useState<DashboardData | null>(null);
+  const [effectiveThreshold, setEffectiveThreshold] = useState(0); // NOVO ESTADO
 
   const councilExecutionRef = useRef<{ 
     isExecuting: boolean;
@@ -753,15 +754,18 @@ export function useRobotCouncilV2(
       return;
     }
 
-    let effectiveThreshold;
+    let calculatedEffectiveThreshold;
     if (isDynamicConsensusOn) {
         const baseThreshold = totalWeight * (consensusSensitivity / 100);
         const volFactor = 1 + (microFeatures ? Math.min(microFeatures.yangZhangVolatility * 5, 1) : 0);
-        effectiveThreshold = baseThreshold * Math.pow(volFactor, 1.5);
+        calculatedEffectiveThreshold = baseThreshold * Math.pow(volFactor, 1.5);
     } else {
-        effectiveThreshold = consensusSensitivity; 
+        calculatedEffectiveThreshold = consensusSensitivity; 
     }
-    const consensusReached = Math.max(riseSum, fallSum) >= effectiveThreshold;
+    setEffectiveThreshold(calculatedEffectiveThreshold); // Atualiza o estado
+    
+    const consensusReached = Math.max(riseSum, fallSum) >= calculatedEffectiveThreshold;
+
 
     // ══════════════════════════════════════════════════════════════
     // ETAPA 9: KELLY CRITERION POSITION SIZING
@@ -875,5 +879,6 @@ export function useRobotCouncilV2(
     setStopLossThreshold, isDynamicConsensusOn, setIsDynamicConsensusOn,
     isDynamicRiskOn, setIsDynamicRiskOn, isMeritocracyOn, setIsMeritocracyOn,
     dashboardData,
+    effectiveThreshold, // Exporta o novo valor
   };
 }
