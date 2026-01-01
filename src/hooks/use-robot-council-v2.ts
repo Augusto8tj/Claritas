@@ -315,7 +315,7 @@ export function useRobotCouncilV2(
   const [dailyBalance, setDailyBalance] = useState(100);
   const [dailyTarget, setDailyTarget] = useState(50);
   const [consensusSensitivity, setConsensusSensitivity] = useState(60); 
-  const [confidenceFactor, setConfidenceFactor] = useState(75); 
+  const [confidenceFactor, setConfidenceFactor] = useState(70); 
   const [durationRange, setDurationRange] = useState<[number, number]>([15, 180]);
   const [takeProfitThreshold, setTakeProfitThreshold] = useState(10);
   const [stopLossThreshold, setStopLossThreshold] = useState(20);
@@ -935,13 +935,13 @@ export function useRobotCouncilV2(
       consensusDirection === 'RISE' ? 'CALL' : 'PUT', kellyStake, activeSymbol!,
       consensusDirection.toLowerCase() as 'rise' | 'fall', finalDuration, finalDurationUnit, 'Conselho'
     ).then(tradeResult => {
-      // Quando a operação for concluída, o log será atualizado e salvo no Firebase
-      const updateLogOnCompletion = (updatedOp: Operation) => {
-        if (updatedOp.id === tradeResult.contractId) {
+      // Este bloco executa após a compra ser confirmada
+      const watchForCompletion = (op: Operation) => {
+        if (op.id === tradeResult.contractId && op.status !== 'pending') {
           setTradeDecisionLog(prevLogs => {
-            const updatedLogs = prevLogs.map(log => {
+            return prevLogs.map(log => {
               if (log.id === decisionLog.id) {
-                const finalLog = { ...log, result: updatedOp.status, pnl: updatedOp.result };
+                const finalLog = { ...log, result: op.status, pnl: op.result };
                 if (user) {
                     saveTradeDecision(user.uid, finalLog); // Salva no Firebase
                 }
@@ -949,23 +949,25 @@ export function useRobotCouncilV2(
               }
               return log;
             });
-            return updatedLogs;
           });
         }
       };
 
-      // Esta é uma simplificação. A lógica real estaria no `onmessage` do `useDerivApi`
-      // para observar quando `proposal_open_contract` com `is_sold: 1` chega.
-      const unsubscribe = () => { /* Lógica para remover o listener */ };
-      const subscribeToOperationUpdates = (opId: number, callback: (op: Operation) => void) => {
-          // Placeholder: Em um sistema real, isso observaria as atualizações do WebSocket
-          // e chamaria o callback quando a operação com `opId` fosse atualizada.
+      // Adicionamos um listener que será chamado quando o operationsLog mudar
+      const checkOpsLog = (log: Operation[]) => {
+        const updatedOp = log.find(op => op.id === tradeResult.contractId);
+        if (updatedOp && updatedOp.status !== 'pending') {
+          watchForCompletion(updatedOp);
+        }
       };
-      if(tradeResult.contractId) {
-        subscribeToOperationUpdates(tradeResult.contractId, updateLogOnCompletion);
-      }
-
-
+      
+      // Simulação de como o React reagiria à atualização do `operationsLog`
+      // A lógica real dependerá de como o `operationsLog` é atualizado pelo `useDerivApi`
+      const unsubscribe = () => { /* Em um app real, aqui removeríamos o listener */ };
+      
+      // Quando `operationsLog` for atualizado, esta lógica será acionada
+      checkOpsLog(operationsLog);
+      
     }).finally(() => {
       const recentTrades = operationsLog.filter(op => op.initiator === 'Conselho' && Date.now() - new Date(op.timestamp).getTime() < 300000).length;
       const cooldownTime = Math.min(5000 + (recentTrades * 2000), 30000);

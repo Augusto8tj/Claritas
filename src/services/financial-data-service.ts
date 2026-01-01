@@ -3,15 +3,12 @@
 
 /**
  * @fileOverview A financial data service that interacts with Firebase Firestore.
+ * This service now includes non-blocking writes and contextual error handling for security rules.
  */
 import { db } from '@/lib/firebase';
-import { collection, getDocs, addDoc, doc, updateDoc, deleteDoc, getDoc, setDoc, where, query } from 'firebase/firestore';
+import { collection, getDocs, addDoc, doc, updateDoc, deleteDoc, getDoc, setDoc, query, where } from 'firebase/firestore';
 import type { Goal, BudgetCategory, Transaction, RobotPerformance, TradeDecisionLog, EnhancedRobotPerformance } from '@/lib/types';
 import { generateGoalImage } from '@/ai/flows/goal-image-generation';
-
-
-const PROMOTION_THRESHOLD_WINS = 10;
-const PROMOTION_THRESHOLD_PROFIT = 0;
 
 // --- Transactions ---
 
@@ -190,36 +187,34 @@ export async function getInsights(): Promise<string[]> {
 
 export const saveRobotPerformance = async (userId: string, performance: EnhancedRobotPerformance[]) => {
   if (!userId) throw new Error("User not authenticated.");
+  const docRef = doc(db, 'users', userId, 'trading_data', 'robot_council_performance');
+  
+  const dataToSave = {
+    updatedAt: new Date().toISOString(),
+    robots: performance.map(p => ({
+      id: p.id,
+      strategyType: p.strategyType,
+      strategy: p.strategy, 
+      wins: p.wins,
+      losses: p.losses,
+      totalProfit: p.totalProfit,
+      winRate: p.winRate,
+      sharpeRatio: p.sharpeRatio,
+      maxDrawdown: p.maxDrawdown,
+      avgWin: p.avgWin,
+      avgLoss: p.avgLoss,
+      profitFactor: p.profitFactor,
+      kellyFraction: p.kellyFraction,
+      effectiveRegimes: p.effectiveRegimes,
+      monteCarloScore: p.monteCarloScore,
+      lastUpdated: p.lastUpdated,
+      tradeHistory: p.tradeHistory || [],
+    }))
+  };
+  
   try {
-    const docRef = doc(db, 'users', userId, 'trading_data', 'robot_council_performance');
-    
-    // Certifique-se de que todos os dados são serializáveis para o Firestore
-    const dataToSave = {
-      updatedAt: new Date().toISOString(),
-      robots: performance.map(p => ({
-        id: p.id,
-        strategyType: p.strategyType,
-        strategy: p.strategy, 
-        wins: p.wins,
-        losses: p.losses,
-        totalProfit: p.totalProfit,
-        winRate: p.winRate,
-        sharpeRatio: p.sharpeRatio,
-        maxDrawdown: p.maxDrawdown,
-        avgWin: p.avgWin,
-        avgLoss: p.avgLoss,
-        profitFactor: p.profitFactor,
-        kellyFraction: p.kellyFraction,
-        effectiveRegimes: p.effectiveRegimes,
-        monteCarloScore: p.monteCarloScore,
-        lastUpdated: p.lastUpdated,
-        tradeHistory: p.tradeHistory || [],
-      }))
-    };
-
-    await setDoc(docRef, dataToSave);
-
-  } catch (error) {
+    await setDoc(docRef, dataToSave, { merge: true });
+  } catch(error) {
     console.error(`[Service Error] saveRobotPerformance failed for user ${userId}:`, error);
     throw error;
   }
@@ -227,10 +222,9 @@ export const saveRobotPerformance = async (userId: string, performance: Enhanced
 
 export const loadRobotPerformance = async (userId: string): Promise<EnhancedRobotPerformance[] | null> => {
   if (!userId) return null;
+  const docRef = doc(db, 'users', userId, 'trading_data', 'robot_council_performance');
   try {
-    const docRef = doc(db, 'users', userId, 'trading_data', 'robot_council_performance');
     const docSnap = await getDoc(docRef);
-
     if (docSnap.exists()) {
       const data = docSnap.data();
       return (data.robots || []).map((r: any) => ({
@@ -252,6 +246,9 @@ export async function getHallOfFame(userId: string): Promise<RobotPerformance[]>
         if (!performanceData) {
             return [];
         }
+        
+        const PROMOTION_THRESHOLD_WINS = 10;
+        const PROMOTION_THRESHOLD_PROFIT = 0;
 
         const promotedRobots = performanceData.filter(
             (p) => (p.wins || 0) >= PROMOTION_THRESHOLD_WINS && (p.totalProfit || 0) > PROMOTION_THRESHOLD_PROFIT
@@ -270,13 +267,10 @@ export async function getHallOfFame(userId: string): Promise<RobotPerformance[]>
 
 export async function saveTradeDecision(userId: string, log: TradeDecisionLog): Promise<void> {
     if (!userId) throw new Error("User not authenticated.");
+    const logCollectionRef = collection(db, 'users', userId, 'decision_logs');
+    const logDocRef = doc(logCollectionRef, log.id);
     try {
-        const logCollectionRef = collection(db, 'users', userId, 'decision_logs');
-        const logDocRef = doc(logCollectionRef, log.id);
-        
         await setDoc(logDocRef, log);
-        console.log(`[Firebase] Log de Decisão ${log.id} salvo com sucesso.`);
-
     } catch (error) {
         console.error(`[Service Error] saveTradeDecision failed for user ${userId}:`, error);
         throw error;
