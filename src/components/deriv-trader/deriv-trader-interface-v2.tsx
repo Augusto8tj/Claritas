@@ -58,6 +58,7 @@ function DerivTraderInterfaceV2({ symbol }: DerivTraderInterfaceProps) {
   const { isConnected, executeTrade, durationLimits } = useDerivApi();
 
   const form = useFormContext<RiseFallFormValues>();
+  const lastUnitRef = useRef<DurationUnit | null>(null);
   
   const durationUnit = useWatch({
     control: form.control,
@@ -79,12 +80,26 @@ function DerivTraderInterfaceV2({ symbol }: DerivTraderInterfaceProps) {
     return (stake * 1.942).toFixed(2);
   }, [stake]);
 
-  const lastUnitRef = useRef<DurationUnit | null>(null);
 
   useEffect(() => {
-    if (!durationLimits || !durationUnit || lastUnitRef.current === durationUnit) {
-      return;
+    if (!durationLimits || !durationUnit) return;
+    
+    // Garante que o valor do Select não é um item desabilitado
+    if (durationLimits[durationUnit]?.min === 0) {
+        const firstValid = Object.entries(durationLimits)
+            .find(([, v]) => v.min > 0)?.[0];
+        
+        if (firstValid) {
+            form.setValue('duration_unit', firstValid as DurationUnit, {
+                shouldDirty: false,
+                shouldValidate: false,
+            });
+        }
+        return; // Retorna para esperar o novo render com a unidade válida
     }
+
+    // Lógica de ajuste de duração apenas quando a unidade muda
+    if (lastUnitRef.current === durationUnit) return;
     lastUnitRef.current = durationUnit;
   
     const currentDuration = form.getValues('duration');
@@ -101,7 +116,7 @@ function DerivTraderInterfaceV2({ symbol }: DerivTraderInterfaceProps) {
         shouldValidate: false,
       });
     }
-  }, [durationUnit]);
+  }, [durationUnit, durationLimits, form]);
 
 
   const handleDurationChange = (amount: number) => {
@@ -241,10 +256,7 @@ function DerivTraderInterfaceV2({ symbol }: DerivTraderInterfaceProps) {
                                     render={({ field }) => (
                                         <FormItem className="w-2/5">
                                             <Select
-                                              onValueChange={(value) => {
-                                                const newUnit = value as DurationUnit;
-                                                field.onChange(newUnit);
-                                              }}
+                                              onValueChange={field.onChange}
                                               value={field.value}
                                             >
                                                 <FormControl>
@@ -253,11 +265,14 @@ function DerivTraderInterfaceV2({ symbol }: DerivTraderInterfaceProps) {
                                                     </SelectTrigger>
                                                 </FormControl>
                                                 <SelectContent>
-                                                    {Object.entries(durationUnitLabels).map(([value, label]) => (
-                                                        <SelectItem key={value} value={value} disabled={durationLimits && durationLimits[value as DurationUnit].min === 0}>
-                                                            {label}
-                                                        </SelectItem>
-                                                    ))}
+                                                    {Object.entries(durationUnitLabels).map(([value, label]) => {
+                                                        const isUnitDisabled = durationLimits?.[value as DurationUnit]?.min === 0;
+                                                        return (
+                                                            <SelectItem key={value} value={value} disabled={isUnitDisabled}>
+                                                                {label}
+                                                            </SelectItem>
+                                                        );
+                                                    })}
                                                 </SelectContent>
                                             </Select>
                                         </FormItem>
