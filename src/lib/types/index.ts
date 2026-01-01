@@ -87,6 +87,7 @@ export interface Operation {
   entryPrice?: number;
   exitPrice?: number;
   isSellable?: boolean;
+  expirationTime?: number; // Expiration time in milliseconds
 }
 
 // =================================================================

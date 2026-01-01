@@ -29,7 +29,7 @@ export function PendingOperationCounter({ operation, onSell, isSelling, currentS
   const [ticksSinceEntry, setTicksSinceEntry] = useState(0);
   const [remainingMs, setRemainingMs] = useState<number | null>(null);
 
-  const { duration, durationUnit, timestamp: entryTimeISO, isSellable, entryPrice, direction } = operation;
+  const { duration, durationUnit, timestamp: entryTimeISO, isSellable, expirationTime } = operation;
   const entryTime = useMemo(() => new Date(entryTimeISO).getTime(), [entryTimeISO]);
 
   const buttonStyle = useMemo(() => {
@@ -39,18 +39,6 @@ export function PendingOperationCounter({ operation, onSell, isSelling, currentS
     });
   }, [currentStatus]);
 
-  const endTime = useMemo(() => {
-    if (durationUnit === 't') return null;
-    let durationMs = 0;
-    switch (durationUnit) {
-        case 's': durationMs = duration * 1000; break;
-        case 'm': durationMs = duration * 60 * 1000; break;
-        case 'h': durationMs = duration * 3600 * 1000; break;
-        case 'd': durationMs = duration * 86400 * 1000; break;
-    }
-    return entryTime + durationMs;
-  }, [duration, durationUnit, entryTime]);
-
   useEffect(() => {
     if (durationUnit !== 't' || !priceTicks) return;
     const relevantTicks = priceTicks.filter(tick => tick.epoch * 1000 > entryTime);
@@ -58,19 +46,19 @@ export function PendingOperationCounter({ operation, onSell, isSelling, currentS
   }, [priceTicks, entryTime, durationUnit]);
   
   useEffect(() => {
-    if (durationUnit === 't' || !endTime) return;
+    if (durationUnit === 't' || !expirationTime) return;
     const interval = setInterval(() => {
-        const newRemainingMs = endTime - Date.now();
+        const newRemainingMs = expirationTime - Date.now();
         setRemainingMs(newRemainingMs);
         if (newRemainingMs <= 0) {
             clearInterval(interval);
         }
     }, 1000);
-    setRemainingMs(endTime - Date.now());
+    setRemainingMs(expirationTime - Date.now());
     return () => clearInterval(interval);
-  }, [endTime, durationUnit]);
+  }, [expirationTime, durationUnit]);
 
-  const isSellableNow = isSellable && remainingMs !== null && remainingMs > 1000; // Allow selling until the last second
+  const isSellableNow = isSellable && remainingMs !== null && remainingMs > 1000;
   
   const renderCounter = () => {
     if (durationUnit === 't') {

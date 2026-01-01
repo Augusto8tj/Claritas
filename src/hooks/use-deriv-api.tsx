@@ -387,7 +387,6 @@ const subscribeToMarketData = useCallback(async (symbol: string) => {
             throw new Error("A conexão com a API da Deriv não está ativa.");
           }
 
-          // Garantir que o stake tem no máximo 2 casas decimais
           const sanitizedStake = parseFloat(stake.toFixed(2));
 
           try {
@@ -412,8 +411,9 @@ const subscribeToMarketData = useCallback(async (symbol: string) => {
             
             const entryPrice = buyResult.entry_tick_display_value ? parseFloat(buyResult.entry_tick_display_value) : buyResult.buy_price;
 
-            // Contratos são vendáveis se não forem baseados em Ticks
             const isSellable = durationUnit !== 't';
+            
+            const expirationTimeMs = buyResult.expiration_time ? buyResult.expiration_time * 1000 : undefined;
 
             const newOperation: Operation = {
                 id: buyResult.contract_id,
@@ -427,6 +427,7 @@ const subscribeToMarketData = useCallback(async (symbol: string) => {
                 initiator,
                 entryPrice: entryPrice,
                 isSellable,
+                expirationTime: expirationTimeMs,
             };
             setOperationsLog(prevLog => [newOperation, ...prevLog]);
 
@@ -462,12 +463,11 @@ const subscribeToMarketData = useCallback(async (symbol: string) => {
     try {
         const sellResponse: any = await makeRequest({ 
             "sell": contractId,
-            "price": 0, // Vende pelo preço atual de mercado
+            "price": 0,
         });
 
         const sellResult = sellResponse.sell;
         if (sellResult) {
-            // A atualização do contrato virá da subscrição 'proposal_open_contract'
             return { success: true, message: `Ordem de venda para o contrato ${contractId} enviada.` };
         } else {
             throw new Error("A resposta da API não continha os dados de venda esperados.");
@@ -538,10 +538,12 @@ const subscribeToMarketData = useCallback(async (symbol: string) => {
                         description: `Contrato ${contract.contract_id}: ${profit >= 0 ? `Lucro de ${contract.currency} ${profit.toFixed(2)}` : `Prejuízo de ${contract.currency} ${Math.abs(profit).toFixed(2)}`}`,
                         variant: isLoss ? "destructive" : "default",
                     });
+                    
+                    const sellTime = contract.sell_time ? contract.sell_time * 1000 : Date.now();
 
                     setOperationsLog(prevLog => prevLog.map(op =>
                         op.id === contract.contract_id 
-                        ? { ...op, status: profit >= 0 ? 'won' : 'lost', result: profit, exitPrice: parseFloat(contract.exit_tick_display_value), exitTimestamp: new Date(contract.sell_time * 1000).toISOString() } 
+                        ? { ...op, status: profit >= 0 ? 'won' : 'lost', result: profit, exitPrice: parseFloat(contract.exit_tick_display_value), exitTimestamp: new Date(sellTime).toISOString() } 
                         : op
                     ));
 
