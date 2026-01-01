@@ -9,7 +9,7 @@
 
 import { ai } from '@/lib/genkit';
 import { z } from 'zod';
-import { AssetAnalysisInputSchema, AssetAnalysisOutputSchema, type AssetAnalysisInput, type AssetAnalysisOutput } from '@/lib/types';
+import { AssetAnalysisInputSchema, AssetAnalysisOutputSchema, type AssetAnalysisInput, type AssetAnalysisOutput } from './asset-analysis.types';
 
 // O prompt é definido diretamente como uma string para clareza
 const ANALYSIS_PROMPT = `Você é um copiloto de negociação e gestor de risco. Sua tarefa é analisar os dados do ativo, o contexto do trader e fornecer uma sugestão de negociação inteligente e segura.
