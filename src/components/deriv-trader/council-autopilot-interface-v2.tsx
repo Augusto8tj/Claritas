@@ -175,7 +175,7 @@ export function CouncilAutopilotInterfaceV2(props: CouncilAutopilotInterfaceV2Pr
                     <div>
                         <div className="flex justify-between items-center mb-1">
                              <Label htmlFor="consensus-sensitivity">Sensibilidade do Consenso</Label>
-                             <span className="text-sm font-mono">{consensusSensitivity}</span>
+                             <span className="text-sm font-mono text-primary font-semibold">{consensusSensitivity}</span>
                         </div>
                         <Slider
                             id="consensus-sensitivity"
@@ -191,7 +191,7 @@ export function CouncilAutopilotInterfaceV2(props: CouncilAutopilotInterfaceV2Pr
                      <div>
                         <div className="flex justify-between items-center mb-1">
                             <Label htmlFor="confidence-factor">Fator de Confiança</Label>
-                            <span className="text-sm font-mono">{confidenceFactor.toFixed(1)}</span>
+                            <span className="text-sm font-mono text-primary font-semibold">{confidenceFactor.toFixed(1)}</span>
                         </div>
                         <Slider
                             id="confidence-factor"
