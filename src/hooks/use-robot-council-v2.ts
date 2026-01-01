@@ -80,6 +80,8 @@ const MONTE_CARLO_ITERATIONS = 1000;     // Iterações para validação
 const REGIME_LOOKBACK = 50;              // Janela para detecção de regime
 const MICROSTRUCTURE_WINDOW = 20;        // Janela para features de microestrutura
 const MIN_TRADES_FOR_STATS = 30;         // Trades mínimos para estatísticas confiáveis
+const THROTTLE_MS = 1000;                // Intervalo mínimo entre execuções do ciclo principal (em ms)
+
 
 const REGIME_THRESHOLDS = {
   ADX_TREND: 25,
@@ -253,6 +255,7 @@ export function useRobotCouncilV2(
   const { user, loading: isAuthLoading } = useAuth();
   const { toast } = useToast();
   const { evolvedStrategies, evolveTrigger, evolutionHistory } = useStrategyEvolution(initialCouncilStrategies);
+  const lastExecutionTimeRef = useRef(0); // Para o throttle
 
   // ────────────────────────────────────────────────────────────────
   // ESTADOS DO CONSELHO
@@ -455,6 +458,15 @@ export function useRobotCouncilV2(
   // 🔄 LOOP PRINCIPAL - EXECUTADO A CADA TICK
   // ════════════════════════════════════════════════════════════════════
   useEffect(() => {
+    // ══════════════════════════════════════════════════════════════
+    // THROTTLE: CONTROLA A FREQUÊNCIA DE EXECUÇÃO
+    // ══════════════════════════════════════════════════════════════
+    const now = Date.now();
+    if (now - lastExecutionTimeRef.current < THROTTLE_MS) {
+        return; // Pula a execução se for muito cedo
+    }
+    lastExecutionTimeRef.current = now;
+
     // ══════════════════════════════════════════════════════════════
     // VALIDAÇÕES PRELIMINARES
     // ══════════════════════════════════════════════════════════════
