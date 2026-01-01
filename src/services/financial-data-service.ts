@@ -9,6 +9,8 @@ import { db } from '@/lib/firebase';
 import { collection, getDocs, addDoc, doc, updateDoc, deleteDoc, getDoc, setDoc, query, where } from 'firebase/firestore';
 import type { Goal, BudgetCategory, Transaction, RobotPerformance, TradeDecisionLog, EnhancedRobotPerformance } from '@/lib/types';
 import { generateGoalImage } from '@/ai/flows/goal-image-generation';
+import { FirestorePermissionError } from '@/firebase/errors';
+import { errorEmitter } from '@/firebase/error-emitter';
 
 // --- Transactions ---
 
@@ -19,8 +21,9 @@ export async function getTransactions(userId: string): Promise<Transaction[]> {
         const snapshot = await getDocs(transactionsCol);
         return snapshot.docs.map(d => ({ id: d.id, ...d.data() } as Transaction));
     } catch (serverError) {
+        // Propagate the original error for client-side handling
         console.error(`[Service Error] getTransactions failed for user ${userId}:`, serverError);
-        throw serverError; // Propagate the original error
+        throw serverError;
     }
 }
 
@@ -191,25 +194,28 @@ export const saveRobotPerformance = async (userId: string, performance: Enhanced
   
   const dataToSave = {
     updatedAt: new Date().toISOString(),
-    robots: performance.map(p => ({
-      id: p.id,
-      strategyType: p.strategyType,
-      strategy: p.strategy, 
-      wins: p.wins,
-      losses: p.losses,
-      totalProfit: p.totalProfit,
-      winRate: p.winRate,
-      sharpeRatio: p.sharpeRatio,
-      maxDrawdown: p.maxDrawdown,
-      avgWin: p.avgWin,
-      avgLoss: p.avgLoss,
-      profitFactor: p.profitFactor,
-      kellyFraction: p.kellyFraction,
-      effectiveRegimes: p.effectiveRegimes,
-      monteCarloScore: p.monteCarloScore,
-      lastUpdated: p.lastUpdated,
-      tradeHistory: p.tradeHistory || [],
-    }))
+    robots: performance.map(p => {
+      const sanitizedValue = (value: number | undefined) => (value === undefined || isNaN(value)) ? 0 : value;
+      return {
+        id: p.id,
+        strategyType: p.strategyType,
+        strategy: p.strategy, 
+        wins: sanitizedValue(p.wins),
+        losses: sanitizedValue(p.losses),
+        totalProfit: sanitizedValue(p.totalProfit),
+        winRate: sanitizedValue(p.winRate),
+        sharpeRatio: sanitizedValue(p.sharpeRatio),
+        maxDrawdown: sanitizedValue(p.maxDrawdown),
+        avgWin: sanitizedValue(p.avgWin),
+        avgLoss: sanitizedValue(p.avgLoss),
+        profitFactor: sanitizedValue(p.profitFactor),
+        kellyFraction: sanitizedValue(p.kellyFraction),
+        effectiveRegimes: p.effectiveRegimes || [],
+        monteCarloScore: sanitizedValue(p.monteCarloScore),
+        lastUpdated: sanitizedValue(p.lastUpdated),
+        tradeHistory: p.tradeHistory || [],
+      }
+    })
   };
   
   try {
