@@ -248,7 +248,7 @@ export function useRobotCouncilV2(
   // ────────────────────────────────────────────────────────────────
   // DEPENDENCIES
   // ────────────────────────────────────────────────────────────────
-  const { operationsLog, executeTrade, timePeriod, isConnected, durationLimits, sellContract } = useDerivApi();
+  const { operationsLog, executeTrade, timePeriod, isConnected, durationLimits, sellContract, dataVersion } = useDerivApi();
   const { user, loading: isAuthLoading } = useAuth();
   const { toast } = useToast();
   const { evolvedStrategies, evolveTrigger, evolutionHistory } = useStrategyEvolution(initialCouncilStrategies);
@@ -344,7 +344,7 @@ export function useRobotCouncilV2(
       close: t.price, 
       volume: 1 
     }));
-  }, [priceTicks]);
+  }, [dataVersion]); // Alterado para dataVersion
 
   // ────────────────────────────────────────────────────────────────
   // SINCRONIZAÇÃO COM EVOLUÇÃO GENÉTICA
@@ -448,9 +448,7 @@ export function useRobotCouncilV2(
       title: '⏸️ Sistema Pausado',
       description: 'Conselho desativado.',
     });
-  }, [toast]);
-
-  // ════════════════════════════════════════════════════════════════════
+  }, [toast]);  // ════════════════════════════════════════════════════════════════════
   // 🔄 LOOP PRINCIPAL - EXECUTADO A CADA TICK
   // ════════════════════════════════════════════════════════════════════
   useEffect(() => {
@@ -475,7 +473,7 @@ export function useRobotCouncilV2(
       timePeriod, 
       { duration: 5, unit: 'm' }
     );
-    setIndicators(currentIndicators);
+    setIndicators(currentIndicators); // NOVO
 
     if (!currentIndicators || !currentIndicators.adx) {
       console.warn('⚠️ Indicadores incompletos, pulando ciclo');
@@ -1031,8 +1029,7 @@ export function useRobotCouncilV2(
     });
 
   }, [
-    priceTicks,
-    tickCandles,
+    dataVersion, // Alterado
     isConnected,
     isCouncilAutopilotOn,
     strategyCouncil,

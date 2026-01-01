@@ -74,6 +74,7 @@ interface DerivApiContextType {
   setChartType: (type: ChartType) => void;
   timePeriod: TimePeriod;
   setTimePeriod: (period: TimePeriod) => void;
+  dataVersion: number; // NOVO: Sinal de atualização de dados
 
   setAccountType: (type: AccountType) => void;
   setTokens: (tokens: { demo?: string; real?: string }) => void;
@@ -186,6 +187,7 @@ export const DerivApiProvider = ({ children }: { children: ReactNode }) => {
   const activeSubscriptionIdRef = useRef<string | null>(null);
   const [tradeAnnotations, setTradeAnnotations] = useState<TradeAnnotation[]>([]);
   const [durationLimits, setDurationLimits] = useState<DurationLimits | null>(null);
+  const [dataVersion, setDataVersion] = useState(0); // NOVO
 
   const wsRef = useRef<WebSocket | null>(null);
   const [isConnected, setIsConnected] = useState(false);
@@ -338,6 +340,7 @@ const subscribeToMarketData = useCallback(async (symbol: string) => {
         if (historyStyle === 'ticks') {
             setPriceTicks(history as TickData[]);
         }
+        setDataVersion(v => v + 1); // NOVO
 
         let subRequest: any;
         
@@ -572,6 +575,7 @@ const subscribeToMarketData = useCallback(async (symbol: string) => {
                             }
                             return newTicks;
                         });
+                        setDataVersion(v => v + 1); // NOVO
                     }
                     break;
                 
@@ -586,6 +590,7 @@ const subscribeToMarketData = useCallback(async (symbol: string) => {
                             close: parseFloat(ohlc.close),
                         };
                         setChartData(prev => addDataPoint(prev, newCandle));
+                        setDataVersion(v => v + 1); // NOVO
                     }
                     break;
                 
@@ -601,6 +606,7 @@ const subscribeToMarketData = useCallback(async (symbol: string) => {
                                 close: parseFloat(candle.close),
                             };
                             setChartData(prev => addDataPoint(prev, newCandle));
+                            setDataVersion(v => v + 1); // NOVO
                         }
                     }
                     break;
@@ -771,6 +777,7 @@ const subscribeToMarketData = useCallback(async (symbol: string) => {
     setChartType,
     timePeriod,
     setTimePeriod,
+    dataVersion, // NOVO
     executeTrade,
     sellContract,
     clearActiveContracts,
