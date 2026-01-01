@@ -315,7 +315,7 @@ export function useRobotCouncilV2(
   const [dailyBalance, setDailyBalance] = useState(100);
   const [dailyTarget, setDailyTarget] = useState(50);
   const [consensusSensitivity, setConsensusSensitivity] = useState(60); 
-  const [confidenceFactor, setConfidenceFactor] = useState(100); 
+  const [confidenceFactor, setConfidenceFactor] = useState(80); 
   const [durationRange, setDurationRange] = useState<[number, number]>([15, 180]);
   const [takeProfitThreshold, setTakeProfitThreshold] = useState(10);
   const [stopLossThreshold, setStopLossThreshold] = useState(20);
@@ -750,8 +750,10 @@ export function useRobotCouncilV2(
         suggestedStake: technicalVote.suggestedStake * posterior, regime: regimeResult.regime, reason: technicalVote.reason,
       };
       bayesianVotes[robot.id] = finalVote;
-
+      
+      // Aplica o fator de confiança como um redutor
       const voteWeight = calibratedConf * weight * (confidenceFactor / 100);
+
       if (technicalVote.vote === 'RISE') riseSum += voteWeight;
       if (technicalVote.vote === 'FALL') fallSum += voteWeight;
       weightedStakeSum += finalVote.suggestedStake * voteWeight;
@@ -777,6 +779,9 @@ export function useRobotCouncilV2(
     const dailyPnL = operationsLog
       .filter(op => op.initiator === 'Conselho' && new Date(op.timestamp).toDateString() === new Date().toDateString())
       .reduce((sum, op) => sum + (op.result || 0), 0);
+      
+    setPortfolioStats(prev => ({ ...prev, dailyPnL }));
+
 
     if (dailyPnL <= -dailyBalance) {
       toast({ title: "🛑 Stop Loss Diário Atingido", description: "Operações suspensas.", variant: "destructive" });
@@ -863,12 +868,11 @@ export function useRobotCouncilV2(
     }
     setConsensusDecision({ direction: consensusDirection, probability: consensusProbability, stake: kellyStake });
     const activeStakes = activeCouncilContracts.reduce((sum, c) => sum + c.stake, 0);
-    setPortfolioStats({
-      totalExposure: activeStakes, maxExposure: dailyBalance * 0.3,
-      currentDrawdown: Math.abs(dailyPnL / dailyBalance * 100),
-      maxDrawdown: Math.max(portfolioStats.maxDrawdown, Math.abs(dailyPnL / dailyBalance * 100)),
-      dailyPnL
-    });
+    setPortfolioStats(prev => ({
+      ...prev,
+      totalExposure: activeStakes,
+      maxDrawdown: Math.max(prev.maxDrawdown, Math.abs(dailyPnL / dailyBalance * 100)),
+    }));
 
     // ══════════════════════════════════════════════════════════════
     // ETAPA 13: EXECUÇÃO DE TRADE REAL

@@ -205,10 +205,9 @@ export function CouncilAutopilotInterfaceV2(props: CouncilAutopilotInterfaceV2Pr
                 <div className="space-y-6 rounded-lg border bg-muted/50 p-4">
                     <div>
                         <div className="flex justify-between items-center mb-1">
-                            <Label htmlFor="consensus-sensitivity">Sensibilidade do Consenso</Label>
+                            <Label htmlFor="consensus-sensitivity">Sensibilidade do Consenso (%)</Label>
                             <div className="flex items-center gap-2 text-sm">
-                                <span>Definido:</span>
-                                <span className="font-mono text-primary font-semibold">{consensusSensitivity}</span>
+                                <span className="font-mono text-primary font-semibold">{consensusSensitivity}%</span>
                             </div>
                         </div>
                         <Slider
@@ -227,16 +226,15 @@ export function CouncilAutopilotInterfaceV2(props: CouncilAutopilotInterfaceV2Pr
                     </div>
                      <div>
                         <div className="flex justify-between items-center mb-1">
-                            <Label htmlFor="confidence-factor">Fator de Confiança</Label>
+                            <Label htmlFor="confidence-factor">Fator de Confiança (%)</Label>
                              <div className="flex items-center gap-2 text-sm">
-                                <span>Definido:</span>
-                                <span className="font-mono text-primary font-semibold">{confidenceFactor.toFixed(0)}%</span>
+                                <span className="font-mono text-primary font-semibold">{confidenceFactor}%</span>
                             </div>
                         </div>
                         <Slider
                             id="confidence-factor"
-                            min={50}
-                            max={200}
+                            min={20}
+                            max={100}
                             step={10}
                             value={[confidenceFactor]}
                             onValueChange={(value) => setConfidenceFactor(value[0])}
