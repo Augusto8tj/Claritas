@@ -205,7 +205,7 @@ export function CouncilAutopilotInterfaceV2(props: CouncilAutopilotInterfaceV2Pr
                 <div className="space-y-6 rounded-lg border bg-muted/50 p-4">
                     <div>
                         <div className="flex justify-between items-center mb-1">
-                            <Label htmlFor="consensus-sensitivity">Sensibilidade do Consenso (%)</Label>
+                            <Label htmlFor="consensus-sensitivity">Sensibilidade do Consenso</Label>
                             <div className="flex items-center gap-2 text-sm">
                                 <span className="font-mono text-primary font-semibold">{consensusSensitivity}%</span>
                             </div>
@@ -226,7 +226,7 @@ export function CouncilAutopilotInterfaceV2(props: CouncilAutopilotInterfaceV2Pr
                     </div>
                      <div>
                         <div className="flex justify-between items-center mb-1">
-                            <Label htmlFor="confidence-factor">Fator de Confiança (%)</Label>
+                            <Label htmlFor="confidence-factor">Limiar de Confiança Mínimo</Label>
                              <div className="flex items-center gap-2 text-sm">
                                 <span className="font-mono text-primary font-semibold">{confidenceFactor}%</span>
                             </div>
@@ -241,7 +241,7 @@ export function CouncilAutopilotInterfaceV2(props: CouncilAutopilotInterfaceV2Pr
                             disabled={isCouncilAutopilotOn}
                         />
                          <div className="flex justify-between items-center text-xs text-muted-foreground mt-2">
-                             <span>Confiança Bruta (Conselho):</span>
+                             <span>Força de Voto (Conselho):</span>
                              <span className="font-mono font-bold text-foreground">{councilConfidence.toFixed(2)}</span>
                          </div>
                     </div>

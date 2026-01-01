@@ -699,16 +699,31 @@ export function useRobotCouncilV2(
     strategyCouncil.forEach(robot => {
       const perf = performanceMap.get(robot.id);
       const technicalVote = calculateTechnicalVote(robot, currentIndicators, tickCandles);
+      
+      // NOVA LÓGICA: Aplica o limiar de confiança mínimo
+      if (technicalVote.vote === 'HOLD' || technicalVote.confidence < confidenceFactor) {
+        bayesianVotes[robot.id] = {
+          ...technicalVote,
+          rawConfidence: technicalVote.confidence, 
+          calibratedConfidence: 0, 
+          bayesianProbability: 0.5,
+          weight: 0, 
+          regime: regimeResult.regime, 
+          reason: technicalVote.confidence < confidenceFactor ? `Confiança (${technicalVote.confidence}) < Limiar (${confidenceFactor})` : 'Inativo/Fora de Regime'
+        };
+        return;
+      }
+
       const durationInSeconds = durationToSeconds(technicalVote.optimalDuration, technicalVote.optimalDurationUnit);
       
       const isRegimeEffective = !perf?.effectiveRegimes?.length || perf.effectiveRegimes.includes(regimeResult.regime);
       const isDurationInRange = durationInSeconds >= durationRange[0] && durationInSeconds <= durationRange[1];
       
-      if (technicalVote.vote === 'HOLD' || !isRegimeEffective || !isDurationInRange) {
+      if (!isRegimeEffective || !isDurationInRange) {
         bayesianVotes[robot.id] = {
           ...technicalVote,
           rawConfidence: 0, calibratedConfidence: 0, bayesianProbability: 0.5,
-          weight: 0, regime: regimeResult.regime, reason: 'Inativo/Fora de Regime'
+          weight: 0, regime: regimeResult.regime, reason: 'Inativo/Fora de Regime ou Duração'
         };
         return;
       }
@@ -751,8 +766,7 @@ export function useRobotCouncilV2(
       };
       bayesianVotes[robot.id] = finalVote;
       
-      // Aplica o fator de confiança como um redutor
-      const voteWeight = calibratedConf * weight * (confidenceFactor / 100);
+      const voteWeight = calibratedConf * weight;
 
       if (technicalVote.vote === 'RISE') riseSum += voteWeight;
       if (technicalVote.vote === 'FALL') fallSum += voteWeight;
