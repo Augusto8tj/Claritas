@@ -60,30 +60,23 @@ function DerivTraderInterface({ symbol }: DerivTraderInterfaceProps) {
   const form = useFormContext<RiseFallFormValues>();
   const durationUnit = form.watch('duration_unit');
 
-  const durationLimitsRef = useRef<DurationLimits | null>(null);
-
+  // Ajustado para depender apenas da mudança da unidade de duração.
   useEffect(() => {
-    if (!durationLimits || JSON.stringify(durationLimits) === JSON.stringify(durationLimitsRef.current)) {
+    if (!durationLimits || !durationLimits[durationUnit]) {
       return;
-    }
-    
-    durationLimitsRef.current = durationLimits;
-    
-    if (!durationLimits[durationUnit]) {
-        return;
     }
 
     const currentDuration = form.getValues('duration');
     const { min, max } = durationLimits[durationUnit];
-    let newDuration = currentDuration;
 
+    let newDuration = currentDuration;
     if (newDuration < min) newDuration = min;
     if (newDuration > max) newDuration = max;
 
     if (newDuration !== currentDuration) {
-        form.setValue('duration', newDuration);
+      form.setValue('duration', newDuration);
     }
-}, [durationLimits, durationUnit, form]);
+  }, [durationUnit, durationLimits]);
 
 
   const handleDurationChange = (amount: number) => {
@@ -215,11 +208,6 @@ function DerivTraderInterface({ symbol }: DerivTraderInterfaceProps) {
                                               onValueChange={(value) => {
                                                 const newUnit = value as DurationUnit;
                                                 field.onChange(newUnit);
-
-                                                if (durationLimits && durationLimits[newUnit]) {
-                                                    const { min } = durationLimits[newUnit];
-                                                    form.setValue('duration', min);
-                                                }
                                               }}
                                               value={field.value}
                                             >
