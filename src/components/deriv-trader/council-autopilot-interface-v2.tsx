@@ -9,7 +9,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Button } from "../ui/button";
-import { Loader2, LayoutGrid, Power, PowerOff, Clock, TrendingUp, TrendingDown } from "lucide-react";
+import { Loader2, LayoutGrid, Power, PowerOff, Clock, TrendingUp, TrendingDown, Wallet, BarChart2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Label } from "../ui/label";
 import { Switch } from "../ui/switch";
@@ -18,6 +18,7 @@ import { Badge } from "../ui/badge";
 import { Input } from "../ui/input";
 import type { useRobotCouncilV2 } from "@/hooks/use-robot-council-v2";
 import { Slider } from "../ui/slider";
+import { cn } from "@/lib/utils";
 
 interface CouncilAutopilotInterfaceV2Props extends ReturnType<typeof useRobotCouncilV2> {}
 
@@ -51,6 +52,7 @@ export function CouncilAutopilotInterfaceV2(props: CouncilAutopilotInterfaceV2Pr
     setStopLossThreshold,
     effectiveThreshold,
     councilConfidence,
+    portfolioStats,
  } = props;
   const { toast } = useToast();
 
@@ -71,6 +73,33 @@ export function CouncilAutopilotInterfaceV2(props: CouncilAutopilotInterfaceV2Pr
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
+
+        {isCouncilAutopilotOn && (
+           <div className="space-y-3 rounded-lg border bg-card p-4">
+              <h4 className="font-headline flex items-center gap-2 text-primary"><Wallet className="h-5 w-5"/>Gestão de Portfólio</h4>
+              <div className="grid grid-cols-3 gap-3 text-center text-xs">
+                  <div>
+                      <p className="text-muted-foreground">P&L do Dia</p>
+                      <p className={cn("font-bold text-sm", portfolioStats.dailyPnL > 0 && "text-green-600", portfolioStats.dailyPnL < 0 && "text-destructive")}>
+                          {portfolioStats.dailyPnL.toLocaleString('pt-BR', { style: 'currency', currency: 'USD' })}
+                      </p>
+                  </div>
+                   <div>
+                      <p className="text-muted-foreground">Exposição</p>
+                      <p className="font-bold text-sm">
+                          {portfolioStats.totalExposure.toLocaleString('pt-BR', { style: 'currency', currency: 'USD' })}
+                      </p>
+                  </div>
+                   <div>
+                      <p className="text-muted-foreground">Drawdown</p>
+                      <p className="font-bold text-sm">
+                          {portfolioStats.currentDrawdown.toFixed(2)}%
+                      </p>
+                  </div>
+              </div>
+          </div>
+        )}
+
         <div className="grid grid-cols-2 gap-4">
              <div className="space-y-2">
                 <Label htmlFor="council-daily-balance">Banca do Dia (USD)</Label>

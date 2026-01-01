@@ -361,7 +361,7 @@ export function useRobotCouncilV2(
       close: t.price, 
       volume: 1 
     }));
-  }, [dataVersion]); 
+  }, [dataVersion, priceTicks]); 
 
   // ────────────────────────────────────────────────────────────────
   // SINCRONIZAÇÃO COM EVOLUÇÃO GENÉTICA
@@ -888,7 +888,7 @@ export function useRobotCouncilV2(
     activeSymbol, operationsLog, currentRegime, user, toast, executeTrade, sellContract,
     timePeriod, durationLimits, dailyBalance, dailyTarget, evolveTrigger,
     portfolioStats.maxDrawdown, consensusSensitivity, confidenceFactor, durationRange,
-    takeProfitThreshold, stopLossThreshold
+    takeProfitThreshold, stopLossThreshold, priceTicks, tickCandles
   ]);
 
   // ════════════════════════════════════════════════════════════════════
