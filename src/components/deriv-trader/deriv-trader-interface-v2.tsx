@@ -82,9 +82,9 @@ function DerivTraderInterfaceV2({ symbol }: DerivTraderInterfaceProps) {
   const lastUnitRef = useRef<DurationUnit | null>(null);
 
   useEffect(() => {
-    if (!durationLimits || !durationUnit) return;
-  
-    if (lastUnitRef.current === durationUnit) return;
+    if (!durationLimits || !durationUnit || lastUnitRef.current === durationUnit) {
+      return;
+    }
     lastUnitRef.current = durationUnit;
   
     const currentDuration = form.getValues('duration');
@@ -101,7 +101,7 @@ function DerivTraderInterfaceV2({ symbol }: DerivTraderInterfaceProps) {
         shouldValidate: false,
       });
     }
-  }, [durationUnit, durationLimits, form]);
+  }, [durationUnit]);
 
 
   const handleDurationChange = (amount: number) => {
