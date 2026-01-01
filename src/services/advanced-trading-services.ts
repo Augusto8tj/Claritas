@@ -75,7 +75,7 @@ export interface PerformanceMetrics {
   calmarRatio: number;        // Return / Max Drawdown
   maxDrawdown: number;
   maxDrawdownDuration: number; // Em número de trades
-  profitFactor: number;       // Total wins / Total losses
+  profitFactor: number;       // Total Wins / Total Losses
   kellyFraction: number;
   avgWin: number;
   avgLoss: number;

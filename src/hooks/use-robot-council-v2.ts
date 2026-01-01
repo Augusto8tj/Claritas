@@ -43,6 +43,19 @@ export type EnhancedRobotPerformance = EnhancedRobotPerformanceType;
 export type RobotVote = RobotVoteType;
 export type CouncilVotes = { [key: string]: RobotVote };
 
+export interface DashboardData {
+    regime: string;
+    bayesianProbability: number;
+    consensusDirection: 'RISE' | 'FALL' | 'HOLD';
+    activeRobotsCount: number;
+    microstructure: {
+        pressure: number;
+        velocity: number;
+        isSpike: boolean;
+    };
+    kellyStake: number;
+}
+
 
 const durationToSeconds = (duration: number, unit: DurationUnit): number => {
     switch (unit) {
@@ -198,6 +211,8 @@ export function useRobotCouncilV2(
     maxDrawdown: 0,
     dailyPnL: 0
   });
+  
+   const [dashboardData, setDashboardData] = useState<DashboardData | null>(null);
 
   const councilExecutionRef = useRef<{ 
     isExecuting: boolean;
@@ -318,7 +333,7 @@ export function useRobotCouncilV2(
     const currentTick = priceTicks[priceTicks.length - 1];
     if(!currentTick) return;
     
-    const currentIndicators = calculateAllIndicators(tickCandles, strategyCouncil, timePeriod);
+    const currentIndicators = calculateAllIndicators(tickCandles, strategyCouncil, timePeriod, {duration: 5, unit: 'm'});
     if (!currentIndicators) return;
 
     const regimeResult = detectMarketRegime(
@@ -396,6 +411,7 @@ export function useRobotCouncilV2(
 
     const newVotes: Record<string, any> = {};
     let riseSum = 0, fallSum = 0, totalWeight = 0, weightedStakeSum = 0, weightedDurationSum = 0;
+    let activeRobotsCount = 0;
 
     strategyCouncil.forEach(robot => {
         const perf = performanceMap.get(robot.id);
@@ -409,6 +425,7 @@ export function useRobotCouncilV2(
             return;
         }
 
+        activeRobotsCount++;
         let prior = 0.5;
         if (perf && (perf.wins + perf.losses) >= MIN_TRADES_FOR_STATS) prior = perf.winRate / 100;
         let likelihood = technicalVote.confidence / 100;
@@ -466,12 +483,7 @@ export function useRobotCouncilV2(
         effectiveThreshold = (totalWeight * 0.6) * volatilityFactor;
     }
     const consensusReached = Math.max(riseSum, fallSum) >= effectiveThreshold;
-    if (!consensusReached) {
-        setConsensusDecision({ direction: 'HOLD', probability: consensusProbability, stake: 0 });
-        return;
-    }
-
-    const avgWinRate = robotPerformance.reduce((sum, r) => sum + (r.winRate || 0), 0) / (robotPerformance.length || 1) / 100;
+    
     const payoff = 0.95; // Simplified payoff for this logic
     let kellyStake = calculateKellyStake(dailyBalance, consensusProbability, payoff);
 
@@ -481,6 +493,25 @@ export function useRobotCouncilV2(
         if (currentDrawdown > 5) kellyStake *= 0.7;
     }
     kellyStake = Math.max(0.35, Math.min(kellyStake, dailyBalance * 0.05));
+    
+     setDashboardData({
+        regime: regimeResult.regime,
+        bayesianProbability: consensusProbability,
+        consensusDirection,
+        activeRobotsCount: activeRobotsCount,
+        microstructure: {
+            pressure: microFeatures ? microFeatures.volumeImbalance : 0.5,
+            velocity: microFeatures ? microFeatures.tickVelocity : 0,
+            isSpike: microFeatures ? Math.abs(microFeatures.priceAcceleration) > 0.001 : false,
+        },
+        kellyStake,
+    });
+    
+    if (!consensusReached) {
+        setConsensusDecision({ direction: 'HOLD', probability: consensusProbability, stake: 0 });
+        return;
+    }
+
 
     const avgDurationSeconds = totalWeight > 0 ? weightedDurationSum / totalWeight : 300;
     let finalDuration = Math.round(avgDurationSeconds / 60), finalDurationUnit: DurationUnit = 'm';
@@ -532,6 +563,7 @@ export function useRobotCouncilV2(
     isDynamicConsensusOn, setIsDynamicConsensusOn,
     isDynamicRiskOn, setIsDynamicRiskOn,
     isMeritocracyOn, setIsMeritocracyOn,
-    fetchStrategyCouncil, dissolveCouncil
+    fetchStrategyCouncil, dissolveCouncil,
+    dashboardData,
   };
 }
