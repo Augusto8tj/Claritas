@@ -3,7 +3,8 @@
 
 import * as React from 'react';
 import { useMemo } from 'react';
-import { useForm, FormProvider, useWatch } from 'react-hook-form';
+import { useForm, FormProvider, useFormContext, useWatch } from 'react-hook-form';
+import { ArrowDown, ArrowUp, Info, Loader2, Minus, Plus, ChevronDown } from "lucide-react";
 
 import {
   FormField,
@@ -22,17 +23,16 @@ import {
 
 import { Input } from '@/components/ui/input';
 import { Checkbox } from '@/components/ui/checkbox';
-import { ArrowDown, ArrowUp, ChevronDown, Info, Loader2, Minus, Plus } from 'lucide-react';
-import { useToast } from '@/hooks/use-toast';
-import { useDerivApi } from '@/hooks/use-deriv-api';
 import { Button } from '../ui/button';
 import { Card, CardContent } from '../ui/card';
 import { Separator } from '../ui/separator';
 import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover';
 import { RadioGroup, RadioGroupItem } from '../ui/radio-group';
-import type { DurationUnit, RiseFallFormValues } from '@/lib/types';
-import { Tabs, TabsList, TabsTrigger, TabsContent } from '../ui/tabs';
 import { Switch } from '../ui/switch';
+import { Label } from '../ui/label';
+import { useToast } from '@/hooks/use-toast';
+import { useDerivApi } from '@/hooks/use-deriv-api';
+import type { DurationUnit, RiseFallFormValues, OperationInitiator } from '@/lib/types';
 
 
 type TradeType = 'rise_fall' | 'higher_lower' | 'touch_no_touch';
@@ -255,14 +255,9 @@ export default function DerivTraderInterfaceV2({ symbol }: DerivTraderInterfaceV
                 </PopoverContent>
             </Popover>
 
-            <Form {...form}>
                 <form className="space-y-4">
-                    <Tabs defaultValue="duration" className="w-full">
-                        <TabsList className="grid w-full grid-cols-2">
-                            <TabsTrigger value="duration">Duração</TabsTrigger>
-                            <TabsTrigger value="endtime" disabled>Hora de término</TabsTrigger>
-                        </TabsList>
-                        <TabsContent value="duration" className="pt-2">
+                    <div className="w-full">
+                        
                             <div className="flex gap-2">
                                 <FormField
                                     control={form.control}
@@ -280,8 +275,7 @@ export default function DerivTraderInterfaceV2({ symbol }: DerivTraderInterfaceV
                                                 </FormControl>
                                                 <SelectContent>
                                                     {Object.entries(durationUnitLabels).map(([value, label]) => {
-                                                        const isUnitDisabled =
-                                                          durationLimits?.[value as DurationUnit]?.min === 0;
+                                                         const isUnitDisabled = durationLimits?.[value as DurationUnit]?.min === 0;
                                                         return (
                                                             <SelectItem key={value} value={value} disabled={isUnitDisabled}>
                                                                 {label}
@@ -319,17 +313,13 @@ export default function DerivTraderInterfaceV2({ symbol }: DerivTraderInterfaceV
                                     )}
                                 />
                             </div>
-                        </TabsContent>
-                    </Tabs>
+                        
+                    </div>
                     
                     <Separator />
                     
-                    <Tabs defaultValue="stake" className="w-full">
-                        <TabsList className="grid w-full grid-cols-2">
-                            <TabsTrigger value="stake">Entrada</TabsTrigger>
-                            <TabsTrigger value="payout" disabled>Pagamento</TabsTrigger>
-                        </TabsList>
-                        <TabsContent value="stake" className="pt-2">
+                    <div className="w-full">
+                       
                             <FormField
                                 control={form.control}
                                 name="stake"
@@ -351,8 +341,8 @@ export default function DerivTraderInterfaceV2({ symbol }: DerivTraderInterfaceV
                                 </FormItem>
                                 )}
                             />
-                        </TabsContent>
-                    </Tabs>
+                        
+                    </div>
 
                     <div className="flex items-center justify-between pt-2">
                         <div className="flex flex-row items-center space-x-2 space-y-0">
@@ -363,12 +353,18 @@ export default function DerivTraderInterfaceV2({ symbol }: DerivTraderInterfaceV
                                     <FormItem className="flex items-center gap-2">
                                         <FormControl>
                                             <Checkbox
-                                            checked={field.value}
-                                            onCheckedChange={(v) => field.onChange(!!v)}
-                                            disabled={isButtonDisabled}
+                                                checked={!!allowEquals}
+                                                onCheckedChange={(checked) =>
+                                                  form.setValue('allowEquals', !!checked, {
+                                                    shouldDirty: true,
+                                                    shouldValidate: false,
+                                                  })
+                                                }
+                                                disabled={isButtonDisabled}
+                                                id="allowEquals"
                                             />
                                         </FormControl>
-                                        <Label htmlFor="allowEqualsV2" className="text-sm font-normal text-muted-foreground cursor-pointer">
+                                        <Label htmlFor="allowEquals" className="text-sm font-normal text-muted-foreground cursor-pointer">
                                             Permitir "Equals"
                                         </Label>
                                     </FormItem>
@@ -384,7 +380,6 @@ export default function DerivTraderInterfaceV2({ symbol }: DerivTraderInterfaceV
                         </div>
                     </div>
                 </form>
-            </Form>
             
             <div className="space-y-2 pt-2">
                 <div className="text-xs text-muted-foreground flex items-center justify-between">
