@@ -412,7 +412,8 @@ const subscribeToMarketData = useCallback(async (symbol: string) => {
             
             const entryPrice = buyResult.entry_tick_display_value ? parseFloat(buyResult.entry_tick_display_value) : buyResult.buy_price;
 
-            const isSellable = durationUnit !== 't'; // Qualquer contrato baseado em tempo é vendável
+            // Contratos são vendáveis se não forem baseados em Ticks
+            const isSellable = durationUnit !== 't';
 
             const newOperation: Operation = {
                 id: buyResult.contract_id,
@@ -540,7 +541,7 @@ const subscribeToMarketData = useCallback(async (symbol: string) => {
 
                     setOperationsLog(prevLog => prevLog.map(op =>
                         op.id === contract.contract_id 
-                        ? { ...op, status: profit >= 0 ? 'won' : 'lost', result: profit, exitPrice: parseFloat(contract.exit_tick_display_value) } 
+                        ? { ...op, status: profit >= 0 ? 'won' : 'lost', result: profit, exitPrice: parseFloat(contract.exit_tick_display_value), exitTimestamp: new Date(contract.sell_time * 1000).toISOString() } 
                         : op
                     ));
 

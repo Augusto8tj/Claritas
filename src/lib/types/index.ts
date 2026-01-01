@@ -80,6 +80,7 @@ export interface Operation {
   status: OperationStatus;
   result?: number; // Profit or loss amount
   timestamp: string; // ISO format
+  exitTimestamp?: string; // ISO format for when the contract was closed
   duration: number;
   durationUnit: DurationUnit;
   initiator: OperationInitiator;

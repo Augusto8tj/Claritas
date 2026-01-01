@@ -11,7 +11,7 @@ import {
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import type { Operation, OperationInitiator, TickData } from "@/lib/types";
-import { ArrowDown, ArrowUp, Bot, User, Users, MoveRight } from "lucide-react";
+import { ArrowDown, ArrowUp, Bot, User, Users, MoveRight, Clock } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "../ui/tooltip";
 import { useDerivApi } from "@/hooks/use-deriv-api";
@@ -37,6 +37,14 @@ const initiatorIcons: Record<OperationInitiator, React.ReactNode> = {
     Conselho: <Users className="h-3 w-3" />,
 };
 
+const formatTime = (isoString: string | undefined): string => {
+    if (!isoString) return "--:--:--";
+    try {
+        return new Date(isoString).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    } catch {
+        return "--:--:--";
+    }
+};
 
 export function OperationsLog({ operations }: OperationsLogProps) {
   const { sellContract, priceTicks } = useDerivApi();
@@ -100,8 +108,6 @@ export function OperationsLog({ operations }: OperationsLogProps) {
                 ) : (
                 operations.map((op) => {
                   
-                  // **FIX**: Removed `useMemo` from inside the loop. The calculation is simple
-                  // and does not need memoization here, resolving the React Hook order error.
                   const currentStatus = (() => {
                     if (op.status !== 'pending' || !latestTick || !op.entryPrice) return 'even';
                     if (op.direction === 'rise') {
@@ -127,16 +133,27 @@ export function OperationsLog({ operations }: OperationsLogProps) {
                         </Tooltip>
                         <span>{op.asset} - {op.direction === "rise" ? "Rise" : "Fall"}</span>
                         </p>
-                        <p className="text-xs text-muted-foreground pl-9">
-                          Entrada: ${op.stake.toFixed(2)} | Duração: {op.duration} {durationUnitLabels[op.durationUnit] || op.durationUnit}
-                        </p>
-                        {op.entryPrice && op.exitPrice && (
-                            <p className="text-xs text-muted-foreground pl-9 flex items-center gap-1.5">
-                                {op.entryPrice.toFixed(4)}
-                                <MoveRight className="h-3 w-3" />
-                                {op.exitPrice.toFixed(4)}
-                            </p>
-                        )}
+                        <div className="text-xs text-muted-foreground pl-9 space-y-1">
+                            <p>Entrada: ${op.stake.toFixed(2)} | Duração: {op.duration} {durationUnitLabels[op.durationUnit] || op.durationUnit}</p>
+                            <div className="flex items-center gap-2">
+                                <div className="flex items-center gap-1.5">
+                                    <Clock className="h-3 w-3" />
+                                    <span>{formatTime(op.timestamp)}</span>
+                                </div>
+                                {op.exitTimestamp && (
+                                     <div className="flex items-center gap-1.5">
+                                        <MoveRight className="h-3 w-3" />
+                                        <span>{formatTime(op.exitTimestamp)}</span>
+                                    </div>
+                                )}
+                            </div>
+                             {op.entryPrice && (
+                                <p className="flex items-center gap-1.5 font-mono">
+                                    {op.entryPrice.toFixed(4)}
+                                    {op.exitPrice && <><MoveRight className="h-3 w-3" />{op.exitPrice.toFixed(4)}</>}
+                                </p>
+                            )}
+                        </div>
                     </div>
                     <div
                         className={cn(
