@@ -3,6 +3,7 @@ import type { RobotStrategy } from '@/lib/types';
 
 // This file contains the pre-defined, local configuration for the 22 robot analysts.
 // Each robot now has its own optimal duration and unit, making the system's time-based decisions dynamic.
+// NEW: Added individual risk parameters (chandelierPeriod, chandelierMultiplier) to each strategy.
 
 export const initialCouncilStrategies: Omit<RobotStrategy, 'id'>[] = [
   // --- Momentum & Trend (Short-Term Specialists) ---
@@ -19,6 +20,8 @@ export const initialCouncilStrategies: Omit<RobotStrategy, 'id'>[] = [
     optimalDuration: 5,
     optimalDurationUnit: 't',
     suggestedStake: 1.5,
+    chandelierPeriod: 15,
+    chandelierMultiplier: 2.5,
   },
   {
     strategyType: "STOCHASTIC",
@@ -33,6 +36,8 @@ export const initialCouncilStrategies: Omit<RobotStrategy, 'id'>[] = [
     optimalDuration: 5,
     optimalDurationUnit: 't',
     suggestedStake: 1.5,
+    chandelierPeriod: 15,
+    chandelierMultiplier: 2.5,
   },
   {
     strategyType: "MACD_CROSS",
@@ -45,6 +50,8 @@ export const initialCouncilStrategies: Omit<RobotStrategy, 'id'>[] = [
     optimalDuration: 2,
     optimalDurationUnit: 'm',
     suggestedStake: 1.0,
+    chandelierPeriod: 25,
+    chandelierMultiplier: 3.5,
   },
   {
     strategyType: "ADX_TREND",
@@ -56,6 +63,8 @@ export const initialCouncilStrategies: Omit<RobotStrategy, 'id'>[] = [
     optimalDuration: 3,
     optimalDurationUnit: 'm',
     suggestedStake: 1.2,
+    chandelierPeriod: 30,
+    chandelierMultiplier: 3.0,
   },
   {
     strategyType: "AWESOME_OSCILLATOR",
@@ -65,6 +74,8 @@ export const initialCouncilStrategies: Omit<RobotStrategy, 'id'>[] = [
     optimalDuration: 1,
     optimalDurationUnit: 'm',
     suggestedStake: 0.8,
+    chandelierPeriod: 20,
+    chandelierMultiplier: 3.0,
   },
   {
     strategyType: "TRIX",
@@ -75,6 +86,8 @@ export const initialCouncilStrategies: Omit<RobotStrategy, 'id'>[] = [
     optimalDuration: 2,
     optimalDurationUnit: 'm',
     suggestedStake: 0.7,
+    chandelierPeriod: 25,
+    chandelierMultiplier: 3.0,
   },
   {
     strategyType: "ROC",
@@ -85,6 +98,8 @@ export const initialCouncilStrategies: Omit<RobotStrategy, 'id'>[] = [
     optimalDuration: 45,
     optimalDurationUnit: 's',
     suggestedStake: 0.9,
+    chandelierPeriod: 20,
+    chandelierMultiplier: 3.0,
   },
   {
     strategyType: "RVI",
@@ -99,6 +114,8 @@ export const initialCouncilStrategies: Omit<RobotStrategy, 'id'>[] = [
     optimalDuration: 1,
     optimalDurationUnit: 'm',
     suggestedStake: 1.0,
+    chandelierPeriod: 22,
+    chandelierMultiplier: 3.0,
   },
   {
     strategyType: "PARABOLIC_SAR",
@@ -110,6 +127,8 @@ export const initialCouncilStrategies: Omit<RobotStrategy, 'id'>[] = [
     optimalDuration: 10,
     optimalDurationUnit: 't',
     suggestedStake: 1.3,
+    chandelierPeriod: 18,
+    chandelierMultiplier: 2.5,
   },
   // --- Volatility & Structure ---
   {
@@ -122,6 +141,8 @@ export const initialCouncilStrategies: Omit<RobotStrategy, 'id'>[] = [
     optimalDuration: 7,
     optimalDurationUnit: 't',
     suggestedStake: 1.4,
+    chandelierPeriod: 20,
+    chandelierMultiplier: 3.0,
   },
   {
     strategyType: "ICHIMOKU_CLOUD",
@@ -131,6 +152,8 @@ export const initialCouncilStrategies: Omit<RobotStrategy, 'id'>[] = [
     optimalDuration: 5,
     optimalDurationUnit: 'm',
     suggestedStake: 1.5,
+    chandelierPeriod: 40,
+    chandelierMultiplier: 4.0,
   },
   {
     strategyType: "KAMA",
@@ -143,6 +166,8 @@ export const initialCouncilStrategies: Omit<RobotStrategy, 'id'>[] = [
     optimalDuration: 3,
     optimalDurationUnit: 'm',
     suggestedStake: 1.1,
+    chandelierPeriod: 30,
+    chandelierMultiplier: 3.5,
   },
   {
     strategyType: "DONCHIAN_CHANNELS",
@@ -153,10 +178,12 @@ export const initialCouncilStrategies: Omit<RobotStrategy, 'id'>[] = [
     optimalDuration: 1,
     optimalDurationUnit: 'm',
     suggestedStake: 1.0,
+    chandelierPeriod: 22,
+    chandelierMultiplier: 3.0,
   },
   {
     strategyType: "CHANDELIER_EXIT",
-    justification: "Trailing stop baseado em volatilidade (ATR) em {{timePeriod}}.",
+    justification: "Usa o próprio Chandelier como sinal de entrada, além de stop.",
     strongConfidence: 85,
     weakConfidence: 60,
     period: 22,
@@ -164,6 +191,8 @@ export const initialCouncilStrategies: Omit<RobotStrategy, 'id'>[] = [
     optimalDuration: 2,
     optimalDurationUnit: 'm',
     suggestedStake: 1.2,
+    chandelierPeriod: 22,
+    chandelierMultiplier: 3.0,
   },
   // --- Volume & Order Flow ---
   {
@@ -175,6 +204,8 @@ export const initialCouncilStrategies: Omit<RobotStrategy, 'id'>[] = [
     optimalDuration: 5,
     optimalDurationUnit: 'm',
     suggestedStake: 0.9,
+    chandelierPeriod: 35,
+    chandelierMultiplier: 3.5,
   },
   {
     strategyType: "VWAP",
@@ -184,6 +215,8 @@ export const initialCouncilStrategies: Omit<RobotStrategy, 'id'>[] = [
     optimalDuration: 1,
     optimalDurationUnit: 'm',
     suggestedStake: 1.3,
+    chandelierPeriod: 25,
+    chandelierMultiplier: 3.0,
   },
   {
     strategyType: "MFI",
@@ -198,6 +231,8 @@ export const initialCouncilStrategies: Omit<RobotStrategy, 'id'>[] = [
     optimalDuration: 5,
     optimalDurationUnit: 't',
     suggestedStake: 1.2,
+    chandelierPeriod: 15,
+    chandelierMultiplier: 2.5,
   },
   {
     strategyType: "OBV",
@@ -207,6 +242,8 @@ export const initialCouncilStrategies: Omit<RobotStrategy, 'id'>[] = [
     optimalDuration: 2,
     optimalDurationUnit: 'm',
     suggestedStake: 0.8,
+    chandelierPeriod: 28,
+    chandelierMultiplier: 3.0,
   },
   // --- Statistical & Mean Reversion ---
   {
@@ -219,6 +256,8 @@ export const initialCouncilStrategies: Omit<RobotStrategy, 'id'>[] = [
     optimalDuration: 7,
     optimalDurationUnit: 't',
     suggestedStake: 1.1,
+    chandelierPeriod: 20,
+    chandelierMultiplier: 2.8,
   },
   {
     strategyType: "STOCH_RSI",
@@ -233,6 +272,8 @@ export const initialCouncilStrategies: Omit<RobotStrategy, 'id'>[] = [
     optimalDuration: 5,
     optimalDurationUnit: 't',
     suggestedStake: 1.4,
+    chandelierPeriod: 15,
+    chandelierMultiplier: 2.5,
   },
   // --- Patterns ---
   {
@@ -244,6 +285,8 @@ export const initialCouncilStrategies: Omit<RobotStrategy, 'id'>[] = [
     optimalDuration: 5,
     optimalDurationUnit: 't',
     suggestedStake: 1.8,
+    chandelierPeriod: 12,
+    chandelierMultiplier: 2.2,
   },
   // --- Moving Average ---
   {
@@ -256,6 +299,8 @@ export const initialCouncilStrategies: Omit<RobotStrategy, 'id'>[] = [
     optimalDuration: 1,
     optimalDurationUnit: 'm',
     suggestedStake: 1.0,
+    chandelierPeriod: 25,
+    chandelierMultiplier: 3.5,
   }
 ].map((strat) => ({
     // Adicionando valores padrão para campos opcionais para garantir que o objeto seja completo
