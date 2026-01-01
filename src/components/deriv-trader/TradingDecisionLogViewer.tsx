@@ -17,10 +17,12 @@ import {
 } from '@/components/ui/accordion';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Badge } from '@/components/ui/badge';
-import { CheckCircle, XCircle, Bot, Archive, TrendingUp, TrendingDown, HelpCircle, Brain, Activity, CircleDot, Sigma } from 'lucide-react';
+import { CheckCircle, XCircle, Bot, Archive, TrendingUp, TrendingDown, HelpCircle, Brain, Activity, CircleDot, Sigma, FilePieChart } from 'lucide-react';
 import type { TradeDecisionLog } from '@/lib/types';
 import { cn } from '@/lib/utils';
 import { Separator } from '../ui/separator';
+import { Button } from '../ui/button';
+import { useToast } from '@/hooks/use-toast';
 
 interface TradingDecisionLogViewerProps {
   logs: TradeDecisionLog[];
@@ -38,17 +40,35 @@ export const TradingDecisionLogViewer: React.FC<TradingDecisionLogViewerProps> =
   logs,
 }) => {
   const reversedLogs = [...logs].reverse();
+  const { toast } = useToast();
+
+  const handleReportClick = () => {
+    toast({
+        title: "Funcionalidade em Desenvolvimento",
+        description: "A capacidade de gerar e exportar relatórios está a ser preparada."
+    });
+  }
 
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="font-headline flex items-center gap-2">
-            <Bot className="h-5 w-5 text-primary" />
-            Auditoria Cognitiva
-        </CardTitle>
-        <CardDescription>
-          Análise detalhada de cada decisão tomada pelo conselho de robôs nesta sessão.
-        </CardDescription>
+        <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-4">
+            <div className="flex-1">
+                <CardTitle className="font-headline flex items-center gap-2">
+                    <Bot className="h-5 w-5 text-primary" />
+                    Auditoria Cognitiva
+                </CardTitle>
+                <CardDescription>
+                  Análise detalhada de cada decisão tomada pelo conselho de robôs.
+                </CardDescription>
+            </div>
+            {reversedLogs.length > 0 && (
+                <Button variant="outline" size="sm" onClick={handleReportClick}>
+                    <FilePieChart className="mr-2 h-4 w-4"/>
+                    Gerar Relatório
+                </Button>
+            )}
+        </div>
       </CardHeader>
       <CardContent>
         {reversedLogs.length === 0 ? (
