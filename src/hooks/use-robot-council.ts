@@ -379,7 +379,7 @@ export function useRobotCouncil(
         } => {
             let finalStake = baseStake;
             let finalDuration = baseDuration;
-            let finalDurationUnit: DurationUnit = 't';
+            let finalDurationUnit: DurationUnit = 's'; // Padrão para segundos
 
             const defaultReturn = { finalStake, finalDuration, finalDurationUnit, status: 'inactive' as 'inactive', message: 'Aguardando indicadores.' };
             
@@ -424,7 +424,7 @@ export function useRobotCouncil(
             const totalConfidence = votingRobots.reduce((sum, v) => sum + v.confidence, 0);
 
             if (isDynamicRiskOn && totalConfidence > 0) {
-                 const weightedAvgDuration = votingRobots.reduce((sum, v) => sum + durationToSeconds(v.optimalDuration, v.optimalDurationUnit) * v.confidence, 0) / totalConfidence;
+                 const weightedAvgDuration = votingRobots.reduce((sum, v) => sum + v.optimalDuration * v.confidence, 0) / totalConfidence;
                  const weightedAvgStake = votingRobots.reduce((sum, v) => sum + v.suggestedStake * v.confidence, 0) / totalConfidence;
 
                  const atr = indicators.atr || 0;
@@ -432,12 +432,10 @@ export function useRobotCouncil(
                  const volatilityFactor = (atr / (getPrice(priceTicks[priceTicks.length - 1]) || 1) + bbw) / 2;
 
                  finalStake = weightedAvgStake * Math.max(0.5, 1 - volatilityFactor * 5);
+                 
+                 // A duração já está em segundos
+                 finalDuration = Math.round(weightedAvgDuration);
 
-                 if (weightedAvgDuration <= 10 * 2) { finalDuration = Math.max(1, Math.round(weightedAvgDuration / 2)); finalDurationUnit = 't'; }
-                 else if (weightedAvgDuration < 60) { finalDuration = Math.round(weightedAvgDuration); finalDurationUnit = 's'; }
-                 else { finalDuration = Math.round(weightedAvgDuration / 60); finalDurationUnit = 'm'; }
-            } else {
-                 finalDurationUnit = form.getValues('duration_unit');
             }
 
             // NOVO: CIRCUIT BREAKER - Ação de redução de risco
@@ -447,12 +445,20 @@ export function useRobotCouncil(
                 circuitBreakerAnalysis = 'Perdas sequenciais detectadas, operando com risco mínimo. ';
             }
 
-            // Aplicar restrições finais
+            // Aplicar restrições finais de stake
             finalStake = Math.max(0.35, finalStake);
-            if(finalDurationUnit === 't') {
-              finalDuration = Math.round(Math.max(1, Math.min(10, finalDuration)));
+            
+            // CONVERSÃO FINAL DA DURAÇÃO PARA UNIDADE VÁLIDA
+            if (finalDuration <= 10) {
+                finalDurationUnit = 't';
+                finalDuration = Math.max(5, Math.min(10, finalDuration));
+            } else if (finalDuration < 60) {
+                finalDurationUnit = 's';
+                finalDuration = Math.max(15, finalDuration);
             } else {
-               finalDuration = Math.max(15, finalDuration); // Min 15 segundos para outras unidades
+                finalDurationUnit = 'm';
+                finalDuration = Math.round(finalDuration / 60);
+                finalDuration = Math.max(1, finalDuration);
             }
             
             let finalAnalysis = isDynamicRiskOn ? `Risco ajustado pela volatilidade.` : 'Risco padrão.';
@@ -466,7 +472,7 @@ export function useRobotCouncil(
                 finalDurationUnit
             };
         },
-        [dailyBalance, dailyTarget, priceTicks, isDynamicConsensusOn, isDynamicRiskOn, consensusThreshold, baseStake, baseDuration, form]
+        [dailyBalance, dailyTarget, priceTicks, isDynamicConsensusOn, isDynamicRiskOn, consensusThreshold, baseStake, baseDuration]
     );
 
     // ========================================================================
@@ -517,7 +523,7 @@ export function useRobotCouncil(
             const activeCouncilContracts = operationsLog.filter(op => 
                 op.status === 'pending' && 
                 op.initiator === 'Conselho' &&
-                op.durationUnit !== 't'
+                op.durationUnit !== 't' // Ignora contratos em ticks
             );
             
             activeCouncilContracts.forEach(contract => {
@@ -627,7 +633,7 @@ export function useRobotCouncil(
             const voteData = calculateRobotVote(robot, currentIndicators, tickCandles);
             
             if (voteData.vote !== 'HOLD') {
-                const durationInSeconds = durationToSeconds(voteData.optimalDuration, voteData.optimalDurationUnit);
+                const durationInSeconds = voteData.optimalDuration; // Já está em segundos
                 const tradeId = `vt_${Date.now()}_${tradeCounterRef.current++}`;
                 const virtualTrade: VirtualTrade = {
                     id: tradeId,
