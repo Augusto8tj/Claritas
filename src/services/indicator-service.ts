@@ -19,8 +19,8 @@ export interface Indicators {
     ma: { short: number | null; long: number | null; };
     sma: (number | null)[];
     ema: (number | null)[];
-    ema20?: number | null;
-    ema50?: number | null;
+    ema20: number | null;
+    ema50: number | null;
     vwap: (number | null)[];
     
     bb: { upper: number | null; middle: number | null; lower: number | null };
@@ -316,7 +316,7 @@ export function calculateAllIndicators(chartData: ChartData[], strategyCouncil: 
         rsi: null, stoch: null, atr: null, adx: null, pdi: null, ndi: null,
         macd: { macd: null, signal: null, histogram: null }, 
         ma: { short: null, long: null },
-        sma: [], ema: [], vwap: [], 
+        sma: [], ema: [], ema20: null, ema50: null, vwap: [], 
         bb: { upper: null, middle: null, lower: null },
         bollingerBands: [], 
         donchianChannels: [],
