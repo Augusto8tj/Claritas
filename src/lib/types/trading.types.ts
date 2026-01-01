@@ -121,6 +121,8 @@ export const RobotStrategySchema = z.object({
 
     // Chandelier Exit
     multiplier: z.number().optional(),
+    chandelierPeriod: z.number().optional(),
+    chandelierMultiplier: z.number().optional(),
     
     // AutoTrader specific
     suggestedStake: z.number().describe("The suggested stake amount for this trade, based on risk analysis. Should be a percentage of the balance, e.g., 1-2%."),

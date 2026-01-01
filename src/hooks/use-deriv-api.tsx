@@ -503,7 +503,7 @@ const subscribeToMarketData = useCallback(async (symbol: string) => {
             const response = JSON.parse(event.data);
 
             if (response.error && response.error.message) {
-                if (response.error.code !== 'AlreadySubscribed') {
+                 if (response.error.code !== 'AlreadySubscribed' && response.error.code !== 'SellNotAvailable') {
                   console.error(`[Deriv WS] Error:`, response.error.message);
                 }
             }
@@ -793,5 +793,3 @@ export function useDerivApi() {
   }
   return context;
 }
-
-    

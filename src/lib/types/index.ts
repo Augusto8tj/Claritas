@@ -1,6 +1,6 @@
 // /src/lib/types/index.ts
 import { z } from 'zod';
-import type { RobotStrategy as RobotStrategyT, RobotVote as RobotVoteT, RobotPerformance as RobotPerformanceT } from './trading.types';
+import type { RobotStrategy as RobotStrategyT, RobotVote as RobotVoteT, RobotPerformance as RobotPerformanceT, EnhancedRobotPerformance as EnhancedRobotPerformanceType, MarketRegime as MarketRegimeType, MicrostructureFeatures as MicrostructureFeaturesType, BayesianVote as BayesianVoteType } from './trading.types';
 
 // =================================================================
 // Financial Types
@@ -96,6 +96,10 @@ export interface Operation {
 export type RobotStrategy = RobotStrategyT;
 export type RobotVote = RobotVoteT;
 export type RobotPerformance = RobotPerformanceT;
+export type EnhancedRobotPerformance = EnhancedRobotPerformanceType;
+export type MarketRegime = MarketRegimeType;
+export type MicrostructureFeatures = MicrostructureFeaturesType;
+export type BayesianVote = BayesianVoteType;
 
 
 // =================================================================
@@ -204,5 +208,3 @@ export const GenerateGoalImageOutputSchema = z.object({
   imageUrl: z.string().describe('The data URI of the generated image.'),
 });
 export type GenerateGoalImageOutput = z.infer<typeof GenerateGoalImageOutputSchema>;
-
-    
