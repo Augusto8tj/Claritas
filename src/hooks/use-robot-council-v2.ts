@@ -535,5 +535,3 @@ export function useRobotCouncilV2(
     fetchStrategyCouncil, dissolveCouncil
   };
 }
-
-    
