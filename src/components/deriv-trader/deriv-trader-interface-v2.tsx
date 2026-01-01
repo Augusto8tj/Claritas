@@ -2,7 +2,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { useFormContext } from "react-hook-form";
+import { useFormContext, useWatch } from "react-hook-form";
 import {
   Card,
   CardContent,
@@ -54,29 +54,39 @@ function DerivTraderInterfaceV2({ symbol }: DerivTraderInterfaceProps) {
   const { toast } = useToast();
   const [loading, setLoading] = useState<"rise" | "fall" | null>(null);
   const [tradeType, setTradeType] = useState<TradeType>('rise_fall');
-  const [isInversionModeOn, setIsInversionModeOn] = useState(false); // NOVO ESTADO
+  const [isInversionModeOn, setIsInversionModeOn] = useState(false);
   const { isConnected, executeTrade, durationLimits } = useDerivApi();
 
   const form = useFormContext<RiseFallFormValues>();
-  const durationUnit = form.watch('duration_unit');
+  
+  const durationUnit = useWatch({
+    control: form.control,
+    name: 'duration_unit',
+  });
+  const lastUnitRef = useRef<DurationUnit | null>(null);
 
-  // Ajustado para depender apenas da mudança da unidade de duração.
   useEffect(() => {
-    if (!durationLimits || !durationLimits[durationUnit]) {
-      return;
-    }
-
+    if (!durationLimits || !durationUnit) return;
+  
+    // Evita re-execução para o mesmo valor de unidade
+    if (lastUnitRef.current === durationUnit) return;
+    lastUnitRef.current = durationUnit;
+  
     const currentDuration = form.getValues('duration');
     const { min, max } = durationLimits[durationUnit];
-
+  
     let newDuration = currentDuration;
     if (newDuration < min) newDuration = min;
     if (newDuration > max) newDuration = max;
-
+  
     if (newDuration !== currentDuration) {
-      form.setValue('duration', newDuration);
+      form.setValue('duration', newDuration, {
+        shouldDirty: true,
+        shouldTouch: false,
+        shouldValidate: false,
+      });
     }
-  }, [durationUnit, durationLimits]);
+  }, [durationUnit, durationLimits, form]);
 
 
   const handleDurationChange = (amount: number) => {
