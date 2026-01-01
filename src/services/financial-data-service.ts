@@ -185,6 +185,7 @@ export async function getInsights(): Promise<string[]> {
 }
 
 // --- Trading Robot Performance ---
+const sanitizePerformanceValue = (value: number | undefined | null): number => (value === undefined || value === null || isNaN(value)) ? 0 : value;
 
 export const saveRobotPerformance = async (userId: string, performance: EnhancedRobotPerformance[]) => {
   if (!userId) throw new Error("User not authenticated.");
@@ -193,24 +194,23 @@ export const saveRobotPerformance = async (userId: string, performance: Enhanced
   const dataToSave = {
     updatedAt: new Date().toISOString(),
     robots: performance.map(p => {
-       const sanitizedValue = (value: number | undefined | null): number => (value === undefined || value === null || isNaN(value)) ? 0 : value;
       return {
         id: p.id,
         strategyType: p.strategyType,
         strategy: p.strategy, 
-        wins: sanitizedValue(p.wins),
-        losses: sanitizedValue(p.losses),
-        totalProfit: sanitizedValue(p.totalProfit),
-        winRate: sanitizedValue(p.winRate),
-        sharpeRatio: sanitizedValue(p.sharpeRatio),
-        maxDrawdown: sanitizedValue(p.maxDrawdown),
-        avgWin: sanitizedValue(p.avgWin),
-        avgLoss: sanitizedValue(p.avgLoss),
-        profitFactor: sanitizedValue(p.profitFactor),
-        kellyFraction: sanitizedValue(p.kellyFraction),
+        wins: sanitizePerformanceValue(p.wins),
+        losses: sanitizePerformanceValue(p.losses),
+        totalProfit: sanitizePerformanceValue(p.totalProfit),
+        winRate: sanitizePerformanceValue(p.winRate),
+        sharpeRatio: sanitizePerformanceValue(p.sharpeRatio),
+        maxDrawdown: sanitizePerformanceValue(p.maxDrawdown),
+        avgWin: sanitizePerformanceValue(p.avgWin),
+        avgLoss: sanitizePerformanceValue(p.avgLoss),
+        profitFactor: sanitizePerformanceValue(p.profitFactor),
+        kellyFraction: sanitizePerformanceValue(p.kellyFraction),
         effectiveRegimes: p.effectiveRegimes || [],
-        monteCarloScore: sanitizedValue(p.monteCarloScore),
-        lastUpdated: sanitizedValue(p.lastUpdated),
+        monteCarloScore: sanitizePerformanceValue(p.monteCarloScore),
+        lastUpdated: sanitizePerformanceValue(p.lastUpdated),
         tradeHistory: p.tradeHistory || [],
       }
     })
@@ -291,6 +291,7 @@ export async function getTradeDecisionLogs(userId: string): Promise<TradeDecisio
         return snapshot.docs.map(d => d.data() as TradeDecisionLog);
     } catch (serverError) {
         console.error(`[Service Error] getTradeDecisionLogs failed for user ${userId}:`, serverError);
+        // Propagate the original error for client-side handling
         throw serverError;
     }
 }

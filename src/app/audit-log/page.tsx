@@ -7,6 +7,8 @@ import { getTradeDecisionLogs } from '@/services/financial-data-service';
 import { TradingDecisionLogViewer } from '@/components/deriv-trader/TradingDecisionLogViewer';
 import type { TradeDecisionLog } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
+import { errorEmitter } from '@/firebase/error-emitter';
+import { FirestorePermissionError } from '@/firebase/errors';
 
 function AuditLogSkeleton() {
     return (
@@ -45,6 +47,13 @@ export default function AuditLogPage() {
         setLogs(fetchedLogs);
       } catch (error) {
         console.error("Failed to fetch trade decision logs:", error);
+         errorEmitter.emit(
+          'permission-error',
+          new FirestorePermissionError({
+            path: `users/${user.uid}/decision_logs`,
+            operation: 'list',
+          })
+        );
       } finally {
         setLoading(false);
       }
