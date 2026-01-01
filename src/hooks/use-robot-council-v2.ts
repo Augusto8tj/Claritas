@@ -925,7 +925,9 @@ export function useRobotCouncilV2(
             const updatedLogs = prevLogs.map(log => {
               if (log.id === decisionLog.id) {
                 const finalLog = { ...log, result: updatedOp.status, pnl: updatedOp.result };
-                saveTradeDecision(user.uid, finalLog); // Salva no Firebase
+                if (user) {
+                    saveTradeDecision(user.uid, finalLog); // Salva no Firebase
+                }
                 return finalLog;
               }
               return log;
@@ -942,7 +944,9 @@ export function useRobotCouncilV2(
           // Placeholder: Em um sistema real, isso observaria as atualizações do WebSocket
           // e chamaria o callback quando a operação com `opId` fosse atualizada.
       };
-      subscribeToOperationUpdates(tradeResult.contractId!, updateLogOnCompletion);
+      if(tradeResult.contractId) {
+        subscribeToOperationUpdates(tradeResult.contractId, updateLogOnCompletion);
+      }
 
 
     }).finally(() => {
