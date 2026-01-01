@@ -258,5 +258,26 @@ export const initialCouncilStrategies: Omit<RobotStrategy, 'id'>[] = [
     suggestedStake: 1.0,
   }
 ].map((strat) => ({
+    // Adicionando valores padrão para campos opcionais para garantir que o objeto seja completo
+    period: strat.period || 14,
+    strongBuyThreshold: strat.strongBuyThreshold || 20,
+    weakBuyThreshold: strat.weakBuyThreshold || 30,
+    strongSellThreshold: strat.strongSellThreshold || 80,
+    weakSellThreshold: strat.weakSellThreshold || 70,
+    shortPeriod: strat.shortPeriod || 12,
+    longPeriod: strat.longPeriod || 26,
+    fastPeriod: strat.fastPeriod || 12,
+    slowPeriod: strat.slowPeriod || 26,
+    signalPeriod: strat.signalPeriod || 9,
+    stdDev: strat.stdDev || 2,
+    pattern: strat.pattern || "hammer",
+    trendStrengthThreshold: strat.trendStrengthThreshold || 25,
+    profileBars: strat.profileBars || 50,
+    zScoreThreshold: strat.zScoreThreshold || 2.0,
+    fastEnd: strat.fastEnd || 2,
+    slowEnd: strat.slowEnd || 30,
+    acceleration: strat.acceleration || 0.02,
+    maxAcceleration: strat.maxAcceleration || 0.2,
+    multiplier: strat.multiplier || 3.0,
     ...strat,
 }));

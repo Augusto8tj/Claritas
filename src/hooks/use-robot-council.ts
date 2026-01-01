@@ -295,12 +295,10 @@ export function useRobotCouncil(
         await new Promise((resolve) => setTimeout(resolve, 500));
 
         const durationUnit = form.getValues('duration_unit');
-        const council = evolvedStrategies.map((strategy, index) => ({
+        
+        const council = initialCouncilStrategies.map((strategy, index) => ({
             ...strategy,
             id: `${strategy.strategyType}_BOT_${index+1}`,
-            suggestedStake: Math.max(0.35, dailyBalance * 0.01),
-            suggestedDuration: 5,
-            suggestedDurationUnit: durationUnit,
             justification: strategy.justification.replace('{{timePeriod}}', timePeriod),
         })) as RobotStrategy[];
 
@@ -313,7 +311,7 @@ export function useRobotCouncil(
 
         setIsCouncilAutopilotOn(true);
         setIsFetchingCouncil(false);
-    }, [activeSymbol, dailyBalance, form, timePeriod, toast, user, evolvedStrategies, resetArenaPerformance]);
+    }, [activeSymbol, form, timePeriod, toast, user, resetArenaPerformance]);
 
     // ========================================================================
     // DISSOLVER O CONSELHO
@@ -753,5 +751,3 @@ export function useRobotCouncil(
         evolutionHistory
     };
 }
-
-    
