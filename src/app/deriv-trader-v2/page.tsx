@@ -130,20 +130,21 @@ const SidePanel = ({ robotCouncil }: { robotCouncil: ReturnType<typeof useRobotC
     return (
         <div className="space-y-6">
             <CouncilAutopilotInterfaceV2 {...robotCouncil} />
-            <Tabs defaultValue="log">
+            <Tabs defaultValue="desk">
                 <TabsList className="grid w-full grid-cols-3">
-                    <TabsTrigger value="log">Operações</TabsTrigger>
                     <TabsTrigger value="desk">Arena V2</TabsTrigger>
+                    <TabsTrigger value="log">Operações</TabsTrigger>
                     <TabsTrigger value="analysis">Análise IA</TabsTrigger>
                 </TabsList>
-                <TabsContent value="log" className="mt-4">
-                    <OperationsLog operations={operationsLog} />
-                </TabsContent>
                 <TabsContent value="desk" className="mt-4">
                     <TradingDeskV2 
                         robotPerformance={robotCouncil.robotPerformance}
                         isCouncilAutopilotOn={robotCouncil.isCouncilAutopilotOn}
+                        resetArenaPerformance={robotCouncil.resetArenaPerformance}
                     />
+                </TabsContent>
+                <TabsContent value="log" className="mt-4">
+                    <OperationsLog operations={operationsLog} />
                 </TabsContent>
                 <TabsContent value="analysis" className="mt-4">
                     <AIAnalysisInterface analyzeSessionPerformance={tradeAnalysis.analyzeSessionPerformance} />

@@ -25,13 +25,16 @@ import {
     XCircle,
     Trophy,
     AlertTriangle,
+    RefreshCw,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Progress } from '@/components/ui/progress';
+import { Button } from '@/components/ui/button';
 
 interface TradingDeskV2Props {
     robotPerformance: EnhancedRobotPerformance[];
     isCouncilAutopilotOn: boolean;
+    resetArenaPerformance: () => void;
 }
 
 const indicatorIcons: { [key: string]: React.ReactNode } = {
@@ -81,7 +84,7 @@ function renderStrategyParams(robot: RobotStrategy): string {
     }
 }
 
-export function TradingDeskV2({ robotPerformance, isCouncilAutopilotOn }: TradingDeskV2Props) {
+export function TradingDeskV2({ robotPerformance, isCouncilAutopilotOn, resetArenaPerformance }: TradingDeskV2Props) {
     
     const sortedPerformance = [...robotPerformance].sort((a, b) => {
         const sharpeA = a.sharpeRatio || -Infinity;
@@ -93,12 +96,18 @@ export function TradingDeskV2({ robotPerformance, isCouncilAutopilotOn }: Tradin
     return (
         <Card>
             <CardHeader>
-                <CardTitle className="font-headline flex items-center gap-2">
-                    <LayoutGrid className="w-5 h-5" />
-                    Arena Virtual V2.0: Análise de Sharpe
-                </CardTitle>
+                <div className="flex justify-between items-start">
+                    <CardTitle className="font-headline flex items-center gap-2">
+                        <LayoutGrid className="w-5 h-5" />
+                        Arena Virtual V2.0: Análise de Sharpe
+                    </CardTitle>
+                    <Button onClick={resetArenaPerformance} variant="outline" size="sm" disabled={!isCouncilAutopilotOn}>
+                        <RefreshCw className="mr-2 h-4 w-4" />
+                        Resetar Arena
+                    </Button>
+                </div>
                 <CardDescription>
-                    Ranking de robôs pela sua performance ajustada ao risco (Sharpe Ratio).
+                    Ranking de robôs pela sua performance ajustada ao risco (Sharpe Ratio). O desempenho é resetado ao trocar de ativo.
                 </CardDescription>
             </CardHeader>
             <CardContent>

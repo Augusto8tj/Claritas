@@ -260,6 +260,7 @@ export function useRobotCouncilV2(
   const { evolvedStrategies, evolveTrigger, evolutionHistory } = useStrategyEvolution(initialCouncilStrategies);
   const lastExecutionTimeRef = useRef(0); // Para o throttle
   const contractsInAlertRef = useRef<Map<number, 'breached' | 'confirmed'>>(new Map());
+  const lastActiveSymbolRef = useRef<string | null>(null); // NOVO: Para detetar mudança de ativo
 
   // ────────────────────────────────────────────────────────────────
   // ESTADOS DO CONSELHO
@@ -366,6 +367,33 @@ export function useRobotCouncilV2(
   useEffect(() => {
     setStrategyCouncil(evolvedStrategies as RobotStrategy[]);
   }, [evolvedStrategies]);
+  
+  // ────────────────────────────────────────────────────────────────
+  // RESET INTELIGENTE DA ARENA
+  // ────────────────────────────────────────────────────────────────
+  const resetArenaPerformance = useCallback(() => {
+    if (strategyCouncil.length === 0 || !user) return;
+    
+    toast({
+      title: "🔄 Arena V2.0 Resetada",
+      description: `Análise de desempenho reiniciada para ${activeSymbol}.`,
+    });
+
+    const initialPerformance: EnhancedRobotPerformance[] = strategyCouncil.map(robot => ({
+      id: robot.id,
+      strategyType: robot.strategyType,
+      strategy: robot,
+      wins: 0, losses: 0, totalProfit: 0, winRate: 0,
+      sharpeRatio: 0, maxDrawdown: 0, avgWin: 0, avgLoss: 0,
+      profitFactor: 0, kellyFraction: 0, effectiveRegimes: [],
+      monteCarloScore: 0, lastUpdated: Date.now(), tradeHistory: []
+    }));
+
+    setRobotPerformance(initialPerformance);
+    virtualTradesRef.current = [];
+    tradeCounterRef.current = 0;
+    saveRobotPerformance(user.uid, initialPerformance);
+  }, [strategyCouncil, user, activeSymbol, toast]);
 
   // ────────────────────────────────────────────────────────────────
   // CARREGAMENTO DE PERFORMANCE DO FIREBASE
@@ -384,7 +412,7 @@ export function useRobotCouncilV2(
             avgLoss: p.avgLoss || 0,
             profitFactor: p.profitFactor || 0,
             kellyFraction: p.kellyFraction || 0,
-            effectiveRegimes: p.effectiveRegimes || [], // Garante que a lista exista
+            effectiveRegimes: p.effectiveRegimes || [], 
             monteCarloScore: p.monteCarloScore || 0,
             lastUpdated: p.lastUpdated || Date.now(),
             tradeHistory: p.tradeHistory || []
@@ -409,37 +437,13 @@ export function useRobotCouncilV2(
     }
 
     setIsFetchingCouncil(true);
-    virtualTradesRef.current = [];
-    tradeCounterRef.current = 0;
-
     await new Promise((resolve) => setTimeout(resolve, 500));
 
     const council = (evolvedStrategies as RobotStrategy[]).map(s => ({ ...s }));
     setStrategyCouncil(council);
-
-    if (robotPerformance.length === 0) {
-      const initialPerformance: EnhancedRobotPerformance[] = council.map((robot) => ({
-        id: robot.id,
-        strategyType: robot.strategyType,
-        strategy: robot,
-        wins: 0,
-        losses: 0,
-        totalProfit: 0,
-        winRate: 0,
-        sharpeRatio: 0,
-        maxDrawdown: 0,
-        avgWin: 0,
-        avgLoss: 0,
-        profitFactor: 0,
-        kellyFraction: 0,
-        effectiveRegimes: [], // Começa vazio, será populado com dados
-        monteCarloScore: 0,
-        lastUpdated: Date.now(),
-        tradeHistory: []
-      }));
-      setRobotPerformance(initialPerformance);
-      saveRobotPerformance(user.uid, initialPerformance);
-    }
+    
+    // Dispara o reset ao convocar o conselho
+    resetArenaPerformance();
 
     toast({
       title: '🚀 Sistema V2.0 Ativado',
@@ -448,13 +452,26 @@ export function useRobotCouncilV2(
 
     setIsCouncilAutopilotOn(true);
     setIsFetchingCouncil(false);
-  }, [activeSymbol, user, toast, robotPerformance, evolvedStrategies]);
+    lastActiveSymbolRef.current = activeSymbol;
+  }, [activeSymbol, user, toast, evolvedStrategies, resetArenaPerformance]);
+
+  // ────────────────────────────────────────────────────────────────
+  // DETEÇÃO AUTOMÁTICA DE MUDANÇA DE ATIVO
+  // ────────────────────────────────────────────────────────────────
+  useEffect(() => {
+    if (activeSymbol && lastActiveSymbolRef.current !== activeSymbol) {
+      if (isCouncilAutopilotOn) {
+        console.log(`[RESET] Mudança de ativo detectada: ${lastActiveSymbolRef.current} -> ${activeSymbol}. Resetando a arena...`);
+        resetArenaPerformance();
+      }
+      lastActiveSymbolRef.current = activeSymbol;
+    }
+  }, [activeSymbol, isCouncilAutopilotOn, resetArenaPerformance]);
 
   // ────────────────────────────────────────────────────────────────
   // FUNÇÃO: DESATIVAR CONSELHO
   // ────────────────────────────────────────────────────────────────
   const dissolveCouncil = useCallback(() => {
-    setStrategyCouncil([]);
     setIsCouncilAutopilotOn(false);
     virtualTradesRef.current = [];
     
@@ -776,7 +793,7 @@ export function useRobotCouncilV2(
     const avgLossAmount = validPerformance.length > 0 ? validPerformance.reduce((sum, r) => sum + r.avgLoss, 0) / validPerformance.length : 1.0;
     
     let kellyStake = calculateKellyStake(
-      dailyBalance - portfolioStats.totalExposure, avgWinRate, avgWinAmount, avgLossAmount, KELLY_FRACTION
+      dailyBalance - portfolioStats.totalExposure, avgWinRate, avgWinAmount, avgLossAmount
     );
     if (!isFinite(kellyStake) || isNaN(kellyStake) || kellyStake < 0) kellyStake = 0.35;
     if (isDynamicRiskOn) {
@@ -880,6 +897,7 @@ export function useRobotCouncilV2(
     isDynamicRiskOn, setIsDynamicRiskOn, isMeritocracyOn, setIsMeritocracyOn,
     dashboardData,
     effectiveThreshold,
-    councilConfidence
+    councilConfidence,
+    resetArenaPerformance, // NOVO: Exporta a função de reset
   };
 }
