@@ -23,6 +23,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { AITradeSuggestion } from "@/components/deriv-trader/ai-trade-suggestion";
 import { CouncilDashboard } from '@/components/deriv-trader/CouncilDashboard';
 import { TradingDeskV2 } from "@/components/deriv-trader/trading-desk-v2";
+import { TradingDecisionLogViewer } from "@/components/deriv-trader/TradingDecisionLogViewer";
 
 
 // --- Sub-componentes para melhor organização ---
@@ -131,10 +132,11 @@ const SidePanel = ({ robotCouncil }: { robotCouncil: ReturnType<typeof useRobotC
         <div className="space-y-6">
             <CouncilAutopilotInterfaceV2 {...robotCouncil} />
             <Tabs defaultValue="desk">
-                <TabsList className="grid w-full grid-cols-3">
+                <TabsList className="grid w-full grid-cols-4">
                     <TabsTrigger value="desk">Arena V2</TabsTrigger>
                     <TabsTrigger value="log">Operações</TabsTrigger>
                     <TabsTrigger value="analysis">Análise IA</TabsTrigger>
+                    <TabsTrigger value="audit">Auditoria</TabsTrigger>
                 </TabsList>
                 <TabsContent value="desk" className="mt-4">
                     <TradingDeskV2 
@@ -148,6 +150,9 @@ const SidePanel = ({ robotCouncil }: { robotCouncil: ReturnType<typeof useRobotC
                 </TabsContent>
                 <TabsContent value="analysis" className="mt-4">
                     <AIAnalysisInterface analyzeSessionPerformance={tradeAnalysis.analyzeSessionPerformance} />
+                </TabsContent>
+                <TabsContent value="audit" className="mt-4">
+                   <TradingDecisionLogViewer logs={robotCouncil.tradeDecisionLog} />
                 </TabsContent>
             </Tabs>
         </div>

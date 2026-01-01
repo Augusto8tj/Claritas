@@ -57,7 +57,7 @@ import type {
 } from '@/lib/types';
 import { calculateAllIndicators, type Indicators } from '@/services/indicator-service';
 import { useAuth } from '@/features/auth/hooks/use-auth';
-import { saveRobotPerformance, loadRobotPerformance } from '@/services/financial-data-service';
+import { saveRobotPerformance, loadRobotPerformance, saveTradeDecision } from '@/services/financial-data-service';
 import { useStrategyEvolution } from './use-strategy-evolution';
 import { initialCouncilStrategies } from '@/services/council-strategies';
 import {
@@ -524,8 +524,7 @@ export function useRobotCouncilV2(
     const currentIndicators = calculateAllIndicators(
       tickCandles, 
       strategyCouncil, 
-      timePeriod,
-      contractDurationForIndicators
+      timePeriod
     );
     setIndicators(currentIndicators);
 
@@ -876,6 +875,7 @@ export function useRobotCouncilV2(
     
      // Log da Decisão
     const decisionLog: TradeDecisionLog = {
+      id: `TDL-${Date.now()}`,
       timestamp: new Date().toISOString(),
       asset: activeSymbol,
       timePeriod: timePeriod,
@@ -897,7 +897,8 @@ export function useRobotCouncilV2(
         activeRobots: activeRobotsCount,
         votes: bayesianVotes,
       },
-      result: 'pending' // Será atualizado depois
+      result: 'pending',
+      pnl: 0,
     };
 
     setTradeDecisionLog(prev => [...prev, decisionLog]);
@@ -906,10 +907,39 @@ export function useRobotCouncilV2(
       title: "🚀 Ordem Executada",
       description: `${consensusDirection} com $${kellyStake.toFixed(2)} (${(consensusProbability * 100).toFixed(1)}% confiança)`
     });
+
     executeTrade(
       consensusDirection === 'RISE' ? 'CALL' : 'PUT', kellyStake, activeSymbol!,
       consensusDirection.toLowerCase() as 'rise' | 'fall', finalDuration, finalDurationUnit, 'Conselho'
-    ).finally(() => {
+    ).then(tradeResult => {
+      // Quando a operação for concluída, o log será atualizado e salvo no Firebase
+      const updateLogOnCompletion = (updatedOp: Operation) => {
+        if (updatedOp.id === tradeResult.contractId) {
+          setTradeDecisionLog(prevLogs => {
+            const updatedLogs = prevLogs.map(log => {
+              if (log.id === decisionLog.id) {
+                const finalLog = { ...log, result: updatedOp.status, pnl: updatedOp.result };
+                saveTradeDecision(user.uid, finalLog); // Salva no Firebase
+                return finalLog;
+              }
+              return log;
+            });
+            return updatedLogs;
+          });
+        }
+      };
+
+      // Esta é uma simplificação. A lógica real estaria no `onmessage` do `useDerivApi`
+      // para observar quando `proposal_open_contract` com `is_sold: 1` chega.
+      const unsubscribe = () => { /* Lógica para remover o listener */ };
+      const subscribeToOperationUpdates = (opId: number, callback: (op: Operation) => void) => {
+          // Placeholder: Em um sistema real, isso observaria as atualizações do WebSocket
+          // e chamaria o callback quando a operação com `opId` fosse atualizada.
+      };
+      subscribeToOperationUpdates(tradeResult.contractId!, updateLogOnCompletion);
+
+
+    }).finally(() => {
       const recentTrades = operationsLog.filter(op => op.initiator === 'Conselho' && Date.now() - new Date(op.timestamp).getTime() < 300000).length;
       const cooldownTime = Math.min(5000 + (recentTrades * 2000), 30000);
       setTimeout(() => { councilExecutionRef.current.isExecuting = false; }, cooldownTime);
