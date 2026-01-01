@@ -5,12 +5,10 @@
  * @fileOverview A financial data service that interacts with Firebase Firestore.
  */
 import { db } from '@/lib/firebase';
-import { collection, getDocs, addDoc, doc, updateDoc, deleteDoc, getDoc, setDoc } from 'firebase/firestore';
-import type { Goal, BudgetCategory, Transaction, RobotPerformance, TradeDecisionLog } from '@/lib/types';
+import { collection, getDocs, addDoc, doc, updateDoc, deleteDoc, getDoc, setDoc, where, query } from 'firebase/firestore';
+import type { Goal, BudgetCategory, Transaction, RobotPerformance, TradeDecisionLog, EnhancedRobotPerformance } from '@/lib/types';
 import { generateGoalImage } from '@/ai/flows/goal-image-generation';
 
-import { errorEmitter } from '@/firebase/error-emitter';
-import { FirestorePermissionError } from '@/firebase/errors';
 
 const PROMOTION_THRESHOLD_WINS = 10;
 const PROMOTION_THRESHOLD_PROFIT = 0;
@@ -18,31 +16,27 @@ const PROMOTION_THRESHOLD_PROFIT = 0;
 // --- Transactions ---
 
 export async function getTransactions(userId: string): Promise<Transaction[]> {
+    if (!userId) return [];
     const transactionsCol = collection(db, `users/${userId}/transactions`);
     try {
         const snapshot = await getDocs(transactionsCol);
         return snapshot.docs.map(d => ({ id: d.id, ...d.data() } as Transaction));
     } catch (serverError) {
-        const permissionError = new FirestorePermissionError({
-            path: transactionsCol.path,
-            operation: 'list',
-        });
-        errorEmitter.emit('permission-error', permissionError);
-        return [];
+        console.error(`[Service Error] getTransactions failed for user ${userId}:`, serverError);
+        throw serverError; // Propagate the original error
     }
 }
 
 export async function addTransaction(userId: string, data: Omit<Transaction, 'id'>): Promise<string> {
+    if (!userId) throw new Error("User not authenticated.");
     const transactionsCol = collection(db, `users/${userId}/transactions`);
-    addDoc(transactionsCol, data).catch(async (serverError) => {
-        const permissionError = new FirestorePermissionError({
-            path: transactionsCol.path,
-            operation: 'create',
-            requestResourceData: data,
-        });
-        errorEmitter.emit('permission-error', permissionError);
-    });
-    return `Transação "${data.description}" de R$${data.amount.toFixed(2)} adicionada com sucesso.`;
+    try {
+        await addDoc(transactionsCol, data);
+        return `Transação "${data.description}" de R$${data.amount.toFixed(2)} adicionada com sucesso.`;
+    } catch (serverError) {
+        console.error(`[Service Error] addTransaction failed for user ${userId}:`, serverError);
+        throw serverError;
+    }
 }
 
 // --- Financial Summary ---
@@ -57,21 +51,19 @@ export async function getFinancialSummary(userId: string): Promise<{ income: num
 // --- Goals ---
 
 export async function getGoals(userId: string): Promise<Goal[]> {
+    if (!userId) return [];
     const goalsCol = collection(db, `users/${userId}/goals`);
     try {
         const snapshot = await getDocs(goalsCol);
         return snapshot.docs.map(d => ({ id: d.id, ...d.data() } as Goal));
     } catch (serverError) {
-        const permissionError = new FirestorePermissionError({
-            path: goalsCol.path,
-            operation: 'list',
-        });
-        errorEmitter.emit('permission-error', permissionError);
-        return [];
+        console.error(`[Service Error] getGoals failed for user ${userId}:`, serverError);
+        throw serverError;
     }
 }
 
 export async function addGoal(userId: string, name: string, targetAmount: number): Promise<Goal> {
+    if (!userId) throw new Error("User not authenticated.");
     const goalsCol = collection(db, `users/${userId}/goals`);
     
     const newGoalData = {
@@ -82,44 +74,41 @@ export async function addGoal(userId: string, name: string, targetAmount: number
         imageHint: "new goal"
     };
 
-    const docRef = await addDoc(goalsCol, newGoalData).catch((serverError) => {
-        const permissionError = new FirestorePermissionError({
-            path: goalsCol.path,
-            operation: 'create',
-            requestResourceData: newGoalData,
-        });
-        errorEmitter.emit('permission-error', permissionError);
+    try {
+        const docRef = await addDoc(goalsCol, newGoalData);
+
+        // Dispara a geração de imagem, mas não bloqueia a resposta principal
+        generateGoalImage({ goalName: name })
+            .then(imageResult => {
+                if (imageResult?.imageUrl) {
+                    const goalDoc = doc(db, `users/${userId}/goals`, docRef.id);
+                    updateDoc(goalDoc, { imageUrl: imageResult.imageUrl })
+                        .catch(updateError => {
+                            console.error("Falha ao atualizar a imagem da meta:", updateError);
+                        });
+                }
+            })
+            .catch(imageError => {
+                console.error("Falha ao gerar imagem da meta, usando placeholder.", imageError);
+            });
+
+        return { id: docRef.id, ...newGoalData };
+    } catch (serverError) {
+        console.error(`[Service Error] addGoal failed for user ${userId}:`, serverError);
         throw serverError;
-    });
-
-    generateGoalImage({ goalName: name })
-        .then(imageResult => {
-            if (imageResult?.imageUrl) {
-                const goalDoc = doc(db, `users/${userId}/goals`, docRef.id);
-                updateDoc(goalDoc, { imageUrl: imageResult.imageUrl })
-                    .catch(updateError => {
-                        console.error("Falha ao atualizar a imagem da meta:", updateError);
-                    });
-            }
-        })
-        .catch(imageError => {
-            console.error("Falha ao gerar imagem da meta, usando placeholder.", imageError);
-        });
-
-    return { id: docRef.id, ...newGoalData };
+    }
 }
 
 export async function deleteGoal(userId: string, goalId: string): Promise<{ success: boolean }> {
+    if (!userId) throw new Error("User not authenticated.");
     const goalDoc = doc(db, `users/${userId}/goals`, goalId);
-    await deleteDoc(goalDoc).catch(async (serverError) => {
-        const permissionError = new FirestorePermissionError({
-            path: goalDoc.path,
-            operation: 'delete',
-        });
-        errorEmitter.emit('permission-error', permissionError);
+    try {
+        await deleteDoc(goalDoc);
+        return { success: true };
+    } catch (serverError) {
+        console.error(`[Service Error] deleteGoal failed for user ${userId}, goal ${goalId}:`, serverError);
         throw serverError;
-    });
-    return { success: true };
+    }
 }
 
 // --- Budget ---
@@ -131,17 +120,14 @@ async function getBudgetLimits(userId: string): Promise<{ [key: string]: number 
         if (docSnap.exists()) {
             return docSnap.data().limits || {};
         }
+        // Default values if document doesn't exist
         return {
             "Moradia": 2000, "Alimentação": 1000, "Transporte": 500,
             "Lazer": 400, "Compras": 600, "Outros": 300, "Contas": 800,
         };
     } catch (serverError) {
-         const permissionError = new FirestorePermissionError({
-            path: settingsDoc.path,
-            operation: 'get',
-        });
-        errorEmitter.emit('permission-error', permissionError);
-        return {};
+         console.error(`[Service Error] getBudgetLimits failed for user ${userId}:`, serverError);
+         throw serverError;
     }
 }
 
@@ -168,26 +154,22 @@ export async function getBudgetData(userId: string): Promise<BudgetCategory[]> {
 }
 
 export async function updateBudgetLimit(userId: string, name: string, newLimit: number): Promise<BudgetCategory | null> {
+    if (!userId) throw new Error("User not authenticated.");
     const settingsDocRef = doc(db, `users/${userId}/settings`, 'budget');
     const dataToSet = { [`limits.${name}`]: newLimit };
 
-    await setDoc(settingsDocRef, dataToSet, { merge: true })
-        .catch(async (serverError) => {
-            const permissionError = new FirestorePermissionError({
-                path: settingsDocRef.path,
-                operation: 'update',
-                requestResourceData: dataToSet
-            });
-            errorEmitter.emit('permission-error', permissionError);
-            throw serverError;
-        });
+    try {
+        await setDoc(settingsDocRef, dataToSet, { merge: true });
+        const transactions = await getTransactions(userId);
+        const spent = transactions
+            .filter(t => t.type === 'expense' && t.category === name)
+            .reduce((sum, t) => sum + t.amount, 0);
 
-    const transactions = await getTransactions(userId);
-    const spent = transactions
-        .filter(t => t.type === 'expense' && t.category === name)
-        .reduce((sum, t) => sum + t.amount, 0);
-
-    return { name, budgeted: newLimit, spent };
+        return { name, budgeted: newLimit, spent };
+    } catch (serverError) {
+        console.error(`[Service Error] updateBudgetLimit failed for user ${userId}:`, serverError);
+        throw serverError;
+    }
 }
 
 export async function getExpenseCategories(userId: string): Promise<string[]> {
@@ -195,7 +177,7 @@ export async function getExpenseCategories(userId: string): Promise<string[]> {
     return Object.keys(limits);
 }
 
-// --- General Insights (Still Mocked) ---
+// --- General Insights (Mocked) ---
 export async function getInsights(): Promise<string[]> {
     return [
       "Você gastou R$150 em restaurantes. Tente cozinhar em casa para economizar.",
@@ -204,13 +186,14 @@ export async function getInsights(): Promise<string[]> {
     ];
 }
 
-
 // --- Trading Robot Performance ---
 
-export const saveRobotPerformance = async (userId: string, performance: RobotPerformance[]) => {
+export const saveRobotPerformance = async (userId: string, performance: EnhancedRobotPerformance[]) => {
+  if (!userId) throw new Error("User not authenticated.");
   try {
     const docRef = doc(db, 'users', userId, 'trading_data', 'robot_council_performance');
     
+    // Certifique-se de que todos os dados são serializáveis para o Firestore
     const dataToSave = {
       updatedAt: new Date().toISOString(),
       robots: performance.map(p => ({
@@ -221,50 +204,44 @@ export const saveRobotPerformance = async (userId: string, performance: RobotPer
         losses: p.losses,
         totalProfit: p.totalProfit,
         winRate: p.winRate,
-        winRateTrend: p.winRateTrend || 0,
-        winRateRange: p.winRateRange || 0
+        sharpeRatio: p.sharpeRatio,
+        maxDrawdown: p.maxDrawdown,
+        avgWin: p.avgWin,
+        avgLoss: p.avgLoss,
+        profitFactor: p.profitFactor,
+        kellyFraction: p.kellyFraction,
+        effectiveRegimes: p.effectiveRegimes,
+        monteCarloScore: p.monteCarloScore,
+        lastUpdated: p.lastUpdated,
+        tradeHistory: p.tradeHistory || [],
       }))
     };
 
-    await setDoc(docRef, dataToSave).catch((serverError) => {
-       const permissionError = new FirestorePermissionError({
-          path: docRef.path,
-          operation: 'update',
-          requestResourceData: dataToSave,
-       });
-       errorEmitter.emit('permission-error', permissionError);
-       throw serverError;
-    });
+    await setDoc(docRef, dataToSave);
 
   } catch (error) {
-    console.error("Erro ao salvar performance dos robôs:", error);
+    console.error(`[Service Error] saveRobotPerformance failed for user ${userId}:`, error);
+    throw error;
   }
 };
 
-export const loadRobotPerformance = async (userId: string): Promise<RobotPerformance[] | null> => {
+export const loadRobotPerformance = async (userId: string): Promise<EnhancedRobotPerformance[] | null> => {
+  if (!userId) return null;
   try {
     const docRef = doc(db, 'users', userId, 'trading_data', 'robot_council_performance');
-    const docSnap = await getDoc(docRef).catch((serverError) => {
-       const permissionError = new FirestorePermissionError({
-          path: docRef.path,
-          operation: 'get',
-       });
-       errorEmitter.emit('permission-error', permissionError);
-       throw serverError;
-    });
+    const docSnap = await getDoc(docRef);
 
     if (docSnap.exists()) {
       const data = docSnap.data();
-      return data.robots.map((r: any) => ({
+      return (data.robots || []).map((r: any) => ({
         ...r,
-        winRateTrend: r.winRateTrend ?? 0, 
-        winRateRange: r.winRateRange ?? 0
+        tradeHistory: r.tradeHistory || [],
       }));
     }
     return null;
   } catch (error) {
-    console.error("Erro ao carregar performance:", error);
-    return null;
+    console.error(`[Service Error] loadRobotPerformance failed for user ${userId}:`, error);
+    throw error;
   }
 };
 
@@ -277,10 +254,10 @@ export async function getHallOfFame(userId: string): Promise<RobotPerformance[]>
         }
 
         const promotedRobots = performanceData.filter(
-            (p) => p.wins >= PROMOTION_THRESHOLD_WINS && p.totalProfit > PROMOTION_THRESHOLD_PROFIT
+            (p) => (p.wins || 0) >= PROMOTION_THRESHOLD_WINS && (p.totalProfit || 0) > PROMOTION_THRESHOLD_PROFIT
         );
 
-        promotedRobots.sort((a, b) => b.totalProfit - a.totalProfit);
+        promotedRobots.sort((a, b) => (b.totalProfit || 0) - (a.totalProfit || 0));
         
         return promotedRobots;
     } catch(e) {
@@ -292,24 +269,16 @@ export async function getHallOfFame(userId: string): Promise<RobotPerformance[]>
 // --- Trading Decision Log ---
 
 export async function saveTradeDecision(userId: string, log: TradeDecisionLog): Promise<void> {
+    if (!userId) throw new Error("User not authenticated.");
     try {
         const logCollectionRef = collection(db, 'users', userId, 'decision_logs');
-        // Usar o ID do log como ID do documento para evitar duplicatas
         const logDocRef = doc(logCollectionRef, log.id);
         
-        await setDoc(logDocRef, log).catch((serverError) => {
-            const permissionError = new FirestorePermissionError({
-                path: logDocRef.path,
-                operation: 'create',
-                requestResourceData: log,
-            });
-            errorEmitter.emit('permission-error', permissionError);
-            throw serverError;
-        });
+        await setDoc(logDocRef, log);
         console.log(`[Firebase] Log de Decisão ${log.id} salvo com sucesso.`);
 
     } catch (error) {
-        console.error("Erro ao salvar o log de decisão no Firebase:", error);
-        // Não lançar erro para não quebrar a aplicação principal, apenas registrar.
+        console.error(`[Service Error] saveTradeDecision failed for user ${userId}:`, error);
+        throw error;
     }
 }
