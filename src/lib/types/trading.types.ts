@@ -1,5 +1,6 @@
 // src/lib/types/trading.types.ts
 import { z } from 'zod';
+import type { TimePeriod } from '.';
 
 export type MarketRegime = 
   | 'trending_bull'
@@ -19,17 +20,19 @@ export interface MicrostructureFeatures {
   meanReversion: number;
 }
 
-export interface BayesianVote {
-  vote: 'RISE' | 'FALL' | 'HOLD';
-  rawConfidence: number;
-  calibratedConfidence: number;
-  bayesianProbability: number;
-  weight: number;
-  optimalDuration: number;
-  optimalDurationUnit: z.infer<typeof RobotStrategySchema['shape']['optimalDurationUnit']>;
-  suggestedStake: number;
-  regime: MarketRegime;
-}
+export const BayesianVoteSchema = z.object({
+    vote: z.enum(['RISE', 'FALL', 'HOLD']),
+    rawConfidence: z.number(),
+    calibratedConfidence: z.number(),
+    bayesianProbability: z.number(),
+    weight: z.number(),
+    optimalDuration: z.number(),
+    optimalDurationUnit: z.enum(['t', 's', 'm', 'h', 'd']),
+    suggestedStake: z.number(),
+    regime: z.string(), // Mantido como string para flexibilidade
+});
+export type BayesianVote = z.infer<typeof BayesianVoteSchema>;
+
 
 export interface EnhancedRobotPerformance {
   id: string;
@@ -160,3 +163,76 @@ export const RobotPerformanceSchema = z.object({
 });
 
 export type RobotPerformance = z.infer<typeof RobotPerformanceSchema>;
+
+// Schema for a snapshot of all indicators at a given time
+export const IndicatorsSchema = z.object({
+  rsi: z.number().nullable(),
+  stoch: z.number().nullable(),
+  atr: z.number().nullable(),
+  adx: z.number().nullable(),
+  pdi: z.number().nullable(),
+  ndi: z.number().nullable(),
+  macd: z.object({
+    macd: z.number().nullable(),
+    signal: z.number().nullable(),
+    histogram: z.number().nullable(),
+  }),
+  ma: z.object({
+    short: z.number().nullable(),
+    long: z.number().nullable(),
+  }),
+  ema20: z.number().nullable(),
+  ema50: z.number().nullable(),
+  bb: z.object({
+    upper: z.number().nullable(),
+    middle: z.number().nullable(),
+    lower: z.number().nullable(),
+  }),
+  kama: z.number().nullable(),
+  bbw: z.number().nullable(),
+  stochRSI: z.number().nullable(),
+  zScore: z.number().nullable(),
+  awesomeOscillator: z.number().nullable(),
+  trix: z.number().nullable(),
+  roc: z.number().nullable(),
+  parabolicSAR: z.number().nullable(),
+  ichimoku: z.object({
+    tenkan: z.number().nullable(),
+    kijun: z.number().nullable(),
+    senkouA: z.number().nullable(),
+    senkouB: z.number().nullable(),
+  }).nullable(),
+  mfi: z.number().nullable(),
+  obv: z.number().nullable(),
+  chandelierExit: z.number().nullable(),
+  rvi: z.number().nullable(),
+});
+
+// Full audit log for a single trade decision
+export const TradeDecisionLogSchema = z.object({
+  timestamp: z.string(),
+  asset: z.string(),
+  timePeriod: z.custom<TimePeriod>(),
+  tradeParams: z.object({
+    direction: z.enum(['RISE', 'FALL']),
+    stake: z.number(),
+    duration: z.number(),
+    durationUnit: z.enum(['t', 's', 'm', 'h', 'd']),
+  }),
+  context: z.object({
+    marketRegime: z.string(),
+    regimeConfidence: z.number(),
+    microstructure: z.custom<MicrostructureFeatures | null>(),
+    indicators: IndicatorsSchema,
+  }),
+  consensus: z.object({
+    bayesianProbability: z.number(),
+    kellyStake: z.number(),
+    activeRobots: z.number(),
+    votes: z.record(BayesianVoteSchema),
+  }),
+  result: z.enum(['pending', 'won', 'lost']),
+  pnl: z.number().optional(),
+});
+
+export type TradeDecisionLog = z.infer<typeof TradeDecisionLogSchema>;

@@ -52,7 +52,8 @@ import type {
   MicrostructureFeatures,
   BayesianVote,
   EnhancedRobotPerformance as EnhancedRobotPerformanceType,
-  TimePeriod
+  TimePeriod,
+  TradeDecisionLog,
 } from '@/lib/types';
 import { calculateAllIndicators, type Indicators } from '@/services/indicator-service';
 import { useAuth } from '@/features/auth/hooks/use-auth';
@@ -271,6 +272,8 @@ export function useRobotCouncilV2(
   const [isCouncilAutopilotOn, setIsCouncilAutopilotOn] = useState(false);
   const [isFetchingCouncil, setIsFetchingCouncil] = useState(false);
   const [indicators, setIndicators] = useState<Indicators | null>(null);
+  const [tradeDecisionLog, setTradeDecisionLog] = useState<TradeDecisionLog[]>([]);
+
 
   // ────────────────────────────────────────────────────────────────
   // ESTADOS DE REGIME E MICROESTRUTURA
@@ -680,7 +683,7 @@ export function useRobotCouncilV2(
     // ══════════════════════════════════════════════════════════════
     // ETAPA 6: VOTAÇÃO BAYESIANA DOS ROBÔS
     // ══════════════════════════════════════════════════════════════
-    const newVotes: Record<string, any> = {};
+    const bayesianVotes: Record<string, BayesianVote> = {};
     let riseSum = 0;
     let fallSum = 0;
     let totalWeight = 0;
@@ -697,7 +700,7 @@ export function useRobotCouncilV2(
       const isDurationInRange = durationInSeconds >= durationRange[0] && durationInSeconds <= durationRange[1];
       
       if (technicalVote.vote === 'HOLD' || !isRegimeEffective || !isDurationInRange) {
-        newVotes[robot.id] = {
+        bayesianVotes[robot.id] = {
           ...technicalVote,
           rawConfidence: 0, calibratedConfidence: 0, bayesianProbability: 0.5,
           weight: 0, regime: regimeResult.regime
@@ -735,13 +738,13 @@ export function useRobotCouncilV2(
       };
       virtualTradesRef.current.push(virtualTrade);
 
-      const finalVote = {
+      const finalVote: BayesianVote = {
         vote: technicalVote.vote, rawConfidence: technicalVote.confidence,
         calibratedConfidence: calibratedConf * 100, bayesianProbability: posterior, weight,
         optimalDuration: technicalVote.optimalDuration, optimalDurationUnit: technicalVote.optimalDurationUnit,
         suggestedStake: technicalVote.suggestedStake * posterior, regime: regimeResult.regime
       };
-      newVotes[robot.id] = finalVote;
+      bayesianVotes[robot.id] = finalVote;
 
       const voteWeight = calibratedConf * weight * (confidenceFactor / 100);
       if (technicalVote.vote === 'RISE') riseSum += voteWeight;
@@ -836,14 +839,15 @@ export function useRobotCouncilV2(
     // ══════════════════════════════════════════════════════════════
     // ETAPA 11: ATUALIZA DASHBOARD DATA
     // ══════════════════════════════════════════════════════════════
-    setDashboardData({
+    const newDashboardData = {
       regime: regimeResult.regime, bayesianProbability: consensusProbability, consensusDirection,
       activeRobotsCount, microstructure: {
         pressure: microFeatures ? microFeatures.volumeImbalance : 0.5,
         velocity: microFeatures ? microFeatures.tickVelocity : 0,
         isSpike: microFeatures ? Math.abs(microFeatures.priceAcceleration) > 0.001 : false,
       }, kellyStake,
-    });
+    };
+    setDashboardData(newDashboardData);
 
     // ══════════════════════════════════════════════════════════════
     // ETAPA 12: ATUALIZA ESTADOS DE CONSENSO E PORTFOLIO
@@ -869,6 +873,35 @@ export function useRobotCouncilV2(
     if (consensusProbability < 0.65) return;
 
     councilExecutionRef.current.isExecuting = true;
+    
+     // Log da Decisão
+    const decisionLog: TradeDecisionLog = {
+      timestamp: new Date().toISOString(),
+      asset: activeSymbol,
+      timePeriod: timePeriod,
+      tradeParams: {
+        direction: consensusDirection,
+        stake: kellyStake,
+        duration: finalDuration,
+        durationUnit: finalDurationUnit,
+      },
+      context: {
+        marketRegime: regimeResult.regime,
+        regimeConfidence: regimeResult.confidence,
+        microstructure: microFeatures,
+        indicators: currentIndicators,
+      },
+      consensus: {
+        bayesianProbability: consensusProbability,
+        kellyStake: kellyStake,
+        activeRobots: activeRobotsCount,
+        votes: bayesianVotes,
+      },
+      result: 'pending' // Será atualizado depois
+    };
+
+    setTradeDecisionLog(prev => [...prev, decisionLog]);
+
     toast({
       title: "🚀 Ordem Executada",
       description: `${consensusDirection} com $${kellyStake.toFixed(2)} (${(consensusProbability * 100).toFixed(1)}% confiança)`
@@ -907,5 +940,6 @@ export function useRobotCouncilV2(
     effectiveThreshold,
     councilConfidence,
     resetArenaPerformance,
+    tradeDecisionLog,
   };
 }
