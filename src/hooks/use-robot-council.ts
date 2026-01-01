@@ -194,6 +194,7 @@ export function useRobotCouncil(
     const [isDynamicConsensusOn, setIsDynamicConsensusOn] = useState(true);
     const [isDynamicRiskOn, setIsDynamicRiskOn] = useState(true);
     const [isMeritocracyOn, setIsMeritocracyOn] = useState(true);
+    const [isStopLossOn, setIsStopLossOn] = useState(true);
 
     // Estados da Arena Virtual
     const [robotPerformance, setRobotPerformance] = useState<RobotPerformance[]>([]);
@@ -512,75 +513,65 @@ export function useRobotCouncil(
         setIndicators(currentIndicators);
         if (!currentIndicators) return;
         
-        // ====================================================================
-        // GESTOR DE POSIÇÕES ATIVAS (STOP LOSS / TAKE PROFIT)
-        // ====================================================================
-        const activeCouncilContracts = operationsLog.filter(op => 
-            op.status === 'pending' && 
-            op.initiator === 'Conselho' &&
-            op.durationUnit !== 't' // Ignora contratos de ticks para gestão ativa
-        );
-        
-        activeCouncilContracts.forEach(contract => {
-            if(councilExecutionRef.current.sellingContracts.has(contract.id)) return;
-
-            const contractId = contract.id;
-
-            // --- Lógica de Stop-Loss com Confirmação ---
-            const chandelierExit = currentIndicators.chandelierExit;
-            if (chandelierExit && contract.entryPrice) {
-                const isBreached = contract.direction === 'rise' 
-                    ? currentTick.price < chandelierExit 
-                    : currentTick.price > chandelierExit;
-
-                if (isBreached) {
-                    if (contractsInAlertRef.current.has(contractId)) {
-                        // Confirmação: Já estava em alerta, e o preço ainda está do lado errado
-                        councilExecutionRef.current.sellingContracts.add(contractId);
-                        sellContract(contractId).finally(() => setTimeout(() => councilExecutionRef.current.sellingContracts.delete(contractId), 5000));
-                        toast({ title: "🛡️ Stop Loss Confirmado", description: `Contrato #${contractId} fechado para proteger capital.`, variant: "destructive" });
-                        contractsInAlertRef.current.delete(contractId);
-                        return;
-                    } else {
-                        // Primeira violação, entra em alerta
-                        contractsInAlertRef.current.set(contractId, 'breached');
-                    }
-                } else {
-                    // Preço recuperou, remove do alerta
-                    if (contractsInAlertRef.current.has(contractId)) {
-                        contractsInAlertRef.current.delete(contractId);
-                    }
-                }
-            }
+        if (isStopLossOn) {
+            const activeCouncilContracts = operationsLog.filter(op => 
+                op.status === 'pending' && 
+                op.initiator === 'Conselho' &&
+                op.durationUnit !== 't'
+            );
             
-            // --- Lógica de Take-Profit por Exaustão ---
-            const ema20 = currentIndicators.ema20;
-            const rsi = currentIndicators.rsi;
-            if (ema20 && rsi && contract.entryPrice) {
-                const profit = contract.direction === 'rise'
-                    ? (currentTick.price - contract.entryPrice) / contract.entryPrice
-                    : (contract.entryPrice - currentTick.price) / contract.entryPrice;
+            activeCouncilContracts.forEach(contract => {
+                if(councilExecutionRef.current.sellingContracts.has(contract.id)) return;
 
-                const isExtended = contract.direction === 'rise'
-                    ? currentTick.price > ema20 * 1.002 // 0.2% acima da EMA
-                    : currentTick.price < ema20 * 0.998; // 0.2% abaixo da EMA
-                
-                const isOverbought = contract.direction === 'rise' && rsi > 85;
-                const isOversold = contract.direction === 'fall' && rsi < 15;
+                const contractId = contract.id;
 
-                if (profit > 0.001 && isExtended && (isOverbought || isOversold)) {
-                     councilExecutionRef.current.sellingContracts.add(contractId);
-                     sellContract(contractId).finally(() => setTimeout(() => councilExecutionRef.current.sellingContracts.delete(contractId), 5000));
-                     toast({ title: "💰 Take Profit Inteligente", description: `Contrato #${contractId} fechado para garantir lucro.`, className: "bg-green-100 dark:bg-green-900" });
-                     return;
+                const chandelierExit = currentIndicators.chandelierExit;
+                if (chandelierExit && contract.entryPrice) {
+                    const isBreached = contract.direction === 'rise' 
+                        ? currentTick.price < chandelierExit 
+                        : currentTick.price > chandelierExit;
+
+                    if (isBreached) {
+                        if (contractsInAlertRef.current.has(contractId)) {
+                            councilExecutionRef.current.sellingContracts.add(contractId);
+                            sellContract(contractId).finally(() => setTimeout(() => councilExecutionRef.current.sellingContracts.delete(contractId), 5000));
+                            toast({ title: "🛡️ Stop Loss Confirmado", description: `Contrato #${contractId} fechado para proteger capital.`, variant: "destructive" });
+                            contractsInAlertRef.current.delete(contractId);
+                            return;
+                        } else {
+                            contractsInAlertRef.current.set(contractId, 'breached');
+                        }
+                    } else {
+                        if (contractsInAlertRef.current.has(contractId)) {
+                            contractsInAlertRef.current.delete(contractId);
+                        }
+                    }
                 }
-            }
-        });
+                
+                const ema20 = currentIndicators.ema20;
+                const rsi = currentIndicators.rsi;
+                if (ema20 && rsi && contract.entryPrice) {
+                    const profit = contract.direction === 'rise'
+                        ? (currentTick.price - contract.entryPrice) / contract.entryPrice
+                        : (contract.entryPrice - currentTick.price) / contract.entryPrice;
 
+                    const isExtended = contract.direction === 'rise'
+                        ? currentTick.price > ema20 * 1.002
+                        : currentTick.price < ema20 * 0.998;
+                    
+                    const isOverbought = contract.direction === 'rise' && rsi > 85;
+                    const isOversold = contract.direction === 'fall' && rsi < 15;
 
-        // ====================================================================
-        // ARENA VIRTUAL: FASE 1 - Julgamento de Trades Expirados
-        // ====================================================================
+                    if (profit > 0.001 && isExtended && (isOverbought || isOversold)) {
+                         councilExecutionRef.current.sellingContracts.add(contractId);
+                         sellContract(contractId).finally(() => setTimeout(() => councilExecutionRef.current.sellingContracts.delete(contractId), 5000));
+                         toast({ title: "💰 Take Profit Inteligente", description: `Contrato #${contractId} fechado para garantir lucro.`, className: "bg-green-100 dark:bg-green-900" });
+                         return;
+                    }
+                }
+            });
+        }
+
         const stillActiveTrades: VirtualTrade[] = [];
         const performanceMap = new Map<string, RobotPerformance>(
             robotPerformance.map((p) => [p.id, { ...p }])
@@ -628,19 +619,13 @@ export function useRobotCouncil(
             }
         }
 
-        // ====================================================================
-        // MESA OPERACIONAL: Votação e Consenso
-        // ====================================================================
         let riseConfidenceSum = 0;
         let fallConfidenceSum = 0;
         const newVotes: CouncilVotes = {};
         
         strategyCouncil.forEach((robot) => {
             const voteData = calculateRobotVote(robot, currentIndicators, tickCandles);
-
-            // ====================================================================
-            // ARENA VIRTUAL: FASE 2 - Espelhar o Voto como Trade Virtual
-            // ====================================================================
+            
             if (voteData.vote !== 'HOLD') {
                 const durationInSeconds = durationToSeconds(voteData.optimalDuration, voteData.optimalDurationUnit);
                 const tradeId = `vt_${Date.now()}_${tradeCounterRef.current++}`;
@@ -655,7 +640,6 @@ export function useRobotCouncil(
                 virtualTradesRef.current.push(virtualTrade);
             }
 
-            // Calcular peso (meritocracia)
             let weight = 1.0;
             if (isMeritocracyOn) {
                 const perf = performanceMap.get(robot.id);
@@ -672,9 +656,6 @@ export function useRobotCouncil(
             if (voteData.vote === 'FALL') fallConfidenceSum += voteData.confidence * weight;
         });
 
-        // ====================================================================
-        // Atualização de Estados
-        // ====================================================================
         setCouncilVotes(newVotes);
         setConsensusSum({ rise: riseConfidenceSum, fall: fallConfidenceSum });
         setActiveCommittee(committeeOfSpecialists(currentIndicators));
@@ -689,18 +670,13 @@ export function useRobotCouncil(
         
         if (councilExecutionRef.current.isExecuting) return;
 
-        // ====================================================================
-        // Execução de Trade Real (Mesa Operacional)
-        // ====================================================================
          const councilTrades = operationsLog.filter(op => op.initiator === 'Conselho');
         const dailyPnl = councilTrades
-            .filter(op => new Date(op.timestamp).toDateString() === new Date().toDateString())
+            .filter(op => new Date(op.timestamp).toDateString() === new Date().toDateString() && op.status !== 'pending')
             .reduce((sum, op) => sum + (op.result || 0), 0);
 
-        // NOVO: Lógica do Circuit Breaker
-        const lastTwoCouncilTrades = councilTrades.slice(0, 2);
+        const lastTwoCouncilTrades = councilTrades.filter(op => op.status !== 'pending').slice(0, 2);
         const lastTwoTradesWereLosses = lastTwoCouncilTrades.length === 2 && lastTwoCouncilTrades.every(t => t.status === 'lost');
-
 
         const supervisionDecision = supervisionCommitteeCheck(
             riseConfidenceSum,
@@ -740,6 +716,7 @@ export function useRobotCouncil(
         priceTicks,
         isConnected,
         isCouncilAutopilotOn,
+        isStopLossOn,
         strategyCouncil,
         robotPerformance,
         isMeritocracyOn,
@@ -780,6 +757,8 @@ export function useRobotCouncil(
         setIsDynamicRiskOn,
         isMeritocracyOn,
         setIsMeritocracyOn,
+        isStopLossOn,
+        setIsStopLossOn,
         indicators,
         activeCommittee,
         supervisionStatus,

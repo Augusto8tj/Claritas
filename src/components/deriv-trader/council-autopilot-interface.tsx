@@ -92,6 +92,8 @@ export function CouncilAutopilotInterface(props: CouncilAutopilotInterfaceProps)
     setIsDynamicRiskOn,
     isMeritocracyOn,
     setIsMeritocracyOn,
+    isStopLossOn,
+    setIsStopLossOn,
     indicators,
     activeCommittee,
     supervisionStatus,
@@ -150,9 +152,9 @@ export function CouncilAutopilotInterface(props: CouncilAutopilotInterfaceProps)
 
         switch (robot.strategyType) {
             case 'RSI':
-                return <p>RSI Atual: <strong>{format(indicators.rsi)}</strong></p>;
+                return <p>RSI Atual: <strong>{format(indicators.rsi, 2)}</strong></p>;
             case 'STOCHASTIC':
-                return <p>Estocástico Atual: <strong>{format(indicators.stoch)}</strong></p>;
+                return <p>Estocástico Atual: <strong>{format(indicators.stoch, 2)}</strong></p>;
             case 'MACD_CROSS':
                 const { macd, signal } = indicators.macd;
                 return <p>MACD/Sinal: <strong>{format(macd, 4)} / {format(signal, 4)}</strong></p>;
@@ -165,9 +167,9 @@ export function CouncilAutopilotInterface(props: CouncilAutopilotInterfaceProps)
                 if (!lastBand) return <p>Bandas: <strong>...</strong></p>;
                 return <p>Bandas: <strong>{format(lastBand.lower)} / {format(lastBand.upper)}</strong></p>;
             case 'ADX_TREND':
-                return <p>Força da Tendência (ADX): <strong>{format(indicators.adx)}</strong></p>;
+                return <p>Força da Tendência (ADX): <strong>{format(indicators.adx, 2)}</strong></p>;
             case 'Z_SCORE':
-                return <p>Z-Score Atual: <strong>{format(indicators.zScore)}</strong></p>;
+                return <p>Z-Score Atual: <strong>{format(indicators.zScore, 2)}</strong></p>;
             case 'KAMA':
                 return <p>KAMA Atual: <strong>{format(indicators.kama)}</strong></p>;
             case 'STOCH_RSI':
@@ -294,6 +296,10 @@ export function CouncilAutopilotInterface(props: CouncilAutopilotInterfaceProps)
              <div className="flex items-center justify-between">
                 <Label htmlFor="dynamic-risk-switch" className="flex-1">Gestão de Risco Dinâmica</Label>
                 <Switch id="dynamic-risk-switch" checked={isDynamicRiskOn} onCheckedChange={setIsDynamicRiskOn} disabled={isCouncilAutopilotOn} />
+            </div>
+            <div className="flex items-center justify-between">
+                <Label htmlFor="stop-loss-switch" className="flex-1">Stop-Loss Dinâmico</Label>
+                <Switch id="stop-loss-switch" checked={isStopLossOn} onCheckedChange={setIsStopLossOn} disabled={!isCouncilAutopilotOn} />
             </div>
         </div>
 
