@@ -78,9 +78,6 @@ const MainDashboard = ({ robotCouncil }: { robotCouncil: ReturnType<typeof useRo
         chartType, setChartType, timePeriod, setTimePeriod, activeSymbol, tradeAnnotations
     } = useDerivApi();
     
-    // A lógica dos indicadores foi movida para dentro do useRobotCouncilV2. Vamos usar o que ele expõe.
-    // const latestDataPoint = chartData.length > 0 ? chartData[chartData.length - 1] : null;
-
     return (
         <div className="space-y-6">
              {robotCouncil.isCouncilAutopilotOn && robotCouncil.dashboardData && (
@@ -88,8 +85,6 @@ const MainDashboard = ({ robotCouncil }: { robotCouncil: ReturnType<typeof useRo
                     <CouncilDashboard data={robotCouncil.dashboardData} />
                 </div>
             )}
-            {/* O IndicatorPanel precisa dos indicadores, que agora estão dentro do hook. Passamos null por enquanto ou adaptamos.
-            <IndicatorPanel indicators={robotCouncil.indicators} latestDataPoint={latestDataPoint} /> */}
             <Card>
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                     <div>
@@ -108,7 +103,7 @@ const MainDashboard = ({ robotCouncil }: { robotCouncil: ReturnType<typeof useRo
                         timePeriod={timePeriod}
                         setTimePeriod={setTimePeriod}
                         operations={operationsLog}
-                        indicators={null} // Passamos null pois o novo hook gere internamente. Poderíamos expor se necessário.
+                        indicators={robotCouncil.indicators}
                         tradeAnnotations={tradeAnnotations}
                     />
                 </CardContent>
@@ -117,9 +112,9 @@ const MainDashboard = ({ robotCouncil }: { robotCouncil: ReturnType<typeof useRo
                 <DerivTraderInterface symbol={activeSymbol || ""} />
                 <AITradeSuggestion 
                     councilDecision={robotCouncil.consensusDecision.direction}
-                    consensusSum={{rise: 0, fall: 0}} // Placeholder
-                    consensusThreshold={robotCouncil.consensusThreshold}
-                    supervisionStatus={{status: 'inactive', message: 'Análise V2 Ativa'}} // Placeholder
+                    consensusSum={{rise: robotCouncil.consensusDecision.probability, fall: 1 - robotCouncil.consensusDecision.probability}} 
+                    consensusThreshold={0.65} // Limiar Bayesiano Fixo
+                    supervisionStatus={{status: 'approved', message: `Probabilidade Bayesiana: ${(robotCouncil.consensusDecision.probability * 100).toFixed(1)}%`}}
                     activeCommittee={robotCouncil.currentRegime.regime}
                     isAutopilotOn={robotCouncil.isCouncilAutopilotOn}
                 />

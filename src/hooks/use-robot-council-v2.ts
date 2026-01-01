@@ -165,6 +165,7 @@ export function useRobotCouncilV2(
   const [strategyCouncil, setStrategyCouncil] = useState<RobotStrategy[]>(evolvedStrategies as RobotStrategy[]);
   const [isCouncilAutopilotOn, setIsCouncilAutopilotOn] = useState(false);
   const [isFetchingCouncil, setIsFetchingCouncil] = useState(false);
+  const [indicators, setIndicators] = useState<Indicators | null>(null);
   
   const [currentRegime, setCurrentRegime] = useState<{
     regime: MarketRegime;
@@ -335,6 +336,7 @@ export function useRobotCouncilV2(
     if(!currentTick) return;
     
     const currentIndicators = calculateAllIndicators(tickCandles, strategyCouncil, timePeriod, {duration: 5, unit: 'm'});
+    setIndicators(currentIndicators); // Exporta os indicadores
     if (!currentIndicators) return;
 
     const regimeResult = detectMarketRegime(
@@ -566,5 +568,6 @@ export function useRobotCouncilV2(
     isMeritocracyOn, setIsMeritocracyOn,
     fetchStrategyCouncil, dissolveCouncil,
     dashboardData,
+    indicators
   };
 }
