@@ -519,18 +519,33 @@ export function useRobotCouncil(
         setIndicators(currentIndicators);
         if (!currentIndicators) return;
         
+        // ========================================================================
+        // GESTÃO DE RISCO DE TRADES ABERTOS (STOP-LOSS / TAKE-PROFIT)
+        // ========================================================================
         if (isStopLossOn) {
             const activeCouncilContracts = operationsLog.filter(op => 
                 op.status === 'pending' && 
                 op.initiator === 'Conselho' &&
-                op.durationUnit !== 't' // Ignora contratos em ticks
+                op.durationUnit !== 't' // Ignora contratos em ticks, pois são muito rápidos
             );
             
             activeCouncilContracts.forEach(contract => {
                 if(councilExecutionRef.current.sellingContracts.has(contract.id)) return;
 
                 const contractId = contract.id;
+                
+                // --- LÓGICA DE TAKE PROFIT ---
+                const potentialProfit = contract.stake * 0.90; // Aproximação de payout
+                const currentProfit = contract.result || 0; // O hook da API atualiza este valor
+                
+                if (currentProfit > 0 && potentialProfit > 0 && (currentProfit / potentialProfit) >= 0.10) {
+                     councilExecutionRef.current.sellingContracts.add(contractId);
+                     sellContract(contractId).finally(() => setTimeout(() => councilExecutionRef.current.sellingContracts.delete(contractId), 5000));
+                     toast({ title: "💰 Take Profit de 10% Atingido", description: `Contrato #${contractId} fechado para garantir lucro.`, className: "bg-green-100 dark:bg-green-900" });
+                     return; // Sai para não acionar stop loss no mesmo ciclo
+                }
 
+                // --- LÓGICA DE STOP LOSS COM CONFIRMAÇÃO ---
                 const chandelierExit = currentIndicators.chandelierExit;
                 if (chandelierExit && contract.entryPrice) {
                     const isBreached = contract.direction === 'rise' 
@@ -538,41 +553,22 @@ export function useRobotCouncil(
                         : currentTick.price > chandelierExit;
 
                     if (isBreached) {
-                        if (contractsInAlertRef.current.has(contractId)) {
+                        // Se é a primeira vez que viola, marca como 'breached'
+                        if (!contractsInAlertRef.current.has(contractId)) {
+                            contractsInAlertRef.current.set(contractId, 'breached');
+                        } 
+                        // Se já violou no tick anterior, confirma e vende
+                        else if (contractsInAlertRef.current.get(contractId) === 'breached') {
                             councilExecutionRef.current.sellingContracts.add(contractId);
                             sellContract(contractId).finally(() => setTimeout(() => councilExecutionRef.current.sellingContracts.delete(contractId), 5000));
-                            toast({ title: "🛡️ Stop Loss Confirmado", description: `Contrato #${contractId} fechado para proteger capital.`, variant: "destructive" });
-                            contractsInAlertRef.current.delete(contractId);
-                            return;
-                        } else {
-                            contractsInAlertRef.current.set(contractId, 'breached');
+                            toast({ title: "🛡️ Stop Loss Confirmado", description: `Contrato #${contractId} fechado para proteger capital. Violação confirmada.`, variant: "destructive" });
+                            contractsInAlertRef.current.delete(contractId); // Limpa o alerta
                         }
                     } else {
+                        // Se o preço voltou para a zona segura, remove o alerta
                         if (contractsInAlertRef.current.has(contractId)) {
                             contractsInAlertRef.current.delete(contractId);
                         }
-                    }
-                }
-                
-                const ema20 = currentIndicators.ema20;
-                const rsi = currentIndicators.rsi;
-                if (ema20 && rsi && contract.entryPrice) {
-                    const profit = contract.direction === 'rise'
-                        ? (currentTick.price - contract.entryPrice) / contract.entryPrice
-                        : (contract.entryPrice - currentTick.price) / contract.entryPrice;
-
-                    const isExtended = contract.direction === 'rise'
-                        ? currentTick.price > ema20 * 1.002
-                        : currentTick.price < ema20 * 0.998;
-                    
-                    const isOverbought = contract.direction === 'rise' && rsi > 85;
-                    const isOversold = contract.direction === 'fall' && rsi < 15;
-
-                    if (profit > 0.001 && isExtended && (isOverbought || isOversold)) {
-                         councilExecutionRef.current.sellingContracts.add(contractId);
-                         sellContract(contractId).finally(() => setTimeout(() => councilExecutionRef.current.sellingContracts.delete(contractId), 5000));
-                         toast({ title: "💰 Take Profit Inteligente", description: `Contrato #${contractId} fechado para garantir lucro.`, className: "bg-green-100 dark:bg-green-900" });
-                         return;
                     }
                 }
             });
