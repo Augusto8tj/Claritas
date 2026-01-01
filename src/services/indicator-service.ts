@@ -18,7 +18,7 @@ export interface Indicators {
     macd: { macd: number | null; signal: number | null; histogram: number | null };
     ma: { short: number | null; long: number | null; };
     sma: (number | null)[];
-    ema: (number | null)[]; // Changed to ema20
+    ema: (number | null)[];
     ema20?: number | null;
     ema50?: number | null;
     vwap: (number | null)[];

@@ -8,7 +8,6 @@ import type { RobotStrategy, ChartData, TickData, CandleData, RiseFallFormValues
 import { useFormContext } from 'react-hook-form';
 import type { Indicators } from '@/services/indicator-service';
 import { calculateAllIndicators } from '@/services/indicator-service';
-import { initialCouncilStrategies } from '@/services/council-strategies';
 import { useAuth } from '@/features/auth/hooks/use-auth';
 import { saveRobotPerformance, loadRobotPerformance } from '@/services/financial-data-service';
 import { useStrategyEvolution } from './use-strategy-evolution';
@@ -173,10 +172,10 @@ export function useRobotCouncil(
     activeSymbol: string | null,
     priceTicks: TickData[]
 ) {
-    const { operationsLog, executeTrade, timePeriod, isConnected } = useDerivApi();
+    const { operationsLog, executeTrade, timePeriod, isConnected, sellContract } = useDerivApi();
     const { user, loading: isAuthLoading } = useAuth();
     const { toast } = useToast();
-    const { evolvedStrategies, evolveTrigger, evolutionHistory } = useStrategyEvolution(initialCouncilStrategies);
+    const { evolvedStrategies, evolveTrigger, evolutionHistory } = useStrategyEvolution();
     const form = useFormContext<RiseFallFormValues>();
 
     // Estados do Conselho
@@ -212,7 +211,14 @@ export function useRobotCouncil(
     const [consensusDecision, setConsensusDecision] = useState<'RISE' | 'FALL' | 'HOLD'>('HOLD');
 
     // Controle de execução
-    const councilExecutionRef = useRef({ isExecuting: false });
+    const councilExecutionRef = useRef<{ 
+        isExecuting: boolean;
+        sellingContracts: Set<number>;
+    }>({ 
+        isExecuting: false, 
+        sellingContracts: new Set() 
+    });
+
 
     // Sincroniza as estratégias evoluídas com o estado do conselho
     useEffect(() => {
@@ -358,7 +364,8 @@ export function useRobotCouncil(
             fallSum: number,
             currentVotes: CouncilVotes,
             indicators: Indicators | null,
-            dailyPnl: number
+            dailyPnl: number,
+            lastTwoTradesWereLosses: boolean
         ): {
             finalStake: number;
             finalDuration: number;
@@ -396,6 +403,11 @@ export function useRobotCouncil(
                 effectiveThreshold = totalPossibleConsensus * requiredPercentage;
                 setConsensusThreshold(Math.round(effectiveThreshold));
             }
+            
+            // NOVO: CIRCUIT BREAKER
+            if (lastTwoTradesWereLosses) {
+                effectiveThreshold *= 1.5; // Exige 50% mais consenso
+            }
 
             // Verifica consenso
             const consensusReached = Math.max(riseSum, fallSum) >= effectiveThreshold;
@@ -425,6 +437,13 @@ export function useRobotCouncil(
                  finalDurationUnit = form.getValues('duration_unit');
             }
 
+            // NOVO: CIRCUIT BREAKER - Ação de redução de risco
+            let circuitBreakerAnalysis = '';
+            if (lastTwoTradesWereLosses) {
+                finalStake = 0.35; // Reduz stake para o mínimo
+                circuitBreakerAnalysis = 'Perdas sequenciais detectadas, operando com risco mínimo. ';
+            }
+
             // Aplicar restrições finais
             finalStake = Math.max(0.35, finalStake);
             if(finalDurationUnit === 't') {
@@ -432,11 +451,13 @@ export function useRobotCouncil(
             } else {
                finalDuration = Math.max(15, finalDuration); // Min 15 segundos para outras unidades
             }
+            
+            let finalAnalysis = isDynamicRiskOn ? `Risco ajustado pela volatilidade.` : 'Risco padrão.';
 
             return {
                 status: 'approved',
                 message: 'Aprovado. Risco avaliado.',
-                analysis: isDynamicRiskOn ? `Risco ajustado pela volatilidade.` : 'Risco padrão.',
+                analysis: circuitBreakerAnalysis + finalAnalysis,
                 finalStake,
                 finalDuration,
                 finalDurationUnit
@@ -482,6 +503,28 @@ export function useRobotCouncil(
         );
         setIndicators(currentIndicators);
         if (!currentIndicators) return;
+        
+        // NOVO: VERIFICAÇÃO DE STOP LOSS DINÂMICO
+        const activeCouncilContracts = operationsLog.filter(op => op.status === 'pending' && op.initiator === 'Conselho');
+
+        activeCouncilContracts.forEach(contract => {
+            // Se já estamos a tentar vender, não faz nada
+            if(councilExecutionRef.current.sellingContracts.has(contract.id)) return;
+
+            // Se o Chandelier Exit foi calculado
+            if (currentIndicators.chandelierExit && contract.entryPrice) {
+                if (contract.direction === 'rise' && currentTick.price < currentIndicators.chandelierExit) {
+                     councilExecutionRef.current.sellingContracts.add(contract.id);
+                     sellContract(contract.id).finally(() => {
+                         // Remove o ID do set após a tentativa para permitir nova tentativa se falhar
+                         setTimeout(() => councilExecutionRef.current.sellingContracts.delete(contract.id), 5000);
+                     });
+                     toast({ title: "🛡️ Stop Loss Atingido (Chandelier)", description: `Contrato #${contract.id} fechado para proteger capital.`, variant: "destructive" });
+                     return; // Passa ao próximo tick
+                }
+            }
+        });
+
 
         // ====================================================================
         // ARENA VIRTUAL: FASE 1 - Julgamento de Trades Expirados
@@ -565,7 +608,7 @@ export function useRobotCouncil(
             if (isMeritocracyOn) {
                 const perf = performanceMap.get(robot.id);
                 if (perf && perf.wins + perf.losses > 3) {
-                    const winRate = (perf.wins / (perf.wins + perf.losses)) || 0.5;
+                    const winRate = (perf.winRate || 50) / 100;
                     const pnlFactor = Math.tanh(perf.totalProfit / 50); // Mapeia PnL para -1 a 1
                     weight = 0.5 + (winRate * 0.75) + (pnlFactor * 0.25); // Combinação ponderada
                 }
@@ -597,20 +640,23 @@ export function useRobotCouncil(
         // ====================================================================
         // Execução de Trade Real (Mesa Operacional)
         // ====================================================================
-        const dailyPnl = operationsLog
-            .filter(
-                (op) =>
-                    new Date(op.timestamp).toDateString() === new Date().toDateString() &&
-                    op.initiator === 'Conselho'
-            )
+         const councilTrades = operationsLog.filter(op => op.initiator === 'Conselho');
+        const dailyPnl = councilTrades
+            .filter(op => new Date(op.timestamp).toDateString() === new Date().toDateString())
             .reduce((sum, op) => sum + (op.result || 0), 0);
+
+        // NOVO: Lógica do Circuit Breaker
+        const lastTwoCouncilTrades = councilTrades.slice(0, 2);
+        const lastTwoTradesWereLosses = lastTwoCouncilTrades.length === 2 && lastTwoCouncilTrades.every(t => t.status === 'lost');
+
 
         const supervisionDecision = supervisionCommitteeCheck(
             riseConfidenceSum,
             fallConfidenceSum,
             newVotes,
             currentIndicators,
-            dailyPnl
+            dailyPnl,
+            lastTwoTradesWereLosses
         );
         setSupervisionStatus(supervisionDecision);
 
@@ -623,7 +669,7 @@ export function useRobotCouncil(
                 title: 'Conselho Executou Ordem!',
                 description: `Direção: ${direction}, Stake: $${finalStake.toFixed(
                     2
-                )}, Duração: ${finalDuration} ${finalDurationUnit}.`,
+                )}, Duração: ${finalDuration} ${finalDurationUnit}. ${supervisionDecision.analysis || ''}`,
             });
 
             executeTrade(
@@ -650,6 +696,7 @@ export function useRobotCouncil(
         supervisionCommitteeCheck,
         toast,
         executeTrade,
+        sellContract,
         form,
         timePeriod,
         committeeOfSpecialists,
