@@ -154,7 +154,8 @@ const isValid = (value: any): value is number =>
 const calculateTechnicalVote = (
   robot: RobotStrategy,
   indicators: Indicators,
-  tickCandles: CandleData[]
+  tickCandles: CandleData[],
+  durationRange: [number, number] // NOVO: Recebe o range do slider
 ): {
   vote: 'RISE' | 'FALL' | 'HOLD';
   confidence: number;
@@ -165,9 +166,20 @@ const calculateTechnicalVote = (
   let vote: 'RISE' | 'FALL' | 'HOLD' = 'HOLD';
   let confidence = 0;
   let suggestedStake = 0;
-  const { optimalDuration, optimalDurationUnit, suggestedStake: baseStake } = robot;
+  
+  // Clamps the duration to the user-defined range
+  let optimalDuration = Math.max(
+    durationRange[0],
+    Math.min(durationRange[1], robot.optimalDuration)
+  );
+
+  // A unidade é sempre segundos agora
+  const optimalDurationUnit: DurationUnit = 's';
+
+  const { suggestedStake: baseStake } = robot;
 
   const setVote = (newVote: 'RISE' | 'FALL', newConfidence: number) => {
+    if (newConfidence <= 0) return;
     vote = newVote;
     confidence = newConfidence;
     suggestedStake = confidence === robot.strongConfidence ? baseStake : baseStake * 0.5;
@@ -239,6 +251,7 @@ const calculateTechnicalVote = (
   return { vote, confidence, optimalDuration, optimalDurationUnit, suggestedStake };
 };
 
+
 // ════════════════════════════════════════════════════════════════════
 // 🎯 HOOK PRINCIPAL
 // ════════════════════════════════════════════════════════════════════
@@ -299,8 +312,9 @@ export function useRobotCouncilV2(
   // ────────────────────────────────────────────────────────────────
   const [dailyBalance, setDailyBalance] = useState(100);
   const [dailyTarget, setDailyTarget] = useState(50);
-  const [consensusSensitivity, setConsensusSensitivity] = useState(60); // NOVO
-  const [confidenceFactor, setConfidenceFactor] = useState(1.0); // NOVO
+  const [consensusSensitivity, setConsensusSensitivity] = useState(60); 
+  const [confidenceFactor, setConfidenceFactor] = useState(1.0); 
+  const [durationRange, setDurationRange] = useState<[number, number]>([15, 180]); // NOVO
   const [isDynamicConsensusOn, setIsDynamicConsensusOn] = useState(true);
   const [isDynamicRiskOn, setIsDynamicRiskOn] = useState(true);
   const [isMeritocracyOn, setIsMeritocracyOn] = useState(true);
@@ -664,11 +678,11 @@ export function useRobotCouncilV2(
     strategyCouncil.forEach(robot => {
       const perf = performanceMap.get(robot.id);
 
-      // Voto técnico puro
-      const technicalVote = calculateTechnicalVote(robot, currentIndicators, tickCandles);
+      // Voto técnico puro, agora respeitando o durationRange
+      const technicalVote = calculateTechnicalVote(robot, currentIndicators, tickCandles, durationRange);
 
       // Se robô não é efetivo neste regime, ignora (mas permite voto se não tiver histórico)
-      if (perf && perf.effectiveRegimes && perf.effectiveRegimes.length > 0) {
+      if (perf?.effectiveRegimes?.length > 0) {
         if (!perf.effectiveRegimes.includes(regimeResult.regime)) {
           newVotes[robot.id] = {
             vote: 'HOLD',
@@ -684,7 +698,6 @@ export function useRobotCouncilV2(
           return; // Silencia o robô
         }
       }
-
 
       if (technicalVote.vote === 'HOLD') {
         newVotes[robot.id] = {
@@ -1009,7 +1022,7 @@ export function useRobotCouncilV2(
     robotPerformance, isMeritocracyOn, isDynamicConsensusOn, isDynamicRiskOn,
     activeSymbol, operationsLog, currentRegime, user, toast, executeTrade, sellContract,
     timePeriod, durationLimits, dailyBalance, dailyTarget, evolveTrigger,
-    portfolioStats.maxDrawdown, consensusSensitivity, confidenceFactor
+    portfolioStats.maxDrawdown, consensusSensitivity, confidenceFactor, durationRange
   ]);
 
   // ════════════════════════════════════════════════════════════════════
@@ -1046,6 +1059,8 @@ export function useRobotCouncilV2(
     setConsensusSensitivity,
     confidenceFactor,
     setConfidenceFactor,
+    durationRange,
+    setDurationRange,
     isDynamicConsensusOn,
     setIsDynamicConsensusOn,
     isDynamicRiskOn,

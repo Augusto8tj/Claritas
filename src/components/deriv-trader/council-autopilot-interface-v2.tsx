@@ -9,7 +9,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Button } from "../ui/button";
-import { Loader2, LayoutGrid, Power, PowerOff } from "lucide-react";
+import { Loader2, LayoutGrid, Power, PowerOff, Clock } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Label } from "../ui/label";
 import { Switch } from "../ui/switch";
@@ -43,6 +43,8 @@ export function CouncilAutopilotInterfaceV2(props: CouncilAutopilotInterfaceV2Pr
     setConsensusSensitivity,
     confidenceFactor,
     setConfidenceFactor,
+    durationRange,
+    setDurationRange,
  } = props;
   const { toast } = useToast();
 
@@ -88,6 +90,28 @@ export function CouncilAutopilotInterfaceV2(props: CouncilAutopilotInterfaceV2Pr
                 />
                 <p className="text-xs text-muted-foreground">Sua meta de lucro no dia.</p>
             </div>
+        </div>
+
+        <Separator />
+
+        <div className="space-y-2">
+             <div className="flex justify-between items-center mb-1">
+                 <Label htmlFor="duration-range-slider" className="flex items-center gap-2">
+                    <Clock className="h-4 w-4" />
+                    Horizonte Temporal
+                 </Label>
+                 <span className="text-sm font-mono">{durationRange[0]}s - {durationRange[1]}s</span>
+            </div>
+             <Slider
+                id="duration-range-slider"
+                min={1}
+                max={600}
+                step={5}
+                value={durationRange}
+                onValueChange={(value: [number, number]) => setDurationRange(value)}
+                disabled={isCouncilAutopilotOn}
+            />
+            <p className="text-xs text-muted-foreground pt-1">Define a faixa de tempo (min/max) para as operações dos robôs.</p>
         </div>
         
         <Separator />
