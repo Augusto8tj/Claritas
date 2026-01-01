@@ -374,7 +374,7 @@ export function useRobotCouncilV2(
             avgLoss: p.avgLoss || 0,
             profitFactor: p.profitFactor || 0,
             kellyFraction: p.kellyFraction || 0,
-            effectiveRegimes: p.effectiveRegimes || ['ranging'],
+            effectiveRegimes: p.effectiveRegimes || [], // Garante que a lista exista
             monteCarloScore: p.monteCarloScore || 0,
             lastUpdated: p.lastUpdated || Date.now(),
             tradeHistory: p.tradeHistory || []
@@ -422,7 +422,7 @@ export function useRobotCouncilV2(
         avgLoss: 0,
         profitFactor: 0,
         kellyFraction: 0,
-        effectiveRegimes: ['ranging'],
+        effectiveRegimes: [], // Começa vazio, será populado com dados
         monteCarloScore: 0,
         lastUpdated: Date.now(),
         tradeHistory: []
@@ -666,7 +666,7 @@ export function useRobotCouncilV2(
       // Voto técnico puro
       const technicalVote = calculateTechnicalVote(robot, currentIndicators, tickCandles);
 
-      // Se robô não é efetivo neste regime, ignora
+      // Se robô não é efetivo neste regime, ignora (mas permite voto se não tiver histórico)
       if (perf && perf.effectiveRegimes && perf.effectiveRegimes.length > 0) {
         if (!perf.effectiveRegimes.includes(regimeResult.regime)) {
           newVotes[robot.id] = {
@@ -680,9 +680,10 @@ export function useRobotCouncilV2(
             suggestedStake: 0,
             regime: regimeResult.regime
           };
-          return;
+          return; // Silencia o robô
         }
       }
+
 
       if (technicalVote.vote === 'HOLD') {
         newVotes[robot.id] = {
@@ -876,8 +877,7 @@ export function useRobotCouncilV2(
       dailyBalance,
       avgWinRate,
       avgWinAmount,
-      avgLossAmount,
-      volAdjustment
+      avgLossAmount
     );
 
     // Validação de segurança
