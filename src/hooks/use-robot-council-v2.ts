@@ -51,7 +51,8 @@ import type {
   MarketRegime,
   MicrostructureFeatures,
   BayesianVote,
-  EnhancedRobotPerformance as EnhancedRobotPerformanceType
+  EnhancedRobotPerformance as EnhancedRobotPerformanceType,
+  TimePeriod
 } from '@/lib/types';
 import { calculateAllIndicators, type Indicators } from '@/services/indicator-service';
 import { useAuth } from '@/features/auth/hooks/use-auth';
@@ -260,7 +261,8 @@ export function useRobotCouncilV2(
   const { evolvedStrategies, evolveTrigger, evolutionHistory } = useStrategyEvolution(initialCouncilStrategies);
   const lastExecutionTimeRef = useRef(0); // Para o throttle
   const contractsInAlertRef = useRef<Map<number, 'breached' | 'confirmed'>>(new Map());
-  const lastActiveSymbolRef = useRef<string | null>(null); // NOVO: Para detetar mudança de ativo
+  const lastActiveSymbolRef = useRef<string | null>(null);
+  const lastTimePeriodRef = useRef<TimePeriod | null>(null); // NOVO: Para detetar mudança de tempo
 
   // ────────────────────────────────────────────────────────────────
   // ESTADOS DO CONSELHO
@@ -375,8 +377,8 @@ export function useRobotCouncilV2(
     if (strategyCouncil.length === 0 || !user) return;
     
     toast({
-      title: "🔄 Arena V2.0 Resetada",
-      description: `Análise de desempenho reiniciada para ${activeSymbol}.`,
+      title: "🔄 Arena V2.0 Recalibrada",
+      description: `Análise de desempenho reiniciada para o contexto atual.`,
     });
 
     const initialPerformance: EnhancedRobotPerformance[] = strategyCouncil.map(robot => ({
@@ -393,7 +395,7 @@ export function useRobotCouncilV2(
     virtualTradesRef.current = [];
     tradeCounterRef.current = 0;
     saveRobotPerformance(user.uid, initialPerformance);
-  }, [strategyCouncil, user, activeSymbol, toast]);
+  }, [strategyCouncil, user, toast]);
 
   // ────────────────────────────────────────────────────────────────
   // CARREGAMENTO DE PERFORMANCE DO FIREBASE
@@ -442,7 +444,6 @@ export function useRobotCouncilV2(
     const council = (evolvedStrategies as RobotStrategy[]).map(s => ({ ...s }));
     setStrategyCouncil(council);
     
-    // Dispara o reset ao convocar o conselho
     resetArenaPerformance();
 
     toast({
@@ -451,22 +452,29 @@ export function useRobotCouncilV2(
     });
 
     setIsCouncilAutopilotOn(true);
-    setIsFetchingCouncil(false);
     lastActiveSymbolRef.current = activeSymbol;
-  }, [activeSymbol, user, toast, evolvedStrategies, resetArenaPerformance]);
-
+    lastTimePeriodRef.current = timePeriod;
+  }, [activeSymbol, user, toast, evolvedStrategies, resetArenaPerformance, timePeriod]);
+  
   // ────────────────────────────────────────────────────────────────
-  // DETEÇÃO AUTOMÁTICA DE MUDANÇA DE ATIVO
+  // DETEÇÃO AUTOMÁTICA DE MUDANÇA DE CONTEXTO (ATIVO OU PERÍODO)
   // ────────────────────────────────────────────────────────────────
   useEffect(() => {
-    if (activeSymbol && lastActiveSymbolRef.current !== activeSymbol) {
-      if (isCouncilAutopilotOn) {
-        console.log(`[RESET] Mudança de ativo detectada: ${lastActiveSymbolRef.current} -> ${activeSymbol}. Resetando a arena...`);
+    const symbolChanged = activeSymbol && lastActiveSymbolRef.current !== activeSymbol;
+    const timePeriodChanged = timePeriod && lastTimePeriodRef.current !== timePeriod;
+
+    if (isCouncilAutopilotOn && (symbolChanged || timePeriodChanged)) {
+        console.log(`[CONTEXT CHANGE] Mudança detectada. Ativo: ${symbolChanged}, Período: ${timePeriodChanged}. Resetando arena...`);
         resetArenaPerformance();
-      }
-      lastActiveSymbolRef.current = activeSymbol;
+        
+        if (symbolChanged) {
+          lastActiveSymbolRef.current = activeSymbol;
+        }
+        if (timePeriodChanged) {
+          lastTimePeriodRef.current = timePeriod;
+        }
     }
-  }, [activeSymbol, isCouncilAutopilotOn, resetArenaPerformance]);
+  }, [activeSymbol, timePeriod, isCouncilAutopilotOn, resetArenaPerformance]);
 
   // ────────────────────────────────────────────────────────────────
   // FUNÇÃO: DESATIVAR CONSELHO
@@ -898,6 +906,6 @@ export function useRobotCouncilV2(
     dashboardData,
     effectiveThreshold,
     councilConfidence,
-    resetArenaPerformance, // NOVO: Exporta a função de reset
+    resetArenaPerformance,
   };
 }
