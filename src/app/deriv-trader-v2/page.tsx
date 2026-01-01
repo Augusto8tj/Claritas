@@ -14,16 +14,16 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { OperationsLog } from "@/components/deriv-trader/operations-log";
 import { AIAnalysisInterface } from "@/components/deriv-trader/ai-analysis-interface";
 import { riseFallSchema, type RiseFallFormValues } from "@/components/deriv-trader/deriv-trader-interface.types";
-import { CouncilAutopilotInterface } from "@/components/deriv-trader/council-autopilot-interface";
+import { CouncilAutopilotInterfaceV2 } from "@/components/deriv-trader/council-autopilot-interface-v2";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { useTradeAnalysis } from "@/hooks/use-trade-analysis";
 import { useRobotCouncilV2 } from "@/hooks/use-robot-council-v2";
 import { SystemStatusSummary } from "@/components/deriv-trader/system-status-summary";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { AITradeSuggestion } from "@/components/deriv-trader/ai-trade-suggestion";
-import { IndicatorPanel } from "@/components/deriv-trader/indicator-panel";
-import { TradingDesk } from "@/components/deriv-trader/trading-desk";
 import { CouncilDashboard } from '@/components/deriv-trader/CouncilDashboard';
+import { TradingDeskV2 } from "@/components/deriv-trader/trading-desk-v2";
+
 
 // --- Sub-componentes para melhor organização ---
 
@@ -129,23 +129,20 @@ const SidePanel = ({ robotCouncil }: { robotCouncil: ReturnType<typeof useRobotC
 
     return (
         <div className="space-y-6">
-            <CouncilAutopilotInterface {...robotCouncil} />
+            <CouncilAutopilotInterfaceV2 {...robotCouncil} />
             <Tabs defaultValue="log">
                 <TabsList className="grid w-full grid-cols-3">
                     <TabsTrigger value="log">Operações</TabsTrigger>
-                    <TabsTrigger value="desk">Arena</TabsTrigger>
+                    <TabsTrigger value="desk">Arena V2</TabsTrigger>
                     <TabsTrigger value="analysis">Análise IA</TabsTrigger>
                 </TabsList>
                 <TabsContent value="log" className="mt-4">
                     <OperationsLog operations={operationsLog} />
                 </TabsContent>
                 <TabsContent value="desk" className="mt-4">
-                    <TradingDesk 
-                        isMeritocracyOn={robotCouncil.isMeritocracyOn}
-                        setIsMeritocracyOn={robotCouncil.setIsMeritocracyOn}
-                        isCouncilAutopilotOn={robotCouncil.isCouncilAutopilotOn}
+                    <TradingDeskV2 
                         robotPerformance={robotCouncil.robotPerformance}
-                        councilVotes={{} as any} // Placeholder, o novo sistema não usa a estrutura antiga
+                        isCouncilAutopilotOn={robotCouncil.isCouncilAutopilotOn}
                     />
                 </TabsContent>
                 <TabsContent value="analysis" className="mt-4">
