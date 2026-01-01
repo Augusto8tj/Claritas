@@ -5,7 +5,7 @@
  * It is designed to be used on the client-side for real-time analysis.
  */
 
-import type { CandleData, ChartData, TimePeriod, RobotStrategy } from '@/lib/types';
+import type { CandleData, ChartData, TimePeriod, RobotStrategy, DurationUnit } from '@/lib/types';
 import { DerivIndicators } from './DerivFinanceLib';
 
 export interface Indicators {
@@ -27,12 +27,10 @@ export interface Indicators {
     bollingerBands: ({ upper: number; middle: number; lower: number } | null)[];
     
     donchianChannels: ({ upper: number; middle: number; lower: number } | null)[];
-    // New Advanced Indicators
     kama: number | null;
     bbw: number | null; // Bollinger Bandwidth
     stochRSI: number | null;
     zScore: number | null;
-    // Newly added for full coverage
     awesomeOscillator: number | null;
     trix: number | null;
     roc: number | null;
@@ -310,7 +308,12 @@ const calculateBollingerBands = (
     return bands;
 };
 
-export function calculateAllIndicators(chartData: ChartData[], strategyCouncil: RobotStrategy[], timePeriod: TimePeriod): Indicators {
+export function calculateAllIndicators(
+    chartData: ChartData[], 
+    strategyCouncil: RobotStrategy[], 
+    timePeriod: TimePeriod,
+    contractDuration: { duration: number, unit: DurationUnit }
+): Indicators {
     
     const emptyIndicators: Indicators = {
         rsi: null, stoch: null, atr: null, adx: null, pdi: null, ndi: null,
@@ -394,7 +397,12 @@ export function calculateAllIndicators(chartData: ChartData[], strategyCouncil: 
 
     indicators.donchianChannels = DerivIndicators.donchian(candles, getParam('DONCHIAN_CHANNELS', 'period', 20));
 
-    const chandelierValues = DerivIndicators.chandelierExit(candles, getParam('CHANDELIER_EXIT', 'period', 22), getParam('CHANDELIER_EXIT', 'multiplier', 3));
+    // --- CÁLCULO ADAPTATIVO DO CHANDELIER EXIT ---
+    const isLongTerm = contractDuration.unit !== 't';
+    const chandelierPeriod = isLongTerm ? 44 : 22; // Dobra o período para longo prazo
+    const chandelierMultiplier = isLongTerm ? 4.5 : 3.0; // Aumenta o multiplicador
+
+    const chandelierValues = DerivIndicators.chandelierExit(candles, chandelierPeriod, chandelierMultiplier);
     indicators.chandelierExit = chandelierValues.length > 0 ? chandelierValues[chandelierValues.length - 1] : null;
     
     const atrValues = DerivIndicators.atr(candles);

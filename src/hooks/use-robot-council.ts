@@ -496,12 +496,20 @@ export function useRobotCouncil(
             close: t.price,
             volume: 1,
         }));
+        
+        // Passa a duração do último contrato aberto, ou a do formulário se não houver
+        const lastOpenContract = operationsLog.find(op => op.status === 'pending');
+        const contractDurationForIndicators = lastOpenContract 
+            ? { duration: lastOpenContract.duration, unit: lastOpenContract.durationUnit }
+            : { duration: form.getValues('duration'), unit: form.getValues('duration_unit') };
 
         const currentIndicators = calculateAllIndicators(
             tickCandles,
             strategyCouncil,
-            timePeriod
+            timePeriod,
+            contractDurationForIndicators
         );
+
         setIndicators(currentIndicators);
         if (!currentIndicators) return;
         
