@@ -1,16 +1,14 @@
-"use client"
+'use client';
 
-import * as React from "react"
-import * as SelectPrimitive from "@radix-ui/react-select"
+import * as React from 'react';
+import * as SelectPrimitive from '@radix-ui/react-select';
 import { Check, ChevronDown, ChevronUp } from "lucide-react"
 
-import { cn } from "@/lib/utils"
+import { cn } from '@/lib/utils';
 
-const Select = SelectPrimitive.Root
-
-const SelectGroup = SelectPrimitive.Group
-
-const SelectValue = SelectPrimitive.Value
+const Select = SelectPrimitive.Root;
+const SelectGroup = SelectPrimitive.Group;
+const SelectValue = SelectPrimitive.Value;
 
 const SelectTrigger = React.forwardRef<
   React.ElementRef<typeof SelectPrimitive.Trigger>,
@@ -66,6 +64,7 @@ const SelectScrollDownButton = React.forwardRef<
 ))
 SelectScrollDownButton.displayName =
   SelectPrimitive.ScrollDownButton.displayName
+
 
 const SelectContent = React.forwardRef<
   React.ElementRef<typeof SelectPrimitive.Content>,
