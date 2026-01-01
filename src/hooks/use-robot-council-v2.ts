@@ -259,6 +259,7 @@ export function useRobotCouncilV2(
   const [strategyCouncil, setStrategyCouncil] = useState<RobotStrategy[]>(evolvedStrategies as RobotStrategy[]);
   const [isCouncilAutopilotOn, setIsCouncilAutopilotOn] = useState(false);
   const [isFetchingCouncil, setIsFetchingCouncil] = useState(false);
+  const [indicators, setIndicators] = useState<Indicators | null>(null);
 
   // ────────────────────────────────────────────────────────────────
   // ESTADOS DE REGIME E MICROESTRUTURA
@@ -474,6 +475,7 @@ export function useRobotCouncilV2(
       timePeriod, 
       { duration: 5, unit: 'm' }
     );
+    setIndicators(currentIndicators);
 
     if (!currentIndicators || !currentIndicators.adx) {
       console.warn('⚠️ Indicadores incompletos, pulando ciclo');
@@ -1017,7 +1019,7 @@ export function useRobotCouncilV2(
     ).finally(() => {
       // Cooldown progressivo baseado em número de trades recentes
       const recentTrades = operationsLog.filter(
-        op => op.initiator === 'Conselho' &&
+        (op: any) => op.initiator === 'Conselho' &&
         Date.now() - new Date(op.timestamp).getTime() < 300000 // Últimos 5 minutos
       ).length;
 
