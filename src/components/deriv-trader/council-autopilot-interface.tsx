@@ -17,19 +17,11 @@ import { Label } from "../ui/label";
 import { Switch } from "../ui/switch";
 import { Separator } from "../ui/separator";
 import { Badge } from "../ui/badge";
-import type { RobotStrategy } from "@/lib/types/trading.types";
+import type { RobotStrategy, DurationUnit } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { Input } from "../ui/input";
 import type { useRobotCouncil } from "@/hooks/use-robot-council";
 import type { Indicators } from "@/services/indicator-service";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import type { DurationUnit } from "@/lib/types";
 
 const indicatorIcons: { [key: string]: React.ReactNode } = {
     RSI: <BrainCircuit className="h-4 w-4" />,
@@ -408,7 +400,7 @@ export function CouncilAutopilotInterface(props: CouncilAutopilotInterfaceProps)
                                                     {vote !== 'HOLD' && (
                                                         <Badge variant="outline" className="flex items-center gap-1">
                                                             <Clock className="h-3 w-3"/>
-                                                            {optimalDuration} {durationUnitLabels[optimalDurationUnit].slice(0, -1)}
+                                                            {optimalDuration} {durationUnitLabels[optimalDurationUnit]?.slice(0, -1)}
                                                         </Badge>
                                                     )}
                                                 </div>
