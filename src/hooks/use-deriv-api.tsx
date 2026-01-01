@@ -1,7 +1,7 @@
 // src/features/trading/hooks/use-deriv-api.tsx
 'use client';
 
-import { createContext, useContext, useState, useEffect, type ReactNode, useCallback, useRef } from 'react';
+import { createContext, useContext, useState, useEffect, type ReactNode, useCallback, useRef, useMemo } from 'react';
 import type { TradeResult } from '@/services/deriv-api-service';
 import { useToast } from '@/hooks/use-toast';
 import type { Operation, OperationInitiator, DurationUnit, ChartType, TimePeriod, ChartData, CandleData, TradeAnnotation, TickData, DurationLimits } from '@/lib/types';
@@ -186,8 +186,7 @@ export const DerivApiProvider = ({ children }: { children: ReactNode }) => {
   const [timePeriod, setTimePeriod] = useState<TimePeriod>('5m');
   const activeSubscriptionIdRef = useRef<string | null>(null);
   const [tradeAnnotations, setTradeAnnotations] = useState<TradeAnnotation[]>([]);
-  const [durationLimits, setDurationLimits] = useState<DurationLimits | null>(null);
-  const [dataVersion, setDataVersion] = useState(0); // NOVO
+  const [dataVersion, setDataVersion] = useState(0); 
 
   const wsRef = useRef<WebSocket | null>(null);
   const [isConnected, setIsConnected] = useState(false);
@@ -217,15 +216,15 @@ export const DerivApiProvider = ({ children }: { children: ReactNode }) => {
   
   const activeToken = accountType === 'demo' ? demoToken : realToken;
 
-  useEffect(() => {
-    if (activeSymbol && assetGroups.length > 0) {
-      const allAssets = assetGroups.flatMap(g => g.options);
-      const asset = allAssets.find(a => a.value === activeSymbol);
-      if (asset) {
-        setDurationLimits(getDurationLimitsForAsset(asset.minDuration));
-      }
+  const durationLimits = useMemo(() => {
+    if (!activeSymbol || assetGroups.length === 0) {
+      return getDurationLimitsForAsset(undefined);
     }
+    const allAssets = assetGroups.flatMap(g => g.options);
+    const asset = allAssets.find(a => a.value === activeSymbol);
+    return getDurationLimitsForAsset(asset?.minDuration);
   }, [activeSymbol, assetGroups]);
+
 
   const makeRequest = useCallback(<T,>(request: object): Promise<T> => {
     return new Promise((resolve, reject) => {
@@ -340,7 +339,7 @@ const subscribeToMarketData = useCallback(async (symbol: string) => {
         if (historyStyle === 'ticks') {
             setPriceTicks(history as TickData[]);
         }
-        setDataVersion(v => v + 1); // NOVO
+        setDataVersion(v => v + 1);
 
         let subRequest: any;
         
@@ -575,7 +574,7 @@ const subscribeToMarketData = useCallback(async (symbol: string) => {
                             }
                             return newTicks;
                         });
-                        setDataVersion(v => v + 1); // NOVO
+                        setDataVersion(v => v + 1);
                     }
                     break;
                 
@@ -590,7 +589,7 @@ const subscribeToMarketData = useCallback(async (symbol: string) => {
                             close: parseFloat(ohlc.close),
                         };
                         setChartData(prev => addDataPoint(prev, newCandle));
-                        setDataVersion(v => v + 1); // NOVO
+                        setDataVersion(v => v + 1);
                     }
                     break;
                 
@@ -606,7 +605,7 @@ const subscribeToMarketData = useCallback(async (symbol: string) => {
                                 close: parseFloat(candle.close),
                             };
                             setChartData(prev => addDataPoint(prev, newCandle));
-                            setDataVersion(v => v + 1); // NOVO
+                            setDataVersion(v => v + 1);
                         }
                     }
                     break;
@@ -777,7 +776,7 @@ const subscribeToMarketData = useCallback(async (symbol: string) => {
     setChartType,
     timePeriod,
     setTimePeriod,
-    dataVersion, // NOVO
+    dataVersion,
     executeTrade,
     sellContract,
     clearActiveContracts,

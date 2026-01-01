@@ -344,7 +344,7 @@ export function useRobotCouncilV2(
       close: t.price, 
       volume: 1 
     }));
-  }, [dataVersion]); // Alterado para dataVersion
+  }, [dataVersion]); 
 
   // ────────────────────────────────────────────────────────────────
   // SINCRONIZAÇÃO COM EVOLUÇÃO GENÉTICA
@@ -448,7 +448,9 @@ export function useRobotCouncilV2(
       title: '⏸️ Sistema Pausado',
       description: 'Conselho desativado.',
     });
-  }, [toast]);  // ════════════════════════════════════════════════════════════════════
+  }, [toast]);
+  
+  // ════════════════════════════════════════════════════════════════════
   // 🔄 LOOP PRINCIPAL - EXECUTADO A CADA TICK
   // ════════════════════════════════════════════════════════════════════
   useEffect(() => {
@@ -470,10 +472,10 @@ export function useRobotCouncilV2(
     const currentIndicators = calculateAllIndicators(
       tickCandles, 
       strategyCouncil, 
-      timePeriod, 
-      { duration: 5, unit: 'm' }
+      timePeriod,
+      { duration: 5, unit: 'm'}
     );
-    setIndicators(currentIndicators); // NOVO
+    setIndicators(currentIndicators);
 
     if (!currentIndicators || !currentIndicators.adx) {
       console.warn('⚠️ Indicadores incompletos, pulando ciclo');
@@ -798,8 +800,8 @@ export function useRobotCouncilV2(
     // ══════════════════════════════════════════════════════════════
     const dailyPnL = operationsLog
       .filter(op =>
-        new Date(op.timestamp).toDateString() === new Date().toDateString() &&
-        op.initiator === 'Conselho'
+        op.initiator === 'Conselho' &&
+        new Date(op.timestamp).toDateString() === new Date().toDateString()
       )
       .reduce((sum, op) => sum + (op.result || 0), 0);
 
@@ -862,7 +864,6 @@ export function useRobotCouncilV2(
       avgWinRate,
       avgWinAmount,
       avgLossAmount,
-      volAdjustment
     );
 
     // Validação de segurança
@@ -1029,7 +1030,7 @@ export function useRobotCouncilV2(
     });
 
   }, [
-    dataVersion, // Alterado
+    dataVersion,
     isConnected,
     isCouncilAutopilotOn,
     strategyCouncil,
@@ -1068,11 +1069,11 @@ export function useRobotCouncilV2(
     strategyCouncil,
     robotPerformance,
     evolutionHistory,
+    indicators,
 
     // Regime e Mercado
     currentRegime,
     microstructure,
-    indicators,
 
     // Decisão e Consenso
     consensusDecision,
