@@ -1,4 +1,4 @@
-// /src/components/deriv-trader/council-autopilot-interface.tsx
+// src/features/trading/components/deriv-trader/council-autopilot-interface.tsx
 'use client';
 
 import { Fragment } from "react";
@@ -9,18 +9,18 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Button } from "../ui/button";
+import { Button } from "@/components/ui/button";
 import { Loader2, Users, Bot, Info, BrainCircuit, CheckCircle, XCircle, HelpCircle, CandlestickChart, Activity, Waves, Cloud, BarChart, TrendingUp, Award, Wand, Trash2, ShieldCheck, ShieldX, Group, ArrowUpCircle, ArrowDownCircle, LayoutGrid, Power, PowerOff, Clock, Repeat } from "lucide-react";
-import { Alert, AlertDescription, AlertTitle } from "../ui/alert";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { useToast } from "@/hooks/use-toast";
-import { Label } from "../ui/label";
-import { Switch } from "../ui/switch";
-import { Separator } from "../ui/separator";
-import { Badge } from "../ui/badge";
+import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
+import { Separator } from "@/components/ui/separator";
+import { Badge } from "@/components/ui/badge";
 import type { RobotStrategy, DurationUnit } from "@/lib/types";
 import { cn } from "@/lib/utils";
-import { Input } from "../ui/input";
-import type { useRobotCouncil } from "@/hooks/use-robot-council";
+import { Input } from "@/components/ui/input";
+import type { useRobotCouncil } from "@/features/trading/hooks/use-robot-council";
 import type { Indicators } from "@/services/indicator-service";
 
 const indicatorIcons: { [key: string]: React.ReactNode } = {

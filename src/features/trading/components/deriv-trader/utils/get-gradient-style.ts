@@ -1,4 +1,4 @@
-// /src/components/deriv-trader/utils/get-gradient-style.ts
+// src/features/trading/components/deriv-trader/utils/get-gradient-style.ts
 
 export function getGradientStyle({
   isWinning,

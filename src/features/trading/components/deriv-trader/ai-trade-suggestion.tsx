@@ -1,4 +1,4 @@
-// src/components/deriv-trader/ai-trade-suggestion.tsx
+// src/features/trading/components/deriv-trader/ai-trade-suggestion.tsx
 'use client';
 
 import {
@@ -8,10 +8,10 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Alert, AlertDescription, AlertTitle } from "../ui/alert";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { cn } from "@/lib/utils";
 import { TrendingUp, TrendingDown, HelpCircle, ShieldCheck, ShieldX, Group, Eye } from "lucide-react";
-import { Progress } from "../ui/progress";
+import { Progress } from "@/components/ui/progress";
 
 interface AITradeSuggestionProps {
     councilDecision: 'RISE' | 'FALL' | 'HOLD';

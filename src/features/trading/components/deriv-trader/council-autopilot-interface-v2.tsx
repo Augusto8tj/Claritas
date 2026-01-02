@@ -1,4 +1,4 @@
-// src/components/deriv-trader/council-autopilot-interface-v2.tsx
+// src/features/trading/components/deriv-trader/council-autopilot-interface-v2.tsx
 'use client';
 
 import {
@@ -8,16 +8,16 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Button } from "../ui/button";
+import { Button } from "@/components/ui/button";
 import { Loader2, LayoutGrid, Power, PowerOff, Clock, TrendingUp, TrendingDown, Wallet, BarChart2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { Label } from "../ui/label";
-import { Switch } from "../ui/switch";
-import { Separator } from "../ui/separator";
-import { Badge } from "../ui/badge";
-import { Input } from "../ui/input";
-import type { useRobotCouncilV2 } from "@/hooks/use-robot-council-v2";
-import { Slider } from "../ui/slider";
+import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
+import { Separator } from "@/components/ui/separator";
+import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import type { useRobotCouncilV2 } from "@/features/trading/hooks/use-robot-council-v2";
+import { Slider } from "@/components/ui/slider";
 import { cn } from "@/lib/utils";
 
 interface CouncilAutopilotInterfaceV2Props extends ReturnType<typeof useRobotCouncilV2> {}

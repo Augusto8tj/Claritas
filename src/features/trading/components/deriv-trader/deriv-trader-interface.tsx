@@ -1,4 +1,4 @@
-// /src/components/deriv-trader/deriv-trader-interface.tsx
+// src/features/trading/components/deriv-trader/deriv-trader-interface.tsx
 "use client";
 
 import { useState, useEffect, useRef } from "react";
@@ -17,18 +17,18 @@ import {
 } from "@/components/ui/form";
 import { ArrowDown, ArrowUp, Info, Loader2, Minus, Plus, ChevronDown, Repeat } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { Input } from "../ui/input";
-import { Checkbox } from "../ui/checkbox";
-import { Label } from "../ui/label";
-import { Separator } from "../ui/separator";
+import { Input } from "@/components/ui/input";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Label } from "@/components/ui/label";
+import { Separator } from "@/components/ui/separator";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Popover, PopoverContent, PopoverTrigger } from "../ui/popover";
-import { RadioGroup, RadioGroupItem } from "../ui/radio-group";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 
 import type { DurationUnit, RiseFallFormValues } from "@/lib/types";
-import { useDerivApi } from "@/hooks/use-deriv-api";
-import { Switch } from "../ui/switch";
+import { useDerivApi } from "@/features/trading/hooks/use-deriv-api";
+import { Switch } from "@/components/ui/switch";
 
 type TradeType = 'rise_fall' | 'higher_lower' | 'touch_no_touch';
 

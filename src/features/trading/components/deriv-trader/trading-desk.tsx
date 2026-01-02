@@ -1,4 +1,4 @@
-// /src/components/deriv-trader/trading-desk.tsx
+// src/features/trading/components/deriv-trader/trading-desk.tsx
 'use client';
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -31,11 +31,11 @@ import { cn } from '@/lib/utils';
 import { Progress } from '@/components/ui/progress';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
-import type { CouncilVotes } from '@/hooks/use-robot-council';
-import { Label } from '../ui/label';
-import { Switch } from '../ui/switch';
-import { Separator } from '../ui/separator';
-import { Badge } from '../ui/badge';
+import type { CouncilVotes } from '@/features/trading/hooks/use-robot-council';
+import { Label } from '@/components/ui/label';
+import { Switch } from '@/components/ui/switch';
+import { Separator } from '@/components/ui/separator';
+import { Badge } from '@/components/ui/badge';
 
 interface TradingDeskProps {
     isMeritocracyOn: boolean;

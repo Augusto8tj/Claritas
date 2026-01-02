@@ -1,4 +1,4 @@
-// src/components/deriv-trader/trading-desk-v2.tsx
+// src/features/trading/components/deriv-trader/trading-desk-v2.tsx
 'use client';
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';

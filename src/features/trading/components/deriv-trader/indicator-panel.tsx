@@ -1,4 +1,4 @@
-// /src/components/deriv-trader/indicator-panel.tsx
+// src/features/trading/components/deriv-trader/indicator-panel.tsx
 'use client';
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';

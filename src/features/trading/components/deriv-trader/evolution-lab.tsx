@@ -1,12 +1,12 @@
-// /src/components/deriv-trader/evolution-lab.tsx
+// src/features/trading/components/deriv-trader/evolution-lab.tsx
 'use client';
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
-import type { EvolutionEvent } from '@/hooks/use-strategy-evolution';
+import type { EvolutionEvent } from '@/features/trading/hooks/use-strategy-evolution';
 import { Dna, ArrowRight, User, Award, Skull, Bot } from 'lucide-react';
-import { Badge } from '../ui/badge';
-import { Separator } from '../ui/separator';
+import { Badge } from '@/components/ui/badge';
+import { Separator } from '@/components/ui/separator';
 
 interface EvolutionLabProps {
     history: EvolutionEvent[];

@@ -1,11 +1,11 @@
-// /src/components/deriv-trader/pending-operation-counter.tsx
+// src/features/trading/components/deriv-trader/pending-operation-counter.tsx
 "use client";
 
 import { useState, useEffect, useMemo } from 'react';
 import { Loader2, XSquare } from 'lucide-react';
 import type { Operation } from "@/lib/types";
-import { useDerivApi } from '@/hooks/use-deriv-api';
-import { Button } from '../ui/button';
+import { useDerivApi } from '@/features/trading/hooks/use-deriv-api';
+import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { getGradientStyle } from './utils/get-gradient-style';
 

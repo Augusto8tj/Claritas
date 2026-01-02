@@ -1,10 +1,10 @@
-// src/components/deriv-trader/trade-legend.tsx
+// src/features/trading/components/deriv-trader/trade-legend.tsx
 'use client';
 
 import React, { useMemo } from 'react';
 import type { TradeAnnotation } from '@/lib/types';
-import { Badge } from '../ui/badge';
-import { Progress } from '../ui/progress';
+import { Badge } from '@/components/ui/badge';
+import { Progress } from '@/components/ui/progress';
 import { cn } from '@/lib/utils';
 import { TrendingUp, TrendingDown, CheckCircle, XCircle, Timer, Award } from 'lucide-react';
 

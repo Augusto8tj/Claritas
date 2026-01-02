@@ -1,4 +1,4 @@
-// /src/components/deriv-trader/market-chart.tsx
+// src/features/trading/components/deriv-trader/market-chart.tsx
 'use client'
 
 import React, { useCallback } from 'react'
@@ -32,10 +32,10 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { Button } from '../ui/button'
+import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
-import { ToggleGroup, ToggleGroupItem } from '../ui/toggle-group'
-import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover'
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { TradeLegend } from './trade-legend'
 import type { Indicators } from '@/services/indicator-service'
 

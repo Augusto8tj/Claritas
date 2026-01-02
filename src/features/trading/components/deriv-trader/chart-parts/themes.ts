@@ -1,4 +1,4 @@
-// src/components/deriv-trader/chart-parts/themes.ts
+// src/features/trading/components/deriv-trader/chart-parts/themes.ts
 export const THEMES = {
   light: {
     bg: '#FFFFFF',
