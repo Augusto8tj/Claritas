@@ -101,13 +101,13 @@ service cloud.firestore {
 
       /**
        * @description Controls access to a user's financial goals.
-       * @path /users/{userId}/financialGoals/{goalId}
+       * @path /users/{userId}/goals/{goalId}
        * @allow A user (auth.uid='user123') creating a new financial goal in their own subcollection. (create)
        * @allow A user (auth.uid='user123') updating a financial goal in their own subcollection. (update)
-       * @deny A user (auth.uid='userABC') trying to read a financial goal at /users/user123/financialGoals/goal456. (get)
+       * @deny A user (auth.uid='userABC') trying to read a financial goal at /users/user123/goals/goal456. (get)
        * @principle Enforces document ownership and validates relational integrity via a denormalized userId.
        */
-      match /financialGoals/{goalId} {
+      match /goals/{goalId} {
         allow get: if isOwner(userId);
         allow list: if isOwner(userId);
         allow create: if isOwner(userId) && request.resource.data.userId == userId;
