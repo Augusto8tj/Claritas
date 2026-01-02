@@ -4,6 +4,7 @@ import { checkGeminiConnection, checkFirestoreConnection } from "@/app/actions";
 import { ListModelsCard } from "@/features/status/components/list-models-card";
 import { DerivConnectionCard } from "@/features/status/components/deriv-connection-card";
 import { FirestoreWriteTestCard } from "@/features/status/components/firestore-write-test-card";
+import { BrainCircuit, Link, Database } from "lucide-react";
 
 export const revalidate = 0; // Disable cache for this page
 
@@ -29,6 +30,7 @@ export default async function StatusPage() {
       <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
         <HealthCheckCard
           serviceName="API Gemini (IA)"
+          icon={<BrainCircuit className="h-6 w-6 text-primary" />}
           checkResult={geminiResult}
           description="Essencial para todos os recursos de Inteligência Artificial, como chatbots e análises."
           successMessage="A conexão com a API do Google Gemini está funcionando corretamente."
@@ -39,6 +41,7 @@ export default async function StatusPage() {
         <HealthCheckCard
           isClientSide
           serviceName="API Deriv (Corretora)"
+          icon={<Link className="h-6 w-6 text-primary" />}
           description="Necessária para negociação, consulta de saldo e dados de mercado em tempo real."
           successMessage="A conexão com a API da Deriv está funcionando corretamente."
           failureMessage="O token da API da Deriv não está configurado ou é inválido."
@@ -47,6 +50,7 @@ export default async function StatusPage() {
 
         <HealthCheckCard
             serviceName="Firestore (Base de Dados)"
+            icon={<Database className="h-6 w-6 text-primary" />}
             checkResult={firestoreResult}
             description="Armazena todos os seus dados financeiros, metas e desempenho dos robôs."
             successMessage="A conexão com o Firestore está saudável e as regras de segurança estão ativas."

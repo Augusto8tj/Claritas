@@ -1,7 +1,7 @@
 // /src/features/status/components/health-check-card.tsx
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { CheckCircle, XCircle, AlertTriangle, Loader2, Settings } from "lucide-react";
@@ -15,6 +15,7 @@ type CheckResult = {
 
 interface HealthCheckCardProps {
   serviceName: string;
+  icon?: ReactNode;
   description: string;
   successMessage: string;
   failureMessage: string;
@@ -25,6 +26,7 @@ interface HealthCheckCardProps {
 
 export function HealthCheckCard({
   serviceName,
+  icon,
   description,
   successMessage,
   failureMessage,
@@ -33,10 +35,7 @@ export function HealthCheckCard({
   isClientSide = false,
 }: HealthCheckCardProps) {
   
-  // Client-side state for the Deriv API check
   const { isConnected, isConnecting, connectionError, activeToken } = useDerivApi();
-  
-  // Generic state for display purposes
   const [status, setStatus] = useState<"loading" | "success" | "error">("loading");
   const [displayMessage, setDisplayMessage] = useState<string>("");
 
@@ -115,7 +114,10 @@ export function HealthCheckCard({
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="font-headline">{serviceName}</CardTitle>
+        <CardTitle className="font-headline flex items-center gap-2">
+            {icon}
+            {serviceName}
+        </CardTitle>
         <CardDescription>{description}</CardDescription>
       </CardHeader>
       <CardContent>
