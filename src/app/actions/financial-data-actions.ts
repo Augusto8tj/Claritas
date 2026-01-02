@@ -2,7 +2,7 @@
 "use server";
 
 import { z } from "zod";
-import { addGoal as addGoalToService, getGoals as getGoalsFromService, deleteGoal as deleteGoalFromService } from "@/services/financial-data-service";
+import { addGoal as addGoalToService, deleteGoal as deleteGoalFromService } from "@/services/financial-data-service";
 import type { Goal } from "@/lib/types";
 import { revalidatePath } from "next/cache";
 
@@ -29,11 +29,6 @@ export async function addGoal(data: { userId: string, name: string; targetAmount
     // Apenas repassa a mensagem de erro para ser tratada no cliente
     return { error: e.message || "Não foi possível criar a meta." };
   }
-}
-
-export async function getGoals(userId: string): Promise<Goal[]> {
-    // O erro será capturado no componente do cliente que chama esta ação
-    return await getGoalsFromService(userId);
 }
 
 export async function deleteGoal(userId: string, goalId: string): Promise<{ success: boolean; error?: string }> {

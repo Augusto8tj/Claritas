@@ -4,7 +4,7 @@
 import { useEffect, useState } from "react";
 import { GoalCard } from "@/components/goals/goal-card";
 import { AddGoalDialog } from "@/components/goals/add-goal-dialog";
-import { getGoals } from "@/app/actions/financial-data-actions";
+import { getGoals } from "@/services/financial-data-service";
 import type { Goal } from "@/lib/types";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAuth } from "@/features/auth/hooks/use-auth";

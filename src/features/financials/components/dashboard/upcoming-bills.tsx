@@ -92,7 +92,7 @@ export function UpcomingBills() {
       <CardHeader>
         <CardTitle className="font-headline">Contas Recentes</CardTitle>
         <CardDescription>
-          Suas contas pagas e próximas para este ciclo. (Use a categoria &quot;Contas&quot; ao adicionar despesas).
+          Suas contas pagas e próximas para este ciclo. (Use a categoria "Contas" ao adicionar despesas).
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -116,7 +116,7 @@ export function UpcomingBills() {
             )) : (
               <TableRow>
                 <TableCell colSpan={4} className="text-center h-24 text-muted-foreground">
-                  Nenhuma conta registrada. Adicione despesas na categoria &quot;Contas&quot; para vê-las aqui.
+                  Nenhuma conta registrada. Adicione despesas na categoria "Contas" para vê-las aqui.
                 </TableCell>
               </TableRow>
             )}
