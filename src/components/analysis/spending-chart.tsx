@@ -103,14 +103,14 @@ export function SpendingChart() {
                     >
                       <tspan
                         x={viewBox.cx}
-                        y={viewBox.cy - 12}
+                        y={(viewBox.cy || 0) - 12}
                         className="fill-muted-foreground text-sm"
                       >
                         Gasto Total
                       </tspan>
                       <tspan
                         x={viewBox.cx}
-                        y={viewBox.cy + 12}
+                        y={(viewBox.cy || 0) + 12}
                         className="fill-foreground text-2xl font-bold"
                       >
                         R${totalAmount.toLocaleString('pt-BR')}
