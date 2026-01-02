@@ -10,6 +10,8 @@ import { collection, getDocs, doc, setDoc, query, where, orderBy, getDoc, addDoc
 import type { Goal, BudgetCategory, Transaction, RobotPerformance, TradeDecisionLog, EnhancedRobotPerformance } from '@/lib/types';
 import { generateGoalImage } from '@/ai/flows/goal-image-generation';
 import { addDocumentNonBlocking, deleteDocumentNonBlocking, setDocumentNonBlocking } from '@/firebase/non-blocking-updates';
+import { errorEmitter } from '@/firebase/error-emitter';
+import { FirestorePermissionError } from '@/firebase/errors';
 
 
 // --- Transactions ---
@@ -21,8 +23,12 @@ export async function getTransactions(userId: string): Promise<Transaction[]> {
         const snapshot = await getDocs(transactionsCol);
         return snapshot.docs.map(d => ({ id: d.id, ...d.data() } as Transaction));
     } catch (serverError) {
-        console.error(`[Service Error] getTransactions failed for user ${userId}:`, serverError);
-        throw serverError;
+        console.error(`[Service Error] getTransactions failed for user ${userId}. Propagating contextual error.`);
+        errorEmitter.emit('permission-error', new FirestorePermissionError({
+            path: `users/${userId}/transactions`,
+            operation: 'list'
+        }));
+        throw serverError; // Re-throw para que o chamador saiba que a operação falhou
     }
 }
 
@@ -55,7 +61,11 @@ export async function getGoals(userId: string): Promise<Goal[]> {
         const snapshot = await getDocs(goalsCol);
         return snapshot.docs.map(d => ({ id: d.id, ...d.data() } as Goal));
     } catch (serverError) {
-        console.error(`[Service Error] getGoals failed for user ${userId}:`, serverError);
+        console.error(`[Service Error] getGoals failed for user ${userId}. Propagating contextual error.`);
+        errorEmitter.emit('permission-error', new FirestorePermissionError({
+            path: `users/${userId}/goals`,
+            operation: 'list'
+        }));
         throw serverError;
     }
 }
@@ -93,7 +103,12 @@ export async function addGoal(userId: string, name: string, targetAmount: number
         const docRef = await docRefPromise;
         return { id: docRef.id, ...newGoalData };
     } catch (serverError) {
-        console.error(`[Service Error] addGoal failed for user ${userId}:`, serverError);
+        console.error(`[Service Error] addGoal failed for user ${userId}. Propagating contextual error.`);
+         errorEmitter.emit('permission-error', new FirestorePermissionError({
+            path: `users/${userId}/goals`,
+            operation: 'create',
+            requestResourceData: newGoalData
+        }));
         throw serverError;
     }
 }
@@ -124,7 +139,11 @@ async function getBudgetLimits(userId: string): Promise<{ [key: string]: number 
             "Lazer": 400, "Compras": 600, "Outros": 300, "Contas": 800,
         };
     } catch (serverError) {
-         console.error(`[Service Error] getBudgetLimits failed for user ${userId}:`, serverError);
+         console.error(`[Service Error] getBudgetLimits failed for user ${userId}. Propagating contextual error.`);
+         errorEmitter.emit('permission-error', new FirestorePermissionError({
+            path: `users/${userId}/settings/budget`,
+            operation: 'get'
+        }));
          throw serverError;
     }
 }
@@ -236,7 +255,11 @@ export const loadRobotPerformance = async (userId: string): Promise<EnhancedRobo
     }
     return null;
   } catch (error) {
-    console.error(`[Service Error] loadRobotPerformance failed for user ${userId}:`, error);
+    console.error(`[Service Error] loadRobotPerformance failed for user ${userId}. Propagating contextual error.`);
+     errorEmitter.emit('permission-error', new FirestorePermissionError({
+        path: `users/${userId}/trading_data/robot_council_performance`,
+        operation: 'get'
+    }));
     throw error;
   }
 };
@@ -283,7 +306,11 @@ export async function getTradeDecisionLogs(userId: string): Promise<TradeDecisio
         const snapshot = await getDocs(q);
         return snapshot.docs.map(d => d.data() as TradeDecisionLog);
     } catch (serverError) {
-        console.error(`[Service Error] getTradeDecisionLogs failed for user ${userId}:`, serverError);
+        console.error(`[Service Error] getTradeDecisionLogs failed for user ${userId}. Propagating contextual error.`);
+        errorEmitter.emit('permission-error', new FirestorePermissionError({
+            path: `users/${userId}/decision_logs`,
+            operation: 'list'
+        }));
         throw serverError;
     }
 }

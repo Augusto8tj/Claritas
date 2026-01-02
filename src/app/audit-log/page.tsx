@@ -46,14 +46,8 @@ export default function AuditLogPage() {
         fetchedLogs.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
         setLogs(fetchedLogs);
       } catch (error) {
-        console.error("Failed to fetch trade decision logs:", error);
-         errorEmitter.emit(
-          'permission-error',
-          new FirestorePermissionError({
-            path: `users/${user.uid}/decision_logs`,
-            operation: 'list',
-          })
-        );
+        // O erro já é tratado e emitido dentro do `getTradeDecisionLogs`
+        console.error("Failed to fetch trade decision logs (error captured by service).");
       } finally {
         setLoading(false);
       }
