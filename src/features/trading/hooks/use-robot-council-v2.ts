@@ -810,6 +810,15 @@ export function useRobotCouncilV2(
         
         const consensusReached = Math.max(riseSum, fallSum) >= calculatedEffectiveThreshold;
 
+        // ✅ NOVO: Veto de Confiança Estatística
+        const winningDirection = riseSum > fallSum ? 'RISE' : 'FALL';
+        const winningVoters = Object.values(bayesianVotes).filter(v => v.vote === winningDirection);
+        const matureVoters = winningVoters.filter(voter => {
+            const perf = Object.values(robotPerformance).find(p => p.strategy.id === (voter as any).id); // Assumindo que o ID está acessível
+            return perf && (perf.wins + perf.losses) > MIN_TRADES_FOR_STATS;
+        });
+        const maturityRatio = winningVoters.length > 0 ? matureVoters.length / winningVoters.length : 0;
+        const hasStatisticalConfidence = maturityRatio >= 0.6; // Pelo menos 60% dos votantes são "maduros"
 
         const PAYOUT_RATE = 0.95; // Payout líquido para RISE/FALL
         let kellyStake = calculateKellyStake(
@@ -871,6 +880,18 @@ export function useRobotCouncilV2(
           setConsensusDecision({ direction: 'HOLD', probability: consensusProbability, stake: 0 });
           return;
         }
+        
+        // ✅ APLICAÇÃO DO VETO ESTATÍSTICO
+        if (!hasStatisticalConfidence) {
+            setConsensusDecision({ direction: 'HOLD', probability: consensusProbability, stake: 0 });
+            toast({
+                title: "⏳ Consenso Estatístico Insuficiente",
+                description: "Aguardando mais dados da Arena Virtual para operar com segurança.",
+                variant: 'default',
+            });
+            return;
+        }
+
         setConsensusDecision({ direction: consensusDirection, probability: consensusProbability, stake: kellyStake });
         const activeStakes = activeCouncilContracts.reduce((sum, c) => sum + c.stake, 0);
         setPortfolioStats(prev => ({
