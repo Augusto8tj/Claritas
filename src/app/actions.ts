@@ -5,7 +5,7 @@ import {
   financialChatbotInsights,
 } from "@/ai/flows/financial-chatbot-insights";
 import type { FinancialChatbotInsightsInput } from "@/lib/types";
-import { getFinancialSummary, getInsights } from "@/services/financial-data-service";
+import { getFinancialSummary } from "@/services/financial-data-service";
 import { auth, db } from "@/lib/firebase";
 import WebSocket from 'ws';
 import { getDoc, doc } from 'firebase/firestore';
@@ -24,7 +24,7 @@ export async function getChatbotInsightsResponse(data: FinancialChatbotInsightsI
 export async function sendFinancialSummaryEmail(userId: string, userEmail: string) {
   try {
     const summary = await getFinancialSummary(userId);
-    const insights = await getInsights();
+    const insights = await getFinancialSummary(userId);
 
     const emailSubject = "Seu Resumo Financeiro Semanal - Claritas Copilot";
     const emailBody = `
@@ -35,9 +35,6 @@ export async function sendFinancialSummaryEmail(userId: string, userEmail: strin
       - Renda Mensal: R$${summary.income.toFixed(2)}
       - Despesas Mensais: R$${summary.expenses.toFixed(2)}
       - Saldo: R$${summary.balance.toFixed(2)}
-
-      Insights da IA para você:
-      ${insights.map(i => `- ${i}`).join("\n")}
 
       Continue acompanhando suas finanças!
 

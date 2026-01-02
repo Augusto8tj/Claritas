@@ -5,6 +5,7 @@ import { collection, getDocs, doc, setDoc, query, where, orderBy, getDoc, addDoc
 import type { Goal, BudgetCategory, Transaction, RobotPerformance, TradeDecisionLog, EnhancedRobotPerformance } from '@/lib/types';
 import { generateGoalImage } from '@/ai/flows/goal-image-generation';
 import { addDocumentNonBlocking, deleteDocumentNonBlocking, setDocumentNonBlocking, updateDocumentNonBlocking } from '@/firebase/non-blocking-updates';
+import { getChatbotInsightsResponse } from '@/app/actions';
 
 // --- Transactions ---
 
@@ -201,16 +202,32 @@ export async function getExpenseCategories(userId: string): Promise<string[]> {
    }
 }
 
-// --- General Insights (Mocked) ---
-export async function getInsights(): Promise<string[]> {
-    // Simula uma busca, mas retorna dados estáticos.
-    // Em uma aplicação real, isso poderia vir de um fluxo Genkit.
-    return [
-      "Você gastou R$150 em restaurantes. Tente cozinhar em casa para economizar.",
-      "Sua maior despesa é o aluguel. Considere procurar opções mais baratas, se possível.",
-      "Você está perto de atingir seu fundo de emergência! Continue assim."
-    ];
+// --- General Insights (Dynamic) ---
+export async function getFinancialInsights(userId: string): Promise<string[]> {
+    if (!userId) {
+        return ["Faça login para obter insights personalizados."];
+    }
+    try {
+        const response = await getChatbotInsightsResponse({
+            query: "Me dê 3 insights práticos sobre minhas finanças com base em meu resumo financeiro, cada um em uma frase curta.",
+            history: [],
+            userId: userId,
+        });
+
+        if (response.success) {
+            // A IA pode retornar uma string com quebras de linha
+            return response.success.split('\n').filter(line => line.trim() !== '');
+        }
+        
+        console.error("AI Insight Error:", response.error);
+        return ["Não foi possível gerar insights no momento."];
+
+    } catch (error) {
+        console.error("[Service Error] getFinancialInsights failed:", error);
+        return ["Erro ao conectar com o serviço de IA."];
+    }
 }
+
 
 // --- Trading Robot Performance ---
 const sanitizePerformanceValue = (value: number | undefined | null): number => (value === undefined || value === null || isNaN(value)) ? 0 : value;
