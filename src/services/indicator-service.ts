@@ -180,7 +180,7 @@ const calculateADX = (data: CandleData[], period = 14) => {
     const smooth = (values: (number | null)[], smoothingPeriod: number) => {
         if(values.length < smoothingPeriod) return Array(values.length).fill(null);
         let smoothed: (number | null)[] = Array(smoothingPeriod-1).fill(null);
-        const initialSum = values.slice(0, smoothingPeriod).reduce((acc, v) => (acc || 0) + (v||0), 0);
+        const initialSum = values.slice(0, smoothingPeriod).reduce((acc: number, v: number | null) => (acc || 0) + (v||0), 0);
         smoothed.push(initialSum);
 
         for (let i = smoothingPeriod; i < values.length; i++) {
@@ -335,6 +335,7 @@ export function calculateAllIndicators(
 
     let candles: CandleData[];
     if (chartData.length > 0 && !isCandle(chartData[0])) {
+        // If data is TickData, convert to simple CandleData
         candles = chartData.map(d => {
             const price = (d as { price: number }).price;
             return { epoch: d.epoch, open: price, high: price, low: price, close: price, volume: (d as any).volume || 1 };

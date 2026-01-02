@@ -20,8 +20,6 @@ export const initialCouncilStrategies: Omit<RobotStrategy, 'id'>[] = [
     optimalDuration: 45, // 45 segundos
     optimalDurationUnit: 's',
     suggestedStake: 1.5,
-    chandelierPeriod: 15,
-    chandelierMultiplier: 2.5,
   },
   {
     strategyType: "STOCHASTIC",
@@ -36,8 +34,6 @@ export const initialCouncilStrategies: Omit<RobotStrategy, 'id'>[] = [
     optimalDuration: 45, // 45 segundos
     optimalDurationUnit: 's',
     suggestedStake: 1.5,
-    chandelierPeriod: 15,
-    chandelierMultiplier: 2.5,
   },
   {
     strategyType: "MACD_CROSS",
@@ -50,8 +46,6 @@ export const initialCouncilStrategies: Omit<RobotStrategy, 'id'>[] = [
     optimalDuration: 120, // 2 minutos
     optimalDurationUnit: 's',
     suggestedStake: 1.0,
-    chandelierPeriod: 25,
-    chandelierMultiplier: 3.5,
   },
   {
     strategyType: "ADX_TREND",
@@ -63,8 +57,6 @@ export const initialCouncilStrategies: Omit<RobotStrategy, 'id'>[] = [
     optimalDuration: 120, // 2 minutos
     optimalDurationUnit: 's',
     suggestedStake: 1.2,
-    chandelierPeriod: 30,
-    chandelierMultiplier: 3.0,
   },
   {
     strategyType: "AWESOME_OSCILLATOR",
@@ -74,8 +66,6 @@ export const initialCouncilStrategies: Omit<RobotStrategy, 'id'>[] = [
     optimalDuration: 60, // 1 minuto
     optimalDurationUnit: 's',
     suggestedStake: 0.8,
-    chandelierPeriod: 20,
-    chandelierMultiplier: 3.0,
   },
   {
     strategyType: "TRIX",
@@ -86,8 +76,6 @@ export const initialCouncilStrategies: Omit<RobotStrategy, 'id'>[] = [
     optimalDuration: 120, // 2 minutos
     optimalDurationUnit: 's',
     suggestedStake: 0.7,
-    chandelierPeriod: 25,
-    chandelierMultiplier: 3.0,
   },
   {
     strategyType: "ROC",
@@ -98,8 +86,6 @@ export const initialCouncilStrategies: Omit<RobotStrategy, 'id'>[] = [
     optimalDuration: 45, // 45 segundos
     optimalDurationUnit: 's',
     suggestedStake: 0.9,
-    chandelierPeriod: 20,
-    chandelierMultiplier: 3.0,
   },
   {
     strategyType: "RVI",
@@ -114,8 +100,6 @@ export const initialCouncilStrategies: Omit<RobotStrategy, 'id'>[] = [
     optimalDuration: 60, // 1 minuto
     optimalDurationUnit: 's',
     suggestedStake: 1.0,
-    chandelierPeriod: 22,
-    chandelierMultiplier: 3.0,
   },
   {
     strategyType: "PARABOLIC_SAR",
@@ -127,8 +111,6 @@ export const initialCouncilStrategies: Omit<RobotStrategy, 'id'>[] = [
     optimalDuration: 90, // 90 segundos
     optimalDurationUnit: 's',
     suggestedStake: 1.3,
-    chandelierPeriod: 18,
-    chandelierMultiplier: 2.5,
   },
   // --- Volatility & Structure ---
   {
@@ -141,8 +123,6 @@ export const initialCouncilStrategies: Omit<RobotStrategy, 'id'>[] = [
     optimalDuration: 60, // 1 minuto
     optimalDurationUnit: 's',
     suggestedStake: 1.4,
-    chandelierPeriod: 20,
-    chandelierMultiplier: 3.0,
   },
   {
     strategyType: "ICHIMOKU_CLOUD",
@@ -152,8 +132,6 @@ export const initialCouncilStrategies: Omit<RobotStrategy, 'id'>[] = [
     optimalDuration: 120, // 2 minutos
     optimalDurationUnit: 's',
     suggestedStake: 1.5,
-    chandelierPeriod: 40,
-    chandelierMultiplier: 4.0,
   },
   {
     strategyType: "KAMA",
@@ -166,8 +144,6 @@ export const initialCouncilStrategies: Omit<RobotStrategy, 'id'>[] = [
     optimalDuration: 120, // 2 minutos
     optimalDurationUnit: 's',
     suggestedStake: 1.1,
-    chandelierPeriod: 30,
-    chandelierMultiplier: 3.5,
   },
   {
     strategyType: "DONCHIAN_CHANNELS",
@@ -178,8 +154,6 @@ export const initialCouncilStrategies: Omit<RobotStrategy, 'id'>[] = [
     optimalDuration: 60, // 1 minuto
     optimalDurationUnit: 's',
     suggestedStake: 1.0,
-    chandelierPeriod: 22,
-    chandelierMultiplier: 3.0,
   },
   {
     strategyType: "CHANDELIER_EXIT",
@@ -202,8 +176,6 @@ export const initialCouncilStrategies: Omit<RobotStrategy, 'id'>[] = [
     optimalDuration: 120, // 2 minutos
     optimalDurationUnit: 's',
     suggestedStake: 0.9,
-    chandelierPeriod: 35,
-    chandelierMultiplier: 3.5,
   },
   {
     strategyType: "VWAP",
@@ -213,8 +185,6 @@ export const initialCouncilStrategies: Omit<RobotStrategy, 'id'>[] = [
     optimalDuration: 60, // 1 minuto
     optimalDurationUnit: 's',
     suggestedStake: 1.3,
-    chandelierPeriod: 25,
-    chandelierMultiplier: 3.0,
   },
   {
     strategyType: "MFI",
@@ -229,8 +199,6 @@ export const initialCouncilStrategies: Omit<RobotStrategy, 'id'>[] = [
     optimalDuration: 45, // 45 segundos
     optimalDurationUnit: 's',
     suggestedStake: 1.2,
-    chandelierPeriod: 15,
-    chandelierMultiplier: 2.5,
   },
   {
     strategyType: "OBV",
@@ -240,8 +208,6 @@ export const initialCouncilStrategies: Omit<RobotStrategy, 'id'>[] = [
     optimalDuration: 120, // 2 minutos
     optimalDurationUnit: 's',
     suggestedStake: 0.8,
-    chandelierPeriod: 28,
-    chandelierMultiplier: 3.0,
   },
   // --- Statistical & Mean Reversion ---
   {
@@ -254,8 +220,6 @@ export const initialCouncilStrategies: Omit<RobotStrategy, 'id'>[] = [
     optimalDuration: 30, // 30 segundos
     optimalDurationUnit: 's',
     suggestedStake: 1.1,
-    chandelierPeriod: 20,
-    chandelierMultiplier: 2.8,
   },
   {
     strategyType: "STOCH_RSI",
@@ -270,8 +234,6 @@ export const initialCouncilStrategies: Omit<RobotStrategy, 'id'>[] = [
     optimalDuration: 30, // 30 segundos
     optimalDurationUnit: 's',
     suggestedStake: 1.4,
-    chandelierPeriod: 15,
-    chandelierMultiplier: 2.5,
   },
   // --- Patterns ---
   {
@@ -283,8 +245,6 @@ export const initialCouncilStrategies: Omit<RobotStrategy, 'id'>[] = [
     optimalDuration: 15, // 15 segundos
     optimalDurationUnit: 's',
     suggestedStake: 1.8,
-    chandelierPeriod: 12,
-    chandelierMultiplier: 2.2,
   },
   // --- Moving Average ---
   {
@@ -297,32 +257,29 @@ export const initialCouncilStrategies: Omit<RobotStrategy, 'id'>[] = [
     optimalDuration: 60, // 1 minute
     optimalDurationUnit: 's',
     suggestedStake: 1.0,
-    chandelierPeriod: 25,
-    chandelierMultiplier: 3.5,
   }
 ].map((strat) => ({
     // Adicionando valores padrão para campos opcionais para garantir que o objeto seja completo
     period: strat.period || 14,
-    strongBuyThreshold: strat.strongBuyThreshold || 20,
-    weakBuyThreshold: strat.weakBuyThreshold || 30,
-    strongSellThreshold: strat.strongSellThreshold || 80,
-    weakSellThreshold: strat.weakSellThreshold || 70,
-    shortPeriod: strat.shortPeriod || 12,
-    longPeriod: strat.longPeriod || 26,
-    fastPeriod: strat.fastPeriod || 12,
-    slowPeriod: strat.slowPeriod || 26,
-    signalPeriod: strat.signalPeriod || 9,
-    stdDev: strat.stdDev || 2,
-    pattern: strat.pattern || "hammer",
-    trendStrengthThreshold: strat.trendStrengthThreshold || 25,
-    profileBars: strat.profileBars || 50,
-    zScoreThreshold: strat.zScoreThreshold || 2.0,
-    fastEnd: strat.fastEnd || 2,
-    slowEnd: strat.slowEnd || 30,
-    acceleration: strat.acceleration || 0.02,
-    maxAcceleration: strat.maxAcceleration || 0.2,
-    multiplier: strat.multiplier || 3.0,
-    chandelierPeriod: strat.chandelierPeriod || 22,
-    chandelierMultiplier: strat.chandelierMultiplier || 3.0,
+    strongBuyThreshold: strat.strongBuyThreshold,
+    weakBuyThreshold: strat.weakBuyThreshold,
+    strongSellThreshold: strat.strongSellThreshold,
+    weakSellThreshold: strat.weakSellThreshold,
+    shortPeriod: strat.shortPeriod,
+    longPeriod: strat.longPeriod,
+    fastPeriod: strat.fastPeriod,
+    slowPeriod: strat.slowPeriod,
+    signalPeriod: strat.signalPeriod,
+    stdDev: strat.stdDev,
+    pattern: strat.pattern,
+    trendStrengthThreshold: strat.trendStrengthThreshold,
+    profileBars: strat.profileBars,
+    zScoreThreshold: strat.zScoreThreshold,
+    fastEnd: strat.fastEnd,
+    slowEnd: strat.slowEnd,
+    acceleration: strat.acceleration,
+    maxAcceleration: strat.maxAcceleration,
+    chandelierPeriod: strat.chandelierPeriod,
+    chandelierMultiplier: strat.chandelierMultiplier,
     ...strat,
 }));

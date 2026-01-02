@@ -29,7 +29,7 @@ export function ThemeSelector() {
         {themes.map((t) => (
           <div key={t.value}>
             <button
-              onClick={() => setTheme(t.value)}
+              onClick={() => setTheme(t.value as any)}
               className={cn(
                 "w-full rounded-md border-2 p-1",
                 theme === t.value

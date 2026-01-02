@@ -73,7 +73,7 @@ export async function addGoal(userId: string, name: string, targetAmount: number
     };
 
     try {
-        const docRefPromise = addDocumentNonBlocking(goalsCol, newGoalData) as Promise<DocumentReference<DocumentData>>;
+        const docRefPromise = addDoc(goalsCol, newGoalData) as Promise<DocumentReference<DocumentData>>;
 
         generateGoalImage({ goalName: name })
             .then(imageResult => {
@@ -258,7 +258,7 @@ export async function getHallOfFame(userId: string): Promise<RobotPerformance[]>
 
         promotedRobots.sort((a, b) => (b.totalProfit || 0) - (a.totalProfit || 0));
         
-        return promotedRobots;
+        return promotedRobots as RobotPerformance[];
     } catch(e) {
         console.error("Não foi possível carregar o Hall da Fama devido a um erro de acesso aos dados:", e);
         return [];

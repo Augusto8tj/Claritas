@@ -4,7 +4,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useDerivApi } from './use-deriv-api';
 import { useToast } from '@/hooks/use-toast';
-import type { RobotStrategy, ChartData, TickData, CandleData, RiseFallFormValues, DurationUnit } from '@/lib/types';
+import type { RobotStrategy, ChartData, TickData, CandleData, RiseFallFormValues, DurationUnit, EnhancedRobotPerformance, RobotPerformance } from '@/lib/types';
 import { useFormContext } from 'react-hook-form';
 import type { Indicators } from '@/services/indicator-service';
 import { calculateAllIndicators } from '@/services/indicator-service';
@@ -24,17 +24,6 @@ export type RobotVote = {
 };
 export type CouncilVotes = { [key: string]: RobotVote };
 
-export type RobotPerformance = {
-    id: string;
-    strategyType: RobotStrategy['strategyType'];
-    strategy: RobotStrategy;
-    wins: number;
-    losses: number;
-    totalProfit: number;
-    winRate: number;
-    winRateTrend: number;
-    winRateRange: number;
-};
 
 // ============================================================================
 // ARENA VIRTUAL: Estrutura de uma Trade Virtual (Espelho dos Votos)
@@ -279,7 +268,7 @@ export function useRobotCouncil(
         virtualTradesRef.current = [];
         
         if (user) {
-            saveRobotPerformance(user.uid, initialPerformance);
+            saveRobotPerformance(user.uid, initialPerformance as EnhancedRobotPerformance[]);
         }
     }, [strategyCouncil, activeSymbol, toast, user]);
 
@@ -614,10 +603,10 @@ export function useRobotCouncil(
         if (performanceChanged) {
             const updatedPerformance = Array.from(performanceMap.values());
             setRobotPerformance(updatedPerformance);
-            evolveTrigger(updatedPerformance);
+            evolveTrigger(updatedPerformance as EnhancedRobotPerformance[]);
             // SALVAR NO FIREBASE
             if (user) {
-                saveRobotPerformance(user.uid, updatedPerformance);
+                saveRobotPerformance(user.uid, updatedPerformance as EnhancedRobotPerformance[]);
             }
         }
 
@@ -674,8 +663,8 @@ export function useRobotCouncil(
 
          const councilTrades = operationsLog.filter(op => op.initiator === 'Conselho');
         const dailyPnl = councilTrades
-            .filter(op => new Date(op.timestamp).toDateString() === new Date().toDateString() && op.status !== 'pending')
-            .reduce((sum, op) => sum + (op.result || 0), 0);
+            .filter((op: any) => new Date(op.timestamp).toDateString() === new Date().toDateString() && op.status !== 'pending')
+            .reduce((sum: any, op: any) => sum + (op.result || 0), 0);
 
         const lastTwoCouncilTrades = councilTrades.filter(op => op.status !== 'pending').slice(0, 2);
         const lastTwoTradesWereLosses = lastTwoCouncilTrades.length === 2 && lastTwoCouncilTrades.every(t => t.status === 'lost');

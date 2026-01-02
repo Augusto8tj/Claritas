@@ -1,5 +1,5 @@
 // /src/app/budget/page.tsx
-import { BudgetOverview } from "@/features/financials/components/budget/budget-overview";
+import { BudgetOverview } from "@/components/budget/budget-overview";
 
 export default function BudgetPage() {
   return (

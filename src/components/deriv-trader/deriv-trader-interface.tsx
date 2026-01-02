@@ -27,7 +27,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "../ui/popover";
 import { RadioGroup, RadioGroupItem } from "../ui/radio-group";
 
 import type { DurationUnit, RiseFallFormValues } from "@/lib/types";
-import { useDerivApi, type DurationLimits } from "@/hooks/use-deriv-api";
+import { useDerivApi } from "@/hooks/use-deriv-api";
 import { Switch } from "../ui/switch";
 
 type TradeType = 'rise_fall' | 'higher_lower' | 'touch_no_touch';

@@ -28,7 +28,7 @@ export function FontSelector() {
         {fonts.map((f) => (
           <button
             key={f.value}
-            onClick={() => setFont(f.value)}
+            onClick={() => setFont(f.value as any)}
             className={cn(
               "w-full rounded-md border-2 p-1",
               font === f.value ? "border-primary" : "border-transparent"

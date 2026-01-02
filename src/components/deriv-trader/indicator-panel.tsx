@@ -2,12 +2,12 @@
 'use client';
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import type { ChartData } from '@/lib/types';
+import type { ChartData, CandleData } from '@/lib/types';
 import type { Indicators } from '@/services/indicator-service';
 import { Gauge } from 'lucide-react';
 
 interface IndicatorPanelProps {
-  indicators: Indicators | null;
+  indicators: Indicators;
   latestDataPoint: ChartData | null;
 }
 
@@ -16,7 +16,7 @@ const formatValue = (value: number | null | undefined, precision = 4) => {
     return value.toFixed(precision);
 };
 
-const isCandle = (d: ChartData | null): d is { open: number, high: number, low: number, close: number } => d !== null && 'close' in d;
+const isCandle = (d: ChartData | null): d is CandleData => d !== null && 'close' in d;
 
 export function IndicatorPanel({ indicators, latestDataPoint }: IndicatorPanelProps) {
     if (!indicators) return null;

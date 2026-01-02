@@ -529,7 +529,8 @@ export function useRobotCouncilV2(
     const currentIndicators = calculateAllIndicators(
       tickCandles, 
       strategyCouncil, 
-      timePeriod
+      timePeriod,
+      contractDurationForIndicators
     );
     setIndicators(currentIndicators);
 
@@ -545,11 +546,11 @@ export function useRobotCouncilV2(
       tickCandles,
       {
         adx: currentIndicators.adx,
-        pdi: currentIndicators.pdi,
-        ndi: currentIndicators.ndi,
-        bbw: currentIndicators.bbw,
-        roc: currentIndicators.roc,
-        atr: currentIndicators.atr
+        pdi: currentIndicators.pdi || undefined,
+        ndi: currentIndicators.ndi || undefined,
+        bbw: currentIndicators.bbw || undefined,
+        roc: currentIndicators.roc || undefined,
+        atr: currentIndicators.atr || undefined,
       },
       currentRegime.regime,
       transitionMatrixRef.current
@@ -893,6 +894,8 @@ export function useRobotCouncilV2(
     if (councilExecutionRef.current.isExecuting) return;
     if (activeStakes + kellyStake > dailyBalance * 0.3) return;
     if (consensusProbability < 0.65) return;
+    if(consensusDirection === "HOLD") return;
+
 
     councilExecutionRef.current.isExecuting = true;
     

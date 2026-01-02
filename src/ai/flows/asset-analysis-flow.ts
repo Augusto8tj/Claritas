@@ -39,6 +39,15 @@ Dados de Preço Recentes para o ativo {{{symbol}}} (JSON):
 \'\'\'
 `;
 
+const analysisPrompt = ai.definePrompt(
+  {
+    name: 'assetAnalysisPrompt',
+    input: { schema: AssetAnalysisInputSchema },
+    output: { schema: AssetAnalysisOutputSchema },
+    prompt: ANALYSIS_PROMPT
+  },
+);
+
 const getAssetAnalysisFlow = ai.defineFlow(
   {
     name: 'getAssetAnalysisFlow',
@@ -46,15 +55,11 @@ const getAssetAnalysisFlow = ai.defineFlow(
     outputSchema: AssetAnalysisOutputSchema,
   },
   async (input) => {
-    const { output } = await ai.generate({
-      prompt: ANALYSIS_PROMPT,
-      model: 'gemini-2.5-flash',
-      input: {
-          ...input,
-          historicalData: JSON.stringify(input.historicalData), 
-          recentTrades: JSON.stringify(input.recentTrades)
-      },
-      output: { schema: AssetAnalysisOutputSchema },
+    const { output } = await analysisPrompt({
+        ...input,
+        // @ts-ignore - a IA espera strings, a conversão é necessária.
+        historicalData: JSON.stringify(input.historicalData), 
+        recentTrades: JSON.stringify(input.recentTrades)
     });
 
     if (!output) throw new Error("A IA não conseguiu analisar o ativo.");
