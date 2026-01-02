@@ -12,15 +12,23 @@ import { addDocumentNonBlocking, deleteDocumentNonBlocking, setDocumentNonBlocki
 export async function getTransactions(userId: string): Promise<Transaction[]> {
     if (!userId) throw new Error("User ID is required.");
     const transactionsCol = collection(db, `users/${userId}/transactions`);
-    // O erro será propagado para o chamador
-    const snapshot = await getDocs(transactionsCol);
-    return snapshot.docs.map(d => ({ id: d.id, ...d.data() } as Transaction));
+    try {
+        const snapshot = await getDocs(transactionsCol);
+        return snapshot.docs.map(d => ({ id: d.id, ...d.data() } as Transaction));
+    } catch (error) {
+        console.error(`[Service Error] getTransactions for user ${userId} failed:`, error);
+        throw error; // Re-lança o erro para o chamador tratar
+    }
 }
 
 export async function addTransaction(userId: string, data: Omit<Transaction, 'id'>): Promise<string> {
     if (!userId) throw new Error("User not authenticated.");
+    
+    // Adiciona o userId ao corpo do documento para cumprir a regra de segurança.
+    const dataWithUser = { ...data, userId };
+
     const transactionsCol = collection(db, `users/${userId}/transactions`);
-    addDocumentNonBlocking(transactionsCol, data);
+    addDocumentNonBlocking(transactionsCol, dataWithUser); // Usa o dado enriquecido
     return `Transação "${data.description}" de R$${data.amount.toFixed(2)} está a ser adicionada.`;
 }
 
@@ -39,16 +47,21 @@ export async function getFinancialSummary(userId: string): Promise<{ income: num
 export async function getGoals(userId: string): Promise<Goal[]> {
     if (!userId) throw new Error("User ID is required.");
     const goalsCol = collection(db, `users/${userId}/goals`);
-    // O erro será propagado para o chamador
-    const snapshot = await getDocs(goalsCol);
-    return snapshot.docs.map(d => ({ id: d.id, ...d.data() } as Goal));
+    try {
+        const snapshot = await getDocs(goalsCol);
+        return snapshot.docs.map(d => ({ id: d.id, ...d.data() } as Goal));
+    } catch (error) {
+        console.error(`[Service Error] getGoals for user ${userId} failed:`, error);
+        throw error; // Re-lança o erro para o chamador tratar
+    }
 }
 
 export async function addGoal(userId: string, name: string, targetAmount: number): Promise<Goal> {
     if (!userId) throw new Error("User not authenticated.");
     const goalsCol = collection(db, `users/${userId}/goals`);
     
-    const newGoalData: Omit<Goal, 'id' | 'imageUrl'> & {imageUrl?: string} = {
+    const newGoalData: Omit<Goal, 'id' | 'imageUrl'> & {imageUrl?: string, userId: string} = {
+        userId, // Adiciona o userId ao corpo do documento.
         name,
         targetAmount,
         currentAmount: 0,
@@ -91,15 +104,19 @@ export async function deleteGoal(userId: string, goalId: string): Promise<{ succ
 async function getBudgetLimits(userId: string): Promise<{ [key: string]: number }> {
     if (!userId) throw new Error("User ID is required.");
     const settingsDocRef = doc(db, `users/${userId}/settings/budget`);
-    // O erro será propagado para o chamador
-    const docSnap = await getDoc(settingsDocRef);
-    if (docSnap.exists()) {
-        return docSnap.data().limits || {};
+    try {
+        const docSnap = await getDoc(settingsDocRef);
+        if (docSnap.exists()) {
+            return docSnap.data().limits || {};
+        }
+        return {
+            "Moradia": 2000, "Alimentação": 1000, "Transporte": 500,
+            "Lazer": 400, "Compras": 600, "Outros": 300, "Contas": 800,
+        };
+    } catch (error) {
+         console.error(`[Service Error] getBudgetLimits for user ${userId} failed:`, error);
+        throw error;
     }
-    return {
-        "Moradia": 2000, "Alimentação": 1000, "Transporte": 500,
-        "Lazer": 400, "Compras": 600, "Outros": 300, "Contas": 800,
-    };
 }
 
 export async function getBudgetData(userId: string): Promise<BudgetCategory[]> {
@@ -194,15 +211,20 @@ export async function saveRobotPerformance(userId: string, performance: Enhanced
 export async function loadRobotPerformance(userId: string): Promise<EnhancedRobotPerformance[] | null> {
   if (!userId) return null;
   const docRef = doc(db, 'users', userId, 'trading_data', 'robot_council_performance');
-  const docSnap = await getDoc(docRef);
-  if (docSnap.exists()) {
-    const data = docSnap.data();
-    return (data.robots || []).map((r: any) => ({
-      ...r,
-      tradeHistory: r.tradeHistory || [],
-    }));
+  try {
+    const docSnap = await getDoc(docRef);
+    if (docSnap.exists()) {
+      const data = docSnap.data();
+      return (data.robots || []).map((r: any) => ({
+        ...r,
+        tradeHistory: r.tradeHistory || [],
+      }));
+    }
+    return null;
+  } catch (error) {
+    console.error(`[Service Error] loadRobotPerformance for user ${userId} failed:`, error);
+    throw error;
   }
-  return null;
 };
 
 
@@ -237,6 +259,11 @@ export async function getTradeDecisionLogs(userId: string): Promise<TradeDecisio
     if (!userId) return [];
     const logCollectionRef = collection(db, `users/${userId}/decision_logs`);
     const q = query(logCollectionRef, orderBy('timestamp', 'desc'));
-    const snapshot = await getDocs(q);
-    return snapshot.docs.map(d => d.data() as TradeDecisionLog);
+    try {
+        const snapshot = await getDocs(q);
+        return snapshot.docs.map(d => d.data() as TradeDecisionLog);
+    } catch (error) {
+        console.error(`[Service Error] getTradeDecisionLogs for user ${userId} failed:`, error);
+        throw error;
+    }
 }
