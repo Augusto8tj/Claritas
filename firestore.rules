@@ -94,8 +94,8 @@ service cloud.firestore {
       match /transactions/{transactionId} {
         allow get: if isOwner(userId);
         allow list: if isOwner(userId);
-        allow create: if isOwner(userId); // NOTE: Assumes a 'userId' field will be denormalized onto the transaction document for consistency.
-        allow update: if isExistingOwner(userId);
+        allow create: if isOwner(userId) && request.resource.data.userId == userId;
+        allow update: if isExistingOwner(userId) && request.resource.data.userId == resource.data.userId;
         allow delete: if isExistingOwner(userId);
       }
 
