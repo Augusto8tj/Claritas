@@ -215,6 +215,71 @@ export default function HelpPage() {
                 </ul>
               </AccordionContent>
             </AccordionItem>
+
+            <AccordionItem value="item-15">
+                <AccordionTrigger className="text-lg font-semibold">O Cérebro V2.0: Como Funciona o Deriv Trader 2.0</AccordionTrigger>
+                <AccordionContent className="text-base leading-relaxed space-y-4">
+                    <p>O Deriv Trader 2.0 representa uma evolução fundamental, saindo de um sistema de "consenso simples" para um verdadeiro <strong>"Cérebro Quantitativo"</strong>, que opera de forma semelhante a uma mesa de operações de um fundo de investimento de alta frequência.</p>
+                    
+                    <h3 className="text-md font-bold mt-3">1. Contexto é Rei: A Arquitetura "Regime-Aware"</h3>
+                    <p>A cada momento, um modelo inspirado em <strong>Hidden Markov Models (HMM)</strong> classifica o mercado num de cinco "regimes" (`TREND_UP`, `RANGING`, etc.). O sistema sabe que usar um robô oscilador (como o RSI) numa tendência forte é desastroso. Portanto, o Cérebro V2.0 <strong>ativa apenas os robôs especialistas que são adequados para o regime atual</strong>, silenciando os outros.</p>
+
+                    <h3 className="text-md font-bold mt-3">2. Consenso Bayesiano: A Sabedoria Ponderada</h3>
+                    <p>Em vez de uma simples contagem de votos, o sistema usa <strong>Inferência Bayesiana</strong>. Quando um robô vota, o sistema combina a confiança do sinal atual com a <strong>taxa de acerto histórica daquele robô, naquele regime específico</strong>. O resultado é uma Probabilidade de Consenso Bayesiano muito mais precisa e ajustada à realidade.</p>
+
+                    <h3 className="text-md font-bold mt-3">3. Gestão de Risco Científica: O Critério de Kelly</h3>
+                    <p>O valor da aposta (`stake`) é calculado cientificamente usando o <strong>Critério de Kelly Fracionado</strong>. Se a Probabilidade Bayesiana de sucesso é alta, o sistema aposta de forma mais agressiva. Se a vantagem é pequena, ele aposta o mínimo para proteger o capital. O risco é ajustado dinamicamente a cada segundo.</p>
+
+                    <h3 className="text-md font-bold mt-3">4. Veto de Microestrutura: O "Guarda-Costas" Final</h3>
+                    <p>Mesmo com um consenso forte, uma camada final de proteção analisa os últimos 10-20 ticks. Se detetar uma pressão de mercado súbita e contrária (ex: um pico de volume de venda), o "guarda-costas" <strong>vetará a operação</strong>, prevenindo entradas em movimentos anormais ou "flash crashes".</p>
+                </AccordionContent>
+            </AccordionItem>
+
+            <AccordionItem value="item-16">
+                <AccordionTrigger className="text-lg font-semibold">Conheça a Mesa: A Estratégia de Cada Robô</AccordionTrigger>
+                <AccordionContent className="text-base leading-relaxed space-y-4">
+                    <p>A nossa "Mesa Operacional" é um ecossistema de especialistas, cada um com uma visão única do mercado, agrupados em "comités".</p>
+
+                    <h3 className="text-md font-bold mt-3">1. Comité de Momentum: Os "Velocistas"</h3>
+                    <p>Obcecados com a velocidade e aceleração do preço. São os primeiros a detetar quando o mercado ganha ou perde força.</p>
+                    <ul className="list-disc pl-6 space-y-2 text-sm">
+                        <li><strong>RSI & STOCHASTIC:</strong> Especialistas em reversão à média. Apostam contra a tendência de curtíssimo prazo quando o mercado está "esticado" (sobrecomprado ou sobrevendido).</li>
+                        <li><strong>MACD:</strong> Um confirmador de momentum. Vota apenas *depois* de um cruzamento, validando a força da nova direção.</li>
+                        <li><strong>Awesome Oscillator, TRIX, ROC, RVI:</strong> Detetam a aceleração e a "convicção" por trás de um movimento, confirmando que a tendência tem força para continuar.</li>
+                    </ul>
+
+                    <h3 className="text-md font-bold mt-3">2. Comité de Tendência: Os "Navegadores"</h3>
+                    <p>Focam-se na direção principal e sustentada do mercado.</p>
+                    <ul className="list-disc pl-6 space-y-2 text-sm">
+                        <li><strong>Moving Average Cross:</strong> Estratégia clássica que sinaliza uma mudança de tendência quando a média móvel curta cruza a longa.</li>
+                        <li><strong>ADX:</strong> O "rei" da força da tendência. Atua como um filtro, impedindo operações em mercados laterais e sem direção.</li>
+                        <li><strong>Parabolic SAR:</strong> Um seguidor de tendência agressivo, que mantém o voto na direção do movimento até que uma reversão seja sinalizada.</li>
+                    </ul>
+
+                    <h3 className="text-md font-bold mt-3">3. Comité de Volatilidade e Estrutura: Os "Arquitetos"</h3>
+                    <p>Analisam a "arquitetura" do mercado, como a sua largura e canais.</p>
+                    <ul className="list-disc pl-6 space-y-2 text-sm">
+                        <li><strong>Bollinger Bands:</strong> Especialista em reversão à média, votando quando o preço toca as bandas externas.</li>
+                        <li><strong>Ichimoku Cloud:</strong> Um "estratega geopolítico" que fornece uma visão completa de suporte, resistência e equilíbrio do mercado.</li>
+                        <li><strong>KAMA & Donchian Channels:</strong> Identificam rompimentos (breakouts) e adaptam-se à volatilidade do mercado.</li>
+                    </ul>
+
+                    <h3 className="text-md font-bold mt-3">4. Comité de Volume e Fluxo de Ordens: Os "Detetives"</h3>
+                    <p>Analisam o combustível por trás do movimento: o volume.</p>
+                    <ul className="list-disc pl-6 space-y-2 text-sm">
+                        <li><strong>VWAP:</strong> Usa o preço médio ponderado pelo volume como referência de "preço justo". Preço acima do VWAP é um sinal de alta.</li>
+                        <li><strong>MFI & OBV:</strong> Medem se o "dinheiro inteligente" está a entrar ou a sair de um ativo, confirmando tendências com base no fluxo de volume.</li>
+                    </ul>
+
+                     <h3 className="text-md font-bold mt-3">5. Comité Estatístico e de Padrões: Os "Académicos"</h3>
+                    <p>Usam modelos matemáticos e reconhecimento de padrões.</p>
+                    <ul className="list-disc pl-6 space-y-2 text-sm">
+                        <li><strong>Z-SCORE:</strong> Deteta desvios estatísticos extremos, apostando num regresso à média.</li>
+                        <li><strong>STOCHASTIC RSI:</strong> Um "sismógrafo" ultra-sensível para micro-sinais em mercados muito rápidos.</li>
+                        <li><strong>PRICE ACTION PATTERN:</strong> Reconhece padrões de velas, como o "Martelo" (Hammer), que são fortes sinais de reversão.</li>
+                    </ul>
+                </AccordionContent>
+            </AccordionItem>
             
             <AccordionItem value="item-10">
               <AccordionTrigger className="text-lg font-semibold">
