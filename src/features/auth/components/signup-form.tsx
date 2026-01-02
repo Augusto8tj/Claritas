@@ -1,4 +1,4 @@
-// src/features/auth/components/signup-form.tsx
+
 "use client";
 
 import { useState } from "react";
@@ -51,15 +51,13 @@ export function SignupForm() {
         displayName: data.name,
       });
 
-      // Enviar email de verificação
       await sendEmailVerification(userCredential.user);
+      
       toast({
         title: "Verifique seu Email",
         description: "Um link de verificação foi enviado para o seu endereço de email.",
       });
-
       // O AuthGuard irá lidar com o redirecionamento automaticamente
-      // após o estado de autenticação ser atualizado.
     } catch (error: any) {
       toast({
         variant: "destructive",
