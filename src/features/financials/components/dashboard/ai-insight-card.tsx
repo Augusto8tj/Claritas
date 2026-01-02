@@ -4,7 +4,6 @@ import { getInsights } from "@/services/financial-data-service";
 import { Lightbulb } from "lucide-react";
 
 export async function AIInsightCard() {
-  // Alterado para buscar insights reais da IA em vez de dados de exemplo.
   const insights = await getInsights();
 
   return (

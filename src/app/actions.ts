@@ -11,9 +11,8 @@ import WebSocket from 'ws';
 import { getDoc, doc } from 'firebase/firestore';
 
 
-export async function getChatbotInsightsResponse(data: FinancialChatbotInsightsInput, userId: string) {
+export async function getChatbotInsightsResponse(data: FinancialChatbotInsightsInput) {
   try {
-    // Pass userId to the tool context if needed, for now tools will infer it
     const result = await financialChatbotInsights(data);
     return { success: result.response };
   } catch (e) {

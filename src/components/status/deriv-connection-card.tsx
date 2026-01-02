@@ -5,59 +5,56 @@ import React, { useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { checkDerivConnection } from '@/app/actions';
 import { useDerivApi } from '@/hooks/use-deriv-api';
 import { Loader2, AlertTriangle, CheckCircle, Link } from 'lucide-react';
 
 export function DerivConnectionCard() {
-    const [isLoading, setIsLoading] = useState(false);
-    const [result, setResult] = useState<{ success: boolean; error?: string; assetCount?: number } | null>(null);
-    const { activeToken, accountType } = useDerivApi();
+    const [isChecking, setIsChecking] = useState(false);
+    const { isConnected, isConnecting, connectionError, reconnect, accountType } = useDerivApi();
 
     const handleCheckConnection = async () => {
-        setIsLoading(true);
-        setResult(null);
-
-        if (!activeToken) {
-            setResult({ success: false, error: "Nenhum token de API ativo (demo ou real) está configurado no seu navegador. Por favor, adicione um na página de configurações." });
-            setIsLoading(false);
-            return;
-        }
-
-        const response = await checkDerivConnection(activeToken);
-        setResult(response);
-        setIsLoading(false);
+        setIsChecking(true);
+        await reconnect();
+        setIsChecking(false);
     };
 
     return (
         <Card>
             <CardHeader>
                 <CardTitle className="text-lg flex items-center gap-2"><Link className="h-5 w-5" />Diagnóstico de Conexão da Corretora</CardTitle>
-                <CardDescription>Verifique se o seu token de API da Deriv é válido e se a conexão pode ser estabelecida.</CardDescription>
+                <CardDescription>Use para forçar uma reconexão ou diagnosticar problemas com o token da API da Deriv.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
                 <Alert variant="default">
                     <AlertTriangle className="h-4 w-4" />
                     <AlertTitle>Como Usar</AlertTitle>
                     <AlertDescription>
-                        Se o card "API Deriv" acima mostrar uma falha na conexão, clique no botão abaixo. Isso tentará usar o seu token ativo ({accountType}) para se conectar e validar.
+                        Se o card "API Deriv" acima mostrar uma falha, clique no botão abaixo. Isso tentará usar o seu token ativo ({accountType}) para se reconectar e validar.
                     </AlertDescription>
                 </Alert>
-                <Button onClick={handleCheckConnection} disabled={isLoading}>
-                    {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                    {isLoading ? "Verificando..." : "Verificar Conexão da Deriv"}
+                <Button onClick={handleCheckConnection} disabled={isConnecting || isChecking}>
+                    {(isConnecting || isChecking) ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                    {(isConnecting || isChecking) ? "A verificar..." : "Forçar Reconexão e Validar"}
                 </Button>
 
-                {result && (
+                {connectionError && !isConnecting && (
                     <div className="space-y-1.5">
-                        <Alert variant={result.success ? "default" : "destructive"} className={result.success ? "bg-green-500/10 border-green-500/50" : ""}>
-                            {result.success ? <CheckCircle className="h-4 w-4 text-green-700" /> : <AlertTriangle className="h-4 w-4" />}
-                            <AlertTitle className={result.success ? "text-green-800" : ""}>{result.success ? "Diagnóstico Concluído" : "Falha no Diagnóstico"}</AlertTitle>
+                        <Alert variant="destructive">
+                            <AlertTriangle className="h-4 w-4" />
+                            <AlertTitle>Falha na Conexão</AlertTitle>
                             <AlertDescription className="whitespace-pre-wrap text-xs">
-                                {result.success
-                                    ? `Conexão bem-sucedida! O token é válido e ${result.assetCount} ativos foram encontrados.`
-                                    : result.error
-                                }
+                                {connectionError}
+                            </AlertDescription>
+                        </Alert>
+                    </div>
+                )}
+                 {isConnected && !isConnecting && !connectionError && (
+                    <div className="space-y-1.5">
+                        <Alert variant="default" className="bg-green-500/10 border-green-500/50">
+                            <CheckCircle className="h-4 w-4 text-green-700" />
+                            <AlertTitle className="text-green-800">Conexão Ativa</AlertTitle>
+                            <AlertDescription className="whitespace-pre-wrap text-xs text-green-700">
+                                A conexão com a API da Deriv está a funcionar corretamente.
                             </AlertDescription>
                         </Alert>
                     </div>
