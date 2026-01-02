@@ -57,3 +57,4 @@ export async function deleteGoal(userId: string, goalId: string): Promise<{ succ
         return { success: false, error: errorMessage };
     }
 }
+

@@ -79,7 +79,7 @@ export async function addGoal(userId: string, name: string, targetAmount: number
             .then(imageResult => {
                 if (imageResult?.imageUrl) {
                     docRefPromise.then(docRef => {
-                        if (docRef && docRef.id) {
+                        if (docRef?.id) {
                             const goalDoc = doc(db, `users/${userId}/goals`, docRef.id);
                             setDocumentNonBlocking(goalDoc, { imageUrl: imageResult.imageUrl }, { merge: true });
                         }
