@@ -9,7 +9,6 @@ import { addGoal, getFinancialSummary, getBudgetData } from '@/services/financia
 import { addTransaction as addTransactionAction } from '@/app/actions/transaction-actions';
 import { z } from 'zod';
 import { revalidatePath } from 'next/cache';
-import { getFlowsData } from 'genkit';
 
 const userIdSchema = z.string().describe("The unique identifier of the user.");
 
@@ -20,8 +19,7 @@ export const getFinancialSummaryTool = ai.defineTool(
     inputSchema: z.object({}), // O input da IA pode ser vazio
     outputSchema: z.string().describe("Uma frase resumindo a renda, despesas e saldo do usuário."),
   },
-  async () => {
-    const { userId } = getFlowsData();
+  async (_, { userId }) => { // Correctly access userId from context
     if (!userId) throw new Error("ID do usuário não encontrado no contexto do fluxo.");
     
     console.log(`getFinancialSummaryTool foi chamada para o usuário ${userId}`);
@@ -51,8 +49,7 @@ export const getFinancialInsightsTool = ai.defineTool(
     inputSchema: z.object({}),
     outputSchema: z.string().describe('Uma string contendo os insights financeiros, separados por quebras de linha.'),
   },
-  async () => {
-    const { userId } = getFlowsData();
+  async (_, { userId }) => { // Correctly access userId from context
     if (!userId) throw new Error("ID do usuário não encontrado no contexto do fluxo.");
 
     console.log(`getFinancialInsightsTool foi chamada para o usuário ${userId}`);
@@ -77,8 +74,7 @@ export const addTransactionTool = ai.defineTool(
     }),
     outputSchema: z.string(),
   },
-  async (input) => {
-    const { userId } = getFlowsData();
+  async (input, { userId }) => { // Correctly access userId from context
     if (!userId) throw new Error("ID do usuário não encontrado no contexto do fluxo.");
 
     const result = await addTransactionAction({
@@ -105,8 +101,7 @@ export const addGoalTool = ai.defineTool(
     }),
     outputSchema: z.string(),
   },
-  async ({ name, targetAmount }) => {
-    const { userId } = getFlowsData();
+  async ({ name, targetAmount }, { userId }) => { // Correctly access userId from context
     if (!userId) throw new Error("ID do usuário não encontrado no contexto do fluxo.");
 
     const newGoal = await addGoal(userId, name, targetAmount);
@@ -131,8 +126,7 @@ export const getBudgetStatusTool = ai.defineTool(
         inputSchema: z.object({}),
         outputSchema: BudgetStatusSchema,
     },
-    async () => {
-        const { userId } = getFlowsData();
+    async (_, { userId }) => { // Correctly access userId from context
         if (!userId) throw new Error("ID do usuário não encontrado no contexto do fluxo.");
         
         console.log(`getBudgetStatusTool foi chamada para o usuário ${userId}`);

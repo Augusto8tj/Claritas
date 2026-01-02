@@ -18,7 +18,6 @@ import {
   OperationAnalysisInputSchema,
 } from '@/lib/types';
 import { getDerivApiDataForAnalysis } from '@/services/deriv-data-service';
-import { getFlowsData } from 'genkit';
 
 // Ferramenta para resumo geral do mercado (mantida como estava)
 const marketDataPrompt = ai.definePrompt({
@@ -61,8 +60,7 @@ export const getAssetAnalysisTool = ai.defineTool(
     }),
     outputSchema: AssetAnalysisOutputSchema,
   },
-  async ({ symbol }) => {
-    const { userId } = getFlowsData();
+  async ({ symbol }, { userId }) => { // Correctly access userId from context
     if (!userId) throw new Error("ID do usuário é necessário para obter dados da API Deriv.");
     
     const analysisData = await getDerivApiDataForAnalysis(userId, symbol);
@@ -98,8 +96,7 @@ export const analyzeOperationsTool = ai.defineTool(
     }),
     outputSchema: OperationAnalysisOutputSchema,
   },
-  async ({ symbol }) => {
-    const { userId } = getFlowsData();
+  async ({ symbol }, { userId }) => { // Correctly access userId from context
     if (!userId) throw new Error("ID do usuário é necessário para obter o histórico de operações.");
 
     const apiData = await getDerivApiDataForAnalysis(userId, symbol || '');
