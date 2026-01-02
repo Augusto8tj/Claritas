@@ -12,13 +12,11 @@ import { Label } from '@/components/ui/label';
 
 export function ListModelsCard() {
     const [isLoading, setIsLoading] = useState(false);
-    const [result, setResult] = useState<string | null>(null);
-    const [error, setError] = useState<string | null>(null);
+    const [result, setResult] = useState<{ success: boolean; data?: string; error?: string; } | null>(null);
 
     const handleListModels = async () => {
         setIsLoading(true);
         setResult(null);
-        setError(null);
         try {
             const response = await checkGeminiConnection();
             if (response.success && response.models) {
@@ -26,13 +24,13 @@ export function ListModelsCard() {
                     .filter((model: any) => model.supportedGenerationMethods.includes('generateContent'))
                     .map((model: any) => `- ${model.displayName || model.name} (${model.name})`)
                     .join('\n') || 'Nenhum modelo compatível com "generateContent" foi encontrado.';
-                setResult(`Conexão bem-sucedida!\n\nModelos de geração de conteúdo disponíveis:\n\n${modelList}`);
+                setResult({ success: true, data: `Conexão bem-sucedida!\n\nModelos de geração de conteúdo disponíveis:\n\n${modelList}` });
             } else {
                 throw new Error(response.error || "A verificação da IA retornou uma falha desconhecida.");
             }
         } catch (err) {
             const errorMessage = err instanceof Error ? err.message : "Ocorreu um erro desconhecido.";
-            setError(errorMessage);
+            setResult({ success: false, error: errorMessage });
         } finally {
             setIsLoading(false);
         }
@@ -58,20 +56,13 @@ export function ListModelsCard() {
                 </Button>
 
                 {result && (
-                     <Alert variant="default" className="bg-green-500/10 border-green-500/50">
-                        <CheckCircle className="h-4 w-4 text-green-700"/>
-                        <AlertTitle className="text-green-800">Diagnóstico Concluído</AlertTitle>
+                     <Alert variant={result.success ? "default" : "destructive"} className={result.success ? "bg-green-500/10 border-green-500/50" : ""}>
+                        {result.success ? <CheckCircle className="h-4 w-4 text-green-700"/> : <AlertTriangle className="h-4 w-4"/>}
+                        <AlertTitle className={result.success ? "text-green-800 font-bold" : "font-bold"}>
+                            {result.success ? "Diagnóstico Concluído" : "Falha no Diagnóstico"}
+                        </AlertTitle>
                         <AlertDescription className="whitespace-pre-wrap text-xs">
-                            {result}
-                        </AlertDescription>
-                    </Alert>
-                )}
-                {error && (
-                    <Alert variant="destructive">
-                        <AlertTriangle className="h-4 w-4"/>
-                        <AlertTitle>Erro na Verificação</AlertTitle>
-                        <AlertDescription className="whitespace-pre-wrap text-xs">
-                            {error}
+                            {result.success ? result.data : result.error}
                         </AlertDescription>
                     </Alert>
                 )}
