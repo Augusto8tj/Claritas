@@ -60,7 +60,11 @@ export function ChatInterfaceInsights() {
 
     form.reset();
 
-    const response = await getChatbotInsightsResponse({ history, query: data.query });
+    const response = await getChatbotInsightsResponse({ 
+      history, 
+      query: data.query,
+      userId: user.uid,
+    });
     
     if (response.success) {
       const assistantMessage: Message = {
