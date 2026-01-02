@@ -79,6 +79,27 @@ function renderStrategyParams(robot: RobotStrategy): string {
             return `${robot.fastPeriod}/${robot.slowPeriod}/${robot.signalPeriod}`;
         case 'ADX_TREND':
             return `Tendência > ${robot.trendStrengthThreshold}`;
+        case 'PRICE_ACTION_PATTERN':
+            const pattern = robot.pattern === 'hammer' ? 'Martelo' : 'Estrela Cadente';
+            return `Padrão: ${pattern}`;
+        case 'Z_SCORE':
+            return `Z-Score: ${robot.zScoreThreshold}`;
+        case 'VOLUME_PROFILE':
+            return `POC ${robot.profileBars} barras`;
+        case 'PARABOLIC_SAR':
+            return `AF: ${robot.acceleration}, MAX: ${robot.maxAcceleration}`;
+        case 'CHANDELIER_EXIT':
+            return `Período: ${robot.chandelierPeriod}, Mult: ${robot.chandelierMultiplier}`;
+        case 'TRIX':
+        case 'ROC':
+        case 'KAMA':
+        case 'DONCHIAN_CHANNELS':
+            return `Período: ${robot.period}`;
+        case 'AWESOME_OSCILLATOR':
+        case 'ICHIMOKU_CLOUD':
+        case 'VWAP':
+        case 'OBV':
+             return 'Parâmetros Padrão';
         default:
             return 'N/A';
     }
