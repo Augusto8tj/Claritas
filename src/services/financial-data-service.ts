@@ -87,7 +87,7 @@ export async function addGoal(userId: string, name: string, targetAmount: number
     };
 
     // A operação de escrita já usa o non-blocking com tratamento de erro.
-    const docRef = await addDoc(goalsCol, newGoalData);
+    const docRef = await addDocumentNonBlocking(goalsCol, newGoalData);
 
     generateGoalImage({ goalName: name })
         .then(imageResult => {
