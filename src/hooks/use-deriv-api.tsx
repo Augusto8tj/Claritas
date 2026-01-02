@@ -228,13 +228,18 @@ export const DerivApiProvider = ({ children }: { children: ReactNode }) => {
   }, [activeSymbol, assetGroups]);
 
 
-  const makeRequest = useCallback(<T,>(request: object): Promise<T> => {
+  const makeRequest = useCallback(<T,>(request: object, noResponse = false): Promise<T> => {
     return new Promise((resolve, reject) => {
         const ws = wsRef.current;
         if (!ws || ws.readyState !== WebSocket.OPEN) {
             return reject(new Error("WebSocket is not connected."));
         }
         
+        if (noResponse) {
+            ws.send(JSON.stringify(request));
+            return resolve({} as T);
+        }
+
         const req_id = Date.now() + Math.floor(Math.random() * 1000000);
         const payload = { ...request, req_id };
         
@@ -245,23 +250,20 @@ export const DerivApiProvider = ({ children }: { children: ReactNode }) => {
             }
         }, 15000);
         
-        const originalResolve = resolve;
-        const originalReject = reject;
-        
         promisesRef.current.set(String(req_id), {
             resolve: (value: any) => {
                 clearTimeout(timeoutId);
-                originalResolve(value);
+                resolve(value);
             },
             reject: (reason: any) => {
                 clearTimeout(timeoutId);
-                originalReject(reason);
+                reject(reason);
             }
         });
 
         ws.send(JSON.stringify(payload));
     });
-  }, []);
+}, []);
   
     const addTradeAnnotation = useCallback((annotation: Omit<TradeAnnotation, 'id'>) => {
       const newAnnotation: TradeAnnotation = {
@@ -324,7 +326,7 @@ const subscribeToMarketData = useCallback(async (symbol: string) => {
         try { 
             await makeRequest({ forget: activeSubscriptionIdRef.current }); 
         } catch (e) { 
-            console.log('[Market Data] Previous subscription cancelled'); 
+            console.log('[Market Data] Previous subscription could not be forgotten.'); 
         }
         activeSubscriptionIdRef.current = null;
     }
@@ -362,12 +364,10 @@ const subscribeToMarketData = useCallback(async (symbol: string) => {
             };
         }
         
-        const subResponse: any = await makeRequest(subRequest);
-        
-        if (subResponse.subscription?.id) {
-            activeSubscriptionIdRef.current = subResponse.subscription.id;
-            console.log(`[Market Data] Subscribed to ${symbol} (${chartType}) - ID: ${subResponse.subscription.id}`);
-        }
+        // A subscrição não requer uma resposta com req_id, então usamos 'noResponse'.
+        // O ID da subscrição virá numa mensagem separada.
+        await makeRequest(subRequest, true);
+        console.log(`[Market Data] Subscription request sent for ${symbol} (${chartType}).`);
 
     } catch (error: any) {
         console.error(`[Market Data] Error for ${symbol}:`, error);
@@ -529,6 +529,16 @@ const subscribeToMarketData = useCallback(async (symbol: string) => {
                 return;
             }
 
+            // Handle subscription confirmations
+            if (response.subscription && response.subscription.id) {
+                const req = response.echo_req;
+                if (req && (req.ticks || req.ticks_history)) {
+                    activeSubscriptionIdRef.current = response.subscription.id;
+                    console.log(`[Market Data] Confirmed subscription to ${req.ticks || req.ticks_history} - ID: ${response.subscription.id}`);
+                }
+            }
+
+
             switch (response.msg_type) {
                 case 'balance':
                     setAccountBalance({ balance: response.balance.balance, currency: response.balance.currency, loading: false });
@@ -664,6 +674,10 @@ const subscribeToMarketData = useCallback(async (symbol: string) => {
   
     ws.onclose = (event) => {
       const { wasClean, code, reason } = event;
+      // Rejeita todas as promessas pendentes ao fechar a conexão
+      promisesRef.current.forEach((p) => p.reject(new Error("WebSocket connection closed.")));
+      promisesRef.current.clear();
+      
       if (!wasClean) {
         setConnectionError(`A conexão foi fechada: Código ${code} (${reason || 'Fecho Anormal'}).`);
       }
