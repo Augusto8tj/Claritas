@@ -10,13 +10,12 @@ import { z } from 'zod';
 import { getAssetAnalysis } from '@/ai/flows/asset-analysis-flow';
 import { analyzeMqlCode } from '@/ai/flows/mql-analyzer-flow';
 import { analyzeOperations } from '@/ai/flows/operation-analysis-flow';
-import { AssetAnalysisOutputSchema, AssetAnalysisInputSchema } from '@/ai/flows/asset-analysis.types';
+import { AssetAnalysisOutputSchema } from '@/ai/flows/asset-analysis.types';
 import {
   MqlAnalyzerInputSchema,
   MqlAnalyzerOutputSchema,
   OperationAnalysisInputSchema,
   OperationAnalysisOutputSchema,
-  OperationSchema,
 } from '@/lib/types';
 import { getDerivApiDataForAnalysis } from '@/services/deriv-data-service';
 

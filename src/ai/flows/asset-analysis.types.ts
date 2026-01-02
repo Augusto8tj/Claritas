@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { OperationSchema } from '@/lib/types';
+import { OperationSchema } from '@/lib/types/trading.types';
 
 // From asset-analysis.types.ts
 export const AssetAnalysisInputSchema = z.object({

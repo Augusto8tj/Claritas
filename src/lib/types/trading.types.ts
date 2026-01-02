@@ -20,6 +20,21 @@ export interface MicrostructureFeatures {
   meanReversion: number;
 }
 
+export const OperationSchema = z.object({
+  id: z.number(),
+  asset: z.string(),
+  direction: z.enum(['rise', 'fall']),
+  stake: z.number(),
+  status: z.enum(['pending', 'won', 'lost']),
+  result: z.number().optional(),
+  timestamp: z.string().describe("The ISO 8601 timestamp of when the operation was created."),
+  initiator: z.string().optional(),
+  duration: z.number().optional(),
+  durationUnit: z.string().optional(),
+  entryPrice: z.number().optional(),
+});
+
+
 export const BayesianVoteSchema = z.object({
     vote: z.enum(['RISE', 'FALL', 'HOLD']),
     reason: z.string().describe("Justificativa técnica para o voto, ex: 'RSI (28.5) < 30' ou 'Cruzamento de Médias'"),
