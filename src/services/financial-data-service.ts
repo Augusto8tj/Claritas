@@ -1,23 +1,17 @@
 // /src/services/financial-data-service.ts
 'use server';
 
-/**
- * @fileOverview A financial data service that interacts with Firebase Firestore.
- * This service now uses non-blocking updates and propagates raw errors.
- */
 import { db } from '@/lib/firebase';
-import { collection, getDocs, doc, setDoc, query, where, orderBy, getDoc, addDoc, deleteDoc, DocumentReference, DocumentData } from 'firebase/firestore';
+import { collection, getDocs, doc, setDoc, query, where, orderBy, getDoc, addDoc, deleteDoc } from 'firebase/firestore';
 import type { Goal, BudgetCategory, Transaction, RobotPerformance, TradeDecisionLog, EnhancedRobotPerformance } from '@/lib/types';
 import { generateGoalImage } from '@/ai/flows/goal-image-generation';
-import { addDocumentNonBlocking, deleteDocumentNonBlocking, setDocumentNonBlocking } from '@/firebase/non-blocking-updates';
-
 
 // --- Transactions ---
 
 export async function getTransactions(userId: string): Promise<Transaction[]> {
     if (!userId) return [];
     const transactionsCol = collection(db, `users/${userId}/transactions`);
-    // O erro será capturado pelo componente cliente que chama esta função
+    // Errors will be caught by the calling client component
     const snapshot = await getDocs(transactionsCol);
     return snapshot.docs.map(d => ({ id: d.id, ...d.data() } as Transaction));
 }
@@ -26,8 +20,15 @@ export async function addTransaction(userId: string, data: Omit<Transaction, 'id
     if (!userId) throw new Error("User not authenticated.");
     const transactionsCol = collection(db, `users/${userId}/transactions`);
     
-    // Use non-blocking update
-    addDocumentNonBlocking(transactionsCol, data);
+    // Non-blocking update. Errors will be caught and emitted on the client.
+    addDoc(transactionsCol, data).catch(async (serverError) => {
+        const { FirestorePermissionError, errorEmitter } = await import('@/firebase');
+        errorEmitter.emit('permission-error', new FirestorePermissionError({
+            path: transactionsCol.path,
+            operation: 'create',
+            requestResourceData: data,
+        }));
+    });
 
     return `Transação "${data.description}" de R$${data.amount.toFixed(2)} está a ser adicionada.`;
 }
@@ -36,6 +37,7 @@ export async function addTransaction(userId: string, data: Omit<Transaction, 'id
 // --- Financial Summary ---
 
 export async function getFinancialSummary(userId: string): Promise<{ income: number; expenses: number; balance: number; }> {
+    // This function now depends on getTransactions, which will propagate errors.
     const transactions = await getTransactions(userId);
     const income = transactions.filter(t => t.type === 'income').reduce((acc, t) => acc + t.amount, 0);
     const expenses = transactions.filter(t => t.type === 'expense').reduce((acc, t) => acc + t.amount, 0);
@@ -47,7 +49,7 @@ export async function getFinancialSummary(userId: string): Promise<{ income: num
 export async function getGoals(userId: string): Promise<Goal[]> {
     if (!userId) return [];
     const goalsCol = collection(db, `users/${userId}/goals`);
-    // O erro será capturado pelo componente cliente
+    // Errors will be caught by the calling client component
     const snapshot = await getDocs(goalsCol);
     return snapshot.docs.map(d => ({ id: d.id, ...d.data() } as Goal));
 }
@@ -64,39 +66,28 @@ export async function addGoal(userId: string, name: string, targetAmount: number
         imageHint: "new goal"
     };
 
-    // Use non-blocking update and don't await the promise here in the service
-    const docRefPromise = addDocumentNonBlocking(goalsCol, newGoalData);
+    const docRef = await addDoc(goalsCol, newGoalData);
 
     generateGoalImage({ goalName: name })
         .then(imageResult => {
             if (imageResult?.imageUrl) {
-                // The addDocumentNonBlocking promise will eventually resolve with a docRef.
-                docRefPromise.then(docRef => {
-                    if (docRef?.id) {
-                        const goalDoc = doc(db, `users/${userId}/goals`, docRef.id);
-                        setDocumentNonBlocking(goalDoc, { imageUrl: imageResult.imageUrl }, { merge: true });
-                    }
-                });
+                const goalDoc = doc(db, `users/${userId}/goals`, docRef.id);
+                setDoc(goalDoc, { imageUrl: imageResult.imageUrl }, { merge: true })
+                    .catch(updateError => console.error("Falha ao atualizar a imagem da meta:", updateError));
             }
         })
         .catch(imageError => {
             console.error("Falha ao gerar imagem da meta, usando placeholder.", imageError);
         });
 
-    // To provide immediate feedback to the UI, we'll optimistically return what we *expect* the goal to look like.
-    // The Server Action will await a temporary ID.
-    const tempId = `temp_${Date.now()}`;
-    return { id: tempId, ...newGoalData };
+    return { id: docRef.id, ...newGoalData };
 }
 
 
 export async function deleteGoal(userId: string, goalId: string): Promise<{ success: boolean }> {
     if (!userId) throw new Error("User not authenticated.");
     const goalDoc = doc(db, `users/${userId}/goals`, goalId);
-    
-    // Use non-blocking delete
-    deleteDocumentNonBlocking(goalDoc);
-
+    await deleteDoc(goalDoc);
     return { success: true };
 }
 
@@ -104,9 +95,10 @@ export async function deleteGoal(userId: string, goalId: string): Promise<{ succ
 // --- Budget ---
 
 async function getBudgetLimits(userId: string): Promise<{ [key: string]: number }> {
-    const settingsDoc = doc(db, `users/${userId}/settings`, 'budget');
-    // O erro será capturado pelo componente cliente
-    const docSnap = await getDoc(settingsDoc);
+    if (!userId) return {};
+    const settingsDocRef = doc(db, `users/${userId}/settings`, 'budget');
+    // Errors will be caught by the calling client component
+    const docSnap = await getDoc(settingsDocRef);
     if (docSnap.exists()) {
         return docSnap.data().limits || {};
     }
@@ -143,20 +135,14 @@ export async function updateBudgetLimit(userId: string, name: string, newLimit: 
     const settingsDocRef = doc(db, `users/${userId}/settings`, 'budget');
     const dataToSet = { [`limits.${name}`]: newLimit };
 
-    // Use non-blocking update
-    setDocumentNonBlocking(settingsDocRef, dataToSet, { merge: true });
+    await setDoc(settingsDocRef, dataToSet, { merge: true });
 
-    try {
-        const transactions = await getTransactions(userId);
-        const spent = transactions
-            .filter(t => t.type === 'expense' && t.category === name)
-            .reduce((sum, t) => sum + t.amount, 0);
+    const transactions = await getTransactions(userId);
+    const spent = transactions
+        .filter(t => t.type === 'expense' && t.category === name)
+        .reduce((sum, t) => sum + t.amount, 0);
 
-        return { name, budgeted: newLimit, spent };
-    } catch (error) {
-        console.error("Error fetching transactions after budget update:", error);
-        return { name, budgeted: newLimit, spent: 0 }; // Return best guess
-    }
+    return { name, budgeted: newLimit, spent };
 }
 
 
@@ -178,41 +164,41 @@ export async function getInsights(): Promise<string[]> {
 const sanitizePerformanceValue = (value: number | undefined | null): number => (value === undefined || value === null || isNaN(value)) ? 0 : value;
 
 export const saveRobotPerformance = async (userId: string, performance: EnhancedRobotPerformance[]) => {
-  if (!userId) throw new Error("User not authenticated.");
-  const docRef = doc(db, 'users', userId, 'trading_data', 'robot_council_performance');
+    if (!userId) throw new Error("User not authenticated.");
+    const docRef = doc(db, 'users', userId, 'trading_data', 'robot_council_performance');
   
-  const dataToSave = {
-    updatedAt: new Date().toISOString(),
-    robots: performance.map(p => {
-      return {
-        id: p.id,
-        strategyType: p.strategyType,
-        strategy: p.strategy, 
-        wins: sanitizePerformanceValue(p.wins),
-        losses: sanitizePerformanceValue(p.losses),
-        totalProfit: sanitizePerformanceValue(p.totalProfit),
-        winRate: sanitizePerformanceValue(p.winRate),
-        sharpeRatio: sanitizePerformanceValue(p.sharpeRatio),
-        maxDrawdown: sanitizePerformanceValue(p.maxDrawdown),
-        avgWin: sanitizePerformanceValue(p.avgWin),
-        avgLoss: sanitizePerformanceValue(p.avgLoss),
-        profitFactor: sanitizePerformanceValue(p.profitFactor),
-        kellyFraction: sanitizePerformanceValue(p.kellyFraction),
-        effectiveRegimes: p.effectiveRegimes || [],
-        monteCarloScore: sanitizePerformanceValue(p.monteCarloScore),
-        lastUpdated: sanitizePerformanceValue(p.lastUpdated),
-        tradeHistory: p.tradeHistory || [],
-      }
-    })
-  };
+    const dataToSave = {
+        updatedAt: new Date().toISOString(),
+        robots: performance.map(p => {
+          return {
+            id: p.id,
+            strategyType: p.strategyType,
+            strategy: p.strategy, 
+            wins: sanitizePerformanceValue(p.wins),
+            losses: sanitizePerformanceValue(p.losses),
+            totalProfit: sanitizePerformanceValue(p.totalProfit),
+            winRate: sanitizePerformanceValue(p.winRate),
+            sharpeRatio: sanitizePerformanceValue(p.sharpeRatio),
+            maxDrawdown: sanitizePerformanceValue(p.maxDrawdown),
+            avgWin: sanitizePerformanceValue(p.avgWin),
+            avgLoss: sanitizePerformanceValue(p.avgLoss),
+            profitFactor: sanitizePerformanceValue(p.profitFactor),
+            kellyFraction: sanitizePerformanceValue(p.kellyFraction),
+            effectiveRegimes: p.effectiveRegimes || [],
+            monteCarloScore: sanitizePerformanceValue(p.monteCarloScore),
+            lastUpdated: sanitizePerformanceValue(p.lastUpdated),
+            tradeHistory: p.tradeHistory || [],
+          }
+        })
+    };
   
-  setDocumentNonBlocking(docRef, dataToSave, { merge: true });
+    await setDoc(docRef, dataToSave, { merge: true });
 };
 
 export const loadRobotPerformance = async (userId: string): Promise<EnhancedRobotPerformance[] | null> => {
   if (!userId) return null;
   const docRef = doc(db, 'users', userId, 'trading_data', 'robot_council_performance');
-  // O erro será capturado pelo componente cliente
+  // Errors will be caught by the calling client component
   const docSnap = await getDoc(docRef);
   if (docSnap.exists()) {
     const data = docSnap.data();
@@ -226,7 +212,7 @@ export const loadRobotPerformance = async (userId: string): Promise<EnhancedRobo
 
 
 export async function getHallOfFame(userId: string): Promise<RobotPerformance[]> {
-    // O erro será capturado pelo componente cliente
+    // Errors will be caught by the calling client component
     const performanceData = await loadRobotPerformance(userId);
     if (!performanceData) {
         return [];
@@ -250,15 +236,14 @@ export async function saveTradeDecision(userId: string, log: TradeDecisionLog): 
     if (!userId) throw new Error("User not authenticated.");
     const logCollectionRef = collection(db, 'users', userId, 'decision_logs');
     const logDocRef = doc(logCollectionRef, log.id);
-    setDocumentNonBlocking(logDocRef, log, { merge: false });
+    await setDoc(logDocRef, log, { merge: false });
 }
 
 export async function getTradeDecisionLogs(userId: string): Promise<TradeDecisionLog[]> {
     if (!userId) return [];
     const logCollectionRef = collection(db, `users/${userId}/decision_logs`);
     const q = query(logCollectionRef, orderBy('timestamp', 'desc'));
-
-    // O erro será capturado pelo componente cliente
+    // Errors will be caught by the calling client component
     const snapshot = await getDocs(q);
     return snapshot.docs.map(d => d.data() as TradeDecisionLog);
 }

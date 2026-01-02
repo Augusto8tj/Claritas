@@ -84,6 +84,9 @@ export function MainGoal() {
           <CardTitle className="font-headline">Metas</CardTitle>
           <CardDescription>Faça login para ver suas metas.</CardDescription>
         </CardHeader>
+         <CardContent>
+           <p className="text-sm text-muted-foreground">Autenticação necessária.</p>
+        </CardContent>
       </Card>
     );
   }
@@ -101,7 +104,7 @@ export function MainGoal() {
      )
   }
 
-  if (!goals || goals.length === 0) {
+  if (goals.length === 0) {
     return (
       <Card>
         <CardHeader>
@@ -126,7 +129,7 @@ export function MainGoal() {
         </CardDescription>
       </CardHeader>
       <CardContent className="flex items-center justify-center p-6">
-        <Carousel className="w-full max-w-xs" opts={{ loop: true }}>
+        <Carousel className="w-full max-w-xs" opts={{ loop: goals.length > 1 }}>
           <CarouselContent>
             {goals.map((goal) => (
               <CarouselItem key={goal.id}>
@@ -137,8 +140,12 @@ export function MainGoal() {
               </CarouselItem>
             ))}
           </CarouselContent>
-          <CarouselPrevious />
-          <CarouselNext />
+          {goals.length > 1 && (
+            <>
+              <CarouselPrevious />
+              <CarouselNext />
+            </>
+          )}
         </Carousel>
       </CardContent>
     </Card>

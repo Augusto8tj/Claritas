@@ -1,4 +1,6 @@
 // /src/features/financials/components/dashboard/upcoming-bills.tsx
+'use client';
+
 import {
   Card,
   CardContent,
@@ -16,18 +18,17 @@ import {
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import type { Transaction } from "@/lib/types";
+import { useAuth } from "@/features/auth/hooks/use-auth";
+import { getTransactions } from "@/services/financial-data-service";
+import { useEffect, useState, useCallback } from "react";
+import { Skeleton } from "@/components/ui/skeleton";
 
-// A função agora é pura e recebe as transações
 function getBills(transactions: Transaction[]) {
   const bills = transactions.filter(t => t.category === "Contas" && t.type === "expense");
-
-  // This is a simplified logic. A real app would have a dedicated 'bills' collection
-  // with due dates and payment status.
   const today = new Date();
   
   return bills.map(bill => {
     const dueDate = new Date(bill.date);
-    // Mocking status based on date for demonstration
     const status = dueDate < today ? "Paga" : "Próxima";
     return {
         recipient: bill.description,
@@ -38,8 +39,32 @@ function getBills(transactions: Transaction[]) {
   }).sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime());
 }
 
-export function UpcomingBills({ transactions }: { transactions: Transaction[] }) {
-  const bills = getBills(transactions);
+export function UpcomingBills() {
+  const { user } = useAuth();
+  const [bills, setBills] = useState<ReturnType<typeof getBills>>([]);
+  const [loading, setLoading] = useState(true);
+  
+  const fetchBills = useCallback(async () => {
+    if (!user) {
+        setLoading(false);
+        return;
+    }
+    setLoading(true);
+    try {
+        const transactions = await getTransactions(user.uid);
+        const processedBills = getBills(transactions);
+        setBills(processedBills);
+    } catch(error) {
+        console.error("Failed to fetch transactions for bills:", error);
+        // Error is handled by getTransactions, just set empty state
+        setBills([]);
+    }
+    setLoading(false);
+  }, [user]);
+
+  useEffect(() => {
+    fetchBills();
+  }, [fetchBills]);
 
   const getStatusBadge = (status: string) => {
     switch (status) {
@@ -50,6 +75,10 @@ export function UpcomingBills({ transactions }: { transactions: Transaction[] })
       default:
         return <Badge variant="outline">{status}</Badge>;
     }
+  }
+
+  if (loading) {
+    return <Skeleton className="h-64 w-full" />;
   }
 
   return (

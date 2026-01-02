@@ -9,10 +9,13 @@ import {
   YAxis,
   CartesianGrid
 } from "recharts";
+import { useAuth } from "@/features/auth/hooks/use-auth";
+import { getTransactions } from "@/services/financial-data-service";
 import type { Transaction } from "@/lib/types";
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo, useCallback } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { errorEmitter, FirestorePermissionError } from "@/firebase";
 
 interface ChartDataPoint {
   name: string;
@@ -24,30 +27,34 @@ const months = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "
 function processData(transactions: Transaction[]): ChartDataPoint[] {
   const monthlyData: { [key: string]: { income: number, expenses: number } } = {};
 
+  const currentYear = new Date().getFullYear();
   for (let i = 0; i < 12; i++) {
-    const monthKey = `2024-${String(i + 1).padStart(2, '0')}`;
+    const monthKey = `${currentYear}-${String(i + 1).padStart(2, '0')}`;
     monthlyData[monthKey] = { income: 0, expenses: 0 };
   }
-
+  
   transactions.forEach(t => {
     try {
-        const monthKey = t.date.substring(0, 7); // YYYY-MM
-        if (!monthlyData[monthKey]) {
-          monthlyData[monthKey] = { income: 0, expenses: 0 };
-        }
+      const transactionDate = new Date(t.date);
+      if (transactionDate.getFullYear() !== currentYear) return;
+      
+      const monthKey = `${currentYear}-${String(transactionDate.getUTCMonth() + 1).padStart(2, '0')}`;
+      
+      if (monthlyData[monthKey]) {
         if (t.type === 'income') {
           monthlyData[monthKey].income += t.amount;
         } else {
           monthlyData[monthKey].expenses += t.amount;
         }
+      }
     } catch(e) {
-        console.warn(`Could not process transaction date: ${t.date}`, e);
+      console.error("Invalid date format for transaction:", t);
     }
   });
 
   let cumulativeNetWorth = 0;
   return months.map((monthName, index) => {
-    const monthKey = `2024-${String(index + 1).padStart(2, '0')}`;
+    const monthKey = `${currentYear}-${String(index + 1).padStart(2, '0')}`;
     const monthBalance = (monthlyData[monthKey]?.income || 0) - (monthlyData[monthKey]?.expenses || 0);
     cumulativeNetWorth += monthBalance;
     return {
@@ -57,11 +64,71 @@ function processData(transactions: Transaction[]): ChartDataPoint[] {
   });
 }
 
-// O componente agora recebe as transações como prop para ser mais resiliente
-export function NetWorthChart({ transactions }: { transactions: Transaction[] }) {
-    const data = useMemo(() => processData(transactions), [transactions]);
+export function NetWorthChart() {
+    const { user } = useAuth();
+    const [data, setData] = useState<ChartDataPoint[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
 
-    if (!transactions || transactions.length === 0) {
+    const fetchData = useCallback(async () => {
+        if (!user) {
+            setLoading(false);
+            return;
+        }
+
+        setLoading(true);
+        setError(null);
+        try {
+            const transactions = await getTransactions(user.uid);
+            const processed = processData(transactions);
+            setData(processed);
+        } catch (err: any) {
+            console.error(err); // Log the raw error
+            setError("Não foi possível carregar os dados de transações.");
+            errorEmitter.emit('permission-error', new FirestorePermissionError({
+              path: `users/${user.uid}/transactions`,
+              operation: 'list'
+            }));
+            setData(months.map(m => ({ name: m, netWorth: 0 })));
+        }
+        setLoading(false);
+    }, [user]);
+
+    useEffect(() => {
+        fetchData();
+    }, [fetchData]);
+
+    if (loading) {
+       return (
+         <Card className="col-span-4">
+            <CardHeader>
+                <Skeleton className="h-6 w-3/4" />
+                <Skeleton className="h-4 w-1/2" />
+            </CardHeader>
+            <CardContent className="pl-2">
+                <Skeleton className="h-[350px] w-full" />
+            </CardContent>
+        </Card>
+       )
+    }
+
+    if (error) {
+       return (
+         <Card className="col-span-4">
+            <CardHeader>
+                <CardTitle className="font-headline text-destructive">Erro no Gráfico</CardTitle>
+                <CardDescription className="text-destructive">{error}</CardDescription>
+            </CardHeader>
+            <CardContent className="pl-2">
+                <div className="flex h-[350px] w-full items-center justify-center text-center">
+                    <p className="text-muted-foreground">Ocorreu uma falha ao buscar os dados para o gráfico de patrimônio.</p>
+                </div>
+            </CardContent>
+        </Card>
+       )
+    }
+
+    if (data.every(d => d.netWorth === 0)) {
        return (
          <Card className="col-span-4">
             <CardHeader>
