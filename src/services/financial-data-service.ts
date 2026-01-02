@@ -232,72 +232,66 @@ export async function getFinancialInsights(userId: string): Promise<string[]> {
 
 
 // --- Trading Robot Performance ---
-const sanitizePerformanceValue = (value: number | undefined | null): number => {
-  if (value === undefined || value === null || isNaN(value)) {
-    return 0;
-  }
+
+// Helper para garantir que NADA seja undefined
+const safeValue = <T>(value: T | undefined | null, fallback: T): T => {
+  if (value === undefined) return fallback;
+  if (value === null) return fallback; // Opcional: Firestore aceita null, mas fallback é mais seguro para UI
+  if (typeof value === 'number' && isNaN(value)) return fallback;
   return value;
 };
 
 export async function saveRobotPerformance(userId: string, performance: EnhancedRobotPerformance[]) {
-    if (!userId) {
-        return;
-    }
+    if (!userId) return; // Proteção contra userId vazio
+    
     const docRef = doc(db, 'users', userId, 'trading_data', 'robot_council_performance');
   
     const dataToSave = {
         updatedAt: new Date().toISOString(),
         robots: performance.map(p => {
-          // Garante que o objeto strategy não tem undefined
+          // A sanitização explícita é necessária aqui
           const sanitizedStrategy = {
             ...p.strategy,
-            period: p.strategy.period ?? undefined,
-            strongBuyThreshold: p.strategy.strongBuyThreshold ?? undefined,
-            weakBuyThreshold: p.strategy.weakBuyThreshold ?? undefined,
-            strongSellThreshold: p.strategy.strongSellThreshold ?? undefined,
-            weakSellThreshold: p.strategy.weakSellThreshold ?? undefined,
-            shortPeriod: p.strategy.shortPeriod ?? undefined,
-            longPeriod: p.strategy.longPeriod ?? undefined,
-            fastPeriod: p.strategy.fastPeriod ?? undefined,
-            slowPeriod: p.strategy.slowPeriod ?? undefined,
-            signalPeriod: p.strategy.signalPeriod ?? undefined,
-            stdDev: p.strategy.stdDev ?? undefined,
-            pattern: p.strategy.pattern ?? undefined,
-            trendStrengthThreshold: p.strategy.trendStrengthThreshold ?? undefined,
-            profileBars: p.strategy.profileBars ?? undefined,
-            zScoreThreshold: p.strategy.zScoreThreshold ?? undefined,
-            fastEnd: p.strategy.fastEnd ?? undefined,
-            slowEnd: p.strategy.slowEnd ?? undefined,
-            acceleration: p.strategy.acceleration ?? undefined,
-            maxAcceleration: p.strategy.maxAcceleration ?? undefined,
-            chandelierPeriod: p.strategy.chandelierPeriod ?? undefined,
-            chandelierMultiplier: p.strategy.chandelierMultiplier ?? undefined,
+            id: safeValue(p.strategy.id, `unknown_strategy_${Date.now()}`),
+            justification: safeValue(p.strategy.justification, 'N/A'),
+            // Adicione outros campos da strategy aqui, se necessário, com safeValue
           };
 
           return {
-            id: p.id,
-            strategyType: p.strategyType,
-            strategy: sanitizedStrategy, 
-            wins: sanitizePerformanceValue(p.wins),
-            losses: sanitizePerformanceValue(p.losses),
-            totalProfit: sanitizePerformanceValue(p.totalProfit),
-            winRate: sanitizePerformanceValue(p.winRate),
-            sharpeRatio: sanitizePerformanceValue(p.sharpeRatio),
-            maxDrawdown: sanitizePerformanceValue(p.maxDrawdown),
-            avgWin: sanitizePerformanceValue(p.avgWin),
-            avgLoss: sanitizePerformanceValue(p.avgLoss),
-            profitFactor: sanitizePerformanceValue(p.profitFactor),
-            kellyFraction: sanitizePerformanceValue(p.kellyFraction),
-            effectiveRegimes: p.effectiveRegimes || [],
-            monteCarloScore: sanitizePerformanceValue(p.monteCarloScore),
-            lastUpdated: sanitizePerformanceValue(p.lastUpdated),
-            tradeHistory: p.tradeHistory || [],
+            // Garante que ID nunca seja undefined
+            id: p.id || `unknown-${Date.now()}`, 
+            
+            // Strings: usa string vazia ou "N/A" se for undefined
+            strategyType: safeValue(p.strategyType, 'Unknown'),
+            strategy: sanitizedStrategy,
+            
+            // Arrays: garante array vazio
+            effectiveRegimes: safeValue(p.effectiveRegimes, []),
+            tradeHistory: safeValue(p.tradeHistory, []),
+            
+            // Números (usa sua lógica de sanitize + safeValue)
+            wins: safeValue(p.wins, 0),
+            losses: safeValue(p.losses, 0),
+            totalProfit: safeValue(p.totalProfit, 0),
+            winRate: safeValue(p.winRate, 0),
+            sharpeRatio: safeValue(p.sharpeRatio, 0),
+            maxDrawdown: safeValue(p.maxDrawdown, 0),
+            avgWin: safeValue(p.avgWin, 0),
+            avgLoss: safeValue(p.avgLoss, 0),
+            profitFactor: safeValue(p.profitFactor, 0),
+            kellyFraction: safeValue(p.kellyFraction, 0),
+            monteCarloScore: safeValue(p.monteCarloScore, 0),
+            lastUpdated: safeValue(p.lastUpdated, Date.now()),
           }
         })
     };
+    
+    // Converte explicitamente para evitar erros de tipagem com undefined ocultos
+    const sanitizedData = JSON.parse(JSON.stringify(dataToSave));
   
-    setDocumentNonBlocking(docRef, dataToSave, { merge: true });
+    setDocumentNonBlocking(docRef, sanitizedData, { merge: true });
 };
+
 
 export async function loadRobotPerformance(userId: string): Promise<EnhancedRobotPerformance[] | null> {
   if (!userId) {
