@@ -78,7 +78,7 @@ service cloud.firestore {
        * @description Controls access to a user's financial goals.
        * Correctly allows listing goals while securing individual document operations.
        */
-      match /goals/{goalId} {
+      match /financialGoals/{goalId} {
         allow list, get: if isOwner(userId);
         allow create: if isOwner(userId) && request.resource.data.userId == userId;
         allow update: if isOwner(userId) && request.resource.data.userId == userId;
