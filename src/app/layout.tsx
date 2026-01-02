@@ -4,8 +4,6 @@ import { AppLayout } from '@/components/layout/app-layout';
 import { Toaster } from '@/components/ui/toaster';
 import { ThemeProvider } from '@/features/theme/hooks/use-theme';
 import { AuthProvider } from '@/features/auth/hooks/use-auth';
-import { DerivApiProvider } from '@/hooks/use-deriv-api';
-
 
 export const metadata = {
   title: 'Claritas Copilot',
@@ -27,12 +25,10 @@ export default function RootLayout({
       <body className="font-body antialiased" suppressHydrationWarning>
         <ThemeProvider>
           <AuthProvider>
-            <DerivApiProvider>
-                <AppLayout>
-                  {children}
-                </AppLayout>
-                <Toaster />
-            </DerivApiProvider>
+              <AppLayout>
+                {children}
+              </AppLayout>
+              <Toaster />
           </AuthProvider>
         </ThemeProvider>
       </body>

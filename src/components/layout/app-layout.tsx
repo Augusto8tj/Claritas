@@ -51,6 +51,7 @@ import React from "react";
 import Link from "next/link";
 import { Button } from "../ui/button";
 import packageJson from '../../../package.json';
+import { DerivApiProvider } from "@/hooks/use-deriv-api";
 
 
 const navItems = [
@@ -277,20 +278,22 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <SidebarProvider>
-      {isMobile ? <MobileSidebar /> : <DesktopSidebar />}
-      <SidebarInset>
-        <header className="sticky top-0 z-10 flex items-center justify-between h-16 px-4 bg-background/80 backdrop-blur-sm border-b">
-          <div className="flex items-center gap-4">
-             <SidebarTrigger className="md:hidden" />
-             <h2 className="text-lg font-semibold font-headline">
-                {pageTitle}
-             </h2>
-          </div>
-          <UserNav />
-        </header>
-        <main>{children}</main>
-      </SidebarInset>
-    </SidebarProvider>
+    <DerivApiProvider>
+      <SidebarProvider>
+        {isMobile ? <MobileSidebar /> : <DesktopSidebar />}
+        <SidebarInset>
+          <header className="sticky top-0 z-10 flex items-center justify-between h-16 px-4 bg-background/80 backdrop-blur-sm border-b">
+            <div className="flex items-center gap-4">
+               <SidebarTrigger className="md:hidden" />
+               <h2 className="text-lg font-semibold font-headline">
+                  {pageTitle}
+               </h2>
+            </div>
+            <UserNav />
+          </header>
+          <main>{children}</main>
+        </SidebarInset>
+      </SidebarProvider>
+    </DerivApiProvider>
   );
 }
