@@ -8,24 +8,19 @@ import { ai } from '@/lib/genkit';
 import { addGoal, addTransaction, getFinancialSummary, getBudgetData } from '@/services/financial-data-service';
 import { z } from 'zod';
 import { revalidatePath } from 'next/cache';
-import { auth } from '@/lib/firebase'; // Assuming auth can give us the user context
 
-// Helper to get user ID - in a real scenario this might come from a session or middleware.
-const getUserId = () => {
-    const user = auth.currentUser;
-    if (!user) throw new Error("User not authenticated for financial tools.");
-    return user.uid;
-}
+const userIdSchema = z.string().describe("The unique identifier of the user.");
 
 export const getFinancialSummaryTool = ai.defineTool(
   {
     name: 'getFinancialSummaryTool',
-    description: 'Obtém um resumo em texto dos dados financeiros do usuário, incluindo renda, despesas и saldo.',
-    inputSchema: z.object({}),
+    description: 'Obtém um resumo em texto dos dados financeiros do usuário, incluindo renda, despesas e saldo.',
+    inputSchema: z.object({
+        userId: userIdSchema,
+    }),
     outputSchema: z.string().describe("Uma frase resumindo a renda, despesas e saldo do usuário."),
   },
-  async () => {
-    const userId = getUserId();
+  async ({ userId }) => {
     console.log(`getFinancialSummaryTool foi chamada para o usuário ${userId}`);
     const summary = await getFinancialSummary(userId);
     return `Seu resumo financeiro é: Renda de R$${summary.income.toFixed(2)}, Despesas de R$${summary.expenses.toFixed(2)}, resultando num saldo de R$${summary.balance.toFixed(2)}.`;
@@ -50,11 +45,12 @@ export const getFinancialInsightsTool = ai.defineTool(
   {
     name: 'getFinancialInsightsTool',
     description: 'Gera e retorna insights e conselhos financeiros acionáveis com base nos dados do usuário.',
-    inputSchema: z.object({}),
+    inputSchema: z.object({
+      userId: userIdSchema,
+    }),
     outputSchema: z.string().describe('Uma string contendo os insights financeiros, separados por quebras de linha.'),
   },
-  async () => {
-    const userId = getUserId();
+  async ({ userId }) => {
     console.log(`getFinancialInsightsTool foi chamada para o usuário ${userId}`);
     const financialData = await getFinancialSummary(userId);
     const financialDataString = `Renda: ${financialData.income}, Despesas: ${financialData.expenses}, Saldo: ${financialData.balance}`;
@@ -70,6 +66,7 @@ export const addTransactionTool = ai.defineTool(
     name: 'addTransactionTool',
     description: 'Adiciona uma nova transação (receita ou despesa) aos registros financeiros.',
     inputSchema: z.object({
+      userId: userIdSchema,
       description: z.string().describe('A descrição da transação.'),
       amount: z.number().describe('O valor da transação.'),
       type: z.enum(['income', 'expense']).describe('O tipo da transação: "income" para receita, "expense" para despesa.'),
@@ -77,8 +74,7 @@ export const addTransactionTool = ai.defineTool(
     }),
     outputSchema: z.string(),
   },
-  async ({ description, amount, type, category }) => {
-    const userId = getUserId();
+  async ({ userId, description, amount, type, category }) => {
     const transactionData = {
         description,
         amount,
@@ -100,13 +96,13 @@ export const addGoalTool = ai.defineTool(
     name: 'addGoalTool',
     description: 'Adiciona uma nova meta financeira.',
     inputSchema: z.object({
+      userId: userIdSchema,
       name: z.string().describe('O nome da meta.'),
       targetAmount: z.number().describe('O valor alvo da meta.'),
     }),
     outputSchema: z.string(),
   },
-  async ({ name, targetAmount }) => {
-    const userId = getUserId();
+  async ({ userId, name, targetAmount }) => {
     const newGoal = await addGoal(userId, name, targetAmount);
     revalidatePath('/goals');
     revalidatePath('/');
@@ -126,11 +122,12 @@ export const getBudgetStatusTool = ai.defineTool(
     {
         name: 'getBudgetStatusTool',
         description: 'Obtém o status atual do orçamento, mostrando os valores orçados e gastos para cada categoria.',
-        inputSchema: z.object({}),
+        inputSchema: z.object({
+            userId: userIdSchema,
+        }),
         outputSchema: BudgetStatusSchema,
     },
-    async () => {
-        const userId = getUserId();
+    async ({ userId }) => {
         console.log(`getBudgetStatusTool foi chamada para o usuário ${userId}`);
         return getBudgetData(userId);
     }

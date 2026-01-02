@@ -141,6 +141,7 @@ const MessageSchema = z.object({
 export const FinancialChatbotInsightsInputSchema = z.object({
   history: z.array(MessageSchema).describe('The conversation history.'),
   query: z.string().describe('The user query about their finances.'),
+  userId: z.string().describe('The unique identifier of the user.'),
 });
 export type FinancialChatbotInsightsInput = z.infer<typeof FinancialChatbotInsightsInputSchema>;
 

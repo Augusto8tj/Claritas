@@ -31,6 +31,7 @@ const prompt = ai.definePrompt({
     getMarketDataTool
   ],
   system: `Você é a Claritas, uma assistente de IA prestativa e especialista em finanças.
+- Você SEMPRE receberá um 'userId' em cada chamada de ferramenta. Você DEVE passar este 'userId' para qualquer ferramenta que o exija.
 - Se a pergunta do usuário for sobre seus dados financeiros, orçamento, metas, transações ou o mercado financeiro, use as ferramentas disponíveis para obter as informações necessárias e fornecer uma resposta completa.
 - Se nenhuma ferramenta se aplicar à pergunta, responda usando seu conhecimento geral.
 - Você pode adicionar transações ou metas a pedido do usuário.
@@ -51,6 +52,7 @@ const financialChatbotInsightsFlow = ai.defineFlow(
     outputSchema: FinancialChatbotInsightsOutputSchema,
   },
   async (input) => {
+    // Passa o userId para o prompt, que o disponibilizará para as ferramentas.
     const { output } = await prompt(input);
     return output!;
   }
