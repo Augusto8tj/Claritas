@@ -232,7 +232,12 @@ export async function getFinancialInsights(userId: string): Promise<string[]> {
 
 
 // --- Trading Robot Performance ---
-const sanitizePerformanceValue = (value: number | undefined | null): number => (value === undefined || value === null || isNaN(value)) ? 0 : value;
+const sanitizePerformanceValue = (value: number | undefined | null): number => {
+  if (value === undefined || value === null || isNaN(value)) {
+    return 0;
+  }
+  return value;
+};
 
 export async function saveRobotPerformance(userId: string, performance: EnhancedRobotPerformance[]) {
     if (!userId) {
@@ -243,10 +248,36 @@ export async function saveRobotPerformance(userId: string, performance: Enhanced
     const dataToSave = {
         updatedAt: new Date().toISOString(),
         robots: performance.map(p => {
+          // Garante que o objeto strategy não tem undefined
+          const sanitizedStrategy = {
+            ...p.strategy,
+            period: p.strategy.period ?? undefined,
+            strongBuyThreshold: p.strategy.strongBuyThreshold ?? undefined,
+            weakBuyThreshold: p.strategy.weakBuyThreshold ?? undefined,
+            strongSellThreshold: p.strategy.strongSellThreshold ?? undefined,
+            weakSellThreshold: p.strategy.weakSellThreshold ?? undefined,
+            shortPeriod: p.strategy.shortPeriod ?? undefined,
+            longPeriod: p.strategy.longPeriod ?? undefined,
+            fastPeriod: p.strategy.fastPeriod ?? undefined,
+            slowPeriod: p.strategy.slowPeriod ?? undefined,
+            signalPeriod: p.strategy.signalPeriod ?? undefined,
+            stdDev: p.strategy.stdDev ?? undefined,
+            pattern: p.strategy.pattern ?? undefined,
+            trendStrengthThreshold: p.strategy.trendStrengthThreshold ?? undefined,
+            profileBars: p.strategy.profileBars ?? undefined,
+            zScoreThreshold: p.strategy.zScoreThreshold ?? undefined,
+            fastEnd: p.strategy.fastEnd ?? undefined,
+            slowEnd: p.strategy.slowEnd ?? undefined,
+            acceleration: p.strategy.acceleration ?? undefined,
+            maxAcceleration: p.strategy.maxAcceleration ?? undefined,
+            chandelierPeriod: p.strategy.chandelierPeriod ?? undefined,
+            chandelierMultiplier: p.strategy.chandelierMultiplier ?? undefined,
+          };
+
           return {
             id: p.id,
             strategyType: p.strategyType,
-            strategy: p.strategy, 
+            strategy: sanitizedStrategy, 
             wins: sanitizePerformanceValue(p.wins),
             losses: sanitizePerformanceValue(p.losses),
             totalProfit: sanitizePerformanceValue(p.totalProfit),
