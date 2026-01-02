@@ -44,87 +44,76 @@ service cloud.firestore {
       return isSignedIn() && request.auth.uid == userId;
     }
 
-    // Checks for ownership on an existing document, critical for update/delete.
-    function isExistingOwner(userId) {
-      return isOwner(userId) && resource != null;
-    }
-
     /**
      * @description Controls access to a user's own profile document.
      * @path /users/{userId}
-     * @allow A user (auth.uid='user123') creating their own profile at /users/user123. (create)
-     * @allow A user (auth.uid='user123') reading their own profile from /users/user123. (get)
-     * @deny An anonymous user trying to create a profile. (create)
-     * @deny A user (auth.uid='userABC') trying to read another user's profile at /users/user123. (get)
-     * @deny Any user trying to list all user profiles. (list)
-     * @principle Restricts access to a user's own data tree and enforces self-creation.
      */
     match /users/{userId} {
-      allow get: if isOwner(userId);
-      allow list: if false;
-      allow create: if isOwner(userId) && request.resource.data.id == userId;
-      allow update: if isExistingOwner(userId) && request.resource.data.id == resource.data.id;
-      allow delete: if isExistingOwner(userId);
+      allow read, write: if isOwner(userId);
 
       /**
        * @description Controls access to a user's financial accounts.
-       * @path /users/{userId}/financialAccounts/{accountId}
-       * @allow A user (auth.uid='user123') creating a new financial account in their own subcollection. (create)
-       * @allow A user (auth.uid='user123') listing all of their own financial accounts. (list)
-       * @deny A user (auth.uid='userABC') trying to read a financial account at /users/user123/financialAccounts/acc456. (get)
-       * @principle Enforces document ownership and validates relational integrity via a denormalized userId.
+       * Ensures that only the owner can read/write their own accounts.
+       * Create/Update operations require the 'userId' field in the document to match the owner.
        */
       match /financialAccounts/{accountId} {
         allow list, get: if isOwner(userId);
         allow create: if isOwner(userId) && request.resource.data.userId == userId;
-        allow update: if isExistingOwner(userId) && request.resource.data.userId == resource.data.userId;
-        allow delete: if isExistingOwner(userId);
+        allow update: if isOwner(userId) && request.resource.data.userId == userId;
+        allow delete: if isOwner(userId);
       }
 
       /**
        * @description Controls access to a user's financial transactions.
-       * @path /users/{userId}/transactions/{transactionId}
-       * @allow A user (auth.uid='user123') deleting a transaction from their own subcollection. (delete)
-       * @allow A user (auth.uid='user123') listing all of their own transactions. (list)
-       * @deny An anonymous user trying to create a transaction. (create)
-       * @deny A user (auth.uid='userABC') trying to update a transaction at /users/user123/transactions/trans789. (update)
-       * @principle Enforces document ownership for all operations on sensitive financial data.
+       * Ensures that only the owner can read/write their own transactions.
        */
       match /transactions/{transactionId} {
         allow list, get: if isOwner(userId);
         allow create: if isOwner(userId) && request.resource.data.userId == userId;
-        allow update: if isExistingOwner(userId) && request.resource.data.userId == resource.data.userId;
-        allow delete: if isExistingOwner(userId);
+        allow update: if isOwner(userId) && request.resource.data.userId == userId;
+        allow delete: if isOwner(userId);
       }
 
       /**
        * @description Controls access to a user's financial goals.
-       * @path /users/{userId}/goals/{goalId}
-       * @allow A user (auth.uid='user123') creating a new financial goal in their own subcollection. (create)
-       * @allow A user (auth.uid='user123') updating a financial goal in their own subcollection. (update)
-       * @deny A user (auth.uid='userABC') trying to read a financial goal at /users/user123/goals/goal456. (get)
-       * @principle Enforces document ownership and validates relational integrity via a denormalized userId.
+       * Correctly allows listing goals while securing individual document operations.
        */
       match /goals/{goalId} {
         allow list, get: if isOwner(userId);
         allow create: if isOwner(userId) && request.resource.data.userId == userId;
-        allow update: if isExistingOwner(userId) && request.resource.data.userId == resource.data.userId;
-        allow delete: if isExistingOwner(userId);
+        allow update: if isOwner(userId) && request.resource.data.userId == userId;
+        allow delete: if isOwner(userId);
       }
 
       /**
        * @description Controls access to a user's AI-generated insights.
-       * @path /users/{userId}/aiInsights/{insightId}
-       * @allow A user (auth.uid='user123') creating a new AI insight in their own subcollection. (create)
-       * @allow A user (auth.uid='user123') listing their own AI insights. (list)
-       * @deny A user (auth.uid='userABC') trying to delete an insight at /users/user123/aiInsights/insight789. (delete)
-       * @principle Enforces document ownership and validates relational integrity via a denormalized userId.
        */
       match /aiInsights/{insightId} {
         allow list, get: if isOwner(userId);
         allow create: if isOwner(userId) && request.resource.data.userId == userId;
-        allow update: if isExistingOwner(userId) && request.resource.data.userId == resource.data.userId;
-        allow delete: if isExistingOwner(userId);
+        allow update: if isOwner(userId) && request.resource.data.userId == userId;
+        allow delete: if isOwner(userId);
+      }
+      
+       /**
+       * @description Controls access to user-specific settings.
+       */
+      match /settings/{settingId} {
+        allow read, write: if isOwner(userId);
+      }
+
+      /**
+       * @description Controls access to trading data.
+       */
+      match /trading_data/{dataId} {
+        allow read, write: if isOwner(userId);
+      }
+
+       /**
+       * @description Controls access to decision logs.
+       */
+      match /decision_logs/{logId} {
+        allow read, write: if isOwner(userId);
       }
     }
   }
