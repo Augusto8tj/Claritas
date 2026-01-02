@@ -9,10 +9,9 @@ import {
   type ReactNode,
 } from "react";
 import type { User } from "firebase/auth";
-import { onAuthStateChanged } from "firebase/auth";
-import { auth } from "@/lib/firebase";
 import { Loader2 } from "lucide-react";
 import { AuthGuard } from "@/features/auth/components/auth-guard";
+import { useUser as useFirebaseUser } from "@/firebase";
 
 type AuthContextType = {
   user: User | null;
@@ -23,25 +22,20 @@ type AuthContextType = {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<User | null>(null);
-  const [loading, setLoading] = useState(true);
+  const { user: firebaseUser, isUserLoading } = useFirebaseUser();
+  const [user, setUser] = useState<User | null>(firebaseUser);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
-      setUser(user);
-      setLoading(false);
-    });
-
-    return () => unsubscribe();
-  }, []);
+    setUser(firebaseUser);
+  }, [firebaseUser]);
 
   const updateUser = (updatedUser: User | null) => {
     setUser(updatedUser);
   };
+  
+  const value = { user, loading: isUserLoading, updateUser };
 
-  const value = { user, loading, updateUser };
-
-  if (loading) {
+  if (isUserLoading) {
      return (
       <div className="flex h-screen items-center justify-center">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />

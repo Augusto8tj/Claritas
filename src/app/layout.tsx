@@ -4,6 +4,7 @@ import { AppLayout } from '@/components/layout/app-layout';
 import { Toaster } from '@/components/ui/toaster';
 import { ThemeProvider } from '@/features/theme/hooks/use-theme';
 import { AuthProvider } from '@/features/auth/hooks/use-auth';
+import { FirebaseClientProvider } from '@/firebase';
 
 export const metadata = {
   title: 'Claritas Copilot',
@@ -24,12 +25,14 @@ export default function RootLayout({
       </head>
       <body className="font-body antialiased" suppressHydrationWarning>
         <ThemeProvider>
-          <AuthProvider>
-              <AppLayout>
-                {children}
-              </AppLayout>
-              <Toaster />
-          </AuthProvider>
+          <FirebaseClientProvider>
+            <AuthProvider>
+                <AppLayout>
+                  {children}
+                </AppLayout>
+                <Toaster />
+            </AuthProvider>
+          </FirebaseClientProvider>
         </ThemeProvider>
       </body>
     </html>

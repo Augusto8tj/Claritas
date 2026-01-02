@@ -3,12 +3,14 @@
 
 /**
  * @fileOverview A financial data service that interacts with Firebase Firestore.
- * This service now propagates raw Firestore errors to be handled by the client.
+ * This service now uses non-blocking updates and propagates raw errors.
  */
 import { db } from '@/lib/firebase';
-import { collection, getDocs, addDoc, doc, updateDoc, deleteDoc, getDoc, setDoc, query, where, orderBy } from 'firebase/firestore';
+import { collection, getDocs, doc, setDoc, query, where, orderBy, getDoc, addDoc, deleteDoc } from 'firebase/firestore';
 import type { Goal, BudgetCategory, Transaction, RobotPerformance, TradeDecisionLog, EnhancedRobotPerformance } from '@/lib/types';
 import { generateGoalImage } from '@/ai/flows/goal-image-generation';
+import { addDocumentNonBlocking, deleteDocumentNonBlocking, setDocumentNonBlocking } from '@/firebase/non-blocking-updates';
+
 
 // --- Transactions ---
 
@@ -19,7 +21,6 @@ export async function getTransactions(userId: string): Promise<Transaction[]> {
         const snapshot = await getDocs(transactionsCol);
         return snapshot.docs.map(d => ({ id: d.id, ...d.data() } as Transaction));
     } catch (serverError) {
-        // Propagate the original error for client-side contextual handling
         console.error(`[Service Error] getTransactions failed for user ${userId}:`, serverError);
         throw serverError;
     }
@@ -28,14 +29,13 @@ export async function getTransactions(userId: string): Promise<Transaction[]> {
 export async function addTransaction(userId: string, data: Omit<Transaction, 'id'>): Promise<string> {
     if (!userId) throw new Error("User not authenticated.");
     const transactionsCol = collection(db, `users/${userId}/transactions`);
-    try {
-        await addDoc(transactionsCol, data);
-        return `Transação "${data.description}" de R$${data.amount.toFixed(2)} adicionada com sucesso.`;
-    } catch (serverError) {
-        console.error(`[Service Error] addTransaction failed for user ${userId}:`, serverError);
-        throw serverError;
-    }
+    
+    // Use non-blocking update
+    addDocumentNonBlocking(transactionsCol, data);
+
+    return `Transação "${data.description}" de R$${data.amount.toFixed(2)} está a ser adicionada.`;
 }
+
 
 // --- Financial Summary ---
 
@@ -64,7 +64,7 @@ export async function addGoal(userId: string, name: string, targetAmount: number
     if (!userId) throw new Error("User not authenticated.");
     const goalsCol = collection(db, `users/${userId}/goals`);
     
-    const newGoalData = {
+    const newGoalData: Omit<Goal, 'id'> = {
         name,
         targetAmount,
         currentAmount: 0,
@@ -73,23 +73,24 @@ export async function addGoal(userId: string, name: string, targetAmount: number
     };
 
     try {
-        const docRef = await addDoc(goalsCol, newGoalData);
+        // Use non-blocking addDoc and get the promise
+        const docRefPromise = addDocumentNonBlocking(goalsCol, newGoalData);
 
-        // Dispara a geração de imagem, mas não bloqueia a resposta principal
+        // Continue with non-blocking tasks
         generateGoalImage({ goalName: name })
             .then(imageResult => {
                 if (imageResult?.imageUrl) {
-                    const goalDoc = doc(db, `users/${userId}/goals`, docRef.id);
-                    updateDoc(goalDoc, { imageUrl: imageResult.imageUrl })
-                        .catch(updateError => {
-                            console.error("Falha ao atualizar a imagem da meta:", updateError);
-                        });
+                    docRefPromise.then(docRef => {
+                        const goalDoc = doc(db, `users/${userId}/goals`, docRef.id);
+                        setDocumentNonBlocking(goalDoc, { imageUrl: imageResult.imageUrl }, { merge: true });
+                    })
                 }
             })
             .catch(imageError => {
                 console.error("Falha ao gerar imagem da meta, usando placeholder.", imageError);
             });
 
+        const docRef = await docRefPromise;
         return { id: docRef.id, ...newGoalData };
     } catch (serverError) {
         console.error(`[Service Error] addGoal failed for user ${userId}:`, serverError);
@@ -97,17 +98,17 @@ export async function addGoal(userId: string, name: string, targetAmount: number
     }
 }
 
+
 export async function deleteGoal(userId: string, goalId: string): Promise<{ success: boolean }> {
     if (!userId) throw new Error("User not authenticated.");
     const goalDoc = doc(db, `users/${userId}/goals`, goalId);
-    try {
-        await deleteDoc(goalDoc);
-        return { success: true };
-    } catch (serverError) {
-        console.error(`[Service Error] deleteGoal failed for user ${userId}, goal ${goalId}:`, serverError);
-        throw serverError;
-    }
+    
+    // Use non-blocking delete
+    deleteDocumentNonBlocking(goalDoc);
+
+    return { success: true };
 }
+
 
 // --- Budget ---
 
@@ -118,7 +119,6 @@ async function getBudgetLimits(userId: string): Promise<{ [key: string]: number 
         if (docSnap.exists()) {
             return docSnap.data().limits || {};
         }
-        // Default values if document doesn't exist
         return {
             "Moradia": 2000, "Alimentação": 1000, "Transporte": 500,
             "Lazer": 400, "Compras": 600, "Outros": 300, "Contas": 800,
@@ -156,19 +156,22 @@ export async function updateBudgetLimit(userId: string, name: string, newLimit: 
     const settingsDocRef = doc(db, `users/${userId}/settings`, 'budget');
     const dataToSet = { [`limits.${name}`]: newLimit };
 
+    // Use non-blocking update
+    setDocumentNonBlocking(settingsDocRef, dataToSet, { merge: true });
+
     try {
-        await setDoc(settingsDocRef, dataToSet, { merge: true });
         const transactions = await getTransactions(userId);
         const spent = transactions
             .filter(t => t.type === 'expense' && t.category === name)
             .reduce((sum, t) => sum + t.amount, 0);
 
         return { name, budgeted: newLimit, spent };
-    } catch (serverError) {
-        console.error(`[Service Error] updateBudgetLimit failed for user ${userId}:`, serverError);
-        throw serverError;
+    } catch (error) {
+        console.error("Error fetching transactions after budget update:", error);
+        return { name, budgeted: newLimit, spent: 0 }; // Return best guess
     }
 }
+
 
 export async function getExpenseCategories(userId: string): Promise<string[]> {
     const limits = await getBudgetLimits(userId);
@@ -216,12 +219,7 @@ export const saveRobotPerformance = async (userId: string, performance: Enhanced
     })
   };
   
-  try {
-    await setDoc(docRef, dataToSave, { merge: true });
-  } catch(error) {
-    console.error(`[Service Error] saveRobotPerformance failed for user ${userId}:`, error);
-    throw error;
-  }
+  setDocumentNonBlocking(docRef, dataToSave, { merge: true });
 };
 
 export const loadRobotPerformance = async (userId: string): Promise<EnhancedRobotPerformance[] | null> => {
@@ -273,12 +271,7 @@ export async function saveTradeDecision(userId: string, log: TradeDecisionLog): 
     if (!userId) throw new Error("User not authenticated.");
     const logCollectionRef = collection(db, 'users', userId, 'decision_logs');
     const logDocRef = doc(logCollectionRef, log.id);
-    try {
-        await setDoc(logDocRef, log);
-    } catch (error) {
-        console.error(`[Service Error] saveTradeDecision failed for user ${userId}:`, error);
-        throw error;
-    }
+    setDocumentNonBlocking(logDocRef, log, { merge: false });
 }
 
 export async function getTradeDecisionLogs(userId: string): Promise<TradeDecisionLog[]> {
@@ -291,7 +284,6 @@ export async function getTradeDecisionLogs(userId: string): Promise<TradeDecisio
         return snapshot.docs.map(d => d.data() as TradeDecisionLog);
     } catch (serverError) {
         console.error(`[Service Error] getTradeDecisionLogs failed for user ${userId}:`, serverError);
-        // Propagate the original error for client-side handling
         throw serverError;
     }
 }
