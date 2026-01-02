@@ -23,7 +23,7 @@ export async function getTransactions(userId: string): Promise<Transaction[]> {
     }
 }
 
-export async function addTransaction(userId: string, data: Omit<Transaction, 'id'>): Promise<string> {
+export async function addTransaction(userId: string, data: Omit<Transaction, 'id' | 'userId'>): Promise<string> {
     if (!userId) {
         throw new Error("User not authenticated.");
     }
@@ -32,7 +32,10 @@ export async function addTransaction(userId: string, data: Omit<Transaction, 'id
     const dataWithUser = { ...data, userId };
 
     const transactionsCol = collection(db, `users/${userId}/transactions`);
-    addDocumentNonBlocking(transactionsCol, dataWithUser); // Usa o dado enriquecido
+    // A escrita agora é não-bloqueante e já lida com o erro de permissão internamente.
+    addDocumentNonBlocking(transactionsCol, dataWithUser);
+    
+    // Retorna uma mensagem de sucesso otimista.
     return `Transação "${data.description}" de R$${data.amount.toFixed(2)} está a ser adicionada.`;
 }
 

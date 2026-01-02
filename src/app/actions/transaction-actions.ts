@@ -33,7 +33,13 @@ export async function addTransaction(data: {
   try {
     // A função de serviço agora adiciona o userId internamente ao objeto
     // e usa uma escrita não-bloqueante.
-    await addTransactionToService(validatedData.data.userId, validatedData.data);
+    await addTransactionToService(validatedData.data.userId, {
+        description: validatedData.data.description,
+        amount: validatedData.data.amount,
+        type: validatedData.data.type,
+        category: validatedData.data.category,
+        date: validatedData.data.date,
+    });
     
     // Revalida os caminhos para atualizar a UI
     revalidatePath("/analysis");
@@ -41,9 +47,9 @@ export async function addTransaction(data: {
     revalidatePath("/"); // Revalidate dashboard to update monthly balance
     
     return { success: true };
-  } catch (e) {
+  } catch (e: any) {
     console.error("Erro na Server Action 'addTransaction':", e);
     // A falha de permissão agora é tratada no serviço, mas podemos ter outros erros.
-    return { error: "Ocorreu um erro inesperado ao adicionar a transação." };
+    return { error: e.message || "Ocorreu um erro inesperado ao adicionar a transação." };
   }
 }

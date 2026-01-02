@@ -5,7 +5,8 @@
  */
 
 import { ai } from '@/lib/genkit';
-import { addGoal, addTransaction, getFinancialSummary, getBudgetData } from '@/services/financial-data-service';
+import { addGoal, getFinancialSummary, getBudgetData } from '@/services/financial-data-service';
+import { addTransaction as addTransactionAction } from '@/app/actions/transaction-actions';
 import { z } from 'zod';
 import { revalidatePath } from 'next/cache';
 
@@ -70,20 +71,21 @@ export const addTransactionTool = ai.defineTool(
     }),
     outputSchema: z.string(),
   },
-  async ({ description, amount, type, category }, { userId }) => {
-    const transactionData = {
-        description,
-        amount,
-        type,
-        category,
-        date: new Date().toISOString()
-    };
-    const result = await addTransaction(userId, transactionData);
+  async (input, { userId }) => {
+    // Chama a server action, que por sua vez chama o serviço não-bloqueante
+    const result = await addTransactionAction({
+      userId,
+      ...input,
+      date: new Date().toISOString(), // A data é gerada no momento da chamada
+    });
     
-    revalidatePath("/analysis");
-    revalidatePath("/budget");
-
-    return result;
+    if (result.error) {
+        // Se a server action retornar um erro (ex: validação), informa a IA.
+        return `Falha ao adicionar transação: ${JSON.stringify(result.error)}`;
+    }
+    
+    // Confirmação para a IA. A revalidação já acontece na server action.
+    return `Transação "${input.description}" de R$${input.amount} adicionada com sucesso.`;
   }
 );
 
