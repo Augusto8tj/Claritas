@@ -262,8 +262,8 @@ export function CouncilAutopilotInterfaceV2(props: CouncilAutopilotInterfaceV2Pr
 
         {isCouncilAutopilotOn ? (
             <Button variant="destructive" className="w-full" onClick={dissolveCouncil} disabled={isFetchingCouncil}>
-                <PowerOff className="mr-2 h-4 w-4" />
-                Dispensar e Desativar
+                {isFetchingCouncil ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <PowerOff className="mr-2 h-4 w-4" />}
+                {isFetchingCouncil ? 'A desativar...' : 'Dispensar e Desativar'}
             </Button>
         ) : (
              <Button className="w-full" onClick={fetchStrategyCouncil} disabled={isFetchingCouncil}>

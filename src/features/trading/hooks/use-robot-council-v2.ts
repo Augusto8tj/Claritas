@@ -485,6 +485,7 @@ export function useRobotCouncilV2(
     setIsCouncilAutopilotOn(true);
     lastActiveSymbolRef.current = activeSymbol;
     lastTimePeriodRef.current = timePeriod;
+    setIsFetchingCouncil(false);
   }, [activeSymbol, user, toast, evolvedStrategies, resetArenaPerformance, timePeriod]);
   
   // ────────────────────────────────────────────────────────────────
@@ -511,13 +512,22 @@ export function useRobotCouncilV2(
   // FUNÇÃO: DESATIVAR CONSELHO
   // ────────────────────────────────────────────────────────────────
   const dissolveCouncil = useCallback(() => {
-    setIsCouncilAutopilotOn(false);
-    virtualTradesRef.current = [];
-    
+    setIsFetchingCouncil(true); // Usa o mesmo estado para feedback visual
     toast({
-      title: '⏸️ Sistema Pausado',
-      description: 'Conselho desativado.',
+        title: 'Dispensando a Mesa V2.0...',
+        description: 'A guardar os dados finais da sessão.',
     });
+
+    // Simula uma operação de limpeza assíncrona
+    setTimeout(() => {
+        setIsCouncilAutopilotOn(false);
+        virtualTradesRef.current = [];
+        setIsFetchingCouncil(false);
+        toast({
+            title: '⏸️ Sistema Pausado',
+            description: 'Conselho desativado com segurança.',
+        });
+    }, 1500);
   }, [toast]);
   
   // ════════════════════════════════════════════════════════════════════
