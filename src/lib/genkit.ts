@@ -13,7 +13,7 @@ export const ai = genkit({
     googleAI(),
   ],
   // Set the default, most economical model to avoid rate limiting.
-  model: pro,
+  model: flashLite,
 });
 
 // Re-exporting for use in other server components, though direct usage is preferred.
