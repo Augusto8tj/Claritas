@@ -73,8 +73,8 @@ export function FirestoreWriteTestCard() {
                         Clique em "Iniciar Teste de Escrita" para criar um documento de teste. Depois, clique em "Iniciar Teste de Eliminação" para o remover. Ambas as operações devem ser bem-sucedidas.
                     </AlertDescription>
                 </Alert>
-                <div className="flex flex-col sm:flex-row gap-4">
-                    <Button onClick={() => handleTest('write')} disabled={status === 'testing'} className="flex-1">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <Button onClick={() => handleTest('write')} disabled={status === 'testing'}>
                         {status === 'testing' && operation === 'write' ? (
                             <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                         ) : (
@@ -86,7 +86,6 @@ export function FirestoreWriteTestCard() {
                         onClick={() => handleTest('delete')}
                         disabled={status === 'testing'}
                         variant="destructive"
-                        className="flex-1"
                     >
                         {status === 'testing' && operation === 'delete' ? (
                             <Loader2 className="mr-2 h-4 w-4 animate-spin" />
