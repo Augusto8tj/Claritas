@@ -147,5 +147,13 @@ service cloud.firestore {
       allow update: if isExistingOwner(userId) && isImmutableOwnedDocUpdate();
       allow delete: if isExistingOwner(userId);
     }
+
+    match /users/{userId}/trading_data/{document=**} {
+      allow read, write: if isOwner(userId);
+    }
+    
+    match /users/{userId}/decision_logs/{document=**} {
+      allow read, write: if isOwner(userId);
+    }
   }
 }
