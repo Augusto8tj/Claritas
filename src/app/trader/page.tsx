@@ -1,8 +1,12 @@
 // /src/app/trader/page.tsx
+'use client'
+
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Layers, Bot, CandlestickChart, Settings2, Laptop, Smartphone, Wand2 } from "lucide-react";
 import Link from "next/link";
+import { useDerivApi } from "@/hooks/use-deriv-api";
+import { useEffect } from "react";
 
 const platforms = [
   {
@@ -57,6 +61,15 @@ const platforms = [
 ];
 
 export default function DerivPlatformsPage() {
+  const { isConnected, isConnecting, reconnect } = useDerivApi();
+
+  // Garante a conexão ao entrar na página de plataformas
+  useEffect(() => {
+    if (!isConnected && !isConnecting) {
+      reconnect();
+    }
+  }, [isConnected, isConnecting, reconnect]);
+
   return (
     <div className="flex-1 space-y-4 p-4 sm:p-8 pt-6">
       <div className="flex items-center justify-between space-y-2">

@@ -9,66 +9,127 @@ import {
 } from "@/components/ui/accordion";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
-const ChangelogContent = () => (
-  <div className="prose prose-sm dark:prose-invert max-w-none text-base leading-relaxed space-y-4">
-    <style jsx>{`
-      .prose h3 {
-        font-size: 1.25rem;
-        font-weight: 600;
-        margin-bottom: 0.5rem;
-      }
-      .prose h4 {
-        font-size: 1.1rem;
-        font-weight: 600;
-        margin-top: 1rem;
-        margin-bottom: 0.25rem;
-      }
-      .prose ul {
-        list-style-type: disc;
-        padding-left: 1.5rem;
-        margin-top: 0.5rem;
-      }
-      .prose hr {
-        margin: 1.5rem 0;
-      }
-    `}</style>
-     <h3>v1.5.0 (Atual) - A Evolução da Inteligência: Aprendizado Contínuo</h3>
-    <h4>Funcionalidades Principais:</h4>
-    <ul>
-      <li><strong>Laboratório de Evolução Genética:</strong> Implementação do \`useStrategyEvolution\`, um cérebro de aprendizado contínuo. A cada 50 trades virtuais, o sistema identifica os robôs de pior desempenho e os substitui por "mutações" genéticas dos robôs de elite, garantindo que o conselho se adapte e melhore autonomamente.</li>
-      <li><strong>Consenso de Capital:</strong> Os robôs agora não só opinam sobre a direção e o tempo, mas também sugerem um valor de aposta (\`stake\`) proporcional à sua convicção. A aposta final é uma média ponderada destas sugestões, ajustada pelo risco.</li>
-      <li><strong>Gestão de Risco Temporal Aprimorada:</strong> A duração do contrato não é mais uma média simples. As sugestões de tempo de cada robô são convertidas para uma unidade comum (segundos), ponderadas pela confiança, e o resultado final é ajustado dinamicamente pela volatilidade do mercado (ATR, BBW).</li>
-      <li><strong>Painel "Evolução":</strong> Uma nova aba foi adicionada ao Deriv Trader para visualizar o histórico do Laboratório de Evolução, mostrando quais estratégias estão a ser promovidas e quais estão a ser substituídas.</li>
-    </ul>
-    <hr/>
-    <h3>v1.0.0 - A Ascensão da IA: Autonomia e Persistência</h3>
-    <h4>Funcionalidades Principais:</h4>
-    <ul>
-      <li><strong>Autonomia Total da Mesa:</strong> A Mesa Operacional agora ajusta dinamicamente não só o <strong>limiar de consenso</strong>, but também o <strong>valor da aposta (\`stake\`)</strong> e a <strong>duração do contrato</strong> a cada tick. A IA analisa a volatilidade (ATR, Z-Score) e a força da tendência (ADX) para tomar decisões de risco em tempo real.</li>
-      <li><strong>Memória Persistente com Firebase:</strong> A Arena Virtual agora é "imortal". O desempenho de cada um dos 22 robôs (vitórias, derrotas, P&L) é guardado de forma segura no <strong>Firestore</strong>, associado à sua conta de utilizador. O progresso já não se perde ao fechar o navegador.</li>
-      <li><strong>Hall da Fama Integrado:</strong> O Hall da Fama foi movido da sua página isolada para um separador dedicado diretamente dentro da página <strong>Deriv Trader</strong>, centralizando todo o ecossistema de trading num único local. Ele busca os dados do Firebase, mostrando um placar de líderes persistente.</li>
-      <li><strong>Consenso Relativo e Inteligente:</strong> O limiar de consenso deixou de ser um número absoluto. Agora é calculado como uma <strong>percentagem do potencial de voto máximo</strong> disponível a cada momento, tornando-o verdadeiramente adaptativo à quantidade de robôs que têm uma opinião formada (\`RISE\` ou \`FALL\`).</li>
-      <li><strong>Estratégias Locais e Fim da Dependência da IA:</strong> O conselho de 22 robôs analistas já não é gerado por uma chamada de IA. As suas estratégias estão agora definidas localmente no ficheiro <code>src/services/council-strategies.ts</code>, tornando a inicialização da Mesa Operacional instantânea, fiável e consistente.</li>
-    </ul>
-    <h4>Correções Críticas:</h4>
-    <ul>
-      <li>Resolvido um erro crucial (\`TypeError: Cannot read properties of null\`) que impedia a execução de trades automáticas devido à falta de verificação dos indicadores.</li>
-      <li>Corrigida a lógica de votação do robô de Bandas de Bollinger, que estava inoperante e impedia a atividade na Arena.</li>
-      <li>Garantido que os ajustes dinâmicos de \`stake\` e \`duration\` respeitam os limites mínimos da corretora ($0.35 e 1-10 ticks) e que os valores corretos são usados na execução da ordem.</li>
-      <li>Corrigido um erro que tentava executar trades antes de a conexão com a API da corretora estar totalmente estabelecida.</li>
-    </ul>
-    <hr/>
-    <h3>v0.5.0 - A Arena Virtual e Meritocracia</h3>
-    <h4>Funcionalidades Principais:</h4>
-    <ul>
-      <li><strong>Criação da "Arena Virtual":</strong> Implementação de um sistema de "paper trading" competitivo em segundo plano. O sistema rastreia o desempenho individual de cada um dos 22 robôs analistas.</li>
-      <li><strong>Memória de Desempenho:</strong> Utilização do \`localStorage\` para guardar as vitórias, derrotas e o P&L (Lucro/Prejuízo) de cada robô durante a sessão de trading.</li>
-      <li><strong>Página "Mesa de Operações" (\`/trading-desk\`):</strong> Criação de um novo ecrã que funciona como um *leaderboard*, exibindo o ranking de desempenho de todos os analistas, incluindo taxa de acerto e resultado financeiro.</li>
-      <li><strong>Implementação da "Meritocracia":</strong> Adição de um modo de operação onde os robôs com melhor desempenho histórico têm os seus votos ponderados com mais força, tornando o sistema auto-otimizável e adaptativo.</li>
-      <li><strong>Navegação Atualizada:</strong> Adicionado um link no menu lateral para a nova página "Mesa de Operações".</li>
-    </ul>
-  </div>
-);
+const changelogContentString = `# Claritas Copilot - Registo de Alterações
+
+Este documento regista a jornada de desenvolvimento e as principais funcionalidades implementadas no Claritas Copilot.
+
+---
+
+### v2.0.0 (Atual) - O Cérebro Quantitativo: Arquitetura Adaptativa e Gestão de Risco Científica
+
+**Funcionalidades Principais:**
+- **Arquitetura "Regime-Aware" (Consciente do Contexto):** O sistema agora utiliza um modelo (HMM Lite) para identificar o regime de mercado em tempo real (ex: \`TREND_UP\`, \`RANGING\`). Robôs que são inadequados para um certo regime (ex: osciladores em forte tendência) são automaticamente silenciados, eliminando um dos maiores erros de robôs amadores.
+- **Consenso Bayesiano Ponderado por Desempenho de Regime:** A votação deixou de ser uma simples contagem. O sistema agora calcula a probabilidade de sucesso de uma operação usando um consenso que dá mais peso aos robôs que historicamente têm melhor desempenho *naquele regime de mercado específico* (\`winRateTrend\` vs \`winRateRange\`).
+- **Gestão de Risco Dinâmica com "Quarter Kelly":** O valor da aposta (\`stake\`) já não é fixo. É calculado cientificamente a cada oportunidade usando o Critério de Kelly Fracionado, que aposta mais agressivamente quando a probabilidade Bayesiana é alta e protege o capital quando a vantagem é baixa.
+- **Veto de Microestrutura ("O Guarda-Costas"):** Uma camada final de proteção foi implementada. Mesmo com um consenso forte, o sistema vetará uma operação se a análise dos últimos 10 ticks revelar uma pressão de mercado contrária perigosa (ex: vetar uma compra durante um "crash" súbito).
+- **Sistema Totalmente Adaptativo ao Timeframe:** A aplicação inteira, da interface ao núcleo da IA, agora consulta os limites de duração do contrato diretamente da API da corretora. Se o utilizador muda de "ticks" para "segundos", todo o sistema se recalibra para operar dentro das novas regras de tempo (ex: de \`5 ticks\` para \`15 segundos\`), garantindo que todas as operações são sempre válidas.
+
+---
+
+### v1.5.0 - A Evolução da Inteligência: Aprendizado Contínuo e Gestão de Risco Multidimensional
+
+**Funcionalidades Principais:**
+- **Laboratório de Evolução Genética:** Implementação do \`useStrategyEvolution\`, um cérebro de aprendizado contínuo. A cada 50 trades virtuais, o sistema identifica os robôs de pior desempenho e os substitui por "mutações" genéticas dos robôs de elite, garantindo que o conselho se adapte e melhore autonomamente.
+- **Consenso de Capital:** Os robôs agora não só opinam sobre a direção e o tempo, mas também sugerem um valor de aposta (\`stake\`) proporcional à sua convicção. A aposta final é uma média ponderada destas sugestões, ajustada pelo risco.
+- **Gestão de Risco Temporal Aprimorada:** A duração do contrato não é mais uma média simples. As sugestões de tempo de cada robô são convertidas para uma unidade comum (segundos), ponderadas pela confiança, e o resultado final é ajustado dinamicamente pela volatilidade do mercado (ATR, BBW).
+- **Painel "Evolução":** Uma nova aba foi adicionada ao Deriv Trader para visualizar o histórico do Laboratório de Evolução, mostrando quais estratégias estão a ser promovidas e quais estão a ser substituídas.
+
+---
+
+### v1.0.0 - A Ascensão da IA: Autonomia e Persistência
+
+**Funcionalidades Principais:**
+- **Autonomia Total da Mesa:** A Mesa Operacional agora ajusta dinamicamente não só o **limiar de consenso**, but também o **valor da aposta (\`stake\`)** e a **duração do contrato** a cada tick. A IA analisa a volatilidade (ATR, Z-Score) e a força da tendência (ADX) para tomar decisões de risco em tempo real.
+- **Memória Persistente com Firebase:** A Arena Virtual agora é "imortal". O desempenho de cada um dos 22 robôs (vitórias, derrotas, P&L) é guardado de forma segura no **Firestore**, associado à sua conta de utilizador. O progresso já não se perde ao fechar o navegador.
+- **Hall da Fama Integrado:** O Hall da Fama foi movido da sua página isolada para um separador dedicado diretamente dentro da página **Deriv Trader**, centralizando todo o ecossistema de trading num único local. Ele busca os dados do Firebase, mostrando um placar de líderes persistente.
+- **Consenso Relativo e Inteligente:** O limiar de consenso deixou de ser um número absoluto. Agora é calculado como uma **percentagem do potencial de voto máximo** disponível a cada momento, tornando-o verdadeiramente adaptativo à quantidade de robôs que têm uma opinião formada (\`RISE\` ou \`FALL\`).
+- **Estratégias Locais e Fim da Dependência da IA:** O conselho de 22 robôs analistas já não é gerado por uma chamada de IA. As suas estratégias estão agora definidas localmente no ficheiro \`src/services/council-strategies.ts\`, tornando a inicialização da Mesa Operacional instantânea, fiável e consistente.
+
+**Correções Críticas:**
+- Resolvido um erro crucial (\`TypeError: Cannot read properties of null\`) que impedia a execução de trades automáticas devido à falta de verificação dos indicadores.
+- Corrigida a lógica de votação do robô de Bandas de Bollinger, que estava inoperante e impedia a atividade na Arena.
+- Garantido que os ajustes dinâmicos de \`stake\` e \`duration\` respeitam os limites mínimos da corretora ($0.35 e 1-10 ticks) e que os valores corretos são usados na execução da ordem.
+- Corrigido um erro que tentava executar trades antes de a conexão com a API da corretora estar totalmente estabelecida.
+
+---
+
+### v0.5.0 - A Arena Virtual e Meritocracia
+
+**Funcionalidades Principais:**
+- **Criação da "Arena Virtual":** Implementação de um sistema de "paper trading" competitivo em segundo plano. O sistema rastreia o desempenho individual de cada um dos 22 robôs analistas.
+- **Memória de Desempenho:** Utilização do \`localStorage\` para guardar as vitórias, derrotas e o P&L (Lucro/Prejuízo) de cada robô durante a sessão de trading.
+- **Página "Mesa de Operações" (\`/trading-desk\`):** Criação de um novo ecrã que funciona como um *leaderboard*, exibindo o ranking de desempenho de todos os analistas, incluindo taxa de acerto e resultado financeiro.
+- **Implementação da "Meritocracia":** Adição de um modo de operação onde os robôs com melhor desempenho histórico têm os seus votos ponderados com mais força, tornando o sistema auto-otimizável e adaptativo.
+- **Navegação Atualizada:** Adicionado um link no menu lateral para a nova página "Mesa de Operações".
+
+---
+
+### v0.4.0 - Inteligência de Gestão e Análise de Elite
+
+**Funcionalidades Principais:**
+- **Gestão de Risco e Tempo Dinâmicos:** A "Direção de Risco" (\`supervisionCommitteeCheck\`) foi potenciada para não só aprovar ou vetar, mas também para **ajustar dinamicamente o valor da aposta (\`stake\`) e a duração do contrato**, com base na confiança do consenso e em fatores de mercado como volatilidade (ATR) e força da tendência (ADX).
+- **"Gestor de Turno" Inteligente:** A persona \`committeeOfSpecialists\` foi evoluída para analisar a condição de mercado em tempo real (ex: "Tendência de Baixa com Exaustão") e exibir essa leitura na interface.
+- **Lógica de Voto de Alta Frequência:** Implementação dos "Gatilhos de Disparo" para cada um dos 22 analistas, permitindo reações instantâneas a micro-movimentos em horizontes de tempo curtos (5 ticks).
+- **Transparência Total da Mesa:** A interface foi atualizada para exibir em tempo real a atuação de todas as personas: o comité tático ativo, a decisão da supervisão de risco e a soma atual do consenso de votos.
+
+**Correções:**
+- **Reparação do Motor de Cálculo:** Corrigido o cálculo do indicador \`RVI\` e do \`BBW\` (Largura das Bandas de Bollinger), completando o arsenal de 22 indicadores no painel.
+
+---
+
+### v0.3.0 - O Conselho de 22 Analistas de IA
+
+**Funcionalidades Principais:**
+- **Criação do \`strategy-council-flow\`:** Desenvolvimento do fluxo de IA mestre, responsável por gerar um conselho de 22 robôs analistas, cada um com uma estratégia e parâmetros específicos.
+- **Calibração Dinâmica:** O conselho passou a ser "consciente do tempo". A IA ajusta os parâmetros de todos os analistas com base no horizonte de tempo selecionado (de Ticks a Diário).
+- **Motor de Cálculo Abrangente:** Criação do \`DerivFinanceLib.ts\` e \`indicator-service.ts\`, um motor robusto para calcular todos os 22 indicadores técnicos necessários para alimentar o conselho.
+- **Lógica de Votação:** Implementação da lógica base para que cada analista possa emitir um voto de \`RISE\`, \`FALL\`, ou \`HOLD\`.
+
+**Correções Críticas:**
+- Resolvido um bug onde os robôs perdiam o acesso aos dados do motor de cálculo ("perda de visão").
+- Corrigido um erro de \`module not found\` que impedia a construção do conselho.
+
+---
+
+### v0.2.0 - Introdução à Mesa Operacional (Deriv Trader)
+
+**Funcionalidades Principais:**
+- **Integração com a API da Deriv:** Estabelecimento da conexão WebSocket para receber dados de mercado em tempo real e executar operações.
+- **Gráfico de Trading Avançado:** Implementação de um gráfico renderizado em SVG, estável, responsivo, com suporte para múltiplos tipos (Linha/Velas), indicadores sobrepostos e ferramentas de zoom.
+- **Copiloto de Trade:** Primeira versão do assistente de IA para negociação, capaz de analisar o desempenho e sugerir operações.
+- **Estrutura de Hooks:** Criação do \`useDerivApi\` para centralizar a comunicação com a API e do \`useRobotCouncil\` como o "cérebro" da operação.
+
+---
+
+### v0.1.0 - Fundação e Finanças Pessoais
+
+**Funcionalidades Iniciais:**
+- **Setup do Projeto:** Estruturação inicial do projeto em Next.js com TypeScript e ShadCN UI.
+- **Módulos de Finanças Pessoais:** Implementação do Painel Principal, Análise de Despesas, Orçamento Mensal e Metas Financeiras.
+- **Autenticação:** Sistema de login e registo de utilizadores com Firebase.
+- **Chatbot com IA (Claritas):** Integração de um chatbot Genkit para insights e interações financeiras.
+- **Página de Ajuda e Configurações:** Criação das páginas de suporte e personalização da aplicação.
+`;
+
+const ChangelogContent = () => {
+    // Processar o conteúdo do changelog para HTML ou usar um parser de markdown
+    // Por simplicidade, vamos usar uma regex para substituir os marcadores por elementos HTML
+    const formattedContent = changelogContentString
+        .replace(/### (.*)/g, '<h3 class="text-xl font-bold mt-4 mb-2 font-headline">$1</h3>')
+        .replace(/#### (.*)/g, '<h4 class="text-lg font-semibold mt-3 mb-1">$1</h4>')
+        .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+        .replace(/`([^`]+)`/g, '<code class="bg-muted text-muted-foreground px-1 py-0.5 rounded text-sm font-mono">$1</code>')
+        .replace(/---/g, '<hr class="my-4 border-border" />')
+        .replace(/^- (.*)/gm, '<li class="ml-4 list-disc">$1</li>');
+
+    return (
+        <div 
+            className="prose prose-sm dark:prose-invert max-w-none text-base leading-relaxed space-y-2"
+            dangerouslySetInnerHTML={{ __html: formattedContent }}
+        />
+    );
+};
+
 
 export default function HelpPage() {
   return (
@@ -194,7 +255,7 @@ export default function HelpPage() {
                     <div>
                         <h4 className="font-semibold text-md mb-2">Camada 1: Os 22 Analistas Táticos (A Equipa)</h4>
                         <p className="text-sm">
-                           São os especialistas da linha da frente. Cada um domina uma estratégia de indicador (RSI, MACD, etc.), definida no ficheiro <code>src/services/council-strategies.ts</code>. A cada tick, eles analisam os dados do motor de indicadores e emitem um "voto" (\`RISE\`, \`FALL\`, \`HOLD\`) com um nível de confiança.
+                           São os especialistas da linha da frente. Cada um domina uma estratégia de indicador (RSI, MACD, etc.), definida no ficheiro \`src/services/council-strategies.ts\`. A cada tick, eles analisam os dados do motor de indicadores e emitem um "voto" (\`RISE\`, \`FALL\`, \`HOLD\`) com um nível de confiança.
                         </p>
                     </div>
                     <div>
@@ -310,8 +371,8 @@ export default function HelpPage() {
                 <p>Siga estes passos:</p>
                 <ol className="list-decimal pl-6 space-y-1">
                   <li>Obtenha uma chave de API no <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer" className="text-primary underline">Google AI Studio</a>.</li>
-                  <li>No seu projeto, localize o arquivo chamado <code>.env</code>.</li>
-                  <li>Dentro deste arquivo, adicione a seguinte linha, substituindo <code>"SUA_CHAVE_DE_API"</code> pela chave que você copiou: <br/><code>GEMINI_API_KEY="SUA_CHAVE_DE_API"</code></li>
+                  <li>No seu projeto, localize o arquivo chamado \`.env\`.</li>
+                  <li>Dentro deste arquivo, adicione a seguinte linha, substituindo \`"SUA_CHAVE_DE_API"\` pela chave que você copiou: <br/>\`GEMINI_API_KEY="SUA_CHAVE_DE_API"\`</li>
                   <li>Salve o arquivo e reinicie o aplicativo para que as alterações tenham efeito.</li>
                 </ol>
               </AccordionContent>

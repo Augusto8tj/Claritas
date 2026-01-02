@@ -3,7 +3,7 @@ import { z } from 'zod';
 import type { RobotStrategy as RobotStrategyT, RobotVote as RobotVoteT, RobotPerformance as RobotPerformanceT, EnhancedRobotPerformance as EnhancedRobotPerformanceType, MarketRegime as MarketRegimeType, MicrostructureFeatures as MicrostructureFeaturesType, BayesianVote as BayesianVoteType, TradeDecisionLog as TradeDecisionLogType } from './trading.types';
 import type { AssetAnalysisInput as AssetAnalysisInputT, AssetAnalysisOutput as AssetAnalysisOutputT } from '@/ai/flows/asset-analysis.types';
 import { IndicatorsSchema } from './trading.types';
-import { AssetAnalysisInputSchema as AssetAnalysisInputSchemaFromFlow, AssetAnalysisOutputSchema as AssetAnalysisOutputSchemaFromFlow } from '@/ai/flows/asset-analysis.types';
+import { AssetAnalysisInputSchema, AssetAnalysisOutputSchema } from '@/ai/flows/asset-analysis.types';
 
 
 // =================================================================
@@ -122,7 +122,7 @@ export type TradeDecisionLog = TradeDecisionLogType;
 // Trading AI Flow Types
 // =================================================================
 
-// Base Operation for reuse
+// Base Operation for reuse - MOVED TO THE TOP
 export const OperationSchema = z.object({
   id: z.number(),
   asset: z.string(),
@@ -137,9 +137,6 @@ export const OperationSchema = z.object({
   entryPrice: z.number().optional(),
 });
 
-// Re-exporting schemas from their source file
-export const AssetAnalysisInputSchema = AssetAnalysisInputSchemaFromFlow;
-export const AssetAnalysisOutputSchema = AssetAnalysisOutputSchemaFromFlow;
 
 // Re-exporting types from their source file
 export type AssetAnalysisInput = AssetAnalysisInputT;
@@ -211,4 +208,4 @@ export const GenerateGoalImageOutputSchema = z.object({
 });
 export type GenerateGoalImageOutput = z.infer<typeof GenerateGoalImageOutputSchema>;
 
-export { IndicatorsSchema };
+export { IndicatorsSchema, AssetAnalysisInputSchema, AssetAnalysisOutputSchema };
