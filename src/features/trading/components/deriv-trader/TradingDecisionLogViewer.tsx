@@ -43,9 +43,55 @@ export const TradingDecisionLogViewer: React.FC<TradingDecisionLogViewerProps> =
   const { toast } = useToast();
 
   const handleReportClick = () => {
+    if (logs.length === 0) {
+        toast({
+            title: "Nenhum Dado para Exportar",
+            description: "Não há logs de decisão para gerar um relatório."
+        });
+        return;
+    }
+
+    // Define o cabeçalho do CSV
+    const headers = [
+        "ID", "Timestamp", "Asset", "Time Period", "Direction", "Stake", 
+        "Duration", "Duration Unit", "Result", "PnL", "Market Regime", 
+        "Regime Confidence", "Bayesian Probability", "Kelly Stake", "Active Robots"
+    ];
+    
+    // Mapeia os logs para linhas do CSV
+    const rows = logs.map(log => [
+        log.id,
+        log.timestamp,
+        log.asset,
+        log.timePeriod,
+        log.tradeParams.direction,
+        log.tradeParams.stake,
+        log.tradeParams.duration,
+        log.tradeParams.durationUnit,
+        log.result,
+        log.pnl?.toFixed(2) || '0.00',
+        log.context.marketRegime,
+        log.context.regimeConfidence.toFixed(4),
+        log.consensus.bayesianProbability.toFixed(4),
+        log.consensus.kellyStake.toFixed(2),
+        log.consensus.activeRobots
+    ].join(',')).join('\n');
+
+    const csvContent = `${headers.join(',')}\n${rows}`;
+    
+    // Cria o Blob e aciona o download
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute("download", "relatorio_auditoria_cognitiva.csv");
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+
     toast({
-        title: "Funcionalidade em Desenvolvimento",
-        description: "A capacidade de gerar e exportar relatórios está a ser preparada."
+        title: "Relatório Gerado",
+        description: "O download do ficheiro CSV foi iniciado."
     });
   }
 
