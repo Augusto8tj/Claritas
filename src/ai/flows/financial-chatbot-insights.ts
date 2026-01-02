@@ -64,16 +64,14 @@ Nova Pergunta do Usuário: {{{query}}}
 const financialChatbotInsightsFlow = ai.defineFlow(
   {
     name: 'financialChatbotInsightsFlow',
-    // O schema de entrada do fluxo agora inclui o userId, que será extraído.
-    inputSchema: financialChatbotInsightsInputSchema.extend({ userId: z.string().describe("The user's unique ID.") }),
+    inputSchema: financialChatbotInsightsInputSchema.extend({
+      userId: z.string().describe("The user's unique ID."),
+    }),
     outputSchema: financialChatbotInsightsOutputSchema,
   },
   async (input) => {
-    // Separa o userId do resto do input para passá-lo ao contexto das ferramentas
     const { userId, ...promptData } = input;
 
-    // Passa o promptData (sem userId) como input principal do prompt
-    // e o userId separadamente para o contexto das ferramentas.
     const { output } = await prompt(promptData, { data: { userId } });
 
     if (!output) {

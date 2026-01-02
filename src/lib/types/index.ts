@@ -132,12 +132,10 @@ const MessageSchema = z.object({
   role: z.enum(['user', 'model']),
   content: z.string(),
 });
-// O schema do input do prompt não precisa mais do userId
 export const financialChatbotInsightsInputSchema = z.object({
   history: z.array(MessageSchema).describe('The conversation history.'),
   query: z.string().describe('The user query about their finances.'),
 });
-// O tipo do input da função do fluxo ainda espera o userId
 export type FinancialChatbotInsightsInput = z.infer<typeof financialChatbotInsightsInputSchema>;
 
 export const financialChatbotInsightsOutputSchema = z.object({
