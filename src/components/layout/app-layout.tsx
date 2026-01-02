@@ -24,6 +24,7 @@ import {
   PanelLeftClose,
   PanelRightClose,
   Archive,
+  Wand2,
 } from "lucide-react";
 import {
   Sidebar,
@@ -162,6 +163,12 @@ function MainNav() {
                     <SidebarMenuSubButton href="/deriv-trader" isActive={pathname === '/deriv-trader'}>
                         <CandlestickChart />
                         <span>Deriv Trader</span>
+                    </SidebarMenuSubButton>
+                </SidebarMenuSubItem>
+                 <SidebarMenuSubItem>
+                    <SidebarMenuSubButton href="/deriv-trader-v2" isActive={pathname === '/deriv-trader-v2'}>
+                        <Wand2 />
+                        <span>Deriv Trader 2.0</span>
                     </SidebarMenuSubButton>
                 </SidebarMenuSubItem>
                  <SidebarMenuSubItem>
