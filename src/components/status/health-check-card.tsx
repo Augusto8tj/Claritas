@@ -42,7 +42,6 @@ export function HealthCheckCard({
 
   useEffect(() => {
     if (isClientSide) {
-      // Logic for Deriv API check, which is client-side
       if (isConnecting) {
         setStatus("loading");
         setDisplayMessage("Verificando...");
