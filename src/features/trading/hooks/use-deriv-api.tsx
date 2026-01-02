@@ -178,6 +178,8 @@ export const DerivApiProvider = ({ children }: { children: ReactNode }) => {
   const [assetGroups, setAssetGroups] = useState<AssetGroup[]>([]);
   const [isAssetsLoading, setIsAssetsLoading] = useState(true);
   const { toast } = useToast();
+  
+  const [toastQueue, setToastQueue] = useState<any[]>([]);
 
   const [activeSymbol, setActiveSymbol] = useState<string | null>('1HZ10V');
   const [chartData, setChartData] = useState<ChartData[]>([]);
@@ -226,6 +228,14 @@ export const DerivApiProvider = ({ children }: { children: ReactNode }) => {
     const asset = allAssets.find(a => a.value === activeSymbol);
     return getDurationLimitsForAsset(asset?.minDuration);
   }, [activeSymbol, assetGroups]);
+
+  // Process toast queue safely
+  useEffect(() => {
+    if (toastQueue.length > 0) {
+      toastQueue.forEach(t => toast(t));
+      setToastQueue([]);
+    }
+  }, [toastQueue, toast]);
 
 
   const makeRequest = useCallback(<T,>(request: object, noResponse = false): Promise<T> => {
@@ -553,11 +563,11 @@ const subscribeToMarketData = useCallback(async (symbol: string) => {
                             const newStatus = contract.is_sold ? (contract.profit >= 0 ? 'won' : 'lost') : 'pending';
                             
                             if (contract.is_sold) {
-                                toast({
+                                setToastQueue(prev => [...prev, {
                                     title: "Negociação Encerrada",
                                     description: `Contrato ${contractId}: ${contract.profit >= 0 ? `Lucro de ${contract.currency} ${contract.profit.toFixed(2)}` : `Prejuízo de ${contract.currency} ${Math.abs(contract.profit).toFixed(2)}`}`,
                                     variant: contract.profit < 0 ? "destructive" : "default",
-                                });
+                                }]);
                                 
                                 const sellTime = contract.sell_time ? contract.sell_time * 1000 : Date.now();
                                 
@@ -703,7 +713,7 @@ const subscribeToMarketData = useCallback(async (symbol: string) => {
     return () => {
       if (wsRef.current) wsRef.current.close();
     };
-  }, [activeToken, isLoading, makeRequest, toast, triggerReconnect]);
+  }, [activeToken, isLoading, makeRequest, updateTradeAnnotation, toast]);
 
   
   useEffect(() => {
