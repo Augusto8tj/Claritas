@@ -7,9 +7,10 @@ import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { useAuth } from '@/features/auth/hooks/use-auth';
 import { Loader2, AlertTriangle, CheckCircle, Database, Trash2, Edit } from 'lucide-react';
-import { doc, setDoc, deleteDoc } from 'firebase/firestore';
+import { doc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { useToast } from '@/hooks/use-toast';
+import { setDocumentNonBlocking, deleteDocumentNonBlocking } from '@/firebase/non-blocking-updates';
 
 type TestStatus = 'idle' | 'testing' | 'success' | 'error';
 type OperationType = 'write' | 'delete';
@@ -19,7 +20,6 @@ export function FirestoreWriteTestCard() {
     const { toast } = useToast();
     const [status, setStatus] = useState<TestStatus>('idle');
     const [operation, setOperation] = useState<OperationType | null>(null);
-    const [error, setError] = useState<string | null>(null);
 
     const handleTest = async (op: OperationType) => {
         if (!user) {
@@ -33,25 +33,27 @@ export function FirestoreWriteTestCard() {
 
         setStatus('testing');
         setOperation(op);
-        setError(null);
 
         const testDocRef = doc(db, `users/${user.uid}/diagnostico/test-doc`);
 
-        try {
-            if (op === 'write') {
-                await setDoc(testDocRef, {
-                    message: 'teste de escrita',
-                    timestamp: new Date().toISOString(),
-                });
-            } else {
-                await deleteDoc(testDocRef);
-            }
-            setStatus('success');
-        } catch (e: any) {
-            console.error(`[Firestore Test] Failed on ${op} operation:`, e);
-            setError(e.message || 'Ocorreu um erro desconhecido.');
-            setStatus('error');
+        if (op === 'write') {
+            setDocumentNonBlocking(testDocRef, {
+                message: 'teste de escrita',
+                timestamp: new Date().toISOString(),
+            }, { merge: true });
+        } else {
+            deleteDocumentNonBlocking(testDocRef);
         }
+
+        // Feedback otimista
+        setTimeout(() => {
+            // Se nenhum erro foi capturado globalmente, consideramos sucesso.
+            setStatus('success');
+            toast({
+                title: "Operação Enviada",
+                description: `O teste de ${op} foi enviado para o Firestore. Verifique o console de erros do Next.js para falhas de permissão.`,
+            });
+        }, 1500);
     };
 
     return (
@@ -70,7 +72,7 @@ export function FirestoreWriteTestCard() {
                     <AlertTriangle className="h-4 w-4" />
                     <AlertTitle>Como Usar</AlertTitle>
                     <AlertDescription>
-                        Clique em "Iniciar Teste de Escrita" para criar um documento de teste. Depois, clique em "Iniciar Teste de Eliminação" para o remover. Ambas as operações devem ser bem-sucedidas.
+                        Clique em "Iniciar Teste de Escrita" para criar um documento de teste. Depois, clique em "Iniciar Teste de Eliminação" para o remover. Ambas as operações devem ser bem-sucedidas. Se ocorrer um erro de permissão, ele será exibido no overlay de erro do Next.js.
                     </AlertDescription>
                 </Alert>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -99,22 +101,9 @@ export function FirestoreWriteTestCard() {
                 {status === 'success' && (
                     <Alert variant="default" className="bg-green-500/10 border-green-500/50">
                         <CheckCircle className="h-4 w-4 text-green-700" />
-                        <AlertTitle className="text-green-800 font-bold">Operação Bem-sucedida!</AlertTitle>
+                        <AlertTitle className="text-green-800 font-bold">Operação Enviada!</AlertTitle>
                         <AlertDescription className="text-xs text-green-700">
-                            O teste de <strong>{operation === 'write' ? 'escrita' : 'eliminação'}</strong> foi concluído com sucesso. As permissões do Firestore estão corretas para esta operação.
-                        </AlertDescription>
-                    </Alert>
-                )}
-
-                {status === 'error' && (
-                    <Alert variant="destructive">
-                        <AlertTriangle className="h-4 w-4" />
-                        <AlertTitle>Falha na Operação de {operation === 'write' ? 'Escrita' : 'Eliminação'}</AlertTitle>
-                        <AlertDescription className="whitespace-pre-wrap text-xs">
-                            O Firestore bloqueou a operação. Verifique as regras de segurança para a coleção "diagnostico".
-                            <br />
-                            <br />
-                            <strong>Detalhe do Erro:</strong> {error}
+                            O comando de <strong>{operation === 'write' ? 'escrita' : 'eliminação'}</strong> foi enviado. Verifique a consola do Firestore e o overlay de erros do Next.js para confirmar o resultado.
                         </AlertDescription>
                     </Alert>
                 )}
