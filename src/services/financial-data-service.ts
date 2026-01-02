@@ -1,5 +1,4 @@
 // /src/services/financial-data-service.ts
-'use server';
 
 import { db } from '@/lib/firebase';
 import { collection, getDocs, doc, setDoc, query, where, orderBy, getDoc, addDoc, deleteDoc } from 'firebase/firestore';
@@ -10,7 +9,9 @@ import { addDocumentNonBlocking, deleteDocumentNonBlocking, setDocumentNonBlocki
 // --- Transactions ---
 
 export async function getTransactions(userId: string): Promise<Transaction[]> {
-    if (!userId) throw new Error("User ID is required.");
+    if (!userId) {
+        throw new Error("User ID is required.");
+    }
     const transactionsCol = collection(db, `users/${userId}/transactions`);
     try {
         const snapshot = await getDocs(transactionsCol);
@@ -22,7 +23,9 @@ export async function getTransactions(userId: string): Promise<Transaction[]> {
 }
 
 export async function addTransaction(userId: string, data: Omit<Transaction, 'id'>): Promise<string> {
-    if (!userId) throw new Error("User not authenticated.");
+    if (!userId) {
+        throw new Error("User not authenticated.");
+    }
     
     // Adiciona o userId ao corpo do documento para cumprir a regra de segurança.
     const dataWithUser = { ...data, userId };
@@ -36,7 +39,7 @@ export async function addTransaction(userId: string, data: Omit<Transaction, 'id
 // --- Financial Summary ---
 
 export async function getFinancialSummary(userId: string): Promise<{ income: number; expenses: number; balance: number; }> {
-    try {
+   try {
         const transactions = await getTransactions(userId);
         const income = transactions.filter(t => t.type === 'income').reduce((acc, t) => acc + t.amount, 0);
         const expenses = transactions.filter(t => t.type === 'expense').reduce((acc, t) => acc + t.amount, 0);
@@ -52,7 +55,9 @@ export async function getFinancialSummary(userId: string): Promise<{ income: num
 // --- Goals ---
 
 export async function getGoals(userId: string): Promise<Goal[]> {
-    if (!userId) throw new Error("User ID is required.");
+    if (!userId) {
+        throw new Error("User ID is required.");
+    }
     const goalsCol = collection(db, `users/${userId}/goals`);
     try {
         const snapshot = await getDocs(goalsCol);
@@ -64,7 +69,9 @@ export async function getGoals(userId: string): Promise<Goal[]> {
 }
 
 export async function addGoal(userId: string, name: string, targetAmount: number): Promise<Goal> {
-    if (!userId) throw new Error("User not authenticated.");
+    if (!userId) {
+        throw new Error("User not authenticated.");
+    }
     const goalsCol = collection(db, `users/${userId}/goals`);
     
     const newGoalData: Omit<Goal, 'id' | 'imageUrl'> & {imageUrl?: string, userId: string} = {
@@ -98,8 +105,12 @@ export async function addGoal(userId: string, name: string, targetAmount: number
 
 
 export async function deleteGoal(userId: string, goalId: string): Promise<{ success: boolean }> {
-    if (!userId) throw new Error("User not authenticated.");
-    if (!goalId) throw new Error("Goal ID is required.");
+    if (!userId) {
+        throw new Error("User not authenticated.");
+    }
+    if (!goalId) {
+        throw new Error("Goal ID is required.");
+    }
     const goalDoc = doc(db, `users/${userId}/goals`, goalId);
     deleteDocumentNonBlocking(goalDoc);
     return { success: true };
@@ -109,7 +120,9 @@ export async function deleteGoal(userId: string, goalId: string): Promise<{ succ
 // --- Budget ---
 
 async function getBudgetLimits(userId: string): Promise<{ [key: string]: number }> {
-    if (!userId) throw new Error("User ID is required.");
+    if (!userId) {
+        throw new Error("User ID is required.");
+    }
     const settingsDocRef = doc(db, `users/${userId}/settings/budget`);
     try {
         const docSnap = await getDoc(settingsDocRef);
@@ -137,7 +150,9 @@ export async function getBudgetData(userId: string): Promise<BudgetCategory[]> {
       .filter(t => t.type === 'expense')
       .reduce((acc, t) => {
         const category = t.category || "Outros";
-        if (!acc[category]) acc[category] = 0;
+        if (!acc[category]) {
+            acc[category] = 0;
+        }
         acc[category] += t.amount;
         return acc;
       }, {} as { [key: string]: number });
@@ -154,7 +169,9 @@ export async function getBudgetData(userId: string): Promise<BudgetCategory[]> {
 }
 
 export async function updateBudgetLimit(userId: string, name: string, newLimit: number): Promise<BudgetCategory | null> {
-    if (!userId) throw new Error("User not authenticated.");
+    if (!userId) {
+        throw new Error("User not authenticated.");
+    }
     const settingsDocRef = doc(db, `users/${userId}/settings`, 'budget');
     const dataToSet = { [`limits.${name}`]: newLimit };
     
@@ -199,7 +216,9 @@ export async function getInsights(): Promise<string[]> {
 const sanitizePerformanceValue = (value: number | undefined | null): number => (value === undefined || value === null || isNaN(value)) ? 0 : value;
 
 export async function saveRobotPerformance(userId: string, performance: EnhancedRobotPerformance[]) {
-    if (!userId) return;
+    if (!userId) {
+        return;
+    }
     const docRef = doc(db, 'users', userId, 'trading_data', 'robot_council_performance');
   
     const dataToSave = {
@@ -231,7 +250,9 @@ export async function saveRobotPerformance(userId: string, performance: Enhanced
 };
 
 export async function loadRobotPerformance(userId: string): Promise<EnhancedRobotPerformance[] | null> {
-  if (!userId) return null;
+  if (!userId) {
+    return null;
+  }
   const docRef = doc(db, 'users', userId, 'trading_data', 'robot_council_performance');
   try {
     const docSnap = await getDoc(docRef);
@@ -276,14 +297,18 @@ export async function getHallOfFame(userId: string): Promise<RobotPerformance[]>
 // --- Trading Decision Log ---
 
 export async function saveTradeDecision(userId: string, log: TradeDecisionLog) {
-    if (!userId) return;
+    if (!userId) {
+        return;
+    }
     const logCollectionRef = collection(db, 'users', userId, 'decision_logs');
     const logDocRef = doc(logCollectionRef, log.id);
     setDocumentNonBlocking(logDocRef, log, { merge: false });
 }
 
 export async function getTradeDecisionLogs(userId: string): Promise<TradeDecisionLog[]> {
-    if (!userId) return [];
+    if (!userId) {
+        return [];
+    }
     const logCollectionRef = collection(db, `users/${userId}/decision_logs`);
     const q = query(logCollectionRef, orderBy('timestamp', 'desc'));
     try {
