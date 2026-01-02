@@ -19,6 +19,7 @@ export async function addGoal(data: { userId: string, name: string; targetAmount
   }
 
   try {
+    // A função de serviço agora é não-bloqueante e lida com erros internamente
     const newGoal = await addGoalToService(validatedData.data.userId, validatedData.data.name, validatedData.data.targetAmount);
     revalidatePath("/goals");
     revalidatePath("/"); // Also revalidate dashboard for the carousel

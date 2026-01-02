@@ -64,26 +64,29 @@ export async function addGoal(userId: string, name: string, targetAmount: number
         imageHint: "new goal"
     };
 
-    // A captura de erro foi movida para a Server Action, que por sua vez repassa para o cliente
-    const docRefPromise = addDoc(goalsCol, newGoalData) as Promise<DocumentReference<DocumentData>>;
+    // Use non-blocking update and don't await the promise here in the service
+    const docRefPromise = addDocumentNonBlocking(goalsCol, newGoalData);
 
     generateGoalImage({ goalName: name })
         .then(imageResult => {
             if (imageResult?.imageUrl) {
+                // The addDocumentNonBlocking promise will eventually resolve with a docRef.
                 docRefPromise.then(docRef => {
                     if (docRef?.id) {
                         const goalDoc = doc(db, `users/${userId}/goals`, docRef.id);
                         setDocumentNonBlocking(goalDoc, { imageUrl: imageResult.imageUrl }, { merge: true });
                     }
-                })
+                });
             }
         })
         .catch(imageError => {
             console.error("Falha ao gerar imagem da meta, usando placeholder.", imageError);
         });
 
-    const docRef = await docRefPromise;
-    return { id: docRef.id, ...newGoalData };
+    // To provide immediate feedback to the UI, we'll optimistically return what we *expect* the goal to look like.
+    // The Server Action will await a temporary ID.
+    const tempId = `temp_${Date.now()}`;
+    return { id: tempId, ...newGoalData };
 }
 
 
