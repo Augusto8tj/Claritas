@@ -3,7 +3,7 @@
 
 import { useAuth } from "@/features/auth/hooks/use-auth";
 import { useEffect, useState, useCallback } from "react";
-import { getGoals } from "@/app/actions/financial-data-actions";
+import { getGoals } from "@/services/financial-data-service";
 import type { Goal } from "@/lib/types";
 import {
   Card,
