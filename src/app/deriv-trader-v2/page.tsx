@@ -3,27 +3,27 @@
 import React from "react";
 import { useForm, FormProvider } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import DerivTraderInterfaceV2 from "@/components/deriv-trader/deriv-trader-interface-v2";
-import { AssetSelector } from "@/components/deriv-trader/asset-selector";
+import DerivTraderInterfaceV2 from "@/features/trading/components/deriv-trader/deriv-trader-interface-v2";
+import { AssetSelector } from "@/features/trading/components/deriv-trader/asset-selector";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { MarketChart } from "@/components/deriv-trader/market-chart";
+import { MarketChart } from "@/features/trading/components/deriv-trader/market-chart";
 import { Button } from "@/components/ui/button";
 import { Trash2 } from "lucide-react";
-import { useDerivApi } from "@/hooks/use-deriv-api";
+import { useDerivApi } from "@/features/trading/hooks/use-deriv-api";
 import { Skeleton } from "@/components/ui/skeleton";
-import { OperationsLog } from "@/components/deriv-trader/operations-log";
-import { AIAnalysisInterface } from "@/components/deriv-trader/ai-analysis-interface";
-import { riseFallSchema, type RiseFallFormValues } from "@/components/deriv-trader/deriv-trader-interface.types";
-import { CouncilAutopilotInterfaceV2 } from "@/components/deriv-trader/council-autopilot-interface-v2";
+import { OperationsLog } from "@/features/trading/components/deriv-trader/operations-log";
+import { AIAnalysisInterface } from "@/features/trading/components/deriv-trader/ai-analysis-interface";
+import { riseFallSchema, type RiseFallFormValues } from "@/features/trading/components/deriv-trader/deriv-trader-interface.types";
+import { CouncilAutopilotInterfaceV2 } from "@/features/trading/components/deriv-trader/council-autopilot-interface-v2";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
-import { useTradeAnalysis } from "@/hooks/use-trade-analysis";
-import { useRobotCouncilV2 } from "@/hooks/use-robot-council-v2";
-import { SystemStatusSummary } from "@/components/deriv-trader/system-status-summary";
+import { useTradeAnalysis } from "@/features/trading/hooks/use-trade-analysis";
+import { useRobotCouncilV2 } from "@/features/trading/hooks/use-robot-council-v2";
+import { SystemStatusSummary } from "@/features/trading/components/deriv-trader/system-status-summary";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { AITradeSuggestion } from "@/components/deriv-trader/ai-trade-suggestion";
-import { CouncilDashboard } from '@/components/deriv-trader/CouncilDashboard';
-import { TradingDeskV2 } from "@/components/deriv-trader/trading-desk-v2";
-import { TradingDecisionLogViewer } from "@/components/deriv-trader/TradingDecisionLogViewer";
+import { AITradeSuggestion } from "@/features/trading/components/deriv-trader/ai-trade-suggestion";
+import { CouncilDashboard } from '@/features/trading/components/deriv-trader/CouncilDashboard';
+import { TradingDeskV2 } from "@/features/trading/components/deriv-trader/trading-desk-v2";
+import { TradingDecisionLogViewer } from "@/features/trading/components/deriv-trader/TradingDecisionLogViewer";
 
 
 // --- Sub-componentes para melhor organização ---

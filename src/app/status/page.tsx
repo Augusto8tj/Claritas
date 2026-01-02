@@ -1,8 +1,8 @@
 // /src/app/status/page.tsx
-import { HealthCheckCard } from "@/components/status/health-check-card";
+import { HealthCheckCard } from "@/features/status/components/health-check-card";
 import { checkGeminiConnection, checkFirestoreConnection } from "@/app/actions";
-import { ListModelsCard } from "@/components/status/list-models-card";
-import { DerivConnectionCard } from "@/components/status/deriv-connection-card";
+import { ListModelsCard } from "@/features/status/components/list-models-card";
+import { DerivConnectionCard } from "@/features/status/components/deriv-connection-card";
 
 export const revalidate = 0; // Disable cache for this page
 

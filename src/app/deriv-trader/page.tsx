@@ -4,28 +4,28 @@
 import React, { useState, useEffect } from "react";
 import { useForm, FormProvider } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import DerivTraderInterface from "@/components/deriv-trader/deriv-trader-interface";
-import { AssetSelector } from "@/components/deriv-trader/asset-selector";
+import DerivTraderInterface from "@/features/trading/components/deriv-trader/deriv-trader-interface";
+import { AssetSelector } from "@/features/trading/components/deriv-trader/asset-selector";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { MarketChart } from "@/components/deriv-trader/market-chart";
+import { MarketChart } from "@/features/trading/components/deriv-trader/market-chart";
 import { Button } from "@/components/ui/button";
 import { Trash2, Bot, NotepadText, LayoutGrid, Trophy, Dna } from "lucide-react";
-import { useDerivApi } from "@/hooks/use-deriv-api";
+import { useDerivApi } from "@/features/trading/hooks/use-deriv-api";
 import { Skeleton } from "@/components/ui/skeleton";
-import { OperationsLog } from "@/components/deriv-trader/operations-log";
-import { AIAnalysisInterface } from "@/components/deriv-trader/ai-analysis-interface";
+import { OperationsLog } from "@/features/trading/components/deriv-trader/operations-log";
+import { AIAnalysisInterface } from "@/features/trading/components/deriv-trader/ai-analysis-interface";
 import { riseFallSchema, type RiseFallFormValues } from "@/lib/types";
-import { CouncilAutopilotInterface } from "@/components/deriv-trader/council-autopilot-interface";
+import { CouncilAutopilotInterface } from "@/features/trading/components/deriv-trader/council-autopilot-interface";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
-import { useTradeAnalysis } from "@/hooks/use-trade-analysis";
-import { useRobotCouncil } from "@/hooks/use-robot-council";
-import { SystemStatusSummary } from "@/components/deriv-trader/system-status-summary";
+import { useTradeAnalysis } from "@/features/trading/hooks/use-trade-analysis";
+import { useRobotCouncil } from "@/features/trading/hooks/use-robot-council";
+import { SystemStatusSummary } from "@/features/trading/components/deriv-trader/system-status-summary";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { AITradeSuggestion } from "@/components/deriv-trader/ai-trade-suggestion";
-import { IndicatorPanel } from "@/components/deriv-trader/indicator-panel";
-import { TradingDesk } from "@/components/deriv-trader/trading-desk";
-import { HallOfFame } from "@/components/deriv-trader/hall-of-fame";
-import { EvolutionLab } from "@/components/deriv-trader/evolution-lab";
+import { AITradeSuggestion } from "@/features/trading/components/deriv-trader/ai-trade-suggestion";
+import { IndicatorPanel } from "@/features/trading/components/deriv-trader/indicator-panel";
+import { TradingDesk } from "@/features/trading/components/deriv-trader/trading-desk";
+import { HallOfFame } from "@/features/trading/components/deriv-trader/hall-of-fame";
+import { EvolutionLab } from "@/features/trading/components/deriv-trader/evolution-lab";
 
 
 function DerivTraderCore({ activeSymbol, robotCouncil }: { activeSymbol: string | null, robotCouncil: ReturnType<typeof useRobotCouncil> }) {
