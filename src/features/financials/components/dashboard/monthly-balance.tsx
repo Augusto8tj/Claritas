@@ -13,6 +13,7 @@ import { useAuth } from "@/features/auth/hooks/use-auth";
 import { getFinancialSummary } from "@/services/financial-data-service";
 import { useEffect, useState, useCallback } from "react";
 import { Skeleton } from "@/components/ui/skeleton";
+import { FirestorePermissionError, errorEmitter } from "@/firebase";
 
 function BalanceSkeleton() {
     return (
@@ -40,6 +41,7 @@ export function MonthlyBalance() {
   const fetchSummary = useCallback(async () => {
     if (!user) {
       setLoading(false);
+      setSummary({ income: 0, expenses: 0 }); // Garante estado zerado se não houver usuário
       return;
     }
     setLoading(true);
@@ -48,11 +50,16 @@ export function MonthlyBalance() {
       setSummary(data);
     } catch (error) {
       console.error("Failed to fetch financial summary:", error);
-      // Don't emit error here, as getTransactions will do it.
-      // Set to zero to prevent UI crash.
+      // Garante que o estado seja zerado em caso de erro.
       setSummary({ income: 0, expenses: 0 });
+      // Emite o erro para depuração, assumindo que a falha em getFinancialSummary é por permissão em getTransactions
+      errorEmitter.emit('permission-error', new FirestorePermissionError({
+        path: `users/${user.uid}/transactions`,
+        operation: 'list'
+      }));
+    } finally {
+        setLoading(false);
     }
-    setLoading(false);
   }, [user]);
 
   useEffect(() => {

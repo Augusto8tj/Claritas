@@ -46,6 +46,7 @@ export function MainGoal() {
   const fetchGoals = useCallback(async () => {
     if (!user) {
       setLoading(false);
+      setGoals([]);
       return;
     }
     
@@ -58,11 +59,11 @@ export function MainGoal() {
         console.error("[MainGoal] Firestore Error:", err); 
         const errorMessage = "Não foi possível carregar as metas.";
         setError(errorMessage);
+        setGoals([]); // Garante estado zerado em caso de erro
         errorEmitter.emit('permission-error', new FirestorePermissionError({
           path: `users/${user.uid}/goals`,
           operation: 'list'
         }));
-        setGoals([]); // Reset goals on error
     } finally {
         setLoading(false);
     }
@@ -100,6 +101,9 @@ export function MainGoal() {
              {error}
            </CardDescription>
          </CardHeader>
+         <CardContent>
+            <p className="text-sm text-destructive/80">Verifique a consola para detalhes técnicos.</p>
+         </CardContent>
        </Card>
      )
   }

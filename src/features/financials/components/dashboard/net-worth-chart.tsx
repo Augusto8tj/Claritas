@@ -24,6 +24,8 @@ interface ChartDataPoint {
 
 const months = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
 
+const getInitialData = (): ChartDataPoint[] => months.map(m => ({ name: m, netWorth: 0 }));
+
 function processData(transactions: Transaction[]): ChartDataPoint[] {
   const monthlyData: { [key: string]: { income: number, expenses: number } } = {};
 
@@ -66,7 +68,7 @@ function processData(transactions: Transaction[]): ChartDataPoint[] {
 
 export function NetWorthChart() {
     const { user } = useAuth();
-    const [data, setData] = useState<ChartDataPoint[]>([]);
+    const [data, setData] = useState<ChartDataPoint[]>(getInitialData);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
@@ -86,13 +88,12 @@ export function NetWorthChart() {
             console.error("[NetWorthChart] Firestore Error:", err); 
             const errorMessage = "Não foi possível carregar os dados de transações.";
             setError(errorMessage);
-            // O serviço agora lança o erro, então podemos capturá-lo aqui
-            // e emitir o nosso erro contextualizado para a depuração.
+            setData(getInitialData()); // Em caso de erro, reverte para o estado inicial zerado.
+            // Emite o erro contextual para depuração
             errorEmitter.emit('permission-error', new FirestorePermissionError({
               path: `users/${user.uid}/transactions`,
               operation: 'list'
             }));
-            setData(months.map(m => ({ name: m, netWorth: 0 })));
         } finally {
             setLoading(false);
         }
@@ -125,7 +126,7 @@ export function NetWorthChart() {
             </CardHeader>
             <CardContent className="pl-2">
                 <div className="flex h-[350px] w-full items-center justify-center text-center">
-                    <p className="text-muted-foreground">Ocorreu uma falha ao buscar os dados para o gráfico de patrimônio.</p>
+                    <p className="text-muted-foreground">Ocorreu uma falha ao buscar os dados. Verifique a consola para mais detalhes.</p>
                 </div>
             </CardContent>
         </Card>

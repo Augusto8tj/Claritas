@@ -17,7 +17,7 @@ import { Lightbulb, Sparkles } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { getTransactions } from "@/services/financial-data-service";
-import { auth } from "@/lib/firebase"; // Assumindo que você tem uma forma de pegar o usuário no servidor
+import { auth } from "@/lib/firebase";
 
 // Guia para Novos Utilizadores
 async function FirstTransactionGuide() {

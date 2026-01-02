@@ -1,4 +1,3 @@
-
 // /src/services/financial-data-service.ts
 'use server';
 
@@ -11,10 +10,9 @@ import { addDocumentNonBlocking, deleteDocumentNonBlocking, setDocumentNonBlocki
 // --- Transactions ---
 
 export async function getTransactions(userId: string): Promise<Transaction[]> {
-    if (!userId) return [];
+    if (!userId) throw new Error("User ID is required.");
     const transactionsCol = collection(db, `users/${userId}/transactions`);
-    // O try-catch foi removido. Se houver um erro de permissão, a exceção será
-    // propagada para o componente cliente que chamou esta função.
+    // O erro será propagado para o chamador
     const snapshot = await getDocs(transactionsCol);
     return snapshot.docs.map(d => ({ id: d.id, ...d.data() } as Transaction));
 }
@@ -39,9 +37,9 @@ export async function getFinancialSummary(userId: string): Promise<{ income: num
 // --- Goals ---
 
 export async function getGoals(userId: string): Promise<Goal[]> {
-    if (!userId) return [];
+    if (!userId) throw new Error("User ID is required.");
     const goalsCol = collection(db, `users/${userId}/goals`);
-    // O try-catch foi removido para propagar o erro.
+    // O erro será propagado para o chamador
     const snapshot = await getDocs(goalsCol);
     return snapshot.docs.map(d => ({ id: d.id, ...d.data() } as Goal));
 }
@@ -81,6 +79,7 @@ export async function addGoal(userId: string, name: string, targetAmount: number
 
 export async function deleteGoal(userId: string, goalId: string): Promise<{ success: boolean }> {
     if (!userId) throw new Error("User not authenticated.");
+    if (!goalId) throw new Error("Goal ID is required.");
     const goalDoc = doc(db, `users/${userId}/goals`, goalId);
     deleteDocumentNonBlocking(goalDoc);
     return { success: true };
@@ -90,9 +89,9 @@ export async function deleteGoal(userId: string, goalId: string): Promise<{ succ
 // --- Budget ---
 
 async function getBudgetLimits(userId: string): Promise<{ [key: string]: number }> {
-    if (!userId) return {};
-    const settingsDocRef = doc(db, `users/${userId}/settings`, 'budget');
-    // O try-catch foi removido para propagar o erro.
+    if (!userId) throw new Error("User ID is required.");
+    const settingsDocRef = doc(db, `users/${userId}/settings/budget`);
+    // O erro será propagado para o chamador
     const docSnap = await getDoc(settingsDocRef);
     if (docSnap.exists()) {
         return docSnap.data().limits || {};
@@ -148,6 +147,8 @@ export async function getExpenseCategories(userId: string): Promise<string[]> {
 
 // --- General Insights (Mocked) ---
 export async function getInsights(): Promise<string[]> {
+    // Simula uma busca, mas retorna dados estáticos.
+    // Em uma aplicação real, isso poderia vir de um fluxo Genkit.
     return [
       "Você gastou R$150 em restaurantes. Tente cozinhar em casa para economizar.",
       "Sua maior despesa é o aluguel. Considere procurar opções mais baratas, se possível.",

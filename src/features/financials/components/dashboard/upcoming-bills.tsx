@@ -22,6 +22,7 @@ import { useAuth } from "@/features/auth/hooks/use-auth";
 import { getTransactions } from "@/services/financial-data-service";
 import { useEffect, useState, useCallback } from "react";
 import { Skeleton } from "@/components/ui/skeleton";
+import { errorEmitter, FirestorePermissionError } from "@/firebase";
 
 function getBills(transactions: Transaction[]) {
   const bills = transactions.filter(t => t.category === "Contas" && t.type === "expense");
@@ -47,6 +48,7 @@ export function UpcomingBills() {
   const fetchBills = useCallback(async () => {
     if (!user) {
         setLoading(false);
+        setBills([]);
         return;
     }
     setLoading(true);
@@ -56,10 +58,14 @@ export function UpcomingBills() {
         setBills(processedBills);
     } catch(error) {
         console.error("Failed to fetch transactions for bills:", error);
-        // Error is handled by getTransactions, just set empty state
-        setBills([]);
+        setBills([]); // Garante estado zerado em caso de erro
+        errorEmitter.emit('permission-error', new FirestorePermissionError({
+          path: `users/${user.uid}/transactions`,
+          operation: 'list'
+        }));
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   }, [user]);
 
   useEffect(() => {
