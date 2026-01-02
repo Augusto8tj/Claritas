@@ -149,7 +149,7 @@ const SidePanel = ({ robotCouncil }: { robotCouncil: ReturnType<typeof useRobotC
                     <OperationsLog operations={operationsLog} />
                 </TabsContent>
                 <TabsContent value="analysis" className="mt-4">
-                    <AIAnalysisInterface analyzeSessionPerformance={tradeAnalysis.analyzeSessionPerformance} />
+                    <AIAnalysisInterface symbol={activeSymbol}/>
                 </TabsContent>
                 <TabsContent value="audit" className="mt-4">
                    <TradingDecisionLogViewer logs={robotCouncil.tradeDecisionLog} />

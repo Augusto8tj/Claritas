@@ -1,4 +1,4 @@
-// /src/components/deriv-trader/deriv-trader-interface-v2.tsx
+// /src/features/trading/components/deriv-trader/deriv-trader-interface-v2.tsx
 'use client';
 
 import * as React from 'react';
@@ -31,7 +31,7 @@ import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
-import { useDerivApi } from '@/hooks/use-deriv-api';
+import { useDerivApi } from '@/features/trading/hooks/use-deriv-api';
 import type { DurationUnit, RiseFallFormValues, OperationInitiator } from '@/lib/types';
 
 
