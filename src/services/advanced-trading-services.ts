@@ -91,6 +91,9 @@ export interface MicrostructureFeatures {
   yangZhangVolatility: number;
   gapRatio: number;
   meanReversion: number;
+  isSpike: boolean;
+  pressure: 'buy' | 'sell' | 'neutral';
+  analysis: string;
 }
 
 // ════════════════════════════════════════════════════════════════════
@@ -758,17 +761,22 @@ export const extractMicrostructureFeatures = (
   candles: CandleData[]
 ): MicrostructureFeatures => {
   const MICROSTRUCTURE_WINDOW = 20;
+  const defaultFeatures: MicrostructureFeatures = {
+    spreadPercentage: 0,
+    volumeImbalance: 0.5,
+    tickVelocity: 0,
+    priceAcceleration: 0,
+    parkinsonVolatility: 0,
+    yangZhangVolatility: 0,
+    gapRatio: 0,
+    meanReversion: 0,
+    isSpike: false,
+    pressure: 'neutral',
+    analysis: 'Dados insuficientes.'
+  };
+
   if (ticks.length < MICROSTRUCTURE_WINDOW) {
-    return {
-      spreadPercentage: 0,
-      volumeImbalance: 0,
-      tickVelocity: 0,
-      priceAcceleration: 0,
-      parkinsonVolatility: 0,
-      yangZhangVolatility: 0,
-      gapRatio: 0,
-      meanReversion: 0,
-    };
+    return defaultFeatures;
   }
 
   const recentTicks = ticks.slice(-MICROSTRUCTURE_WINDOW);
@@ -776,14 +784,15 @@ export const extractMicrostructureFeatures = (
 
   const prices = recentTicks.map(t => t.price);
   const avgPrice = prices.reduce((sum, p) => sum + p, 0) / prices.length;
-  const spreadEstimate = (Math.max(...prices) - Math.min(...prices)) / avgPrice;
+  const spreadPercentage = (Math.max(...prices) - Math.min(...prices)) / avgPrice;
 
   let upTicks = 0, downTicks = 0;
   for (let i = 1; i < recentTicks.length; i++) {
     if (recentTicks[i].price > recentTicks[i - 1].price) upTicks++;
     else if (recentTicks[i].price < recentTicks[i - 1].price) downTicks++;
   }
-  const volumeImbalance = (upTicks - downTicks) / recentTicks.length;
+  const volumeImbalance = upTicks + downTicks > 0 ? upTicks / (upTicks + downTicks) : 0.5;
+  const pressure = volumeImbalance > 0.6 ? 'buy' : volumeImbalance < 0.4 ? 'sell' : 'neutral';
 
   const timeSpan = recentTicks[recentTicks.length - 1].epoch - recentTicks[0].epoch;
   const tickVelocity = timeSpan > 0 ? recentTicks.length / timeSpan : 0;
@@ -792,6 +801,11 @@ export const extractMicrostructureFeatures = (
   for (let i = 1; i < recentTicks.length; i++) {
     returns.push(recentTicks[i].price - recentTicks[i - 1].price);
   }
+  
+  const avgReturn = returns.reduce((s, r) => s + r, 0) / returns.length;
+  const stdDevReturn = Math.sqrt(returns.reduce((s, r) => s + Math.pow(r - avgReturn, 2), 0) / returns.length);
+  const isSpike = Math.abs(returns[returns.length-1]) > stdDevReturn * 3;
+
   let acceleration = 0;
   if (returns.length >= 2) {
     const velocityChanges = [];
@@ -803,26 +817,30 @@ export const extractMicrostructureFeatures = (
   
   const vol = calculateVolatilityMetrics(recentCandles);
   
-  let gapCount = 0;
   const avgTickSize = prices.reduce((sum, p, i, arr) => {
     if (i === 0) return sum;
     return sum + Math.abs(p - arr[i - 1]);
   }, 0) / (prices.length - 1);
 
+  let gapCount = 0;
   for (let i = 1; i < recentTicks.length; i++) {
     const gap = Math.abs(recentTicks[i].price - recentTicks[i - 1].price);
     if (gap > avgTickSize * 2) gapCount++;
   }
   const gapRatio = gapCount / recentTicks.length;
 
-  const stdDev = Math.sqrt(
-    prices.reduce((sum, p) => sum + Math.pow(p - avgPrice, 2), 0) / prices.length
-  );
+  const stdDev = Math.sqrt(prices.reduce((sum, p) => sum + Math.pow(p - avgPrice, 2), 0) / prices.length);
   const currentPrice = recentTicks[recentTicks.length - 1].price;
   const meanReversion = stdDev > 0 ? (currentPrice - avgPrice) / stdDev : 0;
 
+  const analysisParts = [];
+  if (pressure === 'buy') analysisParts.push('Pressão de compra dominante.');
+  if (pressure === 'sell') analysisParts.push('Pressão de venda dominante.');
+  if (isSpike) analysisParts.push('Pico de preço detectado!');
+  if(tickVelocity > 2) analysisParts.push('Alta frequência de negociação.');
+
   return {
-    spreadPercentage: spreadEstimate,
+    spreadPercentage,
     volumeImbalance,
     tickVelocity,
     priceAcceleration: acceleration,
@@ -830,6 +848,9 @@ export const extractMicrostructureFeatures = (
     yangZhangVolatility: vol.yangZhang,
     gapRatio,
     meanReversion,
+    isSpike,
+    pressure,
+    analysis: analysisParts.length > 0 ? analysisParts.join(' ') : 'Microestrutura neutra.'
   };
 };
 
@@ -840,16 +861,21 @@ export const extractMicrostructureFeatures = (
 export const calculateKellyStake = (
   balance: number,
   winRate: number,
-  payoff: number,
+  payoff: number, // Net payoff (ex: 0.95 for 95% return)
   maxRisk: number = 0.05
 ): number => {
-  if (winRate <= 0.52 || payoff <= 1) return 0.35;
   const p = winRate;
   const q = 1 - p;
-  const b = payoff - 1;
+  const b = payoff; // 'b' is the net odds received on the wager (payout - 1)
+
+  if (p <= 0.52 || b <= 1) return 0.35; // Se não há vantagem, aposta mínima
 
   const kellyFraction = (p * b - q) / b;
-  const safeFraction = kellyFraction * 0.25;
+  
+  // Usa uma fração do Kelly para ser mais conservador
+  const safeFraction = kellyFraction * 0.25; // Quarter Kelly
+  
+  // Limita o risco máximo a 5% da banca
   const finalFraction = Math.min(safeFraction, maxRisk);
 
   return Math.max(0.35, Math.floor(balance * Math.max(0, finalFraction) * 100) / 100);

@@ -188,7 +188,7 @@ const calculateTechnicalVote = (
 
   // Extrai indicadores para facilitar leitura
   const { rsi, stoch, macd, bb, ma, adx, pdi, ndi, stochRSI, mfi, rvi } = indicators;
-  const format = (val: number | null) => (val !== null ? val.toFixed(2) : 'N/A');
+  const format = (val: number | null) => (val !== null && val !== undefined && !isNaN(val) ? val.toFixed(2) : 'N/A');
 
   // ────────────────────────────────────────────────────────────────
   // LÓGICA DE VOTAÇÃO POR ESTRATÉGIA
@@ -545,7 +545,7 @@ export function useRobotCouncilV2(
 
     // ══════════════════════════════════════════════════════════════
     // VALIDAÇÕES PRELIMINARES
-    // ══════════════════════════════════════════════════════════════
+    // ══════════════════════════════════════════════════════════
     if (!isConnected || !user || !isCouncilAutopilotOn || 
         strategyCouncil.length === 0 || !activeSymbol || 
         tickCandles.length < REGIME_LOOKBACK) {
@@ -634,7 +634,7 @@ export function useRobotCouncilV2(
 
     // ══════════════════════════════════════════════════════════════
     // ETAPA 5: ARENA VIRTUAL - JULGAMENTO DE TRADES
-    // ══════════════════════════════════════════════════════════════
+    // ══════════════════════════════════════════════════════════
     const stillActiveTrades: VirtualTrade[] = [];
     const performanceMap = new Map<string, EnhancedRobotPerformance>(
       robotPerformance.map(p => [p.id, { ...p }])
@@ -720,7 +720,7 @@ export function useRobotCouncilV2(
 
     // ══════════════════════════════════════════════════════════════
     // ETAPA 6: VOTAÇÃO BAYESIANA DOS ROBÔS
-    // ══════════════════════════════════════════════════════════════
+    // ══════════════════════════════════════════════════════════
     const bayesianVotes: Record<string, BayesianVote> = {};
     let riseSum = 0;
     let fallSum = 0;
@@ -811,7 +811,7 @@ export function useRobotCouncilV2(
 
     // ══════════════════════════════════════════════════════════════
     // ETAPA 7: CONSENSO BAYESIANO
-    // ══════════════════════════════════════════════════════════════
+    // ══════════════════════════════════════════════════════════
     let consensusDirection: 'RISE' | 'FALL' | 'HOLD' = 'HOLD';
     let consensusProbability = 0.5;
     if (totalWeight > 0 && (riseSum + fallSum) > 0) {
@@ -822,7 +822,7 @@ export function useRobotCouncilV2(
 
     // ══════════════════════════════════════════════════════════════
     // ETAPA 8: GESTÃO DE RISCO E VALIDAÇÕES
-    // ══════════════════════════════════════════════════════════════
+    // ══════════════════════════════════════════════════════════
     const dailyPnL = operationsLog
       .filter(op => op.initiator === 'Conselho' && new Date(op.timestamp).toDateString() === new Date().toDateString())
       .reduce((sum, op) => sum + (op.result || 0), 0);
@@ -854,25 +854,41 @@ export function useRobotCouncilV2(
 
     // ══════════════════════════════════════════════════════════════
     // ETAPA 9: KELLY CRITERION POSITION SIZING
-    // ══════════════════════════════════════════════════════════════
-    const avgWinRate = robotPerformance.length > 0 ? robotPerformance.reduce((sum, r) => sum + r.winRate, 0) / robotPerformance.length / 100 : consensusProbability;
-    const validPerformance = robotPerformance.filter(r => r.avgWin > 0 && r.avgLoss > 0);
-    const avgWinAmount = validPerformance.length > 0 ? validPerformance.reduce((sum, r) => sum + r.avgWin, 0) / validPerformance.length : 1.5;
-    const avgLossAmount = validPerformance.length > 0 ? validPerformance.reduce((sum, r) => sum + r.avgLoss, 0) / validPerformance.length : 1.0;
-    
+    // ══════════════════════════════════════════════════════════
+    const PAYOUT_RATE = 0.95; // Payout líquido para RISE/FALL
     let kellyStake = calculateKellyStake(
-      dailyBalance - portfolioStats.totalExposure, avgWinRate, avgWinAmount, avgLossAmount
+      dailyBalance - portfolioStats.totalExposure, consensusProbability, PAYOUT_RATE
     );
-    if (!isFinite(kellyStake) || isNaN(kellyStake) || kellyStake < 0) kellyStake = 0.35;
-    if (isDynamicRiskOn) {
-      if (currentIndicators.adx && currentIndicators.adx < 20) kellyStake *= 0.5;
-      if (microFeatures && microFeatures.yangZhangVolatility > 0.05) kellyStake *= 0.8;
+    
+    // GUARDA-COSTAS DE MICROESTRUTURA (VETO GRADUADO)
+    if (microFeatures) {
+      if (microFeatures.isSpike) {
+          // VETO TOTAL: Pico de preço anômalo, abortar.
+          toast({ title: "🛡️ Veto de Microestrutura!", description: "Pico de preço súbito detectado. Trade abortado.", variant: "destructive" });
+          return;
+      }
+      if (consensusDirection === 'RISE' && microFeatures.pressure === 'sell') {
+          // VETO PARCIAL: Pressão contrária, reduz o risco.
+          kellyStake *= 0.5; // Reduz o stake pela metade
+          toast({ title: "⚠️ Veto Parcial", description: "Pressão de venda detectada. Risco reduzido." });
+      }
+      if (consensusDirection === 'FALL' && microFeatures.pressure === 'buy') {
+          // VETO PARCIAL
+          kellyStake *= 0.5;
+          toast({ title: "⚠️ Veto Parcial", description: "Pressão de compra detectada. Risco reduzido." });
+      }
+      if (regimeResult.regime === 'breakout' && microFeatures.pressure === (consensusDirection === 'RISE' ? 'buy' : 'sell')) {
+          // CONFIRMAÇÃO DE BREAKOUT: Aumenta o risco.
+          kellyStake *= 1.2;
+          toast({ title: "✅ Confirmação de Breakout", description: "Volume confirma o rompimento. Risco aumentado." });
+      }
     }
-    kellyStake = Math.max(0.35, Math.min(kellyStake, dailyBalance * 0.05));
+    
+    kellyStake = Math.max(0.35, Math.min(kellyStake, dailyBalance * 0.05)); // Aplica limites de segurança
 
     // ══════════════════════════════════════════════════════════════
     // ETAPA 10: DURAÇÃO ÓTIMA
-    // ══════════════════════════════════════════════════════════════
+    // ══════════════════════════════════════════════════════════
     const avgDurationSeconds = totalWeight > 0 ? weightedDurationSum / totalWeight : 60;
     let finalDuration = Math.round(avgDurationSeconds);
     let finalDurationUnit: DurationUnit = 's';
@@ -895,20 +911,20 @@ export function useRobotCouncilV2(
 
     // ══════════════════════════════════════════════════════════════
     // ETAPA 11: ATUALIZA DASHBOARD DATA
-    // ══════════════════════════════════════════════════════════════
+    // ══════════════════════════════════════════════════════════
     const newDashboardData = {
       regime: regimeResult.regime, bayesianProbability: consensusProbability, consensusDirection,
       activeRobotsCount, microstructure: {
         pressure: microFeatures ? microFeatures.volumeImbalance : 0.5,
         velocity: microFeatures ? microFeatures.tickVelocity : 0,
-        isSpike: microFeatures ? Math.abs(microFeatures.priceAcceleration) > 0.001 : false,
+        isSpike: microFeatures ? microFeatures.isSpike : false,
       }, kellyStake,
     };
     setDashboardData(newDashboardData);
 
-    // ══════════════════════════════════════════════════════════════
+    // ══════════════════════════════════════════════════════════
     // ETAPA 12: ATUALIZA ESTADOS DE CONSENSO E PORTFOLIO
-    // ══════════════════════════════════════════════════════════════
+    // ══════════════════════════════════════════════════════════
     if (!consensusReached) {
       setConsensusDecision({ direction: 'HOLD', probability: consensusProbability, stake: 0 });
       return;
@@ -921,9 +937,9 @@ export function useRobotCouncilV2(
       maxDrawdown: Math.max(prev.maxDrawdown, Math.abs(dailyPnL / dailyBalance * 100)),
     }));
 
-    // ══════════════════════════════════════════════════════════════
+    // ══════════════════════════════════════════════════════════
     // ETAPA 13: EXECUÇÃO DE TRADE REAL
-    // ══════════════════════════════════════════════════════════════
+    // ══════════════════════════════════════════════════════════
     if (councilExecutionRef.current.isExecuting) return;
     if (activeStakes + kellyStake > dailyBalance * 0.3) return;
     if (consensusProbability < 0.65) return;
