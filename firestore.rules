@@ -1,119 +1,60 @@
-/**
- * Core Philosophy: This ruleset enforces a strict user-ownership model. All data is
- * sandboxed within a user's own data tree, and a user can only ever access documents
- * that belong to them. There is no concept of public or shared data.
- *
- * Data Structure: The entire database is structured hierarchically under the `/users`
- * collection. Each user has a document keyed by their Firebase Auth UID (`/users/{userId}`).
- * All related data, such as financial accounts, transactions, goals, and AI insights,
- * are stored in subcollections under that specific user's document.
- *
- * Key Security Decisions:
- * - User Enumeration is Disallowed: Listing the top-level `/users` collection is
- *   explicitly forbidden to protect user privacy.
- * - Strict Data Sandboxing: A user's authentication credentials (`request.auth.uid`)
- *   are the sole gatekeeper for accessing any document. Rules consistently check that
- *   the `userId` in the document path matches the authenticated user's ID.
- * - No Global Roles: There are no admin or privileged roles; all users are subject
- *   to the same ownership rules.
- *
- * Denormalization for Authorization: To ensure fast and simple authorization checks,
- * this security model requires that all documents within a user's subcollections
- * (e.g., FinancialAccount, Transaction) contain a denormalized `userId` field.
- * This `userId` field must match the `{userId}` from the document path, allowing for
- * direct ownership checks without needing slow, expensive `get()` calls to parent
-
- * documents.
- *
- * Structural Segregation: By nesting all user-specific data into separate subcollections
- * under `/users/{userId}`, we create a clear and secure separation between each
- * user's data. This prevents accidental data leakage and simplifies list queries, as
- * they are naturally scoped to the requesting user.
- */
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Helper functions for reusable logic
-    function isSignedIn() {
-      return request.auth != null;
-    }
-
-    // Checks if the requesting user is the owner of the document based on the path.
+    // Função auxiliar para verificar se o utilizador autenticado é o dono do documento
     function isOwner(userId) {
-      return isSignedIn() && request.auth.uid == userId;
+      return request.auth != null && request.auth.uid == userId;
+    }
+    
+    // Função auxiliar para operações de update/delete, garantindo que o documento existe
+    function isExistingOwner(userId) {
+      return isOwner(userId) && resource != null;
     }
 
-    /**
-     * @description Controls access to a user's own profile document.
-     * @path /users/{userId}
-     */
     match /users/{userId} {
-      allow read, write: if isOwner(userId);
+      // Regra para o próprio documento de perfil do utilizador
+      allow get: if isOwner(userId);
+      allow create: if isOwner(userId);
+      allow update: if isOwner(userId);
 
-      /**
-       * @description Controls access to a user's financial accounts.
-       * Ensures that only the owner can read/write their own accounts.
-       * Create/Update operations require the 'userId' field in the document to match the owner.
-       */
-      match /financialAccounts/{accountId} {
-        allow list, get: if isOwner(userId);
-        allow create: if isOwner(userId) && request.resource.data.userId == userId;
-        allow update: if isOwner(userId) && request.resource.data.userId == userId;
-        allow delete: if isOwner(userId);
-      }
-
-      /**
-       * @description Controls access to a user's financial transactions.
-       * Ensures that only the owner can read/write their own transactions.
-       */
+      // --- TRANSAÇÕES (Já estava a funcionar) ---
       match /transactions/{transactionId} {
-        allow list, get: if isOwner(userId);
+        allow read, list: if isOwner(userId);
         allow create: if isOwner(userId) && request.resource.data.userId == userId;
-        allow update: if isOwner(userId) && request.resource.data.userId == userId;
-        allow delete: if isOwner(userId);
+        allow update, delete: if isExistingOwner(userId);
       }
 
-      /**
-       * @description Controls access to a user's financial goals.
-       * Correctly allows listing goals while securing individual document operations.
-       */
-      match /financialGoals/{goalId} {
-        allow list, get: if isOwner(userId);
+      // --- METAS / GOALS (O motivo do erro atual) ---
+      // Este bloco é OBRIGATÓRIO para o MainGoal funcionar
+      match /goals/{goalId} {
+        allow read, list: if isOwner(userId);
         allow create: if isOwner(userId) && request.resource.data.userId == userId;
-        allow update: if isOwner(userId) && request.resource.data.userId == userId;
-        allow delete: if isOwner(userId);
-      }
-
-      /**
-       * @description Controls access to a user's AI-generated insights.
-       */
-      match /aiInsights/{insightId} {
-        allow list, get: if isOwner(userId);
-        allow create: if isOwner(userId) && request.resource.data.userId == userId;
-        allow update: if isOwner(userId) && request.resource.data.userId == userId;
-        allow delete: if isOwner(userId);
+        allow update, delete: if isExistingOwner(userId);
       }
       
-       /**
-       * @description Controls access to user-specific settings.
-       */
+      // --- financialGoals (CORREÇÃO DE ERRO ANTERIOR) ---
+      // Garante que a coleção com o nome correto também tenha as regras
+       match /financialGoals/{goalId} {
+        allow read, list: if isOwner(userId);
+        allow create: if isOwner(userId) && request.resource.data.userId == userId;
+        allow update, delete: if isExistingOwner(userId);
+      }
+
+      // --- BUDGET / SETTINGS ---
+      // Necessário para getBudgetLimits
       match /settings/{settingId} {
         allow read, write: if isOwner(userId);
       }
-
-      /**
-       * @description Controls access to trading data.
-       */
-      match /trading_data/{dataId} {
-        allow read, write: if isOwner(userId);
-      }
-
-       /**
-       * @description Controls access to decision logs.
-       */
+      
+      // --- LOGS DE DECISÃO (Trading) ---
       match /decision_logs/{logId} {
-        allow read, write: if isOwner(userId);
+         allow read, write: if isOwner(userId);
+      }
+      
+      // --- PERFORMANCE ROBÔS ---
+      match /trading_data/{docId} {
+         allow read, write: if isOwner(userId);
       }
     }
   }
