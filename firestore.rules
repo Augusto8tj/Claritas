@@ -91,7 +91,6 @@ service cloud.firestore {
 
       /**
        * @description Manages a user's private financial accounts.
-       * @path /users/{userId}/financialAccounts/{accountId}
        */
       match /financialAccounts/{accountId} {
         allow list: if isOwner(userId);
@@ -103,7 +102,6 @@ service cloud.firestore {
 
       /**
        * @description Manages a user's private transactions.
-       * @path /users/{userId}/transactions/{transactionId}
        */
       match /transactions/{transactionId} {
         allow list: if isOwner(userId);
@@ -112,10 +110,9 @@ service cloud.firestore {
         allow update: if isExistingOwner(userId);
         allow delete: if isExistingOwner(userId);
       }
-
+      
       /**
        * @description Manages a user's private financial goals.
-       * @path /users/{userId}/financialGoals/{financialGoalId}
        */
       match /financialGoals/{financialGoalId} {
         allow list: if isOwner(userId);
@@ -127,7 +124,6 @@ service cloud.firestore {
 
       /**
        * @description Manages a user's private AI-generated insights.
-       * @path /users/{userId}/aiInsights/{aiInsightId}
        */
       match /aiInsights/{aiInsightId} {
         allow list: if isOwner(userId);
@@ -139,7 +135,6 @@ service cloud.firestore {
 
       /**
        * @description Manages a user's private trading data and performance logs.
-       * @path /users/{userId}/trading_data/{document=**}
        */
       match /trading_data/{document=**} {
         allow read, write: if isOwner(userId);
@@ -147,7 +142,6 @@ service cloud.firestore {
       
       /**
        * @description Manages a user's private trade decision audit logs.
-       * @path /users/{userId}/decision_logs/{document=**}
        */
       match /decision_logs/{document=**} {
         allow read, write: if isOwner(userId);
@@ -155,7 +149,6 @@ service cloud.firestore {
       
        /**
        * @description Manages a user's private settings.
-       * @path /users/{userId}/settings/{document=**}
        */
       match /settings/{document=**} {
         allow read, write: if isOwner(userId);
