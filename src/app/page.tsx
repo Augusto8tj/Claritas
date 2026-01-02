@@ -2,6 +2,8 @@
 import { Suspense } from "react";
 import {
   Card,
+  CardContent,
+  CardHeader,
 } from "@/components/ui/card";
 import { AIInsightCard } from "@/features/financials/components/dashboard/ai-insight-card";
 import { NetWorthChart } from "@/features/financials/components/dashboard/net-worth-chart";
