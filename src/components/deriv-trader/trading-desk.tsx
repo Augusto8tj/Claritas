@@ -10,7 +10,7 @@ import {
     TableHeader,
     TableRow,
 } from '@/components/ui/table';
-import type { RobotStrategy } from '@/lib/types';
+import type { RobotStrategy, RobotPerformance } from '@/lib/types';
 import {
     BrainCircuit,
     Activity,
@@ -31,7 +31,7 @@ import { cn } from '@/lib/utils';
 import { Progress } from '@/components/ui/progress';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
-import type { RobotPerformance, CouncilVotes } from '@/hooks/use-robot-council';
+import type { CouncilVotes } from '@/hooks/use-robot-council';
 import { Label } from '../ui/label';
 import { Switch } from '../ui/switch';
 import { Separator } from '../ui/separator';
@@ -109,7 +109,7 @@ function renderStrategyParams(robot: RobotStrategy): string {
         case 'PARABOLIC_SAR':
             return `AF: ${robot.acceleration}, MAX: ${robot.maxAcceleration}`;
         case 'CHANDELIER_EXIT':
-            return `Mult. ATR: ${robot.multiplier}`;
+            return `Mult. ATR: ${robot.chandelierMultiplier}`;
         case 'TRIX':
         case 'ROC':
         case 'KAMA':

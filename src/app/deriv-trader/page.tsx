@@ -58,7 +58,7 @@ function DerivTraderCore({ activeSymbol, robotCouncil }: { activeSymbol: string 
   return (
     <>
       <div className="space-y-6">
-        <IndicatorPanel indicators={robotCouncil.indicators} latestDataPoint={latestDataPoint} />
+        {robotCouncil.indicators && <IndicatorPanel indicators={robotCouncil.indicators} latestDataPoint={latestDataPoint} />}
         
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -210,9 +210,10 @@ function DerivTraderPageContent() {
         activeSymbol,
         setActiveSymbol,
         priceTicks,
+        dataVersion,
     } = useDerivApi();
 
-    const robotCouncil = useRobotCouncil(activeSymbol, priceTicks);
+    const robotCouncil = useRobotCouncil(activeSymbol, priceTicks, dataVersion);
     
     const handleAssetChange = (asset: string) => {
         setActiveSymbol(asset);

@@ -48,6 +48,7 @@ export function SpendingChart() {
           .filter(t => t.category === category)
           .reduce((acc, curr) => acc + curr.amount, 0);
         const colorKey = category as ChartConfigKey;
+        // Fallback para a cor de 'Outros' se a categoria não estiver no chartConfig
         const configEntry = chartConfig[colorKey] || chartConfig.Outros;
         return {
           category,

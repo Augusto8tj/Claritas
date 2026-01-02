@@ -55,12 +55,8 @@ const getAssetAnalysisFlow = ai.defineFlow(
     outputSchema: AssetAnalysisOutputSchema,
   },
   async (input) => {
-    const { output } = await analysisPrompt({
-        ...input,
-        // @ts-ignore - a IA espera strings, a conversão é necessária.
-        historicalData: JSON.stringify(input.historicalData), 
-        recentTrades: JSON.stringify(input.recentTrades)
-    });
+    // A IA espera os dados brutos, não uma string JSON. O Genkit lida com a serialização.
+    const { output } = await analysisPrompt(input);
 
     if (!output) throw new Error("A IA não conseguiu analisar o ativo.");
     

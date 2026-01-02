@@ -4,7 +4,7 @@
 import { createContext, useContext, useState, useEffect, type ReactNode, useCallback, useRef, useMemo } from 'react';
 import type { TradeResult } from '@/services/deriv-api-service';
 import { useToast } from '@/hooks/use-toast';
-import type { Operation, OperationInitiator, DurationUnit, ChartType, TimePeriod, ChartData, CandleData, TradeAnnotation, TickData, DurationLimits } from '@/lib/types';
+import type { Operation, OperationInitiator, DurationUnit, ChartType, TimePeriod, ChartData, CandleData, TradeAnnotation, TickData, DurationLimits, Asset } from '@/lib/types';
 import { FirebaseErrorListener } from '@/components/firebase-error-listener';
 
 
@@ -25,15 +25,6 @@ export type PromiseCallbacks = {
   resolve: (value: any) => void; 
   reject: (reason?: any) => void 
 };
-
-export interface Asset {
-  value: string;
-  label: string;
-  marketIsOpen: boolean;
-  submarket: string;
-  market: string;
-  minDuration: string;
-}
 
 export interface AssetGroup {
   label: string;

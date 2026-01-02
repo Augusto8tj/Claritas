@@ -10,7 +10,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useAuth } from "@/features/auth/hooks/use-auth";
 import { FirestorePermissionError, errorEmitter } from "@/firebase";
 import { Button } from "@/components/ui/button";
-import { Target } from "lucide-react";
+import { Target, PlusCircle } from "lucide-react";
 import Link from "next/link";
 
 export default function GoalsPage() {
@@ -70,9 +70,8 @@ export default function GoalsPage() {
             <Target className="h-12 w-12 mb-4" />
             <h3 className="text-xl font-semibold mb-2">Nenhuma meta encontrada</h3>
             <p className="mb-4">Comece a planejar seu futuro financeiro. Crie sua primeira meta agora.</p>
-            <AddGoalDialog onGoalAdded={handleGoalAdded} >
-                 <Button>Criar Nova Meta</Button>
-            </AddGoalDialog>
+            {/* O AddGoalDialog não aceita children, o botão de trigger já está dentro dele */}
+            <AddGoalDialog onGoalAdded={handleGoalAdded} />
         </div>
       ) : (
         <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">

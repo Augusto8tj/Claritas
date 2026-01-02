@@ -1,4 +1,4 @@
-// src/features/trading/hooks/use-robot-council.ts
+// src/hooks/use-robot-council.ts
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
@@ -160,7 +160,8 @@ const calculateRobotVote = (
 // ============================================================================
 export function useRobotCouncil(
     activeSymbol: string | null,
-    priceTicks: TickData[]
+    priceTicks: TickData[],
+    dataVersion: number
 ) {
     const { operationsLog, executeTrade, timePeriod, isConnected, sellContract } = useDerivApi();
     const { user, loading: isAuthLoading } = useAuth();
@@ -233,7 +234,7 @@ export function useRobotCouncil(
             try {
                 const storedPerformance = await loadRobotPerformance(user.uid);
                 if (storedPerformance && storedPerformance.length > 0) {
-                    setRobotPerformance(storedPerformance);
+                    setRobotPerformance(storedPerformance as RobotPerformance[]);
                     console.log("[Performance] Dados de desempenho carregados do Firebase.");
                 } else {
                      console.log("[Performance] Nenhum dado de desempenho encontrado no Firebase para este usuário.");
@@ -260,9 +261,6 @@ export function useRobotCouncil(
             wins: 0,
             losses: 0,
             totalProfit: 0,
-            winRate: 0,
-            winRateTrend: 0,
-            winRateRange: 0,
         }));
         setRobotPerformance(initialPerformance);
         virtualTradesRef.current = [];
@@ -589,7 +587,11 @@ export function useRobotCouncil(
                             perf.losses = (perf.losses || 0) + 1;
                         }
                         const totalTrades = (perf.wins || 0) + (perf.losses || 0);
-                        perf.winRate = totalTrades > 0 ? ((perf.wins || 0) / totalTrades) * 100 : 0;
+                        if (totalTrades > 0) {
+                            perf.winRate = ((perf.wins || 0) / totalTrades) * 100;
+                        } else {
+                            perf.winRate = 0;
+                        }
                         performanceChanged = true;
                     }
                 }
@@ -634,9 +636,9 @@ export function useRobotCouncil(
             let weight = 1.0;
             if (isMeritocracyOn) {
                 const perf = performanceMap.get(robot.id);
-                if (perf && perf.wins + perf.losses > 3) {
+                if (perf && (perf.wins || 0) + (perf.losses || 0) > 3) {
                     const winRate = (perf.winRate || 50) / 100;
-                    const pnlFactor = Math.tanh(perf.totalProfit / 50); // Mapeia PnL para -1 a 1
+                    const pnlFactor = Math.tanh((perf.totalProfit || 0) / 50); // Mapeia PnL para -1 a 1
                     weight = 0.5 + (winRate * 0.75) + (pnlFactor * 0.25); // Combinação ponderada
                 }
             }
@@ -663,8 +665,8 @@ export function useRobotCouncil(
 
          const councilTrades = operationsLog.filter(op => op.initiator === 'Conselho');
         const dailyPnl = councilTrades
-            .filter((op: any) => new Date(op.timestamp).toDateString() === new Date().toDateString() && op.status !== 'pending')
-            .reduce((sum: any, op: any) => sum + (op.result || 0), 0);
+            .filter((op) => new Date(op.timestamp).toDateString() === new Date().toDateString() && op.status !== 'pending')
+            .reduce((sum, op) => sum + (op.result || 0), 0);
 
         const lastTwoCouncilTrades = councilTrades.filter(op => op.status !== 'pending').slice(0, 2);
         const lastTwoTradesWereLosses = lastTwoCouncilTrades.length === 2 && lastTwoCouncilTrades.every(t => t.status === 'lost');
@@ -710,6 +712,7 @@ export function useRobotCouncil(
             );
         }
     }, [
+        dataVersion,
         priceTicks,
         isConnected,
         isCouncilAutopilotOn,
