@@ -4,7 +4,7 @@
 import { useEffect, useState } from 'react';
 import { useAuth } from '@/features/auth/hooks/use-auth';
 import { getTradeDecisionLogs } from '@/services/financial-data-service';
-import { TradingDecisionLogViewer } from '@/components/deriv-trader/TradingDecisionLogViewer';
+import { TradingDecisionLogViewer } from '@/features/trading/components/deriv-trader/TradingDecisionLogViewer';
 import type { TradeDecisionLog } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
 import { errorEmitter } from '@/firebase/error-emitter';
