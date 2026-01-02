@@ -492,6 +492,7 @@ const subscribeToMarketData = useCallback(async (symbol: string) => {
     }
 
     setIsConnecting(true);
+    setAccountBalance({ balance: null, currency: null, loading: true });
     setConnectionError(null);
     setIsAssetsLoading(true);
   
@@ -666,6 +667,7 @@ const subscribeToMarketData = useCallback(async (symbol: string) => {
             setIsConnected(false);
             setIsConnecting(false);
             setIsAssetsLoading(false);
+            setAccountBalance({ balance: null, currency: null, loading: false });
             if (ws.readyState === WebSocket.OPEN) ws.close();
         }
     };
@@ -680,13 +682,13 @@ const subscribeToMarketData = useCallback(async (symbol: string) => {
       }
       setIsConnected(false);
       setIsConnecting(false);
+      setAccountBalance({ balance: null, currency: null, loading: false });
       wsRef.current = null;
     };
   
     ws.onerror = (errorEvent) => {
       console.error('[Deriv WS] WebSocket error occurred.');
-      // A lógica de erro principal foi movida para o 'onclose' para capturar detalhes mais específicos.
-      // O 'onerror' apenas sinaliza que um erro aconteceu, mas o 'onclose' geralmente fornece o motivo.
+      setAccountBalance({ balance: null, currency: null, loading: false });
     };
   
     return () => {
