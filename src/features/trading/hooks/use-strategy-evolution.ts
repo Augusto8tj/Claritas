@@ -3,7 +3,7 @@
 
 import { useState, useCallback, useRef } from 'react';
 import type { RobotStrategy, RobotPerformance } from '@/lib/types';
-import { useToast } from './use-toast';
+import { useToast } from '@/hooks/use-toast';
 
 // ============================================================================
 // PARÂMETROS DA EVOLUÇÃO

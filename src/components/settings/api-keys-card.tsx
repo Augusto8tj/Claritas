@@ -25,7 +25,7 @@ import {
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { useDerivApi, type AccountType } from "@/hooks/use-deriv-api";
+import { useDerivApi, type AccountType } from "@/features/trading/hooks/use-deriv-api";
 import { checkDerivConnection } from "@/app/actions";
 import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
 

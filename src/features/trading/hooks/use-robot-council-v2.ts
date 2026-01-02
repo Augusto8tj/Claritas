@@ -40,7 +40,7 @@
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useDerivApi } from './use-deriv-api';
-import { useToast } from './use-toast';
+import { useToast } from '@/hooks/use-toast';
 import type { 
   RobotStrategy, 
   DurationUnit, 

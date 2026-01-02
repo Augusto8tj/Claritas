@@ -51,7 +51,7 @@ import React from "react";
 import Link from "next/link";
 import { Button } from "../ui/button";
 import packageJson from '../../../package.json';
-import { DerivApiProvider } from "@/hooks/use-deriv-api";
+import { DerivApiProvider } from "@/features/trading/hooks/use-deriv-api";
 
 
 const navItems = [
