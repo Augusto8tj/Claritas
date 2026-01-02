@@ -101,6 +101,9 @@ export interface Operation {
   expirationTime?: number; // Expiration time in milliseconds
 }
 
+// =/src/lib/types/index.ts
+// ... (imports e outros tipos)
+
 // =================================================================
 // Re-exporting trading types for central access
 // =================================================================
@@ -141,9 +144,9 @@ const MessageSchema = z.object({
 export const FinancialChatbotInsightsInputSchema = z.object({
   history: z.array(MessageSchema).describe('The conversation history.'),
   query: z.string().describe('The user query about their finances.'),
-  userId: z.string().describe("The user's unique ID."),
 });
-export type FinancialChatbotInsightsInput = z.infer<typeof FinancialChatbotInsightsInputSchema>;
+// O userId agora é passado separadamente para o fluxo
+export type FinancialChatbotInsightsInput = z.infer<typeof FinancialChatbotInsightsInputSchema> & { userId: string };
 
 export const FinancialChatbotInsightsOutputSchema = z.object({
   response: z.string().describe('The AI-generated response to the user query.'),

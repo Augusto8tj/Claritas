@@ -17,7 +17,8 @@ import { FinancialChatbotInsightsInputSchema, FinancialChatbotInsightsOutputSche
 
 const prompt = ai.definePrompt({
   name: 'financialChatbotInsightsPrompt',
-  input: {schema: FinancialChatbotInsightsInputSchema},
+  // O input do prompt agora não inclui mais o userId.
+  input: {schema: FinancialChatbotInsightsInputSchema.omit({ userId: true })},
   output: {schema: FinancialChatbotInsightsOutputSchema},
   // A IA decide qual ferramenta usar com base na pergunta do usuário.
   tools: [
@@ -55,10 +56,15 @@ const financialChatbotInsightsFlow = ai.defineFlow(
     // Separa o userId do resto do input para passá-lo ao contexto das ferramentas
     const { userId, ...promptData } = input;
     
-    // Passa o userId para o prompt através do segundo argumento (options)
-    // que o disponibilizará para as ferramentas.
+    // Passa o promptData (sem userId) como input principal do prompt
+    // e o userId separadamente para o contexto das ferramentas.
     const { output } = await prompt(promptData, { data: { userId }});
-    return output!;
+    
+    if (!output) {
+        throw new Error("A IA não conseguiu gerar uma resposta.");
+    }
+    
+    return output;
   }
 );
 
