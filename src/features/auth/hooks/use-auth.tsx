@@ -19,23 +19,29 @@ type AuthContextType = {
   updateUser: (user: User | null) => void;
 };
 
-const AuthContext = createContext<AuthContextType | undefined>(undefined);
+const AuthContext = createContext<AuthContextType>({
+  user: null,
+  loading: true,
+  updateUser: () => {},
+});
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const { user: firebaseUser, isUserLoading } = useFirebaseUser();
-  const [user, setUser] = useState<User | null>(firebaseUser);
+  const [user, setUser] = useState<User | null>(null);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     setUser(firebaseUser);
-  }, [firebaseUser]);
+    setLoading(isUserLoading);
+  }, [firebaseUser, isUserLoading]);
 
   const updateUser = (updatedUser: User | null) => {
     setUser(updatedUser);
   };
   
-  const value = { user, loading: isUserLoading, updateUser };
+  const value = { user, loading, updateUser };
 
-  if (isUserLoading) {
+  if (loading) {
      return (
       <div className="flex h-screen items-center justify-center">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
