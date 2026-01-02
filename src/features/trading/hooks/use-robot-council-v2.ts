@@ -922,7 +922,7 @@ export function useRobotCouncilV2(
         };
         setDashboardData(newDashboardData);
 
-        // ══════════════════════════════════════════════════════════
+        // ══════════════════════════════════════════════════════════════
         // ETAPA 12: ATUALIZA ESTADOS DE CONSENSO E PORTFOLIO
         // ══════════════════════════════════════════════════════════
         if (!consensusReached) {
@@ -937,7 +937,7 @@ export function useRobotCouncilV2(
           maxDrawdown: Math.max(prev.maxDrawdown, Math.abs(dailyPnL / dailyBalance * 100)),
         }));
 
-        // ══════════════════════════════════════════════════════════
+        // ══════════════════════════════════════════════════════════════
         // ETAPA 13: EXECUÇÃO DE TRADE REAL
         // ══════════════════════════════════════════════════════════
         if (councilExecutionRef.current.isExecuting) return;
@@ -1027,8 +1027,6 @@ export function useRobotCouncilV2(
         });
     } catch (error) {
         console.error("🚨 ERRO CRÍTICO NO CICLO PRINCIPAL:", error);
-    } finally {
-        councilExecutionRef.current.isExecuting = false;
     }
 
   }, [
@@ -1036,7 +1034,7 @@ export function useRobotCouncilV2(
     robotPerformance, isMeritocracyOn, isDynamicConsensusOn, isDynamicRiskOn,
     activeSymbol, operationsLog, currentRegime, user, toast, executeTrade, sellContract,
     timePeriod, durationLimits, dailyBalance, dailyTarget, evolveTrigger,
-    portfolioStats.maxDrawdown, consensusSensitivity, confidenceFactor, durationRange,
+    portfolioStats, consensusSensitivity, confidenceFactor, durationRange,
     takeProfitThreshold, stopLossThreshold, priceTicks, tickCandles
   ]);
 
