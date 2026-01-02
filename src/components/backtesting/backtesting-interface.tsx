@@ -18,8 +18,9 @@ import {
 } from "@/components/ui/form";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { analyzeMqlCodeAction } from "@/app/actions/trading-actions";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { getChatbotInsightsResponse } from "@/app/actions";
+import { useAuth } from "@/features/auth/hooks/use-auth";
 
 const strategySchema = z.object({
   strategyDescription: z.string().min(10, "A descrição da estratégia é muito curta."),
@@ -32,6 +33,7 @@ const mqlSchema = z.object({
 type MqlFormValues = z.infer<typeof mqlSchema>;
 
 export function BacktestingInterface() {
+  const { user } = useAuth();
   const [loading, setLoading] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
   const [result, setResult] = useState<string | null>(null);
@@ -46,28 +48,42 @@ export function BacktestingInterface() {
     defaultValues: { mqlCode: "" },
   });
 
-  const onStrategySubmit: SubmitHandler<StrategyFormValues> = async (data) => {
-    setLoading(true);
-    setResult(null);
-    // const response = await runStrategyBacktestAction(data);
-    const response = { success: "A simulação de backtesting está em desenvolvimento e será ativada em breve.", error: null };
+  // Função genérica para chamar a IA
+  const callAI = async (query: string) => {
+    if (!user) {
+        setResult("Erro: Utilizador não autenticado.");
+        return;
+    }
+    const response = await getChatbotInsightsResponse({ 
+      query, 
+      history: [], 
+      userId: user.uid 
+    });
+    
     if (response.success) {
       setResult(response.success);
     } else {
-      setResult(`Erro: ${response.error}`);
+      setResult(`Erro na análise da IA: ${response.error}`);
     }
+  };
+
+  const onStrategySubmit: SubmitHandler<StrategyFormValues> = async (data) => {
+    setLoading(true);
+    setResult(null);
+    const query = `Por favor, faça um backtest da seguinte estratégia: ${data.strategyDescription}. Simule os resultados, P&L e taxa de acerto.`;
+    // ATENÇÃO: A funcionalidade de backtesting real não está implementada.
+    // A IA irá gerar uma resposta simulada/descritiva com base na query.
+    await callAI(query);
     setLoading(false);
   };
 
   const onMqlSubmit: SubmitHandler<MqlFormValues> = async (data) => {
     setAnalyzing(true);
     setResult(null);
-    const response = await analyzeMqlCodeAction(data);
-    if (response.success) {
-      strategyForm.setValue("strategyDescription", response.success);
-    } else {
-       setResult(`Erro na análise: ${response.error}`);
-    }
+    const query = `Analise o seguinte código MQL5 e descreva a estratégia de negociação em detalhes:\n\n${"```mql5"}
+${data.mqlCode}
+${"```"}`;
+    await callAI(query);
     setAnalyzing(false);
   };
 
@@ -108,7 +124,7 @@ export function BacktestingInterface() {
                   />
                   <Button type="submit" disabled={loading} className="w-full">
                     {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <TestTube className="mr-2 h-4 w-4" />}
-                    Rodar Simulação
+                    Rodar Simulação com IA
                   </Button>
                 </form>
               </Form>
@@ -142,7 +158,7 @@ export function BacktestingInterface() {
                   </Alert>
                   <Button type="submit" disabled={analyzing} className="w-full" variant="outline">
                     {analyzing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Bot className="mr-2 h-4 w-4" />}
-                    Analisar e Preencher Estratégia
+                    Analisar com IA
                   </Button>
                 </form>
               </Form>
@@ -153,7 +169,7 @@ export function BacktestingInterface() {
       
       <Card className="flex flex-col">
         <CardHeader>
-          <CardTitle className="font-headline">Resultados da Simulação</CardTitle>
+          <CardTitle className="font-headline">Resultados da Análise da IA</CardTitle>
            <CardDescription>
             A IA analisará sua estratégia e retornará um resumo do resultado.
           </CardDescription>

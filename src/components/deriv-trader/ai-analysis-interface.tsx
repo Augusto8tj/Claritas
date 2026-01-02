@@ -12,20 +12,36 @@ import {
 import { Button } from "../ui/button";
 import { Loader2, Sparkles, BrainCircuit } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "../ui/alert";
+import { useAuth } from "@/features/auth/hooks/use-auth";
+import { getChatbotInsightsResponse } from "@/app/actions";
 
 interface AIAnalysisInterfaceProps {
-    analyzeSessionPerformance: () => Promise<string>;
+    symbol?: string | null;
 }
 
-export function AIAnalysisInterface({ analyzeSessionPerformance }: AIAnalysisInterfaceProps) {
+export function AIAnalysisInterface({ symbol }: AIAnalysisInterfaceProps) {
+  const { user } = useAuth();
   const [analysisResult, setAnalysisResult] = useState<string | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
 
   const handleAnalyze = async () => {
+    if (!user) {
+        setAnalysisResult("Erro: Utilizador não autenticado.");
+        return;
+    }
+    
     setIsAnalyzing(true);
     setAnalysisResult(null);
-    const result = await analyzeSessionPerformance();
-    setAnalysisResult(result);
+
+    const query = `Analise meu desempenho de trading para o ativo ${symbol || 'atual'}. Inclua taxa de acerto, P&L e uma conclusão.`;
+
+    const response = await getChatbotInsightsResponse({
+        query,
+        history: [],
+        userId: user.uid,
+    });
+    
+    setAnalysisResult(response.success || `Erro: ${response.error}`);
     setIsAnalyzing(false);
   };
 

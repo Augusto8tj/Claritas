@@ -1,23 +1,22 @@
-// src/features/trading/ai/asset-analysis-flow.ts
+// src/ai/flows/asset-analysis-flow.ts
 'use server';
 
 /**
  * @fileOverview An AI flow for analyzing a trading asset and suggesting a trade.
- * 
- * - getAssetAnalysis - The main flow function.
+ * Este arquivo agora contém apenas a lógica do prompt e do fluxo, que é exportada
+ * para ser usada pela ferramenta `getAssetAnalysisTool`.
  */
 
 import { ai } from '@/lib/genkit';
 import { z } from 'zod';
 import { AssetAnalysisInputSchema, AssetAnalysisOutputSchema, type AssetAnalysisInput, type AssetAnalysisOutput } from './asset-analysis.types';
 
-// O prompt é definido diretamente como uma string para clareza
 const ANALYSIS_PROMPT = `Você é um copiloto de negociação e gestor de risco. Sua tarefa é analisar os dados do ativo, o contexto do trader e fornecer uma sugestão de negociação inteligente e segura.
 
 Contexto do Trader:
 - Saldo da Conta (Total): {{{balance}}} {{{currency}}}
 - Banca do Dia (Risco Máximo): {{{dailyBalance}}} {{{currency}}}
-- Aposta Atual (Stake): {{{stake}}} {{{currency}}}
+- Aposta Sugerida (Stake): {{{stake}}} {{{currency}}}
 - Duração da Operação: {{{duration}}} {{{durationUnit}}}
 - Trades Recentes: {{{recentTrades}}}
 
@@ -55,7 +54,6 @@ const getAssetAnalysisFlow = ai.defineFlow(
     outputSchema: AssetAnalysisOutputSchema,
   },
   async (input) => {
-    // A IA espera os dados brutos, não uma string JSON. O Genkit lida com a serialização.
     const { output } = await analysisPrompt(input);
 
     if (!output) throw new Error("A IA não conseguiu analisar o ativo.");

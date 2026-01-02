@@ -1,10 +1,10 @@
-// src/features/trading/ai/mql-analyzer-flow.ts
+// src/ai/flows/mql-analyzer-flow.ts
 'use server';
 
 /**
  * @fileOverview An AI flow for analyzing MQL5 trading bot code and extracting its strategy.
- * 
- * - analyzeMqlCode - The main flow function.
+ * Este arquivo agora contém apenas a lógica do prompt e do fluxo, que é exportada
+ * para ser usada pela ferramenta `analyzeMqlCodeTool`.
  */
 
 import { ai } from '@/lib/genkit';

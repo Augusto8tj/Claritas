@@ -1,17 +1,16 @@
-// src/features/trading/ai/operation-analysis-flow.ts
+// src/ai/flows/operation-analysis-flow.ts
 'use server';
 
 /**
  * @fileOverview An AI flow for analyzing a user's trading operations history.
- *
- * - analyzeOperations - The main flow function.
+ * Este arquivo agora contém apenas a lógica do prompt e do fluxo, que é exportada
+ * para ser usada pela ferramenta `analyzeOperationsTool`.
  */
 
 import { ai } from '@/lib/genkit';
 import { z } from 'zod';
 import { OperationAnalysisInputSchema, OperationAnalysisOutputSchema, type OperationAnalysisInput } from '@/lib/types';
 
-// O prompt agora espera uma string JSON em vez de um objeto complexo.
 const analyzerPrompt = ai.definePrompt({
   name: 'operationAnalyzerPrompt',
   input: { schema: z.object({ operationsJson: z.string() }) },

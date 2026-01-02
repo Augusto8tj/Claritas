@@ -2,23 +2,31 @@
 'use server';
 
 /**
- * @fileOverview Defines AI tools for interacting with a brokerage API.
- * This file is now simplified, as most logic has been moved to the central use-deriv-api hook.
- * The getHistoricalDataTool is removed from here as it's no longer a separate tool but part of the main hook.
+ * @fileOverview Ferramentas de IA relacionadas a Trading.
+ * Converte os fluxos de análise de trading em ferramentas que o chatbot pode usar.
  */
 import { ai } from '@/lib/genkit';
 import { z } from 'zod';
+import { getAssetAnalysis } from '@/ai/flows/asset-analysis-flow';
+import { analyzeMqlCode } from '@/ai/flows/mql-analyzer-flow';
+import { analyzeOperations } from '@/ai/flows/operation-analysis-flow';
+import {
+  AssetAnalysisInputSchema,
+  AssetAnalysisOutputSchema,
+  MqlAnalyzerInputSchema,
+  MqlAnalyzerOutputSchema,
+  OperationAnalysisInputSchema,
+  OperationAnalysisOutputSchema,
+  OperationSchema,
+} from '@/lib/types';
+import { getDerivApiDataForAnalysis } from '@/services/deriv-data-service';
 
-
-// This file no longer needs to manage its own API tokens or connections.
-// It defines tools that will be called by AI flows. These tools, in turn,
-// will call Server Actions that use the centralized useDerivApi hook.
-
+// Ferramenta para resumo geral do mercado (mantida como estava)
 const marketDataPrompt = ai.definePrompt({
-    name: 'marketDataPrompt',
-    input: { schema: z.object({ query: z.string() }) },
-    output: { schema: z.object({ summary: z.string() }) },
-    prompt: `Você é um analista financeiro. Com base na pergunta do usuário, forneça um resumo conciso do estado atual do mercado financeiro ou do ativo específico mencionado. Inclua índices importantes como IBOVESPA, se relevante.
+  name: 'marketDataPrompt',
+  input: { schema: z.object({ query: z.string() }) },
+  output: { schema: z.object({ summary: z.string() }) },
+  prompt: `Você é um analista financeiro. Com base na pergunta do usuário, forneça um resumo conciso do estado atual do mercado financeiro ou do ativo específico mencionado. Inclua índices importantes como IBOVESPA, se relevante.
 
 Pergunta: {{{query}}}
 `,
@@ -32,7 +40,7 @@ export const getMarketDataTool = ai.defineTool(
       query: z.string().describe('A pergunta do usuário sobre o mercado financeiro ou um ativo.'),
     }),
     outputSchema: z.object({
-        summary: z.string(),
+      summary: z.string(),
     }),
   },
   async ({ query }) => {
@@ -40,5 +48,71 @@ export const getMarketDataTool = ai.defineTool(
     const { output } = await marketDataPrompt({ query });
     if (!output) throw new Error("Não foi possível gerar um resumo do mercado.");
     return output;
+  }
+);
+
+
+// Ferramenta para análise de ativos (substitui o fluxo antigo)
+export const getAssetAnalysisTool = ai.defineTool(
+  {
+    name: 'getAssetAnalysisTool',
+    description: 'Executa uma análise técnica e de risco sobre um ativo de negociação específico. Use para perguntas como "analise o Volatility 100 Index" ou "qual sua sugestão para o EUR/USD?".',
+    inputSchema: z.object({
+      symbol: z.string().describe("O símbolo do ativo a ser analisado, ex: '1HZ10V' ou 'EUR/USD'. Se não for fornecido, deve usar o ativo atualmente ativo."),
+    }),
+    outputSchema: AssetAnalysisOutputSchema,
+  },
+  async ({ symbol }, { userId }) => {
+    if (!userId) throw new Error("ID do usuário é necessário para obter dados da API Deriv.");
+    
+    // Busca os dados necessários para a análise (saldo, trades, etc.)
+    const analysisData = await getDerivApiDataForAnalysis(userId, symbol);
+
+    if (!analysisData) {
+      throw new Error(`Não foi possível obter os dados de negociação para o ativo ${symbol}.`);
+    }
+    
+    return getAssetAnalysis(analysisData);
+  }
+);
+
+// Ferramenta para analisar código MQL5
+export const analyzeMqlCodeTool = ai.defineTool(
+  {
+    name: 'analyzeMqlCodeTool',
+    description: 'Analisa um bloco de código MQL5 e extrai a descrição da estratégia de negociação. Use quando o usuário colar um código e pedir para analisá-lo.',
+    inputSchema: MqlAnalyzerInputSchema,
+    outputSchema: MqlAnalyzerOutputSchema,
+  },
+  async (input) => {
+    return analyzeMqlCode(input);
+  }
+);
+
+// Ferramenta para analisar o desempenho de operações de trading
+export const analyzeOperationsTool = ai.defineTool(
+  {
+    name: 'analyzeOperationsTool',
+    description: 'Analisa o histórico de operações de trading de uma sessão para um determinado ativo e fornece um resumo de desempenho.',
+    inputSchema: z.object({
+        symbol: z.string().optional().describe("O símbolo do ativo para analisar. Se omitido, analisa todos os ativos da sessão."),
+    }),
+    outputSchema: OperationAnalysisOutputSchema,
+  },
+  async ({ symbol }, { userId }) => {
+    if (!userId) throw new Error("ID do usuário é necessário para obter o histórico de operações.");
+
+    const apiData = await getDerivApiDataForAnalysis(userId, symbol || '');
+    if (!apiData) throw new Error("Não foi possível obter o histórico de operações.");
+
+    const operationsToAnalyze = symbol
+        ? apiData.recentTrades.filter(op => op.asset === symbol)
+        : apiData.recentTrades;
+
+    if (operationsToAnalyze.length === 0) {
+        return { analysis: "Não há operações concluídas para analisar na sessão atual para o filtro especificado." };
+    }
+
+    return analyzeOperations({ operations: operationsToAnalyze });
   }
 );

@@ -130,6 +130,10 @@ export const OperationSchema = z.object({
   status: z.enum(['pending', 'won', 'lost']),
   result: z.number().optional(),
   timestamp: z.string().describe("The ISO 8601 timestamp of when the operation was created."),
+  initiator: z.string().optional(),
+  duration: z.number().optional(),
+  durationUnit: z.string().optional(),
+  entryPrice: z.number().optional(),
 });
 
 // Re-exporting types from their source file
@@ -141,17 +145,18 @@ const MessageSchema = z.object({
   role: z.enum(['user', 'model']),
   content: z.string(),
 });
-export const FinancialChatbotInsightsInputSchema = z.object({
+// O schema do input do prompt não precisa mais do userId
+export const financialChatbotInsightsInputSchema = z.object({
   history: z.array(MessageSchema).describe('The conversation history.'),
   query: z.string().describe('The user query about their finances.'),
 });
-// O userId agora é passado separadamente para o fluxo
-export type FinancialChatbotInsightsInput = z.infer<typeof FinancialChatbotInsightsInputSchema> & { userId: string };
+// O tipo do input da função do fluxo ainda espera o userId
+export type FinancialChatbotInsightsInput = z.infer<typeof financialChatbotInsightsInputSchema>;
 
-export const FinancialChatbotInsightsOutputSchema = z.object({
+export const financialChatbotInsightsOutputSchema = z.object({
   response: z.string().describe('The AI-generated response to the user query.'),
 });
-export type FinancialChatbotInsightsOutput = z.infer<typeof FinancialChatbotInsightsOutputSchema>;
+export type FinancialChatbotInsightsOutput = z.infer<typeof financialChatbotInsightsOutputSchema>;
 
 // From mql-analyzer.types.ts
 export const MqlAnalyzerInputSchema = z.object({

@@ -11,13 +11,13 @@ import WebSocket from 'ws';
 import { getDoc, doc } from 'firebase/firestore';
 
 
-export async function getChatbotInsightsResponse(data: FinancialChatbotInsightsInput) {
+export async function getChatbotInsightsResponse(data: FinancialChatbotInsightsInput & { userId: string }) {
   try {
     const result = await financialChatbotInsights(data);
     return { success: result.response };
-  } catch (e) {
-    console.error(e);
-    return { error: "Desculpe, não consegui processar isso. Por favor, tente novamente." };
+  } catch (e: any) {
+    console.error("[Action Error] getChatbotInsightsResponse:", e);
+    return { error: e.message || "Desculpe, não consegui processar isso. Por favor, tente novamente." };
   }
 }
 
