@@ -9,9 +9,9 @@
     "clean": "rm -rf .next",
     "build": "npm run clean && next build",
     "start": "next start",
-    "lint": "next lint .",
+    "check:lint": "next lint .",
     "typecheck": "tsc --noEmit",
-    "validate": "npm run lint && npm run typecheck"
+    "validate": "npm run check:lint && npm run typecheck"
   },
   "dependencies": {
     "@genkit-ai/google-genai": "^1.26.0",
