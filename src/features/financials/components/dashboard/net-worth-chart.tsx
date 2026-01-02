@@ -83,15 +83,19 @@ export function NetWorthChart() {
             const processed = processData(transactions);
             setData(processed);
         } catch (err: any) {
-            console.error(err); // Log the raw error
-            setError("Não foi possível carregar os dados de transações.");
+            console.error("[NetWorthChart] Firestore Error:", err); 
+            const errorMessage = "Não foi possível carregar os dados de transações.";
+            setError(errorMessage);
+            // O serviço agora lança o erro, então podemos capturá-lo aqui
+            // e emitir o nosso erro contextualizado para a depuração.
             errorEmitter.emit('permission-error', new FirestorePermissionError({
               path: `users/${user.uid}/transactions`,
               operation: 'list'
             }));
             setData(months.map(m => ({ name: m, netWorth: 0 })));
+        } finally {
+            setLoading(false);
         }
-        setLoading(false);
     }, [user]);
 
     useEffect(() => {

@@ -13,13 +13,10 @@ import { addDocumentNonBlocking, deleteDocumentNonBlocking, setDocumentNonBlocki
 export async function getTransactions(userId: string): Promise<Transaction[]> {
     if (!userId) return [];
     const transactionsCol = collection(db, `users/${userId}/transactions`);
-    try {
-        const snapshot = await getDocs(transactionsCol);
-        return snapshot.docs.map(d => ({ id: d.id, ...d.data() } as Transaction));
-    } catch (serverError) {
-        console.error(`[Service Error] getTransactions failed for user ${userId}.`);
-        throw serverError; // Propagate error to the client component
-    }
+    // O try-catch foi removido. Se houver um erro de permissão, a exceção será
+    // propagada para o componente cliente que chamou esta função.
+    const snapshot = await getDocs(transactionsCol);
+    return snapshot.docs.map(d => ({ id: d.id, ...d.data() } as Transaction));
 }
 
 export async function addTransaction(userId: string, data: Omit<Transaction, 'id'>): Promise<string> {
@@ -44,13 +41,9 @@ export async function getFinancialSummary(userId: string): Promise<{ income: num
 export async function getGoals(userId: string): Promise<Goal[]> {
     if (!userId) return [];
     const goalsCol = collection(db, `users/${userId}/goals`);
-    try {
-        const snapshot = await getDocs(goalsCol);
-        return snapshot.docs.map(d => ({ id: d.id, ...d.data() } as Goal));
-    } catch (serverError) {
-        console.error(`[Service Error] getGoals failed for user ${userId}.`);
-        throw serverError;
-    }
+    // O try-catch foi removido para propagar o erro.
+    const snapshot = await getDocs(goalsCol);
+    return snapshot.docs.map(d => ({ id: d.id, ...d.data() } as Goal));
 }
 
 export async function addGoal(userId: string, name: string, targetAmount: number): Promise<Goal> {
@@ -64,6 +57,7 @@ export async function addGoal(userId: string, name: string, targetAmount: number
         imageHint: "new goal"
     };
 
+    // A operação de escrita já usa o non-blocking com tratamento de erro.
     const docRef = await addDoc(goalsCol, newGoalData);
 
     generateGoalImage({ goalName: name })
@@ -98,19 +92,15 @@ export async function deleteGoal(userId: string, goalId: string): Promise<{ succ
 async function getBudgetLimits(userId: string): Promise<{ [key: string]: number }> {
     if (!userId) return {};
     const settingsDocRef = doc(db, `users/${userId}/settings`, 'budget');
-    try {
-        const docSnap = await getDoc(settingsDocRef);
-        if (docSnap.exists()) {
-            return docSnap.data().limits || {};
-        }
-        return {
-            "Moradia": 2000, "Alimentação": 1000, "Transporte": 500,
-            "Lazer": 400, "Compras": 600, "Outros": 300, "Contas": 800,
-        };
-    } catch(e) {
-        console.error(`[Service Error] getBudgetLimits failed for user ${userId}.`);
-        throw e;
+    // O try-catch foi removido para propagar o erro.
+    const docSnap = await getDoc(settingsDocRef);
+    if (docSnap.exists()) {
+        return docSnap.data().limits || {};
     }
+    return {
+        "Moradia": 2000, "Alimentação": 1000, "Transporte": 500,
+        "Lazer": 400, "Compras": 600, "Outros": 300, "Contas": 800,
+    };
 }
 
 export async function getBudgetData(userId: string): Promise<BudgetCategory[]> {
@@ -203,20 +193,15 @@ export async function saveRobotPerformance(userId: string, performance: Enhanced
 export async function loadRobotPerformance(userId: string): Promise<EnhancedRobotPerformance[] | null> {
   if (!userId) return null;
   const docRef = doc(db, 'users', userId, 'trading_data', 'robot_council_performance');
-  try {
-    const docSnap = await getDoc(docRef);
-    if (docSnap.exists()) {
-      const data = docSnap.data();
-      return (data.robots || []).map((r: any) => ({
-        ...r,
-        tradeHistory: r.tradeHistory || [],
-      }));
-    }
-    return null;
-  } catch (e) {
-    console.error(`[Service Error] loadRobotPerformance failed for user ${userId}.`);
-    throw e;
+  const docSnap = await getDoc(docRef);
+  if (docSnap.exists()) {
+    const data = docSnap.data();
+    return (data.robots || []).map((r: any) => ({
+      ...r,
+      tradeHistory: r.tradeHistory || [],
+    }));
   }
+  return null;
 };
 
 
@@ -251,11 +236,6 @@ export async function getTradeDecisionLogs(userId: string): Promise<TradeDecisio
     if (!userId) return [];
     const logCollectionRef = collection(db, `users/${userId}/decision_logs`);
     const q = query(logCollectionRef, orderBy('timestamp', 'desc'));
-    try {
-      const snapshot = await getDocs(q);
-      return snapshot.docs.map(d => d.data() as TradeDecisionLog);
-    } catch(e) {
-       console.error(`[Service Error] getTradeDecisionLogs failed for user ${userId}.`);
-       throw e;
-    }
+    const snapshot = await getDocs(q);
+    return snapshot.docs.map(d => d.data() as TradeDecisionLog);
 }

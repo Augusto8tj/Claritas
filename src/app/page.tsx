@@ -24,7 +24,13 @@ async function FirstTransactionGuide() {
     const userId = auth.currentUser?.uid;
     let transactions = [];
     if (userId) {
-        transactions = await getTransactions(userId);
+        try {
+            transactions = await getTransactions(userId);
+        } catch (e) {
+            // Se houver um erro de permissão ao buscar transações, não mostre o guia.
+            // O erro será tratado pelo NetWorthChart e outros componentes.
+            console.error("FirstTransactionGuide: Falha ao buscar transações, o guia pode não ser exibido.", e);
+        }
     }
     const hasTransactions = transactions.length > 0;
 
