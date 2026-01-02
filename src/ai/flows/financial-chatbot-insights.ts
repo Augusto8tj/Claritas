@@ -52,8 +52,12 @@ const financialChatbotInsightsFlow = ai.defineFlow(
     outputSchema: FinancialChatbotInsightsOutputSchema,
   },
   async (input) => {
-    // Passa o userId para o prompt, que o disponibilizará para as ferramentas.
-    const { output } = await prompt(input);
+    // Separa o userId do resto do input para passá-lo ao contexto das ferramentas
+    const { userId, ...promptData } = input;
+    
+    // Passa o userId para o prompt através do segundo argumento (options)
+    // que o disponibilizará para as ferramentas.
+    const { output } = await prompt(promptData, { data: { userId }});
     return output!;
   }
 );
