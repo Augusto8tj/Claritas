@@ -6,7 +6,7 @@ import Link from "next/link";
 import { useForm, type SubmitHandler } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { createUserWithEmailAndPassword, updateProfile } from "firebase/auth";
+import { createUserWithEmailAndPassword, updateProfile, sendEmailVerification } from "firebase/auth";
 import { auth } from "@/lib/firebase";
 import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -50,6 +50,14 @@ export function SignupForm() {
       await updateProfile(userCredential.user, {
         displayName: data.name,
       });
+
+      // Enviar email de verificação
+      await sendEmailVerification(userCredential.user);
+      toast({
+        title: "Verifique seu Email",
+        description: "Um link de verificação foi enviado para o seu endereço de email.",
+      });
+
       // O AuthGuard irá lidar com o redirecionamento automaticamente
       // após o estado de autenticação ser atualizado.
     } catch (error: any) {
