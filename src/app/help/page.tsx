@@ -1,4 +1,6 @@
 // /src/app/help/page.tsx
+'use client';
+
 import {
   Accordion,
   AccordionContent,
@@ -33,8 +35,8 @@ const ChangelogContent = () => (
      <h3>v1.5.0 (Atual) - A Evolução da Inteligência: Aprendizado Contínuo</h3>
     <h4>Funcionalidades Principais:</h4>
     <ul>
-      <li><strong>Laboratório de Evolução Genética:</strong> Implementação do `useStrategyEvolution`, um cérebro de aprendizado contínuo. A cada 50 trades virtuais, o sistema identifica os robôs de pior desempenho e os substitui por "mutações" genéticas dos robôs de elite, garantindo que o conselho se adapte e melhore autonomamente.</li>
-      <li><strong>Consenso de Capital:</strong> Os robôs agora não só opinam sobre a direção e o tempo, mas também sugerem um valor de aposta (`stake`) proporcional à sua convicção. A aposta final é uma média ponderada destas sugestões, ajustada pelo risco.</li>
+      <li><strong>Laboratório de Evolução Genética:</strong> Implementação do \`useStrategyEvolution\`, um cérebro de aprendizado contínuo. A cada 50 trades virtuais, o sistema identifica os robôs de pior desempenho e os substitui por "mutações" genéticas dos robôs de elite, garantindo que o conselho se adapte e melhore autonomamente.</li>
+      <li><strong>Consenso de Capital:</strong> Os robôs agora não só opinam sobre a direção e o tempo, mas também sugerem um valor de aposta (\`stake\`) proporcional à sua convicção. A aposta final é uma média ponderada destas sugestões, ajustada pelo risco.</li>
       <li><strong>Gestão de Risco Temporal Aprimorada:</strong> A duração do contrato não é mais uma média simples. As sugestões de tempo de cada robô são convertidas para uma unidade comum (segundos), ponderadas pela confiança, e o resultado final é ajustado dinamicamente pela volatilidade do mercado (ATR, BBW).</li>
       <li><strong>Painel "Evolução":</strong> Uma nova aba foi adicionada ao Deriv Trader para visualizar o histórico do Laboratório de Evolução, mostrando quais estratégias estão a ser promovidas e quais estão a ser substituídas.</li>
     </ul>
@@ -42,17 +44,17 @@ const ChangelogContent = () => (
     <h3>v1.0.0 - A Ascensão da IA: Autonomia e Persistência</h3>
     <h4>Funcionalidades Principais:</h4>
     <ul>
-      <li><strong>Autonomia Total da Mesa:</strong> A Mesa Operacional agora ajusta dinamicamente não só o <strong>limiar de consenso</strong>, mas também o <strong>valor da aposta (`stake`)</strong> e a <strong>duração do contrato</strong> a cada tick. A IA analisa a volatilidade (ATR, Z-Score) e a força da tendência (ADX) para tomar decisões de risco em tempo real.</li>
+      <li><strong>Autonomia Total da Mesa:</strong> A Mesa Operacional agora ajusta dinamicamente não só o <strong>limiar de consenso</strong>, but também o <strong>valor da aposta (\`stake\`)</strong> e a <strong>duração do contrato</strong> a cada tick. A IA analisa a volatilidade (ATR, Z-Score) e a força da tendência (ADX) para tomar decisões de risco em tempo real.</li>
       <li><strong>Memória Persistente com Firebase:</strong> A Arena Virtual agora é "imortal". O desempenho de cada um dos 22 robôs (vitórias, derrotas, P&L) é guardado de forma segura no <strong>Firestore</strong>, associado à sua conta de utilizador. O progresso já não se perde ao fechar o navegador.</li>
       <li><strong>Hall da Fama Integrado:</strong> O Hall da Fama foi movido da sua página isolada para um separador dedicado diretamente dentro da página <strong>Deriv Trader</strong>, centralizando todo o ecossistema de trading num único local. Ele busca os dados do Firebase, mostrando um placar de líderes persistente.</li>
-      <li><strong>Consenso Relativo e Inteligente:</strong> O limiar de consenso deixou de ser um número absoluto. Agora é calculado como uma <strong>percentagem do potencial de voto máximo</strong> disponível a cada momento, tornando-o verdadeiramente adaptativo à quantidade de robôs que têm uma opinião formada (`RISE` ou `FALL`).</li>
+      <li><strong>Consenso Relativo e Inteligente:</strong> O limiar de consenso deixou de ser um número absoluto. Agora é calculado como uma <strong>percentagem do potencial de voto máximo</strong> disponível a cada momento, tornando-o verdadeiramente adaptativo à quantidade de robôs que têm uma opinião formada (\`RISE\` ou \`FALL\`).</li>
       <li><strong>Estratégias Locais e Fim da Dependência da IA:</strong> O conselho de 22 robôs analistas já não é gerado por uma chamada de IA. As suas estratégias estão agora definidas localmente no ficheiro <code>src/services/council-strategies.ts</code>, tornando a inicialização da Mesa Operacional instantânea, fiável e consistente.</li>
     </ul>
     <h4>Correções Críticas:</h4>
     <ul>
-      <li>Resolvido um erro crucial (`TypeError: Cannot read properties of null`) que impedia a execução de trades automáticas devido à falta de verificação dos indicadores.</li>
+      <li>Resolvido um erro crucial (\`TypeError: Cannot read properties of null\`) que impedia a execução de trades automáticas devido à falta de verificação dos indicadores.</li>
       <li>Corrigida a lógica de votação do robô de Bandas de Bollinger, que estava inoperante e impedia a atividade na Arena.</li>
-      <li>Garantido que os ajustes dinâmicos de `stake` e `duration` respeitam os limites mínimos da corretora ($0.35 e 1-10 ticks) e que os valores corretos são usados na execução da ordem.</li>
+      <li>Garantido que os ajustes dinâmicos de \`stake\` e \`duration\` respeitam os limites mínimos da corretora ($0.35 e 1-10 ticks) e que os valores corretos são usados na execução da ordem.</li>
       <li>Corrigido um erro que tentava executar trades antes de a conexão com a API da corretora estar totalmente estabelecida.</li>
     </ul>
     <hr/>
@@ -60,8 +62,8 @@ const ChangelogContent = () => (
     <h4>Funcionalidades Principais:</h4>
     <ul>
       <li><strong>Criação da "Arena Virtual":</strong> Implementação de um sistema de "paper trading" competitivo em segundo plano. O sistema rastreia o desempenho individual de cada um dos 22 robôs analistas.</li>
-      <li><strong>Memória de Desempenho:</strong> Utilização do `localStorage` para guardar as vitórias, derrotas e o P&L (Lucro/Prejuízo) de cada robô durante a sessão de trading.</li>
-      <li><strong>Página "Mesa de Operações" (`/trading-desk`):</strong> Criação de um novo ecrã que funciona como um *leaderboard*, exibindo o ranking de desempenho de todos os analistas, incluindo taxa de acerto e resultado financeiro.</li>
+      <li><strong>Memória de Desempenho:</strong> Utilização do \`localStorage\` para guardar as vitórias, derrotas e o P&L (Lucro/Prejuízo) de cada robô durante a sessão de trading.</li>
+      <li><strong>Página "Mesa de Operações" (\`/trading-desk\`):</strong> Criação de um novo ecrã que funciona como um *leaderboard*, exibindo o ranking de desempenho de todos os analistas, incluindo taxa de acerto e resultado financeiro.</li>
       <li><strong>Implementação da "Meritocracia":</strong> Adição de um modo de operação onde os robôs com melhor desempenho histórico têm os seus votos ponderados com mais força, tornando o sistema auto-otimizável e adaptativo.</li>
       <li><strong>Navegação Atualizada:</strong> Adicionado um link no menu lateral para a nova página "Mesa de Operações".</li>
     </ul>
@@ -192,7 +194,7 @@ export default function HelpPage() {
                     <div>
                         <h4 className="font-semibold text-md mb-2">Camada 1: Os 22 Analistas Táticos (A Equipa)</h4>
                         <p className="text-sm">
-                           São os especialistas da linha da frente. Cada um domina uma estratégia de indicador (RSI, MACD, etc.), definida no ficheiro <code>src/services/council-strategies.ts</code>. A cada tick, eles analisam os dados do motor de indicadores e emitem um "voto" (`RISE`, `FALL`, `HOLD`) com um nível de confiança.
+                           São os especialistas da linha da frente. Cada um domina uma estratégia de indicador (RSI, MACD, etc.), definida no ficheiro <code>src/services/council-strategies.ts</code>. A cada tick, eles analisam os dados do motor de indicadores e emitem um "voto" (\`RISE\`, \`FALL\`, \`HOLD\`) com um nível de confiança.
                         </p>
                     </div>
                     <div>
@@ -202,7 +204,7 @@ export default function HelpPage() {
                         </p>
                          <ul className="list-disc pl-6 mt-2 space-y-1 text-sm">
                             <li>"Já atingimos o nosso limite de perda ou a nossa meta de lucro do dia?" (se sim, **VETO** e para as operações).</li>
-                            <li>"O mercado está demasiado caótico ou volátil?" (Com base no ADX e BBW, ele **reduz o valor da aposta (`stake`)** e **aumenta a duração do contrato** para se proteger).</li>
+                            <li>"O mercado está demasiado caótico ou volátil?" (Com base no ADX e BBW, ele **reduz o valor da aposta (\`stake\`)** e **aumenta a duração do contrato** para se proteger).</li>
                             <li>"O consenso dos analistas é forte o suficiente para esta condição de mercado?" (se não, aguarda).</li>
                         </ul>
                         <p className="text-sm mt-2">É a direção de risco que dá a aprovação final e ajusta os parâmetros de cada trade de forma autónoma, usando os valores de "Aposta Base" e "Duração Base" como ponto de partida.</p>
@@ -246,7 +248,7 @@ export default function HelpPage() {
                   <ul className="list-disc pl-6 space-y-3">
                     <li>
                       <strong className="font-mono">src/hooks/use-deriv-api.tsx</strong><br/>
-                      A camada de comunicação. Estabelece a conexão WebSocket com a corretora, recebe os dados de mercado (`chartData`) e envia as ordens de negociação (`executeTrade`). É os "ouvidos" e as "mãos" do sistema.
+                      A camada de comunicação. Estabelece a conexão WebSocket com a corretora, recebe os dados de mercado (\`chartData\`) e envia as ordens de negociação (\`executeTrade\`). É os "ouvidos" e as "mãos" do sistema.
                     </li>
                     <li>
                       <strong className="font-mono">src/hooks/use-robot-council.ts</strong><br/>
@@ -328,5 +330,3 @@ export default function HelpPage() {
     </div>
   );
 }
-
-    
