@@ -35,6 +35,14 @@ export type Transaction = {
 // =================================================================
 // Chart & Trading Hook Types
 // =================================================================
+export interface Asset {
+  value: string;
+  label: string;
+  marketIsOpen: boolean;
+  submarket: string;
+  market: string;
+  minDuration: string;
+}
 
 export type TimePeriod = '1m' | '2m' | '3m' | '5m' | '10m' | '15m' | '30m' | '1h' | '8h' | '1d';
 export type ChartType = 'Area' | 'Candle';
@@ -118,7 +126,7 @@ export const OperationSchema = z.object({
   stake: z.number(),
   status: z.enum(['pending', 'won', 'lost']),
   result: z.number().optional(),
-  timestamp: z.string().datetime().describe("The ISO 8601 timestamp of when the operation was created."),
+  timestamp: z.string().describe("The ISO 8601 timestamp of when the operation was created."),
 });
 
 // Re-exporting types from their source file

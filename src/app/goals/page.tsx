@@ -70,8 +70,8 @@ export default function GoalsPage() {
             <Target className="h-12 w-12 mb-4" />
             <h3 className="text-xl font-semibold mb-2">Nenhuma meta encontrada</h3>
             <p className="mb-4">Comece a planejar seu futuro financeiro. Crie sua primeira meta agora.</p>
-            <AddGoalDialog onGoalAdded={handleGoalAdded}>
-                <Button>Criar Nova Meta</Button>
+            <AddGoalDialog onGoalAdded={handleGoalAdded} >
+                 <Button>Criar Nova Meta</Button>
             </AddGoalDialog>
         </div>
       ) : (

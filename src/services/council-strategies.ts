@@ -186,13 +186,11 @@ export const initialCouncilStrategies: Omit<RobotStrategy, 'id'>[] = [
     justification: "Usa o próprio Chandelier como sinal de entrada, além de stop.",
     strongConfidence: 85,
     weakConfidence: 60,
-    period: 22,
-    multiplier: 3,
+    chandelierPeriod: 22,
+    chandelierMultiplier: 3,
     optimalDuration: 120, // 2 minutos
     optimalDurationUnit: 's',
     suggestedStake: 1.2,
-    chandelierPeriod: 22,
-    chandelierMultiplier: 3.0,
   },
   // --- Volume & Order Flow ---
   {
@@ -324,5 +322,7 @@ export const initialCouncilStrategies: Omit<RobotStrategy, 'id'>[] = [
     acceleration: strat.acceleration || 0.02,
     maxAcceleration: strat.maxAcceleration || 0.2,
     multiplier: strat.multiplier || 3.0,
+    chandelierPeriod: strat.chandelierPeriod || 22,
+    chandelierMultiplier: strat.chandelierMultiplier || 3.0,
     ...strat,
 }));

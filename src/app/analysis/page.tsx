@@ -1,6 +1,6 @@
 // /src/app/analysis/page.tsx
-import { SpendingChart } from "@/features/financials/components/analysis/spending-chart";
-import { TransactionsTable } from "@/features/financials/components/analysis/transactions-table";
+import { SpendingChart } from "@/components/analysis/spending-chart";
+import { TransactionsTable } from "@/components/analysis/transactions-table";
 import {
   Card,
   CardContent,

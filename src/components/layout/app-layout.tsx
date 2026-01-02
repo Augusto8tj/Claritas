@@ -165,31 +165,31 @@ function MainNav() {
                     </SidebarMenuSubButton>
                 </SidebarMenuSubItem>
                  <SidebarMenuSubItem>
-                    <SidebarMenuSubButton href="#" isActive={pathname === '/deriv-mt5'} disabled>
+                    <SidebarMenuSubButton href="#" isActive={pathname === '/deriv-mt5'} aria-disabled>
                         <CandlestickChart />
                         <span>Deriv MT5</span>
                     </SidebarMenuSubButton>
                 </SidebarMenuSubItem>
                  <SidebarMenuSubItem>
-                    <SidebarMenuSubButton href="#" isActive={pathname === '/deriv-bot'} disabled>
+                    <SidebarMenuSubButton href="#" isActive={pathname === '/deriv-bot'} aria-disabled>
                         <Bot />
                         <span>Deriv Bot</span>
                     </SidebarMenuSubButton>
                 </SidebarMenuSubItem>
                  <SidebarMenuSubItem>
-                    <SidebarMenuSubButton href="#" isActive={pathname === '/deriv-x'} disabled>
+                    <SidebarMenuSubButton href="#" isActive={pathname === '/deriv-x'} aria-disabled>
                         <Settings2 />
                         <span>Deriv X</span>
                     </SidebarMenuSubButton>
                 </SidebarMenuSubItem>
                  <SidebarMenuSubItem>
-                    <SidebarMenuSubButton href="#" isActive={pathname === '/smart-trader'} disabled>
+                    <SidebarMenuSubButton href="#" isActive={pathname === '/smart-trader'} aria-disabled>
                         <Laptop />
                         <span>SmartTrader</span>
                     </SidebarMenuSubButton>
                 </SidebarMenuSubItem>
                  <SidebarMenuSubItem>
-                    <SidebarMenuSubButton href="#" isActive={pathname === '/deriv-go'} disabled>
+                    <SidebarMenuSubButton href="#" isActive={pathname === '/deriv-go'} aria-disabled>
                         <Smartphone />
                         <span>Deriv GO</span>
                     </SidebarMenuSubButton>

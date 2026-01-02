@@ -2,7 +2,7 @@
 'use client';
 
 import React, { useMemo } from 'react';
-import type { TradeAnnotation } from '@/hooks/types';
+import type { TradeAnnotation } from '@/lib/types';
 import { Badge } from '../ui/badge';
 import { Progress } from '../ui/progress';
 import { cn } from '@/lib/utils';

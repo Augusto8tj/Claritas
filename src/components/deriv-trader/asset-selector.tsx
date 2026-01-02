@@ -46,52 +46,8 @@ export function AssetSelector({ selectedAsset, onAssetChange, assetGroups, isAss
   const [marketStatusFilter, setMarketStatusFilter] = useState('all');
   const [durationFilter, setDurationFilter] = useState('all');
 
-  // Debug: Log para ver os valores reais dos ativos
-  useEffect(() => {
-    if (!isAssetsLoading && assetGroups.length > 0) {
-      const allAssets = assetGroups.flatMap(g => g.options);
-      const uniqueMarkets = [...new Set(allAssets.map(a => a.market))];
-      console.log('🔍 Mercados únicos disponíveis:', uniqueMarkets);
-      console.log('📊 Total de ativos:', allAssets.length);
-      
-      // Log detalhado por mercado
-      uniqueMarkets.forEach(market => {
-        const count = allAssets.filter(a => a.market === market).length;
-        console.log(`  - ${market}: ${count} ativos`);
-      });
-      
-      // Log de status de mercado
-      const openMarkets = allAssets.filter(a => a.marketIsOpen).length;
-      const closedMarkets = allAssets.filter(a => !a.marketIsOpen).length;
-      console.log('📊 Status:', { abertos: openMarkets, fechados: closedMarkets });
-      
-      // Log de durações
-      const withTicks = allAssets.filter(a => a.minDuration && a.minDuration.endsWith('t')).length;
-      const withTime = allAssets.filter(a => a.minDuration && !a.minDuration.endsWith('t')).length;
-      const noMinDuration = allAssets.filter(a => !a.minDuration).length;
-      console.log('⏱️ Durações:', { ticks: withTicks, tempo: withTime, semDuração: noMinDuration });
-      
-      // Log de alguns ativos para verificar estrutura
-      console.log('📝 Exemplos de cada mercado:');
-      uniqueMarkets.forEach(market => {
-        const example = allAssets.find(a => a.market === market);
-        if (example) {
-          console.log(`  ${market}:`, {
-            label: example.label,
-            value: example.value,
-            marketIsOpen: example.marketIsOpen,
-            minDuration: example.minDuration
-          });
-        }
-      });
-    }
-  }, [assetGroups, isAssetsLoading]);
-
   const filteredAssets = useMemo(() => {
     let assets = assetGroups.flatMap(g => g.options);
-
-    console.log('🎯 Filtros ativos:', { filter, marketStatusFilter, durationFilter });
-    console.log('📦 Total antes dos filtros:', assets.length);
 
     // 1. Filter by Market Status
     if (marketStatusFilter === 'open') {
@@ -99,7 +55,6 @@ export function AssetSelector({ selectedAsset, onAssetChange, assetGroups, isAss
     } else if (marketStatusFilter === 'closed') {
       assets = assets.filter(a => !a.marketIsOpen);
     }
-    console.log('📦 Após filtro de status:', assets.length);
 
     // 2. Filter by Duration Type
     if (durationFilter === 'tick') {
@@ -107,19 +62,10 @@ export function AssetSelector({ selectedAsset, onAssetChange, assetGroups, isAss
     } else if (durationFilter === 'time') {
         assets = assets.filter(a => a.minDuration && !a.minDuration.endsWith('t'));
     }
-    console.log('📦 Após filtro de duração:', assets.length);
 
     // 3. Filter by Market Type
     if (filter !== 'all') {
-      const beforeMarketFilter = assets.length;
-      assets = assets.filter(a => {
-        const matches = a.market === filter;
-        if (!matches && beforeMarketFilter < 10) {
-          console.log(`❌ Asset ${a.label} tem market="${a.market}", esperado="${filter}"`);
-        }
-        return matches;
-      });
-      console.log(`📦 Após filtro de mercado (${filter}):`, assets.length);
+      assets = assets.filter(a => a.market === filter);
     }
 
     // Regroup assets after filtering
@@ -132,14 +78,10 @@ export function AssetSelector({ selectedAsset, onAssetChange, assetGroups, isAss
         regrouped[groupLabel].push(asset);
     });
 
-    const result = Object.keys(regrouped).map(label => ({
+    return Object.keys(regrouped).map(label => ({
         label,
         options: regrouped[label],
     })).filter(group => group.options.length > 0);
-
-    console.log('✅ Grupos finais:', result.length, 'com total de ativos:', result.reduce((acc, g) => acc + g.options.length, 0));
-
-    return result;
 
   }, [assetGroups, filter, marketStatusFilter, durationFilter]);
   

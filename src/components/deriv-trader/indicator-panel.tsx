@@ -2,12 +2,12 @@
 'use client';
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import type { ChartData } from '@/hooks/types';
+import type { ChartData } from '@/lib/types';
 import type { Indicators } from '@/services/indicator-service';
 import { Gauge } from 'lucide-react';
 
 interface IndicatorPanelProps {
-  indicators: Indicators;
+  indicators: Indicators | null;
   latestDataPoint: ChartData | null;
 }
 

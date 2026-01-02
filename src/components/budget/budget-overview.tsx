@@ -1,4 +1,4 @@
-// src/features/financials/components/budget/budget-overview.tsx
+// src/components/budget/budget-overview.tsx
 "use client";
 
 import * as React from "react";
@@ -10,7 +10,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
-import { getBudgetData } from "@/features/financials/services/financial-data-service";
+import { getBudgetData } from "@/services/financial-data-service";
 import type { BudgetCategory } from "@/lib/types";
 import { useAuth } from "@/features/auth/hooks/use-auth";
 import {

@@ -37,6 +37,7 @@ import { cn } from '@/lib/utils'
 import { ToggleGroup, ToggleGroupItem } from '../ui/toggle-group'
 import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover'
 import { TradeLegend } from './trade-legend'
+import type { Indicators } from '@/services/indicator-service'
 
 
 interface MarketChartProps {
@@ -49,12 +50,7 @@ interface MarketChartProps {
   timePeriod: TimePeriod
   setTimePeriod: (period: TimePeriod) => void
   operations: Operation[]
-  indicators: {
-    sma: (number | null)[]
-    ema: (number | null)[]
-    vwap: (number | null)[]
-    bollingerBands: ({ upper: number; middle: number; lower: number } | null)[]
-  } | null,
+  indicators: Indicators | null,
   tradeAnnotations: TradeAnnotation[];
 }
 
@@ -960,7 +956,7 @@ export function MarketChart({
     brushRef.current.target = ''
   }, []);
   
-  const handleChartMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
+  const handleChartMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
     const canvas = mainCanvasRef.current;
     if (!canvas) return;
     const rect = canvas.getBoundingClientRect();
@@ -984,6 +980,8 @@ export function MarketChart({
       className="w-full rounded-xl p-4 relative flex flex-col aspect-video min-h-[400px]"
       style={{ backgroundColor: colors.bg }}
       ref={containerRef}
+      onMouseMove={handleChartMouseMove}
+      onMouseLeave={handleChartMouseLeave}
     >
       <div className="flex flex-wrap items-center justify-between gap-y-2 mb-2">
         <div className="flex items-center gap-3">
@@ -1115,8 +1113,6 @@ export function MarketChart({
 
       <div
         className="w-full flex-1 relative"
-        onMouseMove={handleChartMouseMove}
-        onMouseLeave={handleChartMouseLeave}
       >
         <TradeLegend 
             annotations={tradeAnnotations}

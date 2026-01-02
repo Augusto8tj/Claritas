@@ -2,7 +2,7 @@
 "use client";
 
 import { Check, CaseSensitive } from "lucide-react";
-import { useTheme } from "@/hooks/use-theme";
+import { useTheme } from "@/features/theme/hooks/use-theme";
 import { cn } from "@/lib/utils";
 
 const fonts = [

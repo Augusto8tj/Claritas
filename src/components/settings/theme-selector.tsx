@@ -3,7 +3,7 @@
 
 import * as React from "react";
 import { Check, Palette } from "lucide-react";
-import { useTheme } from "@/hooks/use-theme";
+import { useTheme } from "@/features/theme/hooks/use-theme";
 import { cn } from "@/lib/utils";
 
 const themes = [

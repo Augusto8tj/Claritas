@@ -76,7 +76,7 @@ function DerivTraderInterface({ symbol }: DerivTraderInterfaceProps) {
     if (newDuration !== currentDuration) {
       form.setValue('duration', newDuration);
     }
-  }, [durationUnit, durationLimits]);
+  }, [durationUnit, durationLimits, form]);
 
 
   const handleDurationChange = (amount: number) => {
@@ -218,7 +218,7 @@ function DerivTraderInterface({ symbol }: DerivTraderInterfaceProps) {
                                                 </FormControl>
                                                 <SelectContent>
                                                     {Object.entries(durationUnitLabels).map(([value, label]) => (
-                                                        <SelectItem key={value} value={value} disabled={durationLimits && durationLimits[value as DurationUnit].min === 0}>
+                                                        <SelectItem key={value} value={value} disabled={durationLimits ? durationLimits[value as DurationUnit].min === 0 : false}>
                                                             {label}
                                                         </SelectItem>
                                                     ))}

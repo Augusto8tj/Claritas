@@ -280,5 +280,3 @@ export default function DerivTraderPage() {
     </FormProvider>
   );
 }
-
-    

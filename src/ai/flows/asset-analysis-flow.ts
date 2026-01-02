@@ -39,7 +39,6 @@ Dados de Preço Recentes para o ativo {{{symbol}}} (JSON):
 \'\'\'
 `;
 
-// O fluxo agora usa ai.generate() explicitamente com o modelo 'flash'
 const getAssetAnalysisFlow = ai.defineFlow(
   {
     name: 'getAssetAnalysisFlow',
@@ -47,14 +46,11 @@ const getAssetAnalysisFlow = ai.defineFlow(
     outputSchema: AssetAnalysisOutputSchema,
   },
   async (input) => {
-    
-    // Usando ai.generate para ter controlo explícito sobre o modelo
     const { output } = await ai.generate({
-      model: 'gemini-2.5-flash', // Garante que o modelo rápido é usado
       prompt: ANALYSIS_PROMPT,
+      model: 'gemini-2.5-flash',
       input: {
           ...input,
-          // A conversão para JSON é tratada internamente pelo Genkit/Handlebars
           historicalData: JSON.stringify(input.historicalData), 
           recentTrades: JSON.stringify(input.recentTrades)
       },
@@ -63,14 +59,12 @@ const getAssetAnalysisFlow = ai.defineFlow(
 
     if (!output) throw new Error("A IA não conseguiu analisar o ativo.");
     
-    // Adiciona a contagem de pontos de dados à saída
     output.analysisDataPointsCount = input.historicalData.length;
     
     return output;
   }
 );
 
-// A função de invólucro permanece a mesma
 export async function getAssetAnalysis(input: AssetAnalysisInput): Promise<AssetAnalysisOutput> {
     return getAssetAnalysisFlow(input);
 }

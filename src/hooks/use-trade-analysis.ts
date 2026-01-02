@@ -1,4 +1,4 @@
-// src/features/trading/hooks/use-trade-analysis.ts
+// src/hooks/use-trade-analysis.ts
 'use client';
 
 import { useCallback } from 'react';

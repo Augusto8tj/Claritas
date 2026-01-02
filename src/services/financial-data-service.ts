@@ -6,7 +6,7 @@
  * This service now uses non-blocking updates and propagates raw errors.
  */
 import { db } from '@/lib/firebase';
-import { collection, getDocs, doc, setDoc, query, where, orderBy, getDoc, addDoc, deleteDoc } from 'firebase/firestore';
+import { collection, getDocs, doc, setDoc, query, where, orderBy, getDoc, addDoc, deleteDoc, DocumentReference, DocumentData } from 'firebase/firestore';
 import type { Goal, BudgetCategory, Transaction, RobotPerformance, TradeDecisionLog, EnhancedRobotPerformance } from '@/lib/types';
 import { generateGoalImage } from '@/ai/flows/goal-image-generation';
 import { addDocumentNonBlocking, deleteDocumentNonBlocking, setDocumentNonBlocking } from '@/firebase/non-blocking-updates';
@@ -73,16 +73,16 @@ export async function addGoal(userId: string, name: string, targetAmount: number
     };
 
     try {
-        // Use non-blocking addDoc and get the promise
-        const docRefPromise = addDocumentNonBlocking(goalsCol, newGoalData);
+        const docRefPromise = addDocumentNonBlocking(goalsCol, newGoalData) as Promise<DocumentReference<DocumentData>>;
 
-        // Continue with non-blocking tasks
         generateGoalImage({ goalName: name })
             .then(imageResult => {
                 if (imageResult?.imageUrl) {
                     docRefPromise.then(docRef => {
-                        const goalDoc = doc(db, `users/${userId}/goals`, docRef.id);
-                        setDocumentNonBlocking(goalDoc, { imageUrl: imageResult.imageUrl }, { merge: true });
+                        if (docRef && docRef.id) {
+                            const goalDoc = doc(db, `users/${userId}/goals`, docRef.id);
+                            setDocumentNonBlocking(goalDoc, { imageUrl: imageResult.imageUrl }, { merge: true });
+                        }
                     })
                 }
             })

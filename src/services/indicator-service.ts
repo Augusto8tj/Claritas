@@ -180,7 +180,7 @@ const calculateADX = (data: CandleData[], period = 14) => {
     const smooth = (values: (number | null)[], smoothingPeriod: number) => {
         if(values.length < smoothingPeriod) return Array(values.length).fill(null);
         let smoothed: (number | null)[] = Array(smoothingPeriod-1).fill(null);
-        const initialSum = values.slice(0, smoothingPeriod).reduce((acc, v) => acc + (v||0), 0);
+        const initialSum = values.slice(0, smoothingPeriod).reduce((acc, v) => (acc || 0) + (v||0), 0);
         smoothed.push(initialSum);
 
         for (let i = smoothingPeriod; i < values.length; i++) {

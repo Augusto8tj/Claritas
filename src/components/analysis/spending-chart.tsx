@@ -24,6 +24,8 @@ const chartConfig = {
   Outros: { label: "Outros", color: "hsl(var(--muted))" },
 };
 
+type ChartConfigKey = keyof typeof chartConfig;
+
 export function SpendingChart() {
   const { user } = useAuth();
   const [chartData, setChartData] = React.useState<any[]>([]);
@@ -45,11 +47,12 @@ export function SpendingChart() {
         const amount = expenses
           .filter(t => t.category === category)
           .reduce((acc, curr) => acc + curr.amount, 0);
-        const colorKey = category as keyof typeof chartConfig;
+        const colorKey = category as ChartConfigKey;
+        const configEntry = chartConfig[colorKey] || chartConfig.Outros;
         return {
           category,
           amount,
-          fill: chartConfig[colorKey]?.color || chartConfig.Outros.color,
+          fill: configEntry.color,
         };
       }).filter(item => item.amount > 0);
 
@@ -69,7 +72,7 @@ export function SpendingChart() {
 
   return (
       <ChartContainer
-        config={chartConfig}
+        config={chartConfig as any}
         className="mx-auto aspect-square h-[300px]"
       >
         <PieChart>
@@ -89,7 +92,7 @@ export function SpendingChart() {
             ))}
             <Label
               content={({ viewBox }) => {
-                if (viewBox && "cx" in viewBox && "cy" in viewBox) {
+                if (viewBox && "cx" in viewBox && "cy" in viewBox && viewBox.cx !== undefined && viewBox.cy !== undefined) {
                   return (
                     <text
                       x={viewBox.cx}

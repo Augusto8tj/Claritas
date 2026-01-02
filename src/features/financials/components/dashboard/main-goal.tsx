@@ -4,7 +4,7 @@
 import { useAuth } from "@/features/auth/hooks/use-auth";
 import { useEffect, useState, useCallback } from "react";
 import { getGoals } from "@/app/actions/financial-data-actions";
-import type { Goal } from "@/lib/types/financial.types";
+import type { Goal } from "@/lib/types";
 import {
   Card,
   CardContent,
