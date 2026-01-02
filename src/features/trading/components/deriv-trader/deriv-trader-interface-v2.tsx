@@ -23,13 +23,13 @@ import {
 
 import { Input } from '@/components/ui/input';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Button } from '../ui/button';
-import { Card, CardContent } from '../ui/card';
-import { Separator } from '../ui/separator';
-import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover';
-import { RadioGroup, RadioGroupItem } from '../ui/radio-group';
-import { Switch } from '../ui/switch';
-import { Label } from '../ui/label';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent } from '@/components/ui/card';
+import { Separator } from '@/components/ui/separator';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
+import { Switch } from '@/components/ui/switch';
+import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
 import { useDerivApi } from '@/hooks/use-deriv-api';
 import type { DurationUnit, RiseFallFormValues, OperationInitiator } from '@/lib/types';
