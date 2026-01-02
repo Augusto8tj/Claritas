@@ -324,9 +324,9 @@ const getHistoricalData = useCallback(async (symbol: string, style: 'ticks' | 'c
 const subscribeToMarketData = useCallback(async (symbol: string) => {
     if (activeSubscriptionIdRef.current && wsRef.current?.readyState === WebSocket.OPEN) {
         try { 
-            await makeRequest({ forget: activeSubscriptionIdRef.current }); 
+            await makeRequest({ forget: activeSubscriptionIdRef.current }, true); 
         } catch (e) { 
-            console.log('[Market Data] Previous subscription could not be forgotten.'); 
+            console.warn('[Market Data] Previous subscription could not be forgotten.'); 
         }
         activeSubscriptionIdRef.current = null;
     }
@@ -364,8 +364,6 @@ const subscribeToMarketData = useCallback(async (symbol: string) => {
             };
         }
         
-        // A subscrição não requer uma resposta com req_id, então usamos 'noResponse'.
-        // O ID da subscrição virá numa mensagem separada.
         await makeRequest(subRequest, true);
         console.log(`[Market Data] Subscription request sent for ${symbol} (${chartType}).`);
 
@@ -713,7 +711,7 @@ const subscribeToMarketData = useCallback(async (symbol: string) => {
             activeSubscriptionIdRef.current = null;
         }
     };
-  }, [isConnected, chartType, timePeriod, activeSymbol, subscribeToMarketData]);
+  }, [isConnected, activeSymbol, subscribeToMarketData]);
 
   const setAccountType = useCallback((type: AccountType) => {
     try {
