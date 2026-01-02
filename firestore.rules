@@ -92,9 +92,10 @@ service cloud.firestore {
       /**
        * @description Manages a user's private financial accounts.
        */
+      match /financialAccounts/{document=**} {
+        allow list, get: if isOwner(userId);
+      }
       match /financialAccounts/{accountId} {
-        allow list: if isOwner(userId);
-        allow get: if isOwner(userId);
         allow create: if isOwner(userId) && isValidOwnedDocCreate(userId);
         allow update: if isExistingOwner(userId) && isImmutableOwnedDocUpdate();
         allow delete: if isExistingOwner(userId);
@@ -103,9 +104,10 @@ service cloud.firestore {
       /**
        * @description Manages a user's private transactions.
        */
+       match /transactions/{document=**} {
+        allow list, get: if isOwner(userId);
+      }
       match /transactions/{transactionId} {
-        allow list: if isOwner(userId);
-        allow get: if isOwner(userId);
         allow create: if isOwner(userId);
         allow update: if isExistingOwner(userId);
         allow delete: if isExistingOwner(userId);
@@ -114,9 +116,10 @@ service cloud.firestore {
       /**
        * @description Manages a user's private financial goals.
        */
+       match /financialGoals/{document=**} {
+        allow list, get: if isOwner(userId);
+      }
       match /financialGoals/{financialGoalId} {
-        allow list: if isOwner(userId);
-        allow get: if isOwner(userId);
         allow create: if isOwner(userId) && isValidOwnedDocCreate(userId);
         allow update: if isExistingOwner(userId) && isImmutableOwnedDocUpdate();
         allow delete: if isExistingOwner(userId);
@@ -125,9 +128,10 @@ service cloud.firestore {
       /**
        * @description Manages a user's private AI-generated insights.
        */
+       match /aiInsights/{document=**} {
+        allow list, get: if isOwner(userId);
+      }
       match /aiInsights/{aiInsightId} {
-        allow list: if isOwner(userId);
-        allow get: if isOwner(userId);
         allow create: if isOwner(userId) && isValidOwnedDocCreate(userId);
         allow update: if isExistingOwner(userId) && isImmutableOwnedDocUpdate();
         allow delete: if isExistingOwner(userId);
