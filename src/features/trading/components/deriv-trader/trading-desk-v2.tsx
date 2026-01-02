@@ -129,7 +129,7 @@ export function TradingDeskV2({ robotPerformance, isCouncilAutopilotOn, resetAre
                                 
                                 return (
                                     <TableRow
-                                        key={robot.id}
+                                        key={`${robot.id}-${index}`}
                                         className={cn(isTopPerformer && 'bg-muted/30')}
                                     >
                                         <TableCell className="font-medium">
