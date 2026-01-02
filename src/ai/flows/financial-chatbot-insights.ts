@@ -8,7 +8,7 @@
  */
 
 import { ai } from '@/lib/genkit';
-import { z } from 'zod'; // <--- CORREÇÃO: Importar o Zod
+import { z } from 'zod';
 import {
   financialChatbotInsightsInputSchema,
   financialChatbotInsightsOutputSchema,
@@ -64,7 +64,7 @@ Nova Pergunta do Usuário: {{{query}}}
 const financialChatbotInsightsFlow = ai.defineFlow(
   {
     name: 'financialChatbotInsightsFlow',
-    // CORREÇÃO: Usar z.string() em vez de ai.string()
+    // O schema de entrada do fluxo agora inclui o userId, que será extraído.
     inputSchema: financialChatbotInsightsInputSchema.extend({ userId: z.string().describe("The user's unique ID.") }),
     outputSchema: financialChatbotInsightsOutputSchema,
   },
