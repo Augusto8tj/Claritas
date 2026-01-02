@@ -312,8 +312,8 @@ export function useRobotCouncilV2(
   // ────────────────────────────────────────────────────────────────
   // CONFIGURAÇÕES DE GESTÃO DE RISCO
   // ────────────────────────────────────────────────────────────────
-  const [dailyBalance, setDailyBalance] = useState(100);
-  const [dailyTarget, setDailyTarget] = useState(50);
+  const [dailyBalance, setDailyBalance] = useState(10);
+  const [dailyTarget, setDailyTarget] = useState(5);
   const [consensusSensitivity, setConsensusSensitivity] = useState(60); 
   const [confidenceFactor, setConfidenceFactor] = useState(70); 
   const [durationRange, setDurationRange] = useState<[number, number]>([15, 180]);
