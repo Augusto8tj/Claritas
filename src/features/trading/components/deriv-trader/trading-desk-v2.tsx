@@ -182,7 +182,7 @@ export function TradingDeskV2({ robotPerformance, isCouncilAutopilotOn, resetAre
                                 );
                             })
                         ) : (
-                            <TableRow>
+                            <TableRow key="empty-row">
                                 <TableCell colSpan={5} className="text-center h-24">
                                     <div className="flex flex-col items-center justify-center gap-2 text-muted-foreground">
                                         <AlertTriangle className="h-8 w-8" />
