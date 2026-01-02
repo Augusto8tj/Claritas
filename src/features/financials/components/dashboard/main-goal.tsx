@@ -41,6 +41,7 @@ export function MainGoal() {
   const { user } = useAuth();
   const [goals, setGoals] = useState<Goal[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   const fetchGoals = useCallback(async () => {
     if (!user) {
@@ -49,11 +50,13 @@ export function MainGoal() {
     }
     
     setLoading(true);
+    setError(null);
     try {
         const userGoals = await getGoals(user.uid);
         setGoals(userGoals);
-    } catch (error) {
-        console.error(error); // Log the raw error
+    } catch (err: any) {
+        console.error(err); // Log the raw error
+        setError("Não foi possível carregar as metas. Verifique as permissões da base de dados.");
         errorEmitter.emit('permission-error', new FirestorePermissionError({
           path: `users/${user.uid}/goals`,
           operation: 'list'
@@ -84,16 +87,29 @@ export function MainGoal() {
     );
   }
 
+  if (error) {
+     return (
+       <Card>
+         <CardHeader>
+           <CardTitle className="font-headline text-destructive">Erro ao Carregar Metas</CardTitle>
+           <CardDescription className="text-destructive">
+             {error}
+           </CardDescription>
+         </CardHeader>
+       </Card>
+     )
+  }
+
   if (!goals || goals.length === 0) {
     return (
       <Card>
         <CardHeader>
-          <CardTitle className="font-headline">Metas</CardTitle>
-          <CardDescription>Nenhuma meta encontrada.</CardDescription>
+          <CardTitle className="font-headline">Acompanhamento de Metas</CardTitle>
+          <CardDescription>Nenhuma meta financeira foi definida ainda.</CardDescription>
         </CardHeader>
         <CardContent>
           <p className="text-sm text-muted-foreground">
-            Vá para a página de Metas para adicionar sua primeira.
+            Vá para a página de Metas para adicionar o seu primeiro objetivo.
           </p>
         </CardContent>
       </Card>

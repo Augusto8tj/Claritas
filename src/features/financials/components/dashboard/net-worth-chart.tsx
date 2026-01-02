@@ -28,18 +28,23 @@ function processData(transactions: Transaction[]): ChartDataPoint[] {
   const monthlyData: { [key: string]: { income: number, expenses: number } } = {};
 
   for (let i = 0; i < 12; i++) {
-    monthlyData[`2024-${String(i).padStart(2, '0')}`] = { income: 0, expenses: 0 };
+    const monthKey = `2024-${String(i + 1).padStart(2, '0')}`;
+    monthlyData[monthKey] = { income: 0, expenses: 0 };
   }
 
   transactions.forEach(t => {
-    const monthKey = t.date.substring(0, 7); // YYYY-MM
-    if (!monthlyData[monthKey]) {
-      monthlyData[monthKey] = { income: 0, expenses: 0 };
-    }
-    if (t.type === 'income') {
-      monthlyData[monthKey].income += t.amount;
-    } else {
-      monthlyData[monthKey].expenses += t.amount;
+    try {
+        const monthKey = t.date.substring(0, 7); // YYYY-MM
+        if (!monthlyData[monthKey]) {
+          monthlyData[monthKey] = { income: 0, expenses: 0 };
+        }
+        if (t.type === 'income') {
+          monthlyData[monthKey].income += t.amount;
+        } else {
+          monthlyData[monthKey].expenses += t.amount;
+        }
+    } catch(e) {
+        console.warn(`Could not process transaction date: ${t.date}`, e);
     }
   });
 
@@ -59,6 +64,7 @@ export function NetWorthChart() {
     const { user } = useAuth();
     const [data, setData] = useState<ChartDataPoint[]>([]);
     const [loading, setLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
 
     useEffect(() => {
         if (!user) {
@@ -68,12 +74,14 @@ export function NetWorthChart() {
 
         const fetchData = async () => {
             setLoading(true);
+            setError(null);
             try {
               const transactions = await getTransactions(user.uid);
               const processed = processData(transactions);
               setData(processed);
-            } catch (error) {
-              console.error(error); // Log the raw error
+            } catch (err: any) {
+              console.error(err); // Log the raw error
+              setError("Não foi possível carregar os dados de transações.");
               errorEmitter.emit('permission-error', new FirestorePermissionError({
                 path: `users/${user.uid}/transactions`,
                 operation: 'list'
@@ -97,6 +105,22 @@ export function NetWorthChart() {
         </Card>
        )
     }
+
+   if (error) {
+     return (
+       <Card className="col-span-4">
+          <CardHeader>
+              <CardTitle className="font-headline text-destructive">Erro no Gráfico</CardTitle>
+              <CardDescription className="text-destructive">{error}</CardDescription>
+          </CardHeader>
+           <CardContent className="pl-2">
+              <div className="flex h-[350px] w-full items-center justify-center">
+                  <p className="text-muted-foreground">Ocorreu um problema ao carregar os dados do gráfico.</p>
+              </div>
+          </CardContent>
+      </Card>
+     )
+   }
 
     if (data.every(d => d.netWorth === 0)) {
        return (

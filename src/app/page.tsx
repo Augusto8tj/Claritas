@@ -69,11 +69,14 @@ export default async function DashboardPage() {
   // Fetch data directly in the server component page
   const userId = auth.currentUser?.uid;
   let summary = { income: 0, expenses: 0 };
+  
   if (userId) {
       try {
         summary = await getFinancialSummary(userId);
       } catch (e) {
         console.error("Failed to fetch financial summary on server:", e);
+        // Default to zero values on error
+        summary = { income: 0, expenses: 0 };
       }
   }
 
