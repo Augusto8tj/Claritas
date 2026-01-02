@@ -36,10 +36,17 @@ export async function addTransaction(userId: string, data: Omit<Transaction, 'id
 // --- Financial Summary ---
 
 export async function getFinancialSummary(userId: string): Promise<{ income: number; expenses: number; balance: number; }> {
-    const transactions = await getTransactions(userId);
-    const income = transactions.filter(t => t.type === 'income').reduce((acc, t) => acc + t.amount, 0);
-    const expenses = transactions.filter(t => t.type === 'expense').reduce((acc, t) => acc + t.amount, 0);
-    return { income, expenses, balance: income - expenses };
+    try {
+        const transactions = await getTransactions(userId);
+        const income = transactions.filter(t => t.type === 'income').reduce((acc, t) => acc + t.amount, 0);
+        const expenses = transactions.filter(t => t.type === 'expense').reduce((acc, t) => acc + t.amount, 0);
+        return { income, expenses, balance: income - expenses };
+    } catch (error) {
+        // Se getTransactions falhar, o erro será propagado.
+        // O chamador é responsável por tratar o estado de erro.
+        console.error(`[Service Error] getFinancialSummary for user ${userId} failed:`, error);
+        throw error;
+    }
 }
 
 // --- Goals ---
@@ -120,6 +127,7 @@ async function getBudgetLimits(userId: string): Promise<{ [key: string]: number 
 }
 
 export async function getBudgetData(userId: string): Promise<BudgetCategory[]> {
+   try {
     const [transactions, budgetLimits] = await Promise.all([
         getTransactions(userId),
         getBudgetLimits(userId)
@@ -139,6 +147,10 @@ export async function getBudgetData(userId: string): Promise<BudgetCategory[]> {
       budgeted,
       spent: expensesByCategory[name] || 0,
     }));
+   } catch(error) {
+     console.error(`[Service Error] getBudgetData for user ${userId} failed:`, error);
+     throw error;
+   }
 }
 
 export async function updateBudgetLimit(userId: string, name: string, newLimit: number): Promise<BudgetCategory | null> {
@@ -147,19 +159,29 @@ export async function updateBudgetLimit(userId: string, name: string, newLimit: 
     const dataToSet = { [`limits.${name}`]: newLimit };
     
     setDocumentNonBlocking(settingsDocRef, dataToSet, { merge: true });
+    
+    try {
+        const transactions = await getTransactions(userId);
+        const spent = transactions
+            .filter(t => t.type === 'expense' && t.category === name)
+            .reduce((sum, t) => sum + t.amount, 0);
 
-    const transactions = await getTransactions(userId);
-    const spent = transactions
-        .filter(t => t.type === 'expense' && t.category === name)
-        .reduce((sum, t) => sum + t.amount, 0);
-
-    return { name, budgeted: newLimit, spent };
+        return { name, budgeted: newLimit, spent };
+    } catch(error) {
+        // Se a leitura de transações falhar, ainda retornamos o budget atualizado sem o 'spent'
+         return { name, budgeted: newLimit, spent: 0 };
+    }
 }
 
 
 export async function getExpenseCategories(userId: string): Promise<string[]> {
+   try {
     const limits = await getBudgetLimits(userId);
     return Object.keys(limits);
+   } catch (error) {
+     console.error(`[Service Error] getExpenseCategories for user ${userId} failed:`, error);
+     throw error;
+   }
 }
 
 // --- General Insights (Mocked) ---
@@ -229,21 +251,26 @@ export async function loadRobotPerformance(userId: string): Promise<EnhancedRobo
 
 
 export async function getHallOfFame(userId: string): Promise<RobotPerformance[]> {
-    const performanceData = await loadRobotPerformance(userId);
-    if (!performanceData) {
-        return [];
+    try {
+        const performanceData = await loadRobotPerformance(userId);
+        if (!performanceData) {
+            return [];
+        }
+        
+        const PROMOTION_THRESHOLD_WINS = 10;
+        const PROMOTION_THRESHOLD_PROFIT = 0;
+
+        const promotedRobots = performanceData.filter(
+            (p) => (p.wins || 0) >= PROMOTION_THRESHOLD_WINS && (p.totalProfit || 0) > PROMOTION_THRESHOLD_PROFIT
+        );
+
+        promotedRobots.sort((a, b) => (b.totalProfit || 0) - (a.totalProfit || 0));
+        
+        return promotedRobots as RobotPerformance[];
+    } catch(error) {
+        console.error(`[Service Error] getHallOfFame for user ${userId} failed:`, error);
+        throw error;
     }
-    
-    const PROMOTION_THRESHOLD_WINS = 10;
-    const PROMOTION_THRESHOLD_PROFIT = 0;
-
-    const promotedRobots = performanceData.filter(
-        (p) => (p.wins || 0) >= PROMOTION_THRESHOLD_WINS && (p.totalProfit || 0) > PROMOTION_THRESHOLD_PROFIT
-    );
-
-    promotedRobots.sort((a, b) => (b.totalProfit || 0) - (a.totalProfit || 0));
-    
-    return promotedRobots as RobotPerformance[];
 }
 
 // --- Trading Decision Log ---

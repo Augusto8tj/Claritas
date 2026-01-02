@@ -89,7 +89,8 @@ export function NetWorthChart() {
             const errorMessage = "Não foi possível carregar os dados de transações.";
             setError(errorMessage);
             setData(getInitialData()); // Em caso de erro, reverte para o estado inicial zerado.
-            // Emite o erro contextual para depuração
+            // O serviço agora lança o erro, então podemos capturá-lo aqui
+            // e emitir o nosso erro contextualizado para a depuração.
             errorEmitter.emit('permission-error', new FirestorePermissionError({
               path: `users/${user.uid}/transactions`,
               operation: 'list'

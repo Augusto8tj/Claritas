@@ -22,17 +22,17 @@ import { auth } from "@/lib/firebase";
 // Guia para Novos Utilizadores
 async function FirstTransactionGuide() {
     const userId = auth.currentUser?.uid;
-    let transactions = [];
+    let hasTransactions = false;
     if (userId) {
         try {
-            transactions = await getTransactions(userId);
+            const transactions = await getTransactions(userId);
+            hasTransactions = transactions.length > 0;
         } catch (e) {
             // Se houver um erro de permissão ao buscar transações, não mostre o guia.
             // O erro será tratado pelo NetWorthChart e outros componentes.
             console.error("FirstTransactionGuide: Falha ao buscar transações, o guia pode não ser exibido.", e);
         }
     }
-    const hasTransactions = transactions.length > 0;
 
     if (hasTransactions) {
         return null;
