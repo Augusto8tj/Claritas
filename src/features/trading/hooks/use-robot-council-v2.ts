@@ -432,6 +432,29 @@ export function useRobotCouncilV2(
       })
       .catch(err => console.error("❌ Erro ao carregar performance:", err));
   }, [user, isAuthLoading]);
+  
+  // ────────────────────────────────────────────────────────────────
+  // SALVAR LOGS DE AUDITORIA AO SAIR DA PÁGINA
+  // ────────────────────────────────────────────────────────────────
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      if (!user || tradeDecisionLog.length === 0) return;
+
+      console.log("[AUDIT] Salvando logs de auditoria pendentes antes de sair...");
+      tradeDecisionLog.forEach(log => {
+        if (log.result === 'pending') {
+          // Usamos a função não-bloqueante para uma tentativa de "fire and forget"
+          saveTradeDecision(user.uid, log);
+        }
+      });
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+    };
+  }, [tradeDecisionLog, user]);
 
   // ────────────────────────────────────────────────────────────────
   // FUNÇÃO: ATIVAR CONSELHO
