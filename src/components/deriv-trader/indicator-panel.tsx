@@ -92,8 +92,8 @@ export function IndicatorPanel({ indicators, latestDataPoint }: IndicatorPanelPr
                     <h4 className="font-bold text-muted-foreground">Nuvem Ichimoku</h4>
                      <p>Tenkan: <span className="font-bold text-foreground">{formatValue(indicators.ichimoku?.tenkan)}</span></p>
                      <p>Kijun: <span className="font-bold text-foreground">{formatValue(indicators.ichimoku?.kijun)}</span></p>
-                     <p>Senkou A: <span className="font-bold text-foreground">{formatValue(indicators.ichimoku?.senkouA)}</span></p>
-                     <p>Senkou B: <span className="font-bold text-foreground">{formatValue(indicators.ichimoku?.senkouB)}</span></p>
+                     <p>SenkouA: <span className="font-bold text-foreground">{formatValue(indicators.ichimoku?.senkouA)}</span></p>
+                     <p>SenkouB: <span className="font-bold text-foreground">{formatValue(indicators.ichimoku?.senkouB)}</span></p>
                 </div>
             </CardContent>
         </Card>

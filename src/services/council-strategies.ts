@@ -259,34 +259,29 @@ export const initialCouncilStrategies: Omit<RobotStrategy, 'id'>[] = [
     suggestedStake: 1.0,
   }
 ].map((strat) => {
-    // Adicionando valores padrão para campos opcionais para garantir que o objeto seja completo
-    // e corresponda ao tipo RobotStrategy
     const fullStrat = {
-        period: strat.period,
-        strongBuyThreshold: strat.strongBuyThreshold,
-        weakBuyThreshold: strat.weakBuyThreshold,
-        strongSellThreshold: strat.strongSellThreshold,
-        weakSellThreshold: strat.weakSellThreshold,
-        shortPeriod: strat.shortPeriod,
-        longPeriod: strat.longPeriod,
-        fastPeriod: strat.fastPeriod,
-        slowPeriod: strat.slowPeriod,
-        signalPeriod: strat.signalPeriod,
-        stdDev: strat.stdDev,
-        pattern: strat.pattern,
-        trendStrengthThreshold: strat.trendStrengthThreshold,
-        profileBars: strat.profileBars,
-        zScoreThreshold: strat.zScoreThreshold,
-        fastEnd: strat.fastEnd,
-        slowEnd: strat.slowEnd,
-        acceleration: strat.acceleration,
-        maxAcceleration: strat.maxAcceleration,
-        chandelierPeriod: strat.chandelierPeriod,
-        chandelierMultiplier: strat.chandelierMultiplier,
+        period: undefined,
+        strongBuyThreshold: undefined,
+        weakBuyThreshold: undefined,
+        strongSellThreshold: undefined,
+        weakSellThreshold: undefined,
+        shortPeriod: undefined,
+        longPeriod: undefined,
+        fastPeriod: undefined,
+        slowPeriod: undefined,
+        signalPeriod: undefined,
+        stdDev: undefined,
+        pattern: undefined,
+        trendStrengthThreshold: undefined,
+        profileBars: undefined,
+        zScoreThreshold: undefined,
+        fastEnd: undefined,
+        slowEnd: undefined,
+        acceleration: undefined,
+        maxAcceleration: undefined,
+        chandelierPeriod: undefined,
+        chandelierMultiplier: undefined,
         ...strat,
     };
-    // Removendo campos que podem não ser aplicáveis a todos os tipos de estratégia para evitar erros de tipo
-    // Esta é uma abordagem pragmática para satisfazer o TypeScript
-    delete (fullStrat as any).multiplier; // Exemplo de remoção de campo não padronizado
     return fullStrat;
 }) as Omit<RobotStrategy, 'id'>[];

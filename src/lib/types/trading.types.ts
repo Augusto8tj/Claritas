@@ -193,7 +193,7 @@ export const IndicatorsSchema = z.object({
   bollingerBands: z.array(z.object({ upper: z.number(), middle: z.number(), lower: z.number() }).nullable()),
   donchianChannels: z.array(z.object({ upper: z.number(), middle: z.number(), lower: z.number() }).nullable()),
   kama: z.number().nullable(),
-  bbw: z.number().nullable(),
+  bbw: z.number().nullable(), // Bollinger Bandwidth
   stochRSI: z.number().nullable(),
   zScore: z.number().nullable(),
   awesomeOscillator: z.number().nullable(),

@@ -261,6 +261,9 @@ export function useRobotCouncil(
             wins: 0,
             losses: 0,
             totalProfit: 0,
+            winRate: 0,
+            winRateTrend: 0,
+            winRateRange: 0
         }));
         setRobotPerformance(initialPerformance);
         virtualTradesRef.current = [];
