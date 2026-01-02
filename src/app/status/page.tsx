@@ -36,7 +36,6 @@ export default async function StatusPage() {
           configurePath="/settings"
         />
         
-        {/* The Deriv check is fully client-side now, consuming state from the useDerivApi hook */}
         <HealthCheckCard
           isClientSide
           serviceName="API Deriv (Corretora)"
@@ -55,11 +54,11 @@ export default async function StatusPage() {
             configurePath="/help"
         />
       </div>
-      <div className="grid gap-6 md:grid-cols-2">
+      <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
         <ListModelsCard />
         <DerivConnectionCard />
+        <FirestoreWriteTestCard />
       </div>
-      <FirestoreWriteTestCard />
     </div>
   );
 }
