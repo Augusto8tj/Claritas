@@ -22,7 +22,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { getChatbotInsightsResponse } from "@/app/actions";
 import { cn } from "@/lib/utils";
-import { Logo } from "../icons";
+import { Logo } from "@/components/icons";
 
 const MessageSchema = z.object({
   role: z.enum(['user', 'model']),
@@ -60,7 +60,7 @@ export function ChatInterfaceInsights() {
 
     form.reset();
 
-    const response = await getChatbotInsightsResponse({ history, query: data.query }, user.uid);
+    const response = await getChatbotInsightsResponse({ history, query: data.query });
     
     if (response.success) {
       const assistantMessage: Message = {
