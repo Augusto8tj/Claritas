@@ -544,35 +544,44 @@ const subscribeToMarketData = useCallback(async (symbol: string) => {
                     break;
                 case 'proposal_open_contract':
                     const contract = response.proposal_open_contract;
-                    if (!contract || !contract.is_sold) return;
-
-                    const profit = parseFloat(contract.profit);
-                    const isLoss = profit < 0;
-
-                    toast({
-                        title: "Negociação Encerrada",
-                        description: `Contrato ${contract.contract_id}: ${profit >= 0 ? `Lucro de ${contract.currency} ${profit.toFixed(2)}` : `Prejuízo de ${contract.currency} ${Math.abs(profit).toFixed(2)}`}`,
-                        variant: isLoss ? "destructive" : "default",
-                    });
+                    if (!contract) return;
                     
-                    const sellTime = contract.sell_time ? contract.sell_time * 1000 : Date.now();
-
-                    setOperationsLog(prevLog => prevLog.map(op =>
-                        op.id === contract.contract_id 
-                        ? { ...op, status: profit >= 0 ? 'won' : 'lost', result: profit, exitPrice: parseFloat(contract.exit_tick_display_value), exitTimestamp: new Date(sellTime).toISOString() } 
-                        : op
-                    ));
-
-                    updateTradeAnnotation(String(contract.contract_id), {
-                        exitTime: contract.sell_time || Math.floor(Date.now() / 1000),
-                        exitPrice: parseFloat(contract.exit_tick_display_value),
-                        status: profit >= 0 ? 'won' : 'lost',
-                        profit,
-                    });
+                    const contractId = contract.contract_id;
                     
-                    if (wsRef.current?.readyState === WebSocket.OPEN) {
-                        wsRef.current.send(JSON.stringify({"balance": 1, "req_id": Date.now()}));
-                    }
+                    setOperationsLog(prevLog => prevLog.map(op => {
+                        if (op.id === contractId) {
+                            const newStatus = contract.is_sold ? (contract.profit >= 0 ? 'won' : 'lost') : 'pending';
+                            
+                            if (contract.is_sold) {
+                                toast({
+                                    title: "Negociação Encerrada",
+                                    description: `Contrato ${contractId}: ${contract.profit >= 0 ? `Lucro de ${contract.currency} ${contract.profit.toFixed(2)}` : `Prejuízo de ${contract.currency} ${Math.abs(contract.profit).toFixed(2)}`}`,
+                                    variant: contract.profit < 0 ? "destructive" : "default",
+                                });
+                                
+                                const sellTime = contract.sell_time ? contract.sell_time * 1000 : Date.now();
+                                
+                                updateTradeAnnotation(String(contractId), {
+                                    exitTime: contract.sell_time || Math.floor(Date.now() / 1000),
+                                    exitPrice: parseFloat(contract.exit_tick_display_value),
+                                    status: newStatus,
+                                    profit: contract.profit,
+                                });
+                                
+                                // Refresh balance after a trade closes
+                                if (wsRef.current?.readyState === WebSocket.OPEN) {
+                                    wsRef.current.send(JSON.stringify({"balance": 1, "req_id": Date.now()}));
+                                }
+
+                                return { ...op, status: newStatus, result: contract.profit, exitPrice: parseFloat(contract.exit_tick_display_value), exitTimestamp: new Date(sellTime).toISOString() };
+                            } else {
+                                // Update current profit for open contracts
+                                return { ...op, result: contract.profit };
+                            }
+                        }
+                        return op;
+                    }));
+                    
                     break;
                 case 'tick':
                     if (response.tick?.symbol === activeSymbol) {
