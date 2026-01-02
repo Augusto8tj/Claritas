@@ -97,6 +97,22 @@ export function NetWorthChart() {
         </Card>
        )
     }
+
+    if (data.every(d => d.netWorth === 0)) {
+       return (
+         <Card className="col-span-4">
+            <CardHeader>
+                <CardTitle className="font-headline">Patrimônio Líquido</CardTitle>
+                <CardDescription>Sua jornada financeira no último ano.</CardDescription>
+            </CardHeader>
+            <CardContent className="pl-2">
+                <div className="flex h-[350px] w-full items-center justify-center">
+                    <p className="text-muted-foreground">Sem dados de transações para exibir o gráfico.</p>
+                </div>
+            </CardContent>
+        </Card>
+       )
+    }
     
   return (
     <Card className="col-span-4">

@@ -9,6 +9,9 @@ import type { Goal } from "@/lib/types";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAuth } from "@/features/auth/hooks/use-auth";
 import { FirestorePermissionError, errorEmitter } from "@/firebase";
+import { Button } from "@/components/ui/button";
+import { Target } from "lucide-react";
+import Link from "next/link";
 
 export default function GoalsPage() {
   const { user } = useAuth();
@@ -55,15 +58,29 @@ export default function GoalsPage() {
       <p className="text-muted-foreground">
         Acompanhe seu progresso e mantenha-se motivado para alcançar seus sonhos.
       </p>
-      <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-        {loading
-          ? Array.from({ length: 4 }).map((_, i) => (
-              <CardSkeleton key={i} />
-            ))
-          : goals.map((goal) => (
-              <GoalCard key={goal.id} goal={goal} onGoalDeleted={handleGoalDeleted} />
-            ))}
-      </div>
+      
+      {loading ? (
+        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <CardSkeleton key={i} />
+          ))}
+        </div>
+      ) : goals.length === 0 ? (
+        <div className="flex flex-col items-center justify-center text-center text-muted-foreground p-8 border-2 border-dashed rounded-lg h-64">
+            <Target className="h-12 w-12 mb-4" />
+            <h3 className="text-xl font-semibold mb-2">Nenhuma meta encontrada</h3>
+            <p className="mb-4">Comece a planejar seu futuro financeiro. Crie sua primeira meta agora.</p>
+            <AddGoalDialog onGoalAdded={handleGoalAdded}>
+                <Button>Criar Nova Meta</Button>
+            </AddGoalDialog>
+        </div>
+      ) : (
+        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+          {goals.map((goal) => (
+            <GoalCard key={goal.id} goal={goal} onGoalDeleted={handleGoalDeleted} />
+          ))}
+        </div>
+      )}
     </div>
   );
 }
