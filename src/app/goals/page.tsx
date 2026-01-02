@@ -2,8 +2,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { GoalCard } from "@/components/goals/goal-card";
-import { AddGoalDialog } from "@/components/goals/add-goal-dialog";
+import { GoalCard } from "@/features/financials/components/goals/goal-card";
+import { AddGoalDialog } from "@/features/financials/components/goals/add-goal-dialog";
 import { getGoals } from "@/services/financial-data-service";
 import type { Goal } from "@/lib/types";
 import { Skeleton } from "@/components/ui/skeleton";
