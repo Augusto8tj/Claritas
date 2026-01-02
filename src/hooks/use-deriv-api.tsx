@@ -672,23 +672,21 @@ const subscribeToMarketData = useCallback(async (symbol: string) => {
   
     ws.onclose = (event) => {
       const { wasClean, code, reason } = event;
-      // Rejeita todas as promessas pendentes ao fechar a conexão
       promisesRef.current.forEach((p) => p.reject(new Error("WebSocket connection closed.")));
       promisesRef.current.clear();
       
       if (!wasClean) {
-        setConnectionError(`A conexão foi fechada: Código ${code} (${reason || 'Fecho Anormal'}).`);
+        setConnectionError(`A conexão foi encerrada inesperadamente. Código: ${code}. Razão: ${reason || 'N/A'}.`);
       }
       setIsConnected(false);
       setIsConnecting(false);
       wsRef.current = null;
     };
   
-    ws.onerror = (error) => {
-      console.error('[Deriv WS] WebSocket error:', error);
-      setConnectionError("Falha na conexão com a API da Deriv. Verifique o seu token e a ligação à internet.");
-      setIsConnecting(false);
-      setIsConnected(false);
+    ws.onerror = (errorEvent) => {
+      console.error('[Deriv WS] WebSocket error occurred.');
+      // A lógica de erro principal foi movida para o 'onclose' para capturar detalhes mais específicos.
+      // O 'onerror' apenas sinaliza que um erro aconteceu, mas o 'onclose' geralmente fornece o motivo.
     };
   
     return () => {
