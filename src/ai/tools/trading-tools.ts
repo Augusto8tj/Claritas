@@ -14,10 +14,11 @@ import { AssetAnalysisOutputSchema } from '@/ai/flows/asset-analysis.types';
 import {
   MqlAnalyzerInputSchema,
   MqlAnalyzerOutputSchema,
-  OperationAnalysisInputSchema,
   OperationAnalysisOutputSchema,
+  OperationAnalysisInputSchema,
 } from '@/lib/types';
 import { getDerivApiDataForAnalysis } from '@/services/deriv-data-service';
+import { getFlowsData } from 'genkit';
 
 // Ferramenta para resumo geral do mercado (mantida como estava)
 const marketDataPrompt = ai.definePrompt({
@@ -60,10 +61,10 @@ export const getAssetAnalysisTool = ai.defineTool(
     }),
     outputSchema: AssetAnalysisOutputSchema,
   },
-  async ({ symbol }, { userId }) => {
+  async ({ symbol }) => {
+    const { userId } = getFlowsData();
     if (!userId) throw new Error("ID do usuário é necessário para obter dados da API Deriv.");
     
-    // Busca os dados necessários para a análise (saldo, trades, etc.)
     const analysisData = await getDerivApiDataForAnalysis(userId, symbol);
 
     if (!analysisData) {
@@ -97,7 +98,8 @@ export const analyzeOperationsTool = ai.defineTool(
     }),
     outputSchema: OperationAnalysisOutputSchema,
   },
-  async ({ symbol }, { userId }) => {
+  async ({ symbol }) => {
+    const { userId } = getFlowsData();
     if (!userId) throw new Error("ID do usuário é necessário para obter o histórico de operações.");
 
     const apiData = await getDerivApiDataForAnalysis(userId, symbol || '');

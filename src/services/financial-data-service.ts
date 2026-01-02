@@ -208,7 +208,7 @@ export async function getExpenseCategories(userId: string): Promise<string[]> {
 // --- General Insights (Dynamic) ---
 export async function getFinancialInsights(userId: string): Promise<string[]> {
     if (!userId) {
-        return ["Faça login para obter insights personalizados."];
+        throw new Error("User ID is required.");
     }
     try {
         const response = await getChatbotInsightsResponse({
@@ -218,16 +218,15 @@ export async function getFinancialInsights(userId: string): Promise<string[]> {
         });
 
         if (response.success) {
-            // A IA pode retornar uma string com quebras de linha
-            return response.success.split('\n').filter(line => line.trim() !== '');
+            return response.success.split('\n').filter(line => line.trim() !== '' && !line.startsWith("Erro:"));
         }
         
         console.error("AI Insight Error:", response.error);
-        return ["Não foi possível gerar insights no momento."];
+        throw new Error(response.error || "Não foi possível gerar insights no momento.");
 
     } catch (error) {
         console.error("[Service Error] getFinancialInsights failed:", error);
-        return ["Erro ao conectar com o serviço de IA."];
+        throw new Error("Erro ao conectar com o serviço de IA.");
     }
 }
 

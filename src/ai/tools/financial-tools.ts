@@ -9,6 +9,7 @@ import { addGoal, getFinancialSummary, getBudgetData } from '@/services/financia
 import { addTransaction as addTransactionAction } from '@/app/actions/transaction-actions';
 import { z } from 'zod';
 import { revalidatePath } from 'next/cache';
+import { getFlowsData } from 'genkit';
 
 const userIdSchema = z.string().describe("The unique identifier of the user.");
 
@@ -19,8 +20,10 @@ export const getFinancialSummaryTool = ai.defineTool(
     inputSchema: z.object({}), // O input da IA pode ser vazio
     outputSchema: z.string().describe("Uma frase resumindo a renda, despesas e saldo do usuário."),
   },
-  // O `userId` agora vem do contexto (`data`) e não do input da IA.
-  async (_, { userId }) => {
+  async () => {
+    const { userId } = getFlowsData();
+    if (!userId) throw new Error("ID do usuário não encontrado no contexto do fluxo.");
+    
     console.log(`getFinancialSummaryTool foi chamada para o usuário ${userId}`);
     const summary = await getFinancialSummary(userId);
     return `Seu resumo financeiro é: Renda de R$${summary.income.toFixed(2)}, Despesas de R$${summary.expenses.toFixed(2)}, resultando num saldo de R$${summary.balance.toFixed(2)}.`;
@@ -48,7 +51,10 @@ export const getFinancialInsightsTool = ai.defineTool(
     inputSchema: z.object({}),
     outputSchema: z.string().describe('Uma string contendo os insights financeiros, separados por quebras de linha.'),
   },
-  async (_, { userId }) => {
+  async () => {
+    const { userId } = getFlowsData();
+    if (!userId) throw new Error("ID do usuário não encontrado no contexto do fluxo.");
+
     console.log(`getFinancialInsightsTool foi chamada para o usuário ${userId}`);
     const financialData = await getFinancialSummary(userId);
     const financialDataString = `Renda: ${financialData.income}, Despesas: ${financialData.expenses}, Saldo: ${financialData.balance}`;
@@ -71,20 +77,20 @@ export const addTransactionTool = ai.defineTool(
     }),
     outputSchema: z.string(),
   },
-  async (input, { userId }) => {
-    // Chama a server action, que por sua vez chama o serviço não-bloqueante
+  async (input) => {
+    const { userId } = getFlowsData();
+    if (!userId) throw new Error("ID do usuário não encontrado no contexto do fluxo.");
+
     const result = await addTransactionAction({
       userId,
       ...input,
-      date: new Date().toISOString(), // A data é gerada no momento da chamada
+      date: new Date().toISOString(),
     });
     
     if (result.error) {
-        // Se a server action retornar um erro (ex: validação), informa a IA.
         return `Falha ao adicionar transação: ${JSON.stringify(result.error)}`;
     }
     
-    // Confirmação para a IA. A revalidação já acontece na server action.
     return `Transação "${input.description}" de R$${input.amount} adicionada com sucesso.`;
   }
 );
@@ -99,7 +105,10 @@ export const addGoalTool = ai.defineTool(
     }),
     outputSchema: z.string(),
   },
-  async ({ name, targetAmount }, { userId }) => {
+  async ({ name, targetAmount }) => {
+    const { userId } = getFlowsData();
+    if (!userId) throw new Error("ID do usuário não encontrado no contexto do fluxo.");
+
     const newGoal = await addGoal(userId, name, targetAmount);
     revalidatePath('/goals');
     revalidatePath('/');
@@ -122,7 +131,10 @@ export const getBudgetStatusTool = ai.defineTool(
         inputSchema: z.object({}),
         outputSchema: BudgetStatusSchema,
     },
-    async (_, { userId }) => {
+    async () => {
+        const { userId } = getFlowsData();
+        if (!userId) throw new Error("ID do usuário não encontrado no contexto do fluxo.");
+        
         console.log(`getBudgetStatusTool foi chamada para o usuário ${userId}`);
         return getBudgetData(userId);
     }
