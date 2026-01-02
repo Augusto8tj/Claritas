@@ -1,3 +1,4 @@
+
 // src/hooks/use-robot-council-v2.ts
 'use client';
 
@@ -160,39 +161,35 @@ const calculateTechnicalVote = (
   tickCandles: CandleData[]
 ): {
   vote: 'RISE' | 'FALL' | 'HOLD';
-  confidence: number;
+  confidence: number; // Agora será 0-1
   reason: string;
   optimalDuration: number;
   optimalDurationUnit: DurationUnit;
   suggestedStake: number;
 } => {
   let vote: 'RISE' | 'FALL' | 'HOLD' = 'HOLD';
-  let confidence = 0;
+  let confidence = 0; // Confidence agora é 0-1
   let reason = 'Nenhum sinal claro';
   let suggestedStake = 0;
   
-  // Retorna a duração ótima do robô, sem clamping.
   const { optimalDuration, optimalDurationUnit, suggestedStake: baseStake } = robot;
 
-  const setVote = (newVote: 'RISE' | 'FALL', newConfidence: number, newReason: string) => {
-    if (newConfidence <= 0) return;
+  const setVote = (newVote: 'RISE' | 'FALL', rawConfidence: number, newReason: string) => {
+    if (rawConfidence <= 0) return;
     vote = newVote;
-    confidence = newConfidence;
+    confidence = rawConfidence / 100; // Normaliza para 0-1
     reason = newReason;
-    suggestedStake = confidence === robot.strongConfidence ? baseStake : baseStake * 0.5;
+    // Usa a confiança normalizada para a sugestão de stake
+    suggestedStake = rawConfidence === robot.strongConfidence ? baseStake : baseStake * 0.5;
   };
 
   if (!indicators) {
     return { vote: 'HOLD', confidence: 0, reason, optimalDuration, optimalDurationUnit, suggestedStake: 0 };
   }
 
-  // Extrai indicadores para facilitar leitura
   const { rsi, stoch, macd, bb, ma, adx, pdi, ndi, stochRSI, mfi, rvi } = indicators;
   const format = (val: number | null) => (val !== null && val !== undefined && !isNaN(val) ? val.toFixed(2) : 'N/A');
 
-  // ────────────────────────────────────────────────────────────────
-  // LÓGICA DE VOTAÇÃO POR ESTRATÉGIA
-  // ────────────────────────────────────────────────────────────────
   if (robot.strategyType === 'RSI' && isValid(rsi) && robot.strongBuyThreshold) {
     if (rsi <= robot.strongBuyThreshold!) setVote('RISE', robot.strongConfidence, `RSI(${format(rsi)}) <= Forte(${robot.strongBuyThreshold})`);
     else if (rsi <= robot.weakBuyThreshold!) setVote('RISE', robot.weakConfidence, `RSI(${format(rsi)}) <= Fraco(${robot.weakBuyThreshold})`);
@@ -533,18 +530,12 @@ export function useRobotCouncilV2(
   // 🔄 LOOP PRINCIPAL - EXECUTADO A CADA TICK
   // ════════════════════════════════════════════════════════════════════
   useEffect(() => {
-    // ══════════════════════════════════════════════════════════════
-    // THROTTLE: CONTROLA A FREQUÊNCIA DE EXECUÇÃO
-    // ══════════════════════════════════════════════════════════════
     const now = Date.now();
     if (now - lastExecutionTimeRef.current < THROTTLE_MS) {
-        return; // Pula a execução se for muito cedo
+        return; 
     }
     lastExecutionTimeRef.current = now;
 
-    // ══════════════════════════════════════════════════════════════
-    // VALIDAÇÕES PRELIMINARES
-    // ══════════════════════════════════════════════════════════
     if (!isConnected || !user || !isCouncilAutopilotOn || 
         strategyCouncil.length === 0 || !activeSymbol || 
         tickCandles.length < REGIME_LOOKBACK) {
@@ -555,9 +546,6 @@ export function useRobotCouncilV2(
     if (!currentTick) return;
 
     try {
-        // ══════════════════════════════════════════════════════════════
-        // ETAPA 1: CÁLCULO DE INDICADORES TÉCNICOS
-        // ══════════════════════════════════════════════════════════════
         const contractDurationForIndicators = { duration: 5, unit: 'm' as DurationUnit };
         const currentIndicators = calculateAllIndicators(
           tickCandles, 
@@ -572,9 +560,6 @@ export function useRobotCouncilV2(
           return;
         }
 
-        // ══════════════════════════════════════════════════════════════
-        // ETAPA 2: DETECÇÃO DE REGIME (HMM)
-        // ══════════════════════════════════════════════════════════════
         const regimeResult = detectMarketRegime(
           tickCandles,
           {
@@ -596,15 +581,9 @@ export function useRobotCouncilV2(
         });
         transitionMatrixRef.current = regimeResult.transitionMatrix;
 
-        // ══════════════════════════════════════════════════════════════
-        // ETAPA 3: EXTRAÇÃO DE MICROESTRUTURA
-        // ══════════════════════════════════════════════════════════════
         const microFeatures = extractMicrostructureFeatures(priceTicks, tickCandles);
         setMicrostructure(microFeatures);
 
-        // ══════════════════════════════════════════════════════════════
-        // ETAPA 4: GESTÃO DE POSIÇÕES ABERTAS (TP/SL DINÂMICO)
-        // ══════════════════════════════════════════════════════════════
         const activeCouncilContracts = operationsLog.filter(
           op => op.status === 'pending' && op.initiator === 'Conselho'
         );
@@ -632,9 +611,6 @@ export function useRobotCouncilV2(
             }
         });
 
-        // ══════════════════════════════════════════════════════════════
-        // ETAPA 5: ARENA VIRTUAL - JULGAMENTO DE TRADES
-        // ══════════════════════════════════════════════════════════
         const stillActiveTrades: VirtualTrade[] = [];
         const performanceMap = new Map<string, EnhancedRobotPerformance>(
           robotPerformance.map(p => [p.id, { ...p }])
@@ -642,18 +618,15 @@ export function useRobotCouncilV2(
         let performanceChanged = false;
 
         virtualTradesRef.current.forEach(trade => {
-          // Verifica se trade já expirou
           if (currentTick.epoch >= trade.exitEpoch) {
             const exitTick = priceTicks.find(t => t.epoch >= trade.exitEpoch) || currentTick;
 
-            // Determina win ou loss
             const isWin = 
               (trade.vote === 'RISE' && exitTick.price > trade.entryPrice) ||
               (trade.vote === 'FALL' && exitTick.price < trade.entryPrice);
 
             const pnl = isWin ? VIRTUAL_STAKE * 0.95 : -VIRTUAL_STAKE;
 
-            // Atualiza performance do robô
             const perf = performanceMap.get(trade.robotId);
             if (perf) {
               perf.totalProfit += pnl;
@@ -666,7 +639,6 @@ export function useRobotCouncilV2(
               const totalTrades = perf.wins + perf.losses;
               perf.winRate = totalTrades > 0 ? (perf.wins / totalTrades) * 100 : 0;
 
-              // Calcula métricas avançadas se houver trades suficientes
               if (perf.tradeHistory.length >= MIN_TRADES_FOR_STATS) {
                 const metrics = calculatePerformanceMetrics(
                   perf.tradeHistory.map((profit, idx) => ({
@@ -682,11 +654,9 @@ export function useRobotCouncilV2(
                 perf.profitFactor = metrics.profitFactor;
                 perf.kellyFraction = metrics.kellyFraction;
 
-                // Monte Carlo Validation
                 const mcResult = monteCarloValidation(perf.tradeHistory);
                 perf.monteCarloScore = mcResult.score;
 
-                // Analisa regimes efetivos
                 const regimeTrades = perf.tradeHistory.map((profit) => ({
                   regime: trade.regime,
                   profit
@@ -704,7 +674,6 @@ export function useRobotCouncilV2(
 
         virtualTradesRef.current = stillActiveTrades;
 
-        // Atualiza estado se houve mudanças
         if (performanceChanged) {
           const updatedPerformance = Array.from(performanceMap.values());
           updatedPerformance.sort((a, b) => b.sharpeRatio - a.sharpeRatio);
@@ -718,9 +687,6 @@ export function useRobotCouncilV2(
           }
         }
 
-        // ══════════════════════════════════════════════════════════════
-        // ETAPA 6: VOTAÇÃO BAYESIANA DOS ROBÔS
-        // ══════════════════════════════════════════════════════════
         const bayesianVotes: Record<string, BayesianVote> = {};
         let riseSum = 0;
         let fallSum = 0;
@@ -733,16 +699,15 @@ export function useRobotCouncilV2(
           const perf = performanceMap.get(robot.id);
           const technicalVote = calculateTechnicalVote(robot, currentIndicators, tickCandles);
           
-          // NOVA LÓGICA: Aplica o limiar de confiança mínimo
-          if (technicalVote.vote === 'HOLD' || technicalVote.confidence < confidenceFactor) {
+          if (technicalVote.vote === 'HOLD' || (technicalVote.confidence * 100) < confidenceFactor) {
             bayesianVotes[robot.id] = {
               ...technicalVote,
-              rawConfidence: technicalVote.confidence, 
+              rawConfidence: technicalVote.confidence * 100, 
               calibratedConfidence: 0, 
               bayesianProbability: 0.5,
               weight: 0, 
               regime: regimeResult.regime, 
-              reason: technicalVote.confidence < confidenceFactor ? `Confiança (${technicalVote.confidence}) < Limiar (${confidenceFactor})` : 'Inativo/Fora de Regime'
+              reason: (technicalVote.confidence * 100) < confidenceFactor ? `Confiança (${(technicalVote.confidence * 100).toFixed(0)}) < Limiar (${confidenceFactor})` : 'Inativo/Fora de Regime'
             };
             return;
           }
@@ -768,13 +733,13 @@ export function useRobotCouncilV2(
             prior = perf.winRate / 100;
           }
 
-          let likelihood = technicalVote.confidence / 100;
+          let likelihood = technicalVote.confidence;
           if (microFeatures && microFeatures.yangZhangVolatility > 0.05) {
             likelihood *= 0.8;
           }
 
           const posterior = bayesianUpdate(prior, likelihood);
-          const calibratedConf = calibrateConfidence(technicalVote.confidence, perf?.winRate || 50);
+          const calibratedConf = calibrateConfidence(technicalVote.confidence * 100, perf?.winRate || 50);
 
           let weight = 1.0;
           if (isMeritocracyOn && perf && (perf.wins + perf.losses) > 10) {
@@ -792,7 +757,7 @@ export function useRobotCouncilV2(
           virtualTradesRef.current.push(virtualTrade);
 
           const finalVote: BayesianVote = {
-            vote: technicalVote.vote, rawConfidence: technicalVote.confidence,
+            vote: technicalVote.vote, rawConfidence: technicalVote.confidence * 100,
             calibratedConfidence: calibratedConf * 100, bayesianProbability: posterior, weight,
             optimalDuration: technicalVote.optimalDuration, optimalDurationUnit: technicalVote.optimalDurationUnit,
             suggestedStake: technicalVote.suggestedStake * posterior, regime: regimeResult.regime, reason: technicalVote.reason,
@@ -809,9 +774,6 @@ export function useRobotCouncilV2(
         });
         setCouncilConfidence(totalWeight);
 
-        // ══════════════════════════════════════════════════════════════
-        // ETAPA 7: CONSENSO BAYESIANO
-        // ══════════════════════════════════════════════════════════
         let consensusDirection: 'RISE' | 'FALL' | 'HOLD' = 'HOLD';
         let consensusProbability = 0.5;
         if (totalWeight > 0 && (riseSum + fallSum) > 0) {
@@ -820,9 +782,6 @@ export function useRobotCouncilV2(
           else if (fallSum > riseSum && fallSum > 0) consensusDirection = 'FALL';
         }
 
-        // ══════════════════════════════════════════════════════════════
-        // ETAPA 8: GESTÃO DE RISCO E VALIDAÇÕES
-        // ══════════════════════════════════════════════════════════
         const dailyPnL = operationsLog
           .filter(op => op.initiator === 'Conselho' && new Date(op.timestamp).toDateString() === new Date().toDateString())
           .reduce((sum, op) => sum + (op.result || 0), 0);
@@ -852,43 +811,32 @@ export function useRobotCouncilV2(
         const consensusReached = Math.max(riseSum, fallSum) >= calculatedEffectiveThreshold;
 
 
-        // ══════════════════════════════════════════════════════════════
-        // ETAPA 9: KELLY CRITERION POSITION SIZING
-        // ══════════════════════════════════════════════════════════
         const PAYOUT_RATE = 0.95; // Payout líquido para RISE/FALL
         let kellyStake = calculateKellyStake(
           dailyBalance - portfolioStats.totalExposure, consensusProbability, PAYOUT_RATE
         );
         
-        // GUARDA-COSTAS DE MICROESTRUTURA (VETO GRADUADO)
         if (microFeatures) {
           if (microFeatures.isSpike) {
-              // VETO TOTAL: Pico de preço anômalo, abortar.
               toast({ title: "🛡️ Veto de Microestrutura!", description: "Pico de preço súbito detectado. Trade abortado.", variant: "destructive" });
               return;
           }
           if (consensusDirection === 'RISE' && microFeatures.pressure === 'sell') {
-              // VETO PARCIAL: Pressão contrária, reduz o risco.
-              kellyStake *= 0.5; // Reduz o stake pela metade
+              kellyStake *= 0.5; 
               toast({ title: "⚠️ Veto Parcial", description: "Pressão de venda detectada. Risco reduzido." });
           }
           if (consensusDirection === 'FALL' && microFeatures.pressure === 'buy') {
-              // VETO PARCIAL
               kellyStake *= 0.5;
               toast({ title: "⚠️ Veto Parcial", description: "Pressão de compra detectada. Risco reduzido." });
           }
           if (regimeResult.regime === 'breakout' && microFeatures.pressure === (consensusDirection === 'RISE' ? 'buy' : 'sell')) {
-              // CONFIRMAÇÃO DE BREAKOUT: Aumenta o risco.
               kellyStake *= 1.2;
               toast({ title: "✅ Confirmação de Breakout", description: "Volume confirma o rompimento. Risco aumentado." });
           }
         }
         
-        kellyStake = Math.max(0.35, Math.min(kellyStake, dailyBalance * 0.05)); // Aplica limites de segurança
+        kellyStake = Math.max(0.35, Math.min(kellyStake, dailyBalance * 0.05));
 
-        // ══════════════════════════════════════════════════════════════
-        // ETAPA 10: DURAÇÃO ÓTIMA
-        // ══════════════════════════════════════════════════════════
         const avgDurationSeconds = totalWeight > 0 ? weightedDurationSum / totalWeight : 60;
         let finalDuration = Math.round(avgDurationSeconds);
         let finalDurationUnit: DurationUnit = 's';
@@ -909,9 +857,6 @@ export function useRobotCouncilV2(
           finalDurationUnit = 't';
         }
 
-        // ══════════════════════════════════════════════════════════════
-        // ETAPA 11: ATUALIZA DASHBOARD DATA
-        // ══════════════════════════════════════════════════════════
         const newDashboardData = {
           regime: regimeResult.regime, bayesianProbability: consensusProbability, consensusDirection,
           activeRobotsCount, microstructure: {
@@ -922,9 +867,6 @@ export function useRobotCouncilV2(
         };
         setDashboardData(newDashboardData);
 
-        // ══════════════════════════════════════════════════════════════
-        // ETAPA 12: ATUALIZA ESTADOS DE CONSENSO E PORTFOLIO
-        // ══════════════════════════════════════════════════════════
         if (!consensusReached) {
           setConsensusDecision({ direction: 'HOLD', probability: consensusProbability, stake: 0 });
           return;
@@ -937,9 +879,6 @@ export function useRobotCouncilV2(
           maxDrawdown: Math.max(prev.maxDrawdown, Math.abs(dailyPnL / dailyBalance * 100)),
         }));
 
-        // ══════════════════════════════════════════════════════════════
-        // ETAPA 13: EXECUÇÃO DE TRADE REAL
-        // ══════════════════════════════════════════════════════════
         if (councilExecutionRef.current.isExecuting) return;
         if (activeStakes + kellyStake > dailyBalance * 0.3) return;
         if (consensusProbability < 0.65) return;
@@ -948,8 +887,7 @@ export function useRobotCouncilV2(
 
         councilExecutionRef.current.isExecuting = true;
         
-         // Log da Decisão
-        const decisionLog: TradeDecisionLog = {
+         const decisionLog: TradeDecisionLog = {
           id: `TDL-${Date.now()}`,
           timestamp: new Date().toISOString(),
           asset: activeSymbol,
@@ -986,41 +924,7 @@ export function useRobotCouncilV2(
         executeTrade(
           consensusDirection === 'RISE' ? 'CALL' : 'PUT', kellyStake, activeSymbol!,
           consensusDirection.toLowerCase() as 'rise' | 'fall', finalDuration, finalDurationUnit, 'Conselho'
-        ).then(tradeResult => {
-          // Este bloco executa após a compra ser confirmada
-          const watchForCompletion = (op: Operation) => {
-            if (op.id === tradeResult.contractId && op.status !== 'pending') {
-              setTradeDecisionLog(prevLogs => {
-                return prevLogs.map(log => {
-                  if (log.id === decisionLog.id) {
-                    const finalLog = { ...log, result: op.status, pnl: op.result };
-                    if (user) {
-                        saveTradeDecision(user.uid, finalLog); // Salva no Firebase
-                    }
-                    return finalLog;
-                  }
-                  return log;
-                });
-              });
-            }
-          };
-
-          // Adicionamos um listener que será chamado quando o operationsLog mudar
-          const checkOpsLog = (log: Operation[]) => {
-            const updatedOp = log.find(op => op.id === tradeResult.contractId);
-            if (updatedOp && updatedOp.status !== 'pending') {
-              watchForCompletion(updatedOp);
-            }
-          };
-          
-          // Simulação de como o React reagiria à atualização do `operationsLog`
-          // A lógica real dependerá de como o `operationsLog` é atualizado pelo `useDerivApi`
-          const unsubscribe = () => { /* Em um app real, aqui removeríamos o listener */ };
-          
-          // Quando `operationsLog` for atualizado, esta lógica será acionada
-          checkOpsLog(operationsLog);
-          
-        }).finally(() => {
+        ).finally(() => {
           const recentTrades = operationsLog.filter(op => op.initiator === 'Conselho' && Date.now() - new Date(op.timestamp).getTime() < 300000).length;
           const cooldownTime = Math.min(5000 + (recentTrades * 2000), 30000);
           setTimeout(() => { councilExecutionRef.current.isExecuting = false; }, cooldownTime);
