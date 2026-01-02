@@ -56,6 +56,11 @@ service cloud.firestore {
       match /trading_data/{docId} {
          allow read, write: if isOwner(userId);
       }
+
+      // --- DIAGNÓSTICO ---
+      match /diagnostico/{docId} {
+         allow read, write: if isOwner(userId);
+      }
     }
   }
 }

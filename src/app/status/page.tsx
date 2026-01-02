@@ -3,6 +3,7 @@ import { HealthCheckCard } from "@/features/status/components/health-check-card"
 import { checkGeminiConnection, checkFirestoreConnection } from "@/app/actions";
 import { ListModelsCard } from "@/features/status/components/list-models-card";
 import { DerivConnectionCard } from "@/features/status/components/deriv-connection-card";
+import { FirestoreWriteTestCard } from "@/features/status/components/firestore-write-test-card";
 
 export const revalidate = 0; // Disable cache for this page
 
@@ -58,6 +59,7 @@ export default async function StatusPage() {
         <ListModelsCard />
         <DerivConnectionCard />
       </div>
+      <FirestoreWriteTestCard />
     </div>
   );
 }
