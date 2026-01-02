@@ -15,15 +15,10 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { getTransactions } from "@/services/financial-data-service";
-import { auth } from "@/lib/firebase";
+import type { Transaction } from "@/lib/types";
 
-
-async function getBills() {
-  const userId = auth.currentUser?.uid;
-  if (!userId) return [];
-  
-  const transactions = await getTransactions(userId);
+// A função agora é pura e recebe as transações
+function getBills(transactions: Transaction[]) {
   const bills = transactions.filter(t => t.category === "Contas" && t.type === "expense");
 
   // This is a simplified logic. A real app would have a dedicated 'bills' collection
@@ -43,8 +38,8 @@ async function getBills() {
   }).sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime());
 }
 
-export async function UpcomingBills() {
-  const bills = await getBills();
+export function UpcomingBills({ transactions }: { transactions: Transaction[] }) {
+  const bills = getBills(transactions);
 
   const getStatusBadge = (status: string) => {
     switch (status) {

@@ -9,13 +9,10 @@ import {
   YAxis,
   CartesianGrid
 } from "recharts";
-import { useAuth } from "@/features/auth/hooks/use-auth";
-import { getTransactions } from "@/services/financial-data-service";
 import type { Transaction } from "@/lib/types";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { FirestorePermissionError, errorEmitter } from "@/firebase";
 
 interface ChartDataPoint {
   name: string;
@@ -60,69 +57,11 @@ function processData(transactions: Transaction[]): ChartDataPoint[] {
   });
 }
 
-export function NetWorthChart() {
-    const { user } = useAuth();
-    const [data, setData] = useState<ChartDataPoint[]>([]);
-    const [loading, setLoading] = useState(true);
-    const [error, setError] = useState<string | null>(null);
+// O componente agora recebe as transações como prop para ser mais resiliente
+export function NetWorthChart({ transactions }: { transactions: Transaction[] }) {
+    const data = useMemo(() => processData(transactions), [transactions]);
 
-    useEffect(() => {
-        if (!user) {
-            setLoading(false);
-            return;
-        }
-
-        const fetchData = async () => {
-            setLoading(true);
-            setError(null);
-            try {
-              const transactions = await getTransactions(user.uid);
-              const processed = processData(transactions);
-              setData(processed);
-            } catch (err: any) {
-              console.error(err); // Log the raw error
-              setError("Não foi possível carregar os dados de transações.");
-              errorEmitter.emit('permission-error', new FirestorePermissionError({
-                path: `users/${user.uid}/transactions`,
-                operation: 'list'
-              }));
-            }
-            setLoading(false);
-        };
-        fetchData();
-    }, [user]);
-
-    if (loading) {
-       return (
-         <Card className="col-span-4">
-            <CardHeader>
-                <Skeleton className="h-6 w-3/4" />
-                <Skeleton className="h-4 w-1/2" />
-            </CardHeader>
-            <CardContent className="pl-2">
-                <Skeleton className="h-[350px] w-full" />
-            </CardContent>
-        </Card>
-       )
-    }
-
-   if (error) {
-     return (
-       <Card className="col-span-4">
-          <CardHeader>
-              <CardTitle className="font-headline text-destructive">Erro no Gráfico</CardTitle>
-              <CardDescription className="text-destructive">{error}</CardDescription>
-          </CardHeader>
-           <CardContent className="pl-2">
-              <div className="flex h-[350px] w-full items-center justify-center">
-                  <p className="text-muted-foreground">Ocorreu um problema ao carregar os dados do gráfico.</p>
-              </div>
-          </CardContent>
-      </Card>
-     )
-   }
-
-    if (data.every(d => d.netWorth === 0)) {
+    if (!transactions || transactions.length === 0) {
        return (
          <Card className="col-span-4">
             <CardHeader>
@@ -130,8 +69,8 @@ export function NetWorthChart() {
                 <CardDescription>Sua jornada financeira no último ano.</CardDescription>
             </CardHeader>
             <CardContent className="pl-2">
-                <div className="flex h-[350px] w-full items-center justify-center">
-                    <p className="text-muted-foreground">Sem dados de transações para exibir o gráfico.</p>
+                <div className="flex h-[350px] w-full items-center justify-center text-center">
+                    <p className="text-muted-foreground">Adicione suas receitas e despesas para ver a evolução do seu patrimônio aqui.</p>
                 </div>
             </CardContent>
         </Card>
