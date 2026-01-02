@@ -12,14 +12,19 @@ import { FirestorePermissionError, errorEmitter } from "@/firebase";
 import { Button } from "@/components/ui/button";
 import { Target, PlusCircle } from "lucide-react";
 import Link from "next/link";
+import { useToast } from "@/hooks/use-toast";
 
 export default function GoalsPage() {
   const { user } = useAuth();
+  const { toast } = useToast();
   const [goals, setGoals] = useState<Goal[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!user) return;
+    if (!user) {
+      setLoading(false);
+      return;
+    };
     
     const fetchGoals = async () => {
       setLoading(true);
@@ -27,17 +32,24 @@ export default function GoalsPage() {
         const fetchedGoals = await getGoals(user.uid);
         setGoals(fetchedGoals);
       } catch (error) {
-        console.error(error);
+        console.error("Erro ao buscar metas:", error);
+        // O erro de permissão é capturado aqui no cliente
         errorEmitter.emit('permission-error', new FirestorePermissionError({
           path: `users/${user.uid}/goals`,
           operation: 'list'
         }));
+        toast({
+          variant: "destructive",
+          title: "Erro de Permissão",
+          description: "Não foi possível carregar suas metas. Verifique as configurações de segurança.",
+        });
+      } finally {
+        setLoading(false);
       }
-      setLoading(false);
     };
 
     fetchGoals();
-  }, [user]);
+  }, [user, toast]);
 
   const handleGoalAdded = (newGoal: Goal) => {
     setGoals((prevGoals) => [...prevGoals, newGoal]);

@@ -10,8 +10,6 @@ import { collection, getDocs, doc, setDoc, query, where, orderBy, getDoc, addDoc
 import type { Goal, BudgetCategory, Transaction, RobotPerformance, TradeDecisionLog, EnhancedRobotPerformance } from '@/lib/types';
 import { generateGoalImage } from '@/ai/flows/goal-image-generation';
 import { addDocumentNonBlocking, deleteDocumentNonBlocking, setDocumentNonBlocking } from '@/firebase/non-blocking-updates';
-import { errorEmitter } from '@/firebase/error-emitter';
-import { FirestorePermissionError } from '@/firebase/errors';
 
 
 // --- Transactions ---
@@ -19,17 +17,9 @@ import { FirestorePermissionError } from '@/firebase/errors';
 export async function getTransactions(userId: string): Promise<Transaction[]> {
     if (!userId) return [];
     const transactionsCol = collection(db, `users/${userId}/transactions`);
-    try {
-        const snapshot = await getDocs(transactionsCol);
-        return snapshot.docs.map(d => ({ id: d.id, ...d.data() } as Transaction));
-    } catch (serverError) {
-        console.error(`[Service Error] getTransactions failed for user ${userId}. Propagating contextual error.`);
-        errorEmitter.emit('permission-error', new FirestorePermissionError({
-            path: `users/${userId}/transactions`,
-            operation: 'list'
-        }));
-        throw serverError; // Re-throw para que o chamador saiba que a operação falhou
-    }
+    // O erro será capturado pelo componente cliente que chama esta função
+    const snapshot = await getDocs(transactionsCol);
+    return snapshot.docs.map(d => ({ id: d.id, ...d.data() } as Transaction));
 }
 
 export async function addTransaction(userId: string, data: Omit<Transaction, 'id'>): Promise<string> {
@@ -57,17 +47,9 @@ export async function getFinancialSummary(userId: string): Promise<{ income: num
 export async function getGoals(userId: string): Promise<Goal[]> {
     if (!userId) return [];
     const goalsCol = collection(db, `users/${userId}/goals`);
-    try {
-        const snapshot = await getDocs(goalsCol);
-        return snapshot.docs.map(d => ({ id: d.id, ...d.data() } as Goal));
-    } catch (serverError) {
-        console.error(`[Service Error] getGoals failed for user ${userId}. Propagating contextual error.`);
-        errorEmitter.emit('permission-error', new FirestorePermissionError({
-            path: `users/${userId}/goals`,
-            operation: 'list'
-        }));
-        throw serverError;
-    }
+    // O erro será capturado pelo componente cliente
+    const snapshot = await getDocs(goalsCol);
+    return snapshot.docs.map(d => ({ id: d.id, ...d.data() } as Goal));
 }
 
 export async function addGoal(userId: string, name: string, targetAmount: number): Promise<Goal> {
@@ -82,35 +64,26 @@ export async function addGoal(userId: string, name: string, targetAmount: number
         imageHint: "new goal"
     };
 
-    try {
-        const docRefPromise = addDoc(goalsCol, newGoalData) as Promise<DocumentReference<DocumentData>>;
+    // A captura de erro foi movida para a Server Action, que por sua vez repassa para o cliente
+    const docRefPromise = addDoc(goalsCol, newGoalData) as Promise<DocumentReference<DocumentData>>;
 
-        generateGoalImage({ goalName: name })
-            .then(imageResult => {
-                if (imageResult?.imageUrl) {
-                    docRefPromise.then(docRef => {
-                        if (docRef?.id) {
-                            const goalDoc = doc(db, `users/${userId}/goals`, docRef.id);
-                            setDocumentNonBlocking(goalDoc, { imageUrl: imageResult.imageUrl }, { merge: true });
-                        }
-                    })
-                }
-            })
-            .catch(imageError => {
-                console.error("Falha ao gerar imagem da meta, usando placeholder.", imageError);
-            });
+    generateGoalImage({ goalName: name })
+        .then(imageResult => {
+            if (imageResult?.imageUrl) {
+                docRefPromise.then(docRef => {
+                    if (docRef?.id) {
+                        const goalDoc = doc(db, `users/${userId}/goals`, docRef.id);
+                        setDocumentNonBlocking(goalDoc, { imageUrl: imageResult.imageUrl }, { merge: true });
+                    }
+                })
+            }
+        })
+        .catch(imageError => {
+            console.error("Falha ao gerar imagem da meta, usando placeholder.", imageError);
+        });
 
-        const docRef = await docRefPromise;
-        return { id: docRef.id, ...newGoalData };
-    } catch (serverError) {
-        console.error(`[Service Error] addGoal failed for user ${userId}. Propagating contextual error.`);
-         errorEmitter.emit('permission-error', new FirestorePermissionError({
-            path: `users/${userId}/goals`,
-            operation: 'create',
-            requestResourceData: newGoalData
-        }));
-        throw serverError;
-    }
+    const docRef = await docRefPromise;
+    return { id: docRef.id, ...newGoalData };
 }
 
 
@@ -129,23 +102,15 @@ export async function deleteGoal(userId: string, goalId: string): Promise<{ succ
 
 async function getBudgetLimits(userId: string): Promise<{ [key: string]: number }> {
     const settingsDoc = doc(db, `users/${userId}/settings`, 'budget');
-    try {
-        const docSnap = await getDoc(settingsDoc);
-        if (docSnap.exists()) {
-            return docSnap.data().limits || {};
-        }
-        return {
-            "Moradia": 2000, "Alimentação": 1000, "Transporte": 500,
-            "Lazer": 400, "Compras": 600, "Outros": 300, "Contas": 800,
-        };
-    } catch (serverError) {
-         console.error(`[Service Error] getBudgetLimits failed for user ${userId}. Propagating contextual error.`);
-         errorEmitter.emit('permission-error', new FirestorePermissionError({
-            path: `users/${userId}/settings/budget`,
-            operation: 'get'
-        }));
-         throw serverError;
+    // O erro será capturado pelo componente cliente
+    const docSnap = await getDoc(settingsDoc);
+    if (docSnap.exists()) {
+        return docSnap.data().limits || {};
     }
+    return {
+        "Moradia": 2000, "Alimentação": 1000, "Transporte": 500,
+        "Lazer": 400, "Compras": 600, "Outros": 300, "Contas": 800,
+    };
 }
 
 export async function getBudgetData(userId: string): Promise<BudgetCategory[]> {
@@ -244,48 +209,36 @@ export const saveRobotPerformance = async (userId: string, performance: Enhanced
 export const loadRobotPerformance = async (userId: string): Promise<EnhancedRobotPerformance[] | null> => {
   if (!userId) return null;
   const docRef = doc(db, 'users', userId, 'trading_data', 'robot_council_performance');
-  try {
-    const docSnap = await getDoc(docRef);
-    if (docSnap.exists()) {
-      const data = docSnap.data();
-      return (data.robots || []).map((r: any) => ({
-        ...r,
-        tradeHistory: r.tradeHistory || [],
-      }));
-    }
-    return null;
-  } catch (error) {
-    console.error(`[Service Error] loadRobotPerformance failed for user ${userId}. Propagating contextual error.`);
-     errorEmitter.emit('permission-error', new FirestorePermissionError({
-        path: `users/${userId}/trading_data/robot_council_performance`,
-        operation: 'get'
+  // O erro será capturado pelo componente cliente
+  const docSnap = await getDoc(docRef);
+  if (docSnap.exists()) {
+    const data = docSnap.data();
+    return (data.robots || []).map((r: any) => ({
+      ...r,
+      tradeHistory: r.tradeHistory || [],
     }));
-    throw error;
   }
+  return null;
 };
 
 
 export async function getHallOfFame(userId: string): Promise<RobotPerformance[]> {
-    try {
-        const performanceData = await loadRobotPerformance(userId);
-        if (!performanceData) {
-            return [];
-        }
-        
-        const PROMOTION_THRESHOLD_WINS = 10;
-        const PROMOTION_THRESHOLD_PROFIT = 0;
-
-        const promotedRobots = performanceData.filter(
-            (p) => (p.wins || 0) >= PROMOTION_THRESHOLD_WINS && (p.totalProfit || 0) > PROMOTION_THRESHOLD_PROFIT
-        );
-
-        promotedRobots.sort((a, b) => (b.totalProfit || 0) - (a.totalProfit || 0));
-        
-        return promotedRobots as RobotPerformance[];
-    } catch(e) {
-        console.error("Não foi possível carregar o Hall da Fama devido a um erro de acesso aos dados:", e);
+    // O erro será capturado pelo componente cliente
+    const performanceData = await loadRobotPerformance(userId);
+    if (!performanceData) {
         return [];
     }
+    
+    const PROMOTION_THRESHOLD_WINS = 10;
+    const PROMOTION_THRESHOLD_PROFIT = 0;
+
+    const promotedRobots = performanceData.filter(
+        (p) => (p.wins || 0) >= PROMOTION_THRESHOLD_WINS && (p.totalProfit || 0) > PROMOTION_THRESHOLD_PROFIT
+    );
+
+    promotedRobots.sort((a, b) => (b.totalProfit || 0) - (a.totalProfit || 0));
+    
+    return promotedRobots as RobotPerformance[];
 }
 
 // --- Trading Decision Log ---
@@ -302,15 +255,7 @@ export async function getTradeDecisionLogs(userId: string): Promise<TradeDecisio
     const logCollectionRef = collection(db, `users/${userId}/decision_logs`);
     const q = query(logCollectionRef, orderBy('timestamp', 'desc'));
 
-    try {
-        const snapshot = await getDocs(q);
-        return snapshot.docs.map(d => d.data() as TradeDecisionLog);
-    } catch (serverError) {
-        console.error(`[Service Error] getTradeDecisionLogs failed for user ${userId}. Propagating contextual error.`);
-        errorEmitter.emit('permission-error', new FirestorePermissionError({
-            path: `users/${userId}/decision_logs`,
-            operation: 'list'
-        }));
-        throw serverError;
-    }
+    // O erro será capturado pelo componente cliente
+    const snapshot = await getDocs(q);
+    return snapshot.docs.map(d => d.data() as TradeDecisionLog);
 }

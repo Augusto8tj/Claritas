@@ -25,18 +25,14 @@ export async function addGoal(data: { userId: string, name: string; targetAmount
     return { success: newGoal };
   } catch (e: any) {
     console.error("Erro na Server Action addGoal:", e);
-    return { error: e.message || "Não foi possível criar a meta. Verifique as permissões da base de dados." };
+    // Apenas repassa a mensagem de erro para ser tratada no cliente
+    return { error: e.message || "Não foi possível criar a meta." };
   }
 }
 
 export async function getGoals(userId: string): Promise<Goal[]> {
-    try {
-        return await getGoalsFromService(userId);
-    } catch (error) {
-        console.error("[Action Error] getGoals failed:", error);
-        // Re-lança o erro para ser capturado no cliente e emitir o erro contextual.
-        throw error;
-    }
+    // O erro será capturado no componente do cliente que chama esta ação
+    return await getGoalsFromService(userId);
 }
 
 export async function deleteGoal(userId: string, goalId: string): Promise<{ success: boolean; error?: string }> {
@@ -57,4 +53,3 @@ export async function deleteGoal(userId: string, goalId: string): Promise<{ succ
         return { success: false, error: errorMessage };
     }
 }
-

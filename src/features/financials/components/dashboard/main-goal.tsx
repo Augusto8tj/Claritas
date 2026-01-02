@@ -57,6 +57,7 @@ export function MainGoal() {
     } catch (err: any) {
         console.error(err); // Log the raw error
         setError("Não foi possível carregar as metas. Verifique as permissões da base de dados.");
+        // O erro é capturado aqui no cliente, onde podemos emitir o erro contextualizado
         errorEmitter.emit('permission-error', new FirestorePermissionError({
           path: `users/${user.uid}/goals`,
           operation: 'list'
