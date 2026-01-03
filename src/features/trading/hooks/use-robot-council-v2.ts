@@ -253,8 +253,8 @@ export function useRobotCouncilV2(
   const [consensusSensitivity, setConsensusSensitivity] = useState(60); 
   const [confidenceFactor, setConfidenceFactor] = useState(60);
   const [durationRange, setDurationRange] = useState<[number, number]>([15, 180]);
-  const [takeProfitThreshold, setTakeProfitThreshold] = useState(10);
-  const [stopLossThreshold, setStopLossThreshold] = useState(20);
+  const [takeProfitThreshold, setTakeProfitThreshold] = useState(100);
+  const [stopLossThreshold, setStopLossThreshold] = useState(100);
   const [isDynamicConsensusOn, setIsDynamicConsensusOn] = useState(true);
   const [isDynamicRiskOn, setIsDynamicRiskOn] = useState(true);
   const [isMeritocracyOn, setIsMeritocracyOn] = useState(true);
@@ -472,31 +472,31 @@ export function useRobotCouncilV2(
         const perf = performanceMap.get(robot.id);
         const technicalVote = calculateTechnicalVote(robot, currentIndicators, validCandles);
         
-        if (technicalVote.vote === 'HOLD') {
-            debugStats.held++;
-            newBayesianVotes[robot.id] = { ...technicalVote, rawConfidence: 0, calibratedConfidence: 0, bayesianProbability: 0.5, weight: 0, regime: regimeResult.regime, reason: 'HOLD', sharpeRatio: 0, strategy: robot };
-            return;
-        }
-
-        const durationInSeconds = durationToSeconds(technicalVote.optimalDuration, technicalVote.optimalDurationUnit);
-        
-        const lastTrade = virtualTradesRef.current.find(t => t.robotId === robot.id);
-        if (!lastTrade || (currentTick.epoch - lastTrade.entryEpoch) > 5) {
-             virtualTradesRef.current.push({ 
-                id: `vt_${Date.now()}_${tradeCounterRef.current++}`, robotId: robot.id, vote: technicalVote.vote, 
-                entryPrice: currentTick.price, entryEpoch: currentTick.epoch, exitEpoch: currentTick.epoch + durationInSeconds, 
-                regime: regimeResult.regime, microstructure: microFeatures, stake: VIRTUAL_STAKE 
-            });
+        // ARENA VIRTUAL (FUNIL LARGO)
+        if (technicalVote.vote !== 'HOLD') {
+            const durationInSeconds = durationToSeconds(technicalVote.optimalDuration, technicalVote.optimalDurationUnit);
+            const lastTrade = virtualTradesRef.current.find(t => t.robotId === robot.id);
+            if (!lastTrade || (currentTick.epoch - lastTrade.entryEpoch) > 5) { // Evita spam de trades
+                 virtualTradesRef.current.push({ 
+                    id: `vt_${Date.now()}_${tradeCounterRef.current++}`, robotId: robot.id, vote: technicalVote.vote, 
+                    entryPrice: currentTick.price, entryEpoch: currentTick.epoch, exitEpoch: currentTick.epoch + durationInSeconds, 
+                    regime: regimeResult.regime, microstructure: microFeatures, stake: VIRTUAL_STAKE 
+                });
+            }
         }
         
+        // FILTROS PARA CONSENSO REAL (FUNIL ESTREITO)
         let isValidForConsensus = true;
         let rejectionReason = '';
 
         const hasHistory = perf && (perf.wins + perf.losses) > 10;
         const isRegimeEffective = !hasHistory || !perf?.effectiveRegimes?.length || perf.effectiveRegimes.includes(regimeResult.regime);
+        const durationInSeconds = durationToSeconds(technicalVote.optimalDuration, technicalVote.optimalDurationUnit);
         const isDurationInRange = durationInSeconds >= durationRange[0] && durationInSeconds <= durationRange[1];
 
-        if (technicalVote.confidence < (confidenceFactor / 100)) {
+        if (technicalVote.vote === 'HOLD') {
+            isValidForConsensus = false; rejectionReason = 'HOLD'; debugStats.held++;
+        } else if (technicalVote.confidence < (confidenceFactor / 100)) {
             isValidForConsensus = false; rejectionReason = `Confiança Baixa`; debugStats.lowConf++;
         } else if (!isRegimeEffective) {
             isValidForConsensus = false; rejectionReason = `Regime Ineficaz`; debugStats.badRegime++;
@@ -558,14 +558,12 @@ export function useRobotCouncilV2(
         else if (fallSum > riseSum) consensusDirection = 'FALL';
       }
 
-      // Verificações de Carteira
       const dailyPnL = operationsLog.filter(op => op.initiator === 'Conselho' && new Date(op.timestamp).toDateString() === new Date().toDateString()).reduce((sum, op) => sum + (op.result || 0), 0);
       setPortfolioStats(prev => ({ ...prev, dailyPnL }));
 
       if (dailyPnL <= -dailyBalance) { toast({ title: "🛑 Stop Loss Diário", variant: "destructive" }); return; }
       if (dailyPnL >= dailyTarget) { toast({ title: "🎯 Meta Batida", description: "Parabéns!" }); return; }
 
-      // Threshold e Congruência
       const effectiveThresholdRaw = isDynamicConsensusOn ? (totalWeight * (consensusSensitivity / 100)) : consensusSensitivity;
       setEffectiveThreshold(effectiveThresholdRaw);
       
@@ -573,7 +571,11 @@ export function useRobotCouncilV2(
       const congruenceRatio = totalWeight > 0 ? Math.max(riseSum, fallSum) / totalWeight : 0;
       
       const totalSystemTrades = robotPerformance.reduce((sum, p) => sum + p.wins + p.losses, 0);
-      let isSystemMature = totalSystemTrades > 50;
+      const matureRobots = robotPerformance.filter(p => p.wins + p.losses > 30);
+      const matureVotersCount = Object.values(newBayesianVotes).filter(v => v.weight > 0 && matureRobots.some(p => p.id === v.strategy?.id)).length;
+      const matureVotersRatio = activeRobotsCount > 0 ? matureVotersCount / activeRobotsCount : 0;
+      const hasStatisticalConfidence = totalSystemTrades < 50 || (matureVotersRatio >= 0.4 || matureVotersCount >= 3);
+
 
       // 7. CÁLCULO DE STAKE (KELLY CRITERION + VOLATILITY SCALING)
       let kellyStake = calculateKellyStake(dailyBalance - portfolioStats.totalExposure, consensusProbability, 0.95);
@@ -583,13 +585,9 @@ export function useRobotCouncilV2(
           kellyStake *= Math.max(0.2, volFactor);
       }
       
-      // Alinhamento de Tendência
       if (currentIndicators.ema20 && currentIndicators.ema50) {
-          if (consensusDirection === 'RISE' && currentIndicators.ema20 < currentIndicators.ema50) {
-              kellyStake *= 0.5; // Contra a tendência, reduz o risco
-          } else if (consensusDirection === 'FALL' && currentIndicators.ema20 > currentIndicators.ema50) {
-              kellyStake *= 0.5; // Contra a tendência, reduz o risco
-          }
+          if (consensusDirection === 'RISE' && currentIndicators.ema20 < currentIndicators.ema50) kellyStake *= 0.5;
+          else if (consensusDirection === 'FALL' && currentIndicators.ema20 > currentIndicators.ema50) kellyStake *= 0.5;
       }
 
       let microstructureVeto = false;
@@ -622,11 +620,11 @@ export function useRobotCouncilV2(
       // 8. O "GLEIPNIR LOCK" (Validação Final de Segurança)
       const isSafeToTrade = 
         consensusReached &&
+        hasStatisticalConfidence &&
         consensusDirection !== 'HOLD' &&
         entropy < MAX_ENTROPY_THRESHOLD &&
         congruenceRatio > MIN_CONGRUENCE_RATIO &&
-        !microstructureVeto &&
-        isSystemMature;
+        !microstructureVeto;
 
       if (!isSafeToTrade) {
         setConsensusDecision({ direction: 'HOLD', probability: consensusProbability, stake: 0 });
