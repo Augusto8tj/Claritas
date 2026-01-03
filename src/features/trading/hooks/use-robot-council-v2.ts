@@ -244,7 +244,6 @@ const calculateTechnicalVote = (
   return { vote, confidence, reason, optimalDuration, optimalDurationUnit, suggestedStake };
 };
 
-
 // ════════════════════════════════════════════════════════════════════
 // 🎯 HOOK PRINCIPAL
 // ════════════════════════════════════════════════════════════════════

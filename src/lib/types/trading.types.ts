@@ -233,7 +233,7 @@ export const TradeDecisionLogSchema = z.object({
     votes: z.record(z.string(), BayesianVoteSchema),
   }),
   result: z.enum(['pending', 'won', 'lost']),
-  pnl: z.number().optional(),
+  pnl: z.number(),
 });
 
 export type TradeDecisionLog = z.infer<typeof TradeDecisionLogSchema>;
