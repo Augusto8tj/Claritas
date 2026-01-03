@@ -24,6 +24,7 @@ import { CouncilDashboard } from '@/features/trading/components/deriv-trader/Cou
 import { TradingDeskV2 } from "@/features/trading/components/deriv-trader/trading-desk-v2";
 import { TradingDecisionLogViewer } from "@/features/trading/components/deriv-trader/TradingDecisionLogViewer";
 import { EvolutionLab } from "@/features/trading/components/deriv-trader/evolution-lab";
+import { AITradeSuggestion } from "@/features/trading/components/deriv-trader/ai-trade-suggestion";
 
 
 const Header = () => {
@@ -84,7 +85,7 @@ const DerivTraderV2Core = () => {
 
     return (
         <div className="space-y-6 mt-6">
-            {robotCouncil.dashboardData && (
+             {robotCouncil.dashboardData && (
                 <div className="animate-in fade-in slide-in-from-top-4 duration-500">
                     <CouncilDashboard data={robotCouncil.dashboardData} />
                 </div>
@@ -115,7 +116,17 @@ const DerivTraderV2Core = () => {
             </Card>
             
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <DerivTraderInterfaceV2 symbol={activeSymbol || ""} />
+                <div className="space-y-6">
+                    <DerivTraderInterfaceV2 symbol={activeSymbol || ""} />
+                    <AITradeSuggestion 
+                        councilDecision={robotCouncil.consensusDecision.direction}
+                        consensusSum={{rise: robotCouncil.consensusConfidence, fall: (1 - robotCouncil.consensusConfidence) * 100}}
+                        consensusThreshold={robotCouncil.effectiveThreshold}
+                        supervisionStatus={{status: 'inactive', message: ''}}
+                        activeCommittee={""}
+                        isAutopilotOn={robotCouncil.isCouncilAutopilotOn}
+                     />
+                </div>
                 <CouncilAutopilotInterfaceV2 {...robotCouncil} />
             </div>
 
