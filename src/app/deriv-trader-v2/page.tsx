@@ -84,7 +84,7 @@ const DerivTraderV2Core = () => {
 
     return (
         <div className="space-y-6 mt-6">
-            {robotCouncil.isCouncilAutopilotOn && robotCouncil.dashboardData && (
+            {robotCouncil.dashboardData && (
                 <div className="animate-in fade-in slide-in-from-top-4 duration-500">
                     <CouncilDashboard data={robotCouncil.dashboardData} />
                 </div>
