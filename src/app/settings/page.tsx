@@ -1,5 +1,5 @@
 // /src/app/settings/page.tsx
-import { EmailNotificationsCard } from "@/features/auth/components/settings/email-notifications-card";
+import { EmailNotificationsCard } from "@/components/settings/email-notifications-card";
 import {
   Card,
   CardContent,
@@ -7,10 +7,10 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { ThemeSelector } from "@/features/theme/components/theme-selector";
-import { FontSelector } from "@/features/theme/components/font-selector";
+import { ThemeSelector } from "@/components/settings/theme-selector";
+import { FontSelector } from "@/components/settings/font-selector";
 import { Separator } from "@/components/ui/separator";
-import { ApiKeysCard } from "@/features/trading/components/settings/api-keys-card";
+import { ApiKeysCard } from "@/components/settings/api-keys-card";
 
 export default function SettingsPage() {
   return (
