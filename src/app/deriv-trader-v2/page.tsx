@@ -84,15 +84,6 @@ const DerivTraderV2Core = () => {
 
     return (
         <div className="space-y-6 mt-6">
-             <div className="animate-in fade-in slide-in-from-top-4 duration-500">
-                <CouncilDashboardV2 
-                    consensusDecision={robotCouncil.consensusDecision}
-                    supervisionStatus={{ status: 'approved', message: 'Cérebro V2.0 Ativo' }}
-                    activeCommittee={null} // Placeholder, a ser substituído se necessário
-                    isCouncilAutopilotOn={robotCouncil.isCouncilAutopilotOn}
-                />
-            </div>
-            
             <Card>
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                     <div>
@@ -120,6 +111,14 @@ const DerivTraderV2Core = () => {
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 <div className="space-y-6">
                     <DerivTraderInterfaceV2 symbol={activeSymbol || ""} />
+                     <div className="animate-in fade-in slide-in-from-top-4 duration-500">
+                        <CouncilDashboardV2 
+                            consensusDecision={robotCouncil.consensusDecision}
+                            supervisionStatus={{ status: 'approved', message: 'Cérebro V2.0 Ativo' }}
+                            activeCommittee={null} // Placeholder, a ser substituído se necessário
+                            isCouncilAutopilotOn={robotCouncil.isCouncilAutopilotOn}
+                        />
+                    </div>
                 </div>
                 <CouncilAutopilotInterfaceV2 {...robotCouncil} />
             </div>
