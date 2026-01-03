@@ -1,3 +1,4 @@
+
 'use client';
 
 import React from "react";
@@ -8,11 +9,10 @@ import { AssetSelector } from "@/features/trading/components/deriv-trader/asset-
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { MarketChart } from "@/features/trading/components/deriv-trader/market-chart";
 import { Button } from "@/components/ui/button";
-import { Trash2 } from "lucide-react";
+import { Trash2, Dna } from "lucide-react";
 import { useDerivApi } from "@/features/trading/hooks/use-deriv-api";
 import { Skeleton } from "@/components/ui/skeleton";
 import { OperationsLog } from "@/features/trading/components/deriv-trader/operations-log";
-import { AIAnalysisInterface } from "@/features/trading/components/deriv-trader/ai-analysis-interface";
 import { riseFallSchema, type RiseFallFormValues } from "@/features/trading/components/deriv-trader/deriv-trader-interface.types";
 import { CouncilAutopilotInterfaceV2 } from "@/features/trading/components/deriv-trader/council-autopilot-interface-v2";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
@@ -23,6 +23,7 @@ import { AITradeSuggestion } from "@/features/trading/components/deriv-trader/ai
 import { CouncilDashboard } from '@/features/trading/components/deriv-trader/CouncilDashboard';
 import { TradingDeskV2 } from "@/features/trading/components/deriv-trader/trading-desk-v2";
 import { TradingDecisionLogViewer } from "@/features/trading/components/deriv-trader/TradingDecisionLogViewer";
+import { EvolutionLab } from "@/features/trading/components/deriv-trader/evolution-lab";
 
 
 // --- Sub-componentes para melhor organização ---
@@ -124,7 +125,7 @@ const MainDashboard = ({ robotCouncil }: { robotCouncil: ReturnType<typeof useRo
 };
 
 const SidePanel = ({ robotCouncil }: { robotCouncil: ReturnType<typeof useRobotCouncilV2> }) => {
-    const { activeSymbol, operationsLog } = useDerivApi();
+    const { operationsLog } = useDerivApi();
 
     return (
         <div className="space-y-6">
@@ -133,7 +134,7 @@ const SidePanel = ({ robotCouncil }: { robotCouncil: ReturnType<typeof useRobotC
                 <TabsList className="grid w-full grid-cols-4">
                     <TabsTrigger value="desk">Arena V2</TabsTrigger>
                     <TabsTrigger value="log">Operações</TabsTrigger>
-                    <TabsTrigger value="analysis">Análise IA</TabsTrigger>
+                    <TabsTrigger value="evolution">Evolução</TabsTrigger>
                     <TabsTrigger value="audit">Auditoria</TabsTrigger>
                 </TabsList>
                 <TabsContent value="desk" className="mt-4">
@@ -146,8 +147,8 @@ const SidePanel = ({ robotCouncil }: { robotCouncil: ReturnType<typeof useRobotC
                 <TabsContent value="log" className="mt-4">
                     <OperationsLog operations={operationsLog} />
                 </TabsContent>
-                <TabsContent value="analysis" className="mt-4">
-                    <AIAnalysisInterface symbol={activeSymbol}/>
+                 <TabsContent value="evolution" className="mt-4">
+                    <EvolutionLab history={robotCouncil.evolutionHistory} />
                 </TabsContent>
                 <TabsContent value="audit" className="mt-4">
                    <TradingDecisionLogViewer logs={robotCouncil.tradeDecisionLog} />

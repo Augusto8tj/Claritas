@@ -32,7 +32,6 @@ function DerivTraderCore({ activeSymbol, robotCouncil }: { activeSymbol: string 
   const { 
     operationsLog,
     chartData,
-    priceTicks,
     isChartLoading,
     chartError,
     chartType,
@@ -104,11 +103,10 @@ function DerivTraderCore({ activeSymbol, robotCouncil }: { activeSymbol: string 
                 </div>
                  <div className="mt-6">
                     <Tabs value={activeTab} onValueChange={setActiveTab}>
-                        <TabsList className="grid w-full grid-cols-5">
+                        <TabsList className="grid w-full grid-cols-4">
                             <TabsTrigger value="log">Registo de Operações</TabsTrigger>
                             <TabsTrigger value="desk">Arena Virtual</TabsTrigger>
                             <TabsTrigger value="fame">Hall da Fama</TabsTrigger>
-                            <TabsTrigger value="evolution">Evolução</TabsTrigger>
                             <TabsTrigger value="analysis">Análise com IA</TabsTrigger>
                         </TabsList>
                         <TabsContent value="log" className="mt-4">
@@ -126,9 +124,6 @@ function DerivTraderCore({ activeSymbol, robotCouncil }: { activeSymbol: string 
                         <TabsContent value="fame" className="mt-4">
                             <HallOfFame />
                         </TabsContent>
-                         <TabsContent value="evolution" className="mt-4">
-                            <EvolutionLab history={robotCouncil.evolutionHistory} />
-                        </TabsContent>
                          <TabsContent value="analysis" className="mt-4">
                              <AIAnalysisInterface symbol={activeSymbol} />
                         </TabsContent>
@@ -142,12 +137,11 @@ function DerivTraderCore({ activeSymbol, robotCouncil }: { activeSymbol: string 
 
        <div className="lg:hidden mt-6">
            <Tabs value={activeTab} onValueChange={setActiveTab}>
-                <TabsList className="grid w-full grid-cols-6">
+                <TabsList className="grid w-full grid-cols-5">
                     <TabsTrigger value="trade">Negociar</TabsTrigger>
                     <TabsTrigger value="autopilot"><Bot className="w-4 h-4"/></TabsTrigger>
                     <TabsTrigger value="desk"><LayoutGrid className="w-4 h-4"/></TabsTrigger>
                     <TabsTrigger value="fame"><Trophy className="w-4 h-4"/></TabsTrigger>
-                    <TabsTrigger value="evolution"><Dna className="w-4 h-4"/></TabsTrigger>
                     <TabsTrigger value="log"><NotepadText className="w-4 h-4"/></TabsTrigger>
                 </TabsList>
 
@@ -180,11 +174,7 @@ function DerivTraderCore({ activeSymbol, robotCouncil }: { activeSymbol: string 
                  <TabsContent value="fame" className="mt-4">
                     <HallOfFame />
                 </TabsContent>
-
-                 <TabsContent value="evolution" className="mt-4">
-                    <EvolutionLab history={robotCouncil.evolutionHistory} />
-                </TabsContent>
-
+                
                  <TabsContent value="log" className="mt-4 space-y-6">
                     <OperationsLog operations={operationsLog} />
                     <AIAnalysisInterface symbol={activeSymbol} />
