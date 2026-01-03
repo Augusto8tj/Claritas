@@ -53,6 +53,7 @@ const TRADE_TIMEOUT_SECONDS = 3600;
 const CLEANUP_INTERVAL_MS = 60000;
 const HEALTH_CHECK_INTERVAL_MS = 30000;
 const REGIME_LOOKBACK = 50;
+const SELL_DEAD_ZONE_MS = 15000; // Não vender nos últimos 15 segundos
 
 // Limiares de Inteligência
 const MAX_ENTROPY_THRESHOLD = 0.95; // Se a confusão do conselho passar de 95%, não opera
@@ -436,7 +437,7 @@ export function useRobotCouncilV2(
       tradeDecisionLog.forEach(log => { if (log.result === 'pending') saveTradeDecision(user.uid, log); });
     };
     window.addEventListener('beforeunload', handleBeforeUnload);
-    return () => window.removeEventListener('beforeUnload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
   }, [tradeDecisionLog, user]);
 
   const fetchStrategyCouncil = useCallback(async () => {
@@ -501,7 +502,13 @@ export function useRobotCouncilV2(
       // 3. GESTÃO DE POSIÇÕES ABERTAS
       const activeCouncilContracts = operationsLog.filter(op => op.status === 'pending' && op.initiator === 'Conselho');
       activeCouncilContracts.forEach(contract => {
-        if (councilExecutionRef.current.sellingContracts.has(contract.id)) return;
+        if (councilExecutionRef.current.sellingContracts.has(contract.id) || !contract.expirationTime) return;
+
+        const remainingTime = contract.expirationTime - Date.now();
+        if (remainingTime < SELL_DEAD_ZONE_MS) {
+            return; // Entrou na zona de não-interferência, ignora
+        }
+
         const profit = contract.result || 0;
         const pnlPct = (profit / contract.stake) * 100;
         if (profit > 0 && (profit / (contract.stake * 0.95)) * 100 >= takeProfitThreshold) {
@@ -571,7 +578,6 @@ export function useRobotCouncilV2(
         // Qualquer voto válido entra na Arena para gerar estatísticas.
         if (technicalVote.vote !== 'HOLD') {
             const lastTrade = virtualTradesRef.current.find(t => t.robotId === robot.id);
-            // CORREÇÃO #1 e #5: Só cria um novo trade virtual se o anterior JÁ EXPIROU.
             if (!lastTrade || currentTick.epoch >= lastTrade.exitEpoch) {
                 const durationInSeconds = durationToSeconds(technicalVote.optimalDuration, technicalVote.optimalDurationUnit);
                 virtualTradesRef.current.push({ 
@@ -672,13 +678,16 @@ export function useRobotCouncilV2(
       const consensusReached = Math.max(riseSum, fallSum) >= effectiveThresholdRaw;
       const congruenceRatio = totalWeight > 0 ? Math.max(riseSum, fallSum) / totalWeight : 0;
       
-      // Validação Estatística
+      const totalSystemTrades = robotPerformance.reduce((sum, p) => sum + (p.wins || 0) + (p.losses || 0), 0);
+      const isSystemWarmingUp = totalSystemTrades < 50;
+
       const matureVoters = Object.values(newBayesianVotes).filter(v => {
           const perf = robotPerformance.find(p => p.id === v.strategy?.id);
           return v.weight > 0 && perf && (perf.wins + perf.losses) > MIN_TRADES_FOR_STATS;
       });
       const matureVotersRatio = activeRobotsCount > 0 ? matureVoters.length / activeRobotsCount : 0;
-      const hasStatisticalConfidence = matureVotersRatio >= 0.4 || matureVoters.length >= 3;
+
+      const hasStatisticalConfidence = !isSystemWarmingUp && (matureVotersRatio >= 0.4 || matureVoters.length >= 3);
 
       // 7. CÁLCULO DE STAKE (KELLY CRITERION + VOLATILITY SCALING)
       let kellyStake = calculateKellyStake(dailyBalance - portfolioStats.totalExposure, consensusProbability, 0.95);
