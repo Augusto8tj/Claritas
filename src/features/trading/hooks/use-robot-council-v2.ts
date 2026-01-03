@@ -316,7 +316,7 @@ export function useRobotCouncilV2(
     virtualTradesRef.current = [];
     tradeCounterRef.current = 0;
     saveRobotPerformance(user.uid, initialPerformance);
-    toast({ title: "🔄 Arena V2.5 Reiniciada", description: "Novo ciclo de inteligência iniciado." });
+    toast({ title: "🔄 Arena V2.0 Reiniciada", description: "Novo ciclo de inteligência para o novo ativo." });
   }, [strategyCouncil, user, toast]);
 
   // Load Performance
@@ -468,7 +468,7 @@ export function useRobotCouncilV2(
         const perf = performanceMap.get(robot.id);
         const technicalVote = calculateTechnicalVote(robot, currentIndicators, validCandles);
         
-        // CORREÇÃO #3 & #5: Adicionar ao trade virtual apenas se a duração for válida e se o trade anterior do robô já expirou.
+        // CORREÇÃO #1: Registro Incondicional na Arena (Funil Largo)
         const durationInSeconds = durationToSeconds(technicalVote.optimalDuration, technicalVote.optimalDurationUnit);
         if (technicalVote.vote !== 'HOLD') {
             const lastTrade = virtualTradesRef.current.find(t => t.robotId === robot.id);
@@ -481,7 +481,7 @@ export function useRobotCouncilV2(
             }
         }
         
-        // CORREÇÃO #2: Os filtros para o consenso real são aplicados aqui.
+        // CORREÇÃO #2: Filtros para o Consenso Real (Funil Estreito)
         let isValidForConsensus = true;
         let rejectionReason = '';
 
@@ -500,26 +500,25 @@ export function useRobotCouncilV2(
             isValidForConsensus = false; rejectionReason = `Duração Inválida`;
         }
         
-        // Cálculo de Peso Inteligente (Ponderação por Sharpe + Viés de Recência)
+        let prior = (perf && (perf.wins + perf.losses) >= MIN_TRADES_FOR_STATS) ? perf.winRate / 100 : 0.5;
+        let likelihood = technicalVote.confidence;
+        if (microFeatures && microFeatures.yangZhangVolatility > 0.05) likelihood *= 0.8;
+        
+        const posterior = bayesianUpdate(prior, likelihood);
+        const calibratedConf = calibrateConfidence(technicalVote.confidence * 100, perf?.winRate || 50) / 100;
+
         let weight = 0;
         if (isValidForConsensus) {
             activeRobotsCount++;
             weight = 1.0;
-            
             if (isMeritocracyOn && perf && (perf.wins + perf.losses) > 10) {
               const sharpeWeight = Math.max(0.2, Math.min(2.5, (perf.sharpeRatio || 0) / 1.5));
               weight *= sharpeWeight;
-              
               const recentHistory = perf.tradeHistory.slice(-3);
               const recentLosses = recentHistory.filter(p => p < 0).length;
-              if (recentLosses === 3) weight *= 0.5; // Penalidade por má fase
+              if (recentLosses === 3) weight *= 0.5;
             }
         }
-
-        const prior = (perf && (perf.wins + perf.losses) >= MIN_TRADES_FOR_STATS) ? perf.winRate / 100 : 0.5;
-        const likelihood = technicalVote.confidence;
-        const posterior = bayesianUpdate(prior, likelihood);
-        const calibratedConf = calibrateConfidence(technicalVote.confidence * 100, perf?.winRate || 50) / 100;
         
         const finalVote: BayesianVote = { 
             vote: technicalVote.vote, rawConfidence: technicalVote.confidence * 100, calibratedConfidence: calibratedConf * 100, 
@@ -573,7 +572,7 @@ export function useRobotCouncilV2(
       const matureVotersRatio = activeRobotsCount > 0 ? matureVoters.length / activeRobotsCount : 0;
       const hasStatisticalConfidence = isSystemWarmingUp || matureVotersRatio >= 0.4 || matureVoters.length >= 3;
 
-      // 7. CÁLCULO DE STAKE (KELLY + VOLATILITY SCALING + TREND ALIGNMENT)
+      // 7. CÁLCULO DE STAKE (KELLY CRITERION + VOLATILITY SCALING)
       let kellyStake = calculateKellyStake(dailyBalance - portfolioStats.totalExposure, consensusProbability, 0.95);
       
       if (microFeatures && microFeatures.yangZhangVolatility > 0.02) {
@@ -581,7 +580,6 @@ export function useRobotCouncilV2(
           kellyStake *= Math.max(0.2, volFactor);
       }
       
-      // Alinhamento de Tendência
       if (currentIndicators.ema20 && currentIndicators.ema50) {
           if (consensusDirection === 'RISE' && currentIndicators.ema20 < currentIndicators.ema50) kellyStake *= 0.5;
           else if (consensusDirection === 'FALL' && currentIndicators.ema20 > currentIndicators.ema50) kellyStake *= 0.5;
