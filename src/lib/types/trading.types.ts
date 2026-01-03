@@ -38,43 +38,6 @@ export const OperationSchema = z.object({
 });
 
 
-export const BayesianVoteSchema = z.object({
-    vote: z.enum(['RISE', 'FALL', 'HOLD']),
-    reason: z.string().describe("Justificativa técnica para o voto, ex: 'RSI (28.5) < 30' ou 'Cruzamento de Médias'"),
-    rawConfidence: z.number().describe("Confiança bruta do sinal técnico (0-100)"),
-    calibratedConfidence: z.number().describe("Confiança calibrada via Platt Scaling (0-1)"),
-    bayesianProbability: z.number().describe("Probabilidade posterior do voto ser correto (0-1)"),
-    weight: z.number().describe("Peso final do voto no consenso, ajustado por meritocracia."),
-    optimalDuration: z.number(),
-    optimalDurationUnit: z.enum(['t', 's', 'm', 'h', 'd']),
-    suggestedStake: z.number(),
-    regime: z.string(), // Mantido como string para flexibilidade
-    sharpeRatio: z.number().optional().describe("O Sharpe Ratio do robô no momento do voto."),
-});
-export type BayesianVote = z.infer<typeof BayesianVoteSchema>;
-
-
-export interface EnhancedRobotPerformance {
-  id: string;
-  strategyType: RobotStrategy['strategyType'];
-  strategy: RobotStrategy;
-  wins: number;
-  losses: number;
-  totalProfit: number;
-  winRate: number;
-  sharpeRatio: number;
-  maxDrawdown: number;
-  avgWin: number;
-  avgLoss: number;
-  profitFactor: number;
-  kellyFraction: number;
-  effectiveRegimes: MarketRegime[];
-  monteCarloScore: number;
-  lastUpdated: number;
-  tradeHistory: number[];
-}
-
-
 export const RobotStrategySchema = z.object({
     id: z.string().describe("A unique identifier for the robot, e.g., 'RSI_BOT_1'."),
     strategyType: z.enum([
@@ -154,35 +117,45 @@ export const RobotStrategySchema = z.object({
     optimalDuration: z.number().describe("The optimal duration for this specific strategy."),
     optimalDurationUnit: z.enum(['t', 's', 'm', 'h', 'd']).describe("The optimal duration unit for this strategy."),
 });
-
 export type RobotStrategy = z.infer<typeof RobotStrategySchema>;
 
-// Voto do robô, que agora inclui sugestões de stake e duração
-export const RobotVoteSchema = z.object({
-  vote: z.enum(['RISE', 'FALL', 'HOLD']),
-  confidence: z.number(),
-  weight: z.number(),
-  suggestedStake: z.number(),
-  optimalDuration: z.number(),
-  optimalDurationUnit: z.enum(['t', 's', 'm', 'h', 'd']),
+
+export const BayesianVoteSchema = z.object({
+    vote: z.enum(['RISE', 'FALL', 'HOLD']),
+    reason: z.string().describe("Justificativa técnica para o voto, ex: 'RSI (28.5) < 30' ou 'Cruzamento de Médias'"),
+    rawConfidence: z.number().describe("Confiança bruta do sinal técnico (0-100)"),
+    calibratedConfidence: z.number().describe("Confiança calibrada via Platt Scaling (0-1)"),
+    bayesianProbability: z.number().describe("Probabilidade posterior do voto ser correto (0-1)"),
+    weight: z.number().describe("Peso final do voto no consenso, ajustado por meritocracia."),
+    optimalDuration: z.number(),
+    optimalDurationUnit: z.enum(['t', 's', 'm', 'h', 'd']),
+    suggestedStake: z.number(),
+    regime: z.string(), // Mantido como string para flexibilidade
+    sharpeRatio: z.number().optional().describe("O Sharpe Ratio do robô no momento do voto."),
+    strategy: RobotStrategySchema.optional().describe("Snapshot da configuração da estratégia no momento do voto."),
 });
+export type BayesianVote = z.infer<typeof BayesianVoteSchema>;
 
-export type RobotVote = z.infer<typeof RobotVoteSchema>;
 
-// Desempenho do robô, incluindo win rates por regime
-export const RobotPerformanceSchema = z.object({
-    id: z.string(),
-    strategyType: z.string(),
-    strategy: RobotStrategySchema,
-    wins: z.number(),
-    losses: z.number(),
-    totalProfit: z.number(),
-    winRate: z.number().optional(),
-    winRateTrend: z.number().optional(),
-    winRateRange: z.number().optional(),
-});
-
-export type RobotPerformance = z.infer<typeof RobotPerformanceSchema>;
+export interface EnhancedRobotPerformance {
+  id: string;
+  strategyType: RobotStrategy['strategyType'];
+  strategy: RobotStrategy;
+  wins: number;
+  losses: number;
+  totalProfit: number;
+  winRate: number;
+  sharpeRatio: number;
+  maxDrawdown: number;
+  avgWin: number;
+  avgLoss: number;
+  profitFactor: number;
+  kellyFraction: number;
+  effectiveRegimes: MarketRegime[];
+  monteCarloScore: number;
+  lastUpdated: number;
+  tradeHistory: number[];
+}
 
 // Schema for a snapshot of all indicators at a given time
 export const IndicatorsSchema = z.object({
@@ -264,3 +237,31 @@ export const TradeDecisionLogSchema = z.object({
 });
 
 export type TradeDecisionLog = z.infer<typeof TradeDecisionLogSchema>;
+
+
+// Voto do robô, que agora inclui sugestões de stake e duração
+export const RobotVoteSchema = z.object({
+  vote: z.enum(['RISE', 'FALL', 'HOLD']),
+  confidence: z.number(),
+  weight: z.number(),
+  suggestedStake: z.number(),
+  optimalDuration: z.number(),
+  optimalDurationUnit: z.enum(['t', 's', 'm', 'h', 'd']),
+});
+
+export type RobotVote = z.infer<typeof RobotVoteSchema>;
+
+// Desempenho do robô, incluindo win rates por regime
+export const RobotPerformanceSchema = z.object({
+    id: z.string(),
+    strategyType: z.string(),
+    strategy: RobotStrategySchema,
+    wins: z.number(),
+    losses: z.number(),
+    totalProfit: z.number(),
+    winRate: z.number().optional(),
+    winRateTrend: z.number().optional(),
+    winRateRange: z.number().optional(),
+});
+
+export type RobotPerformance = z.infer<typeof RobotPerformanceSchema>;

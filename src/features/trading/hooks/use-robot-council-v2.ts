@@ -706,7 +706,8 @@ export function useRobotCouncilV2(
               bayesianProbability: 0.5,
               weight: 0, 
               regime: regimeResult.regime, 
-              reason: (technicalVote.confidence * 100) < confidenceFactor ? `Confiança (${(technicalVote.confidence * 100).toFixed(0)}) < Limiar (${confidenceFactor})` : 'Inativo/Fora de Regime'
+              reason: (technicalVote.confidence * 100) < confidenceFactor ? `Confiança (${(technicalVote.confidence * 100).toFixed(0)}) < Limiar (${confidenceFactor})` : 'Inativo/Fora de Regime',
+              strategy: robot,
             };
             return;
           }
@@ -747,6 +748,7 @@ export function useRobotCouncilV2(
             calibratedConfidence: calibratedConf * 100, bayesianProbability: posterior, weight,
             optimalDuration: technicalVote.optimalDuration, optimalDurationUnit: technicalVote.optimalDurationUnit,
             suggestedStake: technicalVote.suggestedStake * posterior, regime: regimeResult.regime, reason: technicalVote.reason,
+            strategy: robot,
           };
           bayesianVotes[robot.id] = finalVote;
           
@@ -800,7 +802,7 @@ export function useRobotCouncilV2(
         const winningDirection = riseSum > fallSum ? 'RISE' : 'FALL';
         const winningVoters = Object.values(bayesianVotes).filter(v => v.vote === winningDirection);
         const matureVoters = winningVoters.filter(voter => {
-            const perf = Object.values(robotPerformance).find(p => p.strategy.id === (voter as any).id); // Assumindo que o ID está acessível
+            const perf = Object.values(robotPerformance).find(p => p.id === (voter.strategy?.id));
             return perf && (perf.wins + perf.losses) > MIN_TRADES_FOR_STATS;
         });
         const maturityRatio = winningVoters.length > 0 ? matureVoters.length / winningVoters.length : 0;
@@ -910,6 +912,9 @@ export function useRobotCouncilV2(
             regimeConfidence: regimeResult.confidence,
             microstructure: microFeatures,
             indicators: currentIndicators,
+            supervisionReason: 'Aprovado pelo Cérebro V2.0',
+            payout: kellyStake * PAYOUT_RATE,
+            entryPrice: currentTick.price
           },
           consensus: {
             bayesianProbability: consensusProbability,
