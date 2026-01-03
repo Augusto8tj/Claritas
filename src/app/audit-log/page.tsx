@@ -1,36 +1,64 @@
 // /src/app/audit-log/page.tsx
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { useAuth } from '@/features/auth/hooks/use-auth';
 import { getTradeDecisionLogs } from '@/services/financial-data-service';
 import { TradingDecisionLogViewer } from '@/features/trading/components/deriv-trader/TradingDecisionLogViewer';
 import type { TradeDecisionLog } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
-import { errorEmitter } from '@/firebase/error-emitter';
-import { FirestorePermissionError } from '@/firebase/errors';
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Badge } from '@/components/ui/badge';
+import { CheckCircle, XCircle, Bot, Archive, TrendingUp, TrendingDown, HelpCircle, Brain, Activity, CircleDot, Sigma, FilePieChart, Shield, Target, Trophy, Filter, Trash2, Loader2 } from 'lucide-react';
+import { cn } from '@/lib/utils';
+import { Separator } from '@/components/ui/separator';
+import { Button } from '@/components/ui/button';
+import { DateRangePicker } from '@/components/ui/date-picker-with-range';
+import type { DateRange } from 'react-day-picker';
+import { Input } from '@/components/ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
+import { useToast } from "@/hooks/use-toast";
+import { deleteAllDecisionLogs } from '@/app/actions/audit-log-actions';
 
 function AuditLogSkeleton() {
     return (
-        <div className="border rounded-lg p-6">
-            <div className="space-y-2 mb-4">
-                <Skeleton className="h-6 w-1/2" />
-                <Skeleton className="h-4 w-3/4" />
-            </div>
-            <div className="space-y-2">
+        <Card>
+            <CardHeader>
+                <Skeleton className="h-8 w-1/3" />
+                <Skeleton className="h-4 w-1/2" />
+            </CardHeader>
+            <CardContent className="space-y-2">
                 <Skeleton className="h-10 w-full" />
                 <Skeleton className="h-10 w-full" />
                 <Skeleton className="h-10 w-full" />
-            </div>
-        </div>
-    )
+            </CardContent>
+        </Card>
+    );
 }
-
 
 export default function AuditLogPage() {
   const { user } = useAuth();
+  const { toast } = useToast();
   const [logs, setLogs] = useState<TradeDecisionLog[]>([]);
   const [loading, setLoading] = useState(true);
+  const [isDeleting, setIsDeleting] = useState(false);
+
+  // Estados dos Filtros
+  const [dateRange, setDateRange] = useState<DateRange | undefined>(undefined);
+  const [assetFilter, setAssetFilter] = useState('');
+  const [resultFilter, setResultFilter] = useState('all');
 
   useEffect(() => {
     if (!user) {
@@ -42,12 +70,10 @@ export default function AuditLogPage() {
       setLoading(true);
       try {
         const fetchedLogs = await getTradeDecisionLogs(user.uid);
-        // Ordena do mais recente para o mais antigo
         fetchedLogs.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
         setLogs(fetchedLogs);
       } catch (error) {
-        // O erro já é tratado e emitido dentro do `getTradeDecisionLogs`
-        console.error("Failed to fetch trade decision logs (error captured by service).");
+        console.error("Failed to fetch trade decision logs:", error);
       } finally {
         setLoading(false);
       }
@@ -55,6 +81,40 @@ export default function AuditLogPage() {
 
     fetchLogs();
   }, [user]);
+
+  const filteredLogs = useMemo(() => {
+    return logs.filter(log => {
+      const logDate = new Date(log.timestamp);
+      
+      const dateMatch = !dateRange || (
+          (!dateRange.from || logDate >= dateRange.from) &&
+          (!dateRange.to || logDate <= dateRange.to)
+      );
+      const assetMatch = !assetFilter || log.asset.toLowerCase().includes(assetFilter.toLowerCase());
+      const resultMatch = resultFilter === 'all' || log.result === resultFilter;
+      
+      return dateMatch && assetMatch && resultMatch;
+    });
+  }, [logs, dateRange, assetFilter, resultFilter]);
+  
+  const uniqueAssets = useMemo(() => {
+    const assets = new Set(logs.map(log => log.asset));
+    return Array.from(assets);
+  }, [logs]);
+
+  const handleDeleteAll = async () => {
+    if (!user) return;
+    setIsDeleting(true);
+    const result = await deleteAllDecisionLogs(user.uid);
+    if (result.success) {
+      toast({ title: "Histórico Limpo!", description: "Todos os registos de auditoria foram apagados." });
+      setLogs([]);
+    } else {
+      toast({ title: "Erro", description: result.error, variant: "destructive" });
+    }
+    setIsDeleting(false);
+  };
+
 
   return (
     <div className="flex-1 space-y-4 p-4 sm:p-8 pt-6">
@@ -64,13 +124,64 @@ export default function AuditLogPage() {
         </h1>
       </div>
       <p className="text-muted-foreground">
-        Consulte o histórico completo de todas as decisões de trade já registadas na sua conta.
+        Consulte e filtre o histórico completo de todas as decisões de trade registadas na sua conta.
       </p>
+
+       <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Filter className="h-5 w-5" />
+            Filtros de Análise
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
+            <DateRangePicker date={dateRange} setDate={setDateRange} />
+            <Input 
+              placeholder="Filtrar por ativo..."
+              value={assetFilter}
+              onChange={(e) => setAssetFilter(e.target.value)}
+            />
+             <Select value={resultFilter} onValueChange={setResultFilter}>
+              <SelectTrigger>
+                <SelectValue placeholder="Filtrar por resultado" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Todos os Resultados</SelectItem>
+                <SelectItem value="won">Ganhos (Won)</SelectItem>
+                <SelectItem value="lost">Perdas (Lost)</SelectItem>
+                <SelectItem value="pending">Pendentes</SelectItem>
+              </SelectContent>
+            </Select>
+             <AlertDialog>
+                <AlertDialogTrigger asChild>
+                    <Button variant="destructive" className="w-full">
+                        <Trash2 className="mr-2 h-4 w-4" />
+                        Limpar Histórico
+                    </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                    <AlertDialogHeader>
+                        <AlertDialogTitle>Tem a certeza absoluta?</AlertDialogTitle>
+                        <AlertDialogDescription>
+                            Esta ação não pode ser desfeita. Isto irá apagar permanentemente todos os logs de auditoria da sua conta.
+                        </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                        <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                        <AlertDialogAction onClick={handleDeleteAll} disabled={isDeleting}>
+                          {isDeleting ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : null}
+                          Apagar Tudo
+                        </AlertDialogAction>
+                    </AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialog>
+        </CardContent>
+       </Card>
       
       {loading ? (
         <AuditLogSkeleton />
       ) : (
-        <TradingDecisionLogViewer logs={logs} />
+        <TradingDecisionLogViewer logs={filteredLogs} />
       )}
     </div>
   );

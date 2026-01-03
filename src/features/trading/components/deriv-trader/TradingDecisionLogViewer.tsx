@@ -31,7 +31,6 @@ interface TradingDecisionLogViewerProps {
 export const TradingDecisionLogViewer: React.FC<TradingDecisionLogViewerProps> = ({
   logs,
 }) => {
-  const reversedLogs = [...logs].reverse();
   const { toast } = useToast();
 
   const handleReportClick = () => {
@@ -96,31 +95,31 @@ export const TradingDecisionLogViewer: React.FC<TradingDecisionLogViewerProps> =
             <div className="flex-1">
                 <CardTitle className="font-headline flex items-center gap-2">
                     <Bot className="h-5 w-5 text-primary" />
-                    Auditoria Cognitiva
+                    Auditoria Cognitiva ({logs.length} Registos)
                 </CardTitle>
                 <CardDescription>
                   Análise detalhada de cada decisão tomada pelo conselho de robôs.
                 </CardDescription>
             </div>
-            {reversedLogs.length > 0 && (
+            {logs.length > 0 && (
                 <Button variant="outline" size="sm" onClick={handleReportClick}>
                     <FilePieChart className="mr-2 h-4 w-4"/>
-                    Gerar Relatório
+                    Gerar Relatório CSV
                 </Button>
             )}
         </div>
       </CardHeader>
       <CardContent>
-        {reversedLogs.length === 0 ? (
+        {logs.length === 0 ? (
           <div className="flex flex-col items-center justify-center text-center text-muted-foreground p-8 border rounded-md bg-muted/50">
             <Archive className="h-10 w-10 mb-4" />
-            <p className="font-semibold">Nenhuma decisão registada</p>
-            <p className="text-xs">Ative a Mesa V2.0 e aguarde a primeira operação para ver os logs de auditoria.</p>
+            <p className="font-semibold">Nenhuma decisão encontrada</p>
+            <p className="text-xs">Ajuste os filtros ou aguarde novas operações para ver os logs de auditoria.</p>
           </div>
         ) : (
-          <ScrollArea className="h-[400px] w-full pr-4">
+          <ScrollArea className="h-[500px] w-full pr-4">
             <Accordion type="single" collapsible className="w-full" defaultValue="item-0">
-              {reversedLogs.map((log, index) => (
+              {logs.map((log, index) => (
                 <AccordionItem value={`item-${index}`} key={log.id}>
                   <AccordionTrigger>
                     <div className="flex items-center justify-between w-full text-sm">
