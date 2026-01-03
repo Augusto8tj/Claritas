@@ -2,7 +2,7 @@
 'use client';
 
 import { useState, useCallback, useRef } from 'react';
-import type { RobotStrategy, RobotPerformance } from '@/lib/types';
+import type { RobotStrategy, EnhancedRobotPerformance as RobotPerformance } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
 
 // ============================================================================
@@ -102,21 +102,17 @@ export function useStrategyEvolution(initialStrategies: Omit<RobotStrategy, 'id'
 
         // Ordena para encontrar os melhores e piores
         const sortedPerformance = [...performanceData].sort((a, b) => {
-             // Prioriza taxa de acerto, depois lucro
-            const aTotal = a.wins + a.losses;
-            const bTotal = b.wins + b.losses;
-            const aWinRate = aTotal > 0 ? a.wins / aTotal : 0;
-            const bWinRate = bTotal > 0 ? b.wins / bTotal : 0;
-
-            if (aWinRate !== bWinRate) return bWinRate - aWinRate;
-            return b.totalProfit - a.totalProfit;
+            const aSharpe = a.sharpeRatio || -Infinity;
+            const bSharpe = b.sharpeRatio || -Infinity;
+            if(aSharpe !== bSharpe) return bSharpe - aSharpe;
+            return (b.totalProfit || 0) - (a.totalProfit || 0);
         });
 
         const elitePerformers = sortedPerformance.slice(0, ELITE_COUNT);
         const worstPerformers = sortedPerformance.slice(-WORST_COUNT);
 
-        if (elitePerformers.length === 0 || worstPerformers.length === 0) {
-            console.warn("[Evolution] Não há dados de desempenho suficientes para a evolução.");
+        if (elitePerformers.length === 0 || worstPerformers.length === 0 || elitePerformers[0].totalProfit <= 0) {
+            console.warn("[Evolution] Não há robôs de elite com lucro. A evolução será adiada.");
             return;
         }
 
@@ -127,26 +123,30 @@ export function useStrategyEvolution(initialStrategies: Omit<RobotStrategy, 'id'
 
         const newEvent: EvolutionEvent = {
             timestamp: new Date(),
-            elitePerformers: elitePerformers.map(({ id, strategyType, totalProfit, wins, losses }) => ({ id, strategyType, totalProfit, wins, losses })),
+            elitePerformers: elitePerformers.map(({ id, strategyType, totalProfit, wins, losses }) => ({ id, strategyType, totalProfit: totalProfit || 0, wins: wins || 0, losses: losses || 0 })),
             mutations: [],
         };
         
         // Cria um mapa das novas estratégias
-        const newStrategiesMap = new Map<string, Omit<RobotStrategy, 'id'>>(
-            evolvedStrategies.map(s => [(s as any).id, s])
-        );
+        const currentStrategies = [...evolvedStrategies];
+        let strategiesChanged = false;
 
         // Substitui os piores por mutações dos melhores
         worstPerformers.forEach((worst, index) => {
             const eliteParent = elitePerformers[index % elitePerformers.length];
+            
+            const worstIndex = currentStrategies.findIndex(s => (s as RobotStrategy).id === worst.id);
+            if (worstIndex === -1) return;
+
             const newStrategyParams = mutateStrategy(eliteParent.strategy);
             const newJustification = `Mutação da estratégia ${eliteParent.strategyType} de elite.`;
             
-            newStrategiesMap.set(worst.id, {
-                ...worst.strategy, 
+            currentStrategies[worstIndex] = {
+                ...currentStrategies[worstIndex], 
                 ...newStrategyParams, 
                 justification: newJustification,
-            });
+            };
+            strategiesChanged = true;
 
             newEvent.mutations.push({
                 replacedBotId: worst.id,
@@ -158,8 +158,10 @@ export function useStrategyEvolution(initialStrategies: Omit<RobotStrategy, 'id'
             console.log(`[Evolution] Robô ${worst.id} (${worst.strategyType}) foi substituído por uma mutação de ${eliteParent.strategyType}.`);
         });
 
-        setEvolvedStrategies(Array.from(newStrategiesMap.values()));
-        setEvolutionHistory(prev => [newEvent, ...prev]);
+        if (strategiesChanged) {
+            setEvolvedStrategies(currentStrategies);
+            setEvolutionHistory(prev => [newEvent, ...prev]);
+        }
 
     }, [evolvedStrategies, toast]);
 

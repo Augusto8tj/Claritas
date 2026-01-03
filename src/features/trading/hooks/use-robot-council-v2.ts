@@ -111,7 +111,7 @@ type VirtualTrade = {
 export type EnhancedRobotPerformance = EnhancedRobotPerformanceType;
 export type RobotVote = RobotVoteType;
 export type BayesianVote = BayesianVoteType;
-export type CouncilVotes = { [key: string]: RobotVote };
+export type CouncilVotes = { [key: string]: BayesianVote };
 
 export interface DashboardData {
   regime: string;
@@ -269,7 +269,7 @@ export function useRobotCouncilV2(
   // ────────────────────────────────────────────────────────────────
   // ESTADOS DO CONSELHO
   // ────────────────────────────────────────────────────────────────
-  const [strategyCouncil, setStrategyCouncil] = useState<RobotStrategy[]>(evolvedStrategies as RobotStrategy[]);
+  const [strategyCouncil, setStrategyCouncil] = useState<RobotStrategy[]>([]);
   const [isCouncilAutopilotOn, setIsCouncilAutopilotOn] = useState(false);
   const [isFetchingCouncil, setIsFetchingCouncil] = useState(false);
   const [indicators, setIndicators] = useState<Indicators | null>(null);
@@ -371,7 +371,11 @@ export function useRobotCouncilV2(
   // SINCRONIZAÇÃO COM EVOLUÇÃO GENÉTICA
   // ────────────────────────────────────────────────────────────────
   useEffect(() => {
-    setStrategyCouncil(evolvedStrategies as RobotStrategy[]);
+    const councilWithIds = (evolvedStrategies as RobotStrategy[]).map((strat, index) => ({
+        ...strat,
+        id: strat.id || `${strat.strategyType}_BOT_${index+1}`
+    }));
+    setStrategyCouncil(councilWithIds);
   }, [evolvedStrategies]);
   
   // ────────────────────────────────────────────────────────────────
@@ -424,10 +428,13 @@ export function useRobotCouncilV2(
             tradeHistory: p.tradeHistory || []
           }));
           setRobotPerformance(enhanced);
+        } else {
+            // Se não há dados, inicializa a arena
+            resetArenaPerformance();
         }
       })
       .catch(err => console.error("❌ Erro ao carregar performance:", err));
-  }, [user, isAuthLoading]);
+  }, [user, isAuthLoading, resetArenaPerformance]);
   
   // ────────────────────────────────────────────────────────────────
   // SALVAR LOGS DE AUDITORIA AO SAIR DA PÁGINA
@@ -708,6 +715,7 @@ export function useRobotCouncilV2(
               regime: regimeResult.regime, 
               reason: (technicalVote.confidence * 100) < confidenceFactor ? `Confiança (${(technicalVote.confidence * 100).toFixed(0)}) < Limiar (${confidenceFactor})` : 'Inativo/Fora de Regime',
               strategy: robot,
+              sharpeRatio: perf?.sharpeRatio ?? 0,
             };
             return;
           }
@@ -729,8 +737,8 @@ export function useRobotCouncilV2(
 
           let weight = 1.0;
           if (isMeritocracyOn && perf && (perf.wins + perf.losses) > 10) {
-            const sharpeWeight = Math.max(0.2, Math.min(2.0, perf.sharpeRatio / 1.5));
-            const mcWeight = perf.monteCarloScore >= 0.95 ? 1.2 : perf.monteCarloScore >= 0.85 ? 1.0 : 0.5;
+            const sharpeWeight = Math.max(0.2, Math.min(2.0, (perf.sharpeRatio || 0) / 1.5));
+            const mcWeight = (perf.monteCarloScore || 0) >= 0.95 ? 1.2 : (perf.monteCarloScore || 0) >= 0.85 ? 1.0 : 0.5;
             weight = sharpeWeight * mcWeight;
           }
 
@@ -749,6 +757,7 @@ export function useRobotCouncilV2(
             optimalDuration: technicalVote.optimalDuration, optimalDurationUnit: technicalVote.optimalDurationUnit,
             suggestedStake: technicalVote.suggestedStake * posterior, regime: regimeResult.regime, reason: technicalVote.reason,
             strategy: robot,
+            sharpeRatio: perf?.sharpeRatio ?? 0,
           };
           bayesianVotes[robot.id] = finalVote;
           
@@ -798,7 +807,6 @@ export function useRobotCouncilV2(
         
         const consensusReached = Math.max(riseSum, fallSum) >= calculatedEffectiveThreshold;
 
-        // ✅ NOVO: Veto de Confiança Estatística
         const winningDirection = riseSum > fallSum ? 'RISE' : 'FALL';
         const winningVoters = Object.values(bayesianVotes).filter(v => v.vote === winningDirection);
         const matureVoters = winningVoters.filter(voter => {
@@ -806,9 +814,9 @@ export function useRobotCouncilV2(
             return perf && (perf.wins + perf.losses) > MIN_TRADES_FOR_STATS;
         });
         const maturityRatio = winningVoters.length > 0 ? matureVoters.length / winningVoters.length : 0;
-        const hasStatisticalConfidence = maturityRatio >= 0.6; // Pelo menos 60% dos votantes são "maduros"
+        const hasStatisticalConfidence = maturityRatio >= 0.6;
 
-        const PAYOUT_RATE = 0.95; // Payout líquido para RISE/FALL
+        const PAYOUT_RATE = 0.95;
         let kellyStake = calculateKellyStake(
           dailyBalance - portfolioStats.totalExposure, consensusProbability, PAYOUT_RATE
         );
@@ -869,7 +877,6 @@ export function useRobotCouncilV2(
           return;
         }
         
-        // ✅ APLICAÇÃO DO VETO ESTATÍSTICO
         if (!hasStatisticalConfidence) {
             setConsensusDecision({ direction: 'HOLD', probability: consensusProbability, stake: 0 });
             toast({
