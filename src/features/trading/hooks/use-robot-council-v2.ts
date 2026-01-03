@@ -1,4 +1,3 @@
-
 // src/hooks/use-robot-council-v2.ts
 'use client';
 
@@ -180,7 +179,7 @@ const calculateTechnicalVote = (
     confidence = rawConfidence / 100; // Normaliza para 0-1
     reason = newReason;
     // Usa a confiança normalizada para a sugestão de stake
-    suggestedStake = rawConfidence === robot.strongConfidence ? baseStake : baseStake * 0.5;
+    suggestedStake = confidence === (robot.strongConfidence / 100) ? baseStake : baseStake * 0.5;
   };
 
   if (!indicators) {
@@ -711,21 +710,7 @@ export function useRobotCouncilV2(
             };
             return;
           }
-
-          const durationInSeconds = durationToSeconds(technicalVote.optimalDuration, technicalVote.optimalDurationUnit);
           
-          const isRegimeEffective = !perf?.effectiveRegimes?.length || perf.effectiveRegimes.includes(regimeResult.regime);
-          const isDurationInRange = durationInSeconds >= durationRange[0] && durationInSeconds <= durationRange[1];
-          
-          if (!isRegimeEffective || !isDurationInRange) {
-            bayesianVotes[robot.id] = {
-              ...technicalVote,
-              rawConfidence: 0, calibratedConfidence: 0, bayesianProbability: 0.5,
-              weight: 0, regime: regimeResult.regime, reason: 'Inativo/Fora de Regime ou Duração'
-            };
-            return;
-          }
-
           activeRobotsCount++;
 
           let prior = 0.5; 
@@ -748,6 +733,7 @@ export function useRobotCouncilV2(
             weight = sharpeWeight * mcWeight;
           }
 
+          const durationInSeconds = durationToSeconds(technicalVote.optimalDuration, technicalVote.optimalDurationUnit);
           const tradeId = `vt_${Date.now()}_${tradeCounterRef.current++}`;
           const virtualTrade: VirtualTrade = {
             id: tradeId, robotId: robot.id, vote: technicalVote.vote, entryPrice: currentTick.price,
