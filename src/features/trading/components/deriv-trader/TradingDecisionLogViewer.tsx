@@ -17,7 +17,7 @@ import {
 } from '@/components/ui/accordion';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Badge } from '@/components/ui/badge';
-import { CheckCircle, XCircle, Bot, Archive, TrendingUp, TrendingDown, HelpCircle, Brain, Activity, CircleDot, Sigma, FilePieChart, Shield, Target } from 'lucide-react';
+import { CheckCircle, XCircle, Bot, Archive, TrendingUp, TrendingDown, HelpCircle, Brain, Activity, CircleDot, Sigma, FilePieChart, Shield, Target, Trophy } from 'lucide-react';
 import type { TradeDecisionLog } from '@/lib/types';
 import { cn } from '@/lib/utils';
 import { Separator } from '@/components/ui/separator';
