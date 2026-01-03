@@ -695,25 +695,23 @@ export const calibrateConfidence = (
   return calibrated;
 };
 
-/**
- * Calcula a Entropia de Shannon para medir a "confusão" do conselho.
- * Entropia Alta = Votos divididos (Perigoso).
- * Entropia Baixa = Consenso claro (Seguro).
- */
-export const calculateShannonEntropy = (riseWeight: number, fallWeight: number): number => {
+export function calculateShannonEntropy(riseWeight: number, fallWeight: number): number {
   const total = riseWeight + fallWeight;
-  if (total === 0) return 1; // Entropia máxima (ignorância total)
+  if (total === 0) return 1; // Máxima incerteza se não houver votos
   
   const pRise = riseWeight / total;
   const pFall = fallWeight / total;
   
-  // Evita log(0)
-  if (pRise === 0 || pFall === 0) return 0; // Certeza absoluta
-
-  // Fórmula de Shannon normalizada para o intervalo [0, 1]
-  // O log de base 2 de 2 (número de resultados) é 1, então a entropia já está normalizada.
-  return -((pRise * Math.log2(pRise)) + (pFall * Math.log2(pFall))); 
-};
+  let entropy = 0;
+  if (pRise > 0) {
+    entropy -= pRise * Math.log2(pRise);
+  }
+  if (pFall > 0) {
+    entropy -= pFall * Math.log2(pFall);
+  }
+  
+  return entropy; // Para 2 resultados, o máximo é log2(2) = 1. Já está normalizado.
+}
 
 
 // ════════════════════════════════════════════════════════════════════

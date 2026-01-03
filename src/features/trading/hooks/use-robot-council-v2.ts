@@ -355,13 +355,11 @@ export function useRobotCouncilV2(
   // Mudança de Ativo/Periodo
   useEffect(() => {
     const symbolChanged = activeSymbol && lastActiveSymbolRef.current !== activeSymbol;
-    const timePeriodChanged = timePeriod && lastTimePeriodRef.current !== timePeriod;
-    if (isCouncilAutopilotOn && (symbolChanged || timePeriodChanged)) {
-      resetArenaPerformance();
-      if (symbolChanged) lastActiveSymbolRef.current = activeSymbol;
-      if (timePeriodChanged) lastTimePeriodRef.current = timePeriod;
+    if (isCouncilAutopilotOn && symbolChanged) {
+        resetArenaPerformance();
+        lastActiveSymbolRef.current = activeSymbol;
     }
-  }, [activeSymbol, timePeriod, isCouncilAutopilotOn, resetArenaPerformance]);
+  }, [activeSymbol, isCouncilAutopilotOn, resetArenaPerformance]);
 
   const dissolveCouncil = useCallback(() => {
     setIsCouncilAutopilotOn(false);
@@ -471,12 +469,12 @@ export function useRobotCouncilV2(
       strategyCouncil.forEach(robot => {
         const perf = performanceMap.get(robot.id);
         const technicalVote = calculateTechnicalVote(robot, currentIndicators, validCandles);
+        const durationInSeconds = durationToSeconds(technicalVote.optimalDuration, technicalVote.optimalDurationUnit);
         
-        // ARENA VIRTUAL (FUNIL LARGO)
+        // Arena Virtual (Funil Largo): Todos que não votam HOLD participam
         if (technicalVote.vote !== 'HOLD') {
-            const durationInSeconds = durationToSeconds(technicalVote.optimalDuration, technicalVote.optimalDurationUnit);
             const lastTrade = virtualTradesRef.current.find(t => t.robotId === robot.id);
-            if (!lastTrade || (currentTick.epoch - lastTrade.entryEpoch) > 5) { // Evita spam de trades
+            if (!lastTrade || (currentTick.epoch - lastTrade.entryEpoch) > 5) {
                  virtualTradesRef.current.push({ 
                     id: `vt_${Date.now()}_${tradeCounterRef.current++}`, robotId: robot.id, vote: technicalVote.vote, 
                     entryPrice: currentTick.price, entryEpoch: currentTick.epoch, exitEpoch: currentTick.epoch + durationInSeconds, 
@@ -485,25 +483,29 @@ export function useRobotCouncilV2(
             }
         }
         
-        // FILTROS PARA CONSENSO REAL (FUNIL ESTREITO)
+        // Filtros para o Consenso Real (Funil Estreito)
         let isValidForConsensus = true;
-        let rejectionReason = '';
+        let rejectionReason = 'HOLD';
 
-        const hasHistory = perf && (perf.wins + perf.losses) > 10;
-        const isRegimeEffective = !hasHistory || !perf?.effectiveRegimes?.length || perf.effectiveRegimes.includes(regimeResult.regime);
-        const durationInSeconds = durationToSeconds(technicalVote.optimalDuration, technicalVote.optimalDurationUnit);
-        const isDurationInRange = durationInSeconds >= durationRange[0] && durationInSeconds <= durationRange[1];
+        if(technicalVote.vote !== 'HOLD'){
+            rejectionReason = ''; // Limpa o motivo se não for HOLD
+            const hasHistory = perf && (perf.wins + perf.losses) > 10;
+            const isRegimeEffective = !hasHistory || !perf?.effectiveRegimes?.length || perf.effectiveRegimes.includes(regimeResult.regime);
+            const isDurationInRange = durationInSeconds >= durationRange[0] && durationInSeconds <= durationRange[1];
 
-        if (technicalVote.vote === 'HOLD') {
-            isValidForConsensus = false; rejectionReason = 'HOLD'; debugStats.held++;
-        } else if (technicalVote.confidence < (confidenceFactor / 100)) {
-            isValidForConsensus = false; rejectionReason = `Confiança Baixa`; debugStats.lowConf++;
-        } else if (!isRegimeEffective) {
-            isValidForConsensus = false; rejectionReason = `Regime Ineficaz`; debugStats.badRegime++;
-        } else if (!isDurationInRange) {
-            isValidForConsensus = false; rejectionReason = `Duração Inválida`; debugStats.badDuration++;
+            if (technicalVote.confidence < (confidenceFactor / 100)) {
+                isValidForConsensus = false; rejectionReason = `Confiança Baixa`; debugStats.lowConf++;
+            } else if (!isRegimeEffective) {
+                isValidForConsensus = false; rejectionReason = `Regime Ineficaz`; debugStats.badRegime++;
+            } else if (!isDurationInRange) {
+                isValidForConsensus = false; rejectionReason = `Duração Inválida`; debugStats.badDuration++;
+            }
+        } else {
+            isValidForConsensus = false;
+            debugStats.held++;
         }
         
+        // Cálculo de Peso Inteligente
         let prior = (perf && (perf.wins + perf.losses) >= MIN_TRADES_FOR_STATS) ? perf.winRate / 100 : 0.5;
         let likelihood = technicalVote.confidence;
         if (microFeatures && microFeatures.yangZhangVolatility > 0.05) likelihood *= 0.8;
@@ -571,11 +573,13 @@ export function useRobotCouncilV2(
       const congruenceRatio = totalWeight > 0 ? Math.max(riseSum, fallSum) / totalWeight : 0;
       
       const totalSystemTrades = robotPerformance.reduce((sum, p) => sum + p.wins + p.losses, 0);
-      const matureRobots = robotPerformance.filter(p => p.wins + p.losses > 30);
-      const matureVotersCount = Object.values(newBayesianVotes).filter(v => v.weight > 0 && matureRobots.some(p => p.id === v.strategy?.id)).length;
-      const matureVotersRatio = activeRobotsCount > 0 ? matureVotersCount / activeRobotsCount : 0;
-      const hasStatisticalConfidence = totalSystemTrades < 50 || (matureVotersRatio >= 0.4 || matureVotersCount >= 3);
-
+      const isSystemWarmingUp = totalSystemTrades < 50;
+      const matureVoters = Object.values(newBayesianVotes).filter(v => {
+          const perf = robotPerformance.find(p => p.id === v.strategy?.id);
+          return v.weight > 0 && perf && (perf.wins + perf.losses) > 30;
+      });
+      const matureVotersRatio = activeRobotsCount > 0 ? matureVoters.length / activeRobotsCount : 0;
+      const hasStatisticalConfidence = isSystemWarmingUp || matureVotersRatio >= 0.4 || matureVoters.length >= 3;
 
       // 7. CÁLCULO DE STAKE (KELLY CRITERION + VOLATILITY SCALING)
       let kellyStake = calculateKellyStake(dailyBalance - portfolioStats.totalExposure, consensusProbability, 0.95);
