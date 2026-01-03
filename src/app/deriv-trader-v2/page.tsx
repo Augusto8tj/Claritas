@@ -26,8 +26,6 @@ import { TradingDecisionLogViewer } from "@/features/trading/components/deriv-tr
 import { EvolutionLab } from "@/features/trading/components/deriv-trader/evolution-lab";
 
 
-// --- Sub-componentes para melhor organização ---
-
 const Header = () => {
     const { 
         accountType, setAccountType, accountBalance, clearActiveContracts, 
@@ -73,19 +71,19 @@ const Header = () => {
     );
 };
 
-const MainDashboard = ({ robotCouncil }: { robotCouncil: ReturnType<typeof useRobotCouncilV2> }) => {
-    const { 
-        operationsLog, chartData, isChartLoading, chartError, 
-        chartType, setChartType, timePeriod, setTimePeriod, activeSymbol, tradeAnnotations
-    } = useDerivApi();
-    
+const DerivTraderV2Core = () => {
+    const { activeSymbol, priceTicks, dataVersion, operationsLog, chartData, isChartLoading, chartError, chartType, setChartType, timePeriod, setTimePeriod, tradeAnnotations } = useDerivApi();
+    const robotCouncil = useRobotCouncilV2(activeSymbol, priceTicks, dataVersion);
+    const [activeTab, setActiveTab] = React.useState("desk");
+
     return (
-        <div className="space-y-6">
-             {robotCouncil.isCouncilAutopilotOn && robotCouncil.dashboardData && (
+        <div className="space-y-6 mt-6">
+            {robotCouncil.isCouncilAutopilotOn && robotCouncil.dashboardData && (
                 <div className="animate-in fade-in slide-in-from-top-4 duration-500">
                     <CouncilDashboard data={robotCouncil.dashboardData} />
                 </div>
             )}
+            
             <Card>
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                     <div>
@@ -109,28 +107,13 @@ const MainDashboard = ({ robotCouncil }: { robotCouncil: ReturnType<typeof useRo
                     />
                 </CardContent>
             </Card>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 <DerivTraderInterfaceV2 symbol={activeSymbol || ""} />
-                <AITradeSuggestion 
-                    councilDecision={robotCouncil.consensusDecision.direction}
-                    consensusSum={{rise: robotCouncil.consensusDecision.probability, fall: 1 - robotCouncil.consensusDecision.probability}} 
-                    consensusThreshold={0.65} // Limiar Bayesiano Fixo
-                    supervisionStatus={{status: 'approved', message: `Probabilidade Bayesiana: ${(robotCouncil.consensusDecision.probability * 100).toFixed(1)}%`}}
-                    activeCommittee={robotCouncil.currentRegime.regime}
-                    isAutopilotOn={robotCouncil.isCouncilAutopilotOn}
-                />
+                <CouncilAutopilotInterfaceV2 {...robotCouncil} />
             </div>
-        </div>
-    );
-};
 
-const SidePanel = ({ robotCouncil }: { robotCouncil: ReturnType<typeof useRobotCouncilV2> }) => {
-    const { operationsLog } = useDerivApi();
-
-    return (
-        <div className="space-y-6">
-            <CouncilAutopilotInterfaceV2 {...robotCouncil} />
-            <Tabs defaultValue="desk">
+            <Tabs value={activeTab} onValueChange={setActiveTab}>
                 <TabsList className="grid w-full grid-cols-4">
                     <TabsTrigger value="desk">Arena V2</TabsTrigger>
                     <TabsTrigger value="log">Operações</TabsTrigger>
@@ -147,30 +130,13 @@ const SidePanel = ({ robotCouncil }: { robotCouncil: ReturnType<typeof useRobotC
                 <TabsContent value="log" className="mt-4">
                     <OperationsLog operations={operationsLog} />
                 </TabsContent>
-                 <TabsContent value="evolution" className="mt-4">
+                <TabsContent value="evolution" className="mt-4">
                     <EvolutionLab history={robotCouncil.evolutionHistory} />
                 </TabsContent>
                 <TabsContent value="audit" className="mt-4">
                    <TradingDecisionLogViewer logs={robotCouncil.tradeDecisionLog} />
                 </TabsContent>
             </Tabs>
-        </div>
-    );
-};
-
-// --- Componente Principal da Página ---
-const DerivTraderV2Core = () => {
-    const { activeSymbol, priceTicks, dataVersion } = useDerivApi();
-    const robotCouncil = useRobotCouncilV2(activeSymbol, priceTicks, dataVersion);
-
-    return (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mt-6">
-            <div className="lg:col-span-2 space-y-6">
-                <MainDashboard robotCouncil={robotCouncil} />
-            </div>
-            <div className="space-y-6">
-                <SidePanel robotCouncil={robotCouncil} />
-            </div>
         </div>
     );
 };
