@@ -312,7 +312,7 @@ export function useRobotCouncilV2(
   const [dailyBalance, setDailyBalance] = useState(10);
   const [dailyTarget, setDailyTarget] = useState(5);
   const [consensusSensitivity, setConsensusSensitivity] = useState(60); // % necessária para agir
-  const [confidenceFactor, setConfidenceFactor] = useState(60); // Confiança mínima do robô
+  const [confidenceFactor, setConfidenceFactor] = useState(70); // Confiança mínima do robô
   const [durationRange, setDurationRange] = useState<[number, number]>([15, 180]);
   const [takeProfitThreshold, setTakeProfitThreshold] = useState(10);
   const [stopLossThreshold, setStopLossThreshold] = useState(20);
@@ -592,31 +592,20 @@ export function useRobotCouncilV2(
         const perf = performanceMap.get(robot.id);
         const technicalVote = calculateTechnicalVote(robot, currentIndicators, validCandles);
         
-        // 1. SE O ROBÔ ESTÁ EM 'HOLD', IGNORAMOS TUDO PARA CONSENSO, MAS REGISTRAMOS
         if (technicalVote.vote === 'HOLD') {
             debugStats.held++;
-            newBayesianVotes[robot.id] = { 
-                ...technicalVote, 
-                rawConfidence: 0,
-                calibratedConfidence: 0,
-                bayesianProbability: 0.5, 
-                weight: 0, 
-                regime: regimeResult.regime, 
-                reason: 'Sinal Técnico: HOLD' 
-            };
+            newBayesianVotes[robot.id] = { ...technicalVote, rawConfidence: 0, calibratedConfidence: 0, bayesianProbability: 0.5, weight: 0, regime: regimeResult.regime, reason: 'Sinal Técnico: HOLD', sharpeRatio: 0, strategy: robot };
             return;
         }
 
-        // --- CÁLCULOS DE VALIDAÇÃO (Mas não paramos o código ainda) ---
-        
         const durationInSeconds = durationToSeconds(technicalVote.optimalDuration, technicalVote.optimalDurationUnit);
         
         const hasHistory = perf && (perf.wins + perf.losses) > 10;
         const isRegimeEffective = !hasHistory || !perf?.effectiveRegimes?.length || perf.effectiveRegimes.includes(regimeResult.regime);
+        
         const isDurationInRange = durationInSeconds >= durationRange[0] && durationInSeconds <= durationRange[1];
         const isConfidenceHigh = (technicalVote.confidence * 100) >= confidenceFactor;
 
-        // --- 2. REGISTRO NA ARENA VIRTUAL (SEMPRE ACONTECE SE NÃO FOR HOLD) ---
         const tradeId = `vt_${Date.now()}_${tradeCounterRef.current++}`;
         const lastTrade = virtualTradesRef.current.find(t => t.robotId === robot.id);
         const isSpamming = lastTrade && (currentTick.epoch - lastTrade.entryEpoch) < 5;
@@ -630,7 +619,6 @@ export function useRobotCouncilV2(
             });
         }
 
-        // --- 3. CÁLCULO PARA O CONSENSO (DINHEIRO REAL) ---
         let rejectionReason = '';
         let isValidForConsensus = true;
 
@@ -708,6 +696,7 @@ export function useRobotCouncilV2(
       const totalSystemTrades = robotPerformance.reduce((sum, p) => sum + p.wins + p.losses, 0);
       let hasStatisticalConfidence = maturityRatio >= 0.4 || matureVoters.length >= 3;
       if (!hasStatisticalConfidence && totalSystemTrades < 50) {
+        console.log('🔥 FASE DE AQUECIMENTO: permitindo operação');
         hasStatisticalConfidence = true;
       }
       
@@ -725,9 +714,9 @@ export function useRobotCouncilV2(
 🏟️ Virtual Trades Ativos: ${virtualTradesRef.current.length}
 
 ❌ Motivos de Inatividade:
-   - Confiança < ${confidenceFactor}%: ${debugStats.lowConf} robô(s)
-   - Regime ${regimeResult.regime} não efetivo: ${debugStats.badRegime} robô(s)
-   - Duração fora de [${durationRange[0]}, ${durationRange[1]}]s: ${debugStats.badDuration} robô(s)
+   - Confiança (${confidenceFactor}%): ${debugStats.lowConf} robô(s)
+   - Regime ${regimeResult.regime}: ${debugStats.badRegime} robô(s)
+   - Duração [${durationRange[0]}, ${durationRange[1]}]s: ${debugStats.badDuration} robô(s)
 
 📊 Análise de Maturidade:
    Winning Direction: ${winningDirection}
@@ -831,7 +820,7 @@ export function useRobotCouncilV2(
   }, [
     dataVersion, isConnected, isCouncilAutopilotOn, strategyCouncil, robotPerformance,
     activeSymbol, operationsLog, currentRegime, user, toast, executeTrade, sellContract,
-    timePeriod, durationLimits, dailyBalance, dailyTarget, evolveTrigger, portfolioStats,
+    timePeriod, dailyBalance, dailyTarget, evolveTrigger, portfolioStats,
     consensusSensitivity, confidenceFactor, durationRange, takeProfitThreshold,
     stopLossThreshold, priceTicks, tickCandles, isMeritocracyOn, isDynamicConsensusOn
   ]);
@@ -849,3 +838,4 @@ export function useRobotCouncilV2(
     tradeDecisionLog, systemMetrics,
   };
 }
+```
