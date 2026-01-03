@@ -16,7 +16,6 @@ import { AIAnalysisInterface } from "@/features/trading/components/deriv-trader/
 import { riseFallSchema, type RiseFallFormValues } from "@/features/trading/components/deriv-trader/deriv-trader-interface.types";
 import { CouncilAutopilotInterfaceV2 } from "@/features/trading/components/deriv-trader/council-autopilot-interface-v2";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
-import { useTradeAnalysis } from "@/features/trading/hooks/use-trade-analysis";
 import { useRobotCouncilV2 } from "@/features/trading/hooks/use-robot-council-v2";
 import { SystemStatusSummary } from "@/features/trading/components/deriv-trader/system-status-summary";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -126,7 +125,6 @@ const MainDashboard = ({ robotCouncil }: { robotCouncil: ReturnType<typeof useRo
 
 const SidePanel = ({ robotCouncil }: { robotCouncil: ReturnType<typeof useRobotCouncilV2> }) => {
     const { activeSymbol, operationsLog } = useDerivApi();
-    const tradeAnalysis = useTradeAnalysis(activeSymbol, operationsLog);
 
     return (
         <div className="space-y-6">

@@ -17,7 +17,6 @@ import { AIAnalysisInterface } from "@/features/trading/components/deriv-trader/
 import { riseFallSchema, type RiseFallFormValues } from "@/lib/types";
 import { CouncilAutopilotInterface } from "@/features/trading/components/deriv-trader/council-autopilot-interface";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
-import { useTradeAnalysis } from "@/features/trading/hooks/use-trade-analysis";
 import { useRobotCouncil } from "@/features/trading/hooks/use-robot-council";
 import { SystemStatusSummary } from "@/features/trading/components/deriv-trader/system-status-summary";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -42,8 +41,6 @@ function DerivTraderCore({ activeSymbol, robotCouncil }: { activeSymbol: string 
     tradeAnnotations,
   } = useDerivApi();
   
-  const tradeAnalysis = useTradeAnalysis(activeSymbol, operationsLog);
-
   const [activeTab, setActiveTab] = useState("log");
 
   useEffect(() => {
@@ -132,7 +129,7 @@ function DerivTraderCore({ activeSymbol, robotCouncil }: { activeSymbol: string 
                             <EvolutionLab history={robotCouncil.evolutionHistory} />
                         </TabsContent>
                          <TabsContent value="analysis" className="mt-4">
-                             <AIAnalysisInterface analyzeSessionPerformance={tradeAnalysis.analyzeSessionPerformance} />
+                             <AIAnalysisInterface symbol={activeSymbol} />
                         </TabsContent>
                     </Tabs>
                 </div>
@@ -189,7 +186,7 @@ function DerivTraderCore({ activeSymbol, robotCouncil }: { activeSymbol: string 
 
                  <TabsContent value="log" className="mt-4 space-y-6">
                     <OperationsLog operations={operationsLog} />
-                    <AIAnalysisInterface analyzeSessionPerformance={tradeAnalysis.analyzeSessionPerformance} />
+                    <AIAnalysisInterface symbol={activeSymbol} />
                 </TabsContent>
            </Tabs>
        </div>
