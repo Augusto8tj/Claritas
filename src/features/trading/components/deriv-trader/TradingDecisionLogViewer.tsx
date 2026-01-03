@@ -17,19 +17,34 @@ import {
 } from '@/components/ui/accordion';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Badge } from '@/components/ui/badge';
-import { CheckCircle, XCircle, Bot, Archive, TrendingUp, TrendingDown, HelpCircle, Brain, Activity, CircleDot, Sigma, FilePieChart, Shield, Target, Trophy } from 'lucide-react';
+import { CheckCircle, XCircle, Bot, Archive, TrendingUp, TrendingDown, HelpCircle, Brain, Activity, CircleDot, Sigma, FilePieChart, Shield, Target, Trophy, Trash2, Loader2 } from 'lucide-react';
 import type { TradeDecisionLog } from '@/lib/types';
 import { cn } from '@/lib/utils';
 import { Separator } from '@/components/ui/separator';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 
 interface TradingDecisionLogViewerProps {
   logs: TradeDecisionLog[];
+  onDeleteLog: (logId: string) => void;
+  deletingLogId: string | null;
 }
 
 export const TradingDecisionLogViewer: React.FC<TradingDecisionLogViewerProps> = ({
   logs,
+  onDeleteLog,
+  deletingLogId,
 }) => {
   const { toast } = useToast();
 
@@ -113,7 +128,7 @@ export const TradingDecisionLogViewer: React.FC<TradingDecisionLogViewerProps> =
         {logs.length === 0 ? (
           <div className="flex flex-col items-center justify-center text-center text-muted-foreground p-8 border rounded-md bg-muted/50">
             <Archive className="h-10 w-10 mb-4" />
-            <p className="font-semibold">Nenhuma decisão encontrada</p>
+            <p className="font-semibold">Nenhum registo de decisão encontrado</p>
             <p className="text-xs">Ajuste os filtros ou aguarde novas operações para ver os logs de auditoria.</p>
           </div>
         ) : (
@@ -121,22 +136,46 @@ export const TradingDecisionLogViewer: React.FC<TradingDecisionLogViewerProps> =
             <Accordion type="single" collapsible className="w-full" defaultValue="item-0">
               {logs.map((log, index) => (
                 <AccordionItem value={`item-${index}`} key={log.id}>
-                  <AccordionTrigger>
-                    <div className="flex items-center justify-between w-full text-sm">
-                      <div className="flex items-center gap-2">
-                        {log.result === 'won' && <CheckCircle className="h-4 w-4 text-green-600" />}
-                        {log.result === 'lost' && <XCircle className="h-4 w-4 text-destructive" />}
-                        {log.result === 'pending' && <Bot className="h-4 w-4 text-blue-500 animate-pulse" />}
-                        <span className="font-semibold">{log.tradeParams.direction}</span>
-                        <span className="text-muted-foreground text-xs">{new Date(log.timestamp).toLocaleTimeString()}</span>
-                      </div>
-                      <Badge variant={log.result === 'won' ? 'default' : log.result === 'lost' ? 'destructive' : 'secondary'}
-                        className={cn(log.result === 'won' && 'bg-green-600/20 text-green-800 border-green-600/30')}
-                      >
-                         {log.pnl !== undefined && log.pnl !== null ? `${log.pnl > 0 ? '+' : ''}${log.pnl.toFixed(2)} USD` : 'Pendente'}
-                      </Badge>
-                    </div>
-                  </AccordionTrigger>
+                  <div className="flex items-center group">
+                      <AccordionTrigger className="flex-1">
+                        <div className="flex items-center justify-between w-full text-sm">
+                          <div className="flex items-center gap-2">
+                            {log.result === 'won' && <CheckCircle className="h-4 w-4 text-green-600" />}
+                            {log.result === 'lost' && <XCircle className="h-4 w-4 text-destructive" />}
+                            {log.result === 'pending' && <Bot className="h-4 w-4 text-blue-500 animate-pulse" />}
+                            <span className="font-semibold">{log.tradeParams.direction}</span>
+                            <span className="text-muted-foreground text-xs">{new Date(log.timestamp).toLocaleTimeString()}</span>
+                          </div>
+                          <Badge variant={log.result === 'won' ? 'default' : log.result === 'lost' ? 'destructive' : 'secondary'}
+                            className={cn(log.result === 'won' && 'bg-green-600/20 text-green-800 border-green-600/30')}
+                          >
+                            {log.pnl !== undefined && log.pnl !== null ? `${log.pnl > 0 ? '+' : ''}${log.pnl.toFixed(2)} USD` : 'Pendente'}
+                          </Badge>
+                        </div>
+                      </AccordionTrigger>
+
+                      <AlertDialog>
+                          <AlertDialogTrigger asChild>
+                            <Button variant="ghost" size="icon" className="h-8 w-8 ml-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                              {deletingLogId === log.id ? <Loader2 className="h-4 w-4 animate-spin"/> : <Trash2 className="h-4 w-4 text-destructive"/>}
+                            </Button>
+                          </AlertDialogTrigger>
+                          <AlertDialogContent>
+                              <AlertDialogHeader>
+                                  <AlertDialogTitle>Apagar este registo?</AlertDialogTitle>
+                                  <AlertDialogDescription>
+                                      Esta ação não pode ser desfeita. O registo de auditoria para a operação de <strong>{log.tradeParams.direction} em {log.asset}</strong> será permanentemente apagado.
+                                  </AlertDialogDescription>
+                              </AlertDialogHeader>
+                              <AlertDialogFooter>
+                                  <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                                  <AlertDialogAction onClick={() => onDeleteLog(log.id)} className="bg-destructive hover:bg-destructive/90">
+                                      Apagar Registo
+                                  </AlertDialogAction>
+                              </AlertDialogFooter>
+                          </AlertDialogContent>
+                      </AlertDialog>
+                  </div>
                   <AccordionContent>
                     <div className="space-y-4 text-xs p-2 bg-muted/50 rounded-md">
                         <div className='grid grid-cols-2 lg:grid-cols-4 gap-2 text-center'>

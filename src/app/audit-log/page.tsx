@@ -1,7 +1,7 @@
 // /src/app/audit-log/page.tsx
 'use client';
 
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, Fragment } from 'react';
 import { useAuth } from '@/features/auth/hooks/use-auth';
 import { getTradeDecisionLogs } from '@/services/financial-data-service';
 import { TradingDecisionLogViewer } from '@/features/trading/components/deriv-trader/TradingDecisionLogViewer';
@@ -10,7 +10,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from '@/components/ui/badge';
-import { CheckCircle, XCircle, Bot, Archive, TrendingUp, TrendingDown, HelpCircle, Brain, Activity, CircleDot, Sigma, FilePieChart, Shield, Target, Trophy, Filter, Trash2, Loader2 } from 'lucide-react';
+import { CheckCircle, XCircle, Bot, Archive, Filter, Trash2, Loader2, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Separator } from '@/components/ui/separator';
 import { Button } from '@/components/ui/button';
@@ -30,7 +30,7 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
-import { deleteAllDecisionLogs } from '@/app/actions/audit-log-actions';
+import { deleteAllDecisionLogs, deleteDecisionLog } from '@/app/actions/audit-log-actions';
 
 function AuditLogSkeleton() {
     return (
@@ -53,7 +53,8 @@ export default function AuditLogPage() {
   const { toast } = useToast();
   const [logs, setLogs] = useState<TradeDecisionLog[]>([]);
   const [loading, setLoading] = useState(true);
-  const [isDeleting, setIsDeleting] = useState(false);
+  const [isDeletingAll, setIsDeletingAll] = useState(false);
+  const [deletingLogId, setDeletingLogId] = useState<string | null>(null);
 
   // Estados dos Filtros
   const [dateRange, setDateRange] = useState<DateRange | undefined>(undefined);
@@ -96,15 +97,10 @@ export default function AuditLogPage() {
       return dateMatch && assetMatch && resultMatch;
     });
   }, [logs, dateRange, assetFilter, resultFilter]);
-  
-  const uniqueAssets = useMemo(() => {
-    const assets = new Set(logs.map(log => log.asset));
-    return Array.from(assets);
-  }, [logs]);
 
   const handleDeleteAll = async () => {
     if (!user) return;
-    setIsDeleting(true);
+    setIsDeletingAll(true);
     const result = await deleteAllDecisionLogs(user.uid);
     if (result.success) {
       toast({ title: "Histórico Limpo!", description: "Todos os registos de auditoria foram apagados." });
@@ -112,7 +108,20 @@ export default function AuditLogPage() {
     } else {
       toast({ title: "Erro", description: result.error, variant: "destructive" });
     }
-    setIsDeleting(false);
+    setIsDeletingAll(false);
+  };
+  
+  const handleDeleteSingle = async (logId: string) => {
+    if (!user) return;
+    setDeletingLogId(logId);
+    const result = await deleteDecisionLog(user.uid, logId);
+    if (result.success) {
+      toast({ title: "Registo Apagado", description: "O log de auditoria foi removido." });
+      setLogs(prev => prev.filter(log => log.id !== logId));
+    } else {
+      toast({ title: "Erro", description: result.error, variant: "destructive" });
+    }
+    setDeletingLogId(null);
   };
 
 
@@ -156,20 +165,20 @@ export default function AuditLogPage() {
                 <AlertDialogTrigger asChild>
                     <Button variant="destructive" className="w-full">
                         <Trash2 className="mr-2 h-4 w-4" />
-                        Limpar Histórico
+                        Limpar Histórico Completo
                     </Button>
                 </AlertDialogTrigger>
                 <AlertDialogContent>
                     <AlertDialogHeader>
                         <AlertDialogTitle>Tem a certeza absoluta?</AlertDialogTitle>
                         <AlertDialogDescription>
-                            Esta ação não pode ser desfeita. Isto irá apagar permanentemente todos os logs de auditoria da sua conta.
+                            Esta ação não pode ser desfeita. Isto irá apagar permanentemente TODOS os logs de auditoria da sua conta.
                         </AlertDialogDescription>
                     </AlertDialogHeader>
                     <AlertDialogFooter>
                         <AlertDialogCancel>Cancelar</AlertDialogCancel>
-                        <AlertDialogAction onClick={handleDeleteAll} disabled={isDeleting}>
-                          {isDeleting ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : null}
+                        <AlertDialogAction onClick={handleDeleteAll} disabled={isDeletingAll}>
+                          {isDeletingAll ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : null}
                           Apagar Tudo
                         </AlertDialogAction>
                     </AlertDialogFooter>
@@ -181,7 +190,7 @@ export default function AuditLogPage() {
       {loading ? (
         <AuditLogSkeleton />
       ) : (
-        <TradingDecisionLogViewer logs={filteredLogs} />
+        <TradingDecisionLogViewer logs={filteredLogs} onDeleteLog={handleDeleteSingle} deletingLogId={deletingLogId} />
       )}
     </div>
   );
