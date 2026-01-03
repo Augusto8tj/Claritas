@@ -10,16 +10,18 @@ import {
 } from "@/components/ui/card";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { cn } from "@/lib/utils";
-import { TrendingUp, TrendingDown, HelpCircle, ShieldCheck, ShieldX, Group, Eye } from "lucide-react";
+import { TrendingUp, TrendingDown, HelpCircle, ShieldCheck, ShieldX, Group, Eye, Sigma, Wallet } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
 
 interface AITradeSuggestionProps {
     councilDecision: 'RISE' | 'FALL' | 'HOLD';
     consensusSum: { rise: number; fall: number };
     consensusThreshold: number;
-    supervisionStatus: { status: 'inactive' | 'approved' | 'veto'; message: string, analysis?: string };
+    supervisionStatus: { status: 'inactive' | 'approved' | 'veto'; message: string };
     activeCommittee: string | null;
     isAutopilotOn: boolean;
+    bayesianProbability?: number; // Propriedade opcional para V2
+    kellyStake?: number; // Propriedade opcional para V2
 }
 
 const suggestionIcons = {
@@ -40,11 +42,13 @@ export function AITradeSuggestion({
     consensusThreshold,
     supervisionStatus,
     activeCommittee,
-    isAutopilotOn 
+    isAutopilotOn,
+    bayesianProbability,
+    kellyStake
 }: AITradeSuggestionProps) {
 
     // Adicionado guarda de segurança para evitar erro de renderização
-    if (!consensusSum) {
+    if (!consensusSum && bayesianProbability === undefined) {
         return (
              <Card>
                 <CardHeader>
@@ -65,9 +69,12 @@ export function AITradeSuggestion({
         )
     }
 
-    const totalConsensus = Math.max(consensusThreshold, consensusSum.rise + consensusSum.fall);
-    const risePercentage = totalConsensus > 0 ? (consensusSum.rise / totalConsensus) * 100 : 0;
-    const fallPercentage = totalConsensus > 0 ? (consensusSum.fall / totalConsensus) * 100 : 0;
+    const isV2 = bayesianProbability !== undefined;
+
+    const totalConsensus = isV2 ? 100 : Math.max(consensusThreshold, (consensusSum?.rise || 0) + (consensusSum?.fall || 0));
+    const risePercentage = isV2 ? (councilDecision === 'RISE' ? bayesianProbability * 100 : 0) : totalConsensus > 0 ? ((consensusSum?.rise || 0) / totalConsensus) * 100 : 0;
+    const fallPercentage = isV2 ? (councilDecision === 'FALL' ? bayesianProbability * 100 : 0) : totalConsensus > 0 ? ((consensusSum?.fall || 0) / totalConsensus) * 100 : 0;
+
 
     if (!isAutopilotOn) {
         return (
@@ -95,10 +102,10 @@ export function AITradeSuggestion({
       <CardHeader>
         <CardTitle className="font-headline flex items-center gap-2">
             <Eye className="h-5 w-5 text-primary" />
-            Consenso da Mesa Operacional
+            Consenso da Mesa {isV2 && "V2.0"}
         </CardTitle>
         <CardDescription>
-          Análise em tempo real do conselho de 22 robôs-analistas.
+          Análise em tempo real do conselho de robôs-analistas.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -128,20 +135,31 @@ export function AITradeSuggestion({
                     <Progress value={risePercentage} className="h-3 rounded-l-full" indicatorClassName="bg-green-500 rounded-l-full" />
                     <Progress value={fallPercentage} className="h-3 rounded-r-full scale-x-[-1]" indicatorClassName="bg-red-500 rounded-r-full" />
                 </div>
-                <div className="text-center text-xs text-muted-foreground mt-1">
-                    Limiar de Consenso: {consensusThreshold}
-                </div>
+                {!isV2 && (
+                    <div className="text-center text-xs text-muted-foreground mt-1">
+                        Limiar de Consenso: {consensusThreshold}
+                    </div>
+                )}
             </div>
 
             <div className="text-sm border-t pt-3 space-y-2">
+                 {isV2 && bayesianProbability !== undefined && (
+                     <div className="flex items-center justify-between">
+                        <span className="font-semibold flex items-center gap-2"><Sigma className="h-4 w-4"/>Probabilidade Bayesiana:</span>
+                        <span className="font-mono font-bold text-primary">{(bayesianProbability * 100).toFixed(1)}%</span>
+                    </div>
+                 )}
+                 {isV2 && kellyStake !== undefined && (
+                     <div className="flex items-center justify-between">
+                        <span className="font-semibold flex items-center gap-2"><Wallet className="h-4 w-4"/>Stake (Kelly Criterion):</span>
+                        <span className="font-mono font-bold text-primary">${kellyStake.toFixed(2)}</span>
+                    </div>
+                 )}
                 <div className="flex items-center gap-2">
                     {supervisionIcons[supervisionStatus.status]}
                     <span className="font-semibold">Direção de Risco:</span>
                     <span className="text-muted-foreground">{supervisionStatus.message}</span>
                 </div>
-                 {supervisionStatus.analysis && (
-                     <p className="text-xs text-muted-foreground pl-6 italic">{supervisionStatus.analysis}</p>
-                 )}
                 <div className="flex items-center gap-2">
                     <Group className="h-4 w-4 text-muted-foreground"/>
                     <span className="font-semibold">Comité Ativo:</span>
@@ -149,7 +167,6 @@ export function AITradeSuggestion({
                 </div>
             </div>
         </div>
-        
       </CardContent>
     </Card>
   );

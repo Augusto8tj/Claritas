@@ -24,7 +24,6 @@ import { CouncilDashboardV2 } from '@/features/trading/components/deriv-trader/C
 import { TradingDeskV2 } from "@/features/trading/components/deriv-trader/trading-desk-v2";
 import { TradingDecisionLogViewer } from "@/features/trading/components/deriv-trader/TradingDecisionLogViewer";
 import { EvolutionLab } from "@/features/trading/components/deriv-trader/evolution-lab";
-import { AITradeSuggestion } from "@/features/trading/components/deriv-trader/ai-trade-suggestion";
 
 
 const Header = () => {
@@ -85,11 +84,14 @@ const DerivTraderV2Core = () => {
 
     return (
         <div className="space-y-6 mt-6">
-             {robotCouncil.dashboardData && (
-                <div className="animate-in fade-in slide-in-from-top-4 duration-500">
-                    <CouncilDashboardV2 data={robotCouncil.dashboardData} />
-                </div>
-            )}
+             <div className="animate-in fade-in slide-in-from-top-4 duration-500">
+                <CouncilDashboardV2 
+                    consensusDecision={robotCouncil.consensusDecision}
+                    supervisionStatus={{ status: 'approved', message: 'Cérebro V2.0 Ativo' }}
+                    activeCommittee={null} // Placeholder, a ser substituído se necessário
+                    isCouncilAutopilotOn={robotCouncil.isCouncilAutopilotOn}
+                />
+            </div>
             
             <Card>
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -118,14 +120,6 @@ const DerivTraderV2Core = () => {
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 <div className="space-y-6">
                     <DerivTraderInterfaceV2 symbol={activeSymbol || ""} />
-                     <AITradeSuggestion 
-                        councilDecision={robotCouncil.consensusDecision.direction}
-                        consensusSum={{rise: robotCouncil.consensusDecision.probability * 100, fall: (1 - robotCouncil.consensusDecision.probability) * 100}}
-                        consensusThreshold={robotCouncil.effectiveThreshold}
-                        supervisionStatus={{status: 'inactive', message: ''}}
-                        activeCommittee={""}
-                        isAutopilotOn={robotCouncil.isCouncilAutopilotOn}
-                     />
                 </div>
                 <CouncilAutopilotInterfaceV2 {...robotCouncil} />
             </div>
