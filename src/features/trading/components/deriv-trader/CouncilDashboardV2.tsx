@@ -61,6 +61,10 @@ export function CouncilDashboardV2({
         );
     }
     
+    // Calcula as porcentagens para a barra dupla
+    const risePercentage = consensusDecision.direction === 'RISE' ? consensusDecision.probability * 100 : 0;
+    const fallPercentage = consensusDecision.direction === 'FALL' ? consensusDecision.probability * 100 : 0;
+
   return (
     <Card>
       <CardHeader>
@@ -95,19 +99,19 @@ export function CouncilDashboardV2({
                     <span className="text-green-600">Confiança RISE</span>
                     <span className="text-red-600">Confiança FALL</span>
                 </div>
-                <div className="flex items-center gap-2">
-                    <Progress value={consensusDecision.direction === 'RISE' ? consensusDecision.probability * 100 : 0} className="h-3 rounded-l-full" indicatorClassName="bg-green-500 rounded-l-full" />
-                    <Progress value={consensusDecision.direction === 'FALL' ? consensusDecision.probability * 100 : 0} className="h-3 rounded-r-full scale-x-[-1]" indicatorClassName="bg-red-500 rounded-r-full" />
+                <div className="flex items-center gap-0.5">
+                    <Progress value={risePercentage} className="h-3 rounded-l-full rounded-r-none" indicatorClassName="bg-green-500 rounded-l-full" />
+                    <Progress value={fallPercentage} className="h-3 rounded-r-full rounded-l-none scale-x-[-1]" indicatorClassName="bg-red-500 rounded-r-full" />
                 </div>
             </div>
 
             <div className="text-sm border-t pt-3 space-y-2">
                 <div className="flex items-center justify-between">
-                    <span className="font-semibold flex items-center gap-2"><Sigma className="h-4 w-4"/>Probabilidade Bayesiana:</span>
+                    <span className="font-semibold flex items-center gap-2"><Sigma className="h-4 w-4"/>Prob. Bayesiana:</span>
                     <span className="font-mono font-bold text-primary">{(consensusDecision.probability * 100).toFixed(1)}%</span>
                 </div>
                  <div className="flex items-center justify-between">
-                    <span className="font-semibold flex items-center gap-2"><Wallet className="h-4 w-4"/>Stake (Kelly Criterion):</span>
+                    <span className="font-semibold flex items-center gap-2"><Wallet className="h-4 w-4"/>Stake (Kelly):</span>
                     <span className="font-mono font-bold text-primary">${consensusDecision.stake.toFixed(2)}</span>
                 </div>
                  <div className="flex items-center gap-2">

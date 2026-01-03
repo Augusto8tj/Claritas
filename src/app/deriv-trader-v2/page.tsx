@@ -22,8 +22,9 @@ import { SystemStatusSummary } from "@/features/trading/components/deriv-trader/
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { CouncilDashboardV2 } from '@/features/trading/components/deriv-trader/CouncilDashboardV2';
 import { TradingDeskV2 } from "@/features/trading/components/deriv-trader/trading-desk-v2";
-import { TradingDecisionLogViewer } from "@/features/trading/components/deriv-trader/TradingDecisionLogViewer";
 import { EvolutionLab } from "@/features/trading/components/deriv-trader/evolution-lab";
+import { AITradeSuggestion } from "@/features/trading/components/deriv-trader/ai-trade-suggestion";
+import { TradingDecisionLogViewer } from "@/features/trading/components/deriv-trader/TradingDecisionLogViewer";
 
 
 const Header = () => {
@@ -75,15 +76,17 @@ const DerivTraderV2Core = () => {
     const { activeSymbol, priceTicks, dataVersion, operationsLog, chartData, isChartLoading, chartError, chartType, setChartType, timePeriod, setTimePeriod, tradeAnnotations } = useDerivApi();
     const robotCouncil = useRobotCouncilV2(activeSymbol, priceTicks, dataVersion);
     const [activeTab, setActiveTab] = React.useState("desk");
-
+    
     // This is a placeholder for the delete log function
     const handleDeleteLog = (logId: string) => {
         console.log("Deleting log:", logId);
         // In a real implementation, you would call a server action here.
     };
 
+
     return (
         <div className="space-y-6 mt-6">
+            
             <Card>
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                     <div>
@@ -112,10 +115,10 @@ const DerivTraderV2Core = () => {
                 <div className="space-y-6">
                     <DerivTraderInterfaceV2 symbol={activeSymbol || ""} />
                      <div className="animate-in fade-in slide-in-from-top-4 duration-500">
-                        <CouncilDashboardV2 
+                        <CouncilDashboardV2
                             consensusDecision={robotCouncil.consensusDecision}
                             supervisionStatus={{ status: 'approved', message: 'Cérebro V2.0 Ativo' }}
-                            activeCommittee={null} // Placeholder, a ser substituído se necessário
+                            activeCommittee={null}
                             isCouncilAutopilotOn={robotCouncil.isCouncilAutopilotOn}
                         />
                     </div>
