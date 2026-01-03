@@ -468,12 +468,14 @@ export function useRobotCouncilV2(
         const perf = performanceMap.get(robot.id);
         const technicalVote = calculateTechnicalVote(robot, currentIndicators, validCandles);
         
-        // CORREÇÃO #1: Registro Incondicional na Arena (Funil Largo)
-        const durationInSeconds = durationToSeconds(technicalVote.optimalDuration, technicalVote.optimalDurationUnit);
+        // --- APRENDIZAGEM (FUNIL LARGO) ---
+        // Qualquer voto válido entra na Arena para gerar estatísticas.
         if (technicalVote.vote !== 'HOLD') {
             const lastTrade = virtualTradesRef.current.find(t => t.robotId === robot.id);
+            // CORREÇÃO #1 e #5: Só cria um novo trade virtual se o anterior JÁ EXPIROU.
             if (!lastTrade || currentTick.epoch >= lastTrade.exitEpoch) {
-                 virtualTradesRef.current.push({ 
+                const durationInSeconds = durationToSeconds(technicalVote.optimalDuration, technicalVote.optimalDurationUnit);
+                virtualTradesRef.current.push({ 
                     id: `vt_${Date.now()}_${tradeCounterRef.current++}`, robotId: robot.id, vote: technicalVote.vote, 
                     entryPrice: currentTick.price, entryEpoch: currentTick.epoch, exitEpoch: currentTick.epoch + durationInSeconds, 
                     regime: regimeResult.regime, microstructure: microFeatures, stake: VIRTUAL_STAKE 
@@ -481,24 +483,25 @@ export function useRobotCouncilV2(
             }
         }
         
-        // CORREÇÃO #2: Filtros para o Consenso Real (Funil Estreito)
-        let isValidForConsensus = true;
-        let rejectionReason = '';
-
+        // --- CONSENSO REAL (FUNIL ESTREITO) ---
+        // Apenas votos que passam pelos filtros contribuem para uma trade real.
+        const durationInSeconds = durationToSeconds(technicalVote.optimalDuration, technicalVote.optimalDurationUnit);
         const hasHistory = perf && (perf.wins + perf.losses) > 10;
         const isRegimeEffective = !hasHistory || !perf?.effectiveRegimes?.length || perf.effectiveRegimes.includes(regimeResult.regime);
         const isDurationInRange = durationInSeconds >= durationRange[0] && durationInSeconds <= durationRange[1];
 
+        let rejectionReason = '';
         if (technicalVote.vote === 'HOLD') {
-            isValidForConsensus = false;
             rejectionReason = 'HOLD';
         } else if (technicalVote.confidence < (confidenceFactor / 100)) {
-            isValidForConsensus = false; rejectionReason = `Confiança Baixa`;
+            rejectionReason = 'Confiança Baixa';
         } else if (!isRegimeEffective) {
-            isValidForConsensus = false; rejectionReason = `Regime Ineficaz`;
+            rejectionReason = `Regime Ineficaz`;
         } else if (!isDurationInRange) {
-            isValidForConsensus = false; rejectionReason = `Duração Inválida`;
+            rejectionReason = `Duração Inválida`;
         }
+
+        const isValidForConsensus = rejectionReason === '';
         
         let prior = (perf && (perf.wins + perf.losses) >= MIN_TRADES_FOR_STATS) ? perf.winRate / 100 : 0.5;
         let likelihood = technicalVote.confidence;
@@ -563,14 +566,18 @@ export function useRobotCouncilV2(
       const consensusReached = Math.max(riseSum, fallSum) >= effectiveThresholdRaw;
       const congruenceRatio = totalWeight > 0 ? Math.max(riseSum, fallSum) / totalWeight : 0;
       
+      // Validação Estatística
       const totalSystemTrades = robotPerformance.reduce((sum, p) => sum + p.wins + p.losses, 0);
       const isSystemWarmingUp = totalSystemTrades < 50;
+      
+      // CORREÇÃO #BUG: A fase de aquecimento NÃO deve permitir trades.
+      // A confiança estatística SÓ é alcançada se houver robôs maduros.
       const matureVoters = Object.values(newBayesianVotes).filter(v => {
           const perf = robotPerformance.find(p => p.id === v.strategy?.id);
-          return v.weight > 0 && perf && (perf.wins + perf.losses) > 30;
+          return v.weight > 0 && perf && (perf.wins + perf.losses) > MIN_TRADES_FOR_STATS;
       });
       const matureVotersRatio = activeRobotsCount > 0 ? matureVoters.length / activeRobotsCount : 0;
-      const hasStatisticalConfidence = isSystemWarmingUp || matureVotersRatio >= 0.4 || matureVoters.length >= 3;
+      const hasStatisticalConfidence = matureVotersRatio >= 0.4 || matureVoters.length >= 3;
 
       // 7. CÁLCULO DE STAKE (KELLY CRITERION + VOLATILITY SCALING)
       let kellyStake = calculateKellyStake(dailyBalance - portfolioStats.totalExposure, consensusProbability, 0.95);
@@ -615,7 +622,7 @@ export function useRobotCouncilV2(
       // 8. O "GLEIPNIR LOCK" (Validação Final de Segurança)
       const isSafeToTrade = 
         consensusReached &&
-        hasStatisticalConfidence &&
+        hasStatisticalConfidence && // Correção Crítica Aplicada Aqui
         consensusDirection !== 'HOLD' &&
         entropy < MAX_ENTROPY_THRESHOLD &&
         congruenceRatio > MIN_CONGRUENCE_RATIO &&
