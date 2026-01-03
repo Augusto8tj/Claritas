@@ -72,6 +72,7 @@ const financialChatbotInsightsFlow = ai.defineFlow(
   async (input) => {
     const { userId, ...promptData } = input;
 
+    // A CORREÇÃO: Passar o userId para o contexto de execução do prompt.
     const { output } = await prompt(promptData, { data: { userId } });
 
     if (!output) {
