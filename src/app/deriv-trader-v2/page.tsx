@@ -23,8 +23,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { CouncilDashboardV2 } from '@/features/trading/components/deriv-trader/CouncilDashboardV2';
 import { TradingDeskV2 } from "@/features/trading/components/deriv-trader/trading-desk-v2";
 import { EvolutionLab } from "@/features/trading/components/deriv-trader/evolution-lab";
-import { AITradeSuggestion } from "@/features/trading/components/deriv-trader/ai-trade-suggestion";
 import { TradingDecisionLogViewer } from "@/features/trading/components/deriv-trader/TradingDecisionLogViewer";
+import { DebugCouncilView } from "@/features/trading/components/deriv-trader/DebugCouncilView";
 
 
 const Header = () => {
@@ -118,7 +118,14 @@ const DerivTraderV2Core = () => {
                         <CouncilDashboardV2
                             consensusDecision={robotCouncil.consensusDecision}
                             supervisionStatus={{ status: 'approved', message: 'Cérebro V2.0 Ativo' }}
-                            activeCommittee={null}
+                            activeCommittee={robotCouncil.currentRegime.regime}
+                            isCouncilAutopilotOn={robotCouncil.isCouncilAutopilotOn}
+                        />
+                    </div>
+                     <div className="animate-in fade-in slide-in-from-top-4 duration-500">
+                        <DebugCouncilView 
+                            votes={robotCouncil.bayesianVotes}
+                            regime={robotCouncil.currentRegime}
                             isCouncilAutopilotOn={robotCouncil.isCouncilAutopilotOn}
                         />
                     </div>

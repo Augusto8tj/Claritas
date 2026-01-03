@@ -273,6 +273,7 @@ export function useRobotCouncilV2(
   const [isFetchingCouncil, setIsFetchingCouncil] = useState(false);
   const [indicators, setIndicators] = useState<Indicators | null>(null);
   const [tradeDecisionLog, setTradeDecisionLog] = useState<TradeDecisionLog[]>([]);
+  const [bayesianVotes, setBayesianVotes] = useState<CouncilVotes>({});
 
 
   // ────────────────────────────────────────────────────────────────
@@ -692,7 +693,7 @@ export function useRobotCouncilV2(
           }
         }
 
-        const bayesianVotes: Record<string, BayesianVote> = {};
+        const newBayesianVotes: CouncilVotes = {};
         let riseSum = 0;
         let fallSum = 0;
         let totalWeight = 0;
@@ -705,7 +706,7 @@ export function useRobotCouncilV2(
           const technicalVote = calculateTechnicalVote(robot, currentIndicators, tickCandles);
           
           if (technicalVote.vote === 'HOLD' || (technicalVote.confidence * 100) < confidenceFactor) {
-            bayesianVotes[robot.id] = {
+            newBayesianVotes[robot.id] = {
               ...technicalVote,
               rawConfidence: technicalVote.confidence * 100, 
               calibratedConfidence: 0, 
@@ -758,7 +759,7 @@ export function useRobotCouncilV2(
             strategy: robot,
             sharpeRatio: perf?.sharpeRatio ?? 0,
           };
-          bayesianVotes[robot.id] = finalVote;
+          newBayesianVotes[robot.id] = finalVote;
           
           const voteWeight = calibratedConf * weight;
 
@@ -768,6 +769,7 @@ export function useRobotCouncilV2(
           weightedDurationSum += durationInSeconds * voteWeight;
           totalWeight += voteWeight;
         });
+        setBayesianVotes(newBayesianVotes);
         setCouncilConfidence(totalWeight);
 
         let consensusDirection: 'RISE' | 'FALL' | 'HOLD' = 'HOLD';
@@ -807,7 +809,7 @@ export function useRobotCouncilV2(
         const consensusReached = Math.max(riseSum, fallSum) >= calculatedEffectiveThreshold;
 
         const winningDirection = riseSum > fallSum ? 'RISE' : 'FALL';
-        const winningVoters = Object.values(bayesianVotes).filter(v => v.vote === winningDirection);
+        const winningVoters = Object.values(newBayesianVotes).filter(v => v.vote === winningDirection);
         const matureVoters = winningVoters.filter(voter => {
             const perf = Object.values(robotPerformance).find(p => p.id === (voter.strategy?.id));
             return perf && (perf.wins + perf.losses) > MIN_TRADES_FOR_STATS;
@@ -926,7 +928,7 @@ export function useRobotCouncilV2(
             bayesianProbability: consensusProbability,
             kellyStake: kellyStake,
             activeRobots: activeRobotsCount,
-            votes: bayesianVotes,
+            votes: newBayesianVotes,
           },
           result: 'pending',
           pnl: 0,
@@ -966,7 +968,7 @@ export function useRobotCouncilV2(
   return {
     isCouncilAutopilotOn, setIsCouncilAutopilotOn, fetchStrategyCouncil, dissolveCouncil,
     isFetchingCouncil, strategyCouncil, robotPerformance, evolutionHistory, indicators,
-    currentRegime, microstructure, consensusDecision, portfolioStats,
+    currentRegime, microstructure, consensusDecision, portfolioStats, bayesianVotes,
     dailyBalance, setDailyBalance, dailyTarget, setDailyTarget, consensusSensitivity,
     setConsensusSensitivity, confidenceFactor, setConfidenceFactor, durationRange,
     setDurationRange, takeProfitThreshold, setTakeProfitThreshold, stopLossThreshold,
