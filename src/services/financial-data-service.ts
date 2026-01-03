@@ -210,7 +210,27 @@ export async function getFinancialInsights(userId: string): Promise<string[]> {
     if (!userId) {
         throw new Error("User ID is required.");
     }
+
+    const cacheKey = `financialInsights_${userId}`;
+    
+    // 1. Tentar ler do cache
     try {
+        const cachedItem = localStorage.getItem(cacheKey);
+        if (cachedItem) {
+            const { insights, timestamp } = JSON.parse(cachedItem);
+            const isCacheValid = (Date.now() - timestamp) < 24 * 60 * 60 * 1000; // 24 horas
+            if (isCacheValid) {
+                console.log("[Cache] Usando insights de IA em cache.");
+                return insights;
+            }
+        }
+    } catch (e) {
+        console.warn("[Cache] Não foi possível ler o cache de insights.", e);
+    }
+
+    // 2. Se o cache for inválido ou não existir, buscar novos insights
+    try {
+        console.log("[API] Cache de insights inválido ou inexistente. A buscar novos insights da IA.");
         const response = await getChatbotInsightsResponse({
             query: "Me dê 3 insights práticos sobre minhas finanças com base em meu resumo financeiro, cada um em uma frase curta.",
             history: [],
@@ -218,7 +238,20 @@ export async function getFinancialInsights(userId: string): Promise<string[]> {
         });
 
         if (response.success) {
-            return response.success.split('\n').filter(line => line.trim() !== '' && !line.startsWith("Erro:"));
+            const newInsights = response.success.split('\n').filter(line => line.trim() !== '' && !line.startsWith("Erro:"));
+            
+            // 3. Salvar os novos insights no cache com um timestamp
+            try {
+                const cacheItem = {
+                    insights: newInsights,
+                    timestamp: Date.now(),
+                };
+                localStorage.setItem(cacheKey, JSON.stringify(cacheItem));
+            } catch(e) {
+                console.warn("[Cache] Não foi possível salvar os novos insights no cache.", e);
+            }
+
+            return newInsights;
         }
         
         console.error("AI Insight Error:", response.error);
