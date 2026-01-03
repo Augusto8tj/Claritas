@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import React from "react";
@@ -19,7 +20,6 @@ import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { useRobotCouncilV2 } from "@/features/trading/hooks/use-robot-council-v2";
 import { SystemStatusSummary } from "@/features/trading/components/deriv-trader/system-status-summary";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { AITradeSuggestion } from "@/features/trading/components/deriv-trader/ai-trade-suggestion";
 import { CouncilDashboard } from '@/features/trading/components/deriv-trader/CouncilDashboard';
 import { TradingDeskV2 } from "@/features/trading/components/deriv-trader/trading-desk-v2";
 import { TradingDecisionLogViewer } from "@/features/trading/components/deriv-trader/TradingDecisionLogViewer";
@@ -75,6 +75,12 @@ const DerivTraderV2Core = () => {
     const { activeSymbol, priceTicks, dataVersion, operationsLog, chartData, isChartLoading, chartError, chartType, setChartType, timePeriod, setTimePeriod, tradeAnnotations } = useDerivApi();
     const robotCouncil = useRobotCouncilV2(activeSymbol, priceTicks, dataVersion);
     const [activeTab, setActiveTab] = React.useState("desk");
+
+    // This is a placeholder for the delete log function
+    const handleDeleteLog = (logId: string) => {
+        console.log("Deleting log:", logId);
+        // In a real implementation, you would call a server action here.
+    };
 
     return (
         <div className="space-y-6 mt-6">
@@ -134,7 +140,7 @@ const DerivTraderV2Core = () => {
                     <EvolutionLab history={robotCouncil.evolutionHistory} />
                 </TabsContent>
                 <TabsContent value="audit" className="mt-4">
-                   <TradingDecisionLogViewer logs={robotCouncil.tradeDecisionLog} />
+                   <TradingDecisionLogViewer logs={robotCouncil.tradeDecisionLog} onDeleteLog={handleDeleteLog} deletingLogId={null} />
                 </TabsContent>
             </Tabs>
         </div>

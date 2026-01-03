@@ -107,7 +107,7 @@ function DerivTraderCore({ activeSymbol, robotCouncil }: { activeSymbol: string 
                             <TabsTrigger value="log">Registo de Operações</TabsTrigger>
                             <TabsTrigger value="desk">Arena Virtual</TabsTrigger>
                             <TabsTrigger value="fame">Hall da Fama</TabsTrigger>
-                            <TabsTrigger value="analysis">Análise com IA</TabsTrigger>
+                            <TabsTrigger value="evolution">Evolução</TabsTrigger>
                         </TabsList>
                         <TabsContent value="log" className="mt-4">
                             <OperationsLog operations={operationsLog} />
@@ -124,8 +124,8 @@ function DerivTraderCore({ activeSymbol, robotCouncil }: { activeSymbol: string 
                         <TabsContent value="fame" className="mt-4">
                             <HallOfFame />
                         </TabsContent>
-                         <TabsContent value="analysis" className="mt-4">
-                             <AIAnalysisInterface symbol={activeSymbol} />
+                         <TabsContent value="evolution" className="mt-4">
+                            <EvolutionLab history={robotCouncil.evolutionHistory} />
                         </TabsContent>
                     </Tabs>
                 </div>
