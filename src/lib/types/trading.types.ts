@@ -18,6 +18,9 @@ export interface MicrostructureFeatures {
   yangZhangVolatility: number;
   gapRatio: number;
   meanReversion: number;
+  isSpike: boolean;
+  pressure: 'buy' | 'sell' | 'neutral';
+  analysis: string;
 }
 
 export const OperationSchema = z.object({
@@ -46,6 +49,7 @@ export const BayesianVoteSchema = z.object({
     optimalDurationUnit: z.enum(['t', 's', 'm', 'h', 'd']),
     suggestedStake: z.number(),
     regime: z.string(), // Mantido como string para flexibilidade
+    sharpeRatio: z.number().optional().describe("O Sharpe Ratio do robô no momento do voto."),
 });
 export type BayesianVote = z.infer<typeof BayesianVoteSchema>;
 
@@ -244,6 +248,10 @@ export const TradeDecisionLogSchema = z.object({
     regimeConfidence: z.number(),
     microstructure: z.custom<MicrostructureFeatures | null>(),
     indicators: IndicatorsSchema.nullable(),
+    supervisionReason: z.string().optional(),
+    payout: z.number().optional(),
+    entryPrice: z.number().optional(),
+    exitPrice: z.number().optional(),
   }),
   consensus: z.object({
     bayesianProbability: z.number(),

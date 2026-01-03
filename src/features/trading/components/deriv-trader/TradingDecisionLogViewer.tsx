@@ -17,7 +17,7 @@ import {
 } from '@/components/ui/accordion';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Badge } from '@/components/ui/badge';
-import { CheckCircle, XCircle, Bot, Archive, TrendingUp, TrendingDown, HelpCircle, Brain, Activity, CircleDot, Sigma, FilePieChart } from 'lucide-react';
+import { CheckCircle, XCircle, Bot, Archive, TrendingUp, TrendingDown, HelpCircle, Brain, Activity, CircleDot, Sigma, FilePieChart, Shield, Target } from 'lucide-react';
 import type { TradeDecisionLog } from '@/lib/types';
 import { cn } from '@/lib/utils';
 import { Separator } from '@/components/ui/separator';
@@ -26,14 +26,6 @@ import { useToast } from '@/hooks/use-toast';
 
 interface TradingDecisionLogViewerProps {
   logs: TradeDecisionLog[];
-}
-
-const getVoteIcon = (vote: string) => {
-    switch (vote) {
-        case 'RISE': return <TrendingUp className="h-4 w-4 text-green-500" />;
-        case 'FALL': return <TrendingDown className="h-4 w-4 text-red-500" />;
-        default: return <HelpCircle className="h-4 w-4 text-yellow-500" />;
-    }
 }
 
 export const TradingDecisionLogViewer: React.FC<TradingDecisionLogViewerProps> = ({
@@ -51,36 +43,38 @@ export const TradingDecisionLogViewer: React.FC<TradingDecisionLogViewerProps> =
         return;
     }
 
-    // Define o cabeçalho do CSV
     const headers = [
-        "ID", "Timestamp", "Asset", "Time Period", "Direction", "Stake", 
-        "Duration", "Duration Unit", "Result", "PnL", "Market Regime", 
-        "Regime Confidence", "Bayesian Probability", "Kelly Stake", "Active Robots"
+        "ID", "Timestamp", "Asset", "Time Period", "Direction", "Stake", "Duration", 
+        "Duration Unit", "Result", "PnL", "Entry Price", "Exit Price", "Payout",
+        "Market Regime", "Regime Confidence", "Supervision Reason",
+        "Bayesian Probability", "Kelly Stake", "Active Robots",
     ];
     
-    // Mapeia os logs para linhas do CSV
     const rows = logs.map(log => [
         log.id,
         log.timestamp,
         log.asset,
         log.timePeriod,
         log.tradeParams.direction,
-        log.tradeParams.stake,
+        log.tradeParams.stake.toFixed(2),
         log.tradeParams.duration,
         log.tradeParams.durationUnit,
         log.result,
         log.pnl?.toFixed(2) || '0.00',
-        log.context.marketRegime,
+        log.context.entryPrice?.toFixed(4) || 'N/A',
+        log.context.exitPrice?.toFixed(4) || 'N/A',
+        log.context.payout?.toFixed(2) || 'N/A',
+        log.context.marketRegime, 
         log.context.regimeConfidence.toFixed(4),
+        `"${log.context.supervisionReason?.replace(/"/g, '""') || 'N/A'}"`,
         log.consensus.bayesianProbability.toFixed(4),
         log.consensus.kellyStake.toFixed(2),
-        log.consensus.activeRobots
+        log.consensus.activeRobots,
     ].join(',')).join('\n');
 
     const csvContent = `${headers.join(',')}\n${rows}`;
     
-    // Cria o Blob e aciona o download
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const blob = new Blob([`\uFEFF${csvContent}`], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.setAttribute("href", url);
@@ -146,20 +140,40 @@ export const TradingDecisionLogViewer: React.FC<TradingDecisionLogViewerProps> =
                   </AccordionTrigger>
                   <AccordionContent>
                     <div className="space-y-4 text-xs p-2 bg-muted/50 rounded-md">
-                        <div className='grid grid-cols-2 gap-2 text-center'>
+                        <div className='grid grid-cols-2 lg:grid-cols-4 gap-2 text-center'>
                              <div className='p-2 bg-background rounded'>
                                 <p className='text-muted-foreground'>Prob. Bayesiana</p>
                                 <p className='font-bold text-base text-primary'>{(log.consensus.bayesianProbability * 100).toFixed(1)}%</p>
                             </div>
                              <div className='p-2 bg-background rounded'>
-                                <p className='text-muted-foreground'>Regime de Mercado</p>
+                                <p className='text-muted-foreground'>Regime Mercado</p>
                                 <p className='font-bold text-base'>{log.context.marketRegime}</p>
                             </div>
+                            <div className='p-2 bg-background rounded'>
+                                <p className='text-muted-foreground'>Preço Entrada</p>
+                                <p className='font-bold text-base'>{log.context.entryPrice?.toFixed(4) || 'N/A'}</p>
+                            </div>
+                             <div className='p-2 bg-background rounded'>
+                                <p className='text-muted-foreground'>Preço Saída</p>
+                                <p className='font-bold text-base'>{log.context.exitPrice?.toFixed(4) || 'N/A'}</p>
+                            </div>
                         </div>
-                        <p><strong>ID da Decisão:</strong> {log.id}</p>
-                        <p><strong>Ativo:</strong> {log.asset} ({log.timePeriod})</p>
-                        <p><strong>Stake (Kelly):</strong> ${log.consensus.kellyStake.toFixed(2)}</p>
-                        <p><strong>Duração:</strong> {log.tradeParams.duration} {log.tradeParams.durationUnit}</p>
+
+                        <div className="p-2 bg-background rounded">
+                             <p className='font-semibold flex items-center gap-2 mb-1'><Shield className='h-4 w-4'/>Razão da Supervisão</p>
+                             <p className='text-muted-foreground italic text-[11px]'>{log.context.supervisionReason || 'N/A'}</p>
+                        </div>
+                        
+                        <div className='grid grid-cols-2 gap-2 text-center'>
+                             <div className='p-2 bg-background rounded'>
+                                <p className='text-muted-foreground'>Stake (Kelly)</p>
+                                <p className='font-bold text-base'>${log.consensus.kellyStake.toFixed(2)}</p>
+                            </div>
+                             <div className='p-2 bg-background rounded'>
+                                <p className='text-muted-foreground'>Payout Esperado</p>
+                                <p className='font-bold text-base'>${log.context.payout?.toFixed(2) || 'N/A'}</p>
+                            </div>
+                        </div>
 
                         <Separator />
                         
@@ -178,7 +192,7 @@ export const TradingDecisionLogViewer: React.FC<TradingDecisionLogViewerProps> =
                                     <div className='grid grid-cols-3 gap-1 pl-5 text-[11px] mt-1'>
                                         <span>Conf: {(voteData.rawConfidence).toFixed(0)}</span>
                                         <span>Bayes: {(voteData.bayesianProbability * 100).toFixed(0)}%</span>
-                                        <span>Peso: {voteData.weight.toFixed(2)}x</span>
+                                        <span className='flex items-center gap-1'>Sharpe: <Trophy className='h-3 w-3 text-amber-500' /> {(voteData.sharpeRatio || 0).toFixed(2)}</span>
                                     </div>
                                 </div>
                              ))}
