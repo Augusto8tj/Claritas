@@ -20,7 +20,7 @@ import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { useRobotCouncilV2 } from "@/features/trading/hooks/use-robot-council-v2";
 import { SystemStatusSummary } from "@/features/trading/components/deriv-trader/system-status-summary";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { CouncilDashboard } from '@/features/trading/components/deriv-trader/CouncilDashboard';
+import { CouncilDashboardV2 } from '@/features/trading/components/deriv-trader/CouncilDashboardV2';
 import { TradingDeskV2 } from "@/features/trading/components/deriv-trader/trading-desk-v2";
 import { TradingDecisionLogViewer } from "@/features/trading/components/deriv-trader/TradingDecisionLogViewer";
 import { EvolutionLab } from "@/features/trading/components/deriv-trader/evolution-lab";
@@ -87,7 +87,7 @@ const DerivTraderV2Core = () => {
         <div className="space-y-6 mt-6">
              {robotCouncil.dashboardData && (
                 <div className="animate-in fade-in slide-in-from-top-4 duration-500">
-                    <CouncilDashboard data={robotCouncil.dashboardData} />
+                    <CouncilDashboardV2 data={robotCouncil.dashboardData} />
                 </div>
             )}
             
@@ -118,9 +118,9 @@ const DerivTraderV2Core = () => {
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 <div className="space-y-6">
                     <DerivTraderInterfaceV2 symbol={activeSymbol || ""} />
-                    <AITradeSuggestion 
+                     <AITradeSuggestion 
                         councilDecision={robotCouncil.consensusDecision.direction}
-                        consensusSum={{rise: robotCouncil.consensusConfidence, fall: (1 - robotCouncil.consensusConfidence) * 100}}
+                        consensusSum={{rise: robotCouncil.consensusDecision.probability * 100, fall: (1 - robotCouncil.consensusDecision.probability) * 100}}
                         consensusThreshold={robotCouncil.effectiveThreshold}
                         supervisionStatus={{status: 'inactive', message: ''}}
                         activeCommittee={""}
