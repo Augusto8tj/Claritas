@@ -581,8 +581,6 @@ export function useRobotCouncilV2(
       }
 
       // 7. 🗳️ COLETA DE VOTOS E CONSENSO
-      // ... (INSERIR NOVO BLOCO LÓGICO AQUI) ...
-
       const newBayesianVotes: CouncilVotes = {};
       let riseSum = 0, fallSum = 0, totalWeight = 0, weightedStakeSum = 0, weightedDurationSum = 0;
       let activeRobotsCount = 0;
@@ -616,12 +614,12 @@ export function useRobotCouncilV2(
         const hasHistory = perf && (perf.wins + perf.losses) > 10;
         const isRegimeEffective = !hasHistory || !perf?.effectiveRegimes?.length || perf.effectiveRegimes.includes(regimeResult.regime);
         const isDurationInRange = durationInSeconds >= durationRange[0] && durationInSeconds <= durationRange[1];
-        const isConfidenceHigh = technicalVote.confidence >= (confidenceFactor / 100);
+        const isConfidenceHigh = (technicalVote.confidence * 100) >= confidenceFactor;
 
         // --- 2. REGISTRO NA ARENA VIRTUAL (SEMPRE ACONTECE SE NÃO FOR HOLD) ---
         const tradeId = `vt_${Date.now()}_${tradeCounterRef.current++}`;
         const lastTrade = virtualTradesRef.current.find(t => t.robotId === robot.id);
-        const isSpamming = lastTrade && (currentTick.epoch - lastTrade.entryEpoch) < 5; // 5 segundos de silêncio
+        const isSpamming = lastTrade && (currentTick.epoch - lastTrade.entryEpoch) < 5;
 
         if (!isSpamming) {
              virtualTradesRef.current.push({ 
@@ -698,17 +696,7 @@ export function useRobotCouncilV2(
             totalWeight += voteWeight;
         }
       });
-
-      // 8. Decisão Final do Conselho
-      let consensusDirection: 'RISE' | 'FALL' | 'HOLD' = 'HOLD';
-      let consensusProbability = 0.5;
-
-      if (totalWeight > 0) {
-        consensusProbability = Math.max(riseSum, fallSum) / (riseSum + fallSum || 1);
-        if (riseSum > fallSum) consensusDirection = 'RISE';
-        else if (fallSum > riseSum) consensusDirection = 'FALL';
-      }
-
+      
       const winningDirection = riseSum > fallSum ? 'RISE' : 'FALL';
       const allWinningVoters = Object.values(newBayesianVotes).filter(v => v.vote === winningDirection);
       const matureVoters = allWinningVoters.filter(voter => {
@@ -720,9 +708,12 @@ export function useRobotCouncilV2(
       const totalSystemTrades = robotPerformance.reduce((sum, p) => sum + p.wins + p.losses, 0);
       let hasStatisticalConfidence = maturityRatio >= 0.4 || matureVoters.length >= 3;
       if (!hasStatisticalConfidence && totalSystemTrades < 50) {
-        hasStatisticalConfidence = true; // Permite durante o aquecimento
+        hasStatisticalConfidence = true;
       }
-
+      
+      let calculatedEffectiveThreshold = isDynamicConsensusOn ? (totalWeight * (consensusSensitivity / 100)) : consensusSensitivity;
+      setEffectiveThreshold(calculatedEffectiveThreshold);
+      
       console.log(`
 ═══════════════════════════════════════════════════
 📊 CICLO DE ANÁLISE
@@ -730,7 +721,7 @@ export function useRobotCouncilV2(
 ✅ Robôs Ativos: ${debugStats.active}
 📈 Rise Sum: ${riseSum.toFixed(2)} | Fall Sum: ${fallSum.toFixed(2)}
 ⚖️ Total Weight: ${totalWeight.toFixed(2)}
-🎯 Threshold Efetivo: ${effectiveThreshold.toFixed(2)}
+🎯 Threshold Efetivo: ${calculatedEffectiveThreshold.toFixed(2)}
 🏟️ Virtual Trades Ativos: ${virtualTradesRef.current.length}
 
 ❌ Motivos de Inatividade:
@@ -749,15 +740,25 @@ export function useRobotCouncilV2(
       setBayesianVotes(newBayesianVotes);
       setCouncilConfidence(totalWeight);
 
-      // Verificações Financeiras Diárias
+      // 8. Decisão Final do Conselho
+      let consensusDirection: 'RISE' | 'FALL' | 'HOLD' = 'HOLD';
+      let consensusProbability = 0.5;
+
+      if (totalWeight > 0) {
+        const totalSum = riseSum + fallSum;
+        if (totalSum > 0) {
+          consensusProbability = Math.max(riseSum, fallSum) / totalSum;
+          if (riseSum > fallSum) consensusDirection = 'RISE';
+          else if (fallSum > riseSum) consensusDirection = 'FALL';
+        }
+      }
+
       const dailyPnL = operationsLog.filter(op => op.initiator === 'Conselho' && new Date(op.timestamp).toDateString() === new Date().toDateString()).reduce((sum, op) => sum + (op.result || 0), 0);
       setPortfolioStats(prev => ({ ...prev, dailyPnL }));
 
       if (dailyPnL <= -dailyBalance) { toast({ title: "🛑 Stop Loss do Dia", variant: "destructive" }); return; }
       if (dailyPnL >= dailyTarget) { toast({ title: "🎯 Meta Batida!", description: "Parabéns!" }); return; }
 
-      let calculatedEffectiveThreshold = isDynamicConsensusOn ? (totalWeight * (consensusSensitivity / 100)) : consensusSensitivity;
-      setEffectiveThreshold(calculatedEffectiveThreshold);
       const consensusReached = Math.max(riseSum, fallSum) >= calculatedEffectiveThreshold;
 
       let kellyStake = calculateKellyStake(dailyBalance - portfolioStats.totalExposure, consensusProbability, 0.95);
@@ -848,4 +849,3 @@ export function useRobotCouncilV2(
     tradeDecisionLog, systemMetrics,
   };
 }
-```
