@@ -182,9 +182,9 @@ const calculateTechnicalVote = (
   const setVote = (newVote: 'RISE' | 'FALL', rawConfidence: number, newReason: string) => {
     if (rawConfidence <= 0) return;
     vote = newVote;
-    confidence = rawConfidence / 100;
+    confidence = rawConfidence; // Store as 0-100
     reason = newReason;
-    suggestedStake = confidence === (robot.strongConfidence / 100) ? baseStake : baseStake * 0.5;
+    suggestedStake = confidence === robot.strongConfidence ? baseStake : baseStake * 0.5;
   };
 
   if (!indicators) {
@@ -263,12 +263,14 @@ export function useRobotCouncilV2(
   const { toast } = useToast();
   const { evolvedStrategies, evolveTrigger, evolutionHistory } = useStrategyEvolution(initialCouncilStrategies);
   
+  // 🔥 NOVO: Execution ID para prevenir race conditions
   const executionIdRef = useRef(0);
   const lastExecutionTimeRef = useRef(0);
   const contractsInAlertRef = useRef<Map<number, 'breached' | 'confirmed'>>(new Map());
   const lastActiveSymbolRef = useRef<string | null>(null);
   const lastTimePeriodRef = useRef<TimePeriod | null>(null);
   
+  // 🔥 NOVO: Métricas de sistema
   const [systemMetrics, setSystemMetrics] = useState<SystemMetrics>({
     virtualTradesCount: 0,
     decisionLogCount: 0,
@@ -719,9 +721,10 @@ export function useRobotCouncilV2(
         const perf = performanceMap.get(robot.id);
         const technicalVote = calculateTechnicalVote(robot, currentIndicators, validCandles);
         
-        if (technicalVote.vote === 'HOLD' || (technicalVote.confidence * 100) < confidenceFactor) {
+        // ✅ BUG FIX #1: Comparação de Confiança Errada
+        if (technicalVote.vote === 'HOLD' || (technicalVote.confidence) < confidenceFactor) {
             inactivityReasons.confidence++;
-            newBayesianVotes[robot.id] = { ...technicalVote, rawConfidence: technicalVote.confidence, bayesianProbability: 0.5, weight: 0, regime: regimeResult.regime, reason: `Confiança Insuficiente` };
+            newBayesianVotes[robot.id] = { ...technicalVote, rawConfidence: technicalVote.confidence, bayesianProbability: 0.5, weight: 0, regime: regimeResult.regime, reason: `Confiança Insuficiente`, calibratedConfidence: 0 };
             return;
         }
 
@@ -729,24 +732,26 @@ export function useRobotCouncilV2(
         const isRegimeEffective = !perf?.effectiveRegimes?.length || perf.effectiveRegimes.includes(regimeResult.regime);
         const isDurationInRange = durationInSeconds >= durationRange[0] && durationInSeconds <= durationRange[1];
 
+        // ✅ BUG FIX #2: Validação de Regime Ausente (movida para antes da criação do trade virtual)
         if (!isRegimeEffective) {
           inactivityReasons.regime++;
-          newBayesianVotes[robot.id] = { ...technicalVote, rawConfidence: 0, bayesianProbability: 0.5, weight: 0, regime: regimeResult.regime, reason: 'Fora de Regime Efetivo' };
+          newBayesianVotes[robot.id] = { ...technicalVote, rawConfidence: 0, bayesianProbability: 0.5, weight: 0, regime: regimeResult.regime, reason: 'Fora de Regime Efetivo', calibratedConfidence: 0 };
           return;
         }
         if (!isDurationInRange) {
           inactivityReasons.duration++;
-          newBayesianVotes[robot.id] = { ...technicalVote, rawConfidence: 0, bayesianProbability: 0.5, weight: 0, regime: regimeResult.regime, reason: 'Fora do Range de Duração' };
+          newBayesianVotes[robot.id] = { ...technicalVote, rawConfidence: 0, bayesianProbability: 0.5, weight: 0, regime: regimeResult.regime, reason: 'Fora do Range de Duração', calibratedConfidence: 0 };
           return;
         }
         
         activeRobotsCount++;
         let prior = (perf && (perf.wins + perf.losses) >= MIN_TRADES_FOR_STATS) ? perf.winRate / 100 : 0.5;
-        let likelihood = technicalVote.confidence;
+        let likelihood = technicalVote.confidence / 100;
         if (microFeatures && microFeatures.yangZhangVolatility > 0.05) likelihood *= 0.8;
         const posterior = bayesianUpdate(prior, likelihood);
         
-        const calibratedConf = calibrateConfidence(technicalVote.confidence, perf?.winRate || 50) / 100; // ✅ BUG FIX #3
+        // ✅ BUG FIX #3: Calibração de Confiança Incorreta
+        const calibratedConf = calibrateConfidence(technicalVote.confidence, perf?.winRate || 50) / 100;
 
         let weight = 1.0;
         if (isMeritocracyOn && perf && (perf.wins + perf.losses) > 10) {
@@ -758,7 +763,7 @@ export function useRobotCouncilV2(
         const tradeId = `vt_${Date.now()}_${tradeCounterRef.current++}`;
         virtualTradesRef.current.push({ id: tradeId, robotId: robot.id, vote: technicalVote.vote, entryPrice: currentTick.price, entryEpoch: currentTick.epoch, exitEpoch: currentTick.epoch + durationInSeconds, regime: regimeResult.regime, microstructure: microFeatures, stake: VIRTUAL_STAKE });
 
-        const finalVote: BayesianVote = { vote: technicalVote.vote, rawConfidence: technicalVote.confidence, calibratedConfidence, bayesianProbability: posterior, weight, optimalDuration: technicalVote.optimalDuration, optimalDurationUnit: technicalVote.optimalDurationUnit, suggestedStake: technicalVote.suggestedStake * posterior, regime: regimeResult.regime, reason: technicalVote.reason };
+        const finalVote: BayesianVote = { vote: technicalVote.vote, rawConfidence: technicalVote.confidence, calibratedConfidence: calibratedConf * 100, bayesianProbability: posterior, weight, optimalDuration: technicalVote.optimalDuration, optimalDurationUnit: technicalVote.optimalDurationUnit, suggestedStake: technicalVote.suggestedStake * posterior, regime: regimeResult.regime, reason: technicalVote.reason };
         newBayesianVotes[robot.id] = finalVote;
 
         const voteWeight = calibratedConf * weight;
@@ -798,10 +803,10 @@ export function useRobotCouncilV2(
       });
       const maturityRatio = winningVoters.length > 0 ? matureVoters.length / winningVoters.length : 0;
       
-      // ✅ BUG FIX #4 e #5
+      // ✅ BUG FIX #4 & #5: Requisito de Maturidade e Fase de Aquecimento
       const totalSystemTrades = robotPerformance.reduce((sum, p) => sum + p.wins + p.losses, 0);
-      const hasStatisticalConfidence = (maturityRatio >= 0.4 || matureVoters.length >= 3) || totalSystemTrades < 50;
-
+      let hasStatisticalConfidence = maturityRatio >= 0.4 || matureVoters.length >= 3;
+      
       let kellyStake = calculateKellyStake(dailyBalance - portfolioStats.totalExposure, consensusProbability, 0.95);
       if (microFeatures) {
         if (microFeatures.isSpike) { toast({ title: "🛡️ Veto Total", description: "Pico anômalo detectado.", variant: "destructive" }); return; }
@@ -821,7 +826,14 @@ export function useRobotCouncilV2(
         finalDuration = Math.max(min, Math.min(max, finalDuration));
       } else { finalDuration = 5; finalDurationUnit = 't'; }
 
-      setDashboardData({ regime: regimeResult.regime, bayesianProbability: consensusProbability, consensusDirection, activeRobotsCount, microstructure: { pressure: microFeatures?.volumeImbalance ?? 0.5, velocity: microFeatures?.tickVelocity ?? 0, isSpike: microFeatures?.isSpike ?? false }, kellyStake });
+      setDashboardData({ regime: regimeResult.regime, bayesianProbability: consensusProbability, consensusDirection, activeRobotsCount, microstructure: { pressure: microFeatures ? microFeatures.volumeImbalance : 0.5, velocity: microFeatures ? microFeatures.tickVelocity : 0, isSpike: microFeatures ? microFeatures.isSpike : false }, kellyStake });
+
+      // Permite operar se estivermos na fase de aquecimento, ignorando a confiança estatística
+      const isWarmupPhase = totalSystemTrades < 50;
+      if (!hasStatisticalConfidence && isWarmupPhase) {
+          hasStatisticalConfidence = true;
+          console.log('🔥 FASE DE AQUECIMENTO: permitindo operação com confiança estatística reduzida.');
+      }
 
       console.log(`
 ═══════════════════════════════════════════════════
@@ -843,7 +855,7 @@ export function useRobotCouncilV2(
    Winning Voters: ${winningVoters.length}
    Mature Voters: ${matureVoters.length}
    Maturity Ratio: ${(maturityRatio * 100).toFixed(1)}%
-   Statistical Confidence: ${hasStatisticalConfidence ? '✅ SIM' : '❌ NÃO'} ${totalSystemTrades < 50 && !hasStatisticalConfidence ? '(Aquecimento)' : ''}
+   Statistical Confidence: ${hasStatisticalConfidence ? '✅ SIM' : '❌ NÃO'} ${isWarmupPhase && !hasStatisticalConfidence ? '(Aquecimento)' : ''}
 ═══════════════════════════════════════════════════
 `);
 
@@ -862,7 +874,7 @@ export function useRobotCouncilV2(
       const currentExecutionId = ++executionIdRef.current;
       councilExecutionRef.current.isExecuting = true;
 
-      const decisionLog: TradeDecisionLog = { id: `TDL-${Date.now()}`, timestamp: new Date().toISOString(), asset: activeSymbol, timePeriod, tradeParams: { direction: consensusDirection, stake: kellyStake, duration: finalDuration, durationUnit: finalDurationUnit }, context: { marketRegime: regimeResult.regime, regimeConfidence: regimeResult.confidence, microstructure: microFeatures, indicators: currentIndicators, entryPrice: currentTick.price }, consensus: { bayesianProbability: consensusProbability, kellyStake, activeRobots: activeRobotsCount, votes: bayesianVotes }, result: 'pending', pnl: 0 };
+      const decisionLog: TradeDecisionLog = { id: `TDL-${Date.now()}`, timestamp: new Date().toISOString(), asset: activeSymbol, timePeriod, tradeParams: { direction: consensusDirection, stake: kellyStake, duration: finalDuration, durationUnit: finalDurationUnit }, context: { marketRegime: regimeResult.regime, regimeConfidence: regimeResult.confidence, microstructure: microFeatures, indicators: currentIndicators }, consensus: { bayesianProbability: consensusProbability, kellyStake, activeRobots: activeRobotsCount, votes: bayesianVotes }, result: 'pending', pnl: 0 };
       setTradeDecisionLog(prev => [decisionLog, ...prev].slice(0, MAX_DECISION_LOG));
       
       toast({ title: "🚀 Ordem Executada", description: `${consensusDirection} com ${kellyStake.toFixed(2)} (${(consensusProbability * 100).toFixed(1)}%)` });
