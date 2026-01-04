@@ -109,7 +109,7 @@ const DerivTraderV2Core = () => {
                      <div className="animate-in fade-in slide-in-from-top-4 duration-500">
                         <CouncilDashboardV2
                             consensusDecision={robotCouncil.consensusDecision}
-                            supervisionStatus={{ status: 'approved', message: 'Cérebro V2.5 Ativo' }}
+                            supervisionStatus={robotCouncil.supervisionStatus}
                             activeCommittee={robotCouncil.currentRegime.regime}
                             isCouncilAutopilotOn={robotCouncil.isCouncilAutopilotOn}
                         />
