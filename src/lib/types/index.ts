@@ -72,6 +72,7 @@ export interface TradeAnnotation {
   id: string;
   contractId: string;
   entryTime: number; // epoch timestamp
+  createdAt?: number; // performance.now() timestamp
   entryPrice: number;
   exitTime?: number;
   exitPrice?: number;

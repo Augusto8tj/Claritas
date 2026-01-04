@@ -278,6 +278,7 @@ export const DerivApiProvider = ({ children }: { children: ReactNode }) => {
     const addTradeAnnotation = useCallback((annotation: Omit<TradeAnnotation, 'id'>) => {
       const newAnnotation: TradeAnnotation = {
         ...annotation,
+        createdAt: performance.now(),
         id: `annotation-${annotation.contractId}`,
       };
       setTradeAnnotations(prev => [...prev, newAnnotation]);
