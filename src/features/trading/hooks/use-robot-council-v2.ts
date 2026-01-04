@@ -310,7 +310,7 @@ const calculateTechnicalVote = (
             }
             break;
     }
-  return { vote, confidence: confidence * 100, reason, optimalDuration, optimalDurationUnit, suggestedStake };
+  return { vote, confidence, reason, optimalDuration, optimalDurationUnit, suggestedStake };
 };
 
 // ════════════════════════════════════════════════════════════════════
@@ -518,18 +518,17 @@ export function useRobotCouncilV2(
 
     // --- BOOTSTRAP DE DADOS HISTÓRICOS ---
     if (!initialDataFetchedRef.current) {
-        const bootstrap = async () => {
-            try {
-                const history = await getHistoricalData(activeSymbol, 'candles', 1000, timePeriod);
-                setHistoricalData(history as CandleData[]);
-                initialDataFetchedRef.current = true;
-                console.log(`[Bootstrap] ${history.length} candles históricos carregados para ${activeSymbol}.`);
-            } catch (error) {
-                toast({ title: "Erro de Bootstrap", description: "Não foi possível carregar os dados históricos.", variant: "destructive" });
-            }
-        };
-        bootstrap();
-        return; // Aguarda o bootstrap antes de continuar
+        initialDataFetchedRef.current = true; // Marca como "em progresso" para evitar múltiplas chamadas
+        getHistoricalData(activeSymbol, 'candles', 1000, timePeriod)
+          .then(history => {
+            setHistoricalData(history as CandleData[]);
+            console.log(`[Bootstrap] ${history.length} candles históricos carregados para ${activeSymbol}.`);
+          })
+          .catch(error => {
+            toast({ title: "Erro de Bootstrap", description: "Não foi possível carregar os dados históricos.", variant: "destructive" });
+            initialDataFetchedRef.current = false; // Permite tentar novamente
+          });
+        return; // Retorna para aguardar os dados
     }
 
     const validCandles = validateCandles(tickCandles, REGIME_LOOKBACK);
@@ -631,10 +630,9 @@ export function useRobotCouncilV2(
         const technicalVote = calculateTechnicalVote(robot, currentIndicators, validCandles);
         
         // --- APRENDIZAGEM (FUNIL LARGO) ---
-        // Qualquer voto válido entra na Arena para gerar estatísticas.
         if (technicalVote.vote !== 'HOLD') {
-            const lastTrade = virtualTradesRef.current.find(t => t.robotId === robot.id);
-            if (!lastTrade || currentTick.epoch >= lastTrade.exitEpoch) {
+            const hasActiveTrade = virtualTradesRef.current.some(t => t.robotId === robot.id && currentTick.epoch < t.exitEpoch);
+            if (!hasActiveTrade) {
                 const durationInSeconds = durationToSeconds(technicalVote.optimalDuration, technicalVote.optimalDurationUnit);
                 virtualTradesRef.current.push({ 
                     id: `vt_${Date.now()}_${tradeCounterRef.current++}`, robotId: robot.id, vote: technicalVote.vote, 
@@ -645,7 +643,6 @@ export function useRobotCouncilV2(
         }
         
         // --- CONSENSO REAL (FUNIL ESTREITO) ---
-        // Apenas votos que passam pelos filtros contribuem para uma trade real.
         const durationInSeconds = durationToSeconds(technicalVote.optimalDuration, technicalVote.optimalDurationUnit);
         const hasHistory = perf && (perf.wins + perf.losses) > 10;
         const isRegimeEffective = !hasHistory || !perf?.effectiveRegimes?.length || perf.effectiveRegimes.includes(regimeResult.regime);
@@ -690,7 +687,7 @@ export function useRobotCouncilV2(
         }
         
         const finalVote: BayesianVote = { 
-            vote: technicalVote.vote, rawConfidence: technicalVote.confidence, calibratedConfidence: calibratedConf * 100, 
+            vote: technicalVote.vote, rawConfidence: technicalVote.confidence * 100, calibratedConfidence: calibratedConf * 100, 
             bayesianProbability: posterior, weight: weight, sharpeRatio: perf?.sharpeRatio || 0,
             optimalDuration: technicalVote.optimalDuration, optimalDurationUnit: technicalVote.optimalDurationUnit, 
             suggestedStake: technicalVote.suggestedStake * posterior, regime: regimeResult.regime, 
