@@ -57,7 +57,12 @@ export function OperationsLog({ operations }: OperationsLogProps) {
 
     return operations
       .filter(op => op.status !== 'pending' && new Date(op.timestamp).toDateString() === today.toDateString())
-      .reduce((sum, op) => sum + (op.result || 0), 0);
+      .reduce((sum, op) => {
+        if (op.status === 'lost') {
+            return sum - op.stake; // Subtrai o stake em caso de perda
+        }
+        return sum + (op.result || 0); // Soma o lucro em caso de vitória
+    }, 0);
   }, [operations]);
 
   const handleSell = async (contractId: number) => {
