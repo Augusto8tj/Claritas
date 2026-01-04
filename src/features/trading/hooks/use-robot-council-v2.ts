@@ -123,6 +123,7 @@ const isValid = (value: any): value is number =>
   value !== null && value !== undefined && !isNaN(value) && Number.isFinite(value);
 
 const validateCandles = (candles: CandleData[], minCount: number): CandleData[] => {
+  if (candles.length < minCount) return [];
   return candles.filter(c => 
     c && isValid(c.close) && c.close > 0 && isValid(c.epoch) && c.epoch > 0 &&
     isValid(c.open) && isValid(c.high) && isValid(c.low)
@@ -305,7 +306,7 @@ export function useRobotCouncilV2(
   priceTicks: TickData[],
   dataVersion: number,
 ) {
-  const { operationsLog, executeTrade, timePeriod, isConnected, durationLimits, sellContract } = useDerivApi();
+  const { operationsLog, executeTrade, timePeriod, isConnected, durationLimits, sellContract, getHistoricalData } = useDerivApi();
   const { user, loading: isAuthLoading } = useAuth();
   const { toast } = useToast();
   const { evolvedStrategies, evolveTrigger, evolutionHistory } = useStrategyEvolution(initialCouncilStrategies);
@@ -334,6 +335,8 @@ export function useRobotCouncilV2(
   const [indicators, setIndicators] = useState<Indicators | null>(null);
   const [tradeDecisionLog, setTradeDecisionLog] = useState<TradeDecisionLog[]>([]);
   const [bayesianVotes, setBayesianVotes] = useState<CouncilVotes>({});
+  const initialDataFetchedRef = useRef(false);
+  const [historicalData, setHistoricalData] = useState<CandleData[]>([]);
   
   const [currentRegime, setCurrentRegime] = useState<{
     regime: MarketRegime;
@@ -374,9 +377,28 @@ export function useRobotCouncilV2(
   const [councilConfidence, setCouncilConfidence] = useState(0);
 
   const tickCandles = useMemo(() => {
-    if (!priceTicks || priceTicks.length === 0) return [];
-    return priceTicks.map((t) => ({ epoch: t.epoch, open: t.price, high: t.price, low: t.price, close: t.price, volume: 1 }));
-  }, [dataVersion, priceTicks]);
+    if (historicalData.length === 0 && priceTicks.length === 0) return [];
+    
+    // Combina dados históricos com os novos ticks em tempo real
+    const combinedData = [...historicalData];
+    priceTicks.forEach(tick => {
+      const lastCandle = combinedData[combinedData.length - 1];
+      if (lastCandle && lastCandle.epoch === tick.epoch) {
+        // Atualiza o último candle
+        lastCandle.close = tick.price;
+        lastCandle.high = Math.max(lastCandle.high, tick.price);
+        lastCandle.low = Math.min(lastCandle.low, tick.price);
+      } else {
+        // Adiciona um novo "candle" de tick
+        combinedData.push({ epoch: tick.epoch, open: tick.price, high: tick.price, low: tick.price, close: tick.price, volume: 1 });
+      }
+    });
+
+    if (combinedData.length > 2000) {
+      return combinedData.slice(combinedData.length - 2000);
+    }
+    return combinedData;
+  }, [historicalData, priceTicks, dataVersion]);
 
   useEffect(() => { setStrategyCouncil(evolvedStrategies as RobotStrategy[]); }, [evolvedStrategies]);
 
@@ -446,6 +468,7 @@ export function useRobotCouncilV2(
     await new Promise(r => setTimeout(r, 500));
     setStrategyCouncil((evolvedStrategies as RobotStrategy[]).map(s => ({ ...s })));
     resetArenaPerformance();
+    initialDataFetchedRef.current = false; // Força a busca de dados históricos
     setIsCouncilAutopilotOn(true);
     lastActiveSymbolRef.current = activeSymbol;
     lastTimePeriodRef.current = timePeriod;
@@ -457,6 +480,7 @@ export function useRobotCouncilV2(
     const symbolChanged = activeSymbol && lastActiveSymbolRef.current !== activeSymbol;
     if (isCouncilAutopilotOn && symbolChanged) {
         resetArenaPerformance();
+        initialDataFetchedRef.current = false; // Força a busca de dados históricos
         lastActiveSymbolRef.current = activeSymbol;
     }
   }, [activeSymbol, isCouncilAutopilotOn, resetArenaPerformance]);
@@ -475,6 +499,22 @@ export function useRobotCouncilV2(
     lastExecutionTimeRef.current = now;
 
     if (!isConnected || !user || !isCouncilAutopilotOn || strategyCouncil.length === 0 || !activeSymbol) return;
+
+    // --- BOOTSTRAP DE DADOS HISTÓRICOS ---
+    if (!initialDataFetchedRef.current) {
+        const bootstrap = async () => {
+            try {
+                const history = await getHistoricalData(activeSymbol, 'candles', 1000, timePeriod);
+                setHistoricalData(history as CandleData[]);
+                initialDataFetchedRef.current = true;
+                console.log(`[Bootstrap] ${history.length} candles históricos carregados para ${activeSymbol}.`);
+            } catch (error) {
+                toast({ title: "Erro de Bootstrap", description: "Não foi possível carregar os dados históricos.", variant: "destructive" });
+            }
+        };
+        bootstrap();
+        return; // Aguarda o bootstrap antes de continuar
+    }
 
     const validCandles = validateCandles(tickCandles, REGIME_LOOKBACK);
     if (validCandles.length < REGIME_LOOKBACK) return;
@@ -778,7 +818,8 @@ export function useRobotCouncilV2(
     activeSymbol, operationsLog, currentRegime, user, toast, executeTrade, sellContract,
     timePeriod, dailyBalance, dailyTarget, evolveTrigger, portfolioStats,
     consensusSensitivity, confidenceFactor, durationRange, takeProfitThreshold,
-    stopLossThreshold, priceTicks, tickCandles, isMeritocracyOn, isDynamicConsensusOn
+    stopLossThreshold, priceTicks, tickCandles, isMeritocracyOn, isDynamicConsensusOn,
+    getHistoricalData, initialDataFetchedRef, historicalData, // Novas dependências
   ]);
 
   return {

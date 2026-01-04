@@ -81,6 +81,7 @@ interface DerivApiContextType {
     initiator: OperationInitiator,
   ) => Promise<TradeResult>;
   sellContract: (contractId: number) => Promise<TradeResult>;
+  getHistoricalData: (symbol: string, style: 'ticks' | 'candles', count: number, period?: TimePeriod) => Promise<ApiHistoricalData[]>;
   clearActiveContracts: () => void;
   tradeAnnotations: TradeAnnotation[];
   durationLimits: DurationLimits | null;
@@ -205,11 +206,8 @@ export const DerivApiProvider = ({ children }: { children: ReactNode }) => {
       const storedRealToken = localStorage.getItem(DERIV_REAL_TOKEN_KEY);
       const storedAccountType = localStorage.getItem(DERIV_ACCOUNT_TYPE_KEY) as AccountType | null;
 
-      if (storedDemoToken) setDemoToken(storedDemoToken);
-      else setDemoToken("ljUGk6wbLSrtEDo"); // Default Demo Key
-
-      if (storedRealToken) setRealToken(storedRealToken);
-      else setRealToken("GU5MwbX1kwvSoyw"); // Default Real Key
+      setDemoToken(storedDemoToken || "ljUGk6wbLSrtEDo");
+      setRealToken(storedRealToken || "GU5MwbX1kwvSoyw");
       
       if (storedAccountType) setAccountTypeState(storedAccountType);
     } catch (error) {
@@ -816,6 +814,7 @@ const subscribeToMarketData = useCallback(async (symbol: string) => {
     dataVersion,
     executeTrade,
     sellContract,
+    getHistoricalData,
     clearActiveContracts,
     tradeAnnotations,
     durationLimits
