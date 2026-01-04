@@ -444,11 +444,11 @@ export function useRobotCouncilV2(
       }
     }, CLEANUP_INTERVAL_MS);
     
-    const healthCheckInterval = setInterval(healthCheckCallback, HEALTH_CHECK_INTERVAL_MS);
+    const healthCheck = setInterval(healthCheckCallback, HEALTH_CHECK_INTERVAL_MS);
 
     return () => {
         clearInterval(cleanupInterval);
-        clearInterval(healthCheckInterval);
+        clearInterval(healthCheck);
     };
   }, [isCouncilAutopilotOn, healthCheckCallback]);
 
@@ -578,6 +578,8 @@ export function useRobotCouncilV2(
   }, [operationsLog, tradeDecisionLog, user]);
 
   useEffect(() => {
+    if (!isCouncilAutopilotOn) return;
+    
     const runCouncilCycle = () => {
         if (!isConnected || !user || !isCouncilAutopilotOn || councilExecutionRef.current.isExecuting ||
             strategyCouncil.length === 0 || !activeSymbol || tickCandles.length < REGIME_LOOKBACK) {
@@ -707,8 +709,8 @@ export function useRobotCouncilV2(
             const localBayesianVotes: Record<string, BayesianVote> = {};
             let riseSum = 0, fallSum = 0, totalWeight = 0, weightedStakeSum = 0, weightedDurationSum = 0;
             let activeRobotsCount = 0;
+            
             strategyCouncil.forEach(robot => {
-                const perf = performanceMap.get(robot.id);
                 const technicalVote = calculateTechnicalVote(robot, currentIndicators, validCandles);
                 if (technicalVote.vote !== 'HOLD') {
                     const hasActiveTrade = virtualTradesRef.current.some(t => t.robotId === robot.id && t.exitEpoch > currentTick.epoch);
@@ -718,17 +720,21 @@ export function useRobotCouncilV2(
                         virtualTradesRef.current.push({ id: tradeId, robotId: robot.id, vote: technicalVote.vote, entryPrice: currentTick.price, entryEpoch: currentTick.epoch, exitEpoch: currentTick.epoch + durationInSeconds, regime: regimeResult.regime, microstructure: microFeatures!, stake: VIRTUAL_STAKE });
                     }
                 }
+
                 if (technicalVote.confidence < confidenceFactor) {
                     localBayesianVotes[robot.id] = { ...technicalVote, rawConfidence: technicalVote.confidence, calibratedConfidence: 0, bayesianProbability: 0.5, weight: 0, regime: regimeResult.regime, reason: `Confiança (${technicalVote.confidence.toFixed(0)}) < Limiar (${confidenceFactor})` };
                     return;
                 }
+                
                 const durationInSeconds = durationToSeconds(technicalVote.optimalDuration, technicalVote.optimalDurationUnit);
+                const perf = performanceMap.get(robot.id);
                 const isRegimeEffective = !perf?.effectiveRegimes?.length || perf.effectiveRegimes.includes(regimeResult.regime);
                 const isDurationInRange = durationInSeconds >= durationRange[0] && durationInSeconds <= durationRange[1];
                 if (!isRegimeEffective || !isDurationInRange) {
                     localBayesianVotes[robot.id] = { ...technicalVote, rawConfidence: 0, calibratedConfidence: 0, bayesianProbability: 0.5, weight: 0, regime: regimeResult.regime, reason: 'Fora de Regime/Duração' };
                     return;
                 }
+
                 activeRobotsCount++;
                 let prior = (perf && (perf.wins + perf.losses) >= MIN_TRADES_FOR_STATS) ? perf.winRate / 100 : 0.5;
                 let likelihood = technicalVote.confidence / 100;
@@ -764,7 +770,9 @@ export function useRobotCouncilV2(
             if (dailyPnL <= -dailyBalance) { toast({ title: "🛑 Stop Loss Diário", description: "Operações suspensas.", variant: "destructive" }); councilExecutionRef.current.isExecuting = false; return; }
             if (dailyPnL >= dailyTarget) { toast({ title: "🎯 Meta Batida", description: `Lucro de ${dailyPnL.toFixed(2)}!` }); councilExecutionRef.current.isExecuting = false; return; }
             
-            const calculatedEffectiveThreshold = isDynamicConsensusOn ? (totalWeight > 0 ? (totalWeight * (consensusSensitivity / 100) * Math.pow(1 + (microFeatures ? Math.min(microFeatures.yangZhangVolatility * 5, 1) : 0), 1.5)) : Infinity) : consensusSensitivity;
+            const calculatedEffectiveThreshold = isDynamicConsensusOn && totalWeight > 0
+                ? (totalWeight * (consensusSensitivity / 100) * Math.pow(1 + (microFeatures ? Math.min(microFeatures.yangZhangVolatility * 5, 1) : 0), 1.5)) 
+                : Infinity;
             const consensusReached = totalWeight > 0 && Math.max(riseSum, fallSum) >= calculatedEffectiveThreshold;
 
             let kellyStake = calculateKellyStake(dailyBalance - councilState.portfolioStats.totalExposure, consensusProbability, 0.95);
@@ -826,13 +834,7 @@ export function useRobotCouncilV2(
         if (!isCouncilAutopilotOn) return;
         const intervalId = setInterval(runCouncilCycle, THROTTLE_MS);
         return () => clearInterval(intervalId);
-    }, [
-        isCouncilAutopilotOn, isConnected, user, strategyCouncil, activeSymbol, priceTicks,
-        robotPerformance, isMeritocracyOn, isDynamicConsensusOn, isDynamicRiskOn,
-        operationsLog, timePeriod, durationLimits, dailyBalance, dailyTarget,
-        evolveTrigger, consensusSensitivity, confidenceFactor, durationRange,
-        takeProfitThreshold, stopLossThreshold, isDynamicExitOn, resetArenaPerformance
-    ]);
+    }, [isCouncilAutopilotOn, isConnected, user, dataVersion, operationsLog, ...Object.values(councilState)]);
 
 
   // Extrair e retornar os estados do objeto de estado unificado
