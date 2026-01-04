@@ -4,7 +4,7 @@
 import React from "react";
 import { useForm, FormProvider } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import DerivTraderInterface from "@/features/trading/components/deriv-trader/deriv-trader-interface";
+import DerivTraderInterface from "@/features/trading/components/deriv-trader/deriv-trader-interface-v2";
 import { AssetSelector } from "@/features/trading/components/deriv-trader/asset-selector";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { MarketChart } from "@/features/trading/components/deriv-trader/market-chart";
