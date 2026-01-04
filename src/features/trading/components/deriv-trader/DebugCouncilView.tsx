@@ -7,11 +7,11 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Progress } from '@/components/ui/progress';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { cn } from '@/lib/utils';
-import type { CouncilVotes, BayesianVote } from '../../hooks/use-robot-council-v2';
-import type { MarketRegime } from '@/lib/types';
+import type { CouncilVotes, BayesianVote, SystemMetrics } from '../../hooks/use-robot-council-v2';
+import type { MarketRegime, EnhancedRobotPerformance } from '@/lib/types';
 import {
   BrainCircuit, Activity, Waves, CandlestickChart, Bot, LayoutGrid, BarChart,
-  TrendingUp, Cloud, HelpCircle, CheckCircle, XCircle, Users, Sigma, Gauge, Trophy
+  TrendingUp, Cloud, HelpCircle, CheckCircle, XCircle, Users, Sigma, Gauge, Trophy, Database, Timer, HardDrive, Brain
 } from 'lucide-react';
 
 // ============================================================================
@@ -26,6 +26,8 @@ interface DebugCouncilViewProps {
     probabilities: Record<MarketRegime, number>;
   };
   isCouncilAutopilotOn: boolean;
+  systemMetrics: SystemMetrics;
+  robotPerformance: EnhancedRobotPerformance[];
 }
 
 const indicatorIcons: { [key: string]: React.ReactNode } = {
@@ -36,7 +38,6 @@ const indicatorIcons: { [key: string]: React.ReactNode } = {
   AWESOME_OSCILLATOR: <BarChart className="h-4 w-4" />,
   TRIX: <Activity className="h-4 w-4" />,
   ROC: <Activity className="h-4 w-4" />,
-  // Mapeamento completo...
   DEFAULT: <Bot className="h-4 w-4" />
 };
 
@@ -58,9 +59,8 @@ const regimeLabels: Record<MarketRegime, string> = {
 // COMPONENTE PRINCIPAL
 // ============================================================================
 
-export function DebugCouncilView({ votes, regime, isCouncilAutopilotOn }: DebugCouncilViewProps) {
+export function DebugCouncilView({ votes, regime, isCouncilAutopilotOn, systemMetrics, robotPerformance }: DebugCouncilViewProps) {
 
-  // 🔥 FIX: Relaxa a guarda para mostrar o painel mesmo sem votos, desde que ativo.
   if (!isCouncilAutopilotOn || !regime) {
     return (
         <Card>
@@ -99,16 +99,42 @@ export function DebugCouncilView({ votes, regime, isCouncilAutopilotOn }: DebugC
       <CardHeader>
         <CardTitle className="font-headline flex items-center gap-2">
           <Gauge className="h-5 w-5 text-primary" />
-          Depuração da Mesa V2.0: Votos e Análise
+          Diagnóstico Avançado da Mesa V2.0
         </CardTitle>
         <CardDescription>
-          Visão em tempo real da votação de cada robô, ordenada por performance ajustada ao risco (Sharpe Ratio).
+          Visão em tempo real da votação, performance e saúde do sistema de IA.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
-        
-        {/* Seção de Análise de Regime */}
+
+        {/* Seção de Métricas do Sistema */}
         <div>
+            <h3 className="font-semibold mb-2 flex items-center gap-2 text-base">
+                <Brain className="h-5 w-5" />
+                Métricas do Sistema
+            </h3>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs">
+                <div className="p-2 bg-muted rounded-md text-center">
+                    <p className="flex items-center justify-center gap-1 text-muted-foreground"><Database className="h-3 w-3"/>Trades Virtuais</p>
+                    <p className="font-bold text-lg">{systemMetrics.virtualTradesCount}</p>
+                </div>
+                 <div className="p-2 bg-muted rounded-md text-center">
+                    <p className="flex items-center justify-center gap-1 text-muted-foreground"><Users className="h-3 w-3"/>Robôs Ativos</p>
+                    <p className="font-bold text-lg">{systemMetrics.activeRobotsCount}/{robotPerformance.length}</p>
+                </div>
+                 <div className="p-2 bg-muted rounded-md text-center">
+                    <p className="flex items-center justify-center gap-1 text-muted-foreground"><Timer className="h-3 w-3"/>Logs de Decisão</p>
+                    <p className="font-bold text-lg">{systemMetrics.decisionLogCount}</p>
+                </div>
+                 <div className="p-2 bg-muted rounded-md text-center">
+                    <p className="flex items-center justify-center gap-1 text-muted-foreground"><HardDrive className="h-3 w-3"/>Memória (MB)</p>
+                    <p className="font-bold text-lg">{systemMetrics.memoryUsageMB.toFixed(1)}</p>
+                </div>
+            </div>
+        </div>
+
+        {/* Seção de Análise de Regime */}
+        <div className="border-t pt-4">
           <h3 className="font-semibold mb-3 flex items-center gap-2 text-base">
             <Users className="h-5 w-5" />
             Análise de Regime (Comités de Analistas)
@@ -128,45 +154,52 @@ export function DebugCouncilView({ votes, regime, isCouncilAutopilotOn }: DebugC
           </div>
         </div>
 
-        <div className="border-t pt-6">
+        <div className="border-t pt-4">
           <h3 className="font-semibold mb-3 flex items-center gap-2 text-base">
             <Sigma className="h-5 w-5" />
-            Votação Individual dos Robôs
+            Votação e Performance Individual
           </h3>
           <ScrollArea className="h-[300px] w-full">
             <Table>
               <TableHeader>
                 <TableRow>
                   <TableHead>Estratégia</TableHead>
+                  <TableHead className="text-center">Trades (V/D)</TableHead>
                   <TableHead className="text-center">Voto Atual</TableHead>
-                  <TableHead className="text-right">Confiança</TableHead>
                   <TableHead className="text-right">Prob. Bayesiana</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {sortedVotes.length > 0 ? (
-                  sortedVotes.map(([robotId, voteData]) => (
-                    <TableRow key={robotId}>
-                      <TableCell className="font-medium">
-                        <div className="flex items-center gap-2">
-                          {indicatorIcons[voteData.strategy?.strategyType || 'DEFAULT'] || <Bot className="h-4 w-4" />}
-                          <span>{voteData.strategy?.strategyType}</span>
-                        </div>
-                      </TableCell>
-                      <TableCell className="text-center">
-                        <div className="flex items-center justify-center gap-1.5">
-                          {voteIcons[voteData.vote]}
-                          <span className="font-semibold">{voteData.vote}</span>
-                        </div>
-                      </TableCell>
-                      <TableCell className="text-right font-mono">
-                        {voteData.rawConfidence.toFixed(0)}%
-                      </TableCell>
-                      <TableCell className="text-right font-mono font-bold text-primary">
-                        {voteData.vote !== 'HOLD' ? (voteData.bayesianProbability * 100).toFixed(1) : '0.0'}%
-                      </TableCell>
-                    </TableRow>
-                  ))
+                  sortedVotes.map(([robotId, voteData]) => {
+                    const perf = robotPerformance.find(p => p.id === robotId);
+                    const totalTrades = (perf?.wins || 0) + (perf?.losses || 0);
+
+                    return (
+                        <TableRow key={robotId}>
+                        <TableCell className="font-medium">
+                            <div className="flex items-center gap-2">
+                            {indicatorIcons[voteData.strategy?.strategyType || 'DEFAULT'] || <Bot className="h-4 w-4" />}
+                            <span>{voteData.strategy?.strategyType}</span>
+                            </div>
+                        </TableCell>
+                        <TableCell className="text-center text-xs">
+                             <span className="text-green-600 font-medium">{perf?.wins || 0}</span>
+                             <span className="text-muted-foreground"> / </span>
+                             <span className="text-red-600 font-medium">{perf?.losses || 0}</span>
+                        </TableCell>
+                        <TableCell className="text-center">
+                            <div className="flex items-center justify-center gap-1.5">
+                            {voteIcons[voteData.vote]}
+                            <span className="font-semibold">{voteData.vote}</span>
+                            </div>
+                        </TableCell>
+                        <TableCell className="text-right font-mono font-bold text-primary">
+                            {voteData.vote !== 'HOLD' ? (voteData.bayesianProbability * 100).toFixed(1) : '0.0'}%
+                        </TableCell>
+                        </TableRow>
+                    );
+                  })
                 ) : (
                   <TableRow>
                     <TableCell colSpan={4} className="text-center h-24 text-muted-foreground">

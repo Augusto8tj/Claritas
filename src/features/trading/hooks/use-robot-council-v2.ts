@@ -126,6 +126,7 @@ interface CouncilState {
     dashboardData: DashboardData | null;
     effectiveThreshold: number;
     councilConfidence: number;
+    systemMetrics: SystemMetrics;
 }
 
 export interface DashboardData {
@@ -298,16 +299,6 @@ export function useRobotCouncilV2(
   const lastTimePeriodRef = useRef<TimePeriod | null>(null);
   const lastRegimeRef = useRef<MarketRegime | null>(null);
 
-  const [systemMetrics, setSystemMetrics] = useState<SystemMetrics>({
-    virtualTradesCount: 0,
-    decisionLogCount: 0,
-    activeRobotsCount: 0,
-    memoryUsageMB: 0,
-    isExecuting: false,
-    lastCleanup: Date.now(),
-    orphanedTradesRemoved: 0
-  });
-
   const [strategyCouncil, setStrategyCouncil] = useState<RobotStrategy[]>(evolvedStrategies as RobotStrategy[]);
   const [isCouncilAutopilotOn, setIsCouncilAutopilotOn] = useState(false);
   const [isFetchingCouncil, setIsFetchingCouncil] = useState(false);
@@ -326,7 +317,16 @@ export function useRobotCouncilV2(
     bayesianVotes: {},
     dashboardData: null,
     effectiveThreshold: 0,
-    councilConfidence: 0
+    councilConfidence: 0,
+    systemMetrics: {
+        virtualTradesCount: 0,
+        decisionLogCount: 0,
+        activeRobotsCount: 0,
+        memoryUsageMB: 0,
+        isExecuting: false,
+        lastCleanup: Date.now(),
+        orphanedTradesRemoved: 0
+    },
   });
 
   const [robotPerformance, setRobotPerformance] = useState<EnhancedRobotPerformance[]>([]);
@@ -407,15 +407,16 @@ export function useRobotCouncilV2(
       });
     }
 
-    setSystemMetrics(prev => ({
-      ...prev,
-      virtualTradesCount: virtualTradesRef.current.length,
-      decisionLogCount: tradeDecisionLog.length,
-      activeRobotsCount: activeRobots,
-      memoryUsageMB: (performance as any).memory?.usedJSHeapSize
-        ? (performance as any).memory.usedJSHeapSize / 1024 / 1024
-        : 0,
-      isExecuting: councilExecutionRef.current.isExecuting
+    setCouncilState(prev => ({
+        ...prev,
+        systemMetrics: {
+            ...prev.systemMetrics,
+            virtualTradesCount: virtualTradesRef.current.length,
+            decisionLogCount: tradeDecisionLog.length,
+            activeRobotsCount: activeRobots,
+            memoryUsageMB: (performance as any).memory?.usedJSHeapSize ? (performance as any).memory.usedJSHeapSize / 1024 / 1024 : 0,
+            isExecuting: councilExecutionRef.current.isExecuting
+        }
     }));
   }, [isCouncilAutopilotOn, strategyCouncil, robotPerformance, tradeDecisionLog, toast, resetArenaPerformance]);
 
@@ -435,11 +436,14 @@ export function useRobotCouncilV2(
       
       if (removed > 0) {
         console.warn(`🧹 Limpeza: ${removed} trades órfãos removidos`);
-        setSystemMetrics(prev => ({
-          ...prev,
-          orphanedTradesRemoved: prev.orphanedTradesRemoved + removed,
-          lastCleanup: Date.now(),
-          virtualTradesCount: virtualTradesRef.current.length
+        setCouncilState(prev => ({
+            ...prev,
+            systemMetrics: {
+                ...prev.systemMetrics,
+                orphanedTradesRemoved: prev.systemMetrics.orphanedTradesRemoved + removed,
+                lastCleanup: Date.now(),
+                virtualTradesCount: virtualTradesRef.current.length
+            }
         }));
       }
     }, CLEANUP_INTERVAL_MS);
@@ -778,7 +782,7 @@ export function useRobotCouncilV2(
 
         let kellyStake = calculateKellyStake(dailyBalance - councilState.portfolioStats.totalExposure, consensusProbability, 0.95);
         if (microFeatures) {
-            if (microFeatures.isSpike) { toast({ title: "🛡️ Veto Total", description: "Pico anômalo detectado.", variant: "destructive" }); councilExecutionRef.current.isExecuting = false; return; }
+            if (isSpike) { toast({ title: "🛡️ Veto Total", description: "Pico anômalo detectado.", variant: "destructive" }); councilExecutionRef.current.isExecuting = false; return; }
             if ((consensusDirection === 'RISE' && microFeatures.pressure === 'sell') || (consensusDirection === 'FALL' && microFeatures.pressure === 'buy')) { kellyStake *= 0.5; toast({ title: "⚠️ Veto Parcial", description: "Risco reduzido." }); }
             if (regimeResult.regime === 'breakout' && microFeatures.pressure === (consensusDirection === 'RISE' ? 'buy' : 'sell')) { kellyStake *= 1.2; toast({ title: "✅ Breakout Confirmado", description: "Risco aumentado." }); }
         }
@@ -796,17 +800,18 @@ export function useRobotCouncilV2(
 
         const activeStakes = activeCouncilContracts.reduce((sum, c) => sum + c.stake, 0);
         
-        setCouncilState({
+        setCouncilState(prev => ({
+            ...prev,
             indicators: currentIndicators,
             currentRegime: { regime: regimeResult.regime, confidence: regimeResult.confidence, probabilities: regimeResult.probabilities },
             microstructure: microFeatures,
             consensusDecision: { direction: consensusDirection, probability: consensusProbability, stake: kellyStake },
-            portfolioStats: { totalExposure: activeStakes, maxExposure: dailyBalance * 0.3, currentDrawdown: Math.abs(dailyPnL / dailyBalance * 100), maxDrawdown: councilState.portfolioStats.maxDrawdown, dailyPnL: dailyPnL },
+            portfolioStats: { totalExposure: activeStakes, maxExposure: dailyBalance * 0.3, currentDrawdown: Math.abs(dailyPnL / dailyBalance * 100), maxDrawdown: prev.portfolioStats.maxDrawdown, dailyPnL: dailyPnL },
             bayesianVotes: localBayesianVotes,
             dashboardData: { regime: regimeResult.regime, bayesianProbability: consensusProbability, consensusDirection, activeRobotsCount, microstructure: { pressure: microFeatures ? microFeatures.volumeImbalance : 0.5, velocity: microFeatures ? microFeatures.tickVelocity : 0, isSpike: microFeatures ? microFeatures.isSpike : false }, kellyStake },
             effectiveThreshold: calculatedEffectiveThreshold,
             councilConfidence: totalWeight,
-        });
+        }));
 
         if (!consensusReached || activeStakes + kellyStake > dailyBalance * 0.3 || consensusProbability < 0.65 || consensusDirection === "HOLD") {
             councilExecutionRef.current.isExecuting = false;
@@ -850,7 +855,7 @@ export function useRobotCouncilV2(
   const {
       indicators, currentRegime, microstructure, consensusDecision,
       portfolioStats, bayesianVotes, dashboardData, effectiveThreshold,
-      councilConfidence
+      councilConfidence, systemMetrics
   } = councilState;
 
   return {
@@ -899,5 +904,3 @@ export function useRobotCouncilV2(
     supervisionStatus: { status: 'approved', message: 'Cérebro V2.5 Ativo' }, // Mocked for compatibility
   };
 }
-
-    
