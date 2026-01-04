@@ -98,7 +98,7 @@ type VirtualTrade = {
 export type EnhancedRobotPerformance = EnhancedRobotPerformanceType;
 export type RobotVote = RobotVoteType;
 export type BayesianVote = BayesianVoteType;
-export type CouncilVotes = { [key: string]: BayesianVote };
+export type CouncilVotes = { [key: string]: RobotVote };
 
 export interface DashboardData {
   regime: string;
@@ -913,4 +913,5 @@ export function useRobotCouncilV2(
     dashboardData, effectiveThreshold, councilConfidence, resetArenaPerformance,
     tradeDecisionLog, systemMetrics, // 🔥 NOVO: Exporta métricas
   };
-}"
+}
+"
