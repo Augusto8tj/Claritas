@@ -39,6 +39,8 @@ export function CouncilAutopilotInterfaceV2(props: CouncilAutopilotInterfaceV2Pr
     setIsDynamicRiskOn,
     isMeritocracyOn,
     setIsMeritocracyOn,
+    isDynamicExitOn,
+    setIsDynamicExitOn,
     strategyCouncil,
     consensusSensitivity,
     setConsensusSensitivity,
@@ -165,7 +167,6 @@ export function CouncilAutopilotInterfaceV2(props: CouncilAutopilotInterfaceV2Pr
                     step={5}
                     value={[takeProfitThreshold]}
                     onValueChange={(value) => setTakeProfitThreshold(value[0])}
-                    disabled={!isCouncilAutopilotOn}
                     className="[&>span]:bg-green-500 [&>div>span]:border-green-600"
                 />
                 <p className="text-xs text-muted-foreground pt-1">Percentual do lucro máximo para realizar o ganho.</p>
@@ -186,7 +187,6 @@ export function CouncilAutopilotInterfaceV2(props: CouncilAutopilotInterfaceV2Pr
                     step={5}
                     value={[stopLossThreshold]}
                     onValueChange={(value) => setStopLossThreshold(value[0])}
-                    disabled={!isCouncilAutopilotOn}
                     className="[&>span]:bg-red-500 [&>div>span]:border-red-600"
                 />
                 <p className="text-xs text-muted-foreground pt-1">Percentual de perda máxima para fechar a operação.</p>
@@ -256,6 +256,10 @@ export function CouncilAutopilotInterfaceV2(props: CouncilAutopilotInterfaceV2Pr
                 <Label htmlFor="meritocracy-switch" className="flex-1">Meritocracia (Ponderação)</Label>
                 <Switch id="meritocracy-switch" checked={isMeritocracyOn} onCheckedChange={setIsMeritocracyOn} disabled={isCouncilAutopilotOn} />
             </div>
+            <div className="flex items-center justify-between">
+                <Label htmlFor="dynamic-exit-switch" className="flex-1">Saída Dinâmica (TP/SL)</Label>
+                <Switch id="dynamic-exit-switch" checked={isDynamicExitOn} onCheckedChange={setIsDynamicExitOn} />
+            </div>
         </div>
 
         <Separator />
@@ -274,9 +278,4 @@ export function CouncilAutopilotInterfaceV2(props: CouncilAutopilotInterfaceV2Pr
 
          <div className="flex justify-between items-center text-xs text-muted-foreground pt-2">
             <span>Analistas em Posição</span>
-            <Badge variant="outline">{Array.isArray(strategyCouncil) ? strategyCouncil.length : 0}</Badge>
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
+            <Badge variant="outline">{Array.isArray(strategyCouncil) ? strategyCouncil.length :

@@ -182,9 +182,9 @@ const calculateTechnicalVote = (
   const setVote = (newVote: 'RISE' | 'FALL', newConfidence: number, newReason: string) => {
     if (newConfidence <= 0) return;
     vote = newVote;
-    confidence = newConfidence / 100; // Normaliza para 0-1
+    confidence = newConfidence;
     reason = newReason;
-    suggestedStake = confidence === (robot.strongConfidence/100) ? baseStake : baseStake * 0.5;
+    suggestedStake = confidence === robot.strongConfidence ? baseStake : baseStake * 0.5;
   };
 
   if (!indicators) {
@@ -264,14 +264,16 @@ export function useRobotCouncilV2(
   const { toast } = useToast();
   const { evolvedStrategies, evolveTrigger, evolutionHistory } = useStrategyEvolution(initialCouncilStrategies);
   
+  // 🔥 NOVO: Execution ID para prevenir race conditions
   const executionIdRef = useRef(0);
   const lastExecutionTimeRef = useRef(0);
   const contractsInAlertRef = useRef<Map<number, 'breached' | 'confirmed'>>(new Map());
   const lastActiveSymbolRef = useRef<string | null>(null);
   const lastTimePeriodRef = useRef<TimePeriod | null>(null);
-  const lastRegimeRef = useRef<MarketRegime | null>(null);
   const initialDataFetchedRef = useRef(false);
+  const lastRegimeRef = useRef<MarketRegime | null>(null);
 
+  // 🔥 NOVO: Métricas de sistema
   const [systemMetrics, setSystemMetrics] = useState<SystemMetrics>({
     virtualTradesCount: 0,
     decisionLogCount: 0,
@@ -399,35 +401,7 @@ export function useRobotCouncilV2(
     saveRobotPerformance(user.uid, initialPerformance);
   }, [strategyCouncil, user, toast]);
 
-  useEffect(() => {
-    if (!isCouncilAutopilotOn) return;
-
-    const cleanupInterval = setInterval(() => {
-      const now = Date.now() / 1000;
-      const before = virtualTradesRef.current.length;
-
-      virtualTradesRef.current = virtualTradesRef.current.filter(trade => {
-        const age = now - trade.entryEpoch;
-        return age < TRADE_TIMEOUT_SECONDS;
-      }).slice(-MAX_VIRTUAL_TRADES);
-
-      const removed = before - virtualTradesRef.current.length;
-      
-      if (removed > 0) {
-        console.warn(`🧹 Limpeza: ${removed} trades órfãos removidos`);
-        setSystemMetrics(prev => ({
-          ...prev,
-          orphanedTradesRemoved: prev.orphanedTradesRemoved + removed,
-          lastCleanup: Date.now(),
-          virtualTradesCount: virtualTradesRef.current.length
-        }));
-      }
-    }, CLEANUP_INTERVAL_MS);
-
-    return () => clearInterval(cleanupInterval);
-  }, [isCouncilAutopilotOn]);
-
-  const healthCheckCallback = useCallback(() => {
+    const healthCheckCallback = useCallback(() => {
     const activeRobots = strategyCouncil.filter(r => {
       const perf = robotPerformance.find(p => p.id === r.id);
       return perf && (perf.wins + perf.losses) > 0;
@@ -453,13 +427,42 @@ export function useRobotCouncilV2(
         : 0,
       isExecuting: councilExecutionRef.current.isExecuting
     }));
-  }, [strategyCouncil, robotPerformance, tradeDecisionLog, toast, resetArenaPerformance]);
+  }, [isCouncilAutopilotOn, strategyCouncil, robotPerformance, tradeDecisionLog, toast, resetArenaPerformance]);
 
   useEffect(() => {
     if (!isCouncilAutopilotOn) return;
+
+    const cleanupInterval = setInterval(() => {
+      const now = Date.now() / 1000;
+      const before = virtualTradesRef.current.length;
+
+      virtualTradesRef.current = virtualTradesRef.current.filter(trade => {
+        const age = now - trade.entryEpoch;
+        return age < TRADE_TIMEOUT_SECONDS;
+      }).slice(-MAX_VIRTUAL_TRADES);
+
+      const removed = before - virtualTradesRef.current.length;
+      
+      if (removed > 0) {
+        console.warn(`🧹 Limpeza: ${removed} trades órfãos removidos`);
+        setSystemMetrics(prev => ({
+          ...prev,
+          orphanedTradesRemoved: prev.orphanedTradesRemoved + removed,
+          lastCleanup: Date.now(),
+          virtualTradesCount: virtualTradesRef.current.length
+        }));
+      }
+    }, CLEANUP_INTERVAL_MS);
+    
     const healthCheckInterval = setInterval(healthCheckCallback, HEALTH_CHECK_INTERVAL_MS);
-    return () => clearInterval(healthCheckInterval);
+
+    return () => {
+        clearInterval(cleanupInterval);
+        clearInterval(healthCheckInterval);
+    };
   }, [isCouncilAutopilotOn, healthCheckCallback]);
+
+
 
   useEffect(() => {
     if (!user || isAuthLoading) return;
@@ -602,16 +605,24 @@ export function useRobotCouncilV2(
     
     // --- BOOTSTRAP DE DADOS HISTÓRICOS ---
     if (!initialDataFetchedRef.current) {
-        initialDataFetchedRef.current = true; // Marca como "em progresso"
-        
+        if (!getHistoricalData) {
+            console.error("getHistoricalData não está disponível.");
+            return;
+        }
+
+        setIsFetchingCouncil(true);
         getHistoricalData(activeSymbol, 'candles', 1000, timePeriod)
           .then(history => {
             console.log(`[Bootstrap] ${history.length} candles históricos carregados para ${activeSymbol}.`);
             setHistoricalData(history as CandleData[]);
+            initialDataFetchedRef.current = true;
           })
           .catch(err => {
             console.error('[Bootstrap] Falha ao carregar dados históricos:', err);
             initialDataFetchedRef.current = false; // Permite nova tentativa
+          })
+          .finally(() => {
+             setIsFetchingCouncil(false);
           });
         
         // Retorna aqui para aguardar os dados no próximo ciclo
@@ -810,8 +821,8 @@ export function useRobotCouncilV2(
         
         // --- DECISÃO DE CONSENSO (FUNIL ESTREITO) ---
         // Apenas votos com confiança mínima e condições ideais participam.
-        if (technicalVote.confidence * 100 < confidenceFactor) {
-            bayesianVotes[robot.id] = { ...technicalVote, rawConfidence: technicalVote.confidence * 100, calibratedConfidence: 0, bayesianProbability: 0.5, weight: 0, regime: regimeResult.regime, reason: `Confiança (${(technicalVote.confidence * 100).toFixed(0)}) < Limiar (${confidenceFactor})` };
+        if (technicalVote.confidence < confidenceFactor) {
+            bayesianVotes[robot.id] = { ...technicalVote, rawConfidence: technicalVote.confidence, calibratedConfidence: 0, bayesianProbability: 0.5, weight: 0, regime: regimeResult.regime, reason: `Confiança (${technicalVote.confidence.toFixed(0)}) < Limiar (${confidenceFactor})` };
             return;
         }
 
@@ -826,10 +837,10 @@ export function useRobotCouncilV2(
 
         activeRobotsCount++;
         let prior = (perf && (perf.wins + perf.losses) >= MIN_TRADES_FOR_STATS) ? perf.winRate / 100 : 0.5;
-        let likelihood = technicalVote.confidence; // Já está em 0-1
+        let likelihood = technicalVote.confidence / 100;
         if (microFeatures && microFeatures.yangZhangVolatility > 0.05) likelihood *= 0.8;
         const posterior = bayesianUpdate(prior, likelihood);
-        const calibratedConf = calibrateConfidence(technicalVote.confidence * 100, perf?.winRate || 50);
+        const calibratedConf = calibrateConfidence(technicalVote.confidence, perf?.winRate || 50);
 
         let weight = 1.0;
         if (isMeritocracyOn && perf && (perf.wins + perf.losses) > 10) {
@@ -837,8 +848,8 @@ export function useRobotCouncilV2(
           const mcWeight = perf.monteCarloScore >= 0.95 ? 1.2 : perf.monteCarloScore >= 0.85 ? 1.0 : 0.5;
           weight = sharpeWeight * mcWeight;
         }
-
-        const finalVote: BayesianVote = { ...technicalVote, rawConfidence: technicalVote.confidence * 100, calibratedConfidence: calibratedConf * 100, bayesianProbability: posterior, weight, suggestedStake: technicalVote.suggestedStake * posterior, regime: regimeResult.regime };
+        
+        const finalVote: BayesianVote = { ...technicalVote, rawConfidence: technicalVote.confidence, calibratedConfidence: calibratedConf * 100, bayesianProbability: posterior, weight, suggestedStake: technicalVote.suggestedStake * posterior, regime: regimeResult.regime };
         bayesianVotes[robot.id] = finalVote;
 
         const voteWeight = calibratedConf * weight;
@@ -929,7 +940,7 @@ export function useRobotCouncilV2(
     timePeriod, durationLimits, dailyBalance, dailyTarget, evolveTrigger,
     portfolioStats, consensusSensitivity, confidenceFactor, durationRange,
     takeProfitThreshold, stopLossThreshold, priceTicks, tickCandles,
-    isDynamicExitOn, getHistoricalData // Adicionado
+    isDynamicExitOn, getHistoricalData, resetArenaPerformance
   ]);
 
   return {
