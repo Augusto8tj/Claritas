@@ -914,4 +914,3 @@ export function useRobotCouncilV2(
     tradeDecisionLog, systemMetrics, // 🔥 NOVO: Exporta métricas
   };
 }
-"
