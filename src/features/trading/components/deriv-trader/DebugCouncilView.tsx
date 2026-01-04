@@ -61,8 +61,26 @@ const regimeLabels: Record<MarketRegime, string> = {
 export function DebugCouncilView({ votes, regime, isCouncilAutopilotOn }: DebugCouncilViewProps) {
 
   // 🔥 FIX: Adiciona guarda de segurança para props nulas ou indefinidas
-  if (!isCouncilAutopilotOn || !votes || !regime) {
-    return null; 
+  if (!isCouncilAutopilotOn || !votes || !regime || Object.keys(votes).length === 0) {
+    return (
+        <Card>
+            <CardHeader>
+                <CardTitle className="font-headline flex items-center gap-2">
+                    <Gauge className="h-5 w-5 text-primary" />
+                    Depuração da Mesa V2.0
+                </CardTitle>
+                 <CardDescription>
+                    Aguardando ativação e o primeiro ciclo de análise...
+                </CardDescription>
+            </CardHeader>
+            <CardContent>
+                <div className="text-center text-muted-foreground p-8">
+                    <Bot className="h-10 w-10 mx-auto mb-2"/>
+                    <p>Ative a Mesa Operacional para iniciar a depuração.</p>
+                </div>
+            </CardContent>
+        </Card>
+    );
   }
 
   const sortedVotes = Object.entries(votes).sort(([, a], [, b]) => {
