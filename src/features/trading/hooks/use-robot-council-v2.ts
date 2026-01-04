@@ -1,4 +1,4 @@
-// src/hooks/use-robot-council-v2.ts
+// /src/hooks/use-robot-council-v2.ts
 'use client';
 
 /**
@@ -395,7 +395,7 @@ export function useRobotCouncilV2(
     saveRobotPerformance(user.uid, initialPerformance);
   }, [strategyCouncil, user, toast]);
 
-    const healthCheckCallback = useCallback(() => {
+  const healthCheckCallback = useCallback(() => {
     const activeRobots = robotPerformance.filter(p => (p.wins + p.losses) > 0).length;
 
     if (activeRobots === 0 && strategyCouncil.length > 0) {
@@ -653,18 +653,24 @@ export function useRobotCouncilV2(
       if (isDynamicExitOn) {
         activeCouncilContracts.forEach(contract => {
           if (councilExecutionRef.current.sellingContracts.has(contract.id)) return;
-
+      
+          // Verifica se a duração do contrato é maior que 15 segundos
+          const contractDurationInSeconds = durationToSeconds(contract.duration, contract.durationUnit);
+          if (contractDurationInSeconds <= 15) {
+            return; // Ignora contratos de 15 segundos ou menos
+          }
+      
           const contractId = contract.id;
           const potentialProfit = contract.stake * 0.94;
           const currentProfit = contract.result || 0;
-
+      
           if (currentProfit > 0 && potentialProfit > 0 && (currentProfit / potentialProfit) * 100 >= takeProfitThreshold) {
             councilExecutionRef.current.sellingContracts.add(contractId);
             sellContract(contractId).finally(() => setTimeout(() => councilExecutionRef.current.sellingContracts.delete(contractId), 5000));
             toast({ title: "💰 Take Profit Atingido", description: `Contrato #${contractId} fechado.` });
             return;
           }
-
+      
           if (currentProfit < 0 && (Math.abs(currentProfit) / contract.stake) * 100 >= stopLossThreshold) {
             councilExecutionRef.current.sellingContracts.add(contractId);
             sellContract(contractId).finally(() => setTimeout(() => councilExecutionRef.current.sellingContracts.delete(contractId), 5000));
