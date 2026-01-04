@@ -163,138 +163,154 @@ const calculateTechnicalVote = (
 
   if (!indicators) return { vote: 'HOLD', confidence: 0, reason: "Sem Indicadores", optimalDuration, optimalDurationUnit, suggestedStake: 0 };
 
-  const { rsi, stoch, macd, bb, ma, adx, pdi, ndi, stochRSI, mfi, trix, roc, obv, rvi, parabolicSAR, chandelierExit, awesomeOscillator } = indicators;
+  const { rsi, stoch, macd, bb, ma, adx, pdi, ndi, stochRSI, mfi, trix, roc, obv, rvi, parabolicSAR, chandelierExit, awesomeOscillator, kama, donchianChannels, ichimoku, zScore, vwap } = indicators;
   const format = (val: number | null) => (isValid(val) ? val!.toFixed(2) : 'N/A');
   const lastCandle = tickCandles[tickCandles.length - 1];
+  if(!lastCandle) return { vote: 'HOLD', confidence: 0, reason: "Sem candles", optimalDuration, optimalDurationUnit, suggestedStake: 0 };
+  const price = lastCandle.close;
 
   // --- Lógica de Votação Expandida para Todos os Robôs ---
+    switch(robot.strategyType) {
+        case 'RSI':
+            if(isValid(rsi)) {
+                if (rsi <= robot.strongBuyThreshold!) setVote('RISE', robot.strongConfidence, `RSI(${format(rsi)}) < ${robot.strongBuyThreshold}`);
+                else if (rsi <= robot.weakBuyThreshold!) setVote('RISE', robot.weakConfidence, `RSI(${format(rsi)}) < ${robot.weakBuyThreshold}`);
+                else if (rsi >= robot.strongSellThreshold!) setVote('FALL', robot.strongConfidence, `RSI(${format(rsi)}) > ${robot.strongSellThreshold}`);
+                else if (rsi >= robot.weakSellThreshold!) setVote('FALL', robot.weakConfidence, `RSI(${format(rsi)}) > ${robot.weakSellThreshold}`);
+            }
+            break;
+        case 'STOCHASTIC':
+            if(isValid(stoch)) {
+                 if (stoch <= robot.strongBuyThreshold!) setVote('RISE', robot.strongConfidence, `Stoch(${format(stoch)}) < ${robot.strongBuyThreshold}`);
+                else if (stoch <= robot.weakBuyThreshold!) setVote('RISE', robot.weakConfidence, `Stoch(${format(stoch)}) < ${robot.weakBuyThreshold}`);
+                else if (stoch >= robot.strongSellThreshold!) setVote('FALL', robot.strongConfidence, `Stoch(${format(stoch)}) > ${robot.strongSellThreshold}`);
+                else if (stoch >= robot.weakSellThreshold!) setVote('FALL', robot.weakConfidence, `Stoch(${format(stoch)}) > ${robot.weakSellThreshold}`);
+            }
+            break;
+        case 'MACD_CROSS':
+             if (isValid(macd.macd) && isValid(macd.signal) && isValid(macd.histogram)) {
+                const isCrossingUp = macd.histogram > 0 && indicators.macd?.histogram! - macd.histogram > 0;
+                const isCrossingDown = macd.histogram < 0 && indicators.macd?.histogram! - macd.histogram < 0;
+                const divergence = Math.abs(macd.macd - macd.signal);
+                const conf = Math.min(100, 50 + divergence * 1000);
 
-  switch(robot.strategyType) {
-    case 'RSI':
-        if(isValid(rsi)) {
-            const score = (50 - rsi) / 50; // Mapeia RSI para -1 (venda) a 1 (compra)
-            const absScore = Math.abs(score);
-            if (absScore > 0.2) { // Limiar mínimo para ter uma opinião
-                setVote(score > 0 ? 'RISE' : 'FALL', absScore * 100, `RSI(${format(rsi)})`);
+                if (isCrossingUp) setVote('RISE', conf, `Crossover de alta`);
+                else if (isCrossingDown) setVote('FALL', conf, `Crossover de baixa`);
             }
-        }
-        break;
-
-    case 'STOCHASTIC':
-        if(isValid(stoch)) {
-            const score = (50 - stoch) / 50;
-            const absScore = Math.abs(score);
-            if (absScore > 0.2) {
-                setVote(score > 0 ? 'RISE' : 'FALL', absScore * 100, `Stoch(${format(stoch)})`);
+            break;
+        case 'BOLLINGER_BANDS':
+            if (isValid(bb.lower) && isValid(bb.upper)) {
+                if (price <= bb.lower) setVote('RISE', robot.strongConfidence, `Toque na banda inferior`);
+                else if (price >= bb.upper) setVote('FALL', robot.strongConfidence, `Toque na banda superior`);
             }
-        }
-        break;
-
-    case 'MACD_CROSS':
-        if (isValid(macd.macd) && isValid(macd.signal)) {
-            const cross = macd.macd - macd.signal;
-            const score = Math.tanh(cross * 10); // Sigmoid para normalizar
-            if (Math.abs(score) > 0.1) {
-                setVote(score > 0 ? 'RISE' : 'FALL', Math.abs(score) * 70, `MACD Cross`);
+            break;
+        case 'MOVING_AVERAGE_CROSS':
+            if (isValid(ma.short) && isValid(ma.long)) {
+                if (ma.short > ma.long) setVote('RISE', robot.weakConfidence, `Cruzamento de Alta`);
+                else if (ma.long > ma.short) setVote('FALL', robot.weakConfidence, `Cruzamento de Baixa`);
             }
-        }
-        break;
-
-    case 'BOLLINGER_BANDS':
-        if (isValid(bb.lower) && isValid(bb.upper) && lastCandle) {
-            const price = lastCandle.close;
-            if (price <= bb.lower) setVote('RISE', robot.weakConfidence, `Toque Banda Inferior`);
-            else if (price >= bb.upper) setVote('FALL', robot.weakConfidence, `Toque Banda Superior`);
-        }
-        break;
-    
-    case 'MOVING_AVERAGE_CROSS':
-        if (isValid(ma.short) && isValid(ma.long)) {
-            if (ma.short > ma.long) setVote('RISE', robot.weakConfidence, `Golden Cross`);
-            else if (ma.long > ma.short) setVote('FALL', robot.weakConfidence, `Death Cross`);
-        }
-        break;
-
-    case 'ADX_TREND':
-        if (isValid(adx) && adx > (robot.trendStrengthThreshold || 25)) {
-            if (isValid(pdi) && isValid(ndi)) {
-                if (pdi > ndi) setVote('RISE', robot.weakConfidence, `Tendência Alta (ADX ${format(adx)})`);
-                else if (ndi > pdi) setVote('FALL', robot.weakConfidence, `Tendência Baixa (ADX ${format(adx)})`);
+            break;
+        case 'ADX_TREND':
+            if (isValid(adx) && adx > (robot.trendStrengthThreshold || 20) && isValid(pdi) && isValid(ndi)) {
+                const conf = Math.min(100, 40 + (adx - 20) * 2);
+                if (pdi > ndi) setVote('RISE', conf, `Tendência de Alta Forte (ADX: ${format(adx)})`);
+                else if (ndi > pdi) setVote('FALL', conf, `Tendência de Baixa Forte (ADX: ${format(adx)})`);
             }
-        }
-        break;
-    
-    case 'MFI':
-        if(isValid(mfi)) {
-            const score = (50 - mfi) / 50;
-            if (Math.abs(score) > 0.2) {
-                setVote(score > 0 ? 'RISE' : 'FALL', Math.abs(score) * 100, `MFI(${format(mfi)})`);
+            break;
+        case 'STOCH_RSI':
+            if (isValid(stochRSI)) {
+                if (stochRSI <= robot.strongBuyThreshold!) setVote('RISE', robot.strongConfidence, `StochRSI(${format(stochRSI)}) na zona de sobrevenda`);
+                else if (stochRSI >= robot.strongSellThreshold!) setVote('FALL', robot.strongConfidence, `StochRSI(${format(stochRSI)}) na zona de sobrecompra`);
             }
-        }
-        break;
-        
-    case 'STOCH_RSI':
-        if(isValid(stochRSI)) {
-            const score = (0.5 - stochRSI) / 0.5;
-            if (Math.abs(score) > 0.2) {
-                setVote(score > 0 ? 'RISE' : 'FALL', Math.abs(score) * 100, `StochRSI(${format(stochRSI)})`);
+            break;
+        case 'MFI':
+             if (isValid(mfi)) {
+                if (mfi <= robot.strongBuyThreshold!) setVote('RISE', robot.strongConfidence, `MFI(${format(mfi)}) sobrevendido`);
+                else if (mfi >= robot.strongSellThreshold!) setVote('FALL', robot.strongConfidence, `MFI(${format(mfi)}) sobrecomprado`);
             }
-        }
-        break;
-        
-    case 'TRIX':
-        if(isValid(trix)) {
-            const score = Math.tanh(trix * 5);
-             if (Math.abs(score) > 0.1) {
-                setVote(score > 0 ? 'RISE' : 'FALL', Math.abs(score) * 60, `TRIX(${format(trix)})`);
+            break;
+        case 'TRIX':
+            if (isValid(trix)) {
+                 if (trix > 0) setVote('RISE', Math.min(90, Math.abs(trix) * 200), `TRIX positivo`);
+                else if (trix < 0) setVote('FALL', Math.min(90, Math.abs(trix) * 200), `TRIX negativo`);
             }
-        }
-        break;
-        
-    case 'ROC':
-        if(isValid(roc)) {
-             const score = Math.tanh(roc);
-             if (Math.abs(score) > 0.1) {
-                setVote(score > 0 ? 'RISE' : 'FALL', Math.abs(score) * 60, `ROC(${format(roc)})`);
+            break;
+        case 'ROC':
+             if (isValid(roc)) {
+                 if (roc > 0) setVote('RISE', Math.min(90, roc * 10), `ROC positivo`);
+                else if (roc < 0) setVote('FALL', Math.min(90, Math.abs(roc) * 10), `ROC negativo`);
             }
-        }
-        break;
-        
-    case 'RVI':
-        if(isValid(rvi)) {
-            const score = (rvi - 50) / 50;
-            if (Math.abs(score) > 0.2) {
-                setVote(score > 0 ? 'RISE' : 'FALL', Math.abs(score) * 80, `RVI(${format(rvi)})`);
+            break;
+        case 'RVI':
+             if (isValid(rvi) && isValid(indicators.rvi)) {
+                if (rvi > 50) setVote('RISE', (rvi - 50) * 2, `Vigor de Alta (${format(rvi)})`);
+                else if (rvi < 50) setVote('FALL', (50 - rvi) * 2, `Vigor de Baixa (${format(rvi)})`);
             }
-        }
-        break;
-        
-    case 'PARABOLIC_SAR':
-        if(isValid(parabolicSAR) && lastCandle) {
-            if(lastCandle.close > parabolicSAR) setVote('RISE', robot.weakConfidence, `Preço acima do SAR`);
-            else if(lastCandle.close < parabolicSAR) setVote('FALL', robot.weakConfidence, `Preço abaixo do SAR`);
-        }
-        break;
-        
-    case 'CHANDELIER_EXIT':
-        if(isValid(chandelierExit) && lastCandle) {
-             if(lastCandle.close > chandelierExit) setVote('RISE', robot.weakConfidence, `Preço acima da Saída Chandelier`);
-        }
-        break;
-
-    case 'AWESOME_OSCILLATOR':
-         if(isValid(awesomeOscillator)) {
-             if(awesomeOscillator > 0) setVote('RISE', robot.weakConfidence, `AO Positivo`);
-             else if(awesomeOscillator < 0) setVote('FALL', robot.weakConfidence, `AO Negativo`);
-        }
-        break;
-
-    default:
-        // Lógica para outros robôs que ainda não têm uma análise contínua.
-        break;
-  }
-
-  return { vote, confidence, reason, optimalDuration, optimalDurationUnit, suggestedStake };
+            break;
+        case 'PARABOLIC_SAR':
+            if (isValid(parabolicSAR)) {
+                 if (price > parabolicSAR) setVote('RISE', robot.weakConfidence, `Preço acima do SAR`);
+                 else if (price < parabolicSAR) setVote('FALL', robot.weakConfidence, `Preço abaixo do SAR`);
+            }
+            break;
+        case 'ICHIMOKU_CLOUD':
+            if (ichimoku && isValid(ichimoku.senkouA) && isValid(ichimoku.senkouB) && isValid(ichimoku.tenkan) && isValid(ichimoku.kijun)) {
+                const aboveCloud = price > ichimoku.senkouA && price > ichimoku.senkouB;
+                const belowCloud = price < ichimoku.senkouA && price < ichimoku.senkouB;
+                const tenkanAboveKijun = ichimoku.tenkan > ichimoku.kijun;
+                if (aboveCloud && tenkanAboveKijun) setVote('RISE', robot.strongConfidence, `Acima da Nuvem, Tenkan > Kijun`);
+                else if (belowCloud && !tenkanAboveKijun) setVote('FALL', robot.strongConfidence, `Abaixo da Nuvem, Tenkan < Kijun`);
+            }
+            break;
+        case 'KAMA':
+            if (isValid(kama)) {
+                if (price > kama) setVote('RISE', robot.weakConfidence, `Preço > KAMA`);
+                else if (price < kama) setVote('FALL', robot.weakConfidence, `Preço < KAMA`);
+            }
+            break;
+        case 'Z_SCORE':
+            if (isValid(zScore)) {
+                if (zScore <= -(robot.zScoreThreshold || 2)) setVote('RISE', robot.strongConfidence, `Z-Score (${format(zScore)}) Extremo Negativo`);
+                else if (zScore >= (robot.zScoreThreshold || 2)) setVote('FALL', robot.strongConfidence, `Z-Score (${format(zScore)}) Extremo Positivo`);
+            }
+            break;
+         case 'DONCHIAN_CHANNELS':
+            const lastChannel = donchianChannels[donchianChannels.length-1];
+            if (lastChannel && isValid(lastChannel.upper) && isValid(lastChannel.lower)) {
+                if (price >= lastChannel.upper) setVote('RISE', robot.strongConfidence, `Rompimento de Máxima`);
+                else if (price <= lastChannel.lower) setVote('FALL', robot.strongConfidence, `Rompimento de Mínima`);
+            }
+            break;
+        case 'AWESOME_OSCILLATOR':
+            if(isValid(awesomeOscillator)) {
+                if (awesomeOscillator > 0) setVote('RISE', robot.weakConfidence, `AO positivo`);
+                else if (awesomeOscillator < 0) setVote('FALL', robot.weakConfidence, `AO negativo`);
+            }
+            break;
+        case 'OBV':
+             if (isValid(obv)) {
+                const obvSma = calculateSMA(tickCandles.map(c => ({...c, close: obv})), 20);
+                const lastObvSma = obvSma[obvSma.length-1];
+                if (isValid(lastObvSma)) {
+                    if (obv > lastObvSma) setVote('RISE', robot.weakConfidence, `OBV acima da sua média`);
+                    else if (obv < lastObvSma) setVote('FALL', robot.weakConfidence, `OBV abaixo da sua média`);
+                }
+            }
+            break;
+        case 'VWAP':
+            const lastVwap = vwap[vwap.length - 1];
+            if (isValid(lastVwap)) {
+                if (price > lastVwap) setVote('RISE', robot.strongConfidence, `Preço > VWAP`);
+                else if (price < lastVwap) setVote('FALL', robot.strongConfidence, `Preço < VWAP`);
+            }
+            break;
+        case 'CHANDELIER_EXIT':
+            if(isValid(chandelierExit)) {
+                if (price > chandelierExit) setVote('RISE', robot.weakConfidence, `Acima da saída Chandelier`);
+            }
+            break;
+    }
+  return { vote, confidence: confidence * 100, reason, optimalDuration, optimalDurationUnit, suggestedStake };
 };
 
 // ════════════════════════════════════════════════════════════════════
@@ -674,7 +690,7 @@ export function useRobotCouncilV2(
         }
         
         const finalVote: BayesianVote = { 
-            vote: technicalVote.vote, rawConfidence: technicalVote.confidence * 100, calibratedConfidence: calibratedConf * 100, 
+            vote: technicalVote.vote, rawConfidence: technicalVote.confidence, calibratedConfidence: calibratedConf * 100, 
             bayesianProbability: posterior, weight: weight, sharpeRatio: perf?.sharpeRatio || 0,
             optimalDuration: technicalVote.optimalDuration, optimalDurationUnit: technicalVote.optimalDurationUnit, 
             suggestedStake: technicalVote.suggestedStake * posterior, regime: regimeResult.regime, 
