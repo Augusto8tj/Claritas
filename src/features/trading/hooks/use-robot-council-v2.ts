@@ -712,6 +712,8 @@ export function useRobotCouncilV2(
             
             strategyCouncil.forEach(robot => {
                 const technicalVote = calculateTechnicalVote(robot, currentIndicators, validCandles);
+                
+                // Aprendizagem Incondicional: Registra o voto para a Arena Virtual
                 if (technicalVote.vote !== 'HOLD') {
                     const hasActiveTrade = virtualTradesRef.current.some(t => t.robotId === robot.id && t.exitEpoch > currentTick.epoch);
                     if (!hasActiveTrade) {
@@ -721,6 +723,7 @@ export function useRobotCouncilV2(
                     }
                 }
 
+                // Decisão Condicional: Aplica filtros para o consenso de trade real
                 if (technicalVote.confidence < confidenceFactor) {
                     localBayesianVotes[robot.id] = { ...technicalVote, rawConfidence: technicalVote.confidence, calibratedConfidence: 0, bayesianProbability: 0.5, weight: 0, regime: regimeResult.regime, reason: `Confiança (${technicalVote.confidence.toFixed(0)}) < Limiar (${confidenceFactor})` };
                     return;
@@ -730,6 +733,7 @@ export function useRobotCouncilV2(
                 const perf = performanceMap.get(robot.id);
                 const isRegimeEffective = !perf?.effectiveRegimes?.length || perf.effectiveRegimes.includes(regimeResult.regime);
                 const isDurationInRange = durationInSeconds >= durationRange[0] && durationInSeconds <= durationRange[1];
+                
                 if (!isRegimeEffective || !isDurationInRange) {
                     localBayesianVotes[robot.id] = { ...technicalVote, rawConfidence: 0, calibratedConfidence: 0, bayesianProbability: 0.5, weight: 0, regime: regimeResult.regime, reason: 'Fora de Regime/Duração' };
                     return;
@@ -845,18 +849,48 @@ export function useRobotCouncilV2(
   } = councilState;
 
   return {
-    isCouncilAutopilotOn, setIsCouncilAutopilotOn, fetchStrategyCouncil, dissolveCouncil,
-    isFetchingCouncil, strategyCouncil, robotPerformance, evolutionHistory, indicators,
-    currentRegime, microstructure, consensusDecision, portfolioStats,
-    dailyBalance, setDailyBalance, dailyTarget, setDailyTarget, consensusSensitivity,
-    setConsensusSensitivity, confidenceFactor, setConfidenceFactor, durationRange,
-    setDurationRange, takeProfitThreshold, setTakeProfitThreshold, stopLossThreshold,
-    setStopLossThreshold, isDynamicConsensusOn, setIsDynamicConsensusOn,
-    isDynamicRiskOn, setIsDynamicRiskOn, isMeritocracyOn, setIsMeritocracyOn,
-    isDynamicExitOn, setIsDynamicExitOn,
-    dashboardData, effectiveThreshold, councilConfidence, resetArenaPerformance,
-    tradeDecisionLog, systemMetrics,
+    isCouncilAutopilotOn,
+    setIsCouncilAutopilotOn,
+    fetchStrategyCouncil,
+    dissolveCouncil,
+    isFetchingCouncil,
+    strategyCouncil,
+    robotPerformance,
+    evolutionHistory,
+    indicators,
+    currentRegime,
+    microstructure,
+    consensusDecision,
+    portfolioStats,
+    dailyBalance,
+    setDailyBalance,
+    dailyTarget,
+    setDailyTarget,
+    consensusSensitivity,
+    setConsensusSensitivity,
+    confidenceFactor,
+    setConfidenceFactor,
+    durationRange,
+    setDurationRange,
+    takeProfitThreshold,
+    setTakeProfitThreshold,
+    stopLossThreshold,
+    setStopLossThreshold,
+    isDynamicConsensusOn,
+    setIsDynamicConsensusOn,
+    isDynamicRiskOn,
+    setIsDynamicRiskOn,
+    isMeritocracyOn,
+    setIsMeritocracyOn,
+    isDynamicExitOn,
+    setIsDynamicExitOn,
+    dashboardData,
+    effectiveThreshold,
+    councilConfidence,
+    resetArenaPerformance,
+    tradeDecisionLog,
+    systemMetrics,
     bayesianVotes,
-    supervisionStatus: { status: 'approved', message: 'Cérebro V2.5 Ativo' } // Mocked for compatibility
+    supervisionStatus: { status: 'approved', message: 'Cérebro V2.5 Ativo' }, // Mocked for compatibility
   };
 }
