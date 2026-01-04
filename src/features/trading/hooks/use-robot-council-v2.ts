@@ -259,7 +259,7 @@ export function useRobotCouncilV2(
   priceTicks: TickData[],
   dataVersion: number,
 ) {
-  const { operationsLog, executeTrade, timePeriod, isConnected, durationLimits, sellContract, getHistoricalData } = useDerivApi();
+  const { operationsLog, executeTrade, timePeriod, isConnected, durationLimits, sellContract } = useDerivApi();
   const { user, loading: isAuthLoading } = useAuth();
   const { toast } = useToast();
   const { evolvedStrategies, evolveTrigger, evolutionHistory } = useStrategyEvolution(initialCouncilStrategies);
@@ -270,8 +270,6 @@ export function useRobotCouncilV2(
   const contractsInAlertRef = useRef<Map<number, 'breached' | 'confirmed'>>(new Map());
   const lastActiveSymbolRef = useRef<string | null>(null);
   const lastTimePeriodRef = useRef<TimePeriod | null>(null);
-  const initialDataFetchedRef = useRef(false);
-  const lastRegimeRef = useRef<MarketRegime | null>(null);
 
   // 🔥 NOVO: Métricas de sistema
   const [systemMetrics, setSystemMetrics] = useState<SystemMetrics>({
@@ -283,8 +281,6 @@ export function useRobotCouncilV2(
     lastCleanup: Date.now(),
     orphanedTradesRemoved: 0
   });
-  
-  const [historicalData, setHistoricalData] = useState<CandleData[]>([]);
 
   const [strategyCouncil, setStrategyCouncil] = useState<RobotStrategy[]>(evolvedStrategies as RobotStrategy[]);
   const [isCouncilAutopilotOn, setIsCouncilAutopilotOn] = useState(false);
@@ -357,8 +353,8 @@ export function useRobotCouncilV2(
   });
 
   const tickCandles = useMemo(() => {
-    const historical = historicalData.length > 0 ? historicalData : [];
-    const ticks = priceTicks.map((t) => ({
+    if (!priceTicks || priceTicks.length === 0) return [];
+    return priceTicks.map((t) => ({
       epoch: t.epoch,
       open: t.price,
       high: t.price,
@@ -366,12 +362,7 @@ export function useRobotCouncilV2(
       close: t.price,
       volume: 1
     }));
-    // Evita duplicados
-    const combined = [...historical, ...ticks];
-    const uniqueByEpoch = Array.from(new Map(combined.map(item => [item.epoch, item])).values());
-    return uniqueByEpoch.sort((a,b) => a.epoch - b.epoch);
-  }, [dataVersion, priceTicks, historicalData]);
-
+  }, [dataVersion, priceTicks]);
 
   useEffect(() => {
     setStrategyCouncil(evolvedStrategies as RobotStrategy[]);
@@ -401,14 +392,14 @@ export function useRobotCouncilV2(
     saveRobotPerformance(user.uid, initialPerformance);
   }, [strategyCouncil, user, toast]);
 
-    const healthCheckCallback = useCallback(() => {
+  const healthCheckCallback = useCallback(() => {
     const activeRobots = strategyCouncil.filter(r => {
       const perf = robotPerformance.find(p => p.id === r.id);
       return perf && (perf.wins + perf.losses) > 0;
     }).length;
 
     if (activeRobots === 0 && strategyCouncil.length > 0) {
-      console.error('🚨 ALERTA: Nenhum robô ativo! Resetando sistema...');
+      console.warn('🚨 ALERTA: Nenhum robô ativo! Resetando sistema...');
       resetArenaPerformance();
       toast({
         title: "⚠️ Auto-Recuperação",
@@ -515,7 +506,6 @@ export function useRobotCouncilV2(
     }
 
     setIsFetchingCouncil(true);
-    initialDataFetchedRef.current = false;
     await new Promise((resolve) => setTimeout(resolve, 500));
 
     const council = (evolvedStrategies as RobotStrategy[]).map(s => ({ ...s }));
@@ -540,7 +530,6 @@ export function useRobotCouncilV2(
 
     if (isCouncilAutopilotOn && (symbolChanged || timePeriodChanged)) {
       console.log(`[CONTEXT CHANGE] Mudança detectada. Resetando arena...`);
-      initialDataFetchedRef.current = false; // Força o refetch dos dados históricos
       resetArenaPerformance();
 
       if (symbolChanged) lastActiveSymbolRef.current = activeSymbol;
@@ -559,8 +548,6 @@ export function useRobotCouncilV2(
       setIsCouncilAutopilotOn(false);
       virtualTradesRef.current = [];
       setIsFetchingCouncil(false);
-      initialDataFetchedRef.current = false; // Reset for next activation
-      setHistoricalData([]); // Clear historical data
       toast({
         title: '⏸️ Sistema Pausado',
         description: 'Conselho desativado com segurança.',
@@ -599,38 +586,9 @@ export function useRobotCouncilV2(
     lastExecutionTimeRef.current = now;
 
     if (!isConnected || !user || !isCouncilAutopilotOn ||
-      strategyCouncil.length === 0 || !activeSymbol) {
+      strategyCouncil.length === 0 || !activeSymbol ||
+      tickCandles.length < REGIME_LOOKBACK) {
       return;
-    }
-    
-    // --- BOOTSTRAP DE DADOS HISTÓRICOS ---
-    if (!initialDataFetchedRef.current) {
-        if (!getHistoricalData) {
-            console.error("getHistoricalData não está disponível.");
-            return;
-        }
-
-        setIsFetchingCouncil(true);
-        getHistoricalData(activeSymbol, 'candles', 1000, timePeriod)
-          .then(history => {
-            console.log(`[Bootstrap] ${history.length} candles históricos carregados para ${activeSymbol}.`);
-            setHistoricalData(history as CandleData[]);
-            initialDataFetchedRef.current = true;
-          })
-          .catch(err => {
-            console.error('[Bootstrap] Falha ao carregar dados históricos:', err);
-            initialDataFetchedRef.current = false; // Permite nova tentativa
-          })
-          .finally(() => {
-             setIsFetchingCouncil(false);
-          });
-        
-        // Retorna aqui para aguardar os dados no próximo ciclo
-        return;
-    }
-
-    if (tickCandles.length < REGIME_LOOKBACK) {
-        return;
     }
 
     const currentTick = priceTicks[priceTicks.length - 1];
@@ -667,17 +625,16 @@ export function useRobotCouncilV2(
           roc: currentIndicators.roc || undefined,
           atr: currentIndicators.atr || undefined,
         },
-        lastRegimeRef.current || 'ranging',
+        currentRegime.regime,
         transitionMatrixRef.current
       );
       
-      // ✅ RESET DA ARENA NA MUDANÇA DE REGIME
-      if (lastRegimeRef.current && lastRegimeRef.current !== regimeResult.regime) {
-          console.log(`[REGIME CHANGE] Mudança de ${lastRegimeRef.current} para ${regimeResult.regime}. Resetando Arena...`);
+      if(lastActiveSymbolRef.current && lastActiveSymbolRef.current !== activeSymbol && lastTimePeriodRef.current !== timePeriod) {
+        if(currentRegime.regime !== regimeResult.regime){
+          console.log(`[REGIME CHANGE] Mudança de ${currentRegime.regime} para ${regimeResult.regime}. Resetando Arena...`);
           resetArenaPerformance();
+        }
       }
-      lastRegimeRef.current = regimeResult.regime;
-
 
       setCurrentRegime({
         regime: regimeResult.regime,
@@ -940,7 +897,7 @@ export function useRobotCouncilV2(
     timePeriod, durationLimits, dailyBalance, dailyTarget, evolveTrigger,
     portfolioStats, consensusSensitivity, confidenceFactor, durationRange,
     takeProfitThreshold, stopLossThreshold, priceTicks, tickCandles,
-    isDynamicExitOn, getHistoricalData, resetArenaPerformance
+    isDynamicExitOn, resetArenaPerformance
   ]);
 
   return {
