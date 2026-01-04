@@ -151,6 +151,7 @@ export interface SystemMetrics {
   isExecuting: boolean;
   lastCleanup: number;
   orphanedTradesRemoved: number;
+  sessionDuration: number;
 }
 
 // ════════════════════════════════════════════════════════════════════
@@ -303,6 +304,7 @@ export function useRobotCouncilV2(
   const [isCouncilAutopilotOn, setIsCouncilAutopilotOn] = useState(false);
   const [isFetchingCouncil, setIsFetchingCouncil] = useState(false);
   const [tradeDecisionLog, setTradeDecisionLog] = useState<TradeDecisionLog[]>([]);
+  const [sessionStartTime, setSessionStartTime] = useState<number | null>(null);
 
   const [councilState, setCouncilState] = useState<CouncilState>({
     indicators: null,
@@ -325,7 +327,8 @@ export function useRobotCouncilV2(
         memoryUsageMB: 0,
         isExecuting: false,
         lastCleanup: Date.now(),
-        orphanedTradesRemoved: 0
+        orphanedTradesRemoved: 0,
+        sessionDuration: 0,
     },
   });
 
@@ -364,7 +367,7 @@ export function useRobotCouncilV2(
       close: t.price,
       volume: 1
     }));
-  }, [priceTicks]); // Depende apenas dos ticks brutos
+  }, [priceTicks]);
 
   useEffect(() => {
     setStrategyCouncil(evolvedStrategies as RobotStrategy[]);
@@ -396,7 +399,7 @@ export function useRobotCouncilV2(
 
   const healthCheckCallback = useCallback(() => {
     const activeRobots = robotPerformance.filter(p => (p.wins + p.losses) > 0).length;
-
+    
     if (activeRobots === 0 && strategyCouncil.length > 0) {
       console.warn('🚨 ALERTA: Nenhum robô ativo! Resetando sistema...');
       resetArenaPerformance();
@@ -415,10 +418,11 @@ export function useRobotCouncilV2(
             decisionLogCount: tradeDecisionLog.length,
             activeRobotsCount: activeRobots,
             memoryUsageMB: (performance as any).memory?.usedJSHeapSize ? (performance as any).memory.usedJSHeapSize / 1024 / 1024 : 0,
-            isExecuting: councilExecutionRef.current.isExecuting
+            isExecuting: councilExecutionRef.current.isExecuting,
+            sessionDuration: sessionStartTime ? (Date.now() - sessionStartTime) / 1000 : 0,
         }
     }));
-  }, [isCouncilAutopilotOn, strategyCouncil, robotPerformance, tradeDecisionLog, toast, resetArenaPerformance]);
+  }, [isCouncilAutopilotOn, strategyCouncil, robotPerformance, tradeDecisionLog, toast, resetArenaPerformance, sessionStartTime]);
 
   useEffect(() => {
     if (!isCouncilAutopilotOn) return;
@@ -518,7 +522,8 @@ export function useRobotCouncilV2(
       title: '🚀 Sistema V2.0 Ativado',
       description: `${council.length} robôs com IA avançada iniciados.`,
     });
-
+    
+    setSessionStartTime(Date.now());
     setIsCouncilAutopilotOn(true);
     lastActiveSymbolRef.current = activeSymbol;
     lastTimePeriodRef.current = timePeriod;
@@ -549,6 +554,7 @@ export function useRobotCouncilV2(
       setIsCouncilAutopilotOn(false);
       virtualTradesRef.current = [];
       setIsFetchingCouncil(false);
+      setSessionStartTime(null);
       toast({
         title: '⏸️ Sistema Pausado',
         description: 'Conselho desativado com segurança.',
@@ -782,6 +788,7 @@ export function useRobotCouncilV2(
 
         let kellyStake = calculateKellyStake(dailyBalance - councilState.portfolioStats.totalExposure, consensusProbability, 0.95);
         if (microFeatures) {
+            const isSpike = microFeatures.isSpike;
             if (isSpike) { toast({ title: "🛡️ Veto Total", description: "Pico anômalo detectado.", variant: "destructive" }); councilExecutionRef.current.isExecuting = false; return; }
             if ((consensusDirection === 'RISE' && microFeatures.pressure === 'sell') || (consensusDirection === 'FALL' && microFeatures.pressure === 'buy')) { kellyStake *= 0.5; toast({ title: "⚠️ Veto Parcial", description: "Risco reduzido." }); }
             if (regimeResult.regime === 'breakout' && microFeatures.pressure === (consensusDirection === 'RISE' ? 'buy' : 'sell')) { kellyStake *= 1.2; toast({ title: "✅ Breakout Confirmado", description: "Risco aumentado." }); }
@@ -835,13 +842,17 @@ export function useRobotCouncilV2(
         councilExecutionRef.current.isExecuting = false;
     }
   }, [
-    isConnected, user, isCouncilAutopilotOn, dataVersion, operationsLog, 
-    ...Object.values(councilState), // This will likely be too broad and cause re-renders. 
-                                  // In a real app, you'd break this down.
-    strategyCouncil, robotPerformance, isMeritocracyOn, activeSymbol, timePeriod, 
-    dailyBalance, dailyTarget, consensusSensitivity, confidenceFactor, durationRange, 
-    isDynamicConsensusOn, isDynamicRiskOn, isDynamicExitOn, stopLossThreshold, takeProfitThreshold,
-    toast, executeTrade, sellContract, resetArenaPerformance, evolveTrigger
+    isConnected, user, isCouncilAutopilotOn,
+    // Removido: dataVersion, operationsLog, ...Object.values(councilState)
+    // Adicionado granularidade:
+    priceTicks, tickCandles,
+    strategyCouncil, robotPerformance, isMeritocracyOn,
+    activeSymbol, timePeriod,
+    dailyBalance, dailyTarget,
+    consensusSensitivity, confidenceFactor, durationRange,
+    isDynamicConsensusOn, isDynamicRiskOn, isDynamicExitOn,
+    stopLossThreshold, takeProfitThreshold,
+    toast, executeTrade, sellContract, resetArenaPerformance, evolveTrigger, operationsLog, councilState.portfolioStats.totalExposure
   ]);
 
   useEffect(() => {

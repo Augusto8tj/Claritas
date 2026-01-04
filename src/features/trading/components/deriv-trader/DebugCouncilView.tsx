@@ -55,6 +55,14 @@ const regimeLabels: Record<MarketRegime, string> = {
   breakout: 'Rompimento (Breakout)'
 };
 
+const formatDuration = (seconds: number): string => {
+  const h = Math.floor(seconds / 3600).toString().padStart(2, '0');
+  const m = Math.floor((seconds % 3600) / 60).toString().padStart(2, '0');
+  const s = Math.floor(seconds % 60).toString().padStart(2, '0');
+  return `${h}:${m}:${s}`;
+};
+
+
 // ============================================================================
 // COMPONENTE PRINCIPAL
 // ============================================================================
@@ -67,7 +75,7 @@ export function DebugCouncilView({ votes, regime, isCouncilAutopilotOn, systemMe
             <CardHeader>
                 <CardTitle className="font-headline flex items-center gap-2">
                     <Gauge className="h-5 w-5 text-primary" />
-                    Depuração da Mesa V2.0
+                    Diagnóstico da Mesa V2.0
                 </CardTitle>
                  <CardDescription>
                     Aguardando ativação e o primeiro ciclo de análise...
@@ -113,7 +121,11 @@ export function DebugCouncilView({ votes, regime, isCouncilAutopilotOn, systemMe
                 <Brain className="h-5 w-5" />
                 Métricas do Sistema
             </h3>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs">
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-2 text-xs">
+                 <div className="p-2 bg-muted rounded-md text-center">
+                    <p className="flex items-center justify-center gap-1 text-muted-foreground"><Timer className="h-3 w-3"/>Sessão</p>
+                    <p className="font-bold text-lg">{formatDuration(systemMetrics.sessionDuration)}</p>
+                </div>
                 <div className="p-2 bg-muted rounded-md text-center">
                     <p className="flex items-center justify-center gap-1 text-muted-foreground"><Database className="h-3 w-3"/>Trades Virtuais</p>
                     <p className="font-bold text-lg">{systemMetrics.virtualTradesCount}</p>
