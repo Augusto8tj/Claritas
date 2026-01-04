@@ -72,6 +72,7 @@ const MAX_DECISION_LOG = 100;          // Máximo de logs de decisão
 const TRADE_TIMEOUT_SECONDS = 3600;    // 1 hora - trades mais velhos são descartados
 const CLEANUP_INTERVAL_MS = 60000;     // Limpeza a cada 1 minuto
 const HEALTH_CHECK_INTERVAL_MS = 30000; // Health check a cada 30 segundos
+const METRICS_UPDATE_INTERVAL_MS = 1000; // ATUALIZAÇÃO DE MÉTRICAS A CADA SEGUNDO
 
 const REGIME_THRESHOLDS = {
   ADX_TREND: 25,
@@ -160,7 +161,7 @@ export interface SystemMetrics {
 
 const durationToSeconds = (duration: number, unit: DurationUnit): number => {
   switch (unit) {
-    case 't': return duration * 2;
+    case 't': return duration * 2; // Aproximação de 1 tick = 2 segundos
     case 's': return duration;
     case 'm': return duration * 60;
     case 'h': return duration * 3600;
@@ -409,24 +410,28 @@ export function useRobotCouncilV2(
         variant: "destructive"
       });
     }
-
-    setCouncilState(prev => ({
-        ...prev,
-        systemMetrics: {
-            ...prev.systemMetrics,
-            virtualTradesCount: virtualTradesRef.current.length,
-            decisionLogCount: tradeDecisionLog.length,
-            activeRobotsCount: activeRobots,
-            memoryUsageMB: (performance as any).memory?.usedJSHeapSize ? (performance as any).memory.usedJSHeapSize / 1024 / 1024 : 0,
-            isExecuting: councilExecutionRef.current.isExecuting,
-            sessionDuration: sessionStartTime ? (Date.now() - sessionStartTime) / 1000 : 0,
-        }
-    }));
-  }, [isCouncilAutopilotOn, strategyCouncil, robotPerformance, tradeDecisionLog, toast, resetArenaPerformance, sessionStartTime]);
+  }, [isCouncilAutopilotOn, strategyCouncil, robotPerformance, toast, resetArenaPerformance]);
 
   useEffect(() => {
     if (!isCouncilAutopilotOn) return;
 
+    // Intervalo de alta frequência para métricas da UI
+    const metricsInterval = setInterval(() => {
+      setCouncilState(prev => ({
+          ...prev,
+          systemMetrics: {
+              ...prev.systemMetrics,
+              virtualTradesCount: virtualTradesRef.current.length,
+              decisionLogCount: tradeDecisionLog.length,
+              activeRobotsCount: robotPerformance.filter(p => (p.wins + p.losses) > 0).length,
+              memoryUsageMB: (performance as any).memory?.usedJSHeapSize ? (performance as any).memory.usedJSHeapSize / 1024 / 1024 : 0,
+              isExecuting: councilExecutionRef.current.isExecuting,
+              sessionDuration: sessionStartTime ? (Date.now() - sessionStartTime) / 1000 : 0,
+          }
+      }));
+    }, METRICS_UPDATE_INTERVAL_MS);
+
+    // Intervalo de baixa frequência para limpeza e health checks pesados
     const cleanupInterval = setInterval(() => {
       const now = Date.now() / 1000;
       const before = virtualTradesRef.current.length;
@@ -446,7 +451,6 @@ export function useRobotCouncilV2(
                 ...prev.systemMetrics,
                 orphanedTradesRemoved: prev.systemMetrics.orphanedTradesRemoved + removed,
                 lastCleanup: Date.now(),
-                virtualTradesCount: virtualTradesRef.current.length
             }
         }));
       }
@@ -455,10 +459,12 @@ export function useRobotCouncilV2(
     const healthCheck = setInterval(healthCheckCallback, HEALTH_CHECK_INTERVAL_MS);
 
     return () => {
+        clearInterval(metricsInterval);
         clearInterval(cleanupInterval);
         clearInterval(healthCheck);
     };
-  }, [isCouncilAutopilotOn, healthCheckCallback]);
+  }, [isCouncilAutopilotOn, healthCheckCallback, tradeDecisionLog.length, robotPerformance, sessionStartTime]);
+
 
   useEffect(() => {
     if (!user || isAuthLoading) return;
