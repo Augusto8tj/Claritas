@@ -270,6 +270,7 @@ export function useRobotCouncilV2(
   const contractsInAlertRef = useRef<Map<number, 'breached' | 'confirmed'>>(new Map());
   const lastActiveSymbolRef = useRef<string | null>(null);
   const lastTimePeriodRef = useRef<TimePeriod | null>(null);
+  const lastRegimeRef = useRef<MarketRegime | null>(null);
 
   // 🔥 NOVO: Métricas de sistema
   const [systemMetrics, setSystemMetrics] = useState<SystemMetrics>({
@@ -344,6 +345,8 @@ export function useRobotCouncilV2(
   const [dashboardData, setDashboardData] = useState<DashboardData | null>(null);
   const [effectiveThreshold, setEffectiveThreshold] = useState(0);
 
+  const [bayesianVotes, setBayesianVotes] = useState<Record<string, BayesianVote>>({});
+
   const councilExecutionRef = useRef<{
     isExecuting: boolean;
     sellingContracts: Set<number>;
@@ -392,11 +395,8 @@ export function useRobotCouncilV2(
     saveRobotPerformance(user.uid, initialPerformance);
   }, [strategyCouncil, user, toast]);
 
-  const healthCheckCallback = useCallback(() => {
-    const activeRobots = strategyCouncil.filter(r => {
-      const perf = robotPerformance.find(p => p.id === r.id);
-      return perf && (perf.wins + perf.losses) > 0;
-    }).length;
+    const healthCheckCallback = useCallback(() => {
+    const activeRobots = robotPerformance.filter(p => (p.wins + p.losses) > 0).length;
 
     if (activeRobots === 0 && strategyCouncil.length > 0) {
       console.warn('🚨 ALERTA: Nenhum robô ativo! Resetando sistema...');
@@ -625,16 +625,16 @@ export function useRobotCouncilV2(
           roc: currentIndicators.roc || undefined,
           atr: currentIndicators.atr || undefined,
         },
-        currentRegime.regime,
+        lastRegimeRef.current || 'ranging',
         transitionMatrixRef.current
       );
       
-      if(lastActiveSymbolRef.current && lastActiveSymbolRef.current !== activeSymbol && lastTimePeriodRef.current !== timePeriod) {
-        if(currentRegime.regime !== regimeResult.regime){
-          console.log(`[REGIME CHANGE] Mudança de ${currentRegime.regime} para ${regimeResult.regime}. Resetando Arena...`);
-          resetArenaPerformance();
-        }
+      if(lastRegimeRef.current && lastRegimeRef.current !== regimeResult.regime){
+        console.log(`[REGIME CHANGE] Mudança de ${lastRegimeRef.current} para ${regimeResult.regime}. Resetando Arena...`);
+        resetArenaPerformance();
       }
+      lastRegimeRef.current = regimeResult.regime;
+
 
       setCurrentRegime({
         regime: regimeResult.regime,
@@ -757,7 +757,7 @@ export function useRobotCouncilV2(
         }
       }
 
-      const bayesianVotes: Record<string, BayesianVote> = {};
+      const localBayesianVotes: Record<string, BayesianVote> = {};
       let riseSum = 0, fallSum = 0, totalWeight = 0, weightedStakeSum = 0, weightedDurationSum = 0;
       let activeRobotsCount = 0;
 
@@ -766,7 +766,6 @@ export function useRobotCouncilV2(
         const technicalVote = calculateTechnicalVote(robot, currentIndicators, validCandles);
         
         // --- APRENDIZAGEM (FUNIL LARGO) ---
-        // Qualquer voto válido entra na Arena para gerar estatísticas.
         if (technicalVote.vote !== 'HOLD') {
             const hasActiveTrade = virtualTradesRef.current.some(t => t.robotId === robot.id && t.exitEpoch > currentTick.epoch);
             if(!hasActiveTrade) {
@@ -777,9 +776,8 @@ export function useRobotCouncilV2(
         }
         
         // --- DECISÃO DE CONSENSO (FUNIL ESTREITO) ---
-        // Apenas votos com confiança mínima e condições ideais participam.
         if (technicalVote.confidence < confidenceFactor) {
-            bayesianVotes[robot.id] = { ...technicalVote, rawConfidence: technicalVote.confidence, calibratedConfidence: 0, bayesianProbability: 0.5, weight: 0, regime: regimeResult.regime, reason: `Confiança (${technicalVote.confidence.toFixed(0)}) < Limiar (${confidenceFactor})` };
+            localBayesianVotes[robot.id] = { ...technicalVote, rawConfidence: technicalVote.confidence, calibratedConfidence: 0, bayesianProbability: 0.5, weight: 0, regime: regimeResult.regime, reason: `Confiança (${technicalVote.confidence.toFixed(0)}) < Limiar (${confidenceFactor})` };
             return;
         }
 
@@ -788,7 +786,7 @@ export function useRobotCouncilV2(
         const isDurationInRange = durationInSeconds >= durationRange[0] && durationInSeconds <= durationRange[1];
 
         if (!isRegimeEffective || !isDurationInRange) {
-          bayesianVotes[robot.id] = { ...technicalVote, rawConfidence: 0, calibratedConfidence: 0, bayesianProbability: 0.5, weight: 0, regime: regimeResult.regime, reason: 'Fora de Regime/Duração' };
+          localBayesianVotes[robot.id] = { ...technicalVote, rawConfidence: 0, calibratedConfidence: 0, bayesianProbability: 0.5, weight: 0, regime: regimeResult.regime, reason: 'Fora de Regime/Duração' };
           return;
         }
 
@@ -806,8 +804,8 @@ export function useRobotCouncilV2(
           weight = sharpeWeight * mcWeight;
         }
         
-        const finalVote: BayesianVote = { ...technicalVote, rawConfidence: technicalVote.confidence, calibratedConfidence: calibratedConf * 100, bayesianProbability: posterior, weight, suggestedStake: technicalVote.suggestedStake * posterior, regime: regimeResult.regime };
-        bayesianVotes[robot.id] = finalVote;
+        const finalVote: BayesianVote = { ...technicalVote, rawConfidence: technicalVote.confidence, calibratedConfidence: calibratedConf * 100, bayesianProbability: posterior, weight, suggestedStake: technicalVote.suggestedStake * posterior, regime: regimeResult.regime, sharpeRatio: perf?.sharpeRatio, strategy: robot };
+        localBayesianVotes[robot.id] = finalVote;
 
         const voteWeight = calibratedConf * weight;
         if (technicalVote.vote === 'RISE') riseSum += voteWeight;
@@ -816,6 +814,7 @@ export function useRobotCouncilV2(
         weightedDurationSum += durationInSeconds * voteWeight;
         totalWeight += voteWeight;
       });
+      setBayesianVotes(localBayesianVotes);
       setCouncilConfidence(totalWeight);
 
       let consensusDirection: 'RISE' | 'FALL' | 'HOLD' = 'HOLD';
@@ -832,7 +831,9 @@ export function useRobotCouncilV2(
       if (dailyPnL <= -dailyBalance) { toast({ title: "🛑 Stop Loss Diário", description: "Operações suspensas.", variant: "destructive" }); return; }
       if (dailyPnL >= dailyTarget) { toast({ title: "🎯 Meta Batida", description: `Lucro de ${dailyPnL.toFixed(2)}!` }); return; }
 
-      let calculatedEffectiveThreshold = isDynamicConsensusOn ? (totalWeight * (consensusSensitivity / 100) * Math.pow(1 + (microFeatures ? Math.min(microFeatures.yangZhangVolatility * 5, 1) : 0), 1.5)) : consensusSensitivity;
+      let calculatedEffectiveThreshold = isDynamicConsensusOn 
+        ? (totalWeight > 0 ? (totalWeight * (consensusSensitivity / 100) * Math.pow(1 + (microFeatures ? Math.min(microFeatures.yangZhangVolatility * 5, 1) : 0), 1.5)) : Infinity)
+        : consensusSensitivity;
       setEffectiveThreshold(calculatedEffectiveThreshold);
       const consensusReached = Math.max(riseSum, fallSum) >= calculatedEffectiveThreshold;
 
@@ -867,7 +868,7 @@ export function useRobotCouncilV2(
       const currentExecutionId = ++executionIdRef.current;
       councilExecutionRef.current.isExecuting = true;
 
-      const decisionLog: TradeDecisionLog = { id: `TDL-${Date.now()}`, timestamp: new Date().toISOString(), asset: activeSymbol, timePeriod, tradeParams: { direction: consensusDirection, stake: kellyStake, duration: finalDuration, durationUnit: finalDurationUnit }, context: { marketRegime: regimeResult.regime, regimeConfidence: regimeResult.confidence, microstructure: microFeatures, indicators: currentIndicators }, consensus: { bayesianProbability: consensusProbability, kellyStake, activeRobots: activeRobotsCount, votes: bayesianVotes }, result: 'pending', pnl: 0 };
+      const decisionLog: TradeDecisionLog = { id: `TDL-${Date.now()}`, timestamp: new Date().toISOString(), asset: activeSymbol, timePeriod, tradeParams: { direction: consensusDirection, stake: kellyStake, duration: finalDuration, durationUnit: finalDurationUnit }, context: { marketRegime: regimeResult.regime, regimeConfidence: regimeResult.confidence, microstructure: microFeatures, indicators: currentIndicators, supervisionReason: "N/A" }, consensus: { bayesianProbability: consensusProbability, kellyStake, activeRobots: activeRobotsCount, votes: localBayesianVotes }, result: 'pending', pnl: 0 };
       
       setTradeDecisionLog(prev => {
         const newLog = [...prev, decisionLog];
@@ -893,7 +894,7 @@ export function useRobotCouncilV2(
   }, [
     dataVersion, isConnected, isCouncilAutopilotOn, strategyCouncil,
     robotPerformance, isMeritocracyOn, isDynamicConsensusOn, isDynamicRiskOn,
-    activeSymbol, operationsLog, currentRegime, user, toast, executeTrade, sellContract,
+    activeSymbol, operationsLog, user, toast, executeTrade, sellContract,
     timePeriod, durationLimits, dailyBalance, dailyTarget, evolveTrigger,
     portfolioStats, consensusSensitivity, confidenceFactor, durationRange,
     takeProfitThreshold, stopLossThreshold, priceTicks, tickCandles,
@@ -912,5 +913,6 @@ export function useRobotCouncilV2(
     isDynamicExitOn, setIsDynamicExitOn,
     dashboardData, effectiveThreshold, councilConfidence, resetArenaPerformance,
     tradeDecisionLog, systemMetrics,
+    bayesianVotes
   };
 }
