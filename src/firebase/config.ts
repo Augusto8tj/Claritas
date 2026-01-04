@@ -1,3 +1,4 @@
+// /src/firebase/config.ts
 export const firebaseConfig = {
   "projectId": "claritas-copilot",
   "appId": "1:1025750986126:web:32e60c121e39489f4308df",

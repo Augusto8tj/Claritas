@@ -1,5 +1,4 @@
 // /src/services/financial-data-service.ts
-
 import { db } from '@/lib/firebase';
 import { collection, getDocs, doc, setDoc, query, where, orderBy, getDoc, addDoc, deleteDoc } from 'firebase/firestore';
 import type { Goal, BudgetCategory, Transaction, RobotPerformance, TradeDecisionLog, EnhancedRobotPerformance } from '@/lib/types';

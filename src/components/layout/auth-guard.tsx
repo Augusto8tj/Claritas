@@ -1,4 +1,4 @@
-// src/features/auth/components/auth-guard.tsx
+// /src/components/layout/auth-guard.tsx
 "use client";
 
 import { usePathname, useRouter } from "next/navigation";

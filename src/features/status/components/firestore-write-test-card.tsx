@@ -1,4 +1,4 @@
-// src/features/status/components/firestore-write-test-card.tsx
+// /src/features/status/components/firestore-write-test-card.tsx
 "use client";
 
 import React, { useState } from 'react';

@@ -1,4 +1,4 @@
-// src/features/financials/components/budget/budget-overview.tsx
+// /src/features/financials/components/budget/budget-overview.tsx
 "use client";
 
 import * as React from "react";

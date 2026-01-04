@@ -1,5 +1,4 @@
-
-
+// /src/app/deriv-trader-v2/page.tsx
 'use client';
 
 import React from "react";
@@ -14,7 +13,7 @@ import { Trash2, Dna } from "lucide-react";
 import { useDerivApi } from "@/features/trading/hooks/use-deriv-api";
 import { Skeleton } from "@/components/ui/skeleton";
 import { OperationsLog } from "@/features/trading/components/deriv-trader/operations-log";
-import { riseFallSchema, type RiseFallFormValues } from "@/features/trading/components/deriv-trader/deriv-trader-interface.types";
+import { riseFallSchema, type RiseFallFormValues } from "@/lib/types";
 import { CouncilAutopilotInterfaceV2 } from "@/features/trading/components/deriv-trader/council-autopilot-interface-v2";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { useRobotCouncilV2 } from "@/features/trading/hooks/use-robot-council-v2";
@@ -24,6 +23,7 @@ import { CouncilDashboardV2 } from '@/features/trading/components/deriv-trader/C
 import { TradingDeskV2 } from "@/features/trading/components/deriv-trader/trading-desk-v2";
 import { EvolutionLab } from "@/features/trading/components/deriv-trader/evolution-lab";
 import { DebugCouncilView } from "@/features/trading/components/deriv-trader/DebugCouncilView";
+import { TradingDecisionLogViewer } from "@/features/trading/components/deriv-trader/TradingDecisionLogViewer";
 
 
 const Header = () => {
@@ -109,7 +109,7 @@ const DerivTraderV2Core = () => {
                      <div className="animate-in fade-in slide-in-from-top-4 duration-500">
                         <CouncilDashboardV2
                             consensusDecision={robotCouncil.consensusDecision}
-                            supervisionStatus={{ status: 'approved', message: 'Cérebro V2.0 Ativo' }}
+                            supervisionStatus={{ status: 'approved', message: 'Cérebro V2.5 Ativo' }}
                             activeCommittee={robotCouncil.currentRegime.regime}
                             isCouncilAutopilotOn={robotCouncil.isCouncilAutopilotOn}
                         />
@@ -126,9 +126,10 @@ const DerivTraderV2Core = () => {
             </div>
 
             <Tabs value={activeTab} onValueChange={setActiveTab}>
-                <TabsList className="grid w-full grid-cols-3">
+                <TabsList className="grid w-full grid-cols-4">
                     <TabsTrigger value="desk">Arena V2</TabsTrigger>
                     <TabsTrigger value="log">Operações</TabsTrigger>
+                    <TabsTrigger value="audit">Auditoria</TabsTrigger>
                     <TabsTrigger value="evolution">Evolução</TabsTrigger>
                 </TabsList>
                 <TabsContent value="desk" className="mt-4">
@@ -140,6 +141,9 @@ const DerivTraderV2Core = () => {
                 </TabsContent>
                 <TabsContent value="log" className="mt-4">
                     <OperationsLog operations={operationsLog} />
+                </TabsContent>
+                <TabsContent value="audit" className="mt-4">
+                    <TradingDecisionLogViewer logs={robotCouncil.tradeDecisionLog} />
                 </TabsContent>
                 <TabsContent value="evolution" className="mt-4">
                     <EvolutionLab history={robotCouncil.evolutionHistory} />

@@ -1,4 +1,4 @@
-
+// /src/app/signup/page.tsx
 import { SignupForm } from "@/features/auth/components/signup-form";
 import { Logo } from "@/components/icons";
 

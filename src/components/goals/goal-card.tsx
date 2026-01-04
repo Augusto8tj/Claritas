@@ -1,4 +1,4 @@
-// src/features/financials/components/goals/goal-card.tsx
+// /src/components/goals/goal-card.tsx
 "use client";
 
 import Image from "next/image";

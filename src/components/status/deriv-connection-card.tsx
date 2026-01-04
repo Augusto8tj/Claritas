@@ -1,4 +1,4 @@
-// src/components/status/deriv-connection-card.tsx
+// /src/components/status/deriv-connection-card.tsx
 "use client";
 
 import React, { useState } from 'react';

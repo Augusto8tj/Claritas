@@ -1,4 +1,4 @@
-// src/features/financials/components/dashboard/net-worth-chart.tsx
+// /src/features/financials/components/dashboard/net-worth-chart.tsx
 'use client';
 import {
   Line,

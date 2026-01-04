@@ -1,4 +1,4 @@
-// src/features/financials/components/dashboard/ai-insight-card.tsx
+// /src/features/financials/components/dashboard/ai-insight-card.tsx
 'use client';
 
 import { useEffect, useState } from 'react';

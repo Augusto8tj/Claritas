@@ -1,4 +1,4 @@
-// src/features/financials/components/dashboard/goal-progress-chart.tsx
+// /src/features/financials/components/dashboard/goal-progress-chart.tsx
 "use client";
 
 import type { Goal } from "@/lib/types";

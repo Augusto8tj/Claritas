@@ -1,4 +1,4 @@
-// src/features/financials/components/budget/edit-budget-dialog.tsx
+// /src/components/budget/edit-budget-dialog.tsx
 "use client";
 
 import { useState } from "react";

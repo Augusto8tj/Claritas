@@ -1,5 +1,4 @@
-// src/features/trading/services/DerivFinanceLib.ts
-
+// /src/services/DerivFinanceLib.ts
 /**
  * BIBLIOTECA FINANCEIRA AVANÇADA PARA DERIV API (2025)
  * Suporta Gráficos de Linha (Ticks) e Velas (OHLC)

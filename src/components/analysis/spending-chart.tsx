@@ -1,4 +1,4 @@
-// src/components/analysis/spending-chart.tsx
+// /src/components/analysis/spending-chart.tsx
 "use client";
 
 import * as React from "react";

@@ -222,13 +222,13 @@ export default function HelpPage() {
                     <p>O Deriv Trader 2.0 representa uma evolução fundamental, saindo de um sistema de "consenso simples" para um verdadeiro <strong>"Cérebro Quantitativo"</strong>, que opera de forma semelhante a uma mesa de operações de um fundo de investimento de alta frequência.</p>
                     
                     <h3 className="text-md font-bold mt-3">1. Contexto é Rei: A Arquitetura "Regime-Aware"</h3>
-                    <p>A cada momento, um modelo inspirado em <strong>Hidden Markov Models (HMM)</strong> classifica o mercado num de cinco "regimes" (`TREND_UP`, `RANGING`, etc.). O sistema sabe que usar um robô oscilador (como o RSI) numa tendência forte é desastroso. Portanto, o Cérebro V2.0 <strong>ativa apenas os robôs especialistas que são adequados para o regime atual</strong>, silenciando os outros.</p>
+                    <p>A cada momento, um modelo inspirado em <strong>Hidden Markov Models (HMM)</strong> classifica o mercado num de cinco "regimes" (\`TREND_UP\`, \`RANGING\`, etc.). O sistema sabe que usar um robô oscilador (como o RSI) numa tendência forte é desastroso. Portanto, o Cérebro V2.0 <strong>ativa apenas os robôs especialistas que são adequados para o regime atual</strong>, silenciando os outros.</p>
 
                     <h3 className="text-md font-bold mt-3">2. Consenso Bayesiano: A Sabedoria Ponderada</h3>
                     <p>Em vez de uma simples contagem de votos, o sistema usa <strong>Inferência Bayesiana</strong>. Quando um robô vota, o sistema combina a confiança do sinal atual com a <strong>taxa de acerto histórica daquele robô, naquele regime específico</strong>. O resultado é uma Probabilidade de Consenso Bayesiano muito mais precisa e ajustada à realidade.</p>
 
                     <h3 className="text-md font-bold mt-3">3. Gestão de Risco Científica: O Critério de Kelly</h3>
-                    <p>O valor da aposta (`stake`) é calculado cientificamente usando o <strong>Critério de Kelly Fracionado</strong>. Se a Probabilidade Bayesiana de sucesso é alta, o sistema aposta de forma mais agressiva. Se a vantagem é pequena, ele aposta o mínimo para proteger o capital. O risco é ajustado dinamicamente a cada segundo.</p>
+                    <p>O valor da aposta (\`stake\`) é calculado cientificamente usando o <strong>Critério de Kelly Fracionado</strong>. Se a Probabilidade Bayesiana de sucesso é alta, o sistema aposta de forma mais agressiva. Se a vantagem é pequena, ele aposta o mínimo para proteger o capital. O risco é ajustado dinamicamente a cada segundo.</p>
 
                     <h3 className="text-md font-bold mt-3">4. Veto de Microestrutura: O "Guarda-Costas" Final</h3>
                     <p>Mesmo com um consenso forte, uma camada final de proteção analisa os últimos 10-20 ticks. Se detetar uma pressão de mercado súbita e contrária (ex: um pico de volume de venda), o "guarda-costas" <strong>vetará a operação</strong>, prevenindo entradas em movimentos anormais ou "flash crashes".</p>

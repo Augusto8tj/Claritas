@@ -1,4 +1,4 @@
-// src/features/financials/components/dashboard/main-goal.tsx
+// /src/features/financials/components/dashboard/main-goal.tsx
 "use client";
 
 import { useAuth } from "@/features/auth/hooks/use-auth";

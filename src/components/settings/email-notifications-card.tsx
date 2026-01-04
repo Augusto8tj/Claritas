@@ -1,4 +1,4 @@
-// src/features/auth/components/settings/email-notifications-card.tsx
+// /src/components/settings/email-notifications-card.tsx
 "use client";
 
 import { useState } from "react";

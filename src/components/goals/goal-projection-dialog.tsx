@@ -1,4 +1,4 @@
-// src/features/financials/components/goals/goal-projection-dialog.tsx
+// /src/components/goals/goal-projection-dialog.tsx
 "use client";
 
 import { useState } from "react";

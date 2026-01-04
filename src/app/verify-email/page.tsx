@@ -1,4 +1,4 @@
-// src/app/verify-email/page.tsx
+// /src/app/verify-email/page.tsx
 'use client';
 
 import { useState } from 'react';

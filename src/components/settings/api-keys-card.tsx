@@ -1,4 +1,4 @@
-// src/components/settings/api-keys-card.tsx
+// /src/components/settings/api-keys-card.tsx
 "use client";
 
 import { useState } from "react";

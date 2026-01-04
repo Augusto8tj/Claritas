@@ -1,5 +1,4 @@
 // /src/services/indicator-service.ts
-
 /**
  * @fileOverview This service provides a centralized engine for calculating various financial technical indicators.
  * It is designed to be used on the client-side for real-time analysis.

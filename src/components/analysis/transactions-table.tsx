@@ -1,4 +1,4 @@
-// src/components/analysis/transactions-table.tsx
+// /src/components/analysis/transactions-table.tsx
 "use client";
 
 import * as React from "react";

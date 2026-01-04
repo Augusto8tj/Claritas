@@ -1,4 +1,4 @@
-// src/firebase/provider.tsx
+// /src/firebase/provider.tsx
 'use client';
 
 import React, { DependencyList, createContext, useContext, ReactNode, useMemo, useState, useEffect } from 'react';

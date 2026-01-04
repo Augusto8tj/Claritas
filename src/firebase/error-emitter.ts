@@ -1,3 +1,4 @@
+// /src/firebase/error-emitter.ts
 'use client';
 import { FirestorePermissionError } from '@/firebase/errors';
 

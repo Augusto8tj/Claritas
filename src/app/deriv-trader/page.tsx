@@ -1,5 +1,4 @@
-
-
+// /src/app/deriv-trader/page.tsx
 'use client';
 
 import React, { useState, useEffect } from "react";

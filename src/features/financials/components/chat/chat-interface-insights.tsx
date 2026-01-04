@@ -1,4 +1,4 @@
-// src/features/financials/components/chat/chat-interface-insights.tsx
+// /src/features/financials/components/chat/chat-interface-insights.tsx
 "use client";
 
 import { useState, useRef, useEffect } from "react";

@@ -1,4 +1,4 @@
-// src/lib/types/trading.types.ts
+// /src/lib/types/trading.types.ts
 import { z } from 'zod';
 import type { TimePeriod } from '.';
 

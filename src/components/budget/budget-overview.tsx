@@ -1,4 +1,4 @@
-// src/components/budget/budget-overview.tsx
+// /src/components/budget/budget-overview.tsx
 "use client";
 
 import * as React from "react";

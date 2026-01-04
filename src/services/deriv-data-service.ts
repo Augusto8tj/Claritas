@@ -1,4 +1,4 @@
-// src/services/deriv-data-service.ts
+// /src/services/deriv-data-service.ts
 'use server';
 
 /**
