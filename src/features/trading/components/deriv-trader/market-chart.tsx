@@ -39,6 +39,138 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { TradeLegend } from './trade-legend'
 import type { Indicators } from '@/services/indicator-service'
 
+interface DrawActiveTradeParams {
+  ctx: CanvasRenderingContext2D
+  ann: TradeAnnotation
+  visibleData: ChartData[]
+  getX: (index: number) => number
+  getY: (price: number) => number
+  colors: any
+  isCandle: (d: ChartData) => boolean
+}
+
+function drawActiveTrade({
+  ctx,
+  ann,
+  visibleData,
+  getX,
+  getY,
+  colors,
+}: DrawActiveTradeParams) {
+  const entryIndex = visibleData.findIndex(
+    d => Math.abs(d.epoch - ann.entryTime) < 1
+  )
+  if (entryIndex === -1) return
+
+  const entryX = getX(entryIndex)
+  const entryY = getY(ann.entryPrice)
+
+  const lastIndex = visibleData.length - 1
+  if (lastIndex <= entryIndex) return
+
+  const now = performance.now()
+
+  /* ===========================
+     PROGRESSO TEMPORAL SUAVE
+  ============================ */
+  const elapsed = Math.min(
+    1,
+    (now - ann.entryTime * 1000) / 800
+  )
+  const t = 1 - Math.pow(1 - elapsed, 3)
+
+  const targetX = getX(lastIndex)
+  const animatedX = entryX + (targetX - entryX) * t
+
+  /* ===========================
+     DIREÇÃO VISUAL FIXA
+  ============================ */
+  const visualDelta = (Math.abs(targetX - entryX) * 0.35)
+  const directionMultiplier = ann.direction === 'rise' ? -1 : 1
+
+  const animatedY =
+    entryY + visualDelta * directionMultiplier * t
+
+  /* ===========================
+     PULSO SUAVE
+  ============================ */
+  const pulse = 0.5 + Math.sin(now / 300) * 0.5
+
+  /* ===========================
+     GRADIENTE CALL / PUT
+  ============================ */
+  const gradient = ctx.createLinearGradient(
+    entryX,
+    entryY,
+    animatedX,
+    animatedY
+  )
+
+  if (ann.direction === 'rise') {
+    gradient.addColorStop(0, '#3b82f6')
+    gradient.addColorStop(1, '#22c55e')
+  } else {
+    gradient.addColorStop(0, '#f97316')
+    gradient.addColorStop(1, '#ef4444')
+  }
+
+  /* ===========================
+     LINHA PRINCIPAL
+  ============================ */
+  ctx.save()
+  ctx.beginPath()
+  ctx.moveTo(entryX, entryY)
+  ctx.lineTo(animatedX, animatedY)
+  ctx.strokeStyle = gradient
+  ctx.lineWidth = 3 + pulse * 1.5
+  ctx.setLineDash([10, 6])
+  ctx.globalAlpha = 0.85
+  ctx.stroke()
+  ctx.setLineDash([])
+
+  /* ===========================
+     PONTO FINAL (ALVO)
+  ============================ */
+  ctx.beginPath()
+  ctx.arc(
+    animatedX,
+    animatedY,
+    6 + pulse * 2,
+    0,
+    Math.PI * 2
+  )
+  ctx.fillStyle =
+    ann.direction === 'rise'
+      ? '#22c55e'
+      : '#ef4444'
+  ctx.fill()
+
+  /* ===========================
+     BANDEIRA FIXA (NUNCA SOME)
+  ============================ */
+  ctx.beginPath()
+  ctx.moveTo(entryX, entryY)
+  ctx.lineTo(entryX, entryY - 14 * directionMultiplier)
+  ctx.strokeStyle = '#ffffff'
+  ctx.lineWidth = 2
+  ctx.stroke()
+
+  ctx.beginPath()
+  ctx.moveTo(entryX, entryY - 14 * directionMultiplier)
+  ctx.lineTo(entryX + 10, entryY - 10 * directionMultiplier)
+  ctx.lineTo(entryX, entryY - 6 * directionMultiplier)
+  ctx.closePath()
+  ctx.fillStyle =
+    ann.direction === 'rise'
+      ? '#22c55e'
+      : '#ef4444'
+  ctx.fill()
+  ctx.strokeStyle = '#ffffff'
+  ctx.stroke()
+
+  ctx.restore()
+}
+
 
 interface MarketChartProps {
   activeSymbol: string
@@ -656,40 +788,21 @@ export function MarketChart({
             ctx.restore();
         }
     } else {
-        // ===== OPERAÇÃO ATIVA - LINHA DINÂMICA ATÉ O PREÇO ATUAL =====
-        ctx.save();
+        // ===== OPERAÇÕES ATIVAS (SUPORTE MÚLTIPLO) =====
+        tradeAnnotations.forEach(ann => {
+          if (ann.symbol !== activeSymbol) return;
+          if (ann.exitTime) return;
 
-        // Último ponto visível do gráfico
-        const lastIndex = visibleData.length - 1;
-        const lastData = visibleData[lastIndex];
-
-        if (lastData) {
-          const currentPrice = isCandle(lastData)
-            ? lastData.close
-            : lastData.price;
-
-          const currentX = getX(lastIndex);
-          const currentY = getY(currentPrice);
-
-          // Linha tracejada crescente
-          ctx.beginPath();
-          ctx.moveTo(entryX, entryY);
-          ctx.lineTo(currentX, currentY);
-          ctx.strokeStyle = annColor;
-          ctx.lineWidth = 2.5;
-          ctx.setLineDash([6, 4]);
-          ctx.globalAlpha = 0.75;
-          ctx.stroke();
-          ctx.setLineDash([]);
-
-          // Pequeno círculo no ponto atual
-          ctx.beginPath();
-          ctx.arc(currentX, currentY, 5, 0, Math.PI * 2);
-          ctx.fillStyle = annColor;
-          ctx.fill();
-        }
-
-        ctx.restore();
+          drawActiveTrade({
+            ctx,
+            ann,
+            visibleData,
+            getX,
+            getY,
+            colors,
+            isCandle,
+          });
+        });
     }
 });
 
@@ -861,21 +974,27 @@ export function MarketChart({
 
 
   React.useEffect(() => {
-    const handleResize = () => {
-      requestAnimationFrame(drawMainChart)
-      requestAnimationFrame(drawBrushChart)
-    }
-    window.addEventListener('resize', handleResize)
+    let rafId: number;
 
-    const mainChartAF = requestAnimationFrame(drawMainChart)
-    const brushChartAF = requestAnimationFrame(drawBrushChart)
+    const animate = () => {
+      drawMainChart();
+      rafId = requestAnimationFrame(animate);
+    };
+
+    animate();
+
+    const handleResize = () => {
+        drawBrushChart(); // O brush só precisa ser redesenhado no resize
+    };
+
+    window.addEventListener('resize', handleResize);
+    drawBrushChart(); // Desenha o brush uma vez no início
 
     return () => {
-      cancelAnimationFrame(mainChartAF)
-      cancelAnimationFrame(brushChartAF)
-      window.removeEventListener('resize', handleResize)
-    }
-  }, [rawData, visibleIndicators, drawMainChart, drawBrushChart, mousePosition])
+        cancelAnimationFrame(rafId);
+        window.removeEventListener('resize', handleResize);
+    };
+}, [drawMainChart, drawBrushChart]);
 
   const throttleTimeoutRef = React.useRef<NodeJS.Timeout>();
 
