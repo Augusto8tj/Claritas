@@ -278,4 +278,9 @@ export function CouncilAutopilotInterfaceV2(props: CouncilAutopilotInterfaceV2Pr
 
          <div className="flex justify-between items-center text-xs text-muted-foreground pt-2">
             <span>Analistas em Posição</span>
-            <Badge variant="outline">{Array.isArray(strategyCouncil) ? strategyCouncil.length :
+            <Badge variant="outline">{Array.isArray(strategyCouncil) ? strategyCouncil.length : 0}</Badge>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
