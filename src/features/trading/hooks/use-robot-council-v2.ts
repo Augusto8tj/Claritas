@@ -182,9 +182,9 @@ const calculateTechnicalVote = (
   const setVote = (newVote: 'RISE' | 'FALL', newConfidence: number, newReason: string) => {
     if (newConfidence <= 0) return;
     vote = newVote;
-    confidence = newConfidence;
+    confidence = newConfidence / 100; // Normaliza para 0-1
     reason = newReason;
-    suggestedStake = confidence === robot.strongConfidence ? baseStake : baseStake * 0.5;
+    suggestedStake = confidence === (robot.strongConfidence/100) ? baseStake : baseStake * 0.5;
   };
 
   if (!indicators) {
@@ -259,19 +259,18 @@ export function useRobotCouncilV2(
   priceTicks: TickData[],
   dataVersion: number,
 ) {
-  const { operationsLog, executeTrade, timePeriod, isConnected, durationLimits, sellContract } = useDerivApi();
+  const { operationsLog, executeTrade, timePeriod, isConnected, durationLimits, sellContract, getHistoricalData } = useDerivApi();
   const { user, loading: isAuthLoading } = useAuth();
   const { toast } = useToast();
   const { evolvedStrategies, evolveTrigger, evolutionHistory } = useStrategyEvolution(initialCouncilStrategies);
   
-  // 🔥 NOVO: Execution ID para prevenir race conditions
   const executionIdRef = useRef(0);
   const lastExecutionTimeRef = useRef(0);
   const contractsInAlertRef = useRef<Map<number, 'breached' | 'confirmed'>>(new Map());
   const lastActiveSymbolRef = useRef<string | null>(null);
   const lastTimePeriodRef = useRef<TimePeriod | null>(null);
-  
-  // 🔥 NOVO: Métricas de sistema
+  const initialDataFetchedRef = useRef(false);
+
   const [systemMetrics, setSystemMetrics] = useState<SystemMetrics>({
     virtualTradesCount: 0,
     decisionLogCount: 0,
@@ -281,6 +280,8 @@ export function useRobotCouncilV2(
     lastCleanup: Date.now(),
     orphanedTradesRemoved: 0
   });
+  
+  const [historicalData, setHistoricalData] = useState<CandleData[]>([]);
 
   const [strategyCouncil, setStrategyCouncil] = useState<RobotStrategy[]>(evolvedStrategies as RobotStrategy[]);
   const [isCouncilAutopilotOn, setIsCouncilAutopilotOn] = useState(false);
@@ -320,6 +321,7 @@ export function useRobotCouncilV2(
   const [isDynamicConsensusOn, setIsDynamicConsensusOn] = useState(true);
   const [isDynamicRiskOn, setIsDynamicRiskOn] = useState(true);
   const [isMeritocracyOn, setIsMeritocracyOn] = useState(true);
+  const [isDynamicExitOn, setIsDynamicExitOn] = useState(true);
 
   const [consensusDecision, setConsensusDecision] = useState<{
     direction: 'RISE' | 'FALL' | 'HOLD';
@@ -352,8 +354,8 @@ export function useRobotCouncilV2(
   });
 
   const tickCandles = useMemo(() => {
-    if (!priceTicks || priceTicks.length === 0) return [];
-    return priceTicks.map((t) => ({
+    const historical = historicalData.length > 0 ? historicalData : [];
+    const ticks = priceTicks.map((t) => ({
       epoch: t.epoch,
       open: t.price,
       high: t.price,
@@ -361,15 +363,17 @@ export function useRobotCouncilV2(
       close: t.price,
       volume: 1
     }));
-  }, [dataVersion, priceTicks]);
+    // Evita duplicados
+    const combined = [...historical, ...ticks];
+    const uniqueByEpoch = Array.from(new Map(combined.map(item => [item.epoch, item])).values());
+    return uniqueByEpoch.sort((a,b) => a.epoch - b.epoch);
+  }, [dataVersion, priceTicks, historicalData]);
+
 
   useEffect(() => {
     setStrategyCouncil(evolvedStrategies as RobotStrategy[]);
   }, [evolvedStrategies]);
 
-  // ════════════════════════════════════════════════════════════════════
-  // 🔥 NOVO: LIMPEZA AUTOMÁTICA DE TRADES ÓRFÃOS
-  // ════════════════════════════════════════════════════════════════════
   useEffect(() => {
     if (!isCouncilAutopilotOn) return;
 
@@ -377,7 +381,6 @@ export function useRobotCouncilV2(
       const now = Date.now() / 1000;
       const before = virtualTradesRef.current.length;
 
-      // Remove trades órfãos (mais de 1 hora ou além do limite)
       virtualTradesRef.current = virtualTradesRef.current.filter(trade => {
         const age = now - trade.entryEpoch;
         return age < TRADE_TIMEOUT_SECONDS;
@@ -399,9 +402,6 @@ export function useRobotCouncilV2(
     return () => clearInterval(cleanupInterval);
   }, [isCouncilAutopilotOn]);
 
-  // ════════════════════════════════════════════════════════════════════
-  // 🔥 NOVO: HEALTH CHECK COM AUTO-RECUPERAÇÃO
-  // ════════════════════════════════════════════════════════════════════
   useEffect(() => {
     if (!isCouncilAutopilotOn) return;
 
@@ -411,7 +411,6 @@ export function useRobotCouncilV2(
         return perf && (perf.wins + perf.losses) > 0;
       }).length;
 
-      // Alerta se nenhum robô está ativo
       if (activeRobots === 0 && strategyCouncil.length > 0) {
         console.error('🚨 ALERTA: Nenhum robô ativo! Resetando sistema...');
         resetArenaPerformance();
@@ -422,7 +421,6 @@ export function useRobotCouncilV2(
         });
       }
 
-      // Atualiza métricas de sistema
       setSystemMetrics(prev => ({
         ...prev,
         virtualTradesCount: virtualTradesRef.current.length,
@@ -436,7 +434,7 @@ export function useRobotCouncilV2(
     }, HEALTH_CHECK_INTERVAL_MS);
 
     return () => clearInterval(healthCheck);
-  }, [isCouncilAutopilotOn, strategyCouncil, robotPerformance, tradeDecisionLog]);
+  }, [isCouncilAutopilotOn, strategyCouncil, robotPerformance, tradeDecisionLog, toast, resetArenaPerformance]);
 
   const resetArenaPerformance = useCallback(() => {
     if (strategyCouncil.length === 0 || !user) return;
@@ -513,6 +511,7 @@ export function useRobotCouncilV2(
     }
 
     setIsFetchingCouncil(true);
+    initialDataFetchedRef.current = false;
     await new Promise((resolve) => setTimeout(resolve, 500));
 
     const council = (evolvedStrategies as RobotStrategy[]).map(s => ({ ...s }));
@@ -537,6 +536,7 @@ export function useRobotCouncilV2(
 
     if (isCouncilAutopilotOn && (symbolChanged || timePeriodChanged)) {
       console.log(`[CONTEXT CHANGE] Mudança detectada. Resetando arena...`);
+      initialDataFetchedRef.current = false; // Força o refetch dos dados históricos
       resetArenaPerformance();
 
       if (symbolChanged) lastActiveSymbolRef.current = activeSymbol;
@@ -555,6 +555,8 @@ export function useRobotCouncilV2(
       setIsCouncilAutopilotOn(false);
       virtualTradesRef.current = [];
       setIsFetchingCouncil(false);
+      initialDataFetchedRef.current = false; // Reset for next activation
+      setHistoricalData([]); // Clear historical data
       toast({
         title: '⏸️ Sistema Pausado',
         description: 'Conselho desativado com segurança.',
@@ -562,9 +564,6 @@ export function useRobotCouncilV2(
     }, 1500);
   }, [toast]);
 
-  // ════════════════════════════════════════════════════════════════════
-  // 🔥 ATUALIZAÇÃO DE LOGS DE DECISÃO (AGORA EM useEffect SEPARADO)
-  // ════════════════════════════════════════════════════════════════════
   useEffect(() => {
     tradeDecisionLog.forEach(log => {
       if (log.result === 'pending') {
@@ -590,10 +589,33 @@ export function useRobotCouncilV2(
     });
   }, [operationsLog, tradeDecisionLog, user]);
 
-  // ════════════════════════════════════════════════════════════════════
-  // 🔄 LOOP PRINCIPAL - OTIMIZADO E BLINDADO
-  // ════════════════════════════════════════════════════════════════════
   useEffect(() => {
+    if (!isCouncilAutopilotOn || !activeSymbol) {
+      return;
+    }
+    
+    // --- BOOTSTRAP DE DADOS HISTÓRICOS ---
+    if (!initialDataFetchedRef.current) {
+        initialDataFetchedRef.current = true; // Marca como "em progresso"
+        console.log(`[Bootstrap] Carregando dados históricos para ${activeSymbol}...`);
+        
+        getHistoricalData(activeSymbol, 'candles', 1000, timePeriod)
+          .then(history => {
+              setHistoricalData(history as CandleData[]);
+              console.log(`[Bootstrap] ${history.length} candles históricos carregados para ${activeSymbol}.`);
+          })
+          .catch(err => {
+              console.error('[Bootstrap] Falha ao carregar dados históricos:', err);
+              toast({
+                  variant: 'destructive',
+                  title: 'Falha no Bootstrap',
+                  description: 'Não foi possível carregar o histórico de preços inicial.'
+              });
+              initialDataFetchedRef.current = false; // Permite nova tentativa
+          });
+    }
+
+
     const now = Date.now();
     if (now - lastExecutionTimeRef.current < THROTTLE_MS) return;
     lastExecutionTimeRef.current = now;
@@ -608,7 +630,6 @@ export function useRobotCouncilV2(
     if (!currentTick) return;
 
     try {
-      // 🔥 VALIDAÇÃO ROBUSTA DE CANDLES
       const validCandles = validateCandles(tickCandles, REGIME_LOOKBACK);
       if (validCandles.length < REGIME_LOOKBACK) {
         console.warn('⚠️ Candles insuficientes após validação, pulando ciclo');
@@ -656,39 +677,39 @@ export function useRobotCouncilV2(
       const activeCouncilContracts = operationsLog.filter(
         op => op.status === 'pending' && op.initiator === 'Conselho'
       );
+      
+      if (isDynamicExitOn) {
+        activeCouncilContracts.forEach(contract => {
+          if (councilExecutionRef.current.sellingContracts.has(contract.id)) return;
 
-      activeCouncilContracts.forEach(contract => {
-        if (councilExecutionRef.current.sellingContracts.has(contract.id)) return;
+          const contractId = contract.id;
+          const potentialProfit = contract.stake * 0.94;
+          const currentProfit = contract.result || 0;
 
-        const contractId = contract.id;
-        const potentialProfit = contract.stake * 0.94;
-        const currentProfit = contract.result || 0;
+          if (currentProfit > 0 && potentialProfit > 0 && (currentProfit / potentialProfit) * 100 >= takeProfitThreshold) {
+            councilExecutionRef.current.sellingContracts.add(contractId);
+            sellContract(contractId).finally(() => setTimeout(() => councilExecutionRef.current.sellingContracts.delete(contractId), 5000));
+            toast({ title: "💰 Take Profit Atingido", description: `Contrato #${contractId} fechado.` });
+            return;
+          }
 
-        if (currentProfit > 0 && potentialProfit > 0 && (currentProfit / potentialProfit) * 100 >= takeProfitThreshold) {
-          councilExecutionRef.current.sellingContracts.add(contractId);
-          sellContract(contractId).finally(() => setTimeout(() => councilExecutionRef.current.sellingContracts.delete(contractId), 5000));
-          toast({ title: "💰 Take Profit Atingido", description: `Contrato #${contractId} fechado.` });
-          return;
-        }
+          if (currentProfit < 0 && (Math.abs(currentProfit) / contract.stake) * 100 >= stopLossThreshold) {
+            councilExecutionRef.current.sellingContracts.add(contractId);
+            sellContract(contractId).finally(() => setTimeout(() => councilExecutionRef.current.sellingContracts.delete(contractId), 5000));
+            toast({ title: "🛡️ Stop Loss Acionado", description: `Contrato #${contractId} fechado.`, variant: "destructive" });
+          }
+        });
+      }
 
-        if (currentProfit < 0 && (Math.abs(currentProfit) / contract.stake) * 100 >= stopLossThreshold) {
-          councilExecutionRef.current.sellingContracts.add(contractId);
-          sellContract(contractId).finally(() => setTimeout(() => councilExecutionRef.current.sellingContracts.delete(contractId), 5000));
-          toast({ title: "🛡️ Stop Loss Acionado", description: `Contrato #${contractId} fechado.`, variant: "destructive" });
-        }
-      });
 
-      // 🔥 ARENA VIRTUAL COM PROTEÇÃO CONTRA TRADES ÓRFÃOS
       const stillActiveTrades: VirtualTrade[] = [];
       
-      // 🔥 SINCRONIZAÇÃO GARANTIDA: performanceMap sempre tem todos os robôs
       const performanceMap = new Map<string, EnhancedRobotPerformance>();
       strategyCouncil.forEach(robot => {
         const existing = robotPerformance.find(p => p.id === robot.id);
         if (existing) {
           performanceMap.set(robot.id, { ...existing });
         } else {
-          // Criar entrada padrão para robôs novos
           performanceMap.set(robot.id, {
             id: robot.id,
             strategyType: robot.strategyType,
@@ -704,7 +725,6 @@ export function useRobotCouncilV2(
       let performanceChanged = false;
 
       virtualTradesRef.current.forEach(trade => {
-        // 🔥 MARGEM DE TOLERÂNCIA: Considera expirado se passou do exitEpoch - 5 segundos
         const isExpired = currentTick.epoch >= (trade.exitEpoch - 5);
 
         if (isExpired) {
@@ -744,7 +764,6 @@ export function useRobotCouncilV2(
             performanceChanged = true;
           }
         } else {
-          // 🔥 TIMEOUT DE SEGURANÇA: Descarta trades com mais de 1 hora
           const tradeAge = currentTick.epoch - trade.entryEpoch;
           if (tradeAge <= TRADE_TIMEOUT_SECONDS) {
             stillActiveTrades.push(trade);
@@ -773,9 +792,18 @@ export function useRobotCouncilV2(
       strategyCouncil.forEach(robot => {
         const perf = performanceMap.get(robot.id);
         const technicalVote = calculateTechnicalVote(robot, currentIndicators, validCandles);
+        
+        if (technicalVote.vote !== 'HOLD') {
+            const hasActiveTrade = virtualTradesRef.current.some(t => t.robotId === robot.id && t.exitEpoch > currentTick.epoch);
+            if(!hasActiveTrade) {
+                const durationInSeconds = durationToSeconds(technicalVote.optimalDuration, technicalVote.optimalDurationUnit);
+                const tradeId = `vt_${Date.now()}_${tradeCounterRef.current++}`;
+                virtualTradesRef.current.push({ id: tradeId, robotId: robot.id, vote: technicalVote.vote, entryPrice: currentTick.price, entryEpoch: currentTick.epoch, exitEpoch: currentTick.epoch + durationInSeconds, regime: regimeResult.regime, microstructure: microFeatures!, stake: VIRTUAL_STAKE });
+            }
+        }
 
-        if (technicalVote.vote === 'HOLD' || technicalVote.confidence < confidenceFactor) {
-          bayesianVotes[robot.id] = { ...technicalVote, rawConfidence: technicalVote.confidence, calibratedConfidence: 0, bayesianProbability: 0.5, weight: 0, regime: regimeResult.regime, reason: `Confiança (${technicalVote.confidence}) < Limiar (${confidenceFactor})` };
+        if (technicalVote.confidence < (confidenceFactor/100)) {
+          bayesianVotes[robot.id] = { ...technicalVote, rawConfidence: technicalVote.confidence * 100, calibratedConfidence: 0, bayesianProbability: 0.5, weight: 0, regime: regimeResult.regime, reason: `Confiança (${(technicalVote.confidence * 100).toFixed(0)}) < Limiar (${confidenceFactor})` };
           return;
         }
 
@@ -790,22 +818,19 @@ export function useRobotCouncilV2(
 
         activeRobotsCount++;
         let prior = (perf && (perf.wins + perf.losses) >= MIN_TRADES_FOR_STATS) ? perf.winRate / 100 : 0.5;
-        let likelihood = technicalVote.confidence / 100;
+        let likelihood = technicalVote.confidence;
         if (microFeatures && microFeatures.yangZhangVolatility > 0.05) likelihood *= 0.8;
         const posterior = bayesianUpdate(prior, likelihood);
-        const calibratedConf = calibrateConfidence(technicalVote.confidence, perf?.winRate || 50);
+        const calibratedConf = calibrateConfidence(technicalVote.confidence * 100, perf?.winRate || 50);
 
         let weight = 1.0;
         if (isMeritocracyOn && perf && (perf.wins + perf.losses) > 10) {
-          const sharpeWeight = Math.max(0.2, Math.min(2.0, perf.sharpeRatio / 1.5));
+          const sharpeWeight = Math.max(0.2, Math.min(2.0, (perf.sharpeRatio || 0) / 1.5));
           const mcWeight = perf.monteCarloScore >= 0.95 ? 1.2 : perf.monteCarloScore >= 0.85 ? 1.0 : 0.5;
           weight = sharpeWeight * mcWeight;
         }
 
-        const tradeId = `vt_${Date.now()}_${tradeCounterRef.current++}`;
-        virtualTradesRef.current.push({ id: tradeId, robotId: robot.id, vote: technicalVote.vote, entryPrice: currentTick.price, entryEpoch: currentTick.epoch, exitEpoch: currentTick.epoch + durationInSeconds, regime: regimeResult.regime, microstructure: microFeatures, stake: VIRTUAL_STAKE });
-
-        const finalVote: BayesianVote = { ...technicalVote, rawConfidence: technicalVote.confidence, calibratedConfidence: calibratedConf * 100, bayesianProbability: posterior, weight, suggestedStake: technicalVote.suggestedStake * posterior, regime: regimeResult.regime };
+        const finalVote: BayesianVote = { ...technicalVote, rawConfidence: technicalVote.confidence * 100, calibratedConfidence: calibratedConf * 100, bayesianProbability: posterior, weight, suggestedStake: technicalVote.suggestedStake * posterior, regime: regimeResult.regime };
         bayesianVotes[robot.id] = finalVote;
 
         const voteWeight = calibratedConf * weight;
@@ -863,11 +888,9 @@ export function useRobotCouncilV2(
 
       if (councilExecutionRef.current.isExecuting || activeStakes + kellyStake > dailyBalance * 0.3 || consensusProbability < 0.65 || consensusDirection === "HOLD") return;
 
-      // 🔥 EXECUTION ID ÚNICO PARA PREVENIR RACE CONDITIONS
       const currentExecutionId = ++executionIdRef.current;
       councilExecutionRef.current.isExecuting = true;
 
-      // 🔥 LIMITA TAMANHO DO LOG
       const decisionLog: TradeDecisionLog = { id: `TDL-${Date.now()}`, timestamp: new Date().toISOString(), asset: activeSymbol, timePeriod, tradeParams: { direction: consensusDirection, stake: kellyStake, duration: finalDuration, durationUnit: finalDurationUnit }, context: { marketRegime: regimeResult.regime, regimeConfidence: regimeResult.confidence, microstructure: microFeatures, indicators: currentIndicators }, consensus: { bayesianProbability: consensusProbability, kellyStake, activeRobots: activeRobotsCount, votes: bayesianVotes }, result: 'pending', pnl: 0 };
       
       setTradeDecisionLog(prev => {
@@ -883,7 +906,6 @@ export function useRobotCouncilV2(
           const cooldownTime = Math.min(5000 + (recentTrades * 2000), 30000);
           
           setTimeout(() => {
-            // 🔥 SÓ LIBERA SE ESTE É O ID MAIS RECENTE
             if (currentExecutionId === executionIdRef.current) {
               councilExecutionRef.current.isExecuting = false;
             }
@@ -898,7 +920,7 @@ export function useRobotCouncilV2(
     activeSymbol, operationsLog, currentRegime, user, toast, executeTrade, sellContract,
     timePeriod, durationLimits, dailyBalance, dailyTarget, evolveTrigger,
     portfolioStats, consensusSensitivity, confidenceFactor, durationRange,
-    takeProfitThreshold, stopLossThreshold, priceTicks, tickCandles
+    takeProfitThreshold, stopLossThreshold, priceTicks, tickCandles, historicalData, getHistoricalData, isDynamicExitOn
   ]);
 
   return {
@@ -910,7 +932,8 @@ export function useRobotCouncilV2(
     setDurationRange, takeProfitThreshold, setTakeProfitThreshold, stopLossThreshold,
     setStopLossThreshold, isDynamicConsensusOn, setIsDynamicConsensusOn,
     isDynamicRiskOn, setIsDynamicRiskOn, isMeritocracyOn, setIsMeritocracyOn,
+    isDynamicExitOn, setIsDynamicExitOn,
     dashboardData, effectiveThreshold, councilConfidence, resetArenaPerformance,
-    tradeDecisionLog, systemMetrics, // 🔥 NOVO: Exporta métricas
+    tradeDecisionLog, systemMetrics,
   };
 }
