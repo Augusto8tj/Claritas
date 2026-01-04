@@ -1,4 +1,4 @@
-// src/features/trading/components/deriv-trader/market-chart.tsx
+// /src/features/trading/components/deriv-trader/market-chart.tsx
 'use client'
 
 import React, { useCallback } from 'react'
@@ -656,55 +656,39 @@ export function MarketChart({
             ctx.restore();
         }
     } else {
-        // ===== OPERAÇÃO ATIVA - LINHA HORIZONTAL =====
+        // ===== OPERAÇÃO ATIVA - LINHA DINÂMICA ATÉ O PREÇO ATUAL =====
         ctx.save();
-        
-        // Linha tracejada até o final
-        ctx.beginPath();
-        ctx.moveTo(entryX, entryY);
-        ctx.lineTo(width - PADDING.right - 60, entryY);
-        ctx.strokeStyle = annColor;
-        ctx.lineWidth = 2;
-        ctx.setLineDash([5, 5]);
-        ctx.globalAlpha = 0.5;
-        ctx.stroke();
-        ctx.setLineDash([]);
-        
-        // Label "ATIVA" no final da linha
-        const labelText = ann.direction === 'rise' ? 'CALL ATIVA' : 'PUT ATIVA';
-        ctx.font = 'bold 11px Arial';
-        const labelWidth = ctx.measureText(labelText).width;
-        const labelX = width - PADDING.right - labelWidth - 15;
-        const labelY = entryY;
-        
-        // Fundo do label
-        ctx.globalAlpha = 0.95;
-        ctx.fillStyle = colors.bg;
-        ctx.beginPath();
-        // @ts-ignore
-        ctx.roundRect(labelX - 4, labelY - 10, labelWidth + 8, 18, 3);
-        ctx.fill();
-        
-        // Borda
-        ctx.strokeStyle = annColor;
-        ctx.lineWidth = 1.5;
-        ctx.stroke();
-        
-        // Texto
-        ctx.globalAlpha = 1;
-        ctx.fillStyle = annColor;
-        ctx.textAlign = 'left';
-        ctx.textBaseline = 'middle';
-        ctx.fillText(labelText, labelX, labelY);
-        
-        // Pulso animado no círculo de entrada (opcional)
-        ctx.globalAlpha = 0.3;
-        ctx.beginPath();
-        ctx.arc(entryX, entryY, 12, 0, 2 * Math.PI);
-        ctx.strokeStyle = annColor;
-        ctx.lineWidth = 2;
-        ctx.stroke();
-        
+
+        // Último ponto visível do gráfico
+        const lastIndex = visibleData.length - 1;
+        const lastData = visibleData[lastIndex];
+
+        if (lastData) {
+          const currentPrice = isCandle(lastData)
+            ? lastData.close
+            : lastData.price;
+
+          const currentX = getX(lastIndex);
+          const currentY = getY(currentPrice);
+
+          // Linha tracejada crescente
+          ctx.beginPath();
+          ctx.moveTo(entryX, entryY);
+          ctx.lineTo(currentX, currentY);
+          ctx.strokeStyle = annColor;
+          ctx.lineWidth = 2.5;
+          ctx.setLineDash([6, 4]);
+          ctx.globalAlpha = 0.75;
+          ctx.stroke();
+          ctx.setLineDash([]);
+
+          // Pequeno círculo no ponto atual
+          ctx.beginPath();
+          ctx.arc(currentX, currentY, 5, 0, Math.PI * 2);
+          ctx.fillStyle = annColor;
+          ctx.fill();
+        }
+
         ctx.restore();
     }
 });
