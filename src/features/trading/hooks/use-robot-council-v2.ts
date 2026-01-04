@@ -259,7 +259,7 @@ export function useRobotCouncilV2(
   priceTicks: TickData[],
   dataVersion: number,
 ) {
-  const { operationsLog, executeTrade, timePeriod, isConnected, durationLimits, sellContract, getHistoricalData } = useDerivApi();
+  const { operationsLog, executeTrade, timePeriod, isConnected, durationLimits, sellContract } = useDerivApi();
   const { user, loading: isAuthLoading } = useAuth();
   const { toast } = useToast();
   const { evolvedStrategies, evolveTrigger, evolutionHistory } = useStrategyEvolution(initialCouncilStrategies);
@@ -373,6 +373,30 @@ export function useRobotCouncilV2(
   useEffect(() => {
     setStrategyCouncil(evolvedStrategies as RobotStrategy[]);
   }, [evolvedStrategies]);
+  
+  const resetArenaPerformance = useCallback(() => {
+    if (strategyCouncil.length === 0 || !user) return;
+
+    toast({
+      title: "🔄 Arena V2.0 Recalibrada",
+      description: `Análise de desempenho reiniciada para o contexto atual.`,
+    });
+
+    const initialPerformance: EnhancedRobotPerformance[] = strategyCouncil.map(robot => ({
+      id: robot.id,
+      strategyType: robot.strategyType,
+      strategy: robot,
+      wins: 0, losses: 0, totalProfit: 0, winRate: 0,
+      sharpeRatio: 0, maxDrawdown: 0, avgWin: 0, avgLoss: 0,
+      profitFactor: 0, kellyFraction: 0, effectiveRegimes: [],
+      monteCarloScore: 0, lastUpdated: Date.now(), tradeHistory: []
+    }));
+
+    setRobotPerformance(initialPerformance);
+    virtualTradesRef.current = [];
+    tradeCounterRef.current = 0;
+    saveRobotPerformance(user.uid, initialPerformance);
+  }, [strategyCouncil, user, toast]);
 
   useEffect(() => {
     if (!isCouncilAutopilotOn) return;
@@ -435,30 +459,6 @@ export function useRobotCouncilV2(
 
     return () => clearInterval(healthCheck);
   }, [isCouncilAutopilotOn, strategyCouncil, robotPerformance, tradeDecisionLog, toast, resetArenaPerformance]);
-
-  const resetArenaPerformance = useCallback(() => {
-    if (strategyCouncil.length === 0 || !user) return;
-
-    toast({
-      title: "🔄 Arena V2.0 Recalibrada",
-      description: `Análise de desempenho reiniciada para o contexto atual.`,
-    });
-
-    const initialPerformance: EnhancedRobotPerformance[] = strategyCouncil.map(robot => ({
-      id: robot.id,
-      strategyType: robot.strategyType,
-      strategy: robot,
-      wins: 0, losses: 0, totalProfit: 0, winRate: 0,
-      sharpeRatio: 0, maxDrawdown: 0, avgWin: 0, avgLoss: 0,
-      profitFactor: 0, kellyFraction: 0, effectiveRegimes: [],
-      monteCarloScore: 0, lastUpdated: Date.now(), tradeHistory: []
-    }));
-
-    setRobotPerformance(initialPerformance);
-    virtualTradesRef.current = [];
-    tradeCounterRef.current = 0;
-    saveRobotPerformance(user.uid, initialPerformance);
-  }, [strategyCouncil, user, toast]);
 
   useEffect(() => {
     if (!user || isAuthLoading) return;
@@ -590,32 +590,6 @@ export function useRobotCouncilV2(
   }, [operationsLog, tradeDecisionLog, user]);
 
   useEffect(() => {
-    if (!isCouncilAutopilotOn || !activeSymbol) {
-      return;
-    }
-    
-    // --- BOOTSTRAP DE DADOS HISTÓRICOS ---
-    if (!initialDataFetchedRef.current) {
-        initialDataFetchedRef.current = true; // Marca como "em progresso"
-        console.log(`[Bootstrap] Carregando dados históricos para ${activeSymbol}...`);
-        
-        getHistoricalData(activeSymbol, 'candles', 1000, timePeriod)
-          .then(history => {
-              setHistoricalData(history as CandleData[]);
-              console.log(`[Bootstrap] ${history.length} candles históricos carregados para ${activeSymbol}.`);
-          })
-          .catch(err => {
-              console.error('[Bootstrap] Falha ao carregar dados históricos:', err);
-              toast({
-                  variant: 'destructive',
-                  title: 'Falha no Bootstrap',
-                  description: 'Não foi possível carregar o histórico de preços inicial.'
-              });
-              initialDataFetchedRef.current = false; // Permite nova tentativa
-          });
-    }
-
-
     const now = Date.now();
     if (now - lastExecutionTimeRef.current < THROTTLE_MS) return;
     lastExecutionTimeRef.current = now;
@@ -793,7 +767,10 @@ export function useRobotCouncilV2(
         const perf = performanceMap.get(robot.id);
         const technicalVote = calculateTechnicalVote(robot, currentIndicators, validCandles);
         
+        // --- APRENDIZAGEM (FUNIL LARGO) ---
+        // Qualquer voto válido entra na Arena para gerar estatísticas.
         if (technicalVote.vote !== 'HOLD') {
+            // 🔥 FIX: Verifica se há ALGUM trade ATIVO (não expirado)
             const hasActiveTrade = virtualTradesRef.current.some(t => t.robotId === robot.id && t.exitEpoch > currentTick.epoch);
             if(!hasActiveTrade) {
                 const durationInSeconds = durationToSeconds(technicalVote.optimalDuration, technicalVote.optimalDurationUnit);
@@ -801,10 +778,12 @@ export function useRobotCouncilV2(
                 virtualTradesRef.current.push({ id: tradeId, robotId: robot.id, vote: technicalVote.vote, entryPrice: currentTick.price, entryEpoch: currentTick.epoch, exitEpoch: currentTick.epoch + durationInSeconds, regime: regimeResult.regime, microstructure: microFeatures!, stake: VIRTUAL_STAKE });
             }
         }
-
-        if (technicalVote.confidence < (confidenceFactor/100)) {
-          bayesianVotes[robot.id] = { ...technicalVote, rawConfidence: technicalVote.confidence * 100, calibratedConfidence: 0, bayesianProbability: 0.5, weight: 0, regime: regimeResult.regime, reason: `Confiança (${(technicalVote.confidence * 100).toFixed(0)}) < Limiar (${confidenceFactor})` };
-          return;
+        
+        // --- DECISÃO DE CONSENSO (FUNIL ESTREITO) ---
+        // Apenas votos com confiança mínima e condições ideais participam.
+        if (technicalVote.confidence < (confidenceFactor / 100)) {
+            bayesianVotes[robot.id] = { ...technicalVote, rawConfidence: technicalVote.confidence * 100, calibratedConfidence: 0, bayesianProbability: 0.5, weight: 0, regime: regimeResult.regime, reason: `Confiança (${(technicalVote.confidence * 100).toFixed(0)}) < Limiar (${confidenceFactor})` };
+            return;
         }
 
         const durationInSeconds = durationToSeconds(technicalVote.optimalDuration, technicalVote.optimalDurationUnit);
@@ -817,8 +796,9 @@ export function useRobotCouncilV2(
         }
 
         activeRobotsCount++;
+        // Cálculo de Peso Inteligente
         let prior = (perf && (perf.wins + perf.losses) >= MIN_TRADES_FOR_STATS) ? perf.winRate / 100 : 0.5;
-        let likelihood = technicalVote.confidence;
+        let likelihood = technicalVote.confidence; // Já está em 0-1
         if (microFeatures && microFeatures.yangZhangVolatility > 0.05) likelihood *= 0.8;
         const posterior = bayesianUpdate(prior, likelihood);
         const calibratedConf = calibrateConfidence(technicalVote.confidence * 100, perf?.winRate || 50);
@@ -920,7 +900,8 @@ export function useRobotCouncilV2(
     activeSymbol, operationsLog, currentRegime, user, toast, executeTrade, sellContract,
     timePeriod, durationLimits, dailyBalance, dailyTarget, evolveTrigger,
     portfolioStats, consensusSensitivity, confidenceFactor, durationRange,
-    takeProfitThreshold, stopLossThreshold, priceTicks, tickCandles, historicalData, getHistoricalData, isDynamicExitOn
+    takeProfitThreshold, stopLossThreshold, priceTicks, tickCandles,
+    isDynamicExitOn
   ]);
 
   return {
