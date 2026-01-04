@@ -712,7 +712,7 @@ const subscribeToMarketData = useCallback(async (symbol: string) => {
     return () => {
       if (wsRef.current) wsRef.current.close();
     };
-  }, [activeToken, isLoading, makeRequest, updateTradeAnnotation, toast]);
+  }, [activeToken, isLoading, makeRequest, updateTradeAnnotation, toast, triggerReconnect]);
 
   
   useEffect(() => {
@@ -770,14 +770,25 @@ const subscribeToMarketData = useCallback(async (symbol: string) => {
     }
   };
   
-  const reconnect = useCallback(async (): Promise<boolean> => {
+ const reconnect = useCallback(async (): Promise<boolean> => {
+    setIsConnecting(true);
+    setConnectionError(null);
     setTriggerReconnect(c => c + 1);
+    
+    // Espera um tempo para que o useEffect de conexão seja acionado e resolva
     return new Promise(resolve => {
-        setTimeout(() => {
-            resolve(wsRef.current?.readyState === WebSocket.OPEN && isConnected);
-        }, 3000);
+        const checkConnection = () => {
+            if (wsRef.current?.readyState === WebSocket.OPEN && isConnected) {
+                resolve(true);
+            } else if (connectionError) {
+                resolve(false);
+            } else {
+                setTimeout(checkConnection, 500); // Tenta novamente
+            }
+        };
+        setTimeout(checkConnection, 500); // Inicia a verificação
     });
-  }, [isConnected]);
+}, [isConnected, connectionError]);
 
   const clearActiveContracts = () => {
     setOperationsLog([]);
