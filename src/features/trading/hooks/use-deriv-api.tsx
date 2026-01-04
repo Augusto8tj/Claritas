@@ -474,10 +474,18 @@ const subscribeToMarketData = useCallback(async (symbol: string) => {
         return { success: false, message: "A conexão com a API da Deriv não está ativa." };
     }
 
+    const contract = operationsLog.find(op => op.id === contractId);
+    if (contract && contract.expirationTime) {
+      const remainingTime = contract.expirationTime - Date.now();
+      if (remainingTime < 15000) { // 15 segundos de bloqueio
+        return { success: false, message: `O contrato ${contractId} está no período de bloqueio final e não pode ser vendido.` };
+      }
+    }
+
     try {
         const sellResponse: any = await makeRequest({ 
             "sell": contractId,
-            "price": 0,
+            "price": 0, // Sell at market price
         });
 
         const sellResult = sellResponse.sell;
@@ -491,7 +499,7 @@ const subscribeToMarketData = useCallback(async (symbol: string) => {
         const message = error instanceof Error ? error.message : "Um erro desconhecido ocorreu ao vender o contrato.";
         return { success: false, message };
     }
-  }, [isConnected, makeRequest]);
+  }, [isConnected, makeRequest, operationsLog]);
 
 
   useEffect(() => {
