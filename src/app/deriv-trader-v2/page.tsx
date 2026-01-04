@@ -23,7 +23,6 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { CouncilDashboardV2 } from '@/features/trading/components/deriv-trader/CouncilDashboardV2';
 import { TradingDeskV2 } from "@/features/trading/components/deriv-trader/trading-desk-v2";
 import { EvolutionLab } from "@/features/trading/components/deriv-trader/evolution-lab";
-import { TradingDecisionLogViewer } from "@/features/trading/components/deriv-trader/TradingDecisionLogViewer";
 import { DebugCouncilView } from "@/features/trading/components/deriv-trader/DebugCouncilView";
 
 
@@ -77,13 +76,6 @@ const DerivTraderV2Core = () => {
     const robotCouncil = useRobotCouncilV2(activeSymbol, priceTicks, dataVersion);
     const [activeTab, setActiveTab] = React.useState("desk");
     
-    // This is a placeholder for the delete log function
-    const handleDeleteLog = (logId: string) => {
-        console.log("Deleting log:", logId);
-        // In a real implementation, you would call a server action here.
-    };
-
-
     return (
         <div className="space-y-6 mt-6">
             
@@ -134,11 +126,10 @@ const DerivTraderV2Core = () => {
             </div>
 
             <Tabs value={activeTab} onValueChange={setActiveTab}>
-                <TabsList className="grid w-full grid-cols-4">
+                <TabsList className="grid w-full grid-cols-3">
                     <TabsTrigger value="desk">Arena V2</TabsTrigger>
                     <TabsTrigger value="log">Operações</TabsTrigger>
                     <TabsTrigger value="evolution">Evolução</TabsTrigger>
-                    <TabsTrigger value="audit">Auditoria</TabsTrigger>
                 </TabsList>
                 <TabsContent value="desk" className="mt-4">
                     <TradingDeskV2 
@@ -152,9 +143,6 @@ const DerivTraderV2Core = () => {
                 </TabsContent>
                 <TabsContent value="evolution" className="mt-4">
                     <EvolutionLab history={robotCouncil.evolutionHistory} />
-                </TabsContent>
-                <TabsContent value="audit" className="mt-4">
-                   <TradingDecisionLogViewer logs={robotCouncil.tradeDecisionLog} onDeleteLog={handleDeleteLog} deletingLogId={null} />
                 </TabsContent>
             </Tabs>
         </div>
