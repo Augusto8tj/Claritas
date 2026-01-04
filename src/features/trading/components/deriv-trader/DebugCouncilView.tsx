@@ -60,8 +60,8 @@ const regimeLabels: Record<MarketRegime, string> = {
 
 export function DebugCouncilView({ votes, regime, isCouncilAutopilotOn }: DebugCouncilViewProps) {
 
-  // 🔥 FIX: Adiciona guarda de segurança para props nulas ou indefinidas
-  if (!isCouncilAutopilotOn || !votes || !regime || Object.keys(votes).length === 0) {
+  // 🔥 FIX: Relaxa a guarda para mostrar o painel mesmo sem votos, desde que ativo.
+  if (!isCouncilAutopilotOn || !regime) {
     return (
         <Card>
             <CardHeader>
@@ -83,12 +83,12 @@ export function DebugCouncilView({ votes, regime, isCouncilAutopilotOn }: DebugC
     );
   }
 
-  const sortedVotes = Object.entries(votes).sort(([, a], [, b]) => {
+  const sortedVotes = votes ? Object.entries(votes).sort(([, a], [, b]) => {
     const weightA = a.vote === 'HOLD' ? -1 : a.weight;
     const weightB = b.vote === 'HOLD' ? -1 : b.weight;
     if(weightB !== weightA) return weightB - weightA;
     return b.bayesianProbability - a.bayesianProbability;
-  });
+  }) : [];
 
   const regimeProbabilities = Object.entries(regime.probabilities)
     .map(([key, value]) => ({ regime: key as MarketRegime, probability: value }))
@@ -144,28 +144,36 @@ export function DebugCouncilView({ votes, regime, isCouncilAutopilotOn }: DebugC
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {sortedVotes.map(([robotId, voteData]) => (
-                  <TableRow key={robotId}>
-                    <TableCell className="font-medium">
-                      <div className="flex items-center gap-2">
-                        {indicatorIcons[voteData.strategy?.strategyType || 'DEFAULT'] || <Bot className="h-4 w-4" />}
-                        <span>{voteData.strategy?.strategyType}</span>
-                      </div>
-                    </TableCell>
-                    <TableCell className="text-center">
-                      <div className="flex items-center justify-center gap-1.5">
-                        {voteIcons[voteData.vote]}
-                        <span className="font-semibold">{voteData.vote}</span>
-                      </div>
-                    </TableCell>
-                    <TableCell className="text-right font-mono">
-                      {voteData.rawConfidence.toFixed(0)}%
-                    </TableCell>
-                    <TableCell className="text-right font-mono font-bold text-primary">
-                      {voteData.vote !== 'HOLD' ? (voteData.bayesianProbability * 100).toFixed(1) : '0.0'}%
+                {sortedVotes.length > 0 ? (
+                  sortedVotes.map(([robotId, voteData]) => (
+                    <TableRow key={robotId}>
+                      <TableCell className="font-medium">
+                        <div className="flex items-center gap-2">
+                          {indicatorIcons[voteData.strategy?.strategyType || 'DEFAULT'] || <Bot className="h-4 w-4" />}
+                          <span>{voteData.strategy?.strategyType}</span>
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-center">
+                        <div className="flex items-center justify-center gap-1.5">
+                          {voteIcons[voteData.vote]}
+                          <span className="font-semibold">{voteData.vote}</span>
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-right font-mono">
+                        {voteData.rawConfidence.toFixed(0)}%
+                      </TableCell>
+                      <TableCell className="text-right font-mono font-bold text-primary">
+                        {voteData.vote !== 'HOLD' ? (voteData.bayesianProbability * 100).toFixed(1) : '0.0'}%
+                      </TableCell>
+                    </TableRow>
+                  ))
+                ) : (
+                  <TableRow>
+                    <TableCell colSpan={4} className="text-center h-24 text-muted-foreground">
+                      Aguardando o primeiro ciclo de votação...
                     </TableCell>
                   </TableRow>
-                ))}
+                )}
               </TableBody>
             </Table>
           </ScrollArea>
