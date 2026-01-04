@@ -259,7 +259,7 @@ export function useRobotCouncilV2(
   priceTicks: TickData[],
   dataVersion: number,
 ) {
-  const { operationsLog, executeTrade, timePeriod, isConnected, durationLimits, sellContract } = useDerivApi();
+  const { operationsLog, executeTrade, timePeriod, isConnected, durationLimits, sellContract, getHistoricalData } = useDerivApi();
   const { user, loading: isAuthLoading } = useAuth();
   const { toast } = useToast();
   const { evolvedStrategies, evolveTrigger, evolutionHistory } = useStrategyEvolution(initialCouncilStrategies);
@@ -269,6 +269,7 @@ export function useRobotCouncilV2(
   const contractsInAlertRef = useRef<Map<number, 'breached' | 'confirmed'>>(new Map());
   const lastActiveSymbolRef = useRef<string | null>(null);
   const lastTimePeriodRef = useRef<TimePeriod | null>(null);
+  const lastRegimeRef = useRef<MarketRegime | null>(null);
   const initialDataFetchedRef = useRef(false);
 
   const [systemMetrics, setSystemMetrics] = useState<SystemMetrics>({
@@ -426,39 +427,39 @@ export function useRobotCouncilV2(
     return () => clearInterval(cleanupInterval);
   }, [isCouncilAutopilotOn]);
 
+  const healthCheckCallback = useCallback(() => {
+    const activeRobots = strategyCouncil.filter(r => {
+      const perf = robotPerformance.find(p => p.id === r.id);
+      return perf && (perf.wins + perf.losses) > 0;
+    }).length;
+
+    if (activeRobots === 0 && strategyCouncil.length > 0) {
+      console.error('🚨 ALERTA: Nenhum robô ativo! Resetando sistema...');
+      resetArenaPerformance();
+      toast({
+        title: "⚠️ Auto-Recuperação",
+        description: "Sistema resetado automaticamente após inatividade detectada.",
+        variant: "destructive"
+      });
+    }
+
+    setSystemMetrics(prev => ({
+      ...prev,
+      virtualTradesCount: virtualTradesRef.current.length,
+      decisionLogCount: tradeDecisionLog.length,
+      activeRobotsCount: activeRobots,
+      memoryUsageMB: (performance as any).memory?.usedJSHeapSize
+        ? (performance as any).memory.usedJSHeapSize / 1024 / 1024
+        : 0,
+      isExecuting: councilExecutionRef.current.isExecuting
+    }));
+  }, [strategyCouncil, robotPerformance, tradeDecisionLog, toast, resetArenaPerformance]);
+
   useEffect(() => {
     if (!isCouncilAutopilotOn) return;
-
-    const healthCheck = setInterval(() => {
-      const activeRobots = strategyCouncil.filter(r => {
-        const perf = robotPerformance.find(p => p.id === r.id);
-        return perf && (perf.wins + perf.losses) > 0;
-      }).length;
-
-      if (activeRobots === 0 && strategyCouncil.length > 0) {
-        console.error('🚨 ALERTA: Nenhum robô ativo! Resetando sistema...');
-        resetArenaPerformance();
-        toast({
-          title: "⚠️ Auto-Recuperação",
-          description: "Sistema resetado automaticamente após inatividade detectada.",
-          variant: "destructive"
-        });
-      }
-
-      setSystemMetrics(prev => ({
-        ...prev,
-        virtualTradesCount: virtualTradesRef.current.length,
-        decisionLogCount: tradeDecisionLog.length,
-        activeRobotsCount: activeRobots,
-        memoryUsageMB: (performance as any).memory?.usedJSHeapSize 
-          ? (performance as any).memory.usedJSHeapSize / 1024 / 1024 
-          : 0,
-        isExecuting: councilExecutionRef.current.isExecuting
-      }));
-    }, HEALTH_CHECK_INTERVAL_MS);
-
-    return () => clearInterval(healthCheck);
-  }, [isCouncilAutopilotOn, strategyCouncil, robotPerformance, tradeDecisionLog, toast, resetArenaPerformance]);
+    const healthCheckInterval = setInterval(healthCheckCallback, HEALTH_CHECK_INTERVAL_MS);
+    return () => clearInterval(healthCheckInterval);
+  }, [isCouncilAutopilotOn, healthCheckCallback]);
 
   useEffect(() => {
     if (!user || isAuthLoading) return;
@@ -595,9 +596,30 @@ export function useRobotCouncilV2(
     lastExecutionTimeRef.current = now;
 
     if (!isConnected || !user || !isCouncilAutopilotOn ||
-      strategyCouncil.length === 0 || !activeSymbol ||
-      tickCandles.length < REGIME_LOOKBACK) {
+      strategyCouncil.length === 0 || !activeSymbol) {
       return;
+    }
+    
+    // --- BOOTSTRAP DE DADOS HISTÓRICOS ---
+    if (!initialDataFetchedRef.current) {
+        initialDataFetchedRef.current = true; // Marca como "em progresso"
+        
+        getHistoricalData(activeSymbol, 'candles', 1000, timePeriod)
+          .then(history => {
+            console.log(`[Bootstrap] ${history.length} candles históricos carregados para ${activeSymbol}.`);
+            setHistoricalData(history as CandleData[]);
+          })
+          .catch(err => {
+            console.error('[Bootstrap] Falha ao carregar dados históricos:', err);
+            initialDataFetchedRef.current = false; // Permite nova tentativa
+          });
+        
+        // Retorna aqui para aguardar os dados no próximo ciclo
+        return;
+    }
+
+    if (tickCandles.length < REGIME_LOOKBACK) {
+        return;
     }
 
     const currentTick = priceTicks[priceTicks.length - 1];
@@ -634,9 +656,17 @@ export function useRobotCouncilV2(
           roc: currentIndicators.roc || undefined,
           atr: currentIndicators.atr || undefined,
         },
-        currentRegime.regime,
+        lastRegimeRef.current || 'ranging',
         transitionMatrixRef.current
       );
+      
+      // ✅ RESET DA ARENA NA MUDANÇA DE REGIME
+      if (lastRegimeRef.current && lastRegimeRef.current !== regimeResult.regime) {
+          console.log(`[REGIME CHANGE] Mudança de ${lastRegimeRef.current} para ${regimeResult.regime}. Resetando Arena...`);
+          resetArenaPerformance();
+      }
+      lastRegimeRef.current = regimeResult.regime;
+
 
       setCurrentRegime({
         regime: regimeResult.regime,
@@ -770,7 +800,6 @@ export function useRobotCouncilV2(
         // --- APRENDIZAGEM (FUNIL LARGO) ---
         // Qualquer voto válido entra na Arena para gerar estatísticas.
         if (technicalVote.vote !== 'HOLD') {
-            // 🔥 FIX: Verifica se há ALGUM trade ATIVO (não expirado)
             const hasActiveTrade = virtualTradesRef.current.some(t => t.robotId === robot.id && t.exitEpoch > currentTick.epoch);
             if(!hasActiveTrade) {
                 const durationInSeconds = durationToSeconds(technicalVote.optimalDuration, technicalVote.optimalDurationUnit);
@@ -781,7 +810,7 @@ export function useRobotCouncilV2(
         
         // --- DECISÃO DE CONSENSO (FUNIL ESTREITO) ---
         // Apenas votos com confiança mínima e condições ideais participam.
-        if (technicalVote.confidence < (confidenceFactor / 100)) {
+        if (technicalVote.confidence * 100 < confidenceFactor) {
             bayesianVotes[robot.id] = { ...technicalVote, rawConfidence: technicalVote.confidence * 100, calibratedConfidence: 0, bayesianProbability: 0.5, weight: 0, regime: regimeResult.regime, reason: `Confiança (${(technicalVote.confidence * 100).toFixed(0)}) < Limiar (${confidenceFactor})` };
             return;
         }
@@ -796,7 +825,6 @@ export function useRobotCouncilV2(
         }
 
         activeRobotsCount++;
-        // Cálculo de Peso Inteligente
         let prior = (perf && (perf.wins + perf.losses) >= MIN_TRADES_FOR_STATS) ? perf.winRate / 100 : 0.5;
         let likelihood = technicalVote.confidence; // Já está em 0-1
         if (microFeatures && microFeatures.yangZhangVolatility > 0.05) likelihood *= 0.8;
@@ -901,7 +929,7 @@ export function useRobotCouncilV2(
     timePeriod, durationLimits, dailyBalance, dailyTarget, evolveTrigger,
     portfolioStats, consensusSensitivity, confidenceFactor, durationRange,
     takeProfitThreshold, stopLossThreshold, priceTicks, tickCandles,
-    isDynamicExitOn
+    isDynamicExitOn, getHistoricalData // Adicionado
   ]);
 
   return {
