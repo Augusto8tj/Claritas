@@ -79,26 +79,14 @@ export async function addGoal(userId: string, name: string, targetAmount: number
     const goalsCol = collection(db, `users/${userId}/goals`);
     
     const newGoalData: Omit<Goal, 'id' | 'imageUrl'> & {imageUrl?: string, userId: string} = {
-        userId, // Adiciona o userId ao corpo do documento.
+        userId,
         name,
         targetAmount,
         currentAmount: 0,
         imageHint: "new goal"
     };
 
-    // A operação de escrita já usa o non-blocking com tratamento de erro.
-    const docRef = await addDocumentNonBlocking(goalsCol, newGoalData);
-
-    generateGoalImage({ goalName: name })
-        .then(imageResult => {
-            if (imageResult?.imageUrl) {
-                const goalDoc = doc(db, `users/${userId}/goals`, docRef.id);
-                updateDocumentNonBlocking(goalDoc, { imageUrl: imageResult.imageUrl });
-            }
-        })
-        .catch(imageError => {
-            console.error("Falha ao gerar imagem da meta, usando placeholder.", imageError);
-        });
+    const docRef = await addDoc(goalsCol, newGoalData);
 
     return { 
         id: docRef.id, 
@@ -211,26 +199,7 @@ export async function getFinancialInsights(userId: string): Promise<string[]> {
         throw new Error("User ID is required.");
     }
 
-    const cacheKey = `financialInsights_${userId}`;
-    
-    // 1. Tentar ler do cache
     try {
-        const cachedItem = localStorage.getItem(cacheKey);
-        if (cachedItem) {
-            const { insights, timestamp } = JSON.parse(cachedItem);
-            const isCacheValid = (Date.now() - timestamp) < 24 * 60 * 60 * 1000; // 24 horas
-            if (isCacheValid) {
-                console.log("[Cache] Usando insights de IA em cache.");
-                return insights;
-            }
-        }
-    } catch (e) {
-        console.warn("[Cache] Não foi possível ler o cache de insights.", e);
-    }
-
-    // 2. Se o cache for inválido ou não existir, buscar novos insights
-    try {
-        console.log("[API] Cache de insights inválido ou inexistente. A buscar novos insights da IA.");
         const response = await getChatbotInsightsResponse({
             query: "Me dê 3 insights práticos sobre minhas finanças com base em meu resumo financeiro, cada um em uma frase curta.",
             history: [],
@@ -239,18 +208,6 @@ export async function getFinancialInsights(userId: string): Promise<string[]> {
 
         if (response.success) {
             const newInsights = response.success.split('\n').filter(line => line.trim() !== '' && !line.startsWith("Erro:"));
-            
-            // 3. Salvar os novos insights no cache com um timestamp
-            try {
-                const cacheItem = {
-                    insights: newInsights,
-                    timestamp: Date.now(),
-                };
-                localStorage.setItem(cacheKey, JSON.stringify(cacheItem));
-            } catch(e) {
-                console.warn("[Cache] Não foi possível salvar os novos insights no cache.", e);
-            }
-
             return newInsights;
         }
         
