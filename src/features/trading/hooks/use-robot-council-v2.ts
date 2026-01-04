@@ -652,13 +652,10 @@ export function useRobotCouncilV2(
       
       if (isDynamicExitOn) {
         activeCouncilContracts.forEach(contract => {
-          if (councilExecutionRef.current.sellingContracts.has(contract.id)) return;
-      
-          // Verifica se a duração do contrato é maior que 15 segundos
           const contractDurationInSeconds = durationToSeconds(contract.duration, contract.durationUnit);
-          if (contractDurationInSeconds <= 15) {
-            return; // Ignora contratos de 15 segundos ou menos
-          }
+          if (contractDurationInSeconds <= 15) return;
+
+          if (councilExecutionRef.current.sellingContracts.has(contract.id)) return;
       
           const contractId = contract.id;
           const potentialProfit = contract.stake * 0.94;
