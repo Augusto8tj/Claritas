@@ -60,8 +60,9 @@ const regimeLabels: Record<MarketRegime, string> = {
 
 export function DebugCouncilView({ votes, regime, isCouncilAutopilotOn }: DebugCouncilViewProps) {
 
-  if (!isCouncilAutopilotOn) {
-    return null; // Não renderiza nada se o piloto automático estiver desligado
+  // 🔥 FIX: Adiciona guarda de segurança para props nulas ou indefinidas
+  if (!isCouncilAutopilotOn || !votes || !regime) {
+    return null; 
   }
 
   const sortedVotes = Object.entries(votes).sort(([, a], [, b]) => {
