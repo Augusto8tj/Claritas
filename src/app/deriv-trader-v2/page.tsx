@@ -9,7 +9,7 @@ import { AssetSelector } from "@/features/trading/components/deriv-trader/asset-
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { MarketChart } from "@/features/trading/components/deriv-trader/market-chart";
 import { Button } from "@/components/ui/button";
-import { Trash2, Dna } from "lucide-react";
+import { Trash2, Dna, Archive } from "lucide-react";
 import { useDerivApi } from "@/features/trading/hooks/use-deriv-api";
 import { Skeleton } from "@/components/ui/skeleton";
 import { OperationsLog } from "@/features/trading/components/deriv-trader/operations-log";
@@ -23,6 +23,7 @@ import { CouncilDashboardV2 } from '@/features/trading/components/deriv-trader/C
 import { TradingDeskV2 } from "@/features/trading/components/deriv-trader/trading-desk-v2";
 import { EvolutionLab } from "@/features/trading/components/deriv-trader/evolution-lab";
 import { DebugCouncilView } from "@/features/trading/components/deriv-trader/DebugCouncilView";
+import TradingDecisionLogViewer from "@/components/deriv-trader/TradingDecisionLogViewer";
 
 
 const Header = () => {
@@ -125,9 +126,10 @@ const DerivTraderV2Core = () => {
             </div>
 
             <Tabs value={activeTab} onValueChange={setActiveTab}>
-                <TabsList className="grid w-full grid-cols-3">
+                <TabsList className="grid w-full grid-cols-4">
                     <TabsTrigger value="desk">Arena V2</TabsTrigger>
                     <TabsTrigger value="log">Operações</TabsTrigger>
+                    <TabsTrigger value="audit">Auditoria</TabsTrigger>
                     <TabsTrigger value="evolution">Evolução</TabsTrigger>
                 </TabsList>
                 <TabsContent value="desk" className="mt-4">
@@ -139,6 +141,9 @@ const DerivTraderV2Core = () => {
                 </TabsContent>
                 <TabsContent value="log" className="mt-4">
                     <OperationsLog operations={operationsLog} />
+                </TabsContent>
+                <TabsContent value="audit" className="mt-4">
+                    <TradingDecisionLogViewer logs={robotCouncil.tradeDecisionLog} showFilters={false} />
                 </TabsContent>
                 <TabsContent value="evolution" className="mt-4">
                     <EvolutionLab history={robotCouncil.evolutionHistory} />
