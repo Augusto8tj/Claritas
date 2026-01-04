@@ -119,6 +119,8 @@ const DerivTraderV2Core = () => {
                             votes={robotCouncil.bayesianVotes}
                             regime={robotCouncil.currentRegime}
                             isCouncilAutopilotOn={robotCouncil.isCouncilAutopilotOn}
+                            systemMetrics={robotCouncil.systemMetrics}
+                            robotPerformance={robotCouncil.robotPerformance}
                         />
                     </div>
                 </div>

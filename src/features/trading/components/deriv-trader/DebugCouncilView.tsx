@@ -61,7 +61,7 @@ const regimeLabels: Record<MarketRegime, string> = {
 
 export function DebugCouncilView({ votes, regime, isCouncilAutopilotOn, systemMetrics, robotPerformance }: DebugCouncilViewProps) {
 
-  if (!isCouncilAutopilotOn || !regime) {
+  if (!isCouncilAutopilotOn || !regime || !systemMetrics) {
     return (
         <Card>
             <CardHeader>
