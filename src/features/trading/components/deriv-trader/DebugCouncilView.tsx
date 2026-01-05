@@ -121,7 +121,7 @@ export function DebugCouncilView({ votes, regime, isCouncilAutopilotOn, systemMe
                 <Brain className="h-5 w-5" />
                 Métricas do Sistema
             </h3>
-            <div className="grid grid-cols-2 md:grid-cols-5 gap-2 text-xs">
+             <div className="grid grid-cols-2 md:grid-cols-5 gap-2 text-xs">
                  <div className="p-2 bg-muted rounded-md text-center">
                     <p className="flex items-center justify-center gap-1 text-muted-foreground"><Timer className="h-3 w-3"/>Sessão</p>
                     <p className="font-bold text-lg">{formatDuration(systemMetrics.sessionDuration)}</p>
@@ -184,12 +184,12 @@ export function DebugCouncilView({ votes, regime, isCouncilAutopilotOn, systemMe
               </TableHeader>
               <TableBody>
                 {sortedVotes.length > 0 ? (
-                  sortedVotes.map(([robotId, voteData]) => {
+                  sortedVotes.map(([robotId, voteData], index) => {
                     const perf = robotPerformance.find(p => p.id === robotId);
                     const totalTrades = (perf?.wins || 0) + (perf?.losses || 0);
 
                     return (
-                        <TableRow key={robotId}>
+                        <TableRow key={`${robotId}-${index}`}>
                         <TableCell className="font-medium">
                             <div className="flex items-center gap-2">
                             {indicatorIcons[voteData.strategy?.strategyType || 'DEFAULT'] || <Bot className="h-4 w-4" />}
