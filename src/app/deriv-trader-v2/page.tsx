@@ -1,3 +1,4 @@
+
 // /src/app/deriv-trader-v2/page.tsx
 'use client';
 
