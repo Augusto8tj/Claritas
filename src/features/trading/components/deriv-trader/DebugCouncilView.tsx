@@ -128,7 +128,7 @@ export function DebugCouncilView({ votes, regime, isCouncilAutopilotOn, systemMe
                 </div>
                 <div className="p-2 bg-muted rounded-md text-center">
                     <p className="flex items-center justify-center gap-1 text-muted-foreground"><Database className="h-3 w-3"/>Trades Virtuais</p>
-                    <p className="font-bold text-lg">{systemMetrics.virtualTradesCount}</p>
+                    <p className="font-bold text-lg">{systemMetrics.activeVirtualTrades} / {systemMetrics.totalVirtualTrades}</p>
                 </div>
                  <div className="p-2 bg-muted rounded-md text-center">
                     <p className="flex items-center justify-center gap-1 text-muted-foreground"><Users className="h-3 w-3"/>Robôs Ativos</p>

@@ -145,7 +145,8 @@ export interface DashboardData {
 
 // 🔥 NOVO: Métricas de Sistema
 export interface SystemMetrics {
-  virtualTradesCount: number;
+  activeVirtualTrades: number;
+  totalVirtualTrades: number;
   decisionLogCount: number;
   activeRobotsCount: number;
   memoryUsageMB: number;
@@ -322,7 +323,8 @@ export function useRobotCouncilV2(
     effectiveThreshold: 0,
     councilConfidence: 0,
     systemMetrics: {
-        virtualTradesCount: 0,
+        activeVirtualTrades: 0,
+        totalVirtualTrades: 0,
         decisionLogCount: 0,
         activeRobotsCount: 0,
         memoryUsageMB: 0,
@@ -421,7 +423,8 @@ export function useRobotCouncilV2(
           ...prev,
           systemMetrics: {
               ...prev.systemMetrics,
-              virtualTradesCount: virtualTradesRef.current.length,
+              activeVirtualTrades: virtualTradesRef.current.length,
+              totalVirtualTrades: tradeCounterRef.current,
               decisionLogCount: tradeDecisionLog.length,
               activeRobotsCount: robotPerformance.filter(p => (p.wins + p.losses) > 0).length,
               memoryUsageMB: (performance as any).memory?.usedJSHeapSize ? (performance as any).memory.usedJSHeapSize / 1024 / 1024 : 0,
@@ -694,7 +697,11 @@ export function useRobotCouncilV2(
                     perf.tradeHistory.push(pnl);
                     if (isWin) perf.wins++; else perf.losses++;
                     const totalTrades = perf.wins + perf.losses;
-                    perf.winRate = totalTrades > 0 ? (perf.wins / totalTrades) * 100 : 0;
+                    if (totalTrades > 0) {
+                        perf.winRate = (perf.wins / totalTrades) * 100;
+                    } else {
+                        perf.winRate = 0;
+                    }
                     if (perf.tradeHistory.length >= MIN_TRADES_FOR_STATS) {
                         const metrics = calculatePerformanceMetrics(perf.tradeHistory.map((profit, idx) => ({ profit, timestamp: Date.now() - (perf.tradeHistory.length - idx) * 60000 })));
                         Object.assign(perf, metrics);
