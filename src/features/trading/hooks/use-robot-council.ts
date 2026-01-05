@@ -73,10 +73,12 @@ const calculateRobotVote = (
     let confidence = 0;
     const { optimalDuration, optimalDurationUnit, suggestedStake } = robot;
 
-    if (!indicators) {
+    if (!indicators || tickCandles.length < 2) {
         return { vote: 'HOLD', confidence: 0, optimalDuration, optimalDurationUnit, suggestedStake };
     }
     
+    const lastPrice = tickCandles[tickCandles.length - 1].close;
+
     // RSI
     if (robot.strategyType === 'RSI' && isValid(indicators.rsi)) {
         if (indicators.rsi! <= robot.weakBuyThreshold!) { vote = 'RISE'; confidence = robot.weakConfidence; }
@@ -84,49 +86,30 @@ const calculateRobotVote = (
         if (indicators.rsi! >= robot.weakSellThreshold!) { vote = 'FALL'; confidence = robot.weakConfidence; }
         if (indicators.rsi! >= robot.strongSellThreshold!) { vote = 'FALL'; confidence = robot.strongConfidence; }
     }
-
     // STOCHASTIC
-    if (robot.strategyType === 'STOCHASTIC' && isValid(indicators.stoch)) {
+    else if (robot.strategyType === 'STOCHASTIC' && isValid(indicators.stoch)) {
         if (indicators.stoch! <= robot.weakBuyThreshold!) { vote = 'RISE'; confidence = robot.weakConfidence; }
         if (indicators.stoch! <= robot.strongBuyThreshold!) { vote = 'RISE'; confidence = robot.strongConfidence; }
         if (indicators.stoch! >= robot.weakSellThreshold!) { vote = 'FALL'; confidence = robot.weakConfidence; }
         if (indicators.stoch! >= robot.strongSellThreshold!) { vote = 'FALL'; confidence = robot.strongConfidence; }
     }
-
     // MOVING_AVERAGE_CROSS
-    if (robot.strategyType === 'MOVING_AVERAGE_CROSS' && isValid(indicators.ma.short) && isValid(indicators.ma.long)) {
+    else if (robot.strategyType === 'MOVING_AVERAGE_CROSS' && isValid(indicators.ma.short) && isValid(indicators.ma.long)) {
         if (indicators.ma.short! > indicators.ma.long!) { vote = 'RISE'; confidence = robot.weakConfidence; }
         if (indicators.ma.long! > indicators.ma.short!) { vote = 'FALL'; confidence = robot.weakConfidence; }
     }
-
     // MACD_CROSS
-    if (robot.strategyType === 'MACD_CROSS' && isValid(indicators.macd.macd) && isValid(indicators.macd.signal)) {
+    else if (robot.strategyType === 'MACD_CROSS' && isValid(indicators.macd.macd) && isValid(indicators.macd.signal)) {
         if (indicators.macd.macd! > indicators.macd.signal!) { vote = 'RISE'; confidence = robot.weakConfidence; }
         if (indicators.macd.signal! > indicators.macd.macd!) { vote = 'FALL'; confidence = robot.weakConfidence; }
     }
-
     // BOLLINGER_BANDS
-    if (
-        robot.strategyType === 'BOLLINGER_BANDS' &&
-        isValid(indicators.bb.lower) && isValid(indicators.bb.upper) &&
-        tickCandles.length > 0
-    ) {
-        const lastPrice = tickCandles[tickCandles.length - 1].close;
-
-        if (isValid(lastPrice)) {
-            if (lastPrice <= indicators.bb.lower!) {
-                vote = 'RISE';
-                confidence = robot.weakConfidence;
-            }
-            if (lastPrice >= indicators.bb.upper!) {
-                vote = 'FALL';
-                confidence = robot.weakConfidence;
-            }
-        }
+    else if (robot.strategyType === 'BOLLINGER_BANDS' && isValid(indicators.bb.lower) && isValid(indicators.bb.upper) && isValid(lastPrice)) {
+        if (lastPrice <= indicators.bb.lower!) { vote = 'RISE'; confidence = robot.weakConfidence; }
+        if (lastPrice >= indicators.bb.upper!) { vote = 'FALL'; confidence = robot.weakConfidence; }
     }
-
     // ADX_TREND
-    if (robot.strategyType === 'ADX_TREND' && isValid(indicators.adx)) {
+    else if (robot.strategyType === 'ADX_TREND' && isValid(indicators.adx)) {
         if (indicators.adx! > (robot.trendStrengthThreshold || 25)) {
             if (isValid(indicators.pdi) && isValid(indicators.ndi)) {
                 if (indicators.pdi! > indicators.ndi!) { vote = 'RISE'; confidence = robot.weakConfidence; }
@@ -134,21 +117,20 @@ const calculateRobotVote = (
             }
         }
     }
-    
-    // MFI
-    if (robot.strategyType === 'MFI' && isValid(indicators.mfi)) {
-        if (indicators.mfi! <= robot.weakBuyThreshold!) { vote = 'RISE'; confidence = robot.weakConfidence; }
-        if (indicators.mfi! <= robot.strongBuyThreshold!) { vote = 'RISE'; confidence = robot.strongConfidence; }
-        if (indicators.mfi! >= robot.weakSellThreshold!) { vote = 'FALL'; confidence = robot.weakConfidence; }
-        if (indicators.mfi! >= robot.strongSellThreshold!) { vote = 'FALL'; confidence = robot.strongConfidence; }
+    // ICHIMOKU_CLOUD
+    else if (robot.strategyType === 'ICHIMOKU_CLOUD' && indicators.ichimoku) {
+        const { tenkan, kijun, spanA, spanB } = indicators.ichimoku;
+        if (isValid(tenkan) && isValid(kijun) && isValid(spanA) && isValid(spanB) && isValid(lastPrice)) {
+            const cloudTop = Math.max(spanA, spanB);
+            const cloudBottom = Math.min(spanA, spanB);
+            if (lastPrice > cloudTop && tenkan > kijun) { vote = 'RISE'; confidence = robot.strongConfidence; }
+            if (lastPrice < cloudBottom && tenkan < kijun) { vote = 'FALL'; confidence = robot.strongConfidence; }
+        }
     }
-    
-    // STOCH_RSI
-    if (robot.strategyType === 'STOCH_RSI' && isValid(indicators.stochRSI)) {
-        if (indicators.stochRSI! <= robot.weakBuyThreshold!) { vote = 'RISE'; confidence = robot.weakConfidence; }
-        if (indicators.stochRSI! <= robot.strongBuyThreshold!) { vote = 'RISE'; confidence = robot.strongConfidence; }
-        if (indicators.stochRSI! >= robot.weakSellThreshold!) { vote = 'FALL'; confidence = robot.weakConfidence; }
-        if (indicators.stochRSI! >= robot.strongSellThreshold!) { vote = 'FALL'; confidence = robot.strongConfidence; }
+     // Z_SCORE
+    else if (robot.strategyType === 'Z_SCORE' && isValid(indicators.zScore)) {
+        if (indicators.zScore! <= -(robot.zScoreThreshold || 2.0)) { vote = 'RISE'; confidence = robot.strongConfidence; }
+        if (indicators.zScore! >= (robot.zScoreThreshold || 2.0)) { vote = 'FALL'; confidence = robot.strongConfidence; }
     }
 
     return { vote, confidence, optimalDuration, optimalDurationUnit, suggestedStake };
@@ -536,11 +518,14 @@ export function useRobotCouncil(
                 }
 
                 // --- LÓGICA DE STOP LOSS COM CONFIRMAÇÃO ---
-                const chandelierExit = currentIndicators.chandelierExit;
+                const chandelierExit = currentIndicators.chandelier;
                 if (chandelierExit && contract.entryPrice) {
+                    const exitPrice = contract.direction === 'rise' ? chandelierExit.exitLong : chandelierExit.exitShort;
+                    if(!exitPrice) return;
+                    
                     const isBreached = contract.direction === 'rise' 
-                        ? currentTick.price < chandelierExit 
-                        : currentTick.price > chandelierExit;
+                        ? currentTick.price < exitPrice 
+                        : currentTick.price > exitPrice;
 
                     if (isBreached) {
                         // Se é a primeira vez que viola, marca como 'breached'
