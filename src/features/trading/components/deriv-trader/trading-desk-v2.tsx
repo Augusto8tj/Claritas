@@ -120,7 +120,7 @@ export function TradingDeskV2({ robotPerformance, isCouncilAutopilotOn, resetAre
                 <div className="flex justify-between items-start">
                     <CardTitle className="font-headline flex items-center gap-2">
                         <LayoutGrid className="w-5 h-5" />
-                        Arena Virtual V2.0: Análise de Sharpe
+                        Arena Virtual V2.5: Análise de Sharpe
                     </CardTitle>
                     <Button onClick={resetArenaPerformance} variant="outline" size="sm" disabled={!isCouncilAutopilotOn}>
                         <RefreshCw className="mr-2 h-4 w-4" />
