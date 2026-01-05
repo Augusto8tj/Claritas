@@ -206,81 +206,155 @@ const calculateTechnicalVote = (
 } => {
   let vote: 'RISE' | 'FALL' | 'HOLD' = 'HOLD';
   let confidence = 0;
-  let reason = 'Nenhum sinal claro';
+  let reason = 'A aguardar sinal...';
   let suggestedStake = 0;
   
   const { optimalDuration, optimalDurationUnit, suggestedStake: baseStake } = robot;
+  const lastClose = tickCandles.length > 0 ? tickCandles[tickCandles.length - 1].close : 0;
 
+  // Helper para formatar logs
+  const format = (val: number | null | undefined) => (val !== null && val !== undefined && !isNaN(val) ? val.toFixed(4) : 'N/A');
+
+  // Helper para definir voto
   const setVote = (newVote: 'RISE' | 'FALL', newConfidence: number, newReason: string) => {
     if (newConfidence <= 0) return;
     vote = newVote;
     confidence = newConfidence;
     reason = newReason;
-    suggestedStake = confidence === robot.strongConfidence ? baseStake : baseStake * 0.5;
+    suggestedStake = confidence >= robot.strongConfidence ? baseStake : baseStake * 0.5;
   };
 
-  if (!indicators) {
-    return { vote: 'HOLD', confidence: 0, reason, optimalDuration, optimalDurationUnit, suggestedStake: 0 };
+  if (!indicators || !lastClose) {
+    return { vote: 'HOLD', confidence: 0, reason: "Dados insuficientes", optimalDuration, optimalDurationUnit, suggestedStake: 0 };
   }
 
-  const { rsi, stoch, macd, bb, ma, adx, pdi, ndi, stochRSI, mfi, rvi } = indicators;
-  const format = (val: number | null) => (val !== null && val !== undefined && !isNaN(val) ? val.toFixed(2) : 'N/A');
+  // Desestruturação Completa dos Indicadores (Certifique-se que o indicator-service fornece tudo isso)
+  const { 
+    rsi, stoch, macd, bb, ma, adx, pdi, ndi, stochRSI, mfi, rvi,
+    awesomeOscillator: ao, trix, roc,
+    parabolicSAR: psar, ichimoku,
+    kama, donchianChannels: donchian, chandelierExit: chandelier,
+    vwap: vwapArray, obv,
+    zScore,
+    obvPrev, // Assumindo que o service pode fornecer o valor anterior para comparação
+    trixPrev 
+  } = indicators;
+  
+  const vwap = vwapArray && vwapArray.length > 0 ? vwapArray[vwapArray.length - 1] : null;
 
-  // Lógica de votação
-  if (robot.strategyType === 'RSI' && isValid(rsi) && robot.strongBuyThreshold) {
-    if (rsi <= robot.strongBuyThreshold!) setVote('RISE', robot.strongConfidence, `RSI(${format(rsi)}) <= Forte(${robot.strongBuyThreshold})`);
-    else if (rsi <= robot.weakBuyThreshold!) setVote('RISE', robot.weakConfidence, `RSI(${format(rsi)}) <= Fraco(${robot.weakBuyThreshold})`);
-    else if (rsi >= robot.strongSellThreshold!) setVote('FALL', robot.strongConfidence, `RSI(${format(rsi)}) >= Forte(${robot.strongSellThreshold})`);
-    else if (rsi >= robot.weakSellThreshold!) setVote('FALL', robot.weakConfidence, `RSI(${format(rsi)}) >= Fraco(${robot.weakSellThreshold})`);
-  } 
-  else if (robot.strategyType === 'STOCHASTIC' && isValid(stoch) && robot.strongBuyThreshold) {
-    if (stoch <= robot.strongBuyThreshold!) setVote('RISE', robot.strongConfidence, `Stoch(${format(stoch)}) <= Forte(${robot.strongBuyThreshold})`);
-    else if (stoch <= robot.weakBuyThreshold!) setVote('RISE', robot.weakConfidence, `Stoch(${format(stoch)}) <= Fraco(${robot.weakBuyThreshold})`);
-    else if (stoch >= robot.strongSellThreshold!) setVote('FALL', robot.strongConfidence, `Stoch(${format(stoch)}) >= Forte(${robot.strongSellThreshold})`);
-    else if (stoch >= robot.weakSellThreshold!) setVote('FALL', robot.weakConfidence, `Stoch(${format(stoch)}) >= Fraco(${robot.weakSellThreshold})`);
+
+  // ════════════════════════════════════════════════════════════════
+  // 1. COMITÉ DE MOMENTUM (Os Velocistas)
+  // ════════════════════════════════════════════════════════════════
+  if (robot.strategyType === 'RSI' && isValid(rsi)) {
+    if (rsi <= robot.strongBuyThreshold!) setVote('RISE', robot.strongConfidence, `RSI(${format(rsi)}) Sobrevenda Extrema`);
+    else if (rsi <= robot.weakBuyThreshold!) setVote('RISE', robot.weakConfidence, `RSI(${format(rsi)}) Sobrevenda`);
+    else if (rsi >= robot.strongSellThreshold!) setVote('FALL', robot.strongConfidence, `RSI(${format(rsi)}) Sobrecompra Extrema`);
+    else if (rsi >= robot.weakSellThreshold!) setVote('FALL', robot.weakConfidence, `RSI(${format(rsi)}) Sobrecompra`);
   }
-  else if (robot.strategyType === 'MACD_CROSS' && isValid(macd.macd) && isValid(macd.signal)) {
-    if (macd.macd > macd.signal) setVote('RISE', robot.weakConfidence, `Cruzamento MACD para cima`);
-    else if (macd.signal > macd.macd) setVote('FALL', robot.weakConfidence, `Cruzamento MACD para baixo`);
+  else if (robot.strategyType === 'STOCHASTIC' && isValid(stoch)) {
+    if (stoch <= robot.strongBuyThreshold!) setVote('RISE', robot.strongConfidence, `Stoch(${format(stoch)}) Fundo`);
+    else if (stoch >= robot.strongSellThreshold!) setVote('FALL', robot.strongConfidence, `Stoch(${format(stoch)}) Topo`);
   }
-  else if (robot.strategyType === 'BOLLINGER_BANDS' && isValid(bb.lower) && isValid(bb.upper) && tickCandles.length > 0) {
-    const lastPrice = tickCandles[tickCandles.length - 1].close;
-    if (isValid(lastPrice)) {
-      if (lastPrice <= bb.lower) setVote('RISE', robot.weakConfidence, `Preço tocou Banda Inferior`);
-      if (lastPrice >= bb.upper) setVote('FALL', robot.weakConfidence, `Preço tocou Banda Superior`);
-    }
+  else if (robot.strategyType === 'MACD_CROSS' && isValid(macd?.macd) && isValid(macd?.signal)) {
+    if (macd.macd > macd.signal && (macd.histogram || 0) > 0) setVote('RISE', robot.weakConfidence, `MACD Cruzou p/ Cima`);
+    else if (macd.macd < macd.signal && (macd.histogram || 0) < 0) setVote('FALL', robot.weakConfidence, `MACD Cruzou p/ Baixo`);
   }
-  else if (robot.strategyType === 'MOVING_AVERAGE_CROSS' && isValid(ma.short) && isValid(ma.long)) {
-    if (ma.short > ma.long) setVote('RISE', robot.weakConfidence, `Cruzamento de Médias para cima`);
-    else if (ma.long > ma.short) setVote('FALL', robot.weakConfidence, `Cruzamento de Médias para baixo`);
+  else if (robot.strategyType === 'AWESOME_OSCILLATOR' && isValid(ao)) {
+    if (ao > 0 && ao > (indicators.awesomeOscillator || 0)) setVote('RISE', robot.weakConfidence, `AO Positivo e Acelerando`);
+    else if (ao < 0 && ao < (indicators.awesomeOscillator || 0)) setVote('FALL', robot.weakConfidence, `AO Negativo e Acelerando`);
+  }
+  else if (robot.strategyType === 'TRIX' && isValid(trix)) {
+    if (trix > 0 && (trixPrev !== undefined && trix > trixPrev)) setVote('RISE', robot.strongConfidence, 'TRIX Cruzou Zero/Acelerando');
+    else if (trix < 0 && (trixPrev !== undefined && trix < trixPrev)) setVote('FALL', robot.strongConfidence, 'TRIX Abaixo Zero/Caindo');
+  }
+  else if (robot.strategyType === 'ROC' && isValid(roc)) {
+    if (roc > (robot.strongBuyThreshold || 0.5)) setVote('RISE', robot.weakConfidence, `ROC(${format(roc)}) Impulso Forte`);
+    else if (roc < (robot.strongSellThreshold || -0.5)) setVote('FALL', robot.weakConfidence, `ROC(${format(roc)}) Queda Forte`);
+  }
+  else if (robot.strategyType === 'RVI' && isValid(rvi)) {
+    if (rvi > 50) setVote('RISE', robot.weakConfidence, `RVI(${format(rvi)}) Alta Energia`);
+    else if (rvi < 50) setVote('FALL', robot.weakConfidence, `RVI(${format(rvi)}) Baixa Energia`);
+  }
+
+  // ════════════════════════════════════════════════════════════════
+  // 2. COMITÉ DE TENDÊNCIA (Os Navegadores)
+  // ════════════════════════════════════════════════════════════════
+  else if (robot.strategyType === 'MOVING_AVERAGE_CROSS' && isValid(ma?.short) && isValid(ma?.long)) {
+    if (ma.short > ma.long) setVote('RISE', robot.weakConfidence, `Golden Cross (Curta > Longa)`);
+    else if (ma.short < ma.long) setVote('FALL', robot.weakConfidence, `Death Cross (Curta < Longa)`);
   }
   else if (robot.strategyType === 'ADX_TREND' && isValid(adx) && adx > (robot.trendStrengthThreshold || 25)) {
     if (isValid(pdi) && isValid(ndi)) {
-      if (pdi > ndi) setVote('RISE', robot.weakConfidence, `ADX > ${robot.trendStrengthThreshold} e +DI > -DI`);
-      else if (ndi > pdi) setVote('FALL', robot.weakConfidence, `ADX > ${robot.trendStrengthThreshold} e -DI > +DI`);
+      if (pdi > ndi) setVote('RISE', robot.strongConfidence, `ADX(${format(adx)}) Tendência Alta Forte`);
+      else if (ndi > pdi) setVote('FALL', robot.strongConfidence, `ADX(${format(adx)}) Tendência Baixa Forte`);
     }
   }
-  else if (robot.strategyType === 'MFI' && isValid(mfi) && robot.strongBuyThreshold) {
-    if (mfi <= robot.strongBuyThreshold!) setVote('RISE', robot.strongConfidence, `MFI(${format(mfi)}) <= Forte(${robot.strongBuyThreshold})`);
-    else if (mfi <= robot.weakBuyThreshold!) setVote('RISE', robot.weakConfidence, `MFI(${format(mfi)}) <= Fraco(${robot.weakBuyThreshold})`);
-    else if (mfi >= robot.strongSellThreshold!) setVote('FALL', robot.strongConfidence, `MFI(${format(mfi)}) >= Forte(${robot.strongSellThreshold})`);
-    else if (mfi >= robot.weakSellThreshold!) setVote('FALL', robot.weakConfidence, `MFI(${format(mfi)}) >= Fraco(${robot.weakSellThreshold})`);
+  else if (robot.strategyType === 'PARABOLIC_SAR' && isValid(psar)) {
+    if (lastClose > psar) setVote('RISE', robot.weakConfidence, `Preço acima do SAR`);
+    else if (lastClose < psar) setVote('FALL', robot.weakConfidence, `Preço abaixo do SAR`);
   }
-  else if (robot.strategyType === 'STOCH_RSI' && isValid(stochRSI) && robot.strongBuyThreshold) {
-    if (stochRSI <= robot.strongBuyThreshold!) setVote('RISE', robot.strongConfidence, `StochRSI(${format(stochRSI)}) <= Forte(${robot.strongBuyThreshold})`);
-    else if (stochRSI <= robot.weakBuyThreshold!) setVote('RISE', robot.weakConfidence, `StochRSI(${format(stochRSI)}) <= Fraco(${robot.weakBuyThreshold})`);
-    else if (stochRSI >= robot.strongSellThreshold!) setVote('FALL', robot.strongConfidence, `StochRSI(${format(stochRSI)}) >= Forte(${robot.strongSellThreshold})`);
-    else if (stochRSI >= robot.weakSellThreshold!) setVote('FALL', robot.weakConfidence, `StochRSI(${format(stochRSI)}) >= Fraco(${robot.weakSellThreshold})`);
+  else if (robot.strategyType === 'ICHIMOKU_CLOUD' && ichimoku && isValid(ichimoku?.senkouA) && isValid(ichimoku?.senkouB)) {
+    const cloudTop = Math.max(ichimoku.senkouA, ichimoku.senkouB);
+    const cloudBottom = Math.min(ichimoku.senkouA, ichimoku.senkouB);
+    if (lastClose > cloudTop) setVote('RISE', robot.strongConfidence, `Preço acima da Nuvem`);
+    else if (lastClose < cloudBottom) setVote('FALL', robot.strongConfidence, `Preço abaixo da Nuvem`);
   }
-  else if (robot.strategyType === 'RVI' && isValid(rvi) && robot.strongBuyThreshold) {
-    if (rvi <= robot.strongBuyThreshold!) setVote('RISE', robot.strongConfidence, `RVI(${format(rvi)}) <= Forte(${robot.strongBuyThreshold})`);
-    else if (rvi <= robot.weakBuyThreshold!) setVote('RISE', robot.weakConfidence, `RVI(${format(rvi)}) <= Fraco(${robot.weakBuyThreshold})`);
-    else if (rvi >= robot.strongSellThreshold!) setVote('FALL', robot.strongConfidence, `RVI(${format(rvi)}) >= Forte(${robot.strongSellThreshold})`);
-    else if (rvi >= robot.weakSellThreshold!) setVote('FALL', robot.weakConfidence, `RVI(${format(rvi)}) >= Fraco(${robot.weakSellThreshold})`);
+
+  // ════════════════════════════════════════════════════════════════
+  // 3. COMITÉ DE ESTRUTURA (Os Arquitetos)
+  // ════════════════════════════════════════════════════════════════
+  else if (robot.strategyType === 'BOLLINGER_BANDS' && isValid(bb?.lower) && isValid(bb?.upper)) {
+    if (lastClose <= bb.lower) setVote('RISE', robot.weakConfidence, `Toque Banda Inferior (Reversão)`);
+    else if (lastClose >= bb.upper) setVote('FALL', robot.weakConfidence, `Toque Banda Superior (Reversão)`);
+  }
+  else if (robot.strategyType === 'KAMA' && isValid(kama)) {
+    if (lastClose > kama) setVote('RISE', robot.weakConfidence, `Preço > KAMA`);
+    else if (lastClose < kama) setVote('FALL', robot.weakConfidence, `Preço < KAMA`);
+  }
+  else if (robot.strategyType === 'DONCHIAN_CHANNELS' && donchian && donchian.length > 0) {
+    const lastChannel = donchian[donchian.length - 1];
+    if (lastChannel && isValid(lastChannel.upper) && isValid(lastChannel.lower)) {
+        if (lastClose >= lastChannel.upper) setVote('RISE', robot.strongConfidence, `Breakout Donchian Superior`); // Breakout strategy
+        else if (lastClose <= lastChannel.lower) setVote('FALL', robot.strongConfidence, `Breakout Donchian Inferior`);
+    }
+  }
+  else if (robot.strategyType === 'CHANDELIER_EXIT' && isValid(chandelier)) {
+     if (lastClose > chandelier) setVote('RISE', robot.weakConfidence, 'Acima do Chandelier Exit');
+     else if (lastClose < chandelier) setVote('FALL', robot.weakConfidence, 'Abaixo do Chandelier Exit');
+  }
+
+  // ════════════════════════════════════════════════════════════════
+  // 4. COMITÉ DE VOLUME (Os Detetives)
+  // ════════════════════════════════════════════════════════════════
+  else if (robot.strategyType === 'VWAP' && isValid(vwap)) {
+    if (lastClose > vwap) setVote('RISE', robot.weakConfidence, `Preço > VWAP (Controle Comprador)`);
+    else if (lastClose < vwap) setVote('FALL', robot.weakConfidence, `Preço < VWAP (Controle Vendedor)`);
+  }
+  else if (robot.strategyType === 'MFI' && isValid(mfi)) {
+    if (mfi <= 20) setVote('RISE', robot.strongConfidence, `MFI(${format(mfi)}) Sobrevenda Volumétrica`);
+    else if (mfi >= 80) setVote('FALL', robot.strongConfidence, `MFI(${format(mfi)}) Sobrecompra Volumétrica`);
+  }
+  else if (robot.strategyType === 'OBV' && isValid(obv) && isValid(obvPrev)) {
+    if (obv > obvPrev!) setVote('RISE', robot.weakConfidence, `OBV Aumentando (Fluxo Entrada)`);
+    else if (obv < obvPrev!) setVote('FALL', robot.weakConfidence, `OBV Caindo (Fluxo Saída)`);
+  }
+
+  // ════════════════════════════════════════════════════════════════
+  // 5. COMITÉ ESTATÍSTICO (Os Académicos)
+  // ════════════════════════════════════════════════════════════════
+  else if (robot.strategyType === 'Z_SCORE' && isValid(zScore)) {
+    if (zScore < -2.0) setVote('RISE', robot.strongConfidence, `Z-Score(${format(zScore)}) Desvio Negativo Extremo`);
+    else if (zScore > 2.0) setVote('FALL', robot.strongConfidence, `Z-Score(${format(zScore)}) Desvio Positivo Extremo`);
+  }
+  else if (robot.strategyType === 'STOCH_RSI' && isValid(stochRSI)) {
+    if (stochRSI <= 0.2) setVote('RISE', robot.strongConfidence, `StochRSI(${format(stochRSI)}) Zona Compra`);
+    else if (stochRSI >= 0.8) setVote('FALL', robot.strongConfidence, `StochRSI(${format(stochRSI)}) Zona Venda`);
   }
 
   return { vote, confidence, reason, optimalDuration, optimalDurationUnit, suggestedStake };
 };
+
 
 // ════════════════════════════════════════════════════════════════════
 // 🎯 HOOK PRINCIPAL

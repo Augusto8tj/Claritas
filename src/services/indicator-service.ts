@@ -31,12 +31,15 @@ export interface Indicators {
     stochRSI: number | null;
     zScore: number | null;
     awesomeOscillator: number | null;
+    aoPrev?: number | null; // Previous value for comparison
     trix: number | null;
+    trixPrev?: number | null; // Previous value
     roc: number | null;
     parabolicSAR: number | null;
     ichimoku: { tenkan: number | null; kijun: number | null; senkouA: number | null; senkouB: number | null } | null;
     mfi: number | null;
     obv: number | null;
+    obvPrev?: number | null; // Previous value
     chandelierExit: number | null;
     rvi: number | null;
 }
@@ -423,6 +426,9 @@ export function calculateAllIndicators(
         
         const trixValues = DerivIndicators.trix(candles, getParam('TRIX', 'period', 15));
         indicators.trix = trixValues.length > 0 ? trixValues[trixValues.length - 1] : null;
+        if(trixValues.length > 1) {
+            indicators.trixPrev = trixValues[trixValues.length-2];
+        }
 
         const rocValues = DerivIndicators.roc(candles, getParam('ROC', 'period', 12));
         indicators.roc = rocValues.length > 0 ? rocValues[rocValues.length - 1] : null;
@@ -438,6 +444,9 @@ export function calculateAllIndicators(
 
         const obvValues = DerivIndicators.obv(candles);
         indicators.obv = obvValues.length > 0 ? obvValues[obvValues.length - 1] : null;
+        if(obvValues.length > 1){
+            indicators.obvPrev = obvValues[obvValues.length - 2];
+        }
 
         const rviValues = DerivIndicators.rvi(candles, getParam('RVI', 'period', 10));
         indicators.rvi = rviValues.length > 0 ? rviValues[rviValues.length-1] : null;
