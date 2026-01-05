@@ -357,8 +357,8 @@ const calculateTechnicalVote = (
 export function useRobotCouncilV2(
   activeSymbol: string | null,
   priceTicks: TickData[],
-  chartData: CandleData[], // <--- NOVO ARGUMENTO: Histórico Completo
-  dataVersion: number,
+  chartData: CandleData[],
+  dataVersion: number
 ) {
   const { operationsLog, executeTrade, timePeriod, isConnected, durationLimits, sellContract } = useDerivApi();
   const { user, loading: isAuthLoading } = useAuth();
@@ -371,7 +371,6 @@ export function useRobotCouncilV2(
   const lastTimePeriodRef = useRef<TimePeriod | null>(null);
   const lastRegimeRef = useRef<MarketRegime | null>(null);
 
-  // LÓGICA HÍBRIDA: Usa o histórico completo ou faz fallback para ticks
   const tickCandles = useMemo(() => {
     if (chartData && chartData.length > 0) {
       return chartData;
@@ -990,5 +989,3 @@ export function useRobotCouncilV2(
     supervisionStatus: { status: 'approved', message: 'Cérebro V2.5 Ativo' },
   };
 }
-
-    
