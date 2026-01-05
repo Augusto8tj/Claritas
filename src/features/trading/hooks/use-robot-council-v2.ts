@@ -397,9 +397,6 @@ export function useRobotCouncilV2(
     setRobotPerformance(initialPerformance);
     virtualTradesRef.current = [];
     
-    // 🔥 CORREÇÃO: Não resetar o contador total da sessão aqui.
-    // tradeCounterRef.current = 0; 
-    
     saveRobotPerformance(user.uid, initialPerformance);
   }, [strategyCouncil, user, toast]);
 
@@ -529,6 +526,7 @@ export function useRobotCouncilV2(
     setStrategyCouncil(council);
 
     resetArenaPerformance();
+    tradeCounterRef.current = 0;
 
     toast({
       title: '🚀 Sistema V2.0 Ativado',
@@ -539,7 +537,6 @@ export function useRobotCouncilV2(
     setIsCouncilAutopilotOn(true);
     lastActiveSymbolRef.current = activeSymbol;
     lastTimePeriodRef.current = timePeriod;
-    tradeCounterRef.current = 0; // 🔥 CORREÇÃO: Reseta o contador total apenas ao ativar a mesa
     setIsFetchingCouncil(false);
   }, [activeSymbol, user, toast, evolvedStrategies, resetArenaPerformance, timePeriod]);
 
