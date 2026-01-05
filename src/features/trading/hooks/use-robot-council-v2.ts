@@ -253,8 +253,8 @@ const calculateTechnicalVote = (
     else if (stoch >= robot.strongSellThreshold!) setVote('FALL', robot.strongConfidence, `Stoch(${format(stoch)}) Sobrecompra`);
   }
   else if (robot.strategyType === 'MACD_CROSS' && isValid(macd?.macd) && isValid(macd?.signal)) {
-    if (macd.macd > macd.signal) setVote('RISE', robot.strongConfidence, `MACD Cruzou p/ Cima`);
-    else if (macd.macd < macd.signal) setVote('FALL', robot.strongConfidence, `MACD Cruzou p/ Baixo`);
+    if (macd.macd > macd.signal) setVote('RISE', robot.weakConfidence, `MACD Cruzou p/ Cima`);
+    else if (macd.macd < macd.signal) setVote('FALL', robot.weakConfidence, `MACD Cruzou p/ Baixo`);
   }
   else if (robot.strategyType === 'ADX_TREND' && isValid(adx) && isValid(pdi) && isValid(ndi)) {
     if (adx > (robot.trendStrengthThreshold || 25)) {
@@ -1026,3 +1026,5 @@ export function useRobotCouncilV2(
     supervisionStatus: { status: 'approved', message: 'Cérebro V2.5 Ativo' }, // Mocked for compatibility
   };
 }
+
+    
