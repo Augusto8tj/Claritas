@@ -2,7 +2,7 @@
 'use client';
 
 /**
- * 🧠 DERIV TRADER V2.0 - SISTEMA EVOLUTIVO OTIMIZADO
+ * 🧠 DERIV TRADER V2.5 - SISTEMA EVOLUTIVO OTIMIZADO
  * 
  * MELHORIAS CRÍTICAS IMPLEMENTADAS:
  * ═══════════════════════════════════════════════════════════════════
@@ -240,7 +240,7 @@ const calculateTechnicalVote = (
   } = indicators;
 
   // ════════════════════════════════════════════════════════════════
-  // 1. MOMENTUM & TREND (Os Velocistas)
+  // 1. COMITÉ DE MOMENTUM (Os Velocistas)
   // ════════════════════════════════════════════════════════════════
   if (robot.strategyType === 'RSI' && isValid(rsi)) {
     if (rsi <= robot.strongBuyThreshold!) setVote('RISE', robot.strongConfidence, `RSI(${format(rsi)}) < ${robot.strongBuyThreshold}`);
@@ -253,8 +253,8 @@ const calculateTechnicalVote = (
     else if (stoch >= robot.strongSellThreshold!) setVote('FALL', robot.strongConfidence, `Stoch(${format(stoch)}) Sobrecompra`);
   }
   else if (robot.strategyType === 'MACD_CROSS' && isValid(macd?.macd) && isValid(macd?.signal)) {
-    if (macd.macd > macd.signal) setVote('RISE', robot.weakConfidence, `MACD Cruzou p/ Cima`);
-    else if (macd.macd < macd.signal) setVote('FALL', robot.weakConfidence, `MACD Cruzou p/ Baixo`);
+    if (macd.macd > macd.signal) setVote('RISE', robot.strongConfidence, `MACD Cruzou p/ Cima`);
+    else if (macd.macd < macd.signal) setVote('FALL', robot.strongConfidence, `MACD Cruzou p/ Baixo`);
   }
   else if (robot.strategyType === 'ADX_TREND' && isValid(adx) && isValid(pdi) && isValid(ndi)) {
     if (adx > (robot.trendStrengthThreshold || 25)) {
@@ -294,8 +294,7 @@ const calculateTechnicalVote = (
     if (lastClose <= bb.lower) setVote('RISE', robot.weakConfidence, `Toque Banda Inferior`);
     else if (lastClose >= bb.upper) setVote('FALL', robot.weakConfidence, `Toque Banda Superior`);
   }
-  // 🔥 CORREÇÃO DE NOME: ICHIMOKU -> ICHIMOKU_CLOUD
-  else if (robot.strategyType === 'ICHIMOKU_CLOUD' && ichimoku && isValid(ichimoku.spanA) && isValid(ichimoku.spanB) && isValid(ichimoku.tenkan) && isValid(ichimoku.kijun)) {
+  else if (robot.strategyType === 'ICHIMOKU_CLOUD' && isValid(ichimoku?.spanA) && isValid(ichimoku?.spanB) && isValid(ichimoku?.tenkan) && isValid(ichimoku?.kijun)) {
     const cloudTop = Math.max(ichimoku.spanA, ichimoku.spanB);
     const cloudBottom = Math.min(ichimoku.spanA, ichimoku.spanB);
     
@@ -320,9 +319,7 @@ const calculateTechnicalVote = (
   // ════════════════════════════════════════════════════════════════
   // 3. VOLUME & ORDER FLOW
   // ════════════════════════════════════════════════════════════════
-  // 🔥 NOVA LÓGICA: VOLUME_PROFILE (Simulado via densidade de preço)
   else if (robot.strategyType === 'VOLUME_PROFILE') {
-     // Como não temos VPVR real, usamos consolidação. Se preço sai de zona de baixo range (POC teórica)
      const range = Math.abs(lastCandle.high - lastCandle.low);
      const avgRange = (indicators.atr || 1);
      
@@ -357,25 +354,20 @@ const calculateTechnicalVote = (
     if (ma.short > ma.long) setVote('RISE', robot.weakConfidence, `Golden Cross`);
     else if (ma.short < ma.long) setVote('FALL', robot.weakConfidence, `Death Cross`);
   }
-  // 🔥 NOVA LÓGICA: PRICE_ACTION_PATTERN (Martelo)
   else if (robot.strategyType === 'PRICE_ACTION_PATTERN') {
       const body = Math.abs(lastClose - lastCandle.open);
       const upperShadow = lastCandle.high - Math.max(lastClose, lastCandle.open);
       const lowerShadow = Math.min(lastClose, lastCandle.open) - lastCandle.low;
       
-      // Lógica de Martelo (Hammer)
       if (lowerShadow > body * 2 && upperShadow < body * 0.5) {
-          // Se for fundo (fechamento < fechamento anterior) -> Reversão Alta
           if (lastClose < prevClose) setVote('RISE', robot.strongConfidence, 'Padrão Hammer Detectado');
       }
-      // Lógica de Shooting Star
       else if (upperShadow > body * 2 && lowerShadow < body * 0.5) {
-          // Se for topo -> Reversão Baixa
           if (lastClose > prevClose) setVote('FALL', robot.strongConfidence, 'Padrão Shooting Star Detectado');
       }
   }
 
-  return { vote, confidence, reason, optimalDuration, optimalDurationUnit, suggestedStake };
+  return { vote, confidence, reason, optimalDuration, optimalDurationUnit, suggestedStake: suggestedStake };
 };
 
 
@@ -386,6 +378,7 @@ const calculateTechnicalVote = (
 export function useRobotCouncilV2(
   activeSymbol: string | null,
   priceTicks: TickData[],
+  chartData: CandleData[], // <--- ADICIONADO (Recebe o histórico real)
   dataVersion: number,
 ) {
   const { operationsLog, executeTrade, timePeriod, isConnected, durationLimits, sellContract } = useDerivApi();
@@ -398,6 +391,9 @@ export function useRobotCouncilV2(
   const lastActiveSymbolRef = useRef<string | null>(null);
   const lastTimePeriodRef = useRef<TimePeriod | null>(null);
   const lastRegimeRef = useRef<MarketRegime | null>(null);
+
+  // O chartData já vem do use-deriv-api formatado como CandleData[] e com histórico!
+  const tickCandles = chartData;
 
   const [strategyCouncil, setStrategyCouncil] = useState<RobotStrategy[]>(evolvedStrategies as RobotStrategy[]);
   const [isCouncilAutopilotOn, setIsCouncilAutopilotOn] = useState(false);
@@ -456,18 +452,6 @@ export function useRobotCouncilV2(
     isExecuting: false,
     sellingContracts: new Set()
   });
-
-  const tickCandles = useMemo(() => {
-    if (!priceTicks || priceTicks.length === 0) return [];
-    return priceTicks.map((t) => ({
-      epoch: t.epoch,
-      open: t.price,
-      high: t.price,
-      low: t.price,
-      close: t.price,
-      volume: 1
-    }));
-  }, [priceTicks]);
 
   useEffect(() => {
     setStrategyCouncil(evolvedStrategies as RobotStrategy[]);
@@ -1026,5 +1010,3 @@ export function useRobotCouncilV2(
     supervisionStatus: { status: 'approved', message: 'Cérebro V2.5 Ativo' }, // Mocked for compatibility
   };
 }
-
-    

@@ -85,7 +85,7 @@ const IsolatedMarketChart = () => {
     // Por agora, vamos assumir que `useDerivApi` os providencia ou que o impacto é menor.
     // Se `indicators` vier do `useRobotCouncilV2`, ele deve ser passado como prop aqui.
     // Para esta correção, vamos assumir que está no `useDerivApi` ou é nulo.
-    const { indicators: councilIndicators } = useRobotCouncilV2(activeSymbol, [], 0); // Passamos dados vazios para não recalcular
+    const { indicators: councilIndicators } = useRobotCouncilV2(activeSymbol, [], [], 0); // Passamos dados vazios para não recalcular
 
     return (
         <Card>
@@ -115,8 +115,8 @@ const IsolatedMarketChart = () => {
 };
 
 const DerivTraderV2Core = () => {
-    const { activeSymbol, priceTicks, dataVersion, operationsLog } = useDerivApi();
-    const robotCouncil = useRobotCouncilV2(activeSymbol, priceTicks, dataVersion);
+    const { activeSymbol, priceTicks, dataVersion, operationsLog, chartData } = useDerivApi();
+    const robotCouncil = useRobotCouncilV2(activeSymbol, priceTicks, chartData, dataVersion);
     const [activeTab, setActiveTab] = React.useState("desk");
     
     return (
@@ -149,7 +149,7 @@ const DerivTraderV2Core = () => {
 
             <Tabs value={activeTab} onValueChange={setActiveTab}>
                 <TabsList className="grid w-full grid-cols-4">
-                    <TabsTrigger value="desk">Arena V2</TabsTrigger>
+                    <TabsTrigger value="desk">Arena V2.5</TabsTrigger>
                     <TabsTrigger value="log">Operações</TabsTrigger>
                     <TabsTrigger value="audit">Auditoria</TabsTrigger>
                     <TabsTrigger value="evolution">Evolução</TabsTrigger>
