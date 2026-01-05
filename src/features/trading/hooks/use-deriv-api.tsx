@@ -206,10 +206,10 @@ export const DerivApiProvider = ({ children }: { children: ReactNode }) => {
       const storedDemoToken = localStorage.getItem(DERIV_DEMO_TOKEN_KEY);
       const storedRealToken = localStorage.getItem(DERIV_REAL_TOKEN_KEY);
       const storedAccountType = localStorage.getItem(DERIV_ACCOUNT_TYPE_KEY) as AccountType | null;
-
-      setDemoToken(storedDemoToken || "ljUGk6wbLSrtEDo");
-      setRealToken(storedRealToken || "GU5MwbX1kwvSoyw");
       
+      setDemoToken(storedDemoToken || process.env.NEXT_PUBLIC_DERIV_DEMO_TOKEN || null);
+      setRealToken(storedRealToken || process.env.NEXT_PUBLIC_DERIV_REAL_TOKEN || null);
+
       if (storedAccountType) setAccountTypeState(storedAccountType);
     } catch (error) {
       console.error("Failed to access localStorage:", error);
@@ -320,7 +320,6 @@ const getHistoricalData = useCallback(async (symbol: string, style: 'ticks' | 'c
                 high: parseFloat(candle.high),
                 low: parseFloat(candle.low),
                 close: parseFloat(candle.close),
-                // 🔥 CORREÇÃO: Garante volume. Se não houver, usa 1 para não quebrar indicadores
                 volume: candle.tick_count || 1 
             }));
         }
