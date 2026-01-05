@@ -30,6 +30,7 @@ export interface Indicators {
     donchian: { upper: number | null; lower: number | null } | null;
     kama: number | null;
     chandelier: { exitLong: number | null; exitShort: number | null } | null;
+    bollingerBands: ({ upper: number; middle: number; lower: number } | null)[];
     
     // Momentum Avançado
     ao: number | null; // Awesome Oscillator
@@ -182,23 +183,21 @@ const calculateMACD = (data: CandleData[], fast = 12, slow = 26, sig = 9) => {
 };
 
 // 5. Bollinger Bands & Bandwidth
-const calculateBB = (data: CandleData[], period = 20, stdDev = 2) => {
+const calculateBB = (data: CandleData[], period = 20, stdDev = 2): ({ upper: number; middle: number; lower: number; } | null)[] => {
     const sma = calculateSMA(data, period);
-    return data.map((d, i) => {
-        if (sma[i] === null) return { upper: null, middle: null, lower: null, width: null };
+    return data.map((_, i) => {
+        if (sma[i] === null) return null;
         
         let sumSqDiff = 0;
-        for (let j = 0; j < period; j++) {
-            sumSqDiff += Math.pow(data[i - j].close - sma[i]!, 2);
+        const slice = data.slice(i - period + 1, i + 1);
+        for (const d of slice) {
+            sumSqDiff += Math.pow(d.close - sma[i]!, 2);
         }
         const std = Math.sqrt(sumSqDiff / period);
         const upper = sma[i]! + std * stdDev;
         const lower = sma[i]! - std * stdDev;
         
-        return {
-            upper, middle: sma[i], lower,
-            width: (upper - lower) / sma[i]!
-        };
+        return { upper, middle: sma[i]!, lower };
     });
 };
 
@@ -505,7 +504,8 @@ export function calculateAllIndicators(
         const smaLong = calculateSMA(validCandles, getParam('MOVING_AVERAGE_CROSS', 'longPeriod', 50));
         const emaShort = calculateEMA(validCandles, getParam('MOVING_AVERAGE_CROSS', 'shortPeriod', 20));
         const macdData = calculateMACD(validCandles);
-        const bbData = calculateBB(validCandles);
+        const bbSeries = calculateBB(validCandles);
+        const bbData = bbSeries[bbSeries.length - 1];
         
         const adxData = calculateADX(validCandles);
         const donchian = calculateDonchian(validCandles);
@@ -549,8 +549,8 @@ export function calculateAllIndicators(
             },
             sma: smaLong,
             ema: emaShort,
-            bb: bbData[bbData.length - 1],
-            bbw: bbData[bbData.length - 1].width,
+            bb: bbData || { upper: null, middle: null, lower: null },
+            bbw: bbData?.width ?? null,
             donchian,
             kama,
             chandelier,
@@ -567,7 +567,8 @@ export function calculateAllIndicators(
             mfi,
             vwap: vwapSeries,
             zScore,
-            psar
+            psar,
+            bollingerBands: bbSeries,
         };
         
         return indicators;

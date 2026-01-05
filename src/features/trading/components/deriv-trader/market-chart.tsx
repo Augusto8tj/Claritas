@@ -266,12 +266,14 @@ export function MarketChart({
     
     // Assegura que todos os indicadores sejam arrays para que o slice funcione
     const vwapArray = Array.isArray(indicators.vwap) ? indicators.vwap : [];
+    const bollingerBandsArray = Array.isArray(indicators.bollingerBands) ? indicators.bollingerBands : [];
+
 
     return {
       sma: indicators.sma.slice(dataWindow.start, dataWindow.end),
       ema: indicators.ema.slice(dataWindow.start, dataWindow.end),
       vwap: vwapArray.slice(dataWindow.start, dataWindow.end),
-      bollingerBands: indicators.bollingerBands.slice(
+      bollingerBands: bollingerBandsArray.slice(
         dataWindow.start,
         dataWindow.end
       ),
@@ -446,7 +448,7 @@ export function MarketChart({
       ((price - minPrice) / (maxPrice - minPrice)) * chartHeight
       
     const getPrice = (y: number) =>
-      maxPrice - ((y - PADDING.top) / chartHeight) * (maxPrice-minPrice);
+      maxPrice - ((y - PADDING.top) / chartHeight) * (maxPrice - minPrice);
 
     const getX = (index: number) => {
       if (visibleData.length <= 1) return PADDING.left
