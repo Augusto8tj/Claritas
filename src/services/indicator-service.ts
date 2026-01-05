@@ -44,7 +44,7 @@ export interface Indicators {
     mfi: number | null;
     obv: number | null;
     obvPrev: number | null;
-    vwap: number | null;
+    vwap: (number | null)[];
     zScore: number | null;
 }
 
@@ -435,17 +435,16 @@ const calculateStochRSI = (data: CandleData[], rsiValues: (number|null)[], perio
     return maxRSI === minRSI ? 0.5 : (currentRSI - minRSI) / (maxRSI - minRSI);
 };
 
-const calculateVWAP = (data: CandleData[]) => {
-    // VWAP da sessão (array inteiro enviado)
-    if (data.length === 0) return null;
+const calculateVWAP = (data: CandleData[]): (number | null)[] => {
+    if (data.length === 0) return [];
     let cumPV = 0;
     let cumVol = 0;
-    data.forEach(d => {
+    return data.map(d => {
         const tp = (d.high + d.low + d.close) / 3;
         cumPV += tp * d.volume;
         cumVol += d.volume;
+        return cumVol === 0 ? null : cumPV / cumVol;
     });
-    return cumVol === 0 ? null : cumPV / cumVol;
 };
 
 // ============================================================================
@@ -519,7 +518,7 @@ export function calculateAllIndicators(
         const mfi = calculateMFI(validCandles);
         const obvData = calculateOBV(validCandles);
         const stochRSI = calculateStochRSI(validCandles, rsiSeries);
-        const vwap = calculateVWAP(validCandles);
+        const vwapSeries = calculateVWAP(validCandles);
         
         const rocPeriod = getParam('ROC', 'period', 12);
         const roc = validCandles.length > rocPeriod ? 
@@ -532,7 +531,7 @@ export function calculateAllIndicators(
 
         const psar = emaShort[emaShort.length-1];
 
-        const indicators = {
+        const indicators: Indicators = {
             rsi: rsiSeries[rsiSeries.length - 1],
             stoch: stochSeries[stochSeries.length - 1],
             atr: atrSeries[atrSeries.length - 1],
@@ -566,16 +565,10 @@ export function calculateAllIndicators(
             stochRSI,
             rvi,
             mfi,
-            vwap,
+            vwap: vwapSeries,
             zScore,
             psar
         };
-        
-        console.log('✅ [Indicators] Calculados com sucesso:', {
-            rsi: indicators.rsi?.toFixed(2),
-            adx: indicators.adx?.toFixed(2),
-            macd: indicators.macd?.histogram?.toFixed(4)
-        });
         
         return indicators;
 

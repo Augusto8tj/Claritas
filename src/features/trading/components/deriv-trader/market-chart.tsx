@@ -1,4 +1,4 @@
-// /src/features/trading/components/deriv-trader/market-chart.tsx
+// src/features/trading/components/deriv-trader/market-chart.tsx
 'use client'
 
 import React, { useCallback } from 'react'
@@ -263,10 +263,14 @@ export function MarketChart({
     if (!indicators) {
       return { sma: [], ema: [], vwap: [], bollingerBands: [] };
     }
+    
+    // Assegura que todos os indicadores sejam arrays para que o slice funcione
+    const vwapArray = Array.isArray(indicators.vwap) ? indicators.vwap : [];
+
     return {
       sma: indicators.sma.slice(dataWindow.start, dataWindow.end),
       ema: indicators.ema.slice(dataWindow.start, dataWindow.end),
-      vwap: indicators.vwap.slice(dataWindow.start, dataWindow.end),
+      vwap: vwapArray.slice(dataWindow.start, dataWindow.end),
       bollingerBands: indicators.bollingerBands.slice(
         dataWindow.start,
         dataWindow.end
