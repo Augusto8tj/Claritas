@@ -1,7 +1,7 @@
 // src/features/trading/components/deriv-trader/council-autopilot-interface.tsx
 'use client';
 
-import { Fragment } from "react";
+import React, { Fragment } from "react";
 import {
   Card,
   CardContent,
@@ -71,10 +71,9 @@ const robotCategories: Record<string, RobotStrategy['strategyType'][]> = {
     'Especialistas Estatísticos': ['Z_SCORE', 'STOCH_RSI'],
 };
 
-// Hook's return type is used for props
 interface CouncilAutopilotInterfaceProps extends ReturnType<typeof useRobotCouncil> {}
 
-export function CouncilAutopilotInterface(props: CouncilAutopilotInterfaceProps) {
+export const CouncilAutopilotInterface: React.FC<CouncilAutopilotInterfaceProps> = (props) => {
   const { 
     isCouncilAutopilotOn,
     strategyCouncil,
@@ -94,8 +93,8 @@ export function CouncilAutopilotInterface(props: CouncilAutopilotInterfaceProps)
     setIsMeritocracyOn,
     isStopLossOn,
     setIsStopLossOn,
-    isInversionModeOn, // NOVO
-    setIsInversionModeOn, // NOVO
+    isInversionModeOn,
+    setIsInversionModeOn,
     indicators,
     activeCommittee,
     supervisionStatus,
