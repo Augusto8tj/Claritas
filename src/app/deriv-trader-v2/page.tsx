@@ -77,15 +77,10 @@ const Header = () => {
 const IsolatedMarketChart = () => {
     const { 
         activeSymbol, operationsLog, chartData, isChartLoading, chartError, 
-        chartType, setChartType, timePeriod, setTimePeriod, tradeAnnotations,
-        indicators // Supondo que indicators venha do useDerivApi ou de um hook separado. Se vem do council, precisa de refatoração.
+        chartType, setChartType, timePeriod, setTimePeriod, tradeAnnotations
     } = useDerivApi();
 
-    // NOTA: Para uma otimização completa, os 'indicators' deveriam vir de um hook que não re-renderiza com o `useRobotCouncilV2`
-    // Por agora, vamos assumir que `useDerivApi` os providencia ou que o impacto é menor.
-    // Se `indicators` vier do `useRobotCouncilV2`, ele deve ser passado como prop aqui.
-    // Para esta correção, vamos assumir que está no `useDerivApi` ou é nulo.
-    const { indicators: councilIndicators } = useRobotCouncilV2(activeSymbol, [], [], 0); // Passamos dados vazios para não recalcular
+    const { indicators: councilIndicators } = useRobotCouncilV2(activeSymbol, [], [], 0);
 
     return (
         <Card>
@@ -106,7 +101,7 @@ const IsolatedMarketChart = () => {
                     timePeriod={timePeriod}
                     setTimePeriod={setTimePeriod}
                     operations={operationsLog}
-                    indicators={councilIndicators} // Usamos os indicadores do conselho aqui
+                    indicators={councilIndicators}
                     tradeAnnotations={tradeAnnotations}
                 />
             </CardContent>
@@ -196,3 +191,5 @@ export default function DerivTraderV2Page() {
         </FormProvider>
     );
 }
+
+    

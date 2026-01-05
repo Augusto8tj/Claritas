@@ -71,7 +71,7 @@ const MAX_VIRTUAL_TRADES = 500;        // Máximo de trades na memória
 const MAX_DECISION_LOG = 100;          // Máximo de logs de decisão
 const TRADE_TIMEOUT_SECONDS = 3600;    // 1 hora - trades mais velhos são descartados
 const CLEANUP_INTERVAL_MS = 60000;     // Limpeza a cada 1 minuto
-const HEALTH_CHECK_INTERVAL_MS = 30000; // Health check a cada 30 segundos
+const HEALTH_CHECK_INTERVAL_MS = 90000; // Health check a cada 90 segundos
 const METRICS_UPDATE_INTERVAL_MS = 1000; // ATUALIZAÇÃO DE MÉTRICAS A CADA SEGUNDO
 
 const REGIME_THRESHOLDS = {
@@ -208,11 +208,9 @@ const calculateTechnicalVote = (
   let confidence = 0;
   let reason = 'A aguardar sinal...';
   
-  // Extrai configuração do robô
   const { optimalDuration, optimalDurationUnit, suggestedStake: baseStake } = robot;
   const suggestedStake = baseStake || 1.0;
 
-  // Garante dados mínimos
   if (!indicators || tickCandles.length < 2) {
     return { vote: 'HOLD', confidence: 0, reason: "Dados insuficientes", optimalDuration, optimalDurationUnit, suggestedStake: 0 };
   }
@@ -221,10 +219,8 @@ const calculateTechnicalVote = (
   const lastClose = lastCandle.close;
   const prevClose = tickCandles[tickCandles.length - 2].close;
 
-  // Helper para formatar logs
   const format = (val: number | null | undefined) => (val !== null && val !== undefined && !isNaN(val) ? val.toFixed(4) : 'N/A');
 
-  // Helper para definir voto
   const setVote = (newVote: 'RISE' | 'FALL', newConfidence: number, newReason: string) => {
     if (newConfidence <= 0) return;
     vote = newVote;
@@ -232,16 +228,12 @@ const calculateTechnicalVote = (
     reason = newReason;
   };
 
-  // Desestruturação dos Indicadores
   const { 
     rsi, stoch, macd, bb, ma, adx, pdi, ndi, stochRSI, mfi, rvi, 
     ao, trix, roc, psar, ichimoku, kama, donchian, chandelier, 
     vwap, obv, zScore 
   } = indicators;
 
-  // ════════════════════════════════════════════════════════════════
-  // 1. COMITÉ DE MOMENTUM (Os Velocistas)
-  // ════════════════════════════════════════════════════════════════
   if (robot.strategyType === 'RSI' && isValid(rsi)) {
     if (rsi <= robot.strongBuyThreshold!) setVote('RISE', robot.strongConfidence, `RSI(${format(rsi)}) < ${robot.strongBuyThreshold}`);
     else if (rsi <= robot.weakBuyThreshold!) setVote('RISE', robot.weakConfidence, `RSI(${format(rsi)}) < ${robot.weakBuyThreshold}`);
@@ -281,16 +273,11 @@ const calculateTechnicalVote = (
     if (rvi > (robot.strongBuyThreshold || 50)) setVote('RISE', robot.weakConfidence, `RVI(${format(rvi)}) Alta Energia`);
     else if (rvi < (robot.weakSellThreshold || 50)) setVote('FALL', robot.weakConfidence, `RVI(${format(rvi)}) Baixa Energia`);
   }
-
-  // ════════════════════════════════════════════════════════════════
-  // 2. ESTRUTURA & VOLATILIDADE
-  // ════════════════════════════════════════════════════════════════
   else if (robot.strategyType === 'PARABOLIC_SAR' && isValid(psar)) {
     if (lastClose > psar) setVote('RISE', robot.strongConfidence, `Preço acima SAR`);
     else if (lastClose < psar) setVote('FALL', robot.strongConfidence, `Preço abaixo SAR`);
   }
   else if (robot.strategyType === 'BOLLINGER_BANDS' && isValid(bb?.lower) && isValid(bb?.upper)) {
-    // Reversão à média
     if (lastClose <= bb.lower) setVote('RISE', robot.weakConfidence, `Toque Banda Inferior`);
     else if (lastClose >= bb.upper) setVote('FALL', robot.weakConfidence, `Toque Banda Superior`);
   }
@@ -315,10 +302,6 @@ const calculateTechnicalVote = (
      if (lastClose > chandelier.exitShort) setVote('RISE', robot.weakConfidence, 'Acima Chandelier Short');
      else if (lastClose < chandelier.exitLong) setVote('FALL', robot.weakConfidence, 'Abaixo Chandelier Long');
   }
-
-  // ════════════════════════════════════════════════════════════════
-  // 3. VOLUME & ORDER FLOW
-  // ════════════════════════════════════════════════════════════════
   else if (robot.strategyType === 'VOLUME_PROFILE') {
      const range = Math.abs(lastCandle.high - lastCandle.low);
      const avgRange = (indicators.atr || 1);
@@ -338,10 +321,6 @@ const calculateTechnicalVote = (
     if (obv > indicators.obvPrev!) setVote('RISE', robot.weakConfidence, `OBV Subindo`);
     else if (obv < indicators.obvPrev!) setVote('FALL', robot.weakConfidence, `OBV Caindo`);
   }
-
-  // ════════════════════════════════════════════════════════════════
-  // 4. ESTATÍSTICA & PADRÕES
-  // ════════════════════════════════════════════════════════════════
   else if (robot.strategyType === 'Z_SCORE' && isValid(zScore)) {
     if (zScore < -2.0) setVote('RISE', robot.strongConfidence, `Z-Score Desvio Negativo`);
     else if (zScore > 2.0) setVote('FALL', robot.strongConfidence, `Z-Score Desvio Positivo`);
@@ -367,7 +346,7 @@ const calculateTechnicalVote = (
       }
   }
 
-  return { vote, confidence, reason, optimalDuration, optimalDurationUnit, suggestedStake: suggestedStake };
+  return { vote, confidence, reason, optimalDuration, optimalDurationUnit, suggestedStake };
 };
 
 
@@ -378,7 +357,7 @@ const calculateTechnicalVote = (
 export function useRobotCouncilV2(
   activeSymbol: string | null,
   priceTicks: TickData[],
-  chartData: CandleData[], // <--- ADICIONADO (Recebe o histórico real)
+  chartData: CandleData[],
   dataVersion: number,
 ) {
   const { operationsLog, executeTrade, timePeriod, isConnected, durationLimits, sellContract } = useDerivApi();
@@ -392,7 +371,6 @@ export function useRobotCouncilV2(
   const lastTimePeriodRef = useRef<TimePeriod | null>(null);
   const lastRegimeRef = useRef<MarketRegime | null>(null);
 
-  // O chartData já vem do use-deriv-api formatado como CandleData[] e com histórico!
   const tickCandles = chartData;
 
   const [strategyCouncil, setStrategyCouncil] = useState<RobotStrategy[]>(evolvedStrategies as RobotStrategy[]);
@@ -498,7 +476,6 @@ export function useRobotCouncilV2(
   useEffect(() => {
     if (!isCouncilAutopilotOn) return;
 
-    // Intervalo de alta frequência para métricas da UI
     const metricsInterval = setInterval(() => {
       setCouncilState(prev => ({
           ...prev,
@@ -515,7 +492,6 @@ export function useRobotCouncilV2(
       }));
     }, METRICS_UPDATE_INTERVAL_MS);
 
-    // Intervalo de baixa frequência para limpeza e health checks pesados
     const cleanupInterval = setInterval(() => {
       const now = Date.now() / 1000;
       const before = virtualTradesRef.current.length;
@@ -815,7 +791,6 @@ export function useRobotCouncilV2(
         strategyCouncil.forEach(robot => {
             const technicalVote = calculateTechnicalVote(robot, currentIndicators, validCandles);
             
-            // Aprendizagem Incondicional: Registra o voto para a Arena Virtual
             if (technicalVote.vote !== 'HOLD') {
                 const hasActiveTrade = virtualTradesRef.current.some(t => t.robotId === robot.id && t.exitEpoch > currentTick.epoch);
                 if (!hasActiveTrade) {
@@ -825,7 +800,6 @@ export function useRobotCouncilV2(
                 }
             }
 
-            // Decisão Condicional: Aplica filtros para o consenso de trade real
             if (technicalVote.confidence < confidenceFactor) {
                 localBayesianVotes[robot.id] = { ...technicalVote, rawConfidence: technicalVote.confidence, calibratedConfidence: 0, bayesianProbability: 0.5, weight: 0, regime: regimeResult.regime, reason: `Confiança (${technicalVote.confidence.toFixed(0)}) < Limiar (${confidenceFactor})` };
                 return;
@@ -938,8 +912,6 @@ export function useRobotCouncilV2(
     }
   }, [
     isConnected, user, isCouncilAutopilotOn,
-    // Removido: dataVersion, operationsLog, ...Object.values(councilState)
-    // Adicionado granularidade:
     priceTicks, tickCandles,
     strategyCouncil, robotPerformance, isMeritocracyOn,
     activeSymbol, timePeriod,
@@ -956,8 +928,6 @@ export function useRobotCouncilV2(
       return () => clearInterval(intervalId);
   }, [runCouncilCycle, isCouncilAutopilotOn]);
 
-
-  // Extrair e retornar os estados do objeto de estado unificado
   const {
       indicators, currentRegime, microstructure, consensusDecision,
       portfolioStats, bayesianVotes, dashboardData, effectiveThreshold,
@@ -1007,6 +977,8 @@ export function useRobotCouncilV2(
     tradeDecisionLog,
     systemMetrics,
     bayesianVotes,
-    supervisionStatus: { status: 'approved', message: 'Cérebro V2.5 Ativo' }, // Mocked for compatibility
+    supervisionStatus: { status: 'approved', message: 'Cérebro V2.5 Ativo' },
   };
 }
+
+    
