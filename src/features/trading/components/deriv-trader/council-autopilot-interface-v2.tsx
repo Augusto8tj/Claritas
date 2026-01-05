@@ -248,16 +248,26 @@ export function CouncilAutopilotInterfaceV2(props: CouncilAutopilotInterfaceV2Pr
                 </div>
             )}
 
-             <div className="flex items-center justify-between">
-                <Label htmlFor="dynamic-risk-switch" className="flex-1">Gestão de Risco Dinâmica</Label>
+            <div className="flex items-start justify-between">
+                <Label htmlFor="dynamic-risk-switch" className="flex flex-col space-y-1 flex-1">
+                    <span>Gestão de Risco Dinâmica</span>
+                    <span className="font-normal leading-snug text-muted-foreground text-xs">
+                        Define o VALOR da aposta (stake) antes da entrada usando o Critério de Kelly.
+                    </span>
+                </Label>
                 <Switch id="dynamic-risk-switch" checked={isDynamicRiskOn} onCheckedChange={setIsDynamicRiskOn} disabled={isCouncilAutopilotOn} />
             </div>
             <div className="flex items-center justify-between">
                 <Label htmlFor="meritocracy-switch" className="flex-1">Meritocracia (Ponderação)</Label>
                 <Switch id="meritocracy-switch" checked={isMeritocracyOn} onCheckedChange={setIsMeritocracyOn} disabled={isCouncilAutopilotOn} />
             </div>
-            <div className="flex items-center justify-between">
-                <Label htmlFor="dynamic-exit-switch" className="flex-1">Saída Dinâmica (TP/SL)</Label>
+            <div className="flex items-start justify-between">
+                <Label htmlFor="dynamic-exit-switch" className="flex flex-col space-y-1 flex-1">
+                    <span>Saída Dinâmica (TP/SL)</span>
+                     <span className="font-normal leading-snug text-muted-foreground text-xs">
+                        Fecha operações abertas prematuramente para garantir lucros ou limitar perdas.
+                    </span>
+                </Label>
                 <Switch id="dynamic-exit-switch" checked={isDynamicExitOn} onCheckedChange={setIsDynamicExitOn} />
             </div>
         </div>
