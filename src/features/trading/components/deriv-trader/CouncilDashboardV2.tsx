@@ -46,10 +46,10 @@ export function CouncilDashboardV2({
                 <CardHeader>
                     <CardTitle className="font-headline flex items-center gap-2">
                         <Eye className="h-5 w-5 text-primary" />
-                        Consenso da Mesa V2.0
+                        Consenso da Mesa V2.5
                     </CardTitle>
                     <CardDescription>
-                        Ative a Mesa Operacional V2.0 para ver o consenso em tempo real.
+                        Ative a Mesa Operacional V2.5 para ver o consenso em tempo real.
                     </CardDescription>
                 </CardHeader>
                 <CardContent>
@@ -70,7 +70,7 @@ export function CouncilDashboardV2({
       <CardHeader>
         <CardTitle className="font-headline flex items-center gap-2">
             <Eye className="h-5 w-5 text-primary" />
-            Consenso da Mesa V2.0
+            Consenso da Mesa V2.5
         </CardTitle>
         <CardDescription>
           Análise em tempo real do Cérebro Quantitativo.
@@ -101,7 +101,7 @@ export function CouncilDashboardV2({
                 </div>
                 <div className="flex items-center gap-0.5">
                     <Progress value={risePercentage} className="h-3 rounded-l-full rounded-r-none" indicatorClassName="bg-green-500 rounded-l-full" />
-                    <Progress value={fallPercentage} className="h-3 rounded-r-full rounded-l-none scale-x-[-1]" indicatorClassName="bg-red-500 rounded-r-full" />
+                    <Progress value={fallPercentage} className="h-3 rounded-r-full scale-x-[-1]" indicatorClassName="bg-red-500 rounded-r-full" />
                 </div>
             </div>
 

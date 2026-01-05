@@ -75,7 +75,7 @@ export function DebugCouncilView({ votes, regime, isCouncilAutopilotOn, systemMe
             <CardHeader>
                 <CardTitle className="font-headline flex items-center gap-2">
                     <Gauge className="h-5 w-5 text-primary" />
-                    Diagnóstico da Mesa V2.0
+                    Diagnóstico Avançado da Mesa V2.5
                 </CardTitle>
                  <CardDescription>
                     Aguardando ativação e o primeiro ciclo de análise...
@@ -107,7 +107,7 @@ export function DebugCouncilView({ votes, regime, isCouncilAutopilotOn, systemMe
       <CardHeader>
         <CardTitle className="font-headline flex items-center gap-2">
           <Gauge className="h-5 w-5 text-primary" />
-          Diagnóstico Avançado da Mesa V2.0
+          Diagnóstico Avançado da Mesa V2.5
         </CardTitle>
         <CardDescription>
           Visão em tempo real da votação, performance e saúde do sistema de IA.

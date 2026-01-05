@@ -64,7 +64,7 @@ export function CouncilAutopilotInterfaceV2(props: CouncilAutopilotInterfaceV2Pr
         <div className="flex justify-between items-center">
             <CardTitle className="font-headline flex items-center gap-2">
                 <LayoutGrid className="h-5 w-5 text-primary" />
-                Mesa Operacional V2.0
+                Mesa Operacional V2.5
             </CardTitle>
             <Badge variant={isCouncilAutopilotOn ? "default" : "secondary"}>
                 {isCouncilAutopilotOn ? "Ativada" : "Desativada"}
@@ -110,7 +110,7 @@ export function CouncilAutopilotInterfaceV2(props: CouncilAutopilotInterfaceV2Pr
                     type="number"
                     value={dailyBalance}
                     onChange={(e) => setDailyBalance(Number(e.target.value))}
-                    placeholder="Ex: 100"
+                    placeholder="Ex: 10"
                     disabled={isCouncilAutopilotOn}
                 />
                 <p className="text-xs text-muted-foreground">Sua perda máxima no dia.</p>
@@ -122,7 +122,7 @@ export function CouncilAutopilotInterfaceV2(props: CouncilAutopilotInterfaceV2Pr
                     type="number"
                     value={dailyTarget}
                     onChange={(e) => setDailyTarget(Number(e.target.value))}
-                    placeholder="Ex: 50"
+                    placeholder="Ex: 5"
                     disabled={isCouncilAutopilotOn}
                 />
                 <p className="text-xs text-muted-foreground">Sua meta de lucro no dia.</p>
@@ -282,7 +282,7 @@ export function CouncilAutopilotInterfaceV2(props: CouncilAutopilotInterfaceV2Pr
         ) : (
              <Button className="w-full" onClick={fetchStrategyCouncil} disabled={isFetchingCouncil}>
                 {isFetchingCouncil ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Power className="mr-2 h-4 w-4" />}
-                {isFetchingCouncil ? 'Convocando...' : 'Convocar e Ativar Mesa V2.0'}
+                {isFetchingCouncil ? 'Convocando...' : 'Convocar e Ativar Mesa V2.5'}
             </Button>
         )}
 
