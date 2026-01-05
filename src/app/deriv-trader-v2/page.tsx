@@ -9,7 +9,7 @@ import { AssetSelector } from "@/features/trading/components/deriv-trader/asset-
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { MarketChart } from "@/features/trading/components/deriv-trader/market-chart";
 import { Button } from "@/components/ui/button";
-import { Trash2, Dna, Archive } from "lucide-react";
+import { Trash2, Dna, Archive, Brain } from "lucide-react";
 import { useDerivApi } from "@/features/trading/hooks/use-deriv-api";
 import { Skeleton } from "@/components/ui/skeleton";
 import { OperationsLog } from "@/features/trading/components/deriv-trader/operations-log";
@@ -40,7 +40,7 @@ const Header = () => {
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
             <div className="flex items-center gap-4 flex-1">
                 <h1 className="text-3xl font-bold tracking-tight font-headline shrink-0">
-                    Deriv Trader 2.0
+                    Deriv Trader 2.5
                 </h1>
                 <AssetSelector 
                     selectedAsset={activeSymbol || ""} 

@@ -4,7 +4,16 @@ Este documento regista a jornada de desenvolvimento e as principais funcionalida
 
 ---
 
-### v2.0.0 (Atual) - O Cérebro Quantitativo: Arquitetura Adaptativa e Gestão de Risco Científica
+### v2.5.0 (Atual) - O Despertar Cognitivo: A Mesa Operacional Completa
+
+**Funcionalidades Principais:**
+- **Ativação Total do Conselho:** A lógica de votação (`calculateTechnicalVote`) foi expandida para incluir todos os 22 robôs-analistas. Estratégias como `ICHIMOKU`, `VWAP`, `Z_SCORE` e `TRIX` agora participam ativamente do consenso, trazendo uma diversidade de perspetivas sem precedentes.
+- **Motor de Cálculo Soberano:** O `indicator-service.ts` foi reescrito do zero. Ele agora é 100% autónomo, sem dependências externas, e calcula o arsenal completo de mais de 25 indicadores necessários para alimentar cada especialista da mesa, eliminando "pontos cegos".
+- **Desbloqueio da Arena Virtual:** Com a lógica de votação e o motor de indicadores completos, a Arena Virtual agora opera em plena capacidade. Todos os robôs fazem "paper trades" a cada sinal, gerando os dados de desempenho necessários para o sistema de meritocracia e evolução genética.
+
+---
+
+### v2.0.0 - O Cérebro Quantitativo: Arquitetura Adaptativa e Gestão de Risco Científica
 
 **Funcionalidades Principais:**
 - **Arquitetura "Regime-Aware" (Consciente do Contexto):** O sistema agora utiliza um modelo (HMM Lite) para identificar o regime de mercado em tempo real (ex: `TREND_UP`, `RANGING`). Robôs que são inadequados para um certo regime (ex: osciladores em forte tendência) são automaticamente silenciados, eliminando um dos maiores erros de robôs amadores.
