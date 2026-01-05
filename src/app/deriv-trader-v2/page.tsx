@@ -191,5 +191,3 @@ export default function DerivTraderV2Page() {
         </FormProvider>
     );
 }
-
-    
