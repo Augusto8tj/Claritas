@@ -360,7 +360,7 @@ export function useRobotCouncilV2(
   chartData: CandleData[],
   dataVersion: number
 ) {
-  const { operationsLog, executeTrade, timePeriod, isConnected, durationLimits, sellContract } = useDerivApi();
+  const { operationsLog, executeTrade, timePeriod, isConnected, durationLimits, sellContract, getHistoricalData } = useDerivApi();
   const { user, loading: isAuthLoading } = useAuth();
   const { toast } = useToast();
   const { evolvedStrategies, evolveTrigger, evolutionHistory } = useStrategyEvolution(initialCouncilStrategies);
@@ -387,6 +387,8 @@ export function useRobotCouncilV2(
   const [isFetchingCouncil, setIsFetchingCouncil] = useState(false);
   const [tradeDecisionLog, setTradeDecisionLog] = useState<TradeDecisionLog[]>([]);
   const [sessionStartTime, setSessionStartTime] = useState<number | null>(null);
+  const [isBootstrapped, setIsBootstrapped] = useState(false);
+  const bootstrapAttemptedRef = useRef(false);
 
   const [councilState, setCouncilState] = useState<CouncilState>({
     indicators: null,
@@ -575,6 +577,36 @@ export function useRobotCouncilV2(
     return () => window.removeEventListener('beforeunload', handleBeforeUnload);
   }, [tradeDecisionLog, user]);
 
+  useEffect(() => {
+    if (!isCouncilAutopilotOn || !activeSymbol || !user || bootstrapAttemptedRef.current) return;
+    
+    bootstrapAttemptedRef.current = true;
+    
+    console.log('🔄 [Bootstrap] Iniciando carregamento de dados históricos...');
+    
+    getHistoricalData(activeSymbol, 'candles', 1000, timePeriod)
+      .then(data => {
+        console.log(`✅ [Bootstrap] ${data.length} candles carregados para ${activeSymbol}`);
+        
+        // Valida dados
+        if (data.length >= REGIME_LOOKBACK) {
+          setIsBootstrapped(true);
+          toast({
+            title: "📊 Dados Carregados",
+            description: `${data.length} candles históricos carregados com sucesso.`
+          });
+        } else {
+          console.warn(`⚠️ [Bootstrap] Apenas ${data.length} candles, mínimo é ${REGIME_LOOKBACK}`);
+          setIsBootstrapped(false);
+        }
+      })
+      .catch(err => {
+        console.error('❌ [Bootstrap] Erro ao carregar dados:', err);
+        bootstrapAttemptedRef.current = false; // Permite retry
+        setIsBootstrapped(false);
+      });
+  }, [isCouncilAutopilotOn, activeSymbol, timePeriod, user, getHistoricalData, toast]);
+
   const fetchStrategyCouncil = useCallback(async () => {
     if (!activeSymbol || !user) {
       toast({
@@ -609,11 +641,13 @@ export function useRobotCouncilV2(
   useEffect(() => {
     const symbolChanged = activeSymbol && lastActiveSymbolRef.current !== activeSymbol;
     const timePeriodChanged = timePeriod && lastTimePeriodRef.current !== timePeriod;
-
+  
     if (isCouncilAutopilotOn && (symbolChanged || timePeriodChanged)) {
-      console.log(`[CONTEXT CHANGE] Mudança detectada. Resetando arena...`);
+      console.log(`[CONTEXT CHANGE] Mudança detectada. Resetando bootstrap...`);
+      bootstrapAttemptedRef.current = false;
+      setIsBootstrapped(false);
       resetArenaPerformance();
-
+  
       if (symbolChanged) lastActiveSymbolRef.current = activeSymbol;
       if (timePeriodChanged) lastTimePeriodRef.current = timePeriod;
     }
@@ -664,6 +698,16 @@ export function useRobotCouncilV2(
   }, [operationsLog, tradeDecisionLog, user]);
 
   const runCouncilCycle = useCallback(() => {
+    console.log(`═══ [Cycle Start] ═══`);
+    console.log(`📊 Data: ${tickCandles.length} candles, dataVersion: ${dataVersion}`);
+    console.log(`🤖 Council: ${strategyCouncil.length} robôs`);
+    console.log(`✅ Bootstrap: ${isBootstrapped ? 'OK' : 'PENDENTE'}`);
+
+    if (!isBootstrapped) {
+      console.log('⏳ Aguardando bootstrap de dados históricos...');
+      return;
+    }
+    
     if (!isConnected || !user || !isCouncilAutopilotOn || councilExecutionRef.current.isExecuting ||
         strategyCouncil.length === 0 || !activeSymbol || tickCandles.length < REGIME_LOOKBACK) {
         return;
@@ -690,7 +734,14 @@ export function useRobotCouncilV2(
             validCandles, strategyCouncil, timePeriod, contractDurationForIndicators
         );
         
-        if (!currentIndicators || !currentIndicators.adx) {
+        if (!currentIndicators) {
+            console.warn('⏳ Aguardando indicadores serem calculados...');
+            councilExecutionRef.current.isExecuting = false;
+            return;
+        }
+        
+        if (!isValid(currentIndicators.adx)) {
+            console.warn('⏳ ADX ainda não disponível, pulando ciclo...');
             councilExecutionRef.current.isExecuting = false;
             return;
         }
@@ -928,14 +979,18 @@ export function useRobotCouncilV2(
     consensusSensitivity, confidenceFactor, durationRange,
     isDynamicConsensusOn, isDynamicRiskOn, isDynamicExitOn,
     stopLossThreshold, takeProfitThreshold,
-    toast, executeTrade, sellContract, resetArenaPerformance, evolveTrigger, operationsLog, councilState.portfolioStats.totalExposure
+    toast, executeTrade, sellContract, resetArenaPerformance, evolveTrigger, operationsLog, councilState.portfolioStats.totalExposure, dataVersion, isBootstrapped
   ]);
 
   useEffect(() => {
-      if (!isCouncilAutopilotOn) return;
-      const intervalId = setInterval(runCouncilCycle, THROTTLE_MS);
-      return () => clearInterval(intervalId);
+    if (!isCouncilAutopilotOn) return;
+    const intervalId = setInterval(runCouncilCycle, THROTTLE_MS);
+    return () => clearInterval(intervalId);
   }, [runCouncilCycle, isCouncilAutopilotOn]);
+
+  useEffect(() => {
+    console.log(`📊 [Data Update] dataVersion: ${dataVersion}, chartData: ${chartData.length} candles`);
+  }, [dataVersion, chartData.length]);
 
   const {
       indicators, currentRegime, microstructure, consensusDecision,

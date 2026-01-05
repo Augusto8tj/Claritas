@@ -204,53 +204,74 @@ const calculateBB = (data: CandleData[], period = 20, stdDev = 2) => {
 
 // 6. ADX (Complexo, mas necessário para os robôs de tendência)
 const calculateADX = (data: CandleData[], period = 14) => {
-    if (data.length < period * 2) return { adx: null, pdi: null, ndi: null };
-    
-    // Implementação simplificada para performance, mas precisa o suficiente
-    const tr = calculateATR(data, 1).map(v => v || 0); // TR é ATR de período 1
-    const pDM: number[] = [0];
-    const nDM: number[] = [0];
-    
-    for(let i=1; i<data.length; i++) {
-        const up = data[i].high - data[i-1].high;
-        const down = data[i-1].low - data[i].low;
-        pDM.push((up > down && up > 0) ? up : 0);
-        nDM.push((down > up && down > 0) ? down : 0);
+    if (data.length < period * 3) {
+        console.warn(`⚠️ ADX precisa de ${period * 3} candles, tem ${data.length}`);
+        return { adx: null, pdi: null, ndi: null };
     }
     
-    // Wilder's Smoothing
-    const smooth = (vals: number[], p: number) => {
-        const res = Array(vals.length).fill(0);
-        let sum = 0;
-        for(let i=0; i<p; i++) sum += vals[i];
-        res[p-1] = sum; // Initial Sum
-        for(let i=p; i<vals.length; i++) res[i] = res[i-1] - (res[i-1]/p) + vals[i];
-        return res;
-    };
+    try {
+        const tr = calculateATR(data, 1).map(v => v || 0);
+        const pDM: number[] = [0];
+        const nDM: number[] = [0];
+        
+        for(let i=1; i<data.length; i++) {
+            const up = data[i].high - data[i-1].high;
+            const down = data[i-1].low - data[i].low;
+            pDM.push((up > down && up > 0) ? up : 0);
+            nDM.push((down > up && down > 0) ? down : 0);
+        }
+        
+        const smooth = (vals: number[], p: number) => {
+            const res = Array(vals.length).fill(0);
+            let sum = 0;
+            for(let i=0; i<p && i<vals.length; i++) sum += vals[i];
+            
+            if (p - 1 < vals.length) res[p-1] = sum;
+            
+            for(let i=p; i<vals.length; i++) {
+                res[i] = res[i-1] - (res[i-1]/p) + vals[i];
+            }
+            return res;
+        };
 
-    const sTR = smooth(tr, period);
-    const sPDM = smooth(pDM, period);
-    const sNDM = smooth(nDM, period);
-    
-    const pdi = sTR.map((v, i) => v === 0 ? 0 : 100 * (sPDM[i] / v));
-    const ndi = sTR.map((v, i) => v === 0 ? 0 : 100 * (sNDM[i] / v));
-    
-    const dx = pdi.map((p, i) => {
-        const n = ndi[i];
-        return (p + n === 0) ? 0 : 100 * Math.abs(p - n) / (p + n);
-    });
-    
-    // Correção: ADX é a média suavizada do DX. O smooth function já acumula.
-    // Vamos usar EMA simples do DX para o ADX final, é padrão em muitas libs
-    const adxEma = calculateEMA(dx.map(d => ({close: d} as CandleData)), period);
-    
-    const lastIdx = data.length - 1;
-    return { 
-        adx: adxEma[lastIdx], 
-        pdi: pdi[lastIdx], 
-        ndi: ndi[lastIdx] 
-    };
+        const sTR = smooth(tr, period);
+        const sPDM = smooth(pDM, period);
+        const sNDM = smooth(nDM, period);
+        
+        const pdi = sTR.map((v, i) => v === 0 ? 0 : 100 * (sPDM[i] / v));
+        const ndi = sTR.map((v, i) => v === 0 ? 0 : 100 * (sNDM[i] / v));
+        
+        const dx = pdi.map((p, i) => {
+            const n = ndi[i];
+            return (p + n === 0) ? 0 : 100 * Math.abs(p - n) / (p + n);
+        });
+        
+        const dxCandles = dx.map(d => ({close: d} as CandleData));
+        const adxEma = calculateEMA(dxCandles, period);
+        
+        const lastIdx = data.length - 1;
+        
+        const adxValue = adxEma[lastIdx];
+        const pdiValue = pdi[lastIdx];
+        const ndiValue = ndi[lastIdx];
+        
+        if (!Number.isFinite(adxValue) || !Number.isFinite(pdiValue) || !Number.isFinite(ndiValue)) {
+            console.warn('⚠️ ADX calculou valores inválidos');
+            return { adx: null, pdi: null, ndi: null };
+        }
+        
+        return { 
+            adx: adxValue, 
+            pdi: pdiValue, 
+            ndi: ndiValue 
+        };
+        
+    } catch (error) {
+        console.error('❌ Erro ao calcular ADX:', error);
+        return { adx: null, pdi: null, ndi: null };
+    }
 };
+
 
 // 7. Novos Indicadores Avançados (Para os Comitês Específicos)
 
@@ -436,25 +457,13 @@ export function calculateAllIndicators(
     strategyCouncil: RobotStrategy[], 
     timePeriod: TimePeriod,
     contractDuration: { duration: number, unit: DurationUnit }
-): Indicators {
+): Indicators | null {
     
-    const emptyIndicators: Indicators = {
-        rsi: null, stoch: null, atr: null, adx: null, pdi: null, ndi: null,
-        macd: { macd: null, signal: null, histogram: null }, 
-        ma: { short: null, long: null },
-        sma: [], ema: [], 
-        bb: { upper: null, middle: null, lower: null }, bbw: null,
-        donchian: null, kama: null, chandelier: null,
-        psar: null, ichimoku: null,
-        ao: null, aoPrev: null, trix: null, trixPrev: null, roc: null,
-        stochRSI: null, rvi: null,
-        mfi: null, obv: null, obvPrev: null, vwap: null, zScore: null
-    };
-    
-    // Validação Inicial
-    if (!chartData || chartData.length < 30) return emptyIndicators;
+    if (!chartData || chartData.length < 50) {
+        console.warn(`⚠️ [Indicators] Dados insuficientes: ${chartData?.length || 0}/50 candles`);
+        return null;
+    }
 
-    // Normalização para CandleData
     let candles: CandleData[];
     if (isCandle(chartData[0])) {
         candles = chartData as CandleData[];
@@ -468,54 +477,62 @@ export function calculateAllIndicators(
             volume: 1 
         }));
     }
-
-    // Configurações Dinâmicas dos Robôs
-    const getParam = (type: RobotStrategy['strategyType'], key: keyof RobotStrategy, defaultValue: any) => {
-        const robot = strategyCouncil.find(r => r.strategyType === type);
-        return robot && robot[key] !== undefined ? robot[key] : defaultValue;
-    };
+    
+    const validCandles = candles.filter(c => 
+        c.close > 0 && 
+        c.open > 0 && 
+        c.high > 0 && 
+        c.low > 0 &&
+        Number.isFinite(c.close) &&
+        Number.isFinite(c.open) &&
+        Number.isFinite(c.high) &&
+        Number.isFinite(c.low)
+    );
+    
+    if (validCandles.length < 50) {
+        console.warn(`⚠️ [Indicators] Apenas ${validCandles.length}/50 candles válidos`);
+        return null;
+    }
 
     try {
-        // --- CÁLCULOS BASE ---
-        const rsiSeries = calculateRSI(candles, getParam('RSI', 'period', 14));
-        const stochSeries = calculateStochastic(candles, getParam('STOCHASTIC', 'period', 14));
-        const atrSeries = calculateATR(candles, 14);
-        const smaLong = calculateSMA(candles, getParam('MOVING_AVERAGE_CROSS', 'longPeriod', 50));
-        const emaShort = calculateEMA(candles, getParam('MOVING_AVERAGE_CROSS', 'shortPeriod', 20));
-        const macdData = calculateMACD(candles);
-        const bbData = calculateBB(candles);
+        const getParam = (type: RobotStrategy['strategyType'], key: keyof RobotStrategy, defaultValue: any) => {
+            const robot = strategyCouncil.find(r => r.strategyType === type);
+            return robot && robot[key] !== undefined ? robot[key] : defaultValue;
+        };
+
+        const rsiSeries = calculateRSI(validCandles, getParam('RSI', 'period', 14));
+        const stochSeries = calculateStochastic(validCandles, getParam('STOCHASTIC', 'period', 14));
+        const atrSeries = calculateATR(validCandles, 14);
+        const smaLong = calculateSMA(validCandles, getParam('MOVING_AVERAGE_CROSS', 'longPeriod', 50));
+        const emaShort = calculateEMA(validCandles, getParam('MOVING_AVERAGE_CROSS', 'shortPeriod', 20));
+        const macdData = calculateMACD(validCandles);
+        const bbData = calculateBB(validCandles);
         
-        // --- CÁLCULOS AVANÇADOS (COMITÊS) ---
-        const adxData = calculateADX(candles);
-        const donchian = calculateDonchian(candles);
-        const kama = calculateKAMA(candles);
-        const aoData = calculateAO(candles);
-        const trixData = calculateTRIX(candles);
-        const ichimoku = calculateIchimoku(candles);
-        const chandelier = calculateChandelier(candles, atrSeries);
-        const zScore = calculateZScore(candles);
-        const mfi = calculateMFI(candles);
-        const obvData = calculateOBV(candles);
-        const stochRSI = calculateStochRSI(candles, rsiSeries);
-        const vwap = calculateVWAP(candles);
+        const adxData = calculateADX(validCandles);
+        const donchian = calculateDonchian(validCandles);
+        const kama = calculateKAMA(validCandles);
+        const aoData = calculateAO(validCandles);
+        const trixData = calculateTRIX(validCandles);
+        const ichimoku = calculateIchimoku(validCandles);
+        const chandelier = calculateChandelier(validCandles, atrSeries);
+        const zScore = calculateZScore(validCandles);
+        const mfi = calculateMFI(validCandles);
+        const obvData = calculateOBV(validCandles);
+        const stochRSI = calculateStochRSI(validCandles, rsiSeries);
+        const vwap = calculateVWAP(validCandles);
         
-        // ROC (Rate of Change)
         const rocPeriod = getParam('ROC', 'period', 12);
-        const roc = candles.length > rocPeriod ? 
-            ((candles[candles.length-1].close - candles[candles.length-1-rocPeriod].close) / candles[candles.length-1-rocPeriod].close) * 100 : null;
+        const roc = validCandles.length > rocPeriod ? 
+            ((validCandles[validCandles.length-1].close - validCandles[validCandles.length-1-rocPeriod].close) / validCandles[validCandles.length-1-rocPeriod].close) * 100 : null;
 
-        // RVI (Relative Vigor Index) - Aproximação simplificada
         const rviPeriod = 10;
-        const rviNumerator = candles.slice(-rviPeriod).reduce((acc, c) => acc + (c.close - c.open), 0);
-        const rviDenominator = candles.slice(-rviPeriod).reduce((acc, c) => acc + (c.high - c.low), 0);
-        const rvi = rviDenominator === 0 ? 50 : (rviNumerator / rviDenominator) * 50 + 50; // Normalizado 0-100 base 50
+        const rviNumerator = validCandles.slice(-rviPeriod).reduce((acc, c, i, arr) => i > 0 ? acc + (c.close - arr[i-1].close) : acc, 0);
+        const rviDenominator = validCandles.slice(-rviPeriod).reduce((acc, c) => acc + (c.high - c.low), 0);
+        const rvi = rviDenominator === 0 ? 50 : (rviNumerator / rviDenominator) * 50 + 50;
 
-        // PSAR (Simplificado para o último valor)
-        // Nota: Um PSAR real precisa de estado persistente, aqui calculamos uma estimativa baseada em tendência
-        const psar = emaShort[emaShort.length-1]; // Fallback placeholder se não houver lógica completa recursiva
+        const psar = emaShort[emaShort.length-1];
 
-        return {
-            ...emptyIndicators,
+        const indicators = {
             rsi: rsiSeries[rsiSeries.length - 1],
             stoch: stochSeries[stochSeries.length - 1],
             atr: atrSeries[atrSeries.length - 1],
@@ -535,8 +552,6 @@ export function calculateAllIndicators(
             ema: emaShort,
             bb: bbData[bbData.length - 1],
             bbw: bbData[bbData.length - 1].width,
-            
-            // Novos Campos Sincronizados
             donchian,
             kama,
             chandelier,
@@ -553,11 +568,19 @@ export function calculateAllIndicators(
             mfi,
             vwap,
             zScore,
-            psar: psar // Usando EMA curta como proxy ou implementar lógica completa se necessário
+            psar
         };
+        
+        console.log('✅ [Indicators] Calculados com sucesso:', {
+            rsi: indicators.rsi?.toFixed(2),
+            adx: indicators.adx?.toFixed(2),
+            macd: indicators.macd?.histogram?.toFixed(4)
+        });
+        
+        return indicators;
 
     } catch (e) {
-        console.error("❌ Erro fatal no Engine de Indicadores:", e);
-        return emptyIndicators;
+        console.error("❌ [Indicators] Erro fatal:", e);
+        return null;
     }
 }
