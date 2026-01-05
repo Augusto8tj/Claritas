@@ -38,6 +38,7 @@ export type ApiHistoricalData = {
     high?: number;
     low?: number;
     close?: number;
+    volume?: number;
 };
 
 interface DerivApiContextType {
@@ -308,17 +309,19 @@ const getHistoricalData = useCallback(async (symbol: string, style: 'ticks' | 'c
             return response.history.times.map((time: number, index: number) => ({
                 epoch: time,
                 price: response.history.prices[index],
+                volume: 1, // Ticks têm volume 1
             }));
         }
       
         if (response.candles) {
             return response.candles.map((candle: any) => ({
                 epoch: candle.epoch,
-                open: candle.open,
-                high: candle.high,
-                low: candle.low,
-                close: candle.close,
-                price: candle.close,
+                open: parseFloat(candle.open),
+                high: parseFloat(candle.high),
+                low: parseFloat(candle.low),
+                close: parseFloat(candle.close),
+                // 🔥 CORREÇÃO: Garante volume. Se não houver, usa 1 para não quebrar indicadores
+                volume: candle.tick_count || 1 
             }));
         }
         
@@ -348,7 +351,15 @@ const subscribeToMarketData = useCallback(async (symbol: string) => {
     try {
         const historyStyle = chartType === 'Candle' ? 'candles' : 'ticks';
         const history = await getHistoricalData(symbol, historyStyle, 1000, timePeriod);
-        setChartData(history as ChartData[]);
+        
+        const chartHistory = history.map(h => {
+             if(historyStyle === 'candles') {
+                return { epoch: h.epoch, open: h.open, high: h.high, low: h.low, close: h.close, volume: h.volume } as CandleData;
+             }
+             return { epoch: h.epoch, price: h.price } as TickData;
+        });
+
+        setChartData(chartHistory as ChartData[]);
         if (historyStyle === 'ticks') {
             setPriceTicks(history as TickData[]);
         }
@@ -627,6 +638,7 @@ const subscribeToMarketData = useCallback(async (symbol: string) => {
                             high: parseFloat(ohlc.high),
                             low: parseFloat(ohlc.low),
                             close: parseFloat(ohlc.close),
+                            volume: ohlc.tick_count || 1,
                         };
                         setChartData(prev => addDataPoint(prev, newCandle));
                         setDataVersion(v => v + 1);
@@ -643,6 +655,7 @@ const subscribeToMarketData = useCallback(async (symbol: string) => {
                                 high: parseFloat(candle.high),
                                 low: parseFloat(candle.low),
                                 close: parseFloat(candle.close),
+                                volume: candle.tick_count || 1,
                             };
                             setChartData(prev => addDataPoint(prev, newCandle));
                             setDataVersion(v => v + 1);
