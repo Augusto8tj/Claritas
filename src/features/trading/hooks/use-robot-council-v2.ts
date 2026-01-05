@@ -357,7 +357,7 @@ const calculateTechnicalVote = (
 export function useRobotCouncilV2(
   activeSymbol: string | null,
   priceTicks: TickData[],
-  chartData: CandleData[],
+  chartData: CandleData[], // <--- NOVO ARGUMENTO: Histórico Completo
   dataVersion: number,
 ) {
   const { operationsLog, executeTrade, timePeriod, isConnected, durationLimits, sellContract } = useDerivApi();
@@ -371,7 +371,17 @@ export function useRobotCouncilV2(
   const lastTimePeriodRef = useRef<TimePeriod | null>(null);
   const lastRegimeRef = useRef<MarketRegime | null>(null);
 
-  const tickCandles = chartData;
+  // LÓGICA HÍBRIDA: Usa o histórico completo ou faz fallback para ticks
+  const tickCandles = useMemo(() => {
+    if (chartData && chartData.length > 0) {
+      return chartData;
+    }
+    if (!priceTicks || priceTicks.length === 0) return [];
+    return priceTicks.map((t) => ({
+        epoch: t.epoch, open: t.price, high: t.price,
+        low: t.price, close: t.price, volume: 1
+    }));
+  }, [chartData, priceTicks]);
 
   const [strategyCouncil, setStrategyCouncil] = useState<RobotStrategy[]>(evolvedStrategies as RobotStrategy[]);
   const [isCouncilAutopilotOn, setIsCouncilAutopilotOn] = useState(false);
