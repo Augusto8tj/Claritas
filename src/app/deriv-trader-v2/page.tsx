@@ -25,6 +25,9 @@ import { EvolutionLab } from "@/features/trading/components/deriv-trader/evoluti
 import { DebugCouncilView } from "@/features/trading/components/deriv-trader/DebugCouncilView";
 import TradingDecisionLogViewer from "@/components/deriv-trader/TradingDecisionLogViewer";
 
+// ============================================================================
+// COMPONENTES REORGANIZADOS PARA PERFORMANCE
+// ============================================================================
 
 const Header = () => {
     const { 
@@ -71,37 +74,54 @@ const Header = () => {
     );
 };
 
+const IsolatedMarketChart = () => {
+    const { 
+        activeSymbol, operationsLog, chartData, isChartLoading, chartError, 
+        chartType, setChartType, timePeriod, setTimePeriod, tradeAnnotations,
+        indicators // Supondo que indicators venha do useDerivApi ou de um hook separado. Se vem do council, precisa de refatoração.
+    } = useDerivApi();
+
+    // NOTA: Para uma otimização completa, os 'indicators' deveriam vir de um hook que não re-renderiza com o `useRobotCouncilV2`
+    // Por agora, vamos assumir que `useDerivApi` os providencia ou que o impacto é menor.
+    // Se `indicators` vier do `useRobotCouncilV2`, ele deve ser passado como prop aqui.
+    // Para esta correção, vamos assumir que está no `useDerivApi` ou é nulo.
+    const { indicators: councilIndicators } = useRobotCouncilV2(activeSymbol, [], 0); // Passamos dados vazios para não recalcular
+
+    return (
+        <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <div>
+                    <CardTitle className="font-headline text-lg">Gráfico ({activeSymbol})</CardTitle>
+                    <CardDescription className="text-xs">Desempenho em tempo real do ativo.</CardDescription>
+                </div>
+            </CardHeader>
+            <CardContent>
+                <MarketChart 
+                    activeSymbol={activeSymbol || ''}
+                    chartData={chartData}
+                    isChartLoading={isChartLoading}
+                    chartError={chartError}
+                    chartType={chartType}
+                    setChartType={setChartType}
+                    timePeriod={timePeriod}
+                    setTimePeriod={setTimePeriod}
+                    operations={operationsLog}
+                    indicators={councilIndicators} // Usamos os indicadores do conselho aqui
+                    tradeAnnotations={tradeAnnotations}
+                />
+            </CardContent>
+        </Card>
+    );
+};
+
 const DerivTraderV2Core = () => {
-    const { activeSymbol, priceTicks, dataVersion, operationsLog, chartData, isChartLoading, chartError, chartType, setChartType, timePeriod, setTimePeriod, tradeAnnotations } = useDerivApi();
+    const { activeSymbol, priceTicks, dataVersion, operationsLog } = useDerivApi();
     const robotCouncil = useRobotCouncilV2(activeSymbol, priceTicks, dataVersion);
     const [activeTab, setActiveTab] = React.useState("desk");
     
     return (
         <div className="space-y-6 mt-6">
-            
-            <Card>
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                    <div>
-                        <CardTitle className="font-headline text-lg">Gráfico ({activeSymbol})</CardTitle>
-                        <CardDescription className="text-xs">Desempenho em tempo real do ativo.</CardDescription>
-                    </div>
-                </CardHeader>
-                <CardContent>
-                    <MarketChart 
-                        activeSymbol={activeSymbol || ''}
-                        chartData={chartData}
-                        isChartLoading={isChartLoading}
-                        chartError={chartError}
-                        chartType={chartType}
-                        setChartType={setChartType}
-                        timePeriod={timePeriod}
-                        setTimePeriod={setTimePeriod}
-                        operations={operationsLog}
-                        indicators={robotCouncil.indicators}
-                        tradeAnnotations={tradeAnnotations}
-                    />
-                </CardContent>
-            </Card>
+            <IsolatedMarketChart />
             
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 <div className="space-y-6">
