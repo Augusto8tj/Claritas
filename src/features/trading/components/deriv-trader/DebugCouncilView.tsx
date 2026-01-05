@@ -192,8 +192,11 @@ export function DebugCouncilView({ votes, regime, isCouncilAutopilotOn, systemMe
                         <TableRow key={`${robotId}-${index}`}>
                         <TableCell className="font-medium">
                             <div className="flex items-center gap-2">
-                            {indicatorIcons[voteData.strategy?.strategyType || 'DEFAULT'] || <Bot className="h-4 w-4" />}
-                            <span>{voteData.strategy?.strategyType}</span>
+                                {indicatorIcons[voteData.strategy?.strategyType || 'DEFAULT'] || <Bot className="h-4 w-4" />}
+                                <div>
+                                    <span className="font-bold">{voteData.strategy?.strategyType}</span>
+                                    <span className="text-xs text-muted-foreground ml-2">{robotId}</span>
+                                </div>
                             </div>
                         </TableCell>
                         <TableCell className="text-center text-xs">
