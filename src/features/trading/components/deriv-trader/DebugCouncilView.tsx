@@ -62,7 +62,7 @@ const formatDuration = (seconds: number): string => {
 
 export function DebugCouncilView({ councilState, isCouncilAutopilotOn }: DebugCouncilViewProps) {
   
-  const { bayesianVotes, currentRegime, systemMetrics, robotPerformance } = councilState || {};
+  const { bayesianVotes, currentRegime, systemMetrics, robotPerformance, consensusDecision, consensusReached, consensusSum, totalWeight, effectiveThreshold } = councilState;
 
   if (!isCouncilAutopilotOn || !currentRegime || !systemMetrics) {
     return (
@@ -219,4 +219,10 @@ export function DebugCouncilView({ councilState, isCouncilAutopilotOn }: DebugCo
                   </TableRow>
                 )}
               </TableBody>
-            </Table
+            </Table>
+          </ScrollArea>
+        </div>
+      </CardContent>
+    </Card>
+  );
+};
