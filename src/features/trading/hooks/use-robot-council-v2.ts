@@ -1,4 +1,3 @@
-
 'use client';
 
 /**
@@ -768,7 +767,6 @@ export function useRobotCouncilV2(
         const logData = {
           chartData: tickCandles,
           priceTicks,
-          isBootstrapped: true, 
           indicators: councilState.indicators,
           currentRegime: councilState.currentRegime,
           strategyCouncil,
@@ -777,6 +775,7 @@ export function useRobotCouncilV2(
           consensusDecision: councilState.consensusDecision
         };
 
+        // Adicionando seus logs de depuração
         console.log('═══════════════════════════════════════');
         console.log('🔍 VALIDAÇÃO ARQUITETURA V2.5');
         console.log('═══════════════════════════════════════');
@@ -786,20 +785,30 @@ export function useRobotCouncilV2(
         console.log('   priceTicks (fallback):', logData.priceTicks?.length || 0, 'ticks');
         console.log('   tickCandles (usado):', tickCandles?.length || 0);
 
-        console.log('\n2️⃣ BOOTSTRAP:');
-        console.log('   Status:', logData.isBootstrapped ? '✅ OK' : '❌ PENDENTE');
-        
-        console.log('\n3️⃣ INDICADORES:');
+        console.log('\n2️⃣ INDICADORES:');
         console.log('   Status:', logData.indicators ? '✅ OK' : '❌ NULL');
         if (logData.indicators) {
-          console.log('   RSI:', logData.indicators.rsi?.toFixed(2) || 'N/A');
-          console.log('   ADX:', logData.indicators.adx?.toFixed(2) || 'N/A');
-          console.log('   MACD:', logData.indicators.macd?.histogram?.toFixed(4) || 'N/A');
+            console.log('   RSI:', logData.indicators.rsi?.toFixed(2) || 'N/A');
+            console.log('   ADX:', logData.indicators.adx?.toFixed(2) || 'N/A');
+            console.log('   MACD:', logData.indicators.macd?.histogram?.toFixed(4) || 'N/A');
+            console.log('   Stoch:', logData.indicators.stoch?.toFixed(2) || 'N/A');
+            console.log('   BBW:', logData.indicators.bbw?.toFixed(4) || 'N/A');
+            console.log('   Z-Score:', logData.indicators.zScore?.toFixed(2) || 'N/A');
         }
 
-        console.log('\n4️⃣ REGIME:');
+        console.log('\n3️⃣ REGIME:');
         console.log('   Tipo:', logData.currentRegime?.regime || 'N/A');
         console.log('   Confiança:', ((logData.currentRegime?.confidence || 0) * 100).toFixed(0) + '%');
+        if (logData.currentRegime?.probabilities) {
+            console.log('   Distribuição:', Object.entries(logData.currentRegime.probabilities)
+                .map(([k, v]) => `${k}: ${(v*100).toFixed(0)}%`)
+                .join(' | '));
+        }
+
+        console.log('\n4️⃣ MICROESTRUTURA:');
+        if (microFeatures) {
+            console.log(`   Pressão: ${microFeatures.pressure} (${(microFeatures.volumeImbalance*100).toFixed(0)}%) | Velocidade: ${microFeatures.tickVelocity.toFixed(2)} t/s`);
+        }
 
         console.log('\n5️⃣ ROBÔS:');
         console.log('   Conselho:', logData.strategyCouncil?.length || 0);
@@ -813,6 +822,10 @@ export function useRobotCouncilV2(
         console.log('   Direção:', logData.consensusDecision?.direction || 'N/A');
         console.log('   Probabilidade:', ((logData.consensusDecision?.probability || 0) * 100).toFixed(0) + '%');
         console.log('   Stake:', '$' + (logData.consensusDecision?.stake || 0).toFixed(2));
+        console.log(`   Soma (Rise/Fall): ${riseSum.toFixed(2)} / ${fallSum.toFixed(2)}`);
+        console.log(`   Peso Total: ${totalWeight.toFixed(2)}`);
+        console.log(`   Limiar Efetivo: ${calculatedEffectiveThreshold.toFixed(2)}`);
+        console.log(`   Executado: ${consensusReached ? '✅ SIM' : '❌ NÃO'}`);
 
         console.log('═══════════════════════════════════════');
 
@@ -820,12 +833,13 @@ export function useRobotCouncilV2(
         // Aqui é onde o dinheiro real seria apostado.
         if (consensusReached && consensusDirection !== 'HOLD') {
              const kellyStake = calculateKellyStake(dailyBalance, consensusProbability, 0.9);
-             // Implementação de execução real omitida para focar na lógica de decisão
-             // Aqui chamaríamos executeTrade(...)
+             if (kellyStake > 0) {
+                // executeTrade(...)
+             }
         }
 
     } catch (error) {
-        console.error("🚨 [Council Error] Erro crítico no ciclo:", error);
+        console.error("🚨 [Council Crash]", error);
     } finally {
         // Libera o Mutex para o próximo ciclo
         councilExecutionRef.current.isExecuting = false;
