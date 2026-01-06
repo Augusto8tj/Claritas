@@ -719,16 +719,16 @@ const subscribeToMarketData = useCallback(async (symbol: string) => {
   
     ws.onclose = (event) => {
       const { wasClean, code, reason } = event;
-      // Safety check for promisesRef.current
+      
+      const pendingPromises = promisesRef.current ? Array.from(promisesRef.current.values()) : [];
       if (promisesRef.current) {
-        const pendingPromises = Array.from(promisesRef.current.values());
         promisesRef.current.clear();
-        pendingPromises.forEach((p) => {
-          if (p && typeof p.reject === 'function') {
-            p.reject(new Error("WebSocket connection closed."));
-          }
-        });
       }
+      pendingPromises.forEach((p) => {
+        if (p && typeof p.reject === 'function') {
+          p.reject(new Error("WebSocket connection closed."));
+        }
+      });
       
       if (!wasClean) {
         setConnectionError(`A conexão foi encerrada inesperadamente. Código: ${code}. Razão: ${reason || 'N/A'}.`);
@@ -770,7 +770,7 @@ const subscribeToMarketData = useCallback(async (symbol: string) => {
     try {
         localStorage.setItem(DERIV_ACCOUNT_TYPE_KEY, type);
         setAccountTypeState(type);
-        setTriggerReconnect(c => c + 1);
+        setTriggerReconnect(c => c + 1); // Trigger a full reconnect
     } catch (error) {
         console.error("Failed to save account type to localStorage:", error);
     }
