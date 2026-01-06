@@ -42,7 +42,7 @@ import type {
   BayesianVote as BayesianVoteType, EnhancedRobotPerformance as EnhancedRobotPerformanceType,
   TimePeriod, TradeDecisionLog,
 } from '@/lib/types';
-import { calculateAllIndicators, type Indicators } from '@/services/indicator-service';
+import { calculateAllIndicators, type Indicators } from '@/services/indicator-service-v2';
 import { useAuth } from '@/features/auth/hooks/use-auth';
 import { saveRobotPerformance, loadRobotPerformance, saveTradeDecision } from '@/services/financial-data-service';
 import { useStrategyEvolution } from './use-strategy-evolution';
@@ -309,9 +309,10 @@ const calculateTechnicalVote = (
      if (range > avgRange * 1.5 && lastClose > lastCandle.open) setVote('RISE', robot.weakConfidence, 'Expansão de Volume Alta');
      else if (range > avgRange * 1.5 && lastClose < lastCandle.open) setVote('FALL', robot.weakConfidence, 'Expansão de Volume Baixa');
   }
-  else if (robot.strategyType === 'VWAP' && isValid(vwap)) {
-    if (lastClose > vwap) setVote('RISE', robot.weakConfidence, `Preço > VWAP`);
-    else if (lastClose < vwap) setVote('FALL', robot.weakConfidence, `Preço < VWAP`);
+  else if (robot.strategyType === 'VWAP' && isValid(vwap[vwap.length-1])) {
+    const lastVwap = vwap[vwap.length-1]!;
+    if (lastClose > lastVwap) setVote('RISE', robot.weakConfidence, `Preço > VWAP`);
+    else if (lastClose < lastVwap) setVote('FALL', robot.weakConfidence, `Preço < VWAP`);
   }
   else if (robot.strategyType === 'MFI' && isValid(mfi)) {
     if (mfi <= 20) setVote('RISE', robot.strongConfidence, `MFI Sobrevenda`);
