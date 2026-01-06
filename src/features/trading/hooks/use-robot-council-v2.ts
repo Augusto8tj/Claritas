@@ -433,7 +433,7 @@ export function useRobotCouncilV2(
     if (priceTicks && priceTicks.length > 0) {
       return priceTicks.map((t) => ({
           epoch: t.epoch, open: t.price, high: t.price,
-          low: t.price, close: t.price, volume: 1
+          low: t.price, close: t.price, volume: 1 
       }));
     }
     return [];
