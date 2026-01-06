@@ -636,6 +636,17 @@ const subscribeToMarketData = useCallback(async (symbol: string) => {
                             volume: ohlc.tick_count || 1,
                         };
                         setChartData(prev => addDataPoint(prev, newCandle));
+                        
+                        // CORREÇÃO: Popular priceTicks com base no preço de fecho da vela
+                        const newTick = { epoch: ohlc.open_time, price: parseFloat(ohlc.close) };
+                        setPriceTicks(prev => {
+                            const newTicks = [...prev, newTick];
+                             if (newTicks.length > MAX_DATA_POINTS) {
+                                return newTicks.slice(1);
+                            }
+                            return newTicks;
+                        });
+                        
                         setDataVersion(v => v + 1);
                     }
                     break;
