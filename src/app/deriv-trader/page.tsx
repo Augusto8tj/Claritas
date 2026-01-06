@@ -18,7 +18,6 @@ import { riseFallSchema, type RiseFallFormValues } from "@/lib/types";
 import { CouncilAutopilotInterface } from "@/features/trading/components/deriv-trader/council-autopilot-interface";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { useRobotCouncil } from "@/features/trading/hooks/use-robot-council";
-import { SystemStatusSummary } from "@/features/trading/components/deriv-trader/system-status-summary";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { AITradeSuggestion } from "@/features/trading/components/deriv-trader/ai-trade-suggestion";
 import { IndicatorPanel } from "@/features/trading/components/deriv-trader/indicator-panel";
@@ -242,8 +241,6 @@ function DerivTraderPageContent() {
                 )}
             </div>
             </div>
-
-            <SystemStatusSummary />
 
             <DerivTraderCore activeSymbol={activeSymbol} robotCouncil={robotCouncil} />
         </div>
