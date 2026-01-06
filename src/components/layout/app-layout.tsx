@@ -91,9 +91,9 @@ const navItems = [
     label: "Chat Claritas",
   },
    {
-    href: "/trader",
-    icon: Layers,
-    label: "Plataformas Deriv",
+    href: "/deriv-trader", // Link direto para a V1
+    icon: CandlestickChart,
+    label: "Deriv Trader V1",
   },
   {
     href: "/status",
@@ -121,11 +121,11 @@ const navItems = [
 
 function MainNav() {
   const pathname = usePathname();
-  const isTraderSectionActive = pathname.startsWith('/trader') || pathname.startsWith('/deriv-trader');
+  const isTraderSectionActive = pathname.startsWith('/deriv-trader') || pathname.startsWith('/trader');
   
   return (
     <SidebarMenu>
-      {navItems.filter(item => !item.hidden && item.href !== '/trader').map((item) => (
+      {navItems.filter(item => !item.hidden).map((item) => (
         <SidebarMenuItem key={item.href}>
           <SidebarMenuButton
             asChild
@@ -143,60 +143,28 @@ function MainNav() {
       <Collapsible>
         <SidebarMenuItem>
           <CollapsibleTrigger asChild>
-            <Link href="/trader">
               <SidebarMenuButton
                 className="w-full justify-start"
-                isActive={isTraderSectionActive}
+                isActive={pathname.startsWith('/deriv-trader-v2')}
               >
                 <Layers className="w-5 h-5" />
-                <span>Plataformas Deriv</span>
-                <ChevronDown className={cn("ml-auto h-4 w-4 shrink-0 transition-transform", isTraderSectionActive && "rotate-180")} />
+                <span>Hub de Inovação</span>
+                <ChevronDown className={cn("ml-auto h-4 w-4 shrink-0 transition-transform", pathname.startsWith('/deriv-trader-v2') && "rotate-180")} />
               </SidebarMenuButton>
-            </Link>
           </CollapsibleTrigger>
         </SidebarMenuItem>
         <CollapsibleContent asChild>
             <SidebarMenuSub>
-                <SidebarMenuSubItem>
-                    <SidebarMenuSubButton href="/deriv-trader" isActive={pathname === '/deriv-trader'}>
-                        <CandlestickChart />
-                        <span>Deriv Trader</span>
-                    </SidebarMenuSubButton>
-                </SidebarMenuSubItem>
                  <SidebarMenuSubItem>
                     <SidebarMenuSubButton href="/deriv-trader-v2" isActive={pathname === '/deriv-trader-v2'}>
                         <Wand2 />
-                        <span>Deriv Trader 2.0</span>
+                        <span>Deriv Trader 2.5</span>
                     </SidebarMenuSubButton>
                 </SidebarMenuSubItem>
-                 <SidebarMenuSubItem>
-                    <SidebarMenuSubButton href="#" isActive={pathname === '/deriv-mt5'} aria-disabled>
-                        <CandlestickChart />
-                        <span>Deriv MT5</span>
-                    </SidebarMenuSubButton>
-                </SidebarMenuSubItem>
-                 <SidebarMenuSubItem>
-                    <SidebarMenuSubButton href="#" isActive={pathname === '/deriv-bot'} aria-disabled>
-                        <Bot />
-                        <span>Deriv Bot</span>
-                    </SidebarMenuSubButton>
-                </SidebarMenuSubItem>
-                 <SidebarMenuSubItem>
-                    <SidebarMenuSubButton href="#" isActive={pathname === '/deriv-x'} aria-disabled>
-                        <Settings2 />
-                        <span>Deriv X</span>
-                    </SidebarMenuSubButton>
-                </SidebarMenuSubItem>
-                 <SidebarMenuSubItem>
-                    <SidebarMenuSubButton href="#" isActive={pathname === '/smart-trader'} aria-disabled>
-                        <Laptop />
-                        <span>SmartTrader</span>
-                    </SidebarMenuSubButton>
-                </SidebarMenuSubItem>
-                 <SidebarMenuSubItem>
-                    <SidebarMenuSubButton href="#" isActive={pathname === '/deriv-go'} aria-disabled>
-                        <Smartphone />
-                        <span>Deriv GO</span>
+                <SidebarMenuSubItem>
+                    <SidebarMenuSubButton href="/trader" isActive={pathname === '/trader'}>
+                        <Layers />
+                        <span>Plataformas Futuras</span>
                     </SidebarMenuSubButton>
                 </SidebarMenuSubItem>
             </SidebarMenuSub>
