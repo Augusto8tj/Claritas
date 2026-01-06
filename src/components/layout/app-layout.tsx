@@ -271,14 +271,17 @@ function SidebarContent({children}: {children: React.ReactNode}) {
   )
 }
 
-// Wrapper para evitar renderização duplicada de provedores
+// Wrapper to avoid duplicate providers
 const DerivTraderWrapper = ({ children }: { children: React.ReactNode }) => {
   const pathname = usePathname();
-  // Apenas o V1 (estável) usa o DerivApiProvider diretamente no layout.
-  // O V2 tem seu próprio provedor interno na sua página.
-  if (pathname.includes('/deriv-trader') && !pathname.includes('/deriv-trader-v2')) {
+  // V1 (stable) and the platform selection page now use the DerivApiProvider
+  const isV1TraderRelated = pathname.startsWith('/deriv-trader') || pathname === '/trader';
+
+  // The V2 system has its own internal provider and does not need this wrapper
+  if (isV1TraderRelated && !pathname.startsWith('/deriv-trader-v2')) {
     return <DerivApiProvider>{children}</DerivApiProvider>;
   }
+  
   return <>{children}</>;
 };
 
