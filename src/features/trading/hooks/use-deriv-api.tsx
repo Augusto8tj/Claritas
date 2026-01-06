@@ -203,14 +203,14 @@ export const DerivApiProvider = ({ children }: { children: ReactNode }) => {
 
   useEffect(() => {
     try {
-      const storedDemoToken = localStorage.getItem(DERIV_DEMO_TOKEN_KEY);
-      const storedRealToken = localStorage.getItem(DERIV_REAL_TOKEN_KEY);
+      const storedDemoToken = localStorage.getItem(DERIV_DEMO_TOKEN_KEY) || process.env.NEXT_PUBLIC_DERIV_DEMO_TOKEN;
+      const storedRealToken = localStorage.getItem(DERIV_REAL_TOKEN_KEY) || process.env.NEXT_PUBLIC_DERIV_REAL_TOKEN;
       const storedAccountType = localStorage.getItem(DERIV_ACCOUNT_TYPE_KEY) as AccountType | null;
       
-      setDemoToken(storedDemoToken || null);
-      setRealToken(storedRealToken || null);
-
+      if (storedDemoToken) setDemoToken(storedDemoToken);
+      if (storedRealToken) setRealToken(storedRealToken);
       if (storedAccountType) setAccountTypeState(storedAccountType);
+      
     } catch (error) {
       console.error("Failed to access localStorage:", error);
     }
@@ -712,8 +712,10 @@ const subscribeToMarketData = useCallback(async (symbol: string) => {
   
     ws.onclose = (event) => {
       const { wasClean, code, reason } = event;
-      promisesRef.current.forEach((p) => p.reject(new Error("WebSocket connection closed.")));
-      promisesRef.current.clear();
+      if (promisesRef.current) {
+        promisesRef.current.forEach((p) => p.reject(new Error("WebSocket connection closed.")));
+        promisesRef.current.clear();
+      }
       
       if (!wasClean) {
         setConnectionError(`A conexão foi encerrada inesperadamente. Código: ${code}. Razão: ${reason || 'N/A'}.`);
