@@ -53,7 +53,7 @@ export interface Indicators {
 // 🧮 BIBLIOTECA MATEMÁTICA INTERNA (Zero Dependências)
 // ============================================================================
 
-const isCandle = (d: ChartData): d is CandleData => d !== null && 'close' in d;
+const isCandle = (d: ChartData): d is CandleData => d != null && 'close' in d;
 
 // 1. Médias Móveis (SMA e EMA)
 const calculateSMA = (data: CandleData[], period: number): (number | null)[] => {
@@ -462,25 +462,16 @@ export function calculateAllIndicators(
         return null;
     }
 
-    let candles: CandleData[];
-    if (isCandle(chartData[0])) {
-        candles = chartData as CandleData[];
-    } else {
-        candles = chartData.map(d => ({ 
-            epoch: d.epoch, 
-            open: (d as any).price, 
-            high: (d as any).price, 
-            low: (d as any).price, 
-            close: (d as any).price, 
-            volume: 1 
-        }));
-    }
+    // ✅ CORREÇÃO: Garante que todos os dados sejam tratados como CandleData
+    const candles: CandleData[] = chartData.map(d => {
+        if (isCandle(d)) return d;
+        // Converte TickData para CandleData
+        const price = (d as any).price;
+        return { epoch: d.epoch, open: price, high: price, low: price, close: price, volume: 1 };
+    });
     
     const validCandles = candles.filter(c => 
-        c.close > 0 && 
-        c.open > 0 && 
-        c.high > 0 && 
-        c.low > 0 &&
+        c && c.close > 0 && 
         Number.isFinite(c.close) &&
         Number.isFinite(c.open) &&
         Number.isFinite(c.high) &&
@@ -488,7 +479,7 @@ export function calculateAllIndicators(
     );
     
     if (validCandles.length < 50) {
-        console.warn(`⚠️ [Indicators] Apenas ${validCandles.length}/50 candles válidos`);
+        console.warn(`⚠️ [Indicators] Apenas ${validCandles.length}/50 candles válidos após conversão`);
         return null;
     }
 
