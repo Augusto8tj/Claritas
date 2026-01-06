@@ -998,7 +998,7 @@ export function useRobotCouncilV2(
         console.log('═══════════════════════════════════════');
         console.log('🔍 VALIDAÇÃO ARQUITETURA V2.5');
         console.log('═══════════════════════════════════════');
-
+        
         // 1. Fonte de Dados
         console.log('1️⃣ FONTE DE DADOS:');
         console.log('   chartData (direto):', chartData?.length || 0, 'candles');
@@ -1014,9 +1014,9 @@ export function useRobotCouncilV2(
         console.log('\n3️⃣ INDICADORES:');
         console.log('   Status:', indicators ? '✅ OK' : '❌ NULL');
         if (indicators) {
-        console.log('   RSI:', indicators.rsi?.toFixed(2) || 'N/A');
-        console.log('   ADX:', indicators.adx?.toFixed(2) || 'N/A');
-        console.log('   MACD:', indicators.macd?.histogram?.toFixed(4) || 'N/A');
+          console.log('   RSI:', indicators.rsi?.toFixed(2) || 'N/A');
+          console.log('   ADX:', indicators.adx?.toFixed(2) || 'N/A');
+          console.log('   MACD:', indicators.macd?.histogram?.toFixed(4) || 'N/A');
         }
 
         // 4. Regime
