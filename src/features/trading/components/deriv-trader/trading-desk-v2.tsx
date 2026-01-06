@@ -131,7 +131,7 @@ export function TradingDeskV2({ councilState }: TradingDeskV2Props) {
 
     // Acesso aos trades ativos (Paper Trading)
     // Isso lê o valor atual da ref sem disparar re-render (quem dispara é o hook pai atualizando systemMetrics)
-    const activeTrades = virtualTradesRef.current || [];
+    const activeTrades = virtualTradesRef?.current || [];
 
     return (
         <Card className="h-full flex flex-col shadow-md border-muted">

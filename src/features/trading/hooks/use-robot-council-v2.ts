@@ -696,7 +696,7 @@ export function useRobotCouncilV2(
                      virtualTradesRef.current.push({
                          id: `vt-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
                          robotId: robot.id,
-                         vote: technicalVote.vote as 'RISE' | 'FALL',
+                         vote: technicalVote.vote,
                          entryPrice: currentTick.price,
                          entryEpoch: currentTick.epoch,
                          exitEpoch: currentTick.epoch + durationSec,
@@ -827,7 +827,7 @@ export function useRobotCouncilV2(
     strategyCouncil,
     robotPerformance,
     evolutionHistory,
-    virtualTradesRef, // EXPORTA A REF
+    virtualTradesRef,
     ...councilState, // Espalha todo o estado complexo
     // Setters para configurações da UI
     setDailyBalance, setDailyTarget, setConsensusSensitivity, setConfidenceFactor, 
