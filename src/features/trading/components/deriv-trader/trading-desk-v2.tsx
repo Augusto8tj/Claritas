@@ -12,6 +12,7 @@ import { Progress } from '@/components/ui/progress';
 import { cn } from '@/lib/utils';
 import type { useRobotCouncilV2 } from '../../hooks/use-robot-council-v2';
 import type { RobotStrategy } from '@/lib/types';
+import { VirtualTradeTimer } from './VirtualTradeTimer';
 
 import {
     BrainCircuit, Activity, Waves, CandlestickChart, Bot, LayoutGrid, BarChart,
@@ -184,8 +185,7 @@ export function TradingDeskV2({ councilState }: TradingDeskV2Props) {
                             {activeTrades.length > 0 ? (
                                 <div className="divide-y divide-border/50">
                                     {activeTrades.map((trade) => {
-                                        const safeRobotId = trade.robotId ? String(trade.robotId) : 'Unknown';
-                                        const displayId = safeRobotId.includes('-') ? safeRobotId.split('-')[0] : safeRobotId;
+                                        const displayId = trade.robotId.includes('-') ? trade.robotId.split('-')[0] : trade.robotId;
 
                                         return (
                                             <div key={trade.id} className="px-6 py-4 flex items-center justify-between hover:bg-muted/10 transition-colors">
@@ -211,10 +211,7 @@ export function TradingDeskV2({ councilState }: TradingDeskV2Props) {
                                                     <Badge variant={trade.vote === 'RISE' ? 'default' : 'destructive'} className="mb-1 font-bold">
                                                         {trade.vote}
                                                     </Badge>
-                                                    <p className="text-[10px] text-muted-foreground flex items-center justify-end gap-1">
-                                                        <Timer className="h-3 w-3 animate-spin" />
-                                                        Monitorando...
-                                                    </p>
+                                                    <VirtualTradeTimer exitEpoch={trade.exitEpoch} />
                                                 </div>
                                             </div>
                                         );
