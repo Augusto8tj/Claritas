@@ -23,6 +23,7 @@ import { EvolutionLab } from "@/features/trading/components/deriv-trader/evoluti
 import { DebugCouncilView } from "@/features/trading/components/deriv-trader/DebugCouncilView";
 import TradingDecisionLogViewer from "@/components/deriv-trader/TradingDecisionLogViewer";
 import { CouncilAutopilotInterfaceV2 } from "@/features/trading/components/deriv-trader/council-autopilot-interface-v2";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 
 // ============================================================================
 // COMPONENTES REORGANIZADOS PARA PERFORMANCE
