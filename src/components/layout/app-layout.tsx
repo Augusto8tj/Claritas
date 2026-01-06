@@ -141,7 +141,6 @@ function MainNav() {
         </SidebarMenuItem>
       ))}
 
-      {/* Menu de Plataformas com Submenu */}
       <Collapsible>
         <SidebarMenuItem>
           <CollapsibleTrigger asChild>
@@ -272,6 +271,18 @@ function SidebarContent({children}: {children: React.ReactNode}) {
   )
 }
 
+// Wrapper para evitar renderização duplicada de provedores
+const DerivTraderWrapper = ({ children }: { children: React.ReactNode }) => {
+  const pathname = usePathname();
+  // Apenas o V1 (estável) usa o DerivApiProvider diretamente no layout.
+  // O V2 tem seu próprio provedor interno na sua página.
+  if (pathname.includes('/deriv-trader') && !pathname.includes('/deriv-trader-v2')) {
+    return <DerivApiProvider>{children}</DerivApiProvider>;
+  }
+  return <>{children}</>;
+};
+
+
 export function AppLayout({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
   const pathname = usePathname();
@@ -279,13 +290,12 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   
   const pageTitle = navItems.find(item => item.href === pathname)?.label || 'Claritas Copilot';
 
-  // Não renderiza o layout principal em telas de autenticação
   if (!user) {
     return <main>{children}</main>;
   }
 
   return (
-    <DerivApiProvider>
+    <DerivTraderWrapper>
       <SidebarProvider>
         {isMobile ? <MobileSidebar /> : <DesktopSidebar />}
         <SidebarInset>
@@ -301,6 +311,6 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
           <main>{children}</main>
         </SidebarInset>
       </SidebarProvider>
-    </DerivApiProvider>
+    </DerivTraderWrapper>
   );
 }

@@ -1,8 +1,8 @@
-// src/features/trading/components/deriv-trader/system-status-summary.tsx
+// /src/features/trading/components/deriv-trader/system-status-summary.tsx
 'use client';
 
 import { BrainCircuit, Link as LinkIcon, Loader2, RefreshCw, Server, Settings, ShieldCheck, ShieldX } from "lucide-react";
-import { useDerivApi } from "@/features/trading/hooks/use-deriv-api";
+import { useDerivApiV2 } from "@/features/trading/hooks/use-deriv-api-v2";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
@@ -11,7 +11,7 @@ import { checkGeminiConnection } from "@/app/actions";
 import { useToast } from "@/hooks/use-toast";
 
 export function SystemStatusSummary() {
-    const { isConnected, isConnecting, connectionError, reconnect } = useDerivApi();
+    const { isConnected, isConnecting, connectionError, reconnect } = useDerivApiV2();
     const [isGeminiOk, setIsGeminiOk] = React.useState<'ok' | 'error' | 'loading'>('loading');
     const [isChecking, setIsChecking] = React.useState(false);
     const { toast } = useToast();
@@ -31,7 +31,6 @@ export function SystemStatusSummary() {
         setIsChecking(true);
         toast({ title: "A verificar...", description: "A re-validar as conexões com os serviços." });
         
-        // Dispara ambas as verificações em paralelo
         const [derivSuccess, geminiSuccess] = await Promise.all([
             reconnect(), 
             checkGemini()

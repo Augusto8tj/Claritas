@@ -10,7 +10,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { MarketChart } from "@/features/trading/components/deriv-trader/market-chart";
 import { Button } from "@/components/ui/button";
 import { Trash2, Dna, Archive, Brain } from "lucide-react";
-import { useDerivApi } from "@/features/trading/hooks/use-deriv-api";
+import { useDerivApiV2, DerivApiProviderV2 } from "@/features/trading/hooks/use-deriv-api-v2";
 import { Skeleton } from "@/components/ui/skeleton";
 import { OperationsLog } from "@/features/trading/components/deriv-trader/operations-log";
 import { riseFallSchema, type RiseFallFormValues } from "@/lib/types";
@@ -34,7 +34,7 @@ const Header = () => {
         accountType, setAccountType, accountBalance, clearActiveContracts, 
         operationsLog, isConnecting, isAssetsLoading, assetGroups, 
         activeSymbol, setActiveSymbol 
-    } = useDerivApi();
+    } = useDerivApiV2();
 
     return (
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -78,9 +78,8 @@ const IsolatedMarketChart = () => {
     const { 
         activeSymbol, operationsLog, chartData, isChartLoading, chartError, 
         chartType, setChartType, timePeriod, setTimePeriod, tradeAnnotations
-    } = useDerivApi();
+    } = useDerivApiV2();
 
-    // Injeta o chartData aqui para ter acesso aos indicadores
     const { indicators: councilIndicators } = useRobotCouncilV2(activeSymbol, [], chartData, 0);
 
     return (
@@ -111,7 +110,7 @@ const IsolatedMarketChart = () => {
 };
 
 const DerivTraderV2Core = () => {
-    const { activeSymbol, priceTicks, dataVersion, operationsLog, chartData } = useDerivApi();
+    const { activeSymbol, priceTicks, dataVersion, operationsLog, chartData } = useDerivApiV2();
     
     // ✅ O ELO PERDIDO: `chartData` é injetado no cérebro do conselho
     const robotCouncil = useRobotCouncilV2(activeSymbol, priceTicks, chartData, dataVersion);
@@ -173,7 +172,7 @@ const DerivTraderV2Core = () => {
     );
 };
 
-export default function DerivTraderV2Page() {
+const PageContent = () => {
     const form = useForm<RiseFallFormValues>({
         resolver: zodResolver(riseFallSchema),
         defaultValues: {
@@ -192,5 +191,14 @@ export default function DerivTraderV2Page() {
                 <DerivTraderV2Core />
             </div>
         </FormProvider>
+    );
+};
+
+
+export default function DerivTraderV2Page() {
+    return (
+        <DerivApiProviderV2>
+            <PageContent />
+        </DerivApiProviderV2>
     );
 }
