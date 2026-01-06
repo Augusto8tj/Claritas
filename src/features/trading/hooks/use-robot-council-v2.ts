@@ -222,172 +222,172 @@ const calculateTechnicalVote = (
   // Usamos try/catch para garantir que um erro de cálculo num robô não pare os outros.
   try {
       
-      // 1. RSI (Índice de Força Relativa) - Clássico de Reversão
-      if (robot.strategyType === 'RSI' && isValid(rsi)) {
-        // Lógica: Se cair muito (Sobrevenda), compra. Se subir muito (Sobrecompra), vende.
-        if (rsi <= robot.strongBuyThreshold!) setVote('RISE', robot.strongConfidence, `RSI Extremo Baixo (${format(rsi)})`);
-        else if (rsi <= robot.weakBuyThreshold!) setVote('RISE', robot.weakConfidence, `RSI Baixo (${format(rsi)})`);
-        else if (rsi >= robot.strongSellThreshold!) setVote('FALL', robot.strongConfidence, `RSI Extremo Alto (${format(rsi)})`);
-        else if (rsi >= robot.weakSellThreshold!) setVote('FALL', robot.weakConfidence, `RSI Alto (${format(rsi)})`);
-      }
+    // 1. RSI (Índice de Força Relativa) - Clássico de Reversão
+  if (robot.strategyType === 'RSI' && isValid(rsi)) {
+    // Lógica: Se cair muito (Sobrevenda), compra. Se subir muito (Sobrecompra), vende.
+    if (rsi <= robot.strongBuyThreshold!) setVote('RISE', robot.strongConfidence, `RSI Extremo Baixo (${format(rsi)})`);
+    else if (rsi <= robot.weakBuyThreshold!) setVote('RISE', robot.weakConfidence, `RSI Baixo (${format(rsi)})`);
+    else if (rsi >= robot.strongSellThreshold!) setVote('FALL', robot.strongConfidence, `RSI Extremo Alto (${format(rsi)})`);
+    else if (rsi >= robot.weakSellThreshold!) setVote('FALL', robot.weakConfidence, `RSI Alto (${format(rsi)})`);
+  }
+  
+  // 2. Stochastic Oscillator - Momentum rápido
+  else if (robot.strategyType === 'STOCHASTIC' && isValid(stoch)) {
+    if (stoch <= robot.strongBuyThreshold!) setVote('RISE', robot.strongConfidence, `Stoch Sobrevenda (${format(stoch)})`);
+    else if (stoch >= robot.strongSellThreshold!) setVote('FALL', robot.strongConfidence, `Stoch Sobrecompra (${format(stoch)})`);
+  }
+  
+  // 3. MACD - Seguidor de Tendência
+  else if (robot.strategyType === 'MACD_CROSS' && isValid(macd?.macd) && isValid(macd?.signal)) {
+    // Cruzamento da linha MACD com o Sinal + Confirmação do Histograma
+    if (macd.macd > macd.signal && macd.histogram! > 0) setVote('RISE', robot.strongConfidence, `MACD Cruzamento Bullish`);
+    else if (macd.macd < macd.signal && macd.histogram! < 0) setVote('FALL', robot.strongConfidence, `MACD Cruzamento Bearish`);
+  }
+  
+  // 4. ADX (Average Directional Index) - Força da Tendência
+  else if (robot.strategyType === 'ADX_TREND' && isValid(adx) && isValid(pdi) && isValid(ndi)) {
+    // Só opera se houver tendência forte (ADX > 25)
+    if (adx > (robot.trendStrengthThreshold || 25)) {
+       if (pdi > ndi) setVote('RISE', robot.strongConfidence, `Tendência Forte Alta (ADX ${format(adx)})`);
+       else if (ndi > pdi) setVote('FALL', robot.strongConfidence, `Tendência Forte Baixa (ADX ${format(adx)})`);
+    }
+  }
+  
+  // 5. Bollinger Bands - Volatilidade e Reversão à Média
+  else if (robot.strategyType === 'BOLLINGER_BANDS' && isValid(bb?.lower) && isValid(bb?.upper)) {
+    if (lastClose <= bb.lower) setVote('RISE', robot.weakConfidence, `Preço tocou Banda Inferior`);
+    else if (lastClose >= bb.upper) setVote('FALL', robot.weakConfidence, `Preço tocou Banda Superior`);
+  }
+  
+  // 6. Awesome Oscillator - Momentum (Pires/Saucer)
+  else if (robot.strategyType === 'AWESOME_OSCILLATOR' && isValid(ao)) {
+    const isBullish = ao > 0 && ao > (indicators.aoPrev || 0);
+    const isBearish = ao < 0 && ao < (indicators.aoPrev || 0);
+    if (isBullish) setVote('RISE', robot.weakConfidence, `AO Momentum Crescente`);
+    else if (isBearish) setVote('FALL', robot.weakConfidence, `AO Momentum Decrescente`);
+  }
+  
+  // 7. TRIX - Oscilador Triplo Suavizado
+  else if (robot.strategyType === 'TRIX' && isValid(trix)) {
+    if (trix > 0 && trix > (indicators.trixPrev || 0)) setVote('RISE', robot.strongConfidence, 'TRIX Acelerando');
+    else if (trix < 0 && trix < (indicators.trixPrev || 0)) setVote('FALL', robot.strongConfidence, 'TRIX Desacelerando');
+  }
+  
+  // 8. ROC (Rate of Change) - Velocidade do preço
+  else if (robot.strategyType === 'ROC' && isValid(roc)) {
+    if (roc > 0.1) setVote('RISE', robot.weakConfidence, `ROC Positivo (${format(roc)})`);
+    else if (roc < -0.1) setVote('FALL', robot.weakConfidence, `ROC Negativo (${format(roc)})`);
+  }
+  
+  // 9. RVI (Relative Volatility Index)
+  else if (robot.strategyType === 'RVI' && isValid(rvi)) {
+    if (rvi > (robot.strongBuyThreshold || 60)) setVote('RISE', robot.weakConfidence, `RVI Alta Energia`);
+    else if (rvi < (robot.weakSellThreshold || 40)) setVote('FALL', robot.weakConfidence, `RVI Baixa Energia`);
+  }
+  
+  // 10. Parabolic SAR - Stop and Reverse
+  else if (robot.strategyType === 'PARABOLIC_SAR' && isValid(psar)) {
+    if (lastClose > psar) setVote('RISE', robot.strongConfidence, `Tendência acima SAR`);
+    else if (lastClose < psar) setVote('FALL', robot.strongConfidence, `Tendência abaixo SAR`);
+  }
+  
+  // 11. Ichimoku Cloud - Sistema Completo Japonês
+  else if (robot.strategyType === 'ICHIMOKU_CLOUD' && isValid(ichimoku?.spanA)) {
+    const cloudTop = Math.max(ichimoku.spanA!, ichimoku.spanB!);
+    const cloudBottom = Math.min(ichimoku.spanA!, ichimoku.spanB!);
+    
+    // Estratégia Kumo Breakout + TK Cross
+    if (lastClose > cloudTop && ichimoku.tenkan! > ichimoku.kijun!) 
+        setVote('RISE', robot.strongConfidence, `Rompimento Nuvem + TK Cross`);
+    else if (lastClose < cloudBottom && ichimoku.tenkan! < ichimoku.kijun!) 
+        setVote('FALL', robot.strongConfidence, `Colapso Nuvem + TK Cross`);
+  }
+  
+  // 12. KAMA (Kaufman Adaptive MA) - Média que se adapta ao ruído
+  else if (robot.strategyType === 'KAMA' && isValid(kama)) {
+    if (lastClose > kama) setVote('RISE', robot.weakConfidence, `Tendência KAMA Bullish`);
+    else if (lastClose < kama) setVote('FALL', robot.weakConfidence, `Tendência KAMA Bearish`);
+  }
+  
+  // 13. Donchian Channels - Estratégia de Tartarugas (Breakout)
+  else if (robot.strategyType === 'DONCHIAN_CHANNELS' && isValid(donchian?.upper)) {
+    // Rompimento ou toque nos limites do canal
+    if (lastClose >= donchian.upper! - (donchian.upper! - donchian.lower!) * 0.05) 
+        setVote('RISE', robot.strongConfidence, `Teste de Topo Donchian`);
+    else if (lastClose <= donchian.lower! + (donchian.upper! - donchian.lower!) * 0.05) 
+        setVote('FALL', robot.strongConfidence, `Teste de Fundo Donchian`);
+  }
+  
+  // 14. Chandelier Exit - Baseado em ATR para sair de trades (usado aqui para entrada reversa)
+  else if (robot.strategyType === 'CHANDELIER_EXIT' && isValid(chandelier?.exitLong)) {
+     if (lastClose > chandelier.exitShort!) setVote('RISE', robot.weakConfidence, 'Suporte Chandelier Mantido');
+     else if (lastClose < chandelier.exitLong!) setVote('FALL', robot.weakConfidence, 'Resistência Chandelier Ativa');
+  }
+  
+  // 15. VWAP (Volume Weighted Average Price) - Institucional
+  else if (robot.strategyType === 'VWAP' && vwap && vwap.length > 0) {
+    const lastVwap = vwap[vwap.length-1];
+    if (isValid(lastVwap)) {
+        if (lastClose > lastVwap) setVote('RISE', robot.weakConfidence, `Preço acima VWAP (Bullish)`);
+        else if (lastClose < lastVwap) setVote('FALL', robot.weakConfidence, `Preço abaixo VWAP (Bearish)`);
+    }
+  }
+  
+  // 16. MFI (Money Flow Index) - RSI ponderado por volume
+  else if (robot.strategyType === 'MFI' && isValid(mfi)) {
+    if (mfi <= 20) setVote('RISE', robot.strongConfidence, `Fluxo de Dinheiro Entrando (MFI ${format(mfi)})`);
+    else if (mfi >= 80) setVote('FALL', robot.strongConfidence, `Fluxo de Dinheiro Saindo (MFI ${format(mfi)})`);
+  }
+  
+  // 17. OBV (On Balance Volume) - Fluxo de volume cumulativo
+  else if (robot.strategyType === 'OBV' && isValid(obv) && isValid(indicators.obvPrev)) {
+    if (obv > indicators.obvPrev!) setVote('RISE', robot.weakConfidence, `Acumulação Detectada (OBV Subindo)`);
+    else if (obv < indicators.obvPrev!) setVote('FALL', robot.weakConfidence, `Distribuição Detectada (OBV Caindo)`);
+  }
+  
+  // 18. Z-Score - Desvio Padrão Estatístico
+  else if (robot.strategyType === 'Z_SCORE' && isValid(zScore)) {
+    // Reversão à média baseada em desvios padrão (Sigma)
+    if (zScore < -2.0) setVote('RISE', robot.strongConfidence, `Desvio Padrão Negativo (Oportunidade Reversão)`);
+    else if (zScore > 2.0) setVote('FALL', robot.strongConfidence, `Desvio Padrão Positivo (Oportunidade Reversão)`);
+  }
+  
+  // 19. Stochastic RSI - O oscilador do oscilador
+  else if (robot.strategyType === 'STOCH_RSI' && isValid(stochRSI)) {
+    if (stochRSI <= 0.2) setVote('RISE', robot.strongConfidence, `StochRSI Sobrevenda`);
+    else if (stochRSI >= 0.8) setVote('FALL', robot.strongConfidence, `StochRSI Sobrecompra`);
+  }
+  
+  // 20. Moving Average Cross - O clássico Cruzamento de Ouro/Morte
+  else if (robot.strategyType === 'MOVING_AVERAGE_CROSS' && isValid(ma?.short) && isValid(ma?.long)) {
+    if (ma.short > ma.long) setVote('RISE', robot.weakConfidence, `Golden Cross (Curta > Longa)`);
+    else setVote('FALL', robot.weakConfidence, `Death Cross (Curta < Longa)`);
+  }
+  
+  // 21. Price Action Pattern - Reconhecimento de Padrões de Vela
+  else if (robot.strategyType === 'PRICE_ACTION_PATTERN') {
+      const body = Math.abs(lastClose - lastCandle.open);
+      const upperShadow = lastCandle.high - Math.max(lastClose, lastCandle.open);
+      const lowerShadow = Math.min(lastClose, lastCandle.open) - lastCandle.low;
       
-      // 2. Stochastic Oscillator - Momentum rápido
-      else if (robot.strategyType === 'STOCHASTIC' && isValid(stoch)) {
-        if (stoch <= robot.strongBuyThreshold!) setVote('RISE', robot.strongConfidence, `Stoch Sobrevenda (${format(stoch)})`);
-        else if (stoch >= robot.strongSellThreshold!) setVote('FALL', robot.strongConfidence, `Stoch Sobrecompra (${format(stoch)})`);
+      // Hammer (Martelo) ou Shooting Star (Estrela Cadente)
+      if (lowerShadow > body * 2 && upperShadow < body * 0.5) {
+         setVote('RISE', robot.strongConfidence, 'Padrão Martelo (Rejeição de Baixa)');
+      } else if (upperShadow > body * 2 && lowerShadow < body * 0.5) {
+         setVote('FALL', robot.strongConfidence, 'Padrão Estrela Cadente (Rejeição de Alta)');
       }
-      
-      // 3. MACD - Seguidor de Tendência
-      else if (robot.strategyType === 'MACD_CROSS' && isValid(macd?.macd) && isValid(macd?.signal)) {
-        // Cruzamento da linha MACD com o Sinal + Confirmação do Histograma
-        if (macd.macd > macd.signal && macd.histogram! > 0) setVote('RISE', robot.strongConfidence, `MACD Cruzamento Bullish`);
-        else if (macd.macd < macd.signal && macd.histogram! < 0) setVote('FALL', robot.strongConfidence, `MACD Cruzamento Bearish`);
-      }
-      
-      // 4. ADX (Average Directional Index) - Força da Tendência
-      else if (robot.strategyType === 'ADX_TREND' && isValid(adx) && isValid(pdi) && isValid(ndi)) {
-        // Só opera se houver tendência forte (ADX > 25)
-        if (adx > (robot.trendStrengthThreshold || 25)) {
-           if (pdi > ndi) setVote('RISE', robot.strongConfidence, `Tendência Forte Alta (ADX ${format(adx)})`);
-           else if (ndi > pdi) setVote('FALL', robot.strongConfidence, `Tendência Forte Baixa (ADX ${format(adx)})`);
-        }
-      }
-      
-      // 5. Bollinger Bands - Volatilidade e Reversão à Média
-      else if (robot.strategyType === 'BOLLINGER_BANDS' && isValid(bb?.lower) && isValid(bb?.upper)) {
-        if (lastClose <= bb.lower) setVote('RISE', robot.weakConfidence, `Preço tocou Banda Inferior`);
-        else if (lastClose >= bb.upper) setVote('FALL', robot.weakConfidence, `Preço tocou Banda Superior`);
-      }
-      
-      // 6. Awesome Oscillator - Momentum (Pires/Saucer)
-      else if (robot.strategyType === 'AWESOME_OSCILLATOR' && isValid(ao)) {
-        const isBullish = ao > 0 && ao > (indicators.aoPrev || 0);
-        const isBearish = ao < 0 && ao < (indicators.aoPrev || 0);
-        if (isBullish) setVote('RISE', robot.weakConfidence, `AO Momentum Crescente`);
-        else if (isBearish) setVote('FALL', robot.weakConfidence, `AO Momentum Decrescente`);
-      }
-      
-      // 7. TRIX - Oscilador Triplo Suavizado
-      else if (robot.strategyType === 'TRIX' && isValid(trix)) {
-        if (trix > 0 && trix > (indicators.trixPrev || 0)) setVote('RISE', robot.strongConfidence, 'TRIX Acelerando');
-        else if (trix < 0 && trix < (indicators.trixPrev || 0)) setVote('FALL', robot.strongConfidence, 'TRIX Desacelerando');
-      }
-      
-      // 8. ROC (Rate of Change) - Velocidade do preço
-      else if (robot.strategyType === 'ROC' && isValid(roc)) {
-        if (roc > 0.1) setVote('RISE', robot.weakConfidence, `ROC Positivo (${format(roc)})`);
-        else if (roc < -0.1) setVote('FALL', robot.weakConfidence, `ROC Negativo (${format(roc)})`);
-      }
-      
-      // 9. RVI (Relative Volatility Index)
-      else if (robot.strategyType === 'RVI' && isValid(rvi)) {
-        if (rvi > (robot.strongBuyThreshold || 60)) setVote('RISE', robot.weakConfidence, `RVI Alta Energia`);
-        else if (rvi < (robot.weakSellThreshold || 40)) setVote('FALL', robot.weakConfidence, `RVI Baixa Energia`);
-      }
-      
-      // 10. Parabolic SAR - Stop and Reverse
-      else if (robot.strategyType === 'PARABOLIC_SAR' && isValid(psar)) {
-        if (lastClose > psar) setVote('RISE', robot.strongConfidence, `Tendência acima SAR`);
-        else if (lastClose < psar) setVote('FALL', robot.strongConfidence, `Tendência abaixo SAR`);
-      }
-      
-      // 11. Ichimoku Cloud - Sistema Completo Japonês
-      else if (robot.strategyType === 'ICHIMOKU_CLOUD' && isValid(ichimoku?.spanA)) {
-        const cloudTop = Math.max(ichimoku.spanA!, ichimoku.spanB!);
-        const cloudBottom = Math.min(ichimoku.spanA!, ichimoku.spanB!);
-        
-        // Estratégia Kumo Breakout + TK Cross
-        if (lastClose > cloudTop && ichimoku.tenkan! > ichimoku.kijun!) 
-            setVote('RISE', robot.strongConfidence, `Rompimento Nuvem + TK Cross`);
-        else if (lastClose < cloudBottom && ichimoku.tenkan! < ichimoku.kijun!) 
-            setVote('FALL', robot.strongConfidence, `Colapso Nuvem + TK Cross`);
-      }
-      
-      // 12. KAMA (Kaufman Adaptive MA) - Média que se adapta ao ruído
-      else if (robot.strategyType === 'KAMA' && isValid(kama)) {
-        if (lastClose > kama) setVote('RISE', robot.weakConfidence, `Tendência KAMA Bullish`);
-        else if (lastClose < kama) setVote('FALL', robot.weakConfidence, `Tendência KAMA Bearish`);
-      }
-      
-      // 13. Donchian Channels - Estratégia de Tartarugas (Breakout)
-      else if (robot.strategyType === 'DONCHIAN_CHANNELS' && isValid(donchian?.upper)) {
-        // Rompimento ou toque nos limites do canal
-        if (lastClose >= donchian.upper! - (donchian.upper! - donchian.lower!) * 0.05) 
-            setVote('RISE', robot.strongConfidence, `Teste de Topo Donchian`);
-        else if (lastClose <= donchian.lower! + (donchian.upper! - donchian.lower!) * 0.05) 
-            setVote('FALL', robot.strongConfidence, `Teste de Fundo Donchian`);
-      }
-      
-      // 14. Chandelier Exit - Baseado em ATR para sair de trades (usado aqui para entrada reversa)
-      else if (robot.strategyType === 'CHANDELIER_EXIT' && isValid(chandelier?.exitLong)) {
-         if (lastClose > chandelier.exitShort!) setVote('RISE', robot.weakConfidence, 'Suporte Chandelier Mantido');
-         else if (lastClose < chandelier.exitLong!) setVote('FALL', robot.weakConfidence, 'Resistência Chandelier Ativa');
-      }
-      
-      // 15. VWAP (Volume Weighted Average Price) - Institucional
-      else if (robot.strategyType === 'VWAP' && vwap && vwap.length > 0) {
-        const lastVwap = vwap[vwap.length-1];
-        if (isValid(lastVwap)) {
-            if (lastClose > lastVwap) setVote('RISE', robot.weakConfidence, `Preço acima VWAP (Bullish)`);
-            else if (lastClose < lastVwap) setVote('FALL', robot.weakConfidence, `Preço abaixo VWAP (Bearish)`);
-        }
-      }
-      
-      // 16. MFI (Money Flow Index) - RSI ponderado por volume
-      else if (robot.strategyType === 'MFI' && isValid(mfi)) {
-        if (mfi <= 20) setVote('RISE', robot.strongConfidence, `Fluxo de Dinheiro Entrando (MFI ${format(mfi)})`);
-        else if (mfi >= 80) setVote('FALL', robot.strongConfidence, `Fluxo de Dinheiro Saindo (MFI ${format(mfi)})`);
-      }
-      
-      // 17. OBV (On Balance Volume) - Fluxo de volume cumulativo
-      else if (robot.strategyType === 'OBV' && isValid(obv) && isValid(indicators.obvPrev)) {
-        if (obv > indicators.obvPrev!) setVote('RISE', robot.weakConfidence, `Acumulação Detectada (OBV Subindo)`);
-        else if (obv < indicators.obvPrev!) setVote('FALL', robot.weakConfidence, `Distribuição Detectada (OBV Caindo)`);
-      }
-      
-      // 18. Z-Score - Desvio Padrão Estatístico
-      else if (robot.strategyType === 'Z_SCORE' && isValid(zScore)) {
-        // Reversão à média baseada em desvios padrão (Sigma)
-        if (zScore < -2.0) setVote('RISE', robot.strongConfidence, `Desvio Padrão Negativo (Oportunidade Reversão)`);
-        else if (zScore > 2.0) setVote('FALL', robot.strongConfidence, `Desvio Padrão Positivo (Oportunidade Reversão)`);
-      }
-      
-      // 19. Stochastic RSI - O oscilador do oscilador
-      else if (robot.strategyType === 'STOCH_RSI' && isValid(stochRSI)) {
-        if (stochRSI <= 0.2) setVote('RISE', robot.strongConfidence, `StochRSI Sobrevenda`);
-        else if (stochRSI >= 0.8) setVote('FALL', robot.strongConfidence, `StochRSI Sobrecompra`);
-      }
-      
-      // 20. Moving Average Cross - O clássico Cruzamento de Ouro/Morte
-      else if (robot.strategyType === 'MOVING_AVERAGE_CROSS' && isValid(ma?.short) && isValid(ma?.long)) {
-        if (ma.short > ma.long) setVote('RISE', robot.weakConfidence, `Golden Cross (Curta > Longa)`);
-        else setVote('FALL', robot.weakConfidence, `Death Cross (Curta < Longa)`);
-      }
-      
-      // 21. Price Action Pattern - Reconhecimento de Padrões de Vela
-      else if (robot.strategyType === 'PRICE_ACTION_PATTERN') {
-          const body = Math.abs(lastClose - lastCandle.open);
-          const upperShadow = lastCandle.high - Math.max(lastClose, lastCandle.open);
-          const lowerShadow = Math.min(lastClose, lastCandle.open) - lastCandle.low;
-          
-          // Hammer (Martelo) ou Shooting Star (Estrela Cadente)
-          if (lowerShadow > body * 2 && upperShadow < body * 0.5) {
-             setVote('RISE', robot.strongConfidence, 'Padrão Martelo (Rejeição de Baixa)');
-          } else if (upperShadow > body * 2 && lowerShadow < body * 0.5) {
-             setVote('FALL', robot.strongConfidence, 'Padrão Estrela Cadente (Rejeição de Alta)');
-          }
-      }
+  }
 
-      // 22. Volume Profile - Análise de Microestrutura
-      else if (robot.strategyType === 'VOLUME_PROFILE') {
-         const range = Math.abs(lastCandle.high - lastCandle.low);
-         const avgRange = (indicators.atr || 1);
-         // Detecta "Barra de Exaustão" ou "Barra de Força" com base no tamanho relativo
-         if (range > avgRange * 1.5) {
-             if (lastClose > lastCandle.open) setVote('RISE', robot.weakConfidence, 'Barra de Força (Expansão)');
-             else setVote('FALL', robot.weakConfidence, 'Barra de Queda (Expansão)');
-         }
-      }
+  // 22. Volume Profile - Análise de Microestrutura
+  else if (robot.strategyType === 'VOLUME_PROFILE') {
+     const range = Math.abs(lastCandle.high - lastCandle.low);
+     const avgRange = (indicators.atr || 1);
+     // Detecta "Barra de Exaustão" ou "Barra de Força" com base no tamanho relativo
+     if (range > avgRange * 1.5) {
+         if (lastClose > lastCandle.open) setVote('RISE', robot.weakConfidence, 'Barra de Força (Expansão)');
+         else setVote('FALL', robot.weakConfidence, 'Barra de Queda (Expansão)');
+     }
+  }
 
   } catch (e) {
       // Log de erro não obstrutivo
@@ -562,7 +562,6 @@ export function useRobotCouncilV2(
     }
     if (!activeSymbol) return;
     
-    // B. VALIDAÇÃO DE DADOS: O ponto crítico da estagnação
     const validCandles = validateCandles(tickCandles);
     
     if (validCandles.length < REGIME_LOOKBACK) {
@@ -570,6 +569,14 @@ export function useRobotCouncilV2(
            console.log(`⏳ [Council] Carregando histórico... (${validCandles.length}/${REGIME_LOOKBACK} candles)`);
        }
        return; 
+    }
+    
+    // GUARDA DE SINCRONIZAÇÃO: Garante que temos pelo menos um tick real
+    if (priceTicks.length === 0) {
+        if (executionIdRef.current % 10 === 0) {
+           console.log(`⏳ [Council] Aguardando primeiro tick...`);
+        }
+       return;
     }
 
     // Mutex: Se já está executando, não sobreponha
@@ -579,17 +586,14 @@ export function useRobotCouncilV2(
 
     try {
         const currentTick = priceTicks[priceTicks.length - 1];
-        if (!currentTick) {
-            // Esta guarda é redundante por causa da verificação acima, mas é uma boa prática
-            councilExecutionRef.current.isExecuting = false;
-            return;
-        }
+        // Esta verificação agora é mais segura por causa da guarda acima
+        if (!currentTick) throw new Error("Tick atual indisponível");
 
         const contractDurationForIndicators = { duration: 5, unit: 'm' as DurationUnit };
         const currentIndicators = calculateAllIndicators(validCandles, strategyCouncil, timePeriod, contractDurationForIndicators);
 
         if (!currentIndicators) {
-            console.warn("⚠️ [Council] Falha ao calcular indicadores.");
+            console.warn("⚠️ [Council] Indicadores retornaram nulo. Tentando novamente no próximo tick.");
             councilExecutionRef.current.isExecuting = false;
             return;
         }
@@ -828,28 +832,27 @@ export function useRobotCouncilV2(
     strategyCouncil, timePeriod, robotPerformance, confidenceFactor, isMeritocracyOn, consensusSensitivity, dailyBalance
   ]);
 
-  // Hook que dispara o ciclo repetidamente
-  useEffect(() => {
-    if (!isCouncilAutopilotOn) return;
-    const interval = setInterval(runCouncilCycle, THROTTLE_MS);
-    return () => clearInterval(interval);
-  }, [runCouncilCycle, isCouncilAutopilotOn]);
-
-  // Retorno da API do Hook para os Componentes React
-  return {
-    isCouncilAutopilotOn,
-    fetchStrategyCouncil,
-    dissolveCouncil,
-    isFetchingCouncil,
-    strategyCouncil,
-    robotPerformance,
-    evolutionHistory,
-    ...councilState, // Espalha todo o estado complexo
-    // Setters para configurações da UI
-    setDailyBalance, setDailyTarget, setConsensusSensitivity, setConfidenceFactor, 
-    setDurationRange, setTakeProfitThreshold, setStopLossThreshold, 
-    setIsDynamicConsensusOn, setIsDynamicRiskOn, setIsMeritocracyOn, setIsDynamicExitOn,
-    resetArenaPerformance, tradeDecisionLog,
-    supervisionStatus: { status: 'approved', message: 'Sistema Operacional v2.5' }
-  };
+// Hook que dispara o ciclo repetidamente
+useEffect(() => {
+if (!isCouncilAutopilotOn) return;
+const interval = setInterval(runCouncilCycle, THROTTLE_MS);
+return () => clearInterval(interval);
+}, [runCouncilCycle, isCouncilAutopilotOn]);
+// Retorno da API do Hook para os Componentes React
+return {
+isCouncilAutopilotOn,
+fetchStrategyCouncil,
+dissolveCouncil,
+isFetchingCouncil,
+strategyCouncil,
+robotPerformance,
+evolutionHistory,
+...councilState, // Espalha todo o estado complexo
+// Setters para configurações da UI
+setDailyBalance, setDailyTarget, setConsensusSensitivity, setConfidenceFactor,
+setDurationRange, setTakeProfitThreshold, setStopLossThreshold,
+setIsDynamicConsensusOn, setIsDynamicRiskOn, setIsMeritocracyOn, setIsDynamicExitOn,
+resetArenaPerformance, tradeDecisionLog,
+supervisionStatus: { status: 'approved', message: 'Sistema Operacional v2.5' }
+};
 }
