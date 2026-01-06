@@ -34,7 +34,7 @@
  */
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { useDerivApi } from './use-deriv-api';
+import { useDerivApiV2 as useDerivApi } from './use-deriv-api-v2';
 import { useToast } from '@/hooks/use-toast';
 import type { 
   RobotStrategy, DurationUnit, TickData, CandleData, Operation,
