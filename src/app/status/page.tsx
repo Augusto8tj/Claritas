@@ -1,21 +1,37 @@
 // /src/app/status/page.tsx
+'use client';
+
 import { HealthCheckCard } from "@/features/status/components/health-check-card";
-import { checkGeminiConnection, checkFirestoreConnection } from "@/app/actions";
 import { ListModelsCard } from "@/features/status/components/list-models-card";
 import { DerivConnectionCard } from "@/features/status/components/deriv-connection-card";
 import { FirestoreWriteTestCard } from "@/features/status/components/firestore-write-test-card";
+import { DerivApiProvider } from '@/features/trading/hooks/use-deriv-api';
 import { BrainCircuit, Link, Database } from "lucide-react";
+import { useState, useEffect } from "react";
+import { checkGeminiConnection, checkFirestoreConnection } from "@/app/actions";
 
-export const revalidate = 0; // Disable cache for this page
+type CheckResult = {
+  success: boolean;
+  error?: string;
+};
 
-export default async function StatusPage() {
-  
-  // As a server component, this will run on the server each time the page is loaded.
-  const [geminiResult, firestoreResult] = await Promise.all([
-    checkGeminiConnection(),
-    checkFirestoreConnection()
-  ]);
-  
+// Conteúdo da página movido para um componente filho para poder ser envolvido pelo Provider
+function StatusPageContent() {
+  const [serverChecks, setServerChecks] = useState<{ gemini: CheckResult | null, firestore: CheckResult | null }>({ gemini: null, firestore: null });
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function runServerChecks() {
+      const [geminiResult, firestoreResult] = await Promise.all([
+        checkGeminiConnection(),
+        checkFirestoreConnection()
+      ]);
+      setServerChecks({ gemini: geminiResult, firestore: firestoreResult });
+      setLoading(false);
+    }
+    runServerChecks();
+  }, []);
+
   return (
     <div className="flex-1 space-y-4 p-4 sm:p-8 pt-6">
       <div className="flex items-center justify-between space-y-2">
@@ -31,7 +47,7 @@ export default async function StatusPage() {
         <HealthCheckCard
           serviceName="API Gemini (IA)"
           icon={<BrainCircuit className="h-6 w-6 text-primary" />}
-          checkResult={geminiResult}
+          checkResult={serverChecks.gemini || undefined}
           description="Essencial para todos os recursos de Inteligência Artificial, como chatbots e análises."
           successMessage="A conexão com a API do Google Gemini está funcionando corretamente."
           failureMessage="A chave da API do Gemini não está configurada ou é inválida."
@@ -51,7 +67,7 @@ export default async function StatusPage() {
         <HealthCheckCard
             serviceName="Firestore (Base de Dados)"
             icon={<Database className="h-6 w-6 text-primary" />}
-            checkResult={firestoreResult}
+            checkResult={serverChecks.firestore || undefined}
             description="Armazena todos os seus dados financeiros, metas e desempenho dos robôs."
             successMessage="A conexão com o Firestore está saudável e as regras de segurança estão ativas."
             failureMessage="Não foi possível conectar ao Firestore ou as regras de segurança não estão configuradas corretamente."
@@ -65,4 +81,13 @@ export default async function StatusPage() {
       </div>
     </div>
   );
+}
+
+// O componente de página agora envolve o conteúdo com o Provider necessário
+export default function StatusPage() {
+    return (
+        <DerivApiProvider>
+            <StatusPageContent />
+        </DerivApiProvider>
+    );
 }
