@@ -746,6 +746,8 @@ export function useRobotCouncilV2(
         const consensusReached = totalWeight > 0 && Math.max(riseSum, fallSum) >= calculatedEffectiveThreshold;
 
         // I. ATUALIZAÇÃO DA INTERFACE (UI LAYER)
+        const currentSessionDuration = sessionStartTime ? (Date.now() - sessionStartTime) / 1000 : 0;
+
         setCouncilState(prev => ({
             ...prev,
             indicators: currentIndicators,
@@ -763,6 +765,7 @@ export function useRobotCouncilV2(
             },
             systemMetrics: {
                 ...prev.systemMetrics,
+                sessionDuration: currentSessionDuration,
                 activeVirtualTrades: virtualTradesRef.current.length,
                 totalVirtualTrades: prev.systemMetrics.totalVirtualTrades + (performanceChanged ? 1 : 0),
                 activeRobotsCount,
@@ -796,7 +799,7 @@ export function useRobotCouncilV2(
 
   }, [
     isCouncilAutopilotOn, isConnected, activeSymbol, tickCandles, priceTicks, 
-    strategyCouncil, timePeriod, robotPerformance, confidenceFactor, isMeritocracyOn, consensusSensitivity, dailyBalance
+    strategyCouncil, timePeriod, robotPerformance, confidenceFactor, isMeritocracyOn, consensusSensitivity, dailyBalance, sessionStartTime
   ]);
 
   // Hook que dispara o ciclo repetidamente
