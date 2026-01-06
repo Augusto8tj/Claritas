@@ -138,7 +138,7 @@ export function CouncilAutopilotInterfaceV2(props: CouncilAutopilotInterfaceV2Pr
                         <Clock className="h-4 w-4" />
                         Horizonte Temporal
                     </Label>
-                    <span className="text-sm font-mono">{durationRange[0]}s - {durationRange[1]}s</span>
+                    <span className="text-sm font-mono">{durationRange ? `${durationRange[0]}s - ${durationRange[1]}s` : '...'}</span>
                 </div>
                 <Slider
                     id="duration-range-slider"
@@ -147,7 +147,7 @@ export function CouncilAutopilotInterfaceV2(props: CouncilAutopilotInterfaceV2Pr
                     step={5}
                     value={durationRange}
                     onValueChange={(value: [number, number]) => setDurationRange(value)}
-                    disabled={isCouncilAutopilotOn}
+                    disabled={isCouncilAutopilotOn || !durationRange}
                 />
                 <p className="text-xs text-muted-foreground pt-1">Filtra os robôs cujo tempo ótimo de operação está dentro deste intervalo.</p>
             </div>
