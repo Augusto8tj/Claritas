@@ -128,7 +128,7 @@ export function DebugCouncilView({ councilState, isCouncilAutopilotOn }: DebugCo
                 </div>
                  <div className="p-2 bg-muted rounded-md text-center">
                     <p className="flex items-center justify-center gap-1 text-muted-foreground"><Users className="h-3 w-3"/>Robôs Ativos</p>
-                    <p className="font-bold text-lg">{systemMetrics.activeRobotsCount}/{robotPerformance.length}</p>
+                    <p className="font-bold text-lg">{systemMetrics.activeRobotsCount}/{robotPerformance?.length || 'N/A'}</p>
                 </div>
                  <div className="p-2 bg-muted rounded-md text-center">
                     <p className="flex items-center justify-center gap-1 text-muted-foreground"><Timer className="h-3 w-3"/>Logs de Decisão</p>
@@ -180,7 +180,7 @@ export function DebugCouncilView({ councilState, isCouncilAutopilotOn }: DebugCo
               <TableBody>
                 {sortedVotes.length > 0 ? (
                   sortedVotes.map(([robotId, voteData], index) => {
-                    const perf = robotPerformance.find(p => p.id === robotId);
+                    const perf = robotPerformance?.find(p => p.id === robotId);
                     const totalTrades = (perf?.wins || 0) + (perf?.losses || 0);
 
                     return (
@@ -219,10 +219,4 @@ export function DebugCouncilView({ councilState, isCouncilAutopilotOn }: DebugCo
                   </TableRow>
                 )}
               </TableBody>
-            </Table>
-          </ScrollArea>
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
+            </Table
