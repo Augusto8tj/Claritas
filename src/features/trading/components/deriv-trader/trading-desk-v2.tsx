@@ -27,7 +27,7 @@ import {
 // Alteramos a prop para receber o ESTADO INTEIRO do conselho.
 // Isso permite acesso aos dados reativos (robotPerformance) e aos dados mutáveis (virtualTradesRef).
 interface TradingDeskV2Props {
-    councilState: ReturnType<typeof useRobotCouncilV2>;
+  councilState: ReturnType<typeof useRobotCouncilV2>;
 }
 
 // ============================================================================

@@ -1,3 +1,4 @@
+// /src/features/trading/hooks/use-robot-council-v2.ts
 'use client';
 
 /**
@@ -826,6 +827,7 @@ export function useRobotCouncilV2(
     strategyCouncil,
     robotPerformance,
     evolutionHistory,
+    virtualTradesRef, // EXPORTA A REF
     ...councilState, // Espalha todo o estado complexo
     // Setters para configurações da UI
     setDailyBalance, setDailyTarget, setConsensusSensitivity, setConfidenceFactor, 
