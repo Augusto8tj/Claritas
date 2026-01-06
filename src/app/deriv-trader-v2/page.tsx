@@ -15,7 +15,6 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { OperationsLog } from "@/features/trading/components/deriv-trader/operations-log";
 import { riseFallSchema, type RiseFallFormValues } from "@/lib/types";
 import { useRobotCouncilV2 } from "@/features/trading/hooks/use-robot-council-v2";
-import { SystemStatusSummary } from "@/features/trading/components/deriv-trader/system-status-summary";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { CouncilDashboardV2 } from '@/features/trading/components/deriv-trader/CouncilDashboardV2';
 import { TradingDeskV2 } from "@/features/trading/components/deriv-trader/trading-desk-v2";
@@ -150,9 +149,7 @@ const DerivTraderV2Core = () => {
                 </TabsList>
                 <TabsContent value="desk" className="mt-4">
                     <TradingDeskV2 
-                        robotPerformance={robotCouncil.robotPerformance}
-                        isCouncilAutopilotOn={robotCouncil.isCouncilAutopilotOn}
-                        resetArenaPerformance={robotCouncil.resetArenaPerformance}
+                        councilState={robotCouncil}
                     />
                 </TabsContent>
                 <TabsContent value="log" className="mt-4">
@@ -184,7 +181,6 @@ const PageContent = () => {
         <FormProvider {...form}>
             <div className="flex-1 space-y-4 p-4 sm:p-8 pt-6">
                 <Header />
-                <SystemStatusSummary />
                 <DerivTraderV2Core />
             </div>
         </FormProvider>
