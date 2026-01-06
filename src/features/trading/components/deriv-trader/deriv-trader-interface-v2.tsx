@@ -1,4 +1,4 @@
-// /src/features/trading/components/deriv-trader/deriv-trader-interface-v2.tsx
+// src/features/trading/components/deriv-trader/deriv-trader-interface-v2.tsx
 'use client';
 
 import * as React from 'react';
@@ -66,6 +66,9 @@ export default function DerivTraderInterfaceV2({ symbol }: DerivTraderInterfaceV
   const form = useFormContext<RiseFallFormValues>();
   const lastUnitRef = React.useRef<DurationUnit | null>(null);
   
+  // ✅ GATILHO REATIVADO: Esta linha é crucial para garantir que o componente
+  // re-renderize quando a unidade de duração muda, forçando a lógica de
+  // atualização de limites a ser re-avaliada.
   const durationUnit = useWatch({
     control: form.control,
     name: 'duration_unit',
