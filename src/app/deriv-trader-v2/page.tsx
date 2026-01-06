@@ -80,7 +80,6 @@ const IsolatedMarketChart = () => {
         chartType, setChartType, timePeriod, setTimePeriod, tradeAnnotations
     } = useDerivApiV2();
 
-    // Este hook agora é chamado aqui mas apenas para obter os indicadores para o gráfico
     const { indicators: councilIndicators } = useRobotCouncilV2(activeSymbol, [], chartData, 0);
 
     return (
