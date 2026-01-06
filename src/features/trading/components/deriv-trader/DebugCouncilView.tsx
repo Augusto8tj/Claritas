@@ -7,7 +7,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Progress } from '@/components/ui/progress';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { cn } from '@/lib/utils';
-import type { CouncilState, SystemMetrics } from '../../hooks/use-robot-council-v2';
+import type { useRobotCouncilV2, CouncilState, SystemMetrics } from '../../hooks/use-robot-council-v2';
 import type { MarketRegime, EnhancedRobotPerformance } from '@/lib/types';
 import {
   BrainCircuit, Activity, Waves, CandlestickChart, Bot, LayoutGrid, BarChart,
@@ -19,7 +19,7 @@ import {
 // ============================================================================
 
 interface DebugCouncilViewProps {
-  councilState: CouncilState;
+  councilState: ReturnType<typeof useRobotCouncilV2>;
   isCouncilAutopilotOn: boolean;
 }
 
@@ -62,7 +62,13 @@ const formatDuration = (seconds: number): string => {
 
 export function DebugCouncilView({ councilState, isCouncilAutopilotOn }: DebugCouncilViewProps) {
   
-  const { bayesianVotes, currentRegime, systemMetrics, robotPerformance, consensusDecision, consensusReached, consensusSum, totalWeight, effectiveThreshold } = councilState;
+  const { 
+      bayesianVotes, 
+      currentRegime, 
+      systemMetrics, 
+      robotPerformance, 
+      consensusDecision,
+  } = councilState;
 
   if (!isCouncilAutopilotOn || !currentRegime || !systemMetrics) {
     return (
