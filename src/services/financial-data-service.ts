@@ -343,12 +343,12 @@ export async function getTradeDecisionLogs(userId: string): Promise<TradeDecisio
         return [];
     }
     const logCollectionRef = collection(db, `users/${userId}/decision_logs`);
-    const q = query(logCollectionRef, orderBy('timestamp', 'desc'));
+    const q = query(logCollectionRef);
     try {
         const snapshot = await getDocs(q);
         return snapshot.docs.map(d => d.data() as TradeDecisionLog);
     } catch (error) {
         console.error(`[Service Error] getTradeDecisionLogs for user ${userId} failed:`, error);
-        throw error;
+        return []; // Retorna um array vazio em caso de erro para não quebrar a UI
     }
 }

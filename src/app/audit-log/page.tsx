@@ -51,6 +51,7 @@ export default function AuditLogPage() {
       setLoading(true);
       try {
         const fetchedLogs = await getTradeDecisionLogs(user.uid);
+        // A ordenação agora é feita aqui no cliente.
         fetchedLogs.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
         setLogs(fetchedLogs);
       } catch (error) {
@@ -172,7 +173,6 @@ export default function AuditLogPage() {
         onDeleteLog={handleDeleteSingle} 
         deletingLogId={deletingLogId} 
       />
-      
     </div>
   );
 }
