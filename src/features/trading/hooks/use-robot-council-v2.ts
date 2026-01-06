@@ -5,7 +5,7 @@
  * 🧠 DERIV TRADER V2.5 - SISTEMA EVOLUTIVO OTIMIZADO E CORRIGIDO
  * 
  * CORREÇÕES IMPLEMENTADAS:
- * ═══════════════════════════════════════════════════════════════════
+ * ═══════════════════════════════════════════
  * 
  * 1. BOOTSTRAP AUTOMÁTICO DE DADOS HISTÓRICOS ✅
  *    - Carrega 1000 candles ao iniciar
@@ -712,7 +712,7 @@ export function useRobotCouncilV2(
 
   // 🔥 MODIFICADO: runCouncilCycle com validação de bootstrap
   const runCouncilCycle = useCallback(() => {
-    // 🔥 NOVA VALIDAÇÃO: Aguardar bootstrap
+    
     if (!isBootstrapped) {
       return;
     }
@@ -962,6 +962,8 @@ export function useRobotCouncilV2(
 
         const activeStakes = activeCouncilContracts.reduce((sum, c) => sum + c.stake, 0);
         
+        const { indicators } = councilState;
+        
         setCouncilState(prev => ({
             ...prev,
             indicators: currentIndicators,
@@ -992,6 +994,56 @@ export function useRobotCouncilV2(
                     }
                 }, TRADE_COOLDOWN_MS);
             });
+        
+        console.log('═══════════════════════════════════════');
+        console.log('🔍 VALIDAÇÃO ARQUITETURA V2.5');
+        console.log('═══════════════════════════════════════');
+
+        // 1. Fonte de Dados
+        console.log('1️⃣ FONTE DE DADOS:');
+        console.log('   chartData (direto):', chartData?.length || 0, 'candles');
+        console.log('   priceTicks (fallback):', priceTicks?.length || 0, 'ticks');
+        console.log('   tickCandles (usado):', tickCandles?.length || 0);
+
+        // 2. Bootstrap
+        console.log('\n2️⃣ BOOTSTRAP:');
+        console.log('   Status:', isBootstrapped ? '✅ OK' : '❌ PENDENTE');
+        console.log('   Tentativa feita:', bootstrapAttemptedRef?.current ? 'Sim' : 'Não');
+
+        // 3. Indicadores
+        console.log('\n3️⃣ INDICADORES:');
+        console.log('   Status:', indicators ? '✅ OK' : '❌ NULL');
+        if (indicators) {
+        console.log('   RSI:', indicators.rsi?.toFixed(2) || 'N/A');
+        console.log('   ADX:', indicators.adx?.toFixed(2) || 'N/A');
+        console.log('   MACD:', indicators.macd?.histogram?.toFixed(4) || 'N/A');
+        }
+
+        // 4. Regime
+        const { currentRegime } = councilState;
+        console.log('\n4️⃣ REGIME:');
+        console.log('   Tipo:', currentRegime?.regime || 'N/A');
+        console.log('   Confiança:', ((currentRegime?.confidence || 0) * 100).toFixed(0) + '%');
+
+        // 5. Robôs
+        const { bayesianVotes } = councilState;
+        console.log('\n5️⃣ ROBÔS:');
+        console.log('   Conselho:', strategyCouncil?.length || 0);
+        console.log('   Com Votos:', Object.keys(bayesianVotes || {}).length);
+        console.log('   Ativos (weight>0):', Object.values(bayesianVotes || {}).filter(v => v.weight > 0).length);
+
+        // 6. Arena Virtual
+        console.log('\n6️⃣ ARENA VIRTUAL:');
+        console.log('   Trades Ativos:', virtualTradesRef.current?.length || 0);
+
+        // 7. Consenso
+        const { consensusDecision } = councilState;
+        console.log('\n7️⃣ CONSENSO:');
+        console.log('   Direção:', consensusDecision?.direction || 'N/A');
+        console.log('   Probabilidade:', ((consensusDecision?.probability || 0) * 100).toFixed(0) + '%');
+        console.log('   Stake:', '$' + (consensusDecision?.stake || 0).toFixed(2));
+
+        console.log('═══════════════════════════════════════');
 
     } catch (error) {
         console.error("🚨 ERRO CRÍTICO NO CICLO:", error);
@@ -1008,7 +1060,7 @@ export function useRobotCouncilV2(
     consensusSensitivity, confidenceFactor, durationRange,
     isDynamicConsensusOn, isDynamicRiskOn, isDynamicExitOn,
     stopLossThreshold, takeProfitThreshold,
-    toast, executeTrade, sellContract, resetArenaPerformance, evolveTrigger, operationsLog, councilState.portfolioStats.totalExposure, durationLimits, chartData
+    toast, executeTrade, sellContract, resetArenaPerformance, evolveTrigger, operationsLog, councilState.portfolioStats.totalExposure, durationLimits, chartData, councilState
   ]);
 
   useEffect(() => {
