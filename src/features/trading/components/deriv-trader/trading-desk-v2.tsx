@@ -1,53 +1,50 @@
 // src/features/trading/components/deriv-trader/trading-desk-v2.tsx
 'use client';
 
+import React, { useMemo } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import {
-    Table,
-    TableBody,
-    TableCell,
-    TableHead,
-    TableHeader,
-    TableRow,
-} from '@/components/ui/table';
-import type { EnhancedRobotPerformance, RobotStrategy } from '@/lib/types';
-import {
-    BrainCircuit,
-    Activity,
-    Waves,
-    CandlestickChart,
-    Bot,
-    LayoutGrid,
-    BarChart,
-    TrendingUp,
-    Cloud,
-    CheckCircle,
-    XCircle,
-    Trophy,
-    AlertTriangle,
-    RefreshCw,
-} from 'lucide-react';
-import { cn } from '@/lib/utils';
-import { Progress } from '@/components/ui/progress';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Progress } from '@/components/ui/progress';
+import { cn } from '@/lib/utils';
+import type { useRobotCouncilV2 } from '../../hooks/use-robot-council-v2'; // Importamos o hook inteiro para tipagem
+import type { RobotStrategy } from '@/lib/types';
 
+// Ícones para enriquecer a interface visualmente
+import {
+    BrainCircuit, Activity, Waves, CandlestickChart, Bot, LayoutGrid, BarChart,
+    TrendingUp, Cloud, CheckCircle, XCircle, Trophy, AlertTriangle, RefreshCw,
+    Swords, Timer, Skull, TrendingDown, Medal, Zap
+} from 'lucide-react';
+
+// ============================================================================
+// 1. DEFINIÇÃO DE TIPOS E PROPS
+// ============================================================================
+
+// Alteramos a prop para receber o ESTADO INTEIRO do conselho.
+// Isso permite acesso aos dados reativos (robotPerformance) e aos dados mutáveis (virtualTradesRef).
 interface TradingDeskV2Props {
-    robotPerformance: EnhancedRobotPerformance[];
-    isCouncilAutopilotOn: boolean;
-    resetArenaPerformance: () => void;
+    councilState: ReturnType<typeof useRobotCouncilV2>;
 }
 
+// ============================================================================
+// 2. MAPA DE ÍCONES E HELPERS VISUAIS
+// ============================================================================
+
 const indicatorIcons: { [key: string]: React.ReactNode } = {
-    RSI: <BrainCircuit className="h-4 w-4" />,
-    STOCHASTIC: <BrainCircuit className="h-4 w-4" />,
-    MOVING_AVERAGE_CROSS: <Activity className="h-4 w-4" />,
-    BOLLINGER_BANDS: <Waves className="h-4 w-4" />,
-    MACD_CROSS: <Activity className="h-4 w-4" />,
-    PRICE_ACTION_PATTERN: <CandlestickChart className="h-4 w-4" />,
-    ADX_TREND: <TrendingUp className="h-4 w-4" />,
-    ICHIMOKU_CLOUD: <Cloud className="h-4 w-4" />,
-    AWESOME_OSCILLATOR: <BarChart className="h-4 w-4" />,
-    VOLUME_PROFILE: <Activity className="h-4 w-4" />,
+    RSI: <BrainCircuit className="h-4 w-4 text-amber-500" />,
+    STOCHASTIC: <BrainCircuit className="h-4 w-4 text-slate-400" />,
+    MOVING_AVERAGE_CROSS: <Activity className="h-4 w-4 text-blue-500" />,
+    BOLLINGER_BANDS: <Waves className="h-4 w-4 text-cyan-500" />,
+    MACD_CROSS: <Activity className="h-4 w-4 text-indigo-500" />,
+    PRICE_ACTION_PATTERN: <CandlestickChart className="h-4 w-4 text-emerald-500" />,
+    ADX_TREND: <TrendingUp className="h-4 w-4 text-purple-500" />,
+    ICHIMOKU_CLOUD: <Cloud className="h-4 w-4 text-sky-500" />,
+    AWESOME_OSCILLATOR: <BarChart className="h-4 w-4 text-orange-500" />,
+    VOLUME_PROFILE: <Activity className="h-4 w-4 text-pink-500" />,
     KAMA: <Activity className="h-4 w-4" />,
     VWAP: <Activity className="h-4 w-4" />,
     Z_SCORE: <BrainCircuit className="h-4 w-4" />,
@@ -60,8 +57,10 @@ const indicatorIcons: { [key: string]: React.ReactNode } = {
     PARABOLIC_SAR: <TrendingUp className="h-4 w-4" />,
     CHANDELIER_EXIT: <TrendingUp className="h-4 w-4" />,
     OBV: <Activity className="h-4 w-4" />,
+    DEFAULT: <Bot className="h-4 w-4 text-muted-foreground" />
 };
 
+// Helper para formatar os parâmetros técnicos de forma legível na tabela
 function renderStrategyParams(robot: RobotStrategy): string {
     switch (robot.strategyType) {
         case 'RSI':
@@ -72,151 +71,278 @@ function renderStrategyParams(robot: RobotStrategy): string {
         case 'STOCH_RSI':
             return `Forte < ${robot.strongBuyThreshold?.toFixed(2)}, Fraco < ${robot.weakBuyThreshold?.toFixed(2)}`;
         case 'MOVING_AVERAGE_CROSS':
-            return `Cruzamento ${robot.shortPeriod}/${robot.longPeriod}`;
+            return `Cruzamento SMA/EMA ${robot.shortPeriod}/${robot.longPeriod}`;
         case 'BOLLINGER_BANDS':
-            return `Período: ${robot.period}, Desvio: ${robot.stdDev}`;
+            return `Per: ${robot.period}, Desvio: ${robot.stdDev}`;
         case 'MACD_CROSS':
-            return `${robot.fastPeriod}/${robot.slowPeriod}/${robot.signalPeriod}`;
+            return `MACD ${robot.fastPeriod}/${robot.slowPeriod}/${robot.signalPeriod}`;
         case 'ADX_TREND':
-            return `Tendência > ${robot.trendStrengthThreshold}`;
+            return `Força Tendência > ${robot.trendStrengthThreshold}`;
         case 'PRICE_ACTION_PATTERN':
             const pattern = robot.pattern === 'hammer' ? 'Martelo' : 'Estrela Cadente';
             return `Padrão: ${pattern}`;
         case 'Z_SCORE':
-            return `Z-Score: ${robot.zScoreThreshold}`;
+            return `Desvio (Sigma): ${robot.zScoreThreshold}`;
         case 'VOLUME_PROFILE':
-            return `POC ${robot.profileBars} barras`;
+            return `POC Lookback: ${robot.profileBars} candles`;
         case 'PARABOLIC_SAR':
-            return `AF: ${robot.acceleration}, MAX: ${robot.maxAcceleration}`;
+            return `Aceleração: ${robot.acceleration}, Máx: ${robot.maxAcceleration}`;
         case 'CHANDELIER_EXIT':
-            return `Período: ${robot.chandelierPeriod}, Mult: ${robot.chandelierMultiplier}`;
+            return `Per: ${robot.chandelierPeriod}, Mult: ${robot.chandelierMultiplier}`;
         case 'TRIX':
         case 'ROC':
         case 'KAMA':
         case 'DONCHIAN_CHANNELS':
-            return `Período: ${robot.period}`;
-        case 'AWESOME_OSCILLATOR':
-        case 'ICHIMOKU_CLOUD':
-        case 'VWAP':
-        case 'OBV':
-             return 'Parâmetros Padrão';
+            return `Período Base: ${robot.period}`;
         default:
-            return 'N/A';
+            return 'Parâmetros Padrão Otimizados';
     }
 }
 
-export function TradingDeskV2({ robotPerformance, isCouncilAutopilotOn, resetArenaPerformance }: TradingDeskV2Props) {
+// ============================================================================
+// 3. COMPONENTE PRINCIPAL (TRADING DESK V2)
+// ============================================================================
+
+export function TradingDeskV2({ councilState }: TradingDeskV2Props) {
     
-    const sortedPerformance = [...robotPerformance].sort((a, b) => {
-        const sharpeA = a.sharpeRatio || -Infinity;
-        const sharpeB = b.sharpeRatio || -Infinity;
-        if (sharpeA !== sharpeB) return sharpeB - sharpeA;
-        return (b.totalProfit || 0) - (a.totalProfit || 0);
-    });
+    // Desestruturação do estado global do cérebro
+    const { 
+        robotPerformance, 
+        isCouncilAutopilotOn, 
+        resetArenaPerformance,
+        virtualTradesRef, // Acesso direto à memória mutável para trades em tempo real
+        systemMetrics 
+    } = councilState;
+
+    // --- LÓGICA DE ORDENAÇÃO (MEMOIZED) ---
+    // Usamos useMemo para evitar reordenar o array a cada frame de renderização,
+    // economizando processamento. Só reordena quando 'robotPerformance' muda.
+    const sortedPerformance = useMemo(() => {
+        return [...robotPerformance].sort((a, b) => {
+            // 1. Critério: Sharpe Ratio (Eficiência)
+            const sharpeA = a.sharpeRatio || -Infinity;
+            const sharpeB = b.sharpeRatio || -Infinity;
+            if (sharpeA !== sharpeB) return sharpeB - sharpeA;
+            
+            // 2. Critério: Lucro Total (Resultado Bruto)
+            return (b.totalProfit || 0) - (a.totalProfit || 0);
+        });
+    }, [robotPerformance]);
+
+    // Acesso aos trades ativos (Paper Trading)
+    // Isso lê o valor atual da ref sem disparar re-render (quem dispara é o hook pai atualizando systemMetrics)
+    const activeTrades = virtualTradesRef.current || [];
 
     return (
-        <Card>
-            <CardHeader>
+        <Card className="h-full flex flex-col shadow-md border-muted">
+            <CardHeader className="pb-3 space-y-1">
                 <div className="flex justify-between items-start">
-                    <CardTitle className="font-headline flex items-center gap-2">
-                        <LayoutGrid className="w-5 h-5" />
-                        Arena Virtual V2.5: Análise de Sharpe
-                    </CardTitle>
-                    <Button onClick={resetArenaPerformance} variant="outline" size="sm" disabled={!isCouncilAutopilotOn}>
-                        <RefreshCw className="mr-2 h-4 w-4" />
-                        Resetar Arena
-                    </Button>
-                </div>
-                <CardDescription>
-                    Ranking de robôs pela sua performance ajustada ao risco (Sharpe Ratio). O desempenho é resetado ao trocar de ativo.
-                </CardDescription>
-            </CardHeader>
-            <CardContent>
-                <Table>
-                    <TableHeader>
-                        <TableRow>
-                            <TableHead>Estratégia</TableHead>
-                            <TableHead>Parâmetros</TableHead>
-                            <TableHead className="text-center">Trades (V/D)</TableHead>
-                            <TableHead className="text-center">Sharpe Ratio</TableHead>
-                            <TableHead className="text-right">P&L (USD)</TableHead>
-                        </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                        {sortedPerformance.length > 0 ? (
-                            sortedPerformance.map((robot, index) => {
-                                const totalTrades = (robot.wins || 0) + (robot.losses || 0);
-                                const isTopPerformer = index < 3;
-                                
-                                return (
-                                    <TableRow
-                                        key={`${robot.id}-${index}`}
-                                        className={cn(isTopPerformer && 'bg-muted/30')}
-                                    >
-                                        <TableCell className="font-medium">
-                                            <div className="flex items-center gap-2">
-                                                {isTopPerformer && index === 0 && (
-                                                    <Trophy className="h-4 w-4 text-yellow-500" />
-                                                )}
-                                                {indicatorIcons[robot.strategyType] || <Bot />}
-                                                <span className="text-sm">
-                                                    {robot.strategyType}
-                                                </span>
-                                            </div>
-                                        </TableCell>
-                                        <TableCell className="text-xs text-muted-foreground">
-                                            {renderStrategyParams(robot.strategy)}
-                                        </TableCell>
-                                        <TableCell className="text-center">
-                                            <div className="flex items-center justify-center gap-2">
-                                                <span className="flex items-center gap-1 text-green-600">
-                                                    <CheckCircle className="h-4 w-4" />
-                                                    {robot.wins || 0}
-                                                </span>
-                                                <span>/</span>
-                                                <span className="flex items-center gap-1 text-red-600">
-                                                    {robot.losses || 0}
-                                                    <XCircle className="h-4 w-4" />
-                                                </span>
-                                            </div>
-                                        </TableCell>
-                                        <TableCell className="text-center font-semibold">
-                                            {totalTrades > 10 ? robot.sharpeRatio.toFixed(2) : '-'}
-                                        </TableCell>
-                                        <TableCell
-                                            className={cn(
-                                                'text-right font-bold',
-                                                (robot.totalProfit || 0) > 0
-                                                    ? 'text-green-600'
-                                                    : (robot.totalProfit || 0) < 0
-                                                      ? 'text-red-600'
-                                                      : 'text-muted-foreground'
-                                            )}
-                                        >
-                                            {(robot.totalProfit || 0).toLocaleString('en-US', {
-                                                style: 'currency',
-                                                currency: 'USD',
-                                                minimumFractionDigits: 2,
-                                            })}
-                                        </TableCell>
-                                    </TableRow>
-                                );
-                            })
-                        ) : (
-                            <TableRow key="empty-row">
-                                <TableCell colSpan={5} className="text-center h-24">
-                                    <div className="flex flex-col items-center justify-center gap-2 text-muted-foreground">
-                                        <AlertTriangle className="h-8 w-8" />
-                                        <p>
-                                            Nenhum desempenho registrado. Ative a Mesa Operacional
-                                            para iniciar a simulação.
-                                        </p>
-                                    </div>
-                                </TableCell>
-                            </TableRow>
+                    <div className="flex flex-col gap-1">
+                        <CardTitle className="font-headline flex items-center gap-2 text-xl">
+                            <Swords className="h-6 w-6 text-primary" />
+                            Arena Virtual V2.5
+                        </CardTitle>
+                        <CardDescription>
+                            Torneio de algoritmos e classificação por Sharpe Ratio.
+                        </CardDescription>
+                    </div>
+                    
+                    <div className="flex items-center gap-2">
+                         {isCouncilAutopilotOn && (
+                            <Badge variant="outline" className="border-green-500 text-green-500 animate-pulse bg-green-500/10">
+                                <Zap className="h-3 w-3 mr-1 fill-current" />
+                                AO VIVO
+                            </Badge>
                         )}
-                    </TableBody>
-                </Table>
+                        <Button 
+                            onClick={resetArenaPerformance} 
+                            variant="ghost" 
+                            size="icon" 
+                            disabled={!isCouncilAutopilotOn}
+                            title="Resetar Estatísticas"
+                        >
+                            <RefreshCw className="h-4 w-4" />
+                        </Button>
+                    </div>
+                </div>
+            </CardHeader>
+
+            <CardContent className="flex-1 overflow-hidden p-0">
+                <Tabs defaultValue="arena" className="h-full flex flex-col">
+                    
+                    {/* Barra de Navegação das Abas */}
+                    <div className="px-6 border-b">
+                        <TabsList className="grid w-full grid-cols-2">
+                            <TabsTrigger value="arena" className="flex items-center gap-2">
+                                <Activity className="h-4 w-4" />
+                                Combate Ativo ({activeTrades.length})
+                            </TabsTrigger>
+                            <TabsTrigger value="ranking" className="flex items-center gap-2">
+                                <Trophy className="h-4 w-4" />
+                                Classificação ({sortedPerformance.length})
+                            </TabsTrigger>
+                        </TabsList>
+                    </div>
+
+                    {/* --- ABA 1: COMBATE ATIVO (PAPER TRADES) --- */}
+                    <TabsContent value="arena" className="flex-1 overflow-hidden flex flex-col m-0 bg-muted/5">
+                        <div className="px-6 py-2 bg-muted/20 border-b flex justify-between text-xs text-muted-foreground font-medium uppercase tracking-wider">
+                            <span>Estratégia / Robô</span>
+                            <span>Status</span>
+                        </div>
+                        <ScrollArea className="flex-1">
+                            {activeTrades.length > 0 ? (
+                                <div className="divide-y divide-border/50">
+                                    {activeTrades.map((trade) => (
+                                        <div key={trade.id} className="px-6 py-4 flex items-center justify-between hover:bg-muted/10 transition-colors">
+                                            
+                                            {/* Lado Esquerdo: Info do Robô */}
+                                            <div className="flex items-center gap-4">
+                                                <div className={cn("p-2 rounded-full ring-1 ring-inset", 
+                                                    trade.vote === 'RISE' ? "bg-green-500/10 text-green-600 ring-green-500/20" : "bg-red-500/10 text-red-600 ring-red-500/20"
+                                                )}>
+                                                    {trade.vote === 'RISE' ? <TrendingUp className="h-5 w-5" /> : <TrendingDown className="h-5 w-5" />}
+                                                </div>
+                                                <div>
+                                                    <p className="font-bold text-sm flex items-center gap-2">
+                                                        Robô {trade.robotId.split('-')[0]} 
+                                                        <Badge variant="outline" className="text-[10px] h-4 px-1 py-0">{trade.regime}</Badge>
+                                                    </p>
+                                                    <p className="text-xs text-muted-foreground mt-0.5">
+                                                        Entrada: <span className="font-mono text-foreground">@{trade.entryPrice.toFixed(2)}</span>
+                                                    </p>
+                                                </div>
+                                            </div>
+
+                                            {/* Lado Direito: Status */}
+                                            <div className="text-right">
+                                                <Badge variant={trade.vote === 'RISE' ? 'default' : 'destructive'} className="mb-1 font-bold">
+                                                    {trade.vote}
+                                                </Badge>
+                                                <p className="text-[10px] text-muted-foreground flex items-center justify-end gap-1">
+                                                    <Timer className="h-3 w-3 animate-spin" />
+                                                    Monitorando...
+                                                </p>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            ) : (
+                                <div className="h-64 flex flex-col items-center justify-center text-muted-foreground gap-3">
+                                    <Bot className="h-12 w-12 opacity-10" />
+                                    <div className="text-center">
+                                        <p className="text-sm font-medium">A arena está silenciosa.</p>
+                                        <p className="text-xs opacity-70">Aguardando sinais dos robôs analistas...</p>
+                                    </div>
+                                    {!isCouncilAutopilotOn && (
+                                        <Badge variant="destructive" className="mt-2">Sistema Pausado</Badge>
+                                    )}
+                                </div>
+                            )}
+                        </ScrollArea>
+                    </TabsContent>
+
+                    {/* --- ABA 2: RANKING DETALHADO (LEADERBOARD) --- */}
+                    <TabsContent value="ranking" className="flex-1 overflow-hidden flex flex-col m-0">
+                         <ScrollArea className="h-full">
+                            <Table>
+                                <TableHeader className="bg-muted/50 sticky top-0 z-10">
+                                    <TableRow>
+                                        <TableHead className="w-[200px]">Estratégia</TableHead>
+                                        <TableHead className="hidden md:table-cell">Parâmetros Ativos</TableHead>
+                                        <TableHead className="text-center">Score (W/L)</TableHead>
+                                        <TableHead className="text-center">Sharpe</TableHead>
+                                        <TableHead className="text-right">P&L (USD)</TableHead>
+                                    </TableRow>
+                                </TableHeader>
+                                <TableBody>
+                                    {sortedPerformance.length > 0 ? (
+                                        sortedPerformance.map((robot, index) => {
+                                            const totalTrades = (robot.wins || 0) + (robot.losses || 0);
+                                            const isTop3 = index < 3;
+                                            const winRate = robot.winRate || 0;
+                                            
+                                            return (
+                                                <TableRow key={`${robot.id}-${index}`} className={cn(isTop3 ? "bg-muted/20" : "")}>
+                                                    
+                                                    {/* Coluna 1: Identificação */}
+                                                    <TableCell className="font-medium">
+                                                        <div className="flex items-center gap-3">
+                                                            <div className="relative">
+                                                                {isTop3 && index === 0 && <Trophy className="absolute -top-3 -left-2 h-5 w-5 text-amber-500 drop-shadow-sm" />}
+                                                                {indicatorIcons[robot.strategyType] || <Bot className="h-4 w-4" />}
+                                                            </div>
+                                                            <div className="flex flex-col">
+                                                                <span className={cn("text-sm", isTop3 && "font-bold text-primary")}>
+                                                                    {robot.strategyType}
+                                                                </span>
+                                                                {isTop3 && <span className="text-[10px] text-amber-600 font-semibold">Top Performance</span>}
+                                                            </div>
+                                                        </div>
+                                                    </TableCell>
+
+                                                    {/* Coluna 2: Parâmetros (Oculto em mobile) */}
+                                                    <TableCell className="hidden md:table-cell text-xs text-muted-foreground max-w-[200px] truncate" title={renderStrategyParams(robot.strategy)}>
+                                                        {renderStrategyParams(robot.strategy)}
+                                                    </TableCell>
+
+                                                    {/* Coluna 3: Win Rate Visual */}
+                                                    <TableCell>
+                                                        <div className="flex flex-col gap-1 items-center w-24 mx-auto">
+                                                            <div className="flex justify-between w-full text-[10px]">
+                                                                <span className="text-green-600 font-bold">{robot.wins}W</span>
+                                                                <span className="text-muted-foreground">{winRate.toFixed(0)}%</span>
+                                                                <span className="text-red-600 font-bold">{robot.losses}L</span>
+                                                            </div>
+                                                            <Progress value={winRate} className={cn("h-1.5 w-full", winRate > 50 ? "bg-green-100" : "bg-red-100")} />
+                                                        </div>
+                                                    </TableCell>
+
+                                                    {/* Coluna 4: Sharpe Ratio */}
+                                                    <TableCell className="text-center font-mono text-sm">
+                                                        {totalTrades > 5 ? (
+                                                            <Badge variant="outline" className={cn(
+                                                                robot.sharpeRatio > 1.5 ? "border-green-500 text-green-600 bg-green-50" : 
+                                                                robot.sharpeRatio > 1.0 ? "border-blue-500 text-blue-600 bg-blue-50" : "border-gray-200"
+                                                            )}>
+                                                                {robot.sharpeRatio.toFixed(2)}
+                                                            </Badge>
+                                                        ) : (
+                                                            <span className="text-muted-foreground text-xs">-</span>
+                                                        )}
+                                                    </TableCell>
+
+                                                    {/* Coluna 5: P&L */}
+                                                    <TableCell className={cn(
+                                                        'text-right font-bold font-mono',
+                                                        (robot.totalProfit || 0) > 0 ? 'text-green-600' : (robot.totalProfit || 0) < 0 ? 'text-red-600' : 'text-muted-foreground'
+                                                    )}>
+                                                        {(robot.totalProfit || 0).toLocaleString('en-US', { style: 'currency', currency: 'USD' })}
+                                                    </TableCell>
+                                                </TableRow>
+                                            );
+                                        })
+                                    ) : (
+                                        <TableRow>
+                                            <TableCell colSpan={5} className="h-32 text-center">
+                                                <div className="flex flex-col items-center justify-center gap-2 text-muted-foreground">
+                                                    <AlertTriangle className="h-8 w-8 opacity-20" />
+                                                    <p>Aguardando dados de performance...</p>
+                                                </div>
+                                            </TableCell>
+                                        </TableRow>
+                                    )}
+                                </TableBody>
+                            </Table>
+                        </ScrollArea>
+                    </TabsContent>
+                </Tabs>
+
+                {/* Footer de Status */}
+                <div className="p-2 border-t bg-muted/30 text-[10px] text-muted-foreground flex justify-between items-center px-4">
+                    <span className="flex items-center gap-1"><BrainCircuit className="h-3 w-3"/> Algoritmo Genético Ativo</span>
+                    <span className="flex items-center gap-1"><Activity className="h-3 w-3"/> Atualização: Tempo Real</span>
+                </div>
             </CardContent>
         </Card>
     );
