@@ -14,7 +14,7 @@ import type { Operation, OperationInitiator, TickData } from "@/lib/types";
 import { ArrowDown, ArrowUp, Bot, User, Users, MoveRight, Clock, DollarSign } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { useDerivApi } from "@/features/trading/hooks/use-deriv-api";
+import { useDerivApiV2 as useDerivApi } from "@/features/trading/hooks/use-deriv-api-v2";
 import { useToast } from "@/hooks/use-toast";
 import { PendingOperationCounter } from "./pending-operation-counter";
 
