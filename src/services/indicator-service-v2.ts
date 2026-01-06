@@ -1,62 +1,88 @@
-
 /**
- * @fileOverview ENGINE DE CÁLCULO FINANCEIRO AUTÔNOMO V2.5
- * Fornece todos os 25+ indicadores necessários para o Conselho de Robôs.
- * Totalmente independente de bibliotecas externas.
+ * @fileOverview ENGINE DE CÁLCULO FINANCEIRO AUTÔNOMO V2.5 (VERSÃO MESTRE)
+ * =================================================================================
+ * MÓDULO DE SERVIÇO (SERVICE LAYER)
+ * 
+ * OBJETIVO DIDÁTICO:
+ * Este arquivo demonstra como transformar dados brutos de preço (OHLC) em sinais
+ * matemáticos utilizáveis. Ele segue o princípio de "Pure Functions" (Funções Puras):
+ * Mesma entrada sempre gera a mesma saída, sem efeitos colaterais.
+ * 
+ * MELHORIAS DE ARQUITETURA:
+ * 1. Sincronia: Limite de candles ajustado para 30 (mesmo do Cérebro).
+ * 2. Robustez: Tratamento de "Zero Division" em todos os osciladores.
+ * 3. Tipagem: Uso estrito de TypeScript para evitar erros de runtime.
  */
 
 import type { CandleData, ChartData, TimePeriod, RobotStrategy, DurationUnit } from '@/lib/types';
 
-// Interface exata que o use-robot-council-v2.ts espera
+// ============================================================================
+// 1. DEFINIÇÃO DA INTERFACE DE SAÍDA (O "Menu" de Indicadores)
+// ============================================================================
+// Esta interface define exatamente o que este serviço entrega para o Cérebro.
 export interface Indicators {
-    // Básicos
-    rsi: number | null;
-    stoch: number | null;
-    atr: number | null;
-    adx: number | null;
-    pdi: number | null;
-    ndi: number | null;
-    
-    // Médias e Tendência
-    macd: { macd: number | null; signal: number | null; histogram: number | null };
-    ma: { short: number | null; long: number | null; };
-    sma: (number | null)[];
-    ema: (number | null)[];
-    psar: number | null; // Parabolic SAR
-    ichimoku: { tenkan: number | null; kijun: number | null; spanA: number | null; spanB: number | null } | null;
+    // --- Osciladores de Momento ---
+    rsi: number | null;      // Relative Strength Index
+    stoch: number | null;    // Stochastic Oscillator
+    stochRSI: number | null; // Stochastic do RSI
+    mfi: number | null;      // Money Flow Index: RSI ponderado por volume
+    rvi: number | null;      // Relative Volatility Index: Direção da volatilidade
+    roc: number | null;      // Rate of Change: Velocidade pura da mudança de preço
+    trix: number | null;     // Triple Exponential Average: Filtra ruídos insignificantes
+    trixPrev: number | null; // Valor anterior do TRIX (para detectar cruzamentos)
+    ao: number | null;       // Awesome Oscillator: Momentum de mercado (comparação de médias)
+    aoPrev: number | null;   // Valor anterior do AO para detectar "Twin Peaks" ou "Saucers"
+    cci?: number | null;     // Commodity Channel Index (Opcional)
 
-    // Estrutura e Volatilidade
-    bb: { upper: number | null; middle: number | null; lower: number | null }; // Último valor
-    bbw: number | null; // Bandwidth
-    donchian: { upper: number | null; lower: number | null } | null;
-    kama: number | null;
-    chandelier: { exitLong: number | null; exitShort: number | null } | null;
-    bollingerBands: ({ upper: number; middle: number; lower: number } | null)[];
-    
-    // Momentum Avançado
-    ao: number | null; // Awesome Oscillator
-    aoPrev: number | null; // Para detectar aceleração
-    trix: number | null;
-    trixPrev: number | null;
-    roc: number | null;
-    stochRSI: number | null;
-    rvi: number | null;
+    // --- Indicadores de Tendência ---
+    adx: number | null;      // Average Directional Index: Força da tendência (sem direção)
+    pdi: number | null;      // Positive Directional Indicator: Força dos touros
+    ndi: number | null;      // Negative Directional Indicator: Força dos ursos
+    macd: { 
+        macd: number | null; 
+        signal: number | null; 
+        histogram: number | null // A diferença entre MACD e Sinal (Sinal de entrada)
+    };
+    psar: number | null;     // Parabolic SAR: Pontos de parada e reversão (Stop Loss dinâmico)
+    ichimoku: { 
+        tenkan: number | null; // Média rápida (conversão)
+        kijun: number | null;  // Média base
+        spanA: number | null;  // Limite A da Nuvem
+        spanB: number | null   // Limite B da Nuvem
+    } | null;
+    kama: number | null;     // Kaufman Adaptive MA: Média que ignora ruído lateral
+    zScore: number | null;   // Estatística: Distância do preço em relação à média (Desvio Padrão)
 
-    // Volume e Estatística
-    mfi: number | null;
-    obv: number | null;
-    obvPrev: number | null;
-    vwap: (number | null)[];
-    zScore: number | null;
+    // --- Médias Móveis ---
+    ma: { short: number | null; long: number | null; }; // Par para cruzamentos
+    sma: (number | null)[];  // Simple Moving Average (Histórico completo)
+    ema: (number | null)[];  // Exponential Moving Average (Histórico completo)
+    vwap: (number | null)[]; // Volume Weighted Average Price (Preço Médio Institucional)
+
+    // --- Volatilidade e Canais ---
+    atr: number | null;      // Average True Range: Volatilidade absoluta em pontos
+    bb: { upper: number | null; middle: number | null; lower: number | null }; // Bandas de Bollinger
+    bbw: number | null;      // Bandwidth: Largura das bandas (indica compressão/explosão)
+    bollingerBands: ({ upper: number; middle: number; lower: number } | null)[]; // Histórico para gráficos
+    donchian: { upper: number | null; lower: number | null } | null; // Máximas e Mínimas de N períodos
+    chandelier: { exitLong: number | null; exitShort: number | null } | null; // Trailing Stop baseado em ATR
+
+    // --- Volume ---
+    obv: number | null;      // On Balance Volume: Fluxo acumulado de volume
+    obvPrev: number | null;  // Para detectar divergências
 }
 
 // ============================================================================
-// 🧮 BIBLIOTECA MATEMÁTICA INTERNA (Zero Dependências)
+// 2. BIBLIOTECA MATEMÁTICA (CORE LOGIC)
 // ============================================================================
 
+// Helper: Verifica se um objeto é um Candle válido
 const isCandle = (d: ChartData): d is CandleData => d != null && 'close' in d;
 
-// 1. Médias Móveis (SMA e EMA)
+/**
+ * Média Móvel Simples (SMA)
+ * Fórmula: Soma(Preços) / N
+ */
 const calculateSMA = (data: CandleData[], period: number): (number | null)[] => {
     if (data.length < period) return Array(data.length).fill(null);
     const results: (number | null)[] = [];
@@ -72,17 +98,23 @@ const calculateSMA = (data: CandleData[], period: number): (number | null)[] => 
     return results;
 };
 
+/**
+ * Média Móvel Exponencial (EMA)
+ * Fórmula: (PreçoAtual - EMA_Anterior) * Multiplicador + EMA_Anterior
+ * Multiplicador = 2 / (Periodo + 1)
+ */
 const calculateEMA = (data: CandleData[], period: number): (number | null)[] => {
     if (data.length < period) return Array(data.length).fill(null);
-    const k = 2 / (period + 1);
+    const k = 2 / (period + 1); // Fator de suavização
     const results: (number | null)[] = Array(period - 1).fill(null);
     
-    // Primeira EMA é SMA
+    // Inicialização com SMA
     let sum = 0;
     for (let i = 0; i < period; i++) sum += data[i].close;
     let prevEma = sum / period;
     results.push(prevEma);
 
+    // Cálculo Recursivo
     for (let i = period; i < data.length; i++) {
         const currentEma = (data[i].close - prevEma) * k + prevEma;
         results.push(currentEma);
@@ -91,11 +123,15 @@ const calculateEMA = (data: CandleData[], period: number): (number | null)[] => 
     return results;
 };
 
-// 2. RSI & Stochastic
+/**
+ * Relative Strength Index (RSI)
+ * Compara a magnitude dos ganhos recentes com as perdas recentes.
+ */
 const calculateRSI = (data: CandleData[], period = 14): (number | null)[] => {
     if (data.length < period + 1) return Array(data.length).fill(null);
     const results: (number | null)[] = Array(period).fill(null);
     
+    // Primeira média de ganhos e perdas
     let avgGain = 0, avgLoss = 0;
     for (let i = 1; i <= period; i++) {
         const change = data[i].close - data[i - 1].close;
@@ -105,8 +141,11 @@ const calculateRSI = (data: CandleData[], period = 14): (number | null)[] => {
     avgGain /= period;
     avgLoss /= period;
     
-    results.push(100 - (100 / (1 + (avgGain / (avgLoss === 0 ? 1 : avgLoss)))));
+    // RSI Inicial
+    // Proteção contra divisão por zero se avgLoss for 0
+    results.push(100 - (100 / (1 + (avgGain / (avgLoss === 0 ? 0.0001 : avgLoss)))));
 
+    // RSI Suavizado (Wilder's Smoothing)
     for (let i = period + 1; i < data.length; i++) {
         const change = data[i].close - data[i - 1].close;
         const gain = change > 0 ? change : 0;
@@ -121,6 +160,10 @@ const calculateRSI = (data: CandleData[], period = 14): (number | null)[] => {
     return results;
 };
 
+/**
+ * Estocástico (Stochastic Oscillator)
+ * Fórmula: (Close - LowestLow) / (HighestHigh - LowestLow) * 100
+ */
 const calculateStochastic = (data: CandleData[], period = 14) => {
     if (data.length < period) return Array(data.length).fill(null);
     return data.map((_, i) => {
@@ -128,51 +171,57 @@ const calculateStochastic = (data: CandleData[], period = 14) => {
         const slice = data.slice(i - period + 1, i + 1);
         const low = Math.min(...slice.map(d => d.low));
         const high = Math.max(...slice.map(d => d.high));
+        // Se High == Low (mercado parado), retorna 50 (neutro) para não dividir por zero
         return high === low ? 50 : ((data[i].close - low) / (high - low)) * 100;
     });
 };
 
-// Patch Seguro para ATR
+/**
+ * Average True Range (ATR) - Versão Robusta
+ * Mede a volatilidade considerando gaps de preço.
+ */
 const calculateATR = (data: CandleData[], period = 14): (number | null)[] => {
     if (data.length < period + 1) return Array(data.length).fill(null);
     const trs = [0]; 
+    
     for(let i=1; i<data.length; i++) {
         const hl = data[i].high - data[i].low;
         const hc = Math.abs(data[i].high - data[i-1].close);
         const lc = Math.abs(data[i].low - data[i-1].close);
-        trs.push(Math.max(hl, hc, lc)); // Se candles flat, isso retorna 0
+        // O True Range é o maior desses 3 valores
+        trs.push(Math.max(hl, hc, lc));
     }
     
-    // Smoothed ATR
     const atrs: (number | null)[] = Array(period).fill(null);
     let initialSum = 0;
     for(let i=1; i<=period; i++) initialSum += trs[i];
     atrs.push(initialSum / period); 
 
+    // Suavização Wilders
     for(let i=period+1; i<data.length; i++) {
-        const prevAtr = atrs[i-1] || 0; // Fallback para 0
+        const prevAtr = atrs[i-1] || 0;
         atrs.push(((prevAtr * (period - 1)) + trs[i]) / period);
     }
     return atrs;
 };
 
-// 4. MACD
+/**
+ * MACD (Moving Average Convergence Divergence)
+ */
 const calculateMACD = (data: CandleData[], fast = 12, slow = 26, sig = 9) => {
     const fastEMA = calculateEMA(data, fast);
     const slowEMA = calculateEMA(data, slow);
     const macdLine = data.map((_, i) => (fastEMA[i] !== null && slowEMA[i] !== null) ? fastEMA[i]! - slowEMA[i]! : null);
     
-    // Calcular Signal Line (EMA do MACD Line)
-    // Precisamos filtrar nulls para calcular a EMA do sinal
+    // Truque para calcular EMA de um array que contém nulls no início
     const validMacdIndices = macdLine.map((v, i) => v !== null ? i : -1).filter(i => i !== -1);
     const validMacdValues = validMacdIndices.map(i => ({ close: macdLine[i]! } as CandleData));
-    
     const signalLineRaw = calculateEMA(validMacdValues, sig);
     
-    // Remapear para o array original
     const signalLine: (number | null)[] = Array(data.length).fill(null);
     const histogram: (number | null)[] = Array(data.length).fill(null);
     
+    // Mapear de volta para os índices originais
     validMacdIndices.forEach((originalIndex, idx) => {
         signalLine[originalIndex] = signalLineRaw[idx];
         if (macdLine[originalIndex] !== null && signalLine[originalIndex] !== null) {
@@ -183,36 +232,48 @@ const calculateMACD = (data: CandleData[], fast = 12, slow = 26, sig = 9) => {
     return { macd: macdLine, signal: signalLine, histogram };
 };
 
-// 5. Bollinger Bands & Bandwidth
+/**
+ * Bandas de Bollinger
+ * Usam desvio padrão para medir a dispersão dos preços em torno da média.
+ */
 const calculateBB = (data: CandleData[], period = 20, stdDev = 2): ({ upper: number; middle: number; lower: number; } | null)[] => {
     const sma = calculateSMA(data, period);
     return data.map((_, i) => {
         if (sma[i] === null) return null;
         
+        // Cálculo do Desvio Padrão
         let sumSqDiff = 0;
         const slice = data.slice(i - period + 1, i + 1);
         for (const d of slice) {
             sumSqDiff += Math.pow(d.close - sma[i]!, 2);
         }
-        const std = Math.sqrt(sumSqDiff / period);
-        const upper = sma[i]! + std * stdDev;
-        const lower = sma[i]! - std * stdDev;
         
-        return { upper, middle: sma[i]!, lower };
+        const std = Math.sqrt(sumSqDiff / period);
+        
+        return { 
+            upper: sma[i]! + std * stdDev, 
+            middle: sma[i]!, 
+            lower: sma[i]! - std * stdDev 
+        };
     });
 };
 
-// Patch Seguro para ADX (Divisão por zero)
+/**
+ * ADX (Average Directional Index) - Versão Blindada
+ * Essencial para detectar se o mercado está em tendência ou lateral.
+ * Contém proteção explícita contra erros de cálculo em mercados sem volume.
+ */
 const calculateADX = (data: CandleData[], period = 14) => {
     if (data.length < period * 3) {
         return { adx: null, pdi: null, ndi: null };
     }
     
     try {
-        const tr = calculateATR(data, 1).map(v => v || 0); // Garante números
+        const tr = calculateATR(data, 1).map(v => v || 0);
         const pDM: number[] = [0];
         const nDM: number[] = [0];
         
+        // Movimento Direcional (+DM e -DM)
         for(let i=1; i<data.length; i++) {
             const up = data[i].high - data[i-1].high;
             const down = data[i-1].low - data[i].low;
@@ -220,6 +281,7 @@ const calculateADX = (data: CandleData[], period = 14) => {
             nDM.push((down > up && down > 0) ? down : 0);
         }
         
+        // Função de Suavização Wilder
         const smooth = (vals: number[], p: number) => {
             const res = Array(vals.length).fill(0);
             let sum = 0;
@@ -235,17 +297,23 @@ const calculateADX = (data: CandleData[], period = 14) => {
         const sPDM = smooth(pDM, period);
         const sNDM = smooth(nDM, period);
         
-        // CORREÇÃO: Check explícito para sTR !== 0
+        // Cálculo Seguro de DI (Directional Indicators)
+        // Evita dividir por zero se o True Range for 0
         const pdi = sTR.map((v, i) => v === 0 ? 0 : 100 * (sPDM[i] / v));
         const ndi = sTR.map((v, i) => v === 0 ? 0 : 100 * (sNDM[i] / v));
         
+        // Cálculo do DX
         const dx = pdi.map((p, i) => {
             const n = ndi[i];
-            return (p + n === 0) ? 0 : 100 * Math.abs(p - n) / (p + n);
+            const sum = p + n;
+            // FAIL-SAFE CRÍTICO: Se sum for 0, DX é 0
+            return (sum === 0) ? 0 : 100 * Math.abs(p - n) / sum;
         });
         
+        // ADX é a EMA do DX
         const dxCandles = dx.map(d => ({close: d} as CandleData));
         const adxEma = calculateEMA(dxCandles, period);
+        
         const lastIdx = data.length - 1;
         
         return { 
@@ -255,12 +323,13 @@ const calculateADX = (data: CandleData[], period = 14) => {
         };
         
     } catch (error) {
-        console.error('❌ Erro ADX Safe:', error);
-        return { adx: 50, pdi: 20, ndi: 20 }; // Retorna valores neutros em caso de erro
+        console.error('❌ Safe ADX Error:', error);
+        // Fallback neutro em caso de erro matemático extremo
+        return { adx: 20, pdi: 0, ndi: 0 }; 
     }
 };
 
-// 7. Novos Indicadores Avançados (Para os Comitês Específicos)
+// Indicadores Avançados (Auxiliares)
 
 const calculateDonchian = (data: CandleData[], period = 20) => {
     if (data.length < period) return null;
@@ -272,7 +341,7 @@ const calculateDonchian = (data: CandleData[], period = 20) => {
 
 const calculateKAMA = (data: CandleData[], period = 10, fast = 2, slow = 30) => {
     if(data.length < period) return null;
-    let kama = data[period-1].close; // Seed
+    let kama = data[period-1].close; 
     
     for(let i = period; i < data.length; i++) {
         const change = Math.abs(data[i].close - data[i-period].close);
@@ -300,7 +369,6 @@ const calculateAO = (data: CandleData[]) => {
 };
 
 const calculateIchimoku = (data: CandleData[]) => {
-    // Standard params: 9, 26, 52
     if(data.length < 52) return null;
     
     const getAvg = (len: number) => {
@@ -312,29 +380,25 @@ const calculateIchimoku = (data: CandleData[]) => {
     
     const tenkan = getAvg(9);
     const kijun = getAvg(26);
-    const spanA = (tenkan + kijun) / 2; // Projetado 26 no futuro, mas usamos o valor atual para calculo de suporte
+    const spanA = (tenkan + kijun) / 2;
     const spanB = getAvg(52);
     
     return { tenkan, kijun, spanA, spanB };
 };
 
 const calculateTRIX = (data: CandleData[], period = 15) => {
-    // Triple EMA of Log Price
     if (data.length < period * 3) return { current: null, prev: null };
     
     const logPrices = data.map(d => ({ ...d, close: Math.log(d.close) }));
     const ema1 = calculateEMA(logPrices, period);
-    
-    // Helper to extract numeric array for next EMA
     const toCandles = (nums: (number|null)[]) => nums.map(n => ({ close: n || 0 } as CandleData));
-    
     const ema2 = calculateEMA(toCandles(ema1), period);
     const ema3 = calculateEMA(toCandles(ema2), period);
     
     const trixSeries = [];
     for(let i=1; i<ema3.length; i++) {
         if(ema3[i] && ema3[i-1]) {
-            trixSeries.push((ema3[i]! - ema3[i-1]!) * 10000); // Multiplicador arbitrário para legibilidade
+            trixSeries.push((ema3[i]! - ema3[i-1]!) * 10000); 
         } else {
             trixSeries.push(null);
         }
@@ -370,39 +434,32 @@ const calculateZScore = (data: CandleData[], period = 20) => {
 
 const calculateMFI = (data: CandleData[], period = 14) => {
     if (data.length < period + 1) return null;
-    
     let posMF = 0;
     let negMF = 0;
-    
     const typicalPrice = (i: number) => (data[i].high + data[i].low + data[i].close) / 3;
     
-    // Loop simples nos últimos 'period' candles
     for(let i = data.length - period; i < data.length; i++) {
         const tpCurrent = typicalPrice(i);
         const tpPrev = typicalPrice(i-1);
-        const rawMF = tpCurrent * data[i].volume;
-        
+        const rawMF = tpCurrent * (data[i].volume || 1);
         if (tpCurrent > tpPrev) posMF += rawMF;
         else if (tpCurrent < tpPrev) negMF += rawMF;
     }
-    
     if (negMF === 0) return 100;
-    const mfi = 100 - (100 / (1 + posMF / negMF));
-    return mfi;
+    return 100 - (100 / (1 + posMF / negMF));
 };
 
 const calculateOBV = (data: CandleData[]) => {
     if (data.length < 2) return { current: null, prev: null };
-    // OBV é cumulativo desde o início do array carregado
     let obv = 0;
     const obvHistory: number[] = [0];
     
     for(let i=1; i<data.length; i++) {
-        if (data[i].close > data[i-1].close) obv += data[i].volume;
-        else if (data[i].close < data[i-1].close) obv -= data[i].volume;
+        const vol = data[i].volume || 1;
+        if (data[i].close > data[i-1].close) obv += vol;
+        else if (data[i].close < data[i-1].close) obv -= vol;
         obvHistory.push(obv);
     }
-    
     return {
         current: obvHistory[obvHistory.length - 1],
         prev: obvHistory[obvHistory.length - 2]
@@ -410,7 +467,6 @@ const calculateOBV = (data: CandleData[]) => {
 };
 
 const calculateStochRSI = (data: CandleData[], rsiValues: (number|null)[], period = 14) => {
-    // Stoch do RSI
     const validRSI = rsiValues.filter(v => v !== null) as number[];
     if (validRSI.length < period) return null;
     
@@ -428,14 +484,15 @@ const calculateVWAP = (data: CandleData[]): (number | null)[] => {
     let cumVol = 0;
     return data.map(d => {
         const tp = (d.high + d.low + d.close) / 3;
-        cumPV += tp * d.volume;
-        cumVol += d.volume;
+        const vol = d.volume || 1;
+        cumPV += tp * vol;
+        cumVol += vol;
         return cumVol === 0 ? null : cumPV / cumVol;
     });
 };
 
 // ============================================================================
-// 🚀 FUNÇÃO PRINCIPAL EXPORTADA
+// 3. FUNÇÃO ORQUESTRADORA (EXPORTADA)
 // ============================================================================
 
 export function calculateAllIndicators(
@@ -445,31 +502,22 @@ export function calculateAllIndicators(
     contractDuration: { duration: number, unit: DurationUnit }
 ): Indicators | null {
     
-    if (!chartData || chartData.length < 50) {
-        console.warn(`⚠️ [Indicators] Dados insuficientes: ${chartData?.length || 0}/50 candles`);
+    // CORREÇÃO: Limite de sincronia ajustado para 30, como no Cérebro.
+    if (!chartData || chartData.length < 30) {
         return null;
     }
 
-    // ✅ CORREÇÃO: Garante que todos os dados sejam tratados como CandleData
     const candles: CandleData[] = chartData.map(d => {
         if (isCandle(d)) return d;
-        // Converte TickData para CandleData
         const price = (d as any).price;
         return { epoch: d.epoch, open: price, high: price, low: price, close: price, volume: 1 };
     });
     
     const validCandles = candles.filter(c => 
-        c && c.close > 0 && 
-        Number.isFinite(c.close) &&
-        Number.isFinite(c.open) &&
-        Number.isFinite(c.high) &&
-        Number.isFinite(c.low)
+        c && c.close > 0 && Number.isFinite(c.close)
     );
     
-    if (validCandles.length < 50) {
-        console.warn(`⚠️ [Indicators] Apenas ${validCandles.length}/50 candles válidos após conversão`);
-        return null;
-    }
+    if (validCandles.length < 30) return null;
 
     try {
         const getParam = (type: RobotStrategy['strategyType'], key: keyof RobotStrategy, defaultValue: any) => {
@@ -477,6 +525,7 @@ export function calculateAllIndicators(
             return robot && robot[key] !== undefined ? robot[key] : defaultValue;
         };
 
+        // Cálculos em Cascata
         const rsiSeries = calculateRSI(validCandles, getParam('RSI', 'period', 14));
         const stochSeries = calculateStochastic(validCandles, getParam('STOCHASTIC', 'period', 14));
         const atrSeries = calculateATR(validCandles, 14);
@@ -485,7 +534,6 @@ export function calculateAllIndicators(
         const macdData = calculateMACD(validCandles);
         const bbSeries = calculateBB(validCandles);
         const bbData = bbSeries[bbSeries.length - 1];
-        
         const adxData = calculateADX(validCandles);
         const donchian = calculateDonchian(validCandles);
         const kama = calculateKAMA(validCandles);
@@ -510,6 +558,7 @@ export function calculateAllIndicators(
 
         const psar = emaShort[emaShort.length-1];
 
+        // Montagem do objeto de resposta
         const indicators: Indicators = {
             rsi: rsiSeries[rsiSeries.length - 1],
             stoch: stochSeries[stochSeries.length - 1],
@@ -553,7 +602,7 @@ export function calculateAllIndicators(
         return indicators;
 
     } catch (e) {
-        console.error("❌ [Indicators] Erro fatal:", e);
+        console.error("❌ [Indicators] Erro de Cálculo:", e);
         return null;
     }
 }
