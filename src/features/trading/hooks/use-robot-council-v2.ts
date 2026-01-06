@@ -498,23 +498,90 @@ export function useRobotCouncilV2(
   }, [isCouncilAutopilotOn, activeSymbol, timePeriod, user, getHistoricalData, toast]);
 
   useEffect(() => {
-    console.log(`📊 [Data Update] dataVersion: ${dataVersion}, chartData: ${chartData.length} candles`);
-  }, [dataVersion, chartData.length]);
-  
+    if (!isCouncilAutopilotOn) return;
+    const metricsInterval = setInterval(() => {
+      setCouncilState(prev => ({
+          ...prev,
+          systemMetrics: {
+              ...prev.systemMetrics,
+              activeVirtualTrades: virtualTradesRef.current.length,
+              totalVirtualTrades: tradeCounterRef.current,
+              decisionLogCount: tradeDecisionLog.length,
+              activeRobotsCount: robotPerformance.filter(p => (p.wins + p.losses) > 0).length,
+              memoryUsageMB: (performance as any).memory?.usedJSHeapSize ? (performance as any).memory.usedJSHeapSize / 1024 / 1024 : 0,
+              isExecuting: councilExecutionRef.current.isExecuting,
+              sessionDuration: sessionStartTime ? (Date.now() - sessionStartTime) / 1000 : 0,
+          }
+      }));
+    }, METRICS_UPDATE_INTERVAL_MS);
+
+    const cleanupInterval = setInterval(() => {
+      const now = Date.now() / 1000;
+      const before = virtualTradesRef.current.length;
+
+      virtualTradesRef.current = virtualTradesRef.current.filter(trade => {
+        const age = now - trade.entryEpoch;
+        return age < TRADE_TIMEOUT_SECONDS;
+      }).slice(-MAX_VIRTUAL_TRADES);
+
+      const removed = before - virtualTradesRef.current.length;
+      
+      if (removed > 0) {
+        console.warn(`🧹 Limpeza: ${removed} trades órfãos removidos`);
+        setCouncilState(prev => ({
+            ...prev,
+            systemMetrics: {
+                ...prev.systemMetrics,
+                orphanedTradesRemoved: prev.systemMetrics.orphanedTradesRemoved + removed,
+                lastCleanup: Date.now(),
+            }
+        }));
+      }
+    }, CLEANUP_INTERVAL_MS);
+    
+    return () => {
+        clearInterval(metricsInterval);
+        clearInterval(cleanupInterval);
+    };
+}, [isCouncilAutopilotOn, tradeDecisionLog.length, robotPerformance, sessionStartTime]);
+
   useEffect(() => {
-    const symbolChanged = activeSymbol && lastActiveSymbolRef.current !== activeSymbol;
-    const timePeriodChanged = timePeriod && lastTimePeriodRef.current !== timePeriod;
-  
-    if (isCouncilAutopilotOn && (symbolChanged || timePeriodChanged)) {
-      console.log(`[CONTEXT CHANGE] Mudança detectada. Resetando bootstrap e arena...`);
-      bootstrapAttemptedRef.current = false;
-      setIsBootstrapped(false);
-      resetArenaPerformance();
-  
-      if (symbolChanged) lastActiveSymbolRef.current = activeSymbol;
-      if (timePeriodChanged) lastTimePeriodRef.current = timePeriod;
-    }
-  }, [activeSymbol, timePeriod, isCouncilAutopilotOn, resetArenaPerformance]);
+    if (!user || isAuthLoading) return;
+    loadRobotPerformance(user.uid)
+      .then((stored) => {
+        if (stored && stored.length > 0) {
+          const enhanced: EnhancedRobotPerformance[] = (stored as any[]).map(p => ({
+            ...p,
+            sharpeRatio: p.sharpeRatio || 0,
+            maxDrawdown: p.maxDrawdown || 0,
+            avgWin: p.avgWin || 0,
+            avgLoss: p.avgLoss || 0,
+            profitFactor: p.profitFactor || 0,
+            kellyFraction: p.kellyFraction || 0,
+            effectiveRegimes: p.effectiveRegimes || [],
+            monteCarloScore: p.monteCarloScore || 0,
+            lastUpdated: p.lastUpdated || Date.now(),
+            tradeHistory: p.tradeHistory || []
+          }));
+          setRobotPerformance(enhanced);
+        }
+      })
+      .catch(err => console.error("❌ Erro ao carregar performance:", err));
+  }, [user, isAuthLoading]);
+
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+        if (!user || tradeDecisionLog.length === 0) return;
+        console.log("[AUDIT] Salvando logs de auditoria pendentes antes de sair...");
+        tradeDecisionLog.forEach(log => {
+            if (log.result === 'pending') {
+                saveTradeDecision(user.uid, log);
+            }
+        });
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [tradeDecisionLog, user]);
 
   const dissolveCouncil = useCallback(() => {
     setIsFetchingCouncil(true);
@@ -568,6 +635,20 @@ export function useRobotCouncilV2(
     setIsFetchingCouncil(false);
   }, [activeSymbol, user, toast, evolvedStrategies, resetArenaPerformance, timePeriod]);
 
+  useEffect(() => {
+    const symbolChanged = activeSymbol && lastActiveSymbolRef.current !== activeSymbol;
+    const timePeriodChanged = timePeriod && lastTimePeriodRef.current !== timePeriod;
+  
+    if (isCouncilAutopilotOn && (symbolChanged || timePeriodChanged)) {
+      console.log(`[CONTEXT CHANGE] Mudança detectada. Resetando bootstrap e arena...`);
+      bootstrapAttemptedRef.current = false;
+      setIsBootstrapped(false);
+      resetArenaPerformance();
+  
+      if (symbolChanged) lastActiveSymbolRef.current = activeSymbol;
+      if (timePeriodChanged) lastTimePeriodRef.current = timePeriod;
+    }
+  }, [activeSymbol, timePeriod, isCouncilAutopilotOn, resetArenaPerformance]);
 
   useEffect(() => {
     tradeDecisionLog.forEach(log => {
@@ -842,55 +923,6 @@ export function useRobotCouncilV2(
 
         const activeStakes = activeCouncilContracts.reduce((sum, c) => sum + c.stake, 0);
         
-        const { indicators, bayesianVotes, consensusDecision } = councilState;
-        
-        console.log('═══════════════════════════════════════');
-        console.log('🔍 VALIDAÇÃO ARQUITETURA V2.5');
-        console.log('═══════════════════════════════════════');
-
-        // 1. Fonte de Dados
-        console.log('1️⃣ FONTE DE DADOS:');
-        console.log('   chartData (direto):', chartData?.length || 0, 'candles');
-        console.log('   priceTicks (fallback):', priceTicks?.length || 0, 'ticks');
-        console.log('   tickCandles (usado):', tickCandles?.length || 0);
-
-        // 2. Bootstrap
-        console.log('\n2️⃣ BOOTSTRAP:');
-        console.log('   Status:', isBootstrapped ? '✅ OK' : '❌ PENDENTE');
-        console.log('   Tentativa feita:', bootstrapAttemptedRef?.current ? 'Sim' : 'Não');
-
-        // 3. Indicadores
-        console.log('\n3️⃣ INDICADORES:');
-        console.log('   Status:', indicators ? '✅ OK' : '❌ NULL');
-        if (indicators) {
-          console.log('   RSI:', indicators.rsi?.toFixed(2) || 'N/A');
-          console.log('   ADX:', indicators.adx?.toFixed(2) || 'N/A');
-          console.log('   MACD:', indicators.macd?.histogram?.toFixed(4) || 'N/A');
-        }
-
-        // 4. Regime
-        console.log('\n4️⃣ REGIME:');
-        console.log('   Tipo:', currentRegime?.regime || 'N/A');
-        console.log('   Confiança:', ((currentRegime?.confidence || 0) * 100).toFixed(0) + '%');
-
-        // 5. Robôs
-        console.log('\n5️⃣ ROBÔS:');
-        console.log('   Conselho:', strategyCouncil?.length || 0);
-        console.log('   Com Votos:', Object.keys(bayesianVotes || {}).length);
-        console.log('   Ativos (weight>0):', Object.values(bayesianVotes || {}).filter(v => v.weight > 0).length);
-
-        // 6. Arena Virtual
-        console.log('\n6️⃣ ARENA VIRTUAL:');
-        console.log('   Trades Ativos:', virtualTradesRef.current?.length || 0);
-
-        // 7. Consenso
-        console.log('\n7️⃣ CONSENSO:');
-        console.log('   Direção:', consensusDecision?.direction || 'N/A');
-        console.log('   Probabilidade:', ((consensusDecision?.probability || 0) * 100).toFixed(0) + '%');
-        console.log('   Stake:', '$' + (consensusDecision?.stake || 0).toFixed(2));
-
-        console.log('═══════════════════════════════════════');
-        
         setCouncilState(prev => ({
             ...prev,
             indicators: currentIndicators,
@@ -938,59 +970,63 @@ isDynamicConsensusOn, isDynamicRiskOn, isDynamicExitOn,
 stopLossThreshold, takeProfitThreshold,
 toast, executeTrade, sellContract, resetArenaPerformance, evolveTrigger, operationsLog, councilState.portfolioStats.totalExposure, durationLimits
 ]);
-useEffect(() => {
-if (!isCouncilAutopilotOn) return;
-const intervalId = setInterval(runCouncilCycle, THROTTLE_MS);
-return () => clearInterval(intervalId);
-}, [runCouncilCycle, isCouncilAutopilotOn]);
-const {
-indicators, currentRegime, microstructure, consensusDecision,
-portfolioStats, bayesianVotes, dashboardData, effectiveThreshold,
-councilConfidence, systemMetrics
-} = councilState;
-return {
-isCouncilAutopilotOn,
-setIsCouncilAutopilotOn,
-fetchStrategyCouncil,
-dissolveCouncil,
-isFetchingCouncil,
-strategyCouncil,
-robotPerformance,
-evolutionHistory,
-indicators,
-currentRegime,
-microstructure,
-consensusDecision,
-portfolioStats,
-dailyBalance,
-setDailyBalance,
-dailyTarget,
-setDailyTarget,
-consensusSensitivity,
-setConsensusSensitivity,
-confidenceFactor,
-setConfidenceFactor,
-durationRange,
-setDurationRange,
-takeProfitThreshold,
-setTakeProfitThreshold,
-stopLossThreshold,
-setStopLossThreshold,
-isDynamicConsensusOn,
-setIsDynamicConsensusOn,
-isDynamicRiskOn,
-setIsDynamicRiskOn,
-isMeritocracyOn,
-setIsMeritocracyOn,
-isDynamicExitOn,
-setIsDynamicExitOn,
-dashboardData,
-effectiveThreshold,
-councilConfidence,
-resetArenaPerformance,
-tradeDecisionLog,
-systemMetrics,
-bayesianVotes,
-supervisionStatus: { status: 'approved', message: 'Cérebro V2.5 Ativo' },
-};
+
+  useEffect(() => {
+    if (!isCouncilAutopilotOn) return;
+    const intervalId = setInterval(runCouncilCycle, THROTTLE_MS);
+    return () => clearInterval(intervalId);
+  }, [runCouncilCycle, isCouncilAutopilotOn]);
+
+  const {
+    indicators, currentRegime, microstructure, consensusDecision,
+    portfolioStats, bayesianVotes, dashboardData, effectiveThreshold,
+    councilConfidence, systemMetrics
+  } = councilState;
+
+  return {
+    isCouncilAutopilotOn,
+    setIsCouncilAutopilotOn,
+    fetchStrategyCouncil,
+    dissolveCouncil,
+    isFetchingCouncil,
+    strategyCouncil,
+    robotPerformance,
+    evolutionHistory,
+    indicators,
+    currentRegime,
+    microstructure,
+    consensusDecision,
+    portfolioStats,
+    dailyBalance,
+    setDailyBalance,
+    dailyTarget,
+    setDailyTarget,
+    consensusSensitivity,
+    setConsensusSensitivity,
+    confidenceFactor,
+    setConfidenceFactor,
+    durationRange,
+    setDurationRange,
+    takeProfitThreshold,
+    setTakeProfitThreshold,
+    stopLossThreshold,
+    setStopLossThreshold,
+    isDynamicConsensusOn,
+    setIsDynamicConsensusOn,
+    isDynamicRiskOn,
+    setIsDynamicRiskOn,
+    isMeritocracyOn,
+    setIsMeritocracyOn,
+    isDynamicExitOn,
+    setIsDynamicExitOn,
+    dashboardData,
+    effectiveThreshold,
+    councilConfidence,
+    resetArenaPerformance,
+    tradeDecisionLog,
+    systemMetrics,
+    bayesianVotes,
+    // Compatibilidade com a interface V1
+    supervisionStatus: { status: 'approved', message: 'Cérebro V2.5 Ativo' },
+  };
 }
