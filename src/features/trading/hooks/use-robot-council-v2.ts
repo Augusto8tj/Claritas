@@ -1,3 +1,4 @@
+
 'use client';
 
 /**
@@ -559,16 +560,9 @@ export function useRobotCouncilV2(
         if (executionIdRef.current % 10 === 0) console.log('⏳ [Council] Aguardando conexão Deriv...'); 
         return; 
     }
-    if (!activeSymbol) { 
-        if (executionIdRef.current % 10 === 0) console.log('⏳ [Council] Nenhum símbolo ativo.');
-        return;
-    }
-    // CORREÇÃO CRÍTICA: Garante que temos ticks para trabalhar
-    if (priceTicks.length === 0) {
-        if (executionIdRef.current % 10 === 0) console.log('⏳ [Council] Aguardando primeiro tick...');
-        return;
-    }
+    if (!activeSymbol) return;
     
+    // B. VALIDAÇÃO DE DADOS: O ponto crítico da estagnação
     const validCandles = validateCandles(tickCandles);
     
     if (validCandles.length < REGIME_LOOKBACK) {
@@ -578,6 +572,7 @@ export function useRobotCouncilV2(
        return; 
     }
 
+    // Mutex: Se já está executando, não sobreponha
     if (councilExecutionRef.current.isExecuting) return; 
     councilExecutionRef.current.isExecuting = true;
     executionIdRef.current++;
@@ -745,8 +740,70 @@ export function useRobotCouncilV2(
             }
         }));
         
-        if (executionIdRef.current % 10 === 0) {
-            console.log(`✅ [Council Alive] Cycle #${executionIdRef.current} | Active Robots: ${activeRobotsCount} | Paper Trades: ${virtualTradesRef.current.length} | Regime: ${regimeResult.regime}`);
+        const logData = {
+            chartData: tickCandles,
+            priceTicks,
+            indicators: councilState.indicators,
+            currentRegime: councilState.currentRegime,
+            strategyCouncil,
+            bayesianVotes: councilState.bayesianVotes,
+            virtualTradesRef,
+            consensusDecision: councilState.consensusDecision
+        };
+
+        if (executionIdRef.current % 5 === 0) {
+            console.log('═══════════════════════════════════════');
+            console.log(`🔍 VALIDAÇÃO ARQUITETURA V2.5 - CICLO #${executionIdRef.current}`);
+            console.log('═══════════════════════════════════════');
+            
+            console.log('1️⃣ FONTE DE DADOS:');
+            console.log('   chartData (direto):', logData.chartData?.length || 0, 'candles');
+            console.log('   priceTicks (fallback):', logData.priceTicks?.length || 0, 'ticks');
+            console.log('   tickCandles (usado):', tickCandles?.length || 0);
+
+            console.log('\n2️⃣ INDICADORES:');
+            console.log('   Status:', logData.indicators ? '✅ OK' : '❌ NULL');
+            if (logData.indicators) {
+                console.log('   RSI:', logData.indicators.rsi?.toFixed(2) || 'N/A');
+                console.log('   ADX:', logData.indicators.adx?.toFixed(2) || 'N/A');
+                console.log('   MACD:', logData.indicators.macd?.histogram?.toFixed(4) || 'N/A');
+                console.log('   Stoch:', logData.indicators.stoch?.toFixed(2) || 'N/A');
+                console.log('   BBW:', logData.indicators.bbw?.toFixed(4) || 'N/A');
+                console.log('   Z-Score:', logData.indicators.zScore?.toFixed(2) || 'N/A');
+            }
+
+            console.log('\n3️⃣ REGIME:');
+            console.log('   Tipo:', logData.currentRegime?.regime || 'N/A');
+            console.log('   Confiança:', ((logData.currentRegime?.confidence || 0) * 100).toFixed(0) + '%');
+            if (logData.currentRegime?.probabilities) {
+                console.log('   Distribuição:', Object.entries(logData.currentRegime.probabilities)
+                    .map(([k, v]) => `${k}: ${(v*100).toFixed(0)}%`)
+                    .join(' | '));
+            }
+
+            console.log('\n4️⃣ MICROESTRUTURA:');
+            if (microFeatures) {
+                console.log(`   Pressão: ${microFeatures.pressure} (${(microFeatures.volumeImbalance*100).toFixed(0)}%) | Velocidade: ${microFeatures.tickVelocity.toFixed(2)} t/s`);
+            }
+
+            console.log('\n5️⃣ ROBÔS:');
+            console.log('   Conselho:', logData.strategyCouncil?.length || 0);
+            console.log('   Com Votos:', Object.keys(logData.bayesianVotes || {}).length);
+            console.log('   Ativos (weight>0):', Object.values(logData.bayesianVotes || {}).filter(v => v.weight > 0).length);
+
+            console.log('\n6️⃣ ARENA VIRTUAL:');
+            console.log('   Trades Ativos:', logData.virtualTradesRef.current?.length || 0);
+
+            console.log('\n7️⃣ CONSENSO:');
+            console.log('   Direção:', logData.consensusDecision?.direction || 'N/A');
+            console.log('   Probabilidade:', ((logData.consensusDecision?.probability || 0) * 100).toFixed(0) + '%');
+            console.log('   Stake:', '$' + (logData.consensusDecision?.stake || 0).toFixed(2));
+            console.log(`   Soma (Rise/Fall): ${riseSum.toFixed(2)} / ${fallSum.toFixed(2)}`);
+            console.log(`   Peso Total: ${totalWeight.toFixed(2)}`);
+            console.log(`   Limiar Efetivo: ${calculatedEffectiveThreshold.toFixed(2)}`);
+            console.log(`   Executado: ${consensusReached ? '✅ SIM' : '❌ NÃO'}`);
+            
+            console.log('═══════════════════════════════════════');
         }
 
         if (consensusReached && consensusDirection !== 'HOLD') {
@@ -757,8 +814,10 @@ export function useRobotCouncilV2(
         }
 
     } catch (error) {
-        if (error instanceof Error && error.message !== "Tick atual indisponível") {
-             console.error("🚨 [Council Error] Erro crítico no ciclo:", error);
+        if (error instanceof Error) {
+            console.error(`🚨 [Council Crash] Ciclo #${executionIdRef.current} falhou:`, error.message);
+        } else {
+            console.error(`🚨 [Council Crash] Ciclo #${executionIdRef.current} falhou com erro desconhecido.`);
         }
     } finally {
         councilExecutionRef.current.isExecuting = false;
@@ -769,12 +828,14 @@ export function useRobotCouncilV2(
     strategyCouncil, timePeriod, robotPerformance, confidenceFactor, isMeritocracyOn, consensusSensitivity, dailyBalance
   ]);
 
+  // Hook que dispara o ciclo repetidamente
   useEffect(() => {
     if (!isCouncilAutopilotOn) return;
     const interval = setInterval(runCouncilCycle, THROTTLE_MS);
     return () => clearInterval(interval);
   }, [runCouncilCycle, isCouncilAutopilotOn]);
 
+  // Retorno da API do Hook para os Componentes React
   return {
     isCouncilAutopilotOn,
     fetchStrategyCouncil,
@@ -783,7 +844,8 @@ export function useRobotCouncilV2(
     strategyCouncil,
     robotPerformance,
     evolutionHistory,
-    ...councilState,
+    ...councilState, // Espalha todo o estado complexo
+    // Setters para configurações da UI
     setDailyBalance, setDailyTarget, setConsensusSensitivity, setConfidenceFactor, 
     setDurationRange, setTakeProfitThreshold, setStopLossThreshold, 
     setIsDynamicConsensusOn, setIsDynamicRiskOn, setIsMeritocracyOn, setIsDynamicExitOn,
