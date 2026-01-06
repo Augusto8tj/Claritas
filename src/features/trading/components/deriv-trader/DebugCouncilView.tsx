@@ -147,7 +147,7 @@ export function DebugCouncilView({ councilState, isCouncilAutopilotOn }: DebugCo
                 value={`${systemMetrics.activeVirtualTrades} / ${systemMetrics.totalVirtualTrades}`}
                 subtext="Ativos / Total"
             />
-            <MetricCard 
+             <MetricCard 
                 icon={<Users className="h-4 w-4 text-green-500" />}
                 label="Robôs Ativos"
                 value={`${systemMetrics.activeRobotsCount} / ${robotPerformance?.length || 22}`}

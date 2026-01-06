@@ -744,6 +744,9 @@ export function useRobotCouncilV2(
 
         const calculatedEffectiveThreshold = (totalWeight * (consensusSensitivity / 100));
         const consensusReached = totalWeight > 0 && Math.max(riseSum, fallSum) >= calculatedEffectiveThreshold;
+        
+        // CORREÇÃO: Medição de memória
+        const memoryUsageMB = (performance.memory as any)?.usedJSHeapSize / (1024 * 1024);
 
         // I. ATUALIZAÇÃO DA INTERFACE (UI LAYER)
         const currentSessionDuration = sessionStartTime ? (Date.now() - sessionStartTime) / 1000 : 0;
@@ -755,14 +758,6 @@ export function useRobotCouncilV2(
             microstructure: microFeatures,
             consensusDecision: { direction: consensusDirection, probability: consensusProbability, stake: 0 },
             bayesianVotes: localBayesianVotes,
-            dashboardData: {
-                regime: regimeResult.regime,
-                bayesianProbability: consensusProbability,
-                consensusDirection,
-                activeRobotsCount,
-                microstructure: { pressure: microFeatures?.volumeImbalance || 0, velocity: microFeatures?.tickVelocity || 0, isSpike: false },
-                kellyStake: 0
-            },
             systemMetrics: {
                 ...prev.systemMetrics,
                 sessionDuration: currentSessionDuration,
@@ -770,7 +765,8 @@ export function useRobotCouncilV2(
                 totalVirtualTrades: prev.systemMetrics.totalVirtualTrades + (performanceChanged ? 1 : 0),
                 activeRobotsCount,
                 orphanedTradesRemoved: prev.systemMetrics.orphanedTradesRemoved + removedOrphanedCount,
-                lastCleanup: removedOrphanedCount > 0 ? Date.now() : prev.systemMetrics.lastCleanup
+                lastCleanup: removedOrphanedCount > 0 ? Date.now() : prev.systemMetrics.lastCleanup,
+                memoryUsageMB: memoryUsageMB || prev.systemMetrics.memoryUsageMB,
             },
             robotPerformance,
             consensusReached,
