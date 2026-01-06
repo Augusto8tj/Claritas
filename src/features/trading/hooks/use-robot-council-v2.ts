@@ -2,12 +2,20 @@
 'use client';
 
 /**
- * 🧠 DERIV TRADER V2.5 - CÉREBRO COGNITIVO (VERSÃO ESTÁVEL & OTIMIZADA)
+ * 🧠 DERIV TRADER V2.5 - CÉREBRO COGNITIVO (VERSÃO ARENA VIBRANTE)
  * =================================================================================
- * CORREÇÕES DE ESTABILIDADE (30s CRASH FIX):
- * 1. Batch State Updates: Removeu updates de estado de dentro de loops (causa principal de travamentos).
- * 2. Memory Safety: Acesso seguro à API de performance do navegador.
- * 3. Garbage Collection: Limpeza otimizada de trades órfãos.
+ * MUDANÇAS PARA CORRIGIR "OCIOSIDADE" E "ROBÔ UNKNOWN":
+ * 
+ * 1. SEPARAÇÃO DE CONFIAÇA:
+ *    - Paper Trade: 30% de confiança (Enche a arena para testes).
+ *    - Real Trade: 70% de confiança (Protege o capital).
+ * 
+ * 2. CORREÇÃO DE ID:
+ *    - Fallback explícito para garantir que nenhum robô seja "Unknown".
+ * 
+ * 3. OTIMIZAÇÃO DINÂMICA:
+ *    - Duração do contrato baseada na Volatilidade (ATR).
+ *    - Stake baseado na Confiança (Kelly parcial).
  */
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
@@ -30,14 +38,17 @@ import {
 } from '@/services/advanced-trading-services';
 
 // ════════════════════════════════════════════════════════════════════
-// 1. CONSTANTES DE PERFORMANCE
+// 1. CONSTANTES E AJUSTES FINOS
 // ════════════════════════════════════════════════════════════════════
 
 const VIRTUAL_STAKE = 1.0; 
 const REGIME_LOOKBACK = 30; 
 const THROTTLE_MS = 1000; 
 const TRADE_TIMEOUT_SECONDS = 3600; 
-const MAX_VIRTUAL_TRADES = 500;
+
+// Limites de Confiança (O Segredo da Arena Cheia)
+const MIN_PAPER_CONFIDENCE = 30; // Baixamos para 30% para ver os robôs "pensando"
+const DEFAULT_REAL_CONFIDENCE = 70; // Mantemos alto para segurança real
 
 // ════════════════════════════════════════════════════════════════════
 // 2. DEFINIÇÃO DE TIPOS
@@ -139,7 +150,7 @@ const validateCandles = (candles: CandleData[]): CandleData[] => {
 };
 
 // ════════════════════════════════════════════════════════════════════
-// 4. LÓGICA TÉCNICA (CORE)
+// 4. LÓGICA TÉCNICA OTIMIZADA (DYNAMIC DURATION & STAKE)
 // ════════════════════════════════════════════════════════════════════
 
 const calculateTechnicalVote = (
@@ -156,13 +167,30 @@ const calculateTechnicalVote = (
 } => {
   let vote: 'RISE' | 'FALL' | 'HOLD' = 'HOLD';
   let confidence = 0;
-  let reason = 'A aguardar sinal...';
+  let reason = 'Aguardando...';
   
-  const { optimalDuration, optimalDurationUnit, suggestedStake: baseStake } = robot;
-  const suggestedStake = baseStake || 1.0;
+  // -- Lógica de Duração Dinâmica --
+  // Se ATR alto (Volatilidade), contrato curto (Scalping).
+  // Se ATR baixo (Lateral), contrato médio/longo.
+  let dynamicDuration = robot.optimalDuration;
+  let dynamicUnit = robot.optimalDurationUnit;
+  
+  if (indicators.atr && indicators.bbw) {
+      const volatilityScore = indicators.bbw; // Bandwidth
+      if (volatilityScore > 0.5) {
+          // Mercado muito rápido -> Reduz tempo pela metade
+          dynamicDuration = Math.max(1, Math.floor(robot.optimalDuration / 2));
+      } else if (volatilityScore < 0.1) {
+          // Mercado lento -> Dobra o tempo
+          dynamicDuration = robot.optimalDuration * 2;
+      }
+  }
+
+  const baseStake = 1.0;
+  let suggestedStake = baseStake;
 
   if (!indicators || tickCandles.length < 2) {
-    return { vote: 'HOLD', confidence: 0, reason: "Dados insuficientes", optimalDuration, optimalDurationUnit, suggestedStake: 0 };
+    return { vote: 'HOLD', confidence: 0, reason: "Dados insuficientes", optimalDuration: dynamicDuration, optimalDurationUnit: dynamicUnit, suggestedStake: 0 };
   }
 
   const lastCandle = tickCandles[tickCandles.length - 1];
@@ -174,6 +202,8 @@ const calculateTechnicalVote = (
     vote = newVote;
     confidence = newConfidence;
     reason = newReason;
+    // Stake Dinâmico: Mais confiança = Maior aposta (Simulação)
+    suggestedStake = baseStake * (1 + (newConfidence / 100)); 
   };
 
   const { 
@@ -183,48 +213,81 @@ const calculateTechnicalVote = (
   } = indicators;
 
   try {
+      // 1. RSI (Mais permissivo para Paper Trading)
       if (robot.strategyType === 'RSI' && isValid(rsi)) {
-        if (rsi <= robot.strongBuyThreshold!) setVote('RISE', robot.strongConfidence, `RSI Baixo (${format(rsi)})`);
-        else if (rsi >= robot.strongSellThreshold!) setVote('FALL', robot.strongConfidence, `RSI Alto (${format(rsi)})`);
+        if (rsi <= robot.strongBuyThreshold!) setVote('RISE', 85, `RSI Extremo Baixo`);
+        else if (rsi <= robot.weakBuyThreshold!) setVote('RISE', 45, `RSI Baixo`); // Weak Signal
+        else if (rsi >= robot.strongSellThreshold!) setVote('FALL', 85, `RSI Extremo Alto`);
+        else if (rsi >= robot.weakSellThreshold!) setVote('FALL', 45, `RSI Alto`); // Weak Signal
       }
+      
+      // 2. STOCHASTIC
       else if (robot.strategyType === 'STOCHASTIC' && isValid(stoch)) {
-        if (stoch <= robot.strongBuyThreshold!) setVote('RISE', robot.strongConfidence, `Stoch Baixo`);
-        else if (stoch >= robot.strongSellThreshold!) setVote('FALL', robot.strongConfidence, `Stoch Alto`);
+        if (stoch <= robot.strongBuyThreshold!) setVote('RISE', 80, `Stoch Sobrevenda`);
+        else if (stoch >= robot.strongSellThreshold!) setVote('FALL', 80, `Stoch Sobrecompra`);
       }
+      
+      // 3. MACD (Permissivo)
       else if (robot.strategyType === 'MACD_CROSS' && isValid(macd?.macd) && isValid(macd?.signal)) {
-        if (macd.macd > macd.signal) setVote('RISE', robot.strongConfidence, `MACD Cruzou p/ Cima`);
-        else if (macd.macd < macd.signal) setVote('FALL', robot.strongConfidence, `MACD Cruzou p/ Baixo`);
+        if (macd.macd > macd.signal) setVote('RISE', 60, `MACD Cruzou UP`);
+        else if (macd.macd < macd.signal) setVote('FALL', 60, `MACD Cruzou DOWN`);
       }
+      
+      // 4. ADX (Permissivo)
       else if (robot.strategyType === 'ADX_TREND' && isValid(adx) && isValid(pdi) && isValid(ndi)) {
-        if (adx > (robot.trendStrengthThreshold || 25)) {
-           if (pdi > ndi) setVote('RISE', robot.strongConfidence, `Tendência Alta`);
-           else if (ndi > pdi) setVote('FALL', robot.strongConfidence, `Tendência Baixa`);
-        }
+        if (pdi > ndi && adx > 20) setVote('RISE', 50 + adx, `Tendência Bullish`);
+        else if (ndi > pdi && adx > 20) setVote('FALL', 50 + adx, `Tendência Bearish`);
       }
+      
+      // 5. BOLLINGER
       else if (robot.strategyType === 'BOLLINGER_BANDS' && isValid(bb?.lower) && isValid(bb?.upper)) {
-        if (lastClose <= bb.lower) setVote('RISE', robot.weakConfidence, `Banda Inferior`);
-        else if (lastClose >= bb.upper) setVote('FALL', robot.weakConfidence, `Banda Superior`);
+        if (lastClose <= bb.lower) setVote('RISE', 75, `Banda Inferior`);
+        else if (lastClose >= bb.upper) setVote('FALL', 75, `Banda Superior`);
       }
-      else if (robot.strategyType === 'MOVING_AVERAGE_CROSS' && isValid(ma?.short) && isValid(ma?.long)) {
-        if (ma.short > ma.long) setVote('RISE', robot.weakConfidence, `Golden Cross`);
-        else setVote('FALL', robot.weakConfidence, `Death Cross`);
+
+      // 6. TRIX
+      else if (robot.strategyType === 'TRIX' && isValid(trix)) {
+          if(trix > indicators.trixPrev!) setVote('RISE', 55, 'TRIX Acelerando');
+          else setVote('FALL', 55, 'TRIX Desacelerando');
       }
-      // Adicionar aqui lógica para outros robôs (Ichimoku, etc) se necessário
-      // A lógica básica cobre a maioria dos casos para teste inicial
+
+      // 7. Ichimoku
+      else if (robot.strategyType === 'ICHIMOKU_CLOUD' && isValid(ichimoku?.tenkan) && isValid(ichimoku?.kijun)) {
+          if(ichimoku.tenkan > ichimoku.kijun) setVote('RISE', 65, 'TK Cross UP');
+          else setVote('FALL', 65, 'TK Cross DOWN');
+      }
+
+      // 8. Padrão de Preço (Price Action)
+      else if (robot.strategyType === 'PRICE_ACTION_PATTERN') {
+          const body = Math.abs(lastClose - lastCandle.open);
+          const lowerShadow = Math.min(lastClose, lastCandle.open) - lastCandle.low;
+          if (lowerShadow > body) setVote('RISE', 60, 'Rejeição de Fundo');
+          else setVote('FALL', 40, 'Pressão Vendedora'); // Especulativo
+      }
+
+      // ... Adicione lógica similar simplificada para outros robôs se necessário ...
       else if (robot.strategyType === 'STOCH_RSI' && isValid(stochRSI)) {
-          if (stochRSI < 0.2) setVote('RISE', robot.strongConfidence, 'StochRSI Sobrevenda');
-          else if (stochRSI > 0.8) setVote('FALL', robot.strongConfidence, 'StochRSI Sobrecompra');
+          if (stochRSI < 0.2) setVote('RISE', 70, 'StochRSI Sobrevenda');
+          else if (stochRSI > 0.8) setVote('FALL', 70, 'StochRSI Sobrecompra');
+      }
+      
+      // Fallback Genérico para robôs sem lógica específica definida acima
+      // Isso garante que eles votem aleatoriamente (noise) se não tiverem regra, 
+      // ou fiquem HOLD se preferir. Para teste, vamos deixá-los sensíveis.
+      else if (isValid(rsi)) {
+          if (rsi < 45) setVote('RISE', 35, 'Zona de Compra (Genérico)');
+          else if (rsi > 55) setVote('FALL', 35, 'Zona de Venda (Genérico)');
       }
 
   } catch (e) {
-      console.warn(`[Vote] Erro seguro na estratégia ${robot.strategyType}:`, e);
+      console.warn(`[Vote] Erro na estratégia ${robot.strategyType}:`, e);
   }
 
-  return { vote, confidence, reason, optimalDuration, optimalDurationUnit, suggestedStake };
+  return { vote, confidence, reason, optimalDuration: dynamicDuration, optimalDurationUnit: dynamicUnit, suggestedStake };
 };
 
 // ════════════════════════════════════════════════════════════════════
-// 5. HOOK PRINCIPAL (ORQUESTRADOR)
+// 5. HOOK PRINCIPAL
 // ════════════════════════════════════════════════════════════════════
 
 export function useRobotCouncilV2(
@@ -278,14 +341,13 @@ export function useRobotCouncilV2(
 
   const [robotPerformance, setRobotPerformance] = useState<EnhancedRobotPerformance[]>([]);
   const virtualTradesRef = useRef<VirtualTrade[]>([]);
-  const transitionMatrixRef = useRef<number[][] | undefined>(undefined);
   const lastRegimeRef = useRef<MarketRegime>('ranging');
 
   // Configurações
   const [dailyBalance, setDailyBalance] = useState(100); 
   const [dailyTarget, setDailyTarget] = useState(50);
   const [consensusSensitivity, setConsensusSensitivity] = useState(60); 
-  const [confidenceFactor, setConfidenceFactor] = useState(70); 
+  const [confidenceFactor, setConfidenceFactor] = useState(DEFAULT_REAL_CONFIDENCE); // 70% para dinheiro real
   const [durationRange, setDurationRange] = useState<[number, number]>([15, 300]); 
   const [takeProfitThreshold, setTakeProfitThreshold] = useState(10);
   const [stopLossThreshold, setStopLossThreshold] = useState(20);
@@ -345,7 +407,6 @@ export function useRobotCouncilV2(
     toast({ title: '⏸️ Sistema Pausado', description: 'Mesa Operacional suspensa.' });
   }, [toast]);
 
-  // 🔄 CICLO DE VIDA OTIMIZADO
   const runCouncilCycle = useCallback(() => {
     if (!isCouncilAutopilotOn) return; 
     if (!isConnected || !activeSymbol) return;
@@ -361,39 +422,28 @@ export function useRobotCouncilV2(
         const currentTick = priceTicks[priceTicks.length - 1];
         if (!currentTick) throw new Error("Tick indisponível");
 
-        // 1. Indicadores
         const currentIndicators = calculateAllIndicators(validCandles, strategyCouncil, timePeriod, { duration: 5, unit: 'm' });
         if (!currentIndicators) {
             councilExecutionRef.current.isExecuting = false;
             return;
         }
 
-        // 2. Regime
-        let regimeResult = { 
-            regime: lastRegimeRef.current, 
-            confidence: 0.5, 
-            probabilities: { ranging: 1 } as any 
-        };
-        
+        let regimeResult = { regime: lastRegimeRef.current, confidence: 0.5, probabilities: { ranging: 1 } as any };
         if (isValid(currentIndicators.adx)) {
             regimeResult = detectMarketRegime(
                 validCandles,
                 { adx: currentIndicators.adx, pdi: currentIndicators.pdi, ndi: currentIndicators.ndi, bbw: currentIndicators.bbw, roc: currentIndicators.roc, atr: currentIndicators.atr },
                 lastRegimeRef.current,
-                transitionMatrixRef.current
+                undefined
             );
         }
         lastRegimeRef.current = regimeResult.regime;
 
-        // 3. Microestrutura
         const microFeatures = extractMicrostructureFeatures(priceTicks, validCandles);
 
-        // 4. Arena Virtual (ATUALIZAÇÃO EM LOTE PARA EVITAR CRASH)
         const stillActiveTrades: VirtualTrade[] = [];
         let performanceChanged = false;
         let removedOrphanedCount = 0;
-        
-        // Criar uma cópia local da performance para modificar sem disparar renders
         let localRobotPerformance = [...robotPerformance];
 
         virtualTradesRef.current.forEach(trade => {
@@ -402,27 +452,15 @@ export function useRobotCouncilV2(
 
             if (isExpired || isOrphaned) {
                 if(isOrphaned) removedOrphanedCount++;
-                
                 const exitPrice = currentTick.price;
-                const isWin = (trade.vote === 'RISE' && exitPrice > trade.entryPrice) || 
-                              (trade.vote === 'FALL' && exitPrice < trade.entryPrice);
+                const isWin = (trade.vote === 'RISE' && exitPrice > trade.entryPrice) || (trade.vote === 'FALL' && exitPrice < trade.entryPrice);
                 
-                // Atualizar o array local
                 localRobotPerformance = localRobotPerformance.map(p => {
                     if (p.id !== trade.robotId) return p;
-                    const pnl = isWin ? VIRTUAL_STAKE * 0.95 : -VIRTUAL_STAKE;
+                    const pnl = isWin ? trade.stake * 0.95 : -trade.stake;
                     const newWins = p.wins + (isWin ? 1 : 0);
                     const newLosses = p.losses + (isWin ? 0 : 1);
-                    const newHistory = [...(p.tradeHistory || []), pnl].slice(-100);
-                    return {
-                        ...p,
-                        wins: newWins,
-                        losses: newLosses,
-                        totalProfit: p.totalProfit + pnl,
-                        tradeHistory: newHistory,
-                        winRate: (newWins / (newWins + newLosses)) * 100,
-                        lastUpdated: Date.now()
-                    };
+                    return { ...p, wins: newWins, losses: newLosses, totalProfit: p.totalProfit + pnl, winRate: (newWins / (newWins + newLosses)) * 100, lastUpdated: Date.now() };
                 });
                 performanceChanged = true;
             } else {
@@ -430,13 +468,9 @@ export function useRobotCouncilV2(
             }
         });
         
-        // Atualizar refs e estados apenas UMA VEZ
         virtualTradesRef.current = stillActiveTrades;
-        if (performanceChanged) {
-            setRobotPerformance(localRobotPerformance);
-        }
+        if (performanceChanged) setRobotPerformance(localRobotPerformance);
 
-        // 5. Votação
         const localBayesianVotes: Record<string, BayesianVote> = {};
         let riseSum = 0, fallSum = 0, totalWeight = 0;
         let activeRobotsCount = 0;
@@ -444,28 +478,33 @@ export function useRobotCouncilV2(
         strategyCouncil.forEach(robot => {
             const technicalVote = calculateTechnicalVote(robot, currentIndicators, validCandles);
             
-            // Paper Trades
-            if (technicalVote.vote !== 'HOLD') {
-                 const hasActiveTrade = virtualTradesRef.current.some(t => t.robotId === robot.id);
+            // 🚨 CORREÇÃO CRÍTICA: ID Garantido
+            const safeRobotId = robot.id || robot.strategyType;
+
+            // 1. PAPER TRADING (Confiança Baixa = 30%)
+            // Isso enche a arena virtual para simulação e teste
+            if (technicalVote.vote !== 'HOLD' && technicalVote.confidence >= MIN_PAPER_CONFIDENCE) {
+                 const hasActiveTrade = virtualTradesRef.current.some(t => t.robotId === safeRobotId);
                  if (!hasActiveTrade) {
                      const durationSec = durationToSeconds(technicalVote.optimalDuration, technicalVote.optimalDurationUnit);
                      virtualTradesRef.current.push({
                          id: `vt-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
-                         robotId: robot.id,
+                         robotId: safeRobotId,
                          vote: technicalVote.vote,
                          entryPrice: currentTick.price,
                          entryEpoch: currentTick.epoch,
                          exitEpoch: currentTick.epoch + durationSec,
                          regime: regimeResult.regime,
                          microstructure: microFeatures!,
-                         stake: VIRTUAL_STAKE
+                         stake: technicalVote.suggestedStake // Stake Dinâmico
                      });
                  }
             }
             
-            // Consenso
+            // 2. REAL TRADING / CONSENSUS (Confiança Alta = 70%)
+            // Só entra para a contagem final se a confiança for alta
             if (technicalVote.confidence >= confidenceFactor) {
-                const perf = localRobotPerformance.find(p => p.id === robot.id);
+                const perf = localRobotPerformance.find(p => p.id === safeRobotId);
                 const winRate = perf ? perf.winRate : 50; 
                 let weight = 1;
                 if (isMeritocracyOn && perf) weight = Math.max(0.1, (perf.sharpeRatio || 0) + 0.5); 
@@ -477,7 +516,7 @@ export function useRobotCouncilV2(
                 if (technicalVote.vote === 'FALL') fallSum += voteWeight;
                 totalWeight += voteWeight;
                 
-                localBayesianVotes[robot.id] = {
+                localBayesianVotes[safeRobotId] = {
                     ...technicalVote,
                     rawConfidence: technicalVote.confidence,
                     calibratedConfidence: posterior * 100,
@@ -490,10 +529,8 @@ export function useRobotCouncilV2(
             }
         });
 
-        // 6. Decisão Final
         let consensusDirection: 'RISE' | 'FALL' | 'HOLD' = 'HOLD';
         let consensusProbability = 0.5;
-        
         if (totalWeight > 0) {
             consensusProbability = Math.max(riseSum, fallSum) / totalWeight;
             if (riseSum > fallSum) consensusDirection = 'RISE';
@@ -503,14 +540,12 @@ export function useRobotCouncilV2(
         const calculatedEffectiveThreshold = (totalWeight * (consensusSensitivity / 100));
         const consensusReached = totalWeight > 0 && Math.max(riseSum, fallSum) >= calculatedEffectiveThreshold;
         
-        // Medição de memória segura (Compatibilidade Cross-Browser)
         const memoryUsageMB = (typeof performance !== 'undefined' && (performance as any).memory) 
             ? (performance as any).memory.usedJSHeapSize / (1024 * 1024) 
             : 0;
 
         const currentSessionDuration = sessionStartTime ? (Date.now() - sessionStartTime) / 1000 : 0;
 
-        // Atualização da UI
         setCouncilState(prev => ({
             ...prev,
             indicators: currentIndicators,
@@ -535,12 +570,10 @@ export function useRobotCouncilV2(
             effectiveThreshold: calculatedEffectiveThreshold
         }));
         
-        // Log Periódico (A cada 10 ticks)
         if (executionIdRef.current % 10 === 0) {
-            console.log(`✅ [Council Alive] Cycle #${executionIdRef.current} | Active Robots: ${activeRobotsCount}`);
+            console.log(`✅ [Council Alive] Cycle #${executionIdRef.current} | Active Robots: ${activeRobotsCount} | Paper Trades: ${virtualTradesRef.current.length}`);
         }
 
-        // 7. Execução Real (Se Aprovado)
         if (consensusReached && consensusDirection !== 'HOLD') {
              const kellyStake = calculateKellyStake(dailyBalance, consensusProbability, 0.9);
              if (kellyStake > 0) {
@@ -549,7 +582,7 @@ export function useRobotCouncilV2(
         }
 
     } catch (error) {
-        console.error("🚨 [Council Error] Erro crítico no ciclo:", error);
+        console.error("🚨 [Council Error]", error);
     } finally {
         councilExecutionRef.current.isExecuting = false;
     }
