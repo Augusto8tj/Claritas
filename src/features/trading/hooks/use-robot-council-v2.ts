@@ -498,7 +498,8 @@ export function useRobotCouncilV2(
     isExecuting: false, sellingContracts: new Set()
   });
 
-  // Atualiza o conselho quando a evolução genética produz novos robôs
+  // ✅ CORREÇÃO: Usa o `useEffect` para ouvir as mudanças do algoritmo genético.
+  // Quando `evolvedStrategies` muda, este efeito atualiza o `strategyCouncil` em uso.
   useEffect(() => {
     setStrategyCouncil(evolvedStrategies as RobotStrategy[]);
   }, [evolvedStrategies]);

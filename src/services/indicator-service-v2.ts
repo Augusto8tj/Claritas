@@ -265,6 +265,7 @@ const calculateBB = (data: CandleData[], period = 20, stdDev = 2): ({ upper: num
  */
 const calculateADX = (data: CandleData[], period = 14) => {
     if (data.length < period * 3) {
+        console.warn(`⚠️ ADX precisa de ${period * 3} candles, tem ${data.length}`);
         return { adx: null, pdi: null, ndi: null };
     }
     
@@ -286,7 +287,9 @@ const calculateADX = (data: CandleData[], period = 14) => {
             const res = Array(vals.length).fill(0);
             let sum = 0;
             for(let i=0; i<p && i<vals.length; i++) sum += vals[i];
+            
             if (p - 1 < vals.length) res[p-1] = sum;
+            
             for(let i=p; i<vals.length; i++) {
                 res[i] = res[i-1] - (res[i-1]/p) + vals[i];
             }
@@ -316,20 +319,30 @@ const calculateADX = (data: CandleData[], period = 14) => {
         
         const lastIdx = data.length - 1;
         
+        const adxValue = adxEma[lastIdx];
+        const pdiValue = pdi[lastIdx];
+        const ndiValue = ndi[lastIdx];
+        
+        if (!Number.isFinite(adxValue) || !Number.isFinite(pdiValue) || !Number.isFinite(ndiValue)) {
+            console.warn('⚠️ ADX calculou valores inválidos');
+            return { adx: null, pdi: null, ndi: null };
+        }
+        
         return { 
-            adx: adxEma[lastIdx] || 0, 
-            pdi: pdi[lastIdx] || 0, 
-            ndi: ndi[lastIdx] || 0 
+            adx: adxValue, 
+            pdi: pdiValue, 
+            ndi: ndiValue 
         };
         
     } catch (error) {
-        console.error('❌ Safe ADX Error:', error);
+        console.error('❌ Erro ao calcular ADX:', error);
         // Fallback neutro em caso de erro matemático extremo
         return { adx: 20, pdi: 0, ndi: 0 }; 
     }
 };
 
-// Indicadores Avançados (Auxiliares)
+
+// 7. Novos Indicadores Avançados (Para os Comitês Específicos)
 
 const calculateDonchian = (data: CandleData[], period = 20) => {
     if (data.length < period) return null;
@@ -341,7 +354,7 @@ const calculateDonchian = (data: CandleData[], period = 20) => {
 
 const calculateKAMA = (data: CandleData[], period = 10, fast = 2, slow = 30) => {
     if(data.length < period) return null;
-    let kama = data[period-1].close; 
+    let kama = data[period-1].close; // Seed
     
     for(let i = period; i < data.length; i++) {
         const change = Math.abs(data[i].close - data[i-period].close);
@@ -369,6 +382,7 @@ const calculateAO = (data: CandleData[]) => {
 };
 
 const calculateIchimoku = (data: CandleData[]) => {
+    // Standard params: 9, 26, 52
     if(data.length < 52) return null;
     
     const getAvg = (len: number) => {
@@ -380,25 +394,29 @@ const calculateIchimoku = (data: CandleData[]) => {
     
     const tenkan = getAvg(9);
     const kijun = getAvg(26);
-    const spanA = (tenkan + kijun) / 2;
+    const spanA = (tenkan + kijun) / 2; // Projetado 26 no futuro, mas usamos o valor atual para calculo de suporte
     const spanB = getAvg(52);
     
     return { tenkan, kijun, spanA, spanB };
 };
 
 const calculateTRIX = (data: CandleData[], period = 15) => {
+    // Triple EMA of Log Price
     if (data.length < period * 3) return { current: null, prev: null };
     
     const logPrices = data.map(d => ({ ...d, close: Math.log(d.close) }));
     const ema1 = calculateEMA(logPrices, period);
+    
+    // Helper to extract numeric array for next EMA
     const toCandles = (nums: (number|null)[]) => nums.map(n => ({ close: n || 0 } as CandleData));
+    
     const ema2 = calculateEMA(toCandles(ema1), period);
     const ema3 = calculateEMA(toCandles(ema2), period);
     
     const trixSeries = [];
     for(let i=1; i<ema3.length; i++) {
         if(ema3[i] && ema3[i-1]) {
-            trixSeries.push((ema3[i]! - ema3[i-1]!) * 10000); 
+            trixSeries.push((ema3[i]! - ema3[i-1]!) * 10000); // Multiplicador arbitrário para legibilidade
         } else {
             trixSeries.push(null);
         }
@@ -434,23 +452,30 @@ const calculateZScore = (data: CandleData[], period = 20) => {
 
 const calculateMFI = (data: CandleData[], period = 14) => {
     if (data.length < period + 1) return null;
+    
     let posMF = 0;
     let negMF = 0;
+    
     const typicalPrice = (i: number) => (data[i].high + data[i].low + data[i].close) / 3;
     
+    // Loop simples nos últimos 'period' candles
     for(let i = data.length - period; i < data.length; i++) {
         const tpCurrent = typicalPrice(i);
         const tpPrev = typicalPrice(i-1);
         const rawMF = tpCurrent * (data[i].volume || 1);
+        
         if (tpCurrent > tpPrev) posMF += rawMF;
         else if (tpCurrent < tpPrev) negMF += rawMF;
     }
+    
     if (negMF === 0) return 100;
-    return 100 - (100 / (1 + posMF / negMF));
+    const mfi = 100 - (100 / (1 + posMF / negMF));
+    return mfi;
 };
 
 const calculateOBV = (data: CandleData[]) => {
     if (data.length < 2) return { current: null, prev: null };
+    // OBV é cumulativo desde o início do array carregado
     let obv = 0;
     const obvHistory: number[] = [0];
     
@@ -460,6 +485,7 @@ const calculateOBV = (data: CandleData[]) => {
         else if (data[i].close < data[i-1].close) obv -= vol;
         obvHistory.push(obv);
     }
+    
     return {
         current: obvHistory[obvHistory.length - 1],
         prev: obvHistory[obvHistory.length - 2]
@@ -467,6 +493,7 @@ const calculateOBV = (data: CandleData[]) => {
 };
 
 const calculateStochRSI = (data: CandleData[], rsiValues: (number|null)[], period = 14) => {
+    // Stoch do RSI
     const validRSI = rsiValues.filter(v => v !== null) as number[];
     if (validRSI.length < period) return null;
     
@@ -492,7 +519,7 @@ const calculateVWAP = (data: CandleData[]): (number | null)[] => {
 };
 
 // ============================================================================
-// 3. FUNÇÃO ORQUESTRADORA (EXPORTADA)
+// 🚀 FUNÇÃO PRINCIPAL EXPORTADA
 // ============================================================================
 
 export function calculateAllIndicators(
@@ -504,33 +531,60 @@ export function calculateAllIndicators(
     
     // CORREÇÃO: Limite de sincronia ajustado para 30, como no Cérebro.
     if (!chartData || chartData.length < 30) {
+        console.warn(`⚠️ [Indicators] Dados insuficientes: ${chartData?.length || 0}/30 candles`);
         return null;
     }
 
-    const candles: CandleData[] = chartData.map(d => {
-        if (isCandle(d)) return d;
-        const price = (d as any).price;
-        return { epoch: d.epoch, open: price, high: price, low: price, close: price, volume: 1 };
-    });
+    let candles: CandleData[];
+    if (isCandle(chartData[0])) {
+        candles = chartData as CandleData[];
+    } else {
+        candles = chartData.map(d => ({ 
+            epoch: d.epoch, 
+            open: (d as any).price, 
+            high: (d as any).price, 
+            low: (d as any).price, 
+            close: (d as any).price, 
+            volume: 1 
+        }));
+    }
     
     const validCandles = candles.filter(c => 
-        c && c.close > 0 && Number.isFinite(c.close)
+        c && c.close > 0 && Number.isFinite(c.close) &&
+        c.open > 0 && Number.isFinite(c.open) &&
+        c.high > 0 && Number.isFinite(c.high) &&
+        c.low > 0 && Number.isFinite(c.low)
     );
     
-    if (validCandles.length < 30) return null;
+    if (validCandles.length < 30) {
+        console.warn(`⚠️ [Indicators] Apenas ${validCandles.length}/30 candles válidos`);
+        return null;
+    }
 
     try {
         const getParam = (type: RobotStrategy['strategyType'], key: keyof RobotStrategy, defaultValue: any) => {
             const robot = strategyCouncil.find(r => r.strategyType === type);
-            return robot && robot[key] !== undefined ? robot[key] : defaultValue;
+            // ✅ CORREÇÃO: Usa o timePeriod para determinar o período, se a estratégia não especificar.
+            // Esta é uma heurística simples: períodos mais curtos para timeframes mais curtos.
+            if(robot && robot[key] !== undefined) return robot[key];
+            if(key === 'period' || key === 'shortPeriod' || key === 'fastPeriod') {
+                if (timePeriod.endsWith('m') && parseInt(timePeriod) <= 5) return defaultValue / 2;
+                if (timePeriod.endsWith('h') || timePeriod.endsWith('d')) return defaultValue * 2;
+            }
+            return defaultValue;
         };
 
         // Cálculos em Cascata
         const rsiSeries = calculateRSI(validCandles, getParam('RSI', 'period', 14));
         const stochSeries = calculateStochastic(validCandles, getParam('STOCHASTIC', 'period', 14));
         const atrSeries = calculateATR(validCandles, 14);
-        const smaLong = calculateSMA(validCandles, getParam('MOVING_AVERAGE_CROSS', 'longPeriod', 50));
-        const emaShort = calculateEMA(validCandles, getParam('MOVING_AVERAGE_CROSS', 'shortPeriod', 20));
+        
+        // ✅ CORREÇÃO: Passa os períodos dinâmicos para as médias
+        const longPeriod = getParam('MOVING_AVERAGE_CROSS', 'longPeriod', 50);
+        const shortPeriod = getParam('MOVING_AVERAGE_CROSS', 'shortPeriod', 20);
+        const smaLong = calculateSMA(validCandles, longPeriod);
+        const emaShort = calculateEMA(validCandles, shortPeriod);
+        
         const macdData = calculateMACD(validCandles);
         const bbSeries = calculateBB(validCandles);
         const bbData = bbSeries[bbSeries.length - 1];
