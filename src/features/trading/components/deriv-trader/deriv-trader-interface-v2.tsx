@@ -31,7 +31,7 @@ import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
-import { useDerivApi } from '@/features/trading/hooks/use-deriv-api';
+import { useDerivApiV2 as useDerivApi } from "@/features/trading/hooks/use-deriv-api-v2";
 import type { DurationUnit, RiseFallFormValues, OperationInitiator } from '@/lib/types';
 
 
