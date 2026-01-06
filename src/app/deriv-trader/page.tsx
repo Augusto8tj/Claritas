@@ -39,7 +39,8 @@ function DerivTraderCore() {
     tradeAnnotations,
     activeSymbol,
     priceTicks,
-    dataVersion
+    dataVersion,
+    sellContract,
   } = useDerivApi();
   
   const robotCouncil = useRobotCouncil(activeSymbol, priceTicks, dataVersion);
@@ -112,7 +113,7 @@ function DerivTraderCore() {
                             <TabsTrigger value="evolution">Evolução</TabsTrigger>
                         </TabsList>
                         <TabsContent value="log" className="mt-4">
-                            <OperationsLog operations={operationsLog} />
+                            <OperationsLog operations={operationsLog} sellContractV1={sellContract} priceTicksV1={priceTicks} />
                         </TabsContent>
                         <TabsContent value="desk" className="mt-4">
                             <TradingDesk 
@@ -178,7 +179,7 @@ function DerivTraderCore() {
                 </TabsContent>
                 
                  <TabsContent value="log" className="mt-4 space-y-6">
-                    <OperationsLog operations={operationsLog} />
+                    <OperationsLog operations={operationsLog} sellContractV1={sellContract} priceTicksV1={priceTicks} />
                     <AIAnalysisInterface symbol={activeSymbol} />
                 </TabsContent>
            </Tabs>

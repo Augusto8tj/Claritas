@@ -115,7 +115,7 @@ const IsolatedMarketChart = () => {
 };
 
 const DerivTraderV2Core = () => {
-    const { activeSymbol, priceTicks, dataVersion, operationsLog, chartData } = useDerivApiV2();
+    const { activeSymbol, priceTicks, dataVersion, operationsLog, chartData, sellContract } = useDerivApiV2();
     
     // ✅ O ELO CRÍTICO: `chartData` é injetado no cérebro do conselho
     const robotCouncil = useRobotCouncilV2(activeSymbol, priceTicks, chartData, dataVersion);
@@ -159,7 +159,11 @@ const DerivTraderV2Core = () => {
                     />
                 </TabsContent>
                 <TabsContent value="log" className="mt-4">
-                    <OperationsLog operations={operationsLog} />
+                    <OperationsLog 
+                        operations={operationsLog} 
+                        sellContractV2={sellContract} 
+                        priceTicksV2={priceTicks} 
+                    />
                 </TabsContent>
                 <TabsContent value="audit" className="mt-4">
                     <TradingDecisionLogViewer logs={robotCouncil.tradeDecisionLog} showFilters={false} />

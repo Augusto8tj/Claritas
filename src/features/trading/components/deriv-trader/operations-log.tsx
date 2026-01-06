@@ -11,16 +11,21 @@ import {
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import type { Operation, OperationInitiator, TickData } from "@/lib/types";
-import { ArrowDown, ArrowUp, Bot, User, Users, MoveRight, Clock, DollarSign } from "lucide-react";
+import { ArrowDown, ArrowUp, Bot, User, Users, MoveRight, Clock, DollarSign, Loader2, XSquare } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { useDerivApi } from "@/features/trading/hooks/use-deriv-api";
 import { useToast } from "@/hooks/use-toast";
 import { PendingOperationCounter } from "./pending-operation-counter";
 
 
 interface OperationsLogProps {
   operations: Operation[];
+  // Funções para V1
+  sellContractV1?: (contractId: number) => Promise<any>;
+  priceTicksV1?: TickData[];
+  // Funções para V2
+  sellContractV2?: (contractId: number) => Promise<any>;
+  priceTicksV2?: TickData[];
 }
 
 const durationUnitLabels: { [key: string]: string } = {
@@ -46,10 +51,13 @@ const formatTime = (isoString: string | undefined): string => {
     }
 };
 
-export function OperationsLog({ operations }: OperationsLogProps) {
-  const { sellContract, priceTicks } = useDerivApi();
+export function OperationsLog({ operations, sellContractV1, priceTicksV1, sellContractV2, priceTicksV2 }: OperationsLogProps) {
   const { toast } = useToast();
   const [sellingContractId, setSellingContractId] = useState<number | null>(null);
+
+  // Usa a função de venda e os ticks apropriados com base no que foi passado
+  const sellContract = sellContractV1 || sellContractV2;
+  const priceTicks = priceTicksV1 || priceTicksV2 || [];
 
   const dailySummary = useMemo(() => {
     const today = new Date();
@@ -59,13 +67,14 @@ export function OperationsLog({ operations }: OperationsLogProps) {
       .filter(op => op.status !== 'pending' && new Date(op.timestamp).toDateString() === today.toDateString())
       .reduce((sum, op) => {
         if (op.status === 'lost') {
-            return sum - op.stake; // Subtrai o stake em caso de perda
+            return sum - op.stake; 
         }
-        return sum + (op.result || 0); // Soma o lucro em caso de vitória
+        return sum + (op.result || 0);
     }, 0);
   }, [operations]);
 
   const handleSell = async (contractId: number) => {
+    if (!sellContract) return;
     setSellingContractId(contractId);
     const result = await sellContract(contractId);
     if (result.success) {
@@ -73,7 +82,6 @@ export function OperationsLog({ operations }: OperationsLogProps) {
     } else {
       toast({ title: "Falha na Venda", description: result.message, variant: "destructive" });
     }
-    // O status será atualizado via WebSocket, não precisamos remover o loading state aqui
   };
 
   const latestTick = useMemo(() => {
