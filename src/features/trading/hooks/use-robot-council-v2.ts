@@ -36,7 +36,7 @@ import type {
   BayesianVote as BayesianVoteType, EnhancedRobotPerformance as EnhancedRobotPerformanceType,
   TimePeriod, TradeDecisionLog,
 } from '@/lib/types';
-import { calculateAllIndicators, type Indicators } from '@/services/indicator-service';
+import { calculateAllIndicators, type Indicators } from '@/services/indicator-service-v2';
 import { useAuth } from '@/features/auth/hooks/use-auth';
 import { saveRobotPerformance, loadRobotPerformance, saveTradeDecision } from '@/services/financial-data-service';
 import { useStrategyEvolution } from './use-strategy-evolution';
@@ -515,24 +515,24 @@ export function useRobotCouncilV2(
         });
       });
   }, [isCouncilAutopilotOn, activeSymbol, timePeriod, user, getHistoricalData, toast]);
-
-  const healthCheckCallback = useCallback(() => {
-    const activeRobots = robotPerformance.filter(p => (p.wins + p.losses) > 0).length;
-    
-    if (activeRobots === 0 && strategyCouncil.length > 0 && isBootstrapped) {
-      console.warn('🚨 ALERTA: Nenhum robô ativo! Resetando sistema...');
-      resetArenaPerformance();
-      toast({
-        title: "⚠️ Auto-Recuperação",
-        description: "Sistema resetado automaticamente após inatividade detectada.",
-        variant: "destructive"
-      });
-    }
-  }, [isCouncilAutopilotOn, strategyCouncil, robotPerformance, toast, resetArenaPerformance, isBootstrapped]);
   
   useEffect(() => {
     if (!isCouncilAutopilotOn) return;
 
+    const healthCheckCallback = () => {
+        const activeRobots = robotPerformance.filter(p => (p.wins + p.losses) > 0).length;
+        
+        if (activeRobots === 0 && strategyCouncil.length > 0 && isBootstrapped) {
+            console.warn('🚨 ALERTA: Nenhum robô ativo! Resetando sistema...');
+            resetArenaPerformance();
+            toast({
+                title: "⚠️ Auto-Recuperação",
+                description: "Sistema resetado automaticamente após inatividade detectada.",
+                variant: "destructive"
+            });
+        }
+    };
+    
     const metricsInterval = setInterval(() => {
       setCouncilState(prev => ({
           ...prev,
@@ -572,15 +572,14 @@ export function useRobotCouncilV2(
       }
     }, CLEANUP_INTERVAL_MS);
     
-    // Desativado por agora para focar na correção principal
-    // const healthCheck = setInterval(healthCheckCallback, HEALTH_CHECK_INTERVAL_MS);
+    const healthCheck = setInterval(healthCheckCallback, HEALTH_CHECK_INTERVAL_MS);
 
     return () => {
         clearInterval(metricsInterval);
         clearInterval(cleanupInterval);
-        // clearInterval(healthCheck);
+        clearInterval(healthCheck);
     };
-  }, [isCouncilAutopilotOn, /* healthCheckCallback, */ tradeDecisionLog.length, robotPerformance, sessionStartTime]);
+  }, [isCouncilAutopilotOn, robotPerformance, strategyCouncil, isBootstrapped, resetArenaPerformance, toast, tradeDecisionLog.length, sessionStartTime]);
   
   useEffect(() => {
     if (!user || isAuthLoading) return;
@@ -983,38 +982,6 @@ export function useRobotCouncilV2(
 
         const decisionLog: TradeDecisionLog = { id: `TDL-${Date.now()}`, timestamp: new Date().toISOString(), asset: activeSymbol, timePeriod, tradeParams: { direction: consensusDirection, stake: kellyStake, duration: finalDuration, durationUnit: finalDurationUnit }, context: { marketRegime: regimeResult.regime, regimeConfidence: regimeResult.confidence, microstructure: microFeatures, indicators: currentIndicators, supervisionReason: "N/A" }, consensus: { bayesianProbability: consensusProbability, kellyStake, activeRobots: activeRobotsCount, votes: localBayesianVotes }, result: 'pending', pnl: 0 };
         setTradeDecisionLog(prev => [...prev, decisionLog].slice(-MAX_DECISION_LOG));
-        
-        console.log('═══════════════════════════════════════');
-        console.log('🔍 VALIDAÇÃO ARQUITETURA V2.5');
-        console.log('═══════════════════════════════════════');
-        console.log('1️⃣ FONTE DE DADOS:');
-        console.log(`   chartData (direto): ${chartData?.length || 0} candles`);
-        console.log(`   priceTicks (fallback): ${priceTicks?.length || 0} ticks`);
-        console.log(`   tickCandles (usado): ${tickCandles?.length || 0}`);
-        console.log('\n2️⃣ BOOTSTRAP:');
-        console.log(`   Status: ${isBootstrapped ? '✅ OK' : '❌ PENDENTE'}`);
-        console.log(`   Tentativa feita: ${bootstrapAttemptedRef?.current ? 'Sim' : 'Não'}`);
-        console.log('\n3️⃣ INDICADORES:');
-        console.log(`   Status: ${currentIndicators ? '✅ OK' : '❌ NULL'}`);
-        if (currentIndicators) {
-          console.log(`   RSI: ${currentIndicators.rsi?.toFixed(2) || 'N/A'}`);
-          console.log(`   ADX: ${currentIndicators.adx?.toFixed(2) || 'N/A'}`);
-          console.log(`   MACD: ${currentIndicators.macd?.histogram?.toFixed(4) || 'N/A'}`);
-        }
-        console.log('\n4️⃣ REGIME:');
-        console.log(`   Tipo: ${regimeResult?.regime || 'N/A'}`);
-        console.log(`   Confiança: ${((regimeResult?.confidence || 0) * 100).toFixed(0)}%`);
-        console.log('\n5️⃣ ROBÔS:');
-        console.log(`   Conselho: ${strategyCouncil?.length || 0}`);
-        console.log(`   Com Votos: ${Object.keys(localBayesianVotes || {}).length}`);
-        console.log(`   Ativos (weight>0): ${Object.values(localBayesianVotes || {}).filter(v => v.weight > 0).length}`);
-        console.log('\n6️⃣ ARENA VIRTUAL:');
-        console.log(`   Trades Ativos: ${virtualTradesRef.current?.length || 0}`);
-        console.log('\n7️⃣ CONSENSO:');
-        console.log(`   Direção: ${consensusDecision?.direction || 'N/A'}`);
-        console.log(`   Probabilidade: ${((consensusDecision?.probability || 0) * 100).toFixed(0)}%`);
-        console.log(`   Stake: $${(consensusDecision?.stake || 0).toFixed(2)}`);
-        console.log('═══════════════════════════════════════');
         
         toast({ title: "🚀 Ordem Executada", description: `${consensusDirection} com ${kellyStake.toFixed(2)} (${(consensusProbability * 100).toFixed(1)}%)` });    
         executeTrade(consensusDirection === 'RISE' ? 'CALL' : 'PUT', kellyStake, activeSymbol!, consensusDirection.toLowerCase() as 'rise' | 'fall', finalDuration, finalDurationUnit, 'Conselho')
