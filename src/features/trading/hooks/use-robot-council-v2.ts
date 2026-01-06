@@ -974,16 +974,11 @@ export function useRobotCouncilV2(
             councilConfidence: totalWeight,
         }));
 
-        if (!consensusReached || activeStakes + kellyStake > dailyBalance * 0.3 || consensusProbability < 0.65 || consensusDirection === "HOLD") {
-            councilExecutionRef.current.isExecuting = false;
-            return;
-        }
+        const executionVetoed = !consensusReached || activeStakes + kellyStake > dailyBalance * 0.3 || consensusProbability < 0.65 || consensusDirection === "HOLD";
 
-        const decisionLog: TradeDecisionLog = { id: `TDL-${Date.now()}`, timestamp: new Date().toISOString(), asset: activeSymbol, timePeriod, tradeParams: { direction: consensusDirection, stake: kellyStake, duration: finalDuration, durationUnit: finalDurationUnit }, context: { marketRegime: regimeResult.regime, regimeConfidence: regimeResult.confidence, microstructure: microFeatures, indicators: currentIndicators, supervisionReason: "N/A" }, consensus: { bayesianProbability: consensusProbability, kellyStake, activeRobots: activeRobotsCount, votes: localBayesianVotes }, result: 'pending', pnl: 0 };
-        setTradeDecisionLog(prev => [...prev, decisionLog].slice(-MAX_DECISION_LOG));
-        
+        // --- DETAILED LOGGING V2.5 ---
         console.log('═══════════════════════════════════════');
-        console.log('🔍 VALIDAÇÃO ARQUITETURA V2.5');
+        console.log(`🔍 VALIDAÇÃO ARQUITETURA V2.5 (Ciclo #${currentExecutionId})`);
         console.log('═══════════════════════════════════════');
         
         // 1. Fonte de Dados
@@ -995,39 +990,54 @@ export function useRobotCouncilV2(
         // 2. Bootstrap
         console.log('\n2️⃣ BOOTSTRAP:');
         console.log(`   Status: ${isBootstrapped ? '✅ OK' : '❌ PENDENTE'}`);
-        console.log(`   Tentativa feita: ${bootstrapAttemptedRef?.current ? 'Sim' : 'Não'}`);
         
         // 3. Indicadores
         console.log('\n3️⃣ INDICADORES:');
         console.log(`   Status: ${currentIndicators ? '✅ OK' : '❌ NULL'}`);
         if (currentIndicators) {
-          console.log(`   RSI: ${currentIndicators.rsi?.toFixed(2) || 'N/A'}`);
-          console.log(`   ADX: ${currentIndicators.adx?.toFixed(2) || 'N/A'}`);
-          console.log(`   MACD: ${currentIndicators.macd?.histogram?.toFixed(4) || 'N/A'}`);
+          console.log(`   RSI: ${currentIndicators.rsi?.toFixed(2) || 'N/A'}, Stoch: ${currentIndicators.stoch?.toFixed(2) || 'N/A'}`);
+          console.log(`   ADX: ${currentIndicators.adx?.toFixed(2) || 'N/A'}, BBW: ${currentIndicators.bbw?.toFixed(4) || 'N/A'}`);
+          console.log(`   MACD Hist: ${currentIndicators.macd?.histogram?.toFixed(4) || 'N/A'}, Z-Score: ${currentIndicators.zScore?.toFixed(2) || 'N/A'}`);
         }
         
-        // 4. Regime
-        console.log('\n4️⃣ REGIME:');
-        console.log(`   Tipo: ${regimeResult?.regime || 'N/A'}`);
-        console.log(`   Confiança: ${((regimeResult?.confidence || 0) * 100).toFixed(0)}%`);
-        
-        // 5. Robôs
-        console.log('\n5️⃣ ROBÔS:');
-        console.log(`   Conselho: ${strategyCouncil?.length || 0}`);
-        console.log(`   Com Votos: ${Object.keys(localBayesianVotes || {}).length}`);
-        console.log(`   Ativos (weight>0): ${Object.values(localBayesianVotes || {}).filter(v => v.weight > 0).length}`);
-        
+        // 4. Regime & Microestrutura
+        console.log('\n4️⃣ ANÁLISE DE CONTEXTO:');
+        console.log(`   Regime: ${regimeResult?.regime || 'N/A'} (Conf: ${((regimeResult?.confidence || 0) * 100).toFixed(0)}%)`);
+        if(microFeatures) {
+          console.log(`   Microestrutura: Pressão ${microFeatures.pressure}, Vel. ${microFeatures.tickVelocity.toFixed(2)}, Spike: ${microFeatures.isSpike ? 'SIM' : 'NÃO'}`);
+        }
+
+        // 5. Votação
+        console.log('\n5️⃣ VOTAÇÃO:');
+        console.log(`   Robôs Ativos: ${activeRobotsCount}/${strategyCouncil.length}`);
+        console.log(`   Consenso: Rise ${riseSum.toFixed(2)} vs Fall ${fallSum.toFixed(2)}`);
+        console.log(`   Threshold Dinâmico: ${calculatedEffectiveThreshold.toFixed(2)}`);
+
         // 6. Arena Virtual
         console.log('\n6️⃣ ARENA VIRTUAL:');
         console.log(`   Trades Ativos: ${virtualTradesRef.current?.length || 0}`);
         
-        // 7. Consenso
-        console.log('\n7️⃣ CONSENSO:');
+        // 7. Decisão Final
+        console.log('\n7️⃣ DECISÃO DE EXECUÇÃO:');
         console.log(`   Direção: ${consensusDirection || 'N/A'}`);
-        console.log(`   Probabilidade: ${((consensusProbability || 0) * 100).toFixed(0)}%`);
-        console.log(`   Stake: $${(kellyStake || 0).toFixed(2)}`);
+        console.log(`   Probabilidade Bayesiana: ${((consensusProbability || 0) * 100).toFixed(0)}%`);
+        console.log(`   Stake (Kelly): $${(kellyStake || 0).toFixed(2)}`);
         
+        if (executionVetoed) {
+            console.log('   Resultado: ❌ VETADO (Consenso insuficiente ou risco elevado)');
+        } else {
+            console.log(`   Resultado: ✅ EXECUTANDO TRADE`);
+        }
+
         console.log('═══════════════════════════════════════');
+
+        if (executionVetoed) {
+            councilExecutionRef.current.isExecuting = false;
+            return;
+        }
+
+        const decisionLog: TradeDecisionLog = { id: `TDL-${Date.now()}`, timestamp: new Date().toISOString(), asset: activeSymbol, timePeriod, tradeParams: { direction: consensusDirection, stake: kellyStake, duration: finalDuration, durationUnit: finalDurationUnit }, context: { marketRegime: regimeResult.regime, regimeConfidence: regimeResult.confidence, microstructure: microFeatures, indicators: currentIndicators, supervisionReason: "N/A" }, consensus: { bayesianProbability: consensusProbability, kellyStake, activeRobots: activeRobotsCount, votes: localBayesianVotes }, result: 'pending', pnl: 0 };
+        setTradeDecisionLog(prev => [...prev, decisionLog].slice(-MAX_DECISION_LOG));
         
         toast({ title: "🚀 Ordem Executada", description: `${consensusDirection} com ${kellyStake.toFixed(2)} (${(consensusProbability * 100).toFixed(1)}%)` });    
         executeTrade(consensusDirection === 'RISE' ? 'CALL' : 'PUT', kellyStake, activeSymbol!, consensusDirection.toLowerCase() as 'rise' | 'fall', finalDuration, finalDurationUnit, 'Conselho')
@@ -1054,7 +1064,7 @@ export function useRobotCouncilV2(
     consensusSensitivity, confidenceFactor, durationRange,
     isDynamicConsensusOn, isDynamicRiskOn, isDynamicExitOn,
     stopLossThreshold, takeProfitThreshold,
-    toast, executeTrade, sellContract, resetArenaPerformance, evolveTrigger, operationsLog, councilState, durationLimits, chartData
+    toast, executeTrade, sellContract, resetArenaPerformance, evolveTrigger, operationsLog, councilState.portfolioStats.totalExposure, durationLimits, chartData
   ]);
 
   useEffect(() => {
@@ -1116,4 +1126,3 @@ export function useRobotCouncilV2(
     supervisionStatus: { status: 'approved', message: 'Cérebro V2.5 Ativo' },
   };
 }
-
