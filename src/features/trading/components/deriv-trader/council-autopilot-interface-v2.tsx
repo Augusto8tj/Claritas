@@ -292,4 +292,5 @@ export function CouncilAutopilotInterfaceV2(props: CouncilAutopilotInterfaceV2Pr
         </div>
       </CardContent>
     </Card>
-  
+  );
+}
