@@ -10,10 +10,9 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { cn } from '@/lib/utils';
-import type { useRobotCouncilV2 } from '../../hooks/use-robot-council-v2'; // Importamos o hook inteiro para tipagem
+import type { useRobotCouncilV2 } from '../../hooks/use-robot-council-v2';
 import type { RobotStrategy } from '@/lib/types';
 
-// Ícones para enriquecer a interface visualmente
 import {
     BrainCircuit, Activity, Waves, CandlestickChart, Bot, LayoutGrid, BarChart,
     TrendingUp, Cloud, CheckCircle, XCircle, Trophy, AlertTriangle, RefreshCw,
@@ -24,10 +23,8 @@ import {
 // 1. DEFINIÇÃO DE TIPOS E PROPS
 // ============================================================================
 
-// Alteramos a prop para receber o ESTADO INTEIRO do conselho.
-// Isso permite acesso aos dados reativos (robotPerformance) e aos dados mutáveis (virtualTradesRef).
 interface TradingDeskV2Props {
-  councilState: ReturnType<typeof useRobotCouncilV2>;
+    councilState: ReturnType<typeof useRobotCouncilV2>;
 }
 
 // ============================================================================
@@ -60,8 +57,9 @@ const indicatorIcons: { [key: string]: React.ReactNode } = {
     DEFAULT: <Bot className="h-4 w-4 text-muted-foreground" />
 };
 
-// Helper para formatar os parâmetros técnicos de forma legível na tabela
 function renderStrategyParams(robot: RobotStrategy): string {
+    if (!robot) return 'N/A'; // Proteção contra robot undefined
+    
     switch (robot.strategyType) {
         case 'RSI':
         case 'STOCHASTIC':
@@ -105,32 +103,25 @@ function renderStrategyParams(robot: RobotStrategy): string {
 
 export function TradingDeskV2({ councilState }: TradingDeskV2Props) {
     
-    // Desestruturação do estado global do cérebro
     const { 
         robotPerformance, 
         isCouncilAutopilotOn, 
         resetArenaPerformance,
-        virtualTradesRef, // Acesso direto à memória mutável para trades em tempo real
+        virtualTradesRef, 
         systemMetrics 
     } = councilState;
 
-    // --- LÓGICA DE ORDENAÇÃO (MEMOIZED) ---
-    // Usamos useMemo para evitar reordenar o array a cada frame de renderização,
-    // economizando processamento. Só reordena quando 'robotPerformance' muda.
     const sortedPerformance = useMemo(() => {
+        if (!robotPerformance) return []; // Proteção contra array nulo
         return [...robotPerformance].sort((a, b) => {
-            // 1. Critério: Sharpe Ratio (Eficiência)
             const sharpeA = a.sharpeRatio || -Infinity;
             const sharpeB = b.sharpeRatio || -Infinity;
             if (sharpeA !== sharpeB) return sharpeB - sharpeA;
-            
-            // 2. Critério: Lucro Total (Resultado Bruto)
             return (b.totalProfit || 0) - (a.totalProfit || 0);
         });
     }, [robotPerformance]);
 
-    // Acesso aos trades ativos (Paper Trading)
-    // Isso lê o valor atual da ref sem disparar re-render (quem dispara é o hook pai atualizando systemMetrics)
+    // Acesso seguro aos trades ativos
     const activeTrades = virtualTradesRef?.current || [];
 
     return (
@@ -170,7 +161,6 @@ export function TradingDeskV2({ councilState }: TradingDeskV2Props) {
             <CardContent className="flex-1 overflow-hidden p-0">
                 <Tabs defaultValue="arena" className="h-full flex flex-col">
                     
-                    {/* Barra de Navegação das Abas */}
                     <div className="px-6 border-b">
                         <TabsList className="grid w-full grid-cols-2">
                             <TabsTrigger value="arena" className="flex items-center gap-2">
@@ -193,39 +183,44 @@ export function TradingDeskV2({ councilState }: TradingDeskV2Props) {
                         <ScrollArea className="flex-1">
                             {activeTrades.length > 0 ? (
                                 <div className="divide-y divide-border/50">
-                                    {activeTrades.map((trade) => (
-                                        <div key={trade.id} className="px-6 py-4 flex items-center justify-between hover:bg-muted/10 transition-colors">
-                                            
-                                            {/* Lado Esquerdo: Info do Robô */}
-                                            <div className="flex items-center gap-4">
-                                                <div className={cn("p-2 rounded-full ring-1 ring-inset", 
-                                                    trade.vote === 'RISE' ? "bg-green-500/10 text-green-600 ring-green-500/20" : "bg-red-500/10 text-red-600 ring-red-500/20"
-                                                )}>
-                                                    {trade.vote === 'RISE' ? <TrendingUp className="h-5 w-5" /> : <TrendingDown className="h-5 w-5" />}
-                                                </div>
-                                                <div>
-                                                    <p className="font-bold text-sm flex items-center gap-2">
-                                                        Robô {trade.robotId.split('-')[0]} 
-                                                        <Badge variant="outline" className="text-[10px] h-4 px-1 py-0">{trade.regime}</Badge>
-                                                    </p>
-                                                    <p className="text-xs text-muted-foreground mt-0.5">
-                                                        Entrada: <span className="font-mono text-foreground">@{trade.entryPrice.toFixed(2)}</span>
-                                                    </p>
-                                                </div>
-                                            </div>
+                                    {activeTrades.map((trade) => {
+                                        // 🛡️ CORREÇÃO DO ERRO 'UNDEFINED SPLIT':
+                                        // Garantimos que robotId é uma string válida antes de tentar usar .split()
+                                        const safeRobotId = trade.robotId ? String(trade.robotId) : 'Unknown';
+                                        const displayId = safeRobotId.includes('-') ? safeRobotId.split('-')[0] : safeRobotId;
 
-                                            {/* Lado Direito: Status */}
-                                            <div className="text-right">
-                                                <Badge variant={trade.vote === 'RISE' ? 'default' : 'destructive'} className="mb-1 font-bold">
-                                                    {trade.vote}
-                                                </Badge>
-                                                <p className="text-[10px] text-muted-foreground flex items-center justify-end gap-1">
-                                                    <Timer className="h-3 w-3 animate-spin" />
-                                                    Monitorando...
-                                                </p>
+                                        return (
+                                            <div key={trade.id} className="px-6 py-4 flex items-center justify-between hover:bg-muted/10 transition-colors">
+                                                
+                                                <div className="flex items-center gap-4">
+                                                    <div className={cn("p-2 rounded-full ring-1 ring-inset", 
+                                                        trade.vote === 'RISE' ? "bg-green-500/10 text-green-600 ring-green-500/20" : "bg-red-500/10 text-red-600 ring-red-500/20"
+                                                    )}>
+                                                        {trade.vote === 'RISE' ? <TrendingUp className="h-5 w-5" /> : <TrendingDown className="h-5 w-5" />}
+                                                    </div>
+                                                    <div>
+                                                        <p className="font-bold text-sm flex items-center gap-2">
+                                                            Robô {displayId} 
+                                                            <Badge variant="outline" className="text-[10px] h-4 px-1 py-0">{trade.regime}</Badge>
+                                                        </p>
+                                                        <p className="text-xs text-muted-foreground mt-0.5">
+                                                            Entrada: <span className="font-mono text-foreground">@{trade.entryPrice?.toFixed(2) || '---'}</span>
+                                                        </p>
+                                                    </div>
+                                                </div>
+
+                                                <div className="text-right">
+                                                    <Badge variant={trade.vote === 'RISE' ? 'default' : 'destructive'} className="mb-1 font-bold">
+                                                        {trade.vote}
+                                                    </Badge>
+                                                    <p className="text-[10px] text-muted-foreground flex items-center justify-end gap-1">
+                                                        <Timer className="h-3 w-3 animate-spin" />
+                                                        Monitorando...
+                                                    </p>
+                                                </div>
                                             </div>
-                                        </div>
-                                    ))}
+                                        );
+                                    })}
                                 </div>
                             ) : (
                                 <div className="h-64 flex flex-col items-center justify-center text-muted-foreground gap-3">
@@ -265,7 +260,6 @@ export function TradingDeskV2({ councilState }: TradingDeskV2Props) {
                                             return (
                                                 <TableRow key={`${robot.id}-${index}`} className={cn(isTop3 ? "bg-muted/20" : "")}>
                                                     
-                                                    {/* Coluna 1: Identificação */}
                                                     <TableCell className="font-medium">
                                                         <div className="flex items-center gap-3">
                                                             <div className="relative">
@@ -281,12 +275,10 @@ export function TradingDeskV2({ councilState }: TradingDeskV2Props) {
                                                         </div>
                                                     </TableCell>
 
-                                                    {/* Coluna 2: Parâmetros (Oculto em mobile) */}
                                                     <TableCell className="hidden md:table-cell text-xs text-muted-foreground max-w-[200px] truncate" title={renderStrategyParams(robot.strategy)}>
                                                         {renderStrategyParams(robot.strategy)}
                                                     </TableCell>
 
-                                                    {/* Coluna 3: Win Rate Visual */}
                                                     <TableCell>
                                                         <div className="flex flex-col gap-1 items-center w-24 mx-auto">
                                                             <div className="flex justify-between w-full text-[10px]">
@@ -298,7 +290,6 @@ export function TradingDeskV2({ councilState }: TradingDeskV2Props) {
                                                         </div>
                                                     </TableCell>
 
-                                                    {/* Coluna 4: Sharpe Ratio */}
                                                     <TableCell className="text-center font-mono text-sm">
                                                         {totalTrades > 5 ? (
                                                             <Badge variant="outline" className={cn(
@@ -312,7 +303,6 @@ export function TradingDeskV2({ councilState }: TradingDeskV2Props) {
                                                         )}
                                                     </TableCell>
 
-                                                    {/* Coluna 5: P&L */}
                                                     <TableCell className={cn(
                                                         'text-right font-bold font-mono',
                                                         (robot.totalProfit || 0) > 0 ? 'text-green-600' : (robot.totalProfit || 0) < 0 ? 'text-red-600' : 'text-muted-foreground'
@@ -338,7 +328,6 @@ export function TradingDeskV2({ councilState }: TradingDeskV2Props) {
                     </TabsContent>
                 </Tabs>
 
-                {/* Footer de Status */}
                 <div className="p-2 border-t bg-muted/30 text-[10px] text-muted-foreground flex justify-between items-center px-4">
                     <span className="flex items-center gap-1"><BrainCircuit className="h-3 w-3"/> Algoritmo Genético Ativo</span>
                     <span className="flex items-center gap-1"><Activity className="h-3 w-3"/> Atualização: Tempo Real</span>
