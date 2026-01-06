@@ -1,7 +1,7 @@
 // /src/app/deriv-trader/page.tsx
 'use client';
 
-import React, { useState, useEffect } from "react";
+import React from "react";
 import { useForm, FormProvider } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import DerivTraderInterface from "@/features/trading/components/deriv-trader/deriv-trader-interface";
@@ -10,7 +10,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { MarketChart } from "@/features/trading/components/deriv-trader/market-chart";
 import { Button } from "@/components/ui/button";
 import { Trash2, Bot, NotepadText, LayoutGrid, Trophy, Dna } from "lucide-react";
-import { useDerivApi } from "@/features/trading/hooks/use-deriv-api";
+import { DerivApiProvider, useDerivApi } from "@/features/trading/hooks/use-deriv-api";
 import { Skeleton } from "@/components/ui/skeleton";
 import { OperationsLog } from "@/features/trading/components/deriv-trader/operations-log";
 import { AIAnalysisInterface } from "@/features/trading/components/deriv-trader/ai-analysis-interface";
@@ -26,7 +26,7 @@ import { HallOfFame } from "@/features/trading/components/deriv-trader/hall-of-f
 import { EvolutionLab } from "@/features/trading/components/deriv-trader/evolution-lab";
 
 
-function DerivTraderCore({ activeSymbol, robotCouncil }: { activeSymbol: string | null, robotCouncil: ReturnType<typeof useRobotCouncil> }) {
+function DerivTraderCore() {
   const { 
     operationsLog,
     chartData,
@@ -37,11 +37,15 @@ function DerivTraderCore({ activeSymbol, robotCouncil }: { activeSymbol: string 
     timePeriod,
     setTimePeriod,
     tradeAnnotations,
+    activeSymbol,
+    priceTicks,
+    dataVersion
   } = useDerivApi();
   
-  const [activeTab, setActiveTab] = useState("log");
+  const robotCouncil = useRobotCouncil(activeSymbol, priceTicks, dataVersion);
+  const [activeTab, setActiveTab] = React.useState("log");
 
-  useEffect(() => {
+  React.useEffect(() => {
     if (robotCouncil.isCouncilAutopilotOn) {
       setActiveTab("desk");
     }
@@ -195,11 +199,7 @@ function DerivTraderPageContent() {
         assetGroups,
         activeSymbol,
         setActiveSymbol,
-        priceTicks,
-        dataVersion,
     } = useDerivApi();
-
-    const robotCouncil = useRobotCouncil(activeSymbol, priceTicks, dataVersion);
     
     const handleAssetChange = (asset: string) => {
         setActiveSymbol(asset);
@@ -242,7 +242,7 @@ function DerivTraderPageContent() {
             </div>
             </div>
 
-            <DerivTraderCore activeSymbol={activeSymbol} robotCouncil={robotCouncil} />
+            <DerivTraderCore />
         </div>
     );
 }
@@ -260,8 +260,10 @@ export default function DerivTraderPage() {
   });
 
   return (
-    <FormProvider {...form}>
-      <DerivTraderPageContent />
-    </FormProvider>
+    <DerivApiProvider>
+        <FormProvider {...form}>
+            <DerivTraderPageContent />
+        </FormProvider>
+    </DerivApiProvider>
   );
 }

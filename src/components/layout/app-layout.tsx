@@ -52,7 +52,6 @@ import React from "react";
 import Link from "next/link";
 import { Button } from "../ui/button";
 import packageJson from '../../../package.json';
-import { DerivApiProvider } from "@/features/trading/hooks/use-deriv-api";
 
 
 const navItems = [
@@ -271,20 +270,6 @@ function SidebarContent({children}: {children: React.ReactNode}) {
   )
 }
 
-// Wrapper to avoid duplicate providers
-const DerivTraderWrapper = ({ children }: { children: React.ReactNode }) => {
-  const pathname = usePathname();
-  // V1 (stable) and the platform selection page now use the DerivApiProvider
-  const isV1TraderRelated = pathname.startsWith('/deriv-trader') || pathname === '/trader';
-
-  // The V2 system has its own internal provider and does not need this wrapper
-  if (isV1TraderRelated && !pathname.startsWith('/deriv-trader-v2')) {
-    return <DerivApiProvider>{children}</DerivApiProvider>;
-  }
-  
-  return <>{children}</>;
-};
-
 
 export function AppLayout({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
@@ -298,22 +283,20 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <DerivTraderWrapper>
-      <SidebarProvider>
-        {isMobile ? <MobileSidebar /> : <DesktopSidebar />}
-        <SidebarInset>
-          <header className="sticky top-0 z-10 flex items-center justify-between h-16 px-4 bg-background/80 backdrop-blur-sm border-b">
-            <div className="flex items-center gap-4">
-               <SidebarTrigger className="md:hidden" />
-               <h2 className="text-lg font-semibold font-headline">
-                  {pageTitle}
-               </h2>
-            </div>
-            <UserNav />
-          </header>
-          <main>{children}</main>
-        </SidebarInset>
-      </SidebarProvider>
-    </DerivTraderWrapper>
+    <SidebarProvider>
+      {isMobile ? <MobileSidebar /> : <DesktopSidebar />}
+      <SidebarInset>
+        <header className="sticky top-0 z-10 flex items-center justify-between h-16 px-4 bg-background/80 backdrop-blur-sm border-b">
+          <div className="flex items-center gap-4">
+              <SidebarTrigger className="md:hidden" />
+              <h2 className="text-lg font-semibold font-headline">
+                {pageTitle}
+              </h2>
+          </div>
+          <UserNav />
+        </header>
+        <main>{children}</main>
+      </SidebarInset>
+    </SidebarProvider>
   );
 }
