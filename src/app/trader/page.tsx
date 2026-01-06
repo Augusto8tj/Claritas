@@ -5,7 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Layers, Bot, CandlestickChart, Settings2, Laptop, Smartphone, Wand2 } from "lucide-react";
 import Link from "next/link";
-import { useDerivApi } from "@/features/trading/hooks/use-deriv-api";
+import { useDerivApi, DerivApiProvider } from "@/features/trading/hooks/use-deriv-api";
 import { useEffect } from "react";
 
 const platforms = [
@@ -60,7 +60,7 @@ const platforms = [
   }
 ];
 
-export default function DerivPlatformsPage() {
+function DerivPlatformsPageContent() {
   const { isConnected, isConnecting, reconnect } = useDerivApi();
 
   // Garante a conexão ao entrar na página de plataformas
@@ -105,4 +105,12 @@ export default function DerivPlatformsPage() {
       </div>
     </div>
   );
+}
+
+export default function DerivPlatformsPage() {
+    return (
+        <DerivApiProvider>
+            <DerivPlatformsPageContent />
+        </DerivApiProvider>
+    );
 }
