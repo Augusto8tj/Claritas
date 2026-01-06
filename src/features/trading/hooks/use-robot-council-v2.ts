@@ -309,7 +309,7 @@ const calculateTechnicalVote = (
      if (range > avgRange * 1.5 && lastClose > lastCandle.open) setVote('RISE', robot.weakConfidence, 'Expansão de Volume Alta');
      else if (range > avgRange * 1.5 && lastClose < lastCandle.open) setVote('FALL', robot.weakConfidence, 'Expansão de Volume Baixa');
   }
-  else if (robot.strategyType === 'VWAP' && isValid(vwap[vwap.length-1])) {
+  else if (robot.strategyType === 'VWAP' && vwap && vwap.length > 0 && isValid(vwap[vwap.length-1])) {
     const lastVwap = vwap[vwap.length-1]!;
     if (lastClose > lastVwap) setVote('RISE', robot.weakConfidence, `Preço > VWAP`);
     else if (lastClose < lastVwap) setVote('FALL', robot.weakConfidence, `Preço < VWAP`);
@@ -373,13 +373,20 @@ export function useRobotCouncilV2(
   const lastRegimeRef = useRef<MarketRegime | null>(null);
 
   const tickCandles = useMemo(() => {
+    // Prioriza o histórico se existir
     if (chartData && chartData.length > 0) {
       return chartData;
     }
+    // Fallback para ticks ao vivo
     if (!priceTicks || priceTicks.length === 0) return [];
+    
     return priceTicks.map((t) => ({
-        epoch: t.epoch, open: t.price, high: t.price,
-        low: t.price, close: t.price, volume: 1
+      epoch: t.epoch,
+      open: t.price,
+      high: t.price,
+      low: t.price,
+      close: t.price,
+      volume: 1 // Garante que indicadores de volume não quebrem
     }));
   }, [chartData, priceTicks]);
 
@@ -980,7 +987,8 @@ export function useRobotCouncilV2(
     consensusSensitivity, confidenceFactor, durationRange,
     isDynamicConsensusOn, isDynamicRiskOn, isDynamicExitOn,
     stopLossThreshold, takeProfitThreshold,
-    toast, executeTrade, sellContract, resetArenaPerformance, evolveTrigger, operationsLog, councilState.portfolioStats.totalExposure, dataVersion, isBootstrapped
+    toast, executeTrade, sellContract, resetArenaPerformance, evolveTrigger, operationsLog, councilState.portfolioStats.totalExposure, 
+    dataVersion, isBootstrapped
   ]);
 
   useEffect(() => {

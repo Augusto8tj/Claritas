@@ -1,4 +1,3 @@
-
 // /src/app/deriv-trader-v2/page.tsx
 'use client';
 
@@ -81,7 +80,8 @@ const IsolatedMarketChart = () => {
         chartType, setChartType, timePeriod, setTimePeriod, tradeAnnotations
     } = useDerivApi();
 
-    const { indicators: councilIndicators } = useRobotCouncilV2(activeSymbol, [], [], 0);
+    // Injeta o chartData aqui para ter acesso aos indicadores
+    const { indicators: councilIndicators } = useRobotCouncilV2(activeSymbol, [], chartData, 0);
 
     return (
         <Card>
@@ -112,6 +112,8 @@ const IsolatedMarketChart = () => {
 
 const DerivTraderV2Core = () => {
     const { activeSymbol, priceTicks, dataVersion, operationsLog, chartData } = useDerivApi();
+    
+    // ✅ O ELO PERDIDO: `chartData` é injetado no cérebro do conselho
     const robotCouncil = useRobotCouncilV2(activeSymbol, priceTicks, chartData, dataVersion);
     const [activeTab, setActiveTab] = React.useState("desk");
     
