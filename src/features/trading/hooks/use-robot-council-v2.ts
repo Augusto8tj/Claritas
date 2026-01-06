@@ -373,11 +373,9 @@ export function useRobotCouncilV2(
   const lastRegimeRef = useRef<MarketRegime | null>(null);
 
   const tickCandles = useMemo(() => {
-    // Prioriza o histórico se existir
     if (chartData && chartData.length > 0) {
       return chartData;
     }
-    // Fallback para ticks ao vivo
     if (!priceTicks || priceTicks.length === 0) return [];
     
     return priceTicks.map((t) => ({
@@ -386,7 +384,7 @@ export function useRobotCouncilV2(
       high: t.price,
       low: t.price,
       close: t.price,
-      volume: 1 // Garante que indicadores de volume não quebrem
+      volume: 1 
     }));
   }, [chartData, priceTicks]);
 
@@ -590,7 +588,7 @@ export function useRobotCouncilV2(
     
     bootstrapAttemptedRef.current = true;
     
-    console.log('🔄 [Bootstrap] Iniciando carregamento de dados históricos...');
+    console.log('🔄 [Bootstrap] Carregando dados históricos...');
     
     getHistoricalData(activeSymbol, 'candles', 1000, timePeriod)
       .then(data => {
@@ -706,6 +704,7 @@ export function useRobotCouncilV2(
   }, [operationsLog, tradeDecisionLog, user]);
 
   const runCouncilCycle = useCallback(() => {
+    
     console.log(`═══ [Cycle Start] ═══`);
     console.log(`📊 Data: ${tickCandles.length} candles, dataVersion: ${dataVersion}`);
     console.log(`🤖 Council: ${strategyCouncil.length} robôs`);
@@ -904,6 +903,8 @@ export function useRobotCouncilV2(
             weightedDurationSum += durationInSeconds * voteWeight;
             totalWeight += voteWeight;
         });
+        
+        console.log(`📊 CICLO DE ANÁLISE COMPLETO: Robôs Ativos: ${activeRobotsCount}/${strategyCouncil.length}, Votação: Rise ${riseSum.toFixed(2)} | Fall ${fallSum.toFixed(2)}`);
 
         let consensusDirection: 'RISE' | 'FALL' | 'HOLD' = 'HOLD';
         let consensusProbability = 0.5;
@@ -922,6 +923,10 @@ export function useRobotCouncilV2(
             ? (totalWeight * (consensusSensitivity / 100) * Math.pow(1 + (microFeatures ? Math.min(microFeatures.yangZhangVolatility * 5, 1) : 0), 1.5)) 
             : Infinity;
         const consensusReached = totalWeight > 0 && Math.max(riseSum, fallSum) >= calculatedEffectiveThreshold;
+        
+        if(consensusReached) {
+            console.log(`✅ CONSENSO ATINGIDO: ${consensusDirection} (Força: ${Math.max(riseSum, fallSum).toFixed(2)}, Threshold: ${calculatedEffectiveThreshold.toFixed(2)})`);
+        }
 
         let kellyStake = calculateKellyStake(dailyBalance - councilState.portfolioStats.totalExposure, consensusProbability, 0.95);
         if (microFeatures) {
@@ -964,7 +969,9 @@ export function useRobotCouncilV2(
 
         const decisionLog: TradeDecisionLog = { id: `TDL-${Date.now()}`, timestamp: new Date().toISOString(), asset: activeSymbol, timePeriod, tradeParams: { direction: consensusDirection, stake: kellyStake, duration: finalDuration, durationUnit: finalDurationUnit }, context: { marketRegime: regimeResult.regime, regimeConfidence: regimeResult.confidence, microstructure: microFeatures, indicators: currentIndicators, supervisionReason: "N/A" }, consensus: { bayesianProbability: consensusProbability, kellyStake, activeRobots: activeRobotsCount, votes: localBayesianVotes }, result: 'pending', pnl: 0 };
         setTradeDecisionLog(prev => [...prev, decisionLog].slice(-MAX_DECISION_LOG));
-        toast({ title: "🚀 Ordem Executada", description: `${consensusDirection} com ${kellyStake.toFixed(2)} (${(consensusProbability * 100).toFixed(1)}%)` });
+        
+        console.log(`🚀 Ordem Executada: ${consensusDirection} @ $${kellyStake.toFixed(2)} (${(consensusProbability * 100).toFixed(1)}% confiança)`);
+        toast({ title: `🚀 Ordem Executada: ${consensusDirection}`, description: `$${kellyStake.toFixed(2)} por ${finalDuration} ${finalDurationUnit}` });
         
         executeTrade(consensusDirection === 'RISE' ? 'CALL' : 'PUT', kellyStake, activeSymbol!, consensusDirection.toLowerCase() as 'rise' | 'fall', finalDuration, finalDurationUnit, 'Conselho')
             .finally(() => {
@@ -987,8 +994,9 @@ export function useRobotCouncilV2(
     consensusSensitivity, confidenceFactor, durationRange,
     isDynamicConsensusOn, isDynamicRiskOn, isDynamicExitOn,
     stopLossThreshold, takeProfitThreshold,
-    toast, executeTrade, sellContract, resetArenaPerformance, evolveTrigger, operationsLog, councilState.portfolioStats.totalExposure, 
-    dataVersion, isBootstrapped
+    toast, executeTrade, sellContract, resetArenaPerformance, evolveTrigger, operationsLog, councilState.portfolioStats.totalExposure,
+    dataVersion, // ✅ ADICIONADO
+    isBootstrapped // ✅ ADICIONADO
   ]);
 
   useEffect(() => {
