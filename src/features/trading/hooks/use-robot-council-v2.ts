@@ -177,12 +177,13 @@ const isValid = (value: any): value is number =>
 // 🔥 NOVO: Validação de Candles
 const validateCandles = (candles: CandleData[], minCount: number): CandleData[] => {
   const valid = candles.filter(c => 
+    c &&
     c.close > 0 && 
     Number.isFinite(c.close) && 
     c.epoch > 0 &&
-    c.open > 0 &&
-    c.high > 0 &&
-    c.low > 0
+    Number.isFinite(c.open) &&
+    Number.isFinite(c.high) &&
+    Number.isFinite(c.low)
   );
   
   if (valid.length < minCount) {
@@ -477,18 +478,8 @@ export function useRobotCouncilV2(
   }, [strategyCouncil, user, toast]);
 
   const healthCheckCallback = useCallback(() => {
-    // This logic was causing infinite resets. It's disabled for now.
-    // const activeRobots = robotPerformance.filter(p => (p.wins + p.losses) > 0).length;
-    // if (activeRobots === 0 && strategyCouncil.length > 0) {
-    //   console.warn('🚨 ALERTA: Nenhum robô ativo! Resetando sistema...');
-    //   resetArenaPerformance();
-    //   toast({
-    //     title: "⚠️ Auto-Recuperação",
-    //     description: "Sistema resetado automaticamente após inatividade detectada.",
-    //     variant: "destructive"
-    //   });
-    // }
-  }, [isCouncilAutopilotOn, strategyCouncil, robotPerformance, toast, resetArenaPerformance]);
+      // Logic disabled due to causing infinite loops
+  }, []);
 
   useEffect(() => {
     if (!isCouncilAutopilotOn) return;
@@ -533,12 +524,9 @@ export function useRobotCouncilV2(
       }
     }, CLEANUP_INTERVAL_MS);
     
-    // const healthCheck = setInterval(healthCheckCallback, HEALTH_CHECK_INTERVAL_MS);
-
     return () => {
         clearInterval(metricsInterval);
         clearInterval(cleanupInterval);
-        // clearInterval(healthCheck);
     };
   }, [isCouncilAutopilotOn, healthCheckCallback, tradeDecisionLog.length, robotPerformance, sessionStartTime]);
 
@@ -841,6 +829,7 @@ export function useRobotCouncilV2(
             }
         });
         virtualTradesRef.current = stillActiveTrades;
+        
         if (performanceChanged) {
             const updatedPerformance = Array.from(performanceMap.values());
             updatedPerformance.sort((a, b) => b.sharpeRatio - a.sharpeRatio);
@@ -1061,3 +1050,5 @@ export function useRobotCouncilV2(
     supervisionStatus: { status: 'approved', message: 'Cérebro V2.5 Ativo' },
   };
 }
+
+    
