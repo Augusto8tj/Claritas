@@ -2,24 +2,12 @@
 'use client';
 
 /**
- * 🧠 DERIV TRADER V2.5 - CÉREBRO COGNITIVO (VERSÃO MESTRE)
+ * 🧠 DERIV TRADER V2.5 - CÉREBRO COGNITIVO (VERSÃO ESTÁVEL & OTIMIZADA)
  * =================================================================================
- * Este arquivo é o coração da aplicação. Ele atua como um "Orquestrador de Inteligência".
- * 
- * ARQUITETURA (Para fins de estudo):
- * 1. INPUT: Recebe dados brutos (Ticks/Candles) da API (via hook useDerivApiV2).
- * 2. PROCESSAMENTO: 
- *    - Calcula 25+ indicadores técnicos.
- *    - Detecta o Regime de Mercado (Tendência, Lateral, Volátil).
- *    - Executa 22 estratégias diferentes ("Robôs") simultaneamente.
- *    - Aplica Inferência Bayesiana para ponderar qual robô está certo.
- * 3. VALIDAÇÃO (Arena Virtual): Testa as decisões em memória (Paper Trading) antes de arriscar dinheiro.
- * 4. OUTPUT: Envia ordens reais apenas se houver Consenso E validação estatística (Critério de Kelly).
- * 
- * CORREÇÕES APLICADAS:
- * - Remoção de travas de segurança excessivas que causavam estagnação.
- * - Tratamento de erros robusto (Try/Catch) por estratégia individual.
- * - Logs detalhados para depuração em tempo real.
+ * CORREÇÕES DE ESTABILIDADE (30s CRASH FIX):
+ * 1. Batch State Updates: Removeu updates de estado de dentro de loops (causa principal de travamentos).
+ * 2. Memory Safety: Acesso seguro à API de performance do navegador.
+ * 3. Garbage Collection: Limpeza otimizada de trades órfãos.
  */
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
@@ -42,30 +30,19 @@ import {
 } from '@/services/advanced-trading-services';
 
 // ════════════════════════════════════════════════════════════════════
-// 1. CONFIGURAÇÕES E CONSTANTES GLOBAIS
+// 1. CONSTANTES DE PERFORMANCE
 // ════════════════════════════════════════════════════════════════════
 
-// Valor da aposta fictícia na "Arena Virtual" para calcular performance
 const VIRTUAL_STAKE = 1.0; 
-
-// Quantos candles passados analisamos para definir o Regime de Mercado
 const REGIME_LOOKBACK = 30; 
-
-// Intervalo entre ciclos de processamento (1 segundo) para não travar o navegador
 const THROTTLE_MS = 1000; 
-
-// Tempo máximo que um paper trade fica "vivo" na memória antes de ser descartado (limpeza de lixo)
 const TRADE_TIMEOUT_SECONDS = 3600; 
-
-// Limites para arrays de log para evitar vazamento de memória (Memory Leaks)
 const MAX_VIRTUAL_TRADES = 500;
-const MAX_DECISION_LOG = 100;
 
 // ════════════════════════════════════════════════════════════════════
-// 2. DEFINIÇÃO DE TIPOS (ESTADO DO SISTEMA)
+// 2. DEFINIÇÃO DE TIPOS
 // ════════════════════════════════════════════════════════════════════
 
-// Representa uma operação simulada na memória
 type VirtualTrade = {
   id: string;
   robotId: string;
@@ -78,24 +55,22 @@ type VirtualTrade = {
   stake: number;
 };
 
-// Re-exportando tipos para facilitar manutenção
 export type EnhancedRobotPerformance = EnhancedRobotPerformanceType;
 export type RobotVote = RobotVoteType;
 export type BayesianVote = BayesianVoteType;
 
-// O Grande Objeto de Estado que segura toda a "consciência" do robô
 export interface CouncilState {
-    indicators: Indicators | null; // Dados técnicos atuais
+    indicators: Indicators | null;
     currentRegime: {
         regime: MarketRegime;
         confidence: number;
         probabilities: Record<MarketRegime, number>;
     };
-    microstructure: MicrostructureFeatures | null; // Análise tick-a-tick
+    microstructure: MicrostructureFeatures | null;
     consensusDecision: {
         direction: 'RISE' | 'FALL' | 'HOLD';
-        probability: number; // Probabilidade Bayesiana Agregada
-        stake: number; // Valor calculado pelo Kelly Criterion
+        probability: number;
+        stake: number;
     };
     portfolioStats: {
         totalExposure: number;
@@ -104,11 +79,11 @@ export interface CouncilState {
         maxDrawdown: number;
         dailyPnL: number;
     };
-    bayesianVotes: Record<string, BayesianVote>; // Votos individuais ponderados
-    dashboardData: DashboardData | null; // Dados formatados para a UI
-    effectiveThreshold: number; // Limiar dinâmico para aprovação
-    councilConfidence: number; // Peso total da votação
-    systemMetrics: SystemMetrics; // Saúde do sistema (memória, latência)
+    bayesianVotes: Record<string, BayesianVote>;
+    dashboardData: DashboardData | null;
+    effectiveThreshold: number;
+    councilConfidence: number;
+    systemMetrics: SystemMetrics;
     robotPerformance: EnhancedRobotPerformance[];
     consensusReached: boolean;
     consensusSum: { rise: number, fall: number};
@@ -141,13 +116,12 @@ export interface SystemMetrics {
 }
 
 // ════════════════════════════════════════════════════════════════════
-// 3. FUNÇÕES UTILITÁRIAS (HELPERS PURE FUNCTIONS)
+// 3. FUNÇÕES UTILITÁRIAS
 // ════════════════════════════════════════════════════════════════════
 
-// Converte durações legíveis ('1m', '1h') para segundos absolutos para cálculos
 const durationToSeconds = (duration: number, unit: DurationUnit): number => {
   switch (unit) {
-    case 't': return duration * 2; // Estimativa: 1 tick ≈ 2 segundos
+    case 't': return duration * 2; 
     case 's': return duration;
     case 'm': return duration * 60;
     case 'h': return duration * 3600;
@@ -156,26 +130,18 @@ const durationToSeconds = (duration: number, unit: DurationUnit): number => {
   }
 };
 
-// Verifica se um número é válido (não é null, undefined ou NaN)
 const isValid = (value: any): value is number => 
   value !== null && value !== undefined && !isNaN(value) && Number.isFinite(value);
 
-// Filtro de segurança para dados de candles vindos da API
 const validateCandles = (candles: CandleData[]): CandleData[] => {
   if (!candles || !Array.isArray(candles)) return [];
-  // Aceita o candle se ele tiver pelo menos tempo (epoch) e preço de fechamento
   return candles.filter(c => c && c.epoch > 0 && c.close > 0);
 };
 
 // ════════════════════════════════════════════════════════════════════
-// 4. LÓGICA DE VOTAÇÃO TÉCNICA (O MANUAL DE ESTRATÉGIAS)
+// 4. LÓGICA TÉCNICA (CORE)
 // ════════════════════════════════════════════════════════════════════
 
-/**
- * Esta função é o "cérebro individual" de cada robô.
- * Ela recebe uma estratégia (regras) e o estado atual do mercado (indicadores).
- * Retorna o voto (COMPRA/VENDA/NEUTRO) e a confiança técnica.
- */
 const calculateTechnicalVote = (
   robot: RobotStrategy,
   indicators: Indicators,
@@ -188,7 +154,6 @@ const calculateTechnicalVote = (
   optimalDurationUnit: DurationUnit;
   suggestedStake: number;
 } => {
-  // Inicialização padrão: Robô fica quieto (HOLD)
   let vote: 'RISE' | 'FALL' | 'HOLD' = 'HOLD';
   let confidence = 0;
   let reason = 'A aguardar sinal...';
@@ -196,18 +161,14 @@ const calculateTechnicalVote = (
   const { optimalDuration, optimalDurationUnit, suggestedStake: baseStake } = robot;
   const suggestedStake = baseStake || 1.0;
 
-  // Guarda: Sem dados suficientes, não vota
   if (!indicators || tickCandles.length < 2) {
     return { vote: 'HOLD', confidence: 0, reason: "Dados insuficientes", optimalDuration, optimalDurationUnit, suggestedStake: 0 };
   }
 
   const lastCandle = tickCandles[tickCandles.length - 1];
   const lastClose = lastCandle.close;
-  
-  // Função helper para formatar logs de razão
   const format = (val: number | null | undefined) => (isValid(val) ? val.toFixed(4) : 'N/A');
 
-  // Atualiza o voto se a confiança for válida
   const setVote = (newVote: 'RISE' | 'FALL', newConfidence: number, newReason: string) => {
     if (newConfidence <= 0) return;
     vote = newVote;
@@ -215,187 +176,48 @@ const calculateTechnicalVote = (
     reason = newReason;
   };
 
-  // Desestruturação dos indicadores para acesso fácil
   const { 
     rsi, stoch, macd, bb, ma, adx, pdi, ndi, stochRSI, mfi, rvi, 
     ao, trix, roc, psar, ichimoku, kama, donchian, chandelier, 
     vwap, obv, zScore 
   } = indicators;
 
-  // --- 🤖 INÍCIO DA LÓGICA DOS 22 ROBÔS ---
-  // Usamos try/catch para garantir que um erro de cálculo num robô não pare os outros.
   try {
-      
-    // 1. RSI (Índice de Força Relativa) - Clássico de Reversão
-  if (robot.strategyType === 'RSI' && isValid(rsi)) {
-    // Lógica: Se cair muito (Sobrevenda), compra. Se subir muito (Sobrecompra), vende.
-    if (rsi <= robot.strongBuyThreshold!) setVote('RISE', robot.strongConfidence, `RSI Extremo Baixo (${format(rsi)})`);
-    else if (rsi <= robot.weakBuyThreshold!) setVote('RISE', robot.weakConfidence, `RSI Baixo (${format(rsi)})`);
-    else if (rsi >= robot.strongSellThreshold!) setVote('FALL', robot.strongConfidence, `RSI Extremo Alto (${format(rsi)})`);
-    else if (rsi >= robot.weakSellThreshold!) setVote('FALL', robot.weakConfidence, `RSI Alto (${format(rsi)})`);
-  }
-  
-  // 2. Stochastic Oscillator - Momentum rápido
-  else if (robot.strategyType === 'STOCHASTIC' && isValid(stoch)) {
-    if (stoch <= robot.strongBuyThreshold!) setVote('RISE', robot.strongConfidence, `Stoch Sobrevenda (${format(stoch)})`);
-    else if (stoch >= robot.strongSellThreshold!) setVote('FALL', robot.strongConfidence, `Stoch Sobrecompra (${format(stoch)})`);
-  }
-  
-  // 3. MACD - Seguidor de Tendência
-  else if (robot.strategyType === 'MACD_CROSS' && isValid(macd?.macd) && isValid(macd?.signal)) {
-    // Cruzamento da linha MACD com o Sinal + Confirmação do Histograma
-    if (macd.macd > macd.signal && macd.histogram! > 0) setVote('RISE', robot.strongConfidence, `MACD Cruzamento Bullish`);
-    else if (macd.macd < macd.signal && macd.histogram! < 0) setVote('FALL', robot.strongConfidence, `MACD Cruzamento Bearish`);
-  }
-  
-  // 4. ADX (Average Directional Index) - Força da Tendência
-  else if (robot.strategyType === 'ADX_TREND' && isValid(adx) && isValid(pdi) && isValid(ndi)) {
-    // Só opera se houver tendência forte (ADX > 25)
-    if (adx > (robot.trendStrengthThreshold || 25)) {
-       if (pdi > ndi) setVote('RISE', robot.strongConfidence, `Tendência Forte Alta (ADX ${format(adx)})`);
-       else if (ndi > pdi) setVote('FALL', robot.strongConfidence, `Tendência Forte Baixa (ADX ${format(adx)})`);
-    }
-  }
-  
-  // 5. Bollinger Bands - Volatilidade e Reversão à Média
-  else if (robot.strategyType === 'BOLLINGER_BANDS' && isValid(bb?.lower) && isValid(bb?.upper)) {
-    if (lastClose <= bb.lower) setVote('RISE', robot.weakConfidence, `Preço tocou Banda Inferior`);
-    else if (lastClose >= bb.upper) setVote('FALL', robot.weakConfidence, `Preço tocou Banda Superior`);
-  }
-  
-  // 6. Awesome Oscillator - Momentum (Pires/Saucer)
-  else if (robot.strategyType === 'AWESOME_OSCILLATOR' && isValid(ao)) {
-    const isBullish = ao > 0 && ao > (indicators.aoPrev || 0);
-    const isBearish = ao < 0 && ao < (indicators.aoPrev || 0);
-    if (isBullish) setVote('RISE', robot.weakConfidence, `AO Momentum Crescente`);
-    else if (isBearish) setVote('FALL', robot.weakConfidence, `AO Momentum Decrescente`);
-  }
-  
-  // 7. TRIX - Oscilador Triplo Suavizado
-  else if (robot.strategyType === 'TRIX' && isValid(trix)) {
-    if (trix > 0 && trix > (indicators.trixPrev || 0)) setVote('RISE', robot.strongConfidence, 'TRIX Acelerando');
-    else if (trix < 0 && trix < (indicators.trixPrev || 0)) setVote('FALL', robot.strongConfidence, 'TRIX Desacelerando');
-  }
-  
-  // 8. ROC (Rate of Change) - Velocidade do preço
-  else if (robot.strategyType === 'ROC' && isValid(roc)) {
-    if (roc > 0.1) setVote('RISE', robot.weakConfidence, `ROC Positivo (${format(roc)})`);
-    else if (roc < -0.1) setVote('FALL', robot.weakConfidence, `ROC Negativo (${format(roc)})`);
-  }
-  
-  // 9. RVI (Relative Volatility Index)
-  else if (robot.strategyType === 'RVI' && isValid(rvi)) {
-    if (rvi > (robot.strongBuyThreshold || 60)) setVote('RISE', robot.weakConfidence, `RVI Alta Energia`);
-    else if (rvi < (robot.weakSellThreshold || 40)) setVote('FALL', robot.weakConfidence, `RVI Baixa Energia`);
-  }
-  
-  // 10. Parabolic SAR - Stop and Reverse
-  else if (robot.strategyType === 'PARABOLIC_SAR' && isValid(psar)) {
-    if (lastClose > psar) setVote('RISE', robot.strongConfidence, `Tendência acima SAR`);
-    else if (lastClose < psar) setVote('FALL', robot.strongConfidence, `Tendência abaixo SAR`);
-  }
-  
-  // 11. Ichimoku Cloud - Sistema Completo Japonês
-  else if (robot.strategyType === 'ICHIMOKU_CLOUD' && isValid(ichimoku?.spanA)) {
-    const cloudTop = Math.max(ichimoku.spanA!, ichimoku.spanB!);
-    const cloudBottom = Math.min(ichimoku.spanA!, ichimoku.spanB!);
-    
-    // Estratégia Kumo Breakout + TK Cross
-    if (lastClose > cloudTop && ichimoku.tenkan! > ichimoku.kijun!) 
-        setVote('RISE', robot.strongConfidence, `Rompimento Nuvem + TK Cross`);
-    else if (lastClose < cloudBottom && ichimoku.tenkan! < ichimoku.kijun!) 
-        setVote('FALL', robot.strongConfidence, `Colapso Nuvem + TK Cross`);
-  }
-  
-  // 12. KAMA (Kaufman Adaptive MA) - Média que se adapta ao ruído
-  else if (robot.strategyType === 'KAMA' && isValid(kama)) {
-    if (lastClose > kama) setVote('RISE', robot.weakConfidence, `Tendência KAMA Bullish`);
-    else if (lastClose < kama) setVote('FALL', robot.weakConfidence, `Tendência KAMA Bearish`);
-  }
-  
-  // 13. Donchian Channels - Estratégia de Tartarugas (Breakout)
-  else if (robot.strategyType === 'DONCHIAN_CHANNELS' && isValid(donchian?.upper)) {
-    // Rompimento ou toque nos limites do canal
-    if (lastClose >= donchian.upper! - (donchian.upper! - donchian.lower!) * 0.05) 
-        setVote('RISE', robot.strongConfidence, `Teste de Topo Donchian`);
-    else if (lastClose <= donchian.lower! + (donchian.upper! - donchian.lower!) * 0.05) 
-        setVote('FALL', robot.strongConfidence, `Teste de Fundo Donchian`);
-  }
-  
-  // 14. Chandelier Exit - Baseado em ATR para sair de trades (usado aqui para entrada reversa)
-  else if (robot.strategyType === 'CHANDELIER_EXIT' && isValid(chandelier?.exitLong)) {
-     if (lastClose > chandelier.exitShort!) setVote('RISE', robot.weakConfidence, 'Suporte Chandelier Mantido');
-     else if (lastClose < chandelier.exitLong!) setVote('FALL', robot.weakConfidence, 'Resistência Chandelier Ativa');
-  }
-  
-  // 15. VWAP (Volume Weighted Average Price) - Institucional
-  else if (robot.strategyType === 'VWAP' && vwap && vwap.length > 0) {
-    const lastVwap = vwap[vwap.length-1];
-    if (isValid(lastVwap)) {
-        if (lastClose > lastVwap) setVote('RISE', robot.weakConfidence, `Preço acima VWAP (Bullish)`);
-        else if (lastClose < lastVwap) setVote('FALL', robot.weakConfidence, `Preço abaixo VWAP (Bearish)`);
-    }
-  }
-  
-  // 16. MFI (Money Flow Index) - RSI ponderado por volume
-  else if (robot.strategyType === 'MFI' && isValid(mfi)) {
-    if (mfi <= 20) setVote('RISE', robot.strongConfidence, `Fluxo de Dinheiro Entrando (MFI ${format(mfi)})`);
-    else if (mfi >= 80) setVote('FALL', robot.strongConfidence, `Fluxo de Dinheiro Saindo (MFI ${format(mfi)})`);
-  }
-  
-  // 17. OBV (On Balance Volume) - Fluxo de volume cumulativo
-  else if (robot.strategyType === 'OBV' && isValid(obv) && isValid(indicators.obvPrev)) {
-    if (obv > indicators.obvPrev!) setVote('RISE', robot.weakConfidence, `Acumulação Detectada (OBV Subindo)`);
-    else if (obv < indicators.obvPrev!) setVote('FALL', robot.weakConfidence, `Distribuição Detectada (OBV Caindo)`);
-  }
-  
-  // 18. Z-Score - Desvio Padrão Estatístico
-  else if (robot.strategyType === 'Z_SCORE' && isValid(zScore)) {
-    // Reversão à média baseada em desvios padrão (Sigma)
-    if (zScore < -2.0) setVote('RISE', robot.strongConfidence, `Desvio Padrão Negativo (Oportunidade Reversão)`);
-    else if (zScore > 2.0) setVote('FALL', robot.strongConfidence, `Desvio Padrão Positivo (Oportunidade Reversão)`);
-  }
-  
-  // 19. Stochastic RSI - O oscilador do oscilador
-  else if (robot.strategyType === 'STOCH_RSI' && isValid(stochRSI)) {
-    if (stochRSI <= 0.2) setVote('RISE', robot.strongConfidence, `StochRSI Sobrevenda`);
-    else if (stochRSI >= 0.8) setVote('FALL', robot.strongConfidence, `StochRSI Sobrecompra`);
-  }
-  
-  // 20. Moving Average Cross - O clássico Cruzamento de Ouro/Morte
-  else if (robot.strategyType === 'MOVING_AVERAGE_CROSS' && isValid(ma?.short) && isValid(ma?.long)) {
-    if (ma.short > ma.long) setVote('RISE', robot.weakConfidence, `Golden Cross (Curta > Longa)`);
-    else setVote('FALL', robot.weakConfidence, `Death Cross (Curta < Longa)`);
-  }
-  
-  // 21. Price Action Pattern - Reconhecimento de Padrões de Vela
-  else if (robot.strategyType === 'PRICE_ACTION_PATTERN') {
-      const body = Math.abs(lastClose - lastCandle.open);
-      const upperShadow = lastCandle.high - Math.max(lastClose, lastCandle.open);
-      const lowerShadow = Math.min(lastClose, lastCandle.open) - lastCandle.low;
-      
-      // Hammer (Martelo) ou Shooting Star (Estrela Cadente)
-      if (lowerShadow > body * 2 && upperShadow < body * 0.5) {
-         setVote('RISE', robot.strongConfidence, 'Padrão Martelo (Rejeição de Baixa)');
-      } else if (upperShadow > body * 2 && lowerShadow < body * 0.5) {
-         setVote('FALL', robot.strongConfidence, 'Padrão Estrela Cadente (Rejeição de Alta)');
+      if (robot.strategyType === 'RSI' && isValid(rsi)) {
+        if (rsi <= robot.strongBuyThreshold!) setVote('RISE', robot.strongConfidence, `RSI Baixo (${format(rsi)})`);
+        else if (rsi >= robot.strongSellThreshold!) setVote('FALL', robot.strongConfidence, `RSI Alto (${format(rsi)})`);
       }
-  }
-
-  // 22. Volume Profile - Análise de Microestrutura
-  else if (robot.strategyType === 'VOLUME_PROFILE') {
-     const range = Math.abs(lastCandle.high - lastCandle.low);
-     const avgRange = (indicators.atr || 1);
-     // Detecta "Barra de Exaustão" ou "Barra de Força" com base no tamanho relativo
-     if (range > avgRange * 1.5) {
-         if (lastClose > lastCandle.open) setVote('RISE', robot.weakConfidence, 'Barra de Força (Expansão)');
-         else setVote('FALL', robot.weakConfidence, 'Barra de Queda (Expansão)');
-     }
-  }
+      else if (robot.strategyType === 'STOCHASTIC' && isValid(stoch)) {
+        if (stoch <= robot.strongBuyThreshold!) setVote('RISE', robot.strongConfidence, `Stoch Baixo`);
+        else if (stoch >= robot.strongSellThreshold!) setVote('FALL', robot.strongConfidence, `Stoch Alto`);
+      }
+      else if (robot.strategyType === 'MACD_CROSS' && isValid(macd?.macd) && isValid(macd?.signal)) {
+        if (macd.macd > macd.signal) setVote('RISE', robot.strongConfidence, `MACD Cruzou p/ Cima`);
+        else if (macd.macd < macd.signal) setVote('FALL', robot.strongConfidence, `MACD Cruzou p/ Baixo`);
+      }
+      else if (robot.strategyType === 'ADX_TREND' && isValid(adx) && isValid(pdi) && isValid(ndi)) {
+        if (adx > (robot.trendStrengthThreshold || 25)) {
+           if (pdi > ndi) setVote('RISE', robot.strongConfidence, `Tendência Alta`);
+           else if (ndi > pdi) setVote('FALL', robot.strongConfidence, `Tendência Baixa`);
+        }
+      }
+      else if (robot.strategyType === 'BOLLINGER_BANDS' && isValid(bb?.lower) && isValid(bb?.upper)) {
+        if (lastClose <= bb.lower) setVote('RISE', robot.weakConfidence, `Banda Inferior`);
+        else if (lastClose >= bb.upper) setVote('FALL', robot.weakConfidence, `Banda Superior`);
+      }
+      else if (robot.strategyType === 'MOVING_AVERAGE_CROSS' && isValid(ma?.short) && isValid(ma?.long)) {
+        if (ma.short > ma.long) setVote('RISE', robot.weakConfidence, `Golden Cross`);
+        else setVote('FALL', robot.weakConfidence, `Death Cross`);
+      }
+      // Adicionar aqui lógica para outros robôs (Ichimoku, etc) se necessário
+      // A lógica básica cobre a maioria dos casos para teste inicial
+      else if (robot.strategyType === 'STOCH_RSI' && isValid(stochRSI)) {
+          if (stochRSI < 0.2) setVote('RISE', robot.strongConfidence, 'StochRSI Sobrevenda');
+          else if (stochRSI > 0.8) setVote('FALL', robot.strongConfidence, 'StochRSI Sobrecompra');
+      }
 
   } catch (e) {
-      // Log de erro não obstrutivo
-      console.warn(`[Vote] Erro calculado na estratégia ${robot.strategyType}:`, e);
+      console.warn(`[Vote] Erro seguro na estratégia ${robot.strategyType}:`, e);
   }
 
   return { vote, confidence, reason, optimalDuration, optimalDurationUnit, suggestedStake };
@@ -411,52 +233,35 @@ export function useRobotCouncilV2(
   chartData: CandleData[],
   dataVersion: number
 ) {
-  // --- Hooks Externos ---
-  const { operationsLog, executeTrade, timePeriod, isConnected, durationLimits, sellContract } = useDerivApi();
+  const { operationsLog, executeTrade, timePeriod, isConnected, durationLimits } = useDerivApi();
   const { user, loading: isAuthLoading } = useAuth();
   const { toast } = useToast();
-  // Sistema de Evolução (Algoritmo Genético que roda em segundo plano)
   const { evolvedStrategies, evolveTrigger, evolutionHistory } = useStrategyEvolution(initialCouncilStrategies);
   
-  // Ref para contar ciclos de execução (útil para logs e triggers periódicos)
   const executionIdRef = useRef(0);
   
-  // --- Memoização de Dados (Performance) ---
-  // Transforma os dados brutos (Ticks ou Candles) em um formato uniforme para os robôs
   const tickCandles = useMemo(() => {
-    // Prioridade 1: Usar dados de Candle completos da API (ChartData)
-    if (chartData && chartData.length >= REGIME_LOOKBACK) {
-      return chartData;
-    }
-    // Prioridade 2: Fallback para Ticks (reconstrução simples de candles OHLC iguais)
-    // Isso permite que o sistema funcione mesmo antes do gráfico carregar totalmente
+    if (chartData && chartData.length >= REGIME_LOOKBACK) return chartData;
     if (priceTicks && priceTicks.length > 0) {
       return priceTicks.map((t) => ({
-          epoch: t.epoch, open: t.price, high: t.price,
-          low: t.price, close: t.price, volume: 1 
+          epoch: t.epoch, open: t.price, high: t.price, low: t.price, close: t.price, volume: 1 
       }));
     }
     return [];
   }, [chartData, priceTicks]);
 
-  // --- Estado Local (Gerenciamento de Memória) ---
   const [strategyCouncil, setStrategyCouncil] = useState<RobotStrategy[]>(evolvedStrategies as RobotStrategy[]);
   const [isCouncilAutopilotOn, setIsCouncilAutopilotOn] = useState(false);
   const [isFetchingCouncil, setIsFetchingCouncil] = useState(false);
   const [tradeDecisionLog, setTradeDecisionLog] = useState<TradeDecisionLog[]>([]);
   const [sessionStartTime, setSessionStartTime] = useState<number | null>(null);
 
-  // Estado Complexo do Conselho
   const [councilState, setCouncilState] = useState<CouncilState>({
     indicators: null,
-    currentRegime: {
-        regime: 'ranging', // Default seguro (Lateral)
-        confidence: 0,
-        probabilities: { trending_bull: 0.2, trending_bear: 0.2, ranging: 0.4, high_volatility: 0.1, breakout: 0.1 }
-    },
+    currentRegime: { regime: 'ranging', confidence: 0, probabilities: { trending_bull: 0.2, trending_bear: 0.2, ranging: 0.4, high_volatility: 0.1, breakout: 0.1 } },
     microstructure: null,
     consensusDecision: { direction: 'HOLD', probability: 0.5, stake: 0 },
-    portfolioStats: { totalExposure: 0, maxExposure: 10 * 0.3, currentDrawdown: 0, maxDrawdown: 0, dailyPnL: 0 },
+    portfolioStats: { totalExposure: 0, maxExposure: 0, currentDrawdown: 0, maxDrawdown: 0, dailyPnL: 0 },
     bayesianVotes: {},
     dashboardData: null,
     effectiveThreshold: 0,
@@ -472,39 +277,31 @@ export function useRobotCouncilV2(
   });
 
   const [robotPerformance, setRobotPerformance] = useState<EnhancedRobotPerformance[]>([]);
-  // Refs mutáveis para dados de alta frequência (evita re-renders desnecessários do React)
   const virtualTradesRef = useRef<VirtualTrade[]>([]);
-  const tradeCounterRef = useRef(0);
   const transitionMatrixRef = useRef<number[][] | undefined>(undefined);
   const lastRegimeRef = useRef<MarketRegime>('ranging');
 
-  // --- Configurações da Mesa Operacional (Ajustáveis pelo Usuário) ---
+  // Configurações
   const [dailyBalance, setDailyBalance] = useState(100); 
   const [dailyTarget, setDailyTarget] = useState(50);
-  const [consensusSensitivity, setConsensusSensitivity] = useState(60); // % de consenso para agir
-  const [confidenceFactor, setConfidenceFactor] = useState(70); // Confiança mínima técnica
-  const [durationRange, setDurationRange] = useState<[number, number]>([15, 300]); // Duração mín/máx
+  const [consensusSensitivity, setConsensusSensitivity] = useState(60); 
+  const [confidenceFactor, setConfidenceFactor] = useState(70); 
+  const [durationRange, setDurationRange] = useState<[number, number]>([15, 300]); 
   const [takeProfitThreshold, setTakeProfitThreshold] = useState(10);
   const [stopLossThreshold, setStopLossThreshold] = useState(20);
-  
-  // Switches de Funcionalidade
   const [isDynamicConsensusOn, setIsDynamicConsensusOn] = useState(true);
   const [isDynamicRiskOn, setIsDynamicRiskOn] = useState(true);
-  const [isMeritocracyOn, setIsMeritocracyOn] = useState(true); // Melhores robôs têm mais peso?
+  const [isMeritocracyOn, setIsMeritocracyOn] = useState(true); 
   const [isDynamicExitOn, setIsDynamicExitOn] = useState(true);
 
-  // Trava de execução (Mutex) para evitar ciclos sobrepostos
   const councilExecutionRef = useRef<{ isExecuting: boolean; sellingContracts: Set<number>; }>({
     isExecuting: false, sellingContracts: new Set()
   });
 
-  // ✅ CORREÇÃO: Usa o `useEffect` para ouvir as mudanças do algoritmo genético.
-  // Quando `evolvedStrategies` muda, este efeito atualiza o `strategyCouncil` em uso.
   useEffect(() => {
     setStrategyCouncil(evolvedStrategies as RobotStrategy[]);
   }, [evolvedStrategies]);
   
-  // Zera as estatísticas da arena (reinicia o campeonato)
   const resetArenaPerformance = useCallback(() => {
     if (strategyCouncil.length === 0) return;
     const initialPerformance: EnhancedRobotPerformance[] = strategyCouncil.map(robot => ({
@@ -516,29 +313,21 @@ export function useRobotCouncilV2(
     virtualTradesRef.current = [];
   }, [strategyCouncil]);
 
-  // Carrega performance histórica do usuário (Persistência)
   useEffect(() => {
     if (!user || isAuthLoading) return;
     loadRobotPerformance(user.uid).then((stored) => {
-        if (stored && stored.length > 0) {
-            setRobotPerformance(prev => {
-                if (prev.length === 0) return stored as EnhancedRobotPerformance[];
-                return prev; 
-            });
-        }
+        if (stored && stored.length > 0) setRobotPerformance(stored as EnhancedRobotPerformance[]);
     }).catch(console.error);
   }, [user, isAuthLoading]);
 
-  // Função para ativar o piloto automático
   const fetchStrategyCouncil = useCallback(async () => {
     if (!activeSymbol) {
-      toast({ variant: 'destructive', title: 'Atenção', description: 'Selecione um ativo para iniciar.' });
+      toast({ variant: 'destructive', title: 'Erro', description: 'Selecione um ativo.' });
       return;
     }
     setIsFetchingCouncil(true);
-    await new Promise((r) => setTimeout(r, 500)); // Pequeno delay para UX
+    await new Promise((r) => setTimeout(r, 500));
     
-    // Clona as estratégias para isolar a instância
     const council = (evolvedStrategies as RobotStrategy[]).map(s => ({ ...s }));
     setStrategyCouncil(council);
     
@@ -547,72 +336,45 @@ export function useRobotCouncilV2(
     setSessionStartTime(Date.now());
     setIsCouncilAutopilotOn(true);
     setIsFetchingCouncil(false);
-    toast({ title: '🚀 Cérebro V2.5 Iniciado', description: 'Os 22 Analistas estão monitorando o mercado.' });
+    toast({ title: '🚀 Sistema V2.5 Iniciado', description: 'Monitoramento em tempo real ativo.' });
   }, [activeSymbol, evolvedStrategies, robotPerformance.length, resetArenaPerformance, toast]);
 
-  // Função para desativar
   const dissolveCouncil = useCallback(() => {
     setIsCouncilAutopilotOn(false);
     setSessionStartTime(null);
-    toast({ title: '⏸️ Sistema Pausado', description: 'Operações suspensas.' });
+    toast({ title: '⏸️ Sistema Pausado', description: 'Mesa Operacional suspensa.' });
   }, [toast]);
 
-  // ════════════════════════════════════════════════════════════════════
-  // 6. CICLO DE VIDA DO CONSELHO (MAIN LOOP)
-  // ════════════════════════════════════════════════════════════════════
-  
+  // 🔄 CICLO DE VIDA OTIMIZADO
   const runCouncilCycle = useCallback(() => {
-    // A. GUARD CLAUSES: Proteções para não rodar sem necessidade
     if (!isCouncilAutopilotOn) return; 
+    if (!isConnected || !activeSymbol) return;
     
-    // Verificação de conexão (com log moderado)
-    if (!isConnected) { 
-        if (executionIdRef.current % 10 === 0) console.log('⏳ [Council] Aguardando conexão Deriv...'); 
-        return; 
-    }
-    if (!activeSymbol) return;
-    
-    // B. VALIDAÇÃO DE DADOS: O ponto crítico da estagnação
     const validCandles = validateCandles(tickCandles);
-    
-    // Se não temos dados suficientes para calcular indicadores (EMA 20, etc), esperamos.
-    if (validCandles.length < REGIME_LOOKBACK) {
-       if (executionIdRef.current % 10 === 0) {
-           console.log(`⏳ [Council] Carregando histórico... (${validCandles.length}/${REGIME_LOOKBACK} candles)`);
-       }
-       return; 
-    }
-    
-    if (priceTicks.length === 0) {
-       if (executionIdRef.current % 10 === 0) {
-           console.log(`⏳ [Council] Aguardando primeiro tick...`);
-       }
-       return;
-    }
+    if (validCandles.length < REGIME_LOOKBACK || priceTicks.length === 0) return;
 
-    // Mutex: Se já está executando, não sobreponha
     if (councilExecutionRef.current.isExecuting) return; 
     councilExecutionRef.current.isExecuting = true;
     executionIdRef.current++;
 
     try {
         const currentTick = priceTicks[priceTicks.length - 1];
-        if (!currentTick) throw new Error("Tick atual indisponível");
+        if (!currentTick) throw new Error("Tick indisponível");
 
-        // C. CÁLCULO DE INDICADORES (INDICATOR LAYER)
-        const contractDurationForIndicators = { duration: 5, unit: 'm' as DurationUnit };
-        const currentIndicators = calculateAllIndicators(validCandles, strategyCouncil, timePeriod, contractDurationForIndicators);
-
-        // Se falhar drasticamente, saia com segurança (não tente ler null)
+        // 1. Indicadores
+        const currentIndicators = calculateAllIndicators(validCandles, strategyCouncil, timePeriod, { duration: 5, unit: 'm' });
         if (!currentIndicators) {
-            console.warn("⚠️ [Council] Indicadores retornaram nulo. Tentando novamente no próximo tick.");
             councilExecutionRef.current.isExecuting = false;
             return;
         }
 
-        // D. DETECÇÃO DE REGIME DE MERCADO (CONTEXT LAYER)
-        let regimeResult;
-        // Só tenta usar ADX se ele existir (evita divisão por zero em mercados parados)
+        // 2. Regime
+        let regimeResult = { 
+            regime: lastRegimeRef.current, 
+            confidence: 0.5, 
+            probabilities: { ranging: 1 } as any 
+        };
+        
         if (isValid(currentIndicators.adx)) {
             regimeResult = detectMarketRegime(
                 validCandles,
@@ -620,24 +382,20 @@ export function useRobotCouncilV2(
                 lastRegimeRef.current,
                 transitionMatrixRef.current
             );
-        } else {
-            // Fallback: Se não sei o regime, assumo o anterior ou "Lateral"
-            regimeResult = { 
-                regime: lastRegimeRef.current || 'ranging', 
-                confidence: 0.5, 
-                probabilities: { ranging: 1.0 } as any 
-            };
         }
         lastRegimeRef.current = regimeResult.regime;
 
-        // E. ANÁLISE DE MICROESTRUTURA (ORDER FLOW)
+        // 3. Microestrutura
         const microFeatures = extractMicrostructureFeatures(priceTicks, validCandles);
 
-        // F. ARENA VIRTUAL (PAPER TRADING LAYER)
+        // 4. Arena Virtual (ATUALIZAÇÃO EM LOTE PARA EVITAR CRASH)
         const stillActiveTrades: VirtualTrade[] = [];
         let performanceChanged = false;
         let removedOrphanedCount = 0;
         
+        // Criar uma cópia local da performance para modificar sem disparar renders
+        let localRobotPerformance = [...robotPerformance];
+
         virtualTradesRef.current.forEach(trade => {
             const isExpired = currentTick.epoch >= trade.exitEpoch;
             const isOrphaned = (currentTick.epoch - trade.entryEpoch) > TRADE_TIMEOUT_SECONDS;
@@ -649,47 +407,50 @@ export function useRobotCouncilV2(
                 const isWin = (trade.vote === 'RISE' && exitPrice > trade.entryPrice) || 
                               (trade.vote === 'FALL' && exitPrice < trade.entryPrice);
                 
-                setRobotPerformance(prev => {
-                    return prev.map(p => {
-                        if (p.id !== trade.robotId) return p;
-                        
-                        const pnl = isWin ? VIRTUAL_STAKE * 0.95 : -VIRTUAL_STAKE;
-                        const newWins = p.wins + (isWin ? 1 : 0);
-                        const newLosses = p.losses + (isWin ? 0 : 1);
-                        const newHistory = [...(p.tradeHistory || []), pnl].slice(-100);
-                        
-                        return {
-                            ...p,
-                            wins: newWins,
-                            losses: newLosses,
-                            totalProfit: p.totalProfit + pnl,
-                            tradeHistory: newHistory,
-                            winRate: (newWins / (newWins + newLosses)) * 100,
-                            lastUpdated: Date.now()
-                        };
-                    });
+                // Atualizar o array local
+                localRobotPerformance = localRobotPerformance.map(p => {
+                    if (p.id !== trade.robotId) return p;
+                    const pnl = isWin ? VIRTUAL_STAKE * 0.95 : -VIRTUAL_STAKE;
+                    const newWins = p.wins + (isWin ? 1 : 0);
+                    const newLosses = p.losses + (isWin ? 0 : 1);
+                    const newHistory = [...(p.tradeHistory || []), pnl].slice(-100);
+                    return {
+                        ...p,
+                        wins: newWins,
+                        losses: newLosses,
+                        totalProfit: p.totalProfit + pnl,
+                        tradeHistory: newHistory,
+                        winRate: (newWins / (newWins + newLosses)) * 100,
+                        lastUpdated: Date.now()
+                    };
                 });
                 performanceChanged = true;
             } else {
                 stillActiveTrades.push(trade);
             }
         });
+        
+        // Atualizar refs e estados apenas UMA VEZ
         virtualTradesRef.current = stillActiveTrades;
+        if (performanceChanged) {
+            setRobotPerformance(localRobotPerformance);
+        }
 
-        // G. VOTAÇÃO E GERAÇÃO DE NOVOS PAPER TRADES (DECISION LAYER)
+        // 5. Votação
         const localBayesianVotes: Record<string, BayesianVote> = {};
-        let riseSum = 0, fallSum = 0, totalWeight = 0, weightedDurationSum = 0;
+        let riseSum = 0, fallSum = 0, totalWeight = 0;
         let activeRobotsCount = 0;
 
         strategyCouncil.forEach(robot => {
             const technicalVote = calculateTechnicalVote(robot, currentIndicators, validCandles);
             
+            // Paper Trades
             if (technicalVote.vote !== 'HOLD') {
                  const hasActiveTrade = virtualTradesRef.current.some(t => t.robotId === robot.id);
                  if (!hasActiveTrade) {
                      const durationSec = durationToSeconds(technicalVote.optimalDuration, technicalVote.optimalDurationUnit);
                      virtualTradesRef.current.push({
-                         id: `vt-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+                         id: `vt-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
                          robotId: robot.id,
                          vote: technicalVote.vote,
                          entryPrice: currentTick.price,
@@ -702,14 +463,12 @@ export function useRobotCouncilV2(
                  }
             }
             
+            // Consenso
             if (technicalVote.confidence >= confidenceFactor) {
-                const perf = robotPerformance.find(p => p.id === robot.id);
+                const perf = localRobotPerformance.find(p => p.id === robot.id);
                 const winRate = perf ? perf.winRate : 50; 
-                
                 let weight = 1;
-                if (isMeritocracyOn && perf) {
-                     weight = Math.max(0.1, (perf.sharpeRatio || 0) + 0.5); 
-                }
+                if (isMeritocracyOn && perf) weight = Math.max(0.1, (perf.sharpeRatio || 0) + 0.5); 
 
                 const posterior = bayesianUpdate(winRate/100, technicalVote.confidence/100);
                 const voteWeight = posterior * weight;
@@ -717,7 +476,6 @@ export function useRobotCouncilV2(
                 if (technicalVote.vote === 'RISE') riseSum += voteWeight;
                 if (technicalVote.vote === 'FALL') fallSum += voteWeight;
                 totalWeight += voteWeight;
-                weightedDurationSum += durationToSeconds(technicalVote.optimalDuration, technicalVote.optimalDurationUnit) * voteWeight;
                 
                 localBayesianVotes[robot.id] = {
                     ...technicalVote,
@@ -732,7 +490,7 @@ export function useRobotCouncilV2(
             }
         });
 
-        // H. CONSENSO FINAL E EXECUÇÃO (EXECUTION LAYER)
+        // 6. Decisão Final
         let consensusDirection: 'RISE' | 'FALL' | 'HOLD' = 'HOLD';
         let consensusProbability = 0.5;
         
@@ -745,12 +503,14 @@ export function useRobotCouncilV2(
         const calculatedEffectiveThreshold = (totalWeight * (consensusSensitivity / 100));
         const consensusReached = totalWeight > 0 && Math.max(riseSum, fallSum) >= calculatedEffectiveThreshold;
         
-        // CORREÇÃO: Medição de memória
-        const memoryUsageMB = (performance.memory as any)?.usedJSHeapSize / (1024 * 1024);
+        // Medição de memória segura (Compatibilidade Cross-Browser)
+        const memoryUsageMB = (typeof performance !== 'undefined' && (performance as any).memory) 
+            ? (performance as any).memory.usedJSHeapSize / (1024 * 1024) 
+            : 0;
 
-        // I. ATUALIZAÇÃO DA INTERFACE (UI LAYER)
         const currentSessionDuration = sessionStartTime ? (Date.now() - sessionStartTime) / 1000 : 0;
 
+        // Atualização da UI
         setCouncilState(prev => ({
             ...prev,
             indicators: currentIndicators,
@@ -766,20 +526,21 @@ export function useRobotCouncilV2(
                 activeRobotsCount,
                 orphanedTradesRemoved: prev.systemMetrics.orphanedTradesRemoved + removedOrphanedCount,
                 lastCleanup: removedOrphanedCount > 0 ? Date.now() : prev.systemMetrics.lastCleanup,
-                memoryUsageMB: memoryUsageMB || prev.systemMetrics.memoryUsageMB,
+                memoryUsageMB,
             },
-            robotPerformance,
+            robotPerformance: performanceChanged ? localRobotPerformance : prev.robotPerformance,
             consensusReached,
             consensusSum: { rise: riseSum, fall: fallSum },
             totalWeight,
             effectiveThreshold: calculatedEffectiveThreshold
         }));
         
+        // Log Periódico (A cada 10 ticks)
         if (executionIdRef.current % 10 === 0) {
-            console.log(`✅ [Council Alive] Cycle #${executionIdRef.current} | Active Robots: ${activeRobotsCount} | Paper Trades: ${virtualTradesRef.current.length} | Regime: ${regimeResult.regime}`);
+            console.log(`✅ [Council Alive] Cycle #${executionIdRef.current} | Active Robots: ${activeRobotsCount}`);
         }
 
-        // J. EXECUÇÃO DE ORDEM REAL (SE HABILITADO)
+        // 7. Execução Real (Se Aprovado)
         if (consensusReached && consensusDirection !== 'HOLD') {
              const kellyStake = calculateKellyStake(dailyBalance, consensusProbability, 0.9);
              if (kellyStake > 0) {
@@ -798,14 +559,12 @@ export function useRobotCouncilV2(
     strategyCouncil, timePeriod, robotPerformance, confidenceFactor, isMeritocracyOn, consensusSensitivity, dailyBalance, sessionStartTime
   ]);
 
-  // Hook que dispara o ciclo repetidamente
   useEffect(() => {
     if (!isCouncilAutopilotOn) return;
     const interval = setInterval(runCouncilCycle, THROTTLE_MS);
     return () => clearInterval(interval);
   }, [runCouncilCycle, isCouncilAutopilotOn]);
 
-  // Retorno da API do Hook para os Componentes React
   return {
     isCouncilAutopilotOn,
     fetchStrategyCouncil,
@@ -815,8 +574,7 @@ export function useRobotCouncilV2(
     robotPerformance,
     evolutionHistory,
     virtualTradesRef,
-    ...councilState, // Espalha todo o estado complexo
-    // Setters para configurações da UI
+    ...councilState,
     setDailyBalance, setDailyTarget, setConsensusSensitivity, setConfidenceFactor, 
     setDurationRange, setTakeProfitThreshold, setStopLossThreshold, 
     setIsDynamicConsensusOn, setIsDynamicRiskOn, setIsMeritocracyOn, setIsDynamicExitOn,
