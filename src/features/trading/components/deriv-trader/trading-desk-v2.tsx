@@ -184,8 +184,6 @@ export function TradingDeskV2({ councilState }: TradingDeskV2Props) {
                             {activeTrades.length > 0 ? (
                                 <div className="divide-y divide-border/50">
                                     {activeTrades.map((trade) => {
-                                        // 🛡️ CORREÇÃO DO ERRO 'UNDEFINED SPLIT':
-                                        // Garantimos que robotId é uma string válida antes de tentar usar .split()
                                         const safeRobotId = trade.robotId ? String(trade.robotId) : 'Unknown';
                                         const displayId = safeRobotId.includes('-') ? safeRobotId.split('-')[0] : safeRobotId;
 
@@ -199,10 +197,10 @@ export function TradingDeskV2({ councilState }: TradingDeskV2Props) {
                                                         {trade.vote === 'RISE' ? <TrendingUp className="h-5 w-5" /> : <TrendingDown className="h-5 w-5" />}
                                                     </div>
                                                     <div>
-                                                        <p className="font-bold text-sm flex items-center gap-2">
-                                                            Robô {displayId} 
+                                                        <div className="font-bold text-sm flex items-center gap-2">
+                                                            <span>Robô {displayId}</span>
                                                             <Badge variant="outline" className="text-[10px] h-4 px-1 py-0">{trade.regime}</Badge>
-                                                        </p>
+                                                        </div>
                                                         <p className="text-xs text-muted-foreground mt-0.5">
                                                             Entrada: <span className="font-mono text-foreground">@{trade.entryPrice?.toFixed(2) || '---'}</span>
                                                         </p>
