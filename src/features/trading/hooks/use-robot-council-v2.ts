@@ -985,13 +985,19 @@ export function useRobotCouncilV2(
         console.log('═══════════════════════════════════════');
         console.log('🔍 VALIDAÇÃO ARQUITETURA V2.5');
         console.log('═══════════════════════════════════════');
+        
+        // 1. Fonte de Dados
         console.log('1️⃣ FONTE DE DADOS:');
         console.log(`   chartData (direto): ${chartData?.length || 0} candles`);
         console.log(`   priceTicks (fallback): ${priceTicks?.length || 0} ticks`);
         console.log(`   tickCandles (usado): ${tickCandles?.length || 0}`);
+        
+        // 2. Bootstrap
         console.log('\n2️⃣ BOOTSTRAP:');
         console.log(`   Status: ${isBootstrapped ? '✅ OK' : '❌ PENDENTE'}`);
         console.log(`   Tentativa feita: ${bootstrapAttemptedRef?.current ? 'Sim' : 'Não'}`);
+        
+        // 3. Indicadores
         console.log('\n3️⃣ INDICADORES:');
         console.log(`   Status: ${currentIndicators ? '✅ OK' : '❌ NULL'}`);
         if (currentIndicators) {
@@ -999,19 +1005,28 @@ export function useRobotCouncilV2(
           console.log(`   ADX: ${currentIndicators.adx?.toFixed(2) || 'N/A'}`);
           console.log(`   MACD: ${currentIndicators.macd?.histogram?.toFixed(4) || 'N/A'}`);
         }
+        
+        // 4. Regime
         console.log('\n4️⃣ REGIME:');
-        console.log(`   Tipo: ${councilState.currentRegime?.regime || 'N/A'}`);
-        console.log(`   Confiança: ${((councilState.currentRegime?.confidence || 0) * 100).toFixed(0)}%`);
+        console.log(`   Tipo: ${regimeResult?.regime || 'N/A'}`);
+        console.log(`   Confiança: ${((regimeResult?.confidence || 0) * 100).toFixed(0)}%`);
+        
+        // 5. Robôs
         console.log('\n5️⃣ ROBÔS:');
         console.log(`   Conselho: ${strategyCouncil?.length || 0}`);
-        console.log(`   Com Votos: ${Object.keys(councilState.bayesianVotes || {}).length}`);
-        console.log(`   Ativos (weight>0): ${Object.values(councilState.bayesianVotes || {}).filter(v => v.weight > 0).length}`);
+        console.log(`   Com Votos: ${Object.keys(localBayesianVotes || {}).length}`);
+        console.log(`   Ativos (weight>0): ${Object.values(localBayesianVotes || {}).filter(v => v.weight > 0).length}`);
+        
+        // 6. Arena Virtual
         console.log('\n6️⃣ ARENA VIRTUAL:');
         console.log(`   Trades Ativos: ${virtualTradesRef.current?.length || 0}`);
+        
+        // 7. Consenso
         console.log('\n7️⃣ CONSENSO:');
-        console.log(`   Direção: ${councilState.consensusDecision?.direction || 'N/A'}`);
-        console.log(`   Probabilidade: ${((councilState.consensusDecision?.probability || 0) * 100).toFixed(0)}%`);
-        console.log(`   Stake: $${(councilState.consensusDecision?.stake || 0).toFixed(2)}`);
+        console.log(`   Direção: ${consensusDirection || 'N/A'}`);
+        console.log(`   Probabilidade: ${((consensusProbability || 0) * 100).toFixed(0)}%`);
+        console.log(`   Stake: $${(kellyStake || 0).toFixed(2)}`);
+        
         console.log('═══════════════════════════════════════');
         
         toast({ title: "🚀 Ordem Executada", description: `${consensusDirection} com ${kellyStake.toFixed(2)} (${(consensusProbability * 100).toFixed(1)}%)` });    
@@ -1101,3 +1116,4 @@ export function useRobotCouncilV2(
     supervisionStatus: { status: 'approved', message: 'Cérebro V2.5 Ativo' },
   };
 }
+
