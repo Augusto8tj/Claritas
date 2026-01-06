@@ -76,7 +76,7 @@ export function CouncilAutopilotInterfaceV2(props: CouncilAutopilotInterfaceV2Pr
       </CardHeader>
       <CardContent className="space-y-4">
 
-        {isCouncilAutopilotOn && (
+        {isCouncilAutopilotOn && portfolioStats && (
            <div className="space-y-3 rounded-lg border bg-card p-4">
               <h4 className="font-headline flex items-center gap-2 text-primary"><Wallet className="h-5 w-5"/>Gestão de Portfólio</h4>
               <div className="grid grid-cols-3 gap-3 text-center text-xs">
@@ -201,7 +201,7 @@ export function CouncilAutopilotInterfaceV2(props: CouncilAutopilotInterfaceV2Pr
                 <Switch id="dynamic-consensus-switch" checked={isDynamicConsensusOn} onCheckedChange={setIsDynamicConsensusOn} disabled={isCouncilAutopilotOn} />
             </div>
 
-            {isDynamicConsensusOn && (
+            {isDynamicConsensusOn && effectiveThreshold !== undefined && councilConfidence !== undefined && (
                 <div className="space-y-6 rounded-lg border bg-muted/50 p-4">
                     <div>
                         <div className="flex justify-between items-center mb-1">
@@ -292,5 +292,4 @@ export function CouncilAutopilotInterfaceV2(props: CouncilAutopilotInterfaceV2Pr
         </div>
       </CardContent>
     </Card>
-  );
-}
+  

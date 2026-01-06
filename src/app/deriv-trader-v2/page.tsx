@@ -14,8 +14,6 @@ import { useDerivApiV2, DerivApiProviderV2 } from "@/features/trading/hooks/use-
 import { Skeleton } from "@/components/ui/skeleton";
 import { OperationsLog } from "@/features/trading/components/deriv-trader/operations-log";
 import { riseFallSchema, type RiseFallFormValues } from "@/lib/types";
-import { CouncilAutopilotInterfaceV2 } from "@/features/trading/components/deriv-trader/council-autopilot-interface-v2";
-import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { useRobotCouncilV2 } from "@/features/trading/hooks/use-robot-council-v2";
 import { SystemStatusSummary } from "@/features/trading/components/deriv-trader/system-status-summary";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -24,6 +22,7 @@ import { TradingDeskV2 } from "@/features/trading/components/deriv-trader/tradin
 import { EvolutionLab } from "@/features/trading/components/deriv-trader/evolution-lab";
 import { DebugCouncilView } from "@/features/trading/components/deriv-trader/DebugCouncilView";
 import TradingDecisionLogViewer from "@/components/deriv-trader/TradingDecisionLogViewer";
+import { CouncilAutopilotInterfaceV2 } from "@/features/trading/components/deriv-trader/council-autopilot-interface-v2";
 
 // ============================================================================
 // COMPONENTES REORGANIZADOS PARA PERFORMANCE
@@ -133,11 +132,8 @@ const DerivTraderV2Core = () => {
                     </div>
                      <div className="animate-in fade-in slide-in-from-top-4 duration-500">
                         <DebugCouncilView 
-                            votes={robotCouncil.bayesianVotes}
-                            regime={robotCouncil.currentRegime}
+                            councilState={robotCouncil}
                             isCouncilAutopilotOn={robotCouncil.isCouncilAutopilotOn}
-                            systemMetrics={robotCouncil.systemMetrics}
-                            robotPerformance={robotCouncil.robotPerformance}
                         />
                     </div>
                 </div>

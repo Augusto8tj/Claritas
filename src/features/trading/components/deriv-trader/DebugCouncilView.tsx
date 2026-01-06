@@ -7,7 +7,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Progress } from '@/components/ui/progress';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { cn } from '@/lib/utils';
-import type { CouncilVotes, BayesianVote, SystemMetrics } from '../../hooks/use-robot-council-v2';
+import type { CouncilState, SystemMetrics } from '../../hooks/use-robot-council-v2';
 import type { MarketRegime, EnhancedRobotPerformance } from '@/lib/types';
 import {
   BrainCircuit, Activity, Waves, CandlestickChart, Bot, LayoutGrid, BarChart,
@@ -19,15 +19,8 @@ import {
 // ============================================================================
 
 interface DebugCouncilViewProps {
-  votes: CouncilVotes;
-  regime: {
-    regime: MarketRegime;
-    confidence: number;
-    probabilities: Record<MarketRegime, number>;
-  };
+  councilState: CouncilState;
   isCouncilAutopilotOn: boolean;
-  systemMetrics: SystemMetrics;
-  robotPerformance: EnhancedRobotPerformance[];
 }
 
 const indicatorIcons: { [key: string]: React.ReactNode } = {
@@ -67,9 +60,11 @@ const formatDuration = (seconds: number): string => {
 // COMPONENTE PRINCIPAL
 // ============================================================================
 
-export function DebugCouncilView({ votes, regime, isCouncilAutopilotOn, systemMetrics, robotPerformance }: DebugCouncilViewProps) {
+export function DebugCouncilView({ councilState, isCouncilAutopilotOn }: DebugCouncilViewProps) {
+  
+  const { bayesianVotes, currentRegime, systemMetrics, robotPerformance } = councilState || {};
 
-  if (!isCouncilAutopilotOn || !regime || !systemMetrics) {
+  if (!isCouncilAutopilotOn || !currentRegime || !systemMetrics) {
     return (
         <Card>
             <CardHeader>
@@ -91,14 +86,14 @@ export function DebugCouncilView({ votes, regime, isCouncilAutopilotOn, systemMe
     );
   }
 
-  const sortedVotes = votes ? Object.entries(votes).sort(([, a], [, b]) => {
+  const sortedVotes = bayesianVotes ? Object.entries(bayesianVotes).sort(([, a], [, b]) => {
     const weightA = a.vote === 'HOLD' ? -1 : a.weight;
     const weightB = b.vote === 'HOLD' ? -1 : b.weight;
     if(weightB !== weightA) return weightB - weightA;
     return b.bayesianProbability - a.bayesianProbability;
   }) : [];
 
-  const regimeProbabilities = Object.entries(regime.probabilities)
+  const regimeProbabilities = Object.entries(currentRegime.probabilities)
     .map(([key, value]) => ({ regime: key as MarketRegime, probability: value }))
     .sort((a,b) => b.probability - a.probability);
 
