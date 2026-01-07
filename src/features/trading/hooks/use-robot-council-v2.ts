@@ -476,7 +476,11 @@ export function useRobotCouncilV2(
         });
         
         virtualTradesRef.current = stillActiveTrades;
-        if (performanceChanged) setRobotPerformance(localRobotPerformance);
+        if (performanceChanged) {
+            setRobotPerformance(localRobotPerformance);
+            // ✅ A CHAMADA CRÍTICA PARA ATIVAR A EVOLUÇÃO
+            evolveTrigger(localRobotPerformance);
+        }
 
         const localBayesianVotes: Record<string, BayesianVote> = {};
         let riseSum = 0, fallSum = 0, totalWeight = 0;
@@ -643,7 +647,7 @@ export function useRobotCouncilV2(
 
   }, [
     isCouncilAutopilotOn, isConnected, activeSymbol, tickCandles, priceTicks, 
-    strategyCouncil, timePeriod, robotPerformance, confidenceFactor, isMeritocracyOn, consensusSensitivity, dailyBalance, sessionStartTime, user, durationRange, executeTrade
+    strategyCouncil, timePeriod, robotPerformance, confidenceFactor, isMeritocracyOn, consensusSensitivity, dailyBalance, sessionStartTime, user, durationRange, executeTrade, evolveTrigger
   ]);
 
   useEffect(() => {
