@@ -111,9 +111,15 @@ export function TradingDeskV2({ councilState }: TradingDeskV2Props) {
         virtualTradesRef, 
         systemMetrics 
     } = councilState;
+    
+    // Força re-render quando systemMetrics muda
+    const [, setForceRender] = React.useState(0);
+    React.useEffect(() => {
+        setForceRender(prev => prev + 1);
+    }, [systemMetrics]);
 
     const sortedPerformance = useMemo(() => {
-        if (!robotPerformance) return []; // Proteção contra array nulo
+        if (!robotPerformance) return [];
         return [...robotPerformance].sort((a, b) => {
             const sharpeA = a.sharpeRatio || -Infinity;
             const sharpeB = b.sharpeRatio || -Infinity;
@@ -122,7 +128,6 @@ export function TradingDeskV2({ councilState }: TradingDeskV2Props) {
         });
     }, [robotPerformance]);
 
-    // Acesso seguro aos trades ativos
     const activeTrades = virtualTradesRef?.current || [];
 
     return (
