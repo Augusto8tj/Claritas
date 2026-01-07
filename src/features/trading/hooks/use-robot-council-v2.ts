@@ -34,7 +34,7 @@ import { useStrategyEvolution } from './use-strategy-evolution';
 import { initialCouncilStrategies } from '@/services/council-strategies';
 import {
   detectMarketRegime, calculateKellyStake, bayesianUpdate,
-  extractMicrostructureFeatures
+  extractMicrostructureFeatures, calculatePerformanceMetrics
 } from '@/services/advanced-trading-services';
 
 // ════════════════════════════════════════════════════════════════════
@@ -333,10 +333,10 @@ export function useRobotCouncilV2(
   const [durationRange, setDurationRange] = useState<[number, number]>([15, 300]); 
   const [takeProfitThreshold, setTakeProfitThreshold] = useState(10);
   const [stopLossThreshold, setStopLossThreshold] = useState(20);
-  const [isDynamicConsensusOn, setIsDynamicConsensusOn] = useState(true);
-  const [isDynamicRiskOn, setIsDynamicRiskOn] = useState(true);
-  const [isMeritocracyOn, setIsMeritocracyOn] = useState(true); 
-  const [isDynamicExitOn, setIsDynamicExitOn] = useState(true);
+  const [isDynamicConsensusOn, setIsDynamicConsensusOn] = useState(isDynamicConsensusOn);
+  const [isDynamicRiskOn, setIsDynamicRiskOn] = useState(isDynamicRiskOn);
+  const [isMeritocracyOn, setIsMeritocracyOn] = useState(isMeritocracyOn); 
+  const [isDynamicExitOn, setIsDynamicExitOn] = useState(isDynamicExitOn);
 
   const councilExecutionRef = useRef<{ isExecuting: boolean; sellingContracts: Set<number>; }>({
     isExecuting: false, sellingContracts: new Set()
@@ -439,7 +439,7 @@ export function useRobotCouncilV2(
         if (isValid(currentIndicators.adx)) {
             regimeResult = detectMarketRegime(
                 validCandles,
-                { adx: currentIndicators.adx, pdi: currentIndicators.pdi, ndi: currentIndicators.ndi, bbw: currentIndicators.bbw, roc: currentIndicators.roc, atr: currentIndicators.atr },
+                { adx: currentIndicators.adx, pdi: currentIndicators.pdi, ndi: currentIndicators.bbw, roc: currentIndicators.roc, atr: currentIndicators.atr },
                 lastRegimeRef.current,
                 undefined
             );
@@ -467,7 +467,19 @@ export function useRobotCouncilV2(
                     const pnl = isWin ? trade.stake * 0.95 : -trade.stake;
                     const newWins = p.wins + (isWin ? 1 : 0);
                     const newLosses = p.losses + (isWin ? 0 : 1);
-                    return { ...p, wins: newWins, losses: newLosses, totalProfit: p.totalProfit + pnl, winRate: (newWins / (newWins + newLosses)) * 100, lastUpdated: Date.now() };
+                    const newTradeHistory = [...(p.tradeHistory || []), pnl];
+                    const performanceMetrics = calculatePerformanceMetrics(newTradeHistory.map((profit, i) => ({ profit, timestamp: Date.now() - (newTradeHistory.length - i) * 1000 })));
+
+                    return { 
+                        ...p, 
+                        wins: newWins, 
+                        losses: newLosses, 
+                        totalProfit: p.totalProfit + pnl, 
+                        winRate: (newWins / (newWins + newLosses)) * 100, 
+                        lastUpdated: Date.now(),
+                        tradeHistory: newTradeHistory,
+                        sharpeRatio: performanceMetrics.sharpeRatio
+                    };
                 });
                 performanceChanged = true;
             } else {
@@ -478,7 +490,6 @@ export function useRobotCouncilV2(
         virtualTradesRef.current = stillActiveTrades;
         if (performanceChanged) {
             setRobotPerformance(localRobotPerformance);
-            // ✅ A CHAMADA CRÍTICA PARA ATIVAR A EVOLUÇÃO
             evolveTrigger(localRobotPerformance);
         }
 
@@ -529,7 +540,6 @@ export function useRobotCouncilV2(
                     weight,
                     regime: regimeResult.regime,
                     strategy: robot,
-                    // ✅ NOVO: Adiciona o Sharpe Ratio ao log do voto
                     sharpeRatio: perf?.sharpeRatio || 0
                 };
                 activeRobotsCount++;
@@ -673,3 +683,5 @@ export function useRobotCouncilV2(
     supervisionStatus: { status: 'approved', message: 'Sistema Operacional v2.5' }
   };
 }
+
+    
