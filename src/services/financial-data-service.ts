@@ -6,6 +6,45 @@ import { generateGoalImage } from '@/ai/flows/goal-image-generation';
 import { addDocumentNonBlocking, deleteDocumentNonBlocking, setDocumentNonBlocking, updateDocumentNonBlocking } from '@/firebase/non-blocking-updates';
 import { getChatbotInsightsResponse } from '@/app/actions';
 
+
+// ============================================================================
+// SANITIZATION HELPER
+// ============================================================================
+
+/**
+ * Recursively sanitizes an object to be Firestore-compatible.
+ * - Removes keys with `undefined` values.
+ * - Converts `NaN` values to `null`.
+ * This is crucial because Firestore does not support these values.
+ * @param obj The object to sanitize.
+ * @returns A new, sanitized object.
+ */
+function sanitizeForFirestore(obj: any): any {
+  if (obj === null || typeof obj !== 'object') {
+    if (typeof obj === 'number' && isNaN(obj)) {
+      return null;
+    }
+    return obj;
+  }
+
+  if (Array.isArray(obj)) {
+    return obj.map(item => sanitizeForFirestore(item));
+  }
+
+  const newObj: { [key: string]: any } = {};
+  for (const key in obj) {
+    if (Object.prototype.hasOwnProperty.call(obj, key)) {
+      const value = obj[key];
+      if (value !== undefined) {
+        newObj[key] = sanitizeForFirestore(value);
+      }
+    }
+  }
+
+  return newObj;
+}
+
+
 // --- Transactions ---
 
 export async function getTransactions(userId: string): Promise<Transaction[]> {
@@ -222,61 +261,24 @@ export async function getFinancialInsights(userId: string): Promise<string[]> {
 
 // --- Trading Robot Performance ---
 
-// Helper para garantir que NADA seja undefined
 const safeValue = <T>(value: T | undefined | null, fallback: T): T => {
-  if (value === undefined) return fallback;
-  if (value === null) return fallback; // Opcional: Firestore aceita null, mas fallback é mais seguro para UI
+  if (value === undefined || value === null) return fallback;
   if (typeof value === 'number' && isNaN(value)) return fallback;
   return value;
 };
 
 export async function saveRobotPerformance(userId: string, performance: EnhancedRobotPerformance[]) {
-    if (!userId) return; // Proteção contra userId vazio
+    if (!userId) return;
     
     const docRef = doc(db, 'users', userId, 'trading_data', 'robot_council_performance');
   
     const dataToSave = {
         updatedAt: new Date().toISOString(),
-        robots: performance.map(p => {
-          // A sanitização explícita é necessária aqui
-          const sanitizedStrategy = {
-            ...p.strategy,
-            id: safeValue(p.strategy.id, `unknown_strategy_${Date.now()}`),
-            justification: safeValue(p.strategy.justification, 'N/A'),
-            // Adicione outros campos da strategy aqui, se necessário, com safeValue
-          };
-
-          return {
-            // Garante que ID nunca seja undefined
-            id: p.id || `unknown-${Date.now()}`, 
-            
-            // Strings: usa string vazia ou "N/A" se for undefined
-            strategyType: safeValue(p.strategyType, 'Unknown'),
-            strategy: sanitizedStrategy,
-            
-            // Arrays: garante array vazio
-            effectiveRegimes: safeValue(p.effectiveRegimes, []),
-            tradeHistory: safeValue(p.tradeHistory, []),
-            
-            // Números (usa sua lógica de sanitize + safeValue)
-            wins: safeValue(p.wins, 0),
-            losses: safeValue(p.losses, 0),
-            totalProfit: safeValue(p.totalProfit, 0),
-            winRate: safeValue(p.winRate, 0),
-            sharpeRatio: safeValue(p.sharpeRatio, 0),
-            maxDrawdown: safeValue(p.maxDrawdown, 0),
-            avgWin: safeValue(p.avgWin, 0),
-            avgLoss: safeValue(p.avgLoss, 0),
-            profitFactor: safeValue(p.profitFactor, 0),
-            kellyFraction: safeValue(p.kellyFraction, 0),
-            monteCarloScore: safeValue(p.monteCarloScore, 0),
-            lastUpdated: safeValue(p.lastUpdated, Date.now()),
-          }
-        })
+        robots: performance,
     };
     
-    // Converte explicitamente para evitar erros de tipagem com undefined ocultos
-    const sanitizedData = JSON.parse(JSON.stringify(dataToSave));
+    // Sanitize before saving
+    const sanitizedData = sanitizeForFirestore(dataToSave);
   
     setDocumentNonBlocking(docRef, sanitizedData, { merge: true });
 };
@@ -335,7 +337,11 @@ export async function saveTradeDecision(userId: string, log: TradeDecisionLog) {
     }
     const logCollectionRef = collection(db, 'users', userId, 'decision_logs');
     const logDocRef = doc(logCollectionRef, log.id);
-    setDocumentNonBlocking(logDocRef, log, { merge: false });
+    
+    // Sanitize the log object before sending it to Firestore
+    const sanitizedLog = sanitizeForFirestore(log);
+
+    setDocumentNonBlocking(logDocRef, sanitizedLog, { merge: true }); // Use merge:true to be safe
 }
 
 export async function getTradeDecisionLogs(userId: string): Promise<TradeDecisionLog[]> {
