@@ -102,9 +102,10 @@ export function useStrategyEvolution(initialStrategies: Omit<RobotStrategy, 'id'
 
         // Ordena para encontrar os melhores e piores
         const sortedPerformance = [...performanceData].sort((a, b) => {
-            const aSharpe = a.sharpeRatio || -Infinity;
-            const bSharpe = b.sharpeRatio || -Infinity;
-            if(aSharpe !== bSharpe) return bSharpe - aSharpe;
+            // Prioriza Win Rate, depois P&L
+            const winRateA = a.winRate || 0;
+            const winRateB = b.winRate || 0;
+            if(winRateA !== winRateB) return winRateB - winRateA;
             return (b.totalProfit || 0) - (a.totalProfit || 0);
         });
 
