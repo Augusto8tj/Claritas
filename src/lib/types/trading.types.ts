@@ -207,6 +207,7 @@ export const IndicatorsSchema = z.object({
 // Full audit log for a single trade decision
 export const TradeDecisionLogSchema = z.object({
   id: z.string(),
+  contractId: z.number().optional(),
   timestamp: z.string(),
   asset: z.string(),
   timePeriod: z.custom<TimePeriod>(),

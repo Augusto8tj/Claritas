@@ -335,7 +335,7 @@ export function useRobotCouncilV2(
   const [stopLossThreshold, setStopLossThreshold] = useState(20);
   const [isDynamicConsensusOn, setIsDynamicConsensusOn] = useState(true);
   const [isDynamicRiskOn, setIsDynamicRiskOn] = useState(true);
-  const [isMeritocracyOn, setIsMeritocracyOn] = useState(true); 
+  const [isMeritocracyOn, setIsMeritocracyOn] = useState(true);
   const [isDynamicExitOn, setIsDynamicExitOn] = useState(true);
 
   const councilExecutionRef = useRef<{ isExecuting: boolean; sellingContracts: Set<number>; }>({
@@ -389,11 +389,10 @@ export function useRobotCouncilV2(
     toast({ title: '⏸️ Sistema Pausado', description: 'Mesa Operacional suspensa.' });
   }, [toast]);
   
-  // ✅ NOVO: Hook para atualizar log quando um trade real é concluído
   useEffect(() => {
       const lastOperation = operationsLog[0];
       if (lastOperation && lastOperation.status !== 'pending' && lastOperation.initiator === 'Conselho') {
-          const logIndex = tradeDecisionLog.findIndex(log => log.tradeParams.stake === lastOperation.stake && log.result === 'pending');
+          const logIndex = tradeDecisionLog.findIndex(log => log.contractId === lastOperation.id);
           if (logIndex !== -1) {
               const updatedLog = {
                   ...tradeDecisionLog[logIndex],
@@ -631,11 +630,11 @@ export function useRobotCouncilV2(
                     finalDurationUnit,
                     'Conselho'
                 ).then(tradeResult => {
-                     // ✅ ATUALIZAÇÃO: Se a execução foi bem sucedida, guardamos o log com o preço de entrada
-                     if(tradeResult.success && tradeResult.entryPrice) {
+                     if(tradeResult.success && tradeResult.contractId) {
                          const logId = `log-${Date.now()}`;
                          const log: TradeDecisionLog = {
                             id: logId,
+                            contractId: tradeResult.contractId,
                             timestamp: new Date().toISOString(),
                             asset: activeSymbol,
                             timePeriod: timePeriod,
@@ -652,7 +651,7 @@ export function useRobotCouncilV2(
                                 indicators: currentIndicators,
                                 supervisionReason: 'Execução Automática V2.5',
                                 payout: kellyStake * 0.95,
-                                entryPrice: tradeResult.entryPrice, // ✅ DADO ADICIONADO
+                                entryPrice: tradeResult.entryPrice,
                             },
                             consensus: {
                                 bayesianProbability: consensusProbability,
