@@ -1,4 +1,4 @@
-// /src/features/trading/components/deriv-trader/operations-log.tsx
+// src/features/trading/components/deriv-trader/operations-log.tsx
 "use client";
 
 import {

@@ -487,7 +487,7 @@ const subscribeToMarketData = useCallback(async (symbol: string) => {
     const contract = operationsLog.find(op => op.id === contractId);
     if (contract && contract.expirationTime) {
       const remainingTime = contract.expirationTime - Date.now();
-      if (remainingTime < 15000) { // 15 segundos de bloqueio
+      if (remainingTime < 15000) { 
         return { success: false, message: `O contrato ${contractId} está no período de bloqueio final e não pode ser vendido.` };
       }
     }

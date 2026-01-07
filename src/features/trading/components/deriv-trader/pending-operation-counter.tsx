@@ -53,7 +53,7 @@ export function PendingOperationCounter({ operation, onSell, isSelling, currentS
   }, [expirationTime]);
 
   // Contrato vendável se for temporal e tiver mais de 1 segundo de vida
-  const isSellableNow = isSellable && remainingMs !== null && remainingMs > 1000;
+  const isSellableNow = isSellable && remainingMs !== null && remainingMs > 15000;
   
   const renderCounter = () => {
     if (remainingMs === null) {
