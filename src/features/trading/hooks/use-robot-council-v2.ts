@@ -328,15 +328,15 @@ export function useRobotCouncilV2(
   // Configurações
   const [dailyBalance, setDailyBalance] = useState(100); 
   const [dailyTarget, setDailyTarget] = useState(50);
+  const [isDynamicConsensusOn, setIsDynamicConsensusOn] = useState(true);
+  const [isDynamicRiskOn, setIsDynamicRiskOn] = useState(true);
+  const [isMeritocracyOn, setIsMeritocracyOn] = useState(true);
+  const [isDynamicExitOn, setIsDynamicExitOn] = useState(true);
   const [consensusSensitivity, setConsensusSensitivity] = useState(60); 
   const [confidenceFactor, setConfidenceFactor] = useState(DEFAULT_REAL_CONFIDENCE); // 70% para dinheiro real
   const [durationRange, setDurationRange] = useState<[number, number]>([15, 300]); 
   const [takeProfitThreshold, setTakeProfitThreshold] = useState(10);
   const [stopLossThreshold, setStopLossThreshold] = useState(20);
-  const [isDynamicConsensusOn, setIsDynamicConsensusOn] = useState(true);
-  const [isDynamicRiskOn, setIsDynamicRiskOn] = useState(true);
-  const [isMeritocracyOn, setIsMeritocracyOn] = useState(true);
-  const [isDynamicExitOn, setIsDynamicExitOn] = useState(true);
 
   const councilExecutionRef = useRef<{ isExecuting: boolean; sellingContracts: Set<number>; }>({
     isExecuting: false, sellingContracts: new Set()
@@ -572,14 +572,13 @@ export function useRobotCouncilV2(
         const currentSessionDuration = sessionStartTime ? (Date.now() - sessionStartTime) / 1000 : 0;
         
         // --- CÁLCULO DE STAKE REFINADO ---
-        let kellyStake = calculateKellyStake(dailyBalance, consensusProbability, 0.95); // Usa o PAYOFF LÍQUIDO (0.95 para 95%)
+        let kellyStake = calculateKellyStake(dailyBalance, consensusProbability, 0.95);
         
-        // Aplica ajuste de volatilidade ao stake
         const atr = currentIndicators.atr || 0;
         const bbw = currentIndicators.bbw || 0;
-        const volatilityFactor = (atr / currentTick.price + bbw) / 2; // Combina volatilidade relativa e de banda
-        kellyStake *= Math.max(0.3, 1 - volatilityFactor * 5); // Reduz o stake em até 70% em alta volatilidade
-        kellyStake = Math.max(0.35, kellyStake); // Garante o mínimo
+        const volatilityFactor = (atr / currentTick.price + bbw) / 2;
+        kellyStake *= Math.max(0.3, 1 - volatilityFactor * 5);
+        kellyStake = Math.max(0.35, kellyStake);
         
         const microstructureVeto = (microFeatures?.pressure === 'sell' && consensusDirection === 'RISE') ||
                                    (microFeatures?.pressure === 'buy' && consensusDirection === 'FALL');
@@ -623,31 +622,26 @@ export function useRobotCouncilV2(
                     ? votingRobots.reduce((sum, v) => sum + durationToSeconds(v.optimalDuration, v.optimalDurationUnit) * v.bayesianProbability, 0) / totalConfidence
                     : durationRange[0];
                 
-                 // --- AJUSTE DE DURAÇÃO PELA VOLATILIDADE ---
-                if (bbw > 0.08) { // Mercado volátil, encurta duração
-                    weightedAvgDuration *= 0.75;
-                } else if (bbw < 0.02) { // Mercado calmo, aumenta duração
-                    weightedAvgDuration *= 1.25;
-                }
+                if (bbw > 0.08) weightedAvgDuration *= 0.75;
+                else if (bbw < 0.02) weightedAvgDuration *= 1.25;
 
                 let finalDuration = Math.round(weightedAvgDuration);
-                let finalDurationUnit: DurationUnit = 's';
+                let finalDurationUnit: DurationUnit = 's'; // Padrão para segundos
                 
-                 if (durationLimits) {
-                    if (finalDuration <= durationLimits.t.max && durationLimits.t.min > 0) {
+                if (durationLimits) {
+                    const canUseTicks = durationLimits.t.min > 0;
+                    if (canUseTicks && finalDuration <= 20) { // Usa ticks para durações curtas se disponível
                         finalDurationUnit = 't';
-                        finalDuration = Math.max(durationLimits.t.min, finalDuration);
-                    } else if (durationLimits.s.min > 0) {
+                        finalDuration = Math.max(durationLimits.t.min, Math.round(finalDuration / 2));
+                        finalDuration = Math.min(finalDuration, durationLimits.t.max);
+                    } else { // Usa segundos como fallback ou para durações mais longas
                         finalDurationUnit = 's';
                         finalDuration = Math.max(durationLimits.s.min, finalDuration);
-                    } else { // Fallback se 's' não for permitido
-                        finalDurationUnit = 'm';
-                        finalDuration = Math.max(durationLimits.m.min, Math.round(finalDuration/60));
+                        finalDuration = Math.min(finalDuration, durationLimits.s.max);
                     }
                 } else {
-                    finalDuration = Math.max(15, finalDuration); // Fallback seguro
+                    finalDuration = Math.max(15, finalDuration); // Fallback seguro sem limits
                 }
-
 
                  executeTrade(
                     consensusDirection === 'RISE' ? 'CALL' : 'PUT',
