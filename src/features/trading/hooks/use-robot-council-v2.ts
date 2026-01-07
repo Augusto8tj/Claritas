@@ -571,7 +571,15 @@ export function useRobotCouncilV2(
 
         const currentSessionDuration = sessionStartTime ? (Date.now() - sessionStartTime) / 1000 : 0;
         
-        const kellyStake = calculateKellyStake(dailyBalance, consensusProbability, 0.95);
+        // --- CÁLCULO DE STAKE REFINADO ---
+        let kellyStake = calculateKellyStake(dailyBalance, consensusProbability, 0.95); // Usa o PAYOFF LÍQUIDO (0.95 para 95%)
+        
+        // Aplica ajuste de volatilidade ao stake
+        const atr = currentIndicators.atr || 0;
+        const bbw = currentIndicators.bbw || 0;
+        const volatilityFactor = (atr / currentTick.price + bbw) / 2; // Combina volatilidade relativa e de banda
+        kellyStake *= Math.max(0.3, 1 - volatilityFactor * 5); // Reduz o stake em até 70% em alta volatilidade
+        kellyStake = Math.max(0.35, kellyStake); // Garante o mínimo
         
         const microstructureVeto = (microFeatures?.pressure === 'sell' && consensusDirection === 'RISE') ||
                                    (microFeatures?.pressure === 'buy' && consensusDirection === 'FALL');
@@ -611,22 +619,33 @@ export function useRobotCouncilV2(
                  const votingRobots = Object.values(localBayesianVotes).filter(v => v.vote === consensusDirection);
                  const totalConfidence = votingRobots.reduce((sum, v) => sum + v.bayesianProbability, 0);
 
-                 const weightedAvgDuration = totalConfidence > 0 
+                 let weightedAvgDuration = totalConfidence > 0 
                     ? votingRobots.reduce((sum, v) => sum + durationToSeconds(v.optimalDuration, v.optimalDurationUnit) * v.bayesianProbability, 0) / totalConfidence
                     : durationRange[0];
+                
+                 // --- AJUSTE DE DURAÇÃO PELA VOLATILIDADE ---
+                if (bbw > 0.08) { // Mercado volátil, encurta duração
+                    weightedAvgDuration *= 0.75;
+                } else if (bbw < 0.02) { // Mercado calmo, aumenta duração
+                    weightedAvgDuration *= 1.25;
+                }
 
                 let finalDuration = Math.round(weightedAvgDuration);
                 let finalDurationUnit: DurationUnit = 's';
                 
                  if (durationLimits) {
-                    if (finalDuration <= durationLimits.t.max) {
+                    if (finalDuration <= durationLimits.t.max && durationLimits.t.min > 0) {
                         finalDurationUnit = 't';
                         finalDuration = Math.max(durationLimits.t.min, finalDuration);
-                    } else {
+                    } else if (durationLimits.s.min > 0) {
+                        finalDurationUnit = 's';
                         finalDuration = Math.max(durationLimits.s.min, finalDuration);
+                    } else { // Fallback se 's' não for permitido
+                        finalDurationUnit = 'm';
+                        finalDuration = Math.max(durationLimits.m.min, Math.round(finalDuration/60));
                     }
                 } else {
-                    finalDuration = Math.max(15, finalDuration); // Fallback
+                    finalDuration = Math.max(15, finalDuration); // Fallback seguro
                 }
 
 
@@ -734,6 +753,3 @@ export function useRobotCouncilV2(
     supervisionStatus: { status: 'approved', message: 'Sistema Operacional v2.5' }
   };
 }
-
-    
-    
