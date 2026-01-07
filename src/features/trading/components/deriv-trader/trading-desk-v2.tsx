@@ -255,7 +255,7 @@ export function TradingDeskV2({ councilState }: TradingDeskV2Props) {
                                         sortedPerformance.map((robot, index) => {
                                             const totalTrades = (robot.wins || 0) + (robot.losses || 0);
                                             const isTop3 = index < 3;
-                                            const winRate = robot.winRate || 0;
+                                            const winRate = robot.winRate ?? 0;
                                             
                                             return (
                                                 <TableRow key={`${robot.id}-${index}`} className={cn(isTop3 ? "bg-muted/20" : "")}>

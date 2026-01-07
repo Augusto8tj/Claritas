@@ -469,7 +469,7 @@ export const calculatePerformanceMetrics = (
       currentDrawdownDuration = 0;
     } else {
       currentDrawdownDuration++;
-      const drawdown = ((peak - equity) / peak) * 100;
+      const drawdown = peak > 0 ? ((peak - equity) / peak) * 100 : 0;
       if (drawdown > maxDrawdown) {
         maxDrawdown = drawdown;
         maxDrawdownDuration = currentDrawdownDuration;
@@ -495,7 +495,9 @@ export const calculatePerformanceMetrics = (
   
   const avgWin = wins.length > 0 ? totalWins / wins.length : 0;
   const avgLoss = losses.length > 0 ? totalLosses / losses.length : 0;
-  const winRate = (wins.length / profits.length) * 100;
+  const totalTrades = wins.length + losses.length;
+  const winRate = totalTrades > 0 ? (wins.length / totalTrades) * 100 : 0;
+
 
   // ────────────────────────────────────────────────────────────────
   // 6. KELLY CRITERION
