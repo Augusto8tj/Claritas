@@ -27,7 +27,7 @@ import type {
   BayesianVote as BayesianVoteType, EnhancedRobotPerformance as EnhancedRobotPerformanceType,
   TimePeriod, TradeDecisionLog,
 } from '@/lib/types';
-import { calculateAllIndicators, type Indicators } from '@/services/indicator-service';
+import { calculateAllIndicators, type Indicators } from '@/services/indicator-service-v2';
 import { useAuth } from '@/features/auth/hooks/use-auth';
 import { saveRobotPerformance, loadRobotPerformance, saveTradeDecision } from '@/services/financial-data-service';
 import { useStrategyEvolution } from './use-strategy-evolution';
@@ -478,7 +478,7 @@ export function useRobotCouncilV2(
                         winRate: (newWins / (newWins + newLosses)) * 100, 
                         lastUpdated: Date.now(),
                         tradeHistory: newTradeHistory,
-                        sharpeRatio: performanceMetrics.sharpeRatio
+                        ...performanceMetrics,
                     };
                 });
                 performanceChanged = true;
@@ -600,13 +600,35 @@ export function useRobotCouncilV2(
         if (consensusReached && consensusDirection !== 'HOLD' && user) {
              if (kellyStake > 0 && !microstructureVeto) {
                  
+                 const votingRobots = Object.values(localBayesianVotes).filter(v => v.vote === consensusDirection);
+                 const totalConfidence = votingRobots.reduce((sum, v) => sum + v.bayesianProbability, 0);
+
+                 const weightedAvgDuration = totalConfidence > 0 
+                    ? votingRobots.reduce((sum, v) => sum + durationToSeconds(v.optimalDuration, v.optimalDurationUnit) * v.bayesianProbability, 0) / totalConfidence
+                    : durationRange[0];
+
+                let finalDuration = Math.round(weightedAvgDuration);
+                let finalDurationUnit: DurationUnit = 's';
+                
+                 if (durationLimits) {
+                    if (finalDuration <= durationLimits.t.max) {
+                        finalDurationUnit = 't';
+                        finalDuration = Math.max(durationLimits.t.min, finalDuration);
+                    } else {
+                        finalDuration = Math.max(durationLimits.s.min, finalDuration);
+                    }
+                } else {
+                    finalDuration = Math.max(15, finalDuration); // Fallback
+                }
+
+
                  executeTrade(
                     consensusDirection === 'RISE' ? 'CALL' : 'PUT',
                     kellyStake,
                     activeSymbol,
                     consensusDirection.toLowerCase() as 'rise' | 'fall',
-                    durationRange[0],
-                    's',
+                    finalDuration,
+                    finalDurationUnit,
                     'Conselho'
                 ).then(tradeResult => {
                      // ✅ ATUALIZAÇÃO: Se a execução foi bem sucedida, guardamos o log com o preço de entrada
@@ -620,8 +642,8 @@ export function useRobotCouncilV2(
                             tradeParams: {
                                 direction: consensusDirection,
                                 stake: kellyStake,
-                                duration: durationRange[0],
-                                durationUnit: 's'
+                                duration: finalDuration,
+                                durationUnit: finalDurationUnit
                             },
                             context: {
                                 marketRegime: regimeResult.regime,
@@ -657,7 +679,7 @@ export function useRobotCouncilV2(
 
   }, [
     isCouncilAutopilotOn, isConnected, activeSymbol, tickCandles, priceTicks, 
-    strategyCouncil, timePeriod, robotPerformance, confidenceFactor, isMeritocracyOn, consensusSensitivity, dailyBalance, sessionStartTime, user, durationRange, executeTrade, evolveTrigger
+    strategyCouncil, timePeriod, robotPerformance, confidenceFactor, isMeritocracyOn, consensusSensitivity, dailyBalance, sessionStartTime, user, durationRange, executeTrade, evolveTrigger, durationLimits
   ]);
 
   useEffect(() => {
@@ -668,6 +690,7 @@ export function useRobotCouncilV2(
 
   return {
     isCouncilAutopilotOn,
+    setIsCouncilAutopilotOn,
     fetchStrategyCouncil,
     dissolveCouncil,
     isFetchingCouncil,
