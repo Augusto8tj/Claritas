@@ -1,4 +1,4 @@
-// src/hooks/use-robot-council.ts
+// /src/hooks/use-robot-council.ts
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
@@ -593,6 +593,7 @@ export function useRobotCouncil(
         if (performanceChanged) {
             const updatedPerformance = Array.from(performanceMap.values());
             setRobotPerformance(updatedPerformance);
+            // ✅ CORREÇÃO: Chama o gatilho da evolução aqui
             evolveTrigger(updatedPerformance as EnhancedRobotPerformance[]);
             // SALVAR NO FIREBASE
             if (user) {
