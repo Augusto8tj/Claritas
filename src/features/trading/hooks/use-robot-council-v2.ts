@@ -333,10 +333,10 @@ export function useRobotCouncilV2(
   const [durationRange, setDurationRange] = useState<[number, number]>([15, 300]); 
   const [takeProfitThreshold, setTakeProfitThreshold] = useState(10);
   const [stopLossThreshold, setStopLossThreshold] = useState(20);
-  const [isDynamicConsensusOn, setIsDynamicConsensusOn] = useState(isDynamicConsensusOn);
-  const [isDynamicRiskOn, setIsDynamicRiskOn] = useState(isDynamicRiskOn);
-  const [isMeritocracyOn, setIsMeritocracyOn] = useState(isMeritocracyOn); 
-  const [isDynamicExitOn, setIsDynamicExitOn] = useState(isDynamicExitOn);
+  const [isDynamicConsensusOn, setIsDynamicConsensusOn] = useState(true);
+  const [isDynamicRiskOn, setIsDynamicRiskOn] = useState(true);
+  const [isMeritocracyOn, setIsMeritocracyOn] = useState(true); 
+  const [isDynamicExitOn, setIsDynamicExitOn] = useState(true);
 
   const councilExecutionRef = useRef<{ isExecuting: boolean; sellingContracts: Set<number>; }>({
     isExecuting: false, sellingContracts: new Set()
