@@ -632,7 +632,7 @@ export function calculateAllIndicators(
             sma: smaLong,
             ema: emaShort,
             bb: bbData || { upper: null, middle: null, lower: null },
-            bbw: bbData && bbData.middle ? ((bbData.upper - bbData.lower) / bbData.middle) * 100 : null,
+            bbw: bbData && bbData.middle ? ((bbData.upper! - bbData.lower!) / bbData.middle!) * 100 : null,
             donchian,
             kama,
             chandelier,
