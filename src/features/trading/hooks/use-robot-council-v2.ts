@@ -169,6 +169,7 @@ const calculateTechnicalVote = (
   let confidence = 0;
   let reason = 'Aguardando...';
   
+  // INICIALIZAÇÃO com valores padrão da estratégia
   let dynamicDuration = robot.optimalDuration;
   let dynamicUnit = robot.optimalDurationUnit;
   
@@ -201,7 +202,7 @@ const calculateTechnicalVote = (
 
   const { 
     rsi, stoch, macd, bb, ma, adx, pdi, ndi, stochRSI, mfi, rvi, 
-    ao, trix, roc, psar, ichimoku, kama, donchian, chandelier, 
+    ao: awesomeOscillator, trix, roc, psar: parabolicSAR, ichimoku, kama, donchian, chandelier, 
     vwap, obv, zScore 
   } = indicators;
 
@@ -387,6 +388,31 @@ export function useRobotCouncilV2(
     setSessionStartTime(null);
     toast({ title: '⏸️ Sistema Pausado', description: 'Mesa Operacional suspensa.' });
   }, [toast]);
+  
+  // ✅ NOVO: Hook para atualizar log quando um trade real é concluído
+  useEffect(() => {
+      const lastOperation = operationsLog[0];
+      if (lastOperation && lastOperation.status !== 'pending' && lastOperation.initiator === 'Conselho') {
+          const logIndex = tradeDecisionLog.findIndex(log => log.tradeParams.stake === lastOperation.stake && log.result === 'pending');
+          if (logIndex !== -1) {
+              const updatedLog = {
+                  ...tradeDecisionLog[logIndex],
+                  result: lastOperation.status,
+                  pnl: lastOperation.result || 0,
+                  context: {
+                      ...tradeDecisionLog[logIndex].context,
+                      exitPrice: lastOperation.exitPrice,
+                  }
+              };
+              
+              const newLogs = [...tradeDecisionLog];
+              newLogs[logIndex] = updatedLog;
+              setTradeDecisionLog(newLogs);
+              
+              if(user) saveTradeDecision(user.uid, updatedLog);
+          }
+      }
+  }, [operationsLog, tradeDecisionLog, user]);
 
   const runCouncilCycle = useCallback(() => {
     if (!isCouncilAutopilotOn) return; 
@@ -498,7 +524,9 @@ export function useRobotCouncilV2(
                     bayesianProbability: posterior,
                     weight,
                     regime: regimeResult.regime,
-                    strategy: robot
+                    strategy: robot,
+                    // ✅ NOVO: Adiciona o Sharpe Ratio ao log do voto
+                    sharpeRatio: perf?.sharpeRatio || 0
                 };
                 activeRobotsCount++;
             }
@@ -521,9 +549,8 @@ export function useRobotCouncilV2(
 
         const currentSessionDuration = sessionStartTime ? (Date.now() - sessionStartTime) / 1000 : 0;
         
-        const kellyStake = calculateKellyStake(dailyBalance, consensusProbability, 0.95); // Usando 95% de payout
+        const kellyStake = calculateKellyStake(dailyBalance, consensusProbability, 0.95);
         
-        // VETO DA MICROESTRUTURA
         const microstructureVeto = (microFeatures?.pressure === 'sell' && consensusDirection === 'RISE') ||
                                    (microFeatures?.pressure === 'buy' && consensusDirection === 'FALL');
 
@@ -558,39 +585,7 @@ export function useRobotCouncilV2(
 
         if (consensusReached && consensusDirection !== 'HOLD' && user) {
              if (kellyStake > 0 && !microstructureVeto) {
-                 const logId = `log-${Date.now()}`;
-                 const log: TradeDecisionLog = {
-                    id: logId,
-                    timestamp: new Date().toISOString(),
-                    asset: activeSymbol,
-                    timePeriod: timePeriod,
-                    tradeParams: {
-                        direction: consensusDirection,
-                        stake: kellyStake,
-                        duration: durationRange[0], // Usando o início do range como duração base
-                        durationUnit: 's'
-                    },
-                    context: {
-                        marketRegime: regimeResult.regime,
-                        regimeConfidence: regimeResult.confidence,
-                        microstructure: microFeatures,
-                        indicators: currentIndicators,
-                        supervisionReason: 'Execução Automática V2.5',
-                        payout: kellyStake * 0.95,
-                    },
-                    consensus: {
-                        bayesianProbability: consensusProbability,
-                        kellyStake: kellyStake,
-                        activeRobots: activeRobotsCount,
-                        votes: localBayesianVotes,
-                    },
-                    result: 'pending',
-                    pnl: 0,
-                 };
-
-                 saveTradeDecision(user.uid, log);
-                 setTradeDecisionLog(prev => [log, ...prev]);
-
+                 
                  executeTrade(
                     consensusDirection === 'RISE' ? 'CALL' : 'PUT',
                     kellyStake,
@@ -599,7 +594,44 @@ export function useRobotCouncilV2(
                     durationRange[0],
                     's',
                     'Conselho'
-                );
+                ).then(tradeResult => {
+                     // ✅ ATUALIZAÇÃO: Se a execução foi bem sucedida, guardamos o log com o preço de entrada
+                     if(tradeResult.success && tradeResult.entryPrice) {
+                         const logId = `log-${Date.now()}`;
+                         const log: TradeDecisionLog = {
+                            id: logId,
+                            timestamp: new Date().toISOString(),
+                            asset: activeSymbol,
+                            timePeriod: timePeriod,
+                            tradeParams: {
+                                direction: consensusDirection,
+                                stake: kellyStake,
+                                duration: durationRange[0],
+                                durationUnit: 's'
+                            },
+                            context: {
+                                marketRegime: regimeResult.regime,
+                                regimeConfidence: regimeResult.confidence,
+                                microstructure: microFeatures,
+                                indicators: currentIndicators,
+                                supervisionReason: 'Execução Automática V2.5',
+                                payout: kellyStake * 0.95,
+                                entryPrice: tradeResult.entryPrice, // ✅ DADO ADICIONADO
+                            },
+                            consensus: {
+                                bayesianProbability: consensusProbability,
+                                kellyStake: kellyStake,
+                                activeRobots: activeRobotsCount,
+                                votes: localBayesianVotes,
+                            },
+                            result: 'pending',
+                            pnl: 0,
+                         };
+
+                         saveTradeDecision(user.uid, log);
+                         setTradeDecisionLog(prev => [log, ...prev]);
+                     }
+                });
              }
         }
 

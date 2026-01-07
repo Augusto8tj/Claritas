@@ -313,7 +313,6 @@ const getHistoricalData = useCallback(async (symbol: string, style: 'ticks' | 'c
         }
       
         if (response.candles) {
-            // ✅ CORREÇÃO APLICADA AQUI
             return response.candles.map((candle: any) => ({
                 epoch: candle.epoch,
                 open: parseFloat(candle.open),
@@ -470,6 +469,7 @@ const subscribeToMarketData = useCallback(async (symbol: string) => {
               success: true,
               message: `Ordem do tipo "${contractType}" para ${symbol} no valor de ${sanitizedStake} USD executada com sucesso.`,
               contractId: buyResult.contract_id,
+              entryPrice: entryPrice,
             };
           } catch (error) {
              console.error("[Deriv Hook] Erro durante a negociação:", error);
@@ -535,7 +535,7 @@ const subscribeToMarketData = useCallback(async (symbol: string) => {
             const response = JSON.parse(event.data);
 
             if (response.error && response.error.message) {
-                 if (response.error.code !== 'AlreadySubscribed' && response.error.code !== 'SellNotAvailable') {
+                 if (response.error.code !== 'AlreadySubscribed' && response.error.code !== 'SellNotAvailable' && !response.error.message.includes('Waiting for entry tick')) {
                   console.error(`[Deriv WS] Error:`, response.error.message);
                 }
             }
@@ -576,6 +576,7 @@ const subscribeToMarketData = useCallback(async (symbol: string) => {
                     setOperationsLog(prevLog => prevLog.map(op => {
                         if (op.id === contractId) {
                             const newStatus = contract.is_sold ? (contract.profit >= 0 ? 'won' : 'lost') : 'pending';
+                            const exitPrice = contract.exit_tick_display_value ? parseFloat(contract.exit_tick_display_value) : op.exitPrice;
                             
                             if (contract.is_sold) {
                                 setToastQueue(prev => [...prev, {
@@ -588,7 +589,7 @@ const subscribeToMarketData = useCallback(async (symbol: string) => {
                                 
                                 updateTradeAnnotation(String(contractId), {
                                     exitTime: contract.sell_time || Math.floor(Date.now() / 1000),
-                                    exitPrice: parseFloat(contract.exit_tick_display_value),
+                                    exitPrice: exitPrice,
                                     status: newStatus,
                                     profit: contract.profit,
                                 });
@@ -597,7 +598,7 @@ const subscribeToMarketData = useCallback(async (symbol: string) => {
                                     wsRef.current.send(JSON.stringify({"balance": 1, "req_id": Date.now()}));
                                 }
 
-                                return { ...op, status: newStatus, result: contract.profit, exitPrice: parseFloat(contract.exit_tick_display_value), exitTimestamp: new Date(sellTime).toISOString() };
+                                return { ...op, status: newStatus, result: contract.profit, exitPrice: exitPrice, exitTimestamp: new Date(sellTime).toISOString() };
                             } else {
                                 return { ...op, result: contract.profit };
                             }
@@ -637,7 +638,6 @@ const subscribeToMarketData = useCallback(async (symbol: string) => {
                         };
                         setChartData(prev => addDataPoint(prev, newCandle));
                         
-                        // CORREÇÃO: Popular priceTicks com base no preço de fecho da vela
                         const newTick = { epoch: ohlc.open_time, price: parseFloat(ohlc.close) };
                         setPriceTicks(prev => {
                             const newTicks = [...prev, newTick];
