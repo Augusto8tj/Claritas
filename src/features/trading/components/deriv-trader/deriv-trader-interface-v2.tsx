@@ -64,16 +64,26 @@ export default function DerivTraderInterfaceV2({ symbol }: DerivTraderInterfaceV
   const { isConnected, executeTrade, durationLimits } = useDerivApi();
 
   const form = useFormContext<RiseFallFormValues>();
-  const lastUnitRef = React.useRef<DurationUnit | null>(null);
   
-  // ✅ GATILHO REATIVADO: Esta linha é crucial para garantir que o componente
-  // re-renderize quando a unidade de duração muda, forçando a lógica de
-  // atualização de limites a ser re-avaliada.
-  const durationUnit = useWatch({
+  // --- HF-SAFE STATE MANAGEMENT ---
+  // This pattern prevents infinite render loops with complex forms.
+  const [localDurationUnit, setLocalDurationUnit] = React.useState<DurationUnit | undefined>(
+    form.getValues("duration_unit")
+  );
+
+  const durationUnitFromForm = useWatch({
     control: form.control,
     name: 'duration_unit',
   });
   
+  // Sync from React Hook Form to local UI state only when it truly changes.
+  useEffect(() => {
+    if (durationUnitFromForm !== localDurationUnit) {
+      setLocalDurationUnit(durationUnitFromForm);
+    }
+  }, [durationUnitFromForm, localDurationUnit]);
+  // --- END HF-SAFE ---
+
   const allowEquals = useWatch({
     control: form.control,
     name: 'allowEquals',
@@ -89,11 +99,11 @@ export default function DerivTraderInterfaceV2({ symbol }: DerivTraderInterfaceV
     return (stake * 1.942).toFixed(2);
   }, [stake]);
 
-  // Efeito para garantir que o `value` do Select é sempre válido
+  // Effect to ensure the selected duration unit is always valid based on API limits.
   React.useEffect(() => {
-    if (!durationLimits || !durationUnit) return;
+    if (!durationLimits || !durationUnitFromForm) return;
     
-    const isUnitDisabled = durationLimits[durationUnit]?.min === 0;
+    const isUnitDisabled = durationLimits[durationUnitFromForm]?.min === 0;
 
     if (isUnitDisabled) {
         const firstValid = (Object.keys(durationLimits) as DurationUnit[]).find(
@@ -107,19 +117,15 @@ export default function DerivTraderInterfaceV2({ symbol }: DerivTraderInterfaceV
             });
         }
     }
-  }, [durationLimits, durationUnit, form]);
+  }, [durationLimits, durationUnitFromForm, form]);
 
 
-  // Efeito para ajustar a DURAÇÃO quando a UNIDADE muda
+  // Effect to adjust the duration value when the unit changes.
   React.useEffect(() => {
-    if (!durationLimits || !durationUnit) return;
-    
-    // Proteção para não re-executar com o mesmo valor
-    if (lastUnitRef.current === durationUnit) return;
-    lastUnitRef.current = durationUnit;
+    if (!durationLimits || !durationUnitFromForm) return;
   
     const currentDuration = form.getValues('duration');
-    const limits = durationLimits[durationUnit];
+    const limits = durationLimits[durationUnitFromForm];
     
     if (!limits) return;
 
@@ -134,13 +140,14 @@ export default function DerivTraderInterfaceV2({ symbol }: DerivTraderInterfaceV
         shouldValidate: false,
       });
     }
-  }, [durationUnit, durationLimits, form]);
+  }, [durationUnitFromForm, durationLimits, form]);
 
 
   const handleDurationChange = (amount: number) => {
-    if (!durationLimits || !durationLimits[durationUnit]) return;
+    const unit = form.getValues('duration_unit');
+    if (!durationLimits || !durationLimits[unit]) return;
     const currentDuration = form.getValues('duration');
-    const { min, max } = durationLimits[durationUnit];
+    const { min, max } = durationLimits[unit];
     let newDuration = currentDuration + amount;
     if (newDuration < min) newDuration = min;
     if (newDuration > max) newDuration = max;
@@ -220,22 +227,6 @@ export default function DerivTraderInterfaceV2({ symbol }: DerivTraderInterfaceV
   const payoutPercentage = "94.20%";
   const isButtonDisabled = !!loading || !isConnected;
 
-  // --- STATE LOCAL HF-SAFE ---
-  const [localDurationUnit, setLocalDurationUnit] = React.useState<DurationUnit | undefined>(
-    form.getValues("duration_unit")
-  );
-
-  // sincroniza RHF → UI (apenas quando realmente muda)
-  React.useEffect(() => {
-    const subscription = form.watch((values, { name }) => {
-      if (name === "duration_unit" && values.duration_unit !== localDurationUnit) {
-        setLocalDurationUnit(values.duration_unit);
-      }
-    });
-    return () => subscription.unsubscribe();
-  }, [form, localDurationUnit]);
-
-
   return (
     <div className="space-y-6">
       <Card className="bg-card/50">
@@ -287,11 +278,7 @@ export default function DerivTraderInterfaceV2({ symbol }: DerivTraderInterfaceV
                                         value={localDurationUnit}
                                         onValueChange={(val) => {
                                           const next = val as DurationUnit;
-
-                                          // atualiza UI primeiro
                                           setLocalDurationUnit(next);
-
-                                          // atualiza RHF fora do ciclo de render do Select
                                           queueMicrotask(() => {
                                             form.setValue("duration_unit", next, {
                                               shouldDirty: true,
