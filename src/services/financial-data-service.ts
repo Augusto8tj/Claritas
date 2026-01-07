@@ -261,12 +261,6 @@ export async function getFinancialInsights(userId: string): Promise<string[]> {
 
 // --- Trading Robot Performance ---
 
-const safeValue = <T>(value: T | undefined | null, fallback: T): T => {
-  if (value === undefined || value === null) return fallback;
-  if (typeof value === 'number' && isNaN(value)) return fallback;
-  return value;
-};
-
 export async function saveRobotPerformance(userId: string, performance: EnhancedRobotPerformance[]) {
     if (!userId) return;
     
@@ -280,6 +274,8 @@ export async function saveRobotPerformance(userId: string, performance: Enhanced
     // Sanitize before saving
     const sanitizedData = sanitizeForFirestore(dataToSave);
   
+    // Use merge: true para garantir que não sobrescreva o documento com dados parciais.
+    // Isto é mais seguro em cenários de escritas concorrentes.
     setDocumentNonBlocking(docRef, sanitizedData, { merge: true });
 };
 
