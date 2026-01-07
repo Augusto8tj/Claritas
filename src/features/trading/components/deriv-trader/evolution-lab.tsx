@@ -100,5 +100,3 @@ export function EvolutionLab({ history }: EvolutionLabProps) {
         </Card>
     );
 }
-
-    
