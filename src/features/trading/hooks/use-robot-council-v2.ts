@@ -389,29 +389,39 @@ export function useRobotCouncilV2(
     toast({ title: '⏸️ Sistema Pausado', description: 'Mesa Operacional suspensa.' });
   }, [toast]);
   
-  useEffect(() => {
-      const lastOperation = operationsLog[0];
-      if (lastOperation && lastOperation.status !== 'pending' && lastOperation.initiator === 'Conselho') {
-          const logIndex = tradeDecisionLog.findIndex(log => log.contractId === lastOperation.id);
-          if (logIndex !== -1) {
-              const updatedLog = {
-                  ...tradeDecisionLog[logIndex],
-                  result: lastOperation.status,
-                  pnl: lastOperation.result || 0,
-                  context: {
-                      ...tradeDecisionLog[logIndex].context,
-                      exitPrice: lastOperation.exitPrice,
-                  }
-              };
-              
-              const newLogs = [...tradeDecisionLog];
-              newLogs[logIndex] = updatedLog;
-              setTradeDecisionLog(newLogs);
-              
-              if(user) saveTradeDecision(user.uid, updatedLog);
-          }
-      }
-  }, [operationsLog, tradeDecisionLog, user]);
+    // EFEITO PARA ATUALIZAR O LOG DE DECISÃO QUANDO UMA OPERAÇÃO É CONCLUÍDA
+    useEffect(() => {
+        if (!operationsLog || operationsLog.length === 0 || !user) return;
+    
+        const lastOperation = operationsLog[0];
+        
+        // Se a última operação está concluída e foi iniciada pelo conselho
+        if (lastOperation && lastOperation.status !== 'pending' && lastOperation.initiator === 'Conselho') {
+            
+            const logIndex = tradeDecisionLog.findIndex(log => log.contractId === lastOperation.id);
+            
+            // Só atualiza se o log existir e ainda estiver pendente
+            if (logIndex !== -1 && tradeDecisionLog[logIndex].result === 'pending') {
+                const updatedLog = {
+                    ...tradeDecisionLog[logIndex],
+                    result: lastOperation.status,
+                    pnl: lastOperation.result || 0,
+                    context: {
+                        ...tradeDecisionLog[logIndex].context,
+                        exitPrice: lastOperation.exitPrice,
+                    }
+                };
+                
+                const newLogs = [...tradeDecisionLog];
+                newLogs[logIndex] = updatedLog;
+                
+                setTradeDecisionLog(newLogs);
+                
+                // Persiste a atualização no Firestore
+                saveTradeDecision(user.uid, updatedLog);
+            }
+        }
+    }, [operationsLog, tradeDecisionLog, user]);
 
   const runCouncilCycle = useCallback(() => {
     if (!isCouncilAutopilotOn) return; 
@@ -725,4 +735,5 @@ export function useRobotCouncilV2(
   };
 }
 
+    
     
