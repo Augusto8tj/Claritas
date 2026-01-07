@@ -536,7 +536,11 @@ const subscribeToMarketData = useCallback(async (symbol: string) => {
             const response = JSON.parse(event.data);
 
             if (response.error && response.error.message) {
-                 if (response.error.code !== 'AlreadySubscribed' && response.error.code !== 'SellNotAvailable') {
+                 if (
+                    response.error.code !== 'AlreadySubscribed' && 
+                    response.error.code !== 'SellNotAvailable' &&
+                    !response.error.message.includes('Waiting for entry tick')
+                 ) {
                   console.error(`[Deriv WS] Error:`, response.error.message);
                 }
             }
