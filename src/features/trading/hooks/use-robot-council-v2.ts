@@ -27,7 +27,7 @@ import type {
   BayesianVote as BayesianVoteType, EnhancedRobotPerformance as EnhancedRobotPerformanceType,
   TimePeriod, TradeDecisionLog,
 } from '@/lib/types';
-import { calculateAllIndicators, type Indicators } from '@/services/indicator-service-v2';
+import { calculateAllIndicators, type Indicators } from '@/services/indicator-service';
 import { useAuth } from '@/features/auth/hooks/use-auth';
 import { saveRobotPerformance, loadRobotPerformance, saveTradeDecision } from '@/services/financial-data-service';
 import { useStrategyEvolution } from './use-strategy-evolution';
@@ -169,19 +169,14 @@ const calculateTechnicalVote = (
   let confidence = 0;
   let reason = 'Aguardando...';
   
-  // -- Lógica de Duração Dinâmica --
-  // Se ATR alto (Volatilidade), contrato curto (Scalping).
-  // Se ATR baixo (Lateral), contrato médio/longo.
   let dynamicDuration = robot.optimalDuration;
   let dynamicUnit = robot.optimalDurationUnit;
   
   if (indicators.atr && indicators.bbw) {
-      const volatilityScore = indicators.bbw; // Bandwidth
+      const volatilityScore = indicators.bbw; 
       if (volatilityScore > 0.5) {
-          // Mercado muito rápido -> Reduz tempo pela metade
           dynamicDuration = Math.max(1, Math.floor(robot.optimalDuration / 2));
       } else if (volatilityScore < 0.1) {
-          // Mercado lento -> Dobra o tempo
           dynamicDuration = robot.optimalDuration * 2;
       }
   }
@@ -195,14 +190,12 @@ const calculateTechnicalVote = (
 
   const lastCandle = tickCandles[tickCandles.length - 1];
   const lastClose = lastCandle.close;
-  const format = (val: number | null | undefined) => (isValid(val) ? val.toFixed(4) : 'N/A');
-
+  
   const setVote = (newVote: 'RISE' | 'FALL', newConfidence: number, newReason: string) => {
     if (newConfidence <= 0) return;
     vote = newVote;
     confidence = newConfidence;
     reason = newReason;
-    // Stake Dinâmico: Mais confiança = Maior aposta (Simulação)
     suggestedStake = baseStake * (1 + (newConfidence / 100)); 
   };
 
@@ -213,67 +206,55 @@ const calculateTechnicalVote = (
   } = indicators;
 
   try {
-      // 1. RSI (Mais permissivo para Paper Trading)
       if (robot.strategyType === 'RSI' && isValid(rsi)) {
-        if (rsi <= robot.strongBuyThreshold!) setVote('RISE', 85, `RSI Extremo Baixo`);
-        else if (rsi <= robot.weakBuyThreshold!) setVote('RISE', 45, `RSI Baixo`); // Weak Signal
-        else if (rsi >= robot.strongSellThreshold!) setVote('FALL', 85, `RSI Extremo Alto`);
-        else if (rsi >= robot.weakSellThreshold!) setVote('FALL', 45, `RSI Alto`); // Weak Signal
+        if (rsi <= robot.strongBuyThreshold!) setVote('RISE', 93, `RSI Extremo Baixo`);
+        else if (rsi <= robot.weakBuyThreshold!) setVote('RISE', 45, `RSI Baixo`);
+        else if (rsi >= robot.strongSellThreshold!) setVote('FALL', 93, `RSI Extremo Alto`);
+        else if (rsi >= robot.weakSellThreshold!) setVote('FALL', 45, `RSI Alto`);
       }
       
-      // 2. STOCHASTIC
       else if (robot.strategyType === 'STOCHASTIC' && isValid(stoch)) {
         if (stoch <= robot.strongBuyThreshold!) setVote('RISE', 80, `Stoch Sobrevenda`);
         else if (stoch >= robot.strongSellThreshold!) setVote('FALL', 80, `Stoch Sobrecompra`);
       }
       
-      // 3. MACD (Permissivo)
       else if (robot.strategyType === 'MACD_CROSS' && isValid(macd?.macd) && isValid(macd?.signal)) {
         if (macd.macd > macd.signal) setVote('RISE', 60, `MACD Cruzou UP`);
         else if (macd.macd < macd.signal) setVote('FALL', 60, `MACD Cruzou DOWN`);
       }
       
-      // 4. ADX (Permissivo)
       else if (robot.strategyType === 'ADX_TREND' && isValid(adx) && isValid(pdi) && isValid(ndi)) {
         if (pdi > ndi && adx > 20) setVote('RISE', 50 + adx, `Tendência Bullish`);
         else if (ndi > pdi && adx > 20) setVote('FALL', 50 + adx, `Tendência Bearish`);
       }
       
-      // 5. BOLLINGER
       else if (robot.strategyType === 'BOLLINGER_BANDS' && isValid(bb?.lower) && isValid(bb?.upper)) {
         if (lastClose <= bb.lower) setVote('RISE', 75, `Banda Inferior`);
         else if (lastClose >= bb.upper) setVote('FALL', 75, `Banda Superior`);
       }
 
-      // 6. TRIX
       else if (robot.strategyType === 'TRIX' && isValid(trix)) {
           if(trix > indicators.trixPrev!) setVote('RISE', 55, 'TRIX Acelerando');
           else setVote('FALL', 55, 'TRIX Desacelerando');
       }
 
-      // 7. Ichimoku
       else if (robot.strategyType === 'ICHIMOKU_CLOUD' && isValid(ichimoku?.tenkan) && isValid(ichimoku?.kijun)) {
           if(ichimoku.tenkan > ichimoku.kijun) setVote('RISE', 65, 'TK Cross UP');
           else setVote('FALL', 65, 'TK Cross DOWN');
       }
 
-      // 8. Padrão de Preço (Price Action)
       else if (robot.strategyType === 'PRICE_ACTION_PATTERN') {
           const body = Math.abs(lastClose - lastCandle.open);
           const lowerShadow = Math.min(lastClose, lastCandle.open) - lastCandle.low;
           if (lowerShadow > body) setVote('RISE', 60, 'Rejeição de Fundo');
-          else setVote('FALL', 40, 'Pressão Vendedora'); // Especulativo
+          else setVote('FALL', 40, 'Pressão Vendedora');
       }
 
-      // ... Adicione lógica similar simplificada para outros robôs se necessário ...
       else if (robot.strategyType === 'STOCH_RSI' && isValid(stochRSI)) {
           if (stochRSI < 0.2) setVote('RISE', 70, 'StochRSI Sobrevenda');
           else if (stochRSI > 0.8) setVote('FALL', 70, 'StochRSI Sobrecompra');
       }
       
-      // Fallback Genérico para robôs sem lógica específica definida acima
-      // Isso garante que eles votem aleatoriamente (noise) se não tiverem regra, 
-      // ou fiquem HOLD se preferir. Para teste, vamos deixá-los sensíveis.
       else if (isValid(rsi)) {
           if (rsi < 45) setVote('RISE', 35, 'Zona de Compra (Genérico)');
           else if (rsi > 55) setVote('FALL', 35, 'Zona de Venda (Genérico)');
@@ -477,12 +458,8 @@ export function useRobotCouncilV2(
 
         strategyCouncil.forEach(robot => {
             const technicalVote = calculateTechnicalVote(robot, currentIndicators, validCandles);
-            
-            // 🚨 CORREÇÃO CRÍTICA: ID Garantido
             const safeRobotId = robot.id || robot.strategyType;
 
-            // 1. PAPER TRADING (Confiança Baixa = 30%)
-            // Isso enche a arena virtual para simulação e teste
             if (technicalVote.vote !== 'HOLD' && technicalVote.confidence >= MIN_PAPER_CONFIDENCE) {
                  const hasActiveTrade = virtualTradesRef.current.some(t => t.robotId === safeRobotId);
                  if (!hasActiveTrade) {
@@ -496,13 +473,11 @@ export function useRobotCouncilV2(
                          exitEpoch: currentTick.epoch + durationSec,
                          regime: regimeResult.regime,
                          microstructure: microFeatures!,
-                         stake: technicalVote.suggestedStake // Stake Dinâmico
+                         stake: technicalVote.suggestedStake
                      });
                  }
             }
             
-            // 2. REAL TRADING / CONSENSUS (Confiança Alta = 70%)
-            // Só entra para a contagem final se a confiança for alta
             if (technicalVote.confidence >= confidenceFactor) {
                 const perf = localRobotPerformance.find(p => p.id === safeRobotId);
                 const winRate = perf ? perf.winRate : 50; 
@@ -545,13 +520,20 @@ export function useRobotCouncilV2(
             : 0;
 
         const currentSessionDuration = sessionStartTime ? (Date.now() - sessionStartTime) / 1000 : 0;
+        
+        const kellyStake = calculateKellyStake(dailyBalance, consensusProbability, 0.95); // Usando 95% de payout
+        
+        // VETO DA MICROESTRUTURA
+        const microstructureVeto = (microFeatures?.pressure === 'sell' && consensusDirection === 'RISE') ||
+                                   (microFeatures?.pressure === 'buy' && consensusDirection === 'FALL');
+
 
         setCouncilState(prev => ({
             ...prev,
             indicators: currentIndicators,
             currentRegime: regimeResult,
             microstructure: microFeatures,
-            consensusDecision: { direction: consensusDirection, probability: consensusProbability, stake: 0 },
+            consensusDecision: { direction: consensusDirection, probability: consensusProbability, stake: kellyStake },
             bayesianVotes: localBayesianVotes,
             systemMetrics: {
                 ...prev.systemMetrics,
@@ -574,10 +556,50 @@ export function useRobotCouncilV2(
             console.log(`✅ [Council Alive] Cycle #${executionIdRef.current} | Active Robots: ${activeRobotsCount} | Paper Trades: ${virtualTradesRef.current.length}`);
         }
 
-        if (consensusReached && consensusDirection !== 'HOLD') {
-             const kellyStake = calculateKellyStake(dailyBalance, consensusProbability, 0.9);
-             if (kellyStake > 0) {
-                // executeTrade(...)
+        if (consensusReached && consensusDirection !== 'HOLD' && user) {
+             if (kellyStake > 0 && !microstructureVeto) {
+                 const logId = `log-${Date.now()}`;
+                 const log: TradeDecisionLog = {
+                    id: logId,
+                    timestamp: new Date().toISOString(),
+                    asset: activeSymbol,
+                    timePeriod: timePeriod,
+                    tradeParams: {
+                        direction: consensusDirection,
+                        stake: kellyStake,
+                        duration: durationRange[0], // Usando o início do range como duração base
+                        durationUnit: 's'
+                    },
+                    context: {
+                        marketRegime: regimeResult.regime,
+                        regimeConfidence: regimeResult.confidence,
+                        microstructure: microFeatures,
+                        indicators: currentIndicators,
+                        supervisionReason: 'Execução Automática V2.5',
+                        payout: kellyStake * 0.95,
+                    },
+                    consensus: {
+                        bayesianProbability: consensusProbability,
+                        kellyStake: kellyStake,
+                        activeRobots: activeRobotsCount,
+                        votes: localBayesianVotes,
+                    },
+                    result: 'pending',
+                    pnl: 0,
+                 };
+
+                 saveTradeDecision(user.uid, log);
+                 setTradeDecisionLog(prev => [log, ...prev]);
+
+                 executeTrade(
+                    consensusDirection === 'RISE' ? 'CALL' : 'PUT',
+                    kellyStake,
+                    activeSymbol,
+                    consensusDirection.toLowerCase() as 'rise' | 'fall',
+                    durationRange[0],
+                    's',
+                    'Conselho'
+                );
              }
         }
 
@@ -589,7 +611,7 @@ export function useRobotCouncilV2(
 
   }, [
     isCouncilAutopilotOn, isConnected, activeSymbol, tickCandles, priceTicks, 
-    strategyCouncil, timePeriod, robotPerformance, confidenceFactor, isMeritocracyOn, consensusSensitivity, dailyBalance, sessionStartTime
+    strategyCouncil, timePeriod, robotPerformance, confidenceFactor, isMeritocracyOn, consensusSensitivity, dailyBalance, sessionStartTime, user, durationRange, executeTrade
   ]);
 
   useEffect(() => {

@@ -13,7 +13,7 @@ import type { useRobotCouncilV2 } from '../../hooks/use-robot-council-v2';
 import type { MarketRegime } from '@/lib/types';
 import {
   BrainCircuit, Activity, Waves, CandlestickChart, Bot, LayoutGrid, BarChart,
-  TrendingUp, Cloud, HelpCircle, CheckCircle, XCircle, Users, Sigma, Gauge, Trophy, Database, Timer, HardDrive, Brain, Zap, Scale
+  TrendingUp, Cloud, HelpCircle, CheckCircle, XCircle, Trophy, Database, Timer, HardDrive, Brain, Zap, Scale, ShieldAlert, ShieldCheck, ShieldX
 } from 'lucide-react';
 
 // ============================================================================
@@ -80,7 +80,7 @@ export function DebugCouncilView({ councilState, isCouncilAutopilotOn }: DebugCo
         <Card>
             <CardHeader>
                 <CardTitle className="font-headline flex items-center gap-2">
-                    <Gauge className="h-5 w-5 text-primary" />
+                    <BarChart className="h-5 w-5 text-primary" />
                     Diagnóstico Avançado da Mesa V2.5
                 </CardTitle>
                  <CardDescription>
@@ -98,12 +98,9 @@ export function DebugCouncilView({ councilState, isCouncilAutopilotOn }: DebugCo
   }
 
   const sortedVotes = bayesianVotes ? Object.entries(bayesianVotes).sort(([, a], [, b]) => {
-    // Prioriza quem tem voto ativo
     const activeA = a.vote !== 'HOLD' ? 1 : 0;
     const activeB = b.vote !== 'HOLD' ? 1 : 0;
     if (activeA !== activeB) return activeB - activeA;
-    
-    // Depois por probabilidade bayesiana
     return b.bayesianProbability - a.bayesianProbability;
   }) : [];
 
@@ -111,24 +108,41 @@ export function DebugCouncilView({ councilState, isCouncilAutopilotOn }: DebugCo
     .map(([key, value]) => ({ regime: key as MarketRegime, probability: value }))
     .sort((a,b) => b.probability - a.probability);
 
+  // --- LÓGICA DE DECISÃO FINAL (ESPELHO DO HOOK) ---
+  const kellyStake = consensusDecision.stake;
+  const microstructureVeto = microstructure?.pressure === 'sell' && consensusDecision.direction === 'RISE' ||
+                             microstructure?.pressure === 'buy' && consensusDecision.direction === 'FALL';
+
+  let finalDecisionStatus: 'EXECUTADO' | 'VETO' | 'HOLD' = 'HOLD';
+  let finalDecisionReason = "Consenso insuficiente ou sem vantagem.";
+  
+  if (consensusDecision.direction !== 'HOLD' && kellyStake > 0) {
+      if (microstructureVeto) {
+          finalDecisionStatus = 'VETO';
+          finalDecisionReason = `Veto da Microestrutura (Pressão Contrária de ${microstructure?.pressure === 'buy' ? 'Compra' : 'Venda'}).`;
+      } else {
+          finalDecisionStatus = 'EXECUTADO';
+          finalDecisionReason = `Ordem ${consensusDecision.direction} enviada com stake de $${kellyStake.toFixed(2)}.`;
+      }
+  }
+
+
   return (
     <Card className="shadow-lg border-muted">
       <CardHeader className="pb-3">
         <div className="flex justify-between items-start">
             <div>
                 <CardTitle className="font-headline flex items-center gap-2 text-xl">
-                <Gauge className="h-6 w-6 text-primary" />
+                <BarChart className="h-6 w-6 text-primary" />
                 Diagnóstico Avançado da Mesa V2.5
                 </CardTitle>
                 <CardDescription>
                 Visão profunda do Cérebro Cognitivo, Microestrutura e Votação Bayesiana.
                 </CardDescription>
             </div>
-            {consensusDecision.direction !== 'HOLD' && (
-                <Badge variant={consensusDecision.direction === 'RISE' ? "default" : "destructive"} className="text-sm px-3 py-1">
-                    DECISÃO: {consensusDecision.direction} ({(consensusDecision.probability * 100).toFixed(0)}%)
-                </Badge>
-            )}
+             <Badge variant={finalDecisionStatus === 'EXECUTADO' ? 'default' : finalDecisionStatus === 'VETO' ? 'destructive' : 'secondary'} className="text-sm px-3 py-1">
+                DECISÃO: {consensusDecision.direction} ({(consensusDecision.probability * 100).toFixed(0)}%)
+             </Badge>
         </div>
       </CardHeader>
       
@@ -148,7 +162,7 @@ export function DebugCouncilView({ councilState, isCouncilAutopilotOn }: DebugCo
                 subtext="Ativos / Total"
             />
              <MetricCard 
-                icon={<Users className="h-4 w-4 text-green-500" />}
+                icon={<Bot className="h-4 w-4 text-green-500" />}
                 label="Robôs Ativos"
                 value={`${systemMetrics.activeRobotsCount} / ${robotPerformance?.length || 22}`}
             />
@@ -166,6 +180,27 @@ export function DebugCouncilView({ councilState, isCouncilAutopilotOn }: DebugCo
         </div>
 
         <Separator />
+        
+        {/* NOVA SEÇÃO: DECISÃO FINAL */}
+        <div>
+            <h3 className="font-semibold mb-3 flex items-center gap-2">
+                <ShieldCheck className="h-5 w-5 text-gray-500" />
+                Status da Execução Final
+            </h3>
+             <div className={cn("p-4 rounded-lg border text-center", 
+                finalDecisionStatus === 'EXECUTADO' && 'bg-green-500/10 border-green-500/30 text-green-700',
+                finalDecisionStatus === 'VETO' && 'bg-red-500/10 border-red-500/30 text-red-700',
+                finalDecisionStatus === 'HOLD' && 'bg-amber-500/10 border-amber-500/30 text-amber-700'
+             )}>
+                <div className="flex items-center justify-center gap-2 font-bold text-lg mb-1">
+                    {finalDecisionStatus === 'EXECUTADO' && <ShieldCheck />}
+                    {finalDecisionStatus === 'VETO' && <ShieldX />}
+                    {finalDecisionStatus === 'HOLD' && <ShieldAlert />}
+                    <span>{finalDecisionStatus}</span>
+                </div>
+                <p className="text-xs">{finalDecisionReason}</p>
+            </div>
+        </div>
 
         <div className="grid md:grid-cols-2 gap-6">
             {/* 2. Análise de Regime de Mercado */}
@@ -228,7 +263,7 @@ export function DebugCouncilView({ councilState, isCouncilAutopilotOn }: DebugCo
         {/* 4. Tabela de Votação Detalhada */}
         <div>
           <h3 className="font-semibold mb-3 flex items-center gap-2">
-            <Sigma className="h-5 w-5 text-pink-500" />
+            <LayoutGrid className="h-5 w-5 text-pink-500" />
             Conselho de Estratégias (Votação Bayesiana)
           </h3>
           <ScrollArea className="h-[350px] w-full rounded-md border">
