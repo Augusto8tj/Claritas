@@ -2,7 +2,7 @@
 'use client';
 
 import * as React from 'react';
-import { useMemo, useEffect, useRef } from 'react';
+import { useMemo, useEffect } from 'react';
 import { useFormContext, useWatch } from 'react-hook-form';
 import { ArrowDown, ArrowUp, Info, Loader2, Minus, Plus, ChevronDown } from "lucide-react";
 
@@ -66,17 +66,12 @@ export default function DerivTraderInterfaceV2({ symbol }: DerivTraderInterfaceV
   const form = useFormContext<RiseFallFormValues>();
   
   // --- HF-SAFE STATE MANAGEMENT ---
-  // This pattern prevents infinite render loops with complex forms.
-  const [localDurationUnit, setLocalDurationUnit] = React.useState<DurationUnit | undefined>(
+  const [localDurationUnit, setLocalDurationUnit] = React.useState<DurationUnit>(
     form.getValues("duration_unit")
   );
 
-  const durationUnitFromForm = useWatch({
-    control: form.control,
-    name: 'duration_unit',
-  });
+  const durationUnitFromForm = form.watch('duration_unit');
   
-  // Sync from React Hook Form to local UI state only when it truly changes.
   useEffect(() => {
     if (durationUnitFromForm !== localDurationUnit) {
       setLocalDurationUnit(durationUnitFromForm);
@@ -84,15 +79,8 @@ export default function DerivTraderInterfaceV2({ symbol }: DerivTraderInterfaceV
   }, [durationUnitFromForm, localDurationUnit]);
   // --- END HF-SAFE ---
 
-  const allowEquals = useWatch({
-    control: form.control,
-    name: 'allowEquals',
-  });
-
-  const stake = useWatch({
-    control: form.control,
-    name: 'stake',
-  });
+  const allowEquals = form.watch('allowEquals');
+  const stake = form.watch('stake');
 
   const payout = useMemo(() => {
     if (!stake) return "0.00";
@@ -101,9 +89,9 @@ export default function DerivTraderInterfaceV2({ symbol }: DerivTraderInterfaceV
 
   // Effect to ensure the selected duration unit is always valid based on API limits.
   React.useEffect(() => {
-    if (!durationLimits || !durationUnitFromForm) return;
+    if (!durationLimits || !localDurationUnit) return;
     
-    const isUnitDisabled = durationLimits[durationUnitFromForm]?.min === 0;
+    const isUnitDisabled = durationLimits[localDurationUnit]?.min === 0;
 
     if (isUnitDisabled) {
         const firstValid = (Object.keys(durationLimits) as DurationUnit[]).find(
@@ -112,20 +100,21 @@ export default function DerivTraderInterfaceV2({ symbol }: DerivTraderInterfaceV
         
         if (firstValid) {
             form.setValue('duration_unit', firstValid, {
-                shouldDirty: false,
-                shouldValidate: false,
+                shouldDirty: true,
+                shouldTouch: false,
+                shouldValidate: true,
             });
         }
     }
-  }, [durationLimits, durationUnitFromForm, form]);
+  }, [durationLimits, localDurationUnit, form]);
 
 
   // Effect to adjust the duration value when the unit changes.
   React.useEffect(() => {
-    if (!durationLimits || !durationUnitFromForm) return;
+    if (!durationLimits || !localDurationUnit) return;
   
     const currentDuration = form.getValues('duration');
-    const limits = durationLimits[durationUnitFromForm];
+    const limits = durationLimits[localDurationUnit];
     
     if (!limits) return;
 
@@ -137,10 +126,10 @@ export default function DerivTraderInterfaceV2({ symbol }: DerivTraderInterfaceV
       form.setValue('duration', newDuration, {
         shouldDirty: true,
         shouldTouch: false,
-        shouldValidate: false,
+        shouldValidate: true,
       });
     }
-  }, [durationUnitFromForm, durationLimits, form]);
+  }, [localDurationUnit, durationLimits, form]);
 
 
   const handleDurationChange = (amount: number) => {
@@ -163,7 +152,7 @@ export default function DerivTraderInterfaceV2({ symbol }: DerivTraderInterfaceV
     form.setValue('stake', Math.max(0.35, currentStake + amount), {
         shouldDirty: true,
         shouldTouch: false,
-        shouldValidate: false,
+        shouldValidate: true,
     });
   }
 
@@ -283,7 +272,7 @@ export default function DerivTraderInterfaceV2({ symbol }: DerivTraderInterfaceV
                                             form.setValue("duration_unit", next, {
                                               shouldDirty: true,
                                               shouldTouch: false,
-                                              shouldValidate: false,
+                                              shouldValidate: true,
                                             });
                                           });
                                         }}
