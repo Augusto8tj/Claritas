@@ -80,9 +80,16 @@ export function ApiStatusIndicator() {
       <div className="flex items-center justify-center gap-4 rounded-lg border bg-card p-2 px-4 shadow-sm">
         <StatusIcon status={derivStatus} serviceName="Corretora" />
         <StatusIcon status={iaStatus} serviceName="IA" />
-        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={runAllChecks} disabled={isChecking}>
-          <RefreshCw className={cn("h-4 w-4", isChecking && "animate-spin")} />
-        </Button>
+        <Tooltip>
+            <TooltipTrigger asChild>
+                <Button variant="ghost" size="icon" className="h-7 w-7" onClick={runAllChecks} disabled={isChecking}>
+                    <RefreshCw className={cn("h-4 w-4", isChecking && "animate-spin")} />
+                </Button>
+            </TooltipTrigger>
+            <TooltipContent>
+                <p>Verificar Conexões</p>
+            </TooltipContent>
+        </Tooltip>
       </div>
     </TooltipProvider>
   );
