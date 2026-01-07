@@ -58,13 +58,19 @@ const Header = () => {
                         <ToggleGroupItem value="demo" aria-label="Usar conta demo">Demo</ToggleGroupItem>
                         <ToggleGroupItem value="real" aria-label="Usar conta real">Real</ToggleGroupItem>
                     </ToggleGroup>
-                    <div className="text-right h-6 w-40">
+                    <div className="text-right">
                         {accountBalance.loading || isConnecting ? (
-                            <Skeleton className="h-5 w-full" />
+                            <div className="space-y-1">
+                                <Skeleton className="h-4 w-16" />
+                                <Skeleton className="h-5 w-24" />
+                            </div>
                         ) : accountBalance.balance !== null ? (
-                            <p className="text-sm font-medium text-muted-foreground truncate">
-                                Saldo: <span className="font-bold text-foreground">{new Intl.NumberFormat('en-US', { style: 'currency', currency: accountBalance.currency || 'USD' }).format(accountBalance.balance)}</span>
-                            </p>
+                            <div>
+                                <p className="text-xs text-muted-foreground">Saldo:</p>
+                                <p className="text-lg font-bold text-foreground leading-tight">
+                                    {new Intl.NumberFormat('en-US', { style: 'currency', currency: accountBalance.currency || 'USD' }).format(accountBalance.balance)}
+                                </p>
+                            </div>
                         ) : null}
                     </div>
                     {operationsLog.length > 0 && (
