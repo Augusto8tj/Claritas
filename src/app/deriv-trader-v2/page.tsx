@@ -136,15 +136,17 @@ const DerivTraderV2Core = () => {
                             isCouncilAutopilotOn={robotCouncil.isCouncilAutopilotOn}
                         />
                     </div>
-                     <div className="animate-in fade-in slide-in-from-top-4 duration-500">
-                        <DebugCouncilView 
-                            councilState={robotCouncil}
-                            isCouncilAutopilotOn={robotCouncil.isCouncilAutopilotOn}
-                        />
-                    </div>
                 </div>
                 <CouncilAutopilotInterfaceV2 {...robotCouncil} />
             </div>
+
+            <div className="animate-in fade-in slide-in-from-top-4 duration-500">
+                <DebugCouncilView 
+                    councilState={robotCouncil}
+                    isCouncilAutopilotOn={robotCouncil.isCouncilAutopilotOn}
+                />
+            </div>
+
 
             <Tabs value={activeTab} onValueChange={setActiveTab}>
                 <TabsList className="grid w-full grid-cols-4">
