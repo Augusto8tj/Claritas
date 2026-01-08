@@ -24,6 +24,7 @@ import { IndicatorPanel } from "@/features/trading/components/deriv-trader/indic
 import { TradingDesk } from "@/features/trading/components/deriv-trader/trading-desk";
 import { HallOfFame } from "@/features/trading/components/deriv-trader/hall-of-fame";
 import { EvolutionLab } from "@/features/trading/components/deriv-trader/evolution-lab";
+import { ApiStatusIndicatorLegacy } from "@/features/trading/components/deriv-trader/ApiStatusIndicatorLegacy";
 
 
 function DerivTraderCore() {
@@ -209,38 +210,49 @@ function DerivTraderPageContent() {
     return (
         <div className="flex-1 space-y-4 p-4 sm:p-8 pt-6">
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-            <div className="flex items-center gap-4 flex-1">
-                <h1 className="text-3xl font-bold tracking-tight font-headline shrink-0">
-                    Deriv Trader
+                <h1 className="text-3xl font-bold tracking-tight font-headline shrink-0 text-center md:text-left">
+                    Deriv Trader V1
                 </h1>
-                <AssetSelector 
-                    selectedAsset={activeSymbol || ""} 
-                    onAssetChange={handleAssetChange} 
-                    assetGroups={assetGroups}
-                    isAssetsLoading={isAssetsLoading}
-                />
-            </div>
-            <div className="flex items-center justify-end gap-4">
-                <ToggleGroup type="single" value={accountType} onValueChange={(value: any) => value && setAccountType(value)} defaultValue="demo" aria-label="Tipo de Conta">
-                    <ToggleGroupItem value="demo" aria-label="Usar conta demo">Demo</ToggleGroupItem>
-                    <ToggleGroupItem value="real" aria-label="Usar conta real">Real</ToggleGroupItem>
-                </ToggleGroup>
-                <div className="text-right h-6 w-40">
-                    {accountBalance.loading || isConnecting ? (
-                        <Skeleton className="h-5 w-full" />
-                    ) : accountBalance.balance !== null ? (
-                        <p className="text-sm font-medium text-muted-foreground truncate">
-                            Saldo: <span className="font-bold text-foreground">{new Intl.NumberFormat('en-US', { style: 'currency', currency: accountBalance.currency || 'USD' }).format(accountBalance.balance)}</span>
-                        </p>
-                    ) : null}
+                <div className="flex-1 grid grid-cols-1 md:grid-cols-3 gap-4 items-center">
+                    <div className="flex justify-center">
+                        <AssetSelector 
+                            selectedAsset={activeSymbol || ""} 
+                            onAssetChange={handleAssetChange} 
+                            assetGroups={assetGroups}
+                            isAssetsLoading={isAssetsLoading}
+                        />
+                    </div>
+                    <div className="flex justify-center">
+                        <ApiStatusIndicatorLegacy />
+                    </div>
+                    <div className="flex items-center justify-center md:justify-end gap-4">
+                        <ToggleGroup type="single" value={accountType} onValueChange={(value: any) => value && setAccountType(value)} defaultValue="demo" aria-label="Tipo de Conta">
+                            <ToggleGroupItem value="demo" aria-label="Usar conta demo">Demo</ToggleGroupItem>
+                            <ToggleGroupItem value="real" aria-label="Usar conta real">Real</ToggleGroupItem>
+                        </ToggleGroup>
+                        <div className="text-right">
+                            {accountBalance.loading || isConnecting ? (
+                                <div className="space-y-1">
+                                    <Skeleton className="h-4 w-16" />
+                                    <Skeleton className="h-5 w-24" />
+                                </div>
+                            ) : accountBalance.balance !== null ? (
+                                <div>
+                                    <p className="text-xs text-muted-foreground">Saldo:</p>
+                                    <p className="text-lg font-bold text-foreground leading-tight">
+                                        {new Intl.NumberFormat('en-US', { style: 'currency', currency: accountBalance.currency || 'USD' }).format(accountBalance.balance)}
+                                    </p>
+                                </div>
+                            ) : null}
+                        </div>
+                        {operationsLog.length > 0 && (
+                            <Button variant="outline" size="icon" className="h-8 w-8" onClick={clearActiveContracts}>
+                                <Trash2 className="h-4 w-4" />
+                                <span className="sr-only">Limpar negociações</span>
+                            </Button>
+                        )}
+                    </div>
                 </div>
-                {operationsLog.length > 0 && (
-                    <Button variant="outline" size="icon" className="h-8 w-8" onClick={clearActiveContracts}>
-                        <Trash2 className="h-4 w-4" />
-                        <span className="sr-only">Limpar negociações</span>
-                    </Button>
-                )}
-            </div>
             </div>
 
             <DerivTraderCore />
