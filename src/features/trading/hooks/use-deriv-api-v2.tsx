@@ -332,7 +332,9 @@ const getHistoricalData = useCallback(async (symbol: string, style: 'ticks' | 'c
 
 
 const subscribeToMarketData = useCallback(async (symbol: string) => {
-    if (activeSubscriptionIdRef.current && wsRef.current?.readyState === WebSocket.OPEN) {
+    if (wsRef.current?.readyState !== WebSocket.OPEN) return;
+
+    if (activeSubscriptionIdRef.current) {
         try { 
             await makeRequest({ forget: activeSubscriptionIdRef.current }, true); 
         } catch (e) { 
@@ -535,7 +537,7 @@ const subscribeToMarketData = useCallback(async (symbol: string) => {
             const response = JSON.parse(event.data);
 
             if (response.error && response.error.message) {
-                 if (response.error.code !== 'AlreadySubscribed' && response.error.code !== 'SellNotAvailable' && !response.error.message.includes('Waiting for entry tick')) {
+                 if (response.error.code !== 'AlreadySubscribed' && response.error.code !== 'SellNotAvailable') {
                   console.error(`[Deriv WS] Error:`, response.error.message);
                 }
             }
@@ -544,7 +546,7 @@ const subscribeToMarketData = useCallback(async (symbol: string) => {
             if (reqId && promisesRef.current.has(String(reqId))) {
                 const promise = promisesRef.current.get(String(reqId));
                 promisesRef.current.delete(String(reqId));
-                if (response.error) {
+                if (response.error && response.error.code !== 'InvalidtoSell') {
                     const errorMessage = response.error.message || `Unknown API error. Code: ${response.error.code || 'N/A'}`;
                     const errorDetails = JSON.stringify(response.error);
                     promise?.reject(new Error(`${errorMessage} | Details: ${errorDetails}`));
