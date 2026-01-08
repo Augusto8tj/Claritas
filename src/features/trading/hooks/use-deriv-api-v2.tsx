@@ -266,7 +266,7 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
 
         ws.send(JSON.stringify(payload));
     });
-  }, []); // Empty dependency array, relies on wsRef.current
+  }, []); 
 
     const addTradeAnnotation = useCallback((annotation: Omit<TradeAnnotation, 'id'>) => {
       const newAnnotation: TradeAnnotation = {
@@ -324,71 +324,6 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
             throw error;
         }
     }, [makeRequest]);
-
-    const subscribeToMarketData = useCallback(async (symbol: string) => {
-        if (wsRef.current?.readyState !== WebSocket.OPEN) return;
-
-        if (activeSubscriptionIdRef.current) {
-            try { 
-                await makeRequest({ forget: activeSubscriptionIdRef.current }); 
-            } catch (e) { 
-                // Ignore if forget fails, we will subscribe to the new one anyway.
-            }
-            activeSubscriptionIdRef.current = null;
-        }
-
-        setIsChartLoading(true);
-        setChartError(null);
-        setChartData([]);
-        setPriceTicks([]); 
-
-        try {
-            const historyStyle = chartType === 'Candle' ? 'candles' : 'ticks';
-            const history = await getHistoricalData(symbol, historyStyle, 1000, timePeriod);
-            
-            const chartHistory = history.map(h => {
-                if(historyStyle === 'candles') {
-                    return { epoch: h.epoch, open: h.open, high: h.high, low: h.low, close: h.close, volume: h.volume } as CandleData;
-                }
-                return { epoch: h.epoch, price: h.price } as TickData;
-            });
-
-            setChartData(chartHistory as ChartData[]);
-            if (historyStyle === 'ticks') {
-                setPriceTicks(history as TickData[]);
-            }
-            setDataVersion(v => v + 1);
-
-            let subRequest: any;
-            if (chartType === 'Candle') {
-                subRequest = { 
-                    ticks_history: symbol, 
-                    style: 'candles', 
-                    granularity: getGranularityForTimePeriod(timePeriod), 
-                    subscribe: 1,
-                    end: "latest",
-                    count: 1,
-                    adjust_start_time: 1
-                };
-            } else {
-                subRequest = { 
-                    ticks: symbol, 
-                    subscribe: 1 
-                };
-            }
-            
-            // For subscriptions, we don't wait for a response in the promise queue
-            wsRef.current.send(JSON.stringify(subRequest));
-            console.log(`[Market Data] Subscription request sent for ${symbol} (${chartType}).`);
-
-        } catch (error: any) {
-            console.error(`[Market Data] Error for ${symbol}:`, error);
-            setChartError(error.message || 'Falha ao carregar dados do mercado.');
-        } finally {
-            setIsChartLoading(false);
-        }
-    }, [getHistoricalData, makeRequest, chartType, timePeriod]);
-
 
     const executeTrade = useCallback(async (
         contractType: string,
@@ -695,25 +630,26 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
     };
   
     ws.onclose = (event) => {
-      const { wasClean, code, reason } = event;
-      
-      const pendingPromises = promisesRef.current ? Array.from(promisesRef.current.values()) : [];
-      if (promisesRef.current) {
-        promisesRef.current.clear();
-      }
-      pendingPromises.forEach((p) => {
-        if (p && typeof p.reject === 'function') {
-          p.reject(new Error("WebSocket connection closed."));
+        if (!wsRef.current) return;
+        const { wasClean, code, reason } = event;
+        
+        const pendingPromises = promisesRef.current ? Array.from(promisesRef.current.values()) : [];
+        if (promisesRef.current) {
+            promisesRef.current.clear();
         }
-      });
-      
-      if (!wasClean) {
-        setConnectionError(`A conexão foi encerrada inesperadamente. Código: ${code}. Razão: ${reason || 'N/A'}.`);
-      }
-      setIsConnected(false);
-      setIsConnecting(false);
-      setAccountBalance({ balance: null, currency: null, loading: false });
-      wsRef.current = null;
+        pendingPromises.forEach((p) => {
+            if (p && typeof p.reject === 'function') {
+                p.reject(new Error("WebSocket connection closed."));
+            }
+        });
+        
+        if (!wasClean) {
+            setConnectionError(`A conexão foi encerrada inesperadamente. Código: ${code}. Razão: ${reason || 'N/A'}.`);
+        }
+        setIsConnected(false);
+        setIsConnecting(false);
+        setAccountBalance({ balance: null, currency: null, loading: false });
+        wsRef.current = null;
     };
   
     ws.onerror = (errorEvent) => {
@@ -722,10 +658,76 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
     };
   
     return () => {
-      if (wsRef.current) wsRef.current.close();
+      if (wsRef.current) {
+          wsRef.current.onclose = null;
+          wsRef.current.close();
+      }
     };
   }, [activeToken, isLoading, makeRequest, updateTradeAnnotation, toast, triggerReconnect]);
 
+  const subscribeToMarketData = useCallback(async (symbol: string) => {
+    if (wsRef.current?.readyState !== WebSocket.OPEN) return;
+
+    if (activeSubscriptionIdRef.current) {
+        try { 
+            await makeRequest({ forget: activeSubscriptionIdRef.current }); 
+        } catch (e) { 
+            // Ignore if forget fails, we will subscribe to the new one anyway.
+        }
+        activeSubscriptionIdRef.current = null;
+    }
+
+    setIsChartLoading(true);
+    setChartError(null);
+    setChartData([]);
+    setPriceTicks([]); 
+
+    try {
+        const historyStyle = chartType === 'Candle' ? 'candles' : 'ticks';
+        const history = await getHistoricalData(symbol, historyStyle, 1000, timePeriod);
+        
+        const chartHistory = history.map(h => {
+            if(historyStyle === 'candles') {
+                return { epoch: h.epoch, open: h.open, high: h.high, low: h.low, close: h.close, volume: h.volume } as CandleData;
+            }
+            return { epoch: h.epoch, price: h.price } as TickData;
+        });
+
+        setChartData(chartHistory as ChartData[]);
+        if (historyStyle === 'ticks') {
+            setPriceTicks(history as TickData[]);
+        }
+        setDataVersion(v => v + 1);
+
+        let subRequest: any;
+        if (chartType === 'Candle') {
+            subRequest = { 
+                ticks_history: symbol, 
+                style: 'candles', 
+                granularity: getGranularityForTimePeriod(timePeriod), 
+                subscribe: 1,
+                end: "latest",
+                count: 1,
+                adjust_start_time: 1
+            };
+        } else {
+            subRequest = { 
+                ticks: symbol, 
+                subscribe: 1 
+            };
+        }
+        
+        // For subscriptions, we don't wait for a response in the promise queue
+        wsRef.current.send(JSON.stringify(subRequest));
+        console.log(`[Market Data] Subscription request sent for ${symbol} (${chartType}).`);
+
+    } catch (error: any) {
+        console.error(`[Market Data] Error for ${symbol}:`, error);
+        setChartError(error.message || 'Falha ao carregar dados do mercado.');
+    } finally {
+        setIsChartLoading(false);
+    }
+  }, [getHistoricalData, makeRequest, chartType, timePeriod]);
   
   useEffect(() => {
     if (isConnected && activeSymbol) {
