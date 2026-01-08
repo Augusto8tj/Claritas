@@ -15,7 +15,16 @@ Este documento regista a jornada de desenvolvimento e as principais funcionalida
 
 ---
 
-### v2.0.0 (Atual) - O Cérebro Quantitativo: Arquitetura Adaptativa e Gestão de Risco Científica
+### v2.5.0 (Atual) - O Despertar Cognitivo: A Mesa Operacional Completa
+
+**Funcionalidades Principais:**
+- **Ativação Total do Conselho:** A lógica de votação (\`calculateTechnicalVote\`) foi expandida para incluir todos os 22 robôs-analistas. Estratégias como \`ICHIMOKU\`, \`VWAP\`, \`Z_SCORE\` e \`TRIX\` agora participam ativamente do consenso, trazendo uma diversidade de perspetivas sem precedentes.
+- **Motor de Cálculo Soberano:** O \`indicator-service.ts\` foi reescrito do zero. Ele agora é 100% autónomo, sem dependências externas, e calcula o arsenal completo de mais de 25 indicadores necessários para alimentar cada especialista da mesa, eliminando "pontos cegos".
+- **Desbloqueio da Arena Virtual:** Com a lógica de votação e o motor de indicadores completos, a Arena Virtual agora opera em plena capacidade. Todos os robôs fazem "paper trades" a cada sinal, gerando os dados de desempenho necessários para o sistema de meritocracia e evolução genética.
+
+---
+
+### v2.0.0 - O Cérebro Quantitativo: Arquitetura Adaptativa e Gestão de Risco Científica
 
 **Funcionalidades Principais:**
 - **Arquitetura "Regime-Aware" (Consciente do Contexto):** O sistema agora utiliza um modelo (HMM Lite) para identificar o regime de mercado em tempo real (ex: \`TREND_UP\`, \`RANGING\`). Robôs que são inadequados para um certo regime (ex: osciladores em forte tendência) são automaticamente silenciados, eliminando um dos maiores erros de robôs amadores.
@@ -217,21 +226,26 @@ export default function HelpPage() {
             </AccordionItem>
 
             <AccordionItem value="item-15">
-                <AccordionTrigger className="text-lg font-semibold">O Cérebro V2.0: Como Funciona o Deriv Trader 2.0</AccordionTrigger>
+                <AccordionTrigger className="text-lg font-semibold">O Cérebro V2.5: Como Funciona o Deriv Trader</AccordionTrigger>
                 <AccordionContent className="text-base leading-relaxed space-y-4">
-                    <p>O Deriv Trader 2.0 representa uma evolução fundamental, saindo de um sistema de "consenso simples" para um verdadeiro <strong>"Cérebro Quantitativo"</strong>, que opera de forma semelhante a uma mesa de operações de um fundo de investimento de alta frequência.</p>
+                    <p>O Deriv Trader 2.5 representa uma evolução fundamental, saindo de um sistema de "consenso simples" para um verdadeiro <strong>"Cérebro Quantitativo"</strong>, que opera de forma semelhante a uma mesa de operações de um fundo de investimento de alta frequência.</p>
                     
-                    <h3 className="text-md font-bold mt-3">1. Contexto é Rei: A Arquitetura "Regime-Aware"</h3>
-                    <p>A cada momento, um modelo inspirado em <strong>Hidden Markov Models (HMM)</strong> classifica o mercado num de cinco "regimes" (\`TREND_UP\`, \`RANGING\`, etc.). O sistema sabe que usar um robô oscilador (como o RSI) numa tendência forte é desastroso. Portanto, o Cérebro V2.0 <strong>ativa apenas os robôs especialistas que são adequados para o regime atual</strong>, silenciando os outros.</p>
+                    <h3 className="text-md font-bold mt-3">1. Camada de Conexão: `use-deriv-api-v2.tsx`</h3>
+                    <p>Esta camada é a nossa única ponte de comunicação com a corretora. É responsável por gerir a conexão WebSocket, autenticação, e atuar como a "fonte da verdade" para todos os dados de mercado, como o gráfico (`chartData`) e o saldo da conta.</p>
 
-                    <h3 className="text-md font-bold mt-3">2. Consenso Bayesiano: A Sabedoria Ponderada</h3>
-                    <p>Em vez de uma simples contagem de votos, o sistema usa <strong>Inferência Bayesiana</strong>. Quando um robô vota, o sistema combina a confiança do sinal atual com a <strong>taxa de acerto histórica daquele robô, naquele regime específico</strong>. O resultado é uma Probabilidade de Consenso Bayesiano muito mais precisa e ajustada à realidade.</p>
+                    <h3 className="text-md font-bold mt-3">2. O Cérebro Cognitivo: `use-robot-council-v2.ts`</h3>
+                    <p>Este é o coração do sistema, executando um ciclo de análise a cada tick de preço. As suas responsabilidades incluem:</p>
+                     <ul className="list-disc pl-6 space-y-2">
+                        <li><strong>Cálculo de Indicadores (`indicator-service-v2.ts`):</strong> Um motor autónomo que calcula mais de 25 indicadores técnicos (RSI, MACD, etc.) a partir dos dados brutos.</li>
+                        <li><strong>Deteção de Regime de Mercado (`advanced-trading-services.ts`):</strong> Um modelo inspirado em HMM que classifica o mercado (ex: `TREND_UP`, `RANGING`) e ativa apenas os robôs especialistas adequados para aquele contexto.</li>
+                        <li><strong>Consenso Bayesiano Ponderado:</strong> Os robôs ativos votam e os seus votos são ponderados pelo desempenho histórico (`Sharpe Ratio`). O sistema usa inferência Bayesiana para calcular uma probabilidade de sucesso final muito mais precisa.</li>
+                        <li><strong>Gestão de Risco com Critério de Kelly:</strong> O tamanho da aposta (`stake`) é calculado cientificamente com base na probabilidade de sucesso, apostando mais agressivamente quando a vantagem é alta.</li>
+                        <li><strong>Veto de Microestrutura:</strong> Uma camada de proteção final que analisa os últimos ticks para detetar anomalias (como picos de volume) e pode vetar uma operação.</li>
+                        <li><strong>Arena Virtual & Evolução Genética:</strong> Todos os votos são executados como "paper trades" na Arena Virtual. A cada 50 trades, o sistema identifica os robôs de pior desempenho e os substitui por "mutações" genéticas dos robôs de elite.</li>
+                     </ul>
 
-                    <h3 className="text-md font-bold mt-3">3. Gestão de Risco Científica: O Critério de Kelly</h3>
-                    <p>O valor da aposta (\`stake\`) é calculado cientificamente usando o <strong>Critério de Kelly Fracionado</strong>. Se a Probabilidade Bayesiana de sucesso é alta, o sistema aposta de forma mais agressiva. Se a vantagem é pequena, ele aposta o mínimo para proteger o capital. O risco é ajustado dinamicamente a cada segundo.</p>
-
-                    <h3 className="text-md font-bold mt-3">4. Veto de Microestrutura: O "Guarda-Costas" Final</h3>
-                    <p>Mesmo com um consenso forte, uma camada final de proteção analisa os últimos 10-20 ticks. Se detetar uma pressão de mercado súbita e contrária (ex: um pico de volume de venda), o "guarda-costas" <strong>vetará a operação</strong>, prevenindo entradas em movimentos anormais ou "flash crashes".</p>
+                    <h3 className="text-md font-bold mt-3">3. A Interface do Utilizador: `deriv-trader-v2/page.tsx`</h3>
+                    <p>A camada de apresentação exibe a complexidade do cérebro de forma clara, com componentes como o `CouncilDashboardV2` (visão geral), `DebugCouncilView` (detalhes de cada robô), `TradingDeskV2` (ranking de desempenho) e `EvolutionLab` (histórico de mutações).</p>
                 </AccordionContent>
             </AccordionItem>
 
@@ -243,7 +257,7 @@ export default function HelpPage() {
                     <h3 className="text-md font-bold mt-3">1. Comité de Momentum: Os "Velocistas"</h3>
                     <p>Obcecados com a velocidade e aceleração do preço. São os primeiros a detetar quando o mercado ganha ou perde força.</p>
                     <ul className="list-disc pl-6 space-y-2 text-sm">
-                        <li><strong>RSI:</strong> Especialista em reversão. Precisa do indicador `RSI` para detetar sobrecompra (&gt;70) ou sobrevenda (&lt;30).</li>
+                        <li><strong>RSI:</strong> Especialista em reversão. Precisa do indicador `RSI` para detetar sobrecompra (>70) ou sobrevenda (<30).</li>
                         <li><strong>STOCHASTIC:</strong> Semelhante ao RSI, mas mais sensível. Precisa do indicador `Stochastic Oscillator (STOCH)` para encontrar pontos de exaustão.</li>
                         <li><strong>MACD:</strong> Um confirmador de momentum. Precisa dos valores de `MACD Line` e `Signal Line` para detetar cruzamentos que sinalizam uma nova direção.</li>
                         <li><strong>Awesome Oscillator, TRIX, ROC:</strong> Detetam a aceleração e a "convicção" por trás de um movimento, confirmando que a tendência tem força para continuar. Precisam, respetivamente, dos indicadores `Awesome Oscillator`, `TRIX` e `Rate of Change (ROC)`.</li>
