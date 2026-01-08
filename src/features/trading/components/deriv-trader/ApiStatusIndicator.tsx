@@ -82,7 +82,7 @@ export function ApiStatusIndicator() {
         <StatusIcon status={iaStatus} serviceName="IA" />
         <Tooltip>
             <TooltipTrigger asChild>
-                <Button variant="ghost" size="icon" className="h-7 w-7" onClick={runAllChecks} disabled={isChecking}>
+                <Button variant="ghost" size="icon" className="h-7 w-7" onClick={runAllChecks}>
                     <RefreshCw className={cn("h-4 w-4", isChecking && "animate-spin")} />
                 </Button>
             </TooltipTrigger>
