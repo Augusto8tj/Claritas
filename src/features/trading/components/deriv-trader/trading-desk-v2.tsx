@@ -291,7 +291,7 @@ export function TradingDeskV2({ councilState }: TradingDeskV2Props) {
                                                     </TableCell>
 
                                                     <TableCell className="text-center font-mono text-sm">
-                                                        {totalTrades > 5 ? (
+                                                        {totalTrades > 5 && robot.sharpeRatio !== undefined && robot.sharpeRatio !== null ? (
                                                             <Badge variant="outline" className={cn(
                                                                 robot.sharpeRatio > 1.5 ? "border-green-500 text-green-600 bg-green-50" : 
                                                                 robot.sharpeRatio > 1.0 ? "border-blue-500 text-blue-600 bg-blue-50" : "border-gray-200"
