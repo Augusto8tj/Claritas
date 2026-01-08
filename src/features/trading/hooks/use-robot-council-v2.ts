@@ -536,12 +536,12 @@ export function useRobotCouncilV2(
                 const perf = localRobotPerformance.find(p => p.id === safeRobotId);
                 
                 // ✅ Otimização 2: Ponderação Exponencial
-                let weight = 0.05; // Peso mínimo para robôs não testados
+                let weight = 0.05;
                 if (isMeritocracyOn && perf && (perf.wins + perf.losses) >= 10) {
                     if (perf.sharpeRatio > 0) {
                         weight = Math.pow(1 + perf.sharpeRatio, 2);
                     } else {
-                        weight = Math.exp(perf.sharpeRatio); // Penalização severa
+                        weight = Math.exp(perf.sharpeRatio);
                     }
                 }
 
@@ -588,13 +588,11 @@ export function useRobotCouncilV2(
         const edgeAdjustedProb = consensusProbability * regimeResult.confidence;
         let kellyStake = calculateKellyStake(dailyBalance, edgeAdjustedProb, 0.95);
         
-        // Ajuste de Volatilidade e Incerteza
         const volatilityFactor = (currentIndicators.atr / currentTick.price + currentIndicators.bbw) / 2;
         kellyStake *= Math.exp(-volatilityFactor * 3);
         const entropy = calculateShannonEntropy(riseSum, fallSum);
         kellyStake *= (0.5 + (1 - entropy) * 0.5);
 
-        // Boost para sinais premium
         if (consensusProbability > 0.85 && regimeResult.confidence > 0.8) {
             kellyStake *= 1.3;
         }
