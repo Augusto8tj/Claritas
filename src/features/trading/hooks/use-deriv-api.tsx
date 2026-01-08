@@ -542,7 +542,6 @@ export const DerivApiProvider = ({ children }: { children: ReactNode }) => {
                 } else {
                     promise?.resolve(response);
                 }
-                return; // Stop further processing if it was a direct response
             }
 
             if (response.error && response.error.message) {
