@@ -2,20 +2,23 @@
 'use client';
 
 /**
- * 🧠 DERIV TRADER V2.5 - CÉREBRO COGNITIVO (VERSÃO ARENA VIBRANTE)
+ * 🧠 DERIV TRADER V2.5 - CÉREBRO COGNITIVO (VERSÃO MESTRE OTIMIZADA)
  * =================================================================================
- * MUDANÇAS PARA CORRIGIR "OCIOSIDADE" E "ROBÔ UNKNOWN":
+ * Otimizações de Prioridade 1 implementadas:
  * 
- * 1. SEPARAÇÃO DE CONFIAÇA:
- *    - Paper Trade: 30% de confiança (Enche a arena para testes).
- *    - Real Trade: 70% de confiança (Protege o capital).
+ * 1. THRESHOLDS ALINHADOS:
+ *    - MIN_PAPER_CONFIDENCE ajustado para 60 para treino realista.
+ *    - MIN_REAL_CONFIDENCE (confidenceFactor) em 70.
  * 
- * 2. CORREÇÃO DE ID:
- *    - Fallback explícito para garantir que nenhum robô seja "Unknown".
+ * 2. PONDERAÇÃO EXPONENCIAL:
+ *    - O peso de um robô agora cresce exponencialmente com seu Sharpe Ratio.
+ *    - Robôs com Sharpe negativo são severamente penalizados.
+ *    - Robôs não testados têm influência mínima.
  * 
- * 3. OTIMIZAÇÃO DINÂMICA:
- *    - Duração do contrato baseada na Volatilidade (ATR).
- *    - Stake baseado na Confiança (Kelly parcial).
+ * 3. KELLY STAKE AVANÇADO:
+ *    - A probabilidade de consenso é ajustada pela confiança do regime de mercado.
+ *    - Boost de 30% para sinais de altíssima convicção.
+ *    - Penalização por entropia: stake é reduzido se o consenso for incerto.
  */
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
@@ -34,11 +37,12 @@ import { useStrategyEvolution } from './use-strategy-evolution';
 import { initialCouncilStrategies } from '@/services/council-strategies';
 import {
   detectMarketRegime, calculateKellyStake, bayesianUpdate,
-  extractMicrostructureFeatures, calculatePerformanceMetrics
+  extractMicrostructureFeatures, calculatePerformanceMetrics,
+  calculateShannonEntropy,
 } from '@/services/advanced-trading-services';
 
 // ════════════════════════════════════════════════════════════════════
-// 1. CONSTANTES E AJUSTES FINOS
+// 1. CONSTANTES E AJUSTES FINOS (OTIMIZADOS)
 // ════════════════════════════════════════════════════════════════════
 
 const VIRTUAL_STAKE = 1.0; 
@@ -46,9 +50,10 @@ const REGIME_LOOKBACK = 30;
 const THROTTLE_MS = 1000; 
 const TRADE_TIMEOUT_SECONDS = 3600; 
 
-// Limites de Confiança (O Segredo da Arena Cheia)
-const MIN_PAPER_CONFIDENCE = 30; // Baixamos para 30% para ver os robôs "pensando"
-const DEFAULT_REAL_CONFIDENCE = 70; // Mantemos alto para segurança real
+// ✅ Otimização 1: Limites de Confiança Alinhados
+const MIN_PAPER_CONFIDENCE = 60;    // Aumentado para 60 para treinar com sinais mais realistas
+const MIN_REAL_CONFIDENCE = 70;     // Nível de confiança para trades com dinheiro real
+const AGGRESSIVE_THRESHOLD = 85;    // Limiar para considerar um sinal de alta convicção
 
 // ════════════════════════════════════════════════════════════════════
 // 2. DEFINIÇÃO DE TIPOS
@@ -333,7 +338,7 @@ export function useRobotCouncilV2(
   const [isMeritocracyOn, setIsMeritocracyOn] = useState(true);
   const [isDynamicExitOn, setIsDynamicExitOn] = useState(true);
   const [consensusSensitivity, setConsensusSensitivity] = useState(60); 
-  const [confidenceFactor, setConfidenceFactor] = useState(DEFAULT_REAL_CONFIDENCE); // 70% para dinheiro real
+  const [confidenceFactor, setConfidenceFactor] = useState(MIN_REAL_CONFIDENCE); // ✅ Otimização 1
   const [durationRange, setDurationRange] = useState<[number, number]>([15, 300]); 
   const [takeProfitThreshold, setTakeProfitThreshold] = useState(10);
   const [stopLossThreshold, setStopLossThreshold] = useState(20);
@@ -529,10 +534,18 @@ export function useRobotCouncilV2(
             
             if (technicalVote.confidence >= confidenceFactor) {
                 const perf = localRobotPerformance.find(p => p.id === safeRobotId);
-                const winRate = perf ? perf.winRate : 50; 
-                let weight = 1;
-                if (isMeritocracyOn && perf) weight = Math.max(0.1, (perf.sharpeRatio || 0) + 0.5); 
+                
+                // ✅ Otimização 2: Ponderação Exponencial
+                let weight = 0.05; // Peso mínimo para robôs não testados
+                if (isMeritocracyOn && perf && (perf.wins + perf.losses) >= 10) {
+                    if (perf.sharpeRatio > 0) {
+                        weight = Math.pow(1 + perf.sharpeRatio, 2);
+                    } else {
+                        weight = Math.exp(perf.sharpeRatio); // Penalização severa
+                    }
+                }
 
+                const winRate = perf ? perf.winRate : 50; 
                 const posterior = bayesianUpdate(winRate/100, technicalVote.confidence/100);
                 const voteWeight = posterior * weight;
                 
@@ -571,14 +584,23 @@ export function useRobotCouncilV2(
 
         const currentSessionDuration = sessionStartTime ? (Date.now() - sessionStartTime) / 1000 : 0;
         
-        // --- CÁLCULO DE STAKE REFINADO ---
-        let kellyStake = calculateKellyStake(dailyBalance, consensusProbability, 0.95);
+        // ✅ Otimização 3: Cálculo de Kelly Stake Avançado
+        const edgeAdjustedProb = consensusProbability * regimeResult.confidence;
+        let kellyStake = calculateKellyStake(dailyBalance, edgeAdjustedProb, 0.95);
         
-        const atr = currentIndicators.atr || 0;
-        const bbw = currentIndicators.bbw || 0;
-        const volatilityFactor = (atr / currentTick.price + bbw) / 2;
-        kellyStake *= Math.max(0.3, 1 - volatilityFactor * 5);
-        kellyStake = Math.max(0.35, kellyStake);
+        // Ajuste de Volatilidade e Incerteza
+        const volatilityFactor = (currentIndicators.atr / currentTick.price + currentIndicators.bbw) / 2;
+        kellyStake *= Math.exp(-volatilityFactor * 3);
+        const entropy = calculateShannonEntropy(riseSum, fallSum);
+        kellyStake *= (0.5 + (1 - entropy) * 0.5);
+
+        // Boost para sinais premium
+        if (consensusProbability > 0.85 && regimeResult.confidence > 0.8) {
+            kellyStake *= 1.3;
+        }
+
+        const minStake = volatilityFactor > 0.5 ? 0.5 : 0.35;
+        kellyStake = Math.max(minStake, kellyStake);
         
         const microstructureVeto = (microFeatures?.pressure === 'sell' && consensusDirection === 'RISE') ||
                                    (microFeatures?.pressure === 'buy' && consensusDirection === 'FALL');
@@ -622,8 +644,8 @@ export function useRobotCouncilV2(
                     ? votingRobots.reduce((sum, v) => sum + durationToSeconds(v.optimalDuration, v.optimalDurationUnit) * v.bayesianProbability, 0) / totalConfidence
                     : durationRange[0];
                 
-                if (bbw > 0.08) weightedAvgDuration *= 0.75;
-                else if (bbw < 0.02) weightedAvgDuration *= 1.25;
+                if (currentIndicators.bbw > 0.08) weightedAvgDuration *= 0.75;
+                else if (currentIndicators.bbw < 0.02) weightedAvgDuration *= 1.25;
 
                 let finalDuration = Math.round(weightedAvgDuration);
                 let finalDurationUnit: DurationUnit = 's'; // Padrão para segundos

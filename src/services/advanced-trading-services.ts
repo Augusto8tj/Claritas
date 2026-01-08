@@ -532,7 +532,7 @@ export const calculatePerformanceMetrics = (
  * 
  * PARKINSON: Usa High-Low, mais eficiente que close-to-close
  * YANG-ZHANG: Mais robusto, considera Open-High-Low-Close
- * GARMAN-KLASS: Alternativa ao Yang-Zhang
+ * GARMAN-KLASS: Alternativa robusta
  */
 export const calculateVolatilityMetrics = (
   candles: CandleData[]
