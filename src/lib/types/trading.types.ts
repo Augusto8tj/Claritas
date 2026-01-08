@@ -174,8 +174,8 @@ export const IndicatorsSchema = z.object({
     short: z.number().nullable(),
     long: z.number().nullable(),
   }),
-  ema20: z.number().nullable(),
-  ema50: z.number().nullable(),
+  sma: z.array(z.number().nullable()),
+  ema: z.array(z.number().nullable()),
   vwap: z.array(z.number().nullable()),
   bb: z.object({
     upper: z.number().nullable(),
@@ -190,6 +190,7 @@ export const IndicatorsSchema = z.object({
   zScore: z.number().nullable(),
   awesomeOscillator: z.number().nullable(),
   trix: z.number().nullable(),
+  trixPrev: z.number().nullable(),
   roc: z.number().nullable(),
   parabolicSAR: z.number().nullable(),
   ichimoku: z.object({
@@ -200,7 +201,11 @@ export const IndicatorsSchema = z.object({
   }).nullable(),
   mfi: z.number().nullable(),
   obv: z.number().nullable(),
-  chandelierExit: z.number().nullable(),
+  obvPrev: z.number().nullable(),
+  chandelierExit: z.object({
+    exitLong: z.number().nullable(),
+    exitShort: z.number().nullable(),
+  }).nullable(),
   rvi: z.number().nullable(),
 });
 

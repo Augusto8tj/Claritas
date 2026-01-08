@@ -22,7 +22,7 @@
  */
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { useDerivApiV2 as useDerivApi } from './use-deriv-api-v2';
+import { useDerivApiV2 } from './use-deriv-api-v2';
 import { useToast } from '@/hooks/use-toast';
 import type { 
   RobotStrategy, DurationUnit, TickData, CandleData,
@@ -283,7 +283,7 @@ export function useRobotCouncilV2(
   chartData: CandleData[],
   dataVersion: number
 ) {
-  const { operationsLog, executeTrade, timePeriod, isConnected, durationLimits } = useDerivApi();
+  const { operationsLog, executeTrade, timePeriod, isConnected, durationLimits } = useDerivApiV2();
   const { user, loading: isAuthLoading } = useAuth();
   const { toast } = useToast();
   const { evolvedStrategies, evolveTrigger, evolutionHistory } = useStrategyEvolution(initialCouncilStrategies);
@@ -535,13 +535,13 @@ export function useRobotCouncilV2(
             if (technicalVote.confidence >= confidenceFactor) {
                 const perf = localRobotPerformance.find(p => p.id === safeRobotId);
                 
-                // ✅ Otimização 2: Ponderação Exponencial
-                let weight = 0.05;
+                // ✅ Otimização 2: Ponderação Exponencial por Sharpe Ratio
+                let weight = 0.05; // Peso base para robôs não testados
                 if (isMeritocracyOn && perf && (perf.wins + perf.losses) >= 10) {
                     if (perf.sharpeRatio > 0) {
                         weight = Math.pow(1 + perf.sharpeRatio, 2);
                     } else {
-                        weight = Math.exp(perf.sharpeRatio);
+                        weight = Math.exp(perf.sharpeRatio); 
                     }
                 }
 
@@ -588,16 +588,17 @@ export function useRobotCouncilV2(
         const edgeAdjustedProb = consensusProbability * regimeResult.confidence;
         let kellyStake = calculateKellyStake(dailyBalance, edgeAdjustedProb, 0.95);
         
-        const volatilityFactor = (currentIndicators.atr / currentTick.price + currentIndicators.bbw) / 2;
+        const volatilityFactor = (currentIndicators.atr || 0) / currentTick.price + (currentIndicators.bbw || 0);
         kellyStake *= Math.exp(-volatilityFactor * 3);
         const entropy = calculateShannonEntropy(riseSum, fallSum);
-        kellyStake *= (0.5 + (1 - entropy) * 0.5);
+        const certaintyFactor = 1 - entropy;
+        kellyStake *= (0.5 + certaintyFactor * 0.5);
 
-        if (consensusProbability > 0.85 && regimeResult.confidence > 0.8) {
+        if (consensusProbability > AGGRESSIVE_THRESHOLD / 100 && regimeResult.confidence > 0.8) {
             kellyStake *= 1.3;
         }
 
-        const minStake = volatilityFactor > 0.5 ? 0.5 : 0.35;
+        const minStake = volatilityFactor > 0.005 ? 0.5 : 0.35;
         kellyStake = Math.max(minStake, kellyStake);
         
         const microstructureVeto = (microFeatures?.pressure === 'sell' && consensusDirection === 'RISE') ||
@@ -642,8 +643,8 @@ export function useRobotCouncilV2(
                     ? votingRobots.reduce((sum, v) => sum + durationToSeconds(v.optimalDuration, v.optimalDurationUnit) * v.bayesianProbability, 0) / totalConfidence
                     : durationRange[0];
                 
-                if (currentIndicators.bbw > 0.08) weightedAvgDuration *= 0.75;
-                else if (currentIndicators.bbw < 0.02) weightedAvgDuration *= 1.25;
+                if (currentIndicators.bbw && currentIndicators.bbw > 0.08) weightedAvgDuration *= 0.75;
+                else if (currentIndicators.bbw && currentIndicators.bbw < 0.02) weightedAvgDuration *= 1.25;
 
                 let finalDuration = Math.round(weightedAvgDuration);
                 let finalDurationUnit: DurationUnit = 's'; // Padrão para segundos
@@ -692,7 +693,7 @@ export function useRobotCouncilV2(
                                 microstructure: microFeatures,
                                 indicators: currentIndicators,
                                 supervisionReason: 'Execução Automática V2.5',
-                                payout: kellyStake * 0.95,
+                                payout: kellyStake * 0.95, // Aproximação, o valor real vem depois
                                 entryPrice: tradeResult.entryPrice,
                             },
                             consensus: {

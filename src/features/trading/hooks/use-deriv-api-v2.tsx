@@ -476,6 +476,7 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
                 } else {
                     promise?.resolve(response);
                 }
+                // CORREÇÃO: Não retorna aqui, permite que o resto do handler execute
             }
 
             if (response.error && response.error.message) {
