@@ -237,16 +237,11 @@ export const DerivApiProvider = ({ children }: { children: ReactNode }) => {
   }, [toastQueue, toast]);
 
 
-  const makeRequest = useCallback(<T,>(request: object, noResponse = false): Promise<T> => {
+  const makeRequest = useCallback(<T,>(request: object): Promise<T> => {
     return new Promise((resolve, reject) => {
         const ws = wsRef.current;
         if (!ws || ws.readyState !== WebSocket.OPEN) {
             return reject(new Error("WebSocket is not connected."));
-        }
-        
-        if (noResponse) {
-            ws.send(JSON.stringify(request));
-            return resolve({} as T);
         }
 
         const req_id = Date.now() + Math.floor(Math.random() * 1000000);
@@ -272,7 +267,7 @@ export const DerivApiProvider = ({ children }: { children: ReactNode }) => {
 
         ws.send(JSON.stringify(payload));
     });
-}, []);
+  }, []); // Empty dependency array, relies on wsRef.current
   
     const addTradeAnnotation = useCallback((annotation: Omit<TradeAnnotation, 'id'>) => {
       const newAnnotation: TradeAnnotation = {
@@ -289,112 +284,111 @@ export const DerivApiProvider = ({ children }: { children: ReactNode }) => {
       ));
     }, []);
 
-const getHistoricalData = useCallback(async (symbol: string, style: 'ticks' | 'candles', count: number, period?: TimePeriod): Promise<ApiHistoricalData[]> => {
-    const request: any = {
-        ticks_history: symbol,
-        end: "latest",
-        count,
-        adjust_start_time: 1,
-        style: style,
-    };
-    
-    if (style === 'candles' && period) {
-        request.granularity = getGranularityForTimePeriod(period);
-    }
-    
-    try {
-        const response: any = await makeRequest(request);
-
-        if (response.history) {
-            return response.history.times.map((time: number, index: number) => ({
-                epoch: time,
-                price: response.history.prices[index],
-                volume: 1, // Ticks têm volume 1
-            }));
-        }
-      
-        if (response.candles) {
-            return response.candles.map((candle: any) => ({
-                epoch: candle.epoch,
-                open: parseFloat(candle.open),
-                high: parseFloat(candle.high),
-                low: parseFloat(candle.low),
-                close: parseFloat(candle.close),
-                volume: candle.tick_count || 1 
-            }));
+    const getHistoricalData = useCallback(async (symbol: string, style: 'ticks' | 'candles', count: number, period?: TimePeriod): Promise<ApiHistoricalData[]> => {
+        const request: any = {
+            ticks_history: symbol,
+            end: "latest",
+            count,
+            adjust_start_time: 1,
+            style: style,
+        };
+        
+        if (style === 'candles' && period) {
+            request.granularity = getGranularityForTimePeriod(period);
         }
         
-        return [];
-    } catch (error: any) {
-        console.error('[getHistoricalData] Error:', error);
-        throw error;
-    }
-}, [makeRequest]);
+        try {
+            const response: any = await makeRequest(request);
 
-
-const subscribeToMarketData = useCallback(async (symbol: string) => {
-    if (wsRef.current?.readyState !== WebSocket.OPEN) return;
-
-    if (activeSubscriptionIdRef.current) {
-        try { 
-            await makeRequest({ forget: activeSubscriptionIdRef.current }, true); 
-        } catch (e) { 
-            console.warn('[Market Data] Previous subscription could not be forgotten.'); 
-        }
-        activeSubscriptionIdRef.current = null;
-    }
-
-    setIsChartLoading(true);
-    setChartError(null);
-    setChartData([]);
-    setPriceTicks([]); 
-
-    try {
-        const historyStyle = chartType === 'Candle' ? 'candles' : 'ticks';
-        const history = await getHistoricalData(symbol, historyStyle, 1000, timePeriod);
+            if (response.history) {
+                return response.history.times.map((time: number, index: number) => ({
+                    epoch: time,
+                    price: response.history.prices[index],
+                    volume: 1, // Ticks têm volume 1
+                }));
+            }
         
-        const chartHistory = history.map(h => {
-             if(historyStyle === 'candles') {
-                return { epoch: h.epoch, open: h.open, high: h.high, low: h.low, close: h.close, volume: h.volume } as CandleData;
-             }
-             return { epoch: h.epoch, price: h.price } as TickData;
-        });
-
-        setChartData(chartHistory as ChartData[]);
-        if (historyStyle === 'ticks') {
-            setPriceTicks(history as TickData[]);
+            if (response.candles) {
+                return response.candles.map((candle: any) => ({
+                    epoch: candle.epoch,
+                    open: parseFloat(candle.open),
+                    high: parseFloat(candle.high),
+                    low: parseFloat(candle.low),
+                    close: parseFloat(candle.close),
+                    volume: candle.tick_count || 1 
+                }));
+            }
+            
+            return [];
+        } catch (error: any) {
+            console.error('[getHistoricalData] Error:', error);
+            throw error;
         }
-        setDataVersion(v => v + 1);
+    }, [makeRequest]);
 
-        let subRequest: any;
-        
-        if (chartType === 'Candle') {
-            subRequest = { 
-                ticks_history: symbol, 
-                style: 'candles', 
-                granularity: getGranularityForTimePeriod(timePeriod), 
-                subscribe: 1,
-                end: "latest",
-                count: 1,
-                adjust_start_time: 1
-            };
-        } else {
-            subRequest = { 
-                ticks: symbol, 
-                subscribe: 1 
-            };
+    const subscribeToMarketData = useCallback(async (symbol: string) => {
+        if (wsRef.current?.readyState !== WebSocket.OPEN) return;
+
+        if (activeSubscriptionIdRef.current) {
+            try { 
+                await makeRequest({ forget: activeSubscriptionIdRef.current });
+            } catch (e) { 
+                // Ignore if forget fails, we will subscribe to the new one anyway.
+            }
+            activeSubscriptionIdRef.current = null;
         }
-        
-        await makeRequest(subRequest, true);
-        console.log(`[Market Data] Subscription request sent for ${symbol} (${chartType}).`);
 
-    } catch (error: any) {
-        console.error(`[Market Data] Error for ${symbol}:`, error);
-        setChartError(error.message || 'Falha ao carregar dados do mercado.');
-    } finally {
-        setIsChartLoading(false);
-    }
-}, [getHistoricalData, makeRequest, chartType, timePeriod]);
+        setIsChartLoading(true);
+        setChartError(null);
+        setChartData([]);
+        setPriceTicks([]); 
+
+        try {
+            const historyStyle = chartType === 'Candle' ? 'candles' : 'ticks';
+            const history = await getHistoricalData(symbol, historyStyle, 1000, timePeriod);
+            
+            const chartHistory = history.map(h => {
+                if(historyStyle === 'candles') {
+                    return { epoch: h.epoch, open: h.open, high: h.high, low: h.low, close: h.close, volume: h.volume } as CandleData;
+                }
+                return { epoch: h.epoch, price: h.price } as TickData;
+            });
+
+            setChartData(chartHistory as ChartData[]);
+            if (historyStyle === 'ticks') {
+                setPriceTicks(history as TickData[]);
+            }
+            setDataVersion(v => v + 1);
+
+            let subRequest: any;
+            if (chartType === 'Candle') {
+                subRequest = { 
+                    ticks_history: symbol, 
+                    style: 'candles', 
+                    granularity: getGranularityForTimePeriod(timePeriod), 
+                    subscribe: 1,
+                    end: "latest",
+                    count: 1,
+                    adjust_start_time: 1
+                };
+            } else {
+                subRequest = { 
+                    ticks: symbol, 
+                    subscribe: 1 
+                };
+            }
+            
+            // For subscriptions, we don't wait for a response in the promise queue
+            wsRef.current.send(JSON.stringify(subRequest));
+            console.log(`[Market Data] Subscription request sent for ${symbol} (${chartType}).`);
+
+        } catch (error: any) {
+            console.error(`[Market Data] Error for ${symbol}:`, error);
+            setChartError(error.message || 'Falha ao carregar dados do mercado.');
+        } finally {
+            setIsChartLoading(false);
+        }
+    }, [getHistoricalData, makeRequest, chartType, timePeriod]);
 
 
     const executeTrade = useCallback(async (
@@ -537,6 +531,20 @@ const subscribeToMarketData = useCallback(async (symbol: string) => {
         try {
             const response = JSON.parse(event.data);
 
+            const reqId = response.req_id;
+            if (reqId && promisesRef.current.has(String(reqId))) {
+                const promise = promisesRef.current.get(String(reqId));
+                promisesRef.current.delete(String(reqId));
+                if (response.error) {
+                    const errorMessage = response.error.message || `Unknown API error. Code: ${response.error.code || 'N/A'}`;
+                    const errorDetails = JSON.stringify(response.error);
+                    promise?.reject(new Error(`${errorMessage} | Details: ${errorDetails}`));
+                } else {
+                    promise?.resolve(response);
+                }
+                return; // Stop further processing if it was a direct response
+            }
+
             if (response.error && response.error.message) {
                  if (
                     response.error.code !== 'AlreadySubscribed' && 
@@ -546,26 +554,10 @@ const subscribeToMarketData = useCallback(async (symbol: string) => {
                 }
             }
             
-            const reqId = response.req_id;
-            if (reqId && promisesRef.current.has(String(reqId))) {
-                const promise = promisesRef.current.get(String(reqId));
-                promisesRef.current.delete(String(reqId));
-                if (response.error && response.error.code !== 'InvalidtoSell') {
-                    const errorMessage = response.error.message || `Unknown API error. Code: ${response.error.code || 'N/A'}`;
-                    const errorDetails = JSON.stringify(response.error);
-                    promise?.reject(new Error(`${errorMessage} | Details: ${errorDetails}`));
-                } else {
-                    promise?.resolve(response);
-                }
-                return;
-            }
-
-            // Handle subscription confirmations
             if (response.subscription && response.subscription.id) {
                 const req = response.echo_req;
                 if (req && (req.ticks || req.ticks_history)) {
                     activeSubscriptionIdRef.current = response.subscription.id;
-                    console.log(`[Market Data] Confirmed subscription to ${req.ticks || req.ticks_history} - ID: ${response.subscription.id}`);
                 }
             }
 
@@ -602,7 +594,7 @@ const subscribeToMarketData = useCallback(async (symbol: string) => {
                                 
                                 // Refresh balance after a trade closes
                                 if (wsRef.current?.readyState === WebSocket.OPEN) {
-                                    wsRef.current.send(JSON.stringify({"balance": 1, "req_id": Date.now()}));
+                                    wsRef.current.send(JSON.stringify({"balance": 1}));
                                 }
 
                                 return { ...op, status: newStatus, result: contract.profit, exitPrice: parseFloat(contract.exit_tick_display_value), exitTimestamp: new Date(sellTime).toISOString() };
@@ -634,36 +626,19 @@ const subscribeToMarketData = useCallback(async (symbol: string) => {
                     break;
                 
                 case 'ohlc':
-                    if (chartType === 'Candle' && response.ohlc?.symbol === activeSymbol) {
-                        const ohlc = response.ohlc;
+                case 'candles':
+                    const candleData = response.ohlc || (response.candles && response.candles[0]);
+                    if (chartType === 'Candle' && candleData && candleData.symbol === activeSymbol) {
                         const newCandle: CandleData = {
-                            epoch: ohlc.open_time,
-                            open: parseFloat(ohlc.open),
-                            high: parseFloat(ohlc.high),
-                            low: parseFloat(ohlc.low),
-                            close: parseFloat(ohlc.close),
-                            volume: ohlc.tick_count || 1,
+                            epoch: candleData.open_time || candleData.epoch,
+                            open: parseFloat(candleData.open),
+                            high: parseFloat(candleData.high),
+                            low: parseFloat(candleData.low),
+                            close: parseFloat(candleData.close),
+                            volume: candleData.tick_count || 1,
                         };
                         setChartData(prev => addDataPoint(prev, newCandle));
                         setDataVersion(v => v + 1);
-                    }
-                    break;
-                
-                case 'candles':
-                    if (chartType === 'Candle' && response.candles?.length > 0) {
-                        const candle = response.candles[0];
-                        if (candle && (!activeSymbol || response.echo_req?.ticks_history === activeSymbol)) {
-                            const newCandle: CandleData = {
-                                epoch: candle.epoch,
-                                open: parseFloat(candle.open),
-                                high: parseFloat(candle.high),
-                                low: parseFloat(candle.low),
-                                close: parseFloat(candle.close),
-                                volume: candle.tick_count || 1,
-                            };
-                            setChartData(prev => addDataPoint(prev, newCandle));
-                            setDataVersion(v => v + 1);
-                        }
                     }
                     break;
             }
@@ -746,17 +721,7 @@ const subscribeToMarketData = useCallback(async (symbol: string) => {
     if (isConnected && activeSymbol) {
         subscribeToMarketData(activeSymbol);
     }
-    return () => {
-        if (activeSubscriptionIdRef.current && wsRef.current?.readyState === WebSocket.OPEN) {
-            try {
-                wsRef.current.send(JSON.stringify({ forget: activeSubscriptionIdRef.current }));
-            } catch (e) {
-                console.warn('[Deriv WS] Could not unsubscribe on cleanup:', e);
-            }
-            activeSubscriptionIdRef.current = null;
-        }
-    };
-  }, [isConnected, activeSymbol, subscribeToMarketData]);
+  }, [isConnected, activeSymbol, subscribeToMarketData, chartType, timePeriod]);
 
   const setAccountType = useCallback((type: AccountType) => {
     try {
