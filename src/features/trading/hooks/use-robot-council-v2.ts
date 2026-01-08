@@ -52,8 +52,8 @@ const TRADE_TIMEOUT_SECONDS = 3600;
 
 // ✅ Otimização 1: Limites de Confiança Alinhados
 const MIN_PAPER_CONFIDENCE = 60;    // Aumentado para 60 para treinar com sinais mais realistas
-const MIN_REAL_CONFIDENCE = 70;     // Nível de confiança para trades com dinheiro real
-const AGGRESSIVE_THRESHOLD = 85;    // Limiar para considerar um sinal de alta convicção
+const MIN_REAL_CONFIDENCE = 70;  // Mantém conservador para capital real
+const AGGRESSIVE_THRESHOLD = 85; // Para oportunidades de alta convicção
 
 // ════════════════════════════════════════════════════════════════════
 // 2. DEFINIÇÃO DE TIPOS
@@ -589,14 +589,16 @@ export function useRobotCouncilV2(
         let kellyStake = calculateKellyStake(dailyBalance, edgeAdjustedProb, 0.95);
         
         const volatilityFactor = (currentIndicators.atr || 0) / currentTick.price + (currentIndicators.bbw || 0);
-        kellyStake *= Math.exp(-volatilityFactor * 3);
-        const entropy = calculateShannonEntropy(riseSum, fallSum);
-        const certaintyFactor = 1 - entropy;
-        kellyStake *= (0.5 + certaintyFactor * 0.5);
+        const volAdjustment = Math.exp(-volatilityFactor * 3);
+        kellyStake *= volAdjustment;
 
         if (consensusProbability > AGGRESSIVE_THRESHOLD / 100 && regimeResult.confidence > 0.8) {
             kellyStake *= 1.3;
         }
+
+        const entropy = calculateShannonEntropy(riseSum, fallSum);
+        const certaintyFactor = 1 - entropy;
+        kellyStake *= (0.5 + certaintyFactor * 0.5);
 
         const minStake = volatilityFactor > 0.005 ? 0.5 : 0.35;
         kellyStake = Math.max(minStake, kellyStake);
