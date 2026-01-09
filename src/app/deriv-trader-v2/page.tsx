@@ -124,7 +124,7 @@ const IsolatedMarketChart = () => {
 const DerivTraderV2Core = () => {
     const { activeSymbol, priceTicks, dataVersion, operationsLog, chartData, sellContract } = useDerivApiV2();
     
-    // ✅ O ELO CRÍTICO: `priceTicks` é injetado no cérebro do conselho, juntamente com chartData
+    // ✅ CORREÇÃO: O `priceTicks` real é injetado no cérebro do conselho.
     const robotCouncil = useRobotCouncilV2(activeSymbol, priceTicks, chartData, dataVersion);
     const [activeTab, setActiveTab] = React.useState("desk");
     
