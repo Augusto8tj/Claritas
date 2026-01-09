@@ -10,7 +10,7 @@ import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { cn } from '@/lib/utils';
 import type { useRobotCouncilV2 } from '../../hooks/use-robot-council-v2';
-import type { MarketRegime } from '@/lib/types';
+import type { MarketRegime, RobotStrategy } from '@/lib/types';
 import {
   BrainCircuit, Activity, Waves, CandlestickChart, Bot, LayoutGrid, BarChart,
   TrendingUp, Cloud, HelpCircle, CheckCircle, XCircle, Trophy, Database, Timer, HardDrive, Brain, Zap, Scale, ShieldAlert, ShieldCheck, ShieldX
@@ -288,12 +288,9 @@ export function DebugCouncilView({ councilState, isCouncilAutopilotOn }: DebugCo
                     return (
                         <TableRow key={`${robotId}-${index}`} className={cn(isHolding ? "opacity-60 hover:opacity-100" : "bg-muted/10")}>
                         <TableCell className="font-medium">
-                            <div className="flex items-center gap-2">
+                            <div className="flex items-center gap-2" title={robotId}>
                                 {indicatorIcons[voteData.strategy?.strategyType || 'DEFAULT'] || <Bot className="h-4 w-4" />}
-                                <div className="flex flex-col">
-                                    <span className="text-xs font-bold">{voteData.strategy?.strategyType}</span>
-                                    <span className="text-[10px] text-muted-foreground truncate w-24" title={robotId}>{robotId}</span>
-                                </div>
+                                <span className="text-sm font-bold">{voteData.strategy?.strategyType}</span>
                             </div>
                         </TableCell>
                         <TableCell className="text-center">
