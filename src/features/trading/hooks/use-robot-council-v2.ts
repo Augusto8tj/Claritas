@@ -514,28 +514,12 @@ export function useRobotCouncilV2(
             const technicalVote = calculateTechnicalVote(robot, currentIndicators, validCandles);
             const safeRobotId = robot.id || robot.strategyType;
 
-            if (technicalVote.vote !== 'HOLD' && technicalVote.confidence >= MIN_PAPER_CONFIDENCE) {
-                 const hasActiveTrade = virtualTradesRef.current.some(t => t.robotId === safeRobotId);
-                 if (!hasActiveTrade) {
-                     const durationSec = durationToSeconds(technicalVote.optimalDuration, technicalVote.optimalDurationUnit);
-                     virtualTradesRef.current.push({
-                         id: `vt-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
-                         robotId: safeRobotId,
-                         vote: technicalVote.vote,
-                         entryPrice: currentTick.price,
-                         entryEpoch: currentTick.epoch,
-                         exitEpoch: currentTick.epoch + durationSec,
-                         regime: regimeResult.regime,
-                         microstructure: microFeatures!,
-                         stake: technicalVote.suggestedStake
-                     });
-                 }
-            }
-            
+            // ✅ CORREÇÃO INVERTIDA: Consenso primeiro, depois Arena
+            // 1. Participa do consenso (threshold > 70)
             if (technicalVote.confidence >= confidenceFactor) {
                 const perf = localRobotPerformance.find(p => p.id === safeRobotId);
                 
-                let weight = 0.05; 
+                let weight = 0.05; // Peso mínimo para robôs não testados
                 if (isMeritocracyOn && perf && (perf.wins + perf.losses) >= 10) {
                     if (perf.sharpeRatio > 0) {
                         weight = Math.pow(1 + perf.sharpeRatio, 2);
@@ -564,6 +548,26 @@ export function useRobotCouncilV2(
                 };
                 activeRobotsCount++;
             }
+            
+            // 2. Lógica separada para a Arena Virtual (threshold > 60)
+            if (technicalVote.vote !== 'HOLD' && technicalVote.confidence >= MIN_PAPER_CONFIDENCE) {
+                 const hasActiveTrade = virtualTradesRef.current.some(t => t.robotId === safeRobotId);
+                 if (!hasActiveTrade) {
+                     const durationSec = durationToSeconds(technicalVote.optimalDuration, technicalVote.optimalDurationUnit);
+                     virtualTradesRef.current.push({
+                         id: `vt-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
+                         robotId: safeRobotId,
+                         vote: technicalVote.vote,
+                         entryPrice: currentTick.price,
+                         entryEpoch: currentTick.epoch,
+                         exitEpoch: currentTick.epoch + durationSec,
+                         regime: regimeResult.regime,
+                         microstructure: microFeatures!,
+                         stake: technicalVote.suggestedStake
+                     });
+                     console.log(`📝 [Arena] ${robot.strategyType} → ${technicalVote.vote} (${technicalVote.confidence.toFixed(0)}%)`);
+                 }
+            }
         });
 
         let consensusDirection: 'RISE' | 'FALL' | 'HOLD' = 'HOLD';
@@ -583,6 +587,7 @@ export function useRobotCouncilV2(
 
         const currentSessionDuration = sessionStartTime ? (Date.now() - sessionStartTime) / 1000 : 0;
         
+        // Otimização Kelly Stake
         const edgeAdjustedProb = consensusProbability * regimeResult.confidence;
         let kellyStake = calculateKellyStake(dailyBalance, edgeAdjustedProb, 0.95);
         
