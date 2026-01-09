@@ -131,68 +131,78 @@ export function OperationsLog({ operations, sellContractV1, priceTicksV1, sellCo
                   })();
 
                   return (
-                    <div key={op.id} className="flex items-center">
-                    <div className="flex-1 space-y-1">
-                        <p className="text-sm font-medium leading-none flex items-center gap-1.5">
-                         <Tooltip>
-                            <TooltipTrigger>
-                                <div className="p-1 bg-muted rounded-full">
-                                    {initiatorIcons[op.initiator]}
-                                </div>
-                            </TooltipTrigger>
-                            <TooltipContent>
-                                <p>Iniciado por: {op.initiator}</p>
-                            </TooltipContent>
-                        </Tooltip>
-                        <span>{op.asset} - {op.direction === "rise" ? "Rise" : "Fall"}</span>
-                        </p>
-                        <div className="text-xs text-muted-foreground pl-9 space-y-1">
-                            <p>Entrada: ${op.stake.toFixed(2)} | Duração: {op.duration} {durationUnitLabels[op.durationUnit] || op.durationUnit}</p>
-                             <div className="flex items-center gap-1.5">
-                                <Clock className="h-3 w-3" />
-                                <span>{formatTime(op.timestamp)}</span>
-                                {op.exitTimestamp && (
-                                    <span className="flex items-center gap-1.5"><MoveRight className="h-3 w-3" /> {formatTime(op.exitTimestamp)}</span>
-                                )}
+                    <div key={op.id} className="flex items-center gap-4">
+                        {/* Ícone e Título da Operação */}
+                        <div className="flex-shrink-0">
+                            <Tooltip>
+                                <TooltipTrigger>
+                                    <div className="p-2 bg-muted rounded-full">
+                                        {initiatorIcons[op.initiator]}
+                                    </div>
+                                </TooltipTrigger>
+                                <TooltipContent>
+                                    <p>Iniciado por: {op.initiator}</p>
+                                </TooltipContent>
+                            </Tooltip>
+                        </div>
+                        
+                        {/* Grid de Detalhes */}
+                        <div className="flex-1 grid grid-cols-2 md:grid-cols-4 gap-x-4 gap-y-1 text-xs">
+                            <div className="col-span-2 md:col-span-4">
+                                <p className="text-sm font-medium leading-none">{op.asset} - {op.direction === "rise" ? "Rise" : "Fall"}</p>
                             </div>
-                            {op.entryPrice && (
-                                <div className="flex items-center gap-1.5 font-mono">
-                                    <DollarSign className="h-3 w-3"/>
-                                    <span>{op.entryPrice.toFixed(4)}</span>
-                                    {op.exitPrice && (
-                                       <span className="flex items-center gap-1.5"><MoveRight className="h-3 w-3" /> {op.exitPrice.toFixed(4)}</span>
-                                    )}
-                                </div>
+                            
+                            {/* Detalhes do Contrato */}
+                            <div className="text-muted-foreground">
+                                <p>Entrada: <span className="font-semibold text-foreground">${op.stake.toFixed(2)}</span></p>
+                                <p>Duração: <span className="font-semibold text-foreground">{op.duration} {durationUnitLabels[op.durationUnit] || op.durationUnit}</span></p>
+                            </div>
+
+                            {/* Timeline */}
+                            <div className="text-muted-foreground">
+                                <p className="flex items-center gap-1">
+                                    <Clock className="h-3 w-3"/>
+                                    <span>{formatTime(op.timestamp)}</span>
+                                </p>
+                                 <p className="flex items-center gap-1">
+                                    <MoveRight className="h-3 w-3"/>
+                                    <span>{op.exitTimestamp ? formatTime(op.exitTimestamp) : '--:--:--'}</span>
+                                </p>
+                            </div>
+                            
+                             {/* Preços */}
+                            <div className="text-muted-foreground font-mono col-span-2 md:col-span-1">
+                                <p>Entrada: @{op.entryPrice?.toFixed(4) || '...'}</p>
+                                <p>Saída: @{op.exitPrice?.toFixed(4) || '...'}</p>
+                            </div>
+
+                        </div>
+                        
+                        {/* Resultado Final */}
+                        <div className={cn("flex items-center gap-1.5 text-sm font-semibold w-28 justify-end",
+                            op.status === "pending" && "text-muted-foreground",
+                            op.status === "won" && "text-green-600",
+                            op.status === "lost" && "text-destructive"
+                        )}>
+                            {op.status === "pending" ? (
+                                <PendingOperationCounter
+                                    operation={op}
+                                    onSell={() => handleSell(op.id)}
+                                    isSelling={sellingContractId === op.id}
+                                    currentStatus={currentStatus}
+                                />
+                            ) : op.status === "won" ? (
+                                <>
+                                    <ArrowUp className="h-4 w-4" />
+                                    <span>+${op.result?.toFixed(2)}</span>
+                                </>
+                            ) : (
+                                <>
+                                    <ArrowDown className="h-4 w-4" />
+                                    <span>-${op.stake.toFixed(2)}</span>
+                                </>
                             )}
                         </div>
-                    </div>
-                    <div
-                        className={cn(
-                        "flex items-center gap-1.5 text-sm font-semibold",
-                        op.status === "pending" && "text-muted-foreground",
-                        op.status === "won" && "text-green-600",
-                        op.status === "lost" && "text-destructive"
-                        )}
-                    >
-                        {op.status === "pending" ? (
-                        <PendingOperationCounter
-                          operation={op}
-                          onSell={() => handleSell(op.id)}
-                          isSelling={sellingContractId === op.id}
-                          currentStatus={currentStatus}
-                        />
-                        ) : op.status === "won" ? (
-                        <>
-                            <ArrowUp className="h-4 w-4" />
-                            <span>+${op.result?.toFixed(2)}</span>
-                        </>
-                        ) : (
-                        <>
-                            <ArrowDown className="h-4 w-4" />
-                            <span>-${op.stake.toFixed(2)}</span>
-                        </>
-                        )}
-                    </div>
                     </div>
                   );
                 })
