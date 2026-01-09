@@ -467,14 +467,25 @@ export function useRobotCouncilV2(
         let removedOrphanedCount = 0;
         let localRobotPerformance = [...robotPerformance];
 
+        // LOG DE DEBUG
+        console.log(`🔍 [Virtual Trades Check] Total: ${virtualTradesRef.current.length}, Current Epoch: ${currentTick.epoch}`);
         virtualTradesRef.current.forEach(trade => {
             const isExpired = currentTick.epoch >= trade.exitEpoch;
             const isOrphaned = (currentTick.epoch - trade.entryEpoch) > TRADE_TIMEOUT_SECONDS;
-
+            
+            // LOG DE DEBUG
+            console.log(`🔍 [Trade ${trade.robotId}] Entry: ${trade.entryEpoch}, Exit: ${trade.exitEpoch}, Current: ${currentTick.epoch}, Expired: ${isExpired}, Orphaned: ${isOrphaned}`);
+            
             if (isExpired || isOrphaned) {
-                if(isOrphaned) removedOrphanedCount++;
+                if(isOrphaned) {
+                    console.log(`⚠️ [Orphaned] ${trade.robotId} - Trade muito antigo, removendo`);
+                    removedOrphanedCount++;
+                }
                 const exitPrice = currentTick.price;
                 const isWin = (trade.vote === 'RISE' && exitPrice > trade.entryPrice) || (trade.vote === 'FALL' && exitPrice < trade.entryPrice);
+                
+                // LOG DE DEBUG
+                console.log(`📊 [Trade Closed] ${trade.robotId} | Vote: ${trade.vote} | Entry: ${trade.entryPrice} | Exit: ${exitPrice} | Result: ${isWin ? 'WIN' : 'LOSS'}`);
                 
                 localRobotPerformance = localRobotPerformance.map(p => {
                     if (p.id !== trade.robotId) return p;
@@ -482,6 +493,10 @@ export function useRobotCouncilV2(
                     const newWins = p.wins + (isWin ? 1 : 0);
                     const newLosses = p.losses + (isWin ? 0 : 1);
                     const newTradeHistory = [...(p.tradeHistory || []), pnl];
+                    
+                    // LOG DE DEBUG
+                    console.log(`📈 [Performance Update] ${trade.robotId} | Wins: ${newWins}, Losses: ${newLosses}, Total: ${newWins + newLosses}, PnL: ${pnl}`);
+
                     const performanceMetrics = calculatePerformanceMetrics(newTradeHistory.map((profit, i) => ({ profit, timestamp: Date.now() - (newTradeHistory.length - i) * 1000 })));
 
                     return { 
@@ -502,24 +517,27 @@ export function useRobotCouncilV2(
         
         virtualTradesRef.current = stillActiveTrades;
         if (performanceChanged) {
-            setRobotPerformance(localRobotPerformance);
+            console.log(`💾 [Saving Performance] Total robots: ${localRobotPerformance.length}`);
+            setRobotPerformance([...localRobotPerformance]); // CRÍTICO: Cria novo array para forçar re-render
             evolveTrigger(localRobotPerformance);
+            console.log(`✅ [Performance Saved] ${localRobotPerformance.map(p => `${p.id}:${p.wins}W/${p.losses}L`).join(', ')}`);
         }
 
-        const localBayesianVotes: Record<string, BayesianVote> = {};
         let riseSum = 0, fallSum = 0, totalWeight = 0;
         let activeRobotsCount = 0;
+        const localBayesianVotes: Record<string, BayesianVote> = {};
 
         strategyCouncil.forEach(robot => {
+            const safeRobotId = robot.id || `${robot.strategyType}-${Date.now()}`;
             const technicalVote = calculateTechnicalVote(robot, currentIndicators, validCandles);
-            const safeRobotId = robot.id || robot.strategyType;
-
-            // ✅ CORREÇÃO INVERTIDA: Consenso primeiro, depois Arena
-            // 1. Participa do consenso (threshold > 70)
+            
+            // =====================================================
+            // BLOCO 1: PARTICIPAÇÃO NO CONSENSO (≥70%)
+            // =====================================================
             if (technicalVote.confidence >= confidenceFactor) {
                 const perf = localRobotPerformance.find(p => p.id === safeRobotId);
                 
-                let weight = 0.05; // Peso mínimo para robôs não testados
+                let weight = 0.05; 
                 if (isMeritocracyOn && perf && (perf.wins + perf.losses) >= 10) {
                     if (perf.sharpeRatio > 0) {
                         weight = Math.pow(1 + perf.sharpeRatio, 2);
@@ -547,26 +565,34 @@ export function useRobotCouncilV2(
                     sharpeRatio: perf?.sharpeRatio || 0
                 };
                 activeRobotsCount++;
-            }
-            
-            // 2. Lógica separada para a Arena Virtual (threshold > 60)
-            if (technicalVote.vote !== 'HOLD' && technicalVote.confidence >= MIN_PAPER_CONFIDENCE) {
-                 const hasActiveTrade = virtualTradesRef.current.some(t => t.robotId === safeRobotId);
-                 if (!hasActiveTrade) {
-                     const durationSec = durationToSeconds(technicalVote.optimalDuration, technicalVote.optimalDurationUnit);
-                     virtualTradesRef.current.push({
-                         id: `vt-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
-                         robotId: safeRobotId,
-                         vote: technicalVote.vote,
-                         entryPrice: currentTick.price,
-                         entryEpoch: currentTick.epoch,
-                         exitEpoch: currentTick.epoch + durationSec,
-                         regime: regimeResult.regime,
-                         microstructure: microFeatures!,
-                         stake: technicalVote.suggestedStake
-                     });
-                     console.log(`📝 [Arena] ${robot.strategyType} → ${technicalVote.vote} (${technicalVote.confidence.toFixed(0)}%)`);
-                 }
+                
+                // =====================================================
+                // CRÍTICO: CRIAR TRADE VIRTUAL PARA ROBÔS DO CONSENSO
+                // =====================================================
+                if (technicalVote.vote !== 'HOLD') {
+                    const hasActiveTrade = virtualTradesRef.current.some(t => t.robotId === safeRobotId);
+                    
+                    if (!hasActiveTrade) {
+                        const durationSec = Math.min(
+                            durationToSeconds(technicalVote.optimalDuration, technicalVote.optimalDurationUnit),
+                            300 // Máximo 5 minutos
+                        );
+                        
+                        virtualTradesRef.current.push({
+                            id: `vt-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
+                            robotId: safeRobotId,
+                            vote: technicalVote.vote,
+                            entryPrice: currentTick.price,
+                            entryEpoch: currentTick.epoch,
+                            exitEpoch: currentTick.epoch + durationSec,
+                            regime: regimeResult.regime,
+                            microstructure: microFeatures!,
+                            stake: technicalVote.suggestedStake
+                        });
+                        
+                        console.log(`✅ [Arena] ${safeRobotId} → ${technicalVote.vote} (${technicalVote.confidence}%) | Exit in ${durationSec}s`);
+                    }
+                }
             }
         });
 
