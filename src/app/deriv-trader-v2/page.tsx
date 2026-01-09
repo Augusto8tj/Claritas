@@ -90,7 +90,8 @@ const IsolatedMarketChart = () => {
         activeSymbol, operationsLog, chartData, isChartLoading, chartError, 
         chartType, setChartType, timePeriod, setTimePeriod, tradeAnnotations
     } = useDerivApiV2();
-
+    
+    // Passa priceTicks vazio para o gráfico porque ele só precisa de chartData
     const { indicators: councilIndicators } = useRobotCouncilV2(activeSymbol, [], chartData, 0);
 
     return (
@@ -123,7 +124,7 @@ const IsolatedMarketChart = () => {
 const DerivTraderV2Core = () => {
     const { activeSymbol, priceTicks, dataVersion, operationsLog, chartData, sellContract } = useDerivApiV2();
     
-    // ✅ O ELO CRÍTICO: `chartData` é injetado no cérebro do conselho
+    // ✅ O ELO CRÍTICO: `priceTicks` é injetado no cérebro do conselho, juntamente com chartData
     const robotCouncil = useRobotCouncilV2(activeSymbol, priceTicks, chartData, dataVersion);
     const [activeTab, setActiveTab] = React.useState("desk");
     

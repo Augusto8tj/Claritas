@@ -236,7 +236,7 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
   }, [toastQueue, toast]);
 
 
-  const makeRequest = useCallback(<T,>(request: object): Promise<T> => {
+  const makeRequest = useCallback(<T,>(request: object, noResponse = false): Promise<T> => {
     return new Promise((resolve, reject) => {
         const ws = wsRef.current;
         if (!ws || ws.readyState !== WebSocket.OPEN) {
@@ -246,25 +246,31 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
         const req_id = Date.now() + Math.floor(Math.random() * 1000000);
         const payload = { ...request, req_id };
         
-        const timeoutId = setTimeout(() => {
-            if (promisesRef.current.has(String(req_id))) {
-                promisesRef.current.delete(String(req_id));
-                reject(new Error(`Request timed out for req_id: ${req_id}`));
-            }
-        }, 15000); // 15 second timeout
+        if (!noResponse) {
+            const timeoutId = setTimeout(() => {
+                if (promisesRef.current.has(String(req_id))) {
+                    promisesRef.current.delete(String(req_id));
+                    reject(new Error(`Request timed out for req_id: ${req_id}`));
+                }
+            }, 15000); // 15 second timeout
+            
+            promisesRef.current.set(String(req_id), {
+                resolve: (value: any) => {
+                    clearTimeout(timeoutId);
+                    resolve(value);
+                },
+                reject: (reason: any) => {
+                    clearTimeout(timeoutId);
+                    reject(reason);
+                }
+            });
+        }
         
-        promisesRef.current.set(String(req_id), {
-            resolve: (value: any) => {
-                clearTimeout(timeoutId);
-                resolve(value);
-            },
-            reject: (reason: any) => {
-                clearTimeout(timeoutId);
-                reject(reason);
-            }
-        });
-
         ws.send(JSON.stringify(payload));
+        
+        if (noResponse) {
+            resolve({} as T);
+        }
     });
   }, []); 
 
@@ -464,21 +470,21 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
     ws.onmessage = (event) => {
         try {
             const response = JSON.parse(event.data);
-
             const reqId = response.req_id;
+            
+            // Prioridade 1: Tratar respostas a pedidos explícitos
             if (reqId && promisesRef.current.has(String(reqId))) {
                 const promise = promisesRef.current.get(String(reqId));
                 promisesRef.current.delete(String(reqId));
                 if (response.error) {
                     const errorMessage = response.error.message || `Unknown API error. Code: ${response.error.code || 'N/A'}`;
-                    const errorDetails = JSON.stringify(response.error);
-                    promise?.reject(new Error(`${errorMessage} | Details: ${errorDetails}`));
+                    promise?.reject(new Error(`${errorMessage}`));
                 } else {
                     promise?.resolve(response);
                 }
-                // CORREÇÃO: Não retorna aqui, permite que o resto do handler execute
             }
 
+            // Prioridade 2: Tratar streams de dados
             if (response.error && response.error.message) {
                  if (response.error.code !== 'AlreadySubscribed' && response.error.code !== 'SellNotAvailable') {
                   console.error(`[Deriv WS] Error:`, response.error.message);
@@ -491,7 +497,6 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
                     activeSubscriptionIdRef.current = response.subscription.id;
                 }
             }
-
 
             switch (response.msg_type) {
                 case 'balance':
@@ -594,8 +599,8 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
             setIsConnecting(false);
             setConnectionError(null);
             
-            ws.send(JSON.stringify({ "proposal_open_contract": 1, "subscribe": 1 }));
-            ws.send(JSON.stringify({ "balance": 1, "subscribe": 1 }));
+            makeRequest({ "proposal_open_contract": 1, "subscribe": 1 }, true);
+            makeRequest({ "balance": 1, "subscribe": 1 }, true);
             
             const assetsRes: any = await makeRequest({ active_symbols: 'full', product_type: 'basic' });
             
@@ -632,6 +637,8 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
   
     ws.onclose = (event) => {
         if (!wsRef.current) return;
+        wsRef.current = null; // Impede múltiplas execuções
+        
         const { wasClean, code, reason } = event;
         
         const pendingPromises = promisesRef.current ? Array.from(promisesRef.current.values()) : [];
@@ -650,7 +657,6 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
         setIsConnected(false);
         setIsConnecting(false);
         setAccountBalance({ balance: null, currency: null, loading: false });
-        wsRef.current = null;
     };
   
     ws.onerror = (errorEvent) => {
@@ -671,7 +677,7 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
 
     if (activeSubscriptionIdRef.current) {
         try { 
-            await makeRequest({ forget: activeSubscriptionIdRef.current }); 
+            await makeRequest({ forget: activeSubscriptionIdRef.current }, true); 
         } catch (e) { 
             // Ignore if forget fails, we will subscribe to the new one anyway.
         }
@@ -688,7 +694,7 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
         const history = await getHistoricalData(symbol, historyStyle, 1000, timePeriod);
         
         const chartHistory = history.map(h => {
-            if(historyStyle === 'candles') {
+            if(historyStyle === 'candles' && h.open) {
                 return { epoch: h.epoch, open: h.open, high: h.high, low: h.low, close: h.close, volume: h.volume } as CandleData;
             }
             return { epoch: h.epoch, price: h.price } as TickData;
@@ -718,8 +724,7 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
             };
         }
         
-        // For subscriptions, we don't wait for a response in the promise queue
-        wsRef.current.send(JSON.stringify(subRequest));
+        makeRequest(subRequest, true);
         console.log(`[Market Data] Subscription request sent for ${symbol} (${chartType}).`);
 
     } catch (error: any) {
@@ -734,7 +739,16 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
     if (isConnected && activeSymbol) {
         subscribeToMarketData(activeSymbol);
     }
-  }, [isConnected, activeSymbol, subscribeToMarketData, chartType, timePeriod]);
+  }, [isConnected, activeSymbol, subscribeToMarketData]);
+  
+  useEffect(() => {
+      if (isConnected && activeSymbol) {
+        setChartData([]);
+        setPriceTicks([]);
+        subscribeToMarketData(activeSymbol);
+      }
+  }, [chartType, timePeriod])
+
 
   const setAccountType = useCallback((type: AccountType) => {
     try {

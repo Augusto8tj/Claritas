@@ -535,8 +535,7 @@ export function useRobotCouncilV2(
             if (technicalVote.confidence >= confidenceFactor) {
                 const perf = localRobotPerformance.find(p => p.id === safeRobotId);
                 
-                // ✅ Otimização 2: Ponderação Exponencial por Sharpe Ratio
-                let weight = 0.05; // Peso base para robôs não testados
+                let weight = 0.05; 
                 if (isMeritocracyOn && perf && (perf.wins + perf.losses) >= 10) {
                     if (perf.sharpeRatio > 0) {
                         weight = Math.pow(1 + perf.sharpeRatio, 2);
@@ -584,7 +583,6 @@ export function useRobotCouncilV2(
 
         const currentSessionDuration = sessionStartTime ? (Date.now() - sessionStartTime) / 1000 : 0;
         
-        // ✅ Otimização 3: Cálculo de Kelly Stake Avançado
         const edgeAdjustedProb = consensusProbability * regimeResult.confidence;
         let kellyStake = calculateKellyStake(dailyBalance, edgeAdjustedProb, 0.95);
         
