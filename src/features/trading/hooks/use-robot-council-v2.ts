@@ -300,7 +300,7 @@ export function useRobotCouncilV2(
     return [];
   }, [chartData, priceTicks]);
 
-  const [strategyCouncil, setStrategyCouncil] = useState<RobotStrategy[]>(evolvedStrategies as RobotStrategy[]);
+  const [strategyCouncil, setStrategyCouncil] = useState<RobotStrategy[]>([]);
   const [isCouncilAutopilotOn, setIsCouncilAutopilotOn] = useState(false);
   const [isFetchingCouncil, setIsFetchingCouncil] = useState(false);
   const [tradeDecisionLog, setTradeDecisionLog] = useState<TradeDecisionLog[]>([]);
@@ -328,6 +328,7 @@ export function useRobotCouncilV2(
 
   const [robotPerformance, setRobotPerformance] = useState<EnhancedRobotPerformance[]>([]);
   const virtualTradesRef = useRef<VirtualTrade[]>([]);
+  const robotPerformanceRef = useRef<EnhancedRobotPerformance[]>([]); // ✅ SOLUÇÃO: Fonte da verdade
   const lastRegimeRef = useRef<MarketRegime>('ranging');
 
   // Configurações
@@ -348,26 +349,39 @@ export function useRobotCouncilV2(
   });
 
   useEffect(() => {
-    setStrategyCouncil(evolvedStrategies as RobotStrategy[]);
+      // ✅ SOLUÇÃO: Garante IDs estáveis na criação
+      setStrategyCouncil(evolvedStrategies.map(s => ({
+          ...s,
+          id: s.id || s.strategyType // Usa o ID pré-definido
+      })) as RobotStrategy[]);
   }, [evolvedStrategies]);
   
   const resetArenaPerformance = useCallback(() => {
     if (strategyCouncil.length === 0) return;
-    const initialPerformance: EnhancedRobotPerformance[] = strategyCouncil.map(robot => ({
-      id: robot.id, strategyType: robot.strategyType, strategy: robot, wins: 0, losses: 0, totalProfit: 0, winRate: 0,
-      sharpeRatio: 0, maxDrawdown: 0, avgWin: 0, avgLoss: 0, profitFactor: 0, kellyFraction: 0, effectiveRegimes: [],
-      monteCarloScore: 0, lastUpdated: Date.now(), tradeHistory: []
-    }));
-    setRobotPerformance(initialPerformance);
+    const initialPerformance: EnhancedRobotPerformance[] = strategyCouncil.map(robot => {
+        if (!robot.id) throw new Error("Robô sem ID no reset!");
+        return {
+          id: robot.id, strategyType: robot.strategyType, strategy: robot, wins: 0, losses: 0, totalProfit: 0, winRate: 0,
+          sharpeRatio: 0, maxDrawdown: 0, avgWin: 0, avgLoss: 0, profitFactor: 0, kellyFraction: 0, effectiveRegimes: [],
+          monteCarloScore: 0, lastUpdated: Date.now(), tradeHistory: []
+        };
+    });
+    robotPerformanceRef.current = initialPerformance; // ✅ SOLUÇÃO: Atualiza a ref
+    setRobotPerformance(initialPerformance); // Atualiza o estado para UI
     virtualTradesRef.current = [];
   }, [strategyCouncil]);
 
   useEffect(() => {
     if (!user || isAuthLoading) return;
     loadRobotPerformance(user.uid).then((stored) => {
-        if (stored && stored.length > 0) setRobotPerformance(stored as EnhancedRobotPerformance[]);
+        if (stored && stored.length > 0) {
+            robotPerformanceRef.current = stored as EnhancedRobotPerformance[]; // ✅ SOLUÇÃO
+            setRobotPerformance(stored as EnhancedRobotPerformance[]);
+        } else {
+            resetArenaPerformance();
+        }
     }).catch(console.error);
-  }, [user, isAuthLoading]);
+  }, [user, isAuthLoading, resetArenaPerformance]);
 
   const fetchStrategyCouncil = useCallback(async () => {
     if (!activeSymbol) {
@@ -377,16 +391,16 @@ export function useRobotCouncilV2(
     setIsFetchingCouncil(true);
     await new Promise((r) => setTimeout(r, 500));
     
-    const council = (evolvedStrategies as RobotStrategy[]).map(s => ({ ...s }));
-    setStrategyCouncil(council);
+    // O useEffect já lida com a criação dos IDs
+    setStrategyCouncil(evolvedStrategies as RobotStrategy[]);
     
-    if (robotPerformance.length === 0) resetArenaPerformance();
+    resetArenaPerformance();
     
     setSessionStartTime(Date.now());
     setIsCouncilAutopilotOn(true);
     setIsFetchingCouncil(false);
     toast({ title: '🚀 Sistema V2.5 Iniciado', description: 'Monitoramento em tempo real ativo.' });
-  }, [activeSymbol, evolvedStrategies, robotPerformance.length, resetArenaPerformance, toast]);
+  }, [activeSymbol, evolvedStrategies, resetArenaPerformance, toast]);
 
   const dissolveCouncil = useCallback(() => {
     setIsCouncilAutopilotOn(false);
@@ -465,7 +479,7 @@ export function useRobotCouncilV2(
         const stillActiveTrades: VirtualTrade[] = [];
         let performanceChanged = false;
         let removedOrphanedCount = 0;
-        let localRobotPerformance = [...robotPerformance];
+        let localRobotPerformance = robotPerformanceRef.current.map(p => ({ ...p, tradeHistory: [...(p.tradeHistory || [])] }));
 
         virtualTradesRef.current.forEach(trade => {
             const isExpired = currentTick.epoch >= trade.exitEpoch;
@@ -480,14 +494,14 @@ export function useRobotCouncilV2(
                 
                 console.log('🔴 TRADE FINALIZADO', { robotId: trade.robotId, profit: isWin ? VIRTUAL_STAKE * 0.95 : -VIRTUAL_STAKE });
 
-                localRobotPerformance = localRobotPerformance.map(p => {
-                    if (p.id !== trade.robotId) return p;
-                    
+                const perfIndex = localRobotPerformance.findIndex(p => p.id === trade.robotId);
+                if (perfIndex !== -1) {
                     performanceChanged = true;
+                    const perf = localRobotPerformance[perfIndex];
                     const pnl = isWin ? VIRTUAL_STAKE * 0.95 : -VIRTUAL_STAKE;
-                    const newWins = p.wins + (isWin ? 1 : 0);
-                    const newLosses = p.losses + (isWin ? 0 : 1);
-                    const newTradeHistory = [...(p.tradeHistory || []), pnl];
+                    const newWins = perf.wins + (isWin ? 1 : 0);
+                    const newLosses = perf.losses + (isWin ? 0 : 1);
+                    const newTradeHistory = [...(perf.tradeHistory || []), pnl];
                     
                     const performanceMetrics = calculatePerformanceMetrics(
                         newTradeHistory.map((profit, i) => ({ 
@@ -496,16 +510,17 @@ export function useRobotCouncilV2(
                         }))
                     );
 
-                    return { 
-                        ...p, 
+                    localRobotPerformance[perfIndex] = { 
+                        ...perf, 
                         wins: newWins, 
                         losses: newLosses, 
-                        totalProfit: p.totalProfit + pnl,
+                        totalProfit: perf.totalProfit + pnl,
                         lastUpdated: Date.now(),
                         tradeHistory: newTradeHistory,
                         ...performanceMetrics,
                     };
-                });
+                     console.log(`📈 [Performance Update] ${trade.robotId} | Wins: ${newWins}, Losses: ${newLosses}, Total: ${newWins + newLosses}, PnL: ${pnl}`);
+                }
 
             } else {
                 stillActiveTrades.push(trade);
@@ -514,7 +529,9 @@ export function useRobotCouncilV2(
         
         virtualTradesRef.current = stillActiveTrades;
         if (performanceChanged) {
-            setRobotPerformance([...localRobotPerformance]);
+            console.log(`💾 [Saving Performance] Total robots: ${localRobotPerformance.length}`);
+            robotPerformanceRef.current = localRobotPerformance; // ✅ SOLUÇÃO: Atualiza a ref
+            setRobotPerformance([...localRobotPerformance]); // Atualiza o estado da UI
             evolveTrigger(localRobotPerformance);
             if (user) {
                 saveRobotPerformance(user.uid, localRobotPerformance);
@@ -528,22 +545,24 @@ export function useRobotCouncilV2(
 
         strategyCouncil.forEach(robot => {
             if (!robot.id) {
-              console.error('🚨 Robô sem ID:', robot.strategyType);
-              return;
+                console.error('🚨 Robô sem ID:', robot.strategyType);
+                return;
             }
             const robotId = robot.id;
-            console.log(`🟢 SINAL GERADO`, { robotId: robotId, strategyType: robot.strategyType });
 
             const technicalVote = calculateTechnicalVote(robot, currentIndicators, validCandles);
             
-            if (technicalVote.confidence >= MIN_PAPER_CONFIDENCE && technicalVote.vote !== 'HOLD') {
+            // ✅ SOLUÇÃO: Garante que robôs do consenso SEMPRE treinem
+            if (technicalVote.confidence >= confidenceFactor && technicalVote.vote !== 'HOLD') {
+                
                 const hasActiveTrade = virtualTradesRef.current.some(t => t.robotId === robotId);
                 if (!hasActiveTrade) {
                     const durationSec = Math.min(
                         durationToSeconds(technicalVote.optimalDuration, technicalVote.optimalDurationUnit),
-                        300 
+                        300 // Máximo 5 minutos
                     );
-                    const newTrade = {
+                    
+                    virtualTradesRef.current.push({
                         id: `vt-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
                         robotId: robotId,
                         vote: technicalVote.vote,
@@ -553,15 +572,14 @@ export function useRobotCouncilV2(
                         regime: regimeResult.regime,
                         microstructure: microFeatures!,
                         stake: technicalVote.suggestedStake
-                    };
-                    virtualTradesRef.current.push(newTrade);
-                    console.log(`📌 TRADE VIRTUAL CRIADO`, { robotId: robotId, direction: newTrade.vote, entryPrice: newTrade.entryPrice });
+                    });
+                    console.log(`✅ [Arena] ${robotId} → ${technicalVote.vote} (${technicalVote.confidence}%) | Exit in ${durationSec}s`);
                 }
-            }
 
-            if (technicalVote.confidence >= confidenceFactor) {
-                const perf = localRobotPerformance.find(p => p.id === robotId);
-                
+                // A lógica de votação e consenso continua aqui dentro
+                const perf = robotPerformanceRef.current.find(p => p.id === robotId); // ✅ SOLUÇÃO: Lê da ref
+                console.log('📊 PERF NO VOTO', { robotId, wins: perf?.wins, losses: perf?.losses, winRate: perf?.winRate });
+
                 let weight = 0.05; 
                 if (isMeritocracyOn && perf && (perf.wins + perf.losses) >= 10) {
                     if (perf.sharpeRatio > 0) {
@@ -649,7 +667,7 @@ export function useRobotCouncilV2(
                 lastCleanup: removedOrphanedCount > 0 ? Date.now() : prev.systemMetrics.lastCleanup,
                 memoryUsageMB,
             },
-            robotPerformance: performanceChanged ? localRobotPerformance : prev.robotPerformance,
+            robotPerformance: performanceChanged ? [...localRobotPerformance] : prev.robotPerformance,
             consensusReached,
             consensusSum: { rise: riseSum, fall: fallSum },
             totalWeight,
@@ -748,7 +766,7 @@ export function useRobotCouncilV2(
 
   }, [
     isCouncilAutopilotOn, isConnected, activeSymbol, tickCandles, priceTicks, 
-    strategyCouncil, timePeriod, robotPerformance, confidenceFactor, isMeritocracyOn, consensusSensitivity, dailyBalance, sessionStartTime, user, durationRange, executeTrade, evolveTrigger, durationLimits, dataVersion
+    strategyCouncil, timePeriod, confidenceFactor, isMeritocracyOn, consensusSensitivity, dailyBalance, sessionStartTime, user, durationRange, executeTrade, evolveTrigger, durationLimits, dataVersion
   ]);
 
   useEffect(() => {
@@ -795,5 +813,7 @@ export function useRobotCouncilV2(
     supervisionStatus: { status: 'approved', message: 'Sistema Operacional v2.5' }
   };
 }
+
+    
 
     
