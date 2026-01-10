@@ -327,8 +327,9 @@ export function useRobotCouncilV2(
   });
 
   const [robotPerformance, setRobotPerformance] = useState<EnhancedRobotPerformance[]>([]);
+  const robotPerformanceRef = useRef<EnhancedRobotPerformance[]>([]);
   const virtualTradesRef = useRef<VirtualTrade[]>([]);
-  const robotPerformanceRef = useRef<EnhancedRobotPerformance[]>([]); // ✅ SOLUÇÃO: Fonte da verdade
+  
   const lastRegimeRef = useRef<MarketRegime>('ranging');
 
   // Configurações
@@ -349,13 +350,7 @@ export function useRobotCouncilV2(
   });
 
   useEffect(() => {
-    setStrategyCouncil(evolvedStrategies.map(s => {
-        if (!s.id) {
-          console.error("Evolved strategy missing ID:", s.strategyType);
-          return { ...s, id: `${s.strategyType}-${Math.random()}` }; // Fallback
-        }
-        return s;
-    }) as RobotStrategy[]);
+    setStrategyCouncil(evolvedStrategies as RobotStrategy[]);
   }, [evolvedStrategies]);
   
   const resetArenaPerformance = useCallback(() => {
@@ -476,44 +471,35 @@ export function useRobotCouncilV2(
         let performanceChanged = false;
         let removedOrphanedCount = 0;
         
+        // Loop que resolve os trades virtuais expirados
         virtualTradesRef.current.forEach(trade => {
             const isExpired = currentTick.epoch >= trade.exitEpoch;
             const isOrphaned = (currentTick.epoch - trade.entryEpoch) > TRADE_TIMEOUT_SECONDS;
             
             if (isExpired || isOrphaned) {
                 if(isOrphaned) removedOrphanedCount++;
-
+        
+                // Encontra o tick exato de saída para precisão
                 const exitTick = priceTicks.find(t => t.epoch >= trade.exitEpoch) || currentTick;
                 const exitPrice = exitTick.price;
                 const isWin = (trade.vote === 'RISE' && exitPrice > trade.entryPrice) || (trade.vote === 'FALL' && exitPrice < trade.entryPrice);
                 
                 const perfIndex = robotPerformanceRef.current.findIndex(p => p.id === trade.robotId);
+                
                 if (perfIndex !== -1) {
                     const perf = robotPerformanceRef.current[perfIndex];
                     const pnl = isWin ? VIRTUAL_STAKE * 0.95 : -VIRTUAL_STAKE;
-                    const newWins = perf.wins + (isWin ? 1 : 0);
-                    const newLosses = perf.losses + (isWin ? 0 : 1);
-                    const newTradeHistory = [...(perf.tradeHistory || []), pnl];
+                    perf.wins += (isWin ? 1 : 0);
+                    perf.losses += (isWin ? 0 : 1);
+                    perf.totalProfit += pnl;
+                    perf.tradeHistory.push(pnl);
+                    perf.lastUpdated = Date.now();
                     
-                    const performanceMetrics = calculatePerformanceMetrics(
-                        newTradeHistory.map((profit, i) => ({ 
-                            profit, 
-                            timestamp: Date.now() - (newTradeHistory.length - i) * 1000 
-                        }))
-                    );
-
-                    robotPerformanceRef.current[perfIndex] = { 
-                        ...perf, 
-                        wins: newWins, 
-                        losses: newLosses, 
-                        totalProfit: perf.totalProfit + pnl,
-                        lastUpdated: Date.now(),
-                        tradeHistory: newTradeHistory,
-                        ...performanceMetrics,
-                    };
+                    const metrics = calculatePerformanceMetrics(perf.tradeHistory.map((profit, i) => ({ profit, timestamp: Date.now() - (perf.tradeHistory.length - i) * 1000 })));
+                    
+                    robotPerformanceRef.current[perfIndex] = { ...perf, ...metrics };
                     performanceChanged = true;
                 }
-
             } else {
                 stillActiveTrades.push(trade);
             }
@@ -527,7 +513,7 @@ export function useRobotCouncilV2(
                 saveRobotPerformance(user.uid, robotPerformanceRef.current);
             }
         }
-
+        
         let riseSum = 0, fallSum = 0, totalWeight = 0;
         let activeRobotsCount = 0;
         const localBayesianVotes: Record<string, BayesianVote> = {};
@@ -540,7 +526,7 @@ export function useRobotCouncilV2(
             
             if (technicalVote.confidence >= confidenceFactor && technicalVote.vote !== 'HOLD') {
                 const perf = robotPerformanceRef.current.find(p => p.id === robotId);
-
+                
                 let weight = 0.05; 
                 if (isMeritocracyOn && perf && (perf.wins + perf.losses) >= 10) {
                     if (perf.sharpeRatio > 0) {
@@ -549,8 +535,8 @@ export function useRobotCouncilV2(
                         weight = Math.exp(perf.sharpeRatio); 
                     }
                 }
-
-                const winRate = perf ? perf.winRate : 50; 
+                
+                const winRate = perf?.winRate ?? 50; 
                 const posterior = bayesianUpdate(winRate/100, technicalVote.confidence/100);
                 const voteWeight = posterior * weight;
                 
@@ -587,7 +573,7 @@ export function useRobotCouncilV2(
                 }
             }
         });
-
+        
         let consensusDirection: 'RISE' | 'FALL' | 'HOLD' = 'HOLD';
         let consensusProbability = 0.5;
         if (totalWeight > 0) {
