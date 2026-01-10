@@ -288,6 +288,7 @@ export function useRobotCouncilV2(
   } = useStrategyEvolution(initialCouncilStrategies);
   
   const executionIdRef = useRef(0);
+  const processedRealTradesRef = useRef<Set<number>>(new Set());
   
   const [strategyCouncil, setStrategyCouncil] = useState<RobotStrategy[]>([]);
   const [isCouncilAutopilotOn, setIsCouncilAutopilotOn] = useState(false);
@@ -552,13 +553,16 @@ export function useRobotCouncilV2(
             for (let i = tradesToRemoveIndices.length - 1; i >= 0; i--) {
                 virtualTradesRef.current.splice(tradesToRemoveIndices[i], 1);
             }
-            // ✅ CORREÇÃO: Chama o gatilho para cada trade virtual concluído
-            for (let i=0; i < tradesToRemoveIndices.length; i++) {
-                evolveTrigger(robotPerformanceRef.current, 'virtual');
+            if (tradesToRemoveIndices.length > 0) {
+                evolveTrigger(robotPerformanceRef.current, 'virtual', tradesToRemoveIndices.length);
             }
         }
         
-        const lastRealOperation = operationsLog.find(op => op.status !== 'pending' && op.initiator === 'Conselho' && !tradeDecisionLog.find(l => l.contractId === op.id)?.processed);
+        const lastRealOperation = operationsLog.find(op => 
+            op.status !== 'pending' && 
+            op.initiator === 'Conselho' && 
+            !processedRealTradesRef.current.has(op.id)
+        );
 
         if (lastRealOperation) {
              const log = tradeDecisionLog.find(l => l.contractId === lastRealOperation.id);
@@ -579,9 +583,8 @@ export function useRobotCouncilV2(
                          performanceChanged = true;
                      }
                  });
-                 log.processed = true; 
-                 // ✅ CORREÇÃO: Chama o gatilho para o trade real concluído
-                 evolveTrigger(robotPerformanceRef.current, 'real');
+                 processedRealTradesRef.current.add(lastRealOperation.id);
+                 evolveTrigger(robotPerformanceRef.current, 'real', 1);
              }
         }
 
@@ -835,7 +838,7 @@ export function useRobotCouncilV2(
 
   }, [
     isCouncilAutopilotOn, isConnected, activeSymbol, validCandles, priceTicks, 
-    strategyCouncil, timePeriod, confidenceFactor, isMeritocracyOn, consensusSensitivity, dailyBalance, sessionStartTime, user, durationRange, executeTrade, evolveTrigger, durationLimits, dataVersion, sellContract, toast, tradeDecisionLog, isDynamicExitOn, memoizedIndicators
+    strategyCouncil, timePeriod, confidenceFactor, isMeritocracyOn, consensusSensitivity, dailyBalance, sessionStartTime, user, durationRange, executeTrade, evolveTrigger, durationLimits, sellContract, toast, tradeDecisionLog, isDynamicExitOn, memoizedIndicators
   ]);
 
   useEffect(() => {

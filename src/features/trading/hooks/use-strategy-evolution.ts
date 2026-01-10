@@ -359,16 +359,29 @@ export function useStrategyEvolution(initialStrategies: Omit<RobotStrategy, 'id'
 
   const evolveTrigger = useCallback((
     performanceData: RobotPerformance[],
-    tradeType: 'real' | 'virtual' // NOVO: parâmetro de tipo
+    tradeType: 'real' | 'virtual',
+    count: number = 1
   ) => {
     
-    tradeCountRef.current[tradeType]++;
+    tradeCountRef.current[tradeType] += count;
     const totalTrades = tradeCountRef.current.real + tradeCountRef.current.virtual;
+
+    console.log(`
+    🧬 [Evolution V3] Contadores Atualizados:
+       - Tipo: ${tradeType}
+       - Quantidade: +${count}
+       - Real: ${tradeCountRef.current.real}
+       - Virtual: ${tradeCountRef.current.virtual}
+       - Total: ${totalTrades}/${EVOLUTION_CONFIG.TRIGGER_THRESHOLD}
+       - Faltam: ${Math.max(0, EVOLUTION_CONFIG.TRIGGER_THRESHOLD - totalTrades)}
+    `);
 
     if (totalTrades < EVOLUTION_CONFIG.TRIGGER_THRESHOLD) {
       return;
     }
 
+    console.log(`🎉 [Evolution V3] LIMITE ATINGIDO! Iniciando geração ${generationRef.current + 1}...`);
+    
     // Reset contadores
     tradeCountRef.current = { real: 0, virtual: 0 };
     generationRef.current++;
@@ -394,7 +407,8 @@ export function useStrategyEvolution(initialStrategies: Omit<RobotStrategy, 'id'
       .slice(-EVOLUTION_CONFIG.WORST_COUNT)
       .filter(p => p.tradeHistory && p.tradeHistory.length >= EVOLUTION_CONFIG.MIN_TRADES_FOR_DEEP_ANALYSIS);
 
-    if (elitePerformers.length === 0 || worstPerformers.length === 0 || elitePerformers[0].totalProfit <= 0) {
+    if (elitePerformers.length === 0 || worstPerformers.length === 0 || (elitePerformers[0]?.totalProfit || 0) <= 0) {
+      console.warn("[Evolution] Não há robôs de elite com lucro ou piores robôs com dados suficientes. A evolução será adiada.");
       setIsEvolving(false);
       return;
     }
@@ -494,6 +508,6 @@ export function useStrategyEvolution(initialStrategies: Omit<RobotStrategy, 'id'
     evolutionProgress,
     currentGeneration: generationRef.current,
     tradesUntilEvolution: EVOLUTION_CONFIG.TRIGGER_THRESHOLD - (tradeCountRef.current.real + tradeCountRef.current.virtual),
-    tradeCounts: tradeCountRef.current, // Exporta a contagem detalhada
+    tradeCounts: tradeCountRef.current,
   };
 }

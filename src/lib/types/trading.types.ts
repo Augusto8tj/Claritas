@@ -244,6 +244,7 @@ export const TradeDecisionLogSchema = z.object({
   }),
   result: z.enum(['pending', 'won', 'lost']),
   pnl: z.number(),
+  processed: z.boolean().optional(),
 });
 
 export type TradeDecisionLog = z.infer<typeof TradeDecisionLogSchema>;
