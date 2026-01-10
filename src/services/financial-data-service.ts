@@ -1,4 +1,4 @@
-// /src/services/financial-data-service.ts
+// src/services/financial-data-service.ts
 import { db } from '@/lib/firebase';
 import { collection, getDocs, doc, setDoc, query, where, orderBy, getDoc, addDoc, deleteDoc } from 'firebase/firestore';
 import type { Goal, BudgetCategory, Transaction, RobotPerformance, TradeDecisionLog, EnhancedRobotPerformance } from '@/lib/types';
@@ -362,7 +362,13 @@ export async function saveEvolutionHistory(userId: string, history: EvolutionEve
     if (!userId || !history) return;
     const docRef = doc(db, 'users', userId, 'trading_data', 'evolution_history');
     
-    const sanitizedHistory = sanitizeForFirestore(history);
+    // Converte Date objects para ISO strings antes de salvar
+    const historyForFirestore = history.map(event => ({
+        ...event,
+        timestamp: event.timestamp.toISOString(),
+    }));
+
+    const sanitizedHistory = sanitizeForFirestore(historyForFirestore);
 
     setDocumentNonBlocking(docRef, { history: sanitizedHistory }, { merge: true });
 }
@@ -375,7 +381,7 @@ export async function loadEvolutionHistory(userId: string): Promise<EvolutionEve
         const docSnap = await getDoc(docRef);
         if (docSnap.exists()) {
             const data = docSnap.data();
-            // Firestore armazena timestamps como objetos, precisamos converter de volta para Date
+            // Firestore armazena timestamps como strings, precisamos converter de volta para Date
             const history = (data.history || []).map((event: any) => ({
                 ...event,
                 timestamp: new Date(event.timestamp)

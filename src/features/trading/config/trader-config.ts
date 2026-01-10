@@ -59,6 +59,25 @@ export const ARENA_CONFIG = {
   MIN_TRADES_FOR_EVOLUTION_ANALYSIS: 3,
 };
 
+
+export const EVOLUTION_CONFIG = {
+  // Número de trades totais (reais + virtuais) para acionar um ciclo de evolução
+  TRIGGER_THRESHOLD: 5,
+  
+  // Quantos dos melhores robôs são considerados "elite" para reprodução
+  ELITE_COUNT: 3,
+  
+  // Quantos dos piores robôs são substituídos
+  WORST_COUNT: 3,
+  
+  // Número mínimo de trades para que um robô seja elegível para análise de evolução
+  MIN_TRADES_FOR_DEEP_ANALYSIS: 3,
+  
+  // Força da mutação direcionada (ex: 0.1 = 10% de ajuste)
+  DIRECTED_MUTATION_STRENGTH: 0.15,
+};
+
+
 // ============================================================================
 // 3. PARÂMETROS DE GESTÃO DE RISCO E EXECUÇÃO
 // ============================================================================
