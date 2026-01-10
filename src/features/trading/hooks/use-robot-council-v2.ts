@@ -39,6 +39,7 @@ import {
   detectMarketRegime, calculateKellyStake, bayesianUpdate,
   extractMicrostructureFeatures, calculatePerformanceMetrics,
   calculateShannonEntropy,
+  type RegimeDetectionResult,
 } from '@/services/advanced-trading-services';
 import { TRADER_CONFIG, ARENA_CONFIG, RISK_CONFIG } from '@/features/trading/config/trader-config';
 
@@ -323,6 +324,9 @@ export function useRobotCouncilV2(
   const virtualTradesRef = useRef<VirtualTrade[]>([]);
   
   const lastRegimeRef = useRef<MarketRegime>('ranging');
+  
+  // Cache para o Regime de Mercado
+  const regimeCacheRef = useRef<{ result: RegimeDetectionResult; timestamp: number } | null>(null);
 
   // Configurações
   const [dailyBalance, setDailyBalance] = useState(100); 
@@ -437,8 +441,11 @@ export function useRobotCouncilV2(
   const validCandles = useMemo(() => validateCandles(tickCandles), [tickCandles]);
 
   const memoizedIndicators = useMemo(() => {
-    return calculateAllIndicators(validCandles, strategyCouncil, timePeriod, { duration: 5, unit: 'm' });
-  }, [validCandles, strategyCouncil, timePeriod]);
+      const lastCandleEpoch = validCandles[validCandles.length - 1]?.epoch;
+      if (!lastCandleEpoch) return null; // Prevenção
+      return calculateAllIndicators(validCandles, strategyCouncil, timePeriod, { duration: 5, unit: 'm' });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [validCandles.length, validCandles[validCandles.length - 1]?.epoch, timePeriod, strategyCouncil.length]);
 
 
   const runCouncilCycle = useCallback(() => {
@@ -520,17 +527,24 @@ export function useRobotCouncilV2(
             });
         }
         // ==========================================================
+        
+        // Otimização do Regime Detection com Cache
+        const now = Date.now();
+        const REGIME_CACHE_TTL = 5000; // 5 segundos
+        let regimeResult: RegimeDetectionResult;
 
-
-        let regimeResult = { regime: lastRegimeRef.current, confidence: 0.5, probabilities: { ranging: 1 } as any };
-        if (isValid(currentIndicators.adx)) {
-            regimeResult = detectMarketRegime(
+        if (regimeCacheRef.current && (now - regimeCacheRef.current.timestamp < REGIME_CACHE_TTL)) {
+            regimeResult = regimeCacheRef.current.result;
+        } else {
+             regimeResult = detectMarketRegime(
                 validCandles,
-                { adx: currentIndicators.adx, pdi: currentIndicators.pdi, ndi: currentIndicators.bbw, roc: currentIndicators.roc, atr: currentIndicators.atr },
+                { adx: currentIndicators.adx, pdi: currentIndicators.pdi, ndi: currentIndicators.ndi, bbw: currentIndicators.bbw, roc: currentIndicators.roc, atr: currentIndicators.atr },
                 lastRegimeRef.current,
                 undefined
             );
+            regimeCacheRef.current = { result: regimeResult, timestamp: now };
         }
+        
         lastRegimeRef.current = regimeResult.regime;
 
         const microFeatures = extractMicrostructureFeatures(priceTicks, validCandles);
