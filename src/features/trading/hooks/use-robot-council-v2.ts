@@ -40,20 +40,8 @@ import {
   extractMicrostructureFeatures, calculatePerformanceMetrics,
   calculateShannonEntropy,
 } from '@/services/advanced-trading-services';
+import { TRADER_CONFIG, ARENA_CONFIG, RISK_CONFIG } from '../../config/trader-config';
 
-// ════════════════════════════════════════════════════════════════════
-// 1. CONSTANTES E AJUSTES FINOS (OTIMIZADOS)
-// ════════════════════════════════════════════════════════════════════
-
-const VIRTUAL_STAKE = 1.0; 
-const REGIME_LOOKBACK = 30; 
-const THROTTLE_MS = 1000; 
-const TRADE_TIMEOUT_SECONDS = 3600; 
-
-// ✅ Otimização 1: Limites de Confiança Alinhados
-const MIN_PAPER_CONFIDENCE = 60;    // Aumentado para 60 para treinar com sinais mais realistas
-const MIN_REAL_CONFIDENCE = 70;  // Mantém conservador para capital real
-const AGGRESSIVE_THRESHOLD = 85; // Para oportunidades de alta convicção
 
 // ════════════════════════════════════════════════════════════════════
 // 2. DEFINIÇÃO DE TIPOS
@@ -292,7 +280,7 @@ export function useRobotCouncilV2(
   const executionIdRef = useRef(0);
   
   const tickCandles = useMemo(() => {
-    if (chartData && chartData.length >= REGIME_LOOKBACK) return chartData;
+    if (chartData && chartData.length >= TRADER_CONFIG.REGIME_LOOKBACK) return chartData;
     if (priceTicks && priceTicks.length > 0) {
       return priceTicks.map((t) => ({
           epoch: t.epoch, open: t.price, high: t.price, low: t.price, close: t.price, volume: 1 
@@ -344,7 +332,7 @@ export function useRobotCouncilV2(
   const [isMeritocracyOn, setIsMeritocracyOn] = useState(true);
   const [isDynamicExitOn, setIsDynamicExitOn] = useState(true);
   const [consensusSensitivity, setConsensusSensitivity] = useState(60); 
-  const [confidenceFactor, setConfidenceFactor] = useState(MIN_REAL_CONFIDENCE); // ✅ Otimização 1
+  const [confidenceFactor, setConfidenceFactor] = useState(RISK_CONFIG.MIN_REAL_CONFIDENCE);
   const [durationRange, setDurationRange] = useState<[number, number]>([15, 300]); 
   const [takeProfitThreshold, setTakeProfitThreshold] = useState(10);
   const [stopLossThreshold, setStopLossThreshold] = useState(20);
@@ -450,7 +438,7 @@ export function useRobotCouncilV2(
     if (!isCouncilAutopilotOn || !isConnected || !activeSymbol) return;
     
     const validCandles = validateCandles(tickCandles);
-    if (validCandles.length < REGIME_LOOKBACK || priceTicks.length === 0) return;
+    if (validCandles.length < TRADER_CONFIG.REGIME_LOOKBACK || priceTicks.length === 0) return;
 
     if (councilExecutionRef.current.isExecuting) return; 
     councilExecutionRef.current.isExecuting = true;
@@ -546,14 +534,14 @@ export function useRobotCouncilV2(
         
         const tradesToRemove = virtualTradesRef.current.filter(trade => {
             const isExpired = currentTick.epoch >= trade.exitEpoch;
-            const isOrphaned = (currentTick.epoch - trade.entryEpoch) > TRADE_TIMEOUT_SECONDS;
+            const isOrphaned = (currentTick.epoch - trade.entryEpoch) > TRADER_CONFIG.TRADE_TIMEOUT_SECONDS;
             return isExpired || isOrphaned;
         }).length;
         
         const processedTrades = virtualTradesRef.current.splice(0, tradesToRemove);
 
         processedTrades.forEach(trade => {
-            const isOrphaned = (currentTick.epoch - trade.entryEpoch) > TRADE_TIMEOUT_SECONDS;
+            const isOrphaned = (currentTick.epoch - trade.entryEpoch) > TRADER_CONFIG.TRADE_TIMEOUT_SECONDS;
             if (isOrphaned) removedOrphanedCount++;
 
             const exitTick = priceTicks.find(t => t.epoch >= trade.exitEpoch) || currentTick;
@@ -564,7 +552,7 @@ export function useRobotCouncilV2(
             
             if (perfIndex !== -1) {
                 const perf = robotPerformanceRef.current[perfIndex];
-                const pnl = isWin ? VIRTUAL_STAKE * 0.95 : -VIRTUAL_STAKE;
+                const pnl = isWin ? ARENA_CONFIG.VIRTUAL_STAKE * 0.95 : -ARENA_CONFIG.VIRTUAL_STAKE;
                 perf.wins += (isWin ? 1 : 0);
                 perf.losses += (isWin ? 0 : 1);
                 perf.totalProfit += pnl;
@@ -629,7 +617,7 @@ export function useRobotCouncilV2(
                 };
                 activeRobotsCount++;
                 
-                if (!hasActiveTrade && technicalVote.confidence >= MIN_PAPER_CONFIDENCE) {
+                if (!hasActiveTrade && technicalVote.confidence >= ARENA_CONFIG.MIN_PAPER_CONFIDENCE) {
                     const durationSec = Math.min(durationToSeconds(technicalVote.optimalDuration, technicalVote.optimalDurationUnit), 300);
                     virtualTradesRef.current.push({
                         id: `vt-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
@@ -664,22 +652,21 @@ export function useRobotCouncilV2(
         const currentSessionDuration = sessionStartTime ? (Date.now() - sessionStartTime) / 1000 : 0;
         
         const edgeAdjustedProb = consensusProbability * regimeResult.confidence;
-        let kellyStake = calculateKellyStake(dailyBalance, edgeAdjustedProb, 0.95);
+        let kellyStake = calculateKellyStake(dailyBalance, edgeAdjustedProb, 0.95, RISK_CONFIG.MAX_STAKE_PERCENTAGE);
         
         const volatilityFactor = (currentIndicators.atr || 0) / currentTick.price + (currentIndicators.bbw || 0);
-        const volAdjustment = Math.exp(-volatilityFactor * 3);
+        const volAdjustment = Math.exp(-volatilityFactor * RISK_CONFIG.VOLATILITY_ADJUSTMENT_FACTOR);
         kellyStake *= volAdjustment;
 
-        if (consensusProbability > AGGRESSIVE_THRESHOLD / 100 && regimeResult.confidence > 0.8) {
-            kellyStake *= 1.3;
+        if (consensusProbability > RISK_CONFIG.AGGRESSIVE_THRESHOLD / 100 && regimeResult.confidence > 0.8) {
+            kellyStake *= RISK_CONFIG.AGGRESSIVE_BOOST_FACTOR;
         }
 
         const entropy = calculateShannonEntropy(riseSum, fallSum);
         const certaintyFactor = 1 - entropy;
         kellyStake *= (0.5 + certaintyFactor * 0.5);
-
-        const minStake = volatilityFactor > 0.005 ? 0.5 : 0.35;
-        kellyStake = Math.max(minStake, kellyStake);
+        
+        kellyStake = Math.max(RISK_CONFIG.MIN_STAKE, kellyStake);
         
         const microstructureVeto = (microFeatures?.pressure === 'sell' && consensusDirection === 'RISE') ||
                                    (microFeatures?.pressure === 'buy' && consensusDirection === 'FALL');
@@ -803,7 +790,7 @@ export function useRobotCouncilV2(
 
   useEffect(() => {
     if (!isCouncilAutopilotOn) return;
-    const interval = setInterval(runCouncilCycle, THROTTLE_MS);
+    const interval = setInterval(runCouncilCycle, TRADER_CONFIG.THROTTLE_MS);
     return () => clearInterval(interval);
   }, [runCouncilCycle, isCouncilAutopilotOn]);
 
