@@ -87,29 +87,29 @@ const calculateRobotVote = (
         if (indicators.rsi! >= robot.strongSellThreshold!) { vote = 'FALL'; confidence = robot.strongConfidence; }
     }
     // STOCHASTIC
-    else if (robot.strategyType === 'STOCHASTIC' && isValid(indicators.stoch)) {
+    if (robot.strategyType === 'STOCHASTIC' && isValid(indicators.stoch)) {
         if (indicators.stoch! <= robot.weakBuyThreshold!) { vote = 'RISE'; confidence = robot.weakConfidence; }
         if (indicators.stoch! <= robot.strongBuyThreshold!) { vote = 'RISE'; confidence = robot.strongConfidence; }
         if (indicators.stoch! >= robot.weakSellThreshold!) { vote = 'FALL'; confidence = robot.weakConfidence; }
         if (indicators.stoch! >= robot.strongSellThreshold!) { vote = 'FALL'; confidence = robot.strongConfidence; }
     }
     // MOVING_AVERAGE_CROSS
-    else if (robot.strategyType === 'MOVING_AVERAGE_CROSS' && isValid(indicators.ma.short) && isValid(indicators.ma.long)) {
+    if (robot.strategyType === 'MOVING_AVERAGE_CROSS' && isValid(indicators.ma.short) && isValid(indicators.ma.long)) {
         if (indicators.ma.short! > indicators.ma.long!) { vote = 'RISE'; confidence = robot.weakConfidence; }
         if (indicators.ma.long! > indicators.ma.short!) { vote = 'FALL'; confidence = robot.weakConfidence; }
     }
     // MACD_CROSS
-    else if (robot.strategyType === 'MACD_CROSS' && isValid(indicators.macd.macd) && isValid(indicators.macd.signal)) {
+    if (robot.strategyType === 'MACD_CROSS' && isValid(indicators.macd.macd) && isValid(indicators.macd.signal)) {
         if (indicators.macd.macd! > indicators.macd.signal!) { vote = 'RISE'; confidence = robot.weakConfidence; }
         if (indicators.macd.signal! > indicators.macd.macd!) { vote = 'FALL'; confidence = robot.weakConfidence; }
     }
     // BOLLINGER_BANDS
-    else if (robot.strategyType === 'BOLLINGER_BANDS' && isValid(indicators.bb.lower) && isValid(indicators.bb.upper) && isValid(lastPrice)) {
+    if (robot.strategyType === 'BOLLINGER_BANDS' && isValid(indicators.bb.lower) && isValid(indicators.bb.upper) && isValid(lastPrice)) {
         if (lastPrice <= indicators.bb.lower!) { vote = 'RISE'; confidence = robot.weakConfidence; }
         if (lastPrice >= indicators.bb.upper!) { vote = 'FALL'; confidence = robot.weakConfidence; }
     }
     // ADX_TREND
-    else if (robot.strategyType === 'ADX_TREND' && isValid(indicators.adx)) {
+    if (robot.strategyType === 'ADX_TREND' && isValid(indicators.adx)) {
         if (indicators.adx! > (robot.trendStrengthThreshold || 25)) {
             if (isValid(indicators.pdi) && isValid(indicators.ndi)) {
                 if (indicators.pdi! > indicators.ndi!) { vote = 'RISE'; confidence = robot.weakConfidence; }
@@ -118,7 +118,7 @@ const calculateRobotVote = (
         }
     }
     // ICHIMOKU_CLOUD
-    else if (robot.strategyType === 'ICHIMOKU_CLOUD' && indicators.ichimoku) {
+    if (robot.strategyType === 'ICHIMOKU_CLOUD' && indicators.ichimoku) {
         const { tenkan, kijun, spanA, spanB } = indicators.ichimoku;
         if (isValid(tenkan) && isValid(kijun) && isValid(spanA) && isValid(spanB) && isValid(lastPrice)) {
             const cloudTop = Math.max(spanA, spanB);
@@ -128,7 +128,7 @@ const calculateRobotVote = (
         }
     }
      // Z_SCORE
-    else if (robot.strategyType === 'Z_SCORE' && isValid(indicators.zScore)) {
+    if (robot.strategyType === 'Z_SCORE' && isValid(indicators.zScore)) {
         if (indicators.zScore! <= -(robot.zScoreThreshold || 2.0)) { vote = 'RISE'; confidence = robot.strongConfidence; }
         if (indicators.zScore! >= (robot.zScoreThreshold || 2.0)) { vote = 'FALL'; confidence = robot.strongConfidence; }
     }
@@ -760,3 +760,5 @@ export function useRobotCouncil(
         evolutionHistory
     };
 }
+
+    
