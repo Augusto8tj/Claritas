@@ -283,7 +283,8 @@ export function useRobotCouncilV2(
     isEvolving,
     evolutionProgress,
     currentGeneration,
-    tradesUntilEvolution
+    tradesUntilEvolution,
+    tradeCounts,
   } = useStrategyEvolution(initialCouncilStrategies);
   
   const executionIdRef = useRef(0);
@@ -551,7 +552,10 @@ export function useRobotCouncilV2(
             for (let i = tradesToRemoveIndices.length - 1; i >= 0; i--) {
                 virtualTradesRef.current.splice(tradesToRemoveIndices[i], 1);
             }
-            evolveTrigger(robotPerformanceRef.current);
+            // ✅ CORREÇÃO: Chama o gatilho para cada trade virtual concluído
+            for (let i=0; i < tradesToRemoveIndices.length; i++) {
+                evolveTrigger(robotPerformanceRef.current, 'virtual');
+            }
         }
         
         const lastRealOperation = operationsLog.find(op => op.status !== 'pending' && op.initiator === 'Conselho' && !tradeDecisionLog.find(l => l.contractId === op.id)?.processed);
@@ -576,7 +580,8 @@ export function useRobotCouncilV2(
                      }
                  });
                  log.processed = true; 
-                 evolveTrigger(robotPerformanceRef.current);
+                 // ✅ CORREÇÃO: Chama o gatilho para o trade real concluído
+                 evolveTrigger(robotPerformanceRef.current, 'real');
              }
         }
 
@@ -727,7 +732,7 @@ export function useRobotCouncilV2(
                 ...prev.systemMetrics,
                 sessionDuration: currentSessionDuration,
                 activeVirtualTrades: virtualTradesRef.current.length,
-                totalVirtualTrades: prev.systemMetrics.totalVirtualTrades + (performanceChanged ? 1 : 0),
+                totalVirtualTrades: prev.systemMetrics.totalVirtualTrades + tradesToRemoveIndices.length,
                 activeRobotsCount,
                 orphanedTradesRemoved: prev.systemMetrics.orphanedTradesRemoved + removedOrphanedCount,
                 lastCleanup: removedOrphanedCount > 0 ? Date.now() : prev.systemMetrics.lastCleanup,
@@ -854,6 +859,7 @@ export function useRobotCouncilV2(
     evolutionProgress,
     currentGeneration,
     tradesUntilEvolution,
+    tradeCounts,
     virtualTradesRef,
     ...councilState,
     virtualTradeCount, // Exporta o contador
