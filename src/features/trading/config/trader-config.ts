@@ -45,8 +45,8 @@ export const ARENA_CONFIG = {
   MIN_PAPER_CONFIDENCE: 60,
 
   // Número de trades (reais + virtuais) antes de acionar um ciclo de evolução genética.
-  // Valor mais baixo acelera a adaptação, mas pode reagir a ruído.
-  EVOLUTION_TRIGGER_THRESHOLD: 10,
+  // ✅ OTIMIZADO: Valor reduzido para maior agilidade em alta frequência.
+  EVOLUTION_TRIGGER_THRESHOLD: 5,
   
   // Número de robôs de elite (melhor Sharpe) a serem usados como "pais" genéticos.
   ELITE_COUNT: 3,
@@ -56,7 +56,7 @@ export const ARENA_CONFIG = {
 
   // Número mínimo de trades que um robô deve ter para ser considerado na evolução.
   // Evita que robôs "inocentes" com 0 trades sejam punidos.
-  MIN_TRADES_FOR_EVOLUTION_ANALYSIS: 5,
+  MIN_TRADES_FOR_EVOLUTION_ANALYSIS: 3,
 };
 
 // ============================================================================
