@@ -434,6 +434,7 @@ export function useRobotCouncilV2(
                 robotPerformanceRef.current = updatedPerformance;
                 setRobotPerformance(updatedPerformance);
                 saveRobotPerformance(user.uid, updatedPerformance);
+                // ✅ CHAMADA CORRETA: O gatilho da evolução agora considera trades reais
                 evolveTrigger(updatedPerformance);
             }
         }
@@ -591,10 +592,12 @@ export function useRobotCouncilV2(
         }
         
         if (performanceChanged) {
-            setRobotPerformance([...robotPerformanceRef.current]);
-            evolveTrigger(robotPerformanceRef.current);
+            const updatedPerformance = Array.from(robotPerformanceRef.current);
+            setRobotPerformance(updatedPerformance);
+            // ✅ CHAMADA CORRETA: O gatilho da evolução agora considera trades virtuais
+            evolveTrigger(updatedPerformance);
             if (user) {
-                saveRobotPerformance(user.uid, robotPerformanceRef.current);
+                saveRobotPerformance(user.uid, updatedPerformance);
             }
         }
         
