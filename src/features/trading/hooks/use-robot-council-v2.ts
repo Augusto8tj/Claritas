@@ -558,33 +558,34 @@ export function useRobotCouncilV2(
             return isExpired || isOrphaned;
         }).length;
         
-        const processedTrades = virtualTradesRef.current.splice(0, tradesToRemove);
+        if (tradesToRemove > 0) {
+            const processedTrades = virtualTradesRef.current.splice(0, tradesToRemove);
+            processedTrades.forEach(trade => {
+                const isOrphaned = (currentTick.epoch - trade.entryEpoch) > TRADER_CONFIG.TRADE_TIMEOUT_SECONDS;
+                if (isOrphaned) removedOrphanedCount++;
 
-        processedTrades.forEach(trade => {
-            const isOrphaned = (currentTick.epoch - trade.entryEpoch) > TRADER_CONFIG.TRADE_TIMEOUT_SECONDS;
-            if (isOrphaned) removedOrphanedCount++;
-
-            const exitTick = priceTicks.find(t => t.epoch >= trade.exitEpoch) || currentTick;
-            const exitPrice = exitTick.price;
-            const isWin = (trade.vote === 'RISE' && exitPrice > trade.entryPrice) || (trade.vote === 'FALL' && exitPrice < trade.entryPrice);
-            
-            const perfIndex = robotPerformanceRef.current.findIndex(p => p.id === trade.robotId);
-            
-            if (perfIndex !== -1) {
-                const perf = robotPerformanceRef.current[perfIndex];
-                const pnl = isWin ? ARENA_CONFIG.VIRTUAL_STAKE * 0.95 : -ARENA_CONFIG.VIRTUAL_STAKE;
-                perf.wins += (isWin ? 1 : 0);
-                perf.losses += (isWin ? 0 : 1);
-                perf.totalProfit += pnl;
-                perf.tradeHistory.push({ profit: pnl, regime: trade.regime, timestamp: Date.now() });
-                perf.lastUpdated = Date.now();
+                const exitTick = priceTicks.find(t => t.epoch >= trade.exitEpoch) || currentTick;
+                const exitPrice = exitTick.price;
+                const isWin = (trade.vote === 'RISE' && exitPrice > trade.entryPrice) || (trade.vote === 'FALL' && exitPrice < trade.entryPrice);
                 
-                const metrics = calculatePerformanceMetrics(perf.tradeHistory);
+                const perfIndex = robotPerformanceRef.current.findIndex(p => p.id === trade.robotId);
                 
-                robotPerformanceRef.current[perfIndex] = { ...perf, ...metrics };
-                performanceChanged = true;
-            }
-        });
+                if (perfIndex !== -1) {
+                    const perf = robotPerformanceRef.current[perfIndex];
+                    const pnl = isWin ? ARENA_CONFIG.VIRTUAL_STAKE * 0.95 : -ARENA_CONFIG.VIRTUAL_STAKE;
+                    perf.wins += (isWin ? 1 : 0);
+                    perf.losses += (isWin ? 0 : 1);
+                    perf.totalProfit += pnl;
+                    perf.tradeHistory.push({ profit: pnl, regime: trade.regime, timestamp: Date.now() });
+                    perf.lastUpdated = Date.now();
+                    
+                    const metrics = calculatePerformanceMetrics(perf.tradeHistory);
+                    
+                    robotPerformanceRef.current[perfIndex] = { ...perf, ...metrics };
+                    performanceChanged = true;
+                }
+            });
+        }
         
         if (performanceChanged) {
             setRobotPerformance([...robotPerformanceRef.current]);
@@ -686,10 +687,15 @@ export function useRobotCouncilV2(
         const certaintyFactor = 1 - entropy;
         kellyStake *= (0.5 + certaintyFactor * 0.5);
         
-        kellyStake = Math.max(RISK_CONFIG.MIN_STAKE, kellyStake);
-        
-        const microstructureVeto = (microFeatures?.pressure === 'sell' && consensusDirection === 'RISE') ||
+        const pressureIntensity = microFeatures ? Math.abs(microFeatures.volumeImbalance - 0.5) : 0;
+        const isContraryPressure = (microFeatures?.pressure === 'sell' && consensusDirection === 'RISE') || 
                                    (microFeatures?.pressure === 'buy' && consensusDirection === 'FALL');
+        
+        if (isContraryPressure) {
+            kellyStake *= (1 - pressureIntensity * 1.5); // Reduz stake proporcionalmente à pressão contrária
+        }
+        
+        kellyStake = Math.max(RISK_CONFIG.MIN_STAKE, kellyStake);
 
         setCouncilState(prev => ({
             ...prev,
@@ -718,7 +724,7 @@ export function useRobotCouncilV2(
         setVirtualTradeCount(virtualTradesRef.current.length);
 
         if (consensusReached && consensusDirection !== 'HOLD' && user) {
-             if (kellyStake > 0 && !microstructureVeto) {
+             if (kellyStake > 0) {
                  
                  const votingRobots = Object.values(localBayesianVotes).filter(v => v.vote === consensusDirection);
                  const totalConfidence = votingRobots.reduce((sum, v) => sum + v.bayesianProbability, 0);
