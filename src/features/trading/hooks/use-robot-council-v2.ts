@@ -280,16 +280,6 @@ export function useRobotCouncilV2(
   
   const executionIdRef = useRef(0);
   
-  const tickCandles = useMemo(() => {
-    if (chartData && chartData.length >= TRADER_CONFIG.REGIME_LOOKBACK) return chartData;
-    if (priceTicks && priceTicks.length > 0) {
-      return priceTicks.map((t) => ({
-          epoch: t.epoch, open: t.price, high: t.price, low: t.price, close: t.price, volume: 1 
-      }));
-    }
-    return [];
-  }, [chartData, priceTicks]);
-
   const [strategyCouncil, setStrategyCouncil] = useState<RobotStrategy[]>([]);
   const [isCouncilAutopilotOn, setIsCouncilAutopilotOn] = useState(false);
   const [isFetchingCouncil, setIsFetchingCouncil] = useState(false);
@@ -327,6 +317,10 @@ export function useRobotCouncilV2(
   
   // Cache para o Regime de Mercado
   const regimeCacheRef = useRef<{ result: RegimeDetectionResult; timestamp: number } | null>(null);
+  
+  // NOVO: Histórico para Meta-Regime
+  const regimeHistoryRef = useRef<MarketRegime[]>([]);
+  const MAX_REGIME_HISTORY = 50;
 
   // Configurações
   const [dailyBalance, setDailyBalance] = useState(100); 
@@ -438,7 +432,7 @@ export function useRobotCouncilV2(
     }
   }, [operationsLog, tradeDecisionLog, user, isCouncilAutopilotOn, evolveTrigger]);
 
-  const validCandles = useMemo(() => validateCandles(tickCandles), [tickCandles]);
+  const validCandles = useMemo(() => validateCandles(chartData), [chartData]);
 
   const memoizedIndicators = useMemo(() => {
       const lastCandleEpoch = validCandles[validCandles.length - 1]?.epoch;
@@ -466,10 +460,7 @@ export function useRobotCouncilV2(
             councilExecutionRef.current.isExecuting = false;
             return;
         }
-
-        // ==========================================================
-        // GUARDIÃO DE POSIÇÃO ATIVO (STOP-LOSS DINÂMICO)
-        // ==========================================================
+        
         if (isDynamicExitOn) {
             const activeCouncilContracts = operationsLog.filter(op =>
                 op.status === 'pending' &&
@@ -526,9 +517,7 @@ export function useRobotCouncilV2(
                 }
             });
         }
-        // ==========================================================
         
-        // Otimização do Regime Detection com Cache
         const now = Date.now();
         const REGIME_CACHE_TTL = 5000; // 5 segundos
         let regimeResult: RegimeDetectionResult;
@@ -546,22 +535,23 @@ export function useRobotCouncilV2(
         }
         
         lastRegimeRef.current = regimeResult.regime;
+        
+        regimeHistoryRef.current.push(regimeResult.regime);
+        if (regimeHistoryRef.current.length > MAX_REGIME_HISTORY) {
+            regimeHistoryRef.current.shift();
+        }
 
         const microFeatures = extractMicrostructureFeatures(priceTicks, validCandles);
 
         let performanceChanged = false;
         let removedOrphanedCount = 0;
         
-        const tradesToRemove = virtualTradesRef.current.filter(trade => {
+        const tradesToRemoveIndices: number[] = [];
+        virtualTradesRef.current.forEach((trade, index) => {
             const isExpired = currentTick.epoch >= trade.exitEpoch;
             const isOrphaned = (currentTick.epoch - trade.entryEpoch) > TRADER_CONFIG.TRADE_TIMEOUT_SECONDS;
-            return isExpired || isOrphaned;
-        }).length;
-        
-        if (tradesToRemove > 0) {
-            const processedTrades = virtualTradesRef.current.splice(0, tradesToRemove);
-            processedTrades.forEach(trade => {
-                const isOrphaned = (currentTick.epoch - trade.entryEpoch) > TRADER_CONFIG.TRADE_TIMEOUT_SECONDS;
+            if (isExpired || isOrphaned) {
+                tradesToRemoveIndices.push(index);
                 if (isOrphaned) removedOrphanedCount++;
 
                 const exitTick = priceTicks.find(t => t.epoch >= trade.exitEpoch) || currentTick;
@@ -584,7 +574,13 @@ export function useRobotCouncilV2(
                     robotPerformanceRef.current[perfIndex] = { ...perf, ...metrics };
                     performanceChanged = true;
                 }
-            });
+            }
+        });
+        
+        if (tradesToRemoveIndices.length > 0) {
+            for (let i = tradesToRemoveIndices.length - 1; i >= 0; i--) {
+                virtualTradesRef.current.splice(tradesToRemoveIndices[i], 1);
+            }
         }
         
         if (performanceChanged) {
@@ -692,7 +688,26 @@ export function useRobotCouncilV2(
                                    (microFeatures?.pressure === 'buy' && consensusDirection === 'FALL');
         
         if (isContraryPressure) {
-            kellyStake *= (1 - pressureIntensity * 1.5); // Reduz stake proporcionalmente à pressão contrária
+            kellyStake *= (1 - pressureIntensity * 1.5);
+        }
+        
+        if (regimeHistoryRef.current.length >= 20) {
+          const countRegimeChanges = (history: MarketRegime[]) => {
+            return history.reduce((count, regime, i) => {
+              if (i > 0 && regime !== history[i - 1]) return count + 1;
+              return count;
+            }, 0);
+          };
+          const changes = countRegimeChanges(regimeHistoryRef.current);
+          const changeRate = changes / regimeHistoryRef.current.length;
+          
+          if (changeRate > 0.5) {
+            kellyStake *= 0.5;
+            console.log('[Meta-Regime] Mercado caótico detectado. Stake reduzido em 50%.');
+          } else if (changeRate < 0.15) {
+            kellyStake *= 1.2;
+            console.log('[Meta-Regime] Mercado estável. Stake aumentado em 20%.');
+          }
         }
         
         kellyStake = Math.max(RISK_CONFIG.MIN_STAKE, kellyStake);
