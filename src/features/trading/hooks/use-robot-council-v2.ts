@@ -15,7 +15,7 @@
  *    - Robôs com Sharpe negativo são severamente penalizados.
  *    - Robôs não testados têm influência mínima.
  * 
- * 3. KELLY STAKE AVANÇADO:
+ * 3. KELLY CRITERION AVANÇADO:
  *    - A probabilidade de consenso é ajustada pela confiança do regime de mercado.
  *    - Boost de 30% para sinais de altíssima convicção.
  *    - Penalização por entropia: stake é reduzido se o consenso for incerto.
@@ -40,7 +40,7 @@ import {
   extractMicrostructureFeatures, calculatePerformanceMetrics,
   calculateShannonEntropy,
 } from '@/services/advanced-trading-services';
-import { TRADER_CONFIG, ARENA_CONFIG, RISK_CONFIG } from '../../config/trader-config';
+import { TRADER_CONFIG, ARENA_CONFIG, RISK_CONFIG } from '@/features/trading/config/trader-config';
 
 
 // ════════════════════════════════════════════════════════════════════
