@@ -551,9 +551,9 @@ export function useRobotCouncilV2(
             for (let i = tradesToRemoveIndices.length - 1; i >= 0; i--) {
                 virtualTradesRef.current.splice(tradesToRemoveIndices[i], 1);
             }
+            evolveTrigger(robotPerformanceRef.current);
         }
         
-        // UNIFICAÇÃO DA ATUALIZAÇÃO E EVOLUÇÃO
         const lastRealOperation = operationsLog.find(op => op.status !== 'pending' && op.initiator === 'Conselho' && !tradeDecisionLog.find(l => l.contractId === op.id)?.processed);
 
         if (lastRealOperation) {
@@ -575,7 +575,7 @@ export function useRobotCouncilV2(
                          performanceChanged = true;
                      }
                  });
-                 log.processed = true; // Marca como processado
+                 log.processed = true; 
              }
         }
 
@@ -603,8 +603,8 @@ export function useRobotCouncilV2(
             if (technicalVote.confidence >= confidenceFactor && technicalVote.vote !== 'HOLD') {
                 const perf = robotPerformanceRef.current.find(p => p.id === robotId);
                 
-                let weight = 0.05; 
-                if (isMeritocracyOn && perf && (perf.wins + perf.losses) >= 10) {
+                let weight = 0.01; // ✅ OTIMIZAÇÃO: Peso base para robôs "estagiários"
+                if (isMeritocracyOn && perf && (perf.wins + perf.losses) >= 10) { // ✅ SÓ VOTA COM PESO SE TIVER 10+ TRADES
                     if (perf.sharpeRatio > 0) {
                         weight = Math.pow(1 + perf.sharpeRatio, 2);
                     } else {
@@ -666,47 +666,52 @@ export function useRobotCouncilV2(
 
         const currentSessionDuration = sessionStartTime ? (Date.now() - sessionStartTime) / 1000 : 0;
         
-        const edgeAdjustedProb = consensusProbability * regimeResult.confidence;
-        let kellyStake = calculateKellyStake(dailyBalance, edgeAdjustedProb, 0.95);
-        
-        const volatilityFactor = (currentIndicators.atr || 0) / currentTick.price + (currentIndicators.bbw || 0);
-        const volAdjustment = Math.exp(-volatilityFactor * RISK_CONFIG.VOLATILITY_ADJUSTMENT_FACTOR);
-        kellyStake *= volAdjustment;
+        let kellyStake = 0;
+        if (isDynamicRiskOn) {
+            const edgeAdjustedProb = consensusProbability * regimeResult.confidence;
+            kellyStake = calculateKellyStake(dailyBalance, edgeAdjustedProb, 0.95);
 
-        if (consensusProbability > RISK_CONFIG.AGGRESSIVE_THRESHOLD / 100 && regimeResult.confidence > 0.8) {
-            kellyStake *= RISK_CONFIG.AGGRESSIVE_BOOST_FACTOR;
-        }
+            const volatilityFactor = (currentIndicators.atr || 0) / currentTick.price + (currentIndicators.bbw || 0);
+            const volAdjustment = Math.exp(-volatilityFactor * RISK_CONFIG.VOLATILITY_ADJUSTMENT_FACTOR);
+            kellyStake *= volAdjustment;
 
-        const entropy = calculateShannonEntropy(riseSum, fallSum);
-        const certaintyFactor = 1 - entropy;
-        kellyStake *= (0.5 + certaintyFactor * 0.5);
-        
-        if (microFeatures) {
-            const pressureIntensity = Math.abs(microFeatures.volumeImbalance - 0.5);
-            const isContraryPressure = (microFeatures.pressure === 'sell' && consensusDirection === 'RISE') || 
-                                       (microFeatures.pressure === 'buy' && consensusDirection === 'FALL');
-        
-            if (isContraryPressure) {
-                const reductionFactor = 1 - pressureIntensity * 1.5; // Reduz até 75%
-                kellyStake *= Math.max(0.25, reductionFactor);
+            if (consensusProbability > RISK_CONFIG.AGGRESSIVE_THRESHOLD / 100 && regimeResult.confidence > 0.8) {
+                kellyStake *= RISK_CONFIG.AGGRESSIVE_BOOST_FACTOR;
             }
-        }
-        
-        if (regimeHistoryRef.current.length >= 20) {
-          const countRegimeChanges = (history: MarketRegime[]) => {
-            return history.reduce((count, regime, i) => {
-              if (i > 0 && regime !== history[i - 1]) return count + 1;
-              return count;
-            }, 0);
-          };
-          const changes = countRegimeChanges(regimeHistoryRef.current);
-          const changeRate = changes / regimeHistoryRef.current.length;
-          
-          if (changeRate > 0.5) {
-            kellyStake *= 0.5;
-          } else if (changeRate < 0.15) {
-            kellyStake *= 1.2;
-          }
+
+            const entropy = calculateShannonEntropy(riseSum, fallSum);
+            const certaintyFactor = 1 - entropy;
+            kellyStake *= (0.5 + certaintyFactor * 0.5);
+            
+            if (microFeatures) {
+                const pressureIntensity = Math.abs(microFeatures.volumeImbalance - 0.5);
+                const isContraryPressure = (microFeatures.pressure === 'sell' && consensusDirection === 'RISE') || 
+                                           (microFeatures.pressure === 'buy' && consensusDirection === 'FALL');
+            
+                if (isContraryPressure) {
+                    const reductionFactor = 1 - pressureIntensity * 1.5; 
+                    kellyStake *= Math.max(0.25, reductionFactor);
+                }
+            }
+            
+            if (regimeHistoryRef.current.length >= 20) {
+              const countRegimeChanges = (history: MarketRegime[]) => {
+                return history.reduce((count, regime, i) => {
+                  if (i > 0 && regime !== history[i - 1]) return count + 1;
+                  return count;
+                }, 0);
+              };
+              const changes = countRegimeChanges(regimeHistoryRef.current);
+              const changeRate = changes / regimeHistoryRef.current.length;
+              
+              if (changeRate > 0.5) {
+                kellyStake *= 0.5;
+              } else if (changeRate < 0.15) {
+                kellyStake *= 1.2;
+              }
+            }
+        } else {
+             kellyStake = 1.0; // Stake fixo se o risco dinâmico estiver desligado
         }
         
         kellyStake = Math.max(RISK_CONFIG.MIN_STAKE, kellyStake);
