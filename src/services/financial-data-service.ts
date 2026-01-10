@@ -346,7 +346,7 @@ export async function getTradeDecisionLogs(userId: string): Promise<TradeDecisio
         return [];
     }
     const logCollectionRef = collection(db, `users/${userId}/decision_logs`);
-    const q = query(logCollectionRef);
+    const q = query(logCollectionRef, orderBy('timestamp', 'desc')); // Ordena por mais recente
     try {
         const snapshot = await getDocs(q);
         return snapshot.docs.map(d => d.data() as TradeDecisionLog);

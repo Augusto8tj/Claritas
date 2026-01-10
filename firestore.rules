@@ -49,7 +49,7 @@ service cloud.firestore {
       
       // --- LOGS DE DECISÃO (Trading) ---
       match /decision_logs/{logId} {
-         allow read, write: if isOwner(userId);
+         allow read, list, write: if isOwner(userId);
       }
       
       // --- PERFORMANCE ROBÔS ---

@@ -14,7 +14,7 @@ const EVOLUTION_CONFIG = {
   // ✅ REDUZIDO: De 10 para 5 trades totais (virtual + real)
   TRIGGER_THRESHOLD: 5,
   
-  // Número de robôs de elite (top performers)
+  // Número de robôs de elite
   ELITE_COUNT: 3,
   
   // Número de robôs a substituir
@@ -22,12 +22,6 @@ const EVOLUTION_CONFIG = {
   
   // Mínimo de trades para análise profunda
   MIN_TRADES_FOR_DEEP_ANALYSIS: 3,
-  
-  // Taxa de mutação (0.1 = 10% de mudança nos parâmetros)
-  MUTATION_RATE: 0.15,
-  
-  // Força da mutação direcionada (maior = mais agressivo na correção)
-  DIRECTED_MUTATION_STRENGTH: 0.3,
 };
 
 // ============================================================================
