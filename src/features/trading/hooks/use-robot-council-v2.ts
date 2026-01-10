@@ -438,7 +438,7 @@ export function useRobotCouncilV2(
     const lastCandleEpoch = validCandles[validCandles.length - 1]?.epoch;
     if (!lastCandleEpoch) return null;
     return calculateAllIndicators(validCandles, strategyCouncil, timePeriod, { duration: 5, unit: 'm' });
-  }, [validCandles.length, validCandles[validCandles.length - 1]?.epoch, timePeriod, strategyCouncil.length]);
+  }, [validCandles, timePeriod, strategyCouncil]);
 
 
   const runCouncilCycle = useCallback(() => {
