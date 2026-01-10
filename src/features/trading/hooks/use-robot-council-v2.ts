@@ -104,6 +104,7 @@ export interface CouncilState {
     consensusReached: boolean;
     consensusSum: { rise: number, fall: number};
     totalWeight: number;
+    virtualTradeCount: number; // NOVO: Gatilho de renderização
 }
 
 export interface DashboardData {
@@ -306,7 +307,10 @@ export function useRobotCouncilV2(
   const [tradeDecisionLog, setTradeDecisionLog] = useState<TradeDecisionLog[]>([]);
   const [sessionStartTime, setSessionStartTime] = useState<number | null>(null);
 
-  const [councilState, setCouncilState] = useState<CouncilState>({
+  // NOVO: Gatilho de renderização para a UI
+  const [virtualTradeCount, setVirtualTradeCount] = useState(0);
+
+  const [councilState, setCouncilState] = useState<Omit<CouncilState, 'virtualTradeCount'>>({
     indicators: null,
     currentRegime: { regime: 'ranging', confidence: 0, probabilities: { trending_bull: 0.2, trending_bear: 0.2, ranging: 0.4, high_volatility: 0.1, breakout: 0.1 } },
     microstructure: null,
@@ -366,6 +370,7 @@ export function useRobotCouncilV2(
     robotPerformanceRef.current = initialPerformance;
     setRobotPerformance(initialPerformance);
     virtualTradesRef.current = [];
+    setVirtualTradeCount(0); // Reseta o contador
   }, [strategyCouncil]);
 
   useEffect(() => {
@@ -403,7 +408,6 @@ export function useRobotCouncilV2(
     toast({ title: '⏸️ Sistema Pausado', description: 'Mesa Operacional suspensa.' });
   }, [toast]);
   
-  // ✅ CORREÇÃO: Unificação do aprendizado com trades reais.
   useEffect(() => {
     if (!operationsLog || operationsLog.length === 0 || !user || !isCouncilAutopilotOn) return;
 
@@ -436,8 +440,6 @@ export function useRobotCouncilV2(
                 robotPerformanceRef.current = updatedPerformance;
                 setRobotPerformance(updatedPerformance);
                 saveRobotPerformance(user.uid, updatedPerformance);
-                
-                // ✅ GATILHO DE EVOLUÇÃO: Agora também é acionado por trades reais!
                 evolveTrigger(updatedPerformance);
             }
         }
@@ -477,15 +479,16 @@ export function useRobotCouncilV2(
 
         const microFeatures = extractMicrostructureFeatures(priceTicks, validCandles);
 
-        const stillActiveTrades: VirtualTrade[] = [];
         let performanceChanged = false;
         let removedOrphanedCount = 0;
+        let tradesToRemove = 0;
         
         virtualTradesRef.current.forEach(trade => {
             const isExpired = currentTick.epoch >= trade.exitEpoch;
             const isOrphaned = (currentTick.epoch - trade.entryEpoch) > TRADE_TIMEOUT_SECONDS;
             
             if (isExpired || isOrphaned) {
+                tradesToRemove++;
                 if(isOrphaned) removedOrphanedCount++;
         
                 const exitTick = priceTicks.find(t => t.epoch >= trade.exitEpoch) || currentTick;
@@ -508,12 +511,13 @@ export function useRobotCouncilV2(
                     robotPerformanceRef.current[perfIndex] = { ...perf, ...metrics };
                     performanceChanged = true;
                 }
-            } else {
-                stillActiveTrades.push(trade);
             }
         });
         
-        virtualTradesRef.current = stillActiveTrades;
+        if (tradesToRemove > 0) {
+            virtualTradesRef.current.splice(0, tradesToRemove);
+        }
+
         if (performanceChanged) {
             setRobotPerformance([...robotPerformanceRef.current]);
             evolveTrigger(robotPerformanceRef.current);
@@ -531,7 +535,8 @@ export function useRobotCouncilV2(
             if (!robotId) return;
 
             const technicalVote = calculateTechnicalVote(robot, currentIndicators, validCandles);
-            
+            const hasActiveTrade = virtualTradesRef.current.some(t => t.robotId === robotId);
+
             if (technicalVote.confidence >= confidenceFactor && technicalVote.vote !== 'HOLD') {
                 const perf = robotPerformanceRef.current.find(p => p.id === robotId);
                 
@@ -564,7 +569,6 @@ export function useRobotCouncilV2(
                 };
                 activeRobotsCount++;
                 
-                const hasActiveTrade = virtualTradesRef.current.some(t => t.robotId === robotId);
                 if (!hasActiveTrade && technicalVote.confidence >= MIN_PAPER_CONFIDENCE) {
                     const durationSec = Math.min(durationToSeconds(technicalVote.optimalDuration, technicalVote.optimalDurationUnit), 300);
                     virtualTradesRef.current.push({
@@ -644,6 +648,8 @@ export function useRobotCouncilV2(
             effectiveThreshold: calculatedEffectiveThreshold
         }));
         
+        setVirtualTradeCount(virtualTradesRef.current.length);
+
         if (consensusReached && consensusDirection !== 'HOLD' && user) {
              if (kellyStake > 0 && !microstructureVeto) {
                  
@@ -752,6 +758,7 @@ export function useRobotCouncilV2(
     evolutionHistory,
     virtualTradesRef,
     ...councilState,
+    virtualTradeCount, // Exporta o contador
     dailyBalance,
     setDailyBalance,
     dailyTarget,
@@ -779,5 +786,3 @@ export function useRobotCouncilV2(
     supervisionStatus: { status: 'approved', message: 'Sistema Operacional v2.5' }
   };
 }
-
-    
