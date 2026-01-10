@@ -43,20 +43,6 @@ export const ARENA_CONFIG = {
   // Limiar de confiança MÍNIMO para que um voto de robô se torne
   // um trade virtual na arena. Ajuda a treinar com sinais de maior qualidade.
   MIN_PAPER_CONFIDENCE: 60,
-
-  // Número de trades (reais + virtuais) antes de acionar um ciclo de evolução genética.
-  // ✅ OTIMIZADO: Valor reduzido para maior agilidade em alta frequência.
-  EVOLUTION_TRIGGER_THRESHOLD: 5,
-  
-  // Número de robôs de elite (melhor Sharpe) a serem usados como "pais" genéticos.
-  ELITE_COUNT: 3,
-
-  // Número de robôs de pior desempenho a serem substituídos em cada ciclo.
-  WORST_COUNT: 3,
-
-  // Número mínimo de trades que um robô deve ter para ser considerado na evolução.
-  // Evita que robôs "inocentes" com 0 trades sejam punidos.
-  MIN_TRADES_FOR_EVOLUTION_ANALYSIS: 3,
 };
 
 

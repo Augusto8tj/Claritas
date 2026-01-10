@@ -162,7 +162,7 @@ const diagnoseRobot = (
       diagnosis: 'Dados insuficientes',
       worstRegime: null,
       bestRegime: null,
-      rootCause: 'Menos de 3 trades executados',
+      rootCause: `Menos de ${EVOLUTION_CONFIG.MIN_TRADES_FOR_DEEP_ANALYSIS} trades executados`,
       recommendation: 'Aguardar mais dados antes de mutar',
     };
   }
@@ -367,20 +367,17 @@ export function useStrategyEvolution(initialStrategies: Omit<RobotStrategy, 'id'
     const totalTrades = tradeCountRef.current.real + tradeCountRef.current.virtual;
 
     console.log(`
-    🧬 [Evolution V3] Contadores Atualizados:
-       - Tipo: ${tradeType}
-       - Quantidade: +${count}
-       - Real: ${tradeCountRef.current.real}
-       - Virtual: ${tradeCountRef.current.virtual}
-       - Total: ${totalTrades}/${EVOLUTION_CONFIG.TRIGGER_THRESHOLD}
-       - Faltam: ${Math.max(0, EVOLUTION_CONFIG.TRIGGER_THRESHOLD - totalTrades)}
+🧬 [Evolution V3] Contadores:
+   Real: ${tradeCountRef.current.real}
+   Virtual: ${tradeCountRef.current.virtual}
+   Total: ${totalTrades}/${EVOLUTION_CONFIG.TRIGGER_THRESHOLD}
     `);
-
+    
     if (totalTrades < EVOLUTION_CONFIG.TRIGGER_THRESHOLD) {
       return;
     }
 
-    console.log(`🎉 [Evolution V3] LIMITE ATINGIDO! Iniciando geração ${generationRef.current + 1}...`);
+    console.log(`🎉 [Evolution V3] LIMITE ATINGIDO! Iniciando...`);
     
     // Reset contadores
     tradeCountRef.current = { real: 0, virtual: 0 };
@@ -407,13 +404,36 @@ export function useStrategyEvolution(initialStrategies: Omit<RobotStrategy, 'id'
       .slice(-EVOLUTION_CONFIG.WORST_COUNT)
       .filter(p => p.tradeHistory && p.tradeHistory.length >= EVOLUTION_CONFIG.MIN_TRADES_FOR_DEEP_ANALYSIS);
 
-    if (elitePerformers.length === 0 || worstPerformers.length === 0 || (elitePerformers[0]?.totalProfit || 0) <= 0) {
-      console.warn("[Evolution] Não há robôs de elite com lucro ou piores robôs com dados suficientes. A evolução será adiada.");
+    console.log(`
+📊 [Evolution V3] Análise de Robôs:
+   Total de robôs: ${performanceData.length}
+   Elite (top ${EVOLUTION_CONFIG.ELITE_COUNT}): ${elitePerformers.length}
+   Piores (bottom ${EVOLUTION_CONFIG.WORST_COUNT}): ${worstPerformers.length}
+   
+   Elite IDs: ${elitePerformers.map(e => e.id).join(', ')}
+   Piores IDs: ${worstPerformers.map(w => w.id).join(', ')}
+    `);
+      
+    if (elitePerformers.length === 0) {
+      console.warn('❌ [Evolution V3] ABORTADO: Nenhum robô de elite com dados suficientes');
       setIsEvolving(false);
       return;
     }
-
-    setEvolutionProgress(40);
+    
+    if (worstPerformers.length === 0) {
+      console.warn('❌ [Evolution V3] ABORTADO: Nenhum robô pior com dados suficientes');
+      setIsEvolving(false);
+      return;
+    }
+    
+    if (elitePerformers[0].totalProfit <= 0) {
+      console.warn('❌ [Evolution V3] ABORTADO: Elite não é lucrativa');
+      console.log(`   Elite #1: ${elitePerformers[0].strategyType} com lucro ${elitePerformers[0].totalProfit}`);
+      setIsEvolving(false);
+      return;
+    }
+    
+    console.log(`✅ [Evolution V3] Todas as validações passaram! Mutando...`);
     
     const newEvent: EvolutionEvent = {
       timestamp: new Date(),
