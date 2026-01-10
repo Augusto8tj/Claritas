@@ -4,6 +4,8 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import type { RobotStrategy, EnhancedRobotPerformance as RobotPerformance, MarketRegime } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
+import { useAuth } from '@/features/auth/hooks/use-auth';
+import { loadEvolutionHistory, saveEvolutionHistory } from '@/services/financial-data-service';
 
 // ============================================================================
 // PARÂMETROS DA EVOLUÇÃO V3.0 (OTIMIZADOS PARA ALTA FREQUÊNCIA)
@@ -335,6 +337,7 @@ const performDirectedMutation = (
 
 export function useStrategyEvolution(initialStrategies: Omit<RobotStrategy, 'id'>[]) {
   const { toast } = useToast();
+  const { user, loading: isAuthLoading } = useAuth();
   
   const [evolvedStrategies, setEvolvedStrategies] = useState<Omit<RobotStrategy, 'id'>[]>(initialStrategies);
   const [evolutionHistory, setEvolutionHistory] = useState<EvolutionEvent[]>([]);
@@ -343,35 +346,41 @@ export function useStrategyEvolution(initialStrategies: Omit<RobotStrategy, 'id'
   const generationRef = useRef(0);
   const lastEvolutionTimeRef = useRef(Date.now());
   
-  // ✅ NOVO: Estado para debug/visualização
   const [isEvolving, setIsEvolving] = useState(false);
   const [evolutionProgress, setEvolutionProgress] = useState(0);
+
+  // Carrega o histórico do Firestore na inicialização
+  useEffect(() => {
+    if (!user || isAuthLoading) return;
+    
+    const loadHistory = async () => {
+        try {
+            const storedHistory = await loadEvolutionHistory(user.uid);
+            if (storedHistory && storedHistory.length > 0) {
+                setEvolutionHistory(storedHistory);
+                generationRef.current = storedHistory[0]?.generation || 0;
+            }
+        } catch (error) {
+            console.error("[EvolutionV3] Falha ao carregar histórico:", error);
+        }
+    };
+    
+    loadHistory();
+  }, [user, isAuthLoading]);
 
   const evolveTrigger = useCallback((performanceData: RobotPerformance[]) => {
     tradeCountRef.current += 1;
     
-    console.log(`[Evolution V3] Trade count: ${tradeCountRef.current}/${EVOLUTION_CONFIG.TRIGGER_THRESHOLD}`);
-
     if (tradeCountRef.current < EVOLUTION_CONFIG.TRIGGER_THRESHOLD) {
       return;
     }
 
-    // ✅ RESET do contador
     tradeCountRef.current = 0;
     generationRef.current++;
     setIsEvolving(true);
     setEvolutionProgress(0);
 
-    console.log(`🧬 [Evolution V3] INICIANDO GERAÇÃO ${generationRef.current}`);
-
-    // ────────────────────────────────────────────────────────────────
-    // FASE 1: SELEÇÃO DE ELITE E PIORES
-    // ────────────────────────────────────────────────────────────────
-    
-    setEvolutionProgress(20);
-    
     const sortedPerformance = [...performanceData].sort((a, b) => {
-      // Prioriza Sharpe Ratio, mas considera win rate como desempate
       const sharpeA = a.sharpeRatio || -Infinity;
       const sharpeB = b.sharpeRatio || -Infinity;
       if (Math.abs(sharpeA - sharpeB) < 0.1) {
@@ -380,6 +389,8 @@ export function useStrategyEvolution(initialStrategies: Omit<RobotStrategy, 'id'
       return sharpeB - sharpeA;
     });
 
+    setEvolutionProgress(20);
+    
     const elitePerformers = sortedPerformance
       .slice(0, EVOLUTION_CONFIG.ELITE_COUNT)
       .filter(p => p.tradeHistory && p.tradeHistory.length >= EVOLUTION_CONFIG.MIN_TRADES_FOR_DEEP_ANALYSIS);
@@ -388,23 +399,11 @@ export function useStrategyEvolution(initialStrategies: Omit<RobotStrategy, 'id'
       .slice(-EVOLUTION_CONFIG.WORST_COUNT)
       .filter(p => p.tradeHistory && p.tradeHistory.length >= EVOLUTION_CONFIG.MIN_TRADES_FOR_DEEP_ANALYSIS);
 
-    if (elitePerformers.length === 0 || worstPerformers.length === 0) {
-      console.warn('[Evolution V3] Dados insuficientes. Adiando evolução.');
+    if (elitePerformers.length === 0 || worstPerformers.length === 0 || elitePerformers[0].totalProfit <= 0) {
       setIsEvolving(false);
       return;
     }
 
-    // Só evolui se pelo menos 1 robô de elite é lucrativo
-    if (elitePerformers[0].totalProfit <= 0) {
-      console.warn('[Evolution V3] Nenhum robô de elite é lucrativo. Adiando.');
-      setIsEvolving(false);
-      return;
-    }
-
-    // ────────────────────────────────────────────────────────────────
-    // FASE 2: DIAGNÓSTICO E PLANEJAMENTO DE MUTAÇÕES
-    // ────────────────────────────────────────────────────────────────
-    
     setEvolutionProgress(40);
     
     const newEvent: EvolutionEvent = {
@@ -431,31 +430,15 @@ export function useStrategyEvolution(initialStrategies: Omit<RobotStrategy, 'id'
     const currentStrategies = [...evolvedStrategies];
     let strategiesChanged = false;
 
-    // ────────────────────────────────────────────────────────────────
-    // FASE 3: EXECUÇÃO DAS MUTAÇÕES
-    // ────────────────────────────────────────────────────────────────
-    
     setEvolutionProgress(60);
 
     worstPerformers.forEach((worst, index) => {
       const eliteParent = elitePerformers[index % elitePerformers.length];
       const worstIndex = currentStrategies.findIndex(s => (s as RobotStrategy).id === worst.id);
       
-      if (worstIndex === -1) {
-        console.warn(`[Evolution V3] Robô ${worst.id} não encontrado no conselho`);
-        return;
-      }
+      if (worstIndex === -1) return;
 
-      // Diagnóstico profundo
       const diagnosis = diagnoseRobot(worst);
-      
-      console.log(`[Evolution V3] Diagnosticando ${worst.strategyType}:`, {
-        diagnosis: diagnosis.diagnosis,
-        rootCause: diagnosis.rootCause,
-        recommendation: diagnosis.recommendation,
-      });
-
-      // Mutação direcionada
       const { mutatedDNA, mutatedGenes } = performDirectedMutation(
         eliteParent.strategy,
         diagnosis
@@ -471,7 +454,7 @@ export function useStrategyEvolution(initialStrategies: Omit<RobotStrategy, 'id'
 
       strategiesChanged = true;
 
-      const mutationPlan: MutationPlan = {
+      newEvent.mutations.push({
         robotId: worst.id,
         robotType: worst.strategyType,
         parentId: eliteParent.id,
@@ -480,22 +463,18 @@ export function useStrategyEvolution(initialStrategies: Omit<RobotStrategy, 'id'
         prescription: diagnosis.recommendation,
         expectedImprovement: `Alvo: ${diagnosis.worstRegime} (${diagnosis.rootCause})`,
         mutatedGenes,
-      };
-
-      newEvent.mutations.push(mutationPlan);
-
-      console.log(`✅ [Evolution V3] ${worst.strategyType} → Mutado com ${mutatedGenes.length} genes`);
+      });
     });
 
-    // ────────────────────────────────────────────────────────────────
-    // FASE 4: ATUALIZAÇÃO E NOTIFICAÇÃO
-    // ────────────────────────────────────────────────────────────────
-    
     setEvolutionProgress(80);
 
     if (strategiesChanged) {
-      setEvolvedStrategies(currentStrategies);
-      setEvolutionHistory(prev => [newEvent, ...prev]);
+        const newHistory = [newEvent, ...evolutionHistory];
+        setEvolvedStrategies(currentStrategies);
+        setEvolutionHistory(newHistory);
+        if (user) {
+            saveEvolutionHistory(user.uid, newHistory);
+        }
 
       const timeSinceLastEvolution = (Date.now() - lastEvolutionTimeRef.current) / 1000;
       lastEvolutionTimeRef.current = Date.now();
@@ -505,35 +484,19 @@ export function useStrategyEvolution(initialStrategies: Omit<RobotStrategy, 'id'
         description: `${newEvent.mutations.length} robôs evoluídos. Elite: ${elitePerformers[0].strategyType} (Sharpe ${elitePerformers[0].sharpeRatio?.toFixed(2)}). Tempo: ${timeSinceLastEvolution.toFixed(0)}s`,
         duration: 5000,
       });
-
-      console.log(`🎉 [Evolution V3] Geração ${generationRef.current} concluída:`, {
-        mutations: newEvent.mutations.length,
-        eliteSharpe: elitePerformers[0].sharpeRatio,
-        avgPopulationSharpe: newEvent.populationStats.avgSharpe,
-      });
     }
 
     setEvolutionProgress(100);
     setTimeout(() => setIsEvolving(false), 1000);
 
-  }, [evolvedStrategies, toast]);
-
-  // ✅ NOVO: Debug em tempo real
-  useEffect(() => {
-    console.log(`[Evolution V3] Estado atual:`, {
-      tradeCount: tradeCountRef.current,
-      threshold: EVOLUTION_CONFIG.TRIGGER_THRESHOLD,
-      generation: generationRef.current,
-      historySize: evolutionHistory.length,
-    });
-  }, [tradeCountRef.current, evolutionHistory.length]);
+  }, [evolvedStrategies, toast, user, evolutionHistory]);
 
   return {
     evolvedStrategies,
     evolveTrigger,
     evolutionHistory,
-    isEvolving, // ✅ NOVO: Para mostrar loading na UI
-    evolutionProgress, // ✅ NOVO: Progresso 0-100
+    isEvolving,
+    evolutionProgress,
     currentGeneration: generationRef.current,
     tradesUntilEvolution: Math.max(0, EVOLUTION_CONFIG.TRIGGER_THRESHOLD - tradeCountRef.current),
   };

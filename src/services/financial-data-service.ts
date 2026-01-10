@@ -5,6 +5,7 @@ import type { Goal, BudgetCategory, Transaction, RobotPerformance, TradeDecision
 import { generateGoalImage } from '@/ai/flows/goal-image-generation';
 import { addDocumentNonBlocking, deleteDocumentNonBlocking, setDocumentNonBlocking, updateDocumentNonBlocking } from '@/firebase/non-blocking-updates';
 import { getChatbotInsightsResponse } from '@/app/actions';
+import { EvolutionEvent } from '@/features/trading/hooks/use-strategy-evolution';
 
 
 // ============================================================================
@@ -25,6 +26,10 @@ function sanitizeForFirestore(obj: any): any {
       return null;
     }
     return obj;
+  }
+
+  if (obj instanceof Date) {
+    return obj.toISOString();
   }
 
   if (Array.isArray(obj)) {
@@ -348,5 +353,38 @@ export async function getTradeDecisionLogs(userId: string): Promise<TradeDecisio
     } catch (error) {
         console.error(`[Service Error] getTradeDecisionLogs for user ${userId} failed:`, error);
         return []; // Retorna um array vazio em caso de erro para não quebrar a UI
+    }
+}
+
+// --- Evolution History ---
+
+export async function saveEvolutionHistory(userId: string, history: EvolutionEvent[]) {
+    if (!userId || !history) return;
+    const docRef = doc(db, 'users', userId, 'trading_data', 'evolution_history');
+    
+    const sanitizedHistory = sanitizeForFirestore(history);
+
+    setDocumentNonBlocking(docRef, { history: sanitizedHistory }, { merge: true });
+}
+
+export async function loadEvolutionHistory(userId: string): Promise<EvolutionEvent[]> {
+    if (!userId) return [];
+    
+    const docRef = doc(db, 'users', userId, 'trading_data', 'evolution_history');
+    try {
+        const docSnap = await getDoc(docRef);
+        if (docSnap.exists()) {
+            const data = docSnap.data();
+            // Firestore armazena timestamps como objetos, precisamos converter de volta para Date
+            const history = (data.history || []).map((event: any) => ({
+                ...event,
+                timestamp: new Date(event.timestamp)
+            }));
+            return history;
+        }
+        return [];
+    } catch (error) {
+        console.error(`[Service Error] loadEvolutionHistory for user ${userId} failed:`, error);
+        return []; // Retorna array vazio em caso de erro
     }
 }
