@@ -557,7 +557,7 @@ export function useRobotCouncilV2(
                 activeRobotsCount++;
                 
                 const hasActiveTrade = virtualTradesRef.current.some(t => t.robotId === robotId);
-                if (!hasActiveTrade) {
+                if (!hasActiveTrade && technicalVote.confidence >= MIN_PAPER_CONFIDENCE) {
                     const durationSec = Math.min(durationToSeconds(technicalVote.optimalDuration, technicalVote.optimalDurationUnit), 300);
                     virtualTradesRef.current.push({
                         id: `vt-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
