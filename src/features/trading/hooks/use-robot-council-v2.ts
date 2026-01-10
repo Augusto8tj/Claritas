@@ -403,13 +403,12 @@ export function useRobotCouncilV2(
     toast({ title: '⏸️ Sistema Pausado', description: 'Mesa Operacional suspensa.' });
   }, [toast]);
   
-  // ✅ NOVO: Efeito para unificar aprendizado com trades reais
+  // ✅ CORREÇÃO: Unificação do aprendizado com trades reais.
   useEffect(() => {
     if (!operationsLog || operationsLog.length === 0 || !user || !isCouncilAutopilotOn) return;
 
     const lastOperation = operationsLog[0];
     
-    // Processa apenas trades reais, concluídos, do Conselho
     if (lastOperation && lastOperation.status !== 'pending' && lastOperation.initiator === 'Conselho') {
         const log = tradeDecisionLog.find(l => l.contractId === lastOperation.id);
         
@@ -417,7 +416,6 @@ export function useRobotCouncilV2(
             const pnl = lastOperation.result || 0;
             const votingRobots = Object.keys(log.consensus.votes);
             
-            // Atribui o resultado a todos os robôs que participaram da decisão
             const performanceMap = new Map<string, EnhancedRobotPerformance>(
                 robotPerformanceRef.current.map(p => [p.id, { ...p }])
             );
@@ -426,7 +424,7 @@ export function useRobotCouncilV2(
             votingRobots.forEach(robotId => {
                 const perf = performanceMap.get(robotId);
                 if (perf) {
-                    perf.tradeHistory.push({ profit: pnl, regime: log.context.marketRegime as MarketRegime });
+                    perf.tradeHistory.push({ profit: pnl, regime: log.context.marketRegime as MarketRegime, timestamp: Date.now() });
                     const metrics = calculatePerformanceMetrics(perf.tradeHistory);
                     performanceMap.set(robotId, { ...perf, ...metrics });
                     changed = true;
@@ -438,10 +436,13 @@ export function useRobotCouncilV2(
                 robotPerformanceRef.current = updatedPerformance;
                 setRobotPerformance(updatedPerformance);
                 saveRobotPerformance(user.uid, updatedPerformance);
+                
+                // ✅ GATILHO DE EVOLUÇÃO: Agora também é acionado por trades reais!
+                evolveTrigger(updatedPerformance);
             }
         }
     }
-  }, [operationsLog, tradeDecisionLog, user, isCouncilAutopilotOn]);
+  }, [operationsLog, tradeDecisionLog, user, isCouncilAutopilotOn, evolveTrigger]);
 
   const runCouncilCycle = useCallback(() => {
     if (!isCouncilAutopilotOn || !isConnected || !activeSymbol) return;
@@ -480,7 +481,6 @@ export function useRobotCouncilV2(
         let performanceChanged = false;
         let removedOrphanedCount = 0;
         
-        // Loop que resolve os trades virtuais expirados
         virtualTradesRef.current.forEach(trade => {
             const isExpired = currentTick.epoch >= trade.exitEpoch;
             const isOrphaned = (currentTick.epoch - trade.entryEpoch) > TRADE_TIMEOUT_SECONDS;
@@ -500,7 +500,7 @@ export function useRobotCouncilV2(
                     perf.wins += (isWin ? 1 : 0);
                     perf.losses += (isWin ? 0 : 1);
                     perf.totalProfit += pnl;
-                    perf.tradeHistory.push({ profit: pnl, regime: trade.regime });
+                    perf.tradeHistory.push({ profit: pnl, regime: trade.regime, timestamp: Date.now() });
                     perf.lastUpdated = Date.now();
                     
                     const metrics = calculatePerformanceMetrics(perf.tradeHistory);
@@ -779,3 +779,5 @@ export function useRobotCouncilV2(
     supervisionStatus: { status: 'approved', message: 'Sistema Operacional v2.5' }
   };
 }
+
+    
