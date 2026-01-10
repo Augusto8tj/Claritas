@@ -276,7 +276,15 @@ export function useRobotCouncilV2(
   const { operationsLog, executeTrade, timePeriod, isConnected, durationLimits, sellContract } = useDerivApiV2();
   const { user, loading: isAuthLoading } = useAuth();
   const { toast } = useToast();
-  const { evolvedStrategies, evolveTrigger, evolutionHistory } = useStrategyEvolution(initialCouncilStrategies);
+  const { 
+    evolvedStrategies, 
+    evolveTrigger, 
+    evolutionHistory,
+    isEvolving,
+    evolutionProgress,
+    currentGeneration,
+    tradesUntilEvolution
+  } = useStrategyEvolution(initialCouncilStrategies);
   
   const executionIdRef = useRef(0);
   
@@ -875,6 +883,10 @@ export function useRobotCouncilV2(
     strategyCouncil,
     robotPerformance,
     evolutionHistory,
+    isEvolving,
+    evolutionProgress,
+    currentGeneration,
+    tradesUntilEvolution,
     virtualTradesRef,
     ...councilState,
     virtualTradeCount, // Exporta o contador
