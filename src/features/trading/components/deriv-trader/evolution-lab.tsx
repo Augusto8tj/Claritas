@@ -28,7 +28,7 @@ export function EvolutionLab({ history }: EvolutionLabProps) {
                 <CardHeader>
                     <CardTitle className="font-headline flex items-center gap-2">
                         <Dna className="w-5 h-5 text-primary" />
-                        Laboratório de Evolução
+                        Laboratório de Evolução v2.5
                     </CardTitle>
                     <CardDescription>
                         Acompanhe aqui os ciclos de aprendizado e adaptação da Mesa Operacional.
@@ -50,7 +50,7 @@ export function EvolutionLab({ history }: EvolutionLabProps) {
             <CardHeader>
                 <CardTitle className="font-headline flex items-center gap-2">
                     <Dna className="w-5 h-5 text-primary" />
-                    Laboratório de Evolução
+                    Laboratório de Evolução v2.5
                 </CardTitle>
                 <CardDescription>
                     Histórico de ciclos de aprendizado. Os robôs de pior desempenho são substituídos por mutações dos melhores.
