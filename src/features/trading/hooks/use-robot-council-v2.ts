@@ -435,10 +435,9 @@ export function useRobotCouncilV2(
   const validCandles = useMemo(() => validateCandles(chartData), [chartData]);
 
   const memoizedIndicators = useMemo(() => {
-      const lastCandleEpoch = validCandles[validCandles.length - 1]?.epoch;
-      if (!lastCandleEpoch) return null; // Prevenção
-      return calculateAllIndicators(validCandles, strategyCouncil, timePeriod, { duration: 5, unit: 'm' });
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    const lastCandleEpoch = validCandles[validCandles.length - 1]?.epoch;
+    if (!lastCandleEpoch) return null;
+    return calculateAllIndicators(validCandles, strategyCouncil, timePeriod, { duration: 5, unit: 'm' });
   }, [validCandles.length, validCandles[validCandles.length - 1]?.epoch, timePeriod, strategyCouncil.length]);
 
 
@@ -683,12 +682,16 @@ export function useRobotCouncilV2(
         const certaintyFactor = 1 - entropy;
         kellyStake *= (0.5 + certaintyFactor * 0.5);
         
-        const pressureIntensity = microFeatures ? Math.abs(microFeatures.volumeImbalance - 0.5) : 0;
-        const isContraryPressure = (microFeatures?.pressure === 'sell' && consensusDirection === 'RISE') || 
-                                   (microFeatures?.pressure === 'buy' && consensusDirection === 'FALL');
+        if (microFeatures) {
+            const pressureIntensity = Math.abs(microFeatures.volumeImbalance - 0.5);
+            const isContraryPressure = (microFeatures.pressure === 'sell' && consensusDirection === 'RISE') || 
+                                       (microFeatures.pressure === 'buy' && consensusDirection === 'FALL');
         
-        if (isContraryPressure) {
-            kellyStake *= (1 - pressureIntensity * 1.5);
+            if (isContraryPressure) {
+                const reductionFactor = 1 - pressureIntensity * 1.5; // Reduz até 75%
+                kellyStake *= Math.max(0.25, reductionFactor);
+                console.log(`[Microestrutura] Pressão contrária detectada. Stake ajustado para: $${kellyStake.toFixed(2)}`);
+            }
         }
         
         if (regimeHistoryRef.current.length >= 20) {
@@ -829,9 +832,6 @@ export function useRobotCouncilV2(
     strategyCouncil, timePeriod, confidenceFactor, isMeritocracyOn, consensusSensitivity, dailyBalance, sessionStartTime, user, durationRange, executeTrade, evolveTrigger, durationLimits, dataVersion, sellContract, toast, tradeDecisionLog, isDynamicExitOn, memoizedIndicators
   ]);
 
-  const timeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const lastRunRef = useRef<number>(0);
-  
   const debouncedRunCouncilCycle = useCallback(() => {
     const now = Date.now();
     const timeSinceLastRun = now - lastRunRef.current;
@@ -850,6 +850,9 @@ export function useRobotCouncilV2(
       }, TRADER_CONFIG.THROTTLE_MS - timeSinceLastRun);
     }
   }, [runCouncilCycle]);
+  
+  const timeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const lastRunRef = useRef<number>(0);
 
   useEffect(() => {
     if (!isCouncilAutopilotOn || !dataVersion) return;
