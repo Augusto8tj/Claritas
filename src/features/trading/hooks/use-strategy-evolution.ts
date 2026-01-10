@@ -17,7 +17,7 @@ const EVOLUTION_CONFIG = {
   // Número de robôs de elite (top performers)
   ELITE_COUNT: 3,
   
-  // Número de robôs a serem substituídos
+  // Número de robôs a substituir
   WORST_COUNT: 3,
   
   // Mínimo de trades para análise profunda
@@ -349,7 +349,7 @@ export function useStrategyEvolution(initialStrategies: Omit<RobotStrategy, 'id'
   const [isEvolving, setIsEvolving] = useState(false);
   const [evolutionProgress, setEvolutionProgress] = useState(0);
 
-  // Carrega o histórico do Firestore na inicialização
+  // ✅ CORREÇÃO: Carrega o histórico do Firestore na inicialização
   useEffect(() => {
     if (!user || isAuthLoading) return;
     
@@ -489,7 +489,7 @@ export function useStrategyEvolution(initialStrategies: Omit<RobotStrategy, 'id'
     setEvolutionProgress(100);
     setTimeout(() => setIsEvolving(false), 1000);
 
-  }, [evolvedStrategies, toast, user, evolutionHistory]);
+  }, [evolvedStrategies, toast, user, evolutionHistory, isAuthLoading]);
 
   return {
     evolvedStrategies,
