@@ -485,7 +485,11 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
               }
               
               if (response.error && response.error.message) {
-                   if (response.error.code !== 'AlreadySubscribed' && response.error.code !== 'SellNotAvailable') {
+                   if (
+                      response.error.code !== 'AlreadySubscribed' && 
+                      response.error.code !== 'SellNotAvailable' &&
+                      response.error.code !== 'ContractSellNotAvailable'
+                   ) {
                     console.error(`[Deriv WS] Error:`, response.error.message);
                   }
               }
