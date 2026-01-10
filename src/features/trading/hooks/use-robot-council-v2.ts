@@ -469,60 +469,62 @@ export function useRobotCouncilV2(
         // ==========================================================
         // GUARDIÃO DE POSIÇÃO ATIVO (STOP-LOSS DINÂMICO)
         // ==========================================================
-        const activeCouncilContracts = operationsLog.filter(op => 
-            op.status === 'pending' && 
-            op.initiator === 'Conselho' &&
-            op.durationUnit !== 't' 
-        );
+        if (isDynamicExitOn) {
+            const activeCouncilContracts = operationsLog.filter(op =>
+                op.status === 'pending' &&
+                op.initiator === 'Conselho' &&
+                op.durationUnit !== 't'
+            );
 
-        activeCouncilContracts.forEach(contract => {
-            if (councilExecutionRef.current.sellingContracts.has(contract.id)) return;
+            activeCouncilContracts.forEach(contract => {
+                if (councilExecutionRef.current.sellingContracts.has(contract.id)) return;
 
-            const chandelier = currentIndicators.chandelier;
-            const exitPrice = contract.direction === 'rise' ? chandelier?.exitLong : chandelier?.exitShort;
+                const chandelier = currentIndicators.chandelier;
+                const exitPrice = contract.direction === 'rise' ? chandelier?.exitLong : chandelier?.exitShort;
 
-            let shouldSell = false;
-            let reason = '';
+                let shouldSell = false;
+                let reason = '';
 
-            // 1. Chandelier Exit (Stop de Volatilidade)
-            if (exitPrice) {
-                if (contract.direction === 'rise' && currentTick.price < exitPrice) {
-                    shouldSell = true;
-                    reason = 'Stop de Volatilidade Atingido (Chandelier)';
-                } else if (contract.direction === 'fall' && currentTick.price > exitPrice) {
-                    shouldSell = true;
-                    reason = 'Stop de Volatilidade Atingido (Chandelier)';
+                // 1. Chandelier Exit (Stop de Volatilidade)
+                if (exitPrice) {
+                    if (contract.direction === 'rise' && currentTick.price < exitPrice) {
+                        shouldSell = true;
+                        reason = 'Stop de Volatilidade Atingido (Chandelier)';
+                    } else if (contract.direction === 'fall' && currentTick.price > exitPrice) {
+                        shouldSell = true;
+                        reason = 'Stop de Volatilidade Atingido (Chandelier)';
+                    }
                 }
-            }
 
-            // 2. Mudança de Regime (Stop de Contexto)
-            const tradeLog = tradeDecisionLog.find(l => l.contractId === contract.id);
-            if (tradeLog) {
-                const entryRegime = tradeLog.context.marketRegime;
-                const currentRegime = lastRegimeRef.current;
-                
-                const isContradictory = 
-                    (entryRegime === 'trending_bull' && currentRegime === 'trending_bear') ||
-                    (entryRegime === 'trending_bear' && currentRegime === 'trending_bull');
+                // 2. Mudança de Regime (Stop de Contexto)
+                const tradeLog = tradeDecisionLog.find(l => l.contractId === contract.id);
+                if (tradeLog) {
+                    const entryRegime = tradeLog.context.marketRegime;
+                    const currentRegime = lastRegimeRef.current;
 
-                if (isContradictory) {
-                    shouldSell = true;
-                    reason = `Inversão de Regime de Mercado (de ${entryRegime} para ${currentRegime})`;
+                    const isContradictory =
+                        (entryRegime === 'trending_bull' && currentRegime === 'trending_bear') ||
+                        (entryRegime === 'trending_bear' && currentRegime === 'trending_bull');
+
+                    if (isContradictory) {
+                        shouldSell = true;
+                        reason = `Inversão de Regime de Mercado (de ${entryRegime} para ${currentRegime})`;
+                    }
                 }
-            }
 
-            if (shouldSell) {
-                councilExecutionRef.current.sellingContracts.add(contract.id);
-                sellContract(contract.id).finally(() => {
-                    setTimeout(() => councilExecutionRef.current.sellingContracts.delete(contract.id), 10000);
-                });
-                toast({
-                    title: "🛡️ Proteção de Posição Ativada",
-                    description: `Contrato #${contract.id} fechado. Motivo: ${reason}`,
-                    variant: "destructive"
-                });
-            }
-        });
+                if (shouldSell) {
+                    councilExecutionRef.current.sellingContracts.add(contract.id);
+                    sellContract(contract.id).finally(() => {
+                        setTimeout(() => councilExecutionRef.current.sellingContracts.delete(contract.id), 10000);
+                    });
+                    toast({
+                        title: "🛡️ Proteção de Posição Ativada",
+                        description: `Contrato #${contract.id} fechado. Motivo: ${reason}`,
+                        variant: "destructive"
+                    });
+                }
+            });
+        }
         // ==========================================================
 
 
@@ -541,41 +543,40 @@ export function useRobotCouncilV2(
 
         let performanceChanged = false;
         let removedOrphanedCount = 0;
-        const stillActiveTrades: VirtualTrade[] = [];
         
-        virtualTradesRef.current.forEach(trade => {
+        const tradesToRemove = virtualTradesRef.current.filter(trade => {
             const isExpired = currentTick.epoch >= trade.exitEpoch;
             const isOrphaned = (currentTick.epoch - trade.entryEpoch) > TRADE_TIMEOUT_SECONDS;
-            
-            if (isExpired || isOrphaned) {
-                if(isOrphaned) removedOrphanedCount++;
+            return isExpired || isOrphaned;
+        }).length;
         
-                const exitTick = priceTicks.find(t => t.epoch >= trade.exitEpoch) || currentTick;
-                const exitPrice = exitTick.price;
-                const isWin = (trade.vote === 'RISE' && exitPrice > trade.entryPrice) || (trade.vote === 'FALL' && exitPrice < trade.entryPrice);
+        const processedTrades = virtualTradesRef.current.splice(0, tradesToRemove);
+
+        processedTrades.forEach(trade => {
+            const isOrphaned = (currentTick.epoch - trade.entryEpoch) > TRADE_TIMEOUT_SECONDS;
+            if (isOrphaned) removedOrphanedCount++;
+
+            const exitTick = priceTicks.find(t => t.epoch >= trade.exitEpoch) || currentTick;
+            const exitPrice = exitTick.price;
+            const isWin = (trade.vote === 'RISE' && exitPrice > trade.entryPrice) || (trade.vote === 'FALL' && exitPrice < trade.entryPrice);
+            
+            const perfIndex = robotPerformanceRef.current.findIndex(p => p.id === trade.robotId);
+            
+            if (perfIndex !== -1) {
+                const perf = robotPerformanceRef.current[perfIndex];
+                const pnl = isWin ? VIRTUAL_STAKE * 0.95 : -VIRTUAL_STAKE;
+                perf.wins += (isWin ? 1 : 0);
+                perf.losses += (isWin ? 0 : 1);
+                perf.totalProfit += pnl;
+                perf.tradeHistory.push({ profit: pnl, regime: trade.regime, timestamp: Date.now() });
+                perf.lastUpdated = Date.now();
                 
-                const perfIndex = robotPerformanceRef.current.findIndex(p => p.id === trade.robotId);
+                const metrics = calculatePerformanceMetrics(perf.tradeHistory);
                 
-                if (perfIndex !== -1) {
-                    const perf = robotPerformanceRef.current[perfIndex];
-                    const pnl = isWin ? VIRTUAL_STAKE * 0.95 : -VIRTUAL_STAKE;
-                    perf.wins += (isWin ? 1 : 0);
-                    perf.losses += (isWin ? 0 : 1);
-                    perf.totalProfit += pnl;
-                    perf.tradeHistory.push({ profit: pnl, regime: trade.regime, timestamp: Date.now() });
-                    perf.lastUpdated = Date.now();
-                    
-                    const metrics = calculatePerformanceMetrics(perf.tradeHistory);
-                    
-                    robotPerformanceRef.current[perfIndex] = { ...perf, ...metrics };
-                    performanceChanged = true;
-                }
-            } else {
-              stillActiveTrades.push(trade);
+                robotPerformanceRef.current[perfIndex] = { ...perf, ...metrics };
+                performanceChanged = true;
             }
         });
-        
-        virtualTradesRef.current = stillActiveTrades;
         
         if (performanceChanged) {
             setRobotPerformance([...robotPerformanceRef.current]);
@@ -797,7 +798,7 @@ export function useRobotCouncilV2(
 
   }, [
     isCouncilAutopilotOn, isConnected, activeSymbol, tickCandles, priceTicks, 
-    strategyCouncil, timePeriod, confidenceFactor, isMeritocracyOn, consensusSensitivity, dailyBalance, sessionStartTime, user, durationRange, executeTrade, evolveTrigger, durationLimits, dataVersion, sellContract, toast, tradeDecisionLog
+    strategyCouncil, timePeriod, confidenceFactor, isMeritocracyOn, consensusSensitivity, dailyBalance, sessionStartTime, user, durationRange, executeTrade, evolveTrigger, durationLimits, dataVersion, sellContract, toast, tradeDecisionLog, isDynamicExitOn
   ]);
 
   useEffect(() => {
