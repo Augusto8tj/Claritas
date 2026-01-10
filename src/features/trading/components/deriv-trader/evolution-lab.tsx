@@ -4,7 +4,7 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import type { EvolutionEvent } from '@/features/trading/hooks/use-strategy-evolution';
-import { Dna, ArrowRight, User, Award, Skull, Bot } from 'lucide-react';
+import { Dna, ArrowRight, Award, Skull, Bot, FileText } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 
@@ -75,17 +75,23 @@ export function EvolutionLab({ history }: EvolutionLabProps) {
 
                                 <div>
                                      <h4 className="font-semibold mb-2 flex items-center gap-2"><Bot className="w-4 h-4 text-blue-500" /> Mutações e Substituições</h4>
-                                     <ul className="space-y-2 text-sm">
+                                     <ul className="space-y-3 text-sm">
                                          {event.mutations.map(m => (
-                                             <li key={m.replacedBotId} className="flex flex-wrap items-center gap-2 p-2 rounded-md bg-muted/50">
-                                                <div className="flex items-center gap-1.5 text-red-600">
-                                                    <Skull className="w-3 h-3" />
-                                                    <span>{m.replacedBotType}</span>
+                                             <li key={m.replacedBotId} className="p-3 rounded-md bg-muted/50 border space-y-2">
+                                                <div className="flex flex-wrap items-center gap-2">
+                                                    <div className="flex items-center gap-1.5 text-red-600">
+                                                        <Skull className="w-3 h-3" />
+                                                        <span>{m.replacedBotType} (Substituído)</span>
+                                                    </div>
+                                                    <ArrowRight className="w-4 h-4 text-muted-foreground" />
+                                                    <div className="flex items-center gap-1.5 text-green-700">
+                                                        <Dna className="w-3 h-3" />
+                                                        <span>Mutação de {m.parentBotType}</span>
+                                                    </div>
                                                 </div>
-                                                <ArrowRight className="w-4 h-4 text-muted-foreground" />
-                                                <div className="flex items-center gap-1.5 text-green-700">
-                                                     <Dna className="w-3 h-3" />
-                                                     <span>Mutação de {m.parentBotType}</span>
+                                                <div className="flex items-start gap-2 text-xs text-muted-foreground border-t pt-2 mt-2">
+                                                   <FileText className="w-3 h-3 mt-0.5 shrink-0" />
+                                                   <span><b>Análise:</b> {m.analysis}</span>
                                                 </div>
                                              </li>
                                          ))}

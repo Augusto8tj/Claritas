@@ -2,15 +2,16 @@
 'use client';
 
 import { useState, useCallback, useRef } from 'react';
-import type { RobotStrategy, EnhancedRobotPerformance as RobotPerformance } from '@/lib/types';
+import type { RobotStrategy, EnhancedRobotPerformance as RobotPerformance, MarketRegime } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
 
 // ============================================================================
 // PARÂMETROS DA EVOLUÇÃO
 // ============================================================================
-const EVOLUTION_TRIGGER_THRESHOLD = 50; // A cada X trades virtuais, aciona a evolução
-const ELITE_COUNT = 5; // Número de melhores robôs a serem usados como base para mutação
-const WORST_COUNT = 5; // Número de piores robôs a serem substituídos
+const EVOLUTION_TRIGGER_THRESHOLD = 10; // ✅ Otimização: Reduzido de 50 para 10
+const ELITE_COUNT = 3; 
+const WORST_COUNT = 3; 
+const MIN_TRADES_FOR_ANALYSIS = 5;
 
 export interface EvolutionEvent {
     timestamp: Date;
@@ -20,51 +21,64 @@ export interface EvolutionEvent {
         replacedBotType: string;
         parentBotId: string;
         parentBotType: string;
+        analysis: string; // ✅ NOVO: Análise da mutação
     }[];
 }
 
 // ============================================================================
-// FUNÇÕES DE MUTAÇÃO
+// FUNÇÕES DE MUTAÇÃO INTELIGENTE
 // ============================================================================
 
 /**
- * Cria uma mutação de um robô de sucesso.
+ * Cria uma mutação de um robô de sucesso, com ajustes direcionados.
  * @param eliteRobot O robô de elite a ser mutado.
+ * @param analysis A análise do robô a ser substituído (opcional).
  * @returns Uma nova estratégia com parâmetros ligeiramente alterados.
  */
-const mutateStrategy = (eliteRobot: RobotStrategy): Omit<RobotStrategy, 'id' | 'justification'> => {
+const mutateStrategy = (
+    eliteRobot: RobotStrategy, 
+    analysis?: { worstRegime: MarketRegime | null }
+): Omit<RobotStrategy, 'id' | 'justification'> => {
     const newStrategy = { ...eliteRobot };
     
-    // Fator de mutação pequeno
-    const mutationFactor = 1 + (Math.random() - 0.5) * 0.2; // +/- 10%
+    // Fatores de mutação
+    const bigMutation = 1 + (Math.random() - 0.5) * 0.4; // +/- 20%
+    const smallMutation = 1 + (Math.random() - 0.5) * 0.1; // +/- 5%
     const smallChange = Math.random() > 0.5 ? 1 : -1;
 
-    if (newStrategy.period) {
-        newStrategy.period = Math.max(5, Math.round(newStrategy.period * mutationFactor));
+    // ✅ Mutação Direcionada: Se sabemos que o robô falha em tendência, o fazemos mais rápido (curto período)
+    if (analysis?.worstRegime === 'trending_bull' || analysis?.worstRegime === 'trending_bear') {
+        if (newStrategy.period) {
+            newStrategy.period = Math.max(5, Math.round(newStrategy.period * 0.8)); // Torna-o mais rápido
+        }
+    } 
+    // ✅ Se falha em mercado lateral, o fazemos mais lento (longo período)
+    else if (analysis?.worstRegime === 'ranging') {
+         if (newStrategy.period) {
+            newStrategy.period = Math.max(10, Math.round(newStrategy.period * 1.2)); // Torna-o mais lento
+        }
     }
-    if (newStrategy.shortPeriod) {
-        newStrategy.shortPeriod = Math.max(3, Math.round(newStrategy.shortPeriod * mutationFactor));
-    }
-    if (newStrategy.longPeriod) {
-        newStrategy.longPeriod = Math.max(newStrategy.shortPeriod ? newStrategy.shortPeriod + 5 : 10, Math.round(newStrategy.longPeriod * mutationFactor));
-    }
-     if (newStrategy.strongBuyThreshold) {
-        newStrategy.strongBuyThreshold = Math.max(5, Math.min(40, newStrategy.strongBuyThreshold + smallChange));
+
+    // Mutação geral com menor intensidade
+    if (newStrategy.period) newStrategy.period = Math.max(5, Math.round(newStrategy.period * smallMutation));
+    if (newStrategy.shortPeriod) newStrategy.shortPeriod = Math.max(3, Math.round(newStrategy.shortPeriod * smallMutation));
+    if (newStrategy.longPeriod) newStrategy.longPeriod = Math.max(newStrategy.shortPeriod ? newStrategy.shortPeriod + 5 : 10, Math.round(newStrategy.longPeriod * smallMutation));
+    
+    if (newStrategy.strongBuyThreshold) {
+        newStrategy.strongBuyThreshold = Math.max(5, Math.min(40, newStrategy.strongBuyThreshold + smallChange * 2));
         newStrategy.weakBuyThreshold = newStrategy.strongBuyThreshold + 10;
     }
     if (newStrategy.strongSellThreshold) {
-        newStrategy.strongSellThreshold = Math.min(95, Math.max(60, newStrategy.strongSellThreshold + smallChange));
+        newStrategy.strongSellThreshold = Math.min(95, Math.max(60, newStrategy.strongSellThreshold - smallChange * 2));
         newStrategy.weakSellThreshold = newStrategy.strongSellThreshold - 10;
     }
     if (newStrategy.optimalDuration) {
-        newStrategy.optimalDuration = Math.max(1, Math.round(newStrategy.optimalDuration * mutationFactor));
-        // Garante que a duração para ticks fique entre 1 e 10
+        newStrategy.optimalDuration = Math.max(5, Math.round(newStrategy.optimalDuration * bigMutation));
         if (newStrategy.optimalDurationUnit === 't') {
-            newStrategy.optimalDuration = Math.min(10, newStrategy.optimalDuration);
+            newStrategy.optimalDuration = Math.min(10, Math.max(5, newStrategy.optimalDuration));
         }
     }
     
-    // Remove os campos que serão gerados novamente
     const { id, justification, ...rest } = newStrategy;
 
     return rest as Omit<RobotStrategy, 'id' | 'justification'>;
@@ -78,48 +92,34 @@ const mutateStrategy = (eliteRobot: RobotStrategy): Omit<RobotStrategy, 'id' | '
 export function useStrategyEvolution(initialStrategies: Omit<RobotStrategy, 'id'>[]) {
     const { toast } = useToast();
     
-    // O estado que guarda as estratégias atuais, começando com as iniciais
     const [evolvedStrategies, setEvolvedStrategies] = useState<Omit<RobotStrategy, 'id'>[]>(initialStrategies);
-    // NOVO: Estado para guardar o histórico de eventos de evolução
     const [evolutionHistory, setEvolutionHistory] = useState<EvolutionEvent[]>([]);
 
-    // Contador de trades para acionar a evolução
     const tradeCountRef = useRef(0);
 
-    /**
-     * A função principal que é chamada a cada ciclo de avaliação de desempenho.
-     * Ela decide se é hora de evoluir e, se for, recalibra as estratégias.
-     */
     const evolveTrigger = useCallback((performanceData: RobotPerformance[]) => {
         tradeCountRef.current += 1;
 
         if (tradeCountRef.current < EVOLUTION_TRIGGER_THRESHOLD) {
-            return; // Ainda não é hora de evoluir
+            return;
         }
 
         console.log(`[Evolution] Limite de ${EVOLUTION_TRIGGER_THRESHOLD} trades atingido. A iniciar ciclo de evolução...`);
-        tradeCountRef.current = 0; // Reseta o contador
+        tradeCountRef.current = 0;
 
-        // Ordena para encontrar os melhores e piores
-        const sortedPerformance = [...performanceData].sort((a, b) => {
-            // Prioriza Win Rate, depois P&L
-            const winRateA = a.winRate || 0;
-            const winRateB = b.winRate || 0;
-            if(winRateA !== winRateB) return winRateB - winRateA;
-            return (b.totalProfit || 0) - (a.totalProfit || 0);
-        });
+        const sortedPerformance = [...performanceData].sort((a, b) => (b.sharpeRatio || -Infinity) - (a.sharpeRatio || -Infinity));
 
-        const elitePerformers = sortedPerformance.slice(0, ELITE_COUNT);
-        const worstPerformers = sortedPerformance.slice(-WORST_COUNT);
+        const elitePerformers = sortedPerformance.slice(0, ELITE_COUNT).filter(p => p.tradeHistory && p.tradeHistory.length > MIN_TRADES_FOR_ANALYSIS);
+        const worstPerformers = sortedPerformance.slice(-WORST_COUNT).filter(p => p.tradeHistory && p.tradeHistory.length > MIN_TRADES_FOR_ANALYSIS);
 
         if (elitePerformers.length === 0 || worstPerformers.length === 0 || elitePerformers[0].totalProfit <= 0) {
-            console.warn("[Evolution] Não há robôs de elite com lucro. A evolução será adiada.");
+            console.warn("[Evolution] Não há robôs de elite com lucro ou piores robôs com dados suficientes. A evolução será adiada.");
             return;
         }
 
         toast({
-            title: "🧬 Evolução de Estratégia!",
-            description: "A IA está a recalibrar os robôs com base no desempenho recente.",
+            title: "🧬 Evolução Genética Inteligente!",
+            description: "A IA está a analisar e a otimizar os robôs de pior desempenho.",
         });
 
         const newEvent: EvolutionEvent = {
@@ -128,19 +128,47 @@ export function useStrategyEvolution(initialStrategies: Omit<RobotStrategy, 'id'
             mutations: [],
         };
         
-        // Cria um mapa das novas estratégias
         const currentStrategies = [...evolvedStrategies];
         let strategiesChanged = false;
 
-        // Substitui os piores por mutações dos melhores
         worstPerformers.forEach((worst, index) => {
             const eliteParent = elitePerformers[index % elitePerformers.length];
-            
             const worstIndex = currentStrategies.findIndex(s => (s as RobotStrategy).id === worst.id);
             if (worstIndex === -1) return;
 
-            const newStrategyParams = mutateStrategy(eliteParent.strategy);
-            const newJustification = `Mutação da estratégia ${eliteParent.strategyType} de elite.`;
+            // ✅ ANÁLISE DE CAUSA-RAIZ
+            const regimeTrades = worst.tradeHistory.reduce((acc, trade) => {
+                // Supondo que tradeHistory agora guarda objetos { profit, regime }
+                const regime = (trade as any).regime as MarketRegime || 'ranging';
+                if (!acc[regime]) acc[regime] = { wins: 0, losses: 0 };
+                if ((trade as any).profit > 0) acc[regime].wins++;
+                else acc[regime].losses++;
+                return acc;
+            }, {} as Record<MarketRegime, { wins: number; losses: number }>);
+            
+            let worstRegime: MarketRegime | null = null;
+            let lowestWinRate = 50; // Começa com 50% para só considerar pior se for abaixo disso
+            let analysis = "Mutação geral baseada em elite.";
+
+            for (const r in regimeTrades) {
+                const regime = r as MarketRegime;
+                const stats = regimeTrades[regime];
+                const total = stats.wins + stats.losses;
+                if (total > 2) { // Mínimo de 3 trades para considerar
+                    const winRate = (stats.wins / total) * 100;
+                    if (winRate < lowestWinRate) {
+                        lowestWinRate = winRate;
+                        worstRegime = regime;
+                    }
+                }
+            }
+            
+            if (worstRegime) {
+                analysis = `Desempenho fraco (${lowestWinRate.toFixed(0)}% WR) em regime '${worstRegime}'. A ajustar parâmetros para este cenário.`;
+            }
+
+            const newStrategyParams = mutateStrategy(eliteParent.strategy, { worstRegime });
+            const newJustification = `Mutação de ${eliteParent.strategyType}. Análise: ${analysis}`;
             
             currentStrategies[worstIndex] = {
                 ...currentStrategies[worstIndex], 
@@ -154,9 +182,10 @@ export function useStrategyEvolution(initialStrategies: Omit<RobotStrategy, 'id'
                 replacedBotType: worst.strategyType,
                 parentBotId: eliteParent.id,
                 parentBotType: eliteParent.strategyType,
+                analysis,
             });
 
-            console.log(`[Evolution] Robô ${worst.id} (${worst.strategyType}) foi substituído por uma mutação de ${eliteParent.strategyType}.`);
+            console.log(`[Evolution] Robô ${worst.id} (${worst.strategyType}) substituído. Análise: ${analysis}`);
         });
 
         if (strategiesChanged) {
@@ -169,6 +198,6 @@ export function useStrategyEvolution(initialStrategies: Omit<RobotStrategy, 'id'
     return {
         evolvedStrategies,
         evolveTrigger,
-        evolutionHistory, // EXPORTA O HISTÓRICO
+        evolutionHistory,
     };
 }

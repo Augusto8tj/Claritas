@@ -39,7 +39,7 @@ export const OperationSchema = z.object({
 
 
 export const RobotStrategySchema = z.object({
-    id: z.string().describe("A unique identifier for the robot, e.g., 'RSI_BOT_1'."),
+    id: z.string().describe("A unique identifier for the robot, e.g., 'rsi_scalper'."),
     strategyType: z.enum([
         "RSI", 
         "STOCHASTIC", 
@@ -154,7 +154,7 @@ export interface EnhancedRobotPerformance {
   effectiveRegimes: MarketRegime[];
   monteCarloScore: number;
   lastUpdated: number;
-  tradeHistory: number[];
+  tradeHistory: { profit: number; regime: MarketRegime }[]; // ✅ Armazena contexto
 }
 
 // Schema for a snapshot of all indicators at a given time
