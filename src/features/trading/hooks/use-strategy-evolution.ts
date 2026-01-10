@@ -239,7 +239,7 @@ const performDirectedMutation = (
   
   const mutatedDNA: Partial<RobotStrategy> = { ...eliteRobot };
   const mutatedGenes: string[] = [];
-  const strength = EVOLUTION_CONFIG.DIRECTED_MUTATION_STRENGTH;
+  const strength = 0.15; // MUTATION_STRENGTH
   
   // ────────────────────────────────────────────────────────────────
   // MUTAÇÃO DIRECIONADA POR REGIME
@@ -347,10 +347,11 @@ export function useStrategyEvolution(initialStrategies: Omit<RobotStrategy, 'id'
   useEffect(() => {
     if (!user || isAuthLoading) return;
     
+    let isMounted = true;
     const loadHistory = async () => {
         try {
             const storedHistory = await loadEvolutionHistory(user.uid);
-            if (storedHistory && storedHistory.length > 0) {
+            if (isMounted && storedHistory && storedHistory.length > 0) {
                 setEvolutionHistory(storedHistory);
                 generationRef.current = storedHistory[0]?.generation || 0;
             }
@@ -360,6 +361,8 @@ export function useStrategyEvolution(initialStrategies: Omit<RobotStrategy, 'id'
     };
     
     loadHistory();
+
+    return () => { isMounted = false };
   }, [user, isAuthLoading]);
 
   const evolveTrigger = useCallback((performanceData: RobotPerformance[]) => {
