@@ -71,7 +71,7 @@ export const EVOLUTION_CONFIG = {
   WORST_COUNT: 3,
   
   // Número mínimo de trades para que um robô seja elegível para análise de evolução
-  MIN_TRADES_FOR_DEEP_ANALYSIS: 3,
+  MIN_TRADES_FOR_DEEP_ANALYSIS: 1,
   
   // Força da mutação direcionada (ex: 0.1 = 10% de ajuste)
   DIRECTED_MUTATION_STRENGTH: 0.15,
