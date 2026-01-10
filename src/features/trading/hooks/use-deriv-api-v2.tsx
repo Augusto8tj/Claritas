@@ -250,7 +250,7 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
             const timeoutId = setTimeout(() => {
                 if (promisesRef.current.has(String(req_id))) {
                     promisesRef.current.delete(String(req_id));
-                    reject(new Error(`Request timed out for req_id: ${req_id}`));
+                    reject(new Error('Request timed out for req_id: ' + req_id));
                 }
             }, 15000); // 15 second timeout
             
@@ -490,7 +490,7 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
                       response.error.code !== 'SellNotAvailable' &&
                       response.error.code !== 'ContractSellNotAvailable'
                    ) {
-                    console.error(`[Deriv WS] Error:`, response.error.message);
+                    console.error('[Deriv WS] Error:', response.error.message);
                   }
               }
               

@@ -576,6 +576,7 @@ export function useRobotCouncilV2(
                      }
                  });
                  log.processed = true; 
+                 evolveTrigger(robotPerformanceRef.current);
              }
         }
 
@@ -583,7 +584,6 @@ export function useRobotCouncilV2(
         if (performanceChanged) {
             const updatedPerformance = Array.from(robotPerformanceRef.current);
             setRobotPerformance(updatedPerformance);
-            evolveTrigger(updatedPerformance);
             if (user) {
                 saveRobotPerformance(user.uid, updatedPerformance);
             }
@@ -603,8 +603,8 @@ export function useRobotCouncilV2(
             if (technicalVote.confidence >= confidenceFactor && technicalVote.vote !== 'HOLD') {
                 const perf = robotPerformanceRef.current.find(p => p.id === robotId);
                 
-                let weight = 0.01; // ✅ OTIMIZAÇÃO: Peso base para robôs "estagiários"
-                if (isMeritocracyOn && perf && (perf.wins + perf.losses) >= 10) { // ✅ SÓ VOTA COM PESO SE TIVER 10+ TRADES
+                let weight = 0.01;
+                if (isMeritocracyOn && perf && (perf.wins + perf.losses) >= 10) {
                     if (perf.sharpeRatio > 0) {
                         weight = Math.pow(1 + perf.sharpeRatio, 2);
                     } else {
@@ -833,39 +833,13 @@ export function useRobotCouncilV2(
     strategyCouncil, timePeriod, confidenceFactor, isMeritocracyOn, consensusSensitivity, dailyBalance, sessionStartTime, user, durationRange, executeTrade, evolveTrigger, durationLimits, dataVersion, sellContract, toast, tradeDecisionLog, isDynamicExitOn, memoizedIndicators
   ]);
 
-  const debouncedRunCouncilCycle = useCallback(() => {
-    const now = Date.now();
-    const timeSinceLastRun = now - lastRunRef.current;
-
-    if (timeoutRef.current) {
-      clearTimeout(timeoutRef.current);
-    }
-
-    if (timeSinceLastRun >= TRADER_CONFIG.THROTTLE_MS) {
-      runCouncilCycle();
-      lastRunRef.current = now;
-    } else {
-      timeoutRef.current = setTimeout(() => {
-        runCouncilCycle();
-        lastRunRef.current = Date.now();
-      }, TRADER_CONFIG.THROTTLE_MS - timeSinceLastRun);
-    }
-  }, [runCouncilCycle]);
-  
-  const timeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const lastRunRef = useRef<number>(0);
-
   useEffect(() => {
-    if (!isCouncilAutopilotOn || !dataVersion) return;
-    debouncedRunCouncilCycle();
-    
-    // Cleanup timeout on unmount
-    return () => {
-        if(timeoutRef.current) {
-            clearTimeout(timeoutRef.current);
-        }
-    }
-  }, [dataVersion, isCouncilAutopilotOn, debouncedRunCouncilCycle]);
+    if (!isCouncilAutopilotOn) return;
+
+    const intervalId = setInterval(runCouncilCycle, TRADER_CONFIG.THROTTLE_MS);
+
+    return () => clearInterval(intervalId);
+  }, [isCouncilAutopilotOn, runCouncilCycle]);
 
   return {
     isCouncilAutopilotOn,
