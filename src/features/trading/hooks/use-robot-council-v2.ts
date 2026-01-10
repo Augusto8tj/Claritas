@@ -698,7 +698,6 @@ export function useRobotCouncilV2(
             if (isContraryPressure) {
                 const reductionFactor = 1 - pressureIntensity * 1.5; // Reduz até 75%
                 kellyStake *= Math.max(0.25, reductionFactor);
-                console.log(`[Microestrutura] Pressão contrária detectada. Stake ajustado para: $${kellyStake.toFixed(2)}`);
             }
         }
         
@@ -714,10 +713,8 @@ export function useRobotCouncilV2(
           
           if (changeRate > 0.5) {
             kellyStake *= 0.5;
-            console.log('[Meta-Regime] Mercado caótico detectado. Stake reduzido em 50%.');
           } else if (changeRate < 0.15) {
             kellyStake *= 1.2;
-            console.log('[Meta-Regime] Mercado estável. Stake aumentado em 20%.');
           }
         }
         
@@ -749,7 +746,8 @@ export function useRobotCouncilV2(
         
         setVirtualTradeCount(virtualTradesRef.current.length);
 
-        if (consensusReached && consensusDirection !== 'HOLD' && user) {
+        // ✅ CORREÇÃO: Adicionada verificação de probabilidade mínima
+        if (consensusReached && consensusDirection !== 'HOLD' && user && consensusProbability > 0.52) {
              if (kellyStake > 0) {
                  
                  const votingRobots = Object.values(localBayesianVotes).filter(v => v.vote === consensusDirection);
