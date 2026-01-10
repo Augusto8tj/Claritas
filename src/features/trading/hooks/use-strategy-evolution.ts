@@ -138,10 +138,9 @@ export function useStrategyEvolution(initialStrategies: Omit<RobotStrategy, 'id'
 
             // ✅ ANÁLISE DE CAUSA-RAIZ
             const regimeTrades = worst.tradeHistory.reduce((acc, trade) => {
-                // Supondo que tradeHistory agora guarda objetos { profit, regime }
-                const regime = (trade as any).regime as MarketRegime || 'ranging';
+                const regime = trade.regime || 'ranging';
                 if (!acc[regime]) acc[regime] = { wins: 0, losses: 0 };
-                if ((trade as any).profit > 0) acc[regime].wins++;
+                if (trade.profit > 0) acc[regime].wins++;
                 else acc[regime].losses++;
                 return acc;
             }, {} as Record<MarketRegime, { wins: number; losses: number }>);

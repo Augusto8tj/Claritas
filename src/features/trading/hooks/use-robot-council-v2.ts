@@ -403,36 +403,45 @@ export function useRobotCouncilV2(
     toast({ title: '⏸️ Sistema Pausado', description: 'Mesa Operacional suspensa.' });
   }, [toast]);
   
-    // EFEITO PARA ATUALIZAR O LOG DE DECISÃO QUANDO UMA OPERAÇÃO É CONCLUÍDA
-    useEffect(() => {
-        if (!operationsLog || operationsLog.length === 0 || !user) return;
+  // ✅ NOVO: Efeito para unificar aprendizado com trades reais
+  useEffect(() => {
+    if (!operationsLog || operationsLog.length === 0 || !user || !isCouncilAutopilotOn) return;
+
+    const lastOperation = operationsLog[0];
     
-        const lastOperation = operationsLog[0];
+    // Processa apenas trades reais, concluídos, do Conselho
+    if (lastOperation && lastOperation.status !== 'pending' && lastOperation.initiator === 'Conselho') {
+        const log = tradeDecisionLog.find(l => l.contractId === lastOperation.id);
         
-        if (lastOperation && lastOperation.status !== 'pending' && lastOperation.initiator === 'Conselho') {
+        if (log) {
+            const pnl = lastOperation.result || 0;
+            const votingRobots = Object.keys(log.consensus.votes);
             
-            const logIndex = tradeDecisionLog.findIndex(log => log.contractId === lastOperation.id);
+            // Atribui o resultado a todos os robôs que participaram da decisão
+            const performanceMap = new Map<string, EnhancedRobotPerformance>(
+                robotPerformanceRef.current.map(p => [p.id, { ...p }])
+            );
             
-            if (logIndex !== -1 && tradeDecisionLog[logIndex].result === 'pending') {
-                const updatedLog = {
-                    ...tradeDecisionLog[logIndex],
-                    result: lastOperation.status,
-                    pnl: lastOperation.result || 0,
-                    context: {
-                        ...tradeDecisionLog[logIndex].context,
-                        exitPrice: lastOperation.exitPrice,
-                    }
-                };
-                
-                const newLogs = [...tradeDecisionLog];
-                newLogs[logIndex] = updatedLog;
-                
-                setTradeDecisionLog(newLogs);
-                
-                saveTradeDecision(user.uid, updatedLog);
+            let changed = false;
+            votingRobots.forEach(robotId => {
+                const perf = performanceMap.get(robotId);
+                if (perf) {
+                    perf.tradeHistory.push({ profit: pnl, regime: log.context.marketRegime as MarketRegime });
+                    const metrics = calculatePerformanceMetrics(perf.tradeHistory);
+                    performanceMap.set(robotId, { ...perf, ...metrics });
+                    changed = true;
+                }
+            });
+
+            if (changed) {
+                const updatedPerformance = Array.from(performanceMap.values());
+                robotPerformanceRef.current = updatedPerformance;
+                setRobotPerformance(updatedPerformance);
+                saveRobotPerformance(user.uid, updatedPerformance);
             }
         }
-    }, [operationsLog, tradeDecisionLog, user]);
+    }
+  }, [operationsLog, tradeDecisionLog, user, isCouncilAutopilotOn]);
 
   const runCouncilCycle = useCallback(() => {
     if (!isCouncilAutopilotOn || !isConnected || !activeSymbol) return;
@@ -479,7 +488,6 @@ export function useRobotCouncilV2(
             if (isExpired || isOrphaned) {
                 if(isOrphaned) removedOrphanedCount++;
         
-                // Encontra o tick exato de saída para precisão
                 const exitTick = priceTicks.find(t => t.epoch >= trade.exitEpoch) || currentTick;
                 const exitPrice = exitTick.price;
                 const isWin = (trade.vote === 'RISE' && exitPrice > trade.entryPrice) || (trade.vote === 'FALL' && exitPrice < trade.entryPrice);
@@ -492,10 +500,10 @@ export function useRobotCouncilV2(
                     perf.wins += (isWin ? 1 : 0);
                     perf.losses += (isWin ? 0 : 1);
                     perf.totalProfit += pnl;
-                    perf.tradeHistory.push(pnl);
+                    perf.tradeHistory.push({ profit: pnl, regime: trade.regime });
                     perf.lastUpdated = Date.now();
                     
-                    const metrics = calculatePerformanceMetrics(perf.tradeHistory.map((profit, i) => ({ profit, timestamp: Date.now() - (perf.tradeHistory.length - i) * 1000 })));
+                    const metrics = calculatePerformanceMetrics(perf.tradeHistory);
                     
                     robotPerformanceRef.current[perfIndex] = { ...perf, ...metrics };
                     performanceChanged = true;
