@@ -12,6 +12,7 @@
  * 1. Sincronia: Limite de candles ajustado para 30 (mesmo do Cérebro).
  * 2. Robustez: Tratamento de "Zero Division" em todos os osciladores.
  * 3. Tipagem: Uso estrito de TypeScript para evitar erros de runtime.
+ * 4. OTIMIZAÇÃO: Cache de indicadores para evitar recálculos desnecessários.
  */
 
 import type { CandleData, ChartData, TimePeriod, RobotStrategy, DurationUnit } from '@/lib/types';
@@ -71,6 +72,15 @@ export interface Indicators {
     obv: number | null;      // On Balance Volume: Fluxo acumulado de volume
     obvPrev: number | null;  // Para detectar divergências
 }
+
+// ============================================================================
+// OTIMIZAÇÃO #4: CACHE DE INDICADORES
+// ============================================================================
+const indicatorCache = new Map<string, { 
+  indicators: Indicators; 
+  lastCandleEpoch: number;
+  timePeriod: TimePeriod;
+}>();
 
 // ============================================================================
 // 2. BIBLIOTECA MATEMÁTICA (CORE LOGIC)
@@ -308,8 +318,8 @@ const calculateADX = (data: CandleData[], period = 14) => {
         // Cálculo do DX
         const dx = pdi.map((p, i) => {
             const n = ndi[i];
-            const sum = p + n;
             // FAIL-SAFE CRÍTICO: Se sum for 0, DX é 0
+            const sum = p + n;
             return (sum === 0) ? 0 : 100 * Math.abs(p - n) / sum;
         });
         
@@ -529,27 +539,13 @@ export function calculateAllIndicators(
     contractDuration: { duration: number, unit: DurationUnit }
 ): Indicators | null {
     
-    // CORREÇÃO: Limite de sincronia ajustado para 30, como no Cérebro.
     if (!chartData || chartData.length < 30) {
         console.warn(`⚠️ [Indicators] Dados insuficientes: ${chartData?.length || 0}/30 candles`);
         return null;
     }
-
-    let candles: CandleData[];
-    if (isCandle(chartData[0])) {
-        candles = chartData as CandleData[];
-    } else {
-        candles = chartData.map(d => ({ 
-            epoch: d.epoch, 
-            open: (d as any).price, 
-            high: (d as any).price, 
-            low: (d as any).price, 
-            close: (d as any).price, 
-            volume: 1 
-        }));
-    }
     
-    const validCandles = candles.filter(c => 
+    // Validação de dados de entrada
+    const validCandles = chartData.filter(isCandle).filter(c => 
         c && c.close > 0 && Number.isFinite(c.close) &&
         c.open > 0 && Number.isFinite(c.open) &&
         c.high > 0 && Number.isFinite(c.high) &&
@@ -560,31 +556,34 @@ export function calculateAllIndicators(
         console.warn(`⚠️ [Indicators] Apenas ${validCandles.length}/30 candles válidos`);
         return null;
     }
+    
+    const lastCandle = validCandles[validCandles.length - 1];
+    const cacheKey = `${timePeriod}-${validCandles.length}-${lastCandle.epoch}`;
+
+    // Verifica o cache primeiro
+    const cached = indicatorCache.get(cacheKey);
+    if (cached) {
+        return cached.indicators;
+    }
 
     try {
         const getParam = (type: RobotStrategy['strategyType'], key: keyof RobotStrategy, defaultValue: any) => {
             const robot = strategyCouncil.find(r => r.strategyType === type);
-            // ✅ CORREÇÃO: Usa o timePeriod para determinar o período, se a estratégia não especificar.
-            // Esta é uma heurística simples: períodos mais curtos para timeframes mais curtos.
             if(robot && robot[key] !== undefined) return robot[key];
             if(key === 'period' || key === 'shortPeriod' || key === 'fastPeriod') {
-                if (timePeriod.endsWith('m') && parseInt(timePeriod) <= 5) return defaultValue / 2;
+                if (timePeriod.endsWith('m') && parseInt(timePeriod) <= 5) return Math.max(5, Math.floor(defaultValue / 2));
                 if (timePeriod.endsWith('h') || timePeriod.endsWith('d')) return defaultValue * 2;
             }
             return defaultValue;
         };
 
-        // Cálculos em Cascata
         const rsiSeries = calculateRSI(validCandles, getParam('RSI', 'period', 14));
         const stochSeries = calculateStochastic(validCandles, getParam('STOCHASTIC', 'period', 14));
         const atrSeries = calculateATR(validCandles, 14);
-        
-        // ✅ CORREÇÃO: Passa os períodos dinâmicos para as médias
         const longPeriod = getParam('MOVING_AVERAGE_CROSS', 'longPeriod', 50);
         const shortPeriod = getParam('MOVING_AVERAGE_CROSS', 'shortPeriod', 20);
         const smaLong = calculateSMA(validCandles, longPeriod);
         const emaShort = calculateEMA(validCandles, shortPeriod);
-        
         const macdData = calculateMACD(validCandles);
         const bbSeries = calculateBB(validCandles);
         const bbData = bbSeries[bbSeries.length - 1];
@@ -612,7 +611,6 @@ export function calculateAllIndicators(
 
         const psar = emaShort[emaShort.length-1];
 
-        // Montagem do objeto de resposta
         const indicators: Indicators = {
             rsi: rsiSeries[rsiSeries.length - 1],
             stoch: stochSeries[stochSeries.length - 1],
@@ -653,6 +651,19 @@ export function calculateAllIndicators(
             bollingerBands: bbSeries,
         };
         
+        // Salva no cache
+        indicatorCache.set(cacheKey, {
+            indicators,
+            lastCandleEpoch: lastCandle.epoch,
+            timePeriod
+        });
+
+        // Limita o tamanho do cache para evitar memory leaks
+        if (indicatorCache.size > 20) {
+            const firstKey = indicatorCache.keys().next().value;
+            indicatorCache.delete(firstKey);
+        }
+
         return indicators;
 
     } catch (e) {
