@@ -18,7 +18,7 @@ import { useRobotCouncilV2 } from "@/features/trading/hooks/use-robot-council-v2
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { CouncilDashboardV2 } from '@/features/trading/components/deriv-trader/CouncilDashboardV2';
 import { TradingDeskV2 } from "@/features/trading/components/deriv-trader/trading-desk-v2";
-import { EvolutionLab } from "@/features/trading/components/deriv-trader/evolution-lab";
+import EvolutionLabV3 from "@/features/trading/components/deriv-trader/evolution-lab-v3";
 import { DebugCouncilView } from "@/features/trading/components/deriv-trader/DebugCouncilView";
 import TradingDecisionLogViewer from "@/components/deriv-trader/TradingDecisionLogViewer";
 import { CouncilAutopilotInterfaceV2 } from "@/features/trading/components/deriv-trader/council-autopilot-interface-v2";
@@ -178,7 +178,13 @@ const DerivTraderV2Core = () => {
                     <TradingDecisionLogViewer logs={robotCouncil.tradeDecisionLog} showFilters={false} />
                 </TabsContent>
                 <TabsContent value="evolution" className="mt-4">
-                    <EvolutionLab history={robotCouncil.evolutionHistory} />
+                    <EvolutionLabV3 
+                        history={robotCouncil.evolutionHistory}
+                        isEvolving={robotCouncil.isEvolving}
+                        evolutionProgress={robotCouncil.evolutionProgress}
+                        currentGeneration={robotCouncil.currentGeneration}
+                        tradesUntilEvolution={robotCouncil.tradesUntilEvolution}
+                    />
                 </TabsContent>
             </Tabs>
         </div>
