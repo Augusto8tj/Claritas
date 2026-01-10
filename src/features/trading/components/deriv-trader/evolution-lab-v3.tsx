@@ -7,6 +7,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Dna, TrendingUp, TrendingDown, Target, Zap, Award, AlertCircle, TestTube, ChevronsRight, Brain } from 'lucide-react';
 import { Separator } from '@/components/ui/separator';
 import { cn } from '@/lib/utils';
+import { EVOLUTION_CONFIG } from '@/features/trading/config/trader-config';
 
 // Tipo importado do hook de evolução
 interface EvolutionEvent {
