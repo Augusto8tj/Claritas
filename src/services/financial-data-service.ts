@@ -271,11 +271,8 @@ export async function saveRobotPerformance(userId: string, performance: Enhanced
         robots: performance,
     };
     
-    // Sanitize before saving
     const sanitizedData = sanitizeForFirestore(dataToSave);
   
-    // Use merge: true para garantir que não sobrescreva o documento com dados parciais.
-    // Isto é mais seguro em cenários de escritas concorrentes.
     setDocumentNonBlocking(docRef, sanitizedData, { merge: true });
 };
 
@@ -334,10 +331,9 @@ export async function saveTradeDecision(userId: string, log: TradeDecisionLog) {
     const logCollectionRef = collection(db, 'users', userId, 'decision_logs');
     const logDocRef = doc(logCollectionRef, log.id);
     
-    // Sanitize the log object before sending it to Firestore
     const sanitizedLog = sanitizeForFirestore(log);
 
-    setDocumentNonBlocking(logDocRef, sanitizedLog, { merge: true }); // Use merge:true to be safe
+    setDocumentNonBlocking(logDocRef, sanitizedLog, { merge: true });
 }
 
 export async function getTradeDecisionLogs(userId: string): Promise<TradeDecisionLog[]> {
