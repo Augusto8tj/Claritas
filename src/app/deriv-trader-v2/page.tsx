@@ -184,6 +184,7 @@ const DerivTraderV2Core = () => {
                         evolutionProgress={robotCouncil.evolutionProgress}
                         currentGeneration={robotCouncil.currentGeneration}
                         tradesUntilEvolution={robotCouncil.tradesUntilEvolution}
+                        tradeCounts={robotCouncil.tradeCounts}
                     />
                 </TabsContent>
             </Tabs>

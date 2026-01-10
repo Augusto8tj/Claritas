@@ -6,23 +6,13 @@ import type { RobotStrategy, EnhancedRobotPerformance as RobotPerformance, Marke
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/features/auth/hooks/use-auth';
 import { loadEvolutionHistory, saveEvolutionHistory } from '@/services/financial-data-service';
+import { EVOLUTION_CONFIG } from '@/features/trading/config/trader-config';
+
 
 // ============================================================================
 // PARÂMETROS DA EVOLUÇÃO V3.0 (OTIMIZADOS PARA ALTA FREQUÊNCIA)
 // ============================================================================
-const EVOLUTION_CONFIG = {
-  // ✅ REDUZIDO: De 10 para 5 trades totais (virtual + real)
-  TRIGGER_THRESHOLD: 5,
-  
-  // Número de robôs de elite
-  ELITE_COUNT: 3,
-  
-  // Número de robôs a substituir
-  WORST_COUNT: 3,
-  
-  // Mínimo de trades para análise profunda
-  MIN_TRADES_FOR_DEEP_ANALYSIS: 3,
-};
+
 
 // ============================================================================
 // TIPOS AVANÇADOS PARA ANÁLISE
@@ -101,6 +91,7 @@ const analyzeRegimePerformance = (
   
   // Agrupa trades por regime
   trades.forEach(t => {
+    if (!t.regime) return;
     if (!regimeMap.has(t.regime)) {
       regimeMap.set(t.regime, []);
     }
@@ -335,15 +326,16 @@ export function useStrategyEvolution(initialStrategies: Omit<RobotStrategy, 'id'
   
   const [evolvedStrategies, setEvolvedStrategies] = useState<Omit<RobotStrategy, 'id'>[]>(initialStrategies);
   const [evolutionHistory, setEvolutionHistory] = useState<EvolutionEvent[]>([]);
-  
-  const tradeCountRef = useRef(0);
-  const generationRef = useRef(0);
-  const lastEvolutionTimeRef = useRef(Date.now());
-  
   const [isEvolving, setIsEvolving] = useState(false);
   const [evolutionProgress, setEvolutionProgress] = useState(0);
 
-  // ✅ CORREÇÃO: Carrega o histórico do Firestore na inicialização
+  // Contadores separados para transparência
+  const tradeCountRef = useRef({ real: 0, virtual: 0 });
+  const generationRef = useRef(0);
+  const lastEvolutionTimeRef = useRef(Date.now());
+
+
+  // Carrega o histórico do Firestore na inicialização
   useEffect(() => {
     if (!user || isAuthLoading) return;
     
@@ -365,14 +357,20 @@ export function useStrategyEvolution(initialStrategies: Omit<RobotStrategy, 'id'
     return () => { isMounted = false };
   }, [user, isAuthLoading]);
 
-  const evolveTrigger = useCallback((performanceData: RobotPerformance[]) => {
-    tradeCountRef.current += 1;
+  const evolveTrigger = useCallback((
+    performanceData: RobotPerformance[],
+    tradeType: 'real' | 'virtual' // NOVO: parâmetro de tipo
+  ) => {
     
-    if (tradeCountRef.current < EVOLUTION_CONFIG.TRIGGER_THRESHOLD) {
+    tradeCountRef.current[tradeType]++;
+    const totalTrades = tradeCountRef.current.real + tradeCountRef.current.virtual;
+
+    if (totalTrades < EVOLUTION_CONFIG.TRIGGER_THRESHOLD) {
       return;
     }
 
-    tradeCountRef.current = 0;
+    // Reset contadores
+    tradeCountRef.current = { real: 0, virtual: 0 };
     generationRef.current++;
     setIsEvolving(true);
     setEvolutionProgress(0);
@@ -495,6 +493,7 @@ export function useStrategyEvolution(initialStrategies: Omit<RobotStrategy, 'id'
     isEvolving,
     evolutionProgress,
     currentGeneration: generationRef.current,
-    tradesUntilEvolution: Math.max(0, EVOLUTION_CONFIG.TRIGGER_THRESHOLD - tradeCountRef.current),
+    tradesUntilEvolution: EVOLUTION_CONFIG.TRIGGER_THRESHOLD - (tradeCountRef.current.real + tradeCountRef.current.virtual),
+    tradeCounts: tradeCountRef.current, // Exporta a contagem detalhada
   };
 }

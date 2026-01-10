@@ -46,6 +46,7 @@ interface EvolutionLabV3Props {
   evolutionProgress?: number;
   currentGeneration?: number;
   tradesUntilEvolution?: number;
+  tradeCounts?: { real: number; virtual: number };
 }
 
 export default function EvolutionLabV3({ 
@@ -53,7 +54,8 @@ export default function EvolutionLabV3({
   isEvolving = false,
   evolutionProgress = 0,
   currentGeneration = 0,
-  tradesUntilEvolution = 5
+  tradesUntilEvolution = EVOLUTION_CONFIG.TRIGGER_THRESHOLD,
+  tradeCounts = { real: 0, virtual: 0 }
 }: EvolutionLabV3Props) {
   
   const latestEvent = history[0];
@@ -75,9 +77,11 @@ export default function EvolutionLabV3({
             </div>
             <div className="text-right">
               <div className="text-2xl font-bold text-purple-600">Gen {currentGeneration}</div>
-              <div className="text-xs text-muted-foreground">
+               <div className="text-xs text-muted-foreground">
                 {tradesUntilEvolution > 0 ? (
-                  <span>🔄 {tradesUntilEvolution} trades até próxima evolução</span>
+                  <span>
+                    🔄 {tradesUntilEvolution} trades até evolução ({tradeCounts.real}R + {tradeCounts.virtual}V)
+                  </span>
                 ) : (
                   <span>✅ Limite atingido</span>
                 )}
