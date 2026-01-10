@@ -147,8 +147,8 @@ function MainNav() {
                 className="w-full justify-start"
                 isActive={pathname.startsWith('/deriv-trader-v2')}
               >
-                <Layers className="w-5 h-5" />
-                <span>Hub de Inovação</span>
+                <Wand2 className="w-5 h-5" />
+                <span>Deriv Trader V2</span>
                 <ChevronDown className={cn("ml-auto h-4 w-4 shrink-0 transition-transform", pathname.startsWith('/deriv-trader-v2') && "rotate-180")} />
               </SidebarMenuButton>
           </CollapsibleTrigger>
@@ -158,7 +158,7 @@ function MainNav() {
                  <SidebarMenuSubItem>
                     <SidebarMenuSubButton href="/deriv-trader-v2" isActive={pathname === '/deriv-trader-v2'}>
                         <Wand2 />
-                        <span>Deriv Trader 2.5</span>
+                        <span>Trader 2.5 (IA)</span>
                     </SidebarMenuSubButton>
                 </SidebarMenuSubItem>
                 <SidebarMenuSubItem>

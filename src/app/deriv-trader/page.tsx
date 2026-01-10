@@ -23,7 +23,6 @@ import { AITradeSuggestion } from "@/features/trading/components/deriv-trader/ai
 import { IndicatorPanel } from "@/features/trading/components/deriv-trader/indicator-panel";
 import { TradingDesk } from "@/features/trading/components/deriv-trader/trading-desk";
 import { HallOfFame } from "@/features/trading/components/deriv-trader/hall-of-fame";
-import { EvolutionLab } from "@/features/trading/components/deriv-trader/evolution-lab";
 import { ApiStatusIndicatorLegacy } from "@/features/trading/components/deriv-trader/ApiStatusIndicatorLegacy";
 
 
@@ -107,11 +106,10 @@ function DerivTraderCore() {
                 </div>
                  <div className="mt-6">
                     <Tabs value={activeTab} onValueChange={setActiveTab}>
-                        <TabsList className="grid w-full grid-cols-4">
+                        <TabsList className="grid w-full grid-cols-3">
                             <TabsTrigger value="log">Registo de Operações</TabsTrigger>
                             <TabsTrigger value="desk">Arena Virtual</TabsTrigger>
                             <TabsTrigger value="fame">Hall da Fama</TabsTrigger>
-                            <TabsTrigger value="evolution">Evolução</TabsTrigger>
                         </TabsList>
                         <TabsContent value="log" className="mt-4">
                             <OperationsLog operations={operationsLog} sellContractV1={sellContract} priceTicksV1={priceTicks} />
@@ -127,9 +125,6 @@ function DerivTraderCore() {
                         </TabsContent>
                         <TabsContent value="fame" className="mt-4">
                             <HallOfFame />
-                        </TabsContent>
-                         <TabsContent value="evolution" className="mt-4">
-                            <EvolutionLab history={robotCouncil.evolutionHistory} />
                         </TabsContent>
                     </Tabs>
                 </div>
