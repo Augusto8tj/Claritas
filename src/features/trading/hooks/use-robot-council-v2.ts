@@ -141,7 +141,7 @@ const isValid = (value: any): value is number =>
 
 const validateCandles = (candles: CandleData[]): CandleData[] => {
   if (!candles || !Array.isArray(candles)) return [];
-  return candles.filter(c => c && c.epoch > 0 && c.close > 0);
+  return candles.filter(c => c && c.epoch > 0 && c.close > 0 && Number.isFinite(c.close) && Number.isFinite(c.open) && Number.isFinite(c.high) && Number.isFinite(c.low));
 };
 
 // ════════════════════════════════════════════════════════════════════
@@ -402,44 +402,6 @@ export function useRobotCouncilV2(
     toast({ title: '⏸️ Sistema Pausado', description: 'Mesa Operacional suspensa.' });
   }, [toast]);
   
-  useEffect(() => {
-    if (!operationsLog || operationsLog.length === 0 || !user || !isCouncilAutopilotOn) return;
-
-    const lastOperation = operationsLog[0];
-    
-    if (lastOperation && lastOperation.status !== 'pending' && lastOperation.initiator === 'Conselho') {
-        const log = tradeDecisionLog.find(l => l.contractId === lastOperation.id);
-        
-        if (log) {
-            const pnl = lastOperation.result || 0;
-            const votingRobots = Object.keys(log.consensus.votes);
-            
-            const performanceMap = new Map<string, EnhancedRobotPerformance>(
-                robotPerformanceRef.current.map(p => [p.id, { ...p }])
-            );
-            
-            let changed = false;
-            votingRobots.forEach(robotId => {
-                const perf = performanceMap.get(robotId);
-                if (perf) {
-                    perf.tradeHistory.push({ profit: pnl, regime: log.context.marketRegime as MarketRegime, timestamp: Date.now() });
-                    const metrics = calculatePerformanceMetrics(perf.tradeHistory);
-                    performanceMap.set(robotId, { ...perf, ...metrics });
-                    changed = true;
-                }
-            });
-
-            if (changed) {
-                const updatedPerformance = Array.from(performanceMap.values());
-                robotPerformanceRef.current = updatedPerformance;
-                setRobotPerformance(updatedPerformance);
-                saveRobotPerformance(user.uid, updatedPerformance);
-                // ✅ CHAMADA CORRETA: O gatilho da evolução agora considera trades reais
-                evolveTrigger(updatedPerformance);
-            }
-        }
-    }
-  }, [operationsLog, tradeDecisionLog, user, isCouncilAutopilotOn, evolveTrigger]);
 
   const validCandles = useMemo(() => validateCandles(chartData), [chartData]);
 
@@ -591,10 +553,36 @@ export function useRobotCouncilV2(
             }
         }
         
+        // UNIFICAÇÃO DA ATUALIZAÇÃO E EVOLUÇÃO
+        const lastRealOperation = operationsLog.find(op => op.status !== 'pending' && op.initiator === 'Conselho' && !tradeDecisionLog.find(l => l.contractId === op.id)?.processed);
+
+        if (lastRealOperation) {
+             const log = tradeDecisionLog.find(l => l.contractId === lastRealOperation.id);
+             if (log) {
+                 const pnl = lastRealOperation.result || 0;
+                 const votingRobots = Object.keys(log.consensus.votes);
+                 
+                 votingRobots.forEach(robotId => {
+                     const perfIndex = robotPerformanceRef.current.findIndex(p => p.id === robotId);
+                     if (perfIndex !== -1) {
+                         const perf = robotPerformanceRef.current[perfIndex];
+                         perf.wins += (pnl > 0 ? 1 : 0);
+                         perf.losses += (pnl <= 0 ? 1 : 0);
+                         perf.totalProfit += pnl;
+                         perf.tradeHistory.push({ profit: pnl, regime: log.context.marketRegime as MarketRegime, timestamp: Date.now() });
+                         const metrics = calculatePerformanceMetrics(perf.tradeHistory);
+                         robotPerformanceRef.current[perfIndex] = { ...perf, ...metrics };
+                         performanceChanged = true;
+                     }
+                 });
+                 log.processed = true; // Marca como processado
+             }
+        }
+
+
         if (performanceChanged) {
             const updatedPerformance = Array.from(robotPerformanceRef.current);
             setRobotPerformance(updatedPerformance);
-            // ✅ CHAMADA CORRETA: O gatilho da evolução agora considera trades virtuais
             evolveTrigger(updatedPerformance);
             if (user) {
                 saveRobotPerformance(user.uid, updatedPerformance);
@@ -749,7 +737,6 @@ export function useRobotCouncilV2(
         
         setVirtualTradeCount(virtualTradesRef.current.length);
 
-        // ✅ CORREÇÃO: Adicionada verificação de probabilidade mínima
         if (consensusReached && consensusDirection !== 'HOLD' && user && consensusProbability > 0.52) {
              if (kellyStake > 0) {
                  
@@ -917,4 +904,11 @@ export function useRobotCouncilV2(
     tradeDecisionLog,
     supervisionStatus: { status: 'approved', message: 'Sistema Operacional v2.5' }
   };
+}
+
+// Helper to mark a log as processed without modifying the original array
+function markLogAsProcessed(logs: TradeDecisionLog[], contractId: number): TradeDecisionLog[] {
+    return logs.map(log => 
+        log.contractId === contractId ? { ...log, processed: true } : log
+    );
 }
