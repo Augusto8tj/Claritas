@@ -814,11 +814,39 @@ export function useRobotCouncilV2(
     strategyCouncil, timePeriod, confidenceFactor, isMeritocracyOn, consensusSensitivity, dailyBalance, sessionStartTime, user, durationRange, executeTrade, evolveTrigger, durationLimits, dataVersion, sellContract, toast, tradeDecisionLog, isDynamicExitOn, memoizedIndicators
   ]);
 
+  const timeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const lastRunRef = useRef<number>(0);
+  
+  const debouncedRunCouncilCycle = useCallback(() => {
+    const now = Date.now();
+    const timeSinceLastRun = now - lastRunRef.current;
+
+    if (timeoutRef.current) {
+      clearTimeout(timeoutRef.current);
+    }
+
+    if (timeSinceLastRun >= TRADER_CONFIG.THROTTLE_MS) {
+      runCouncilCycle();
+      lastRunRef.current = now;
+    } else {
+      timeoutRef.current = setTimeout(() => {
+        runCouncilCycle();
+        lastRunRef.current = Date.now();
+      }, TRADER_CONFIG.THROTTLE_MS - timeSinceLastRun);
+    }
+  }, [runCouncilCycle]);
+
   useEffect(() => {
-    if (!isCouncilAutopilotOn) return;
-    const interval = setInterval(runCouncilCycle, TRADER_CONFIG.THROTTLE_MS);
-    return () => clearInterval(interval);
-  }, [runCouncilCycle, isCouncilAutopilotOn]);
+    if (!isCouncilAutopilotOn || !dataVersion) return;
+    debouncedRunCouncilCycle();
+    
+    // Cleanup timeout on unmount
+    return () => {
+        if(timeoutRef.current) {
+            clearTimeout(timeoutRef.current);
+        }
+    }
+  }, [dataVersion, isCouncilAutopilotOn, debouncedRunCouncilCycle]);
 
   return {
     isCouncilAutopilotOn,
