@@ -62,7 +62,7 @@ export const ARENA_CONFIG = {
 
 export const EVOLUTION_CONFIG = {
   // Número de trades totais (reais + virtuais) para acionar um ciclo de evolução
-  TRIGGER_THRESHOLD: 5,
+  TRIGGER_THRESHOLD: 2,
   
   // Quantos dos melhores robôs são considerados "elite" para reprodução
   ELITE_COUNT: 3,
