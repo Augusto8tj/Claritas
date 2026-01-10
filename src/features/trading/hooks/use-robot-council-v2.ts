@@ -434,10 +434,16 @@ export function useRobotCouncilV2(
     }
   }, [operationsLog, tradeDecisionLog, user, isCouncilAutopilotOn, evolveTrigger]);
 
+  const validCandles = useMemo(() => validateCandles(tickCandles), [tickCandles]);
+
+  const memoizedIndicators = useMemo(() => {
+    return calculateAllIndicators(validCandles, strategyCouncil, timePeriod, { duration: 5, unit: 'm' });
+  }, [validCandles, strategyCouncil, timePeriod]);
+
+
   const runCouncilCycle = useCallback(() => {
     if (!isCouncilAutopilotOn || !isConnected || !activeSymbol) return;
     
-    const validCandles = validateCandles(tickCandles);
     if (validCandles.length < TRADER_CONFIG.REGIME_LOOKBACK || priceTicks.length === 0) return;
 
     if (councilExecutionRef.current.isExecuting) return; 
@@ -448,7 +454,7 @@ export function useRobotCouncilV2(
         const currentTick = priceTicks[priceTicks.length - 1];
         if (!currentTick) throw new Error("Tick indisponível");
 
-        const currentIndicators = calculateAllIndicators(validCandles, strategyCouncil, timePeriod, { duration: 5, unit: 'm' });
+        const currentIndicators = memoizedIndicators;
         if (!currentIndicators) {
             councilExecutionRef.current.isExecuting = false;
             return;
@@ -652,7 +658,7 @@ export function useRobotCouncilV2(
         const currentSessionDuration = sessionStartTime ? (Date.now() - sessionStartTime) / 1000 : 0;
         
         const edgeAdjustedProb = consensusProbability * regimeResult.confidence;
-        let kellyStake = calculateKellyStake(dailyBalance, edgeAdjustedProb, 0.95, RISK_CONFIG.MAX_STAKE_PERCENTAGE);
+        let kellyStake = calculateKellyStake(dailyBalance, edgeAdjustedProb, 0.95);
         
         const volatilityFactor = (currentIndicators.atr || 0) / currentTick.price + (currentIndicators.bbw || 0);
         const volAdjustment = Math.exp(-volatilityFactor * RISK_CONFIG.VOLATILITY_ADJUSTMENT_FACTOR);
@@ -784,8 +790,8 @@ export function useRobotCouncilV2(
     }
 
   }, [
-    isCouncilAutopilotOn, isConnected, activeSymbol, tickCandles, priceTicks, 
-    strategyCouncil, timePeriod, confidenceFactor, isMeritocracyOn, consensusSensitivity, dailyBalance, sessionStartTime, user, durationRange, executeTrade, evolveTrigger, durationLimits, dataVersion, sellContract, toast, tradeDecisionLog, isDynamicExitOn
+    isCouncilAutopilotOn, isConnected, activeSymbol, validCandles, priceTicks, 
+    strategyCouncil, timePeriod, confidenceFactor, isMeritocracyOn, consensusSensitivity, dailyBalance, sessionStartTime, user, durationRange, executeTrade, evolveTrigger, durationLimits, dataVersion, sellContract, toast, tradeDecisionLog, isDynamicExitOn, memoizedIndicators
   ]);
 
   useEffect(() => {
