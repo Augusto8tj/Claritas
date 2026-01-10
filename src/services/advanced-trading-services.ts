@@ -495,7 +495,7 @@ export const calculatePerformanceMetrics = (
   
   const avgWin = wins.length > 0 ? totalWins / wins.length : 0;
   const avgLoss = losses.length > 0 ? totalLosses / losses.length : 0;
-  const totalTrades = wins.length + losses.length;
+  const totalTrades = profits.length;
   const winRate = totalTrades > 0 ? (wins.length / totalTrades) * 100 : 0;
 
 
