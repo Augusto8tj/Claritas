@@ -10,6 +10,7 @@ import { cn } from '@/lib/utils';
 import { EVOLUTION_CONFIG } from '@/features/trading/config/trader-config';
 import { Button } from '@/components/ui/button';
 import { EnhancedRobotPerformance as RobotPerformance } from '@/lib/types';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 
 
 // Tipo importado do hook de evolução
@@ -52,6 +53,7 @@ interface EvolutionLabV3Props {
   tradeCounts?: { real: number; virtual: number };
   robotPerformance?: RobotPerformance[];
   evolveTrigger?: (performanceData: RobotPerformance[], tradeType: 'real' | 'virtual', count?: number) => void;
+  resetEvolutionHistory?: () => void;
 }
 
 export default function EvolutionLabV3({ 
@@ -63,6 +65,7 @@ export default function EvolutionLabV3({
   tradeCounts = { real: 0, virtual: 0 },
   robotPerformance,
   evolveTrigger,
+  resetEvolutionHistory
 }: EvolutionLabV3Props) {
   
   const latestEvent = history[0];
@@ -95,39 +98,18 @@ export default function EvolutionLabV3({
               </div>
             </div>
           </div>
-           {/* DEBUG BUTTONS */}
+            {/* DEBUG BUTTONS */}
             <div className="flex gap-2 mt-4">
-              <Button 
-                variant="outline" 
-                size="sm"
-                onClick={() => {
-                  console.log('[TESTE MANUAL] Verificando robôs...');
-                  console.log('Robôs disponíveis:', robotPerformance?.length || 0);
-                  
-                  if (robotPerformance && robotPerformance.length > 0) {
-                    console.log('Primeira estratégia:', robotPerformance[0]);
-                    console.log('TradeHistory do primeiro:', robotPerformance[0].tradeHistory);
-                  }
-                }}
-              >
-                🔍 Debug Robôs
-              </Button>
-              
-              <Button 
-                variant="outline" 
-                size="sm"
-                className="text-orange-600 border-orange-400 hover:bg-orange-100 hover:text-orange-700"
-                onClick={() => {
-                  if (evolveTrigger && robotPerformance) {
-                    console.log('[TESTE MANUAL] Forçando evolução com 10 trades virtuais...');
-                    evolveTrigger(robotPerformance, 'virtual', 10);
-                  } else {
-                    alert('evolveTrigger ou robotPerformance não estão disponíveis como props!');
-                  }
-                }}
-              >
-                ⚡ Forçar Evolução
-              </Button>
+                 <Button 
+                    variant="outline" 
+                    size="sm"
+                    className="text-red-600 border-red-400 hover:bg-red-100 hover:text-red-700"
+                    onClick={resetEvolutionHistory}
+                    disabled={!resetEvolutionHistory}
+                  >
+                    <Trash2 className="mr-2 h-4 w-4"/>
+                    Apagar Histórico
+                  </Button>
             </div>
         </CardHeader>
         
