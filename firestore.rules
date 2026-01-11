@@ -52,11 +52,12 @@ service cloud.firestore {
          allow read, list, write: if isOwner(userId);
       }
       
-      // --- PERFORMANCE ROBÔS ---
+      // --- DADOS DE TRADING (PERFORMANCE E EVOLUÇÃO) ---
       match /trading_data/{docId} {
+         // Esta regra genérica cobre 'robot_council_performance' e outros futuros documentos.
          allow read, write: if isOwner(userId);
       }
-
+      
       // --- DIAGNÓSTICO ---
       match /diagnostico/{docId} {
          allow read, write: if isOwner(userId);
