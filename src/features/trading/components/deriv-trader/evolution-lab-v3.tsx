@@ -4,7 +4,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Dna, TrendingUp, TrendingDown, Target, Zap, Award, AlertCircle, TestTube, ChevronsRight, Brain, RefreshCw, Bot, Swords, Timer, Skull, Medal, Activity, LayoutGrid, BarChart, Cloud, CandlestickChart, Waves, BrainCircuit } from 'lucide-react';
+import { Dna, TrendingUp, TrendingDown, Target, Zap, Award, AlertCircle, TestTube, ChevronsRight, Brain, RefreshCw, Bot, Swords, Timer, Skull, Medal, Activity, LayoutGrid, BarChart, Cloud, CandlestickChart, Waves, BrainCircuit, Trash2 } from 'lucide-react';
 import { Separator } from '@/components/ui/separator';
 import { cn } from '@/lib/utils';
 import { EVOLUTION_CONFIG } from '@/features/trading/config/trader-config';
