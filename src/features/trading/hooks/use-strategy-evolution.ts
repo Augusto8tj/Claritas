@@ -394,11 +394,33 @@ export function useStrategyEvolution(initialStrategies: Omit<RobotStrategy, 'id'
           .slice(-EVOLUTION_CONFIG.WORST_COUNT)
           .filter(p => p.tradeHistory && p.tradeHistory.length >= EVOLUTION_CONFIG.MIN_TRADES_FOR_DEEP_ANALYSIS);
           
-        if (elitePerformers.length === 0 || worstPerformers.length === 0 || (elitePerformers[0]?.totalProfit ?? 0) <= 0) {
+        console.log(`
+📊 [Evolution V3] Análise de Robôs:
+   Total de robôs: ${performanceData.length}
+   Elite (top ${EVOLUTION_CONFIG.ELITE_COUNT}): ${elitePerformers.length}
+   Piores (bottom ${EVOLUTION_CONFIG.WORST_COUNT}): ${worstPerformers.length}
+   
+   Elite IDs: ${elitePerformers.map(e => e.id).join(', ')}
+   Piores IDs: ${worstPerformers.map(w => w.id).join(', ')}
+        `);
+          
+        if (elitePerformers.length === 0) {
+          console.warn('❌ [Evolution V3] ABORTADO: Nenhum robô de elite com dados suficientes');
           setIsEvolving(false);
           return { real: 0, virtual: 0 };
         }
         
+        if (worstPerformers.length === 0) {
+          console.warn('❌ [Evolution V3] ABORTADO: Nenhum robô pior com dados suficientes');
+          setIsEvolving(false);
+          return { real: 0, virtual: 0 };
+        }
+        
+        if ((elitePerformers[0]?.totalProfit ?? 0) <= 0) {
+          console.warn('❌ [Evolution V3] ABORTADO: Elite não é lucrativa');
+          console.log(`   Elite #1: ${elitePerformers[0].strategyType} com lucro ${elitePerformers[0].totalProfit}`);
+        }
+
         const newEvent: EvolutionEvent = {
           timestamp: new Date(),
           generation: generationRef.current,
@@ -503,9 +525,8 @@ export function useStrategyEvolution(initialStrategies: Omit<RobotStrategy, 'id'
   
   const deleteSingleEvolution = useCallback(async (eventTimestamp: string) => {
     if (!user) return;
-    const updatedHistory = await deleteEvolutionEvent(user.uid, eventTimestamp);
-    setEvolutionHistory(updatedHistory);
-    generationRef.current = updatedHistory.length > 0 ? updatedHistory[0].generation : 0;
+    setEvolutionHistory(prev => prev.filter(e => e.timestamp.toISOString() !== eventTimestamp));
+    await deleteEvolutionEvent(user.uid, eventTimestamp);
     toast({
         title: 'Geração Apagada',
         description: `O registo da geração foi removido do histórico.`,
