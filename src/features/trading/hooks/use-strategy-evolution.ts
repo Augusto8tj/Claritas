@@ -486,9 +486,11 @@ export function useStrategyEvolution(initialStrategies: Omit<RobotStrategy, 'id'
         if (strategiesChanged) {
             setEvolvedStrategies(currentStrategies);
             
+            // ✅ CORREÇÃO ATÓMICA
             setEvolutionHistory(prevHistory => {
                 const newHistory = [newEvent, ...prevHistory];
                 if (user) {
+                    // A gravação acontece com o estado mais recente (newHistory)
                     saveEvolutionHistory(user.uid, newHistory);
                 }
                 return newHistory;
@@ -509,7 +511,7 @@ export function useStrategyEvolution(initialStrategies: Omit<RobotStrategy, 'id'
         
         return { real: 0, virtual: 0 };
     });
-  }, [evolvedStrategies, toast, user, isAuthLoading]);
+  }, [evolvedStrategies, toast, user]);
   
   const resetEvolutionHistory = useCallback(async () => {
     if (!user) return;
