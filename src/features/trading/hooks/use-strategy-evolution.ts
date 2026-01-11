@@ -498,12 +498,15 @@ export function useStrategyEvolution(initialStrategies: Omit<RobotStrategy, 'id'
     setEvolutionProgress(80);
 
     if (strategiesChanged) {
-        const newHistory = [newEvent, ...evolutionHistory];
         setEvolvedStrategies(currentStrategies);
-        setEvolutionHistory(newHistory);
-        if (user) {
-            saveEvolutionHistory(user.uid, newHistory);
-        }
+        
+        setEvolutionHistory(prev => {
+            const newHistory = [newEvent, ...prev];
+            if (user) {
+                saveEvolutionHistory(user.uid, newHistory);
+            }
+            return newHistory;
+        });
 
       const timeSinceLastEvolution = (Date.now() - lastEvolutionTimeRef.current) / 1000;
       lastEvolutionTimeRef.current = Date.now();
@@ -519,6 +522,19 @@ export function useStrategyEvolution(initialStrategies: Omit<RobotStrategy, 'id'
     setTimeout(() => setIsEvolving(false), 1000);
 
   }, [evolvedStrategies, toast, user, evolutionHistory, isAuthLoading]);
+  
+  const resetEvolutionHistory = useCallback(() => {
+    setEvolutionHistory([]);
+    generationRef.current = 0;
+    if (user) {
+        saveEvolutionHistory(user.uid, []);
+    }
+    toast({
+        title: 'Histórico de Evolução Apagado',
+        description: 'O laboratório foi resetado para a Geração 0.',
+    });
+  }, [user, toast]);
+
 
   return {
     evolvedStrategies,
@@ -529,5 +545,6 @@ export function useStrategyEvolution(initialStrategies: Omit<RobotStrategy, 'id'
     currentGeneration: generationRef.current,
     tradesUntilEvolution: EVOLUTION_CONFIG.TRIGGER_THRESHOLD - (tradeCountRef.current.real + tradeCountRef.current.virtual),
     tradeCounts: tradeCountRef.current,
+    resetEvolutionHistory,
   };
 }
