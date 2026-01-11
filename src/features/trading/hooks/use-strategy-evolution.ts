@@ -1,537 +1,430 @@
 // /src/features/trading/hooks/use-strategy-evolution.ts
 'use client';
 
+/**
+ * 🧬 SISTEMA DE EVOLUÇÃO GENÉTICA V3.0 - VERSÃO COMPLETA E CORRIGIDA
+ * ==================================================================
+ * 
+ * CORREÇÕES IMPLEMENTADAS:
+ * 1. ✅ Contagem dual: 10 trades virtuais OU 1 trade real acionam evolução
+ * 2. ✅ Persistência automática no Firestore após cada geração
+ * 3. ✅ Estados de UI completos (isEvolving, progress, generation)
+ * 4. ✅ Interface compatível com use-robot-council-v2.ts
+ * 5. ✅ Funções de gerenciamento (reset, delete)
+ * 6. ✅ Campo generation em EvolutionEvent
+ * 7. ✅ Análise de causa-raiz direcionada por regime
+ */
+
 import { useState, useCallback, useRef, useEffect } from 'react';
 import type { RobotStrategy, EnhancedRobotPerformance as RobotPerformance, MarketRegime } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/features/auth/hooks/use-auth';
-import { loadEvolutionHistory, saveEvolutionHistory, clearEvolutionHistory, deleteEvolutionEvent } from '@/services/financial-data-service';
-import { EVOLUTION_CONFIG } from '@/features/trading/config/trader-config';
-
-
-// ============================================================================
-// PARÂMETROS DA EVOLUÇÃO V3.0 (OTIMIZADOS PARA ALTA FREQUÊNCIA)
-// ============================================================================
-
+import { 
+  saveEvolutionHistory, 
+  loadEvolutionHistory, 
+  clearEvolutionHistory,
+  deleteEvolutionEvent 
+} from '@/services/financial-data-service';
 
 // ============================================================================
-// TIPOS AVANÇADOS PARA ANÁLISE
+// CONFIGURAÇÃO
 // ============================================================================
+const VIRTUAL_TRADES_THRESHOLD = 10; // ✅ 10 trades virtuais
+const REAL_TRADES_THRESHOLD = 1;     // ✅ 1 trade real
+const ELITE_COUNT = 3;
+const WORST_COUNT = 3;
+const MIN_TRADES_FOR_ANALYSIS = 5;
 
-interface TradeAnalysis {
-  regime: MarketRegime;
-  won: boolean;
-  profit: number;
-  timestamp: number;
-}
-
-interface RegimePerformance {
-  regime: MarketRegime;
-  wins: number;
-  losses: number;
-  totalTrades: number;
-  winRate: number;
-  avgProfit: number;
-  avgLoss: number;
-  profitFactor: number;
-}
-
-interface RobotDNA {
-  // Genoma do robô (parâmetros que podem ser mutados)
-  period?: number;
-  shortPeriod?: number;
-  longPeriod?: number;
-  strongBuyThreshold?: number;
-  strongSellThreshold?: number;
-  optimalDuration: number;
-  optimalDurationUnit: 't' | 's' | 'm' | 'h' | 'd';
-}
-
-interface MutationPlan {
-  robotId: string;
-  robotType: string;
-  parentId: string;
-  parentType: string;
-  diagnosis: string;
-  prescription: string;
-  expectedImprovement: string;
-  mutatedGenes: string[];
-}
-
+// ============================================================================
+// INTERFACES
+// ============================================================================
 export interface EvolutionEvent {
+  generation: number;           // ✅ NOVO: Número da geração
   timestamp: Date;
-  generation: number;
-  totalTrades: number;
-  elitePerformers: {
-    id: string;
-    strategyType: string;
-    sharpeRatio: number;
-    winRate: number;
-    totalProfit: number;
-    effectiveRegimes: MarketRegime[];
+  elitePerformers: Pick<RobotPerformance, 'id' | 'strategyType' | 'totalProfit' | 'wins' | 'losses' | 'sharpeRatio'>[];
+  mutations: {
+    replacedBotId: string;
+    replacedBotType: string;
+    parentBotId: string;
+    parentBotType: string;
+    analysis: string;
+    newParameters: Record<string, any>; // ✅ Registra os novos parâmetros
   }[];
-  mutations: MutationPlan[];
-  populationStats: {
-    avgSharpe: number;
-    avgWinRate: number;
-    totalProfit: number;
-    bestRegimes: MarketRegime[];
-  };
+  trigger: 'virtual' | 'real';  // ✅ NOVO: Qual tipo de trade acionou
+  tradeCount: number;           // ✅ NOVO: Quantos trades foram processados
+}
+
+export interface TradeCounts {
+  virtual: number;
+  real: number;
+  total: number;
 }
 
 // ============================================================================
-// ANALISADOR PROFUNDO DE PERFORMANCE POR REGIME
+// MUTAÇÃO INTELIGENTE
 // ============================================================================
+const mutateStrategy = (
+  eliteRobot: RobotStrategy,
+  analysis?: { worstRegime: MarketRegime | null }
+): { strategy: Omit<RobotStrategy, 'id' | 'justification'>; parameters: Record<string, any> } => {
+  const newStrategy = { ...eliteRobot };
+  const changedParams: Record<string, any> = {};
 
-const analyzeRegimePerformance = (
-  trades: { profit: number; regime: MarketRegime; timestamp: number }[]
-): RegimePerformance[] => {
-  
-  const regimeMap = new Map<MarketRegime, TradeAnalysis[]>();
-  
-  // Agrupa trades por regime
-  trades.forEach(t => {
-    if (!t.regime) return;
-    if (!regimeMap.has(t.regime)) {
-      regimeMap.set(t.regime, []);
+  const bigMutation = 1 + (Math.random() - 0.5) * 0.4; // ±20%
+  const smallMutation = 1 + (Math.random() - 0.5) * 0.1; // ±5%
+  const smallChange = Math.random() > 0.5 ? 1 : -1;
+
+  // ✅ Mutação Direcionada por Regime
+  if (analysis?.worstRegime === 'trending_bull' || analysis?.worstRegime === 'trending_bear') {
+    if (newStrategy.period) {
+      const oldPeriod = newStrategy.period;
+      newStrategy.period = Math.max(5, Math.round(newStrategy.period * 0.8));
+      changedParams.period = { old: oldPeriod, new: newStrategy.period, reason: 'Otimização para tendência' };
     }
-    regimeMap.get(t.regime)!.push({
-      regime: t.regime,
-      won: t.profit > 0,
-      profit: t.profit,
-      timestamp: t.timestamp,
-    });
-  });
-  
-  // Calcula estatísticas por regime
-  const results: RegimePerformance[] = [];
-  
-  regimeMap.forEach((trades, regime) => {
-    const wins = trades.filter(t => t.won).length;
-    const losses = trades.length - wins;
-    const totalTrades = trades.length;
-    const winRate = (wins / totalTrades) * 100;
-    
-    const profits = trades.filter(t => t.won).map(t => t.profit);
-    const lossesPnL = trades.filter(t => !t.won).map(t => Math.abs(t.profit));
-    
-    const avgProfit = profits.length > 0 
-      ? profits.reduce((sum, p) => sum + p, 0) / profits.length 
-      : 0;
-    
-    const avgLoss = lossesPnL.length > 0 
-      ? lossesPnL.reduce((sum, l) => sum + l, 0) / lossesPnL.length 
-      : 0;
-    
-    const totalProfitSum = profits.reduce((sum, p) => sum + p, 0);
-    const totalLossSum = lossesPnL.reduce((sum, l) => sum + l, 0);
-    
-    const profitFactor = totalLossSum > 0 ? totalProfitSum / totalLossSum : 0;
-    
-    results.push({
-      regime,
-      wins,
-      losses,
-      totalTrades,
-      winRate,
-      avgProfit,
-      avgLoss,
-      profitFactor,
-    });
-  });
-  
-  return results.sort((a, b) => a.winRate - b.winRate); // Pior regime primeiro
-};
-
-// ============================================================================
-// DIAGNOSTICADOR INTELIGENTE (IA de Análise)
-// ============================================================================
-
-const diagnoseRobot = (
-  robot: RobotPerformance
-): {
-  diagnosis: string;
-  worstRegime: MarketRegime | null;
-  bestRegime: MarketRegime | null;
-  rootCause: string;
-  recommendation: string;
-} => {
-  
-  if (!robot.tradeHistory || robot.tradeHistory.length < EVOLUTION_CONFIG.MIN_TRADES_FOR_DEEP_ANALYSIS) {
-    return {
-      diagnosis: 'Dados insuficientes',
-      worstRegime: null,
-      bestRegime: null,
-      rootCause: `Menos de ${EVOLUTION_CONFIG.MIN_TRADES_FOR_DEEP_ANALYSIS} trades executados`,
-      recommendation: 'Aguardar mais dados antes de mutar',
-    };
-  }
-  
-  const regimePerf = analyzeRegimePerformance(robot.tradeHistory);
-  
-  if (regimePerf.length === 0) {
-    return {
-      diagnosis: 'Sem dados de regime',
-      worstRegime: null,
-      bestRegime: null,
-      rootCause: 'Nenhum trade registrado com contexto de regime',
-      recommendation: 'Verificar sistema de regime detection',
-    };
-  }
-  
-  const worstRegime = regimePerf[0]; // Primeiro = pior win rate
-  const bestRegime = regimePerf[regimePerf.length - 1]; // Último = melhor
-  
-  let rootCause = '';
-  let recommendation = '';
-  
-  // Análise de Causa Raiz
-  if (worstRegime.winRate < 40) {
-    if (worstRegime.regime === 'trending_bull' || worstRegime.regime === 'trending_bear') {
-      rootCause = `Incapaz de acompanhar tendências (${worstRegime.winRate.toFixed(0)}% WR em ${worstRegime.regime})`;
-      recommendation = 'Reduzir período dos indicadores (tornar mais reativo)';
-    } else if (worstRegime.regime === 'ranging') {
-      rootCause = `Gera falsos sinais em mercado lateral (${worstRegime.winRate.toFixed(0)}% WR)`;
-      recommendation = 'Aumentar período dos indicadores (filtrar ruído)';
-    } else if (worstRegime.regime === 'high_volatility') {
-      rootCause = `Não se adapta a alta volatilidade (${worstRegime.winRate.toFixed(0)}% WR)`;
-      recommendation = 'Encurtar duração dos trades e aumentar thresholds';
-    } else if (worstRegime.regime === 'breakout') {
-      rootCause = `Perde oportunidades de breakout (${worstRegime.winRate.toFixed(0)}% WR)`;
-      recommendation = 'Reduzir duração e tornar thresholds mais agressivos';
+  } else if (analysis?.worstRegime === 'ranging') {
+    if (newStrategy.period) {
+      const oldPeriod = newStrategy.period;
+      newStrategy.period = Math.max(10, Math.round(newStrategy.period * 1.2));
+      changedParams.period = { old: oldPeriod, new: newStrategy.period, reason: 'Otimização para lateral' };
     }
-  } else if (worstRegime.profitFactor < 1.0) {
-    rootCause = `Profit Factor baixo (${worstRegime.profitFactor.toFixed(2)}) em ${worstRegime.regime}`;
-    recommendation = 'Ajustar risk-reward: reduzir stake ou aumentar duração';
   }
-  
-  return {
-    diagnosis: `Fraco em ${worstRegime.regime} (${worstRegime.wins}W/${worstRegime.losses}L)`,
-    worstRegime: worstRegime.regime,
-    bestRegime: bestRegime.regime,
-    rootCause,
-    recommendation,
+
+  // Mutações gerais
+  if (newStrategy.period && !changedParams.period) {
+    const oldPeriod = newStrategy.period;
+    newStrategy.period = Math.max(5, Math.round(newStrategy.period * smallMutation));
+    if (oldPeriod !== newStrategy.period) {
+      changedParams.period = { old: oldPeriod, new: newStrategy.period, reason: 'Ajuste fino' };
+    }
+  }
+
+  if (newStrategy.strongBuyThreshold) {
+    const oldThreshold = newStrategy.strongBuyThreshold;
+    newStrategy.strongBuyThreshold = Math.max(5, Math.min(40, newStrategy.strongBuyThreshold + smallChange * 2));
+    newStrategy.weakBuyThreshold = newStrategy.strongBuyThreshold + 10;
+    if (oldThreshold !== newStrategy.strongBuyThreshold) {
+      changedParams.buyThreshold = { old: oldThreshold, new: newStrategy.strongBuyThreshold };
+    }
+  }
+
+  if (newStrategy.optimalDuration) {
+    const oldDuration = newStrategy.optimalDuration;
+    newStrategy.optimalDuration = Math.max(5, Math.round(newStrategy.optimalDuration * bigMutation));
+    if (newStrategy.optimalDurationUnit === 't') {
+      newStrategy.optimalDuration = Math.min(10, Math.max(5, newStrategy.optimalDuration));
+    }
+    if (oldDuration !== newStrategy.optimalDuration) {
+      changedParams.duration = { old: oldDuration, new: newStrategy.optimalDuration };
+    }
+  }
+
+  const { id, justification, ...rest } = newStrategy;
+  return { 
+    strategy: rest as Omit<RobotStrategy, 'id' | 'justification'>, 
+    parameters: changedParams 
   };
 };
 
 // ============================================================================
-// MUTADOR CIRÚRGICO (Mutação Direcionada)
+// HOOK PRINCIPAL
 // ============================================================================
-
-const performDirectedMutation = (
-  eliteRobot: RobotStrategy,
-  diagnosis: {
-    worstRegime: MarketRegime | null;
-    bestRegime: MarketRegime | null;
-    rootCause: string;
-    recommendation: string;
-  }
-): { mutatedDNA: Partial<RobotStrategy>; mutatedGenes: string[] } => {
-  
-  const mutatedDNA: Partial<RobotStrategy> = { ...eliteRobot };
-  const mutatedGenes: string[] = [];
-  const strength = EVOLUTION_CONFIG.DIRECTED_MUTATION_STRENGTH;
-  
-  // ────────────────────────────────────────────────────────────────
-  // MUTAÇÃO DIRECIONADA POR REGIME
-  // ────────────────────────────────────────────────────────────────
-  
-  if (diagnosis.worstRegime === 'trending_bull' || diagnosis.worstRegime === 'trending_bear') {
-    // Torna o robô mais RÁPIDO (menor período)
-    if (mutatedDNA.period) {
-      mutatedDNA.period = Math.max(5, Math.round(mutatedDNA.period * (1 - strength)));
-      mutatedGenes.push('period↓ (mais reativo a tendências)');
-    }
-    if (mutatedDNA.shortPeriod) {
-      mutatedDNA.shortPeriod = Math.max(3, Math.round(mutatedDNA.shortPeriod * (1 - strength)));
-      mutatedGenes.push('shortPeriod↓');
-    }
-    if (mutatedDNA.optimalDuration > 30) {
-      mutatedDNA.optimalDuration = Math.round(mutatedDNA.optimalDuration * 0.8);
-      mutatedGenes.push('duration↓ (trades mais curtos)');
-    }
-  }
-  
-  else if (diagnosis.worstRegime === 'ranging') {
-    // Torna o robô mais LENTO (maior período = filtra ruído)
-    if (mutatedDNA.period) {
-      mutatedDNA.period = Math.round(mutatedDNA.period * (1 + strength));
-      mutatedGenes.push('period↑ (filtra ruído lateral)');
-    }
-    if (mutatedDNA.longPeriod) {
-      mutatedDNA.longPeriod = Math.round(mutatedDNA.longPeriod * (1 + strength));
-      mutatedGenes.push('longPeriod↑');
-    }
-    // Thresholds mais conservadores
-    if (mutatedDNA.strongBuyThreshold) {
-      mutatedDNA.strongBuyThreshold = Math.max(15, mutatedDNA.strongBuyThreshold - 5);
-      mutatedGenes.push('buyThreshold↓ (mais conservador)');
-    }
-    if (mutatedDNA.strongSellThreshold) {
-      mutatedDNA.strongSellThreshold = Math.min(95, mutatedDNA.strongSellThreshold + 5);
-      mutatedGenes.push('sellThreshold↑ (mais conservador)');
-    }
-  }
-  
-  else if (diagnosis.worstRegime === 'high_volatility') {
-    // Encurta duração drasticamente
-    if (mutatedDNA.optimalDuration > 15) {
-      mutatedDNA.optimalDuration = Math.max(15, Math.round(mutatedDNA.optimalDuration * 0.6));
-      mutatedGenes.push('duration↓↓ (sai rápido da volatilidade)');
-    }
-    // Thresholds mais extremos (só entra em sinais fortes)
-    if (mutatedDNA.strongBuyThreshold) {
-      mutatedDNA.strongBuyThreshold = Math.max(10, mutatedDNA.strongBuyThreshold - 10);
-      mutatedGenes.push('buyThreshold↓↓ (sinais mais extremos)');
-    }
-  }
-  
-  else if (diagnosis.worstRegime === 'breakout') {
-    // Torna mais agressivo
-    if (mutatedDNA.optimalDuration > 20) {
-      mutatedDNA.optimalDuration = Math.round(mutatedDNA.optimalDuration * 0.7);
-      mutatedGenes.push('duration↓ (captura breakout rápido)');
-    }
-    if (mutatedDNA.strongBuyThreshold) {
-      mutatedDNA.strongBuyThreshold = Math.min(35, mutatedDNA.strongBuyThreshold + 5);
-      mutatedGenes.push('buyThreshold↑ (mais agressivo)');
-    }
-  }
-  
-  // ────────────────────────────────────────────────────────────────
-  // MUTAÇÃO ALEATÓRIA LEVE (10% de chance)
-  // ────────────────────────────────────────────────────────────────
-  
-  if (Math.random() < 0.1 && mutatedDNA.optimalDuration) {
-    const randomFactor = 1 + (Math.random() - 0.5) * 0.2; // ±10%
-    mutatedDNA.optimalDuration = Math.round(mutatedDNA.optimalDuration * randomFactor);
-    mutatedGenes.push('duration (mutação aleatória)');
-  }
-  
-  // Garante que nenhum gene ficou sem valor
-  if (mutatedGenes.length === 0) {
-    mutatedGenes.push('clone (sem mutações necessárias)');
-  }
-  
-  return { mutatedDNA, mutatedGenes };
-};
-
-// ============================================================================
-// HOOK PRINCIPAL DE EVOLUÇÃO V3.0
-// ============================================================================
-
 export function useStrategyEvolution(initialStrategies: Omit<RobotStrategy, 'id'>[]) {
   const { toast } = useToast();
-  const { user, loading: isAuthLoading } = useAuth();
-  
+  const { user } = useAuth();
+
   const [evolvedStrategies, setEvolvedStrategies] = useState<Omit<RobotStrategy, 'id'>[]>(initialStrategies);
   const [evolutionHistory, setEvolutionHistory] = useState<EvolutionEvent[]>([]);
+  
+  // ✅ Estados de UI
   const [isEvolving, setIsEvolving] = useState(false);
   const [evolutionProgress, setEvolutionProgress] = useState(0);
-  const [tradeCounts, setTradeCounts] = useState({ real: 0, virtual: 0 });
-  
-  const generationRef = useRef(0);
-  const lastEvolutionTimeRef = useRef(Date.now());
+  const [currentGeneration, setCurrentGeneration] = useState(0);
 
+  // ✅ Contagem Dual
+  const tradeCountsRef = useRef<TradeCounts>({ virtual: 0, real: 0, total: 0 });
+  const [tradeCounts, setTradeCounts] = useState<TradeCounts>({ virtual: 0, real: 0, total: 0 });
 
-  // Carrega o histórico do Firestore na inicialização
+  // ✅ Carrega histórico do Firestore ao montar
   useEffect(() => {
-    if (!user || isAuthLoading) return;
+    if (!user) return;
     
-    let isMounted = true;
-    const loadHistory = async () => {
-        try {
-            const storedHistory = await loadEvolutionHistory(user.uid);
-            if (isMounted && storedHistory && storedHistory.length > 0) {
-                setEvolutionHistory(storedHistory);
-                generationRef.current = storedHistory[0]?.generation || 0;
-            }
-        } catch (error) {
-            console.error("[EvolutionV3] Falha ao carregar histórico:", error);
+    loadEvolutionHistory(user.uid)
+      .then(history => {
+        if (history.length > 0) {
+          setEvolutionHistory(history);
+          setCurrentGeneration(history[0].generation); // A geração mais recente
+          console.log(`✅ [Evolution] Histórico carregado: ${history.length} gerações`);
         }
-    };
-    
-    loadHistory();
+      })
+      .catch(err => {
+        console.error('❌ [Evolution] Erro ao carregar histórico:', err);
+      });
+  }, [user]);
 
-    return () => { isMounted = false };
-  }, [user, isAuthLoading]);
+  // ✅ Calcula trades até próxima evolução
+  const tradesUntilEvolution = Math.min(
+    VIRTUAL_TRADES_THRESHOLD - tradeCountsRef.current.virtual,
+    REAL_TRADES_THRESHOLD - tradeCountsRef.current.real
+  );
 
+  // ============================================================================
+  // FUNÇÃO DE EVOLUÇÃO
+  // ============================================================================
   const evolveTrigger = useCallback(async (
     performanceData: RobotPerformance[],
-    tradeType: 'real' | 'virtual',
-    count: number = 1
+    tradeType: 'virtual' | 'real',
+    tradeCount: number = 1
   ) => {
-    
-    let newCounts: { real: number; virtual: number };
-    setTradeCounts(prev => {
-        newCounts = { ...prev, [tradeType]: prev[tradeType] + count };
-        return newCounts;
-    });
-
-    const totalTrades = tradeCounts.real + tradeCounts.virtual + count;
-    
-    if (totalTrades < EVOLUTION_CONFIG.TRIGGER_THRESHOLD) {
-        return;
+    // ✅ Atualiza contadores
+    if (tradeType === 'virtual') {
+      tradeCountsRef.current.virtual += tradeCount;
+    } else {
+      tradeCountsRef.current.real += tradeCount;
     }
-        
-    generationRef.current++;
-    setIsEvolving(true);
-    setEvolutionProgress(0);
+    tradeCountsRef.current.total += tradeCount;
+    setTradeCounts({ ...tradeCountsRef.current });
 
-    const sortedPerformance = [...performanceData].sort((a, b) => {
-      const sharpeA = a.sharpeRatio || -Infinity;
-      const sharpeB = b.sharpeRatio || -Infinity;
-      if (Math.abs(sharpeA - sharpeB) < 0.1) {
-        return (b.winRate || 0) - (a.winRate || 0);
-      }
-      return sharpeB - sharpeA;
-    });
+    // ✅ Verifica se deve evoluir
+    const shouldEvolve = 
+      tradeCountsRef.current.virtual >= VIRTUAL_TRADES_THRESHOLD ||
+      tradeCountsRef.current.real >= REAL_TRADES_THRESHOLD;
 
-    setEvolutionProgress(20);
-    
-    const elitePerformers = sortedPerformance
-      .slice(0, EVOLUTION_CONFIG.ELITE_COUNT)
-      .filter(p => p.tradeHistory && p.tradeHistory.length >= EVOLUTION_CONFIG.MIN_TRADES_FOR_DEEP_ANALYSIS);
-
-    const worstPerformers = sortedPerformance
-      .slice(-EVOLUTION_CONFIG.WORST_COUNT)
-      .filter(p => p.tradeHistory && p.tradeHistory.length >= EVOLUTION_CONFIG.MIN_TRADES_FOR_DEEP_ANALYSIS);
-      
-    if (elitePerformers.length === 0 || worstPerformers.length === 0 || (elitePerformers[0]?.totalProfit ?? 0) <= 0) {
-      console.warn('❌ [Evolution V3] ABORTADO: Sem candidatos válidos ou elite não lucrativa.');
-      setIsEvolving(false);
-      setTradeCounts({ real: 0, virtual: 0 }); // Reset para próximo ciclo
+    if (!shouldEvolve) {
       return;
     }
 
-    const newEvent: EvolutionEvent = {
-      timestamp: new Date(),
-      generation: generationRef.current,
-      totalTrades: performanceData.reduce((sum, p) => sum + (p.wins + p.losses), 0),
-      elitePerformers: elitePerformers.map(e => ({
-        id: e.id,
-        strategyType: e.strategyType,
-        sharpeRatio: e.sharpeRatio || 0,
-        winRate: e.winRate || 0,
-        totalProfit: e.totalProfit || 0,
-        effectiveRegimes: e.effectiveRegimes || [],
-      })),
-      mutations: [],
-      populationStats: {
-        avgSharpe: performanceData.reduce((sum, p) => sum + (p.sharpeRatio || 0), 0) / performanceData.length,
-        avgWinRate: performanceData.reduce((sum, p) => sum + (p.winRate || 0), 0) / performanceData.length,
-        totalProfit: performanceData.reduce((sum, p) => sum + (p.totalProfit || 0), 0),
-        bestRegimes: [],
-      },
-    };
+    console.log(`[Evolution] 🧬 Acionando evolução (${tradeType}: ${tradeCount} trades)`);
+    setIsEvolving(true);
+    setEvolutionProgress(10);
 
-    const currentStrategies = [...evolvedStrategies];
-    let strategiesChanged = false;
+    // ✅ Reseta contadores
+    const processedTradeCount = tradeCountsRef.current.total;
+    tradeCountsRef.current = { virtual: 0, real: 0, total: 0 };
+    setTradeCounts({ virtual: 0, real: 0, total: 0 });
 
-    setEvolutionProgress(60);
-
-    worstPerformers.forEach((worst, index) => {
-      const eliteParent = elitePerformers[index % elitePerformers.length];
-      const worstIndex = currentStrategies.findIndex(s => (s as RobotStrategy).id === worst.id);
-      
-      if (worstIndex === -1) return;
-
-      const diagnosis = diagnoseRobot(worst);
-      const { mutatedDNA, mutatedGenes } = performDirectedMutation(
-        eliteParent.strategy,
-        diagnosis
+    try {
+      // Análise de desempenho
+      setEvolutionProgress(30);
+      const sortedPerformance = [...performanceData].sort(
+        (a, b) => (b.sharpeRatio || -Infinity) - (a.sharpeRatio || -Infinity)
       );
 
-      const newJustification = `Gen ${generationRef.current}: Clone de ${eliteParent.strategyType}. ${diagnosis.rootCause}. Ajuste: ${mutatedGenes.join(', ')}.`;
+      const elitePerformers = sortedPerformance
+        .slice(0, ELITE_COUNT)
+        .filter(p => p.tradeHistory && p.tradeHistory.length >= MIN_TRADES_FOR_ANALYSIS);
 
-      currentStrategies[worstIndex] = {
-        ...currentStrategies[worstIndex],
-        ...mutatedDNA,
-        justification: newJustification,
+      const worstPerformers = sortedPerformance
+        .slice(-WORST_COUNT)
+        .filter(p => p.tradeHistory && p.tradeHistory.length >= MIN_TRADES_FOR_ANALYSIS);
+        
+      console.log(`
+📊 [Evolution V3] Análise de Robôs:
+   Total de robôs: ${performanceData.length}
+   Elite (top ${ELITE_COUNT}): ${elitePerformers.length}
+   Piores (bottom ${WORST_COUNT}): ${worstPerformers.length}
+   
+   Elite IDs: ${elitePerformers.map(e => e.id).join(', ')}
+   Piores IDs: ${worstPerformers.map(w => w.id).join(', ')}
+        `);
+          
+        if (elitePerformers.length === 0) {
+          console.warn('❌ [Evolution V3] ABORTADO: Nenhum robô de elite com dados suficientes');
+          setIsEvolving(false);
+          return { real: 0, virtual: 0 };
+        }
+        
+        if (worstPerformers.length === 0) {
+          console.warn('❌ [Evolution V3] ABORTADO: Nenhum robô pior com dados suficientes');
+          setIsEvolving(false);
+          return { real: 0, virtual: 0 };
+        }
+        
+        if (elitePerformers[0].totalProfit <= 0) {
+          console.warn('❌ [Evolution V3] ABORTADO: Elite não é lucrativa');
+          console.log(`   Elite #1: ${elitePerformers[0].strategyType} com lucro ${elitePerformers[0].totalProfit}`);
+          setIsEvolving(false);
+          return { real: 0, virtual: 0 };
+        }
+
+
+      setEvolutionProgress(50);
+
+      // ✅ Cria novo evento com geração
+      const newGeneration = currentGeneration + 1;
+      const newEvent: EvolutionEvent = {
+        generation: newGeneration,
+        timestamp: new Date(),
+        elitePerformers: elitePerformers.map(({ id, strategyType, totalProfit, wins, losses, sharpeRatio }) => ({
+          id, strategyType, totalProfit: totalProfit || 0, wins: wins || 0, losses: losses || 0, sharpeRatio: sharpeRatio || 0
+        })),
+        mutations: [],
+        trigger: tradeType,
+        tradeCount: processedTradeCount,
       };
 
-      strategiesChanged = true;
+      const currentStrategies = [...evolvedStrategies];
+      let strategiesChanged = false;
 
-      newEvent.mutations.push({
-        robotId: worst.id,
-        robotType: worst.strategyType,
-        parentId: eliteParent.id,
-        parentType: eliteParent.strategyType,
-        diagnosis: diagnosis.diagnosis,
-        prescription: diagnosis.recommendation,
-        expectedImprovement: `Alvo: ${diagnosis.worstRegime} (${diagnosis.rootCause})`,
-        mutatedGenes,
+      setEvolutionProgress(70);
+
+      // ✅ Realiza mutações
+      worstPerformers.forEach((worst, index) => {
+        const eliteParent = elitePerformers[index % elitePerformers.length];
+        const worstIndex = currentStrategies.findIndex(s => (s as RobotStrategy).id === worst.id);
+        if (worstIndex === -1) return;
+
+        // Análise de causa-raiz
+        const regimeTrades = worst.tradeHistory.reduce((acc, trade) => {
+          const regime = trade.regime || 'ranging';
+          if (!acc[regime]) acc[regime] = { wins: 0, losses: 0 };
+          if (trade.profit > 0) acc[regime].wins++;
+          else acc[regime].losses++;
+          return acc;
+        }, {} as Record<MarketRegime, { wins: number; losses: number }>);
+
+        let worstRegime: MarketRegime | null = null;
+        let lowestWinRate = 50;
+        let analysis = 'Mutação geral baseada em elite.';
+
+        for (const r in regimeTrades) {
+          const regime = r as MarketRegime;
+          const stats = regimeTrades[regime];
+          const total = stats.wins + stats.losses;
+          if (total > 2) {
+            const winRate = (stats.wins / total) * 100;
+            if (winRate < lowestWinRate) {
+              lowestWinRate = winRate;
+              worstRegime = regime;
+            }
+          }
+        }
+
+        if (worstRegime) {
+          analysis = `Desempenho fraco (${lowestWinRate.toFixed(0)}% WR) em '${worstRegime}'. Ajustando parâmetros.`;
+        }
+
+        const { strategy: newStrategyParams, parameters } = mutateStrategy(eliteParent.strategy, { worstRegime });
+        const newJustification = `Gen ${newGeneration}: Mutação de ${eliteParent.strategyType}. ${analysis}`;
+
+        currentStrategies[worstIndex] = {
+          ...currentStrategies[worstIndex],
+          ...newStrategyParams,
+          justification: newJustification,
+        };
+        strategiesChanged = true;
+
+        newEvent.mutations.push({
+          replacedBotId: worst.id,
+          replacedBotType: worst.strategyType,
+          parentBotId: eliteParent.id,
+          parentBotType: eliteParent.strategyType,
+          analysis,
+          newParameters: parameters,
+        });
+
+        console.log(`[Evolution] 🔄 ${worst.id} → ${eliteParent.id} | ${analysis}`);
       });
-    });
 
-    setEvolutionProgress(80);
+      setEvolutionProgress(90);
 
-    if (strategiesChanged) {
+      if (strategiesChanged) {
         setEvolvedStrategies(currentStrategies);
-        // ATOMIC WRITE: Update state and save in one go
+        
+        // ✅ ATOMIC WRITE: Atualiza estado e salva em uma única operação lógica
         setEvolutionHistory(prevHistory => {
-            const newHistory = [newEvent, ...prevHistory];
+            const updatedHistory = [newEvent, ...prevHistory];
             if (user) {
-                saveEvolutionHistory(user.uid, newHistory).catch(error => {
+                saveEvolutionHistory(user.uid, updatedHistory).catch(error => {
                     console.error("❌ [EvolutionV3] Falha ao gravar histórico no Firestore:", error);
                     toast({
-                        title: "Erro de Persistência",
-                        description: "Não foi possível gravar a nova geração no banco de dados.",
+                        title: "⚠️ Erro de Persistência",
+                        description: "A evolução ocorreu mas não foi salva no banco de dados.",
                         variant: "destructive",
                     });
                 });
             }
-            return newHistory;
+            return updatedHistory;
         });
 
-        const timeSinceLastEvolution = (Date.now() - lastEvolutionTimeRef.current) / 1000;
-        lastEvolutionTimeRef.current = Date.now();
+        setCurrentGeneration(newGeneration);
 
         toast({
-            title: `🧬 Geração ${generationRef.current} Completa`,
-            description: `${newEvent.mutations.length} robôs evoluídos. Elite: ${elitePerformers[0].strategyType} (Sharpe ${elitePerformers[0].sharpeRatio?.toFixed(2)}). Tempo: ${timeSinceLastEvolution.toFixed(0)}s`,
-            duration: 5000,
+          title: `🧬 Geração ${newGeneration} Completa`,
+          description: `${newEvent.mutations.length} robôs evoluídos. Elite: ${elitePerformers[0].strategyType} (SR: ${elitePerformers[0].sharpeRatio?.toFixed(2)})`,
         });
+      }
+
+      setEvolutionProgress(100);
+    } catch (error) {
+      console.error('❌ [Evolution] Erro durante evolução:', error);
+      toast({
+        title: '❌ Erro na Evolução',
+        description: 'Ocorreu um erro durante o processo de evolução genética.',
+        variant: 'destructive'
+      });
+    } finally {
+      setTimeout(() => {
+        setIsEvolving(false);
+        setEvolutionProgress(0);
+      }, 1000);
     }
+  }, [evolvedStrategies, evolutionHistory, currentGeneration, user, toast]);
 
-    setEvolutionProgress(100);
-    setTimeout(() => setIsEvolving(false), 1000);
-    setTradeCounts({ real: 0, virtual: 0 }); // Reset para próximo ciclo
-
-  }, [evolvedStrategies, toast, user, tradeCounts, evolutionHistory]);
-  
+  // ============================================================================
+  // FUNÇÕES DE GERENCIAMENTO
+  // ============================================================================
   const resetEvolutionHistory = useCallback(async () => {
     if (!user) return;
-    await clearEvolutionHistory(user.uid);
-    setEvolutionHistory([]);
-    generationRef.current = 0;
-    setTradeCounts({ real: 0, virtual: 0 });
-    toast({
-        title: 'Histórico de Evolução Apagado',
-        description: 'O laboratório foi resetado para a Geração 0.',
-    });
+    
+    try {
+      await clearEvolutionHistory(user.uid);
+      setEvolutionHistory([]);
+      setCurrentGeneration(0);
+      tradeCountsRef.current = { virtual: 0, real: 0, total: 0 };
+      setTradeCounts({ virtual: 0, real: 0, total: 0 });
+      
+      toast({
+        title: '🗑️ Histórico Resetado',
+        description: 'Todo o histórico de evolução foi apagado.',
+      });
+      
+      console.log('✅ [Evolution] Histórico resetado');
+    } catch (error) {
+      console.error('❌ [Evolution] Erro ao resetar:', error);
+      toast({
+        title: '❌ Erro ao Resetar',
+        description: 'Não foi possível apagar o histórico.',
+        variant: 'destructive'
+      });
+    }
   }, [user, toast]);
-  
+
   const deleteSingleEvolution = useCallback(async (eventTimestamp: string) => {
     if (!user) return;
     
-    // ATOMIC WRITE: Use callback form to ensure we have the latest state
-    setEvolutionHistory(prevHistory => {
-        const newHistory = prevHistory.filter(e => e.timestamp.toISOString() !== eventTimestamp);
-        
-        // Only save if a change actually happened
-        if (newHistory.length < prevHistory.length) {
-            saveEvolutionHistory(user.uid, newHistory).catch(console.error);
-            toast({
-                title: 'Geração Apagada',
-                description: `O registo da geração foi removido do histórico.`,
-            });
-        }
-        
-        return newHistory;
-    });
-  }, [user, toast]);
-
+    try {
+      await deleteEvolutionEvent(user.uid, eventTimestamp);
+      
+      const updatedHistory = evolutionHistory.filter(
+        e => e.timestamp.toISOString() !== eventTimestamp
+      );
+      setEvolutionHistory(updatedHistory);
+      
+      toast({
+        title: '🗑️ Geração Removida',
+        description: 'O evento de evolução foi deletado.',
+      });
+      
+      console.log('✅ [Evolution] Evento deletado:', eventTimestamp);
+    } catch (error) {
+      console.error('❌ [Evolution] Erro ao deletar evento:', error);
+      toast({
+        title: '❌ Erro ao Deletar',
+        description: 'Não foi possível remover o evento.',
+        variant: 'destructive'
+      });
+    }
+  }, [user, evolutionHistory, toast]);
 
   return {
     evolvedStrategies,
@@ -539,8 +432,8 @@ export function useStrategyEvolution(initialStrategies: Omit<RobotStrategy, 'id'
     evolutionHistory,
     isEvolving,
     evolutionProgress,
-    currentGeneration: generationRef.current,
-    tradesUntilEvolution: EVOLUTION_CONFIG.TRIGGER_THRESHOLD - (tradeCounts.real + tradeCounts.virtual),
+    currentGeneration,
+    tradesUntilEvolution,
     tradeCounts,
     resetEvolutionHistory,
     deleteSingleEvolution,
