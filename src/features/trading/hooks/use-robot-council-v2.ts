@@ -285,6 +285,8 @@ export function useRobotCouncilV2(
     currentGeneration,
     tradesUntilEvolution,
     tradeCounts,
+    resetEvolutionHistory,
+    deleteSingleEvolution,
   } = useStrategyEvolution(initialCouncilStrategies);
   
   const executionIdRef = useRef(0);
@@ -435,8 +437,8 @@ export function useRobotCouncilV2(
         }
         
         if (isDynamicExitOn) {
-            const activeCouncilContracts = operationsLog.filter(op =>
-                op.status === 'pending' &&
+            const activeCouncilContracts = operationsLog.filter(op => 
+                op.status === 'pending' && 
                 op.initiator === 'Conselho' &&
                 op.durationUnit !== 't'
             );
@@ -893,7 +895,10 @@ export function useRobotCouncilV2(
     setStopLossThreshold,
     resetArenaPerformance,
     tradeDecisionLog,
-    supervisionStatus: { status: 'approved', message: 'Sistema Operacional v2.5' }
+    supervisionStatus: { status: 'approved', message: 'Sistema Operacional v2.5' },
+    evolveTrigger,
+    resetEvolutionHistory,
+    deleteSingleEvolution,
   };
 }
 

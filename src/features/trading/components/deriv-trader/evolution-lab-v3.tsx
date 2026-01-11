@@ -10,6 +10,7 @@ import { cn } from '@/lib/utils';
 import { EVOLUTION_CONFIG } from '@/features/trading/config/trader-config';
 import { Button } from '@/components/ui/button';
 import { EnhancedRobotPerformance as RobotPerformance } from '@/lib/types';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 
 
@@ -54,6 +55,7 @@ interface EvolutionLabV3Props {
   robotPerformance?: RobotPerformance[];
   evolveTrigger?: (performanceData: RobotPerformance[], tradeType: 'real' | 'virtual', count?: number) => void;
   resetEvolutionHistory?: () => void;
+  deleteSingleEvolution?: (timestamp: string) => void;
 }
 
 export default function EvolutionLabV3({ 
@@ -65,7 +67,8 @@ export default function EvolutionLabV3({
   tradeCounts = { real: 0, virtual: 0 },
   robotPerformance,
   evolveTrigger,
-  resetEvolutionHistory
+  resetEvolutionHistory,
+  deleteSingleEvolution,
 }: EvolutionLabV3Props) {
   
   const latestEvent = history[0];
@@ -100,16 +103,32 @@ export default function EvolutionLabV3({
           </div>
             {/* DEBUG BUTTONS */}
             <div className="flex gap-2 mt-4">
-                 <Button 
-                    variant="outline" 
-                    size="sm"
-                    className="text-red-600 border-red-400 hover:bg-red-100 hover:text-red-700"
-                    onClick={resetEvolutionHistory}
-                    disabled={!resetEvolutionHistory}
-                  >
-                    <Trash2 className="mr-2 h-4 w-4"/>
-                    Apagar Histórico
-                  </Button>
+                 <AlertDialog>
+                    <AlertDialogTrigger asChild>
+                         <Button 
+                            variant="destructive" 
+                            size="sm"
+                            disabled={!resetEvolutionHistory}
+                          >
+                            <Trash2 className="mr-2 h-4 w-4"/>
+                            Apagar Histórico Completo
+                          </Button>
+                    </AlertDialogTrigger>
+                    <AlertDialogContent>
+                        <AlertDialogHeader>
+                        <AlertDialogTitle>Tem a certeza absoluta?</AlertDialogTitle>
+                        <AlertDialogDescription>
+                            Esta ação irá apagar permanentemente TODO o histórico de evolução genética da sua conta no Firebase. A contagem de gerações será reiniciada para 0.
+                        </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                        <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                        <AlertDialogAction onClick={resetEvolutionHistory} className="bg-destructive hover:bg-destructive/90">
+                            Sim, apagar tudo
+                        </AlertDialogAction>
+                        </AlertDialogFooter>
+                    </AlertDialogContent>
+                </AlertDialog>
             </div>
         </CardHeader>
         
@@ -258,9 +277,32 @@ export default function EvolutionLabV3({
                           {new Date(event.timestamp).toLocaleString('pt-BR')}
                         </div>
                       </div>
-                      <Badge variant="secondary" className="text-xs">
-                        {event.mutations.length} mutações
-                      </Badge>
+                      <div className="flex items-center gap-2">
+                          <Badge variant="secondary" className="text-xs">
+                            {event.mutations.length} mutações
+                          </Badge>
+                           <AlertDialog>
+                                <AlertDialogTrigger asChild>
+                                    <Button variant="ghost" size="icon" className="h-7 w-7" disabled={!deleteSingleEvolution}>
+                                        <Trash2 className="h-4 w-4 text-destructive/70" />
+                                    </Button>
+                                </AlertDialogTrigger>
+                                <AlertDialogContent>
+                                    <AlertDialogHeader>
+                                    <AlertDialogTitle>Apagar Geração {event.generation}?</AlertDialogTitle>
+                                    <AlertDialogDescription>
+                                        Esta ação irá apagar permanentemente o registo desta geração. Não pode ser desfeita.
+                                    </AlertDialogDescription>
+                                    </AlertDialogHeader>
+                                    <AlertDialogFooter>
+                                    <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                                    <AlertDialogAction onClick={() => deleteSingleEvolution?.(event.timestamp.toISOString())} className="bg-destructive hover:bg-destructive/90">
+                                        Apagar Geração
+                                    </AlertDialogAction>
+                                    </AlertDialogFooter>
+                                </AlertDialogContent>
+                            </AlertDialog>
+                      </div>
                     </div>
 
                     {/* Lista de Mutações */}

@@ -5,7 +5,7 @@ import { useState, useCallback, useRef, useEffect } from 'react';
 import type { RobotStrategy, EnhancedRobotPerformance as RobotPerformance, MarketRegime } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/features/auth/hooks/use-auth';
-import { loadEvolutionHistory, saveEvolutionHistory } from '@/services/financial-data-service';
+import { loadEvolutionHistory, saveEvolutionHistory, clearEvolutionHistory, deleteEvolutionEvent } from '@/services/financial-data-service';
 import { EVOLUTION_CONFIG } from '@/features/trading/config/trader-config';
 
 
@@ -523,15 +523,25 @@ export function useStrategyEvolution(initialStrategies: Omit<RobotStrategy, 'id'
 
   }, [evolvedStrategies, toast, user, evolutionHistory, isAuthLoading]);
   
-  const resetEvolutionHistory = useCallback(() => {
+  const resetEvolutionHistory = useCallback(async () => {
+    if (!user) return;
+    await clearEvolutionHistory(user.uid);
     setEvolutionHistory([]);
     generationRef.current = 0;
-    if (user) {
-        saveEvolutionHistory(user.uid, []);
-    }
     toast({
         title: 'Histórico de Evolução Apagado',
         description: 'O laboratório foi resetado para a Geração 0.',
+    });
+  }, [user, toast]);
+  
+  const deleteSingleEvolution = useCallback(async (eventTimestamp: string) => {
+    if (!user) return;
+    const updatedHistory = await deleteEvolutionEvent(user.uid, eventTimestamp);
+    setEvolutionHistory(updatedHistory);
+    generationRef.current = updatedHistory[0]?.generation || 0;
+    toast({
+        title: 'Geração Apagada',
+        description: `O registo da geração foi removido do histórico.`,
     });
   }, [user, toast]);
 
@@ -546,5 +556,6 @@ export function useStrategyEvolution(initialStrategies: Omit<RobotStrategy, 'id'
     tradesUntilEvolution: EVOLUTION_CONFIG.TRIGGER_THRESHOLD - (tradeCountRef.current.real + tradeCountRef.current.virtual),
     tradeCounts: tradeCountRef.current,
     resetEvolutionHistory,
+    deleteSingleEvolution,
   };
 }

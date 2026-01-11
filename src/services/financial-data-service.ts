@@ -1,4 +1,4 @@
-// src/services/financial-data-service.ts
+// Service module for financial data operations.
 import { db } from '@/lib/firebase';
 import { collection, getDocs, doc, setDoc, query, where, orderBy, getDoc, addDoc, deleteDoc } from 'firebase/firestore';
 import type { Goal, BudgetCategory, Transaction, RobotPerformance, TradeDecisionLog, EnhancedRobotPerformance } from '@/lib/types';
@@ -250,8 +250,13 @@ export async function getFinancialInsights(userId: string): Promise<string[]> {
         });
 
         if (response.success) {
-            const newInsights = response.success.split('\n').filter(line => line.trim() !== '' && !line.startsWith("Erro:"));
-            return newInsights;
+            // A resposta da IA pode vir com marcadores de lista ou numeração. Limpamos isso.
+            const newInsights = response.success
+                .split('\n')
+                .map(line => line.replace(/^[-\d.\s]*/, '').trim()) // Remove marcadores
+                .filter(line => line.length > 10); // Filtra linhas vazias ou muito curtas
+            
+            return newInsights.length > 0 ? newInsights : [response.success];
         }
         
         console.error("AI Insight Error:", response.error);
@@ -393,4 +398,25 @@ export async function loadEvolutionHistory(userId: string): Promise<EvolutionEve
         console.error(`[Service Error] loadEvolutionHistory for user ${userId} failed:`, error);
         return []; // Retorna array vazio em caso de erro
     }
+}
+
+export async function clearEvolutionHistory(userId: string): Promise<void> {
+    if (!userId) return;
+    const docRef = doc(db, 'users', userId, 'trading_data', 'evolution_history');
+    // Simplesmente apaga o documento. O hook de evolução irá recriá-lo se necessário.
+    await deleteDocumentNonBlocking(docRef);
+}
+
+export async function deleteEvolutionEvent(userId: string, eventTimestamp: string): Promise<EvolutionEvent[]> {
+    if (!userId) return [];
+    
+    const currentHistory = await loadEvolutionHistory(userId);
+    const newHistory = currentHistory.filter(event => event.timestamp.toISOString() !== eventTimestamp);
+    
+    if (newHistory.length < currentHistory.length) {
+        await saveEvolutionHistory(userId, newHistory);
+        return newHistory;
+    }
+    
+    return currentHistory;
 }
