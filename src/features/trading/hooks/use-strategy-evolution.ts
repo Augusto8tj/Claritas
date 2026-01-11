@@ -328,9 +328,8 @@ export function useStrategyEvolution(initialStrategies: Omit<RobotStrategy, 'id'
   const [evolutionHistory, setEvolutionHistory] = useState<EvolutionEvent[]>([]);
   const [isEvolving, setIsEvolving] = useState(false);
   const [evolutionProgress, setEvolutionProgress] = useState(0);
-
-  // Contadores separados para transparência
   const [tradeCounts, setTradeCounts] = useState({ real: 0, virtual: 0 });
+  
   const generationRef = useRef(0);
   const lastEvolutionTimeRef = useRef(Date.now());
 
@@ -357,161 +356,149 @@ export function useStrategyEvolution(initialStrategies: Omit<RobotStrategy, 'id'
     return () => { isMounted = false };
   }, [user, isAuthLoading]);
 
-  const evolveTrigger = useCallback((
+  const evolveTrigger = useCallback(async (
     performanceData: RobotPerformance[],
     tradeType: 'real' | 'virtual',
     count: number = 1
   ) => {
     
+    let newCounts: { real: number; virtual: number };
     setTradeCounts(prev => {
-        const newCounts = { ...prev, [tradeType]: prev[tradeType] + count };
-        const totalTrades = newCounts.real + newCounts.virtual;
-        
-        if (totalTrades < EVOLUTION_CONFIG.TRIGGER_THRESHOLD) {
-          return newCounts;
-        }
-        
-        generationRef.current++;
-        setIsEvolving(true);
-        setEvolutionProgress(0);
-
-        const sortedPerformance = [...performanceData].sort((a, b) => {
-          const sharpeA = a.sharpeRatio || -Infinity;
-          const sharpeB = b.sharpeRatio || -Infinity;
-          if (Math.abs(sharpeA - sharpeB) < 0.1) {
-            return (b.winRate || 0) - (a.winRate || 0);
-          }
-          return sharpeB - sharpeA;
-        });
-
-        setEvolutionProgress(20);
-        
-        const elitePerformers = sortedPerformance
-          .slice(0, EVOLUTION_CONFIG.ELITE_COUNT)
-          .filter(p => p.tradeHistory && p.tradeHistory.length >= EVOLUTION_CONFIG.MIN_TRADES_FOR_DEEP_ANALYSIS);
-
-        const worstPerformers = sortedPerformance
-          .slice(-EVOLUTION_CONFIG.WORST_COUNT)
-          .filter(p => p.tradeHistory && p.tradeHistory.length >= EVOLUTION_CONFIG.MIN_TRADES_FOR_DEEP_ANALYSIS);
-          
-        console.log(`
-📊 [Evolution V3] Análise de Robôs:
-   Total de robôs: ${performanceData.length}
-   Elite (top ${EVOLUTION_CONFIG.ELITE_COUNT}): ${elitePerformers.length}
-   Piores (bottom ${EVOLUTION_CONFIG.WORST_COUNT}): ${worstPerformers.length}
-   
-   Elite IDs: ${elitePerformers.map(e => e.id).join(', ')}
-   Piores IDs: ${worstPerformers.map(w => w.id).join(', ')}
-        `);
-          
-        if (elitePerformers.length === 0) {
-          console.warn('❌ [Evolution V3] ABORTADO: Nenhum robô de elite com dados suficientes');
-          setIsEvolving(false);
-          return { real: 0, virtual: 0 };
-        }
-        
-        if (worstPerformers.length === 0) {
-          console.warn('❌ [Evolution V3] ABORTADO: Nenhum robô pior com dados suficientes');
-          setIsEvolving(false);
-          return { real: 0, virtual: 0 };
-        }
-        
-        if ((elitePerformers[0]?.totalProfit ?? 0) <= 0) {
-          console.warn('❌ [Evolution V3] ABORTADO: Elite não é lucrativa');
-          console.log(`   Elite #1: ${elitePerformers[0].strategyType} com lucro ${elitePerformers[0].totalProfit}`);
-        }
-
-        const newEvent: EvolutionEvent = {
-          timestamp: new Date(),
-          generation: generationRef.current,
-          totalTrades: performanceData.reduce((sum, p) => sum + (p.wins + p.losses), 0),
-          elitePerformers: elitePerformers.map(e => ({
-            id: e.id,
-            strategyType: e.strategyType,
-            sharpeRatio: e.sharpeRatio || 0,
-            winRate: e.winRate || 0,
-            totalProfit: e.totalProfit || 0,
-            effectiveRegimes: e.effectiveRegimes || [],
-          })),
-          mutations: [],
-          populationStats: {
-            avgSharpe: performanceData.reduce((sum, p) => sum + (p.sharpeRatio || 0), 0) / performanceData.length,
-            avgWinRate: performanceData.reduce((sum, p) => sum + (p.winRate || 0), 0) / performanceData.length,
-            totalProfit: performanceData.reduce((sum, p) => sum + (p.totalProfit || 0), 0),
-            bestRegimes: [],
-          },
-        };
-
-        const currentStrategies = [...evolvedStrategies];
-        let strategiesChanged = false;
-
-        setEvolutionProgress(60);
-
-        worstPerformers.forEach((worst, index) => {
-          const eliteParent = elitePerformers[index % elitePerformers.length];
-          const worstIndex = currentStrategies.findIndex(s => (s as RobotStrategy).id === worst.id);
-          
-          if (worstIndex === -1) return;
-
-          const diagnosis = diagnoseRobot(worst);
-          const { mutatedDNA, mutatedGenes } = performDirectedMutation(
-            eliteParent.strategy,
-            diagnosis
-          );
-
-          const newJustification = `Gen ${generationRef.current}: Clone de ${eliteParent.strategyType}. ${diagnosis.rootCause}. Ajuste: ${mutatedGenes.join(', ')}.`;
-
-          currentStrategies[worstIndex] = {
-            ...currentStrategies[worstIndex],
-            ...mutatedDNA,
-            justification: newJustification,
-          };
-
-          strategiesChanged = true;
-
-          newEvent.mutations.push({
-            robotId: worst.id,
-            robotType: worst.strategyType,
-            parentId: eliteParent.id,
-            parentType: eliteParent.strategyType,
-            diagnosis: diagnosis.diagnosis,
-            prescription: diagnosis.recommendation,
-            expectedImprovement: `Alvo: ${diagnosis.worstRegime} (${diagnosis.rootCause})`,
-            mutatedGenes,
-          });
-        });
-
-        setEvolutionProgress(80);
-
-        if (strategiesChanged) {
-            setEvolvedStrategies(currentStrategies);
-            
-            // ✅ CORREÇÃO ATÓMICA
-            setEvolutionHistory(prevHistory => {
-                const newHistory = [newEvent, ...prevHistory];
-                if (user) {
-                    // A gravação acontece com o estado mais recente (newHistory)
-                    saveEvolutionHistory(user.uid, newHistory);
-                }
-                return newHistory;
-            });
-
-          const timeSinceLastEvolution = (Date.now() - lastEvolutionTimeRef.current) / 1000;
-          lastEvolutionTimeRef.current = Date.now();
-
-          toast({
-            title: `🧬 Geração ${generationRef.current} Completa`,
-            description: `${newEvent.mutations.length} robôs evoluídos. Elite: ${elitePerformers[0].strategyType} (Sharpe ${elitePerformers[0].sharpeRatio?.toFixed(2)}). Tempo: ${timeSinceLastEvolution.toFixed(0)}s`,
-            duration: 5000,
-          });
-        }
-
-        setEvolutionProgress(100);
-        setTimeout(() => setIsEvolving(false), 1000);
-        
-        return { real: 0, virtual: 0 };
+        newCounts = { ...prev, [tradeType]: prev[tradeType] + count };
+        return newCounts;
     });
-  }, [evolvedStrategies, toast, user]);
+
+    const totalTrades = tradeCounts.real + tradeCounts.virtual + count;
+    
+    if (totalTrades < EVOLUTION_CONFIG.TRIGGER_THRESHOLD) {
+        return;
+    }
+        
+    generationRef.current++;
+    setIsEvolving(true);
+    setEvolutionProgress(0);
+
+    const sortedPerformance = [...performanceData].sort((a, b) => {
+      const sharpeA = a.sharpeRatio || -Infinity;
+      const sharpeB = b.sharpeRatio || -Infinity;
+      if (Math.abs(sharpeA - sharpeB) < 0.1) {
+        return (b.winRate || 0) - (a.winRate || 0);
+      }
+      return sharpeB - sharpeA;
+    });
+
+    setEvolutionProgress(20);
+    
+    const elitePerformers = sortedPerformance
+      .slice(0, EVOLUTION_CONFIG.ELITE_COUNT)
+      .filter(p => p.tradeHistory && p.tradeHistory.length >= EVOLUTION_CONFIG.MIN_TRADES_FOR_DEEP_ANALYSIS);
+
+    const worstPerformers = sortedPerformance
+      .slice(-EVOLUTION_CONFIG.WORST_COUNT)
+      .filter(p => p.tradeHistory && p.tradeHistory.length >= EVOLUTION_CONFIG.MIN_TRADES_FOR_DEEP_ANALYSIS);
+      
+    if (elitePerformers.length === 0 || worstPerformers.length === 0 || (elitePerformers[0]?.totalProfit ?? 0) <= 0) {
+      console.warn('❌ [Evolution V3] ABORTADO: Sem candidatos válidos ou elite não lucrativa.');
+      setIsEvolving(false);
+      setTradeCounts({ real: 0, virtual: 0 }); // Reset para próximo ciclo
+      return;
+    }
+
+    const newEvent: EvolutionEvent = {
+      timestamp: new Date(),
+      generation: generationRef.current,
+      totalTrades: performanceData.reduce((sum, p) => sum + (p.wins + p.losses), 0),
+      elitePerformers: elitePerformers.map(e => ({
+        id: e.id,
+        strategyType: e.strategyType,
+        sharpeRatio: e.sharpeRatio || 0,
+        winRate: e.winRate || 0,
+        totalProfit: e.totalProfit || 0,
+        effectiveRegimes: e.effectiveRegimes || [],
+      })),
+      mutations: [],
+      populationStats: {
+        avgSharpe: performanceData.reduce((sum, p) => sum + (p.sharpeRatio || 0), 0) / performanceData.length,
+        avgWinRate: performanceData.reduce((sum, p) => sum + (p.winRate || 0), 0) / performanceData.length,
+        totalProfit: performanceData.reduce((sum, p) => sum + (p.totalProfit || 0), 0),
+        bestRegimes: [],
+      },
+    };
+
+    const currentStrategies = [...evolvedStrategies];
+    let strategiesChanged = false;
+
+    setEvolutionProgress(60);
+
+    worstPerformers.forEach((worst, index) => {
+      const eliteParent = elitePerformers[index % elitePerformers.length];
+      const worstIndex = currentStrategies.findIndex(s => (s as RobotStrategy).id === worst.id);
+      
+      if (worstIndex === -1) return;
+
+      const diagnosis = diagnoseRobot(worst);
+      const { mutatedDNA, mutatedGenes } = performDirectedMutation(
+        eliteParent.strategy,
+        diagnosis
+      );
+
+      const newJustification = `Gen ${generationRef.current}: Clone de ${eliteParent.strategyType}. ${diagnosis.rootCause}. Ajuste: ${mutatedGenes.join(', ')}.`;
+
+      currentStrategies[worstIndex] = {
+        ...currentStrategies[worstIndex],
+        ...mutatedDNA,
+        justification: newJustification,
+      };
+
+      strategiesChanged = true;
+
+      newEvent.mutations.push({
+        robotId: worst.id,
+        robotType: worst.strategyType,
+        parentId: eliteParent.id,
+        parentType: eliteParent.strategyType,
+        diagnosis: diagnosis.diagnosis,
+        prescription: diagnosis.recommendation,
+        expectedImprovement: `Alvo: ${diagnosis.worstRegime} (${diagnosis.rootCause})`,
+        mutatedGenes,
+      });
+    });
+
+    setEvolutionProgress(80);
+
+    if (strategiesChanged) {
+      try {
+        const newHistory = [newEvent, ...evolutionHistory];
+        if (user) {
+            await saveEvolutionHistory(user.uid, newHistory);
+        }
+        setEvolutionHistory(newHistory);
+        setEvolvedStrategies(currentStrategies);
+
+        const timeSinceLastEvolution = (Date.now() - lastEvolutionTimeRef.current) / 1000;
+        lastEvolutionTimeRef.current = Date.now();
+
+        toast({
+          title: `🧬 Geração ${generationRef.current} Completa`,
+          description: `${newEvent.mutations.length} robôs evoluídos. Elite: ${elitePerformers[0].strategyType} (Sharpe ${elitePerformers[0].sharpeRatio?.toFixed(2)}). Tempo: ${timeSinceLastEvolution.toFixed(0)}s`,
+          duration: 5000,
+        });
+
+      } catch (error) {
+        console.error("❌ [EvolutionV3] Falha ao gravar histórico no Firestore:", error);
+        toast({
+          title: "Erro de Persistência",
+          description: "Não foi possível gravar a nova geração no banco de dados.",
+          variant: "destructive",
+        });
+      }
+    }
+
+    setEvolutionProgress(100);
+    setTimeout(() => setIsEvolving(false), 1000);
+    setTradeCounts({ real: 0, virtual: 0 }); // Reset para próximo ciclo
+
+  }, [evolvedStrategies, toast, user, tradeCounts, evolutionHistory]);
   
   const resetEvolutionHistory = useCallback(async () => {
     if (!user) return;
@@ -527,8 +514,8 @@ export function useStrategyEvolution(initialStrategies: Omit<RobotStrategy, 'id'
   
   const deleteSingleEvolution = useCallback(async (eventTimestamp: string) => {
     if (!user) return;
-    setEvolutionHistory(prev => prev.filter(e => e.timestamp.toISOString() !== eventTimestamp));
     await deleteEvolutionEvent(user.uid, eventTimestamp);
+    setEvolutionHistory(prev => prev.filter(e => e.timestamp.toISOString() !== eventTimestamp));
     toast({
         title: 'Geração Apagada',
         description: `O registo da geração foi removido do histórico.`,

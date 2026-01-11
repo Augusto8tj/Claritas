@@ -366,16 +366,16 @@ export async function getTradeDecisionLogs(userId: string): Promise<TradeDecisio
 export async function saveEvolutionHistory(userId: string, history: EvolutionEvent[]) {
     if (!userId || !history) return;
     const docRef = doc(db, 'users', userId, 'trading_data', 'evolution_history');
-    
-    // Converte Date objects para ISO strings antes de salvar
+
     const historyForFirestore = history.map(event => ({
         ...event,
         timestamp: event.timestamp.toISOString(),
     }));
 
-    const sanitizedHistory = sanitizeForFirestore(historyForFirestore);
+    const sanitizedHistory = sanitizeForFirestore({ history: historyForFirestore });
 
-    setDocumentNonBlocking(docRef, { history: sanitizedHistory }, { merge: true });
+    // Usa setDoc síncrono para garantir a gravação
+    await setDoc(docRef, sanitizedHistory, { merge: true });
 }
 
 export async function loadEvolutionHistory(userId: string): Promise<EvolutionEvent[]> {
@@ -386,37 +386,33 @@ export async function loadEvolutionHistory(userId: string): Promise<EvolutionEve
         const docSnap = await getDoc(docRef);
         if (docSnap.exists()) {
             const data = docSnap.data();
-            // Firestore armazena timestamps como strings, precisamos converter de volta para Date
             const history = (data.history || []).map((event: any) => ({
                 ...event,
                 timestamp: new Date(event.timestamp)
             }));
-            return history;
+            // Garante a ordenação correta no carregamento
+            return history.sort((a: EvolutionEvent, b: EvolutionEvent) => b.timestamp.getTime() - a.timestamp.getTime());
         }
         return [];
     } catch (error) {
         console.error(`[Service Error] loadEvolutionHistory for user ${userId} failed:`, error);
-        return []; // Retorna array vazio em caso de erro
+        return [];
     }
 }
 
 export async function clearEvolutionHistory(userId: string): Promise<void> {
     if (!userId) return;
     const docRef = doc(db, 'users', userId, 'trading_data', 'evolution_history');
-    // Simplesmente apaga o documento. O hook de evolução irá recriá-lo se necessário.
-    await deleteDocumentNonBlocking(docRef);
+    await deleteDoc(docRef);
 }
 
-export async function deleteEvolutionEvent(userId: string, eventTimestamp: string): Promise<EvolutionEvent[]> {
-    if (!userId) return [];
+export async function deleteEvolutionEvent(userId: string, eventTimestamp: string): Promise<void> {
+    if (!userId) return;
     
     const currentHistory = await loadEvolutionHistory(userId);
     const newHistory = currentHistory.filter(event => event.timestamp.toISOString() !== eventTimestamp);
     
     if (newHistory.length < currentHistory.length) {
         await saveEvolutionHistory(userId, newHistory);
-        return newHistory;
     }
-    
-    return currentHistory;
 }
