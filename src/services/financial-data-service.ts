@@ -363,19 +363,31 @@ export async function getTradeDecisionLogs(userId: string): Promise<TradeDecisio
 
 // --- Evolution History ---
 
-export async function saveEvolutionHistory(userId: string, history: EvolutionEvent[]) {
-    if (!userId || !history) return;
+export async function saveEvolutionHistory(userId: string, history: EvolutionEvent[]): Promise<void> {
+    if (!userId || !history) {
+        console.warn("[saveEvolutionHistory] Called with no user or history.");
+        return;
+    }
+
     const docRef = doc(db, 'users', userId, 'trading_data', 'evolution_history');
 
-    const historyForFirestore = history.map(event => ({
-        ...event,
-        timestamp: event.timestamp.toISOString(),
-    }));
+    try {
+        const historyForFirestore = history.map(event => ({
+            ...event,
+            timestamp: event.timestamp.toISOString(), // Converte Datas para strings
+        }));
 
-    const sanitizedHistory = sanitizeForFirestore({ history: historyForFirestore });
+        const sanitizedHistory = sanitizeForFirestore({ history: historyForFirestore });
 
-    // Usa setDoc síncrono para garantir a gravação
-    await setDoc(docRef, sanitizedHistory, { merge: true });
+        // ✅ RECONSTRUÇÃO: Usa setDoc síncrono com await para garantir a gravação e capturar erros.
+        await setDoc(docRef, sanitizedHistory, { merge: true }); 
+        console.log(`✅ [EvolutionV3] Histórico da Geração ${history[0]?.generation} salvo com sucesso no Firestore.`);
+
+    } catch (error) {
+        console.error("❌ [saveEvolutionHistory] Erro fatal ao gravar no Firestore:", error);
+        // Re-lança o erro para que o hook de evolução possa tratá-lo (ex: mostrar um toast)
+        throw new Error("Falha ao salvar o histórico de evolução no banco de dados.");
+    }
 }
 
 export async function loadEvolutionHistory(userId: string): Promise<EvolutionEvent[]> {
@@ -388,9 +400,10 @@ export async function loadEvolutionHistory(userId: string): Promise<EvolutionEve
             const data = docSnap.data();
             const history = (data.history || []).map((event: any) => ({
                 ...event,
-                timestamp: new Date(event.timestamp)
+                timestamp: new Date(event.timestamp) // Converte strings de volta para Datas
             }));
-            // Garante a ordenação correta no carregamento
+            
+            // ✅ MELHORIA: Garante ordenação correta no carregamento
             return history.sort((a: EvolutionEvent, b: EvolutionEvent) => b.timestamp.getTime() - a.timestamp.getTime());
         }
         return [];
@@ -403,6 +416,7 @@ export async function loadEvolutionHistory(userId: string): Promise<EvolutionEve
 export async function clearEvolutionHistory(userId: string): Promise<void> {
     if (!userId) return;
     const docRef = doc(db, 'users', userId, 'trading_data', 'evolution_history');
+    // Usa deleteDoc (que é síncrono por natureza com await)
     await deleteDoc(docRef);
 }
 
@@ -413,6 +427,7 @@ export async function deleteEvolutionEvent(userId: string, eventTimestamp: strin
     const newHistory = currentHistory.filter(event => event.timestamp.toISOString() !== eventTimestamp);
     
     if (newHistory.length < currentHistory.length) {
+        // Salva o histórico atualizado
         await saveEvolutionHistory(userId, newHistory);
     }
 }

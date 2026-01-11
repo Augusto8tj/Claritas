@@ -467,31 +467,31 @@ export function useStrategyEvolution(initialStrategies: Omit<RobotStrategy, 'id'
     setEvolutionProgress(80);
 
     if (strategiesChanged) {
-      try {
-        const newHistory = [newEvent, ...evolutionHistory];
-        if (user) {
-            await saveEvolutionHistory(user.uid, newHistory);
-        }
-        setEvolutionHistory(newHistory);
         setEvolvedStrategies(currentStrategies);
+        // ATOMIC WRITE: Update state and save in one go
+        setEvolutionHistory(prevHistory => {
+            const newHistory = [newEvent, ...prevHistory];
+            if (user) {
+                saveEvolutionHistory(user.uid, newHistory).catch(error => {
+                    console.error("❌ [EvolutionV3] Falha ao gravar histórico no Firestore:", error);
+                    toast({
+                        title: "Erro de Persistência",
+                        description: "Não foi possível gravar a nova geração no banco de dados.",
+                        variant: "destructive",
+                    });
+                });
+            }
+            return newHistory;
+        });
 
         const timeSinceLastEvolution = (Date.now() - lastEvolutionTimeRef.current) / 1000;
         lastEvolutionTimeRef.current = Date.now();
 
         toast({
-          title: `🧬 Geração ${generationRef.current} Completa`,
-          description: `${newEvent.mutations.length} robôs evoluídos. Elite: ${elitePerformers[0].strategyType} (Sharpe ${elitePerformers[0].sharpeRatio?.toFixed(2)}). Tempo: ${timeSinceLastEvolution.toFixed(0)}s`,
-          duration: 5000,
+            title: `🧬 Geração ${generationRef.current} Completa`,
+            description: `${newEvent.mutations.length} robôs evoluídos. Elite: ${elitePerformers[0].strategyType} (Sharpe ${elitePerformers[0].sharpeRatio?.toFixed(2)}). Tempo: ${timeSinceLastEvolution.toFixed(0)}s`,
+            duration: 5000,
         });
-
-      } catch (error) {
-        console.error("❌ [EvolutionV3] Falha ao gravar histórico no Firestore:", error);
-        toast({
-          title: "Erro de Persistência",
-          description: "Não foi possível gravar a nova geração no banco de dados.",
-          variant: "destructive",
-        });
-      }
     }
 
     setEvolutionProgress(100);
@@ -514,11 +514,21 @@ export function useStrategyEvolution(initialStrategies: Omit<RobotStrategy, 'id'
   
   const deleteSingleEvolution = useCallback(async (eventTimestamp: string) => {
     if (!user) return;
-    await deleteEvolutionEvent(user.uid, eventTimestamp);
-    setEvolutionHistory(prev => prev.filter(e => e.timestamp.toISOString() !== eventTimestamp));
-    toast({
-        title: 'Geração Apagada',
-        description: `O registo da geração foi removido do histórico.`,
+    
+    // ATOMIC WRITE: Use callback form to ensure we have the latest state
+    setEvolutionHistory(prevHistory => {
+        const newHistory = prevHistory.filter(e => e.timestamp.toISOString() !== eventTimestamp);
+        
+        // Only save if a change actually happened
+        if (newHistory.length < prevHistory.length) {
+            saveEvolutionHistory(user.uid, newHistory).catch(console.error);
+            toast({
+                title: 'Geração Apagada',
+                description: `O registo da geração foi removido do histórico.`,
+            });
+        }
+        
+        return newHistory;
     });
   }, [user, toast]);
 
