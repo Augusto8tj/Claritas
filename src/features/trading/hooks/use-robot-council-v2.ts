@@ -542,7 +542,6 @@ export function useRobotCouncilV2(
                     perf.losses += (isWin ? 0 : 1);
                     perf.totalProfit += pnl;
                     perf.tradeHistory.push({ profit: pnl, regime: trade.regime, timestamp: Date.now() });
-                    console.log(`[Trade Closed] ${trade.robotId}: ${isWin ? 'WIN' : 'LOSS'} | Total trades: ${perf.tradeHistory.length}`);
                     perf.lastUpdated = Date.now();
                     
                     const metrics = calculatePerformanceMetrics(perf.tradeHistory);

@@ -85,7 +85,7 @@ export default function EvolutionLabV3({
                 Laboratório de Evolução Genética V3.0
               </CardTitle>
               <CardDescription>
-                Sistema inteligente de mutação direcionada por análise de regime
+                por que o botão Apagar Histórico está desabilitado?
               </CardDescription>
             </div>
             <div className="text-right">
@@ -111,7 +111,7 @@ export default function EvolutionLabV3({
                             disabled={!resetEvolutionHistory}
                           >
                             <Trash2 className="mr-2 h-4 w-4"/>
-                            Apagar Histórico Completo
+                            Apagar Histórico
                           </Button>
                     </AlertDialogTrigger>
                     <AlertDialogContent>
