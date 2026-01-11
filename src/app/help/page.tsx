@@ -257,7 +257,7 @@ export default function HelpPage() {
                     <h3 className="text-md font-bold mt-3">1. Comité de Momentum: Os "Velocistas"</h3>
                     <p>Obcecados com a velocidade e aceleração do preço. São os primeiros a detetar quando o mercado ganha ou perde força.</p>
                     <ul className="list-disc pl-6 space-y-2 text-sm">
-                        <li><strong>RSI:</strong> Especialista em reversão. Precisa do indicador `RSI` para detetar sobrecompra (>70) ou sobrevenda (<30).</li>
+                        <li><strong>RSI:</strong> Especialista em reversão. Precisa do indicador `RSI` para detetar sobrecompra (&gt;70) ou sobrevenda (&lt;30).</li>
                         <li><strong>STOCHASTIC:</strong> Semelhante ao RSI, mas mais sensível. Precisa do indicador `Stochastic Oscillator (STOCH)` para encontrar pontos de exaustão.</li>
                         <li><strong>MACD:</strong> Um confirmador de momentum. Precisa dos valores de `MACD Line` e `Signal Line` para detetar cruzamentos que sinalizam uma nova direção.</li>
                         <li><strong>Awesome Oscillator, TRIX, ROC:</strong> Detetam a aceleração e a "convicção" por trás de um movimento, confirmando que a tendência tem força para continuar. Precisam, respetivamente, dos indicadores `Awesome Oscillator`, `TRIX` e `Rate of Change (ROC)`.</li>
