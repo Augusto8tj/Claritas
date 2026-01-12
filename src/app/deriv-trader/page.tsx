@@ -4,26 +4,27 @@
 import React, { useState, useEffect } from "react";
 import { useForm, FormProvider } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import DerivTraderInterface from "@/features/trading/components/deriv-trader/deriv-trader-interface";
+import DerivTraderInterface from "@/features/trading/components/deriv-trader/deriv-trader-interface-v1";
 import { AssetSelector } from "@/features/trading/components/deriv-trader/asset-selector";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { MarketChart } from "@/features/trading/components/deriv-trader/market-chart";
 import { Button } from "@/components/ui/button";
 import { Trash2, Bot, NotepadText, LayoutGrid, Trophy, Dna } from "lucide-react";
-import { DerivApiProvider, useDerivApi } from "@/features/trading/hooks/use-deriv-api";
+import { DerivApiProviderV1, useDerivApiV1 } from "@/features/trading/hooks/use-deriv-api-v1";
 import { Skeleton } from "@/components/ui/skeleton";
 import { OperationsLog } from "@/features/trading/components/deriv-trader/operations-log";
 import { AIAnalysisInterface } from "@/features/trading/components/deriv-trader/ai-analysis-interface";
 import { riseFallSchema, type RiseFallFormValues } from "@/lib/types";
-import { CouncilAutopilotInterface } from "@/features/trading/components/deriv-trader/council-autopilot-interface";
+import { CouncilAutopilotInterfaceV1 } from "@/features/trading/components/deriv-trader/council-autopilot-interface-v1";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
-import { useRobotCouncil } from "@/features/trading/hooks/use-robot-council";
+import { useRobotCouncilV1 } from "@/features/trading/hooks/use-robot-council-v1";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { AITradeSuggestion } from "@/features/trading/components/deriv-trader/ai-trade-suggestion";
 import { IndicatorPanel } from "@/features/trading/components/deriv-trader/indicator-panel";
 import { TradingDesk } from "@/features/trading/components/deriv-trader/trading-desk";
 import { HallOfFame } from "@/features/trading/components/deriv-trader/hall-of-fame";
 import { ApiStatusIndicatorLegacy } from "@/features/trading/components/deriv-trader/ApiStatusIndicatorLegacy";
+import { EvolutionLab } from "@/features/trading/components/deriv-trader/evolution-lab";
 
 
 function DerivTraderCore() {
@@ -39,11 +40,10 @@ function DerivTraderCore() {
     tradeAnnotations,
     activeSymbol,
     priceTicks,
-    dataVersion,
     sellContract,
-  } = useDerivApi();
+  } = useDerivApiV1();
   
-  const robotCouncil = useRobotCouncil(activeSymbol, priceTicks, dataVersion);
+  const robotCouncil = useRobotCouncilV1(activeSymbol, priceTicks);
   const [activeTab, setActiveTab] = React.useState("log");
 
   React.useEffect(() => {
@@ -106,10 +106,11 @@ function DerivTraderCore() {
                 </div>
                  <div className="mt-6">
                     <Tabs value={activeTab} onValueChange={setActiveTab}>
-                        <TabsList className="grid w-full grid-cols-3">
+                        <TabsList className="grid w-full grid-cols-4">
                             <TabsTrigger value="log">Registo de Operações</TabsTrigger>
                             <TabsTrigger value="desk">Arena Virtual</TabsTrigger>
                             <TabsTrigger value="fame">Hall da Fama</TabsTrigger>
+                            <TabsTrigger value="evolution">Evolução</TabsTrigger>
                         </TabsList>
                         <TabsContent value="log" className="mt-4">
                             <OperationsLog operations={operationsLog} sellContractV1={sellContract} priceTicksV1={priceTicks} />
@@ -126,11 +127,14 @@ function DerivTraderCore() {
                         <TabsContent value="fame" className="mt-4">
                             <HallOfFame />
                         </TabsContent>
+                         <TabsContent value="evolution" className="mt-4">
+                           <EvolutionLab history={robotCouncil.evolutionHistory} />
+                        </TabsContent>
                     </Tabs>
                 </div>
             </div>
              <div className="space-y-6">
-                <CouncilAutopilotInterface {...robotCouncil} />
+                <CouncilAutopilotInterfaceV1 {...robotCouncil} />
             </div>
        </div>
 
@@ -157,7 +161,7 @@ function DerivTraderCore() {
                 </TabsContent>
 
                 <TabsContent value="autopilot" className="mt-4 space-y-6">
-                    <CouncilAutopilotInterface {...robotCouncil} />
+                    <CouncilAutopilotInterfaceV1 {...robotCouncil} />
                 </TabsContent>
 
                  <TabsContent value="desk" className="mt-4">
@@ -196,7 +200,7 @@ function DerivTraderPageContent() {
         assetGroups,
         activeSymbol,
         setActiveSymbol,
-    } = useDerivApi();
+    } = useDerivApiV1();
     
     const handleAssetChange = (asset: string) => {
         setActiveSymbol(asset);
@@ -268,10 +272,10 @@ export default function DerivTraderPage() {
   });
 
   return (
-    <DerivApiProvider>
+    <DerivApiProviderV1>
         <FormProvider {...form}>
             <DerivTraderPageContent />
         </FormProvider>
-    </DerivApiProvider>
+    </DerivApiProviderV1>
   );
 }

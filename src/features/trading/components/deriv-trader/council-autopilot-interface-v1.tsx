@@ -1,4 +1,4 @@
-// src/features/trading/components/deriv-trader/council-autopilot-interface.tsx
+// src/features/trading/components/deriv-trader/council-autopilot-interface-v1.tsx
 'use client';
 
 import React, { Fragment } from "react";
@@ -17,11 +17,11 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
-import type { RobotStrategy, DurationUnit } from "@/lib/types";
+import type { RobotStrategy, DurationUnit } from '@/lib/types';
 import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
-import type { useRobotCouncil } from "@/features/trading/hooks/use-robot-council";
-import type { Indicators } from "@/services/indicator-service";
+import type { useRobotCouncilV1 } from "@/features/trading/hooks/use-robot-council-v1";
+import type { Indicators } from '@/services/indicator-service-v1';
 
 const indicatorIcons: { [key: string]: React.ReactNode } = {
     RSI: <BrainCircuit className="h-4 w-4" />,
@@ -30,9 +30,9 @@ const indicatorIcons: { [key: string]: React.ReactNode } = {
     BOLLINGER_BANDS: <Waves className="h-4 w-4" />,
     MACD_CROSS: <Activity className="h-4 w-4" />,
     PRICE_ACTION_PATTERN: <CandlestickChart className="h-4 w-4" />,
-    ADX_TREND: <TrendingUp className="h-4 w-4" />,
-    ICHIMOKU_CLOUD: <Cloud className="h-4 w-4" />,
-    AWESOME_OSCILLATOR: <BarChart className="h-4 w-4" />,
+    ADX_TREND: <BrainCircuit className="h-4 w-4" />,
+    ICHIMOKU_CLOUD: <Waves className="h-4 w-4" />,
+    AWESOME_OSCILLATOR: <Activity className="h-4 w-4" />,
     VOLUME_PROFILE: <Activity className="h-4 w-4" />,
     KAMA: <Activity className="h-4 w-4" />,
     VWAP: <Activity className="h-4 w-4" />,
@@ -71,9 +71,9 @@ const robotCategories: Record<string, RobotStrategy['strategyType'][]> = {
     'Especialistas Estatísticos': ['Z_SCORE', 'STOCH_RSI'],
 };
 
-interface CouncilAutopilotInterfaceProps extends ReturnType<typeof useRobotCouncil> {}
+interface CouncilAutopilotInterfaceV1Props extends ReturnType<typeof useRobotCouncilV1> {}
 
-export const CouncilAutopilotInterface: React.FC<CouncilAutopilotInterfaceProps> = (props) => {
+export const CouncilAutopilotInterfaceV1: React.FC<CouncilAutopilotInterfaceV1Props> = (props) => {
   const { 
     isCouncilAutopilotOn,
     strategyCouncil,
@@ -110,9 +110,9 @@ export const CouncilAutopilotInterface: React.FC<CouncilAutopilotInterfaceProps>
         case 'STOCHASTIC':
         case 'MFI':
         case 'RVI':
-            return `Forte < ${robot.strongBuyThreshold}, Fraco < ${robot.weakBuyThreshold}`;
+            return `Compra < ${robot.strongBuyThreshold}, Venda > ${robot.strongSellThreshold}`;
         case 'STOCH_RSI':
-             return `Forte < ${robot.strongBuyThreshold?.toFixed(2)}, Fraco < ${robot.weakBuyThreshold?.toFixed(2)}`;
+             return `Compra < ${robot.strongBuyThreshold?.toFixed(2)}, Venda > ${robot.strongSellThreshold?.toFixed(2)}`;
         case 'MOVING_AVERAGE_CROSS':
             return `Cruzamento ${robot.shortPeriod}/${robot.longPeriod}`;
         case 'BOLLINGER_BANDS':
@@ -123,15 +123,15 @@ export const CouncilAutopilotInterface: React.FC<CouncilAutopilotInterfaceProps>
             const pattern = robot.pattern === 'hammer' ? 'Martelo' : 'Estrela Cadente';
             return `Padrão: ${pattern}`;
         case 'ADX_TREND':
-            return `Limiar de Tendência > ${robot.trendStrengthThreshold}`;
+            return `Limiar de Força > ${robot.trendStrengthThreshold}`;
         case 'VOLUME_PROFILE':
             return `POC de ${robot.profileBars} barras`;
         case 'Z_SCORE':
-            return `Limiar Z-Score: ${robot.zScoreThreshold}`;
+            return `Z-Score: ${robot.zScoreThreshold}`;
         case 'PARABOLIC_SAR':
             return `AF: ${robot.acceleration}, MAX: ${robot.maxAcceleration}`;
         case 'CHANDELIER_EXIT':
-            return `Multiplicador ATR: ${robot.multiplier}`;
+            return `Mult. ATR: ${robot.multiplier}`;
         case 'TRIX':
         case 'ROC':
         case 'KAMA':
@@ -300,7 +300,7 @@ export const CouncilAutopilotInterface: React.FC<CouncilAutopilotInterfaceProps>
             </div>
             <div className="flex items-center justify-between">
                 <Label htmlFor="stop-loss-switch" className="flex-1">Stop-Loss Dinâmico</Label>
-                <Switch id="stop-loss-switch" checked={isStopLossOn} onCheckedChange={setIsStopLossOn} disabled={!isCouncilAutopilotOn} />
+                <Switch id="stop-loss-switch" checked={isCouncilAutopilotOn} onCheckedChange={() => {}} disabled={true} />
             </div>
              <div className="flex items-center justify-between">
                 <Label htmlFor="inversion-mode-switch" className="flex flex-col space-y-1 flex-1">

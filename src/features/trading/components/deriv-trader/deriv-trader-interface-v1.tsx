@@ -1,4 +1,4 @@
-// src/features/trading/components/deriv-trader/deriv-trader-interface.tsx
+// src/features/trading/components/deriv-trader/deriv-trader-interface-v1.tsx
 "use client";
 
 import { useState, useEffect, useRef } from "react";
@@ -27,7 +27,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 
 import type { DurationUnit, RiseFallFormValues } from "@/lib/types";
-import { useDerivApi } from "@/features/trading/hooks/use-deriv-api";
+import { useDerivApiV1 } from "@/features/trading/hooks/use-deriv-api-v1";
 import { Switch } from "@/components/ui/switch";
 
 type TradeType = 'rise_fall' | 'higher_lower' | 'touch_no_touch';
@@ -55,7 +55,7 @@ function DerivTraderInterface({ symbol }: DerivTraderInterfaceProps) {
   const [loading, setLoading] = useState<"rise" | "fall" | null>(null);
   const [tradeType, setTradeType] = useState<TradeType>('rise_fall');
   const [isInversionModeOn, setIsInversionModeOn] = useState(false); // NOVO ESTADO
-  const { isConnected, executeTrade, durationLimits } = useDerivApi();
+  const { isConnected, executeTrade, durationLimits } = useDerivApiV1();
 
   const form = useFormContext<RiseFallFormValues>();
   const durationUnit = form.watch('duration_unit');
