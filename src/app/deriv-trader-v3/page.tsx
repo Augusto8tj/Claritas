@@ -12,7 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Trash2 } from "lucide-react";
 import { useDerivApiV3, DerivApiProviderV3 } from "@/features/trading/hooks/use-deriv-api-v3";
 import { Skeleton } from "@/components/ui/skeleton";
-import { OperationsLogV3 } from "@/features/trading/components/deriv-trader/operations-log-v3";
+import OperationsLogV3 from "@/features/trading/components/deriv-trader/operations-log-v3";
 import { riseFallSchema, type RiseFallFormValues } from "@/lib/types";
 import { useRobotCouncilV3 } from "@/features/trading/hooks/use-robot-council-v3";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -167,7 +167,6 @@ const DerivTraderV3Core = () => {
                     <OperationsLogV3
                         operations={operationsLog} 
                         sellContract={sellContract} 
-                        priceTicks={priceTicks} 
                     />
                 </TabsContent>
                 <TabsContent value="audit" className="mt-4">
