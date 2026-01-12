@@ -4,7 +4,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useDerivApiV1 } from './use-deriv-api-v1';
 import { useToast } from '@/hooks/use-toast';
-import type { RobotStrategy, ChartData, TickData, CandleData, RiseFallFormValues, DurationUnit } from '@/lib/types';
+import type { RobotStrategy, ChartData, TickData, CandleData, RiseFallFormValues, DurationUnit, RobotPerformance, RobotVote, CouncilVotes } from '@/lib/types';
 import { useFormContext } from 'react-hook-form';
 import type { Indicators } from '@/services/indicator-service-v1';
 import { calculateAllIndicators } from '@/services/indicator-service-v1';
@@ -14,42 +14,17 @@ import { saveRobotPerformance, loadRobotPerformance } from '@/services/trading-d
 import { useStrategyEvolutionV1 } from './use-strategy-evolution-v1';
 
 // --- TIPAGEM E TIPOS DE DADOS ---
-// Representa o voto de um único robô, incluindo sua confiança e sugestões.
-export type RobotVote = {
-    vote: 'RISE' | 'FALL' | 'HOLD';
-    confidence: number;
-    weight: number;
-    optimalDuration: number;
-    optimalDurationUnit: DurationUnit;
-    suggestedStake: number;
-};
-// Um mapa que armazena os votos de todos os robôs pelo seu ID.
-export type CouncilVotes = { [key:string]: RobotVote };
-
-// Armazena as métricas de desempenho de um robô na Arena Virtual.
-export type RobotPerformance = {
-    id: string;
-    strategyType: RobotStrategy['strategyType'];
-    strategy: RobotStrategy;
-    wins: number;
-    losses: number;
-    totalProfit: number;
-    winRate: number; // Adicionado para facilitar o ranking na UI
-};
-
-// Representa uma operação simulada (paper trade) na Arena Virtual.
 type VirtualTrade = {
     id: string;
     robotId: string;
     vote: 'RISE' | 'FALL';
     entryPrice: number;
     entryEpoch: number;
-    exitEpoch: number; // NOVO: Tempo exato de expiração, para precisão máxima.
+    exitEpoch: number; 
     exitTickIndex: number;
 };
 
-// --- CONSTANTES ---
-const VIRTUAL_STAKE = 1.0; // Valor fixo para cada operação virtual, para cálculo de P&L.
+const VIRTUAL_STAKE = 1.0; 
 
 // --- FUNÇÕES AUXILIARES (HELPERS) ---
 const isCandle = (d: ChartData): d is CandleData => d !== null && 'close' in d;
@@ -59,10 +34,9 @@ const getPrice = (d: ChartData | null): number | undefined => {
 };
 const isValid = (value: any): value is number => value !== null && value !== undefined && !isNaN(value);
 
-// Converte durações de diferentes unidades para segundos, para padronizar cálculos.
 const durationToSeconds = (duration: number, unit: DurationUnit): number => {
     switch (unit) {
-        case 't': return duration * 2; // Estimativa: 1 tick a cada 2 segundos em média nos índices sintéticos.
+        case 't': return duration * 2; 
         case 's': return duration;
         case 'm': return duration * 60;
         case 'h': return duration * 3600;
@@ -71,42 +45,29 @@ const durationToSeconds = (duration: number, unit: DurationUnit): number => {
     }
 };
 
-/**
- * Função pura que calcula o voto de um único robô com base nos indicadores.
- * Não tem estado e apenas retorna uma decisão baseada nos dados fornecidos.
- * @param robot A estratégia do robô.
- * @param indicators Os valores atuais dos indicadores técnicos.
- * @param tickCandles Os dados de preço mais recentes.
- * @returns O voto do robô, confiança e sugestões.
- */
 const calculateRobotVote = (
     robot: RobotStrategy,
     indicators: Indicators,
     tickCandles: CandleData[]
 ): Omit<RobotVote, 'weight'> => {
-    // Objetivo: Calcular o voto, a confiança, e o stake sugerido.
-    // O 'suggestedStake' agora é dinâmico com base na força do sinal.
+    
     let vote: RobotVote['vote'] = 'HOLD';
     let confidence = 0;
     let suggestedStake = 0;
     const { optimalDuration, optimalDurationUnit, suggestedStake: baseStake } = robot;
 
-    // Função auxiliar para definir o voto e o stake proporcional à confiança.
     const setVote = (newVote: 'RISE' | 'FALL', newConfidence: number) => {
         vote = newVote;
         confidence = newConfidence;
-        // Stake sugerido é proporcional à confiança do sinal.
         if (confidence === robot.strongConfidence) {
-            suggestedStake = baseStake; // Confiança alta = stake completo
+            suggestedStake = baseStake; 
         } else if (confidence === robot.weakConfidence) {
-            suggestedStake = baseStake * 0.5; // Confiança baixa = meio stake
+            suggestedStake = baseStake * 0.5; 
         }
     };
 
     if (!indicators) return { vote: 'HOLD', confidence: 0, optimalDuration, optimalDurationUnit, suggestedStake: 0 };
     
-    // --- LÓGICA DE VOTAÇÃO PARA CADA TIPO DE ESTRATÉGIA ---
-    // Cada bloco verifica o indicador relevante e usa `setVote` para registar a decisão.
     if (robot.strategyType === 'RSI' && isValid(indicators.rsi)) {
         if (indicators.rsi! <= robot.weakBuyThreshold!) setVote('RISE', robot.weakConfidence);
         if (indicators.rsi! <= robot.strongBuyThreshold!) setVote('RISE', robot.strongConfidence);
@@ -202,9 +163,6 @@ const calculateRobotVote = (
         if (indicators.zScore! >= robot.zScoreThreshold!) setVote('FALL', robot.strongConfidence);
     }
      if (robot.strategyType === 'OBV' && isValid(indicators.obv) && indicators.sma.length > 1) {
-         // Lógica do OBV: Compara o valor atual com uma média móvel do próprio OBV.
-         // Esta parte é um pouco mais complexa e depende de como você armazena a série histórica do OBV.
-         // Por simplicidade, vamos usar uma lógica de inclinação. Se o OBV está a subir, é um sinal de compra.
          if(indicators.sma && indicators.obv > indicators.sma[indicators.sma.length-1]!) {
             setVote('RISE', robot.weakConfidence);
          } else {
@@ -232,12 +190,14 @@ const calculateRobotVote = (
     return { vote, confidence, optimalDuration, optimalDurationUnit, suggestedStake };
 };
 
+
 export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickData[]) {
   const { operationsLog, executeTrade, timePeriod, isConnected, durationLimits, sellContract } = useDerivApiV1();
   const { user, loading: isAuthLoading } = useAuth();
   const { toast } = useToast();
   const form = useFormContext<RiseFallFormValues>();
   const { evolvedStrategies, evolveTrigger, evolutionHistory } = useStrategyEvolutionV1(initialCouncilStrategies);
+  
   const [strategyCouncil, setStrategyCouncil] = useState<RobotStrategy[]>([]);
   const [isCouncilAutopilotOn, setIsCouncilAutopilotOn] = useState(false);
   const [isFetchingCouncil, setIsFetchingCouncil] = useState(false);
@@ -247,7 +207,6 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
   const [isDynamicConsensusOn, setIsDynamicConsensusOn] = useState(true);
   const [isDynamicRiskOn, setIsDynamicRiskOn] = useState(true);
   const [isMeritocracyOn, setIsMeritocracyOn] = useState(true);
-  const [isStopLossOn, setIsStopLossOn] = useState(true);
   const [isInversionModeOn, setIsInversionModeOn] = useState(false);
   const [robotPerformance, setRobotPerformance] = useState<RobotPerformance[]>([]);
   const virtualTradesRef = useRef<VirtualTrade[]>([]);
@@ -259,7 +218,8 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
   const [consensusThreshold, setConsensusThreshold] = useState(300);
   const [consensusDecision, setConsensusDecision] = useState<'RISE' | 'FALL' | 'HOLD'>('HOLD');
   const councilExecutionRef = useRef({ isExecuting: false, sellingContracts: new Set<number>() });
-  const contractsInAlertRef = useRef<Map<number, 'breached' | 'confirmed'>>(new Map());
+  const { baseStake, baseDuration } = {baseStake: 1, baseDuration: 5};
+  
 
   useEffect(() => {
     const councilWithIds = evolvedStrategies.map((strat, index) => ({
@@ -406,6 +366,7 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
     const newVotes: CouncilVotes = {};
     const { duration: formDuration, duration_unit: formDurationUnit } = form.getValues();
     const tradeDurationSeconds = durationToSeconds(formDuration > 0 ? formDuration : baseDuration, formDurationUnit);
+    const tradeDuration = formDuration > 0 ? formDuration : baseDuration;
 
     strategyCouncil.forEach(robot => {
         const voteResult = calculateRobotVote(robot, currentIndicators, tickCandles);
@@ -477,31 +438,30 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
     setActiveCommittee(committeeOfSpecialists(currentIndicators));
     
   }, [
-      // Lista de dependências: O useEffect re-executa se qualquer um destes valores mudar.
       priceTicks, isConnected, isCouncilAutopilotOn, strategyCouncil, robotPerformance, 
       isMeritocracyOn, activeSymbol, operationsLog, supervisionCommitteeCheck, toast, executeTrade, 
-      timePeriod, committeeOfSpecialists, user, evolveTrigger, tickCandles
+      timePeriod, committeeOfSpecialists, user, evolveTrigger, tickCandles, baseDuration, form
   ]);
 
   return {
     isCouncilAutopilotOn, setIsCouncilAutopilotOn, strategyCouncil, fetchStrategyCouncil, dissolveCouncil, isFetchingCouncil, councilVotes, dailyBalance, setDailyBalance, dailyTarget, setDailyTarget, consensusThreshold, setConsensusThreshold, isDynamicConsensusOn, setIsDynamicConsensusOn, isDynamicRiskOn, setIsDynamicRiskOn, isMeritocracyOn, setIsMeritocracyOn, indicators, activeCommittee, supervisionStatus, consensusSum, consensusDecision, robotPerformance, evolutionHistory
   };
 }
-I see this error with the app, reported by NextJS, please fix it. The error is reported as HTML but presented visually to the user).
+```
 
 A > before the line number in the error source usually indicates the line of interest: 
 
-> Build Error: Module not found: Can't resolve '@/services/indicator-service'. Error source: src/features/trading/hooks/use-robot-council.ts (11:1)
-> Module not found: Can't resolve '@/services/indicator-service'
->    9 | import { useFormContext } from 'react-hook-form';
->   10 | import type { Indicators } from '@/services/indicator-service';
-> > 11 | import { calculateAllIndicators } from '@/services/indicator-service';
->      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
->   12 | import type { ChartData, TickData, CandleData, Operation } from '@/lib/types';
+> Build Error: Module not found: Can't resolve './use-strategy-evolution'. Error source: ./src/features/trading/hooks/use-robot-council.ts (15:1)
+> Module not found: Can't resolve './use-strategy-evolution'
 >   13 | import { initialCouncilStrategies } from '@/services/council-strategies';
 >   14 | import { useAuth } from '@/features/auth/hooks/use-auth';
+> > 15 | import { saveRobotPerformance, loadRobotPerformance } from '@/services/financial-data-service';
+>      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+>   16 | import { useStrategyEvolution } from './use-strategy-evolution';
+>   17 | import type { DurationLimits } from './use-deriv-api';
+>   18 |
 > 
-> Import map: aliased to relative './src/services/indicator-service' inside of [project]/
+> Import map: aliased to relative './src/features/trading/hooks/use-strategy-evolution' inside of [project]/src/features/trading/hooks/
 > 
 > Import traces:
 >   Client Component Browser:
