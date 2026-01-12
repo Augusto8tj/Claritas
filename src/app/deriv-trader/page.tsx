@@ -4,7 +4,7 @@
 import React, { useState, useEffect } from "react";
 import { useForm, FormProvider } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import DerivTraderInterface from "@/features/trading/components/deriv-trader/deriv-trader-interface-v1";
+import DerivTraderInterfaceV1 from "@/features/trading/components/deriv-trader/deriv-trader-interface-v1";
 import { AssetSelector } from "@/features/trading/components/deriv-trader/asset-selector";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { MarketChart } from "@/features/trading/components/deriv-trader/market-chart";
@@ -24,7 +24,7 @@ import { IndicatorPanel } from "@/features/trading/components/deriv-trader/indic
 import { TradingDesk } from "@/features/trading/components/deriv-trader/trading-desk";
 import { HallOfFame } from "@/features/trading/components/deriv-trader/hall-of-fame";
 import { ApiStatusIndicatorLegacy } from "@/features/trading/components/deriv-trader/ApiStatusIndicatorLegacy";
-import { EvolutionLab } from "@/features/trading/components/deriv-trader/evolution-lab";
+import { EvolutionLab } from "@/features/trading/components/deriv-trader/evolution-lab-v1";
 
 
 function DerivTraderCore() {
@@ -92,7 +92,7 @@ function DerivTraderCore() {
        <div className="hidden lg:grid lg:grid-cols-3 gap-6 mt-6">
             <div className="lg:col-span-2 space-y-6">
                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <DerivTraderInterface symbol={activeSymbol || ""} />
+                    <DerivTraderInterfaceV1 symbol={activeSymbol || ""} />
                      <div className="space-y-6">
                         <AITradeSuggestion 
                           councilDecision={robotCouncil.consensusDecision}
@@ -149,7 +149,7 @@ function DerivTraderCore() {
                 </TabsList>
 
                 <TabsContent value="trade" className="mt-4 space-y-6">
-                    <DerivTraderInterface symbol={activeSymbol || ""} />
+                    <DerivTraderInterfaceV1 symbol={activeSymbol || ""} />
                     <AITradeSuggestion 
                       councilDecision={robotCouncil.consensusDecision}
                       consensusSum={robotCouncil.consensusSum}
