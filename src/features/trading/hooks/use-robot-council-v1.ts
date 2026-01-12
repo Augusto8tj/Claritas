@@ -21,7 +21,7 @@ import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useDerivApiV1 } from './use-deriv-api-v1';
 import { useToast } from '@/hooks/use-toast';
 import type { RobotStrategy, ChartData, TickData, CandleData, DurationUnit, RobotVote as RobotVoteType, CouncilVotes, RobotPerformance as RobotPerformanceType, Operation } from '@/lib/types';
-import type { RiseFallFormValues } from '@/features/trading/components/deriv-trader/deriv-trader-interface.types';
+import type { RiseFallFormValues } from '@/features/trading/components/deriv-trader/deriv-trader-interface-v1.types';
 import { useFormContext } from 'react-hook-form';
 import type { Indicators } from '@/services/indicator-service-v1';
 import { calculateAllIndicators } from '@/services/indicator-service-v1';
@@ -29,6 +29,7 @@ import { initialCouncilStrategies } from '@/services/council-strategies';
 import { useAuth } from '@/features/auth/hooks/use-auth';
 import { saveRobotPerformance, loadRobotPerformance } from '@/services/trading-data-service-v1';
 import { useStrategyEvolutionV1 } from './use-strategy-evolution-v1';
+import { errorEmitter, FirestorePermissionError } from '@/firebase';
 
 // --- TIPAGEM E TIPOS DE DADOS ---
 export type RobotVote = RobotVoteType;
@@ -256,7 +257,15 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
       .then(stored => {
         if (stored) setRobotPerformance(stored);
       })
-      .catch(console.error);
+      .catch(error => {
+        console.error("[useRobotCouncilV1] Failed to load performance, creating client-side error.", error);
+        // CRÍTICO: Criar o erro aqui no cliente
+        const permissionError = new FirestorePermissionError({
+            path: `users/${user.uid}/trading/robotPerformance`,
+            operation: 'get',
+        });
+        errorEmitter.emit('permission-error', permissionError);
+      });
   }, [user, isAuthLoading]);
 
   const resetArenaPerformance = useCallback(() => {

@@ -8,27 +8,17 @@
 import { db } from '@/lib/firebase';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import type { RobotPerformance } from '@/lib/types';
-import { errorEmitter } from '@/firebase/error-emitter';
-import { FirestorePermissionError } from '@/firebase/errors';
 
 export async function saveRobotPerformance(userId: string, performanceData: RobotPerformance[]): Promise<void> {
-    const performanceDocRef = doc(db, 'users', userId, 'trading', 'robotPerformance');
+    const performanceDocRef = doc(db, 'users', userId, 'trading_data', 'robotPerformance');
     const dataToSave = { performance: performanceData };
 
-    setDoc(performanceDocRef, dataToSave, { merge: true })
-        .catch(async () => {
-            const permissionError = new FirestorePermissionError({
-                path: performanceDocRef.path,
-                operation: 'update',
-                requestResourceData: dataToSave,
-            });
-            errorEmitter.emit('permission-error', permissionError);
-            throw new Error("Falha ao salvar desempenho dos robôs (V1).");
-        });
+    // No servidor, podemos usar o setDoc diretamente. Erros serão propagados.
+    await setDoc(performanceDocRef, dataToSave, { merge: true });
 }
 
 export async function loadRobotPerformance(userId: string): Promise<RobotPerformance[] | null> {
-    const performanceDocRef = doc(db, 'users', userId, 'trading', 'robotPerformance');
+    const performanceDocRef = doc(db, 'users', userId, 'trading_data', 'robotPerformance');
     
     try {
         const docSnap = await getDoc(performanceDocRef);
@@ -37,11 +27,8 @@ export async function loadRobotPerformance(userId: string): Promise<RobotPerform
         }
         return null;
     } catch (serverError) {
-        const permissionError = new FirestorePermissionError({
-            path: performanceDocRef.path,
-            operation: 'get',
-        });
-        errorEmitter.emit('permission-error', permissionError);
-        throw serverError; // Re-throw to be caught by the caller
+        // Agora, simplesmente re-lançamos o erro para ser tratado pelo cliente.
+        console.error(`[Service Error V1] loadRobotPerformance for user ${userId} failed:`, serverError);
+        throw serverError;
     }
 }
