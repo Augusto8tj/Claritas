@@ -124,7 +124,6 @@ const IsolatedMarketChart = () => {
 const DerivTraderV3Core = () => {
     const { activeSymbol, priceTicks, dataVersion, operationsLog, chartData, sellContract } = useDerivApiV3();
     
-    // ✅ CORREÇÃO: Utiliza o hook do cérebro V3
     const robotCouncil = useRobotCouncilV3(activeSymbol, priceTicks, chartData, dataVersion);
     const [activeTab, setActiveTab] = React.useState("desk");
     
@@ -141,7 +140,6 @@ const DerivTraderV3Core = () => {
                         />
                     </div>
                 </div>
-                {/* ✅ CORREÇÃO: Utiliza o componente de piloto automático V3 */}
                 <CouncilAutopilotInterfaceV3 {...robotCouncil} />
             </div>
 
@@ -155,14 +153,12 @@ const DerivTraderV3Core = () => {
 
             <Tabs value={activeTab} onValueChange={setActiveTab}>
                 <TabsList className="grid w-full grid-cols-4">
-                    {/* ✅ CORREÇÃO: Atualiza o rótulo da aba */}
                     <TabsTrigger value="desk">Arena V3.0</TabsTrigger>
                     <TabsTrigger value="log">Operações</TabsTrigger>
                     <TabsTrigger value="audit">Auditoria</TabsTrigger>
                     <TabsTrigger value="evolution">Evolução</TabsTrigger>
                 </TabsList>
                 <TabsContent value="desk" className="mt-4">
-                    {/* TradingDeskV2 é genérico e pode ser usado aqui */}
                     <TradingDeskV2 
                         councilState={robotCouncil}
                     />

@@ -81,7 +81,7 @@ export function DebugCouncilView({ councilState, isCouncilAutopilotOn }: DebugCo
             <CardHeader>
                 <CardTitle className="font-headline flex items-center gap-2">
                     <BarChart className="h-5 w-5 text-primary" />
-                    Diagnóstico Avançado da Mesa V2.5
+                    Diagnóstico Avançado da Mesa
                 </CardTitle>
                  <CardDescription>
                     Aguardando ativação e o primeiro ciclo de análise...
@@ -134,7 +134,7 @@ export function DebugCouncilView({ councilState, isCouncilAutopilotOn }: DebugCo
             <div>
                 <CardTitle className="font-headline flex items-center gap-2 text-xl">
                 <BarChart className="h-6 w-6 text-primary" />
-                Diagnóstico Avançado da Mesa V2.5
+                Diagnóstico Avançado da Mesa
                 </CardTitle>
                 <CardDescription>
                 Visão profunda do Cérebro Cognitivo, Microestrutura e Votação Bayesiana.

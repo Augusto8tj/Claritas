@@ -137,7 +137,7 @@ export function TradingDeskV2({ councilState }: TradingDeskV2Props) {
                     <div className="flex flex-col gap-1">
                         <CardTitle className="font-headline flex items-center gap-2 text-xl">
                             <Swords className="h-6 w-6 text-primary" />
-                            Arena Virtual V2.5
+                            Arena Virtual
                         </CardTitle>
                         <CardDescription>
                             Torneio de algoritmos e classificação por Sharpe Ratio.
