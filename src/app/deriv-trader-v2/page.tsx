@@ -18,7 +18,7 @@ import { useRobotCouncilV2 } from "@/features/trading/hooks/use-robot-council-v2
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { CouncilDashboardV2 } from '@/features/trading/components/deriv-trader/CouncilDashboardV2';
 import { TradingDeskV2 } from "@/features/trading/components/deriv-trader/trading-desk-v2";
-import EvolutionLabV3 from "@/features/trading/components/deriv-trader/evolution-lab-v3";
+import { EvolutionLabV2 } from "@/features/trading/components/deriv-trader/evolution-lab-v2";
 import { DebugCouncilView } from "@/features/trading/components/deriv-trader/DebugCouncilView";
 import TradingDecisionLogViewer from "@/components/deriv-trader/TradingDecisionLogViewer";
 import { CouncilAutopilotInterfaceV2 } from "@/features/trading/components/deriv-trader/council-autopilot-interface-v2";
@@ -178,17 +178,11 @@ const DerivTraderV2Core = () => {
                     <TradingDecisionLogViewer logs={robotCouncil.tradeDecisionLog} showFilters={false} />
                 </TabsContent>
                 <TabsContent value="evolution" className="mt-4">
-                    <EvolutionLabV3 
+                    <EvolutionLabV2 
                         history={robotCouncil.evolutionHistory}
-                        isEvolving={robotCouncil.isEvolving}
-                        evolutionProgress={robotCouncil.evolutionProgress}
-                        currentGeneration={robotCouncil.currentGeneration}
-                        tradesUntilEvolution={robotCouncil.tradesUntilEvolution}
-                        tradeCounts={robotCouncil.tradeCounts}
-                        evolveTrigger={robotCouncil.evolveTrigger}
-                        robotPerformance={robotCouncil.robotPerformance}
                         resetEvolutionHistory={robotCouncil.resetEvolutionHistory}
                         deleteSingleEvolution={robotCouncil.deleteSingleEvolution}
+                        currentGeneration={robotCouncil.currentGeneration}
                     />
                 </TabsContent>
             </Tabs>
