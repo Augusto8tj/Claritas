@@ -1,7 +1,7 @@
-// /src/app/deriv-trader/page.tsx
+// src/app/deriv-trader/page.tsx
 'use client';
 
-import React from "react";
+import React, { useState, useEffect } from "react";
 import { useForm, FormProvider } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import DerivTraderInterface from "@/features/trading/components/deriv-trader/deriv-trader-interface";
