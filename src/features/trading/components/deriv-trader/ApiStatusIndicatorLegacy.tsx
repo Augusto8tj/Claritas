@@ -2,7 +2,7 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { useDerivApi } from '@/features/trading/hooks/use-deriv-api';
+import { useDerivApiV1 as useDerivApi } from '@/features/trading/hooks/use-deriv-api-v1';
 import { checkGeminiConnection } from '@/app/actions';
 import { Button } from '@/components/ui/button';
 import { ShieldCheck, ShieldX, Loader2, RefreshCw } from 'lucide-react';
