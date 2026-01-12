@@ -27,169 +27,8 @@ import { ApiStatusIndicatorLegacy } from "@/features/trading/components/deriv-tr
 import { EvolutionLabV1 } from "@/features/trading/components/deriv-trader/evolution-lab-v1";
 
 
-function DerivTraderCore() {
-  const { 
-    operationsLog,
-    chartData,
-    isChartLoading,
-    chartError,
-    chartType,
-    setChartType,
-    timePeriod,
-    setTimePeriod,
-    tradeAnnotations,
-    activeSymbol,
-    priceTicks,
-    sellContract,
-  } = useDerivApiV1();
-  
-  const robotCouncil = useRobotCouncilV1(activeSymbol, priceTicks);
-  const [activeTab, setActiveTab] = React.useState("log");
-
-  React.useEffect(() => {
-    if (robotCouncil.isCouncilAutopilotOn) {
-      setActiveTab("desk");
-    }
-  }, [robotCouncil.isCouncilAutopilotOn]);
-
-
-  const latestDataPoint = chartData.length > 0 ? chartData[chartData.length - 1] : null;
-
-  return (
-    <>
-      <div className="space-y-6">
-        {robotCouncil.indicators && <IndicatorPanel indicators={robotCouncil.indicators} latestDataPoint={latestDataPoint} />}
-        
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <div>
-                  <CardTitle className="font-headline text-lg">
-                      Gráfico ({activeSymbol})
-                  </CardTitle>
-                  <CardDescription className="text-xs">
-                      Desempenho em tempo real do ativo.
-                  </CardDescription>
-              </div>
-          </CardHeader>
-          <CardContent>
-              <MarketChartV1
-                  activeSymbol={activeSymbol || ''}
-                  chartData={chartData}
-                  isChartLoading={isChartLoading}
-                  chartError={chartError}
-                  chartType={chartType}
-                  setChartType={setChartType}
-                  timePeriod={timePeriod}
-                  setTimePeriod={setTimePeriod}
-                  operations={operationsLog}
-                  indicators={robotCouncil.indicators}
-                  tradeAnnotations={tradeAnnotations}
-              />
-          </CardContent>
-        </Card>
-      </div>
-      
-       <div className="hidden lg:grid lg:grid-cols-3 gap-6 mt-6">
-            <div className="lg:col-span-2 space-y-6">
-                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <DerivTraderInterfaceV1 symbol={activeSymbol || ""} />
-                     <div className="space-y-6">
-                        <AITradeSuggestionV1
-                          councilDecision={robotCouncil.consensusDecision}
-                          consensusSum={robotCouncil.consensusSum}
-                          consensusThreshold={robotCouncil.consensusThreshold}
-                          supervisionStatus={robotCouncil.supervisionStatus}
-                          activeCommittee={robotCouncil.activeCommittee}
-                          isAutopilotOn={robotCouncil.isCouncilAutopilotOn}
-                        />
-                    </div>
-                </div>
-                 <div className="mt-6">
-                    <Tabs value={activeTab} onValueChange={setActiveTab}>
-                        <TabsList className="grid w-full grid-cols-4">
-                            <TabsTrigger value="log">Registo de Operações</TabsTrigger>
-                            <TabsTrigger value="desk">Arena Virtual</TabsTrigger>
-                            <TabsTrigger value="fame">Hall da Fama</TabsTrigger>
-                            <TabsTrigger value="evolution">Evolução</TabsTrigger>
-                        </TabsList>
-                        <TabsContent value="log" className="mt-4">
-                            <OperationsLogV1 operations={operationsLog} sellContract={sellContract} priceTicks={priceTicks} />
-                        </TabsContent>
-                        <TabsContent value="desk" className="mt-4">
-                            <TradingDesk 
-                                isMeritocracyOn={robotCouncil.isMeritocracyOn}
-                                setIsMeritocracyOn={robotCouncil.setIsMeritocracyOn}
-                                isCouncilAutopilotOn={robotCouncil.isCouncilAutopilotOn}
-                                robotPerformance={robotCouncil.robotPerformance}
-                                councilVotes={robotCouncil.councilVotes}
-                            />
-                        </TabsContent>
-                        <TabsContent value="fame" className="mt-4">
-                            <HallOfFame />
-                        </TabsContent>
-                         <TabsContent value="evolution" className="mt-4">
-                           <EvolutionLabV1 history={robotCouncil.evolutionHistory} />
-                        </TabsContent>
-                    </Tabs>
-                </div>
-            </div>
-             <div className="space-y-6">
-                <CouncilAutopilotInterfaceV1 {...robotCouncil} />
-            </div>
-       </div>
-
-       <div className="lg:hidden mt-6">
-           <Tabs value={activeTab} onValueChange={setActiveTab}>
-                <TabsList className="grid w-full grid-cols-5">
-                    <TabsTrigger value="trade">Negociar</TabsTrigger>
-                    <TabsTrigger value="autopilot"><Bot className="w-4 h-4"/></TabsTrigger>
-                    <TabsTrigger value="desk"><LayoutGrid className="w-4 h-4"/></TabsTrigger>
-                    <TabsTrigger value="fame"><Trophy className="w-4 h-4"/></TabsTrigger>
-                    <TabsTrigger value="log"><NotepadText className="w-4 h-4"/></TabsTrigger>
-                </TabsList>
-
-                <TabsContent value="trade" className="mt-4 space-y-6">
-                    <DerivTraderInterfaceV1 symbol={activeSymbol || ""} />
-                    <AITradeSuggestionV1
-                      councilDecision={robotCouncil.consensusDecision}
-                      consensusSum={robotCouncil.consensusSum}
-                      consensusThreshold={robotCouncil.consensusThreshold}
-                      supervisionStatus={robotCouncil.supervisionStatus}
-                      activeCommittee={robotCouncil.activeCommittee}
-                      isAutopilotOn={robotCouncil.isCouncilAutopilotOn}
-                    />
-                </TabsContent>
-
-                <TabsContent value="autopilot" className="mt-4 space-y-6">
-                    <CouncilAutopilotInterfaceV1 {...robotCouncil} />
-                </TabsContent>
-
-                 <TabsContent value="desk" className="mt-4">
-                    <TradingDesk 
-                        isMeritocracyOn={robotCouncil.isMeritocracyOn}
-                        setIsMeritocracyOn={robotCouncil.setIsMeritocracyOn}
-                        isCouncilAutopilotOn={robotCouncil.isCouncilAutopilotOn}
-                        robotPerformance={robotCouncil.robotPerformance}
-                        councilVotes={robotCouncil.councilVotes}
-                    />
-                </TabsContent>
-                
-                 <TabsContent value="fame" className="mt-4">
-                    <HallOfFame />
-                </TabsContent>
-                
-                 <TabsContent value="log" className="mt-4 space-y-6">
-                    <OperationsLogV1 operations={operationsLog} sellContract={sellContract} priceTicks={priceTicks} />
-                    <AIAnalysisInterfaceV1 symbol={activeSymbol} />
-                </TabsContent>
-           </Tabs>
-       </div>
-    </>
-  );
-}
-
 function DerivTraderPageContent() {
-    const { 
+    const {
         accountType, 
         setAccountType, 
         accountBalance, 
@@ -200,8 +39,29 @@ function DerivTraderPageContent() {
         assetGroups,
         activeSymbol,
         setActiveSymbol,
+        chartData,
+        isChartLoading,
+        chartError,
+        chartType,
+        setChartType,
+        timePeriod,
+        setTimePeriod,
+        tradeAnnotations,
+        priceTicks,
+        sellContract,
     } = useDerivApiV1();
     
+    const robotCouncil = useRobotCouncilV1(activeSymbol, priceTicks);
+    const [activeTab, setActiveTab] = React.useState("log");
+
+    React.useEffect(() => {
+        if (robotCouncil.isCouncilAutopilotOn) {
+        setActiveTab("desk");
+        }
+    }, [robotCouncil.isCouncilAutopilotOn]);
+
+    const latestDataPoint = chartData.length > 0 ? chartData[chartData.length - 1] : null;
+
     const handleAssetChange = (asset: string) => {
         setActiveSymbol(asset);
     };
@@ -254,7 +114,136 @@ function DerivTraderPageContent() {
                 </div>
             </div>
 
-            <DerivTraderCore />
+             <>
+                <div className="space-y-6">
+                    {robotCouncil.indicators && <IndicatorPanel indicators={robotCouncil.indicators} latestDataPoint={latestDataPoint} />}
+                    
+                    <Card>
+                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                        <div>
+                            <CardTitle className="font-headline text-lg">
+                                Gráfico ({activeSymbol})
+                            </CardTitle>
+                            <CardDescription className="text-xs">
+                                Desempenho em tempo real do ativo.
+                            </CardDescription>
+                        </div>
+                    </CardHeader>
+                    <CardContent>
+                        <MarketChartV1
+                            activeSymbol={activeSymbol || ''}
+                            chartData={chartData}
+                            isChartLoading={isChartLoading}
+                            chartError={chartError}
+                            chartType={chartType}
+                            setChartType={setChartType}
+                            timePeriod={timePeriod}
+                            setTimePeriod={setTimePeriod}
+                            operations={operationsLog}
+                            indicators={robotCouncil.indicators}
+                            tradeAnnotations={tradeAnnotations}
+                        />
+                    </CardContent>
+                    </Card>
+                </div>
+                
+                <div className="hidden lg:grid lg:grid-cols-3 gap-6 mt-6">
+                        <div className="lg:col-span-2 space-y-6">
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                <DerivTraderInterfaceV1 symbol={activeSymbol || ""} />
+                                <div className="space-y-6">
+                                    <AITradeSuggestionV1
+                                    councilDecision={robotCouncil.consensusDecision}
+                                    consensusSum={robotCouncil.consensusSum}
+                                    consensusThreshold={robotCouncil.consensusThreshold}
+                                    supervisionStatus={robotCouncil.supervisionStatus}
+                                    activeCommittee={robotCouncil.activeCommittee}
+                                    isAutopilotOn={robotCouncil.isCouncilAutopilotOn}
+                                    />
+                                </div>
+                            </div>
+                            <div className="mt-6">
+                                <Tabs value={activeTab} onValueChange={setActiveTab}>
+                                    <TabsList className="grid w-full grid-cols-4">
+                                        <TabsTrigger value="log">Registo de Operações</TabsTrigger>
+                                        <TabsTrigger value="desk">Arena Virtual</TabsTrigger>
+                                        <TabsTrigger value="fame">Hall da Fama</TabsTrigger>
+                                        <TabsTrigger value="evolution">Evolução</TabsTrigger>
+                                    </TabsList>
+                                    <TabsContent value="log" className="mt-4">
+                                        <OperationsLogV1 operations={operationsLog} sellContract={sellContract} priceTicks={priceTicks} />
+                                    </TabsContent>
+                                    <TabsContent value="desk" className="mt-4">
+                                        <TradingDesk 
+                                            isMeritocracyOn={robotCouncil.isMeritocracyOn}
+                                            setIsMeritocracyOn={robotCouncil.setIsMeritocracyOn}
+                                            isCouncilAutopilotOn={robotCouncil.isCouncilAutopilotOn}
+                                            robotPerformance={robotCouncil.robotPerformance}
+                                            councilVotes={robotCouncil.councilVotes}
+                                        />
+                                    </TabsContent>
+                                    <TabsContent value="fame" className="mt-4">
+                                        <HallOfFame />
+                                    </TabsContent>
+                                    <TabsContent value="evolution" className="mt-4">
+                                    <EvolutionLabV1 history={robotCouncil.evolutionHistory} />
+                                    </TabsContent>
+                                </Tabs>
+                            </div>
+                        </div>
+                        <div className="space-y-6">
+                            <CouncilAutopilotInterfaceV1 {...robotCouncil} />
+                        </div>
+                </div>
+
+                <div className="lg:hidden mt-6">
+                    <Tabs value={activeTab} onValueChange={setActiveTab}>
+                        <TabsList className="grid w-full grid-cols-5">
+                            <TabsTrigger value="trade">Negociar</TabsTrigger>
+                            <TabsTrigger value="autopilot"><Bot className="w-4 h-4"/></TabsTrigger>
+                            <TabsTrigger value="desk"><LayoutGrid className="w-4 h-4"/></TabsTrigger>
+                            <TabsTrigger value="fame"><Trophy className="w-4 h-4"/></TabsTrigger>
+                            <TabsTrigger value="log"><NotepadText className="w-4 h-4"/></TabsTrigger>
+                        </TabsList>
+
+                        <TabsContent value="trade" className="mt-4 space-y-6">
+                            <DerivTraderInterfaceV1 symbol={activeSymbol || ""} />
+                            <AITradeSuggestionV1
+                            councilDecision={robotCouncil.consensusDecision}
+                            consensusSum={robotCouncil.consensusSum}
+                            consensusThreshold={robotCouncil.consensusThreshold}
+                            supervisionStatus={robotCouncil.supervisionStatus}
+                            activeCommittee={robotCouncil.activeCommittee}
+                            isAutopilotOn={robotCouncil.isCouncilAutopilotOn}
+                            />
+                        </TabsContent>
+
+                        <TabsContent value="autopilot" className="mt-4 space-y-6">
+                            <CouncilAutopilotInterfaceV1 {...robotCouncil} />
+                        </TabsContent>
+
+                        <TabsContent value="desk" className="mt-4">
+                            <TradingDesk 
+                                isMeritocracyOn={robotCouncil.isMeritocracyOn}
+                                setIsMeritocracyOn={robotCouncil.setIsMeritocracyOn}
+                                isCouncilAutopilotOn={robotCouncil.isCouncilAutopilotOn}
+                                robotPerformance={robotCouncil.robotPerformance}
+                                councilVotes={robotCouncil.councilVotes}
+                            />
+                        </TabsContent>
+                        
+                        <TabsContent value="fame" className="mt-4">
+                            <HallOfFame />
+                        </TabsContent>
+                        
+                        <TabsContent value="log" className="mt-4 space-y-6">
+                            <OperationsLogV1 operations={operationsLog} sellContract={sellContract} priceTicks={priceTicks} />
+                            <AIAnalysisInterfaceV1 symbol={activeSymbol} />
+                        </TabsContent>
+                    </Tabs>
+                </div>
+            </>
+
         </div>
     );
 }
