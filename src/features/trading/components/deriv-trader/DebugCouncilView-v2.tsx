@@ -1,4 +1,4 @@
-// src/features/trading/components/deriv-trader/DebugCouncilView.tsx
+// src/features/trading/components/deriv-trader/DebugCouncilView-v2.tsx
 'use client';
 
 import React from 'react';
@@ -20,7 +20,7 @@ import {
 // TIPOS E ÍCONES
 // ============================================================================
 
-interface DebugCouncilViewProps {
+interface DebugCouncilViewV2Props {
   councilState: ReturnType<typeof useRobotCouncilV2>;
   isCouncilAutopilotOn: boolean;
 }
@@ -64,7 +64,7 @@ const formatDuration = (seconds: number): string => {
 // COMPONENTE PRINCIPAL
 // ============================================================================
 
-export function DebugCouncilView({ councilState, isCouncilAutopilotOn }: DebugCouncilViewProps) {
+export function DebugCouncilViewV2({ councilState, isCouncilAutopilotOn }: DebugCouncilViewV2Props) {
   
   const { 
       bayesianVotes, 
@@ -359,3 +359,5 @@ function MetricCard({ icon, label, value, subtext, highlight = false }: { icon: 
         </div>
     );
 }
+
+    
