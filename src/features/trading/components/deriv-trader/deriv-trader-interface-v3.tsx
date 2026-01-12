@@ -31,7 +31,7 @@ import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
-import { useDerivApiV3 as useDerivApi } from "@/features/trading/hooks/use-deriv-api-v3";
+import { useDerivApiV3 } from "@/features/trading/hooks/use-deriv-api-v3";
 import type { DurationUnit, RiseFallFormValues, OperationInitiator } from '@/lib/types';
 
 
@@ -61,7 +61,7 @@ export default function DerivTraderInterfaceV3({ symbol }: DerivTraderInterfaceV
   const [loading, setLoading] = React.useState<"rise" | "fall" | null>(null);
   const [tradeType, setTradeType] = React.useState<TradeType>('rise_fall');
   const [isInversionModeOn, setIsInversionModeOn] = React.useState(false);
-  const { isConnected, executeTrade, durationLimits } = useDerivApi();
+  const { isConnected, executeTrade, durationLimits } = useDerivApiV3();
 
   const form = useFormContext<RiseFallFormValues>();
   
