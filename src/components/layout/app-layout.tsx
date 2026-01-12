@@ -161,6 +161,12 @@ function MainNav() {
                         <span>Trader 2.5 (IA)</span>
                     </SidebarMenuSubButton>
                 </SidebarMenuSubItem>
+                 <SidebarMenuSubItem>
+                    <SidebarMenuSubButton href="/deriv-trader-v3" isActive={pathname === '/deriv-trader-v3'}>
+                        <TestTube />
+                        <span>Trader 3.0 (IA Lab)</span>
+                    </SidebarMenuSubButton>
+                </SidebarMenuSubItem>
                 <SidebarMenuSubItem>
                     <SidebarMenuSubButton href="/trader" isActive={pathname === '/trader'}>
                         <Layers />
