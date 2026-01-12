@@ -45,6 +45,7 @@ type VirtualTrade = {
     entryPrice: number;
     entryEpoch: number;
     exitEpoch: number; // NOVO: Tempo exato de expiração, para precisão máxima.
+    exitTickIndex: number;
 };
 
 // --- CONSTANTES ---
@@ -361,28 +362,32 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
   useEffect(() => {
     if (!isConnected || !user || !isCouncilAutopilotOn || strategyCouncil.length === 0 || !activeSymbol || tickCandles.length < 2) return;
 
+    const currentTickIndex = priceTicks.length - 1;
+    const currentTick = priceTicks[currentTickIndex];
+    if (!currentTick) return;
+
     const currentIndicators = calculateAllIndicators(tickCandles, strategyCouncil, timePeriod);
     setIndicators(currentIndicators);
     if (!currentIndicators) return;
 
     const activeCouncilContracts = operationsLog.filter(op => op.status === 'pending' && op.initiator === 'Conselho');
-    if (activeCouncilContracts.length > 0) {
-      // positionManagementCommittee(activeCouncilContracts, currentIndicators);
-    }
-
+    
     const performanceMap = new Map(robotPerformance.map(p => [p.id, { ...p }]));
     let performanceChanged = false;
     
     virtualTradesRef.current = virtualTradesRef.current.filter(trade => {
-        if (tickCandles.length - 1 >= trade.exitTickIndex) {
-            const exitPrice = tickCandles[trade.exitTickIndex]?.close;
-            if (exitPrice) {
-                const isWin = (trade.vote === 'RISE' && exitPrice > trade.entryPrice) || (trade.vote === 'FALL' && exitPrice < trade.entryPrice);
+        const exitEpoch = trade.exitEpoch;
+        if (currentTick.epoch >= exitEpoch) {
+            const exitTick = priceTicks.find(t => t.epoch >= exitEpoch) || currentTick;
+            if (exitTick) {
+                const isWin = (trade.vote === 'RISE' && exitTick.price > trade.entryPrice) || (trade.vote === 'FALL' && exitTick.price < trade.entryPrice);
                 const perf = performanceMap.get(trade.robotId);
                 if (perf) {
                     const pnl = isWin ? VIRTUAL_STAKE * 0.95 : -VIRTUAL_STAKE;
-                    perf.totalProfit += pnl;
-                    if (isWin) perf.wins++; else perf.losses++;
+                    perf.totalProfit = (perf.totalProfit || 0) + pnl;
+                    if (isWin) perf.wins = (perf.wins || 0) + 1; else perf.losses = (perf.losses || 0) + 1;
+                    const totalTrades = perf.wins + perf.losses;
+                    perf.winRate = totalTrades > 0 ? (perf.wins / totalTrades) * 100 : 0;
                     performanceChanged = true;
                 }
             }
@@ -395,31 +400,37 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
         const updatedPerformance = Array.from(performanceMap.values());
         setRobotPerformance(updatedPerformance);
         evolveTrigger(updatedPerformance);
-        saveRobotPerformance(user.uid, updatedPerformance);
+        if(user) saveRobotPerformance(user.uid, updatedPerformance);
     }
 
     const newVotes: CouncilVotes = {};
+    const { duration: formDuration, duration_unit: formDurationUnit } = form.getValues();
+    const tradeDurationSeconds = durationToSeconds(formDuration > 0 ? formDuration : baseDuration, formDurationUnit);
+
     strategyCouncil.forEach(robot => {
         const voteResult = calculateRobotVote(robot, currentIndicators, tickCandles);
         let weight = 1.0;
         if (isMeritocracyOn) {
             const perf = performanceMap.get(robot.id);
             if (perf && (perf.wins + perf.losses) > 5) {
-                const winRate = perf.wins / (perf.wins + perf.losses);
-                weight = 1 + (winRate - 0.5) * 2;
+                const winRate = perf.winRate / 100;
+                const pnlFactor = Math.tanh((perf.totalProfit || 0) / 50);
+                weight = 0.5 + winRate * 0.75 + pnlFactor * 0.25;
                 weight = Math.max(0.2, Math.min(2.0, weight));
             }
         }
         newVotes[robot.id] = { ...voteResult, weight };
         if (voteResult.vote !== 'HOLD') {
             const tradeId = `vt_${Date.now()}_${tradeCounterRef.current++}`;
+            const exitEpoch = currentTick.epoch + durationToSeconds(voteResult.optimalDuration, voteResult.optimalDurationUnit);
             virtualTradesRef.current.push({
                 id: tradeId,
                 robotId: robot.id,
                 vote: voteResult.vote,
-                entryPrice: tickCandles[tickCandles.length - 1].close,
-                entryEpoch: tickCandles[tickCandles.length - 1].epoch,
-                exitEpoch: tickCandles[tickCandles.length - 1].epoch + durationToSeconds(voteResult.optimalDuration, voteResult.optimalDurationUnit),
+                entryPrice: currentTick.price,
+                entryEpoch: currentTick.epoch,
+                exitEpoch: exitEpoch,
+                exitTickIndex: currentTickIndex + tradeDuration, // This is an estimation for tick-based trades
             });
         }
     });
@@ -433,8 +444,10 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
     setConsensusSum({ rise: riseSum, fall: fallSum });
     
     let decision: 'RISE' | 'FALL' | 'HOLD' = 'HOLD';
-    if(riseSum > consensusThreshold || fallSum > consensusThreshold){
-      decision = riseSum > fallSum ? 'RISE' : 'FALL';
+    if(riseSum > fallSum && riseSum > 0) {
+      decision = 'RISE';
+    } else if (fallSum > riseSum && fallSum > 0) {
+      decision = 'FALL';
     }
     setConsensusDecision(decision);
 
@@ -446,8 +459,8 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
 
     if (supervisionDecision.status === 'approved') {
         councilExecutionRef.current.isExecuting = true;
-        const { finalStake, finalDuration, finalDurationUnit } = supervisionDecision;
         const dir = riseSum > fallSum ? 'RISE' : 'FALL';
+        const { finalStake, finalDuration, finalDurationUnit } = supervisionDecision;
         
         toast({ title: 'Ordem do Conselho', description: `Executando ${dir} com stake de $${finalStake}.` });
         
@@ -463,9 +476,42 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
     }
     setActiveCommittee(committeeOfSpecialists(currentIndicators));
     
-  }, [priceTicks, isConnected, isCouncilAutopilotOn, strategyCouncil, robotPerformance, isMeritocracyOn, activeSymbol, operationsLog, supervisionCommitteeCheck, toast, executeTrade, timePeriod, committeeOfSpecialists, user, evolveTrigger]);
+  }, [
+      // Lista de dependências: O useEffect re-executa se qualquer um destes valores mudar.
+      priceTicks, isConnected, isCouncilAutopilotOn, strategyCouncil, robotPerformance, 
+      isMeritocracyOn, activeSymbol, operationsLog, supervisionCommitteeCheck, toast, executeTrade, 
+      timePeriod, committeeOfSpecialists, user, evolveTrigger, tickCandles
+  ]);
 
   return {
     isCouncilAutopilotOn, setIsCouncilAutopilotOn, strategyCouncil, fetchStrategyCouncil, dissolveCouncil, isFetchingCouncil, councilVotes, dailyBalance, setDailyBalance, dailyTarget, setDailyTarget, consensusThreshold, setConsensusThreshold, isDynamicConsensusOn, setIsDynamicConsensusOn, isDynamicRiskOn, setIsDynamicRiskOn, isMeritocracyOn, setIsMeritocracyOn, indicators, activeCommittee, supervisionStatus, consensusSum, consensusDecision, robotPerformance, evolutionHistory
   };
 }
+I see this error with the app, reported by NextJS, please fix it. The error is reported as HTML but presented visually to the user).
+
+A > before the line number in the error source usually indicates the line of interest: 
+
+> Build Error: Module not found: Can't resolve '@/services/indicator-service'. Error source: src/features/trading/hooks/use-robot-council.ts (11:1)
+> Module not found: Can't resolve '@/services/indicator-service'
+>    9 | import { useFormContext } from 'react-hook-form';
+>   10 | import type { Indicators } from '@/services/indicator-service';
+> > 11 | import { calculateAllIndicators } from '@/services/indicator-service';
+>      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+>   12 | import type { ChartData, TickData, CandleData, Operation } from '@/lib/types';
+>   13 | import { initialCouncilStrategies } from '@/services/council-strategies';
+>   14 | import { useAuth } from '@/features/auth/hooks/use-auth';
+> 
+> Import map: aliased to relative './src/services/indicator-service' inside of [project]/
+> 
+> Import traces:
+>   Client Component Browser:
+>     ./src/features/trading/hooks/use-robot-council.ts [Client Component Browser]
+>     ./src/app/deriv-trader/page.tsx [Client Component Browser]
+>     ./src/app/deriv-trader/page.tsx [Server Component]
+> 
+>   Client Component SSR:
+>     ./src/features/trading/hooks/use-robot-council.ts [Client Component SSR]
+>     ./src/app/deriv-trader/page.tsx [Client Component SSR]
+>     ./src/app/deriv-trader/page.tsx [Server Component]
+> 
+> https://nextjs.org/docs/messages/module-not-found
