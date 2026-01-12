@@ -1,4 +1,4 @@
-// src/features/trading/components/deriv-trader/ai-analysis-interface.tsx
+// src/features/trading/components/deriv-trader/ai-analysis-interface-v1.tsx
 "use client";
 
 import { useState } from "react";
@@ -15,11 +15,11 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { useAuth } from "@/features/auth/hooks/use-auth";
 import { getChatbotInsightsResponse } from "@/app/actions";
 
-interface AIAnalysisInterfaceProps {
+interface AIAnalysisInterfaceV1Props {
     symbol?: string | null;
 }
 
-export function AIAnalysisInterface({ symbol }: AIAnalysisInterfaceProps) {
+export function AIAnalysisInterfaceV1({ symbol }: AIAnalysisInterfaceV1Props) {
   const { user } = useAuth();
   const [analysisResult, setAnalysisResult] = useState<string | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
