@@ -4,7 +4,7 @@
 import React from "react";
 import { useForm, FormProvider } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import DerivTraderInterface from "@/features/trading/components/deriv-trader/deriv-trader-interface-v2";
+import DerivTraderInterfaceV2 from "@/features/trading/components/deriv-trader/deriv-trader-interface-v2";
 import { AssetSelector } from "@/features/trading/components/deriv-trader/asset-selector";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { MarketChart } from "@/features/trading/components/deriv-trader/market-chart";
@@ -134,7 +134,7 @@ const DerivTraderV2Core = () => {
             
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 <div className="space-y-6">
-                    <DerivTraderInterface symbol={activeSymbol || ""} />
+                    <DerivTraderInterfaceV2 symbol={activeSymbol || ""} />
                      <div className="animate-in fade-in slide-in-from-top-4 duration-500">
                         <CouncilDashboardV2
                             consensusDecision={robotCouncil.consensusDecision}

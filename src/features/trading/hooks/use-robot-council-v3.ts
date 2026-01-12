@@ -14,7 +14,7 @@ import type {
 } from '@/lib/types';
 import { calculateAllIndicators, type Indicators } from '@/services/indicator-service-v2';
 import { useAuth } from '@/features/auth/hooks/use-auth';
-import { saveRobotPerformance, loadRobotPerformance, saveTradeDecision } from '@/services/financial-data-service';
+import { saveRobotPerformanceV3, loadRobotPerformanceV3, saveTradeDecisionV3 } from '@/services/financial-data-service-v3';
 import { useStrategyEvolutionV3 } from './use-strategy-evolution-v3';
 import { initialCouncilStrategies } from '@/services/council-strategies';
 import {
@@ -356,7 +356,7 @@ export function useRobotCouncilV3(
 
   useEffect(() => {
     if (!user || isAuthLoading) return;
-    loadRobotPerformance(user.uid, 'v3').then((stored) => {
+    loadRobotPerformanceV3(user.uid).then((stored) => {
         if (stored && stored.length > 0) {
             robotPerformanceRef.current = stored;
             setRobotPerformance(stored);
@@ -579,7 +579,7 @@ export function useRobotCouncilV3(
             const updatedPerformance = Array.from(robotPerformanceRef.current);
             setRobotPerformance(updatedPerformance);
             if (user) {
-                saveRobotPerformance(user.uid, updatedPerformance, 'v3');
+                saveRobotPerformanceV3(user.uid, updatedPerformance);
             }
         }
         
@@ -809,7 +809,7 @@ export function useRobotCouncilV3(
                             pnl: 0,
                          };
 
-                         saveTradeDecision(user.uid, log, 'v3');
+                         saveTradeDecisionV3(user.uid, log);
                          setTradeDecisionLog(prev => [log, ...prev]);
                      }
                 });
