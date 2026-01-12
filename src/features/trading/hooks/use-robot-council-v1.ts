@@ -1,4 +1,3 @@
-
 'use client';
 
 /**
@@ -21,7 +20,8 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useDerivApiV1 } from './use-deriv-api-v1';
 import { useToast } from '@/hooks/use-toast';
-import type { RobotStrategy, ChartData, TickData, CandleData, RiseFallFormValues, DurationUnit, RobotPerformance, RobotVote, CouncilVotes } from '@/lib/types';
+import type { RobotStrategy, ChartData, TickData, CandleData, DurationUnit, RobotVote as RobotVoteType, CouncilVotes, RobotPerformance as RobotPerformanceType } from '@/lib/types';
+import type { RiseFallFormValues } from '@/features/trading/components/deriv-trader/deriv-trader-interface.types';
 import { useFormContext } from 'react-hook-form';
 import type { Indicators } from '@/services/indicator-service-v1';
 import { calculateAllIndicators } from '@/services/indicator-service-v1';
@@ -31,6 +31,10 @@ import { saveRobotPerformance, loadRobotPerformance } from '@/services/trading-d
 import { useStrategyEvolutionV1 } from './use-strategy-evolution-v1';
 
 // --- TIPAGEM E TIPOS DE DADOS ---
+export type RobotVote = RobotVoteType;
+export type RobotPerformance = RobotPerformanceType;
+
+// Representa uma operação simulada (paper trade) na Arena Virtual.
 type VirtualTrade = {
     id: string;
     robotId: string;
@@ -38,7 +42,6 @@ type VirtualTrade = {
     entryPrice: number;
     entryEpoch: number;
     exitEpoch: number; 
-    exitTickIndex: number;
 };
 
 const VIRTUAL_STAKE = 1.0; 
@@ -354,9 +357,8 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
     let performanceChanged = false;
     
     virtualTradesRef.current = virtualTradesRef.current.filter(trade => {
-        const exitEpoch = trade.exitEpoch;
-        if (currentTick.epoch >= exitEpoch) {
-            const exitTick = priceTicks.find(t => t.epoch >= exitEpoch) || currentTick;
+        if(currentTick.epoch >= trade.exitEpoch) {
+            const exitTick = priceTicks.find(t => t.epoch >= trade.exitEpoch) || currentTick;
             if (exitTick) {
                 const isWin = (trade.vote === 'RISE' && exitTick.price > trade.entryPrice) || (trade.vote === 'FALL' && exitTick.price < trade.entryPrice);
                 const perf = performanceMap.get(trade.robotId);
@@ -408,7 +410,6 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
                 entryPrice: currentTick.price,
                 entryEpoch: currentTick.epoch,
                 exitEpoch: exitEpoch,
-                exitTickIndex: currentTickIndex + tradeDuration, // This is an estimation for tick-based trades
             });
         }
     });
@@ -464,5 +465,3 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
     isCouncilAutopilotOn, setIsCouncilAutopilotOn, strategyCouncil, fetchStrategyCouncil, dissolveCouncil, isFetchingCouncil, councilVotes, dailyBalance, setDailyBalance, dailyTarget, setDailyTarget, consensusThreshold, setConsensusThreshold, isDynamicConsensusOn, setIsDynamicConsensusOn, isDynamicRiskOn, setIsDynamicRiskOn, isMeritocracyOn, setIsMeritocracyOn, isInversionModeOn, setIsInversionModeOn, isStopLossOn, setIsStopLossOn, indicators, activeCommittee, supervisionStatus, consensusSum, consensusDecision, robotPerformance, evolutionHistory
   };
 }
-
-    
