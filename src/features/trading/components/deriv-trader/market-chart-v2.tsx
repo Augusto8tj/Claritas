@@ -1,18 +1,15 @@
-// src/features/trading/components/deriv-trader/market-chart.tsx
+// src/features/trading/components/deriv-trader/market-chart-v2.tsx
 'use client'
+
+// ESTE ARQUIVO É UMA CÓPIA DEDICADA PARA O SISTEMA V2.5
 
 import React, { useCallback } from 'react'
 import {
-  Flag,
   Settings,
   Loader2,
-  TrendingUp,
-  TrendingDown,
   AreaChart,
   CandlestickChart,
   Clock,
-  Moon,
-  Sun,
 } from 'lucide-react'
 import { useTheme as useAppTheme } from '@/features/theme/hooks/use-theme'
 import type {
@@ -33,118 +30,11 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { Button } from '@/components/ui/button'
-import { cn } from '@/lib/utils'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { TradeLegend } from './trade-legend'
-import type { Indicators } from '@/services/indicator-service'
-
-const easeOutCubic = (t: number) => 1 - Math.pow(1 - t, 3);
-const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
-
-interface DrawActiveTradeParams {
-  ctx: CanvasRenderingContext2D;
-  ann: TradeAnnotation;
-  visibleData: ChartData[];
-  getX: (index: number) => number;
-  getY: (price: number) => number;
-  colors: any;
-  maxPrice: number;
-  minPrice: number;
-}
-
-function drawActiveTrade({
-  ctx,
-  ann,
-  visibleData,
-  getX,
-  getY,
-  colors,
-  maxPrice,
-  minPrice
-}: DrawActiveTradeParams) {
-  const entryIndex = visibleData.findIndex(
-    d => Math.abs(d.epoch - ann.entryTime) < 1
-  );
-  if (entryIndex === -1) return;
-
-  const entryX = getX(entryIndex);
-  const entryY = getY(ann.entryPrice);
-
-  const lastIndex = visibleData.length - 1;
-  if (lastIndex <= entryIndex) return;
-
-  const now = performance.now();
-  const startTime = ann.createdAt ?? now;
-  const elapsed = Math.min(1, (now - startTime) / 800);
-  const t = easeOutCubic(elapsed);
-
-  const targetX = getX(lastIndex);
-  const animatedX = lerp(entryX, targetX, t);
-
-  const priceVisualDelta = (maxPrice - minPrice) * 0.12;
-  const directionMultiplier = ann.direction === 'rise' ? -1 : 1;
-  const animatedY = entryY + priceVisualDelta * directionMultiplier * t;
-
-  const phase = ann.id ? ann.id.length * 120 : 0;
-  const pulse = 0.5 + Math.sin((now + phase) / 300) * 0.5;
-
-  const gradient = ctx.createLinearGradient(
-    entryX,
-    entryY,
-    animatedX,
-    animatedY
-  );
-
-  if (ann.direction === 'rise') {
-    gradient.addColorStop(0, '#3b82f6');
-    gradient.addColorStop(1, '#22c55e');
-  } else {
-    gradient.addColorStop(0, '#f97316');
-    gradient.addColorStop(1, '#ef4444');
-  }
-
-  ctx.save();
-  ctx.beginPath();
-  ctx.moveTo(entryX, entryY);
-  ctx.lineTo(animatedX, animatedY);
-  ctx.strokeStyle = gradient;
-  ctx.lineWidth = 3 + pulse * 1.5;
-  ctx.setLineDash([10, 6]);
-  ctx.globalAlpha = 0.85;
-  ctx.stroke();
-  ctx.setLineDash([]);
-
-  ctx.beginPath();
-  ctx.arc(
-    animatedX,
-    animatedY,
-    6 + pulse * 2,
-    0,
-    Math.PI * 2
-  );
-  ctx.fillStyle = ann.direction === 'rise' ? '#22c55e' : '#ef4444';
-  ctx.fill();
-
-  ctx.beginPath();
-  ctx.moveTo(entryX, entryY);
-  ctx.lineTo(entryX, entryY - 14 * directionMultiplier);
-  ctx.strokeStyle = '#ffffff';
-  ctx.lineWidth = 2;
-  ctx.stroke();
-
-  ctx.beginPath();
-  ctx.moveTo(entryX, entryY - 14 * directionMultiplier);
-  ctx.lineTo(entryX + 10, entryY - 10 * directionMultiplier);
-  ctx.lineTo(entryX, entryY - 6 * directionMultiplier);
-  ctx.closePath();
-  ctx.fillStyle = ann.direction === 'rise' ? '#22c55e' : '#ef4444';
-  ctx.fill();
-  ctx.strokeStyle = '#ffffff';
-  ctx.stroke();
-
-  ctx.restore();
-}
+import type { Indicators } from '@/services/indicator-service-v2';
+import { useDerivApiV2 } from '../../hooks/use-deriv-api-v2';
 
 
 interface MarketChartProps {
@@ -174,7 +64,7 @@ const getDisplayPrice = (d: ChartData) =>
   isCandle(d) ? d.close : d.price;
 
 
-export function MarketChart({
+export function MarketChartV2({
   activeSymbol,
   chartData: rawData,
   isChartLoading,
@@ -193,10 +83,7 @@ export function MarketChart({
   const containerRef = React.useRef<HTMLDivElement>(null)
   const rafIdRef = React.useRef<number | null>(null);
 
-  const [chartTheme, setChartTheme] = React.useState<'light' | 'dark'>(
-    appTheme.includes('dark') ? 'dark' : 'light'
-  )
-  const colors = THEMES[chartTheme]
+  const colors = THEMES[appTheme.includes('dark') ? 'dark' : 'light'];
 
   const [visibleIndicators, setVisibleIndicators] = React.useState({
     sma: false,
@@ -232,17 +119,7 @@ export function MarketChart({
     '8h',
     '1d',
   ]
-
-  const lastDataPoint = rawData.length > 0 ? rawData[rawData.length - 1] : null
-  const prevDataPoint = rawData.length > 1 ? rawData[rawData.length - 2] : null
-
-  const lastPrice = lastDataPoint ? getDisplayPrice(lastDataPoint) : 0
-  const prevPrice = prevDataPoint ? getDisplayPrice(prevDataPoint) : 1
   
-  const change = lastPrice - prevPrice
-  const changePercent = prevPrice !== 0 ? (change / prevPrice) * 100 : 0
-  const isPositive = change >= 0
-
   const dataWindow = React.useMemo(() => {
     const start = Math.floor(rawData.length * brushWindow.min)
     const end = Math.ceil(rawData.length * brushWindow.max)
@@ -264,7 +141,6 @@ export function MarketChart({
       return { sma: [], ema: [], vwap: [], bollingerBands: [] };
     }
     
-    // Assegura que todos os indicadores sejam arrays para que o slice funcione
     const vwapArray = Array.isArray(indicators.vwap) ? indicators.vwap : [];
     const bollingerBandsArray = Array.isArray(indicators.bollingerBands) ? indicators.bollingerBands : [];
 
@@ -566,109 +442,6 @@ export function MarketChart({
       drawLineIndicator(ctx, slicedIndicators.ema, colors.ema, getY, getX)
     if (visibleIndicators.vwap)
       drawLineIndicator(ctx, slicedIndicators.vwap, colors.vwap, getY, getX)
-
-    // 1️⃣ Trades finalizados
-    tradeAnnotations.forEach(ann => {
-      if (ann.symbol !== activeSymbol) return;
-      if (!ann.exitTime || !ann.exitPrice) return;
-
-      let entryDataIndex = -1;
-      let minEntryDiff = Infinity;
-      
-      visibleData.forEach((d, i) => {
-          const diff = Math.abs(d.epoch - ann.entryTime);
-          if (diff < minEntryDiff) {
-              minEntryDiff = diff;
-              entryDataIndex = i;
-          }
-      });
-      if (entryDataIndex === -1 || minEntryDiff > 300) return;
-
-      const entryX = getX(entryDataIndex);
-      const entryY = getY(ann.entryPrice);
-      
-      let annColor = ann.status === 'won' ? colors.bull : colors.bear;
-      
-      ctx.save();
-      ctx.beginPath();
-      ctx.arc(entryX, entryY, 5, 0, 2 * Math.PI);
-      ctx.fillStyle = annColor;
-      ctx.fill();
-      
-      let exitDataIndex = -1;
-      let minExitDiff = Infinity;
-      
-      visibleData.forEach((d, i) => {
-          const diff = Math.abs(d.epoch - ann.exitTime!);
-          if (diff < minExitDiff) {
-              minExitDiff = diff;
-              exitDataIndex = i;
-          }
-      });
-
-      if (exitDataIndex !== -1 && minExitDiff <= 300) {
-          const exitX = getX(exitDataIndex);
-          const exitY = getY(ann.exitPrice);
-
-          ctx.beginPath();
-          ctx.moveTo(entryX, entryY);
-          ctx.lineTo(exitX, exitY);
-          ctx.strokeStyle = annColor;
-          ctx.lineWidth = 2.5;
-          ctx.setLineDash([8, 5]);
-          ctx.globalAlpha = 0.75;
-          ctx.stroke();
-          ctx.setLineDash([]);
-          
-          ctx.translate(exitX, exitY);
-          const poleHeight = 40; const flagWidth = 35; const flagHeight = 20;
-          ctx.shadowColor = 'rgba(0, 0, 0, 0.3)'; ctx.shadowBlur = 4; ctx.shadowOffsetX = 2; ctx.shadowOffsetY = 2;
-          ctx.strokeStyle = annColor; ctx.lineWidth = 3;
-          ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(0, -poleHeight); ctx.stroke();
-          
-          ctx.beginPath();
-          ctx.moveTo(0, -poleHeight);
-          ctx.quadraticCurveTo(flagWidth * 0.5, -poleHeight + 3, flagWidth, -poleHeight + flagHeight * 0.5);
-          ctx.quadraticCurveTo(flagWidth * 0.5, -poleHeight + flagHeight - 3, 0, -poleHeight + flagHeight);
-          ctx.closePath();
-          
-          ctx.fillStyle = annColor; ctx.fill();
-          ctx.strokeStyle = 'white'; ctx.lineWidth = 2; ctx.stroke();
-          
-          ctx.shadowColor = 'transparent'; ctx.shadowBlur = 0; ctx.shadowOffsetX = 0; ctx.shadowOffsetY = 0;
-          ctx.fillStyle = 'white'; ctx.font = 'bold 16px Arial'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-          ctx.fillText(ann.status === 'won' ? '✓' : '✗', flagWidth * 0.5, -poleHeight + flagHeight * 0.5);
-
-          if (ann.profit !== undefined) {
-              const profitText = `${ann.profit >= 0 ? '+' : ''}$${Math.abs(ann.profit).toFixed(2)}`;
-              ctx.font = 'bold 13px Arial'; ctx.textAlign = 'left';
-              const textMetrics = ctx.measureText(profitText); const textWidth = textMetrics.width;
-              const padding = 6; const labelX = flagWidth + 8; const labelY = -poleHeight + flagHeight * 0.5;
-              
-              ctx.shadowColor = 'rgba(0, 0, 0, 0.2)'; ctx.shadowBlur = 3; ctx.shadowOffsetX = 1; ctx.shadowOffsetY = 1;
-              ctx.fillStyle = colors.bg;
-              ctx.beginPath();
-              // @ts-ignore
-              ctx.roundRect(labelX - padding, labelY - 10, textWidth + padding * 2, 20, 4);
-              ctx.fill();
-              
-              ctx.shadowColor = 'transparent';
-              ctx.strokeStyle = annColor; ctx.lineWidth = 2; ctx.stroke();
-              
-              ctx.fillStyle = annColor;
-              ctx.fillText(profitText, labelX, labelY);
-          }
-      }
-      ctx.restore();
-    });
-
-    // 2️⃣ Trades ativos
-    tradeAnnotations.forEach(ann => {
-        if (ann.symbol !== activeSymbol) return;
-        if (ann.exitTime) return;
-        
-        drawActiveTrade({ ctx, ann, visibleData, getX, getY, colors, maxPrice, minPrice });
-    });
     
     if (mousePosition) {
         const { x, y } = mousePosition;
@@ -817,16 +590,7 @@ export function MarketChart({
     ctx.fillRect(brushMinX - handleWidth / 2, height / 2 - 15, handleWidth, 30)
     ctx.fillRect(brushMaxX - handleWidth / 2, height / 2 - 15, handleWidth, 30)
   }, [rawData, colors, brushWindow])
-
-  const panOffsetRef = React.useRef(0);
-  const zoomLevelRef = React.useRef(1);
-
-  React.useEffect(() => {
-    panOffsetRef.current = 0;
-    zoomLevelRef.current = 1;
-  }, [activeSymbol, timePeriod, chartType]);
-
-
+  
   React.useEffect(() => {
     const animate = () => {
       drawMainChart();
@@ -959,24 +723,6 @@ export function MarketChart({
           <h2 className="text-xl font-bold" style={{ color: colors.text }}>
             {activeSymbol}
           </h2>
-          <div
-            className="flex items-center gap-2"
-            style={{ color: isPositive ? colors.bull : colors.bear }}
-          >
-            <span className="font-semibold text-lg">
-              {lastPrice > 0 ? lastPrice.toFixed(4) : '...'}
-            </span>
-            <div className="text-xs font-mono flex items-center">
-              {isPositive ? (
-                <TrendingUp size={14} />
-              ) : (
-                <TrendingDown size={14} />
-              )}
-              <span>
-                {change.toFixed(4)} ({changePercent.toFixed(2)}%)
-              </span>
-            </div>
-          </div>
         </div>
         <div className="flex items-center gap-1.5">
           <DropdownMenu>
@@ -1064,21 +810,6 @@ export function MarketChart({
               </div>
             </PopoverContent>
           </Popover>
-
-          <Button
-            variant="outline"
-            size="icon"
-            className="h-9 w-9"
-            onClick={() =>
-              setChartTheme(chartTheme === 'dark' ? 'light' : 'dark')
-            }
-          >
-            {chartTheme === 'dark' ? (
-              <Sun size={16} />
-            ) : (
-              <Moon size={16} />
-            )}
-          </Button>
         </div>
       </div>
 
