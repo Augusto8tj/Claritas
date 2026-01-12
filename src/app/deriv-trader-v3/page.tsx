@@ -9,7 +9,7 @@ import { AssetSelector } from "@/features/trading/components/deriv-trader/asset-
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { MarketChart } from "@/features/trading/components/deriv-trader/market-chart";
 import { Button } from "@/components/ui/button";
-import { Trash2, Dna, Archive, Brain } from "lucide-react";
+import { Trash2 } from "lucide-react";
 import { useDerivApiV3, DerivApiProviderV3 } from "@/features/trading/hooks/use-deriv-api-v3";
 import { Skeleton } from "@/components/ui/skeleton";
 import { OperationsLog } from "@/features/trading/components/deriv-trader/operations-log";
@@ -124,7 +124,7 @@ const IsolatedMarketChart = () => {
 const DerivTraderV3Core = () => {
     const { activeSymbol, priceTicks, dataVersion, operationsLog, chartData, sellContract } = useDerivApiV3();
     
-    // ✅ CORREÇÃO: O `priceTicks` real é injetado no cérebro do conselho.
+    // ✅ CORREÇÃO: Utiliza o hook do cérebro V3
     const robotCouncil = useRobotCouncilV3(activeSymbol, priceTicks, chartData, dataVersion);
     const [activeTab, setActiveTab] = React.useState("desk");
     
@@ -141,6 +141,7 @@ const DerivTraderV3Core = () => {
                         />
                     </div>
                 </div>
+                {/* ✅ CORREÇÃO: Utiliza o componente de piloto automático V3 */}
                 <CouncilAutopilotInterfaceV3 {...robotCouncil} />
             </div>
 
@@ -154,12 +155,14 @@ const DerivTraderV3Core = () => {
 
             <Tabs value={activeTab} onValueChange={setActiveTab}>
                 <TabsList className="grid w-full grid-cols-4">
+                    {/* ✅ CORREÇÃO: Atualiza o rótulo da aba */}
                     <TabsTrigger value="desk">Arena V3.0</TabsTrigger>
                     <TabsTrigger value="log">Operações</TabsTrigger>
                     <TabsTrigger value="audit">Auditoria</TabsTrigger>
                     <TabsTrigger value="evolution">Evolução</TabsTrigger>
                 </TabsList>
                 <TabsContent value="desk" className="mt-4">
+                    {/* TradingDeskV2 é genérico e pode ser usado aqui */}
                     <TradingDeskV2 
                         councilState={robotCouncil}
                     />
@@ -167,7 +170,7 @@ const DerivTraderV3Core = () => {
                 <TabsContent value="log" className="mt-4">
                     <OperationsLog 
                         operations={operationsLog} 
-                        sellContractV2={sellContract} 
+                        sellContractV2={sellContract} // O v3 hook tem uma função `sellContract` compatível
                         priceTicksV2={priceTicks} 
                     />
                 </TabsContent>
