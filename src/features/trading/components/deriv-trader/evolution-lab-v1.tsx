@@ -7,11 +7,11 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Dna, TrendingUp, TrendingDown, ChevronsRight, Award } from 'lucide-react';
 import type { EvolutionEvent } from '@/features/trading/hooks/use-strategy-evolution-v1';
 
-interface EvolutionLabProps {
+interface EvolutionLabV1Props {
   history: EvolutionEvent[];
 }
 
-export function EvolutionLab({ history }: EvolutionLabProps) {
+export function EvolutionLabV1({ history }: EvolutionLabV1Props) {
   return (
     <Card>
       <CardHeader>
