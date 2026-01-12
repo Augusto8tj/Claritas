@@ -5,49 +5,8 @@ import type { Goal, BudgetCategory, Transaction, RobotPerformance, TradeDecision
 import { generateGoalImage } from '@/ai/flows/goal-image-generation';
 import { addDocumentNonBlocking, deleteDocumentNonBlocking, setDocumentNonBlocking, updateDocumentNonBlocking } from '@/firebase/non-blocking-updates';
 import { getChatbotInsightsResponse } from '@/app/actions';
-import { EvolutionEvent } from '@/features/trading/hooks/use-strategy-evolution';
-
-
-// ============================================================================
-// SANITIZATION HELPER
-// ============================================================================
-
-/**
- * Recursively sanitizes an object to be Firestore-compatible.
- * - Removes keys with `undefined` values.
- * - Converts `NaN` values to `null`.
- * This is crucial because Firestore does not support these values.
- * @param obj The object to sanitize.
- * @returns A new, sanitized object.
- */
-function sanitizeForFirestore(obj: any): any {
-  if (obj === null || typeof obj !== 'object') {
-    if (typeof obj === 'number' && isNaN(obj)) {
-      return null;
-    }
-    return obj;
-  }
-
-  if (obj instanceof Date) {
-    return obj.toISOString();
-  }
-
-  if (Array.isArray(obj)) {
-    return obj.map(item => sanitizeForFirestore(item));
-  }
-
-  const newObj: { [key: string]: any } = {};
-  for (const key in obj) {
-    if (Object.prototype.hasOwnProperty.call(obj, key)) {
-      const value = obj[key];
-      if (value !== undefined) {
-        newObj[key] = sanitizeForFirestore(value);
-      }
-    }
-  }
-
-  return newObj;
-}
+import { EvolutionEvent } from '@/features/trading/hooks/use-strategy-evolution-v2';
+import { sanitizeForFirestore } from './utils/sanitize-for-firestore';
 
 
 // --- Transactions ---
@@ -274,14 +233,15 @@ export async function getFinancialInsights(userId: string): Promise<string[]> {
 export async function saveRobotPerformance(userId: string, performance: (RobotPerformance | EnhancedRobotPerformance)[]) {
     if (!userId) return;
     const docRef = doc(db, 'users', userId, 'trading_data', 'robot_council_performance');
-    setDocumentNonBlocking(docRef, {
+    const sanitizedData = sanitizeForFirestore({
         updatedAt: new Date().toISOString(),
         robots: performance,
-    }, { merge: true });
+    });
+    setDocumentNonBlocking(docRef, sanitizedData, { merge: true });
 };
 
 
-export async function loadRobotPerformance(userId: string): Promise<RobotPerformance[] | null> {
+export async function loadRobotPerformance(userId: string): Promise<EnhancedRobotPerformance[] | null> {
   if (!userId) {
     return null;
   }
@@ -290,7 +250,10 @@ export async function loadRobotPerformance(userId: string): Promise<RobotPerform
     const docSnap = await getDoc(docRef);
     if (docSnap.exists()) {
       const data = docSnap.data();
-      return data.robots || [];
+      return (data.robots || []).map((robot: any) => ({
+        ...robot,
+        tradeHistory: robot.tradeHistory || [],
+      }));
     }
     return null;
   } catch (error) {
@@ -331,7 +294,8 @@ export async function saveTradeDecision(userId: string, log: TradeDecisionLog) {
     }
     const logCollectionRef = collection(db, 'users', userId, 'decision_logs');
     const logDocRef = doc(logCollectionRef, log.id);
-    setDocumentNonBlocking(logDocRef, log, { merge: true });
+    const sanitizedLog = sanitizeForFirestore(log);
+    setDocumentNonBlocking(logDocRef, sanitizedLog, { merge: true });
 }
 
 export async function getTradeDecisionLogs(userId: string): Promise<TradeDecisionLog[]> {
@@ -351,35 +315,31 @@ export async function getTradeDecisionLogs(userId: string): Promise<TradeDecisio
 
 // --- Evolution History ---
 
-export async function saveEvolutionHistory(userId: string, history: EvolutionEvent[]): Promise<void> {
-    if (!userId || !history) {
-        console.warn("[saveEvolutionHistory] Called with no user or history.");
-        return;
-    }
+export async function saveEvolutionHistory(userId: string, history: EvolutionEvent[], version: 'v2' | 'v3' = 'v2'): Promise<void> {
+    if (!userId || !history) return;
 
-    const docRef = doc(db, 'users', userId, 'trading_data', 'evolution_history');
+    const docRef = doc(db, 'users', userId, `trading_data_${version}`, 'evolution_history');
 
     try {
         const historyForFirestore = history.map(event => ({
             ...event,
-            timestamp: event.timestamp.toISOString(), // Converte Datas para strings
+            timestamp: event.timestamp.toISOString(),
         }));
 
         const sanitizedHistory = sanitizeForFirestore({ history: historyForFirestore });
 
         await setDoc(docRef, sanitizedHistory, { merge: true });
-        console.log(`✅ [Evolution] Histórico da Geração ${history[0]?.generation} salvo com sucesso no Firestore.`);
 
     } catch (error) {
-        console.error("❌ [saveEvolutionHistory] Erro fatal ao gravar no Firestore:", error);
-        throw new Error("Falha ao salvar o histórico de evolução no banco de dados.");
+        console.error(`❌ [saveEvolutionHistory ${version}] Erro ao gravar no Firestore:`, error);
+        throw new Error(`Falha ao salvar o histórico de evolução ${version}.`);
     }
 }
 
-export async function loadEvolutionHistory(userId: string): Promise<EvolutionEvent[]> {
+export async function loadEvolutionHistory(userId: string, version: 'v2' | 'v3' = 'v2'): Promise<EvolutionEvent[]> {
     if (!userId) return [];
     
-    const docRef = doc(db, 'users', userId, 'trading_data', 'evolution_history');
+    const docRef = doc(db, 'users', userId, `trading_data_${version}`, 'evolution_history');
     try {
         const docSnap = await getDoc(docRef);
         if (docSnap.exists()) {
@@ -392,24 +352,24 @@ export async function loadEvolutionHistory(userId: string): Promise<EvolutionEve
         }
         return [];
     } catch (error) {
-        console.error(`[Service Error] loadEvolutionHistory for user ${userId} failed:`, error);
+        console.error(`[Service Error] loadEvolutionHistory ${version} for user ${userId} failed:`, error);
         return [];
     }
 }
 
-export async function clearEvolutionHistory(userId: string): Promise<void> {
+export async function clearEvolutionHistory(userId: string, version: 'v2' | 'v3' = 'v2'): Promise<void> {
     if (!userId) return;
-    const docRef = doc(db, 'users', userId, 'trading_data', 'evolution_history');
+    const docRef = doc(db, 'users', userId, `trading_data_${version}`, 'evolution_history');
     await deleteDoc(docRef);
 }
 
-export async function deleteEvolutionEvent(userId: string, eventTimestamp: string): Promise<void> {
+export async function deleteEvolutionEvent(userId: string, eventTimestamp: string, version: 'v2' | 'v3' = 'v2'): Promise<void> {
     if (!userId) return;
     
-    const currentHistory = await loadEvolutionHistory(userId);
+    const currentHistory = await loadEvolutionHistory(userId, version);
     const newHistory = currentHistory.filter(event => event.timestamp.toISOString() !== eventTimestamp);
     
     if (newHistory.length < currentHistory.length) {
-        await saveEvolutionHistory(userId, newHistory);
+        await saveEvolutionHistory(userId, newHistory, version);
     }
 }
