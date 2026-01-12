@@ -208,6 +208,7 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
   const [isDynamicRiskOn, setIsDynamicRiskOn] = useState(true);
   const [isMeritocracyOn, setIsMeritocracyOn] = useState(true);
   const [isInversionModeOn, setIsInversionModeOn] = useState(false);
+  const [isStopLossOn, setIsStopLossOn] = useState(true);
   const [robotPerformance, setRobotPerformance] = useState<RobotPerformance[]>([]);
   const virtualTradesRef = useRef<VirtualTrade[]>([]);
   const tradeCounterRef = useRef(0);
@@ -307,11 +308,11 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
         finalStake = Math.max(0.35, formValues.stake * riskFactor);
     }
     
-    if (dailyPnl <= -dailyBalance) return { status: 'veto', message: 'Stop Loss Diário Atingido', finalStake, finalDuration, finalDurationUnit: formValues.duration_unit, analysis: `Prejuízo de $${Math.abs(dailyPnl).toFixed(2)} atingiu o limite de $${dailyBalance}.` };
-    if (dailyPnl >= dailyTarget) return { status: 'veto', message: 'Meta Diária Batida', finalStake, finalDuration, finalDurationUnit: formValues.duration_unit, analysis: `Lucro de $${dailyPnl.toFixed(2)} atingiu a meta de $${dailyTarget}.` };
-    if (Math.max(riseSum, fallSum) < effectiveThreshold) return { status: 'inactive', message: 'Aguardando consenso.', finalStake, finalDuration, finalDurationUnit: formValues.duration_unit };
+    if (dailyPnl <= -dailyBalance) return { status: 'veto' as const, message: 'Stop Loss Diário Atingido', finalStake, finalDuration, finalDurationUnit: formValues.duration_unit, analysis: `Prejuízo de $${Math.abs(dailyPnl).toFixed(2)} atingiu o limite de $${dailyBalance}.` };
+    if (dailyPnl >= dailyTarget) return { status: 'veto' as const, message: 'Meta Diária Batida', finalStake, finalDuration, finalDurationUnit: formValues.duration_unit, analysis: `Lucro de $${dailyPnl.toFixed(2)} atingiu a meta de $${dailyTarget}.` };
+    if (Math.max(riseSum, fallSum) < effectiveThreshold) return { status: 'inactive' as const, message: 'Aguardando consenso.', finalStake, finalDuration, finalDurationUnit: formValues.duration_unit };
 
-    return { status: 'approved', message: 'Aprovado pelo Conselho', finalStake, finalDuration, finalDurationUnit: formValues.duration_unit, analysis: isDynamicRiskOn ? `Risco ajustado: ${finalStake.toFixed(2)}` : 'Risco padrão.' };
+    return { status: 'approved' as const, message: 'Aprovado pelo Conselho', finalStake, finalDuration, finalDurationUnit: formValues.duration_unit, analysis: isDynamicRiskOn ? `Risco ajustado: ${finalStake.toFixed(2)}` : 'Risco padrão.' };
   }, [form, dailyBalance, dailyTarget, isDynamicConsensusOn, isDynamicRiskOn, consensusThreshold]);
   
   const tickCandles = useMemo(() => {
@@ -365,8 +366,7 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
 
     const newVotes: CouncilVotes = {};
     const { duration: formDuration, duration_unit: formDurationUnit } = form.getValues();
-    const tradeDurationSeconds = durationToSeconds(formDuration > 0 ? formDuration : baseDuration, formDurationUnit);
-    const tradeDuration = formDuration > 0 ? formDuration : baseDuration;
+    const tradeDuration = formDuration > 0 ? formDuration : baseDuration; // Fallback para a duração base
 
     strategyCouncil.forEach(robot => {
         const voteResult = calculateRobotVote(robot, currentIndicators, tickCandles);
@@ -444,34 +444,7 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
   ]);
 
   return {
-    isCouncilAutopilotOn, setIsCouncilAutopilotOn, strategyCouncil, fetchStrategyCouncil, dissolveCouncil, isFetchingCouncil, councilVotes, dailyBalance, setDailyBalance, dailyTarget, setDailyTarget, consensusThreshold, setConsensusThreshold, isDynamicConsensusOn, setIsDynamicConsensusOn, isDynamicRiskOn, setIsDynamicRiskOn, isMeritocracyOn, setIsMeritocracyOn, indicators, activeCommittee, supervisionStatus, consensusSum, consensusDecision, robotPerformance, evolutionHistory
+    isCouncilAutopilotOn, setIsCouncilAutopilotOn, strategyCouncil, fetchStrategyCouncil, dissolveCouncil, isFetchingCouncil, councilVotes, dailyBalance, setDailyBalance, dailyTarget, setDailyTarget, consensusThreshold, setConsensusThreshold, isDynamicConsensusOn, setIsDynamicConsensusOn, isDynamicRiskOn, setIsDynamicRiskOn, isMeritocracyOn, setIsMeritocracyOn, isInversionModeOn, setIsInversionModeOn, isStopLossOn, setIsStopLossOn, indicators, activeCommittee, supervisionStatus, consensusSum, consensusDecision, robotPerformance, evolutionHistory
   };
 }
 ```
-
-A > before the line number in the error source usually indicates the line of interest: 
-
-> Build Error: Module not found: Can't resolve './use-strategy-evolution'. Error source: ./src/features/trading/hooks/use-robot-council.ts (15:1)
-> Module not found: Can't resolve './use-strategy-evolution'
->   13 | import { initialCouncilStrategies } from '@/services/council-strategies';
->   14 | import { useAuth } from '@/features/auth/hooks/use-auth';
-> > 15 | import { saveRobotPerformance, loadRobotPerformance } from '@/services/financial-data-service';
->      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
->   16 | import { useStrategyEvolution } from './use-strategy-evolution';
->   17 | import type { DurationLimits } from './use-deriv-api';
->   18 |
-> 
-> Import map: aliased to relative './src/features/trading/hooks/use-strategy-evolution' inside of [project]/src/features/trading/hooks/
-> 
-> Import traces:
->   Client Component Browser:
->     ./src/features/trading/hooks/use-robot-council.ts [Client Component Browser]
->     ./src/app/deriv-trader/page.tsx [Client Component Browser]
->     ./src/app/deriv-trader/page.tsx [Server Component]
-> 
->   Client Component SSR:
->     ./src/features/trading/hooks/use-robot-council.ts [Client Component SSR]
->     ./src/app/deriv-trader/page.tsx [Client Component SSR]
->     ./src/app/deriv-trader/page.tsx [Server Component]
-> 
-> https://nextjs.org/docs/messages/module-not-found
