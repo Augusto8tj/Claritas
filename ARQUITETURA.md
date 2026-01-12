@@ -15,6 +15,7 @@ O Deriv Trader 2.5 abandona a abordagem de "estratégia única" e implementa um 
 3.  **Gestão de Risco Científica**: O valor da aposta (`stake`) não é fixo. É calculado a cada oportunidade de trade usando o **Critério de Kelly Fracionado (Quarter Kelly)**, que aposta mais agressivamente quando a vantagem probabilística é alta e protege o capital quando a vantagem é baixa.
 4.  **Evolução Genética Acelerada**: O desempenho de cada robô é constantemente validado através da **Arena Virtual** (paper trading). A cada **10 trades**, os piores robôs são substituídos por "mutações" genéticas dos robôs de elite, garantindo uma melhoria contínua e ágil.
 5.  **Desacoplamento Cognitivo-UI**: O motor de alta frequência (`useRobotCouncilV2`) é desacoplado da interface (`deriv-trader-v2/page.tsx`). A UI consome o estado a um ritmo controlado, prevenindo colapsos de renderização e garantindo a estabilidade.
+6.  **Adaptação Total ao Timeframe**: O sistema agora é totalmente consciente das regras de cada ativo. Ele consulta os limites de duração do contrato (ex: `ticks` para sintéticos, mínimo de `segundos` para forex) diretamente da API da corretora e ajusta automaticamente a duração de cada operação para garantir 100% de validade, eliminando erros de execução.
 
 ---
 

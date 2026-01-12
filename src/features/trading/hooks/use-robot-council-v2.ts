@@ -1,4 +1,4 @@
-// /src/features/trading/hooks/use-robot-council-v2.ts
+// src/features/trading/hooks/use-robot-council-v2.ts
 'use client';
 
 /**
