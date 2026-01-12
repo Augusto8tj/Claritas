@@ -20,7 +20,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useDerivApiV1 } from './use-deriv-api-v1';
 import { useToast } from '@/hooks/use-toast';
-import type { RobotStrategy, ChartData, TickData, CandleData, DurationUnit, RobotVote as RobotVoteType, CouncilVotes, RobotPerformance as RobotPerformanceType } from '@/lib/types';
+import type { RobotStrategy, ChartData, TickData, CandleData, DurationUnit, RobotVote as RobotVoteType, CouncilVotes, RobotPerformance as RobotPerformanceType, Operation } from '@/lib/types';
 import type { RiseFallFormValues } from '@/features/trading/components/deriv-trader/deriv-trader-interface.types';
 import { useFormContext } from 'react-hook-form';
 import type { Indicators } from '@/services/indicator-service-v1';
