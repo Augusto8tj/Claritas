@@ -1,4 +1,4 @@
-// /src/features/trading/hooks/use-robot-council-v2.ts
+// src/features/trading/hooks/use-robot-council-v2.ts
 'use client';
 
 /**
@@ -33,7 +33,7 @@ import type {
 import { calculateAllIndicators, type Indicators } from '@/services/indicator-service-v2';
 import { useAuth } from '@/features/auth/hooks/use-auth';
 import { saveRobotPerformance, loadRobotPerformance, saveTradeDecision } from '@/services/financial-data-service';
-import { useStrategyEvolution } from './use-strategy-evolution';
+import { useStrategyEvolution } from './use-strategy-evolution-v2';
 import { initialCouncilStrategies } from '@/services/council-strategies';
 import {
   detectMarketRegime, calculateKellyStake, bayesianUpdate,
