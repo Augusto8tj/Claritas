@@ -4,7 +4,19 @@ Este documento regista a jornada de desenvolvimento e as principais funcionalida
 
 ---
 
-### v2.5.0 (Atual) - O Despertar Cognitivo: A Mesa Operacional Completa
+### v3.1.0 (Atual) - O Laboratório de IA e a Visão Hierárquica
+
+**Funcionalidades Principais:**
+- **Criação do Deriv Trader 3.0 (IA Lab):** Um ambiente de desenvolvimento totalmente independente e isolado foi criado para permitir a experimentação e implementação de arquiteturas de IA radicais sem afetar a estabilidade da versão 2.5. Isto inclui a duplicação de todos os hooks e componentes essenciais (`use-deriv-api-v3`, `use-robot-council-v3`, `use-strategy-evolution-v3`, etc.).
+- **Implementação da Detecção de Regime Hierárquica:** Como o primeiro avanço no laboratório 3.0, o sistema agora classifica o mercado em três níveis:
+    - **Macro:** Tendência de longo prazo (bull/bear/sideways market).
+    - **Meso:** O regime de curto prazo (trending, ranging, etc.).
+    - **Micro:** Padrões de curtíssimo prazo (consolidação, exaustão, etc.).
+- **Consenso Contextualizado:** O Cérebro V3 agora tem acesso a este contexto hierárquico completo, permitindo decisões de trading muito mais sofisticadas (ex: ser mais agressivo numa compra se o micro-padrão for de reversão dentro de um macro-mercado de alta).
+
+---
+
+### v2.5.0 - O Despertar Cognitivo: A Mesa Operacional Completa
 
 **Funcionalidades Principais:**
 - **Ativação Total do Conselho:** A lógica de votação (`calculateTechnicalVote`) foi expandida para incluir todos os 22 robôs-analistas. Estratégias como `ICHIMOKU`, `VWAP`, `Z_SCORE` e `TRIX` agora participam ativamente do consenso, trazendo uma diversidade de perspetivas sem precedentes.
