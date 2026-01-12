@@ -1,5 +1,22 @@
-// src/features/trading/hooks/use-robot-council-v1.ts
+
 'use client';
+
+/**
+ * @fileoverview Este hook é o cérebro central da Mesa Operacional V1.
+ * Ele possui duas responsabilidades principais:
+ * 1. O CONSELHO DE ROBÔS:
+ *    - Convoca e gere um conselho de 22 robôs analistas.
+ *    - A cada tick de preço, calcula o voto de cada robô (RISE/FALL/HOLD).
+ *    - Agrega os votos para formar uma decisão de consenso.
+ *    - Aplica a lógica de supervisão e gestão de risco (Comités).
+ *
+ * 2. A ARENA VIRTUAL:
+ *    - Para cada voto válido, cria uma "operação virtual" (paper trade).
+ *    - Rastreia o resultado dessas operações virtuais para medir o desempenho individual de cada robô.
+ *    - Calcula vitórias, derrotas e P&L (Lucro/Prejuízo) para cada analista.
+ *    - Permite o modo "Meritocracia", onde o peso do voto de um robô é ponderado pelo seu desempenho histórico.
+ *    - Persiste os dados de desempenho no Firebase.
+ */
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useDerivApiV1 } from './use-deriv-api-v1';
@@ -317,7 +334,7 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
   
   const tickCandles = useMemo(() => {
     if (!priceTicks || priceTicks.length === 0) return [];
-    return priceTicks.map(t => ({ epoch: t.epoch, open: t.price, high: t.price, low: t.price, close: t.price, volume: 1 }));
+    return priceTicks.map((t) => ({ epoch: t.epoch, open: t.price, high: t.price, low: t.price, close: t.price, volume: 1 }));
   }, [priceTicks]);
 
   useEffect(() => {
@@ -447,4 +464,5 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
     isCouncilAutopilotOn, setIsCouncilAutopilotOn, strategyCouncil, fetchStrategyCouncil, dissolveCouncil, isFetchingCouncil, councilVotes, dailyBalance, setDailyBalance, dailyTarget, setDailyTarget, consensusThreshold, setConsensusThreshold, isDynamicConsensusOn, setIsDynamicConsensusOn, isDynamicRiskOn, setIsDynamicRiskOn, isMeritocracyOn, setIsMeritocracyOn, isInversionModeOn, setIsInversionModeOn, isStopLossOn, setIsStopLossOn, indicators, activeCommittee, supervisionStatus, consensusSum, consensusDecision, robotPerformance, evolutionHistory
   };
 }
-```
+
+    
