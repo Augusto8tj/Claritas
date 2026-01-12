@@ -1,4 +1,4 @@
-// src/features/trading/components/deriv-trader/asset-selector.tsx
+// src/features/trading/components/deriv-trader/asset-selector-v2.tsx
 "use client";
 
 import {
@@ -11,14 +11,13 @@ import {
 } from "@/components/ui/select";
 import React, { useEffect, useState, useMemo } from "react";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useDerivApi } from "@/features/trading/hooks/use-deriv-api";
+import { useDerivApiV2 } from "@/features/trading/hooks/use-deriv-api-v2";
 import type { Asset } from "@/lib/types";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { Check, ChevronsUpDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Badge } from "@/components/ui/badge";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 
@@ -40,7 +39,7 @@ const marketFilters = [
     { label: "Cripto", value: "cryptocurrency" },
 ];
 
-export function AssetSelector({ selectedAsset, onAssetChange, assetGroups, isAssetsLoading }: AssetSelectorProps) {
+export function AssetSelectorV2({ selectedAsset, onAssetChange, assetGroups, isAssetsLoading }: AssetSelectorProps) {
   const [open, setOpen] = useState(false);
   const [filter, setFilter] = useState('all');
   const [marketStatusFilter, setMarketStatusFilter] = useState('all');
