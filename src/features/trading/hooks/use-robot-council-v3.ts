@@ -356,7 +356,7 @@ export function useRobotCouncilV3(
 
   useEffect(() => {
     if (!user || isAuthLoading) return;
-    loadRobotPerformance(user.uid).then((stored) => {
+    loadRobotPerformance(user.uid, 'v3').then((stored) => {
         if (stored && stored.length > 0) {
             robotPerformanceRef.current = stored;
             setRobotPerformance(stored);
@@ -579,7 +579,7 @@ export function useRobotCouncilV3(
             const updatedPerformance = Array.from(robotPerformanceRef.current);
             setRobotPerformance(updatedPerformance);
             if (user) {
-                saveRobotPerformance(user.uid, updatedPerformance);
+                saveRobotPerformance(user.uid, updatedPerformance, 'v3');
             }
         }
         
@@ -809,7 +809,7 @@ export function useRobotCouncilV3(
                             pnl: 0,
                          };
 
-                         saveTradeDecision(user.uid, log);
+                         saveTradeDecision(user.uid, log, 'v3');
                          setTradeDecisionLog(prev => [log, ...prev]);
                      }
                 });

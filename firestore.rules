@@ -47,14 +47,20 @@ service cloud.firestore {
         allow read, write: if isOwner(userId);
       }
       
-      // --- LOGS DE DECISÃO (Trading) ---
+      // --- LOGS DE DECISÃO V2 ---
       match /decision_logs/{logId} {
+         allow read, list, write: if isOwner(userId);
+      }
+      
+      // --- LOGS DE DECISÃO V3 ---
+      match /decision_logs_v3/{logId} {
          allow read, list, write: if isOwner(userId);
       }
       
       // --- DADOS DE TRADING (PERFORMANCE E EVOLUÇÃO) ---
       match /trading_data/{docId} {
-         // Esta regra genérica cobre 'robot_council_performance' e outros futuros documentos.
+         // Esta regra genérica cobre 'robot_council_performance', 'evolution_history',
+         // e as novas coleções '_v3'.
          allow read, write: if isOwner(userId);
       }
       

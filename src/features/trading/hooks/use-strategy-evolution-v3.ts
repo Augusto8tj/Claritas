@@ -146,7 +146,7 @@ export function useStrategyEvolutionV3(initialStrategies: Omit<RobotStrategy, 'i
   useEffect(() => {
     if (!user) return;
     
-    loadEvolutionHistory(user.uid)
+    loadEvolutionHistory(user.uid, 'v3')
       .then(history => {
         if (history.length > 0) {
           setEvolutionHistory(history);
@@ -154,7 +154,7 @@ export function useStrategyEvolutionV3(initialStrategies: Omit<RobotStrategy, 'i
         }
       })
       .catch(err => {
-        console.error('❌ [Evolution] Erro ao carregar histórico:', err);
+        console.error('❌ [Evolution] Erro ao carregar histórico V3:', err);
       });
   }, [user]);
 
@@ -302,7 +302,7 @@ export function useStrategyEvolutionV3(initialStrategies: Omit<RobotStrategy, 'i
         setEvolutionHistory(prevHistory => {
             const updatedHistory = [newEvent, ...prevHistory];
             if (user) {
-              saveEvolutionHistory(user.uid, updatedHistory).catch(error => {
+              saveEvolutionHistory(user.uid, updatedHistory, 'v3').catch(error => {
                   console.error("❌ [EvolutionV3] Falha ao gravar histórico:", error);
                   toast({
                       title: "⚠️ Erro de Persistência",
@@ -341,7 +341,7 @@ export function useStrategyEvolutionV3(initialStrategies: Omit<RobotStrategy, 'i
   const resetEvolutionHistory = useCallback(async () => {
     if (!user) return;
     try {
-      await clearEvolutionHistory(user.uid);
+      await clearEvolutionHistory(user.uid, 'v3');
       setEvolutionHistory([]);
       setCurrentGeneration(0);
       tradeCountsRef.current = { virtual: 0, real: 0, total: 0 };
@@ -355,7 +355,7 @@ export function useStrategyEvolutionV3(initialStrategies: Omit<RobotStrategy, 'i
   const deleteSingleEvolution = useCallback(async (eventTimestamp: string) => {
     if (!user) return;
     try {
-      await deleteEvolutionEvent(user.uid, eventTimestamp);
+      await deleteEvolutionEvent(user.uid, eventTimestamp, 'v3');
       setEvolutionHistory(prev => prev.filter(e => e.timestamp.toISOString() !== eventTimestamp));
       toast({ title: '🗑️ Geração Removida' });
     } catch (error) {
