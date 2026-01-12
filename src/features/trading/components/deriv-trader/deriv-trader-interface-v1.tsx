@@ -26,7 +26,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 
-import type { DurationUnit, RiseFallFormValues } from "@/lib/types";
+import type { DurationUnit, RiseFallFormValues } from "./deriv-trader-interface-v1.types";
 import { useDerivApiV1 } from "@/features/trading/hooks/use-deriv-api-v1";
 import { Switch } from "@/components/ui/switch";
 
@@ -50,7 +50,7 @@ const tradeTypeLabels: Record<TradeType, string> = {
   touch_no_touch: "Touch/No Touch",
 };
 
-function DerivTraderInterface({ symbol }: DerivTraderInterfaceProps) {
+function DerivTraderInterfaceV1({ symbol }: DerivTraderInterfaceProps) {
   const { toast } = useToast();
   const [loading, setLoading] = useState<"rise" | "fall" | null>(null);
   const [tradeType, setTradeType] = useState<TradeType>('rise_fall');
@@ -356,4 +356,4 @@ function DerivTraderInterface({ symbol }: DerivTraderInterfaceProps) {
   );
 }
 
-export default DerivTraderInterface;
+export default DerivTraderInterfaceV1;

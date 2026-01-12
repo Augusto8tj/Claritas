@@ -14,7 +14,7 @@ import { DerivApiProviderV1, useDerivApiV1 } from "@/features/trading/hooks/use-
 import { Skeleton } from "@/components/ui/skeleton";
 import { OperationsLogV1 } from "@/features/trading/components/deriv-trader/operations-log-v1";
 import { AIAnalysisInterfaceV1 } from "@/features/trading/components/deriv-trader/ai-analysis-interface-v1";
-import { riseFallSchema, type RiseFallFormValues } from "@/lib/types";
+import { riseFallSchema, type RiseFallFormValues } from "@/features/trading/components/deriv-trader/deriv-trader-interface-v1.types";
 import { CouncilAutopilotInterfaceV1 } from "@/features/trading/components/deriv-trader/council-autopilot-interface-v1";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { useRobotCouncilV1 } from "@/features/trading/hooks/use-robot-council-v1";

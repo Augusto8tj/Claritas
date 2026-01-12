@@ -32,7 +32,7 @@ import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
 import { useDerivApiV3 } from "@/features/trading/hooks/use-deriv-api-v3";
-import type { DurationUnit, RiseFallFormValues, OperationInitiator } from '@/lib/types';
+import type { DurationUnit, RiseFallFormValues, OperationInitiator } from './deriv-trader-interface-v3.types';
 
 
 type TradeType = 'rise_fall' | 'higher_lower' | 'touch_no_touch';

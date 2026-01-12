@@ -13,7 +13,7 @@ import { Trash2 } from "lucide-react";
 import { useDerivApiV3, DerivApiProviderV3 } from "@/features/trading/hooks/use-deriv-api-v3";
 import { Skeleton } from "@/components/ui/skeleton";
 import OperationsLogV3 from "@/features/trading/components/deriv-trader/operations-log-v3";
-import { riseFallSchema, type RiseFallFormValues } from "@/lib/types";
+import { riseFallSchema, type RiseFallFormValues } from "@/features/trading/components/deriv-trader/deriv-trader-interface-v3.types";
 import { useRobotCouncilV3 } from "@/features/trading/hooks/use-robot-council-v3";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { CouncilDashboardV3 } from '@/features/trading/components/deriv-trader/CouncilDashboardV3';

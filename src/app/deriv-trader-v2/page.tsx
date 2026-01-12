@@ -13,7 +13,7 @@ import { Trash2, Dna, Archive, Brain } from "lucide-react";
 import { useDerivApiV2, DerivApiProviderV2 } from "@/features/trading/hooks/use-deriv-api-v2";
 import { Skeleton } from "@/components/ui/skeleton";
 import { OperationsLogV2 } from "@/features/trading/components/deriv-trader/operations-log-v2";
-import { riseFallSchema, type RiseFallFormValues } from "@/lib/types";
+import { riseFallSchema, type RiseFallFormValues } from "@/features/trading/components/deriv-trader/deriv-trader-interface-v2.types";
 import { useRobotCouncilV2 } from "@/features/trading/hooks/use-robot-council-v2";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { CouncilDashboardV2 } from '@/features/trading/components/deriv-trader/CouncilDashboardV2';
