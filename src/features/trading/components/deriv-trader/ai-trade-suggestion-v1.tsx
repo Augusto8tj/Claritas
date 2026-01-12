@@ -1,4 +1,4 @@
-// src/features/trading/components/deriv-trader/ai-trade-suggestion.tsx
+// src/features/trading/components/deriv-trader/ai-trade-suggestion-v1.tsx
 'use client';
 
 import {
@@ -13,7 +13,7 @@ import { cn } from "@/lib/utils";
 import { TrendingUp, TrendingDown, HelpCircle, ShieldCheck, ShieldX, Group, Eye, Sigma, Wallet } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
 
-interface AITradeSuggestionProps {
+interface AITradeSuggestionV1Props {
     councilDecision: 'RISE' | 'FALL' | 'HOLD';
     consensusSum: { rise: number; fall: number };
     consensusThreshold: number;
@@ -36,7 +36,7 @@ const supervisionIcons = {
     'approved': <ShieldCheck className="h-4 w-4 text-green-600" />,
 };
 
-export function AITradeSuggestion({ 
+export function AITradeSuggestionV1({ 
     councilDecision, 
     consensusSum,
     consensusThreshold,
@@ -45,7 +45,7 @@ export function AITradeSuggestion({
     isAutopilotOn,
     bayesianProbability,
     kellyStake
-}: AITradeSuggestionProps) {
+}: AITradeSuggestionV1Props) {
 
     // Adicionado guarda de segurança para evitar erro de renderização
     if (!consensusSum && bayesianProbability === undefined) {
