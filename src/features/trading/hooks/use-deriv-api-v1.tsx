@@ -128,7 +128,7 @@ const addDataPoint = (prevData: ChartData[], newPoint: ChartData): ChartData[] =
     return data;
 };
 
-const getDurationLimitsForAsset = (minDurationStr: string | undefined): DurationLimits => {
+const getDurationLimitsForAsset = (asset: Asset | undefined): DurationLimits => {
     const defaultLimits: DurationLimits = {
         t: { min: 5, max: 10 },
         s: { min: 15, max: 365 * 24 * 3600 },
@@ -137,21 +137,33 @@ const getDurationLimitsForAsset = (minDurationStr: string | undefined): Duration
         d: { min: 1, max: 365 },
     };
 
-    if (!minDurationStr) return defaultLimits;
-    
-    try {
-        const unit = minDurationStr.slice(-1) as DurationUnit;
-        const value = parseInt(minDurationStr.slice(0, -1), 10);
-    
-        if (isNaN(value) || !defaultLimits[unit]) return defaultLimits;
+    if (!asset || !asset.minDuration) return defaultLimits;
+
+    // Aplica regras de negócio específicas por mercado
+    switch(asset.market) {
+        case 'forex':
+        case 'commodities':
+        case 'stock_index':
+            // Estes mercados não permitem negociações em ticks
+            defaultLimits.t.min = 0;
+            defaultLimits.t.max = 0;
+            // O tempo mínimo é em segundos ou minutos (ex: 1m)
+            if (asset.minDuration.endsWith('s')) {
+                defaultLimits.s.min = Math.max(defaultLimits.s.min, parseInt(asset.minDuration, 10));
+            } else if (asset.minDuration.endsWith('m')) {
+                defaultLimits.s.min = Math.max(defaultLimits.s.min, parseInt(asset.minDuration, 10) * 60);
+            }
+            break;
         
-        const specificLimits = JSON.parse(JSON.stringify(defaultLimits));
-        specificLimits[unit].min = value;
-    
-        return specificLimits;
-    } catch {
-        return defaultLimits;
+        case 'synthetic_index':
+            // Sintéticos têm a maior flexibilidade
+             if (asset.minDuration.endsWith('t')) {
+                defaultLimits.t.min = Math.max(defaultLimits.t.min, parseInt(asset.minDuration, 10));
+            }
+            break;
     }
+
+    return defaultLimits;
 };
 
 const getDurationInSeconds = (duration: number, unit: DurationUnit): number => {
@@ -221,7 +233,7 @@ export const DerivApiProviderV1 = ({ children }: { children: ReactNode }) => {
     }
     const allAssets = assetGroups.flatMap(g => g.options);
     const asset = allAssets.find(a => a.value === activeSymbol);
-    return getDurationLimitsForAsset(asset?.minDuration);
+    return getDurationLimitsForAsset(asset);
   }, [activeSymbol, assetGroups]);
 
 
