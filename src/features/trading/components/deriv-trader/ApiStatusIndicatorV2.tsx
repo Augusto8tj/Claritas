@@ -1,17 +1,17 @@
-// src/features/trading/components/deriv-trader/ApiStatusIndicator.tsx
+// src/features/trading/components/deriv-trader/ApiStatusIndicatorV2.tsx
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { useDerivApiV2 } from '@/features/trading/hooks/use-deriv-api-v2';
 import { checkGeminiConnection } from '@/app/actions';
 import { Button } from '@/components/ui/button';
-import { ShieldCheck, ShieldX, Loader2, RefreshCw, Bot, Link as LinkIcon } from 'lucide-react';
+import { ShieldCheck, ShieldX, Loader2, RefreshCw } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 
 type Status = 'loading' | 'success' | 'error';
 
-export function ApiStatusIndicator() {
+export function ApiStatusIndicatorV2() {
   const { isConnected, isConnecting, connectionError, reconnect } = useDerivApiV2();
   const [iaStatus, setIaStatus] = useState<Status>('loading');
   const [isChecking, setIsChecking] = useState(false);

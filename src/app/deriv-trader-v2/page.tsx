@@ -5,25 +5,25 @@ import React from "react";
 import { useForm, FormProvider } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import DerivTraderInterfaceV2 from "@/features/trading/components/deriv-trader/deriv-trader-interface-v2";
-import { AssetSelector } from "@/features/trading/components/deriv-trader/asset-selector";
+import { AssetSelectorV2 } from "@/features/trading/components/deriv-trader/asset-selector-v2";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { MarketChart } from "@/features/trading/components/deriv-trader/market-chart";
+import { MarketChartV2 } from "@/features/trading/components/deriv-trader/market-chart-v2";
 import { Button } from "@/components/ui/button";
 import { Trash2, Dna, Archive, Brain } from "lucide-react";
 import { useDerivApiV2, DerivApiProviderV2 } from "@/features/trading/hooks/use-deriv-api-v2";
 import { Skeleton } from "@/components/ui/skeleton";
-import { OperationsLog } from "@/features/trading/components/deriv-trader/operations-log";
+import { OperationsLogV2 } from "@/features/trading/components/deriv-trader/operations-log-v2";
 import { riseFallSchema, type RiseFallFormValues } from "@/lib/types";
 import { useRobotCouncilV2 } from "@/features/trading/hooks/use-robot-council-v2";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { CouncilDashboardV2 } from '@/features/trading/components/deriv-trader/CouncilDashboardV2';
 import { TradingDeskV2 } from "@/features/trading/components/deriv-trader/trading-desk-v2";
 import { EvolutionLabV2 } from "@/features/trading/components/deriv-trader/evolution-lab-v2";
-import { DebugCouncilView } from "@/features/trading/components/deriv-trader/DebugCouncilView";
+import { DebugCouncilViewV2 } from "@/features/trading/components/deriv-trader/DebugCouncilView-v2";
 import TradingDecisionLogViewer from "@/components/deriv-trader/TradingDecisionLogViewer";
 import { CouncilAutopilotInterfaceV2 } from "@/features/trading/components/deriv-trader/council-autopilot-interface-v2";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
-import { ApiStatusIndicator } from "@/features/trading/components/deriv-trader/ApiStatusIndicator";
+import { ApiStatusIndicatorV2 } from "@/features/trading/components/deriv-trader/ApiStatusIndicatorV2";
 
 // ============================================================================
 // COMPONENTES REORGANIZADOS PARA PERFORMANCE
@@ -43,7 +43,7 @@ const Header = () => {
             </h1>
             <div className="flex-1 grid grid-cols-1 md:grid-cols-3 gap-4 items-center">
                  <div className="flex justify-center">
-                    <AssetSelector 
+                    <AssetSelectorV2
                         selectedAsset={activeSymbol || ""} 
                         onAssetChange={(asset) => setActiveSymbol(asset)} 
                         assetGroups={assetGroups}
@@ -51,7 +51,7 @@ const Header = () => {
                     />
                  </div>
                 <div className="flex justify-center">
-                    <ApiStatusIndicator />
+                    <ApiStatusIndicatorV2 />
                 </div>
                  <div className="flex items-center justify-center md:justify-end gap-4">
                     <ToggleGroup type="single" value={accountType} onValueChange={(value: any) => value && setAccountType(value)} defaultValue="demo" aria-label="Tipo de Conta">
@@ -103,7 +103,7 @@ const IsolatedMarketChart = () => {
                 </div>
             </CardHeader>
             <CardContent>
-                <MarketChart 
+                <MarketChartV2
                     activeSymbol={activeSymbol || ''}
                     chartData={chartData}
                     isChartLoading={isChartLoading}
@@ -148,7 +148,7 @@ const DerivTraderV2Core = () => {
             </div>
 
             <div className="animate-in fade-in slide-in-from-top-4 duration-500">
-                <DebugCouncilView 
+                <DebugCouncilViewV2
                     councilState={robotCouncil}
                     isCouncilAutopilotOn={robotCouncil.isCouncilAutopilotOn}
                 />
@@ -168,17 +168,17 @@ const DerivTraderV2Core = () => {
                     />
                 </TabsContent>
                 <TabsContent value="log" className="mt-4">
-                    <OperationsLog 
+                    <OperationsLogV2
                         operations={operationsLog} 
-                        sellContractV2={sellContract} 
-                        priceTicksV2={priceTicks} 
+                        sellContract={sellContract} 
+                        priceTicks={priceTicks} 
                     />
                 </TabsContent>
                 <TabsContent value="audit" className="mt-4">
                     <TradingDecisionLogViewer logs={robotCouncil.tradeDecisionLog} showFilters={false} />
                 </TabsContent>
                 <TabsContent value="evolution" className="mt-4">
-                    <EvolutionLabV2 
+                    <EvolutionLabV2
                         history={robotCouncil.evolutionHistory}
                         resetEvolutionHistory={robotCouncil.resetEvolutionHistory}
                         deleteSingleEvolution={robotCouncil.deleteSingleEvolution}

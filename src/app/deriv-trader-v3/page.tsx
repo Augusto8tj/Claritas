@@ -5,25 +5,25 @@ import React from "react";
 import { useForm, FormProvider } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import DerivTraderInterfaceV3 from "@/features/trading/components/deriv-trader/deriv-trader-interface-v3";
-import { AssetSelector } from "@/features/trading/components/deriv-trader/asset-selector";
+import { AssetSelectorV3 } from "@/features/trading/components/deriv-trader/asset-selector-v3";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { MarketChart } from "@/features/trading/components/deriv-trader/market-chart";
+import { MarketChartV3 } from "@/features/trading/components/deriv-trader/market-chart-v3";
 import { Button } from "@/components/ui/button";
 import { Trash2 } from "lucide-react";
 import { useDerivApiV3, DerivApiProviderV3 } from "@/features/trading/hooks/use-deriv-api-v3";
 import { Skeleton } from "@/components/ui/skeleton";
-import { OperationsLog } from "@/features/trading/components/deriv-trader/operations-log";
+import { OperationsLogV3 } from "@/features/trading/components/deriv-trader/operations-log-v3";
 import { riseFallSchema, type RiseFallFormValues } from "@/lib/types";
 import { useRobotCouncilV3 } from "@/features/trading/hooks/use-robot-council-v3";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { CouncilDashboardV3 } from '@/features/trading/components/deriv-trader/CouncilDashboardV3';
 import { TradingDeskV2 } from "@/features/trading/components/deriv-trader/trading-desk-v2";
 import EvolutionLabV3 from "@/features/trading/components/deriv-trader/evolution-lab-v3";
-import { DebugCouncilView } from "@/features/trading/components/deriv-trader/DebugCouncilView";
+import { DebugCouncilViewV3 } from "@/features/trading/components/deriv-trader/DebugCouncilView-v3";
 import TradingDecisionLogViewer from "@/components/deriv-trader/TradingDecisionLogViewer";
 import { CouncilAutopilotInterfaceV3 } from "@/features/trading/components/deriv-trader/council-autopilot-interface-v3";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
-import { ApiStatusIndicator } from "@/features/trading/components/deriv-trader/ApiStatusIndicator";
+import { ApiStatusIndicatorV3 } from "@/features/trading/components/deriv-trader/ApiStatusIndicatorV3";
 
 // ============================================================================
 // COMPONENTES REORGANIZADOS PARA PERFORMANCE
@@ -43,7 +43,7 @@ const Header = () => {
             </h1>
             <div className="flex-1 grid grid-cols-1 md:grid-cols-3 gap-4 items-center">
                  <div className="flex justify-center">
-                    <AssetSelector 
+                    <AssetSelectorV3
                         selectedAsset={activeSymbol || ""} 
                         onAssetChange={(asset) => setActiveSymbol(asset)} 
                         assetGroups={assetGroups}
@@ -51,7 +51,7 @@ const Header = () => {
                     />
                  </div>
                 <div className="flex justify-center">
-                    <ApiStatusIndicator />
+                    <ApiStatusIndicatorV3 />
                 </div>
                  <div className="flex items-center justify-center md:justify-end gap-4">
                     <ToggleGroup type="single" value={accountType} onValueChange={(value: any) => value && setAccountType(value)} defaultValue="demo" aria-label="Tipo de Conta">
@@ -103,7 +103,7 @@ const IsolatedMarketChart = () => {
                 </div>
             </CardHeader>
             <CardContent>
-                <MarketChart 
+                <MarketChartV3
                     activeSymbol={activeSymbol || ''}
                     chartData={chartData}
                     isChartLoading={isChartLoading}
@@ -144,7 +144,7 @@ const DerivTraderV3Core = () => {
             </div>
 
             <div className="animate-in fade-in slide-in-from-top-4 duration-500">
-                <DebugCouncilView 
+                <DebugCouncilViewV3
                     councilState={robotCouncil}
                     isCouncilAutopilotOn={robotCouncil.isCouncilAutopilotOn}
                 />
@@ -164,10 +164,10 @@ const DerivTraderV3Core = () => {
                     />
                 </TabsContent>
                 <TabsContent value="log" className="mt-4">
-                    <OperationsLog 
+                    <OperationsLogV3
                         operations={operationsLog} 
-                        sellContractV2={sellContract} // O v3 hook tem uma função `sellContract` compatível
-                        priceTicksV2={priceTicks} 
+                        sellContract={sellContract} 
+                        priceTicks={priceTicks} 
                     />
                 </TabsContent>
                 <TabsContent value="audit" className="mt-4">

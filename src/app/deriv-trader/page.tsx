@@ -1,30 +1,30 @@
 // src/app/deriv-trader/page.tsx
 'use client';
 
-import React, { useState, useEffect } from "react";
+import React from "react";
 import { useForm, FormProvider } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import DerivTraderInterfaceV1 from "@/features/trading/components/deriv-trader/deriv-trader-interface-v1";
-import { AssetSelector } from "@/features/trading/components/deriv-trader/asset-selector";
+import { AssetSelectorV1 } from "@/features/trading/components/deriv-trader/asset-selector-v1";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { MarketChart } from "@/features/trading/components/deriv-trader/market-chart";
+import { MarketChartV1 } from "@/features/trading/components/deriv-trader/market-chart-v1";
 import { Button } from "@/components/ui/button";
 import { Trash2, Bot, NotepadText, LayoutGrid, Trophy, Dna } from "lucide-react";
 import { DerivApiProviderV1, useDerivApiV1 } from "@/features/trading/hooks/use-deriv-api-v1";
 import { Skeleton } from "@/components/ui/skeleton";
-import { OperationsLog } from "@/features/trading/components/deriv-trader/operations-log";
-import { AIAnalysisInterface } from "@/features/trading/components/deriv-trader/ai-analysis-interface";
+import { OperationsLogV1 } from "@/features/trading/components/deriv-trader/operations-log-v1";
+import { AIAnalysisInterfaceV1 } from "@/features/trading/components/deriv-trader/ai-analysis-interface-v1";
 import { riseFallSchema, type RiseFallFormValues } from "@/lib/types";
 import { CouncilAutopilotInterfaceV1 } from "@/features/trading/components/deriv-trader/council-autopilot-interface-v1";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { useRobotCouncilV1 } from "@/features/trading/hooks/use-robot-council-v1";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { AITradeSuggestion } from "@/features/trading/components/deriv-trader/ai-trade-suggestion";
+import { AITradeSuggestionV1 } from "@/features/trading/components/deriv-trader/ai-trade-suggestion-v1";
 import { IndicatorPanel } from "@/features/trading/components/deriv-trader/indicator-panel";
 import { TradingDesk } from "@/features/trading/components/deriv-trader/trading-desk";
 import { HallOfFame } from "@/features/trading/components/deriv-trader/hall-of-fame";
 import { ApiStatusIndicatorLegacy } from "@/features/trading/components/deriv-trader/ApiStatusIndicatorLegacy";
-import { EvolutionLab } from "@/features/trading/components/deriv-trader/evolution-lab-v1";
+import { EvolutionLabV1 } from "@/features/trading/components/deriv-trader/evolution-lab-v1";
 
 
 function DerivTraderCore() {
@@ -72,7 +72,7 @@ function DerivTraderCore() {
               </div>
           </CardHeader>
           <CardContent>
-              <MarketChart 
+              <MarketChartV1
                   activeSymbol={activeSymbol || ''}
                   chartData={chartData}
                   isChartLoading={isChartLoading}
@@ -94,7 +94,7 @@ function DerivTraderCore() {
                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <DerivTraderInterfaceV1 symbol={activeSymbol || ""} />
                      <div className="space-y-6">
-                        <AITradeSuggestion 
+                        <AITradeSuggestionV1
                           councilDecision={robotCouncil.consensusDecision}
                           consensusSum={robotCouncil.consensusSum}
                           consensusThreshold={robotCouncil.consensusThreshold}
@@ -113,7 +113,7 @@ function DerivTraderCore() {
                             <TabsTrigger value="evolution">Evolução</TabsTrigger>
                         </TabsList>
                         <TabsContent value="log" className="mt-4">
-                            <OperationsLog operations={operationsLog} sellContractV1={sellContract} priceTicksV1={priceTicks} />
+                            <OperationsLogV1 operations={operationsLog} sellContract={sellContract} priceTicks={priceTicks} />
                         </TabsContent>
                         <TabsContent value="desk" className="mt-4">
                             <TradingDesk 
@@ -128,7 +128,7 @@ function DerivTraderCore() {
                             <HallOfFame />
                         </TabsContent>
                          <TabsContent value="evolution" className="mt-4">
-                           <EvolutionLab history={robotCouncil.evolutionHistory} />
+                           <EvolutionLabV1 history={robotCouncil.evolutionHistory} />
                         </TabsContent>
                     </Tabs>
                 </div>
@@ -150,7 +150,7 @@ function DerivTraderCore() {
 
                 <TabsContent value="trade" className="mt-4 space-y-6">
                     <DerivTraderInterfaceV1 symbol={activeSymbol || ""} />
-                    <AITradeSuggestion 
+                    <AITradeSuggestionV1
                       councilDecision={robotCouncil.consensusDecision}
                       consensusSum={robotCouncil.consensusSum}
                       consensusThreshold={robotCouncil.consensusThreshold}
@@ -179,8 +179,8 @@ function DerivTraderCore() {
                 </TabsContent>
                 
                  <TabsContent value="log" className="mt-4 space-y-6">
-                    <OperationsLog operations={operationsLog} sellContractV1={sellContract} priceTicksV1={priceTicks} />
-                    <AIAnalysisInterface symbol={activeSymbol} />
+                    <OperationsLogV1 operations={operationsLog} sellContract={sellContract} priceTicks={priceTicks} />
+                    <AIAnalysisInterfaceV1 symbol={activeSymbol} />
                 </TabsContent>
            </Tabs>
        </div>
@@ -214,7 +214,7 @@ function DerivTraderPageContent() {
                 </h1>
                 <div className="flex-1 grid grid-cols-1 md:grid-cols-3 gap-4 items-center">
                     <div className="flex justify-center">
-                        <AssetSelector 
+                        <AssetSelectorV1
                             selectedAsset={activeSymbol || ""} 
                             onAssetChange={handleAssetChange} 
                             assetGroups={assetGroups}
