@@ -1,3 +1,4 @@
+// src/features/trading/hooks/use-robot-council-v1.ts
 'use client';
 
 /**
@@ -258,10 +259,8 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
         if (stored) setRobotPerformance(stored);
       })
       .catch(error => {
-        console.error("[useRobotCouncilV1] Failed to load performance, creating client-side error.", error);
-        // CRÍTICO: Criar o erro aqui no cliente
         const permissionError = new FirestorePermissionError({
-            path: `users/${user.uid}/trading/robotPerformance`,
+            path: `users/${user.uid}/trading_data/robotPerformance`,
             operation: 'get',
         });
         errorEmitter.emit('permission-error', permissionError);
