@@ -8,7 +8,6 @@
 import { db } from '@/lib/firebase';
 import { collection, doc, getDoc, setDoc, deleteDoc } from 'firebase/firestore';
 import type { EnhancedRobotPerformance, TradeDecisionLog } from '@/lib/types';
-import { setDocumentNonBlocking } from '@/firebase/non-blocking-updates';
 import type { EvolutionEvent } from '@/features/trading/hooks/use-strategy-evolution-v3';
 import { sanitizeForFirestore } from './utils/sanitize-for-firestore';
 
@@ -22,7 +21,13 @@ export async function saveRobotPerformanceV3(userId: string, performance: Enhanc
         updatedAt: new Date().toISOString(),
         robots: performance,
     });
-    setDocumentNonBlocking(docRef, sanitizedData, { merge: true });
+    // No servidor, podemos usar setDoc diretamente e de forma assíncrona
+    try {
+        await setDoc(docRef, sanitizedData, { merge: true });
+    } catch (error) {
+        console.error("Falha ao salvar desempenho V3:", error);
+        // Em um ambiente de produção, você poderia logar isso em um serviço externo.
+    }
 };
 
 
@@ -53,7 +58,12 @@ export async function saveTradeDecisionV3(userId: string, log: TradeDecisionLog)
     const logCollectionRef = collection(db, 'users', userId, 'decision_logs_v3');
     const logDocRef = doc(logCollectionRef, log.id);
     const sanitizedLog = sanitizeForFirestore(log);
-    setDocumentNonBlocking(logDocRef, sanitizedLog, { merge: true });
+    // Correção: Usar setDoc diretamente do SDK do Firebase no servidor.
+    try {
+        await setDoc(logDocRef, sanitizedLog, { merge: true });
+    } catch (error) {
+        console.error("Falha ao salvar log de decisão V3:", error);
+    }
 }
 
 // --- Evolution History V3 ---
@@ -108,5 +118,3 @@ export async function deleteEvolutionEventV3(userId: string, eventTimestamp: str
         await saveEvolutionHistoryV3(userId, newHistory);
     }
 }
-
-    
