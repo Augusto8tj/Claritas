@@ -11,14 +11,32 @@ service cloud.firestore {
       // Regra para o próprio documento de perfil do utilizador
       allow get, create, update: if isOwner(userId);
 
-      // Regra CURINGA para TODAS as subcoleções de um utilizador.
-      // Esta regra única e poderosa garante que um utilizador autenticado
-      // tenha acesso total (leitura, escrita, etc.) a qualquer documento
-      // dentro de qualquer subcoleção que pertença ao seu próprio perfil.
-      // Resolve os problemas de acesso para /transactions, /goals, /settings,
-      // /decision_logs, e todas as versões de /trading_data.
-      match /{subcollection}/{docId} {
-        allow read, list, write, delete: if isOwner(userId);
+      // --- REGRAS EXPLÍCITAS PARA SUBCOLEÇÕES ---
+
+      // Regra para finanças pessoais
+      match /transactions/{transactionId} { allow read, list, write, delete: if isOwner(userId); }
+      match /goals/{goalId} { allow read, list, write, delete: if isOwner(userId); }
+      match /settings/{settingId} { allow read, list, write, delete: if isOwner(userId); }
+      
+      // Regra para logs de auditoria V2.5
+      match /decision_logs/{logId} { allow read, list, write, delete: if isOwner(userId); }
+
+      // Regra para logs de auditoria V3
+      match /decision_logs_v3/{logId} { allow read, list, write, delete: if isOwner(userId); }
+      
+      // Regra para dados de trading V1
+      match /trading_data/{docId} {
+        allow read, write: if isOwner(userId);
+      }
+      
+      // Regra para dados de trading V2.5
+      match /trading_data_v2/{docId} {
+          allow read, write: if isOwner(userId);
+      }
+
+      // Regra para dados de trading V3
+      match /trading_data_v3/{docId} {
+          allow read, write: if isOwner(userId);
       }
     }
   }

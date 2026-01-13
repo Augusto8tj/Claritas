@@ -15,7 +15,7 @@ export async function saveRobotPerformance(userId: string, performanceData: Robo
     const performanceDocRef = doc(db, 'users', userId, 'trading_data', 'robot_council_performance');
     const dataToSave = { 
         updatedAt: new Date().toISOString(),
-        performance: sanitizeForFirestore(performanceData) 
+        performance: performanceData 
     };
 
     // No servidor, podemos usar o setDoc diretamente. Erros serão propagados.
