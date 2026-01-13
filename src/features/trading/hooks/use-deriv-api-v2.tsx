@@ -655,25 +655,19 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
 
     try {
         const contractsRes: any = await makeRequest({ contracts_for: symbol });
-        const availableContracts = contractsRes.contracts_for?.available || [];
-        const riseFallContract = availableContracts.find((c: any) => c.contract_type === 'CALL' || c.contract_type === 'RISE');
-        
-        const newLimits: DurationLimits = { t: {min:0, max:0}, s: {min:0, max:0}, m: {min:0, max:0}, h: {min:0, max:0}, d: {min:0, max:0} };
+        const tradingPeriod = contractsRes.contracts_for?.trading_period;
+        const riseFallPeriod = tradingPeriod?.rise_fall;
 
-        if (riseFallContract) {
-            const units: DurationUnit[] = ['t', 's', 'm', 'h', 'd'];
-            const parseDuration = (durationStr: string) => {
-                const unit = durationStr.slice(-1) as DurationUnit;
-                const value = parseInt(durationStr.slice(0, -1), 10);
-                return { value: isNaN(value) ? 1 : value, unit };
-            };
+        const newLimits: DurationLimits = { t: {min:0, max:0}, s: {min:0, max:0}, m: {min:0, max:0}, h: {min:0, max:0}, d: {min:0, max:0} };
         
-            const minDur = parseDuration(riseFallContract.min_contract_duration);
-            const maxDur = parseDuration(riseFallContract.max_contract_duration);
-        
-            if (units.includes(minDur.unit)) {
-                newLimits[minDur.unit] = { min: minDur.value, max: maxDur.value };
-            }
+        if (riseFallPeriod) {
+            Object.keys(riseFallPeriod).forEach(unit => {
+                const typedUnit = unit as keyof typeof riseFallPeriod;
+                const durationData = riseFallPeriod[typedUnit];
+                if(durationData && newLimits[typedUnit as DurationUnit]) {
+                   newLimits[typedUnit as DurationUnit] = { min: durationData.min, max: durationData.max };
+                }
+            });
         }
         setDurationLimits(newLimits);
 
