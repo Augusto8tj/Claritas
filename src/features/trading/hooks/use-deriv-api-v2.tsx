@@ -183,8 +183,8 @@ const getDurationInSeconds = (duration: number, unit: DurationUnit): number => {
 
 
 export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
-  const [demoToken, setDemoToken] = useState<string | null>(null);
-  const [realToken, setRealToken] = useState<string | null>(null);
+  const [demoToken, setDemoToken] = useState<string | null>('ljUGk6wbLSrtEDo');
+  const [realToken, setRealToken] = useState<string | null>('GU5MwbX1kwvSoyw');
   const [accountType, setAccountTypeState] = useState<AccountType>('demo');
   const [accountBalance, setAccountBalance] = useState<AccountBalance>({ balance: null, currency: null, loading: true });
   const [isLoading, setIsLoading] = useState(true);
@@ -215,12 +215,7 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
 
   useEffect(() => {
     try {
-      const storedDemoToken = localStorage.getItem(DERIV_DEMO_TOKEN_KEY);
-      const storedRealToken = localStorage.getItem(DERIV_REAL_TOKEN_KEY);
       const storedAccountType = localStorage.getItem(DERIV_ACCOUNT_TYPE_KEY) as AccountType | null;
-
-      if (storedDemoToken) setDemoToken(storedDemoToken);
-      if (storedRealToken) setRealToken(storedRealToken);
       if (storedAccountType) setAccountTypeState(storedAccountType);
       
     } catch (error) {
