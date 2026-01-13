@@ -57,18 +57,15 @@ service cloud.firestore {
          allow read, list, write: if isOwner(userId);
       }
       
-      // --- DADOS DE TRADING V1 (PERFORMANCE) ---
-      match /trading_data/{docId} {
+      // --- DADOS DE TRADING (TODAS AS VERSÕES) ---
+      // CORREÇÃO: Usar o nome exato do documento em vez de curinga
+      match /trading_data/robot_council_performance {
          allow read, write: if isOwner(userId);
       }
-      
-      // --- DADOS DE TRADING V2.5+ ---
-      match /trading_data_v2/{docId} {
+      match /trading_data_v2/robot_council_performance {
          allow read, write: if isOwner(userId);
       }
-      
-      // --- DADOS DE TRADING V3 ---
-      match /trading_data_v3/{docId} {
+      match /trading_data_v3/robot_council_performance {
          allow read, write: if isOwner(userId);
       }
       
