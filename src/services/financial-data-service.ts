@@ -230,13 +230,14 @@ export async function getFinancialInsights(userId: string): Promise<string[]> {
 
 // --- Trading Robot Performance ---
 
-export async function saveRobotPerformance(userId: string, performance: (RobotPerformance | EnhancedRobotPerformance)[]) {
+export async function saveRobotPerformance(userId: string, performance: (RobotPerformance | EnhancedRobotPerformance)[], version: 'v1' | 'v2' = 'v1') {
     if (!userId) return;
-    const docRef = doc(db, 'users', userId, 'trading_data', 'robot_council_performance');
+    const docRef = doc(db, 'users', userId, 'trading_data_v1', 'robot_council_performance');
     const sanitizedData = sanitizeForFirestore({
         updatedAt: new Date().toISOString(),
-        robots: performance,
+        performance: performance,
     });
+    // Agora usando setDocumentNonBlocking para evitar sobrecarga
     setDocumentNonBlocking(docRef, sanitizedData, { merge: true });
 };
 
@@ -245,12 +246,12 @@ export async function loadRobotPerformance(userId: string): Promise<EnhancedRobo
   if (!userId) {
     return null;
   }
-  const docRef = doc(db, 'users', userId, 'trading_data', 'robot_council_performance');
+  const docRef = doc(db, 'users', userId, 'trading_data_v1', 'robot_council_performance');
   try {
     const docSnap = await getDoc(docRef);
     if (docSnap.exists()) {
       const data = docSnap.data();
-      return (data.robots || []).map((robot: any) => ({
+      return (data.performance || []).map((robot: any) => ({
         ...robot,
         tradeHistory: robot.tradeHistory || [],
       }));

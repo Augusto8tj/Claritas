@@ -32,7 +32,7 @@ import { useStrategyEvolutionV1 } from './use-strategy-evolution-v1';
 import { errorEmitter, FirestorePermissionError } from '@/firebase';
 import { db } from '@/lib/firebase';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
-import { sanitizeForFirestore } from '@/services/utils/sanitize-for-firestore';
+import { saveRobotPerformance, loadRobotPerformance } from '@/services/financial-data-service';
 
 
 // --- TIPAGEM E TIPOS DE DADOS ---
@@ -50,7 +50,7 @@ type VirtualTrade = {
 };
 
 const VIRTUAL_STAKE = 1.0; 
-const FIRESTORE_SAVE_DEBOUNCE_MS = 10000; // 10 segundos
+const FIRESTORE_SAVE_INTERVAL_MS = 10000; // 10 segundos
 
 // --- FUNÇÕES AUXILIARES (HELPERS) ---
 const isCandle = (d: ChartData): d is CandleData => d !== null && 'close' in d;
@@ -92,7 +92,7 @@ const calculateRobotVote = (
         }
     };
 
-    if (!indicators) return { vote: 'HOLD', confidence: 0, optimalDuration, optimalDurationUnit, suggestedStake: 0 };
+    if (!indicators) return { vote: 'HOLD', confidence: 0, optimalDuration, optimalDurationUnit, suggestedStake: 0, reason: '' };
     
     if (robot.strategyType === 'RSI' && isValid(indicators.rsi)) {
         if (indicators.rsi! <= robot.weakBuyThreshold!) setVote('RISE', robot.weakConfidence);
@@ -213,7 +213,7 @@ const calculateRobotVote = (
         if (lastPrice < indicators.parabolicSAR!) setVote('FALL', robot.weakConfidence);
     }
 
-    return { vote, confidence, optimalDuration, optimalDurationUnit, suggestedStake };
+    return { vote, confidence, optimalDuration, optimalDurationUnit, suggestedStake, reason: '' };
 };
 
 
@@ -247,7 +247,7 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
   const councilExecutionRef = useRef({ isExecuting: false, sellingContracts: new Set<number>() });
   const { baseStake, baseDuration } = {baseStake: 1, baseDuration: 5};
   
-  const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const hasPendingChangesRef = useRef(false);
 
   useEffect(() => {
     const councilWithIds = evolvedStrategies.map((strat, index) => ({
@@ -260,16 +260,15 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
   useEffect(() => {
     if (!user || isAuthLoading) return;
     
-    const performanceDocRef = doc(db, 'users', user.uid, 'trading_data_v1', 'robot_council_performance');
-    getDoc(performanceDocRef)
-      .then(docSnap => {
-        if (docSnap.exists()) {
-          setRobotPerformance(docSnap.data().performance as RobotPerformance[]);
+    loadRobotPerformance(user.uid)
+      .then(storedPerformance => {
+        if (storedPerformance) {
+          setRobotPerformance(storedPerformance as RobotPerformance[]);
         }
       })
       .catch(error => {
         const permissionError = new FirestorePermissionError({
-            path: `users/${user.uid}/trading_data_v1/robot_council_performance`,
+            path: `users/${user.uid}/trading_data/robot_council_performance`,
             operation: 'get',
         });
         errorEmitter.emit('permission-error', permissionError);
@@ -283,42 +282,33 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
     setRobotPerformance(initialPerformance);
     virtualTradesRef.current = [];
     if (user) {
-        const docRef = doc(db, 'users', user.uid, 'trading_data_v1', 'robot_council_performance');
-        setDoc(docRef, sanitizeForFirestore({ performance: initialPerformance }), { merge: true });
+        saveRobotPerformance(user.uid, initialPerformance);
     }
   }, [strategyCouncil, activeSymbol, toast, user]);
-  
-  const savePerformanceToFirestore = useCallback(() => {
-    if (!user || !robotPerformance || robotPerformance.length === 0) return;
-    const docRef = doc(db, 'users', user.uid, 'trading_data_v1', 'robot_council_performance');
-    const dataToSave = { performance: robotPerformance };
-    setDoc(docRef, sanitizeForFirestore(dataToSave), { merge: true }).catch(error => {
-        console.error("Falha ao salvar desempenho no Firestore:", error);
-    });
-  }, [user, robotPerformance]);
 
+  // GUARDIÃO DE PERSISTÊNCIA - Inicia o relógio
   useEffect(() => {
-      if (saveTimeoutRef.current) {
-          clearTimeout(saveTimeoutRef.current);
-      }
-      saveTimeoutRef.current = setTimeout(() => {
-          savePerformanceToFirestore();
-      }, FIRESTORE_SAVE_DEBOUNCE_MS);
+    if (!isCouncilAutopilotOn || !user) return;
+    
+    const saveInterval = setInterval(() => {
+        if(hasPendingChangesRef.current) {
+            saveRobotPerformance(user.uid, robotPerformance);
+            hasPendingChangesRef.current = false;
+        }
+    }, FIRESTORE_SAVE_INTERVAL_MS);
 
-      return () => {
-          if (saveTimeoutRef.current) {
-              clearTimeout(saveTimeoutRef.current);
-          }
-      };
-  }, [robotPerformance, savePerformanceToFirestore]);
-  
+    return () => clearInterval(saveInterval);
+  }, [isCouncilAutopilotOn, user, robotPerformance]);
+
+  // GUARDIÃO DE PERSISTÊNCIA - Salva ao sair
   useEffect(() => {
     return () => {
-      // Save on unmount
-      savePerformanceToFirestore();
+        if (hasPendingChangesRef.current && user) {
+            saveRobotPerformance(user.uid, robotPerformance);
+        }
     };
-  }, [savePerformanceToFirestore]);
-
+  }, [user, robotPerformance]);
+  
   useEffect(() => {
     if (isCouncilAutopilotOn) resetArenaPerformance();
   }, [activeSymbol, isCouncilAutopilotOn, resetArenaPerformance]);
@@ -336,8 +326,7 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
     if (robotPerformance.length === 0) {
       const initialPerformance = (evolvedStrategies as RobotStrategy[]).map(robot => ({ id: robot.id, strategyType: robot.strategyType, strategy: robot, wins: 0, losses: 0, totalProfit: 0, winRate: 0 }));
       setRobotPerformance(initialPerformance);
-      const docRef = doc(db, 'users', user.uid, 'trading_data_v1', 'robot_council_performance');
-      await setDoc(docRef, sanitizeForFirestore({ performance: initialPerformance }), { merge: true });
+      await saveRobotPerformance(user.uid, initialPerformance);
     }
     toast({ title: 'Arena Virtual Iniciada', description: `${evolvedStrategies.length} robôs analistas ativos.` });
     setIsCouncilAutopilotOn(true);
@@ -345,6 +334,11 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
   }, [activeSymbol, user, toast, evolvedStrategies, robotPerformance.length]);
 
   const dissolveCouncil = () => {
+    // Save final performance before dissolving
+    if (hasPendingChangesRef.current && user) {
+        saveRobotPerformance(user.uid, robotPerformance);
+        hasPendingChangesRef.current = false;
+    }
     setStrategyCouncil([]);
     setCouncilVotes({});
     setIsCouncilAutopilotOn(false);
@@ -431,6 +425,7 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
     if (performanceChanged) {
         const updatedPerformance = Array.from(performanceMap.values());
         setRobotPerformance(updatedPerformance);
+        hasPendingChangesRef.current = true;
         evolveTrigger(updatedPerformance);
     }
 

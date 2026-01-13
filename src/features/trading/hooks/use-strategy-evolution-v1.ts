@@ -103,13 +103,13 @@ export function useStrategyEvolutionV1(initialStrategies: Omit<RobotStrategy, 'i
         // Ordena para encontrar os melhores e piores
         const sortedPerformance = [...performanceData].sort((a, b) => {
              // Prioriza taxa de acerto, depois lucro
-            const aTotal = a.wins + a.losses;
-            const bTotal = b.wins + b.losses;
-            const aWinRate = aTotal > 0 ? a.wins / aTotal : 0;
-            const bWinRate = bTotal > 0 ? b.wins / bTotal : 0;
+            const aTotal = (a.wins || 0) + (a.losses || 0);
+            const bTotal = (b.wins || 0) + (b.losses || 0);
+            const aWinRate = aTotal > 0 ? (a.wins || 0) / aTotal : 0;
+            const bWinRate = bTotal > 0 ? (b.wins || 0) / bTotal : 0;
 
             if (aWinRate !== bWinRate) return bWinRate - aWinRate;
-            return b.totalProfit - a.totalProfit;
+            return (b.totalProfit || 0) - (a.totalProfit || 0);
         });
 
         const elitePerformers = sortedPerformance.slice(0, ELITE_COUNT);
@@ -127,7 +127,7 @@ export function useStrategyEvolutionV1(initialStrategies: Omit<RobotStrategy, 'i
 
         const newEvent: EvolutionEvent = {
             timestamp: new Date(),
-            elitePerformers: elitePerformers.map(({ id, strategyType, totalProfit, wins, losses }) => ({ id, strategyType, totalProfit, wins, losses })),
+            elitePerformers: elitePerformers.map(({ id, strategyType, totalProfit, wins, losses }) => ({ id, strategyType, totalProfit: totalProfit || 0, wins: wins || 0, losses: losses || 0 })),
             mutations: [],
         };
         
