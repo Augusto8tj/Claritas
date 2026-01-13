@@ -1,0 +1,77 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Função auxiliar para verificar se o utilizador autenticado é o dono do documento
+    function isOwner(userId) {
+      return request.auth != null && request.auth.uid == userId;
+    }
+    
+    // Função auxiliar para operações de update/delete, garantindo que o documento existe
+    function isExistingOwner(userId) {
+      return isOwner(userId) && resource != null;
+    }
+
+    match /users/{userId} {
+      // Regra para o próprio documento de perfil do utilizador
+      allow get: if isOwner(userId);
+      allow create: if isOwner(userId);
+      allow update: if isOwner(userId);
+
+      // --- TRANSAÇÕES (Já estava a funcionar) ---
+      match /transactions/{transactionId} {
+        allow read, list: if isOwner(userId);
+        allow create: if isOwner(userId) && request.resource.data.userId == userId;
+        allow update, delete: if isExistingOwner(userId);
+      }
+
+      // --- METAS / GOALS (O motivo do erro atual) ---
+      // Este bloco é OBRIGATÓRIO para o MainGoal funcionar
+      match /goals/{goalId} {
+        allow read, list: if isOwner(userId);
+        allow create: if isOwner(userId) && request.resource.data.userId == userId;
+        allow update, delete: if isExistingOwner(userId);
+      }
+      
+      // --- financialGoals (CORREÇÃO DE ERRO ANTERIOR) ---
+      // Garante que a coleção com o nome correto também tenha as regras
+       match /financialGoals/{goalId} {
+        allow read, list: if isOwner(userId);
+        allow create: if isOwner(userId) && request.resource.data.userId == userId;
+        allow update, delete: if isExistingOwner(userId);
+      }
+
+      // --- BUDGET / SETTINGS ---
+      // Necessário para getBudgetLimits
+      match /settings/{settingId} {
+        allow read, write: if isOwner(userId);
+      }
+      
+      // --- LOGS DE DECISÃO V2 ---
+      match /decision_logs/{logId} {
+         allow read, list, write: if isOwner(userId);
+      }
+      
+      // --- LOGS DE DECISÃO V3 ---
+      match /decision_logs_v3/{logId} {
+         allow read, list, write: if isOwner(userId);
+      }
+      
+      // --- DADOS DE TRADING (TODAS AS VERSÕES) ---
+      match /trading_data/{docId} {
+         allow read, write: if isOwner(userId);
+      }
+      match /trading_data_v2/{docId} {
+         allow read, write: if isOwner(userId);
+      }
+      match /trading_data_v3/{docId} {
+         allow read, write: if isOwner(userId);
+      }
+      
+      // --- DIAGNÓSTICO ---
+      match /diagnostico/{docId} {
+         allow read, write: if isOwner(userId);
+      }
+    }
+  }
+}

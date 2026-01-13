@@ -8,17 +8,21 @@
 import { db } from '@/lib/firebase';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import type { RobotPerformance } from '@/lib/types';
+import { sanitizeForFirestore } from './utils/sanitize-for-firestore';
 
 export async function saveRobotPerformance(userId: string, performanceData: RobotPerformance[]): Promise<void> {
-    const performanceDocRef = doc(db, 'users', userId, 'trading_data', 'robotPerformance');
-    const dataToSave = { performance: performanceData };
+    const performanceDocRef = doc(db, 'users', userId, 'trading_data', 'robot_council_performance');
+    const dataToSave = { 
+        updatedAt: new Date().toISOString(),
+        performance: sanitizeForFirestore(performanceData) 
+    };
 
     // No servidor, podemos usar o setDoc diretamente. Erros serão propagados.
     await setDoc(performanceDocRef, dataToSave, { merge: true });
 }
 
 export async function loadRobotPerformance(userId: string): Promise<RobotPerformance[] | null> {
-    const performanceDocRef = doc(db, 'users', userId, 'trading_data', 'robotPerformance');
+    const performanceDocRef = doc(db, 'users', userId, 'trading_data', 'robot_council_performance');
     
     try {
         const docSnap = await getDoc(performanceDocRef);

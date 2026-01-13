@@ -260,7 +260,7 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
       })
       .catch(error => {
         const permissionError = new FirestorePermissionError({
-            path: `users/${user.uid}/trading_data/robotPerformance`,
+            path: `users/${user.uid}/trading_data/robot_council_performance`,
             operation: 'get',
         });
         errorEmitter.emit('permission-error', permissionError);
