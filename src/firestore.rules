@@ -47,29 +47,9 @@ service cloud.firestore {
         allow read, write: if isOwner(userId);
       }
       
-      // --- LOGS DE DECISÃO V2 ---
-      match /decision_logs/{logId} {
-         allow read, list, write: if isOwner(userId);
-      }
-      
-      // --- LOGS DE DECISÃO V3 ---
-      match /decision_logs_v3/{logId} {
-         allow read, list, write: if isOwner(userId);
-      }
-      
-      // --- DADOS DE TRADING (TODAS AS VERSÕES) ---
-      match /trading_data/{docId} {
-         allow read, write: if isOwner(userId);
-      }
-      match /trading_data_v2/{docId} {
-         allow read, write: if isOwner(userId);
-      }
-      match /trading_data_v3/{docId} {
-         allow read, write: if isOwner(userId);
-      }
-      
-      // --- DIAGNÓSTICO ---
-      match /diagnostico/{docId} {
+      // --- DADOS DE TRADING (V1), LOGS (V2), EVOLUÇÃO (V3), DIAGNÓSTICO ---
+      // Abordagem consolidada para proteger todas as subcoleções de dados do utilizador.
+      match /{collection}/{docId} {
          allow read, write: if isOwner(userId);
       }
     }

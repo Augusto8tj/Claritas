@@ -11,6 +11,7 @@ import type { RobotPerformance } from '@/lib/types';
 import { sanitizeForFirestore } from './utils/sanitize-for-firestore';
 
 export async function saveRobotPerformance(userId: string, performanceData: RobotPerformance[]): Promise<void> {
+    if (!userId) return;
     const performanceDocRef = doc(db, 'users', userId, 'trading_data', 'robot_council_performance');
     const dataToSave = { 
         updatedAt: new Date().toISOString(),
@@ -22,6 +23,9 @@ export async function saveRobotPerformance(userId: string, performanceData: Robo
 }
 
 export async function loadRobotPerformance(userId: string): Promise<RobotPerformance[] | null> {
+    if (!userId) {
+        return null;
+    }
     const performanceDocRef = doc(db, 'users', userId, 'trading_data', 'robot_council_performance');
     
     try {
