@@ -654,14 +654,13 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
     setPriceTicks([]); 
 
     try {
-        // Obter os limites de duração atualizados para o ativo
         const contractsRes: any = await makeRequest({ contracts_for: symbol });
         const availableContracts = contractsRes.contracts_for?.available || [];
         const riseFallContract = availableContracts.find((c: any) => c.contract_type === 'CALL' || c.contract_type === 'RISE');
         
         const newLimits: DurationLimits = { t: {min:0, max:0}, s: {min:0, max:0}, m: {min:0, max:0}, h: {min:0, max:0}, d: {min:0, max:0} };
 
-        if (riseFallContract) {
+        if(riseFallContract) {
             const units: DurationUnit[] = ['t', 's', 'm', 'h', 'd'];
             units.forEach(unit => {
                 if (riseFallContract.min_contract_duration.endsWith(unit)) {

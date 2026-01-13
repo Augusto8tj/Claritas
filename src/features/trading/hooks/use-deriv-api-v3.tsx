@@ -132,44 +132,6 @@ const addDataPoint = (prevData: ChartData[], newPoint: ChartData): ChartData[] =
     return data;
 };
 
-const getDurationLimitsForAsset = (asset: Asset | undefined): DurationLimits => {
-    const defaultLimits: DurationLimits = {
-        t: { min: 5, max: 10 },
-        s: { min: 15, max: 365 * 24 * 3600 },
-        m: { min: 1, max: 365 * 24 * 60 },
-        h: { min: 1, max: 365 * 24 },
-        d: { min: 1, max: 365 },
-    };
-
-    if (!asset || !asset.minDuration) return defaultLimits;
-
-    // Aplica regras de negócio específicas por mercado
-    switch(asset.market) {
-        case 'forex':
-        case 'commodities':
-        case 'stock_index':
-            // Estes mercados não permitem negociações em ticks
-            defaultLimits.t.min = 0;
-            defaultLimits.t.max = 0;
-            // O tempo mínimo é em segundos ou minutos (ex: 1m)
-            if (asset.minDuration.endsWith('s')) {
-                defaultLimits.s.min = Math.max(defaultLimits.s.min, parseInt(asset.minDuration, 10));
-            } else if (asset.minDuration.endsWith('m')) {
-                defaultLimits.s.min = Math.max(defaultLimits.s.min, parseInt(asset.minDuration, 10) * 60);
-            }
-            break;
-        
-        case 'synthetic_index':
-            // Sintéticos têm a maior flexibilidade
-             if (asset.minDuration.endsWith('t')) {
-                defaultLimits.t.min = Math.max(defaultLimits.t.min, parseInt(asset.minDuration, 10));
-            }
-            break;
-    }
-
-    return defaultLimits;
-};
-
 const getDurationInSeconds = (duration: number, unit: DurationUnit): number => {
     switch (unit) {
         case 't': return duration * 2;
@@ -205,6 +167,7 @@ export const DerivApiProviderV3 = ({ children }: { children: ReactNode }) => {
   const activeSubscriptionIdRef = useRef<string | null>(null);
   const [tradeAnnotations, setTradeAnnotations] = useState<TradeAnnotation[]>([]);
   const [dataVersion, setDataVersion] = useState(0); 
+  const [durationLimits, setDurationLimits] = useState<DurationLimits | null>(null);
 
   const wsRef = useRef<WebSocket | null>(null);
   const [isConnected, setIsConnected] = useState(false);
@@ -225,15 +188,6 @@ export const DerivApiProviderV3 = ({ children }: { children: ReactNode }) => {
   }, []);
   
   const activeToken = accountType === 'demo' ? demoToken : realToken;
-
-  const durationLimits = useMemo(() => {
-    if (!activeSymbol || assetGroups.length === 0) {
-      return getDurationLimitsForAsset(undefined);
-    }
-    const allAssets = assetGroups.flatMap(g => g.options);
-    const asset = allAssets.find(a => a.value === activeSymbol);
-    return getDurationLimitsForAsset(asset);
-  }, [activeSymbol, assetGroups]);
 
   useEffect(() => {
     if (toastQueue.length > 0) {
@@ -700,6 +654,25 @@ export const DerivApiProviderV3 = ({ children }: { children: ReactNode }) => {
     setPriceTicks([]); 
 
     try {
+        const contractsRes: any = await makeRequest({ contracts_for: symbol });
+        const availableContracts = contractsRes.contracts_for?.available || [];
+        const riseFallContract = availableContracts.find((c: any) => c.contract_type === 'CALL' || c.contract_type === 'RISE');
+        
+        const newLimits: DurationLimits = { t: {min:0, max:0}, s: {min:0, max:0}, m: {min:0, max:0}, h: {min:0, max:0}, d: {min:0, max:0} };
+
+        if(riseFallContract) {
+            const units: DurationUnit[] = ['t', 's', 'm', 'h', 'd'];
+            units.forEach(unit => {
+                if (riseFallContract.min_contract_duration.endsWith(unit)) {
+                    newLimits[unit] = {
+                        min: parseInt(riseFallContract.min_contract_duration),
+                        max: parseInt(riseFallContract.max_contract_duration)
+                    };
+                }
+            });
+        }
+        setDurationLimits(newLimits);
+
         const historyStyle = chartType === 'Candle' ? 'candles' : 'ticks';
         const history = await getHistoricalData(symbol, historyStyle, 1000, timePeriod);
         
