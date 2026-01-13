@@ -32,7 +32,7 @@ import type {
 } from '@/lib/types';
 import { calculateAllIndicators, type Indicators } from '@/services/indicator-service-v2';
 import { useAuth } from '@/features/auth/hooks/use-auth';
-import { saveRobotPerformance, loadRobotPerformance, saveTradeDecision } from '@/services/financial-data-service';
+import { saveRobotPerformance, loadRobotPerformance, saveTradeDecision, saveEvolutionHistory } from '@/services/financial-data-service';
 import { useStrategyEvolution } from './use-strategy-evolution-v2';
 import { initialCouncilStrategies } from '@/services/council-strategies';
 import {
@@ -276,18 +276,7 @@ export function useRobotCouncilV2(
   const { operationsLog, executeTrade, timePeriod, isConnected, durationLimits, sellContract } = useDerivApiV2();
   const { user, loading: isAuthLoading } = useAuth();
   const { toast } = useToast();
-  const { 
-    evolvedStrategies, 
-    evolveTrigger, 
-    evolutionHistory,
-    isEvolving,
-    evolutionProgress,
-    currentGeneration,
-    tradesUntilEvolution,
-    tradeCounts,
-    resetEvolutionHistory,
-    deleteSingleEvolution,
-  } = useStrategyEvolution(initialCouncilStrategies);
+  const { evolvedStrategies, evolveTrigger, evolutionHistory } = useStrategyEvolution(initialCouncilStrategies);
   
   const executionIdRef = useRef(0);
   const processedRealTradesRef = useRef<Set<number>>(new Set());
@@ -351,6 +340,9 @@ export function useRobotCouncilV2(
     isExecuting: false, sellingContracts: new Set()
   });
 
+  // Flag to track if there are pending changes to save
+  const hasPendingChangesRef = useRef(false);
+
   useEffect(() => {
     setStrategyCouncil(evolvedStrategies as RobotStrategy[]);
   }, [evolvedStrategies]);
@@ -370,6 +362,7 @@ export function useRobotCouncilV2(
     setRobotPerformance(initialPerformance);
     virtualTradesRef.current = [];
     setVirtualTradeCount(0); // Reseta o contador
+    hasPendingChangesRef.current = true;
   }, [strategyCouncil]);
 
   useEffect(() => {
@@ -415,6 +408,38 @@ export function useRobotCouncilV2(
     if (!lastCandleEpoch) return null;
     return calculateAllIndicators(validCandles, strategyCouncil, timePeriod, { duration: 5, unit: 'm' });
   }, [validCandles, timePeriod, strategyCouncil]);
+
+
+  // SAVE ON UNMOUNT (Guarda de Segurança)
+  useEffect(() => {
+    return () => {
+      if (user && hasPendingChangesRef.current) {
+        console.log("[Auto-Save] Salvando dados de desempenho ao desmontar o componente...");
+        saveRobotPerformance(user.uid, robotPerformanceRef.current);
+        if (evolutionHistory.length > 0) {
+          saveEvolutionHistory(user.uid, evolutionHistory, 'v2');
+        }
+      }
+    };
+  }, [user, evolutionHistory]); // Adicionado evolutionHistory aqui
+
+  // SAVE PERIODICAMENTE (Relógio de Persistência)
+  useEffect(() => {
+    const PERSISTENCE_INTERVAL_MS = 15000; // 15 segundos
+    
+    const saveInterval = setInterval(() => {
+      if (isCouncilAutopilotOn && hasPendingChangesRef.current && user) {
+        console.log(`[Auto-Save] Salvando dados... ${robotPerformanceRef.current.length} robôs e ${evolutionHistory.length} eventos.`);
+        saveRobotPerformance(user.uid, robotPerformanceRef.current);
+        if (evolutionHistory.length > 0) {
+          saveEvolutionHistory(user.uid, evolutionHistory, 'v2');
+        }
+        hasPendingChangesRef.current = false;
+      }
+    }, PERSISTENCE_INTERVAL_MS);
+
+    return () => clearInterval(saveInterval);
+  }, [isCouncilAutopilotOn, user, evolutionHistory]);
 
 
   const runCouncilCycle = useCallback(() => {
@@ -596,9 +621,7 @@ export function useRobotCouncilV2(
         if (performanceChanged) {
             const updatedPerformance = Array.from(robotPerformanceRef.current);
             setRobotPerformance(updatedPerformance);
-            if (user) {
-                saveRobotPerformance(user.uid, updatedPerformance);
-            }
+            hasPendingChangesRef.current = true;
         }
         
         let riseSum = 0, fallSum = 0, totalWeight = 0;

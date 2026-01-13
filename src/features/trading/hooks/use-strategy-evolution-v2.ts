@@ -1,4 +1,4 @@
-// /src/features/trading/hooks/use-strategy-evolution-v2.ts
+// src/features/trading/hooks/use-strategy-evolution-v2.ts
 'use client';
 
 import { useState, useCallback, useRef } from 'react';
