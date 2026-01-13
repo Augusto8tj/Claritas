@@ -32,6 +32,7 @@ import { useStrategyEvolutionV1 } from './use-strategy-evolution-v1';
 import { errorEmitter, FirestorePermissionError } from '@/firebase';
 import { db } from '@/lib/firebase';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { sanitizeForFirestore } from '@/services/utils/sanitize-for-firestore';
 
 
 // --- TIPAGEM E TIPOS DE DADOS ---
@@ -281,7 +282,7 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
     virtualTradesRef.current = [];
     if (user) {
         const docRef = doc(db, 'users', user.uid, 'trading_data_v1', 'robot_council_performance');
-        setDoc(docRef, { performance: initialPerformance }, { merge: true });
+        setDoc(docRef, sanitizeForFirestore({ performance: initialPerformance }), { merge: true });
     }
   }, [strategyCouncil, activeSymbol, toast, user]);
 
@@ -303,7 +304,7 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
       const initialPerformance = (evolvedStrategies as RobotStrategy[]).map(robot => ({ id: robot.id, strategyType: robot.strategyType, strategy: robot, wins: 0, losses: 0, totalProfit: 0, winRate: 0 }));
       setRobotPerformance(initialPerformance);
       const docRef = doc(db, 'users', user.uid, 'trading_data_v1', 'robot_council_performance');
-      await setDoc(docRef, { performance: initialPerformance }, { merge: true });
+      await setDoc(docRef, sanitizeForFirestore({ performance: initialPerformance }), { merge: true });
     }
     toast({ title: 'Arena Virtual Iniciada', description: `${evolvedStrategies.length} robôs analistas ativos.` });
     setIsCouncilAutopilotOn(true);
@@ -400,7 +401,7 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
         evolveTrigger(updatedPerformance);
         if(user) {
             const docRef = doc(db, 'users', user.uid, 'trading_data_v1', 'robot_council_performance');
-            setDoc(docRef, { performance: updatedPerformance }, { merge: true });
+            setDoc(docRef, sanitizeForFirestore({ performance: updatedPerformance }), { merge: true });
         }
     }
 
