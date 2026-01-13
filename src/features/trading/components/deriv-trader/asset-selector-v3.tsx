@@ -20,6 +20,7 @@ import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { Badge } from "@/components/ui/badge";
 
 
 interface AssetSelectorProps {
@@ -38,6 +39,13 @@ const marketFilters = [
     { label: "Índices", value: "stock_index" },
     { label: "Cripto", value: "cryptocurrency" },
 ];
+
+const formatMinDuration = (duration: string): string => {
+    if (duration.endsWith('t')) return `${duration.slice(0, -1)} Ticks`;
+    if (duration.endsWith('s')) return `${duration.slice(0, -1)} Seg`;
+    if (duration.endsWith('m')) return `${duration.slice(0, -1)} Min`;
+    return duration;
+};
 
 export function AssetSelectorV3({ selectedAsset, onAssetChange, assetGroups, isAssetsLoading }: AssetSelectorProps) {
   const [open, setOpen] = useState(false);
@@ -193,7 +201,7 @@ export function AssetSelectorV3({ selectedAsset, onAssetChange, assetGroups, isA
                     }}
                   >
                      <div className="flex items-center justify-between w-full">
-                        <div className="flex items-center">
+                        <div className="flex items-center gap-2">
                             <Check
                                 className={cn(
                                 "mr-2 h-4 w-4",
@@ -201,6 +209,9 @@ export function AssetSelectorV3({ selectedAsset, onAssetChange, assetGroups, isA
                                 )}
                             />
                             <span>{option.label}</span>
+                             <Badge variant="outline" className="text-[10px] font-mono">
+                                Min: {formatMinDuration(option.minDuration)}
+                            </Badge>
                         </div>
                         <TooltipProvider>
                             <Tooltip>
