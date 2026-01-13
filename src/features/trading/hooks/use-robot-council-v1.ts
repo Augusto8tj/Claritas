@@ -28,9 +28,11 @@ import type { Indicators } from '@/services/indicator-service-v1';
 import { calculateAllIndicators } from '@/services/indicator-service-v1';
 import { initialCouncilStrategies } from '@/services/council-strategies';
 import { useAuth } from '@/features/auth/hooks/use-auth';
-import { saveRobotPerformance, loadRobotPerformance } from '@/services/trading-data-service-v1';
 import { useStrategyEvolutionV1 } from './use-strategy-evolution-v1';
 import { errorEmitter, FirestorePermissionError } from '@/firebase';
+import { db } from '@/lib/firebase';
+import { doc, getDoc, setDoc } from 'firebase/firestore';
+
 
 // --- TIPAGEM E TIPOS DE DADOS ---
 export type RobotVote = RobotVoteType;
@@ -254,13 +256,17 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
 
   useEffect(() => {
     if (!user || isAuthLoading) return;
-    loadRobotPerformance(user.uid)
-      .then(stored => {
-        if (stored) setRobotPerformance(stored);
+    
+    const performanceDocRef = doc(db, 'users', user.uid, 'trading_data_v1', 'robot_council_performance');
+    getDoc(performanceDocRef)
+      .then(docSnap => {
+        if (docSnap.exists()) {
+          setRobotPerformance(docSnap.data().performance as RobotPerformance[]);
+        }
       })
       .catch(error => {
         const permissionError = new FirestorePermissionError({
-            path: `users/${user.uid}/trading_data/robot_council_performance`,
+            path: `users/${user.uid}/trading_data_v1/robot_council_performance`,
             operation: 'get',
         });
         errorEmitter.emit('permission-error', permissionError);
@@ -273,7 +279,10 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
     const initialPerformance: RobotPerformance[] = strategyCouncil.map(robot => ({ id: robot.id, strategyType: robot.strategyType, strategy: robot, wins: 0, losses: 0, totalProfit: 0, winRate: 0 }));
     setRobotPerformance(initialPerformance);
     virtualTradesRef.current = [];
-    if (user) saveRobotPerformance(user.uid, initialPerformance);
+    if (user) {
+        const docRef = doc(db, 'users', user.uid, 'trading_data_v1', 'robot_council_performance');
+        setDoc(docRef, { performance: initialPerformance }, { merge: true });
+    }
   }, [strategyCouncil, activeSymbol, toast, user]);
 
   useEffect(() => {
@@ -293,7 +302,8 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
     if (robotPerformance.length === 0) {
       const initialPerformance = (evolvedStrategies as RobotStrategy[]).map(robot => ({ id: robot.id, strategyType: robot.strategyType, strategy: robot, wins: 0, losses: 0, totalProfit: 0, winRate: 0 }));
       setRobotPerformance(initialPerformance);
-      await saveRobotPerformance(user.uid, initialPerformance);
+      const docRef = doc(db, 'users', user.uid, 'trading_data_v1', 'robot_council_performance');
+      await setDoc(docRef, { performance: initialPerformance }, { merge: true });
     }
     toast({ title: 'Arena Virtual Iniciada', description: `${evolvedStrategies.length} robôs analistas ativos.` });
     setIsCouncilAutopilotOn(true);
@@ -388,7 +398,10 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
         const updatedPerformance = Array.from(performanceMap.values());
         setRobotPerformance(updatedPerformance);
         evolveTrigger(updatedPerformance);
-        if(user) saveRobotPerformance(user.uid, updatedPerformance);
+        if(user) {
+            const docRef = doc(db, 'users', user.uid, 'trading_data_v1', 'robot_council_performance');
+            setDoc(docRef, { performance: updatedPerformance }, { merge: true });
+        }
     }
 
     const newVotes: CouncilVotes = {};
