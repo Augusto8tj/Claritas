@@ -660,16 +660,20 @@ export const DerivApiProviderV3 = ({ children }: { children: ReactNode }) => {
         
         const newLimits: DurationLimits = { t: {min:0, max:0}, s: {min:0, max:0}, m: {min:0, max:0}, h: {min:0, max:0}, d: {min:0, max:0} };
 
-        if(riseFallContract) {
+        if (riseFallContract) {
             const units: DurationUnit[] = ['t', 's', 'm', 'h', 'd'];
-            units.forEach(unit => {
-                if (riseFallContract.min_contract_duration.endsWith(unit)) {
-                    newLimits[unit] = {
-                        min: parseInt(riseFallContract.min_contract_duration),
-                        max: parseInt(riseFallContract.max_contract_duration)
-                    };
-                }
-            });
+            const parseDuration = (durationStr: string) => {
+                const unit = durationStr.slice(-1) as DurationUnit;
+                const value = parseInt(durationStr.slice(0, -1), 10);
+                return { value: isNaN(value) ? 1 : value, unit };
+            };
+        
+            const minDur = parseDuration(riseFallContract.min_contract_duration);
+            const maxDur = parseDuration(riseFallContract.max_contract_duration);
+        
+            if (units.includes(minDur.unit)) {
+                newLimits[minDur.unit] = { min: minDur.value, max: maxDur.value };
+            }
         }
         setDurationLimits(newLimits);
 
