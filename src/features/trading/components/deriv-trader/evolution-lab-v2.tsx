@@ -4,11 +4,10 @@
 import React from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Dna, TrendingUp, ChevronsRight, Award } from 'lucide-react';
-import type { EvolutionEvent } from '@/features/trading/hooks/use-strategy-evolution-v2';
-import { Badge } from '@/components/ui/badge';
-import { cn } from '@/lib/utils';
-import { AlertCircle } from 'lucide-react';
+import { Dna, TrendingUp, ChevronsRight, Award, Trash2, Loader2, AlertCircle } from 'lucide-react';
+import type { EvolutionEvent, TradeCounts } from '@/features/trading/hooks/use-strategy-evolution-v2';
+import { Button } from '@/components/ui/button';
+import { Progress } from '@/components/ui/progress';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -20,8 +19,8 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { Button } from '@/components/ui/button';
-import { Trash2 } from 'lucide-react';
+
+// Carregado do arquivo de configuração para garantir consistência
 import { EVOLUTION_CONFIG } from '@/features/trading/config/trader-config';
 
 interface EvolutionLabV2Props {
@@ -29,9 +28,24 @@ interface EvolutionLabV2Props {
   resetEvolutionHistory?: () => void;
   deleteSingleEvolution?: (timestamp: string) => void;
   currentGeneration?: number;
+  tradesUntilEvolution?: number;
+  tradeCounts?: TradeCounts;
+  evolveTrigger?: () => void; // Para o botão de debug
+  isEvolving?: boolean;
+  evolutionProgress?: number;
 }
 
-export function EvolutionLabV2({ history, resetEvolutionHistory, deleteSingleEvolution, currentGeneration = 0 }: EvolutionLabV2Props) {
+export function EvolutionLabV2({ 
+    history, 
+    resetEvolutionHistory, 
+    deleteSingleEvolution, 
+    currentGeneration = 0,
+    tradesUntilEvolution = EVOLUTION_CONFIG.TRIGGER_THRESHOLD,
+    tradeCounts = { real: 0, virtual: 0, total: 0 },
+    evolveTrigger,
+    isEvolving = false,
+    evolutionProgress = 0,
+}: EvolutionLabV2Props) {
   return (
     <Card>
       <CardHeader>
@@ -42,17 +56,26 @@ export function EvolutionLabV2({ history, resetEvolutionHistory, deleteSingleEvo
                     Laboratório de Evolução V2.5
                 </CardTitle>
                 <CardDescription>
-                Histórico de mutações genéticas do conselho de robôs. A evolução ocorre a cada {EVOLUTION_CONFIG.TRIGGER_THRESHOLD} trades.
+                A evolução ocorre a cada {EVOLUTION_CONFIG.TRIGGER_THRESHOLD} trades virtuais ou a cada trade real.
                 </CardDescription>
             </div>
-             <div className="text-right">
+            <div className="text-right space-y-2">
                 <div className="text-2xl font-bold text-purple-600">Geração {currentGeneration}</div>
+                 <div className="text-xs text-muted-foreground">
+                    {tradesUntilEvolution > 0 ? (
+                    <span>
+                        🔄 {tradesUntilEvolution} trades até evolução ({tradeCounts.real}R + {tradeCounts.virtual}V)
+                    </span>
+                    ) : (
+                    <span>✅ Limite atingido</span>
+                    )}
+                </div>
                  {resetEvolutionHistory && (
                     <AlertDialog>
                         <AlertDialogTrigger asChild>
-                            <Button variant="destructive" size="sm" className="mt-2">
-                                <Trash2 className="mr-2 h-4 w-4"/>
-                                Limpar Histórico
+                            <Button variant="outline" size="sm" className="h-7 text-xs">
+                                <Trash2 className="mr-1.5 h-3 w-3"/>
+                                Resetar Histórico
                             </Button>
                         </AlertDialogTrigger>
                         <AlertDialogContent>
@@ -73,11 +96,20 @@ export function EvolutionLabV2({ history, resetEvolutionHistory, deleteSingleEvo
                  )}
             </div>
         </div>
+        {isEvolving && (
+             <div className="space-y-2 pt-2">
+              <div className="flex items-center justify-between text-sm">
+                <span className="font-medium text-purple-600">Evoluindo população...</span>
+                <span className="text-muted-foreground">{evolutionProgress}%</span>
+              </div>
+              <Progress value={evolutionProgress} className="h-2" />
+            </div>
+        )}
       </CardHeader>
       <CardContent>
         <ScrollArea className="h-[400px] pr-4">
           {history.length === 0 ? (
-            <div className="flex h-full items-center justify-center text-muted-foreground text-center">
+            <div className="flex h-full items-center justify-center text-center text-muted-foreground">
                  <div className="flex flex-col items-center gap-2">
                     <AlertCircle className="h-10 w-10 text-muted-foreground/50"/>
                     <span>Aguardando o primeiro ciclo de evolução...</span>
@@ -88,7 +120,7 @@ export function EvolutionLabV2({ history, resetEvolutionHistory, deleteSingleEvo
               {history.map((event, index) => (
                 <div key={index} className="space-y-4 rounded-lg border p-4">
                   <div className="flex justify-between items-center">
-                    <h3 className="font-semibold text-primary">Geração {history.length - index}</h3>
+                    <h3 className="font-semibold text-primary">Geração {event.generation}</h3>
                     <span className="text-xs text-muted-foreground">
                       {event.timestamp.toLocaleString('pt-BR')}
                     </span>
@@ -110,11 +142,10 @@ export function EvolutionLabV2({ history, resetEvolutionHistory, deleteSingleEvo
                     <h4 className="text-sm font-semibold mb-2 flex items-center gap-2"><ChevronsRight className="h-4 w-4 text-purple-500"/>Mutações Realizadas</h4>
                      <div className="space-y-2 text-xs">
                         {event.mutations.map(m => (
-                            <div key={m.replacedBotId} className="flex items-center gap-2 rounded bg-muted/50 p-1.5 px-2">
-                                <span className="line-through text-red-500">{m.replacedBotType}</span>
+                            <div key={m.robotId} className="flex items-center gap-2 rounded bg-muted/50 p-1.5 px-2">
+                                <span className="line-through text-red-500">{m.robotType}</span>
                                 <TrendingUp className="h-3 w-3 text-muted-foreground" />
-                                <span className="font-semibold text-green-600">{m.parentBotType}</span>
-                                <Badge variant="outline" className="ml-auto">{m.analysis}</Badge>
+                                <span className="font-semibold text-green-600">{m.parentType}</span>
                             </div>
                         ))}
                      </div>
