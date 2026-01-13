@@ -213,11 +213,7 @@ export const DerivApiProviderV1 = ({ children }: { children: ReactNode }) => {
       const storedAccountType = localStorage.getItem(DERIV_ACCOUNT_TYPE_KEY) as AccountType | null;
 
       if (storedDemoToken) setDemoToken(storedDemoToken);
-      else setDemoToken("ljUGk6wbLSrtEDo"); // Default Demo Key
-
       if (storedRealToken) setRealToken(storedRealToken);
-      else setRealToken("GU5MwbX1kwvSoyw"); // Default Real Key
-      
       if (storedAccountType) setAccountTypeState(storedAccountType);
     } catch (error) {
       console.error("Failed to access localStorage:", error);
@@ -241,7 +237,7 @@ export const DerivApiProviderV1 = ({ children }: { children: ReactNode }) => {
     return new Promise((resolve, reject) => {
         const ws = wsRef.current;
         if (!ws || ws.readyState !== WebSocket.OPEN) {
-            return reject(new Error("WebSocket is not connected."));
+            return reject(new Error("WebSocket não está conectado. Verifique o token e a conexão."));
         }
         
         const req_id = Date.now() + Math.floor(Math.random() * 1000000);
@@ -250,21 +246,18 @@ export const DerivApiProviderV1 = ({ children }: { children: ReactNode }) => {
         const timeoutId = setTimeout(() => {
             if (promisesRef.current.has(String(req_id))) {
                 promisesRef.current.delete(String(req_id));
-                reject(new Error(`Request timed out for req_id: ${req_id}`));
+                reject(new Error(`O pedido à API expirou (req_id: ${req_id}). O token pode ser inválido ou a rede está lenta.`));
             }
         }, 15000);
-        
-        const originalResolve = resolve;
-        const originalReject = reject;
         
         promisesRef.current.set(String(req_id), {
             resolve: (value: any) => {
                 clearTimeout(timeoutId);
-                originalResolve(value);
+                resolve(value);
             },
             reject: (reason: any) => {
                 clearTimeout(timeoutId);
-                originalReject(reason);
+                reject(reason);
             }
         });
 
@@ -519,13 +512,14 @@ const subscribeToMarketData = useCallback(async (symbol: string) => {
             const reqId = response.req_id;
             if (reqId && promisesRef.current.has(String(reqId))) {
                 const promise = promisesRef.current.get(String(reqId));
-                promisesRef.current.delete(String(reqId));
-                if (response.error) {
-                    const errorMessage = response.error.message || `Unknown API error. Code: ${response.error.code || 'N/A'}`;
-                    const errorDetails = JSON.stringify(response.error);
-                    promise?.reject(new Error(`${errorMessage} | Details: ${errorDetails}`));
-                } else {
-                    promise?.resolve(response);
+                if (promise) {
+                    if (response.error) {
+                        const errorMessage = response.error.message || `Unknown API error. Code: ${response.error.code || 'N/A'}`;
+                        promise.reject(new Error(`${errorMessage}`));
+                    } else {
+                        promise.resolve(response);
+                    }
+                    promisesRef.current.delete(String(reqId));
                 }
                 return;
             }
@@ -782,7 +776,8 @@ const subscribeToMarketData = useCallback(async (symbol: string) => {
     sellContract,
     clearActiveContracts,
     tradeAnnotations,
-    durationLimits
+    durationLimits,
+    getHistoricalData
   };
 
   return (
