@@ -41,6 +41,7 @@ const marketFilters = [
 ];
 
 const formatMinDuration = (duration: string): string => {
+    if (!duration) return "N/A";
     if (duration.endsWith('t')) return `${duration.slice(0, -1)} Ticks`;
     if (duration.endsWith('s')) return `${duration.slice(0, -1)} Seg`;
     if (duration.endsWith('m')) return `${duration.slice(0, -1)} Min`;
@@ -234,3 +235,5 @@ export function AssetSelectorV3({ selectedAsset, onAssetChange, assetGroups, isA
     </Popover>
   );
 }
+
+    

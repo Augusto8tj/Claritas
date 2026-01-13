@@ -445,3 +445,5 @@ export default function DerivTraderInterfaceV2({ symbol }: DerivTraderInterfaceV
     </div>
   );
 }
+
+    
