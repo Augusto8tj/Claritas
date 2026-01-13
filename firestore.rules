@@ -2,41 +2,30 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Função auxiliar para verificar se o utilizador autenticado é o dono do documento
-    function isOwner(userId) {
-      return request.auth != null && request.auth.uid == userId;
-    }
-
     match /users/{userId} {
-      // Regra para o próprio documento de perfil do utilizador
-      allow get, create, update: if isOwner(userId);
+      // O utilizador pode ler e escrever no seu próprio documento de perfil.
+      allow read, write: if request.auth.uid == userId;
 
-      // --- REGRAS EXPLÍCITAS PARA SUBCOLEÇÕES ---
-
-      // Regra para finanças pessoais
-      match /transactions/{transactionId} { allow read, list, write, delete: if isOwner(userId); }
-      match /goals/{goalId} { allow read, list, write, delete: if isOwner(userId); }
-      match /settings/{settingId} { allow read, list, write, delete: if isOwner(userId); }
-      
-      // Regra para logs de auditoria V2.5
-      match /decision_logs/{logId} { allow read, list, write, delete: if isOwner(userId); }
-
-      // Regra para logs de auditoria V3
-      match /decision_logs_v3/{logId} { allow read, list, write, delete: if isOwner(userId); }
-      
-      // Regra para dados de trading V1
-      match /trading_data/{docId} {
-        allow read, write: if isOwner(userId);
-      }
-      
-      // Regra para dados de trading V2.5
-      match /trading_data_v2/{docId} {
-          allow read, write: if isOwner(userId);
-      }
-
-      // Regra para dados de trading V3
-      match /trading_data_v3/{docId} {
-          allow read, write: if isOwner(userId);
+      // REGRA CURINGA DEFINITIVA:
+      // Permite que o utilizador autenticado tenha acesso total (ler, listar, escrever, apagar)
+      // a QUALQUER documento em QUALQUER subcoleção diretamente abaixo do seu próprio
+      // documento de utilizador.
+      //
+      // Esta regra única e robusta cobre:
+      // - /users/{userId}/transactions/{transactionId}
+      // - /users/{userId}/goals/{goalId}
+      // - /users/{userId}/settings/{settingId}
+      // - /users/{userId}/decision_logs/{logId}
+      // - /users/{userId}/decision_logs_v3/{logId}
+      // - /users/{userId}/trading_data/{docId}   <-- COBRE O CASO DE ERRO
+      // - /users/{userId}/trading_data_v2/{docId}
+      // - /users/{userId}/trading_data_v3/{docId}
+      // - E qualquer outra subcoleção futura.
+      //
+      // A segurança é garantida porque a regra valida que o UID do utilizador autenticado
+      // é o mesmo que o `userId` no caminho do documento.
+      match /{anySubCollection}/{anyDocId=**} {
+        allow read, list, write, delete: if request.auth.uid == userId;
       }
     }
   }
