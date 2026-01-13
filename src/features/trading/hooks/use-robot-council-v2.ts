@@ -276,7 +276,18 @@ export function useRobotCouncilV2(
   const { operationsLog, executeTrade, timePeriod, isConnected, durationLimits, sellContract } = useDerivApiV2();
   const { user, loading: isAuthLoading } = useAuth();
   const { toast } = useToast();
-  const { evolvedStrategies, evolveTrigger, evolutionHistory } = useStrategyEvolution(initialCouncilStrategies);
+  const { 
+    evolvedStrategies, 
+    evolveTrigger, 
+    evolutionHistory,
+    isEvolving,
+    evolutionProgress,
+    currentGeneration,
+    tradesUntilEvolution,
+    tradeCounts,
+    resetEvolutionHistory,
+    deleteSingleEvolution,
+  } = useStrategyEvolution(initialCouncilStrategies);
   
   const executionIdRef = useRef(0);
   const processedRealTradesRef = useRef<Set<number>>(new Set());
@@ -340,9 +351,6 @@ export function useRobotCouncilV2(
     isExecuting: false, sellingContracts: new Set()
   });
 
-  // Flag to track if there are pending changes to save
-  const hasPendingChangesRef = useRef(false);
-
   useEffect(() => {
     setStrategyCouncil(evolvedStrategies as RobotStrategy[]);
   }, [evolvedStrategies]);
@@ -362,12 +370,11 @@ export function useRobotCouncilV2(
     setRobotPerformance(initialPerformance);
     virtualTradesRef.current = [];
     setVirtualTradeCount(0); // Reseta o contador
-    hasPendingChangesRef.current = true;
   }, [strategyCouncil]);
 
   useEffect(() => {
     if (!user || isAuthLoading) return;
-    loadRobotPerformance(user.uid).then((stored) => {
+    loadRobotPerformance(user.uid, 'v2').then((stored) => {
         if (stored && stored.length > 0) {
             robotPerformanceRef.current = stored;
             setRobotPerformance(stored);
@@ -408,38 +415,6 @@ export function useRobotCouncilV2(
     if (!lastCandleEpoch) return null;
     return calculateAllIndicators(validCandles, strategyCouncil, timePeriod, { duration: 5, unit: 'm' });
   }, [validCandles, timePeriod, strategyCouncil]);
-
-
-  // SAVE ON UNMOUNT (Guarda de Segurança)
-  useEffect(() => {
-    return () => {
-      if (user && hasPendingChangesRef.current) {
-        console.log("[Auto-Save] Salvando dados de desempenho ao desmontar o componente...");
-        saveRobotPerformance(user.uid, robotPerformanceRef.current);
-        if (evolutionHistory.length > 0) {
-          saveEvolutionHistory(user.uid, evolutionHistory, 'v2');
-        }
-      }
-    };
-  }, [user, evolutionHistory]); // Adicionado evolutionHistory aqui
-
-  // SAVE PERIODICAMENTE (Relógio de Persistência)
-  useEffect(() => {
-    const PERSISTENCE_INTERVAL_MS = 15000; // 15 segundos
-    
-    const saveInterval = setInterval(() => {
-      if (isCouncilAutopilotOn && hasPendingChangesRef.current && user) {
-        console.log(`[Auto-Save] Salvando dados... ${robotPerformanceRef.current.length} robôs e ${evolutionHistory.length} eventos.`);
-        saveRobotPerformance(user.uid, robotPerformanceRef.current);
-        if (evolutionHistory.length > 0) {
-          saveEvolutionHistory(user.uid, evolutionHistory, 'v2');
-        }
-        hasPendingChangesRef.current = false;
-      }
-    }, PERSISTENCE_INTERVAL_MS);
-
-    return () => clearInterval(saveInterval);
-  }, [isCouncilAutopilotOn, user, evolutionHistory]);
 
 
   const runCouncilCycle = useCallback(() => {
@@ -582,7 +557,7 @@ export function useRobotCouncilV2(
                 virtualTradesRef.current.splice(tradesToRemoveIndices[i], 1);
             }
             if (tradesToRemoveIndices.length > 0) {
-                evolveTrigger(robotPerformanceRef.current);
+                evolveTrigger(robotPerformanceRef.current, 'virtual', tradesToRemoveIndices.length);
             }
         }
         
@@ -613,7 +588,7 @@ export function useRobotCouncilV2(
                  });
                  
                  processedRealTradesRef.current.add(lastRealOperation.id);
-                 evolveTrigger(robotPerformanceRef.current);
+                 evolveTrigger(robotPerformanceRef.current, 'real', 1);
              }
         }
 
@@ -621,7 +596,6 @@ export function useRobotCouncilV2(
         if (performanceChanged) {
             const updatedPerformance = Array.from(robotPerformanceRef.current);
             setRobotPerformance(updatedPerformance);
-            hasPendingChangesRef.current = true;
         }
         
         let riseSum = 0, fallSum = 0, totalWeight = 0;
@@ -885,6 +859,11 @@ export function useRobotCouncilV2(
     strategyCouncil,
     robotPerformance,
     evolutionHistory,
+    isEvolving,
+    evolutionProgress,
+    currentGeneration,
+    tradesUntilEvolution,
+    tradeCounts,
     virtualTradesRef,
     ...councilState,
     virtualTradeCount, // Exporta o contador
@@ -913,14 +892,9 @@ export function useRobotCouncilV2(
     resetArenaPerformance,
     tradeDecisionLog,
     supervisionStatus: { status: 'approved', message: 'Sistema Operacional v2.5' },
-    // Mocked evolution functions for compatibility
-    isEvolving: false,
-    evolutionProgress: 0,
-    currentGeneration: 0,
-    tradesUntilEvolution: 0,
-    tradeCounts: { real: 0, virtual: 0, total: 0 },
-    resetEvolutionHistory: () => {},
-    deleteSingleEvolution: () => {},
+    evolveTrigger,
+    resetEvolutionHistory,
+    deleteSingleEvolution,
   };
 }
 

@@ -7,6 +7,7 @@ import { addDocumentNonBlocking, deleteDocumentNonBlocking, setDocumentNonBlocki
 import { getChatbotInsightsResponse } from '@/app/actions';
 import { EvolutionEvent } from '@/features/trading/hooks/use-strategy-evolution-v2';
 import { sanitizeForFirestore } from './utils/sanitize-for-firestore';
+import { errorEmitter, FirestorePermissionError } from '@/firebase';
 
 
 // --- Transactions ---
@@ -232,13 +233,23 @@ export async function getFinancialInsights(userId: string): Promise<string[]> {
 
 export async function saveRobotPerformance(userId: string, performance: (RobotPerformance | EnhancedRobotPerformance)[], version: 'v1' | 'v2' = 'v1') {
     if (!userId) return;
+    const docPath = `users/${userId}/trading_data_v1/robot_council_performance`;
     const docRef = doc(db, 'users', userId, 'trading_data_v1', 'robot_council_performance');
     const sanitizedData = sanitizeForFirestore({
         updatedAt: new Date().toISOString(),
         performance: performance,
     });
-    // Agora usando setDocumentNonBlocking para evitar sobrecarga
-    setDocumentNonBlocking(docRef, sanitizedData, { merge: true });
+    
+    // Agora usando setDoc com captura de erro contextual
+    setDoc(docRef, sanitizedData, { merge: true })
+        .catch(async (serverError) => {
+            const permissionError = new FirestorePermissionError({
+                path: docRef.path,
+                operation: 'write',
+                requestResourceData: sanitizedData,
+            });
+            errorEmitter.emit('permission-error', permissionError);
+        });
 };
 
 
