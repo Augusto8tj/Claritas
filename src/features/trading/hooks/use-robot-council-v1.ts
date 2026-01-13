@@ -50,6 +50,7 @@ type VirtualTrade = {
 };
 
 const VIRTUAL_STAKE = 1.0; 
+const FIRESTORE_SAVE_DEBOUNCE_MS = 10000; // 10 segundos
 
 // --- FUNÇÕES AUXILIARES (HELPERS) ---
 const isCandle = (d: ChartData): d is CandleData => d !== null && 'close' in d;
@@ -246,6 +247,7 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
   const councilExecutionRef = useRef({ isExecuting: false, sellingContracts: new Set<number>() });
   const { baseStake, baseDuration } = {baseStake: 1, baseDuration: 5};
   
+  const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
     const councilWithIds = evolvedStrategies.map((strat, index) => ({
@@ -285,6 +287,37 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
         setDoc(docRef, sanitizeForFirestore({ performance: initialPerformance }), { merge: true });
     }
   }, [strategyCouncil, activeSymbol, toast, user]);
+  
+  const savePerformanceToFirestore = useCallback(() => {
+    if (!user || !robotPerformance || robotPerformance.length === 0) return;
+    const docRef = doc(db, 'users', user.uid, 'trading_data_v1', 'robot_council_performance');
+    const dataToSave = { performance: robotPerformance };
+    setDoc(docRef, sanitizeForFirestore(dataToSave), { merge: true }).catch(error => {
+        console.error("Falha ao salvar desempenho no Firestore:", error);
+    });
+  }, [user, robotPerformance]);
+
+  useEffect(() => {
+      if (saveTimeoutRef.current) {
+          clearTimeout(saveTimeoutRef.current);
+      }
+      saveTimeoutRef.current = setTimeout(() => {
+          savePerformanceToFirestore();
+      }, FIRESTORE_SAVE_DEBOUNCE_MS);
+
+      return () => {
+          if (saveTimeoutRef.current) {
+              clearTimeout(saveTimeoutRef.current);
+          }
+      };
+  }, [robotPerformance, savePerformanceToFirestore]);
+  
+  useEffect(() => {
+    return () => {
+      // Save on unmount
+      savePerformanceToFirestore();
+    };
+  }, [savePerformanceToFirestore]);
 
   useEffect(() => {
     if (isCouncilAutopilotOn) resetArenaPerformance();
@@ -399,10 +432,6 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
         const updatedPerformance = Array.from(performanceMap.values());
         setRobotPerformance(updatedPerformance);
         evolveTrigger(updatedPerformance);
-        if(user) {
-            const docRef = doc(db, 'users', user.uid, 'trading_data_v1', 'robot_council_performance');
-            setDoc(docRef, sanitizeForFirestore({ performance: updatedPerformance }), { merge: true });
-        }
     }
 
     const newVotes: CouncilVotes = {};
