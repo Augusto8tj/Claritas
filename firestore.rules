@@ -6,72 +6,19 @@ service cloud.firestore {
     function isOwner(userId) {
       return request.auth != null && request.auth.uid == userId;
     }
-    
-    // Função auxiliar para operações de update/delete, garantindo que o documento existe
-    function isExistingOwner(userId) {
-      return isOwner(userId) && resource != null;
-    }
 
     match /users/{userId} {
       // Regra para o próprio documento de perfil do utilizador
-      allow get: if isOwner(userId);
-      allow create: if isOwner(userId);
-      allow update: if isOwner(userId);
+      allow get, create, update: if isOwner(userId);
 
-      // --- TRANSAÇÕES (Já estava a funcionar) ---
-      match /transactions/{transactionId} {
-        allow read, list: if isOwner(userId);
-        allow create: if isOwner(userId) && request.resource.data.userId == userId;
-        allow update, delete: if isExistingOwner(userId);
-      }
-
-      // --- METAS / GOALS (O motivo do erro atual) ---
-      // Este bloco é OBRIGATÓRIO para o MainGoal funcionar
-      match /goals/{goalId} {
-        allow read, list: if isOwner(userId);
-        allow create: if isOwner(userId) && request.resource.data.userId == userId;
-        allow update, delete: if isExistingOwner(userId);
-      }
-      
-      // --- financialGoals (CORREÇÃO DE ERRO ANTERIOR) ---
-      // Garante que a coleção com o nome correto também tenha as regras
-       match /financialGoals/{goalId} {
-        allow read, list: if isOwner(userId);
-        allow create: if isOwner(userId) && request.resource.data.userId == userId;
-        allow update, delete: if isExistingOwner(userId);
-      }
-
-      // --- BUDGET / SETTINGS ---
-      // Necessário para getBudgetLimits
-      match /settings/{settingId} {
-        allow read, write: if isOwner(userId);
-      }
-      
-      // --- LOGS DE DECISÃO V2 ---
-      match /decision_logs/{logId} {
-         allow read, list, write: if isOwner(userId);
-      }
-      
-      // --- LOGS DE DECISÃO V3 ---
-      match /decision_logs_v3/{logId} {
-         allow read, list, write: if isOwner(userId);
-      }
-      
-      // --- DADOS DE TRADING (TODAS AS VERSÕES) ---
-      // CORREÇÃO: Usar o nome exato do documento em vez de curinga
-      match /trading_data/robot_council_performance {
-         allow read, write: if isOwner(userId);
-      }
-      match /trading_data_v2/robot_council_performance {
-         allow read, write: if isOwner(userId);
-      }
-      match /trading_data_v3/robot_council_performance {
-         allow read, write: if isOwner(userId);
-      }
-      
-      // --- DIAGNÓSTICO ---
-      match /diagnostico/{docId} {
-         allow read, write: if isOwner(userId);
+      // Regra CURINGA para TODAS as subcoleções de um utilizador.
+      // Esta regra única e poderosa garante que um utilizador autenticado
+      // tenha acesso total (leitura, escrita, etc.) a qualquer documento
+      // dentro de qualquer subcoleção que pertença ao seu próprio perfil.
+      // Resolve os problemas de acesso para /transactions, /goals, /settings,
+      // /decision_logs, e todas as versões de /trading_data.
+      match /{subcollection}/{docId} {
+        allow read, list, write, delete: if isOwner(userId);
       }
     }
   }
