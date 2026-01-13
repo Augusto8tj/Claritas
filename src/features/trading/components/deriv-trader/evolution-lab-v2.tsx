@@ -22,6 +22,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Button } from '@/components/ui/button';
 import { Trash2 } from 'lucide-react';
+import { EVOLUTION_CONFIG } from '@/features/trading/config/trader-config';
 
 interface EvolutionLabV2Props {
   history: EvolutionEvent[];
@@ -41,7 +42,7 @@ export function EvolutionLabV2({ history, resetEvolutionHistory, deleteSingleEvo
                     Laboratório de Evolução V2.5
                 </CardTitle>
                 <CardDescription>
-                Histórico de mutações genéticas do conselho de robôs. A evolução ocorre a cada 50 trades.
+                Histórico de mutações genéticas do conselho de robôs. A evolução ocorre a cada {EVOLUTION_CONFIG.TRIGGER_THRESHOLD} trades.
                 </CardDescription>
             </div>
              <div className="text-right">
