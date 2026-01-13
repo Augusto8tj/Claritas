@@ -87,7 +87,7 @@ export function EvolutionLabV2({ history, resetEvolutionHistory, deleteSingleEvo
               {history.map((event, index) => (
                 <div key={index} className="space-y-4 rounded-lg border p-4">
                   <div className="flex justify-between items-center">
-                    <h3 className="font-semibold text-primary">Geração {event.generation}</h3>
+                    <h3 className="font-semibold text-primary">Geração {history.length - index}</h3>
                     <span className="text-xs text-muted-foreground">
                       {event.timestamp.toLocaleString('pt-BR')}
                     </span>

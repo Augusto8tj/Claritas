@@ -1,4 +1,4 @@
-// src/features/trading/hooks/use-robot-council-v2.ts
+// /src/features/trading/hooks/use-robot-council-v2.ts
 'use client';
 
 /**
@@ -32,7 +32,7 @@ import type {
 } from '@/lib/types';
 import { calculateAllIndicators, type Indicators } from '@/services/indicator-service-v2';
 import { useAuth } from '@/features/auth/hooks/use-auth';
-import { saveRobotPerformance, loadRobotPerformance, saveTradeDecision, saveEvolutionHistory } from '@/services/financial-data-service';
+import { saveRobotPerformance, loadRobotPerformance, saveTradeDecision, saveEvolutionHistory, clearEvolutionHistory, deleteEvolutionEvent } from '@/services/financial-data-service';
 import { useStrategyEvolution } from './use-strategy-evolution-v2';
 import { initialCouncilStrategies } from '@/services/council-strategies';
 import {
@@ -289,7 +289,7 @@ export function useRobotCouncilV2(
 
   // NOVO: Gatilho de renderização para a UI
   const [virtualTradeCount, setVirtualTradeCount] = useState(0);
-
+  
   const [councilState, setCouncilState] = useState<Omit<CouncilState, 'virtualTradeCount'>>({
     indicators: null,
     currentRegime: { regime: 'ranging', confidence: 0, probabilities: { trending_bull: 0.2, trending_bear: 0.2, ranging: 0.4, high_volatility: 0.1, breakout: 0.1 } },
@@ -582,7 +582,7 @@ export function useRobotCouncilV2(
                 virtualTradesRef.current.splice(tradesToRemoveIndices[i], 1);
             }
             if (tradesToRemoveIndices.length > 0) {
-                evolveTrigger(robotPerformanceRef.current, 'virtual', tradesToRemoveIndices.length);
+                evolveTrigger(robotPerformanceRef.current);
             }
         }
         
@@ -613,7 +613,7 @@ export function useRobotCouncilV2(
                  });
                  
                  processedRealTradesRef.current.add(lastRealOperation.id);
-                 evolveTrigger(robotPerformanceRef.current, 'real', 1);
+                 evolveTrigger(robotPerformanceRef.current);
              }
         }
 
@@ -885,11 +885,6 @@ export function useRobotCouncilV2(
     strategyCouncil,
     robotPerformance,
     evolutionHistory,
-    isEvolving,
-    evolutionProgress,
-    currentGeneration,
-    tradesUntilEvolution,
-    tradeCounts,
     virtualTradesRef,
     ...councilState,
     virtualTradeCount, // Exporta o contador
@@ -918,9 +913,14 @@ export function useRobotCouncilV2(
     resetArenaPerformance,
     tradeDecisionLog,
     supervisionStatus: { status: 'approved', message: 'Sistema Operacional v2.5' },
-    evolveTrigger,
-    resetEvolutionHistory,
-    deleteSingleEvolution,
+    // Mocked evolution functions for compatibility
+    isEvolving: false,
+    evolutionProgress: 0,
+    currentGeneration: 0,
+    tradesUntilEvolution: 0,
+    tradeCounts: { real: 0, virtual: 0, total: 0 },
+    resetEvolutionHistory: () => {},
+    deleteSingleEvolution: () => {},
   };
 }
 
