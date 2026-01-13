@@ -25,8 +25,7 @@ import {
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { useDerivApi, type AccountType } from "@/features/trading/hooks/use-deriv-api";
-import { checkDerivConnection } from "@/app/actions";
+import { useDerivApiV2 as useDerivApi, type AccountType } from "@/features/trading/hooks/use-deriv-api-v2";
 import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
 
 const derivSchema = z.object({

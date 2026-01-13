@@ -6,7 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter }
 import { Button } from "@/components/ui/button";
 import { CheckCircle, XCircle, AlertTriangle, Loader2, Settings } from "lucide-react";
 import Link from "next/link";
-import { useDerivApi } from "@/features/trading/hooks/use-deriv-api";
+import { useDerivApiV2 as useDerivApi } from "@/features/trading/hooks/use-deriv-api-v2";
 
 type CheckResult = {
   success: boolean;

@@ -5,7 +5,7 @@ import { HealthCheckCard } from "@/features/status/components/health-check-card"
 import { ListModelsCard } from "@/features/status/components/list-models-card";
 import { DerivConnectionCard } from "@/features/status/components/deriv-connection-card";
 import { FirestoreWriteTestCard } from "@/features/status/components/firestore-write-test-card";
-import { DerivApiProvider } from '@/features/trading/hooks/use-deriv-api';
+import { DerivApiProviderV2 } from '@/features/trading/hooks/use-deriv-api-v2';
 import { BrainCircuit, Link, Database } from "lucide-react";
 import { useState, useEffect } from "react";
 import { checkGeminiConnection, checkFirestoreConnection } from "@/app/actions";
@@ -86,8 +86,8 @@ function StatusPageContent() {
 // O componente de página agora envolve o conteúdo com o Provider necessário
 export default function StatusPage() {
     return (
-        <DerivApiProvider>
+        <DerivApiProviderV2>
             <StatusPageContent />
-        </DerivApiProvider>
+        </DerivApiProviderV2>
     );
 }

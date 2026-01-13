@@ -5,7 +5,7 @@ import React, { useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { useDerivApi } from '@/features/trading/hooks/use-deriv-api';
+import { useDerivApiV2 as useDerivApi } from '@/features/trading/hooks/use-deriv-api-v2';
 import { Loader2, AlertTriangle, CheckCircle, Link } from 'lucide-react';
 
 export function DerivConnectionCard() {

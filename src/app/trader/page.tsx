@@ -5,7 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Layers, Bot, CandlestickChart, Settings2, Laptop, Smartphone, Wand2 } from "lucide-react";
 import Link from "next/link";
-import { useDerivApi, DerivApiProvider } from "@/features/trading/hooks/use-deriv-api";
+import { useDerivApiV2 as useDerivApi, DerivApiProviderV2 as DerivApiProvider } from "@/features/trading/hooks/use-deriv-api-v2";
 import { useEffect } from "react";
 
 const platforms = [
