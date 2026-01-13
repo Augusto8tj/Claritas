@@ -11,16 +11,15 @@ service cloud.firestore {
       // a QUALQUER documento em QUALQUER subcoleção diretamente abaixo do seu próprio
       // documento de utilizador.
       //
+      // A sintaxe `{anyDocId=**}` é um curinga recursivo que corresponde a qualquer caminho aninhado.
       // Esta regra única e robusta cobre:
       // - /users/{userId}/transactions/{transactionId}
       // - /users/{userId}/goals/{goalId}
-      // - /users/{userId}/settings/{settingId}
       // - /users/{userId}/decision_logs/{logId}
-      // - /users/{userId}/decision_logs_v3/{logId}
-      // - /users/{userId}/trading_data/{docId}   <-- COBRE O CASO DE ERRO
+      // - /users/{userId}/trading_data/{docId}
       // - /users/{userId}/trading_data_v2/{docId}
       // - /users/{userId}/trading_data_v3/{docId}
-      // - E qualquer outra subcoleção futura.
+      // - E qualquer outra subcoleção futura, em qualquer profundidade.
       //
       // A segurança é garantida porque a regra valida que o UID do utilizador autenticado
       // é o mesmo que o `userId` no caminho do documento.
