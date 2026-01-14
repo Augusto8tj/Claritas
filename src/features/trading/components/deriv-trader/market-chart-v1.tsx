@@ -844,12 +844,15 @@ export function MarketChartV1({
   const throttleTimeoutRef = React.useRef<NodeJS.Timeout>();
 
   const handleBrushMouseDown = useCallback((e: React.MouseEvent) => {
+    const canvas = brushCanvasRef.current;
+    if (!canvas) return;
     const rect = e.currentTarget.getBoundingClientRect()
     const x = e.clientX - rect.left
     const pos = x / rect.width
     const handleMargin = 10 / rect.width
 
-    brushRef.current.startX = pos
+    brushRef.current.isBrushing = true;
+    brushRef.current.startX = pos;
 
     if (Math.abs(pos - brushWindow.min) < handleMargin) {
       brushRef.current.target = 'min'
@@ -857,13 +860,31 @@ export function MarketChartV1({
       brushRef.current.target = 'max'
     } else if (pos > brushWindow.min && pos < brushWindow.max) {
       brushRef.current.target = 'body'
+      canvas.style.cursor = 'grabbing';
     } else {
       brushRef.current.target = ''
     }
   }, [brushWindow.min, brushWindow.max]);
 
   const handleBrushMouseMove = useCallback((e: React.MouseEvent) => {
-    if (!brushRef.current.target) return
+    const canvas = brushCanvasRef.current;
+    if (!canvas) return;
+
+    if (!brushRef.current.isBrushing) {
+      const rect = e.currentTarget.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const pos = x / rect.width;
+      const handleMargin = 10 / rect.width;
+      if (Math.abs(pos - brushWindow.min) < handleMargin || Math.abs(pos - brushWindow.max) < handleMargin) {
+        canvas.style.cursor = 'ew-resize';
+      } else if (pos > brushWindow.min && pos < brushWindow.max) {
+        canvas.style.cursor = 'grab';
+      } else {
+        canvas.style.cursor = 'default';
+      }
+      return;
+    }
+    
     if (throttleTimeoutRef.current) return;
     
     const rect = e.currentTarget.getBoundingClientRect()
@@ -898,12 +919,22 @@ export function MarketChartV1({
       throttleTimeoutRef.current = undefined;
     }, 16);
 
-  }, []);
+  }, [brushWindow.min, brushWindow.max]);
 
   const handleBrushMouseUp = useCallback(() => {
+    const canvas = brushCanvasRef.current;
+    if (canvas) canvas.style.cursor = 'grab';
+    brushRef.current.isBrushing = false;
     brushRef.current.target = ''
   }, []);
   
+  const handleBrushMouseLeave = useCallback(() => {
+    const canvas = brushCanvasRef.current;
+    if (canvas && !brushRef.current.isBrushing) {
+      canvas.style.cursor = 'default';
+    }
+  }, []);
+
   const handleChartMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
     const canvas = mainCanvasRef.current;
     if (!canvas) return;
@@ -934,7 +965,7 @@ export function MarketChartV1({
           <h2 className="text-xl font-bold" style={{ color: colors.text }}>
             {activeSymbol}
           </h2>
-          <div
+           <div
             className="flex items-center gap-2"
             style={{ color: isPositive ? colors.bull : colors.bear }}
           >
@@ -1089,11 +1120,11 @@ export function MarketChartV1({
       <div className="w-full h-[60px] mt-2">
         <canvas
           ref={brushCanvasRef}
-          className="w-full h-full cursor-ew-resize"
+          className="w-full h-full"
           onMouseDown={handleBrushMouseDown}
           onMouseMove={handleBrushMouseMove}
           onMouseUp={handleBrushMouseUp}
-          onMouseLeave={handleBrushMouseUp}
+          onMouseLeave={handleBrushMouseLeave}
         />
       </div>
     </div>
