@@ -62,8 +62,10 @@ const MAX_CANDLE_WIDTH = 20
 const isCandle = (d: ChartData): d is CandleData =>
     'open' in d && d.open !== undefined;
 
-const getDisplayPrice = (d: ChartData) =>
-  isCandle(d) ? d.close : d.price;
+const getDisplayPrice = (d: ChartData | null) => {
+  if (!d) return 0;
+  return isCandle(d) ? d.close : d.price;
+}
 
 
 export function MarketChartV1({
@@ -123,6 +125,16 @@ export function MarketChartV1({
     '8h',
     '1d',
   ]
+  
+  const lastDataPoint = rawData.length > 0 ? rawData[rawData.length - 1] : null;
+  const prevDataPoint = rawData.length > 1 ? rawData[rawData.length - 2] : null;
+
+  const lastPrice = getDisplayPrice(lastDataPoint);
+  const prevPrice = getDisplayPrice(prevDataPoint);
+
+  const change = lastPrice - prevPrice;
+  const changePercent = prevPrice !== 0 ? (change / prevPrice) * 100 : 0;
+  const isPositive = change >= 0;
   
   const dataWindow = React.useMemo(() => {
     const start = Math.floor(rawData.length * brushWindow.min)
@@ -509,7 +521,6 @@ export function MarketChartV1({
     const stakeLabelY = entryY - 22;
     ctx.fillStyle = `${colors.priceBg}E6`;
     ctx.beginPath();
-    // @ts-ignore
     ctx.roundRect(
         stakeLabelX - stakeTextWidth / 2 - stakePadding,
         stakeLabelY - 10,
@@ -602,7 +613,6 @@ export function MarketChartV1({
                 ctx.shadowOffsetY = 1;
                 ctx.fillStyle = colors.bg;
                 ctx.beginPath();
-                // @ts-ignore
                 ctx.roundRect(labelX - padding, labelY - 10, textWidth + padding * 2, 20, 4);
                 ctx.fill();
                 ctx.shadowColor = 'transparent';
@@ -634,7 +644,6 @@ export function MarketChartV1({
         ctx.globalAlpha = 0.95;
         ctx.fillStyle = colors.bg;
         ctx.beginPath();
-        // @ts-ignore
         ctx.roundRect(labelX - 4, labelY - 10, labelWidth + 8, 18, 3);
         ctx.fill();
         ctx.strokeStyle = annColor;
@@ -925,24 +934,6 @@ export function MarketChartV1({
           <h2 className="text-xl font-bold" style={{ color: colors.text }}>
             {activeSymbol}
           </h2>
-          <div
-            className="flex items-center gap-2"
-            style={{ color: isPositive ? colors.bull : colors.bear }}
-          >
-            <span className="font-semibold text-lg">
-              {lastPrice > 0 ? lastPrice.toFixed(4) : '...'}
-            </span>
-            <div className="text-xs font-mono flex items-center">
-              {isPositive ? (
-                <TrendingUp size={14} />
-              ) : (
-                <TrendingDown size={14} />
-              )}
-              <span>
-                {change.toFixed(4)} ({changePercent.toFixed(2)}%)
-              </span>
-            </div>
-          </div>
         </div>
         <div className="flex items-center gap-1.5">
           <DropdownMenu>
