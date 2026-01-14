@@ -61,6 +61,13 @@ function DerivTraderPageContent() {
     }, [robotCouncil.isCouncilAutopilotOn]);
 
     const latestDataPoint = chartData.length > 0 ? chartData[chartData.length - 1] : null;
+    const prevDataPoint = chartData.length > 1 ? chartData[chartData.length - 2] : null;
+    const getDisplayPrice = (d: any) => d ? (d.close ?? d.price) : 0;
+    const lastPrice = getDisplayPrice(latestDataPoint);
+    const prevPrice = getDisplayPrice(prevDataPoint);
+    const change = lastPrice - prevPrice;
+    const changePercent = prevPrice !== 0 ? (change / prevPrice) * 100 : 0;
+    const isPositive = change >= 0;
 
     const handleAssetChange = (asset: string) => {
         setActiveSymbol(asset);
@@ -254,8 +261,8 @@ export default function DerivTraderPage() {
     resolver: zodResolver(riseFallSchema),
     defaultValues: {
       stake: 1,
-      duration: 5,
-      duration_unit: "t",
+      duration: 28,
+      duration_unit: "s",
       allowEquals: false,
     },
   });

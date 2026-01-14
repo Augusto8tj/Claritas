@@ -195,8 +195,8 @@ const PageContent = () => {
         resolver: zodResolver(riseFallSchema),
         defaultValues: {
             stake: 1,
-            duration: 5,
-            duration_unit: "t",
+            duration: 28,
+            duration_unit: "s",
             allowEquals: false,
         },
     });
