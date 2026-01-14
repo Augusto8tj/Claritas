@@ -64,24 +64,34 @@ function DerivTraderInterfaceV1({ symbol }: DerivTraderInterfaceProps) {
   useEffect(() => {
     if (durationLimits) {
       const limits = durationLimits[durationUnit];
-      if (limits && limits.min > 0) {
-        const currentDuration = form.getValues('duration');
-        if (currentDuration < limits.min) {
-          form.setValue('duration', limits.min);
-          form.trigger('duration');
-        }
+      // APLICAÇÃO DA REGRA DE NEGÓCIO: Mínimo de 11 para segundos
+      const customMin = durationUnit === 's' ? 11 : limits?.min || 1;
+      
+      const currentDuration = form.getValues('duration');
+      if (currentDuration < customMin) {
+        form.setValue('duration', customMin);
+        form.trigger('duration');
       }
     }
   }, [durationUnit, durationLimits, form]);
 
 
   const handleDurationChange = (amount: number) => {
-    if (!durationLimits) return;
-    const { min, max } = durationLimits[durationUnit];
+    if (!durationLimits) return; 
+    
+    const apiLimits = durationLimits[durationUnit];
+    if (!apiLimits) return;
+
+    // APLICAÇÃO DA REGRA DE NEGÓCIO
+    const min = durationUnit === 's' ? 11 : apiLimits.min;
+    const max = durationUnit === 't' ? 10 : apiLimits.max;
+
     const currentDuration = form.getValues('duration') || 0;
     let newDuration = currentDuration + amount;
+    
     if (newDuration < min) newDuration = min;
     if (newDuration > max) newDuration = max;
+    
     form.setValue('duration', newDuration);
     form.trigger('duration');
   };

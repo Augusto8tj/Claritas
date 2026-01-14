@@ -25,11 +25,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import type { OperationInitiator } from "@/lib/types";
 
 import type { DurationUnit, RiseFallFormValues } from "./deriv-trader-interface-v3.types";
 import { useDerivApiV3 } from "@/features/trading/hooks/use-deriv-api-v3";
 import { Switch } from "@/components/ui/switch";
-import type { OperationInitiator } from "@/lib/types";
 
 type TradeType = 'rise_fall' | 'higher_lower' | 'touch_no_touch';
 
@@ -64,24 +64,34 @@ function DerivTraderInterfaceV3({ symbol }: DerivTraderInterfaceProps) {
   useEffect(() => {
     if (durationLimits) {
       const limits = durationLimits[durationUnit];
-      if (limits && limits.min > 0) {
-        const currentDuration = form.getValues('duration');
-        if (currentDuration < limits.min) {
-          form.setValue('duration', limits.min);
-          form.trigger('duration');
-        }
+      // APLICAÇÃO DA REGRA DE NEGÓCIO: Mínimo de 11 para segundos
+      const customMin = durationUnit === 's' ? 11 : limits?.min || 1;
+      
+      const currentDuration = form.getValues('duration');
+      if (currentDuration < customMin) {
+        form.setValue('duration', customMin);
+        form.trigger('duration');
       }
     }
   }, [durationUnit, durationLimits, form]);
 
 
   const handleDurationChange = (amount: number) => {
-    if (!durationLimits) return;
-    const { min, max } = durationLimits[durationUnit];
+    if (!durationLimits) return; 
+    
+    const apiLimits = durationLimits[durationUnit];
+    if (!apiLimits) return;
+
+    // APLICAÇÃO DA REGRA DE NEGÓCIO
+    const min = durationUnit === 's' ? 11 : apiLimits.min;
+    const max = durationUnit === 't' ? 10 : apiLimits.max;
+
     const currentDuration = form.getValues('duration') || 0;
     let newDuration = currentDuration + amount;
+    
     if (newDuration < min) newDuration = min;
     if (newDuration > max) newDuration = max;
+    
     form.setValue('duration', newDuration);
     form.trigger('duration');
   };
