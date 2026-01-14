@@ -78,13 +78,21 @@ function DerivTraderInterfaceV3({ symbol }: DerivTraderInterfaceProps) {
   const handleDurationChange = (amount: number) => {
     if (!durationLimits) return;
     const { min, max } = durationLimits[durationUnit];
-    const currentDuration = form.getValues('duration');
+    const currentDuration = form.getValues('duration') || 0;
     let newDuration = currentDuration + amount;
     if (newDuration < min) newDuration = min;
     if (newDuration > max) newDuration = max;
     form.setValue('duration', newDuration);
     form.trigger('duration');
   };
+
+  const handleStakeChange = (amount: number) => {
+    const currentStake = form.getValues('stake') || 0;
+    let newStake = currentStake + amount;
+    newStake = Math.max(0.35, newStake);
+    form.setValue('stake', parseFloat(newStake.toFixed(2)));
+    form.trigger('stake');
+  }
 
   const handleTrade = async (tradeDirection: "rise" | "fall") => {
     const isValid = await form.trigger();
@@ -213,7 +221,7 @@ function DerivTraderInterfaceV3({ symbol }: DerivTraderInterfaceProps) {
                                                         <SelectItem 
                                                             key={value} 
                                                             value={value} 
-                                                            disabled={!durationLimits || !durationLimits[value as DurationUnit] || durationLimits[value as DurationUnit].min === 0}
+                                                            disabled={!durationLimits || !durationLimits[value as DurationUnit]}
                                                         >
                                                             {label}
                                                         </SelectItem>
@@ -264,14 +272,14 @@ function DerivTraderInterfaceV3({ symbol }: DerivTraderInterfaceProps) {
                                 render={({ field }) => (
                                 <FormItem>
                                     <div className="flex items-center justify-center gap-2">
-                                        <Button type="button" variant="outline" size="icon" onClick={() => form.setValue('stake', Math.max(0.35, field.value - 1))}><Minus className="h-4 w-4"/></Button>
+                                        <Button type="button" variant="outline" size="icon" onClick={() => handleStakeChange(-1)}><Minus className="h-4 w-4"/></Button>
                                         <div className="relative flex-1">
                                             <FormControl>
                                                 <Input type="number" {...field} onChange={e => field.onChange(parseFloat(e.target.value) || 0)} className="text-center font-bold text-lg pr-12"/>
                                             </FormControl>
                                             <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">USD</span>
                                         </div>
-                                        <Button type="button" variant="outline" size="icon" onClick={() => form.setValue('stake', field.value + 1)}><Plus className="h-4 w-4"/></Button>
+                                        <Button type="button" variant="outline" size="icon" onClick={() => handleStakeChange(1)}><Plus className="h-4 w-4"/></Button>
                                     </div>
                                     <FormMessage />
                                 </FormItem>
