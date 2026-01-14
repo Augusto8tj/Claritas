@@ -401,10 +401,10 @@ const subscribeToMarketData = useCallback(async (symbol: string) => {
             addTradeAnnotation({
                 contractId: String(buyResult.contract_id),
                 entryTime: entryTime,
-                entryPrice,
+                entryPrice: entryPrice,
                 direction: tradeDirection,
                 status: 'pending',
-                stake,
+                stake: stake,
                 symbol,
             });
 

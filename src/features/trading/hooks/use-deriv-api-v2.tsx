@@ -356,7 +356,7 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
             addTradeAnnotation({
                 contractId: String(buyResult.contract_id),
                 entryTime: entryTime,
-                entryPrice,
+                entryPrice: entryPrice,
                 direction: tradeDirection,
                 status: 'pending',
                 stake: sanitizedStake,
