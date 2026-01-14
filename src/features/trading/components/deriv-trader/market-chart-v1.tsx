@@ -3,7 +3,6 @@
 
 import React, { useCallback } from 'react'
 import {
-  Flag,
   Settings,
   Loader2,
   TrendingUp,
@@ -50,12 +49,7 @@ interface MarketChartProps {
   timePeriod: TimePeriod
   setTimePeriod: (period: TimePeriod) => void
   operations: Operation[]
-  indicators: {
-    sma: (number | null)[]
-    ema: (number | null)[]
-    vwap: (number | null)[]
-    bollingerBands: ({ upper: number; middle: number; lower: number } | null)[]
-  } | null,
+  indicators: Indicators | null,
   tradeAnnotations: TradeAnnotation[];
 }
 
@@ -129,17 +123,7 @@ export function MarketChartV1({
     '8h',
     '1d',
   ]
-
-  const lastDataPoint = rawData.length > 0 ? rawData[rawData.length - 1] : null
-  const prevDataPoint = rawData.length > 1 ? rawData[rawData.length - 2] : null
-
-  const lastPrice = lastDataPoint ? getDisplayPrice(lastDataPoint) : 0
-  const prevPrice = prevDataPoint ? getDisplayPrice(prevDataPoint) : 1
   
-  const change = lastPrice - prevPrice
-  const changePercent = prevPrice !== 0 ? (change / prevPrice) * 100 : 0
-  const isPositive = change >= 0
-
   const dataWindow = React.useMemo(() => {
     const start = Math.floor(rawData.length * brushWindow.min)
     const end = Math.ceil(rawData.length * brushWindow.max)
@@ -303,7 +287,6 @@ export function MarketChartV1({
     let minPrice = Infinity
     let maxPrice = -Infinity
     
-    // Correctly calculate min/max for both chart types
     visibleData.forEach((d, i) => {
       const pricePoints: (number | null)[] = []
       if (isCandle(d)) {
@@ -335,7 +318,7 @@ export function MarketChartV1({
       ((price - minPrice) / (maxPrice - minPrice)) * chartHeight
       
     const getPrice = (y: number) =>
-      maxPrice - ((y - PADDING.top) / chartHeight) * (maxPrice-minPrice);
+      maxPrice - ((y - PADDING.top) / chartHeight) * (maxPrice - minPrice);
 
 
     const getX = (index: number) => {
@@ -458,7 +441,6 @@ export function MarketChartV1({
     tradeAnnotations.forEach(ann => {
     if (ann.symbol !== activeSymbol) return;
 
-    // Encontrar índice de entrada nos dados visíveis
     let entryDataIndex = -1;
     let minEntryDiff = Infinity;
     
@@ -470,27 +452,21 @@ export function MarketChartV1({
         }
     });
 
-    // Tolerância de 5 minutos (300 segundos)
     if (entryDataIndex === -1 || minEntryDiff > 300) return;
 
     const entryX = getX(entryDataIndex);
     const entryY = getY(ann.entryPrice);
     
-    // Determinar cor baseada no status
     let annColor: string;
     if (ann.status === 'won') {
         annColor = colors.bull;
     } else if (ann.status === 'lost') {
         annColor = colors.bear;
     } else {
-        // Operação ativa - azul para CALL, laranja para PUT
         annColor = ann.direction === 'rise' ? '#3b82f6' : '#f97316';
     }
     
-    // ===== DESENHAR CÍRCULO DE ENTRADA =====
     ctx.save();
-    
-    // Círculo externo (borda branca para destaque)
     ctx.beginPath();
     ctx.arc(entryX, entryY, 10, 0, 2 * Math.PI);
     ctx.fillStyle = colors.bg;
@@ -498,47 +474,61 @@ export function MarketChartV1({
     ctx.strokeStyle = 'white';
     ctx.lineWidth = 3;
     ctx.stroke();
-    
-    // Círculo do meio (cor da operação)
     ctx.beginPath();
     ctx.arc(entryX, entryY, 8, 0, 2 * Math.PI);
     ctx.fillStyle = annColor;
     ctx.fill();
-    
-    // Círculo interno para a seta
     ctx.beginPath();
     ctx.arc(entryX, entryY, 6, 0, 2 * Math.PI);
     ctx.fillStyle = annColor;
     ctx.fill();
-    
-    // Desenhar seta de direção (branca para contraste)
     ctx.strokeStyle = 'white';
     ctx.lineWidth = 2.5;
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
     ctx.beginPath();
-    
     if (ann.direction === 'rise') {
-        // Seta para cima (CALL)
         ctx.moveTo(entryX - 4, entryY + 2);
         ctx.lineTo(entryX, entryY - 3);
         ctx.lineTo(entryX + 4, entryY + 2);
     } else {
-        // Seta para baixo (PUT)
         ctx.moveTo(entryX - 4, entryY - 2);
         ctx.lineTo(entryX, entryY + 3);
         ctx.lineTo(entryX + 4, entryY - 2);
     }
     ctx.stroke();
     
+    const stakeText = `$${ann.stake.toFixed(2)}`;
+    ctx.font = 'bold 11px Arial';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    const stakeTextMetrics = ctx.measureText(stakeText);
+    const stakeTextWidth = stakeTextMetrics.width;
+    const stakePadding = 4;
+    const stakeLabelX = entryX;
+    const stakeLabelY = entryY - 22;
+    ctx.fillStyle = `${colors.priceBg}E6`;
+    ctx.beginPath();
+    // @ts-ignore
+    ctx.roundRect(
+        stakeLabelX - stakeTextWidth / 2 - stakePadding,
+        stakeLabelY - 10,
+        stakeTextWidth + stakePadding * 2,
+        18,
+        3
+    );
+    ctx.fill();
+    ctx.strokeStyle = annColor;
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    ctx.fillStyle = colors.text;
+    ctx.fillText(stakeText, stakeLabelX, stakeLabelY);
+    
     ctx.restore();
 
-    // ===== SE OPERAÇÃO FOI FINALIZADA =====
     if (ann.exitTime && ann.exitPrice) {
-        // Encontrar índice de saída
         let exitDataIndex = -1;
         let minExitDiff = Infinity;
-        
         visibleData.forEach((d, i) => {
             const diff = Math.abs(d.epoch - ann.exitTime!);
             if (diff < minExitDiff) {
@@ -551,7 +541,6 @@ export function MarketChartV1({
             const exitX = getX(exitDataIndex);
             const exitY = getY(ann.exitPrice);
 
-            // ===== LINHA DE CONEXÃO =====
             ctx.save();
             ctx.beginPath();
             ctx.moveTo(entryX, entryY);
@@ -564,51 +553,33 @@ export function MarketChartV1({
             ctx.setLineDash([]);
             ctx.restore();
             
-            // ===== BANDEIRA DE RESULTADO =====
             ctx.save();
             ctx.translate(exitX, exitY);
 
             const poleHeight = 40;
             const flagWidth = 35;
             const flagHeight = 20;
-            
-            // Sombra para a bandeira (profundidade)
             ctx.shadowColor = 'rgba(0, 0, 0, 0.3)';
             ctx.shadowBlur = 4;
             ctx.shadowOffsetX = 2;
             ctx.shadowOffsetY = 2;
-            
-            // Poste da bandeira
             ctx.strokeStyle = annColor;
             ctx.lineWidth = 3;
             ctx.beginPath();
             ctx.moveTo(0, 0);
             ctx.lineTo(0, -poleHeight);
             ctx.stroke();
-            
-            // Corpo da bandeira (formato triangular ondulado)
             ctx.beginPath();
             ctx.moveTo(0, -poleHeight);
             ctx.quadraticCurveTo(flagWidth * 0.5, -poleHeight + 3, flagWidth, -poleHeight + flagHeight * 0.5);
             ctx.quadraticCurveTo(flagWidth * 0.5, -poleHeight + flagHeight - 3, 0, -poleHeight + flagHeight);
             ctx.closePath();
-            
-            // Preenchimento da bandeira
             ctx.fillStyle = annColor;
             ctx.fill();
-            
-            // Borda da bandeira (branca para destaque)
             ctx.strokeStyle = 'white';
             ctx.lineWidth = 2;
             ctx.stroke();
-            
-            // Remover sombra para o texto
             ctx.shadowColor = 'transparent';
-            ctx.shadowBlur = 0;
-            ctx.shadowOffsetX = 0;
-            ctx.shadowOffsetY = 0;
-            
-            // Símbolo (✓ ou ✗) na bandeira
             ctx.fillStyle = 'white';
             ctx.font = 'bold 16px Arial';
             ctx.textAlign = 'center';
@@ -616,10 +587,8 @@ export function MarketChartV1({
             const symbol = ann.status === 'won' ? '✓' : '✗';
             ctx.fillText(symbol, flagWidth * 0.5, -poleHeight + flagHeight * 0.5);
             
-            // ===== LABEL DO LUCRO/PREJUÍZO =====
             if (ann.profit !== undefined) {
                 const profitText = `${ann.profit >= 0 ? '+' : ''}$${Math.abs(ann.profit).toFixed(2)}`;
-                
                 ctx.font = 'bold 13px Arial';
                 ctx.textAlign = 'left';
                 const textMetrics = ctx.measureText(profitText);
@@ -627,33 +596,19 @@ export function MarketChartV1({
                 const padding = 6;
                 const labelX = flagWidth + 8;
                 const labelY = -poleHeight + flagHeight * 0.5;
-                
-                // Fundo do label com sombra
                 ctx.shadowColor = 'rgba(0, 0, 0, 0.2)';
                 ctx.shadowBlur = 3;
                 ctx.shadowOffsetX = 1;
                 ctx.shadowOffsetY = 1;
-                
                 ctx.fillStyle = colors.bg;
                 ctx.beginPath();
                 // @ts-ignore
-                ctx.roundRect(
-                    labelX - padding, 
-                    labelY - 10, 
-                    textWidth + padding * 2, 
-                    20,
-                    4
-                );
+                ctx.roundRect(labelX - padding, labelY - 10, textWidth + padding * 2, 20, 4);
                 ctx.fill();
-                
-                // Borda do label
                 ctx.shadowColor = 'transparent';
-                ctx.shadowBlur = 0;
                 ctx.strokeStyle = annColor;
                 ctx.lineWidth = 2;
                 ctx.stroke();
-                
-                // Texto do lucro
                 ctx.fillStyle = annColor;
                 ctx.fillText(profitText, labelX, labelY);
             }
@@ -661,10 +616,7 @@ export function MarketChartV1({
             ctx.restore();
         }
     } else {
-        // ===== OPERAÇÃO ATIVA - LINHA HORIZONTAL =====
         ctx.save();
-        
-        // Linha tracejada até o final
         ctx.beginPath();
         ctx.moveTo(entryX, entryY);
         ctx.lineTo(width - PADDING.right - 60, entryY);
@@ -674,35 +626,25 @@ export function MarketChartV1({
         ctx.globalAlpha = 0.5;
         ctx.stroke();
         ctx.setLineDash([]);
-        
-        // Label "ATIVA" no final da linha
         const labelText = ann.direction === 'rise' ? 'CALL ATIVA' : 'PUT ATIVA';
         ctx.font = 'bold 11px Arial';
         const labelWidth = ctx.measureText(labelText).width;
         const labelX = width - PADDING.right - labelWidth - 15;
         const labelY = entryY;
-        
-        // Fundo do label
         ctx.globalAlpha = 0.95;
         ctx.fillStyle = colors.bg;
         ctx.beginPath();
         // @ts-ignore
         ctx.roundRect(labelX - 4, labelY - 10, labelWidth + 8, 18, 3);
         ctx.fill();
-        
-        // Borda
         ctx.strokeStyle = annColor;
         ctx.lineWidth = 1.5;
         ctx.stroke();
-        
-        // Texto
         ctx.globalAlpha = 1;
         ctx.fillStyle = annColor;
         ctx.textAlign = 'left';
         ctx.textBaseline = 'middle';
         ctx.fillText(labelText, labelX, labelY);
-        
-        // Pulso animado no círculo de entrada (opcional)
         ctx.globalAlpha = 0.3;
         ctx.beginPath();
         ctx.arc(entryX, entryY, 12, 0, 2 * Math.PI);
@@ -717,29 +659,23 @@ export function MarketChartV1({
     
     if (mousePosition) {
         const { x, y } = mousePosition;
-
         ctx.strokeStyle = colors.crosshair;
         ctx.lineWidth = 0.5;
         ctx.setLineDash([3, 3]);
-
         ctx.beginPath();
         ctx.moveTo(x, PADDING.top);
         ctx.lineTo(x, height - PADDING.bottom);
         ctx.stroke();
-
         ctx.beginPath();
         ctx.moveTo(PADDING.left, y);
         ctx.lineTo(width - PADDING.right, y);
         ctx.stroke();
-
         ctx.setLineDash([]);
-
         const price = getPrice(y);
         ctx.fillStyle = colors.priceBg;
         ctx.fillRect(width - PADDING.right, y - 10, Y_AXIS_WIDTH, 20);
         ctx.fillStyle = colors.text;
         ctx.fillText(price.toFixed(4), width - PADDING.right + 5, y + 4);
-
         const chartWidth = width - PADDING.left - PADDING.right;
         const percentX = (x - PADDING.left) / chartWidth;
         const dataIndex = Math.round(percentX * (visibleData.length - 1));
@@ -781,14 +717,12 @@ export function MarketChartV1({
                     `L: ${dataPoint.low.toFixed(4)}`,
                     `C: ${dataPoint.close.toFixed(4)}`,
                 ];
-
                 ohlc.forEach((text, i) => {
                     ctx.fillText(text, tooltipX + 5, tooltipY + 30 + i * 15);
                 });
             }
         }
     }
-
 
   }, [
     visibleData,
