@@ -183,6 +183,29 @@ export const DerivApiProviderV1 = ({ children }: { children: ReactNode }) => {
     }
     setIsLoading(false);
   }, []);
+
+  // Client-side timer to check for expired contracts
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const now = Date.now();
+      let hasChanges = false;
+      const updatedOps = operationsLog.map(op => {
+        if (op.status === 'pending' && op.expirationTime && now > op.expirationTime) {
+          hasChanges = true;
+          const updatedAnnotation = { status: 'lost' as const, profit: -op.stake };
+          updateTradeAnnotation(String(op.id), updatedAnnotation);
+          return { ...op, status: 'lost' as const, result: -op.stake };
+        }
+        return op;
+      });
+
+      if (hasChanges) {
+        setOperationsLog(updatedOps);
+      }
+    }, 2000); // Check every 2 seconds
+
+    return () => clearInterval(interval);
+  }, [operationsLog, setOperationsLog]);
   
   const activeToken = accountType === 'demo' ? demoToken : realToken;
 
@@ -388,6 +411,10 @@ const executeTrade = useCallback(async (
           : (buyResult.entry_spot_display_value ? parseFloat(buyResult.entry_spot_display_value) : latestTick);
 
         const isSellable = durationUnit === 's';
+        const durationInSeconds = getDurationInSeconds(duration, durationUnit);
+        const purchaseTimeMs = (buyResult.purchase_time || Math.floor(Date.now() / 1000)) * 1000;
+        const expirationTimeMs = purchaseTimeMs + durationInSeconds * 1000;
+
 
         const newOperation: Operation = {
             id: buyResult.contract_id,
@@ -401,6 +428,7 @@ const executeTrade = useCallback(async (
             initiator,
             entryPrice: entryPrice,
             isSellable,
+            expirationTime: expirationTimeMs,
         };
         setOperationsLog(prevLog => [newOperation, ...prevLog]);
 
