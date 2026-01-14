@@ -145,8 +145,8 @@ const getDurationInSeconds = (duration: number, unit: DurationUnit): number => {
 
 
 export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
-  const [demoToken, setDemoToken] = useState<string | null>(null);
-  const [realToken, setRealToken] = useState<string | null>(null);
+  const [demoToken, setDemoToken] = useState<string | null>('ljUGk6wbLSrtEDo');
+  const [realToken, setRealToken] = useState<string | null>('GU5MwbX1kwvSoyw');
   const [accountType, setAccountTypeState] = useState<AccountType>('demo');
   const [accountBalance, setAccountBalance] = useState<AccountBalance>({ balance: null, currency: null, loading: true });
   const [isLoading, setIsLoading] = useState(true);
