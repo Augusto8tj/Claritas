@@ -192,8 +192,7 @@ export const DerivApiProviderV1 = ({ children }: { children: ReactNode }) => {
       const updatedOps = operationsLog.map(op => {
         if (op.status === 'pending' && op.expirationTime && now > op.expirationTime) {
           hasChanges = true;
-          const updatedAnnotation = { status: 'lost' as const, profit: -op.stake };
-          updateTradeAnnotation(String(op.id), updatedAnnotation);
+          updateTradeAnnotation(String(op.id), { status: 'lost', profit: -op.stake });
           return { ...op, status: 'lost' as const, result: -op.stake };
         }
         return op;
@@ -442,6 +441,7 @@ const executeTrade = useCallback(async (
             status: 'pending',
             stake: stake,
             symbol,
+            expirationTime: expirationTimeMs,
         });
 
         return {
