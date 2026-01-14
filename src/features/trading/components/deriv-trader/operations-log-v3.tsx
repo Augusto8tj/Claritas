@@ -131,7 +131,7 @@ export default function OperationsLogV3({ operations, sellContract }: Operations
                                             </div>
                                             <div className="text-muted-foreground">
                                                 <p className="flex items-center gap-1"><Clock className="h-3 w-3"/><span>{formatTime(op.timestamp)}</span></p>
-                                                <p className="flex items-center gap-1"><MoveRight className="h-3 w-3"/><span>{op.exitTimestamp ? formatTime(op.exitTimestamp) : '--:--:--'}</span></p>
+                                                <p className="flex items-center gap-1"><MoveRight className="h-3 w-3"/><span>{formatTime(op.exitTimestamp)}</span></p>
                                             </div>
                                             <div className="text-muted-foreground font-mono col-span-2 md:col-span-1">
                                                 <p>Entrada: @{op.entryPrice?.toFixed(4) || '...'}</p>
