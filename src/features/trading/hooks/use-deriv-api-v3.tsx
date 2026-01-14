@@ -327,7 +327,10 @@ export const DerivApiProviderV3 = ({ children }: { children: ReactNode }) => {
             const buyResponse: any = await makeRequest({ "buy": proposal.id, "price": proposal.ask_price });
             const buyResult = buyResponse.buy;
             
-            const entryPrice = buyResult.entry_tick_display_value ? parseFloat(buyResult.entry_tick_display_value) : buyResult.buy_price;
+            const latestTick = priceTicks.length > 0 ? priceTicks[priceTicks.length - 1].price : 0;
+            const entryPrice = buyResult.entry_tick_display_value 
+              ? parseFloat(buyResult.entry_tick_display_value) 
+              : (buyResult.entry_spot_display_value ? parseFloat(buyResult.entry_spot_display_value) : latestTick);
 
             const isSellable = durationUnit !== 't';
             
@@ -374,7 +377,7 @@ export const DerivApiProviderV3 = ({ children }: { children: ReactNode }) => {
              const message = error instanceof Error ? error.message : "Um erro desconhecido ocorreu.";
              return { success: false, message };
           }
-      }, [isConnected, makeRequest, addTradeAnnotation]);
+      }, [isConnected, makeRequest, addTradeAnnotation, priceTicks]);
 
   const sellContract = useCallback(async (contractId: number): Promise<TradeResult> => {
     if (!wsRef.current || !isConnected) {
@@ -836,4 +839,3 @@ export function useDerivApiV3() {
   }
   return context;
 }
-

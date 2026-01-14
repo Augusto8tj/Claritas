@@ -344,81 +344,84 @@ const subscribeToMarketData = useCallback(async (symbol: string) => {
 }, [getHistoricalData, makeRequest, chartType, timePeriod]);
 
 
-    const executeTrade = useCallback(async (
-        contractType: string,
-        stake: number,
-        symbol: string,
-        tradeDirection: 'rise' | 'fall',
-        duration: number,
-        durationUnit: DurationUnit,
-        initiator: OperationInitiator
-      ): Promise<TradeResult> => {
-          if (!wsRef.current || !isConnected) {
-            throw new Error("A conexão com a API da Deriv não está ativa.");
-          }
+const executeTrade = useCallback(async (
+    contractType: string,
+    stake: number,
+    symbol: string,
+    tradeDirection: 'rise' | 'fall',
+    duration: number,
+    durationUnit: DurationUnit,
+    initiator: OperationInitiator
+  ): Promise<TradeResult> => {
+      if (!wsRef.current || !isConnected) {
+        throw new Error("A conexão com a API da Deriv não está ativa.");
+      }
 
-          try {
-            const proposalResponse: any = await makeRequest({ 
-                "proposal": 1,
-                "amount": stake,
-                "basis": "stake",
-                "contract_type": contractType,
-                "currency": "USD",
-                "duration": duration,
-                "duration_unit": durationUnit,
-                "symbol": symbol,
-            });
+      try {
+        const proposalResponse: any = await makeRequest({ 
+            "proposal": 1,
+            "amount": stake,
+            "basis": "stake",
+            "contract_type": contractType,
+            "currency": "USD",
+            "duration": duration,
+            "duration_unit": durationUnit,
+            "symbol": symbol,
+        });
 
-            const proposal = proposalResponse.proposal;
-            if (!proposal || !proposal.id) {
-              throw new Error("Falha ao obter uma proposta de negociação da API.");
-            }
-            
-            const buyResponse: any = await makeRequest({ "buy": proposal.id, "price": proposal.ask_price });
-            const buyResult = buyResponse.buy;
-            
-            const entryPrice = buyResult.entry_tick_display_value ? parseFloat(buyResult.entry_tick_display_value) : buyResult.buy_price;
+        const proposal = proposalResponse.proposal;
+        if (!proposal || !proposal.id) {
+          throw new Error("Falha ao obter uma proposta de negociação da API.");
+        }
+        
+        const buyResponse: any = await makeRequest({ "buy": proposal.id, "price": proposal.ask_price });
+        const buyResult = buyResponse.buy;
+        
+        const latestTick = priceTicks.length > 0 ? priceTicks[priceTicks.length - 1].price : 0;
+        const entryPrice = buyResult.entry_tick_display_value 
+          ? parseFloat(buyResult.entry_tick_display_value) 
+          : (buyResult.entry_spot_display_value ? parseFloat(buyResult.entry_spot_display_value) : latestTick);
 
-            const isSellable = durationUnit === 's';
+        const isSellable = durationUnit === 's';
 
-            const newOperation: Operation = {
-                id: buyResult.contract_id,
-                asset: symbol,
-                direction: tradeDirection,
-                stake: stake,
-                status: 'pending',
-                timestamp: new Date().toISOString(),
-                duration: duration,
-                durationUnit: durationUnit,
-                initiator,
-                entryPrice: entryPrice,
-                isSellable,
-            };
-            setOperationsLog(prevLog => [newOperation, ...prevLog]);
+        const newOperation: Operation = {
+            id: buyResult.contract_id,
+            asset: symbol,
+            direction: tradeDirection,
+            stake: stake,
+            status: 'pending',
+            timestamp: new Date().toISOString(),
+            duration: duration,
+            durationUnit: durationUnit,
+            initiator,
+            entryPrice: entryPrice,
+            isSellable,
+        };
+        setOperationsLog(prevLog => [newOperation, ...prevLog]);
 
-            const entryTime = buyResult.purchase_time;
-            
-            addTradeAnnotation({
-                contractId: String(buyResult.contract_id),
-                entryTime: entryTime,
-                entryPrice: entryPrice,
-                direction: tradeDirection,
-                status: 'pending',
-                stake: stake,
-                symbol,
-            });
+        const entryTime = buyResult.purchase_time;
+        
+        addTradeAnnotation({
+            contractId: String(buyResult.contract_id),
+            entryTime: entryTime,
+            entryPrice: entryPrice,
+            direction: tradeDirection,
+            status: 'pending',
+            stake: stake,
+            symbol,
+        });
 
-            return {
-              success: true,
-              message: `Ordem do tipo "${contractType}" para ${symbol} no valor de ${stake} USD executada com sucesso.`,
-              contractId: buyResult.contract_id,
-            };
-          } catch (error) {
-             console.error("[Deriv Hook] Erro durante a negociação:", error);
-             const message = error instanceof Error ? error.message : "Um erro desconhecido ocorreu.";
-             return { success: false, message };
-          }
-      }, [isConnected, makeRequest, addTradeAnnotation]);
+        return {
+          success: true,
+          message: `Ordem do tipo "${contractType}" para ${symbol} no valor de ${stake} USD executada com sucesso.`,
+          contractId: buyResult.contract_id,
+        };
+      } catch (error) {
+         console.error("[Deriv Hook] Erro durante a negociação:", error);
+         const message = error instanceof Error ? error.message : "Um erro desconhecido ocorreu.";
+         return { success: false, message };
+      }
+  }, [isConnected, makeRequest, addTradeAnnotation, priceTicks]);
 
   const sellContract = useCallback(async (contractId: number): Promise<TradeResult> => {
     if (!wsRef.current || !isConnected) {
