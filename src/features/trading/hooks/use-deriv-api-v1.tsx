@@ -184,6 +184,12 @@ export const DerivApiProviderV1 = ({ children }: { children: ReactNode }) => {
     setIsLoading(false);
   }, []);
 
+  const updateTradeAnnotation = useCallback((contractId: string, updates: Partial<TradeAnnotation>) => {
+      setTradeAnnotations(prev => prev.map(ann => 
+        ann.contractId === contractId ? { ...ann, ...updates } : ann
+      ));
+  }, []);
+
   // Client-side timer to check for expired contracts
   useEffect(() => {
     const interval = setInterval(() => {
@@ -193,7 +199,8 @@ export const DerivApiProviderV1 = ({ children }: { children: ReactNode }) => {
         if (op.status === 'pending' && op.expirationTime && now > op.expirationTime) {
           hasChanges = true;
           updateTradeAnnotation(String(op.id), { status: 'lost', profit: -op.stake });
-          return { ...op, status: 'lost' as const, result: -op.stake };
+          // CORREÇÃO: Adicionar o exitTimestamp na expiração por timer
+          return { ...op, status: 'lost' as const, result: -op.stake, exitTimestamp: new Date().toISOString() };
         }
         return op;
       });
@@ -204,7 +211,7 @@ export const DerivApiProviderV1 = ({ children }: { children: ReactNode }) => {
     }, 2000); // Check every 2 seconds
 
     return () => clearInterval(interval);
-  }, [operationsLog, setOperationsLog]);
+  }, [operationsLog, updateTradeAnnotation]);
   
   const activeToken = accountType === 'demo' ? demoToken : realToken;
 
@@ -246,12 +253,6 @@ export const DerivApiProviderV1 = ({ children }: { children: ReactNode }) => {
         id: `annotation-${annotation.contractId}`,
       };
       setTradeAnnotations(prev => [...prev, newAnnotation]);
-    }, []);
-
-    const updateTradeAnnotation = useCallback((contractId: string, updates: Partial<TradeAnnotation>) => {
-      setTradeAnnotations(prev => prev.map(ann => 
-        ann.contractId === contractId ? { ...ann, ...updates } : ann
-      ));
     }, []);
 
 const getHistoricalData = useCallback(async (symbol: string, style: 'ticks' | 'candles', count: number, period?: TimePeriod): Promise<ApiHistoricalData[]> => {
@@ -542,10 +543,12 @@ const executeTrade = useCallback(async (
                         description: `Contrato ${contract.contract_id}: ${profit >= 0 ? `Lucro de ${contract.currency} ${profit.toFixed(2)}` : `Prejuízo de ${contract.currency} ${Math.abs(profit).toFixed(2)}`}`,
                         variant: isLoss ? "destructive" : "default",
                     });
+                    
+                    const sellTime = contract.sell_time ? new Date(contract.sell_time * 1000).toISOString() : new Date().toISOString();
 
                     setOperationsLog(prevLog => prevLog.map(op =>
                         op.id === contract.contract_id 
-                        ? { ...op, status: profit >= 0 ? 'won' : 'lost', result: profit, exitPrice: parseFloat(contract.exit_tick_display_value) } 
+                        ? { ...op, status: profit >= 0 ? 'won' : 'lost', result: profit, exitPrice: parseFloat(contract.exit_tick_display_value), exitTimestamp: sellTime } 
                         : op
                     ));
 
@@ -674,7 +677,7 @@ const executeTrade = useCallback(async (
     return () => {
       if (wsRef.current) wsRef.current.close();
     };
-  }, [activeToken, isLoading, makeRequest, toast, triggerReconnect]);
+  }, [activeToken, isLoading, makeRequest, toast, triggerReconnect, updateTradeAnnotation]);
 
   
   useEffect(() => {

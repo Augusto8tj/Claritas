@@ -192,6 +192,12 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
     setIsLoading(false);
   }, []);
 
+  const updateTradeAnnotation = useCallback((contractId: string, updates: Partial<TradeAnnotation>) => {
+      setTradeAnnotations(prev => prev.map(ann => 
+        ann.contractId === contractId ? { ...ann, ...updates } : ann
+      ));
+  }, []);
+
   // Client-side timer to check for expired contracts
   useEffect(() => {
     const interval = setInterval(() => {
@@ -201,7 +207,8 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
         if (op.status === 'pending' && op.expirationTime && now > op.expirationTime) {
           hasChanges = true;
           updateTradeAnnotation(String(op.id), { status: 'lost', profit: -op.stake });
-          return { ...op, status: 'lost' as const, result: -op.stake };
+           // CORREÇÃO: Adicionar o exitTimestamp na expiração por timer
+          return { ...op, status: 'lost' as const, result: -op.stake, exitTimestamp: new Date().toISOString() };
         }
         return op;
       });
@@ -212,7 +219,7 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
     }, 2000); // Check every 2 seconds
 
     return () => clearInterval(interval);
-  }, [operationsLog, setOperationsLog]);
+  }, [operationsLog, updateTradeAnnotation]);
   
   const activeToken = accountType === 'demo' ? demoToken : realToken;
 
@@ -269,12 +276,6 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
         id: `annotation-${annotation.contractId}`,
       };
       setTradeAnnotations(prev => [...prev, newAnnotation]);
-    }, []);
-
-    const updateTradeAnnotation = useCallback((contractId: string, updates: Partial<TradeAnnotation>) => {
-      setTradeAnnotations(prev => prev.map(ann => 
-        ann.contractId === contractId ? { ...ann, ...updates } : ann
-      ));
     }, []);
 
     const getHistoricalData = useCallback(async (symbol: string, style: 'ticks' | 'candles', count: number, period?: TimePeriod): Promise<ApiHistoricalData[]> => {
@@ -511,13 +512,12 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
                               const exitPrice = contract.exit_tick_display_value ? parseFloat(contract.exit_tick_display_value) : op.exitPrice;
                               
                               if (contract.is_sold) {
+                                  const sellTime = contract.sell_time ? new Date(contract.sell_time * 1000).toISOString() : new Date().toISOString();
                                   setToastQueue(prev => [...prev, {
                                       title: "Negociação Encerrada",
                                       description: `Contrato ${contractId}: ${contract.profit >= 0 ? `Lucro de ${contract.currency} ${contract.profit.toFixed(2)}` : `Prejuízo de ${contract.currency} ${Math.abs(contract.profit).toFixed(2)}`}`,
                                       variant: contract.profit < 0 ? "destructive" : "default",
                                   }]);
-                                  
-                                  const sellTime = contract.sell_time ? contract.sell_time * 1000 : Date.now();
                                   
                                   updateTradeAnnotation(String(contractId), {
                                       exitTime: contract.sell_time || Math.floor(Date.now() / 1000),
@@ -530,7 +530,7 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
                                       wsRef.current.send(JSON.stringify({"balance": 1}));
                                   }
   
-                                  return { ...op, status: newStatus, result: contract.profit, exitPrice: exitPrice, exitTimestamp: new Date(sellTime).toISOString() };
+                                  return { ...op, status: newStatus, result: contract.profit, exitPrice: exitPrice, exitTimestamp: sellTime };
                               } else {
                                   return { ...op, result: contract.profit };
                               }
