@@ -25,11 +25,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import type { OperationInitiator } from "@/lib/types";
 
 import type { DurationUnit, RiseFallFormValues } from "./deriv-trader-interface-v1.types";
 import { useDerivApiV1 } from "@/features/trading/hooks/use-deriv-api-v1";
 import { Switch } from "@/components/ui/switch";
-import type { OperationInitiator } from "@/lib/types";
 
 type TradeType = 'rise_fall' | 'higher_lower' | 'touch_no_touch';
 
@@ -63,11 +63,13 @@ function DerivTraderInterfaceV1({ symbol }: DerivTraderInterfaceProps) {
 
   useEffect(() => {
     if (durationLimits) {
-      const { min } = durationLimits[durationUnit];
-      const currentDuration = form.getValues('duration');
-      if (currentDuration < min) {
-        form.setValue('duration', min);
-        form.trigger('duration');
+      const limits = durationLimits[durationUnit];
+      if (limits && limits.min > 0) {
+        const currentDuration = form.getValues('duration');
+        if (currentDuration < limits.min) {
+          form.setValue('duration', limits.min);
+          form.trigger('duration');
+        }
       }
     }
   }, [durationUnit, durationLimits, form]);
@@ -75,8 +77,8 @@ function DerivTraderInterfaceV1({ symbol }: DerivTraderInterfaceProps) {
 
   const handleDurationChange = (amount: number) => {
     if (!durationLimits) return;
-    const currentDuration = form.getValues('duration');
     const { min, max } = durationLimits[durationUnit];
+    const currentDuration = form.getValues('duration');
     let newDuration = currentDuration + amount;
     if (newDuration < min) newDuration = min;
     if (newDuration > max) newDuration = max;
@@ -208,7 +210,11 @@ function DerivTraderInterfaceV1({ symbol }: DerivTraderInterfaceProps) {
                                                 </FormControl>
                                                 <SelectContent>
                                                     {Object.entries(durationUnitLabels).map(([value, label]) => (
-                                                        <SelectItem key={value} value={value} disabled={durationLimits && durationLimits[value as DurationUnit].min === 0}>
+                                                        <SelectItem 
+                                                            key={value} 
+                                                            value={value} 
+                                                            disabled={!durationLimits || !durationLimits[value as DurationUnit] || durationLimits[value as DurationUnit].min === 0}
+                                                        >
                                                             {label}
                                                         </SelectItem>
                                                     ))}

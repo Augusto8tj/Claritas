@@ -63,11 +63,13 @@ function DerivTraderInterfaceV2({ symbol }: DerivTraderInterfaceProps) {
 
   useEffect(() => {
     if (durationLimits) {
-      const { min } = durationLimits[durationUnit];
-      const currentDuration = form.getValues('duration');
-      if (currentDuration < min) {
-        form.setValue('duration', min);
-        form.trigger('duration');
+      const limits = durationLimits[durationUnit];
+      if (limits && limits.min > 0) {
+        const currentDuration = form.getValues('duration');
+        if (currentDuration < limits.min) {
+          form.setValue('duration', limits.min);
+          form.trigger('duration');
+        }
       }
     }
   }, [durationUnit, durationLimits, form]);
@@ -75,8 +77,8 @@ function DerivTraderInterfaceV2({ symbol }: DerivTraderInterfaceProps) {
 
   const handleDurationChange = (amount: number) => {
     if (!durationLimits) return;
-    const currentDuration = form.getValues('duration');
     const { min, max } = durationLimits[durationUnit];
+    const currentDuration = form.getValues('duration');
     let newDuration = currentDuration + amount;
     if (newDuration < min) newDuration = min;
     if (newDuration > max) newDuration = max;
@@ -208,7 +210,11 @@ function DerivTraderInterfaceV2({ symbol }: DerivTraderInterfaceProps) {
                                                 </FormControl>
                                                 <SelectContent>
                                                     {Object.entries(durationUnitLabels).map(([value, label]) => (
-                                                        <SelectItem key={value} value={value} disabled={durationLimits && durationLimits[value as DurationUnit].min === 0}>
+                                                        <SelectItem 
+                                                            key={value} 
+                                                            value={value} 
+                                                            disabled={!durationLimits || !durationLimits[value as DurationUnit] || durationLimits[value as DurationUnit].min === 0}
+                                                        >
                                                             {label}
                                                         </SelectItem>
                                                     ))}
