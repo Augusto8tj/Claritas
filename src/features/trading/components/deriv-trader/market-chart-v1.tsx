@@ -934,6 +934,24 @@ export function MarketChartV1({
           <h2 className="text-xl font-bold" style={{ color: colors.text }}>
             {activeSymbol}
           </h2>
+          <div
+            className="flex items-center gap-2"
+            style={{ color: isPositive ? colors.bull : colors.bear }}
+          >
+            <span className="font-semibold text-lg">
+              {lastPrice > 0 ? lastPrice.toFixed(4) : '...'}
+            </span>
+            <div className="text-xs font-mono flex items-center">
+              {isPositive ? (
+                <TrendingUp size={14} />
+              ) : (
+                <TrendingDown size={14} />
+              )}
+              <span>
+                {change.toFixed(4)} ({changePercent.toFixed(2)}%)
+              </span>
+            </div>
+          </div>
         </div>
         <div className="flex items-center gap-1.5">
           <DropdownMenu>

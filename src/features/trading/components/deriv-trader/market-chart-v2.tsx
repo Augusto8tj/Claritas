@@ -1,4 +1,4 @@
-// /src/features/trading/components/deriv-trader/market-chart-v2.tsx
+// src/features/trading/components/deriv-trader/market-chart-v2.tsx
 'use client'
 
 // ESTE ARQUIVO É UMA CÓPIA DEDICADA PARA O SISTEMA V2.5
@@ -64,8 +64,10 @@ const MAX_CANDLE_WIDTH = 20
 const isCandle = (d: ChartData): d is CandleData =>
     'open' in d && d.open !== undefined;
 
-const getDisplayPrice = (d: ChartData) =>
-  isCandle(d) ? d.close : d.price;
+const getDisplayPrice = (d: ChartData | null) => {
+  if (!d) return 0;
+  return isCandle(d) ? d.close : d.price;
+}
 
 
 export function MarketChartV2({
@@ -128,11 +130,11 @@ export function MarketChartV2({
     '1d',
   ]
   
-  const lastDataPoint = rawData.length > 0 ? rawData[rawData.length - 1] : null
-  const prevDataPoint = rawData.length > 1 ? rawData[rawData.length - 2] : null
+  const lastDataPoint = rawData.length > 0 ? rawData[rawData.length - 1] : null;
+  const prevDataPoint = rawData.length > 1 ? rawData[rawData.length - 2] : null;
 
-  const lastPrice = lastDataPoint ? getDisplayPrice(lastDataPoint) : 0
-  const prevPrice = prevDataPoint ? getDisplayPrice(prevDataPoint) : 1
+  const lastPrice = getDisplayPrice(lastDataPoint);
+  const prevPrice = getDisplayPrice(prevDataPoint);
   
   const change = lastPrice - prevPrice
   const changePercent = prevPrice !== 0 ? (change / prevPrice) * 100 : 0
