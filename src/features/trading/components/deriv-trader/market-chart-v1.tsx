@@ -853,3 +853,6 @@ export function MarketChartV1({
     </div>
   )
 }
+And change it as follows:
+  
+no cabeçalho do gráfico, retire a variação do preço e mantenha apenas o nome do ativo.
