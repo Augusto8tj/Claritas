@@ -1,7 +1,7 @@
 // src/features/trading/components/deriv-trader/deriv-trader-interface-v1.tsx
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import { useFormContext } from "react-hook-form";
 import {
   Card,
@@ -26,7 +26,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 
-import type { DurationUnit, RiseFallFormValues } from "./deriv-trader-interface-v1.types";
+import type { DurationUnit, RiseFallFormValues, OperationInitiator } from "./deriv-trader-interface-v1.types";
 import { useDerivApiV1 } from "@/features/trading/hooks/use-deriv-api-v1";
 import { Switch } from "@/components/ui/switch";
 
@@ -70,7 +70,7 @@ function DerivTraderInterfaceV1({ symbol }: DerivTraderInterfaceProps) {
     const { min, max } = durationLimits[durationUnit];
 
     let newDuration = currentDuration;
-    if (newDuration < min) newDuration = min;
+    if (newDuration < min || newDuration === 0) newDuration = min > 0 ? min : 5; // Garante que não seja 0
     if (newDuration > max) newDuration = max;
 
     if (newDuration !== currentDuration) {
@@ -239,7 +239,7 @@ function DerivTraderInterfaceV1({ symbol }: DerivTraderInterfaceProps) {
                                                     <Input 
                                                         type="number"
                                                         {...field}
-                                                        onChange={e => field.onChange(parseInt(e.target.value))}
+                                                        onChange={e => field.onChange(parseInt(e.target.value) || 0)}
                                                         className="font-semibold text-lg text-center border-y border-x-0 rounded-none focus-visible:ring-0 h-10"
                                                     />
                                                 </FormControl>
@@ -271,7 +271,7 @@ function DerivTraderInterfaceV1({ symbol }: DerivTraderInterfaceProps) {
                                         <Button type="button" variant="outline" size="icon" onClick={() => form.setValue('stake', Math.max(0.35, field.value - 1))}><Minus className="h-4 w-4"/></Button>
                                         <div className="relative flex-1">
                                             <FormControl>
-                                                <Input type="number" {...field} className="text-center font-bold text-lg pr-12"/>
+                                                <Input type="number" {...field} onChange={e => field.onChange(parseFloat(e.target.value) || 0)} className="text-center font-bold text-lg pr-12"/>
                                             </FormControl>
                                             <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">USD</span>
                                         </div>
@@ -290,18 +290,18 @@ function DerivTraderInterfaceV1({ symbol }: DerivTraderInterfaceProps) {
                                 checked={form.getValues('allowEquals')}
                                 onCheckedChange={(checked) => form.setValue('allowEquals', !!checked)}
                                 disabled={isButtonDisabled}
-                                id="allowEquals"
+                                id="allowEqualsV1"
                             />
-                            <Label htmlFor="allowEquals" className="text-sm font-normal text-muted-foreground cursor-pointer">
+                            <Label htmlFor="allowEqualsV1" className="text-sm font-normal text-muted-foreground cursor-pointer">
                                 Permitir "Equals"
                             </Label>
                             <Info className="h-3 w-3 text-muted-foreground" />
                         </div>
                         <div className="flex items-center space-x-2">
-                            <Label htmlFor="inversion-mode" className="text-sm font-normal text-muted-foreground cursor-pointer">
+                            <Label htmlFor="inversion-mode-v1" className="text-sm font-normal text-muted-foreground cursor-pointer">
                                 Inverter Direção
                             </Label>
-                            <Switch id="inversion-mode" checked={isInversionModeOn} onCheckedChange={setIsInversionModeOn} />
+                            <Switch id="inversion-mode-v1" checked={isInversionModeOn} onCheckedChange={setIsInversionModeOn} />
                         </div>
                     </div>
                 </form>

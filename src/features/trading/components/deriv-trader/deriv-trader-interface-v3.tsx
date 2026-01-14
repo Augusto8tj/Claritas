@@ -1,41 +1,40 @@
 // src/features/trading/components/deriv-trader/deriv-trader-interface-v3.tsx
-'use client';
+"use client";
 
-import * as React from 'react';
-import { useMemo, useEffect } from 'react';
-import { useFormContext, useWatch } from 'react-hook-form';
-import { ArrowDown, ArrowUp, Info, Loader2, Minus, Plus, ChevronDown } from "lucide-react";
-
+import { useState, useEffect } from "react";
+import { useFormContext } from "react-hook-form";
 import {
+  Card,
+  CardContent,
+} from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import {
+  Form,
+  FormControl,
   FormField,
   FormItem,
-  FormControl,
-  FormLabel,
+  FormMessage,
 } from "@/components/ui/form";
+import { ArrowDown, ArrowUp, Info, Loader2, Minus, Plus, ChevronDown, Repeat } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
+import { Input } from "@/components/ui/input";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Label } from "@/components/ui/label";
+import { Separator } from "@/components/ui/separator";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 
-import {
-  Select,
-  SelectTrigger,
-  SelectValue,
-  SelectContent,
-  SelectItem,
-} from '@/components/ui/select';
-
-import { Input } from '@/components/ui/input';
-import { Checkbox } from '@/components/ui/checkbox';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
-import { Separator } from '@/components/ui/separator';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
-import { Switch } from '@/components/ui/switch';
-import { Label } from '@/components/ui/label';
-import { useToast } from '@/hooks/use-toast';
+import type { DurationUnit, RiseFallFormValues, OperationInitiator } from "./deriv-trader-interface-v3.types";
 import { useDerivApiV3 } from "@/features/trading/hooks/use-deriv-api-v3";
-import type { DurationUnit, RiseFallFormValues, OperationInitiator } from './deriv-trader-interface-v3.types';
-
+import { Switch } from "@/components/ui/switch";
 
 type TradeType = 'rise_fall' | 'higher_lower' | 'touch_no_touch';
+
+interface DerivTraderInterfaceProps {
+  symbol: string;
+}
 
 const durationUnitLabels: Record<DurationUnit, string> = {
   t: "Ticks",
@@ -51,110 +50,38 @@ const tradeTypeLabels: Record<TradeType, string> = {
   touch_no_touch: "Touch/No Touch",
 };
 
-interface DerivTraderInterfaceV3Props {
-  symbol: string;
-}
-
-
-export default function DerivTraderInterfaceV3({ symbol }: DerivTraderInterfaceV3Props) {
+function DerivTraderInterfaceV3({ symbol }: DerivTraderInterfaceProps) {
   const { toast } = useToast();
-  const [loading, setLoading] = React.useState<"rise" | "fall" | null>(null);
-  const [tradeType, setTradeType] = React.useState<TradeType>('rise_fall');
-  const [isInversionModeOn, setIsInversionModeOn] = React.useState(false);
+  const [loading, setLoading] = useState<"rise" | "fall" | null>(null);
+  const [tradeType, setTradeType] = useState<TradeType>('rise_fall');
+  const [isInversionModeOn, setIsInversionModeOn] = useState(false);
   const { isConnected, executeTrade, durationLimits } = useDerivApiV3();
 
   const form = useFormContext<RiseFallFormValues>();
-  
-  // --- HF-SAFE STATE MANAGEMENT ---
-  const [localDurationUnit, setLocalDurationUnit] = React.useState<DurationUnit>(
-    form.getValues("duration_unit")
-  );
+  const durationUnit = form.watch('duration_unit');
 
-  const durationUnitFromForm = form.watch('duration_unit');
-  
   useEffect(() => {
-    if (durationUnitFromForm !== localDurationUnit) {
-      setLocalDurationUnit(durationUnitFromForm);
+    if (durationLimits) {
+      const { min } = durationLimits[durationUnit];
+      const currentDuration = form.getValues('duration');
+      if (currentDuration < min || currentDuration === 0) {
+        form.setValue('duration', min > 0 ? min : 5);
+        form.trigger('duration');
+      }
     }
-  }, [durationUnitFromForm, localDurationUnit]);
-  // --- END HF-SAFE ---
-
-  const allowEquals = form.watch('allowEquals');
-  const stake = form.watch('stake');
-
-  const payout = useMemo(() => {
-    if (!stake) return "0.00";
-    return (stake * 1.942).toFixed(2);
-  }, [stake]);
-
-  // Effect to ensure the selected duration unit is always valid based on API limits.
-  React.useEffect(() => {
-    if (!durationLimits || !localDurationUnit) return;
-    
-    const isUnitDisabled = durationLimits[localDurationUnit]?.min === 0;
-
-    if (isUnitDisabled) {
-        const firstValid = (Object.keys(durationLimits) as DurationUnit[]).find(
-            (unit) => durationLimits[unit]?.min > 0
-        );
-        
-        if (firstValid) {
-            form.setValue('duration_unit', firstValid, {
-                shouldDirty: true,
-                shouldTouch: false,
-                shouldValidate: true,
-            });
-        }
-    }
-  }, [durationLimits, localDurationUnit, form]);
-
-
-  // Effect to adjust the duration value when the unit changes.
-  React.useEffect(() => {
-    if (!durationLimits || !localDurationUnit) return;
-  
-    const currentDuration = form.getValues('duration');
-    const limits = durationLimits[localDurationUnit];
-    
-    if (!limits) return;
-
-    let newDuration = currentDuration;
-    if (newDuration < limits.min) newDuration = limits.min;
-    if (newDuration > limits.max) newDuration = limits.max;
-  
-    if (newDuration !== currentDuration) {
-      form.setValue('duration', newDuration, {
-        shouldDirty: true,
-        shouldTouch: false,
-        shouldValidate: true,
-      });
-    }
-  }, [localDurationUnit, durationLimits, form]);
+  }, [durationUnit, durationLimits, form]);
 
 
   const handleDurationChange = (amount: number) => {
-    const unit = form.getValues('duration_unit');
-    if (!durationLimits || !durationLimits[unit]) return;
+    if (!durationLimits) return;
     const currentDuration = form.getValues('duration');
-    const { min, max } = durationLimits[unit];
+    const { min, max } = durationLimits[durationUnit];
     let newDuration = currentDuration + amount;
     if (newDuration < min) newDuration = min;
     if (newDuration > max) newDuration = max;
-    form.setValue('duration', newDuration, {
-      shouldDirty: true,
-      shouldTouch: false,
-      shouldValidate: true,
-    });
+    form.setValue('duration', newDuration);
+    form.trigger('duration');
   };
-
-  const handleStakeChange = (amount: number) => {
-    const currentStake = form.getValues('stake');
-    form.setValue('stake', Math.max(0.35, currentStake + amount), {
-        shouldDirty: true,
-        shouldTouch: false,
-        shouldValidate: true,
-    });
-  }
 
   const handleTrade = async (tradeDirection: "rise" | "fall") => {
     const isValid = await form.trigger();
@@ -187,7 +114,7 @@ export default function DerivTraderInterfaceV3({ symbol }: DerivTraderInterfaceV
     if (tradeType === 'rise_fall') {
       if (finalTradeDirection === 'rise') {
         contractType = data.allowEquals ? 'CALLE' : 'CALL';
-      } else { // 'fall'
+      } else { 
         contractType = data.allowEquals ? 'PUTE' : 'PUT';
       }
     } else {
@@ -212,7 +139,8 @@ export default function DerivTraderInterfaceV3({ symbol }: DerivTraderInterfaceV
       });
     }
   };
-  
+
+  const payout = (form.watch('stake') * 1.942).toFixed(2);
   const payoutPercentage = "94.20%";
   const isButtonDisabled = !!loading || !isConnected;
 
@@ -254,54 +182,42 @@ export default function DerivTraderInterfaceV3({ symbol }: DerivTraderInterfaceV
                 </PopoverContent>
             </Popover>
 
+            <Form {...form}>
                 <form className="space-y-4">
-                    <div className="w-full">
-                        
+                    <Tabs defaultValue="duration" className="w-full">
+                        <TabsList className="grid w-full grid-cols-2">
+                            <TabsTrigger value="duration">Duração</TabsTrigger>
+                            <TabsTrigger value="endtime" disabled>Hora de término</TabsTrigger>
+                        </TabsList>
+                        <TabsContent value="duration" className="pt-2">
                             <div className="flex gap-2">
                                 <FormField
-                                  control={form.control}
-                                  name="duration_unit"
-                                  render={() => (
-                                    <FormItem className="w-2/5">
-                                      <Select
-                                        value={localDurationUnit}
-                                        onValueChange={(val) => {
-                                          const next = val as DurationUnit;
-                                          setLocalDurationUnit(next);
-                                          queueMicrotask(() => {
-                                            form.setValue("duration_unit", next, {
-                                              shouldDirty: true,
-                                              shouldTouch: false,
-                                              shouldValidate: true,
-                                            });
-                                          });
-                                        }}
-                                      >
-                                        <FormControl>
-                                          <SelectTrigger>
-                                            <SelectValue placeholder="Unidade" />
-                                          </SelectTrigger>
-                                        </FormControl>
-
-                                        <SelectContent>
-                                          {Object.entries(durationUnitLabels).map(([value, label]) => {
-                                            const disabled =
-                                              durationLimits?.[value as DurationUnit]?.min === 0;
-
-                                            return (
-                                              <SelectItem
-                                                key={value}
-                                                value={value}
-                                                disabled={disabled}
-                                              >
-                                                {label}
-                                              </SelectItem>
-                                            );
-                                          })}
-                                        </SelectContent>
-                                      </Select>
-                                    </FormItem>
-                                  )}
+                                    control={form.control}
+                                    name="duration_unit"
+                                    render={({ field }) => (
+                                        <FormItem className="w-2/5">
+                                            <Select
+                                              onValueChange={(value) => {
+                                                const newUnit = value as DurationUnit;
+                                                field.onChange(newUnit);
+                                              }}
+                                              value={field.value}
+                                            >
+                                                <FormControl>
+                                                    <SelectTrigger>
+                                                        <SelectValue placeholder="Unidade" />
+                                                    </SelectTrigger>
+                                                </FormControl>
+                                                <SelectContent>
+                                                    {Object.entries(durationUnitLabels).map(([value, label]) => (
+                                                        <SelectItem key={value} value={value} disabled={durationLimits ? durationLimits[value as DurationUnit].min === 0 : false}>
+                                                            {label}
+                                                        </SelectItem>
+                                                    ))}
+                                                </SelectContent>
+                                            </Select>
+                                        </FormItem>
+                                    )}
                                 />
                                 <FormField
                                     control={form.control}
@@ -315,87 +231,73 @@ export default function DerivTraderInterfaceV3({ symbol }: DerivTraderInterfaceV
                                                     <Input 
                                                         type="number"
                                                         {...field}
-                                                        onChange={e => {
-                                                          const value = Number(e.target.value);
-                                                          field.onChange(isNaN(value) ? 0 : value);
-                                                        }}
+                                                        onChange={e => field.onChange(parseInt(e.target.value) || 0)}
                                                         className="font-semibold text-lg text-center border-y border-x-0 rounded-none focus-visible:ring-0 h-10"
                                                     />
                                                 </FormControl>
                                             </div>
                                             <Button type="button" variant="outline" size="icon" className="h-10 w-10" onClick={() => handleDurationChange(1)}><Plus className="h-4 w-4"/></Button>
                                         </div>
+                                        <FormMessage />
                                     </FormItem>
                                     )}
                                 />
                             </div>
-                        
-                    </div>
+                        </TabsContent>
+                    </Tabs>
                     
                     <Separator />
                     
-                    <div className="w-full">
-                       
+                    <Tabs defaultValue="stake" className="w-full">
+                        <TabsList className="grid w-full grid-cols-2">
+                            <TabsTrigger value="stake">Entrada</TabsTrigger>
+                            <TabsTrigger value="payout" disabled>Pagamento</TabsTrigger>
+                        </TabsList>
+                        <TabsContent value="stake" className="pt-2">
                             <FormField
                                 control={form.control}
                                 name="stake"
                                 render={({ field }) => (
                                 <FormItem>
                                     <div className="flex items-center justify-center gap-2">
-                                        <Button type="button" variant="outline" size="icon" onClick={() => handleStakeChange(-1)}><Minus className="h-4 w-4"/></Button>
+                                        <Button type="button" variant="outline" size="icon" onClick={() => form.setValue('stake', Math.max(0.35, field.value - 1))}><Minus className="h-4 w-4"/></Button>
                                         <div className="relative flex-1">
                                             <FormControl>
-                                                <Input type="number" {...field} onChange={e => {
-                                                  const value = Number(e.target.value);
-                                                  field.onChange(isNaN(value) ? 0 : value);
-                                                }} className="text-center font-bold text-lg pr-12"/>
+                                                <Input type="number" {...field} onChange={e => field.onChange(parseFloat(e.target.value) || 0)} className="text-center font-bold text-lg pr-12"/>
                                             </FormControl>
                                             <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">USD</span>
                                         </div>
-                                        <Button type="button" variant="outline" size="icon" onClick={() => handleStakeChange(1)}><Plus className="h-4 w-4"/></Button>
+                                        <Button type="button" variant="outline" size="icon" onClick={() => form.setValue('stake', field.value + 1)}><Plus className="h-4 w-4"/></Button>
                                     </div>
+                                    <FormMessage />
                                 </FormItem>
                                 )}
                             />
-                        
-                    </div>
+                        </TabsContent>
+                    </Tabs>
 
                     <div className="flex items-center justify-between pt-2">
                         <div className="flex flex-row items-center space-x-2 space-y-0">
-                            <FormField
-                                control={form.control}
-                                name="allowEquals"
-                                render={({ field }) => (
-                                    <FormItem className="flex items-center gap-2">
-                                        <FormControl>
-                                            <Checkbox
-                                                checked={!!allowEquals}
-                                                onCheckedChange={(checked) =>
-                                                  form.setValue('allowEquals', !!checked, {
-                                                    shouldDirty: true,
-                                                    shouldValidate: false,
-                                                  })
-                                                }
-                                                disabled={isButtonDisabled}
-                                                id="allowEquals"
-                                            />
-                                        </FormControl>
-                                        <Label htmlFor="allowEquals" className="text-sm font-normal text-muted-foreground cursor-pointer">
-                                            Permitir "Equals"
-                                        </Label>
-                                    </FormItem>
-                                )}
+                            <Checkbox
+                                checked={form.getValues('allowEquals')}
+                                onCheckedChange={(checked) => form.setValue('allowEquals', !!checked)}
+                                disabled={isButtonDisabled}
+                                id="allowEqualsV3"
                             />
+                            <Label htmlFor="allowEqualsV3" className="text-sm font-normal text-muted-foreground cursor-pointer">
+                                Permitir "Equals"
+                            </Label>
                             <Info className="h-3 w-3 text-muted-foreground" />
                         </div>
                         <div className="flex items-center space-x-2">
-                            <Label htmlFor="inversion-modeV2" className="text-sm font-normal text-muted-foreground cursor-pointer">
+                            <Label htmlFor="inversion-mode-v3" className="text-sm font-normal text-muted-foreground cursor-pointer">
                                 Inverter Direção
                             </Label>
-                            <Switch id="inversion-modeV2" checked={isInversionModeOn} onCheckedChange={setIsInversionModeOn} />
+                            <Switch id="inversion-mode-v3" checked={isInversionModeOn} onCheckedChange={setIsInversionModeOn} />
                         </div>
                     </div>
                 </form>
+            </Form>
             
             <div className="space-y-2 pt-2">
                 <div className="text-xs text-muted-foreground flex items-center justify-between">
@@ -445,3 +347,5 @@ export default function DerivTraderInterfaceV3({ symbol }: DerivTraderInterfaceV
     </div>
   );
 }
+
+export default DerivTraderInterfaceV3;
