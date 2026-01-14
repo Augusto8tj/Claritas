@@ -64,8 +64,8 @@ function DerivTraderInterfaceV2({ symbol }: DerivTraderInterfaceProps) {
   useEffect(() => {
     if (durationLimits) {
       const limits = durationLimits[durationUnit];
-      // APLICAÇÃO DA REGRA DE NEGÓCIO: Mínimo de 11 para segundos
-      const customMin = durationUnit === 's' ? 11 : limits?.min || 1;
+      // APLICAÇÃO DA REGRA DE NEGÓCIO: Mínimo de 15 para segundos
+      const customMin = durationUnit === 's' ? 15 : limits?.min || 1;
       
       const currentDuration = form.getValues('duration');
       if (currentDuration < customMin) {
@@ -83,7 +83,7 @@ function DerivTraderInterfaceV2({ symbol }: DerivTraderInterfaceProps) {
     if (!apiLimits) return;
 
     // APLICAÇÃO DA REGRA DE NEGÓCIO
-    const min = durationUnit === 's' ? 11 : apiLimits.min;
+    const min = durationUnit === 's' ? 15 : apiLimits.min;
     const max = durationUnit === 't' ? 10 : apiLimits.max;
 
     const currentDuration = form.getValues('duration') || 0;

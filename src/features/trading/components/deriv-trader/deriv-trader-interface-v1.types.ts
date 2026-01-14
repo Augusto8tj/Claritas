@@ -9,12 +9,12 @@ export const riseFallSchema = z.object({
 }).refine(
   (data) => {
     if (data.duration_unit === 's') {
-      return data.duration >= 11;
+      return data.duration >= 15;
     }
     return true;
   },
   {
-    message: "A duração para segundos deve ser de no mínimo 11.",
+    message: "A duração para segundos deve ser de no mínimo 15.",
     path: ["duration"],
   }
 ).refine(
@@ -32,3 +32,4 @@ export const riseFallSchema = z.object({
 
 
 export type RiseFallFormValues = z.infer<typeof riseFallSchema>;
+export type DurationUnit = z.infer<typeof riseFallSchema.shape.duration_unit>;
