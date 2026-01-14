@@ -355,5 +355,3 @@ function DerivTraderInterfaceV1({ symbol }: DerivTraderInterfaceProps) {
 }
 
 export default DerivTraderInterfaceV1;
-
-    

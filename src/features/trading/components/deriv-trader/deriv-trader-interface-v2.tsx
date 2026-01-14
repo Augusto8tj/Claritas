@@ -15,7 +15,7 @@ import {
   FormItem,
   FormMessage,
 } from "@/components/ui/form";
-import { ArrowDown, ArrowUp, Info, Loader2, Minus, Plus, ChevronDown, Repeat } from "lucide-react";
+import { ArrowDown, ArrowUp, Info, Loader2, Minus, Plus, ChevronDown } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -26,9 +26,10 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 
-import type { DurationUnit, RiseFallFormValues, OperationInitiator } from "./deriv-trader-interface-v2.types";
+import type { DurationUnit, RiseFallFormValues } from "./deriv-trader-interface-v2.types";
 import { useDerivApiV2 } from "@/features/trading/hooks/use-deriv-api-v2";
 import { Switch } from "@/components/ui/switch";
+import type { OperationInitiator } from "@/lib/types";
 
 type TradeType = 'rise_fall' | 'higher_lower' | 'touch_no_touch';
 
@@ -64,8 +65,8 @@ function DerivTraderInterfaceV2({ symbol }: DerivTraderInterfaceProps) {
     if (durationLimits) {
       const { min } = durationLimits[durationUnit];
       const currentDuration = form.getValues('duration');
-      if (currentDuration < min || currentDuration === 0) {
-        form.setValue('duration', min > 0 ? min : 5);
+      if (currentDuration < min) {
+        form.setValue('duration', min);
         form.trigger('duration');
       }
     }
@@ -114,7 +115,7 @@ function DerivTraderInterfaceV2({ symbol }: DerivTraderInterfaceProps) {
     if (tradeType === 'rise_fall') {
       if (finalTradeDirection === 'rise') {
         contractType = data.allowEquals ? 'CALLE' : 'CALL';
-      } else { 
+      } else { // 'fall'
         contractType = data.allowEquals ? 'PUTE' : 'PUT';
       }
     } else {
@@ -123,7 +124,7 @@ function DerivTraderInterfaceV2({ symbol }: DerivTraderInterfaceProps) {
         return;
     }
 
-    const result = await executeTrade(contractType, data.stake, symbol, finalTradeDirection, data.duration, data.duration_unit, 'Manual');
+    const result = await executeTrade(contractType, data.stake, symbol, finalTradeDirection, data.duration, data.duration_unit, 'Manual' as OperationInitiator);
     setLoading(null);
 
     if (result.success && result.contractId) {
@@ -196,13 +197,10 @@ function DerivTraderInterfaceV2({ symbol }: DerivTraderInterfaceProps) {
                                     name="duration_unit"
                                     render={({ field }) => (
                                         <FormItem className="w-2/5">
-                                            <Select
-                                              onValueChange={(value) => {
+                                            <Select onValueChange={(value) => {
                                                 const newUnit = value as DurationUnit;
                                                 field.onChange(newUnit);
-                                              }}
-                                              value={field.value}
-                                            >
+                                            }} value={field.value}>
                                                 <FormControl>
                                                     <SelectTrigger>
                                                         <SelectValue placeholder="Unidade" />
@@ -210,7 +208,7 @@ function DerivTraderInterfaceV2({ symbol }: DerivTraderInterfaceProps) {
                                                 </FormControl>
                                                 <SelectContent>
                                                     {Object.entries(durationUnitLabels).map(([value, label]) => (
-                                                        <SelectItem key={value} value={value} disabled={durationLimits ? durationLimits[value as DurationUnit].min === 0 : false}>
+                                                        <SelectItem key={value} value={value} disabled={durationLimits && durationLimits[value as DurationUnit].min === 0}>
                                                             {label}
                                                         </SelectItem>
                                                     ))}
@@ -277,19 +275,27 @@ function DerivTraderInterfaceV2({ symbol }: DerivTraderInterfaceProps) {
                     </Tabs>
 
                     <div className="flex items-center justify-between pt-2">
-                        <div className="flex flex-row items-center space-x-2 space-y-0">
-                            <Checkbox
-                                checked={form.getValues('allowEquals')}
-                                onCheckedChange={(checked) => form.setValue('allowEquals', !!checked)}
-                                disabled={isButtonDisabled}
-                                id="allowEqualsV2"
-                            />
-                            <Label htmlFor="allowEqualsV2" className="text-sm font-normal text-muted-foreground cursor-pointer">
-                                Permitir "Equals"
-                            </Label>
-                            <Info className="h-3 w-3 text-muted-foreground" />
-                        </div>
-                        <div className="flex items-center space-x-2">
+                        <FormField
+                            control={form.control}
+                            name="allowEquals"
+                            render={({ field }) => (
+                            <FormItem className="flex flex-row items-center space-x-2 space-y-0">
+                                <FormControl>
+                                    <Checkbox
+                                        checked={field.value}
+                                        onCheckedChange={field.onChange}
+                                        disabled={isButtonDisabled}
+                                        id="allowEqualsV2"
+                                    />
+                                </FormControl>
+                                <Label htmlFor="allowEqualsV2" className="text-sm font-normal text-muted-foreground cursor-pointer">
+                                    Permitir "Equals"
+                                </Label>
+                                <Info className="h-3 w-3 text-muted-foreground" />
+                            </FormItem>
+                            )}
+                        />
+                         <div className="flex items-center space-x-2">
                             <Label htmlFor="inversion-mode-v2" className="text-sm font-normal text-muted-foreground cursor-pointer">
                                 Inverter Direção
                             </Label>
