@@ -10,6 +10,10 @@ import {
   AreaChart,
   CandlestickChart,
   Clock,
+  TrendingUp,
+  TrendingDown,
+  Moon,
+  Sun,
 } from 'lucide-react'
 import { useTheme as useAppTheme } from '@/features/theme/hooks/use-theme'
 import type {
@@ -82,8 +86,12 @@ export function MarketChartV3({
   const brushCanvasRef = React.useRef<HTMLCanvasElement>(null)
   const containerRef = React.useRef<HTMLDivElement>(null)
   const rafIdRef = React.useRef<number | null>(null);
+  
+  const [chartTheme, setChartTheme] = React.useState<'light' | 'dark'>(
+    appTheme.includes('dark') ? 'dark' : 'light'
+  )
 
-  const colors = THEMES[appTheme.includes('dark') ? 'dark' : 'light'];
+  const colors = THEMES[chartTheme]
 
   const [visibleIndicators, setVisibleIndicators] = React.useState({
     sma: false,
@@ -119,6 +127,16 @@ export function MarketChartV3({
     '8h',
     '1d',
   ]
+  
+  const lastDataPoint = rawData.length > 0 ? rawData[rawData.length - 1] : null
+  const prevDataPoint = rawData.length > 1 ? rawData[rawData.length - 2] : null
+
+  const lastPrice = lastDataPoint ? getDisplayPrice(lastDataPoint) : 0
+  const prevPrice = prevDataPoint ? getDisplayPrice(prevDataPoint) : 1
+  
+  const change = lastPrice - prevPrice
+  const changePercent = prevPrice !== 0 ? (change / prevPrice) * 100 : 0
+  const isPositive = change >= 0
   
   const dataWindow = React.useMemo(() => {
     const start = Math.floor(rawData.length * brushWindow.min)
@@ -723,6 +741,24 @@ export function MarketChartV3({
           <h2 className="text-xl font-bold" style={{ color: colors.text }}>
             {activeSymbol}
           </h2>
+          <div
+            className="flex items-center gap-2"
+            style={{ color: isPositive ? colors.bull : colors.bear }}
+          >
+            <span className="font-semibold text-lg">
+              {lastPrice > 0 ? lastPrice.toFixed(4) : '...'}
+            </span>
+            <div className="text-xs font-mono flex items-center">
+              {isPositive ? (
+                <TrendingUp size={14} />
+              ) : (
+                <TrendingDown size={14} />
+              )}
+              <span>
+                {change.toFixed(4)} ({changePercent.toFixed(2)}%)
+              </span>
+            </div>
+          </div>
         </div>
         <div className="flex items-center gap-1.5">
           <DropdownMenu>
@@ -810,6 +846,21 @@ export function MarketChartV3({
               </div>
             </PopoverContent>
           </Popover>
+
+          <Button
+            variant="outline"
+            size="icon"
+            className="h-9 w-9"
+            onClick={() =>
+              setChartTheme(chartTheme === 'dark' ? 'light' : 'dark')
+            }
+          >
+            {chartTheme === 'dark' ? (
+              <Sun size={16} />
+            ) : (
+              <Moon size={16} />
+            )}
+          </Button>
         </div>
       </div>
 
