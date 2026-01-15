@@ -140,7 +140,7 @@ const calculateRobotVote = (
         if (indicators.mfi! <= robot.weakBuyThreshold!) setVote('RISE', robot.weakConfidence);
         if (indicators.mfi! <= robot.strongBuyThreshold!) setVote('RISE', robot.strongConfidence);
         if (indicators.mfi! >= robot.weakSellThreshold!) setVote('FALL', robot.weakConfidence);
-        if (indicators.mfi! >= robot.strongSellThreshold!) setVote('FALL', robot.strong confidence);
+        if (indicators.mfi! >= robot.strongSellThreshold!) setVote('FALL', robot.strongConfidence);
     }
     
     if (robot.strategyType === 'STOCH_RSI' && isValid(indicators.stochRSI)) {
