@@ -233,8 +233,8 @@ export async function getFinancialInsights(userId: string): Promise<string[]> {
 
 export async function saveRobotPerformance(userId: string, performance: (RobotPerformance | EnhancedRobotPerformance)[], version: 'v1' | 'v2' = 'v1') {
     if (!userId) return;
-    const docPath = `users/${userId}/trading_data_v1/robot_council_performance`;
-    const docRef = doc(db, 'users', userId, 'trading_data_v1', 'robot_council_performance');
+    const docPath = version === 'v1' ? `users/${userId}/trading_data_v1/robot_council_performance` : `users/${userId}/trading_data_v2/robot_council_performance`;
+    const docRef = doc(db, docPath);
     const sanitizedData = sanitizeForFirestore({
         updatedAt: new Date().toISOString(),
         performance: performance,
@@ -310,6 +310,15 @@ export async function saveTradeDecision(userId: string, log: TradeDecisionLog) {
     setDocumentNonBlocking(logDocRef, sanitizedLog, { merge: true });
 }
 
+export async function saveTradeDecisionV1(userId: string, log: TradeDecisionLog) {
+    if (!userId) return;
+    const logCollectionRef = collection(db, 'users', userId, 'decision_logs_v1');
+    const logDocRef = doc(logCollectionRef, log.id);
+    const sanitizedLog = sanitizeForFirestore(log);
+    setDocumentNonBlocking(logDocRef, sanitizedLog, { merge: true });
+}
+
+
 export async function getTradeDecisionLogs(userId: string): Promise<TradeDecisionLog[]> {
     if (!userId) {
         return [];
@@ -327,7 +336,7 @@ export async function getTradeDecisionLogs(userId: string): Promise<TradeDecisio
 
 // --- Evolution History ---
 
-export async function saveEvolutionHistory(userId: string, history: EvolutionEvent[], version: 'v2' | 'v3' = 'v2'): Promise<void> {
+export async function saveEvolutionHistory(userId: string, history: EvolutionEvent[], version: 'v1' | 'v2' = 'v1'): Promise<void> {
     if (!userId || !history) return;
 
     const docRef = doc(db, 'users', userId, `trading_data_${version}`, 'evolution_history');
@@ -348,7 +357,7 @@ export async function saveEvolutionHistory(userId: string, history: EvolutionEve
     }
 }
 
-export async function loadEvolutionHistory(userId: string, version: 'v2' | 'v3' = 'v2'): Promise<EvolutionEvent[]> {
+export async function loadEvolutionHistory(userId: string, version: 'v1' | 'v2' = 'v1'): Promise<EvolutionEvent[]> {
     if (!userId) return [];
     
     const docRef = doc(db, 'users', userId, `trading_data_${version}`, 'evolution_history');
@@ -369,13 +378,13 @@ export async function loadEvolutionHistory(userId: string, version: 'v2' | 'v3' 
     }
 }
 
-export async function clearEvolutionHistory(userId: string, version: 'v2' | 'v3' = 'v2'): Promise<void> {
+export async function clearEvolutionHistory(userId: string, version: 'v1' | 'v2' = 'v2'): Promise<void> {
     if (!userId) return;
     const docRef = doc(db, 'users', userId, `trading_data_${version}`, 'evolution_history');
     await deleteDoc(docRef);
 }
 
-export async function deleteEvolutionEvent(userId: string, eventTimestamp: string, version: 'v2' | 'v3' = 'v2'): Promise<void> {
+export async function deleteEvolutionEvent(userId: string, eventTimestamp: string, version: 'v1' | 'v2' = 'v2'): Promise<void> {
     if (!userId) return;
     
     const currentHistory = await loadEvolutionHistory(userId, version);

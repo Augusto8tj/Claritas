@@ -1,9 +1,11 @@
 // src/features/trading/hooks/use-strategy-evolution-v1.ts
 'use client';
 
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import type { RobotStrategy, RobotPerformance } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
+import { useAuth } from '@/features/auth/hooks/use-auth';
+import { saveEvolutionHistory, loadEvolutionHistory } from '@/services/financial-data-service';
 
 // ============================================================================
 // PARÂMETROS DA EVOLUÇÃO
@@ -75,13 +77,23 @@ const mutateStrategy = (eliteRobot: RobotStrategy): Omit<RobotStrategy, 'id' | '
 // O HOOK DE EVOLUÇÃO
 // ============================================================================
 
-export function useStrategyEvolutionV1(initialStrategies: Omit<RobotStrategy, 'id' | 'justification'>[]) {
+export function useStrategyEvolutionV1() {
     const { toast } = useToast();
+    const { user } = useAuth();
     
     // O estado que guarda as estratégias atuais, começando com as iniciais
-    const [evolvedStrategies, setEvolvedStrategies] = useState<Omit<RobotStrategy, 'id' | 'justification'>[]>(initialStrategies);
+    const [evolvedStrategies, setEvolvedStrategies] = useState<Omit<RobotStrategy, 'id' | 'justification'>[]>(initialCouncilStrategies);
     // NOVO: Estado para guardar o histórico de eventos de evolução
     const [evolutionHistory, setEvolutionHistory] = useState<EvolutionEvent[]>([]);
+
+    useEffect(() => {
+        if (!user) return;
+        loadEvolutionHistory(user.uid, 'v1').then(history => {
+            if (history && history.length > 0) {
+                setEvolutionHistory(history);
+            }
+        });
+    }, [user]);
 
     // Contador de trades para acionar a evolução
     const tradeCountRef = useRef(0);
@@ -97,7 +109,7 @@ export function useStrategyEvolutionV1(initialStrategies: Omit<RobotStrategy, 'i
             return; // Ainda não é hora de evoluir
         }
 
-        console.log(`[Evolution] Limite de ${EVOLUTION_TRIGGER_THRESHOLD} trades atingido. A iniciar ciclo de evolução...`);
+        console.log(`[Evolution V1] Limite de ${EVOLUTION_TRIGGER_THRESHOLD} trades atingido. A iniciar ciclo de evolução...`);
         tradeCountRef.current = 0; // Reseta o contador
 
         // Ordena para encontrar os melhores e piores
@@ -116,12 +128,12 @@ export function useStrategyEvolutionV1(initialStrategies: Omit<RobotStrategy, 'i
         const worstPerformers = sortedPerformance.slice(-WORST_COUNT);
 
         if (elitePerformers.length === 0 || worstPerformers.length === 0) {
-            console.warn("[Evolution] Não há dados de desempenho suficientes para a evolução.");
+            console.warn("[Evolution V1] Não há dados de desempenho suficientes para a evolução.");
             return;
         }
 
         toast({
-            title: "🧬 Evolução de Estratégia!",
+            title: "🧬 Evolução de Estratégia V1!",
             description: "A IA está a recalibrar os robôs com base no desempenho recente.",
         });
 
@@ -155,17 +167,23 @@ export function useStrategyEvolutionV1(initialStrategies: Omit<RobotStrategy, 'i
                 parentBotType: eliteParent.strategyType,
             });
 
-            console.log(`[Evolution] Robô ${worst.id} (${worst.strategyType}) foi substituído por uma mutação de ${eliteParent.strategyType}.`);
+            console.log(`[Evolution V1] Robô ${worst.id} (${worst.strategyType}) foi substituído por uma mutação de ${eliteParent.strategyType}.`);
         });
 
         setEvolvedStrategies(Array.from(newStrategiesMap.values()));
-        setEvolutionHistory(prev => [newEvent, ...prev]);
+        setEvolutionHistory(prev => {
+            const newHistory = [newEvent, ...prev];
+            if(user) {
+                saveEvolutionHistory(user.uid, newHistory, 'v1');
+            }
+            return newHistory;
+        });
 
-    }, [evolvedStrategies, toast]);
+    }, [evolvedStrategies, toast, user]);
 
     return {
         evolvedStrategies,
         evolveTrigger,
-        evolutionHistory, // EXPORTA O HISTÓRICO
+        evolutionHistory,
     };
 }

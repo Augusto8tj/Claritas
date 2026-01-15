@@ -21,7 +21,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useDerivApiV1 } from './use-deriv-api-v1';
 import { useToast } from '@/hooks/use-toast';
-import type { RobotStrategy, ChartData, TickData, CandleData, DurationUnit, RobotVote as RobotVoteType, CouncilVotes, RobotPerformance as RobotPerformanceType, Operation } from '@/lib/types';
+import type { RobotStrategy, ChartData, TickData, CandleData, DurationUnit, RobotVote as RobotVoteType, CouncilVotes, RobotPerformance as RobotPerformanceType, Operation, TradeDecisionLog } from '@/lib/types';
 import type { RiseFallFormValues } from '@/features/trading/components/deriv-trader/deriv-trader-interface-v1.types';
 import { useFormContext } from 'react-hook-form';
 import type { Indicators } from '@/services/indicator-service-v1';
@@ -32,7 +32,7 @@ import { useStrategyEvolutionV1 } from './use-strategy-evolution-v1';
 import { errorEmitter, FirestorePermissionError } from '@/firebase';
 import { db } from '@/lib/firebase';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
-import { saveRobotPerformance, loadRobotPerformance } from '@/services/financial-data-service';
+import { saveRobotPerformance, loadRobotPerformance, saveTradeDecisionV1 } from '@/services/financial-data-service';
 
 
 // --- TIPAGEM E TIPOS DE DADOS ---
@@ -140,7 +140,7 @@ const calculateRobotVote = (
         if (indicators.mfi! <= robot.weakBuyThreshold!) setVote('RISE', robot.weakConfidence);
         if (indicators.mfi! <= robot.strongBuyThreshold!) setVote('RISE', robot.strongConfidence);
         if (indicators.mfi! >= robot.weakSellThreshold!) setVote('FALL', robot.weakConfidence);
-        if (indicators.mfi! >= robot.strongSellThreshold!) setVote('FALL', robot.strongConfidence);
+        if (indicators.mfi! >= robot.strongSellThreshold!) setVote('FALL', robot.strong confidence);
     }
     
     if (robot.strategyType === 'STOCH_RSI' && isValid(indicators.stochRSI)) {
@@ -222,7 +222,7 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
   const { user, loading: isAuthLoading } = useAuth();
   const { toast } = useToast();
   const form = useFormContext<RiseFallFormValues>();
-  const { evolvedStrategies, evolveTrigger, evolutionHistory } = useStrategyEvolutionV1(initialCouncilStrategies);
+  const { evolvedStrategies, evolveTrigger, evolutionHistory } = useStrategyEvolutionV1();
   
   const [strategyCouncil, setStrategyCouncil] = useState<RobotStrategy[]>([]);
   const [isCouncilAutopilotOn, setIsCouncilAutopilotOn] = useState(false);
@@ -268,7 +268,7 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
       })
       .catch(error => {
         const permissionError = new FirestorePermissionError({
-            path: `users/${user.uid}/trading_data/robot_council_performance`,
+            path: `users/${user.uid}/trading_data_v1/robot_council_performance`,
             operation: 'get',
         });
         errorEmitter.emit('permission-error', permissionError);
@@ -282,7 +282,7 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
     setRobotPerformance(initialPerformance);
     virtualTradesRef.current = [];
     if (user) {
-        saveRobotPerformance(user.uid, initialPerformance);
+        saveRobotPerformance(user.uid, initialPerformance, 'v1');
     }
   }, [strategyCouncil, activeSymbol, toast, user]);
 
@@ -292,7 +292,7 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
     
     const saveInterval = setInterval(() => {
         if(hasPendingChangesRef.current) {
-            saveRobotPerformance(user.uid, robotPerformance);
+            saveRobotPerformance(user.uid, robotPerformance, 'v1');
             hasPendingChangesRef.current = false;
         }
     }, FIRESTORE_SAVE_INTERVAL_MS);
@@ -304,7 +304,7 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
   useEffect(() => {
     return () => {
         if (hasPendingChangesRef.current && user) {
-            saveRobotPerformance(user.uid, robotPerformance);
+            saveRobotPerformance(user.uid, robotPerformance, 'v1');
         }
     };
   }, [user, robotPerformance]);
@@ -326,7 +326,7 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
     if (robotPerformance.length === 0) {
       const initialPerformance = (evolvedStrategies as RobotStrategy[]).map(robot => ({ id: robot.id, strategyType: robot.strategyType, strategy: robot, wins: 0, losses: 0, totalProfit: 0, winRate: 0 }));
       setRobotPerformance(initialPerformance);
-      await saveRobotPerformance(user.uid, initialPerformance);
+      await saveRobotPerformance(user.uid, initialPerformance, 'v1');
     }
     toast({ title: 'Arena Virtual Iniciada', description: `${evolvedStrategies.length} robôs analistas ativos.` });
     setIsCouncilAutopilotOn(true);
@@ -336,7 +336,7 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
   const dissolveCouncil = () => {
     // Save final performance before dissolving
     if (hasPendingChangesRef.current && user) {
-        saveRobotPerformance(user.uid, robotPerformance);
+        saveRobotPerformance(user.uid, robotPerformance, 'v1');
         hasPendingChangesRef.current = false;
     }
     setStrategyCouncil([]);
@@ -497,7 +497,41 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
             finalDuration, 
             finalDurationUnit, 
             'Conselho'
-        ).finally(() => setTimeout(() => councilExecutionRef.current.isExecuting = false, 10000));
+        ).then(tradeResult => {
+            if(tradeResult.success && tradeResult.contractId && user) {
+                const logId = `log-v1-${Date.now()}`;
+                const log: TradeDecisionLog = {
+                   id: logId,
+                   contractId: tradeResult.contractId,
+                   timestamp: new Date().toISOString(),
+                   asset: activeSymbol!,
+                   timePeriod: timePeriod,
+                   tradeParams: {
+                       direction: dir,
+                       stake: finalStake,
+                       duration: finalDuration,
+                       durationUnit: finalDurationUnit,
+                   },
+                   context: {
+                       marketRegime: 'N/A_V1',
+                       regimeConfidence: 0,
+                       microstructure: null,
+                       indicators: currentIndicators,
+                       supervisionReason: supervisionDecision.message,
+                   },
+                   consensus: {
+                       bayesianProbability: Math.max(riseSum, fallSum) / (riseSum + fallSum || 1),
+                       kellyStake: 0, // V1 não usa Kelly
+                       activeRobots: Object.values(newVotes).filter(v => v.vote !== 'HOLD').length,
+                       // @ts-ignore // BayesianVote não existe em V1
+                       votes: newVotes,
+                   },
+                   result: 'pending',
+                   pnl: 0,
+                };
+                saveTradeDecisionV1(user.uid, log);
+            }
+        }).finally(() => setTimeout(() => councilExecutionRef.current.isExecuting = false, 10000));
     }
     setActiveCommittee(committeeOfSpecialists(currentIndicators));
     
