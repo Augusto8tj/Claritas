@@ -12,16 +12,17 @@ import type { EvolutionEvent } from '@/features/trading/hooks/use-strategy-evolu
 import { sanitizeForFirestore } from './utils/sanitize-for-firestore';
 import { errorEmitter, FirestorePermissionError } from '@/firebase';
 
-const DATA_PATH = 'trading_data_v1';
-const PERFORMANCE_DOC = 'robot_council_performance';
-const EVOLUTION_DOC = 'evolution_history';
+const DATA_COLLECTION = 'performance_v1';
+const EVOLUTION_COLLECTION = 'evolution_v1';
+const PERFORMANCE_DOC = 'robot_council';
+const EVOLUTION_DOC = 'history';
 const DECISION_LOG_COLLECTION = 'decision_logs_v1';
 
 // --- Robot Performance V1 ---
 
 export async function saveRobotPerformanceV1(userId: string, performance: RobotPerformance[]): Promise<void> {
     if (!userId) return;
-    const docRef = doc(db, 'users', userId, DATA_PATH, PERFORMANCE_DOC);
+    const docRef = doc(db, 'users', userId, DATA_COLLECTION, PERFORMANCE_DOC);
     const sanitizedData = sanitizeForFirestore({
         updatedAt: new Date().toISOString(),
         performance: performance,
@@ -41,7 +42,7 @@ export async function saveRobotPerformanceV1(userId: string, performance: RobotP
 
 export async function loadRobotPerformanceV1(userId: string): Promise<RobotPerformance[] | null> {
   if (!userId) return null;
-  const docRef = doc(db, 'users', userId, DATA_PATH, PERFORMANCE_DOC);
+  const docRef = doc(db, 'users', userId, DATA_COLLECTION, PERFORMANCE_DOC);
   try {
     const docSnap = await getDoc(docRef);
     if (docSnap.exists()) {
@@ -76,7 +77,7 @@ export async function saveTradeDecisionV1(userId: string, log: TradeDecisionLog)
 
 export async function saveEvolutionHistoryV1(userId: string, history: EvolutionEvent[]): Promise<void> {
     if (!userId || !history) return;
-    const docRef = doc(db, 'users', userId, DATA_PATH, EVOLUTION_DOC);
+    const docRef = doc(db, 'users', userId, EVOLUTION_COLLECTION, EVOLUTION_DOC);
     try {
         const historyForFirestore = history.map(event => ({
             ...event,
@@ -92,7 +93,7 @@ export async function saveEvolutionHistoryV1(userId: string, history: EvolutionE
 
 export async function loadEvolutionHistoryV1(userId: string): Promise<EvolutionEvent[]> {
     if (!userId) return [];
-    const docRef = doc(db, 'users', userId, DATA_PATH, EVOLUTION_DOC);
+    const docRef = doc(db, 'users', userId, EVOLUTION_COLLECTION, EVOLUTION_DOC);
     try {
         const docSnap = await getDoc(docRef);
         if (docSnap.exists()) {

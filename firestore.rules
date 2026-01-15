@@ -16,9 +16,8 @@ service cloud.firestore {
       // - /users/{userId}/transactions/{transactionId}
       // - /users/{userId}/goals/{goalId}
       // - /users/{userId}/decision_logs/{logId}
-      // - /users/{userId}/trading_data/{docId}
-      // - /users/{userId}/trading_data_v2/{docId}
-      // - /users/{userId}/trading_data_v3/{docId}
+      // - /users/{userId}/{performanceCollection}/{docId} (Ex: performance_v1, performance_v2)
+      // - /users/{userId}/{evolutionCollection}/{docId}   (Ex: evolution_v1, evolution_v2)
       // - E qualquer outra subcoleção futura, em qualquer profundidade.
       //
       // A segurança é garantida porque a regra valida que o UID do utilizador autenticado

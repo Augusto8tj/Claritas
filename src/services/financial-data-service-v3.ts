@@ -16,7 +16,7 @@ import { sanitizeForFirestore } from './utils/sanitize-for-firestore';
 
 export async function saveRobotPerformanceV3(userId: string, performance: EnhancedRobotPerformance[]): Promise<void> {
     if (!userId) return;
-    const docRef = doc(db, 'users', userId, 'trading_data_v3', 'robot_council_performance');
+    const docRef = doc(db, 'users', userId, 'performance_v3', 'robot_council');
     const sanitizedData = sanitizeForFirestore({
         updatedAt: new Date().toISOString(),
         robots: performance,
@@ -33,7 +33,7 @@ export async function saveRobotPerformanceV3(userId: string, performance: Enhanc
 
 export async function loadRobotPerformanceV3(userId: string): Promise<EnhancedRobotPerformance[] | null> {
     if (!userId) return null;
-    const docRef = doc(db, 'users', userId, 'trading_data_v3', 'robot_council_performance');
+    const docRef = doc(db, 'users', userId, 'performance_v3', 'robot_council');
     try {
         const docSnap = await getDoc(docRef);
         if (docSnap.exists()) {
@@ -70,7 +70,7 @@ export async function saveTradeDecisionV3(userId: string, log: TradeDecisionLog)
 
 export async function saveEvolutionHistoryV3(userId: string, history: EvolutionEvent[]): Promise<void> {
     if (!userId || !history) return;
-    const docRef = doc(db, 'users', userId, 'trading_data_v3', 'evolution_history');
+    const docRef = doc(db, 'users', userId, 'evolution_v3', 'history');
     try {
         const historyForFirestore = history.map(event => ({
             ...event,
@@ -86,7 +86,7 @@ export async function saveEvolutionHistoryV3(userId: string, history: EvolutionE
 
 export async function loadEvolutionHistoryV3(userId: string): Promise<EvolutionEvent[]> {
     if (!userId) return [];
-    const docRef = doc(db, 'users', userId, 'trading_data_v3', 'evolution_history');
+    const docRef = doc(db, 'users', userId, 'evolution_v3', 'history');
     try {
         const docSnap = await getDoc(docRef);
         if (docSnap.exists()) {
@@ -106,7 +106,7 @@ export async function loadEvolutionHistoryV3(userId: string): Promise<EvolutionE
 
 export async function clearEvolutionHistoryV3(userId: string): Promise<void> {
     if (!userId) return;
-    const docRef = doc(db, 'users', userId, 'trading_data_v3', 'evolution_history');
+    const docRef = doc(db, 'users', userId, 'evolution_v3', 'history');
     await deleteDoc(docRef);
 }
 

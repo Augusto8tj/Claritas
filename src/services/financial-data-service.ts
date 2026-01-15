@@ -229,18 +229,16 @@ export async function getFinancialInsights(userId: string): Promise<string[]> {
 }
 
 
-// --- Trading Robot Performance ---
+// --- Trading Robot Performance (V2) ---
 
-export async function saveRobotPerformance(userId: string, performance: (RobotPerformance | EnhancedRobotPerformance)[], version: 'v1' | 'v2' = 'v1') {
+export async function saveRobotPerformance(userId: string, performance: EnhancedRobotPerformance[]): Promise<void> {
     if (!userId) return;
-    const docPath = version === 'v1' ? `users/${userId}/trading_data_v1/robot_council_performance` : `users/${userId}/trading_data_v2/robot_council_performance`;
-    const docRef = doc(db, docPath);
+    const docRef = doc(db, 'users', userId, 'performance_v2', 'robot_council');
     const sanitizedData = sanitizeForFirestore({
         updatedAt: new Date().toISOString(),
-        performance: performance,
+        robots: performance,
     });
     
-    // Agora usando setDoc com captura de erro contextual
     setDoc(docRef, sanitizedData, { merge: true })
         .catch(async (serverError) => {
             const permissionError = new FirestorePermissionError({
@@ -257,62 +255,31 @@ export async function loadRobotPerformance(userId: string): Promise<EnhancedRobo
   if (!userId) {
     return null;
   }
-  const docRef = doc(db, 'users', userId, 'trading_data_v1', 'robot_council_performance');
+  const docRef = doc(db, 'users', userId, 'performance_v2', 'robot_council');
   try {
     const docSnap = await getDoc(docRef);
     if (docSnap.exists()) {
       const data = docSnap.data();
-      return (data.performance || []).map((robot: any) => ({
+      return (data.robots || []).map((robot: any) => ({
         ...robot,
         tradeHistory: robot.tradeHistory || [],
       }));
     }
     return null;
   } catch (error) {
-    console.error(`[Service Error] loadRobotPerformance for user ${userId} failed:`, error);
+    console.error(`[Service Error V2] loadRobotPerformance for user ${userId} failed:`, error);
     throw error;
   }
 };
 
 
-export async function getHallOfFame(userId: string): Promise<RobotPerformance[]> {
-    try {
-        const performanceData = await loadRobotPerformance(userId);
-        if (!performanceData) {
-            return [];
-        }
-        
-        const PROMOTION_THRESHOLD_WINS = 10;
-        const PROMOTION_THRESHOLD_PROFIT = 0;
-
-        const promotedRobots = performanceData.filter(
-            (p) => (p.wins || 0) >= PROMOTION_THRESHOLD_WINS && (p.totalProfit || 0) > PROMOTION_THRESHOLD_PROFIT
-        );
-
-        promotedRobots.sort((a, b) => (b.totalProfit || 0) - (a.totalProfit || 0));
-        
-        return promotedRobots;
-    } catch(error) {
-        console.error(`[Service Error] getHallOfFame for user ${userId} failed:`, error);
-        throw error;
-    }
-}
-
-// --- Trading Decision Log ---
+// --- Trading Decision Log (V2) ---
 
 export async function saveTradeDecision(userId: string, log: TradeDecisionLog) {
     if (!userId) {
         return;
     }
     const logCollectionRef = collection(db, 'users', userId, 'decision_logs');
-    const logDocRef = doc(logCollectionRef, log.id);
-    const sanitizedLog = sanitizeForFirestore(log);
-    setDocumentNonBlocking(logDocRef, sanitizedLog, { merge: true });
-}
-
-export async function saveTradeDecisionV1(userId: string, log: TradeDecisionLog) {
-    if (!userId) return;
-    const logCollectionRef = collection(db, 'users', userId, 'decision_logs_v1');
     const logDocRef = doc(logCollectionRef, log.id);
     const sanitizedLog = sanitizeForFirestore(log);
     setDocumentNonBlocking(logDocRef, sanitizedLog, { merge: true });
@@ -334,12 +301,13 @@ export async function getTradeDecisionLogs(userId: string): Promise<TradeDecisio
     }
 }
 
-// --- Evolution History ---
+// --- Evolution History (V2) ---
 
-export async function saveEvolutionHistory(userId: string, history: EvolutionEvent[], version: 'v1' | 'v2' = 'v1'): Promise<void> {
+export async function saveEvolutionHistory(userId: string, history: EvolutionEvent[], version: 'v2' | 'v3' = 'v2'): Promise<void> {
     if (!userId || !history) return;
 
-    const docRef = doc(db, 'users', userId, `trading_data_${version}`, 'evolution_history');
+    const collectionName = `evolution_${version}`;
+    const docRef = doc(db, 'users', userId, collectionName, 'history');
 
     try {
         const historyForFirestore = history.map(event => ({
@@ -357,10 +325,11 @@ export async function saveEvolutionHistory(userId: string, history: EvolutionEve
     }
 }
 
-export async function loadEvolutionHistory(userId: string, version: 'v1' | 'v2' = 'v1'): Promise<EvolutionEvent[]> {
+export async function loadEvolutionHistory(userId: string, version: 'v2' | 'v3' = 'v2'): Promise<EvolutionEvent[]> {
     if (!userId) return [];
     
-    const docRef = doc(db, 'users', userId, `trading_data_${version}`, 'evolution_history');
+    const collectionName = `evolution_${version}`;
+    const docRef = doc(db, 'users', userId, collectionName, 'history');
     try {
         const docSnap = await getDoc(docRef);
         if (docSnap.exists()) {
@@ -378,13 +347,13 @@ export async function loadEvolutionHistory(userId: string, version: 'v1' | 'v2' 
     }
 }
 
-export async function clearEvolutionHistory(userId: string, version: 'v1' | 'v2' = 'v2'): Promise<void> {
+export async function clearEvolutionHistory(userId: string, version: 'v2' | 'v3' = 'v2'): Promise<void> {
     if (!userId) return;
-    const docRef = doc(db, 'users', userId, `trading_data_${version}`, 'evolution_history');
+    const docRef = doc(db, 'users', userId, `evolution_${version}`, 'history');
     await deleteDoc(docRef);
 }
 
-export async function deleteEvolutionEvent(userId: string, eventTimestamp: string, version: 'v1' | 'v2' = 'v2'): Promise<void> {
+export async function deleteEvolutionEvent(userId: string, eventTimestamp: string, version: 'v2' | 'v3' = 'v2'): Promise<void> {
     if (!userId) return;
     
     const currentHistory = await loadEvolutionHistory(userId, version);
