@@ -6,6 +6,7 @@ import type { RobotStrategy, RobotPerformance } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/features/auth/hooks/use-auth';
 import { saveEvolutionHistory, loadEvolutionHistory } from '@/services/financial-data-service';
+import { initialCouncilStrategies } from '@/services/council-strategies';
 
 // ============================================================================
 // PARÂMETROS DA EVOLUÇÃO
