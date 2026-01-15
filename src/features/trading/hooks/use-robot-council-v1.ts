@@ -32,7 +32,7 @@ import { useStrategyEvolutionV1 } from './use-strategy-evolution-v1';
 import { errorEmitter, FirestorePermissionError } from '@/firebase';
 import { db } from '@/lib/firebase';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
-import { saveRobotPerformanceV1, loadRobotPerformanceV1, saveTradeDecisionV1 } from '@/services/financial-data-service-v1';
+import { saveRobotPerformance, loadRobotPerformance, saveTradeDecision } from '@/services/financial-data-service';
 
 
 // --- TIPAGEM E TIPOS DE DADOS ---
@@ -260,7 +260,7 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
   useEffect(() => {
     if (!user || isAuthLoading) return;
     
-    loadRobotPerformanceV1(user.uid)
+    loadRobotPerformance(user.uid, 'v1')
       .then(storedPerformance => {
         if (storedPerformance) {
           setRobotPerformance(storedPerformance as RobotPerformance[]);
@@ -282,7 +282,7 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
     setRobotPerformance(initialPerformance);
     virtualTradesRef.current = [];
     if (user) {
-        saveRobotPerformanceV1(user.uid, initialPerformance);
+        saveRobotPerformance(user.uid, initialPerformance, 'v1');
     }
   }, [strategyCouncil, activeSymbol, toast, user]);
 
@@ -292,7 +292,7 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
     
     const saveInterval = setInterval(() => {
         if(hasPendingChangesRef.current) {
-            saveRobotPerformanceV1(user.uid, robotPerformance);
+            saveRobotPerformance(user.uid, robotPerformance, 'v1');
             hasPendingChangesRef.current = false;
         }
     }, FIRESTORE_SAVE_INTERVAL_MS);
@@ -304,7 +304,7 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
   useEffect(() => {
     return () => {
         if (hasPendingChangesRef.current && user) {
-            saveRobotPerformanceV1(user.uid, robotPerformance);
+            saveRobotPerformance(user.uid, robotPerformance, 'v1');
         }
     };
   }, [user, robotPerformance]);
@@ -326,7 +326,7 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
     if (robotPerformance.length === 0) {
       const initialPerformance = (evolvedStrategies as RobotStrategy[]).map(robot => ({ id: robot.id, strategyType: robot.strategyType, strategy: robot, wins: 0, losses: 0, totalProfit: 0, winRate: 0 }));
       setRobotPerformance(initialPerformance);
-      await saveRobotPerformanceV1(user.uid, initialPerformance);
+      await saveRobotPerformance(user.uid, initialPerformance, 'v1');
     }
     toast({ title: 'Arena Virtual Iniciada', description: `${evolvedStrategies.length} robôs analistas ativos.` });
     setIsCouncilAutopilotOn(true);
@@ -336,7 +336,7 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
   const dissolveCouncil = () => {
     // Save final performance before dissolving
     if (hasPendingChangesRef.current && user) {
-        saveRobotPerformanceV1(user.uid, robotPerformance);
+        saveRobotPerformance(user.uid, robotPerformance, 'v1');
         hasPendingChangesRef.current = false;
     }
     setStrategyCouncil([]);
@@ -529,7 +529,7 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
                    result: 'pending',
                    pnl: 0,
                 };
-                saveTradeDecisionV1(user.uid, log);
+                saveTradeDecision(user.uid, log, 'v1');
             }
         }).finally(() => setTimeout(() => councilExecutionRef.current.isExecuting = false, 10000));
     }
@@ -545,3 +545,5 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
     isCouncilAutopilotOn, setIsCouncilAutopilotOn, strategyCouncil, fetchStrategyCouncil, dissolveCouncil, isFetchingCouncil, councilVotes, dailyBalance, setDailyBalance, dailyTarget, setDailyTarget, consensusThreshold, setConsensusThreshold, isDynamicConsensusOn, setIsDynamicConsensusOn, isDynamicRiskOn, setIsDynamicRiskOn, isMeritocracyOn, setIsMeritocracyOn, isInversionModeOn, setIsInversionModeOn, isStopLossOn, setIsStopLossOn, indicators, activeCommittee, supervisionStatus, consensusSum, consensusDecision, robotPerformance, evolutionHistory
   };
 }
+
+    

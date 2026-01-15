@@ -229,14 +229,21 @@ export async function getFinancialInsights(userId: string): Promise<string[]> {
 }
 
 
-// --- Trading Robot Performance (V2) ---
+// --- TRADING SERVICES (Version-Aware) ---
 
-export async function saveRobotPerformance(userId: string, performance: EnhancedRobotPerformance[]): Promise<void> {
+type PerformanceData = RobotPerformance | EnhancedRobotPerformance;
+type Version = 'v1' | 'v2' | 'v3';
+
+export async function saveRobotPerformance(
+    userId: string, 
+    performance: PerformanceData[], 
+    version: Version
+): Promise<void> {
     if (!userId) return;
-    const docRef = doc(db, 'users', userId, 'performance_v2', 'robot_council');
+    const docRef = doc(db, 'users', userId, `performance_${version}`, 'robot_council');
     const sanitizedData = sanitizeForFirestore({
         updatedAt: new Date().toISOString(),
-        robots: performance,
+        data: performance, // Use um nome de campo genérico
     });
     
     setDoc(docRef, sanitizedData, { merge: true })
@@ -250,41 +257,33 @@ export async function saveRobotPerformance(userId: string, performance: Enhanced
         });
 };
 
-
-export async function loadRobotPerformance(userId: string): Promise<EnhancedRobotPerformance[] | null> {
-  if (!userId) {
-    return null;
-  }
-  const docRef = doc(db, 'users', userId, 'performance_v2', 'robot_council');
+export async function loadRobotPerformance(userId: string, version: Version): Promise<PerformanceData[] | null> {
+  if (!userId) return null;
+  const docRef = doc(db, 'users', userId, `performance_${version}`, 'robot_council');
   try {
     const docSnap = await getDoc(docRef);
     if (docSnap.exists()) {
       const data = docSnap.data();
-      return (data.robots || []).map((robot: any) => ({
+      return (data.data || []).map((robot: any) => ({
         ...robot,
         tradeHistory: robot.tradeHistory || [],
       }));
     }
     return null;
   } catch (error) {
-    console.error(`[Service Error V2] loadRobotPerformance for user ${userId} failed:`, error);
+    console.error(`[Service Error ${version}] loadRobotPerformance for user ${userId} failed:`, error);
     throw error;
   }
 };
 
-
-// --- Trading Decision Log (V2) ---
-
-export async function saveTradeDecision(userId: string, log: TradeDecisionLog) {
-    if (!userId) {
-        return;
-    }
-    const logCollectionRef = collection(db, 'users', userId, 'decision_logs');
+export async function saveTradeDecision(userId: string, log: TradeDecisionLog, version: 'v1' | 'v2' | 'v3') {
+    if (!userId) return;
+    const collectionName = version === 'v1' ? 'decision_logs_v1' : 'decision_logs';
+    const logCollectionRef = collection(db, 'users', userId, collectionName);
     const logDocRef = doc(logCollectionRef, log.id);
     const sanitizedLog = sanitizeForFirestore(log);
     setDocumentNonBlocking(logDocRef, sanitizedLog, { merge: true });
 }
-
 
 export async function getTradeDecisionLogs(userId: string): Promise<TradeDecisionLog[]> {
     if (!userId) {
@@ -301,7 +300,7 @@ export async function getTradeDecisionLogs(userId: string): Promise<TradeDecisio
     }
 }
 
-// --- Evolution History (V2) ---
+// --- Evolution History (Version-Aware) ---
 
 export async function saveEvolutionHistory(userId: string, history: EvolutionEvent[], version: 'v2' | 'v3' = 'v2'): Promise<void> {
     if (!userId || !history) return;
@@ -363,3 +362,5 @@ export async function deleteEvolutionEvent(userId: string, eventTimestamp: strin
         await saveEvolutionHistory(userId, newHistory, version);
     }
 }
+
+    

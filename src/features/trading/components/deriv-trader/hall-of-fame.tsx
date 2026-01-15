@@ -8,7 +8,7 @@ import type { RobotStrategy, RobotPerformance } from '@/lib/types';
 import { BrainCircuit, Activity, Waves, CandlestickChart, Bot, Trophy, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/features/auth/hooks/use-auth';
-import { loadRobotPerformanceV1 } from '@/services/financial-data-service-v1';
+import { loadRobotPerformance } from '@/services/financial-data-service';
 
 const indicatorIcons: { [key: string]: React.ReactNode } = {
     RSI: <BrainCircuit className="h-4 w-4" />,
@@ -63,7 +63,7 @@ export function HallOfFame() {
         const fetchFame = async () => {
             setLoading(true);
             try {
-                const performanceData = await loadRobotPerformanceV1(user.uid);
+                const performanceData = await loadRobotPerformance(user.uid, 'v1');
                  if (!performanceData) {
                     setHallOfFame([]);
                     return;
@@ -154,3 +154,5 @@ export function HallOfFame() {
         </Card>
     );
 }
+
+    
