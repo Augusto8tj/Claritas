@@ -5,7 +5,7 @@ import { useState, useCallback, useRef, useEffect } from 'react';
 import type { RobotStrategy, RobotPerformance } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/features/auth/hooks/use-auth';
-import { saveEvolutionHistory, loadEvolutionHistory } from '@/services/financial-data-service';
+import { saveEvolutionHistoryV1, loadEvolutionHistoryV1 } from '@/services/financial-data-service-v1';
 import { initialCouncilStrategies } from '@/services/council-strategies';
 
 // ============================================================================
@@ -89,7 +89,7 @@ export function useStrategyEvolutionV1() {
 
     useEffect(() => {
         if (!user) return;
-        loadEvolutionHistory(user.uid, 'v1').then(history => {
+        loadEvolutionHistoryV1(user.uid).then(history => {
             if (history && history.length > 0) {
                 setEvolutionHistory(history);
             }
@@ -175,7 +175,7 @@ export function useStrategyEvolutionV1() {
         setEvolutionHistory(prev => {
             const newHistory = [newEvent, ...prev];
             if(user) {
-                saveEvolutionHistory(user.uid, newHistory, 'v1');
+                saveEvolutionHistoryV1(user.uid, newHistory);
             }
             return newHistory;
         });

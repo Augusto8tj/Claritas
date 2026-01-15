@@ -8,7 +8,7 @@ import type { RobotStrategy, RobotPerformance } from '@/lib/types';
 import { BrainCircuit, Activity, Waves, CandlestickChart, Bot, Trophy, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/features/auth/hooks/use-auth';
-import { getHallOfFame } from '@/services/financial-data-service';
+import { loadRobotPerformanceV1 } from '@/services/financial-data-service-v1';
 
 const indicatorIcons: { [key: string]: React.ReactNode } = {
     RSI: <BrainCircuit className="h-4 w-4" />,
@@ -26,9 +26,12 @@ const indicatorIcons: { [key: string]: React.ReactNode } = {
 function renderStrategyParams(robot: RobotStrategy) {
     switch (robot.strategyType) {
         case 'RSI':
-            return `Compra < ${robot.strongBuyThreshold}, Venda > ${robot.strongSellThreshold}`;
         case 'STOCHASTIC':
+        case 'MFI':
+        case 'RVI':
             return `Compra < ${robot.strongBuyThreshold}, Venda > ${robot.strongSellThreshold}`;
+        case 'STOCH_RSI':
+             return `Compra < ${robot.strongBuyThreshold?.toFixed(2)}, Venda > ${robot.strongSellThreshold?.toFixed(2)}`;
         case 'MOVING_AVERAGE_CROSS':
             return `Cruzamento ${robot.shortPeriod}/${robot.longPeriod}`;
         case 'BOLLINGER_BANDS':
@@ -60,8 +63,23 @@ export function HallOfFame() {
         const fetchFame = async () => {
             setLoading(true);
             try {
-                const famedRobots = await getHallOfFame(user.uid);
-                setHallOfFame(famedRobots);
+                const performanceData = await loadRobotPerformanceV1(user.uid);
+                 if (!performanceData) {
+                    setHallOfFame([]);
+                    return;
+                }
+                
+                const PROMOTION_THRESHOLD_WINS = 10;
+                const PROMOTION_THRESHOLD_PROFIT = 0;
+
+                const promotedRobots = performanceData.filter(
+                    (p) => (p.wins || 0) >= PROMOTION_THRESHOLD_WINS && (p.totalProfit || 0) > PROMOTION_THRESHOLD_PROFIT
+                );
+
+                promotedRobots.sort((a, b) => (b.totalProfit || 0) - (a.totalProfit || 0));
+                
+                setHallOfFame(promotedRobots);
+
             } catch (error) {
                 console.error("Failed to load Hall of Fame from Firestore", error);
                 setHallOfFame([]);
@@ -85,7 +103,7 @@ export function HallOfFame() {
             <CardHeader>
                 <CardTitle className="font-headline flex items-center gap-2">
                     <Trophy className="w-6 h-6 text-amber-500" />
-                    Hall da Fama dos Robôs
+                    Hall da Fama dos Robôs (V1)
                 </CardTitle>
                 <CardDescription>
                     Um registo permanente dos robôs-analistas mais lucrativos e consistentes. Apenas robôs com mais de 10 vitórias e lucro positivo são elegíveis.
