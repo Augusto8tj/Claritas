@@ -463,41 +463,44 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
     
     setSupervisionStatus({ status: 'approved', message: `Aprovado (Kelly Stake: $${stake.toFixed(2)})` });
 
-    const votingRobots = Object.values(newVotes).filter(v => v.vote === decision);
-    const totalVoteWeightForDecision = votingRobots.reduce((sum, v) => sum + v.weight, 0);
-
     if (totalVoteWeightForDecision > 0) {
+        const votingRobots = Object.values(newVotes).filter(v => v.vote === decision);
         const tickVotes = votingRobots.filter(v => v.optimalDurationUnit === 't');
         const timeVotes = votingRobots.filter(v => v.optimalDurationUnit !== 't');
-    
+
         const tickWeight = tickVotes.reduce((sum, v) => sum + v.weight, 0);
         const timeWeight = timeVotes.reduce((sum, v) => sum + v.weight, 0);
-    
-        let finalUnit: DurationUnit;
-        let finalDuration: number;
 
-        if (tickWeight > timeWeight * 1.2 && durationLimits?.t?.min) {
+        let finalUnit: DurationUnit | null = null;
+        let finalDuration: number = 0;
+
+        const canUseTicks = durationLimits && durationLimits.t && durationLimits.t.min > 0;
+        const canUseSeconds = durationLimits && durationLimits.s && durationLimits.s.min > 0;
+        
+        if (canUseTicks && (!canUseSeconds || tickWeight > timeWeight * 1.2)) {
             finalUnit = 't';
             const totalTickWeight = tickVotes.reduce((sum, v) => sum + v.weight, 0);
-            finalDuration = Math.round(tickVotes.reduce((sum, v) => sum + v.optimalDuration * v.weight, 0) / (totalTickWeight || 1));
-        } else {
+            finalDuration = totalTickWeight > 0 ? Math.round(tickVotes.reduce((sum, v) => sum + v.optimalDuration * v.weight, 0) / totalTickWeight) : 0;
+        } else if (canUseSeconds) {
             finalUnit = 's';
             const totalTimeWeight = timeVotes.reduce((sum, v) => sum + v.weight, 0);
-            const avgSeconds = timeVotes.reduce((sum, v) => sum + durationToSeconds(v.optimalDuration, v.optimalDurationUnit) * v.weight, 0) / (totalTimeWeight || 1);
-            finalDuration = Math.round(avgSeconds);
-        }
-        
-        const bbw = currentIndicators.bbw;
-        if (bbw) {
-            if (bbw > 0.08) {
-                 finalDuration = Math.max(durationLimits?.[finalUnit]?.min || (finalUnit === 't' ? 5 : 15), Math.round(finalDuration * 0.75));
-            } else if (bbw < 0.02) {
-                finalDuration = Math.min(durationLimits?.[finalUnit]?.max || (finalUnit === 't' ? 10 : 300), Math.round(finalDuration * 1.25));
+            if (totalTimeWeight > 0) {
+                const avgSeconds = timeVotes.reduce((sum, v) => sum + durationToSeconds(v.optimalDuration, v.optimalDurationUnit) * v.weight, 0) / totalTimeWeight;
+                finalDuration = Math.round(avgSeconds);
             }
         }
-        
-        if (durationLimits && durationLimits[finalUnit]) {
-            finalDuration = Math.max(durationLimits[finalUnit].min, Math.min(finalDuration, durationLimits[finalUnit].max));
+
+        if (!finalUnit || finalDuration === 0 || !durationLimits?.[finalUnit] || durationLimits[finalUnit].min === 0) {
+            setSupervisionStatus({ status: 'veto', message: 'Duração ou unidade incompatível com o ativo.' });
+            councilExecutionRef.current.isExecuting = false;
+            return;
+        }
+
+        const limits = durationLimits[finalUnit];
+        if (finalDuration < limits.min || finalDuration > limits.max) {
+            setSupervisionStatus({ status: 'veto', message: `Duração (${finalDuration}${finalUnit}) fora dos limites (${limits.min}-${limits.max}).` });
+            councilExecutionRef.current.isExecuting = false;
+            return;
         }
         
         executeTrade(
@@ -509,7 +512,7 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
             finalUnit, 
             'Conselho'
         ).finally(() => {
-            setTimeout(() => { councilExecutionRef.current.isExecuting = false; }, 15000);
+            setTimeout(() => { councilExecutionRef.current.isExecuting = false; }, 5000);
         });
     } else {
         councilExecutionRef.current.isExecuting = false;

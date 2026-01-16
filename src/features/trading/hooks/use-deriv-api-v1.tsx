@@ -537,7 +537,7 @@ const executeTrade = useCallback(async (
                     const profit = parseFloat(contract.profit);
                     const isLoss = profit < 0;
                     
-                    const exitPrice = parseFloat(contract.exit_tick_display_value || contract.sell_spot_display_value || contract.sell_spot);
+                    const exitPrice = parseFloat(contract.exit_tick_display_value || contract.sell_spot_display_value || contract.sell_spot || '0');
 
                     toast({
                         title: "Negociação Encerrada",
