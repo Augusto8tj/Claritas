@@ -11,9 +11,10 @@ import { initialCouncilStrategies } from '@/services/council-strategies';
 // ============================================================================
 // PARÂMETROS DA EVOLUÇÃO
 // ============================================================================
-const EVOLUTION_TRIGGER_THRESHOLD = 50; // A cada X trades virtuais, aciona a evolução
-const ELITE_COUNT = 5; // Número de melhores robôs a serem usados como base para mutação
-const WORST_COUNT = 5; // Número de piores robôs a serem substituídos
+const EVOLUTION_TRIGGER_THRESHOLD = 50; 
+const ELITE_COUNT = 5; 
+const WORST_COUNT = 5;
+const MIN_TRADES_FOR_ANALYSIS = 10;
 
 export interface EvolutionEvent {
     timestamp: Date;
@@ -23,56 +24,99 @@ export interface EvolutionEvent {
         replacedBotType: string;
         parentBotId: string;
         parentBotType: string;
+        diagnosis: string;
+        prescription: string;
+        mutatedGenes: string[];
     }[];
 }
 
 // ============================================================================
-// FUNÇÕES DE MUTAÇÃO
+// FUNÇÕES DE MUTAÇÃO INTELIGENTE
 // ============================================================================
 
 /**
- * Cria uma mutação de um robô de sucesso.
- * @param eliteRobot O robô de elite a ser mutado.
- * @returns Uma nova estratégia com parâmetros ligeiramente alterados.
+ * Analisa o histórico de perdas de um robô para identificar fraquezas.
+ * @param robot O robô a ser analisado.
+ * @returns Um objeto com o padrão de fraqueza e uma sugestão de correção.
  */
-const mutateStrategy = (eliteRobot: RobotStrategy): Omit<RobotStrategy, 'id' | 'justification'> => {
-    const newStrategy = { ...eliteRobot };
+function analyzeRobotFailures(
+  robot: RobotPerformance,
+): {
+  weaknessPattern: string;
+  suggestedFix: Partial<RobotStrategy>;
+} {
+  const losses = robot.tradeHistory?.filter(t => t.profit < 0) || [];
+  
+  if (!robot.tradeHistory || losses.length < MIN_TRADES_FOR_ANALYSIS / 2) {
+    return { weaknessPattern: 'Dados insuficientes', suggestedFix: {} };
+  }
+  
+  // 1. Analisa em que REGIMES o robô perde mais
+  const lossesByTrend: Record<string, number> = {};
+  losses.forEach(loss => {
+    const trend = loss.regime?.trend || 'NEUTRAL';
+    lossesByTrend[trend] = (lossesByTrend[trend] || 0) + 1;
+  });
+  
+  const worstTrend = Object.keys(lossesByTrend).reduce((a, b) => 
+    lossesByTrend[a] > lossesByTrend[b] ? a : b
+  , '');
+  
+  let suggestedFix: Partial<RobotStrategy> = {};
+  let weaknessPattern = `Perde ${((losses.length / robot.tradeHistory.length) * 100).toFixed(0)}% das vezes.`;
+
+  if (worstTrend && lossesByTrend[worstTrend] > losses.length * 0.5) {
+     weaknessPattern += ` Ponto fraco: tendência ${worstTrend}.`;
+     
+     const isTrendStrategy = ['MACD_CROSS', 'ADX_TREND', 'MOVING_AVERAGE_CROSS'].includes(robot.strategyType);
+     const isRangeStrategy = ['RSI', 'STOCHASTIC', 'BOLLINGER_BANDS'].includes(robot.strategyType);
+
+     if (worstTrend === 'NEUTRAL' && isTrendStrategy && robot.strategy.period) {
+         suggestedFix.period = Math.round(robot.strategy.period * 1.2); // Torna a média mais lenta
+     }
+     else if ((worstTrend === 'STRONG_UP' || worstTrend === 'STRONG_DOWN') && isRangeStrategy && robot.strategy.period) {
+         suggestedFix.period = Math.round(robot.strategy.period * 0.8); // Torna o oscilador mais rápido
+     }
+  }
+
+  return {
+    weaknessPattern,
+    suggestedFix
+  };
+}
+
+/**
+ * Cria uma mutação de um robô, aplicando correções e alguma aleatoriedade.
+ * @param eliteRobot O robô "pai".
+ * @param suggestedFix Correções baseadas na análise do robô substituído.
+ * @returns Uma nova estratégia com parâmetros alterados.
+ */
+const mutateStrategy = (
+    eliteRobot: RobotStrategy,
+    suggestedFix: Partial<RobotStrategy> = {}
+): { strategy: Omit<RobotStrategy, 'id' | 'justification'>; parameters: string[] } => {
+    const newStrategy = { ...eliteRobot, ...suggestedFix };
+    const changedParams: string[] = Object.keys(suggestedFix);
     
-    // Fator de mutação pequeno
-    const mutationFactor = 1 + (Math.random() - 0.5) * 0.2; // +/- 10%
+    const mutationFactor = 1 + (Math.random() - 0.5) * 0.1; // +/- 5%
     const smallChange = Math.random() > 0.5 ? 1 : -1;
 
-    if (newStrategy.period) {
+    if (newStrategy.period && !changedParams.includes('period')) {
         newStrategy.period = Math.max(5, Math.round(newStrategy.period * mutationFactor));
+        changedParams.push('period (random)');
     }
-    if (newStrategy.shortPeriod) {
-        newStrategy.shortPeriod = Math.max(3, Math.round(newStrategy.shortPeriod * mutationFactor));
-    }
-    if (newStrategy.longPeriod) {
-        newStrategy.longPeriod = Math.max(newStrategy.shortPeriod ? newStrategy.shortPeriod + 5 : 10, Math.round(newStrategy.longPeriod * mutationFactor));
-    }
-     if (newStrategy.strongBuyThreshold) {
+     if (newStrategy.strongBuyThreshold && !changedParams.includes('strongBuyThreshold')) {
         newStrategy.strongBuyThreshold = Math.max(5, Math.min(40, newStrategy.strongBuyThreshold + smallChange));
         newStrategy.weakBuyThreshold = newStrategy.strongBuyThreshold + 10;
-    }
-    if (newStrategy.strongSellThreshold) {
-        newStrategy.strongSellThreshold = Math.min(95, Math.max(60, newStrategy.strongSellThreshold - smallChange));
-        newStrategy.weakSellThreshold = newStrategy.strongSellThreshold - 10;
-    }
-    if (newStrategy.optimalDuration) {
-        newStrategy.optimalDuration = Math.max(1, Math.round(newStrategy.optimalDuration * mutationFactor));
-        // Garante que a duração para ticks fique entre 1 e 10
-        if (newStrategy.optimalDurationUnit === 't') {
-            newStrategy.optimalDuration = Math.min(10, newStrategy.optimalDuration);
-        }
+        changedParams.push('buyThreshold (random)');
     }
     
-    // Remove os campos que serão gerados novamente
     const { id, justification, ...rest } = newStrategy;
-
-    return rest as Omit<RobotStrategy, 'id' | 'justification'>;
+    return { 
+        strategy: rest as Omit<RobotStrategy, 'id' | 'justification'>, 
+        parameters: changedParams 
+    };
 };
-
 
 // ============================================================================
 // O HOOK DE EVOLUÇÃO
@@ -82,9 +126,7 @@ export function useStrategyEvolutionV1() {
     const { toast } = useToast();
     const { user } = useAuth();
     
-    // O estado que guarda as estratégias atuais, começando com as iniciais
-    const [evolvedStrategies, setEvolvedStrategies] = useState<Omit<RobotStrategy, 'id' | 'justification'>[]>(initialCouncilStrategies);
-    // NOVO: Estado para guardar o histórico de eventos de evolução
+    const [evolvedStrategies, setEvolvedStrategies] = useState<Omit<RobotStrategy, 'id'>[]>(initialCouncilStrategies);
     const [evolutionHistory, setEvolutionHistory] = useState<EvolutionEvent[]>([]);
 
     useEffect(() => {
@@ -96,34 +138,19 @@ export function useStrategyEvolutionV1() {
         });
     }, [user]);
 
-    // Contador de trades para acionar a evolução
     const tradeCountRef = useRef(0);
 
-    /**
-     * A função principal que é chamada a cada ciclo de avaliação de desempenho.
-     * Ela decide se é hora de evoluir e, se for, recalibra as estratégias.
-     */
     const evolveTrigger = useCallback((performanceData: RobotPerformance[]) => {
         tradeCountRef.current += 1;
 
         if (tradeCountRef.current < EVOLUTION_TRIGGER_THRESHOLD) {
-            return; // Ainda não é hora de evoluir
+            return; 
         }
 
         console.log(`[Evolution V1] Limite de ${EVOLUTION_TRIGGER_THRESHOLD} trades atingido. A iniciar ciclo de evolução...`);
-        tradeCountRef.current = 0; // Reseta o contador
+        tradeCountRef.current = 0; 
 
-        // Ordena para encontrar os melhores e piores
-        const sortedPerformance = [...performanceData].sort((a, b) => {
-             // Prioriza taxa de acerto, depois lucro
-            const aTotal = (a.wins || 0) + (a.losses || 0);
-            const bTotal = (b.wins || 0) + (b.losses || 0);
-            const aWinRate = aTotal > 0 ? (a.wins || 0) / aTotal : 0;
-            const bWinRate = bTotal > 0 ? (b.wins || 0) / bTotal : 0;
-
-            if (aWinRate !== bWinRate) return bWinRate - aWinRate;
-            return (b.totalProfit || 0) - (a.totalProfit || 0);
-        });
+        const sortedPerformance = [...performanceData].sort((a, b) => (b.sharpeRatio || -99) - (a.sharpeRatio || -99));
 
         const elitePerformers = sortedPerformance.slice(0, ELITE_COUNT);
         const worstPerformers = sortedPerformance.slice(-WORST_COUNT);
@@ -134,8 +161,8 @@ export function useStrategyEvolutionV1() {
         }
 
         toast({
-            title: "🧬 Evolução de Estratégia V1!",
-            description: "A IA está a recalibrar os robôs com base no desempenho recente.",
+            title: "🧬 Evolução Genética Inteligente!",
+            description: "Analisando falhas e aplicando mutações direcionadas aos robôs.",
         });
 
         const newEvent: EvolutionEvent = {
@@ -144,43 +171,58 @@ export function useStrategyEvolutionV1() {
             mutations: [],
         };
         
-        // Cria um mapa das novas estratégias
-        const newStrategiesMap = new Map<string, Omit<RobotStrategy, 'id' | 'justification'>>(
-            evolvedStrategies.map(s => [(s as any).id, s])
-        );
+        let strategiesChanged = false;
+        const newStrategiesMap = new Map(evolvedStrategies.map((s, i) => [initialCouncilStrategies[i].id, s]));
 
-        // Substitui os piores por mutações dos melhores
         worstPerformers.forEach((worst, index) => {
+            if ((worst.wins || 0) + (worst.losses || 0) < MIN_TRADES_FOR_ANALYSIS) return;
+
             const eliteParent = elitePerformers[index % elitePerformers.length];
-            const newStrategyParams = mutateStrategy(eliteParent.strategy);
-            const newJustification = `Mutação da estratégia ${eliteParent.strategyType} de elite.`;
+            const failureAnalysis = analyzeRobotFailures(worst);
             
-            newStrategiesMap.set(worst.id, {
-                ...worst.strategy, 
-                ...newStrategyParams, 
-                justification: newJustification,
-            });
+            const { strategy: newStrategyParams, parameters: mutatedGenes } = mutateStrategy(eliteParent.strategy, failureAnalysis.suggestedFix);
+            
+            const newJustification = `Gen mutado de ${eliteParent.strategyType}. Causa: ${failureAnalysis.weaknessPattern}`;
+            
+            const worstBotInitialData = initialCouncilStrategies.find(s => s.id === worst.id);
+            if(worstBotInitialData) {
+              const fullNewStrategy = {
+                  ...worstBotInitialData,
+                  ...newStrategyParams,
+                  justification: newJustification,
+              };
+              
+              const currentStrategiesArray = Array.from(newStrategiesMap.values());
+              const worstIndex = currentStrategiesArray.findIndex(s => (s as any).id === worst.id);
+              if (worstIndex !== -1) {
+                  newStrategiesMap.set(worst.id, fullNewStrategy);
+                  strategiesChanged = true;
 
-            newEvent.mutations.push({
-                replacedBotId: worst.id,
-                replacedBotType: worst.strategyType,
-                parentBotId: eliteParent.id,
-                parentBotType: eliteParent.strategyType,
-            });
+                  newEvent.mutations.push({
+                      replacedBotId: worst.id,
+                      replacedBotType: worst.strategyType,
+                      parentBotId: eliteParent.id,
+                      parentBotType: eliteParent.strategyType,
+                      diagnosis: failureAnalysis.weaknessPattern,
+                      prescription: Object.keys(failureAnalysis.suggestedFix).length > 0 ? 'Correção Direcionada' : 'Mutação Aleatória',
+                      mutatedGenes: mutatedGenes,
+                  });
 
-            console.log(`[Evolution V1] Robô ${worst.id} (${worst.strategyType}) foi substituído por uma mutação de ${eliteParent.strategyType}.`);
-        });
-
-        setEvolvedStrategies(Array.from(newStrategiesMap.values()));
-        setEvolutionHistory(prev => {
-            const newHistory = [newEvent, ...prev];
-            if(user) {
-                // @ts-ignore
-                saveEvolutionHistory(user.uid, newHistory, 'v1');
+                  console.log(`[Evolution V1] Robô ${worst.id} (${worst.strategyType}) substituído. Análise: ${failureAnalysis.weaknessPattern}`);
+              }
             }
-            return newHistory;
         });
 
+        if (strategiesChanged) {
+            setEvolvedStrategies(Array.from(newStrategiesMap.values()));
+            setEvolutionHistory(prev => {
+                const newHistory = [newEvent, ...prev];
+                if(user) {
+                    saveEvolutionHistory(user.uid, newHistory, 'v1');
+                }
+                return newHistory;
+            });
+        }
     }, [evolvedStrategies, toast, user]);
 
     return {
@@ -189,5 +231,3 @@ export function useStrategyEvolutionV1() {
         evolutionHistory,
     };
 }
-
-    

@@ -119,6 +119,12 @@ export const RobotStrategySchema = z.object({
 });
 export type RobotStrategy = z.infer<typeof RobotStrategySchema>;
 
+// MODIFICADO: Histórico de trades agora guarda o regime.
+export const TradeHistoryEventSchema = z.object({
+  profit: z.number(),
+  regime: z.any(), // Para acomodar o objeto complexo MarketRegimeV2
+  timestamp: z.number(),
+});
 
 export const BayesianVoteSchema = z.object({
     vote: z.enum(['RISE', 'FALL', 'HOLD']),
@@ -154,7 +160,7 @@ export interface EnhancedRobotPerformance {
   effectiveRegimes: MarketRegime[];
   monteCarloScore: number;
   lastUpdated: number;
-  tradeHistory: { profit: number; regime: MarketRegime }[]; // ✅ Armazena contexto
+  tradeHistory: { profit: number; regime: any; timestamp: number }[];
 }
 
 // Schema for a snapshot of all indicators at a given time
@@ -266,7 +272,7 @@ export type RobotVote = z.infer<typeof RobotVoteSchema>;
 export type CouncilVotes = Record<string, RobotVote>;
 
 
-// Desempenho do robô, incluindo win rates por regime
+// MODIFICADO: usa o novo TradeHistoryEventSchema
 export const RobotPerformanceSchema = z.object({
     id: z.string(),
     strategyType: z.string(),
@@ -277,8 +283,8 @@ export const RobotPerformanceSchema = z.object({
     winRate: z.number().optional(),
     winRateTrend: z.number().optional(),
     winRateRange: z.number().optional(),
-    sharpeRatio: z.number().optional(), // NEW
-    tradeHistory: z.array(z.number()).optional(), // NEW: Array of PnL values
+    sharpeRatio: z.number().optional(),
+    tradeHistory: z.array(TradeHistoryEventSchema).optional(),
 });
 
 export type RobotPerformance = z.infer<typeof RobotPerformanceSchema>;
