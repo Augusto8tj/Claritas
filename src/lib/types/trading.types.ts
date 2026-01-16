@@ -273,6 +273,8 @@ export const RobotPerformanceSchema = z.object({
     winRate: z.number().optional(),
     winRateTrend: z.number().optional(),
     winRateRange: z.number().optional(),
+    sharpeRatio: z.number().optional(), // NEW
+    tradeHistory: z.array(z.number()).optional(), // NEW: Array of PnL values
 });
 
 export type RobotPerformance = z.infer<typeof RobotPerformanceSchema>;
