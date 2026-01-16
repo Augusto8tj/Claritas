@@ -199,7 +199,6 @@ export const DerivApiProviderV1 = ({ children }: { children: ReactNode }) => {
         if (op.status === 'pending' && op.expirationTime && now > op.expirationTime) {
           hasChanges = true;
           updateTradeAnnotation(String(op.id), { status: 'lost', profit: -op.stake });
-          // CORREÇÃO: Adicionar o exitTimestamp na expiração por timer
           return { ...op, status: 'lost' as const, result: -op.stake, exitTimestamp: new Date().toISOString() };
         }
         return op;
@@ -538,8 +537,7 @@ const executeTrade = useCallback(async (
                     const profit = parseFloat(contract.profit);
                     const isLoss = profit < 0;
                     
-                    // CORREÇÃO: Lógica robusta para obter o preço de saída
-                    const exitPrice = parseFloat(contract.exit_tick_display_value || contract.sell_spot_display_value);
+                    const exitPrice = parseFloat(contract.exit_tick_display_value || contract.sell_spot_display_value || contract.sell_spot);
 
                     toast({
                         title: "Negociação Encerrada",

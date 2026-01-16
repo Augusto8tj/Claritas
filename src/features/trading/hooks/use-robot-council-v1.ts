@@ -463,34 +463,57 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
     
     setSupervisionStatus({ status: 'approved', message: `Aprovado (Kelly Stake: $${stake.toFixed(2)})` });
 
-    // 5. Execução do Trade - CORREÇÃO DA DURAÇÃO
     const votingRobots = Object.values(newVotes).filter(v => v.vote === decision);
     const totalVoteWeightForDecision = votingRobots.reduce((sum, v) => sum + v.weight, 0);
 
-    const consensusDuration = totalVoteWeightForDecision > 0 
-        ? Math.round(votingRobots.reduce((sum, v) => sum + durationToSeconds(v.optimalDuration, v.optimalDurationUnit) * v.weight, 0) / totalVoteWeightForDecision) 
-        : 30; // Fallback para 30 segundos
+    if (totalVoteWeightForDecision > 0) {
+        const tickVotes = votingRobots.filter(v => v.optimalDurationUnit === 't');
+        const timeVotes = votingRobots.filter(v => v.optimalDurationUnit !== 't');
+    
+        const tickWeight = tickVotes.reduce((sum, v) => sum + v.weight, 0);
+        const timeWeight = timeVotes.reduce((sum, v) => sum + v.weight, 0);
+    
+        let finalUnit: DurationUnit;
+        let finalDuration: number;
 
-    // A unidade será sempre 's' por agora para simplificar e evitar erros de tick
-    const consensusUnit: DurationUnit = 's';
-    
-    let finalDuration = consensusDuration;
-    if (durationLimits && durationLimits[consensusUnit]) {
-        finalDuration = Math.max(durationLimits[consensusUnit].min, Math.min(finalDuration, durationLimits[consensusUnit].max));
+        if (tickWeight > timeWeight * 1.2 && durationLimits?.t?.min) {
+            finalUnit = 't';
+            const totalTickWeight = tickVotes.reduce((sum, v) => sum + v.weight, 0);
+            finalDuration = Math.round(tickVotes.reduce((sum, v) => sum + v.optimalDuration * v.weight, 0) / (totalTickWeight || 1));
+        } else {
+            finalUnit = 's';
+            const totalTimeWeight = timeVotes.reduce((sum, v) => sum + v.weight, 0);
+            const avgSeconds = timeVotes.reduce((sum, v) => sum + durationToSeconds(v.optimalDuration, v.optimalDurationUnit) * v.weight, 0) / (totalTimeWeight || 1);
+            finalDuration = Math.round(avgSeconds);
+        }
+        
+        const bbw = currentIndicators.bbw;
+        if (bbw) {
+            if (bbw > 0.08) {
+                 finalDuration = Math.max(durationLimits?.[finalUnit]?.min || (finalUnit === 't' ? 5 : 15), Math.round(finalDuration * 0.75));
+            } else if (bbw < 0.02) {
+                finalDuration = Math.min(durationLimits?.[finalUnit]?.max || (finalUnit === 't' ? 10 : 300), Math.round(finalDuration * 1.25));
+            }
+        }
+        
+        if (durationLimits && durationLimits[finalUnit]) {
+            finalDuration = Math.max(durationLimits[finalUnit].min, Math.min(finalDuration, durationLimits[finalUnit].max));
+        }
+        
+        executeTrade(
+            decision === 'RISE' ? 'CALL' : 'PUT', 
+            stake, 
+            activeSymbol!, 
+            decision.toLowerCase() as 'rise' | 'fall', 
+            finalDuration, 
+            finalUnit, 
+            'Conselho'
+        ).finally(() => {
+            setTimeout(() => { councilExecutionRef.current.isExecuting = false; }, 15000);
+        });
+    } else {
+        councilExecutionRef.current.isExecuting = false;
     }
-    if (finalDuration < 15) finalDuration = 15; // Regra de negócio mínima
-    
-    executeTrade(
-        decision === 'RISE' ? 'CALL' : 'PUT', 
-        stake, 
-        activeSymbol!, 
-        decision.toLowerCase() as 'rise' | 'fall', 
-        finalDuration, // Duração dinâmica
-        consensusUnit,  // Unidade de segundos
-        'Conselho'
-    ).finally(() => {
-        setTimeout(() => councilExecutionRef.current.isExecuting = false, 15000); // Cooldown de 15s
-    });
 
   }, [
       priceTicks, isConnected, isCouncilAutopilotOn, strategyCouncil, robotPerformance, isMeritocracyOn, activeSymbol, operationsLog, toast, executeTrade, timePeriod, user, evolveTrigger, tickCandles, form, dailyBalance, dailyTarget, durationLimits
@@ -503,4 +526,3 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
     isInversionModeOn: false, setIsInversionModeOn: ()=>{}
   };
 }
-
