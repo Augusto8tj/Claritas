@@ -537,6 +537,9 @@ const executeTrade = useCallback(async (
 
                     const profit = parseFloat(contract.profit);
                     const isLoss = profit < 0;
+                    
+                    // CORREÇÃO: Lógica robusta para obter o preço de saída
+                    const exitPrice = parseFloat(contract.exit_tick_display_value || contract.sell_spot_display_value);
 
                     toast({
                         title: "Negociação Encerrada",
@@ -548,13 +551,13 @@ const executeTrade = useCallback(async (
 
                     setOperationsLog(prevLog => prevLog.map(op =>
                         op.id === contract.contract_id 
-                        ? { ...op, status: profit >= 0 ? 'won' : 'lost', result: profit, exitPrice: parseFloat(contract.exit_tick_display_value), exitTimestamp: sellTime } 
+                        ? { ...op, status: profit >= 0 ? 'won' : 'lost', result: profit, exitPrice: exitPrice, exitTimestamp: sellTime } 
                         : op
                     ));
 
                     updateTradeAnnotation(String(contract.contract_id), {
                         exitTime: contract.sell_time || Math.floor(Date.now() / 1000),
-                        exitPrice: parseFloat(contract.exit_tick_display_value),
+                        exitPrice: exitPrice,
                         status: profit >= 0 ? 'won' : 'lost',
                         profit,
                     });

@@ -415,7 +415,7 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
     const totalVoteWeight = riseSum + fallSum;
     const consensusProbability = totalVoteWeight > 0 ? Math.max(riseSum, fallSum) / totalVoteWeight : 0.5;
 
-    let decision: 'RISE' | 'FALL' | 'HOLD' = 'HOLD';
+    let decision: 'RISE' | 'FALL' | 'HOLD'> = 'HOLD';
     if(riseSum > fallSum && consensusProbability > 0.6) decision = 'RISE';
     else if (fallSum > riseSum && consensusProbability > 0.6) decision = 'FALL';
     setConsensusDecision(decision);
@@ -463,22 +463,37 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
     
     setSupervisionStatus({ status: 'approved', message: `Aprovado (Kelly Stake: $${stake.toFixed(2)})` });
 
-    // 5. Execução do Trade
-    const formValues = form.getValues();
+    // 5. Execução do Trade - CORREÇÃO DA DURAÇÃO
+    const votingRobots = Object.values(newVotes).filter(v => v.vote === decision);
+    const totalVoteWeightForDecision = votingRobots.reduce((sum, v) => sum + v.weight, 0);
+
+    const consensusDuration = totalVoteWeightForDecision > 0 
+        ? Math.round(votingRobots.reduce((sum, v) => sum + durationToSeconds(v.optimalDuration, v.optimalDurationUnit) * v.weight, 0) / totalVoteWeightForDecision) 
+        : 30; // Fallback para 30 segundos
+
+    // A unidade será sempre 's' por agora para simplificar e evitar erros de tick
+    const consensusUnit: DurationUnit = 's';
+    
+    let finalDuration = consensusDuration;
+    if (durationLimits && durationLimits[consensusUnit]) {
+        finalDuration = Math.max(durationLimits[consensusUnit].min, Math.min(finalDuration, durationLimits[consensusUnit].max));
+    }
+    if (finalDuration < 15) finalDuration = 15; // Regra de negócio mínima
+    
     executeTrade(
         decision === 'RISE' ? 'CALL' : 'PUT', 
         stake, 
         activeSymbol!, 
         decision.toLowerCase() as 'rise' | 'fall', 
-        formValues.duration, 
-        formValues.duration_unit, 
+        finalDuration, // Duração dinâmica
+        consensusUnit,  // Unidade de segundos
         'Conselho'
     ).finally(() => {
         setTimeout(() => councilExecutionRef.current.isExecuting = false, 15000); // Cooldown de 15s
     });
 
   }, [
-      priceTicks, isConnected, isCouncilAutopilotOn, strategyCouncil, robotPerformance, isMeritocracyOn, activeSymbol, operationsLog, toast, executeTrade, timePeriod, user, evolveTrigger, tickCandles, form, dailyBalance, dailyTarget
+      priceTicks, isConnected, isCouncilAutopilotOn, strategyCouncil, robotPerformance, isMeritocracyOn, activeSymbol, operationsLog, toast, executeTrade, timePeriod, user, evolveTrigger, tickCandles, form, dailyBalance, dailyTarget, durationLimits
   ]);
 
    // O 'isDynamicConsensusOn' e 'isDynamicRiskOn' são sempre verdadeiros nesta nova lógica,
