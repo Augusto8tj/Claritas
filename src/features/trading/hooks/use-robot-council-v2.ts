@@ -596,6 +596,9 @@ export function useRobotCouncilV2(
         if (performanceChanged) {
             const updatedPerformance = Array.from(robotPerformanceRef.current);
             setRobotPerformance(updatedPerformance);
+            if (user) {
+                saveRobotPerformance(user.uid, updatedPerformance, 'v2');
+            }
         }
         
         let riseSum = 0, fallSum = 0, totalWeight = 0;
@@ -824,7 +827,7 @@ export function useRobotCouncilV2(
                             pnl: 0,
                          };
 
-                         saveTradeDecision(user.uid, log);
+                         saveTradeDecision(user.uid, log, 'v2');
                          setTradeDecisionLog(prev => [log, ...prev]);
                      }
                 });

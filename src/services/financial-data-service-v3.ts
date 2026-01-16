@@ -6,7 +6,7 @@
  * Interage com coleções específicas do Firestore com o sufixo '_v3'.
  */
 import { db } from '@/lib/firebase';
-import { collection, doc, getDoc, setDoc, deleteDoc } from 'firebase/firestore';
+import { collection, doc, getDoc, setDoc, deleteDoc, query, orderBy, getDocs } from 'firebase/firestore';
 import type { EnhancedRobotPerformance, TradeDecisionLog } from '@/lib/types';
 import type { EvolutionEvent } from '@/features/trading/hooks/use-strategy-evolution-v3';
 import { sanitizeForFirestore } from './utils/sanitize-for-firestore';
@@ -63,6 +63,21 @@ export async function saveTradeDecisionV3(userId: string, log: TradeDecisionLog)
         await setDoc(logDocRef, sanitizedLog, { merge: true });
     } catch (error) {
         console.error("Falha ao salvar log de decisão V3:", error);
+    }
+}
+
+export async function getTradeDecisionLogsV3(userId: string): Promise<TradeDecisionLog[]> {
+    if (!userId) {
+        return [];
+    }
+    const logCollectionRef = collection(db, `users/${userId}/decision_logs_v3`);
+    const q = query(logCollectionRef, orderBy('timestamp', 'desc'));
+    try {
+        const snapshot = await getDocs(q);
+        return snapshot.docs.map(d => d.data() as TradeDecisionLog);
+    } catch (error) {
+        console.error(`[Service Error V3] getTradeDecisionLogsV3 for user ${userId} failed:`, error);
+        return [];
     }
 }
 

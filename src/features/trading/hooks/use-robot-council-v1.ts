@@ -378,6 +378,7 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
 
     const newVotes: CouncilVotes = {};
     let riseSum = 0, fallSum = 0;
+    let totalVoteWeight = 0;
     
     // Todos os robôs votam.
     strategyCouncil.forEach(robot => {
@@ -421,6 +422,8 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
         if (voteResult.vote === 'RISE') riseSum += confidence * weight;
         if (voteResult.vote === 'FALL') fallSum += confidence * weight;
 
+        totalVoteWeight += weight; // Acumula o peso total para normalização
+        
         // Adiciona à Arena Virtual
         if(voteResult.vote !== 'HOLD' && confidence > 50) {
              const exitEpoch = currentTick.epoch + durationToSeconds(voteResult.optimalDuration, voteResult.optimalDurationUnit);
@@ -432,8 +435,6 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
     });
     setCouncilVotes(newVotes);
     
-    const totalVoteWeight = riseSum + fallSum;
-    setConsensusSum({ rise: riseSum / (totalVoteWeight || 1), fall: fallSum / (totalVoteWeight || 1) });
     const consensusProbability = totalVoteWeight > 0 ? Math.max(riseSum, fallSum) / totalVoteWeight : 0.5;
 
     let decision: 'RISE' | 'FALL' | 'HOLD' = 'HOLD';
@@ -534,7 +535,22 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
             finalDuration, 
             finalUnit, 
             'Conselho'
-        ).finally(() => {
+        ).then(tradeResult => {
+            if (tradeResult.success && tradeResult.contractId && user) {
+                saveTradeDecision(user.uid, {
+                    id: String(tradeResult.contractId),
+                    contractId: tradeResult.contractId,
+                    timestamp: new Date().toISOString(),
+                    asset: activeSymbol,
+                    timePeriod,
+                    tradeParams: { direction: decision, stake, duration: finalDuration, durationUnit: finalUnit },
+                    context: { marketRegime: currentRegime, regimeConfidence: 1.0, microstructure: null, indicators: currentIndicators, entryPrice: tradeResult.entryPrice },
+                    consensus: { bayesianProbability: consensusProbability, kellyStake: stake, activeRobots: votingRobots.length, votes: newVotes },
+                    result: 'pending',
+                    pnl: 0,
+                }, 'v1');
+            }
+        }).finally(() => {
             setTimeout(() => { councilExecutionRef.current.isExecuting = false; }, 5000);
         });
     } else {

@@ -276,25 +276,27 @@ export async function loadRobotPerformance(userId: string, version: Version): Pr
   }
 };
 
-export async function saveTradeDecision(userId: string, log: TradeDecisionLog) {
+export async function saveTradeDecision(userId: string, log: TradeDecisionLog, version: 'v1' | 'v2' = 'v2') {
     if (!userId) return;
-    const logCollectionRef = collection(db, 'users', userId, 'decision_logs');
+    const collectionName = `decision_logs_${version}`;
+    const logCollectionRef = collection(db, 'users', userId, collectionName);
     const logDocRef = doc(logCollectionRef, log.id);
     const sanitizedLog = sanitizeForFirestore(log);
     setDocumentNonBlocking(logDocRef, sanitizedLog, { merge: true });
 }
 
-export async function getTradeDecisionLogs(userId: string): Promise<TradeDecisionLog[]> {
+export async function getTradeDecisionLogs(userId: string, version: 'v1' | 'v2' = 'v2'): Promise<TradeDecisionLog[]> {
     if (!userId) {
         return [];
     }
-    const logCollectionRef = collection(db, `users/${userId}/decision_logs`);
+    const collectionName = `decision_logs_${version}`;
+    const logCollectionRef = collection(db, `users/${userId}/${collectionName}`);
     const q = query(logCollectionRef, orderBy('timestamp', 'desc')); // Ordena por mais recente
     try {
         const snapshot = await getDocs(q);
         return snapshot.docs.map(d => d.data() as TradeDecisionLog);
     } catch (error) {
-        console.error(`[Service Error] getTradeDecisionLogs for user ${userId} failed:`, error);
+        console.error(`[Service Error] getTradeDecisionLogs for user ${userId} (version ${version}) failed:`, error);
         return []; // Retorna um array vazio em caso de erro para não quebrar a UI
     }
 }
