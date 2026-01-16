@@ -9,7 +9,7 @@ import { AssetSelectorV3 } from "@/features/trading/components/deriv-trader/asse
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { MarketChart } from "@/features/trading/components/deriv-trader/market-chart";
 import { Button } from "@/components/ui/button";
-import { Trash2 } from "lucide-react";
+import { Trash2, Dna, Archive, Bot, Swords, CandlestickChart, BrainCircuit } from "lucide-react";
 import { useDerivApiV3, DerivApiProviderV3 } from "@/features/trading/hooks/use-deriv-api-v3";
 import { Skeleton } from "@/components/ui/skeleton";
 import OperationsLogV3 from "@/features/trading/components/deriv-trader/operations-log-v3";
@@ -24,10 +24,6 @@ import TradingDecisionLogViewer from "@/components/deriv-trader/TradingDecisionL
 import { CouncilAutopilotInterfaceV3 } from "@/features/trading/components/deriv-trader/council-autopilot-interface-v3";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { ApiStatusIndicatorV3 } from "@/features/trading/components/deriv-trader/ApiStatusIndicatorV3";
-
-// ============================================================================
-// COMPONENTES REORGANIZADOS PARA PERFORMANCE
-// ============================================================================
 
 const Header = () => {
     const { 
@@ -91,7 +87,6 @@ const IsolatedMarketChart = () => {
         chartType, setChartType, timePeriod, setTimePeriod, tradeAnnotations
     } = useDerivApiV3();
     
-    // Passa priceTicks vazio para o gráfico porque ele só precisa de chartData
     const { indicators: councilIndicators } = useRobotCouncilV3(activeSymbol, [], chartData, 0);
 
     return (
@@ -122,71 +117,82 @@ const IsolatedMarketChart = () => {
 };
 
 const DerivTraderV3Core = () => {
-    const { activeSymbol, priceTicks, dataVersion, operationsLog, chartData, sellContract } = useDerivApiV3();
-    
+    const { activeSymbol, priceTicks, dataVersion, operationsLog, sellContract } = useDerivApiV3();
     const robotCouncil = useRobotCouncilV3(activeSymbol, priceTicks, chartData, dataVersion);
-    const [activeTab, setActiveTab] = React.useState("desk");
-    
+    const [mobileTab, setMobileTab] = React.useState("negociar");
+    const [desktopTab, setDesktopTab] = React.useState("arena");
+
     return (
         <div className="space-y-6 mt-6">
-            <IsolatedMarketChart />
-            
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <div className="space-y-6">
+            {/* Mobile View */}
+            <div className="lg:hidden">
+                <Tabs value={mobileTab} onValueChange={setMobileTab}>
+                    <TabsList className="grid w-full grid-cols-6">
+                        <TabsTrigger value="negociar" aria-label="Negociar"><CandlestickChart className="h-4 w-4" /></TabsTrigger>
+                        <TabsTrigger value="piloto" aria-label="Piloto IA"><Bot className="h-4 w-4" /></TabsTrigger>
+                        <TabsTrigger value="arena" aria-label="Arena"><Swords className="h-4 w-4" /></TabsTrigger>
+                        <TabsTrigger value="logs" aria-label="Logs"><Archive className="h-4 w-4" /></TabsTrigger>
+                        <TabsTrigger value="debug" aria-label="Debug"><BrainCircuit className="h-4 w-4" /></TabsTrigger>
+                        <TabsTrigger value="evolucao" aria-label="Evolução"><Dna className="h-4 w-4" /></TabsTrigger>
+                    </TabsList>
+                    
+                    <TabsContent value="negociar" className="mt-4 space-y-6">
+                        <DerivTraderInterfaceV3 symbol={activeSymbol || ""} />
+                        <CouncilDashboardV3 councilState={robotCouncil} />
+                    </TabsContent>
+                    <TabsContent value="piloto" className="mt-4">
+                        <CouncilAutopilotInterfaceV3 {...robotCouncil} />
+                    </TabsContent>
+                    <TabsContent value="arena" className="mt-4">
+                        <TradingDeskV2 councilState={robotCouncil} />
+                    </TabsContent>
+                    <TabsContent value="logs" className="mt-4 space-y-6">
+                        <OperationsLogV3 operations={operationsLog} sellContract={sellContract} />
+                        <TradingDecisionLogViewer logs={robotCouncil.tradeDecisionLog} showFilters={false} />
+                    </TabsContent>
+                    <TabsContent value="debug" className="mt-4">
+                        <DebugCouncilViewV3 councilState={robotCouncil} isCouncilAutopilotOn={robotCouncil.isCouncilAutopilotOn} />
+                    </TabsContent>
+                    <TabsContent value="evolucao" className="mt-4">
+                        <EvolutionLabV3 {...robotCouncil} />
+                    </TabsContent>
+                </Tabs>
+            </div>
+
+            {/* Desktop View */}
+            <div className="hidden lg:grid lg:grid-cols-3 gap-6">
+                {/* Coluna 1: Negociação e Painel de Decisão */}
+                 <div className="space-y-6">
                     <DerivTraderInterfaceV3 symbol={activeSymbol || ""} />
-                     <div className="animate-in fade-in slide-in-from-top-4 duration-500">
-                        <CouncilDashboardV3
-                            councilState={robotCouncil}
-                        />
-                    </div>
+                    <CouncilDashboardV3 councilState={robotCouncil} />
                 </div>
-                <CouncilAutopilotInterfaceV3 {...robotCouncil} />
+                
+                {/* Coluna 2: Autopilot e Debug */}
+                 <div className="space-y-6">
+                    <CouncilAutopilotInterfaceV3 {...robotCouncil} />
+                    <DebugCouncilViewV3 councilState={robotCouncil} isCouncilAutopilotOn={robotCouncil.isCouncilAutopilotOn} />
+                </div>
+
+                {/* Coluna 3: Logs, Arena e Evolução */}
+                <div className="space-y-6">
+                     <Tabs defaultValue="arena" className="h-full">
+                        <TabsList className="grid w-full grid-cols-3">
+                            <TabsTrigger value="arena">Arena</TabsTrigger>
+                            <TabsTrigger value="operacoes">Operações</TabsTrigger>
+                            <TabsTrigger value="evolucao">Evolução</TabsTrigger>
+                        </TabsList>
+                        <TabsContent value="arena" className="mt-4">
+                            <TradingDeskV2 councilState={robotCouncil} />
+                        </TabsContent>
+                         <TabsContent value="operacoes" className="mt-4">
+                            <OperationsLogV3 operations={operationsLog} sellContract={sellContract} />
+                        </TabsContent>
+                        <TabsContent value="evolucao" className="mt-4">
+                            <EvolutionLabV3 {...robotCouncil} />
+                        </TabsContent>
+                    </Tabs>
+                </div>
             </div>
-
-            <div className="animate-in fade-in slide-in-from-top-4 duration-500">
-                <DebugCouncilViewV3
-                    councilState={robotCouncil}
-                    isCouncilAutopilotOn={robotCouncil.isCouncilAutopilotOn}
-                />
-            </div>
-
-
-            <Tabs value={activeTab} onValueChange={setActiveTab}>
-                <TabsList className="grid w-full grid-cols-4">
-                    <TabsTrigger value="desk">Arena V3.0</TabsTrigger>
-                    <TabsTrigger value="log">Operações</TabsTrigger>
-                    <TabsTrigger value="audit">Auditoria</TabsTrigger>
-                    <TabsTrigger value="evolution">Evolução</TabsTrigger>
-                </TabsList>
-                <TabsContent value="desk" className="mt-4">
-                    <TradingDeskV2 
-                        councilState={robotCouncil}
-                    />
-                </TabsContent>
-                <TabsContent value="log" className="mt-4">
-                    <OperationsLogV3
-                        operations={operationsLog} 
-                        sellContract={sellContract} 
-                    />
-                </TabsContent>
-                <TabsContent value="audit" className="mt-4">
-                    <TradingDecisionLogViewer logs={robotCouncil.tradeDecisionLog} showFilters={false} />
-                </TabsContent>
-                <TabsContent value="evolution" className="mt-4">
-                    <EvolutionLabV3 
-                        history={robotCouncil.evolutionHistory}
-                        isEvolving={robotCouncil.isEvolving}
-                        evolutionProgress={robotCouncil.evolutionProgress}
-                        currentGeneration={robotCouncil.currentGeneration}
-                        tradesUntilEvolution={robotCouncil.tradesUntilEvolution}
-                        tradeCounts={robotCouncil.tradeCounts}
-                        evolveTrigger={robotCouncil.evolveTrigger}
-                        robotPerformance={robotCouncil.robotPerformance}
-                        resetEvolutionHistory={robotCouncil.resetEvolutionHistory}
-                        deleteSingleEvolution={robotCouncil.deleteSingleEvolution}
-                    />
-                </TabsContent>
-            </Tabs>
         </div>
     );
 };
@@ -206,6 +212,7 @@ const PageContent = () => {
         <FormProvider {...form}>
             <div className="flex-1 space-y-4 p-4 sm:p-8 pt-6">
                 <Header />
+                <IsolatedMarketChart />
                 <DerivTraderV3Core />
             </div>
         </FormProvider>

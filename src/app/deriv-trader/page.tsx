@@ -9,7 +9,7 @@ import { AssetSelectorV1 } from "@/features/trading/components/deriv-trader/asse
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { MarketChart } from "@/features/trading/components/deriv-trader/market-chart";
 import { Button } from "@/components/ui/button";
-import { Trash2, Bot, NotepadText, LayoutGrid, Trophy, Dna } from "lucide-react";
+import { Trash2, Bot, NotepadText, LayoutGrid, Trophy, Dna, CandlestickChart } from "lucide-react";
 import { DerivApiProviderV1, useDerivApiV1 } from "@/features/trading/hooks/use-deriv-api-v1";
 import { Skeleton } from "@/components/ui/skeleton";
 import { OperationsLogV1 } from "@/features/trading/components/deriv-trader/operations-log-v1";
@@ -172,10 +172,10 @@ function DerivTraderPageContent() {
                             <div className="mt-6">
                                 <Tabs value={activeTab} onValueChange={setActiveTab}>
                                     <TabsList className="grid w-full grid-cols-4">
-                                        <TabsTrigger value="log">Registo de Operações</TabsTrigger>
-                                        <TabsTrigger value="desk">Arena Virtual</TabsTrigger>
-                                        <TabsTrigger value="fame">Hall da Fama</TabsTrigger>
-                                        <TabsTrigger value="evolution">Evolução</TabsTrigger>
+                                        <TabsTrigger value="log"><NotepadText className="w-4 h-4 mr-2"/>Registo</TabsTrigger>
+                                        <TabsTrigger value="desk"><LayoutGrid className="w-4 h-4 mr-2"/>Arena</TabsTrigger>
+                                        <TabsTrigger value="fame"><Trophy className="w-4 h-4 mr-2"/>Fama</TabsTrigger>
+                                        <TabsTrigger value="evolution"><Dna className="w-4 h-4 mr-2"/>Evolução</TabsTrigger>
                                     </TabsList>
                                     <TabsContent value="log" className="mt-4">
                                         <OperationsLogV1 operations={operationsLog} sellContract={sellContract} priceTicks={priceTicks} />
@@ -206,11 +206,11 @@ function DerivTraderPageContent() {
                 <div className="lg:hidden mt-6">
                     <Tabs value={activeTab} onValueChange={setActiveTab}>
                         <TabsList className="grid w-full grid-cols-5">
-                            <TabsTrigger value="trade">Negociar</TabsTrigger>
-                            <TabsTrigger value="autopilot"><Bot className="w-4 h-4"/></TabsTrigger>
-                            <TabsTrigger value="desk"><LayoutGrid className="w-4 h-4"/></TabsTrigger>
-                            <TabsTrigger value="fame"><Trophy className="w-4 h-4"/></TabsTrigger>
-                            <TabsTrigger value="log"><NotepadText className="w-4 h-4"/></TabsTrigger>
+                            <TabsTrigger value="trade" aria-label="Negociar"><CandlestickChart className="w-4 h-4"/></TabsTrigger>
+                            <TabsTrigger value="autopilot" aria-label="Piloto Automático"><Bot className="w-4 h-4"/></TabsTrigger>
+                            <TabsTrigger value="desk" aria-label="Mesa de Operações"><LayoutGrid className="w-4 h-4"/></TabsTrigger>
+                            <TabsTrigger value="fame" aria-label="Hall da Fama"><Trophy className="w-4 h-4"/></TabsTrigger>
+                            <TabsTrigger value="log" aria-label="Registo de Operações"><NotepadText className="w-4 h-4"/></TabsTrigger>
                         </TabsList>
 
                         <TabsContent value="trade" className="mt-4 space-y-6">
