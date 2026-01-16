@@ -42,8 +42,8 @@ import { useToast } from '@/hooks/use-toast';
 import type { RobotStrategy, ChartData, TickData, CandleData, DurationUnit, RobotVote as RobotVoteType, CouncilVotes, RobotPerformance as RobotPerformanceType, Operation, TradeDecisionLog } from '@/lib/types';
 import type { RiseFallFormValues } from '@/features/trading/components/deriv-trader/deriv-trader-interface-v1.types';
 import { useFormContext } from 'react-hook-form';
-import type { Indicators } from '@/services/indicator-service-v1';
-import { calculateAllIndicators } from '@/services/indicator-service-v1';
+import type { Indicators } from '@/services/indicator-service';
+import { calculateAllIndicators } from '@/services/indicator-service';
 import { initialCouncilStrategies } from '@/services/council-strategies';
 import { useAuth } from '@/features/auth/hooks/use-auth';
 import { useStrategyEvolutionV1 } from './use-strategy-evolution-v1';
@@ -529,3 +529,5 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
     isInversionModeOn: false, setIsInversionModeOn: ()=>{}
   };
 }
+
+    
