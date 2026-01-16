@@ -264,9 +264,9 @@ export default function TradingDecisionLogViewer({
                                     <p className='text-muted-foreground italic text-[11px] pl-5'>Params: {renderStrategyParams(voteData.strategy)}</p>
 
                                     <div className='grid grid-cols-3 gap-1 pl-5 text-[11px] mt-1'>
-                                        <span>Conf: {(voteData.rawConfidence).toFixed(0)}</span>
-                                        <span>Bayes: {(voteData.bayesianProbability * 100).toFixed(0)}%</span>
-                                        <span className='flex items-center gap-1'>Sharpe: <Trophy className='h-3 w-3 text-amber-500' /> {(voteData.sharpeRatio || 0).toFixed(2)}</span>
+                                        <span>Conf: {((voteData as any).rawConfidence || (voteData as any).confidence || 0).toFixed(0)}</span>
+                                        <span>Bayes: {(((voteData as any).bayesianProbability || 0) * 100).toFixed(0)}%</span>
+                                        <span className='flex items-center gap-1'>Sharpe: <Trophy className='h-3 w-3 text-amber-500' /> {((voteData as any).sharpeRatio || 0).toFixed(2)}</span>
                                     </div>
                                 </div>
                              ))}
