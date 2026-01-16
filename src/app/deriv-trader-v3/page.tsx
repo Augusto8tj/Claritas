@@ -117,7 +117,7 @@ const IsolatedMarketChart = () => {
 };
 
 const DerivTraderV3Core = () => {
-    const { activeSymbol, priceTicks, dataVersion, operationsLog, sellContract } = useDerivApiV3();
+    const { activeSymbol, priceTicks, dataVersion, operationsLog, sellContract, chartData } = useDerivApiV3();
     const robotCouncil = useRobotCouncilV3(activeSymbol, priceTicks, chartData, dataVersion);
     const [mobileTab, setMobileTab] = React.useState("negociar");
     const [desktopTab, setDesktopTab] = React.useState("arena");
@@ -178,14 +178,15 @@ const DerivTraderV3Core = () => {
                      <Tabs defaultValue="arena" className="h-full">
                         <TabsList className="grid w-full grid-cols-3">
                             <TabsTrigger value="arena">Arena</TabsTrigger>
-                            <TabsTrigger value="operacoes">Operações</TabsTrigger>
+                            <TabsTrigger value="logs">Logs</TabsTrigger>
                             <TabsTrigger value="evolucao">Evolução</TabsTrigger>
                         </TabsList>
                         <TabsContent value="arena" className="mt-4">
                             <TradingDeskV2 councilState={robotCouncil} />
                         </TabsContent>
-                         <TabsContent value="operacoes" className="mt-4">
+                         <TabsContent value="logs" className="mt-4 space-y-4">
                             <OperationsLogV3 operations={operationsLog} sellContract={sellContract} />
+                            <TradingDecisionLogViewer logs={robotCouncil.tradeDecisionLog} showFilters={false} />
                         </TabsContent>
                         <TabsContent value="evolucao" className="mt-4">
                             <EvolutionLabV3 {...robotCouncil} />

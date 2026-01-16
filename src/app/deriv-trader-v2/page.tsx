@@ -117,7 +117,7 @@ const IsolatedMarketChart = () => {
 };
 
 const DerivTraderV2Core = () => {
-    const { activeSymbol, priceTicks, dataVersion, operationsLog, sellContract } = useDerivApiV2();
+    const { activeSymbol, priceTicks, dataVersion, operationsLog, sellContract, chartData } = useDerivApiV2();
     const robotCouncil = useRobotCouncilV2(activeSymbol, priceTicks, chartData, dataVersion);
     const [mobileTab, setMobileTab] = React.useState("negociar");
     const [desktopTab, setDesktopTab] = React.useState("arena");
@@ -175,14 +175,15 @@ const DerivTraderV2Core = () => {
                     <Tabs defaultValue="arena" className="h-full">
                         <TabsList className="grid w-full grid-cols-3">
                             <TabsTrigger value="arena">Arena</TabsTrigger>
-                            <TabsTrigger value="operacoes">Operações</TabsTrigger>
+                            <TabsTrigger value="logs">Logs</TabsTrigger>
                             <TabsTrigger value="evolucao">Evolução</TabsTrigger>
                         </TabsList>
                         <TabsContent value="arena" className="mt-4">
                             <TradingDeskV2 councilState={robotCouncil} />
                         </TabsContent>
-                         <TabsContent value="operacoes" className="mt-4">
+                         <TabsContent value="logs" className="mt-4 space-y-4">
                             <OperationsLogV2 operations={operationsLog} sellContract={sellContract} priceTicks={priceTicks} />
+                             <TradingDecisionLogViewer logs={robotCouncil.tradeDecisionLog} showFilters={false} />
                         </TabsContent>
                         <TabsContent value="evolucao" className="mt-4">
                             <EvolutionLabV2 history={robotCouncil.evolutionHistory} resetEvolutionHistory={robotCouncil.resetEvolutionHistory} deleteSingleEvolution={robotCouncil.deleteSingleEvolution} currentGeneration={robotCouncil.currentGeneration} tradesUntilEvolution={robotCouncil.tradesUntilEvolution} tradeCounts={robotCouncil.tradeCounts} />

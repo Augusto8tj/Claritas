@@ -52,22 +52,14 @@ function DerivTraderPageContent() {
     } = useDerivApiV1();
     
     const robotCouncil = useRobotCouncilV1(activeSymbol, priceTicks);
-    const [activeTab, setActiveTab] = React.useState("log");
+    const [activeTab, setActiveTab] = React.useState("trade");
 
     React.useEffect(() => {
         if (robotCouncil.isCouncilAutopilotOn) {
-        setActiveTab("desk");
+            setActiveTab("desk");
         }
     }, [robotCouncil.isCouncilAutopilotOn]);
 
-    const latestDataPoint = chartData.length > 0 ? chartData[chartData.length - 1] : null;
-    const prevDataPoint = chartData.length > 1 ? chartData[chartData.length - 2] : null;
-    const getDisplayPrice = (d: any) => d ? (d.close ?? d.price) : 0;
-    const lastPrice = getDisplayPrice(latestDataPoint);
-    const prevPrice = getDisplayPrice(prevDataPoint);
-    const change = lastPrice - prevPrice;
-    const changePercent = prevPrice !== 0 ? (change / prevPrice) * 100 : 0;
-    const isPositive = change >= 0;
 
     const handleAssetChange = (asset: string) => {
         setActiveSymbol(asset);
@@ -123,7 +115,7 @@ function DerivTraderPageContent() {
 
              <>
                 <div className="space-y-6">
-                    {robotCouncil.indicators && <IndicatorPanel indicators={robotCouncil.indicators} latestDataPoint={latestDataPoint} />}
+                    {robotCouncil.indicators && <IndicatorPanel indicators={robotCouncil.indicators} latestDataPoint={chartData[chartData.length -1]} />}
                     
                     <Card>
                     <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -170,7 +162,7 @@ function DerivTraderPageContent() {
                                 </div>
                             </div>
                             <div className="mt-6">
-                                <Tabs value={activeTab} onValueChange={setActiveTab}>
+                                <Tabs defaultValue={"log"} value={activeTab} onValueChange={setActiveTab}>
                                     <TabsList className="grid w-full grid-cols-4">
                                         <TabsTrigger value="log"><NotepadText className="w-4 h-4 mr-2"/>Registo</TabsTrigger>
                                         <TabsTrigger value="desk"><LayoutGrid className="w-4 h-4 mr-2"/>Arena</TabsTrigger>
@@ -193,36 +185,39 @@ function DerivTraderPageContent() {
                                         <HallOfFame />
                                     </TabsContent>
                                     <TabsContent value="evolution" className="mt-4">
-                                    <EvolutionLabV1 history={robotCouncil.evolutionHistory} />
+                                        <EvolutionLabV1 history={robotCouncil.evolutionHistory} />
                                     </TabsContent>
                                 </Tabs>
                             </div>
                         </div>
                         <div className="space-y-6">
                             <CouncilAutopilotInterfaceV1 {...robotCouncil} />
+                            <AIAnalysisInterfaceV1 symbol={activeSymbol} />
                         </div>
                 </div>
 
                 <div className="lg:hidden mt-6">
                     <Tabs value={activeTab} onValueChange={setActiveTab}>
-                        <TabsList className="grid w-full grid-cols-5">
+                        <TabsList className="grid w-full grid-cols-6">
                             <TabsTrigger value="trade" aria-label="Negociar"><CandlestickChart className="w-4 h-4"/></TabsTrigger>
                             <TabsTrigger value="autopilot" aria-label="Piloto Automático"><Bot className="w-4 h-4"/></TabsTrigger>
                             <TabsTrigger value="desk" aria-label="Mesa de Operações"><LayoutGrid className="w-4 h-4"/></TabsTrigger>
                             <TabsTrigger value="fame" aria-label="Hall da Fama"><Trophy className="w-4 h-4"/></TabsTrigger>
+                            <TabsTrigger value="evolution" aria-label="Evolução"><Dna className="w-4 h-4" /></TabsTrigger>
                             <TabsTrigger value="log" aria-label="Registo de Operações"><NotepadText className="w-4 h-4"/></TabsTrigger>
                         </TabsList>
 
                         <TabsContent value="trade" className="mt-4 space-y-6">
                             <DerivTraderInterfaceV1 symbol={activeSymbol || ""} />
                             <AITradeSuggestionV1
-                            councilDecision={robotCouncil.consensusDecision}
-                            consensusSum={robotCouncil.consensusSum}
-                            consensusThreshold={robotCouncil.consensusThreshold}
-                            supervisionStatus={robotCouncil.supervisionStatus}
-                            activeCommittee={robotCouncil.activeCommittee}
-                            isAutopilotOn={robotCouncil.isCouncilAutopilotOn}
+                                councilDecision={robotCouncil.consensusDecision}
+                                consensusSum={robotCouncil.consensusSum}
+                                consensusThreshold={robotCouncil.consensusThreshold}
+                                supervisionStatus={robotCouncil.supervisionStatus}
+                                activeCommittee={robotCouncil.activeCommittee}
+                                isAutopilotOn={robotCouncil.isCouncilAutopilotOn}
                             />
+                            <AIAnalysisInterfaceV1 symbol={activeSymbol} />
                         </TabsContent>
 
                         <TabsContent value="autopilot" className="mt-4 space-y-6">
@@ -243,9 +238,12 @@ function DerivTraderPageContent() {
                             <HallOfFame />
                         </TabsContent>
                         
+                        <TabsContent value="evolution" className="mt-4">
+                            <EvolutionLabV1 history={robotCouncil.evolutionHistory} />
+                        </TabsContent>
+
                         <TabsContent value="log" className="mt-4 space-y-6">
                             <OperationsLogV1 operations={operationsLog} sellContract={sellContract} priceTicks={priceTicks} />
-                            <AIAnalysisInterfaceV1 symbol={activeSymbol} />
                         </TabsContent>
                     </Tabs>
                 </div>
