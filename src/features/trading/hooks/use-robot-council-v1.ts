@@ -42,8 +42,8 @@ import { useToast } from '@/hooks/use-toast';
 import type { RobotStrategy, ChartData, TickData, CandleData, DurationUnit, RobotVote as RobotVoteType, CouncilVotes, RobotPerformance as RobotPerformanceType, Operation, TradeDecisionLog } from '@/lib/types';
 import type { RiseFallFormValues } from '@/features/trading/components/deriv-trader/deriv-trader-interface-v1.types';
 import { useFormContext } from 'react-hook-form';
-import type { Indicators } from '@/services/indicator-service';
-import { calculateAllIndicators } from '@/services/indicator-service';
+import type { Indicators } from '@/services/indicator-service-v1';
+import { calculateAllIndicators } from '@/services/indicator-service-v1';
 import { initialCouncilStrategies } from '@/services/council-strategies';
 import { useAuth } from '@/features/auth/hooks/use-auth';
 import { useStrategyEvolutionV1 } from './use-strategy-evolution-v1';
@@ -416,8 +416,8 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
     const consensusProbability = totalVoteWeight > 0 ? Math.max(riseSum, fallSum) / totalVoteWeight : 0.5;
 
     let decision: 'RISE' | 'FALL' | 'HOLD' = 'HOLD';
-    if(riseSum > fallSum && consensusProbability > 0.6) decision = 'RISE';
-    else if (fallSum > riseSum && consensusProbability > 0.6) decision = 'FALL';
+    if(riseSum > fallSum && consensusProbability > 0.54) decision = 'RISE';
+    else if (fallSum > riseSum && consensusProbability > 0.54) decision = 'FALL';
     setConsensusDecision(decision);
 
     // --- Supervisão e Execução ---
@@ -429,7 +429,7 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
 
     // 2. Vantagem Probabilística (Edge)
     if (decision === 'HOLD') {
-      setSupervisionStatus({ status: 'inactive', message: `Aguardando vantagem (> 60%). Atual: ${(consensusProbability*100).toFixed(0)}%`});
+      setSupervisionStatus({ status: 'inactive', message: `Aguardando vantagem (> 54%). Atual: ${(consensusProbability*100).toFixed(0)}%`});
       councilExecutionRef.current.isExecuting = false; 
       return;
     }
