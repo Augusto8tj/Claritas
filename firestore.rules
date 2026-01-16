@@ -2,29 +2,21 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    match /users/{userId} {
-      // O utilizador pode ler e escrever no seu próprio documento de perfil.
+    // Esta regra única e poderosa concede a um utilizador autenticado acesso
+    // total a todos os documentos e subcoleções dentro do seu próprio
+    // documento de utilizador.
+    //
+    // O curinga recursivo `{document=**}` corresponde a qualquer documento
+    // em qualquer profundidade. A segurança é mantida porque a regra ainda
+    // impõe que o UID do utilizador autenticado corresponda ao {userId} no caminho.
+    //
+    // Isto cobre, por exemplo:
+    // - /users/{userId}
+    // - /users/{userId}/transactions/{txId}
+    // - /users/{userId}/performance_v1/robot_council
+    // - /users/{userId}/evolution_v2/history
+    match /users/{userId}/{document=**} {
       allow read, write: if request.auth.uid == userId;
-
-      // REGRA CURINGA DEFINITIVA:
-      // Permite que o utilizador autenticado tenha acesso total (ler, listar, escrever, apagar)
-      // a QUALQUER documento em QUALQUER subcoleção diretamente abaixo do seu próprio
-      // documento de utilizador.
-      //
-      // A sintaxe `{anyDocId=**}` é um curinga recursivo que corresponde a qualquer caminho aninhado.
-      // Esta regra única e robusta cobre:
-      // - /users/{userId}/transactions/{transactionId}
-      // - /users/{userId}/goals/{goalId}
-      // - /users/{userId}/decision_logs/{logId}
-      // - /users/{userId}/{performanceCollection}/{docId} (Ex: performance_v1, performance_v2)
-      // - /users/{userId}/{evolutionCollection}/{docId}   (Ex: evolution_v1, evolution_v2)
-      // - E qualquer outra subcoleção futura, em qualquer profundidade.
-      //
-      // A segurança é garantida porque a regra valida que o UID do utilizador autenticado
-      // é o mesmo que o `userId` no caminho do documento.
-      match /{anySubCollection}/{anyDocId=**} {
-        allow read, list, write, delete: if request.auth.uid == userId;
-      }
     }
   }
 }
