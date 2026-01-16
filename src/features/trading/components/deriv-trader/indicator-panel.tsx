@@ -61,14 +61,14 @@ export function IndicatorPanel({ indicators, latestDataPoint }: IndicatorPanelPr
                     <p>MACD: <span className="font-bold text-foreground">{formatValue(indicators.macd.macd)}</span></p>
                     <p>Sinal: <span className="font-bold text-foreground">{formatValue(indicators.macd.signal)}</span></p>
                     <p>Hist: <span className="font-bold text-foreground">{formatValue(indicators.macd.histogram, 2)}</span></p>
-                    <p>Awesome: <span className="font-bold text-foreground">{formatValue(indicators.awesomeOscillator, 2)}</span></p>
+                    <p>Awesome: <span className="font-bold text-foreground">{formatValue(indicators.ao, 2)}</span></p>
                 </div>
                  <div className="space-y-1">
                     <h4 className="font-bold text-muted-foreground">Tendência</h4>
                     <p>ADX: <span className="font-bold text-foreground">{formatValue(indicators.adx, 2)}</span></p>
                     <p>+DI: <span className="font-bold text-foreground">{formatValue(indicators.pdi, 2)}</span></p>
                     <p>-DI: <span className="font-bold text-foreground">{formatValue(indicators.ndi, 2)}</span></p>
-                    <p>SAR: <span className="font-bold text-foreground">{formatValue(indicators.parabolicSAR)}</span></p>
+                    <p>SAR: <span className="font-bold text-foreground">{formatValue(indicators.psar)}</span></p>
                 </div>
                  <div className="space-y-1">
                     <h4 className="font-bold text-muted-foreground">Volatilidade</h4>
@@ -92,8 +92,8 @@ export function IndicatorPanel({ indicators, latestDataPoint }: IndicatorPanelPr
                     <h4 className="font-bold text-muted-foreground">Nuvem Ichimoku</h4>
                      <p>Tenkan: <span className="font-bold text-foreground">{formatValue(indicators.ichimoku?.tenkan)}</span></p>
                      <p>Kijun: <span className="font-bold text-foreground">{formatValue(indicators.ichimoku?.kijun)}</span></p>
-                     <p>SenkouA: <span className="font-bold text-foreground">{formatValue(indicators.ichimoku?.senkouA)}</span></p>
-                     <p>SenkouB: <span className="font-bold text-foreground">{formatValue(indicators.ichimoku?.senkouB)}</span></p>
+                     <p>SenkouA: <span className="font-bold text-foreground">{formatValue(indicators.ichimoku?.spanA)}</span></p>
+                     <p>SenkouB: <span className="font-bold text-foreground">{formatValue(indicators.ichimoku?.spanB)}</span></p>
                 </div>
             </CardContent>
         </Card>

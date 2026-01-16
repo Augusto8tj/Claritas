@@ -1,17 +1,15 @@
-// src/features/trading/components/deriv-trader/market-chart-v2.tsx
+// src/components/deriv-trader/market-chart.tsx
 'use client'
-
-// ESTE ARQUIVO É UMA CÓPIA DEDICADA PARA O SISTEMA V2.5
 
 import React, { useCallback } from 'react'
 import {
   Settings,
   Loader2,
+  TrendingUp,
+  TrendingDown,
   AreaChart,
   CandlestickChart,
   Clock,
-  TrendingUp,
-  TrendingDown,
   Moon,
   Sun,
 } from 'lucide-react'
@@ -34,11 +32,11 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { Button } from '@/components/ui/button'
+import { cn } from '@/lib/utils'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { TradeLegend } from './trade-legend'
-import type { Indicators } from '@/services/indicator-service-v2';
-import { useDerivApiV2 } from '../../hooks/use-deriv-api-v2';
+import type { Indicators } from '@/services/indicator-service';
 
 
 interface MarketChartProps {
@@ -70,7 +68,7 @@ const getDisplayPrice = (d: ChartData | null) => {
 }
 
 
-export function MarketChartV2({
+export function MarketChart({
   activeSymbol,
   chartData: rawData,
   isChartLoading,
@@ -87,12 +85,10 @@ export function MarketChartV2({
   const mainCanvasRef = React.useRef<HTMLCanvasElement>(null)
   const brushCanvasRef = React.useRef<HTMLCanvasElement>(null)
   const containerRef = React.useRef<HTMLDivElement>(null)
-  const rafIdRef = React.useRef<number | null>(null);
-  
+
   const [chartTheme, setChartTheme] = React.useState<'light' | 'dark'>(
     appTheme.includes('dark') ? 'dark' : 'light'
   )
-
   const colors = THEMES[chartTheme]
 
   const [visibleIndicators, setVisibleIndicators] = React.useState({
@@ -135,10 +131,10 @@ export function MarketChartV2({
 
   const lastPrice = getDisplayPrice(lastDataPoint);
   const prevPrice = getDisplayPrice(prevDataPoint);
-  
-  const change = lastPrice - prevPrice
-  const changePercent = prevPrice !== 0 ? (change / prevPrice) * 100 : 0
-  const isPositive = change >= 0
+
+  const change = lastPrice - prevPrice;
+  const changePercent = prevPrice !== 0 ? (change / prevPrice) * 100 : 0;
+  const isPositive = change >= 0;
   
   const dataWindow = React.useMemo(() => {
     const start = Math.floor(rawData.length * brushWindow.min)
@@ -151,25 +147,15 @@ export function MarketChartV2({
     [rawData, dataWindow]
   )
 
-  const hasActiveTrades = React.useMemo(() => 
-    tradeAnnotations.some(ann => ann.symbol === activeSymbol && !ann.exitTime),
-    [tradeAnnotations, activeSymbol]
-  );
-
   const slicedIndicators = React.useMemo(() => {
     if (!indicators) {
       return { sma: [], ema: [], vwap: [], bollingerBands: [] };
     }
-    
-    const vwapArray = Array.isArray(indicators.vwap) ? indicators.vwap : [];
-    const bollingerBandsArray = Array.isArray(indicators.bollingerBands) ? indicators.bollingerBands : [];
-
-
     return {
       sma: indicators.sma.slice(dataWindow.start, dataWindow.end),
       ema: indicators.ema.slice(dataWindow.start, dataWindow.end),
-      vwap: vwapArray.slice(dataWindow.start, dataWindow.end),
-      bollingerBands: bollingerBandsArray.slice(
+      vwap: indicators.vwap.slice(dataWindow.start, dataWindow.end),
+      bollingerBands: indicators.bollingerBands.slice(
         dataWindow.start,
         dataWindow.end
       ),
@@ -346,6 +332,7 @@ export function MarketChartV2({
     const getPrice = (y: number) =>
       maxPrice - ((y - PADDING.top) / chartHeight) * (maxPrice - minPrice);
 
+
     const getX = (index: number) => {
       if (visibleData.length <= 1) return PADDING.left
       return (
@@ -462,32 +449,242 @@ export function MarketChartV2({
       drawLineIndicator(ctx, slicedIndicators.ema, colors.ema, getY, getX)
     if (visibleIndicators.vwap)
       drawLineIndicator(ctx, slicedIndicators.vwap, colors.vwap, getY, getX)
+
+    tradeAnnotations.forEach(ann => {
+    if (ann.symbol !== activeSymbol) return;
+
+    let entryDataIndex = -1;
+    let minEntryDiff = Infinity;
+    
+    visibleData.forEach((d, i) => {
+        const diff = Math.abs(d.epoch - ann.entryTime);
+        if (diff < minEntryDiff) {
+            minEntryDiff = diff;
+            entryDataIndex = i;
+        }
+    });
+
+    if (entryDataIndex === -1 || minEntryDiff > 300) return;
+
+    const entryX = getX(entryDataIndex);
+    const entryY = getY(ann.entryPrice);
+    
+    let annColor: string;
+    if (ann.status === 'won') {
+        annColor = colors.bull;
+    } else if (ann.status === 'lost') {
+        annColor = colors.bear;
+    } else {
+        annColor = ann.direction === 'rise' ? '#3b82f6' : '#f97316';
+    }
+    
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(entryX, entryY, 10, 0, 2 * Math.PI);
+    ctx.fillStyle = colors.bg;
+    ctx.fill();
+    ctx.strokeStyle = 'white';
+    ctx.lineWidth = 3;
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(entryX, entryY, 8, 0, 2 * Math.PI);
+    ctx.fillStyle = annColor;
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(entryX, entryY, 6, 0, 2 * Math.PI);
+    ctx.fillStyle = annColor;
+    ctx.fill();
+    ctx.strokeStyle = 'white';
+    ctx.lineWidth = 2.5;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.beginPath();
+    if (ann.direction === 'rise') {
+        ctx.moveTo(entryX - 4, entryY + 2);
+        ctx.lineTo(entryX, entryY - 3);
+        ctx.lineTo(entryX + 4, entryY + 2);
+    } else {
+        ctx.moveTo(entryX - 4, entryY - 2);
+        ctx.lineTo(entryX, entryY + 3);
+        ctx.lineTo(entryX + 4, entryY - 2);
+    }
+    ctx.stroke();
+    
+    const stakeText = `$${ann.stake.toFixed(2)}`;
+    ctx.font = 'bold 11px Arial';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    const stakeTextMetrics = ctx.measureText(stakeText);
+    const stakeTextWidth = stakeTextMetrics.width;
+    const stakePadding = 4;
+    const stakeLabelX = entryX;
+    const stakeLabelY = entryY - 22;
+    ctx.fillStyle = `${colors.priceBg}E6`;
+    ctx.beginPath();
+    ctx.roundRect(
+        stakeLabelX - stakeTextWidth / 2 - stakePadding,
+        stakeLabelY - 10,
+        stakeTextWidth + stakePadding * 2,
+        18,
+        3
+    );
+    ctx.fill();
+    ctx.strokeStyle = annColor;
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    ctx.fillStyle = colors.text;
+    ctx.fillText(stakeText, stakeLabelX, stakeLabelY);
+    
+    ctx.restore();
+
+    if (ann.exitTime && ann.exitPrice) {
+        let exitDataIndex = -1;
+        let minExitDiff = Infinity;
+        visibleData.forEach((d, i) => {
+            const diff = Math.abs(d.epoch - ann.exitTime!);
+            if (diff < minExitDiff) {
+                minExitDiff = diff;
+                exitDataIndex = i;
+            }
+        });
+
+        if (exitDataIndex !== -1 && minExitDiff <= 300) {
+            const exitX = getX(exitDataIndex);
+            const exitY = getY(ann.exitPrice);
+
+            ctx.save();
+            ctx.beginPath();
+            ctx.moveTo(entryX, entryY);
+            ctx.lineTo(exitX, exitY);
+            ctx.strokeStyle = annColor;
+            ctx.lineWidth = 2.5;
+            ctx.setLineDash([8, 5]);
+            ctx.globalAlpha = 0.75;
+            ctx.stroke();
+            ctx.setLineDash([]);
+            ctx.restore();
+            
+            ctx.save();
+            ctx.translate(exitX, exitY);
+
+            const poleHeight = 40;
+            const flagWidth = 35;
+            const flagHeight = 20;
+            ctx.shadowColor = 'rgba(0, 0, 0, 0.3)';
+            ctx.shadowBlur = 4;
+            ctx.shadowOffsetX = 2;
+            ctx.shadowOffsetY = 2;
+            ctx.strokeStyle = annColor;
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            ctx.moveTo(0, 0);
+            ctx.lineTo(0, -poleHeight);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.moveTo(0, -poleHeight);
+            ctx.quadraticCurveTo(flagWidth * 0.5, -poleHeight + 3, flagWidth, -poleHeight + flagHeight * 0.5);
+            ctx.quadraticCurveTo(flagWidth * 0.5, -poleHeight + flagHeight - 3, 0, -poleHeight + flagHeight);
+            ctx.closePath();
+            ctx.fillStyle = annColor;
+            ctx.fill();
+            ctx.strokeStyle = 'white';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+            ctx.shadowColor = 'transparent';
+            ctx.fillStyle = 'white';
+            ctx.font = 'bold 16px Arial';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            const symbol = ann.status === 'won' ? '✓' : '✗';
+            ctx.fillText(symbol, flagWidth * 0.5, -poleHeight + flagHeight * 0.5);
+            
+            if (ann.profit !== undefined) {
+                const profitText = `${ann.profit >= 0 ? '+' : ''}$${Math.abs(ann.profit).toFixed(2)}`;
+                ctx.font = 'bold 13px Arial';
+                ctx.textAlign = 'left';
+                const textMetrics = ctx.measureText(profitText);
+                const textWidth = textMetrics.width;
+                const padding = 6;
+                const labelX = flagWidth + 8;
+                const labelY = -poleHeight + flagHeight * 0.5;
+                ctx.shadowColor = 'rgba(0, 0, 0, 0.2)';
+                ctx.shadowBlur = 3;
+                ctx.shadowOffsetX = 1;
+                ctx.shadowOffsetY = 1;
+                ctx.fillStyle = colors.bg;
+                ctx.beginPath();
+                ctx.roundRect(labelX - padding, labelY - 10, textWidth + padding * 2, 20, 4);
+                ctx.fill();
+                ctx.shadowColor = 'transparent';
+                ctx.strokeStyle = annColor;
+                ctx.lineWidth = 2;
+                ctx.stroke();
+                ctx.fillStyle = annColor;
+                ctx.fillText(profitText, labelX, labelY);
+            }
+            
+            ctx.restore();
+        }
+    } else {
+        ctx.save();
+        ctx.beginPath();
+        ctx.moveTo(entryX, entryY);
+        ctx.lineTo(width - PADDING.right - 60, entryY);
+        ctx.strokeStyle = annColor;
+        ctx.lineWidth = 2;
+        ctx.setLineDash([5, 5]);
+        ctx.globalAlpha = 0.5;
+        ctx.stroke();
+        ctx.setLineDash([]);
+        const labelText = ann.direction === 'rise' ? 'CALL ATIVA' : 'PUT ATIVA';
+        ctx.font = 'bold 11px Arial';
+        const labelWidth = ctx.measureText(labelText).width;
+        const labelX = width - PADDING.right - labelWidth - 15;
+        const labelY = entryY;
+        ctx.globalAlpha = 0.95;
+        ctx.fillStyle = colors.bg;
+        ctx.beginPath();
+        ctx.roundRect(labelX - 4, labelY - 10, labelWidth + 8, 18, 3);
+        ctx.fill();
+        ctx.strokeStyle = annColor;
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+        ctx.globalAlpha = 1;
+        ctx.fillStyle = annColor;
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(labelText, labelX, labelY);
+        ctx.globalAlpha = 0.3;
+        ctx.beginPath();
+        ctx.arc(entryX, entryY, 12, 0, 2 * Math.PI);
+        ctx.strokeStyle = annColor;
+        ctx.lineWidth = 2;
+        ctx.stroke();
+        
+        ctx.restore();
+    }
+});
+
     
     if (mousePosition) {
         const { x, y } = mousePosition;
-
         ctx.strokeStyle = colors.crosshair;
         ctx.lineWidth = 0.5;
         ctx.setLineDash([3, 3]);
-
         ctx.beginPath();
         ctx.moveTo(x, PADDING.top);
         ctx.lineTo(x, height - PADDING.bottom);
         ctx.stroke();
-
         ctx.beginPath();
         ctx.moveTo(PADDING.left, y);
         ctx.lineTo(width - PADDING.right, y);
         ctx.stroke();
-
         ctx.setLineDash([]);
-
         const price = getPrice(y);
         ctx.fillStyle = colors.priceBg;
         ctx.fillRect(width - PADDING.right, y - 10, Y_AXIS_WIDTH, 20);
         ctx.fillStyle = colors.text;
         ctx.fillText(price.toFixed(4), width - PADDING.right + 5, y + 4);
-
         const chartWidth = width - PADDING.left - PADDING.right;
         const percentX = (x - PADDING.left) / chartWidth;
         const dataIndex = Math.round(percentX * (visibleData.length - 1));
@@ -529,16 +726,23 @@ export function MarketChartV2({
                     `L: ${dataPoint.low.toFixed(4)}`,
                     `C: ${dataPoint.close.toFixed(4)}`,
                 ];
-
                 ohlc.forEach((text, i) => {
                     ctx.fillText(text, tooltipX + 5, tooltipY + 30 + i * 15);
                 });
             }
         }
     }
+
   }, [
-    visibleData, colors, chartType, tradeAnnotations, activeSymbol,
-    drawLineIndicator, drawBollingerBands, slicedIndicators, visibleIndicators,
+    visibleData,
+    colors,
+    chartType,
+    tradeAnnotations,
+    activeSymbol,
+    drawLineIndicator,
+    drawBollingerBands,
+    slicedIndicators,
+    visibleIndicators,
     mousePosition,
   ])
 
@@ -610,43 +814,32 @@ export function MarketChartV2({
     ctx.fillRect(brushMinX - handleWidth / 2, height / 2 - 15, handleWidth, 30)
     ctx.fillRect(brushMaxX - handleWidth / 2, height / 2 - 15, handleWidth, 30)
   }, [rawData, colors, brushWindow])
-  
+
+  const panOffsetRef = React.useRef(0);
+  const zoomLevelRef = React.useRef(1);
+
   React.useEffect(() => {
-    const animate = () => {
-      drawMainChart();
-      rafIdRef.current = requestAnimationFrame(animate);
-    };
+    panOffsetRef.current = 0;
+    zoomLevelRef.current = 1;
+  }, [activeSymbol, timePeriod, chartType]);
 
-    if (hasActiveTrades || mousePosition) {
-        if (!rafIdRef.current) {
-            animate();
-        }
-    } else {
-        drawMainChart();
-        if(rafIdRef.current) {
-            cancelAnimationFrame(rafIdRef.current);
-            rafIdRef.current = null;
-        }
-    }
-
-    return () => {
-        if (rafIdRef.current) {
-            cancelAnimationFrame(rafIdRef.current);
-            rafIdRef.current = null;
-        }
-    };
-}, [drawMainChart, hasActiveTrades, mousePosition]);
 
   React.useEffect(() => {
     const handleResize = () => {
-      drawMainChart()
-      drawBrushChart()
+      requestAnimationFrame(drawMainChart)
+      requestAnimationFrame(drawBrushChart)
     }
     window.addEventListener('resize', handleResize)
-    drawBrushChart()
-    return () => window.removeEventListener('resize', handleResize)
-  }, [drawBrushChart, drawMainChart])
 
+    const mainChartAF = requestAnimationFrame(drawMainChart)
+    const brushChartAF = requestAnimationFrame(drawBrushChart)
+
+    return () => {
+      cancelAnimationFrame(mainChartAF)
+      cancelAnimationFrame(brushChartAF)
+      window.removeEventListener('resize', handleResize)
+    }
+  }, [rawData, visibleIndicators, drawMainChart, drawBrushChart, mousePosition])
 
   const throttleTimeoutRef = React.useRef<NodeJS.Timeout>();
 
@@ -734,15 +927,15 @@ export function MarketChartV2({
     brushRef.current.isBrushing = false;
     brushRef.current.target = ''
   }, []);
-
+  
   const handleBrushMouseLeave = useCallback(() => {
     const canvas = brushCanvasRef.current;
     if (canvas && !brushRef.current.isBrushing) {
       canvas.style.cursor = 'default';
     }
   }, []);
-  
-  const handleChartMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+
+  const handleChartMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
     const canvas = mainCanvasRef.current;
     if (!canvas) return;
     const rect = canvas.getBoundingClientRect();
@@ -766,15 +959,13 @@ export function MarketChartV2({
       className="w-full rounded-xl p-4 relative flex flex-col aspect-video min-h-[400px]"
       style={{ backgroundColor: colors.bg }}
       ref={containerRef}
-      onMouseMove={handleChartMouseMove}
-      onMouseLeave={handleChartMouseLeave}
     >
       <div className="flex flex-wrap items-center justify-between gap-y-2 mb-2">
         <div className="flex items-center gap-3">
           <h2 className="text-xl font-bold" style={{ color: colors.text }}>
             {activeSymbol}
           </h2>
-          <div
+           <div
             className="flex items-center gap-2"
             style={{ color: isPositive ? colors.bull : colors.bear }}
           >
@@ -899,6 +1090,8 @@ export function MarketChartV2({
 
       <div
         className="w-full flex-1 relative"
+        onMouseMove={handleChartMouseMove}
+        onMouseLeave={handleChartMouseLeave}
       >
         <TradeLegend 
             annotations={tradeAnnotations}

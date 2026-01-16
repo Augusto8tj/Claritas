@@ -1,4 +1,4 @@
-// /src/features/trading/hooks/use-robot-council-v3.ts
+// src/features/trading/hooks/use-robot-council-v3.ts
 'use client';
 
 // ESTE ARQUIVO É UMA CÓPIA DEDICADA PARA O SISTEMA V3.0 (IA Lab)
@@ -12,7 +12,7 @@ import type {
   BayesianVote as BayesianVoteType, EnhancedRobotPerformance as EnhancedRobotPerformanceType,
   TimePeriod, TradeDecisionLog,
 } from '@/lib/types';
-import { calculateAllIndicators, type Indicators } from '@/services/indicator-service-v2';
+import { calculateAllIndicators, type Indicators } from '@/services/indicator-service';
 import { useAuth } from '@/features/auth/hooks/use-auth';
 import { saveRobotPerformanceV3, loadRobotPerformanceV3, saveTradeDecisionV3 } from '@/services/financial-data-service-v3';
 import { useStrategyEvolutionV3 } from './use-strategy-evolution-v3';

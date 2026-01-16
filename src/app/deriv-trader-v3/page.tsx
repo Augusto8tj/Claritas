@@ -7,7 +7,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import DerivTraderInterfaceV3 from "@/features/trading/components/deriv-trader/deriv-trader-interface-v3";
 import { AssetSelectorV3 } from "@/features/trading/components/deriv-trader/asset-selector-v3";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { MarketChartV3 } from "@/features/trading/components/deriv-trader/market-chart-v3";
+import { MarketChart } from "@/features/trading/components/deriv-trader/market-chart";
 import { Button } from "@/components/ui/button";
 import { Trash2 } from "lucide-react";
 import { useDerivApiV3, DerivApiProviderV3 } from "@/features/trading/hooks/use-deriv-api-v3";
@@ -103,7 +103,7 @@ const IsolatedMarketChart = () => {
                 </div>
             </CardHeader>
             <CardContent>
-                <MarketChartV3
+                <MarketChart
                     activeSymbol={activeSymbol || ''}
                     chartData={chartData}
                     isChartLoading={isChartLoading}

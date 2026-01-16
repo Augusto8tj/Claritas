@@ -7,7 +7,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import DerivTraderInterfaceV1 from "@/features/trading/components/deriv-trader/deriv-trader-interface-v1";
 import { AssetSelectorV1 } from "@/features/trading/components/deriv-trader/asset-selector-v1";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { MarketChartV1 } from "@/features/trading/components/deriv-trader/market-chart-v1";
+import { MarketChart } from "@/features/trading/components/deriv-trader/market-chart";
 import { Button } from "@/components/ui/button";
 import { Trash2, Bot, NotepadText, LayoutGrid, Trophy, Dna } from "lucide-react";
 import { DerivApiProviderV1, useDerivApiV1 } from "@/features/trading/hooks/use-deriv-api-v1";
@@ -137,7 +137,7 @@ function DerivTraderPageContent() {
                         </div>
                     </CardHeader>
                     <CardContent>
-                        <MarketChartV1
+                        <MarketChart
                             activeSymbol={activeSymbol || ''}
                             chartData={chartData}
                             isChartLoading={isChartLoading}

@@ -1,4 +1,4 @@
-// /src/features/trading/hooks/use-robot-council-v2.ts
+// src/features/trading/hooks/use-robot-council-v2.ts
 'use client';
 
 /**
@@ -30,7 +30,7 @@ import type {
   BayesianVote as BayesianVoteType, EnhancedRobotPerformance as EnhancedRobotPerformanceType,
   TimePeriod, TradeDecisionLog,
 } from '@/lib/types';
-import { calculateAllIndicators, type Indicators } from '@/services/indicator-service-v2';
+import { calculateAllIndicators, type Indicators } from '@/services/indicator-service';
 import { useAuth } from '@/features/auth/hooks/use-auth';
 import { saveRobotPerformance, loadRobotPerformance, saveTradeDecision, saveEvolutionHistory, clearEvolutionHistory, deleteEvolutionEvent } from '@/services/financial-data-service';
 import { useStrategyEvolution } from './use-strategy-evolution-v2';
@@ -824,7 +824,7 @@ export function useRobotCouncilV2(
                             pnl: 0,
                          };
 
-                         saveTradeDecision(user.uid, log);
+                         saveTradeDecision(user.uid, log, 'v2');
                          setTradeDecisionLog(prev => [log, ...prev]);
                      }
                 });
