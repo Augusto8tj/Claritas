@@ -2,7 +2,7 @@
 'use client';
 
 /**
- * @fileoverview Cérebro da Mesa Operacional V1.5 (Promovido a Cérebro Quantitativo)
+ * @fileoverview Cérebro da Mesa Operacional V1.8 (Promovido a Cérebro Quantitativo)
  * 
  * =================================================================================
  * EVOLUÇÃO DE ARQUITETURA (ENGENHEIRO, ESTA É A MUDANÇA QUE VOCÊ PEDIU):
@@ -12,23 +12,27 @@
  * que desenvolvemos, garantindo um desempenho superior, enquanto permanece no seu
  * ecossistema original. As novas funcionalidades incluem:
  * 
- * 1.  **CONSCIÊNCIA DE REGIME (CONTEXT-AWARENESS):**
+ * 1.  **VOTAÇÃO PROBABILÍSTICA ("TONS DE CINZA"):**
+ *     - Os robôs não dão mais um voto binário. Eles fornecem uma **pontuação de confiança (0-100)**
+ *       que reflete a força do sinal. Um RSI de 15 tem mais força que um de 29.
+ * 
+ * 2.  **CONSCIÊNCIA DE REGIME (CONTEXT-AWARENESS):**
  *     - O sistema agora detecta se o mercado está em 'TENDÊNCIA' ou 'LATERAL' (RANGING).
  *     - Robôs inadequados para um regime têm sua confiança reduzida, mas não são silenciados.
  * 
- * 2.  **MERITOCRACIA EXPONENCIAL (SHARPE RATIO):**
+ * 3.  **MERITOCRACIA EXPONENCIAL (SHARPE RATIO):**
  *     - O poder de voto de um robô já não é baseado em simples vitórias, mas sim no seu
  *       **Sharpe Ratio**, uma medida que relaciona retorno ao risco.
  *     - Um robô com Sharpe Ratio negativo tem o seu voto severamente penalizado, enquanto
  *       um com Sharpe alto tem poder de voto exponencial. Só os melhores lideram.
  * 
- * 3.  **GESTÃO DE RISCO CIENTÍFICA (CRITÉRIO DE KELLY FRACIONADO):**
+ * 4.  **GESTÃO DE RISCO CIENTÍFICA (CRITÉRIO DE KELLY FRACIONADO):**
  *     - O valor da aposta (`stake`) já não é um valor fixo ou um ajuste simples.
  *     - É calculado cientificamente usando o "Quarter Kelly", que aposta mais
  *       agressivamente quando a probabilidade de sucesso do consenso é alta, e protege
  *       o capital quando a vantagem é baixa.
  * 
- * 4.  **VETO DE MICROESTRUTURA (O "GUARDA-COSTAS"):**
+ * 5.  **VETO DE MICROESTRUTURA (O "GUARDA-COSTAS"):**
  *     - Uma camada final de proteção. Mesmo com um consenso forte de COMPRA, se os últimos
  *       5 ticks mostrarem uma "micro-queda" súbita, a operação é VETADA para evitar
  *       entrar contra um movimento de mercado violento e repentino.
@@ -118,7 +122,6 @@ const calculateRobotVote = (
     robot: RobotStrategy,
     indicators: Indicators,
     tickCandles: CandleData[],
-    currentRegime: MarketRegimeV1
 ): Omit<RobotVote, 'weight'> => {
     
     let vote: RobotVote['vote'] = 'HOLD';
@@ -180,28 +183,6 @@ const calculateRobotVote = (
                 if (indicators.ndi! > indicators.pdi!) setVote('FALL', robot.strongConfidence, `ADX(${indicators.adx!.toFixed(0)}) Tendência Baixa`);
             }
         }
-    }
-
-    // --- NOVA LÓGICA: AJUSTE DE CONFIANÇA BASEADO NO REGIME ---
-    if (vote !== 'HOLD' && confidence > 0) {
-        const trendStrategies: RobotStrategy['strategyType'][] = ['MOVING_AVERAGE_CROSS', 'ADX_TREND', 'MACD_CROSS', 'PARABOLIC_SAR', 'ICHIMOKU_CLOUD', 'TRIX'];
-        const rangeStrategies: RobotStrategy['strategyType'][] = ['RSI', 'STOCHASTIC', 'BOLLINGER_BANDS', 'Z_SCORE', 'STOCH_RSI', 'MFI'];
-
-        const isTrendBot = trendStrategies.includes(robot.strategyType);
-        const isRangeBot = rangeStrategies.includes(robot.strategyType);
-
-        if (currentRegime === 'TRENDING' && isRangeBot) {
-            confidence *= 0.5; // Reduz a confiança do robô de lateralização em mercado de tendência.
-            reason += ' (Regime Inadequado)';
-        } else if (currentRegime === 'RANGING' && isTrendBot) {
-            confidence *= 0.5; // Reduz a confiança do robô de tendência em mercado lateral.
-            reason += ' (Regime Inadequado)';
-        } else {
-            // Opcional: Dar um pequeno bónus se o robô for adequado ao regime
-            confidence *= 1.1; 
-            reason += ' (Regime Adequado)';
-        }
-        confidence = Math.min(100, confidence); // Garante que não passa de 100
     }
 
     return { vote, confidence, optimalDuration, optimalDurationUnit, suggestedStake, reason };
@@ -318,7 +299,7 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
       setRobotPerformance(initialPerformance);
       await saveRobotPerformance(user.uid, initialPerformance, 'v1');
     }
-    toast({ title: 'Mesa Operacional V1.5 Ativada', description: `${evolvedStrategies.length} robôs prontos para análise.` });
+    toast({ title: 'Mesa Operacional V1.8 Ativada', description: `${evolvedStrategies.length} robôs prontos para análise.` });
     setIsCouncilAutopilotOn(true);
     setIsFetchingCouncil(false);
   }, [activeSymbol, user, toast, evolvedStrategies, robotPerformance.length, resetArenaPerformance]);
@@ -397,24 +378,51 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
 
     const newVotes: CouncilVotes = {};
     let riseSum = 0, fallSum = 0;
-
+    
+    // Todos os robôs votam.
     strategyCouncil.forEach(robot => {
-        const voteResult = calculateRobotVote(robot, currentIndicators, tickCandles, currentRegime);
+        const voteResult = calculateRobotVote(robot, currentIndicators, tickCandles);
+        let confidence = voteResult.confidence;
+        let reason = voteResult.reason;
+        
+        // Ponderação Contextual da Confiança
+        const trendStrategies: RobotStrategy['strategyType'][] = ['MOVING_AVERAGE_CROSS', 'ADX_TREND', 'MACD_CROSS', 'PARABOLIC_SAR', 'ICHIMOKU_CLOUD', 'TRIX'];
+        const rangeStrategies: RobotStrategy['strategyType'][] = ['RSI', 'STOCHASTIC', 'BOLLINGER_BANDS', 'Z_SCORE', 'STOCH_RSI', 'MFI'];
+        
+        const isTrendBot = trendStrategies.includes(robot.strategyType);
+        const isRangeBot = rangeStrategies.includes(robot.strategyType);
+
+        if (currentRegime === 'TRENDING' && isRangeBot) {
+            confidence *= 0.5; // Reduz drasticamente a confiança.
+            reason += ' (Regime de Tendência Inadequado)';
+        } else if (currentRegime === 'RANGING' && isTrendBot) {
+            confidence *= 0.5; // Reduz drasticamente a confiança.
+            reason += ' (Regime Lateral Inadequado)';
+        } else {
+            confidence *= 1.2; // Bónus por ser adequado.
+            reason += ' (Regime Adequado)';
+        }
+        confidence = Math.min(100, Math.max(0, confidence));
+
+        // Ponderação por Meritocracia (Sharpe Ratio)
         let weight = 1.0;
         if (isMeritocracyOn) {
             const perf = performanceMap.get(robot.id);
             if (perf?.sharpeRatio) {
-                // Ponderação Exponencial: recompensa consistência e penaliza risco
-                weight = Math.exp((perf.sharpeRatio || 0) * 0.5);
-                weight = Math.max(0.1, Math.min(3.0, weight)); // Limita o peso
+                // A ponderação agora é exponencial. Robôs bons têm voz muito mais alta.
+                weight = Math.exp((perf.sharpeRatio || 0) * 0.5); 
+                weight = Math.max(0.1, Math.min(3.0, weight)); // Limitadores de segurança
+            } else {
+                weight = 0.2; // Robô não testado tem peso mínimo.
             }
         }
-        newVotes[robot.id] = { ...voteResult, weight };
-        if (voteResult.vote === 'RISE') riseSum += voteResult.confidence * weight;
-        if (voteResult.vote === 'FALL') fallSum += voteResult.confidence * weight;
+        newVotes[robot.id] = { ...voteResult, confidence, reason, weight };
+        
+        if (voteResult.vote === 'RISE') riseSum += confidence * weight;
+        if (voteResult.vote === 'FALL') fallSum += confidence * weight;
 
-        // Adiciona à arena virtual
-        if(voteResult.vote !== 'HOLD' && voteResult.confidence > 50) {
+        // Adiciona à Arena Virtual
+        if(voteResult.vote !== 'HOLD' && confidence > 50) {
              const exitEpoch = currentTick.epoch + durationToSeconds(voteResult.optimalDuration, voteResult.optimalDurationUnit);
              virtualTradesRef.current.push({
                 id: `vt_${Date.now()}_${tradeCounterRef.current++}`, robotId: robot.id, vote: voteResult.vote,
@@ -423,9 +431,9 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
         }
     });
     setCouncilVotes(newVotes);
-    setConsensusSum({ rise: riseSum, fall: fallSum });
     
     const totalVoteWeight = riseSum + fallSum;
+    setConsensusSum({ rise: riseSum / (totalVoteWeight || 1), fall: fallSum / (totalVoteWeight || 1) });
     const consensusProbability = totalVoteWeight > 0 ? Math.max(riseSum, fallSum) / totalVoteWeight : 0.5;
 
     let decision: 'RISE' | 'FALL' | 'HOLD' = 'HOLD';
@@ -544,7 +552,3 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
     isInversionModeOn: false, setIsInversionModeOn: ()=>{}
   };
 }
-
-    
-
-    

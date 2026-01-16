@@ -258,9 +258,13 @@ export const RobotVoteSchema = z.object({
   suggestedStake: z.number(),
   optimalDuration: z.number(),
   optimalDurationUnit: z.enum(['t', 's', 'm', 'h', 'd']),
+  reason: z.string(),
 });
 
 export type RobotVote = z.infer<typeof RobotVoteSchema>;
+
+export type CouncilVotes = Record<string, RobotVote>;
+
 
 // Desempenho do robô, incluindo win rates por regime
 export const RobotPerformanceSchema = z.object({
