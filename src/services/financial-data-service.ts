@@ -276,10 +276,9 @@ export async function loadRobotPerformance(userId: string, version: Version): Pr
   }
 };
 
-export async function saveTradeDecision(userId: string, log: TradeDecisionLog, version: 'v1' | 'v2' | 'v3') {
+export async function saveTradeDecision(userId: string, log: TradeDecisionLog) {
     if (!userId) return;
-    const collectionName = version === 'v1' ? 'decision_logs_v1' : 'decision_logs';
-    const logCollectionRef = collection(db, 'users', userId, collectionName);
+    const logCollectionRef = collection(db, 'users', userId, 'decision_logs');
     const logDocRef = doc(logCollectionRef, log.id);
     const sanitizedLog = sanitizeForFirestore(log);
     setDocumentNonBlocking(logDocRef, sanitizedLog, { merge: true });
@@ -362,5 +361,3 @@ export async function deleteEvolutionEvent(userId: string, eventTimestamp: strin
         await saveEvolutionHistory(userId, newHistory, version);
     }
 }
-
-    

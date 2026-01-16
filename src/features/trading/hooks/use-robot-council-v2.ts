@@ -300,7 +300,7 @@ export function useRobotCouncilV2(
 
   // NOVO: Gatilho de renderização para a UI
   const [virtualTradeCount, setVirtualTradeCount] = useState(0);
-  
+
   const [councilState, setCouncilState] = useState<Omit<CouncilState, 'virtualTradeCount'>>({
     indicators: null,
     currentRegime: { regime: 'ranging', confidence: 0, probabilities: { trending_bull: 0.2, trending_bear: 0.2, ranging: 0.4, high_volatility: 0.1, breakout: 0.1 } },
@@ -376,8 +376,8 @@ export function useRobotCouncilV2(
     if (!user || isAuthLoading) return;
     loadRobotPerformance(user.uid, 'v2').then((stored) => {
         if (stored && stored.length > 0) {
-            robotPerformanceRef.current = stored;
-            setRobotPerformance(stored);
+            robotPerformanceRef.current = stored as EnhancedRobotPerformance[];
+            setRobotPerformance(stored as EnhancedRobotPerformance[]);
         } else {
             resetArenaPerformance();
         }
@@ -824,7 +824,7 @@ export function useRobotCouncilV2(
                             pnl: 0,
                          };
 
-                         saveTradeDecision(user.uid, log, 'v2');
+                         saveTradeDecision(user.uid, log);
                          setTradeDecisionLog(prev => [log, ...prev]);
                      }
                 });
