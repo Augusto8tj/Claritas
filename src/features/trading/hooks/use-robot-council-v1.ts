@@ -14,8 +14,7 @@
  * 
  * 1.  **CONSCIÊNCIA DE REGIME (CONTEXT-AWARENESS):**
  *     - O sistema agora detecta se o mercado está em 'TENDÊNCIA' ou 'LATERAL' (RANGING).
- *     - Robôs inadequados para um regime são SILENCIADOS, prevenindo "votos estúpidos"
- *       (ex: usar um oscilador como RSI numa tendência forte é um erro comum que agora evitamos).
+ *     - Robôs inadequados para um regime têm sua confiança reduzida, mas não são silenciados.
  * 
  * 2.  **MERITOCRACIA EXPONENCIAL (SHARPE RATIO):**
  *     - O poder de voto de um robô já não é baseado em simples vitórias, mas sim no seu
@@ -119,28 +118,19 @@ const calculateRobotVote = (
     robot: RobotStrategy,
     indicators: Indicators,
     tickCandles: CandleData[],
-    currentRegime: MarketRegimeV1 // NOVO PARÂMETRO
+    currentRegime: MarketRegimeV1
 ): Omit<RobotVote, 'weight'> => {
     
-    // --- LÓGICA DE SILENCIAMENTO POR REGIME ---
-    const trendStrategies: RobotStrategy['strategyType'][] = ['MOVING_AVERAGE_CROSS', 'ADX_TREND', 'MACD_CROSS', 'PARABOLIC_SAR', 'ICHIMOKU_CLOUD', 'TRIX'];
-    const rangeStrategies: RobotStrategy['strategyType'][] = ['RSI', 'STOCHASTIC', 'BOLLINGER_BANDS', 'Z_SCORE', 'STOCH_RSI', 'MFI'];
-
-    if (currentRegime === 'TRENDING' && rangeStrategies.includes(robot.strategyType)) {
-        return { vote: 'HOLD', confidence: 0, reason: 'Silenciado em tendência', optimalDuration: robot.optimalDuration, optimalDurationUnit: robot.optimalDurationUnit, suggestedStake: 0 };
-    }
-    if (currentRegime === 'RANGING' && trendStrategies.includes(robot.strategyType)) {
-        return { vote: 'HOLD', confidence: 0, reason: 'Silenciado em lateralização', optimalDuration: robot.optimalDuration, optimalDurationUnit: robot.optimalDurationUnit, suggestedStake: 0 };
-    }
-
     let vote: RobotVote['vote'] = 'HOLD';
     let confidence = 0;
+    let reason = 'Aguardando sinal...';
     let suggestedStake = 0;
     const { optimalDuration, optimalDurationUnit, suggestedStake: baseStake } = robot;
 
-    const setVote = (newVote: 'RISE' | 'FALL', newConfidence: number) => {
+    const setVote = (newVote: 'RISE' | 'FALL', newConfidence: number, newReason: string) => {
         vote = newVote;
         confidence = newConfidence;
+        reason = newReason;
         if (confidence === robot.strongConfidence) {
             suggestedStake = baseStake; 
         } else if (confidence === robot.weakConfidence) {
@@ -150,53 +140,71 @@ const calculateRobotVote = (
 
     if (!indicators) return { vote: 'HOLD', confidence: 0, optimalDuration, optimalDurationUnit, suggestedStake: 0, reason: '' };
     
-    // ... (lógica de votação individual permanece a mesma) ...
     if (robot.strategyType === 'RSI' && isValid(indicators.rsi)) {
-        if (indicators.rsi! <= robot.weakBuyThreshold!) setVote('RISE', robot.weakConfidence);
-        if (indicators.rsi! <= robot.strongBuyThreshold!) setVote('RISE', robot.strongConfidence);
-        if (indicators.rsi! >= robot.weakSellThreshold!) setVote('FALL', robot.weakConfidence);
-        if (indicators.rsi! >= robot.strongSellThreshold!) setVote('FALL', robot.strongConfidence);
+        if (indicators.rsi! <= robot.weakBuyThreshold!) setVote('RISE', robot.weakConfidence, `RSI(${indicators.rsi!.toFixed(1)}) < ${robot.weakBuyThreshold}`);
+        if (indicators.rsi! <= robot.strongBuyThreshold!) setVote('RISE', robot.strongConfidence, `RSI(${indicators.rsi!.toFixed(1)}) < ${robot.strongBuyThreshold}`);
+        if (indicators.rsi! >= robot.weakSellThreshold!) setVote('FALL', robot.weakConfidence, `RSI(${indicators.rsi!.toFixed(1)}) > ${robot.weakSellThreshold}`);
+        if (indicators.rsi! >= robot.strongSellThreshold!) setVote('FALL', robot.strongConfidence, `RSI(${indicators.rsi!.toFixed(1)}) > ${robot.strongSellThreshold}`);
     }
     
     if (robot.strategyType === 'STOCHASTIC' && isValid(indicators.stoch)) {
-        if (indicators.stoch! <= robot.weakBuyThreshold!) setVote('RISE', robot.weakConfidence);
-        if (indicators.stoch! <= robot.strongBuyThreshold!) setVote('RISE', robot.strongConfidence);
-        if (indicators.stoch! >= robot.weakSellThreshold!) setVote('FALL', robot.weakConfidence);
-        if (indicators.stoch! >= robot.strongSellThreshold!) setVote('FALL', robot.strongConfidence);
+        if (indicators.stoch! <= robot.weakBuyThreshold!) setVote('RISE', robot.weakConfidence, `Stoch(${indicators.stoch!.toFixed(1)}) < ${robot.weakBuyThreshold}`);
+        if (indicators.stoch! <= robot.strongBuyThreshold!) setVote('RISE', robot.strongConfidence, `Stoch(${indicators.stoch!.toFixed(1)}) < ${robot.strongBuyThreshold}`);
+        if (indicators.stoch! >= robot.weakSellThreshold!) setVote('FALL', robot.weakConfidence, `Stoch(${indicators.stoch!.toFixed(1)}) > ${robot.weakSellThreshold}`);
+        if (indicators.stoch! >= robot.strongSellThreshold!) setVote('FALL', robot.strongConfidence, `Stoch(${indicators.stoch!.toFixed(1)}) > ${robot.strongSellThreshold}`);
     }
 
     if (robot.strategyType === 'MOVING_AVERAGE_CROSS' && isValid(indicators.ma.short) && isValid(indicators.ma.long)) {
-        if (indicators.ma.short! > indicators.ma.long!) setVote('RISE', robot.weakConfidence);
-        if (indicators.ma.long! > indicators.ma.short!) setVote('FALL', robot.weakConfidence);
+        if (indicators.ma.short! > indicators.ma.long!) setVote('RISE', robot.weakConfidence, "Cruzamento de Alta");
+        if (indicators.ma.long! > indicators.ma.short!) setVote('FALL', robot.weakConfidence, "Cruzamento de Baixa");
     }
 
     if (robot.strategyType === 'MACD_CROSS' && isValid(indicators.macd.macd) && isValid(indicators.macd.signal)) {
-       if (indicators.macd.macd! > indicators.macd.signal!) setVote('RISE', robot.weakConfidence);
-       if (indicators.macd.signal! > indicators.macd.macd!) setVote('FALL', robot.weakConfidence);
+       if (indicators.macd.macd! > indicators.macd.signal!) setVote('RISE', robot.weakConfidence, "MACD > Sinal");
+       if (indicators.macd.signal! > indicators.macd.macd!) setVote('FALL', robot.weakConfidence, "Sinal > MACD");
     }
     
     if (robot.strategyType === 'BOLLINGER_BANDS' && indicators.bollingerBands?.length && tickCandles.length) {
         const lastBand = indicators.bollingerBands[indicators.bollingerBands.length - 1];
         const lastPrice = tickCandles[tickCandles.length - 1].close;
         if (lastBand && isValid(lastBand.lower) && isValid(lastBand.upper) && isValid(lastPrice)) {
-            if (lastPrice <= lastBand.lower) setVote('RISE', robot.weakConfidence);
-            if (lastPrice >= lastBand.upper) setVote('FALL', robot.weakConfidence);
+            if (lastPrice <= lastBand.lower) setVote('RISE', robot.strongConfidence, "Toque na Banda Inferior");
+            if (lastPrice >= lastBand.upper) setVote('FALL', robot.strongConfidence, "Toque na Banda Superior");
         }
     }
 
     if (robot.strategyType === 'ADX_TREND' && isValid(indicators.adx)) {
         if (indicators.adx! > (robot.trendStrengthThreshold || 25)) {
             if (isValid(indicators.pdi) && isValid(indicators.ndi)) {
-                if (indicators.pdi! > indicators.ndi!) setVote('RISE', robot.weakConfidence);
-                if (indicators.ndi! > indicators.pdi!) setVote('FALL', robot.weakConfidence);
+                if (indicators.pdi! > indicators.ndi!) setVote('RISE', robot.strongConfidence, `ADX(${indicators.adx!.toFixed(0)}) Tendência Alta`);
+                if (indicators.ndi! > indicators.pdi!) setVote('FALL', robot.strongConfidence, `ADX(${indicators.adx!.toFixed(0)}) Tendência Baixa`);
             }
         }
     }
-    
-    // ... (e assim por diante para todas as outras estratégias) ...
 
+    // --- NOVA LÓGICA: AJUSTE DE CONFIANÇA BASEADO NO REGIME ---
+    if (vote !== 'HOLD' && confidence > 0) {
+        const trendStrategies: RobotStrategy['strategyType'][] = ['MOVING_AVERAGE_CROSS', 'ADX_TREND', 'MACD_CROSS', 'PARABOLIC_SAR', 'ICHIMOKU_CLOUD', 'TRIX'];
+        const rangeStrategies: RobotStrategy['strategyType'][] = ['RSI', 'STOCHASTIC', 'BOLLINGER_BANDS', 'Z_SCORE', 'STOCH_RSI', 'MFI'];
 
-    return { vote, confidence, optimalDuration, optimalDurationUnit, suggestedStake, reason: '' };
+        const isTrendBot = trendStrategies.includes(robot.strategyType);
+        const isRangeBot = rangeStrategies.includes(robot.strategyType);
+
+        if (currentRegime === 'TRENDING' && isRangeBot) {
+            confidence *= 0.5; // Reduz a confiança do robô de lateralização em mercado de tendência.
+            reason += ' (Regime Inadequado)';
+        } else if (currentRegime === 'RANGING' && isTrendBot) {
+            confidence *= 0.5; // Reduz a confiança do robô de tendência em mercado lateral.
+            reason += ' (Regime Inadequado)';
+        } else {
+            // Opcional: Dar um pequeno bónus se o robô for adequado ao regime
+            confidence *= 1.1; 
+            reason += ' (Regime Adequado)';
+        }
+        confidence = Math.min(100, confidence); // Garante que não passa de 100
+    }
+
+    return { vote, confidence, optimalDuration, optimalDurationUnit, suggestedStake, reason };
 };
 
 
@@ -213,7 +221,12 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
   const [councilVotes, setCouncilVotes] = useState<CouncilVotes>({});
   const [dailyBalance, setDailyBalance] = useState(100);
   const [dailyTarget, setDailyTarget] = useState(50);
+  const [consensusThreshold, setConsensusThreshold] = useState(300);
+  const [isDynamicConsensusOn, setIsDynamicConsensusOn] = useState(true);
+  const [isDynamicRiskOn, setIsDynamicRiskOn] = useState(true);
   const [isMeritocracyOn, setIsMeritocracyOn] = useState(true);
+  const [isStopLossOn, setIsStopLossOn] = useState(true);
+  const [isInversionModeOn, setIsInversionModeOn] = useState(false);
   const [robotPerformance, setRobotPerformance] = useState<RobotPerformance[]>([]);
   const virtualTradesRef = useRef<VirtualTrade[]>([]);
   const tradeCounterRef = useRef(0);
@@ -497,10 +510,12 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
         }
 
         const limits = durationLimits[finalUnit];
+        finalDuration = Math.max(limits.min, Math.min(finalDuration, limits.max));
+        
         if (finalDuration < limits.min || finalDuration > limits.max) {
-            setSupervisionStatus({ status: 'veto', message: `Duração (${finalDuration}${finalUnit}) fora dos limites (${limits.min}-${limits.max}).` });
-            councilExecutionRef.current.isExecuting = false;
-            return;
+             setSupervisionStatus({ status: 'veto', message: `Duração (${finalDuration}${finalUnit}) fora dos limites (${limits.min}-${limits.max}).` });
+             councilExecutionRef.current.isExecuting = false;
+             return;
         }
         
         executeTrade(
@@ -529,5 +544,7 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
     isInversionModeOn: false, setIsInversionModeOn: ()=>{}
   };
 }
+
+    
 
     
