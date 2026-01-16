@@ -415,7 +415,7 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
     const totalVoteWeight = riseSum + fallSum;
     const consensusProbability = totalVoteWeight > 0 ? Math.max(riseSum, fallSum) / totalVoteWeight : 0.5;
 
-    let decision: 'RISE' | 'FALL' | 'HOLD'> = 'HOLD';
+    let decision: 'RISE' | 'FALL' | 'HOLD' = 'HOLD';
     if(riseSum > fallSum && consensusProbability > 0.6) decision = 'RISE';
     else if (fallSum > riseSum && consensusProbability > 0.6) decision = 'FALL';
     setConsensusDecision(decision);
@@ -503,3 +503,4 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
     isInversionModeOn: false, setIsInversionModeOn: ()=>{}
   };
 }
+
