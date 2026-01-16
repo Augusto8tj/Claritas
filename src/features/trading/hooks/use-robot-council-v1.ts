@@ -463,7 +463,7 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
     
     setSupervisionStatus({ status: 'approved', message: `Aprovado (Kelly Stake: $${stake.toFixed(2)})` });
 
-    if (totalVoteWeightForDecision > 0) {
+    if (totalVoteWeight > 0) {
         const votingRobots = Object.values(newVotes).filter(v => v.vote === decision);
         const tickVotes = votingRobots.filter(v => v.optimalDurationUnit === 't');
         const timeVotes = votingRobots.filter(v => v.optimalDurationUnit !== 't');
