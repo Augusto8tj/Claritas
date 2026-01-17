@@ -20,5 +20,12 @@ service cloud.firestore {
       // A permissão 'write' já inclui 'create', 'update', e 'delete'.
       allow read, write, delete: if request.auth.uid == userId;
     }
+
+    // REGRA TEMPORÁRIA: Permite que qualquer utilizador autenticado apague
+    // documentos da coleção 'decision_logs' legada.
+    // REMOVER APÓS A LIMPEZA.
+    match /decision_logs/{logId} {
+      allow delete: if request.auth != null;
+    }
   }
 }

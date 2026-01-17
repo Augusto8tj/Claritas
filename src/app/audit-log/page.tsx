@@ -27,7 +27,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import TradingDecisionLogViewer from '@/components/deriv-trader/TradingDecisionLogViewer';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { collection, getDocs, writeBatch, doc, deleteDoc } from 'firebase/firestore';
+import { collection, getDocs, doc, deleteDoc, query, limit } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { errorEmitter, FirestorePermissionError } from '@/firebase';
 
@@ -39,6 +39,7 @@ export default function AuditLogPage() {
   const [loading, setLoading] = useState(true);
   const [isDeletingAll, setIsDeletingAll] = useState(false);
   const [deletingLogId, setDeletingLogId] = useState<string | null>(null);
+  const [isDeletingLegacy, setIsDeletingLegacy] = useState(false);
 
   // Filtros
   const [dateRange, setDateRange] = useState<DateRange | undefined>(undefined);
@@ -101,8 +102,6 @@ export default function AuditLogPage() {
     try {
         const snapshot = await getDocs(logCollectionRef);
         if (!snapshot.empty) {
-            // A operação em lote (batch) estava a falhar por razões de permissão obscuras.
-            // Mudar para exclusões paralelas individuais é mais robusto para a exclusão em massa no lado do cliente.
             const deletePromises = snapshot.docs.map(doc => deleteDoc(doc.ref));
             await Promise.all(deletePromises);
         }
@@ -140,6 +139,36 @@ export default function AuditLogPage() {
         }));
     } finally {
         setDeletingLogId(null);
+    }
+  };
+
+  const handleDeleteLegacy = async () => {
+    if (!user) {
+        toast({ title: "Não autenticado", description: "Por favor, faça login para executar esta ação.", variant: "destructive" });
+        return;
+    };
+    setIsDeletingLegacy(true);
+    const logCollectionRef = collection(db, 'decision_logs');
+
+    try {
+        const q = query(logCollectionRef, limit(400));
+        const snapshot = await getDocs(q);
+        
+        if (snapshot.empty) {
+            toast({ title: "Coleção Vazia", description: "A coleção 'decision_logs' legada não contém mais documentos." });
+            setIsDeletingLegacy(false);
+            return;
+        }
+
+        const deletePromises = snapshot.docs.map(doc => deleteDoc(doc.ref));
+        await Promise.all(deletePromises);
+        
+        toast({ title: "Lote Apagado!", description: `${snapshot.size} registos legados foram apagados. Clique novamente se restarem mais.` });
+    } catch (error: any) {
+        console.error(`Falha ao apagar logs de auditoria legados:`, error);
+        toast({ title: "Erro", description: error.message || "Ocorreu um erro ao tentar apagar os registos. Verifique as regras de segurança e o console do navegador.", variant: "destructive" });
+    } finally {
+        setIsDeletingLegacy(false);
     }
   };
 
@@ -226,6 +255,43 @@ export default function AuditLogPage() {
             />
          )}
       </Tabs>
+      <Card className="border-destructive mt-6">
+        <CardHeader>
+            <CardTitle className="font-headline text-destructive flex items-center gap-2">
+                <Trash2 /> Ação de Limpeza Legada
+            </CardTitle>
+            <CardDescription>
+                Use este botão para apagar em lotes a coleção obsoleta 'decision_logs' da raiz da base de dados.
+                Pode ser necessário clicar várias vezes se a coleção for muito grande. Esta ferramenta é temporária.
+            </CardDescription>
+        </CardHeader>
+        <CardContent>
+            <AlertDialog>
+                <AlertDialogTrigger asChild>
+                    <Button variant="destructive" className="w-full">
+                        <Trash2 className="mr-2 h-4 w-4" />
+                        Apagar Lote de Logs Legados (até 400)
+                    </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                    <AlertDialogHeader>
+                        <AlertDialogTitle>Tem a certeza absoluta?</AlertDialogTitle>
+                        <AlertDialogDescription>
+                            Esta ação tentará apagar um lote de até 400 documentos da coleção obsoleta 'decision_logs'. 
+                            Esta operação é intensiva e irá falhar se as regras de segurança não permitirem (ver próximo passo).
+                        </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                        <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                        <AlertDialogAction onClick={handleDeleteLegacy} disabled={isDeletingLegacy} className="bg-destructive hover:bg-destructive/90">
+                        {isDeletingLegacy ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : null}
+                        Apagar Lote
+                        </AlertDialogAction>
+                    </AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialog>
+        </CardContent>
+      </Card>
     </div>
   );
 }
