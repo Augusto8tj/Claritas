@@ -336,7 +336,8 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
   }, [chartData, priceTicks, dataVersion]);
 
   useEffect(() => {
-    if (!isConnected || !user || !isCouncilAutopilotOn || strategyCouncil.length === 0 || !activeSymbol || tickCandles.length < 2) return;
+    // BUG FIX: Adicionado '!durationLimits' para evitar condição de corrida.
+    if (!isConnected || !user || !isCouncilAutopilotOn || !durationLimits || strategyCouncil.length === 0 || !activeSymbol || tickCandles.length < 2) return;
 
     if (councilExecutionRef.current.isExecuting) return; 
     councilExecutionRef.current.isExecuting = true;
@@ -601,7 +602,7 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
 
     councilExecutionRef.current.isExecuting = false;
   }, [
-      dataVersion, isConnected, user, isCouncilAutopilotOn, strategyCouncil, robotPerformance, isMeritocracyOn, activeSymbol, operationsLog, toast, executeTrade, timePeriod, evolveTrigger, tickCandles, form, dailyBalance, dailyTarget, durationLimits, consensusThreshold, isDynamicConsensusOn
+      dataVersion, isConnected, user, isCouncilAutopilotOn, durationLimits, strategyCouncil, robotPerformance, isMeritocracyOn, activeSymbol, operationsLog, toast, executeTrade, timePeriod, evolveTrigger, tickCandles, form, dailyBalance, dailyTarget, consensusThreshold, isDynamicConsensusOn
   ]);
 
    // O 'isDynamicConsensusOn' e 'isDynamicRiskOn' são sempre verdadeiros nesta nova lógica,
