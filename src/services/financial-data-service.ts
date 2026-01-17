@@ -303,7 +303,7 @@ export async function getTradeDecisionLogs(userId: string, version: 'v1' | 'v2' 
 
 // --- Evolution History (Version-Aware) ---
 
-export async function saveEvolutionHistory(userId: string, history: EvolutionEvent[], version: 'v2' | 'v3' = 'v2'): Promise<void> {
+export async function saveEvolutionHistory(userId: string, history: EvolutionEvent[], version: Version): Promise<void> {
     if (!userId || !history) return;
 
     const collectionName = `evolution_${version}`;
@@ -325,7 +325,7 @@ export async function saveEvolutionHistory(userId: string, history: EvolutionEve
     }
 }
 
-export async function loadEvolutionHistory(userId: string, version: 'v2' | 'v3' = 'v2'): Promise<EvolutionEvent[]> {
+export async function loadEvolutionHistory(userId: string, version: Version): Promise<EvolutionEvent[]> {
     if (!userId) return [];
     
     const collectionName = `evolution_${version}`;
@@ -347,13 +347,13 @@ export async function loadEvolutionHistory(userId: string, version: 'v2' | 'v3' 
     }
 }
 
-export async function clearEvolutionHistory(userId: string, version: 'v2' | 'v3' = 'v2'): Promise<void> {
+export async function clearEvolutionHistory(userId: string, version: Version): Promise<void> {
     if (!userId) return;
     const docRef = doc(db, 'users', userId, `evolution_${version}`, 'history');
     await deleteDoc(docRef);
 }
 
-export async function deleteEvolutionEvent(userId: string, eventTimestamp: string, version: 'v2' | 'v3' = 'v2'): Promise<void> {
+export async function deleteEvolutionEvent(userId: string, eventTimestamp: string, version: Version): Promise<void> {
     if (!userId) return;
     
     const currentHistory = await loadEvolutionHistory(userId, version);
