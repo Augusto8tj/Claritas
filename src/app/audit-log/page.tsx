@@ -6,7 +6,7 @@ import { useAuth } from '@/features/auth/hooks/use-auth';
 import { getTradeDecisionLogs } from '@/services/financial-data-service';
 import { getTradeDecisionLogsV3 } from '@/services/financial-data-service-v3';
 import type { TradeDecisionLog } from '@/lib/types';
-import { Filter, Trash2, Loader2, Bot } from 'lucide-react';
+import { Filter, Trash2, Loader2, Bot, AlertCircle } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from '@/components/ui/button';
 import { DateRangePicker } from '@/components/ui/date-picker-with-range';
@@ -30,6 +30,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { collection, getDocs, doc, deleteDoc, query, limit } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { errorEmitter, FirestorePermissionError } from '@/firebase';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 
 
 export default function AuditLogPage() {
@@ -40,6 +41,7 @@ export default function AuditLogPage() {
   const [isDeletingAll, setIsDeletingAll] = useState(false);
   const [deletingLogId, setDeletingLogId] = useState<string | null>(null);
   const [isDeletingLegacy, setIsDeletingLegacy] = useState(false);
+  const [legacyDeletionMessage, setLegacyDeletionMessage] = useState<string | null>(null);
 
   // Filtros
   const [dateRange, setDateRange] = useState<DateRange | undefined>(undefined);
@@ -148,6 +150,7 @@ export default function AuditLogPage() {
         return;
     };
     setIsDeletingLegacy(true);
+    setLegacyDeletionMessage("A processar lote...");
     const logCollectionRef = collection(db, 'decision_logs');
 
     try {
@@ -155,6 +158,8 @@ export default function AuditLogPage() {
         const snapshot = await getDocs(q);
         
         if (snapshot.empty) {
+            const message = "Limpeza concluída. Nenhum documento legado encontrado.";
+            setLegacyDeletionMessage(message);
             toast({ title: "Coleção Vazia", description: "A coleção 'decision_logs' legada não contém mais documentos." });
             setIsDeletingLegacy(false);
             return;
@@ -163,10 +168,14 @@ export default function AuditLogPage() {
         const deletePromises = snapshot.docs.map(doc => deleteDoc(doc.ref));
         await Promise.all(deletePromises);
         
-        toast({ title: "Lote Apagado!", description: `${snapshot.size} registos legados foram apagados. Clique novamente se restarem mais.` });
+        const message = `${snapshot.size} registos legados foram apagados. Por favor, clique novamente se ainda restarem documentos.`;
+        setLegacyDeletionMessage(message);
+        toast({ title: "Lote Apagado!", description: message });
     } catch (error: any) {
         console.error(`Falha ao apagar logs de auditoria legados:`, error);
-        toast({ title: "Erro", description: error.message || "Ocorreu um erro ao tentar apagar os registos. Verifique as regras de segurança e o console do navegador.", variant: "destructive" });
+        const errorMessage = error.message || "Ocorreu um erro ao tentar apagar os registos. Verifique as regras de segurança e o console do navegador.";
+        setLegacyDeletionMessage(`Falha: ${errorMessage}`);
+        toast({ title: "Erro", description: errorMessage, variant: "destructive" });
     } finally {
         setIsDeletingLegacy(false);
     }
@@ -261,11 +270,10 @@ export default function AuditLogPage() {
                 <Trash2 /> Ação de Limpeza Legada
             </CardTitle>
             <CardDescription>
-                Use este botão para apagar em lotes a coleção obsoleta 'decision_logs' da raiz da base de dados.
-                Pode ser necessário clicar várias vezes se a coleção for muito grande. Esta ferramenta é temporária.
+                Devido ao grande volume, a listagem de todos os {'>'}2000 logs legados é impraticável. Use este botão para apagar a coleção obsoleta 'decision_logs' em lotes seguros de 100.
             </CardDescription>
         </CardHeader>
-        <CardContent>
+        <CardContent className="space-y-4">
             <AlertDialog>
                 <AlertDialogTrigger asChild>
                     <Button variant="destructive" className="w-full">
@@ -290,6 +298,15 @@ export default function AuditLogPage() {
                     </AlertDialogFooter>
                 </AlertDialogContent>
             </AlertDialog>
+            {legacyDeletionMessage && (
+              <Alert variant={legacyDeletionMessage.startsWith('Falha') ? 'destructive' : 'default'}>
+                <AlertCircle className="h-4 w-4" />
+                <AlertTitle>Status da Última Operação</AlertTitle>
+                <AlertDescription>
+                  {legacyDeletionMessage}
+                </AlertDescription>
+              </Alert>
+            )}
         </CardContent>
       </Card>
     </div>
