@@ -25,9 +25,11 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
-import { deleteAllDecisionLogs, deleteDecisionLog } from '@/app/actions/audit-log-actions';
 import TradingDecisionLogViewer from '@/components/deriv-trader/TradingDecisionLogViewer';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { collection, getDocs, writeBatch, doc, deleteDoc } from 'firebase/firestore';
+import { db } from '@/lib/firebase';
+import { errorEmitter, FirestorePermissionError } from '@/firebase';
 
 
 export default function AuditLogPage() {
@@ -93,27 +95,53 @@ export default function AuditLogPage() {
   const handleDeleteAll = async () => {
     if (!user) return;
     setIsDeletingAll(true);
-    const result = await deleteAllDecisionLogs(user.uid, activeTab);
-    if (result.success) {
-      toast({ title: "Histórico Limpo!", description: `Todos os registos da versão ${activeTab.toUpperCase()} foram apagados.` });
-      setLogs([]);
-    } else {
-      toast({ title: "Erro", description: result.error, variant: "destructive" });
+    const collectionName = `decision_logs_${activeTab}`;
+    const logCollectionRef = collection(db, 'users', user.uid, collectionName);
+
+    try {
+        const snapshot = await getDocs(logCollectionRef);
+        if (!snapshot.empty) {
+            const batch = writeBatch(db);
+            snapshot.docs.forEach(doc => {
+                batch.delete(doc.ref);
+            });
+            await batch.commit();
+        }
+        
+        toast({ title: "Histórico Limpo!", description: `Todos os registos da versão ${activeTab.toUpperCase()} foram apagados.` });
+        setLogs([]);
+    } catch (error: any) {
+        console.error(`Falha ao apagar logs de auditoria (versão ${activeTab}):`, error);
+        toast({ title: "Erro", description: error.message || "Ocorreu um erro ao tentar apagar os registos.", variant: "destructive" });
+        errorEmitter.emit('permission-error', new FirestorePermissionError({
+            operation: 'delete',
+            path: logCollectionRef.path
+        }));
+    } finally {
+        setIsDeletingAll(false);
     }
-    setIsDeletingAll(false);
   };
   
   const handleDeleteSingle = async (logId: string) => {
     if (!user) return;
     setDeletingLogId(logId);
-    const result = await deleteDecisionLog(user.uid, logId, activeTab);
-    if (result.success) {
-      toast({ title: "Registo Apagado", description: "O log de auditoria foi removido." });
-      setLogs(prev => prev.filter(log => log.id !== logId));
-    } else {
-      toast({ title: "Erro", description: result.error, variant: "destructive" });
+    const collectionName = `decision_logs_${activeTab}`;
+    const logDocRef = doc(db, 'users', user.uid, collectionName, logId);
+
+    try {
+        await deleteDoc(logDocRef);
+        toast({ title: "Registo Apagado", description: "O log de auditoria foi removido." });
+        setLogs(prev => prev.filter(log => log.id !== logId));
+    } catch (error: any) {
+        console.error(`Falha ao apagar o log de auditoria ${logId} (versão ${activeTab}):`, error);
+        toast({ title: "Erro", description: error.message || "Ocorreu um erro ao tentar apagar o registo.", variant: "destructive" });
+        errorEmitter.emit('permission-error', new FirestorePermissionError({
+            operation: 'delete',
+            path: logDocRef.path
+        }));
+    } finally {
+        setDeletingLogId(null);
     }
-    setDeletingLogId(null);
   };
 
 
