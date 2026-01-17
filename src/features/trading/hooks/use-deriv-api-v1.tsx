@@ -592,6 +592,17 @@ const executeTrade = useCallback(async (
                             close: parseFloat(ohlc.close),
                         };
                         setChartData(prev => addDataPoint(prev, newCandle));
+                        const newTickFromCandle: TickData = {
+                            epoch: newCandle.epoch,
+                            price: newCandle.close,
+                        };
+                        setPriceTicks(prev => {
+                            const newTicks = [...prev, newTickFromCandle];
+                            if (newTicks.length > MAX_DATA_POINTS) {
+                                return newTicks.slice(1);
+                            }
+                            return newTicks;
+                        });
                     }
                     break;
                 
@@ -607,6 +618,17 @@ const executeTrade = useCallback(async (
                                 close: parseFloat(candle.close),
                             };
                             setChartData(prev => addDataPoint(prev, newCandle));
+                            const newTickFromCandle: TickData = {
+                                epoch: newCandle.epoch,
+                                price: newCandle.close,
+                            };
+                            setPriceTicks(prev => {
+                                const newTicks = [...prev, newTickFromCandle];
+                                if (newTicks.length > MAX_DATA_POINTS) {
+                                    return newTicks.slice(1);
+                                }
+                                return newTicks;
+                            });
                         }
                     }
                     break;
