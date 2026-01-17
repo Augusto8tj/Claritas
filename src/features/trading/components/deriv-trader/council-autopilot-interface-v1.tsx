@@ -202,7 +202,7 @@ export const CouncilAutopilotInterfaceV1: React.FC<CouncilAutopilotInterfaceV1Pr
                  return <p>Saída Chandelier: <strong>{format(indicators.chandelierExit)}</strong></p>;
             case 'ICHIMOKU_CLOUD':
                 if (!indicators.ichimoku) return <p>Nuvem: <strong>...</strong></p>;
-                return <p>Nuvem A/B: <strong>{format(indicators.ichimoku.senkouA)} / {format(indicators.ichimoku.senkouB)}</strong></p>;
+                return <p>Nuvem A/B: <strong>{format(indicators.ichimoku.spanA)} / {format(indicators.ichimoku.spanB)}</strong></p>;
             default:
                 return null;
         }
