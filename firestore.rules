@@ -21,11 +21,11 @@ service cloud.firestore {
       allow read, write, delete: if request.auth.uid == userId;
     }
 
-    // REGRA TEMPORÁRIA: Permite que qualquer utilizador autenticado apague
+    // REGRA TEMPORÁRIA: Permite que qualquer utilizador autenticado leia e apague
     // documentos da coleção 'decision_logs' legada.
     // REMOVER APÓS A LIMPEZA.
     match /decision_logs/{logId} {
-      allow delete: if request.auth != null;
+      allow read, delete: if request.auth != null;
     }
   }
 }
