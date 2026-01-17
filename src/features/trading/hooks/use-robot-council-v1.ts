@@ -446,6 +446,8 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
         }
     });
     setCouncilVotes(newVotes);
+    setConsensusSum({ rise: riseSum, fall: fallSum });
+
     
     const consensusProbability = totalVoteWeight > 0 ? Math.max(riseSum, fallSum) / totalVoteWeight : 0.5;
 

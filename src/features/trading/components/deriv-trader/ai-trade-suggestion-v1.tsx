@@ -132,8 +132,8 @@ export function AITradeSuggestionV1({
                     <span className="text-red-600">Confiança FALL: <span className="font-mono">{Math.round(consensusSum?.fall || 0)}</span></span>
                 </div>
                 <div className="flex items-center gap-2">
-                    <Progress value={risePercentage} className="h-3 rounded-l-full" indicatorClassName="bg-green-500 rounded-l-full" />
-                    <Progress value={fallPercentage} className="h-3 rounded-r-full scale-x-[-1]" indicatorClassName="bg-red-500 rounded-r-full" />
+                    <Progress value={risePercentage} className="h-3 rounded-l-full" />
+                    <Progress value={fallPercentage} className="h-3 rounded-r-full scale-x-[-1]" />
                 </div>
                 {!isV2 && (
                     <div className="text-center text-xs text-muted-foreground mt-1">
