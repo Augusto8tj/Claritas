@@ -101,11 +101,10 @@ export default function AuditLogPage() {
     try {
         const snapshot = await getDocs(logCollectionRef);
         if (!snapshot.empty) {
-            const batch = writeBatch(db);
-            snapshot.docs.forEach(doc => {
-                batch.delete(doc.ref);
-            });
-            await batch.commit();
+            // A operação em lote (batch) estava a falhar por razões de permissão obscuras.
+            // Mudar para exclusões paralelas individuais é mais robusto para a exclusão em massa no lado do cliente.
+            const deletePromises = snapshot.docs.map(doc => deleteDoc(doc.ref));
+            await Promise.all(deletePromises);
         }
         
         toast({ title: "Histórico Limpo!", description: `Todos os registos da versão ${activeTab.toUpperCase()} foram apagados.` });
