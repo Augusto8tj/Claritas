@@ -7,7 +7,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from '@/components/ui/badge';
-import { CheckCircle, XCircle, Bot, Archive, Filter, Trash2, Loader2, TrendingUp, TrendingDown, Brain, Shield, Target, Trophy, CircleDot, FilePieChart, Sigma } from 'lucide-react';
+import { CheckCircle, XCircle, Bot, Archive, Filter, Trash2, Loader2, TrendingUp, TrendingDown, Brain, Shield, Target, Trophy, CircleDot, FilePieChart, Sigma, HelpCircle as HoldIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Separator } from '@/components/ui/separator';
 import { Button } from '@/components/ui/button';
@@ -27,7 +27,6 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
-import { deleteAllDecisionLogs, deleteDecisionLog } from '@/app/actions/audit-log-actions';
 import { useAuth } from '@/features/auth/hooks/use-auth';
 
 function AuditLogSkeleton() {
@@ -176,13 +175,17 @@ export default function TradingDecisionLogViewer({
                             {log.result === 'won' && <CheckCircle className="h-4 w-4 text-green-600" />}
                             {log.result === 'lost' && <XCircle className="h-4 w-4 text-destructive" />}
                             {log.result === 'pending' && <Bot className="h-4 w-4 text-blue-500 animate-pulse" />}
+                            {log.result === 'hold' && <HoldIcon className="h-4 w-4 text-yellow-500" />}
                             <span className="font-semibold">{log.tradeParams.direction}</span>
                             <span className="text-muted-foreground text-xs">{new Date(log.timestamp).toLocaleTimeString()}</span>
                           </div>
-                          <Badge variant={log.result === 'won' ? 'default' : log.result === 'lost' ? 'destructive' : 'secondary'}
-                            className={cn(log.result === 'won' && 'bg-green-600/20 text-green-800 border-green-600/30')}
+                          <Badge variant={log.result === 'won' ? 'default' : log.result === 'lost' ? 'destructive' : log.result === 'hold' ? 'outline' : 'secondary'}
+                            className={cn(
+                                log.result === 'won' && 'bg-green-600/20 text-green-800 border-green-600/30',
+                                log.result === 'hold' && 'border-yellow-500/50 text-yellow-600'
+                            )}
                           >
-                            {log.pnl !== undefined && log.pnl !== null ? `${log.pnl > 0 ? '+' : ''}${log.pnl.toFixed(2)} USD` : 'Pendente'}
+                            {log.pnl !== undefined && log.pnl !== null && log.result !== 'hold' && log.result !== 'pending' ? `${log.pnl > 0 ? '+' : ''}${log.pnl.toFixed(2)} USD` : log.result.charAt(0).toUpperCase() + log.result.slice(1)}
                           </Badge>
                         </div>
                       </AccordionTrigger>
@@ -281,3 +284,5 @@ export default function TradingDecisionLogViewer({
     </Card>
   );
 };
+
+    

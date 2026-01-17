@@ -251,6 +251,7 @@ export default function AuditLogPage() {
                     <SelectItem value="won">Ganhos (Won)</SelectItem>
                     <SelectItem value="lost">Perdas (Lost)</SelectItem>
                     <SelectItem value="pending">Pendentes</SelectItem>
+                    <SelectItem value="hold">Aguardando (Hold)</SelectItem>
                 </SelectContent>
                 </Select>
                 <AlertDialog>
@@ -360,3 +361,5 @@ export default function AuditLogPage() {
     </div>
   );
 }
+
+    
