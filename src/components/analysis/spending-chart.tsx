@@ -11,6 +11,8 @@ import {
   ChartTooltip,
   ChartTooltipContent,
 } from "@/components/ui/chart";
+import { FirestorePermissionError, errorEmitter } from "@/firebase";
+import { useToast } from "@/hooks/use-toast";
 
 const chartConfig = {
   amount: {
@@ -28,40 +30,54 @@ type ChartConfigKey = keyof typeof chartConfig;
 
 export function SpendingChart() {
   const { user } = useAuth();
+  const { toast } = useToast();
   const [chartData, setChartData] = React.useState<any[]>([]);
   const [totalAmount, setTotalAmount] = React.useState(0);
 
   React.useEffect(() => {
     if (!user) return;
     const fetchData = async () => {
-      const [transactions, categories] = await Promise.all([
-        getTransactions(user.uid),
-        getExpenseCategories(user.uid)
-      ]);
-      
-      const expenses = transactions.filter(t => t.type === 'expense');
-      const total = expenses.reduce((acc, curr) => acc + curr.amount, 0);
-      setTotalAmount(total);
+      try {
+        const [transactions, categories] = await Promise.all([
+          getTransactions(user.uid),
+          getExpenseCategories(user.uid)
+        ]);
+        
+        const expenses = transactions.filter(t => t.type === 'expense');
+        const total = expenses.reduce((acc, curr) => acc + curr.amount, 0);
+        setTotalAmount(total);
 
-      const dataByCategory = categories.map(category => {
-        const amount = expenses
-          .filter(t => t.category === category)
-          .reduce((acc, curr) => acc + curr.amount, 0);
-        const colorKey = category as ChartConfigKey;
-        // Fallback para a cor de 'Outros' se a categoria não estiver no chartConfig
-        const configEntry = chartConfig[colorKey] || chartConfig.Outros;
-        return {
-          category,
-          amount,
-          fill: configEntry.color,
-        };
-      }).filter(item => item.amount > 0);
+        const dataByCategory = categories.map(category => {
+          const amount = expenses
+            .filter(t => t.category === category)
+            .reduce((acc, curr) => acc + curr.amount, 0);
+          const colorKey = category as ChartConfigKey;
+          // Fallback para a cor de 'Outros' se a categoria não estiver no chartConfig
+          const configEntry = chartConfig[colorKey] || chartConfig.Outros;
+          return {
+            category,
+            amount,
+            fill: configEntry.color,
+          };
+        }).filter(item => item.amount > 0);
 
-      setChartData(dataByCategory);
+        setChartData(dataByCategory);
+      } catch (err) {
+        console.error("Error fetching spending chart data:", err);
+        toast({
+            title: "Erro ao Carregar Gráfico",
+            description: "Não foi possível buscar os dados de despesas.",
+            variant: "destructive"
+        });
+        errorEmitter.emit('permission-error', new FirestorePermissionError({
+            path: `users/${user.uid}/transactions`,
+            operation: 'list'
+        }));
+      }
     };
 
     fetchData();
-  }, [user]);
+  }, [user, toast]);
 
   if (chartData.length === 0) {
     return (

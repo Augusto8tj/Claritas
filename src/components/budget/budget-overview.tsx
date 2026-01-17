@@ -26,6 +26,8 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { EditBudgetDialog } from "./edit-budget-dialog";
+import { useToast } from "@/hooks/use-toast";
+import { FirestorePermissionError, errorEmitter } from "@/firebase";
 
 const categoryIcons: { [key: string]: LucideIcon } = {
   Moradia: Home,
@@ -38,16 +40,34 @@ const categoryIcons: { [key: string]: LucideIcon } = {
 
 export function BudgetOverview() {
   const { user } = useAuth();
+  const { toast } = useToast();
   const [budgetData, setBudgetData] = React.useState<BudgetCategory[]>([]);
   const [loading, setLoading] = React.useState(true);
 
   const fetchBudgetData = React.useCallback(async () => {
-    if (!user) return;
+    if (!user) {
+      setLoading(false);
+      return;
+    }
     setLoading(true);
-    const data = await getBudgetData(user.uid);
-    setBudgetData(data);
-    setLoading(false);
-  }, [user]);
+    try {
+      const data = await getBudgetData(user.uid);
+      setBudgetData(data);
+    } catch (err) {
+      console.error("Error fetching budget data:", err);
+      toast({
+          title: "Erro ao Carregar Orçamento",
+          description: "Não foi possível buscar os dados do seu orçamento.",
+          variant: "destructive"
+      });
+      errorEmitter.emit('permission-error', new FirestorePermissionError({
+          path: `users/${user.uid}/transactions`, // Assumindo que a falha mais provável é a leitura de transações
+          operation: 'list'
+      }));
+    } finally {
+      setLoading(false);
+    }
+  }, [user, toast]);
 
   React.useEffect(() => {
     fetchBudgetData();

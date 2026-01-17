@@ -31,6 +31,8 @@ import {
   ArrowUp,
   Loader2,
 } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
+import { FirestorePermissionError, errorEmitter } from "@/firebase";
 
 const categoryIcons: { [key: string]: React.ReactNode } = {
   "Alimentação": <Utensils className="h-4 w-4 text-muted-foreground" />,
@@ -43,21 +45,39 @@ const categoryIcons: { [key: string]: React.ReactNode } = {
 
 export function TransactionsTable() {
   const { user } = useAuth();
+  const { toast } = useToast();
   const [transactions, setTransactions] = React.useState<Transaction[]>([]);
   const [loading, setLoading] = React.useState(true);
 
   React.useEffect(() => {
-    if (!user) return;
+    if (!user) {
+        setLoading(false);
+        return;
+    };
 
     const fetchData = async () => {
       setLoading(true);
-      const data = await getTransactions(user.uid);
-      data.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-      setTransactions(data);
-      setLoading(false);
+      try {
+        const data = await getTransactions(user.uid);
+        data.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+        setTransactions(data);
+      } catch (err) {
+        console.error("Error fetching transactions:", err);
+        toast({
+            title: "Erro ao Carregar Transações",
+            description: "Não foi possível buscar o seu histórico de transações.",
+            variant: "destructive"
+        });
+        errorEmitter.emit('permission-error', new FirestorePermissionError({
+            path: `users/${user.uid}/transactions`,
+            operation: 'list'
+        }));
+      } finally {
+        setLoading(false);
+      }
     };
     fetchData();
-  }, [user]);
+  }, [user, toast]);
 
   return (
     <Card>
