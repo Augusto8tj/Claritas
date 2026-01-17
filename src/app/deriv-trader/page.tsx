@@ -9,7 +9,7 @@ import { AssetSelectorV1 } from "@/features/trading/components/deriv-trader/asse
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { MarketChart } from "@/features/trading/components/deriv-trader/market-chart";
 import { Button } from "@/components/ui/button";
-import { Trash2, Bot, NotepadText, LayoutGrid, Trophy, Dna, CandlestickChart } from "lucide-react";
+import { Trash2, Bot, NotepadText, LayoutGrid, Trophy, Dna, CandlestickChart, Archive } from "lucide-react";
 import { DerivApiProviderV1, useDerivApiV1 } from "@/features/trading/hooks/use-deriv-api-v1";
 import { Skeleton } from "@/components/ui/skeleton";
 import { OperationsLogV1 } from "@/features/trading/components/deriv-trader/operations-log-v1";
@@ -25,6 +25,7 @@ import { TradingDesk } from "@/features/trading/components/deriv-trader/trading-
 import { HallOfFame } from "@/features/trading/components/deriv-trader/hall-of-fame";
 import { ApiStatusIndicatorLegacy } from "@/features/trading/components/deriv-trader/ApiStatusIndicatorLegacy";
 import { EvolutionLabV1 } from "@/features/trading/components/deriv-trader/evolution-lab-v1";
+import TradingDecisionLogViewer from "@/components/deriv-trader/TradingDecisionLogViewer";
 
 
 function DerivTraderPageContent() {
@@ -51,7 +52,7 @@ function DerivTraderPageContent() {
         sellContract,
     } = useDerivApiV1();
     
-    const robotCouncil = useRobotCouncilV1(activeSymbol, priceTicks);
+    const robotCouncil = useRobotCouncilV1(activeSymbol, priceTicks, chartData);
     const [activeTab, setActiveTab] = React.useState("trade");
 
     React.useEffect(() => {
@@ -163,9 +164,10 @@ function DerivTraderPageContent() {
                             </div>
                             <div className="mt-6">
                                 <Tabs defaultValue={"log"} value={activeTab} onValueChange={setActiveTab}>
-                                    <TabsList className="grid w-full grid-cols-4">
+                                    <TabsList className="grid w-full grid-cols-5">
                                         <TabsTrigger value="log"><NotepadText className="w-4 h-4 mr-2"/>Registo</TabsTrigger>
                                         <TabsTrigger value="desk"><LayoutGrid className="w-4 h-4 mr-2"/>Arena</TabsTrigger>
+                                        <TabsTrigger value="audit"><Archive className="w-4 h-4 mr-2"/>Auditoria</TabsTrigger>
                                         <TabsTrigger value="fame"><Trophy className="w-4 h-4 mr-2"/>Fama</TabsTrigger>
                                         <TabsTrigger value="evolution"><Dna className="w-4 h-4 mr-2"/>Evolução</TabsTrigger>
                                     </TabsList>
@@ -180,6 +182,9 @@ function DerivTraderPageContent() {
                                             robotPerformance={robotCouncil.robotPerformance}
                                             councilVotes={robotCouncil.councilVotes}
                                         />
+                                    </TabsContent>
+                                     <TabsContent value="audit" className="mt-4">
+                                        <TradingDecisionLogViewer logs={robotCouncil.tradeDecisionLog} />
                                     </TabsContent>
                                     <TabsContent value="fame" className="mt-4">
                                         <HallOfFame />
@@ -202,6 +207,7 @@ function DerivTraderPageContent() {
                             <TabsTrigger value="trade" aria-label="Negociar"><CandlestickChart className="w-4 h-4"/></TabsTrigger>
                             <TabsTrigger value="autopilot" aria-label="Piloto Automático"><Bot className="w-4 h-4"/></TabsTrigger>
                             <TabsTrigger value="desk" aria-label="Mesa de Operações"><LayoutGrid className="w-4 h-4"/></TabsTrigger>
+                            <TabsTrigger value="audit" aria-label="Auditoria"><Archive className="w-4 h-4" /></TabsTrigger>
                             <TabsTrigger value="fame" aria-label="Hall da Fama"><Trophy className="w-4 h-4"/></TabsTrigger>
                             <TabsTrigger value="evolution" aria-label="Evolução"><Dna className="w-4 h-4" /></TabsTrigger>
                             <TabsTrigger value="log" aria-label="Registo de Operações"><NotepadText className="w-4 h-4"/></TabsTrigger>
@@ -232,6 +238,10 @@ function DerivTraderPageContent() {
                                 robotPerformance={robotCouncil.robotPerformance}
                                 councilVotes={robotCouncil.councilVotes}
                             />
+                        </TabsContent>
+
+                         <TabsContent value="audit" className="mt-4">
+                            <TradingDecisionLogViewer logs={robotCouncil.tradeDecisionLog} />
                         </TabsContent>
                         
                         <TabsContent value="fame" className="mt-4">

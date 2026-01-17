@@ -219,7 +219,19 @@ export const IndicatorsSchema = z.object({
   rvi: z.number().nullable(),
 });
 
-// Full audit log for a single trade decision
+export const RobotVoteSchema = z.object({
+  vote: z.enum(['RISE', 'FALL', 'HOLD']),
+  confidence: z.number(),
+  weight: z.number(),
+  suggestedStake: z.number(),
+  optimalDuration: z.number(),
+  optimalDurationUnit: z.enum(['t', 's', 'm', 'h', 'd']),
+  reason: z.string(),
+});
+export type RobotVote = z.infer<typeof RobotVoteSchema>;
+
+export type CouncilVotes = Record<string, RobotVote>;
+
 export const TradeDecisionLogSchema = z.object({
   id: z.string(),
   contractId: z.number().optional(),
@@ -227,7 +239,7 @@ export const TradeDecisionLogSchema = z.object({
   asset: z.string(),
   timePeriod: z.custom<TimePeriod>(),
   tradeParams: z.object({
-    direction: z.enum(['RISE', 'FALL']),
+    direction: z.enum(['RISE', 'FALL', 'HOLD']),
     stake: z.number(),
     duration: z.number(),
     durationUnit: z.enum(['t', 's', 'm', 'h', 'd']),
@@ -235,7 +247,7 @@ export const TradeDecisionLogSchema = z.object({
   context: z.object({
     marketRegime: z.string(),
     regimeConfidence: z.number(),
-    microstructure: z.custom<MicrostructureFeatures | null>(),
+    microstructure: z.custom<MicrostructureFeatures | null>().nullable(),
     indicators: IndicatorsSchema.nullable(),
     supervisionReason: z.string().optional(),
     payout: z.number().optional(),
@@ -246,33 +258,15 @@ export const TradeDecisionLogSchema = z.object({
     bayesianProbability: z.number(),
     kellyStake: z.number(),
     activeRobots: z.number(),
-    votes: z.record(z.string(), BayesianVoteSchema),
+    votes: z.record(z.string(), z.union([RobotVoteSchema, BayesianVoteSchema])),
   }),
-  result: z.enum(['pending', 'won', 'lost']),
+  result: z.enum(['pending', 'won', 'lost', 'hold']),
   pnl: z.number(),
   processed: z.boolean().optional(),
 });
 
 export type TradeDecisionLog = z.infer<typeof TradeDecisionLogSchema>;
 
-
-// Voto do robô, que agora inclui sugestões de stake e duração
-export const RobotVoteSchema = z.object({
-  vote: z.enum(['RISE', 'FALL', 'HOLD']),
-  confidence: z.number(),
-  weight: z.number(),
-  suggestedStake: z.number(),
-  optimalDuration: z.number(),
-  optimalDurationUnit: z.enum(['t', 's', 'm', 'h', 'd']),
-  reason: z.string(),
-});
-
-export type RobotVote = z.infer<typeof RobotVoteSchema>;
-
-export type CouncilVotes = Record<string, RobotVote>;
-
-
-// MODIFICADO: usa o novo TradeHistoryEventSchema
 export const RobotPerformanceSchema = z.object({
     id: z.string(),
     strategyType: z.string(),
