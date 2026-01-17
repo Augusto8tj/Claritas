@@ -232,6 +232,16 @@ export type RobotVote = z.infer<typeof RobotVoteSchema>;
 
 export type CouncilVotes = Record<string, RobotVote>;
 
+export const VirtualTradeLogSchema = z.object({
+    robotId: z.string(),
+    robotType: z.string(),
+    vote: z.enum(['RISE', 'FALL']),
+    entryPrice: z.number(),
+    entryEpoch: z.number(),
+    exitEpoch: z.number(),
+});
+export type VirtualTradeLog = z.infer<typeof VirtualTradeLogSchema>;
+
 export const TradeDecisionLogSchema = z.object({
   id: z.string(),
   contractId: z.number().optional(),
@@ -255,10 +265,13 @@ export const TradeDecisionLogSchema = z.object({
     exitPrice: z.number().optional(),
   }),
   consensus: z.object({
-    bayesianProbability: z.number(),
-    kellyStake: z.number(),
+    bayesianProbability: z.number().optional(),
+    kellyStake: z.number().optional(),
+    consensusSum: z.object({rise: z.number(), fall: z.number()}).optional(),
+    consensusThreshold: z.number().optional(),
     activeRobots: z.number(),
     votes: z.record(z.string(), z.union([RobotVoteSchema, BayesianVoteSchema])),
+    virtualTrades: z.array(VirtualTradeLogSchema).optional(),
   }),
   result: z.enum(['pending', 'won', 'lost', 'hold']),
   pnl: z.number(),

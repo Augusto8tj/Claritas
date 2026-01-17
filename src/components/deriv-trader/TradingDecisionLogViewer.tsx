@@ -7,7 +7,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from '@/components/ui/badge';
-import { CheckCircle, XCircle, Bot, Archive, Filter, Trash2, Loader2, TrendingUp, TrendingDown, Brain, Shield, Target, Trophy, CircleDot, FilePieChart, Sigma, HelpCircle as HoldIcon } from 'lucide-react';
+import { CheckCircle, XCircle, Bot, Archive, Filter, Trash2, Loader2, TrendingUp, TrendingDown, Brain, Shield, Target, Trophy, CircleDot, FilePieChart, Sigma, HelpCircle as HoldIcon, Swords } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Separator } from '@/components/ui/separator';
 import { Button } from '@/components/ui/button';
@@ -249,6 +249,24 @@ export default function TradingDecisionLogViewer({
                              <p className='font-semibold flex items-center gap-2 mb-1'><Shield className='h-4 w-4'/>Razão da Supervisão</p>
                              <p className='text-muted-foreground italic text-[11px]'>{log.context.supervisionReason || 'N/A'}</p>
                         </div>
+
+                        {log.consensus.virtualTrades && log.consensus.virtualTrades.length > 0 && (
+                            <div className="space-y-3">
+                                <h4 className='font-semibold flex items-center gap-2 text-sm'><Swords className='h-4 w-4'/> Arena Virtual (Novos Combates)</h4>
+                                <div className="space-y-2 max-h-32 overflow-y-auto pr-2 rounded-md border p-2 bg-background">
+                                    {log.consensus.virtualTrades.map((vtrade, v_idx) => (
+                                        <div key={v_idx} className="flex justify-between items-center text-xs">
+                                            <span className='flex items-center gap-1.5'><Bot className='h-3 w-3'/> {vtrade.robotType}</span>
+                                            <span className={cn(
+                                                'font-bold',
+                                                vtrade.vote === 'RISE' && 'text-green-600',
+                                                vtrade.vote === 'FALL' && 'text-red-600'
+                                            )}>{vtrade.vote}</span>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
 
                         <Separator />
                         
