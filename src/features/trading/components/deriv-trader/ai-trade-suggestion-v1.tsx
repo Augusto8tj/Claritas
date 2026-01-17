@@ -17,7 +17,7 @@ interface AITradeSuggestionV1Props {
     councilDecision: 'RISE' | 'FALL' | 'HOLD';
     consensusSum: { rise: number; fall: number };
     consensusThreshold: number;
-    supervisionStatus: { status: 'inactive' | 'approved' | 'veto'; message: string };
+    supervisionStatus: { status: 'inactive' | 'approved' | 'veto'; message: string; analysis?: string };
     activeCommittee: string | null;
     isAutopilotOn: boolean;
     bayesianProbability?: number; // Propriedade opcional para V2
@@ -128,8 +128,8 @@ export function AITradeSuggestionV1({
         <div className="space-y-3">
             <div>
                 <div className="flex justify-between items-center mb-1 text-xs font-medium">
-                    <span className="text-green-600">Confiança RISE</span>
-                    <span className="text-red-600">Confiança FALL</span>
+                    <span className="text-green-600">Confiança RISE: <span className="font-mono">{Math.round(consensusSum?.rise || 0)}</span></span>
+                    <span className="text-red-600">Confiança FALL: <span className="font-mono">{Math.round(consensusSum?.fall || 0)}</span></span>
                 </div>
                 <div className="flex items-center gap-2">
                     <Progress value={risePercentage} className="h-3 rounded-l-full" indicatorClassName="bg-green-500 rounded-l-full" />
@@ -137,7 +137,7 @@ export function AITradeSuggestionV1({
                 </div>
                 {!isV2 && (
                     <div className="text-center text-xs text-muted-foreground mt-1">
-                        Limiar de Consenso: {consensusThreshold}
+                        Limiar de Consenso: {consensusThreshold} (Soma Atual: {Math.round((consensusSum?.rise || 0) + (consensusSum?.fall || 0))})
                     </div>
                 )}
             </div>
@@ -155,10 +155,15 @@ export function AITradeSuggestionV1({
                         <span className="font-mono font-bold text-primary">${kellyStake.toFixed(2)}</span>
                     </div>
                  )}
-                <div className="flex items-center gap-2">
-                    {supervisionIcons[supervisionStatus.status]}
-                    <span className="font-semibold">Direção de Risco:</span>
-                    <span className="text-muted-foreground">{supervisionStatus.message}</span>
+                <div className="flex items-start gap-2">
+                    <div className="mt-1">{supervisionIcons[supervisionStatus.status]}</div>
+                    <div className="flex-1">
+                        <span className="font-semibold">Direção de Risco:</span>
+                        <span className="text-muted-foreground ml-1">{supervisionStatus.message}</span>
+                        {supervisionStatus.analysis && (
+                            <p className="text-xs text-muted-foreground italic mt-0.5">{supervisionStatus.analysis}</p>
+                        )}
+                    </div>
                 </div>
                 <div className="flex items-center gap-2">
                     <Group className="h-4 w-4 text-muted-foreground"/>

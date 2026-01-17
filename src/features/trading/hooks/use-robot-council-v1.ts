@@ -458,12 +458,28 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
     const dailyPnl = operationsLog.filter(op => new Date(op.timestamp).toDateString() === new Date().toDateString() && op.initiator === 'Conselho').reduce((sum, op) => sum + (op.result || 0), 0);
     
     // 1. Stop Loss / Take Profit Diário
-    if (dailyPnl <= -dailyBalance) { setSupervisionStatus({ status: 'veto', message: 'Stop Loss Diário Atingido.'}); councilExecutionRef.current.isExecuting = false; return; }
-    if (dailyPnl >= dailyTarget) { setSupervisionStatus({ status: 'veto', message: 'Meta Diária Atingida.'}); councilExecutionRef.current.isExecuting = false; return; }
+    if (dailyPnl <= -dailyBalance) { 
+        setSupervisionStatus({ 
+            status: 'veto', 
+            message: 'Stop Loss Diário Atingido.',
+            analysis: `P&L de $${dailyPnl.toFixed(2)} atingiu o limite de -$${dailyBalance.toFixed(2)}.`
+        }); 
+        councilExecutionRef.current.isExecuting = false; 
+        return; 
+    }
+    if (dailyPnl >= dailyTarget) { 
+        setSupervisionStatus({ 
+            status: 'veto', 
+            message: 'Meta Diária Atingida.',
+            analysis: `P&L de $${dailyPnl.toFixed(2)} atingiu a meta de $${dailyTarget.toFixed(2)}.`
+        }); 
+        councilExecutionRef.current.isExecuting = false; 
+        return; 
+    }
 
     // 2. Vantagem Probabilística (Edge)
     if (decision === 'HOLD') {
-      setSupervisionStatus({ status: 'inactive', message: `Aguardando vantagem (> 54%). Atual: ${(consensusProbability*100).toFixed(0)}%`});
+      setSupervisionStatus({ status: 'inactive', message: `Aguardando vantagem (> 54%).`, analysis: `Prob. atual: ${(consensusProbability*100).toFixed(0)}%` });
       councilExecutionRef.current.isExecuting = false; 
       return;
     }
@@ -473,7 +489,11 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
     if(last5Ticks.length === 5) {
         const microMove = last5Ticks[4].price - last5Ticks[0].price;
         if ((decision === 'RISE' && microMove < 0) || (decision === 'FALL' && microMove > 0)) {
-             setSupervisionStatus({ status: 'veto', message: `Veto: Micro-movimento contrário.`});
+             setSupervisionStatus({ 
+                 status: 'veto', 
+                 message: `Veto: Micro-movimento contrário.`,
+                 analysis: `Consenso ${decision}, mas os últimos 5 ticks moveram na direção oposta.`
+             });
              councilExecutionRef.current.isExecuting = false;
              return;
         }
@@ -490,12 +510,16 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
     let stake = Math.max(0.35, Math.min(dailyBalance * 0.05, dailyBalance * kellyFraction * 0.25));
 
     if (stake < 0.35) {
-        setSupervisionStatus({ status: 'inactive', message: 'Stake de Kelly abaixo do mínimo.'});
+        setSupervisionStatus({ status: 'inactive', message: 'Stake de Kelly abaixo do mínimo.', analysis: `Stake calculado $${stake.toFixed(2)}.`});
         councilExecutionRef.current.isExecuting = false;
         return;
     }
     
-    setSupervisionStatus({ status: 'approved', message: `Aprovado (Kelly Stake: $${stake.toFixed(2)})` });
+    setSupervisionStatus({ 
+        status: 'approved', 
+        message: `Aprovado para execução.`,
+        analysis: `Kelly Stake: $${stake.toFixed(2)}. Prob. Consenso: ${(consensusProbability * 100).toFixed(1)}%.` 
+    });
 
     if (totalVoteWeight > 0) {
         const votingRobots = Object.values(newVotes).filter(v => v.vote === decision);
