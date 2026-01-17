@@ -119,44 +119,19 @@ const IsolatedMarketChart = () => {
 const DerivTraderV3Core = () => {
     const { activeSymbol, priceTicks, dataVersion, operationsLog, sellContract, chartData } = useDerivApiV3();
     const robotCouncil = useRobotCouncilV3(activeSymbol, priceTicks, chartData, dataVersion);
-    const [mobileTab, setMobileTab] = React.useState("negociar");
-    const [desktopTab, setDesktopTab] = React.useState("arena");
 
     return (
         <div className="space-y-6 mt-6">
             {/* Mobile View */}
-            <div className="lg:hidden">
-                <Tabs value={mobileTab} onValueChange={setMobileTab}>
-                    <TabsList className="grid w-full grid-cols-6">
-                        <TabsTrigger value="negociar" aria-label="Negociar"><CandlestickChart className="h-4 w-4" /></TabsTrigger>
-                        <TabsTrigger value="piloto" aria-label="Piloto IA"><Bot className="h-4 w-4" /></TabsTrigger>
-                        <TabsTrigger value="arena" aria-label="Arena"><Swords className="h-4 w-4" /></TabsTrigger>
-                        <TabsTrigger value="logs" aria-label="Logs"><Archive className="h-4 w-4" /></TabsTrigger>
-                        <TabsTrigger value="debug" aria-label="Debug"><BrainCircuit className="h-4 w-4" /></TabsTrigger>
-                        <TabsTrigger value="evolucao" aria-label="Evolução"><Dna className="h-4 w-4" /></TabsTrigger>
-                    </TabsList>
-                    
-                    <TabsContent value="negociar" className="mt-4 space-y-6">
-                        <DerivTraderInterfaceV3 symbol={activeSymbol || ""} />
-                        <CouncilDashboardV3 councilState={robotCouncil} />
-                    </TabsContent>
-                    <TabsContent value="piloto" className="mt-4">
-                        <CouncilAutopilotInterfaceV3 {...robotCouncil} />
-                    </TabsContent>
-                    <TabsContent value="arena" className="mt-4">
-                        <TradingDeskV2 councilState={robotCouncil} />
-                    </TabsContent>
-                    <TabsContent value="logs" className="mt-4 space-y-6">
-                        <OperationsLogV3 operations={operationsLog} sellContract={sellContract} />
-                        <TradingDecisionLogViewer logs={robotCouncil.tradeDecisionLog} showFilters={false} />
-                    </TabsContent>
-                    <TabsContent value="debug" className="mt-4">
-                        <DebugCouncilViewV3 councilState={robotCouncil} isCouncilAutopilotOn={robotCouncil.isCouncilAutopilotOn} />
-                    </TabsContent>
-                    <TabsContent value="evolucao" className="mt-4">
-                        <EvolutionLabV3 {...robotCouncil} />
-                    </TabsContent>
-                </Tabs>
+            <div className="lg:hidden mt-6 space-y-6">
+                <DerivTraderInterfaceV3 symbol={activeSymbol || ""} />
+                <CouncilDashboardV3 councilState={robotCouncil} />
+                <CouncilAutopilotInterfaceV3 {...robotCouncil} />
+                <OperationsLogV3 operations={operationsLog} sellContract={sellContract} />
+                <TradingDeskV2 councilState={robotCouncil} />
+                <DebugCouncilViewV3 councilState={robotCouncil} isCouncilAutopilotOn={robotCouncil.isCouncilAutopilotOn} />
+                <EvolutionLabV3 {...robotCouncil} />
+                <TradingDecisionLogViewer logs={robotCouncil.tradeDecisionLog} showFilters={false} />
             </div>
 
             {/* Desktop View */}

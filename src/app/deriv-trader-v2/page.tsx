@@ -125,38 +125,15 @@ const DerivTraderV2Core = () => {
     return (
         <div className="space-y-6 mt-6">
             {/* Mobile View */}
-            <div className="lg:hidden">
-                 <Tabs value={mobileTab} onValueChange={setMobileTab}>
-                    <TabsList className="grid w-full grid-cols-6">
-                        <TabsTrigger value="negociar" aria-label="Negociar"><CandlestickChart className="h-4 w-4" /></TabsTrigger>
-                        <TabsTrigger value="piloto" aria-label="Piloto IA"><Bot className="h-4 w-4" /></TabsTrigger>
-                        <TabsTrigger value="arena" aria-label="Arena"><Swords className="h-4 w-4" /></TabsTrigger>
-                        <TabsTrigger value="logs" aria-label="Logs"><Archive className="h-4 w-4" /></TabsTrigger>
-                        <TabsTrigger value="debug" aria-label="Debug"><BrainCircuit className="h-4 w-4" /></TabsTrigger>
-                        <TabsTrigger value="evolucao" aria-label="Evolução"><Dna className="h-4 w-4" /></TabsTrigger>
-                    </TabsList>
-
-                    <TabsContent value="negociar" className="mt-4 space-y-6">
-                        <DerivTraderInterfaceV2 symbol={activeSymbol || ""} />
-                        <CouncilDashboardV2 consensusDecision={robotCouncil.consensusDecision} supervisionStatus={robotCouncil.supervisionStatus} activeCommittee={robotCouncil.currentRegime.regime} isCouncilAutopilotOn={robotCouncil.isCouncilAutopilotOn} />
-                    </TabsContent>
-                    <TabsContent value="piloto" className="mt-4">
-                        <CouncilAutopilotInterfaceV2 {...robotCouncil} />
-                    </TabsContent>
-                    <TabsContent value="arena" className="mt-4">
-                        <TradingDeskV2 councilState={robotCouncil} />
-                    </TabsContent>
-                    <TabsContent value="logs" className="mt-4 space-y-6">
-                        <OperationsLogV2 operations={operationsLog} sellContract={sellContract} priceTicks={priceTicks} />
-                        <TradingDecisionLogViewer logs={robotCouncil.tradeDecisionLog} showFilters={false} />
-                    </TabsContent>
-                    <TabsContent value="debug" className="mt-4">
-                        <DebugCouncilViewV2 councilState={robotCouncil} isCouncilAutopilotOn={robotCouncil.isCouncilAutopilotOn} />
-                    </TabsContent>
-                    <TabsContent value="evolucao" className="mt-4">
-                         <EvolutionLabV2 history={robotCouncil.evolutionHistory} resetEvolutionHistory={robotCouncil.resetEvolutionHistory} deleteSingleEvolution={robotCouncil.deleteSingleEvolution} currentGeneration={robotCouncil.currentGeneration} tradesUntilEvolution={robotCouncil.tradesUntilEvolution} tradeCounts={robotCouncil.tradeCounts} />
-                    </TabsContent>
-                </Tabs>
+            <div className="lg:hidden mt-6 space-y-6">
+                <DerivTraderInterfaceV2 symbol={activeSymbol || ""} />
+                <CouncilDashboardV2 consensusDecision={robotCouncil.consensusDecision} supervisionStatus={robotCouncil.supervisionStatus} activeCommittee={robotCouncil.currentRegime.regime} isCouncilAutopilotOn={robotCouncil.isCouncilAutopilotOn} />
+                <CouncilAutopilotInterfaceV2 {...robotCouncil} />
+                <OperationsLogV2 operations={operationsLog} sellContract={sellContract} priceTicks={priceTicks} />
+                <TradingDeskV2 councilState={robotCouncil} />
+                <DebugCouncilViewV2 councilState={robotCouncil} isCouncilAutopilotOn={robotCouncil.isCouncilAutopilotOn} />
+                <EvolutionLabV2 history={robotCouncil.evolutionHistory} resetEvolutionHistory={robotCouncil.resetEvolutionHistory} deleteSingleEvolution={robotCouncil.deleteSingleEvolution} currentGeneration={robotCouncil.currentGeneration} tradesUntilEvolution={robotCouncil.tradesUntilEvolution} tradeCounts={robotCouncil.tradeCounts} />
+                <TradingDecisionLogViewer logs={robotCouncil.tradeDecisionLog} showFilters={false} />
             </div>
 
             {/* Desktop View */}
