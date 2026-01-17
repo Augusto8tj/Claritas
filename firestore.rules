@@ -16,7 +16,9 @@ service cloud.firestore {
     // - /users/{userId}/performance_v1/robot_council
     // - /users/{userId}/evolution_v2/history
     match /users/{userId}/{document=**} {
-      allow read, write: if request.auth.uid == userId;
+      // Adicionado 'delete' explicitamente para garantir permissão de exclusão.
+      // A permissão 'write' já inclui 'create', 'update', e 'delete'.
+      allow read, write, delete: if request.auth.uid == userId;
     }
   }
 }
