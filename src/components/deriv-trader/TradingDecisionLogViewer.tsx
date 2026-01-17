@@ -94,7 +94,7 @@ export default function TradingDecisionLogViewer({
         "ID", "Timestamp", "Asset", "Time Period", "Direction", "Stake", "Duration", 
         "Duration Unit", "Result", "PnL", "Entry Price", "Exit Price", "Payout",
         "Market Regime", "Regime Confidence", "Supervision Reason",
-        "Bayesian Probability", "Kelly Stake", "Active Robots",
+        "Bayesian Probability / Consensus Sum Rise", "Kelly Stake / Consensus Sum Fall", "Active Robots",
     ];
     
     const rows = logs.map(log => [
@@ -112,10 +112,10 @@ export default function TradingDecisionLogViewer({
         log.context.exitPrice?.toFixed(4) || 'N/A',
         log.context.payout?.toFixed(2) || 'N/A',
         log.context.marketRegime, 
-        log.context.regimeConfidence.toFixed(4),
+        log.context.regimeConfidence?.toFixed(4) || 'N/A',
         `"${log.context.supervisionReason?.replace(/"/g, '""') || 'N/A'}"`,
-        log.consensus.bayesianProbability.toFixed(4),
-        log.consensus.kellyStake.toFixed(2),
+        log.consensus.bayesianProbability?.toFixed(4) || log.consensus.consensusSum?.rise.toFixed(2) || 'N/A',
+        log.consensus.kellyStake?.toFixed(2) || log.consensus.consensusSum?.fall.toFixed(2) || 'N/A',
         log.consensus.activeRobots,
     ].join(',')).join('\n');
 
@@ -166,7 +166,9 @@ export default function TradingDecisionLogViewer({
           </div>
         ) : (
             <Accordion type="single" collapsible className="w-full" defaultValue="item-0">
-              {logs.map((log, index) => (
+              {logs.map((log, index) => {
+                const isV1 = log.consensus.consensusSum !== undefined;
+                return (
                 <AccordionItem value={`item-${index}`} key={log.id}>
                   <div className="flex items-center group">
                       <AccordionTrigger className="flex-1">
@@ -216,38 +218,36 @@ export default function TradingDecisionLogViewer({
                   <AccordionContent>
                     <div className="space-y-4 text-xs p-2 bg-muted/50 rounded-md">
                         <div className='grid grid-cols-2 lg:grid-cols-4 gap-2 text-center'>
-                             <div className='p-2 bg-background rounded'>
-                                <p className='text-muted-foreground'>Prob. Bayesiana</p>
-                                <p className='font-bold text-base text-primary'>{(log.consensus.bayesianProbability * 100).toFixed(1)}%</p>
-                            </div>
+                            {isV1 ? (
+                                <>
+                                 <div className='p-2 bg-background rounded'>
+                                    <p className='text-muted-foreground'>Consenso</p>
+                                    <p className='font-bold text-base text-primary'>{(log.consensus.consensusSum?.rise || 0).toFixed(0)} / {(log.consensus.consensusSum?.fall || 0).toFixed(0)}</p>
+                                </div>
+                                <div className='p-2 bg-background rounded'>
+                                    <p className='text-muted-foreground'>Limiar</p>
+                                    <p className='font-bold text-base'>{log.consensus.consensusThreshold}</p>
+                                </div>
+                                </>
+                            ) : (
+                                <div className='p-2 bg-background rounded'>
+                                    <p className='text-muted-foreground'>Prob. Bayesiana</p>
+                                    <p className='font-bold text-base text-primary'>{((log.consensus.bayesianProbability || 0) * 100).toFixed(1)}%</p>
+                                </div>
+                            )}
                              <div className='p-2 bg-background rounded'>
                                 <p className='text-muted-foreground'>Regime Mercado</p>
                                 <p className='font-bold text-base'>{log.context.marketRegime}</p>
                             </div>
-                            <div className='p-2 bg-background rounded'>
-                                <p className='text-muted-foreground'>Preço Entrada</p>
-                                <p className='font-bold text-base'>{log.context.entryPrice?.toFixed(4) || 'N/A'}</p>
-                            </div>
                              <div className='p-2 bg-background rounded'>
-                                <p className='text-muted-foreground'>Preço Saída</p>
-                                <p className='font-bold text-base'>{log.context.exitPrice?.toFixed(4) || 'N/A'}</p>
+                                <p className='text-muted-foreground'>Stake {isV1 ? '(Base)' : '(Kelly)'}</p>
+                                <p className='font-bold text-base'>${log.tradeParams.stake.toFixed(2)}</p>
                             </div>
                         </div>
 
                         <div className="p-2 bg-background rounded">
                              <p className='font-semibold flex items-center gap-2 mb-1'><Shield className='h-4 w-4'/>Razão da Supervisão</p>
                              <p className='text-muted-foreground italic text-[11px]'>{log.context.supervisionReason || 'N/A'}</p>
-                        </div>
-                        
-                        <div className='grid grid-cols-2 gap-2 text-center'>
-                             <div className='p-2 bg-background rounded'>
-                                <p className='text-muted-foreground'>Stake (Kelly)</p>
-                                <p className='font-bold text-base'>${log.consensus.kellyStake.toFixed(2)}</p>
-                            </div>
-                             <div className='p-2 bg-background rounded'>
-                                <p className='text-muted-foreground'>Payout Esperado</p>
-                                <p className='font-bold text-base'>${log.context.payout?.toFixed(2) || 'N/A'}</p>
-                            </div>
                         </div>
 
                         <Separator />
@@ -265,24 +265,17 @@ export default function TradingDecisionLogViewer({
                                     </div>
                                     <p className='text-muted-foreground italic text-[11px] pl-5'>Motivo: {voteData.reason}</p>
                                     <p className='text-muted-foreground italic text-[11px] pl-5'>Params: {renderStrategyParams(voteData.strategy)}</p>
-
-                                    <div className='grid grid-cols-3 gap-1 pl-5 text-[11px] mt-1'>
-                                        <span>Conf: {((voteData as any).rawConfidence || (voteData as any).confidence || 0).toFixed(0)}</span>
-                                        <span>Bayes: {(((voteData as any).bayesianProbability || 0) * 100).toFixed(0)}%</span>
-                                        <span className='flex items-center gap-1'>Sharpe: <Trophy className='h-3 w-3 text-amber-500' /> {((voteData as any).sharpeRatio || 0).toFixed(2)}</span>
-                                    </div>
                                 </div>
                              ))}
                         </div>
                     </div>
                   </AccordionContent>
                 </AccordionItem>
-              ))}
+                )
+            })}
             </Accordion>
         )}
       </CardContent>
     </Card>
   );
 };
-
-    

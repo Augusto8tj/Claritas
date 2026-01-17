@@ -243,7 +243,7 @@ export async function saveRobotPerformance(
     const docRef = doc(db, 'users', userId, `performance_${version}`, 'robot_council');
     const sanitizedData = sanitizeForFirestore({
         updatedAt: new Date().toISOString(),
-        data: performance, // Use um nome de campo genérico
+        robots: performance,
     });
     
     setDoc(docRef, sanitizedData, { merge: true })
@@ -264,7 +264,7 @@ export async function loadRobotPerformance(userId: string, version: Version): Pr
     const docSnap = await getDoc(docRef);
     if (docSnap.exists()) {
       const data = docSnap.data();
-      return (data.data || []).map((robot: any) => ({
+      return (data.robots || []).map((robot: any) => ({
         ...robot,
         tradeHistory: robot.tradeHistory || [],
       }));
@@ -276,7 +276,7 @@ export async function loadRobotPerformance(userId: string, version: Version): Pr
   }
 };
 
-export async function saveTradeDecision(userId: string, log: TradeDecisionLog, version: 'v1' | 'v2' = 'v2') {
+export async function saveTradeDecision(userId: string, log: TradeDecisionLog, version: 'v1' | 'v2' | 'v3' = 'v2') {
     if (!userId) return;
     const collectionName = `decision_logs_${version}`;
     const logCollectionRef = collection(db, 'users', userId, collectionName);
@@ -285,7 +285,7 @@ export async function saveTradeDecision(userId: string, log: TradeDecisionLog, v
     setDocumentNonBlocking(logDocRef, sanitizedLog, { merge: true });
 }
 
-export async function getTradeDecisionLogs(userId: string, version: 'v1' | 'v2' = 'v2'): Promise<TradeDecisionLog[]> {
+export async function getTradeDecisionLogs(userId: string, version: 'v1' | 'v2' | 'v3' = 'v2'): Promise<TradeDecisionLog[]> {
     if (!userId) {
         return [];
     }
