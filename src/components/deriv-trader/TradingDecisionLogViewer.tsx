@@ -75,7 +75,7 @@ interface TradingDecisionLogViewerProps {
 }
 
 export default function TradingDecisionLogViewer({
-  logs,
+  logs = [],
   onDeleteLog,
   deletingLogId,
   showFilters = true
