@@ -210,6 +210,7 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
   
   const [strategyCouncil, setStrategyCouncil] = useState<RobotStrategy[]>([]);
   const [isCouncilAutopilotOn, setIsCouncilAutopilotOn] = useState(false);
+  const [isAuditingOn, setIsAuditingOn] = useState(true);
   const [isFetchingCouncil, setIsFetchingCouncil] = useState(false);
   const [councilVotes, setCouncilVotes] = useState<CouncilVotes>({});
   const [dailyBalance, setDailyBalance] = useState(100);
@@ -314,7 +315,6 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
     }
     toast({ title: 'Mesa Operacional V1.8 Ativada', description: `${evolvedStrategies.length} robôs prontos para análise.` });
     setIsCouncilAutopilotOn(true);
-    setIsFetchingCouncil(false);
   }, [activeSymbol, user, toast, evolvedStrategies, robotPerformance.length, resetArenaPerformance]);
 
 
@@ -336,7 +336,6 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
   }, [chartData, priceTicks, dataVersion]);
 
   useEffect(() => {
-    // BUG FIX: Adicionado '!durationLimits' para evitar condição de corrida.
     if (!isConnected || !user || !isCouncilAutopilotOn || !durationLimits || strategyCouncil.length === 0 || !activeSymbol || tickCandles.length < 2) return;
 
     if (councilExecutionRef.current.isExecuting) return; 
@@ -535,7 +534,7 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
         }
     }
     
-    if (user) {
+    if (isAuditingOn && user) {
         const logId = `log-${Date.now()}`;
         const baseLog: Omit<TradeDecisionLog, 'id' | 'contractId'> & {result: 'hold' | 'pending'} = {
             timestamp: new Date().toISOString(),
@@ -602,13 +601,44 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
 
     councilExecutionRef.current.isExecuting = false;
   }, [
-      dataVersion, isConnected, user, isCouncilAutopilotOn, durationLimits, strategyCouncil, robotPerformance, isMeritocracyOn, activeSymbol, operationsLog, toast, executeTrade, timePeriod, evolveTrigger, tickCandles, form, dailyBalance, dailyTarget, consensusThreshold, isDynamicConsensusOn
+      dataVersion, isConnected, user, isCouncilAutopilotOn, durationLimits, strategyCouncil, robotPerformance, isMeritocracyOn, activeSymbol, operationsLog, toast, executeTrade, timePeriod, evolveTrigger, tickCandles, form, dailyBalance, dailyTarget, consensusThreshold, isDynamicConsensusOn, isAuditingOn
   ]);
 
    // O 'isDynamicConsensusOn' e 'isDynamicRiskOn' são sempre verdadeiros nesta nova lógica,
    // mas mantemos as props para compatibilidade com a UI, apenas desabilitando as switches.
   return {
-    isCouncilAutopilotOn, setIsCouncilAutopilotOn, strategyCouncil, fetchStrategyCouncil, dissolveCouncil, isFetchingCouncil, councilVotes, dailyBalance, setDailyBalance, dailyTarget, setDailyTarget, consensusThreshold, setConsensusThreshold, isDynamicConsensusOn, setIsDynamicConsensusOn, isDynamicRiskOn, setIsDynamicRiskOn, isMeritocracyOn, setIsMeritocracyOn, isStopLossOn, setIsStopLossOn, indicators, activeCommittee, supervisionStatus, consensusSum, consensusDecision, robotPerformance, evolutionHistory, 
-    isInversionModeOn, setIsInversionModeOn, tradeDecisionLog,
+    isCouncilAutopilotOn,
+    setIsCouncilAutopilotOn,
+    strategyCouncil,
+    fetchStrategyCouncil,
+    dissolveCouncil,
+    isFetchingCouncil,
+    councilVotes,
+    dailyBalance,
+    setDailyBalance,
+    dailyTarget,
+    setDailyTarget,
+    consensusThreshold,
+    setConsensusThreshold,
+    isDynamicConsensusOn,
+    setIsDynamicConsensusOn,
+    isDynamicRiskOn,
+    setIsDynamicRiskOn,
+    isMeritocracyOn,
+    setIsMeritocracyOn,
+    isStopLossOn,
+    setIsStopLossOn,
+    indicators,
+    activeCommittee,
+    supervisionStatus,
+    consensusSum,
+    consensusDecision,
+    robotPerformance,
+    evolutionHistory,
+    isInversionModeOn,
+    setIsInversionModeOn,
+    tradeDecisionLog,
+    isAuditingOn,
+    setIsAuditingOn,
   };
 }

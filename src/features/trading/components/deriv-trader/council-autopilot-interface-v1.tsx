@@ -95,6 +95,8 @@ export const CouncilAutopilotInterfaceV1: React.FC<CouncilAutopilotInterfaceV1Pr
     setIsStopLossOn,
     isInversionModeOn,
     setIsInversionModeOn,
+    isAuditingOn,
+    setIsAuditingOn,
     indicators,
     activeCommittee,
     supervisionStatus,
@@ -299,10 +301,14 @@ export const CouncilAutopilotInterfaceV1: React.FC<CouncilAutopilotInterfaceV1Pr
                 <Switch id="dynamic-risk-switch" checked={isDynamicRiskOn} onCheckedChange={setIsDynamicRiskOn} disabled={isCouncilAutopilotOn} />
             </div>
             <div className="flex items-center justify-between">
+                <Label htmlFor="auditing-switch" className="flex-1">Auditoria Cognitiva Ativada</Label>
+                <Switch id="auditing-switch" checked={isAuditingOn} onCheckedChange={setIsAuditingOn} disabled={!isCouncilAutopilotOn} />
+            </div>
+            <div className="flex items-center justify-between">
                 <Label htmlFor="stop-loss-switch" className="flex-1">Stop-Loss Dinâmico</Label>
                 <Switch id="stop-loss-switch" checked={isCouncilAutopilotOn} onCheckedChange={() => {}} disabled={true} />
             </div>
-             <div className="flex items-center justify-between">
+             <div className="flex items-start justify-between">
                 <Label htmlFor="inversion-mode-switch" className="flex flex-col space-y-1 flex-1">
                     <span>Inverter Decisões (Modo Contrário)</span>
                     <span className="font-normal leading-snug text-muted-foreground text-xs">
