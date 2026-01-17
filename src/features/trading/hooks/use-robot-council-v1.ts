@@ -45,7 +45,7 @@ import { useToast } from '@/hooks/use-toast';
 import type { RobotStrategy, ChartData, TickData, CandleData, DurationUnit, RobotVote as RobotVoteType, CouncilVotes, RobotPerformance as RobotPerformanceType, Operation, TradeDecisionLog } from '@/lib/types';
 import type { RiseFallFormValues } from '@/features/trading/components/deriv-trader/deriv-trader-interface-v1.types';
 import { useFormContext } from 'react-hook-form';
-import type { Indicators } from '@/services/indicator-service';
+import type { Indicators } from '@/services/indicator-service-v1';
 import { calculateAllIndicators } from '@/services/indicator-service';
 import { initialCouncilStrategies } from '@/services/council-strategies';
 import { useAuth } from '@/features/auth/hooks/use-auth';
@@ -155,6 +155,18 @@ const calculateRobotVote = (
         if (indicators.stoch! <= robot.strongBuyThreshold!) setVote('RISE', robot.strongConfidence, `Stoch(${indicators.stoch!.toFixed(1)}) < ${robot.strongBuyThreshold}`);
         if (indicators.stoch! >= robot.weakSellThreshold!) setVote('FALL', robot.weakConfidence, `Stoch(${indicators.stoch!.toFixed(1)}) > ${robot.weakSellThreshold}`);
         if (indicators.stoch! >= robot.strongSellThreshold!) setVote('FALL', robot.strongConfidence, `Stoch(${indicators.stoch!.toFixed(1)}) > ${robot.strongSellThreshold}`);
+    }
+    
+    if (robot.strategyType === 'STOCH_RSI' && isValid(indicators.stochRSI)) {
+        if (indicators.stochRSI! <= robot.strongBuyThreshold!) setVote('RISE', robot.strongConfidence, `StochRSI(${indicators.stochRSI!.toFixed(2)}) em sobrevenda extrema`);
+        else if (indicators.stochRSI! <= robot.weakBuyThreshold!) setVote('RISE', robot.weakConfidence, `StochRSI(${indicators.stochRSI!.toFixed(2)}) em sobrevenda`);
+        if (indicators.stochRSI! >= robot.strongSellThreshold!) setVote('FALL', robot.strongConfidence, `StochRSI(${indicators.stochRSI!.toFixed(2)}) em sobrecompra extrema`);
+        else if (indicators.stochRSI! >= robot.weakSellThreshold!) setVote('FALL', robot.weakConfidence, `StochRSI(${indicators.stochRSI!.toFixed(2)}) em sobrecompra`);
+    }
+
+    if (robot.strategyType === 'Z_SCORE' && isValid(indicators.zScore)) {
+        if (indicators.zScore! <= -(robot.zScoreThreshold || 2.0)) setVote('RISE', robot.strongConfidence, `Z-Score (${indicators.zScore!.toFixed(2)}) indica reversão à média`);
+        if (indicators.zScore! >= (robot.zScoreThreshold || 2.0)) setVote('FALL', robot.strongConfidence, `Z-Score (${indicators.zScore!.toFixed(2)}) indica reversão à média`);
     }
 
     if (robot.strategyType === 'MOVING_AVERAGE_CROSS' && isValid(indicators.ma.short) && isValid(indicators.ma.long)) {
