@@ -151,7 +151,7 @@ export default function AuditLogPage() {
     const logCollectionRef = collection(db, 'decision_logs');
 
     try {
-        const q = query(logCollectionRef, limit(400));
+        const q = query(logCollectionRef, limit(100));
         const snapshot = await getDocs(q);
         
         if (snapshot.empty) {
@@ -270,15 +270,15 @@ export default function AuditLogPage() {
                 <AlertDialogTrigger asChild>
                     <Button variant="destructive" className="w-full">
                         <Trash2 className="mr-2 h-4 w-4" />
-                        Apagar Lote de Logs Legados (até 400)
+                        Apagar Lote de Logs Legados (até 100)
                     </Button>
                 </AlertDialogTrigger>
                 <AlertDialogContent>
                     <AlertDialogHeader>
                         <AlertDialogTitle>Tem a certeza absoluta?</AlertDialogTitle>
                         <AlertDialogDescription>
-                            Esta ação tentará apagar um lote de até 400 documentos da coleção obsoleta 'decision_logs'. 
-                            Esta operação é intensiva e irá falhar se as regras de segurança não permitirem (ver próximo passo).
+                            Esta ação tentará apagar um lote de até 100 documentos da coleção obsoleta 'decision_logs'. 
+                            Esta operação é intensiva e irá falhar se as regras de segurança não permitirem.
                         </AlertDialogDescription>
                     </AlertDialogHeader>
                     <AlertDialogFooter>
