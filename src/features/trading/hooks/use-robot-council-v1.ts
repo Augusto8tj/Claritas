@@ -304,21 +304,28 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
       return;
     }
     setIsFetchingCouncil(true);
-    virtualTradesRef.current = [];
-    tradeCounterRef.current = 0;
-    await new Promise(r => setTimeout(r, 500));
-    setStrategyCouncil(evolvedStrategies as RobotStrategy[]);
-    if (robotPerformance.length === 0) {
-      const initialPerformance = (evolvedStrategies as RobotStrategy[]).map(robot => ({ id: robot.id, strategyType: robot.strategyType, strategy: robot, wins: 0, losses: 0, totalProfit: 0, winRate: 0, sharpeRatio: 0, tradeHistory: [] }));
-      setRobotPerformance(initialPerformance);
-      await saveRobotPerformance(user.uid, initialPerformance, 'v1');
+    try {
+        virtualTradesRef.current = [];
+        tradeCounterRef.current = 0;
+        await new Promise(r => setTimeout(r, 500));
+        setStrategyCouncil(evolvedStrategies as RobotStrategy[]);
+        if (robotPerformance.length === 0) {
+          const initialPerformance = (evolvedStrategies as RobotStrategy[]).map(robot => ({ id: robot.id, strategyType: robot.strategyType, strategy: robot, wins: 0, losses: 0, totalProfit: 0, winRate: 0, sharpeRatio: 0, tradeHistory: [] }));
+          setRobotPerformance(initialPerformance);
+          await saveRobotPerformance(user.uid, initialPerformance, 'v1');
+        }
+        toast({ title: 'Mesa Operacional V1.8 Ativada', description: `${evolvedStrategies.length} robôs prontos para análise.` });
+        setIsCouncilAutopilotOn(true);
+    } catch (error) {
+        console.error("Error fetching strategy council:", error);
+        toast({ title: "Erro ao ativar a mesa", description: "Não foi possível iniciar a mesa operacional.", variant: "destructive"});
+    } finally {
+        setIsFetchingCouncil(false);
     }
-    toast({ title: 'Mesa Operacional V1.8 Ativada', description: `${evolvedStrategies.length} robôs prontos para análise.` });
-    setIsCouncilAutopilotOn(true);
   }, [activeSymbol, user, toast, evolvedStrategies, robotPerformance.length, resetArenaPerformance]);
 
 
-  const dissolveCouncil = () => {
+  const dissolveCouncil = useCallback(() => {
     if (hasPendingChangesRef.current && user) {
         saveRobotPerformance(user.uid, robotPerformance, 'v1');
         hasPendingChangesRef.current = false;
@@ -327,7 +334,7 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
     setCouncilVotes({});
     setIsCouncilAutopilotOn(false);
     virtualTradesRef.current = [];
-  };
+  }, [user, robotPerformance]);
   
   const tickCandles = useMemo(() => {
       const source = chartData.length > 0 ? chartData : priceTicks;
