@@ -52,14 +52,8 @@ function DerivTraderPageContent() {
         sellContract,
     } = useDerivApiV1();
     
-    const robotCouncil = useRobotCouncilV1(activeSymbol, priceTicks, chartData);
-    const [activeTab, setActiveTab] = React.useState("trade");
-
-    React.useEffect(() => {
-        if (robotCouncil.isCouncilAutopilotOn) {
-            setActiveTab("desk");
-        }
-    }, [robotCouncil.isCouncilAutopilotOn]);
+    const robotCouncil = useRobotCouncilV1(activeSymbol, priceTicks, chartData, 0); // dataVersion is 0 for v1
+    const [desktopTab, setDesktopTab] = React.useState("log");
 
 
     const handleAssetChange = (asset: string) => {
@@ -163,7 +157,7 @@ function DerivTraderPageContent() {
                                 </div>
                             </div>
                             <div className="mt-6">
-                                <Tabs defaultValue={"log"} value={activeTab} onValueChange={setActiveTab}>
+                                <Tabs defaultValue={"log"} value={desktopTab} onValueChange={setDesktopTab}>
                                     <TabsList className="grid w-full grid-cols-5">
                                         <TabsTrigger value="log"><NotepadText className="w-4 h-4 mr-2"/>Registo</TabsTrigger>
                                         <TabsTrigger value="desk"><LayoutGrid className="w-4 h-4 mr-2"/>Arena</TabsTrigger>
@@ -184,7 +178,7 @@ function DerivTraderPageContent() {
                                         />
                                     </TabsContent>
                                      <TabsContent value="audit" className="mt-4">
-                                        <TradingDecisionLogViewer logs={robotCouncil.tradeDecisionLog} />
+                                        <TradingDecisionLogViewer logs={robotCouncil.tradeDecisionLog || []} />
                                     </TabsContent>
                                     <TabsContent value="fame" className="mt-4">
                                         <HallOfFame />
@@ -201,61 +195,29 @@ function DerivTraderPageContent() {
                         </div>
                 </div>
 
-                <div className="lg:hidden mt-6">
-                    <Tabs value={activeTab} onValueChange={setActiveTab}>
-                        <TabsList className="grid w-full grid-cols-6">
-                            <TabsTrigger value="trade" aria-label="Negociar"><CandlestickChart className="w-4 h-4"/></TabsTrigger>
-                            <TabsTrigger value="autopilot" aria-label="Piloto Automático"><Bot className="w-4 h-4"/></TabsTrigger>
-                            <TabsTrigger value="desk" aria-label="Mesa de Operações"><LayoutGrid className="w-4 h-4"/></TabsTrigger>
-                            <TabsTrigger value="audit" aria-label="Auditoria"><Archive className="w-4 h-4" /></TabsTrigger>
-                            <TabsTrigger value="fame" aria-label="Hall da Fama"><Trophy className="w-4 h-4"/></TabsTrigger>
-                            <TabsTrigger value="evolution" aria-label="Evolução"><Dna className="w-4 h-4" /></TabsTrigger>
-                            <TabsTrigger value="log" aria-label="Registo de Operações"><NotepadText className="w-4 h-4"/></TabsTrigger>
-                        </TabsList>
-
-                        <TabsContent value="trade" className="mt-4 space-y-6">
-                            <DerivTraderInterfaceV1 symbol={activeSymbol || ""} />
-                            <AITradeSuggestionV1
-                                councilDecision={robotCouncil.consensusDecision}
-                                consensusSum={robotCouncil.consensusSum}
-                                consensusThreshold={robotCouncil.consensusThreshold}
-                                supervisionStatus={robotCouncil.supervisionStatus}
-                                activeCommittee={robotCouncil.activeCommittee}
-                                isAutopilotOn={robotCouncil.isCouncilAutopilotOn}
-                            />
-                            <AIAnalysisInterfaceV1 symbol={activeSymbol} />
-                        </TabsContent>
-
-                        <TabsContent value="autopilot" className="mt-4 space-y-6">
-                            <CouncilAutopilotInterfaceV1 {...robotCouncil} />
-                        </TabsContent>
-
-                        <TabsContent value="desk" className="mt-4">
-                            <TradingDesk 
-                                isMeritocracyOn={robotCouncil.isMeritocracyOn}
-                                setIsMeritocracyOn={robotCouncil.setIsMeritocracyOn}
-                                isCouncilAutopilotOn={robotCouncil.isCouncilAutopilotOn}
-                                robotPerformance={robotCouncil.robotPerformance}
-                                councilVotes={robotCouncil.councilVotes}
-                            />
-                        </TabsContent>
-
-                         <TabsContent value="audit" className="mt-4">
-                            <TradingDecisionLogViewer logs={robotCouncil.tradeDecisionLog} />
-                        </TabsContent>
-                        
-                        <TabsContent value="fame" className="mt-4">
-                            <HallOfFame />
-                        </TabsContent>
-                        
-                        <TabsContent value="evolution" className="mt-4">
-                            <EvolutionLabV1 history={robotCouncil.evolutionHistory} />
-                        </TabsContent>
-
-                        <TabsContent value="log" className="mt-4 space-y-6">
-                            <OperationsLogV1 operations={operationsLog} sellContract={sellContract} priceTicks={priceTicks} />
-                        </TabsContent>
-                    </Tabs>
+                <div className="lg:hidden mt-6 space-y-6">
+                    <DerivTraderInterfaceV1 symbol={activeSymbol || ""} />
+                    <AITradeSuggestionV1
+                        councilDecision={robotCouncil.consensusDecision}
+                        consensusSum={robotCouncil.consensusSum}
+                        consensusThreshold={robotCouncil.consensusThreshold}
+                        supervisionStatus={robotCouncil.supervisionStatus}
+                        activeCommittee={robotCouncil.activeCommittee}
+                        isAutopilotOn={robotCouncil.isCouncilAutopilotOn}
+                    />
+                    <CouncilAutopilotInterfaceV1 {...robotCouncil} />
+                    <AIAnalysisInterfaceV1 symbol={activeSymbol} />
+                    <OperationsLogV1 operations={operationsLog} sellContract={sellContract} priceTicks={priceTicks} />
+                    <TradingDesk 
+                        isMeritocracyOn={robotCouncil.isMeritocracyOn}
+                        setIsMeritocracyOn={robotCouncil.setIsMeritocracyOn}
+                        isCouncilAutopilotOn={robotCouncil.isCouncilAutopilotOn}
+                        robotPerformance={robotCouncil.robotPerformance}
+                        councilVotes={robotCouncil.councilVotes}
+                    />
+                    <TradingDecisionLogViewer logs={robotCouncil.tradeDecisionLog || []} />
+                    <HallOfFame />
+                    <EvolutionLabV1 history={robotCouncil.evolutionHistory} />
                 </div>
             </>
 
