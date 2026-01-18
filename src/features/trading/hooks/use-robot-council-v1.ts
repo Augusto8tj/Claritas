@@ -92,6 +92,12 @@ const detectMarketRegime = (indicators: Indicators | null): MarketRegimeV1 => {
     return 'RANGING';
 };
 
+const formatValue = (value: number | null | undefined, precision = 4) => {
+    if (value === null || value === undefined || isNaN(value)) return '...';
+    return value.toFixed(precision);
+};
+
+
 const calculateRobotVote = (
     robot: RobotStrategy,
     indicators: Indicators,
@@ -612,43 +618,55 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
     
     if (finalDecision !== 'HOLD' && durationLimits) {
         const votingRobots = Object.values(newVotes).filter(v => v.vote === finalDecision);
-        const tickVotes = votingRobots.filter(v => v.optimalDurationUnit === 't');
-        const timeVotes = votingRobots.filter(v => v.optimalDurationUnit !== 't');
-        
-        const tickWeight = tickVotes.reduce((sum, v) => sum + v.weight, 0);
-        const timeWeight = timeVotes.reduce((sum, v) => sum + v.weight, 0);
-    
-        const canUseTicks = durationLimits.t && durationLimits.t.min > 0;
-        const canUseSeconds = durationLimits.s && durationLimits.s.min > 0;
-    
-        let preferredUnit: DurationUnit = 's';
-        if (canUseTicks && (!canUseSeconds || tickWeight > timeWeight)) {
-            preferredUnit = 't';
-        }
-    
-        if (preferredUnit === 't' && canUseTicks) {
-            finalUnit = 't';
-        } else if (canUseSeconds) {
-            finalUnit = 's';
+        const totalWeight = votingRobots.reduce((sum, v) => sum + v.weight, 0);
+
+        if (totalWeight > 0) {
+            // 1. CALCULA A DURAÇÃO BASE (em segundos)
+            const baseDurationInSeconds = votingRobots.reduce((sum, v) => sum + durationToSeconds(v.optimalDuration, v.optimalDurationUnit) * v.weight, 0) / totalWeight;
+
+            // 2. FATOR DE AJUSTE POR VOLATILIDADE (usando BBW)
+            let volatilityFactor = 1.0;
+            const bbw = currentIndicators.bbw; // Largura das Bandas de Bollinger
+            if (isValid(bbw)) {
+                if (bbw > 0.08) { // Volatilidade alta, BBs largas -> Contratos mais curtos
+                    volatilityFactor = 0.7; 
+                    setSupervisionStatus(prev => ({ ...prev, analysis: (prev.analysis || '') + ' | Duração Reduzida (Alta Volatilidade).' }));
+                } else if (bbw < 0.02) { // Volatilidade baixa, BBs estreitas -> Contratos mais longos
+                    volatilityFactor = 1.5;
+                    setSupervisionStatus(prev => ({ ...prev, analysis: (prev.analysis || '') + ' | Duração Aumentada (Baixa Volatilidade).' }));
+                }
+            }
+            
+            let adjustedDuration = baseDurationInSeconds * volatilityFactor;
+
+            // 3. DECIDE A UNIDADE (Ticks vs Segundos) E APLICA LIMITES
+            const canUseTicks = durationLimits.t && durationLimits.t.min > 0;
+            const canUseSeconds = durationLimits.s && durationLimits.s.min > 0;
+            
+            // Prefere Ticks para durações muito curtas se disponível
+            if (canUseTicks && adjustedDuration <= 20) {
+                finalUnit = 't';
+                // Converte segundos para uma estimativa de ticks (1s ~ 2 ticks)
+                finalDuration = Math.round(adjustedDuration / 2);
+            } else if (canUseSeconds) {
+                finalUnit = 's';
+                finalDuration = Math.round(adjustedDuration);
+            } else {
+                // Fallback para ticks se segundos não estiverem disponíveis
+                finalUnit = 't';
+                finalDuration = Math.round(adjustedDuration / 2);
+            }
+            
+            const limits = durationLimits[finalUnit];
+            const minDuration = limits?.min || (finalUnit === 't' ? 5 : 15);
+            const maxDuration = limits?.max || (finalUnit === 't' ? 10 : 3600);
+            
+            finalDuration = Math.max(minDuration, Math.min(finalDuration, maxDuration));
         } else {
-            finalUnit = canUseTicks ? 't' : 's';
+             // Fallback se não houver robôs votando
+            finalDuration = durationLimits.s?.min || 15;
+            finalUnit = 's';
         }
-        
-        if (finalUnit === 't' && tickWeight > 0) {
-            finalDuration = Math.round(tickVotes.reduce((sum, v) => sum + v.optimalDuration * v.weight, 0) / tickWeight);
-        } else if (finalUnit === 's' && timeWeight > 0) {
-            const avgSeconds = timeVotes.reduce((sum, v) => sum + durationToSeconds(v.optimalDuration, v.optimalDurationUnit) * v.weight, 0) / timeWeight;
-            finalDuration = Math.round(avgSeconds);
-        }
-        
-        const limits = durationLimits[finalUnit];
-        const minDuration = limits?.min || (finalUnit === 't' ? 5 : 15);
-        const maxDuration = limits?.max || (finalUnit === 't' ? 10 : 3600);
-    
-        if (isNaN(finalDuration) || finalDuration <= 0) {
-            finalDuration = minDuration;
-        }
-        finalDuration = Math.max(minDuration, Math.min(finalDuration, maxDuration));
     }
     
     const tradeExecution = () => {
