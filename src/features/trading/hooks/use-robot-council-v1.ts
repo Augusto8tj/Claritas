@@ -322,7 +322,7 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
     } finally {
         setIsFetchingCouncil(false);
     }
-  }, [activeSymbol, user, toast, evolvedStrategies, robotPerformance.length, resetArenaPerformance]);
+  }, [activeSymbol, user, toast, evolvedStrategies, robotPerformance.length]);
 
 
   const dissolveCouncil = useCallback(() => {
@@ -463,7 +463,7 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
     setConsensusSum({ rise: riseSum, fall: fallSum });
 
     const consensusProbability = totalVoteWeight > 0 ? Math.max(riseSum, fallSum) / totalVoteWeight : 0.5;
-    let decision: 'RISE' | 'FALL' | 'HOLD' = 'HOLD';
+    let decision: 'RISE' | 'FALL' | 'HOLD'> = 'HOLD';
     if(riseSum > fallSum && consensusProbability > 0.54) decision = 'RISE';
     else if (fallSum > riseSum && consensusProbability > 0.54) decision = 'FALL';
     setConsensusDecision(decision);
@@ -513,31 +513,42 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
     let finalDuration = 0;
     let finalUnit: DurationUnit = 't';
 
-    if (finalDecision !== 'HOLD') {
+    if (finalDecision !== 'HOLD' && durationLimits) {
         const votingRobots = Object.values(newVotes).filter(v => v.vote === finalDecision);
         const tickVotes = votingRobots.filter(v => v.optimalDurationUnit === 't');
         const timeVotes = votingRobots.filter(v => v.optimalDurationUnit !== 't');
+
         const tickWeight = tickVotes.reduce((sum, v) => sum + v.weight, 0);
         const timeWeight = timeVotes.reduce((sum, v) => sum + v.weight, 0);
-        const canUseTicks = durationLimits && durationLimits.t && durationLimits.t.min > 0;
-        const canUseSeconds = durationLimits && durationLimits.s && durationLimits.s.min > 0;
 
-        if (canUseTicks && (!canUseSeconds || tickWeight > timeWeight * 1.2)) {
+        const canUseTicks = durationLimits.t && durationLimits.t.min > 0;
+        const canUseSeconds = durationLimits.s && durationLimits.s.min > 0;
+        
+        const defaultUnit = canUseTicks ? 't' : 's';
+
+        if (canUseTicks && (!canUseSeconds || tickWeight > timeWeight)) {
             finalUnit = 't';
-            const totalTickWeight = tickVotes.reduce((sum, v) => sum + v.weight, 0);
-            finalDuration = totalTickWeight > 0 ? Math.round(tickVotes.reduce((sum, v) => sum + v.optimalDuration * v.weight, 0) / totalTickWeight) : 0;
         } else if (canUseSeconds) {
             finalUnit = 's';
-            const totalTimeWeight = timeVotes.reduce((sum, v) => sum + v.weight, 0);
-            if (totalTimeWeight > 0) {
-                const avgSeconds = timeVotes.reduce((sum, v) => sum + durationToSeconds(v.optimalDuration, v.optimalDurationUnit) * v.weight, 0) / totalTimeWeight;
-                finalDuration = Math.round(avgSeconds);
-            }
+        } else {
+            finalUnit = defaultUnit;
         }
-        
-        if (finalUnit && durationLimits?.[finalUnit]) {
-            const limits = durationLimits[finalUnit];
+
+        if (finalUnit === 't' && tickWeight > 0) {
+            finalDuration = Math.round(tickVotes.reduce((sum, v) => sum + v.optimalDuration * v.weight, 0) / tickWeight);
+        } else if (finalUnit === 's' && timeWeight > 0) {
+            const avgSeconds = timeVotes.reduce((sum, v) => sum + durationToSeconds(v.optimalDuration, v.optimalDurationUnit) * v.weight, 0) / timeWeight;
+            finalDuration = Math.round(avgSeconds);
+        }
+
+        const limits = durationLimits[finalUnit];
+        if (limits) {
+            if (finalDuration <= 0) {
+                finalDuration = limits.min;
+            }
             finalDuration = Math.max(limits.min, Math.min(finalDuration, limits.max));
+        } else {
+            finalDuration = finalUnit === 't' ? 5 : 15;
         }
     }
     
