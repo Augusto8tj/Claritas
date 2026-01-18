@@ -463,7 +463,7 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
     setConsensusSum({ rise: riseSum, fall: fallSum });
 
     const consensusProbability = totalVoteWeight > 0 ? Math.max(riseSum, fallSum) / totalVoteWeight : 0.5;
-    let decision: 'RISE' | 'FALL' | 'HOLD'> = 'HOLD';
+    let decision: 'RISE' | 'FALL' | 'HOLD' = 'HOLD';
     if(riseSum > fallSum && consensusProbability > 0.54) decision = 'RISE';
     else if (fallSum > riseSum && consensusProbability > 0.54) decision = 'FALL';
     setConsensusDecision(decision);
