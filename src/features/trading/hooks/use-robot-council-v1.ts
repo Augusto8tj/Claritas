@@ -409,7 +409,6 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
   }, [user, activeSymbol, robotPerformance, consensusThreshold, isDynamicConsensusOn, toast, assetProfile]);
 
   useEffect(() => {
-    // CORREÇÃO CRÍTICA: Adicionada a guarda !durationLimits
     if (!isConnected || !user || !isCouncilAutopilotOn || !durationLimits || strategyCouncil.length === 0 || !activeSymbol || tickCandles.length < 2) return;
 
     if (councilExecutionRef.current.isExecuting) return; 
@@ -610,7 +609,6 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
             const avgSeconds = timeVotes.reduce((sum, v) => sum + durationToSeconds(v.optimalDuration, v.optimalDurationUnit) * v.weight, 0) / timeWeight;
             finalDuration = Math.round(avgSeconds);
         } else {
-            // BLINDAGEM: Se a unidade preferida não tiver votos, usa uma unidade válida como fallback.
             if (canUseSeconds) {
                 finalDuration = durationLimits.s.min;
                 finalUnit = 's';
@@ -632,65 +630,104 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
         }
         finalDuration = Math.max(minDuration, Math.min(finalDuration, maxDuration));
     }
-    
-    if (isAuditingOn && user && finalDecision !== 'HOLD' && finalDuration > 0) {
-        const logId = `log-${Date.now()}`;
-        const baseLog: Omit<TradeDecisionLog, 'id' | 'contractId'> & {result: 'hold' | 'pending'} = {
+
+    if (finalDecision !== 'HOLD' && finalDuration > 0) {
+      executeTrade(
+        finalDecision === 'RISE' ? 'CALL' : 'PUT',
+        stake,
+        activeSymbol!,
+        finalDecision.toLowerCase() as 'rise' | 'fall',
+        finalDuration,
+        finalUnit,
+        'Conselho'
+      ).then(tradeResult => {
+        if (isAuditingOn && user) {
+          const logId = `log-${Date.now()}`;
+          const baseLog: Omit<TradeDecisionLog, 'id' | 'contractId'> = {
             timestamp: new Date().toISOString(),
             asset: activeSymbol!,
             timePeriod,
             tradeParams: {
-                direction: finalDecision,
-                stake: finalDecision !== 'HOLD' ? stake : 0,
-                duration: finalDuration,
-                durationUnit: finalUnit,
+              direction: finalDecision,
+              stake: stake,
+              duration: finalDuration,
+              durationUnit: finalUnit,
             },
             context: {
-                marketRegime: currentRegime,
-                regimeConfidence: 1.0, 
-                microstructure: null,
-                indicators: currentIndicators,
-                supervisionReason: supervisionStatus.message,
-                payout: stake > 0 ? stake * 0.94 : 0, 
+              marketRegime: currentRegime,
+              regimeConfidence: 1.0,
+              microstructure: null,
+              indicators: currentIndicators,
+              supervisionReason: supervisionStatus.message,
+              payout: stake * 0.94, // Assumindo payout fixo para log
             },
             consensus: {
-                consensusSum: { rise: riseSum, fall: fallSum },
-                consensusThreshold: isDynamicConsensusOn ? undefined : consensusThreshold,
-                bayesianProbability: consensusProbability, 
-                kellyStake: stake,
-                activeRobots: Object.keys(newVotes).length,
-                votes: newVotes,
-                virtualTrades: newVirtualTradesForLog,
+              consensusSum: { rise: riseSum, fall: fallSum },
+              consensusThreshold: isDynamicConsensusOn ? undefined : consensusThreshold,
+              bayesianProbability: consensusProbability,
+              kellyStake: stake,
+              activeRobots: Object.keys(newVotes).length,
+              votes: newVotes,
+              virtualTrades: newVirtualTradesForLog,
             },
             result: 'pending',
             pnl: 0,
-        };
+          };
 
-        if (finalDecision !== 'HOLD' && finalDuration > 0) {
-             executeTrade(
-                finalDecision === 'RISE' ? 'CALL' : 'PUT', 
-                stake, 
-                activeSymbol!, 
-                finalDecision.toLowerCase() as 'rise' | 'fall', 
-                finalDuration, 
-                finalUnit, 
-                'Conselho'
-            ).then(tradeResult => {
-                if (tradeResult.success && tradeResult.contractId) {
-                    const executedLog = { 
-                        ...baseLog, 
-                        id: logId,
-                        contractId: tradeResult.contractId, 
-                        context: { ...baseLog.context, entryPrice: tradeResult.entryPrice }
-                    };
-                    saveTradeDecision(user.uid, executedLog, 'v1');
-                    setTradeDecisionLog(prev => [executedLog, ...prev]);
-                } else {
-                     const failedLog = { ...baseLog, id: logId, result: 'hold' as const, context: {...baseLog.context, supervisionReason: `Falha na execução: ${tradeResult.message}`}};
-                     saveTradeDecision(user.uid, failedLog, 'v1');
-                     setTradeDecisionLog(prev => [failedLog, ...prev]);
-                }
-            });
+          if (tradeResult.success && tradeResult.contractId) {
+            const executedLog: TradeDecisionLog = {
+              ...baseLog,
+              id: logId,
+              contractId: tradeResult.contractId,
+              context: { ...baseLog.context, entryPrice: tradeResult.entryPrice },
+            };
+            saveTradeDecision(user.uid, executedLog, 'v1');
+            setTradeDecisionLog(prev => [executedLog, ...prev]);
+          } else {
+            const failedLog: TradeDecisionLog = {
+              ...baseLog,
+              id: logId,
+              result: 'hold',
+              context: { ...baseLog.context, supervisionReason: `Falha na execução: ${tradeResult.message}` },
+            };
+            saveTradeDecision(user.uid, failedLog, 'v1');
+            setTradeDecisionLog(prev => [failedLog, ...prev]);
+          }
+        }
+      });
+    } 
+    else if (isAuditingOn && user) {
+        const shouldLogHold = (decision !== 'HOLD' && finalDecision === 'HOLD');
+        if (shouldLogHold) {
+            const logId = `log-${Date.now()}`;
+            const holdLog: TradeDecisionLog = {
+                id: logId,
+                timestamp: new Date().toISOString(),
+                asset: activeSymbol!,
+                timePeriod,
+                tradeParams: { direction: 'HOLD', stake: 0, duration: 0, durationUnit: 't' },
+                context: {
+                    marketRegime: currentRegime,
+                    regimeConfidence: 1.0,
+                    microstructure: null,
+                    indicators: currentIndicators,
+                    supervisionReason: supervisionStatus.message,
+                    payout: 0,
+                },
+                consensus: {
+                    consensusSum: { rise: riseSum, fall: fallSum },
+                    consensusThreshold: isDynamicConsensusOn ? undefined : consensusThreshold,
+                    bayesianProbability: consensusProbability, 
+                    kellyStake: stake,
+                    activeRobots: Object.keys(newVotes).length,
+                    votes: newVotes,
+                    virtualTrades: newVirtualTradesForLog,
+                },
+                result: 'hold',
+                pnl: 0,
+            };
+            saveTradeDecision(user.uid, holdLog, 'v1');
+            setTradeDecisionLog(prev => [holdLog, ...prev]);
         }
     }
 
