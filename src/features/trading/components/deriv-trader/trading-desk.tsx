@@ -139,8 +139,9 @@ export function TradingDesk({
 
     // Ordenar por vitórias (depois por lucro)
     const sortedPerformance = [...robotPerformance].sort((a, b) => {
-        const winsCompare = (b.wins || 0) - (a.wins || 0);
-        if (winsCompare !== 0) return winsCompare;
+        const sharpeA = a.sharpeRatio || -Infinity;
+        const sharpeB = b.sharpeRatio || -Infinity;
+        if (sharpeA !== sharpeB) return sharpeB - sharpeA;
         return (b.totalProfit || 0) - (a.totalProfit || 0);
     });
 
@@ -283,6 +284,7 @@ export function TradingDesk({
                             <TableHead className="text-center">Voto Atual</TableHead>
                             <TableHead className="text-center">Trades (V/D)</TableHead>
                             <TableHead className="text-center">Taxa de Acerto</TableHead>
+                            <TableHead className="text-center">Sharpe Ratio</TableHead>
                             <TableHead className="text-right">P&amp;L (USD)</TableHead>
                         </TableRow>
                     </TableHeader>
@@ -308,9 +310,12 @@ export function TradingDesk({
                                                     <Trophy className="h-4 w-4 text-yellow-500" />
                                                 )}
                                                 {indicatorIcons[robot.strategyType] || <Bot />}
-                                                <span className="text-sm">
-                                                    {robot.strategyType}
-                                                </span>
+                                                <div className="flex flex-col">
+                                                   <span className="text-sm">
+                                                        {robot.strategyType}
+                                                    </span>
+                                                    {robot.status === 'Certified' && <Badge variant="secondary" className="w-fit text-[9px] h-4 px-1 py-0 bg-green-100 text-green-700 border-green-200">Certificado</Badge>}
+                                                </div>
                                             </div>
                                         </TableCell>
                                         <TableCell className="text-xs text-muted-foreground">
@@ -364,6 +369,18 @@ export function TradingDesk({
                                                 <span className="text-muted-foreground">-</span>
                                             )}
                                         </TableCell>
+                                        <TableCell className="text-center font-mono text-sm">
+                                            {totalTrades > 2 && robot.sharpeRatio !== undefined && robot.sharpeRatio !== null ? (
+                                                <Badge variant="outline" className={cn(
+                                                    robot.sharpeRatio > 1.5 ? "border-green-500 text-green-600 bg-green-50" : 
+                                                    robot.sharpeRatio > 1.0 ? "border-blue-500 text-blue-600 bg-blue-50" : "border-gray-200"
+                                                )}>
+                                                    {robot.sharpeRatio.toFixed(2)}
+                                                </Badge>
+                                            ) : (
+                                                <span className="text-muted-foreground text-xs">-</span>
+                                            )}
+                                        </TableCell>
                                         <TableCell
                                             className={cn(
                                                 'text-right font-bold',
@@ -385,7 +402,7 @@ export function TradingDesk({
                             })
                         ) : (
                             <TableRow>
-                                <TableCell colSpan={6} className="text-center h-24">
+                                <TableCell colSpan={7} className="text-center h-24">
                                     <div className="flex flex-col items-center justify-center gap-2 text-muted-foreground">
                                         <AlertTriangle className="h-8 w-8" />
                                         <p>

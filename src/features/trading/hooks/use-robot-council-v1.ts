@@ -42,7 +42,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useDerivApiV1 } from './use-deriv-api-v1';
 import { useToast } from '@/hooks/use-toast';
-import type { RobotStrategy, ChartData, TickData, CandleData, DurationUnit, RobotVote as RobotVoteType, CouncilVotes, RobotPerformance as RobotPerformanceType, Operation, TradeDecisionLog, VirtualTradeLog, AssetProfileV1 } from '@/lib/types';
+import type { RobotStrategy, ChartData, TickData, CandleData, DurationUnit, RobotVote as RobotVoteType, CouncilVotes, RobotPerformance as RobotPerformanceType, Operation, TradeDecisionLog, VirtualTradeLog, AssetProfileV1, TradeHistoryEvent } from '@/lib/types';
 import type { RiseFallFormValues } from '@/features/trading/components/deriv-trader/deriv-trader-interface-v1.types';
 import { useFormContext } from 'react-hook-form';
 import type { Indicators } from '@/services/indicator-service-v1';
@@ -70,6 +70,7 @@ type VirtualTrade = {
     entryPrice: number;
     entryEpoch: number;
     exitEpoch: number; 
+    regime: MarketRegimeV1;
 };
 
 const VIRTUAL_STAKE = 1.0; 
@@ -98,12 +99,13 @@ const durationToSeconds = (duration: number, unit: DurationUnit): number => {
  * Calcula o Sharpe Ratio a partir de um histórico de PnL.
  * Uma medida de retorno ajustado ao risco.
  */
-const calculateSharpeRatio = (pnlHistory: number[]): number => {
-    if (pnlHistory.length < 10) return 0; // Dados insuficientes
-    const mean = pnlHistory.reduce((a, b) => a + b, 0) / pnlHistory.length;
+const calculateSharpeRatio = (pnlHistory: { profit: number }[]): number => {
+    if (pnlHistory.length < 10) return 0; // Not enough data
+    const profits = pnlHistory.map(t => t.profit);
+    const mean = profits.reduce((a, b) => a + b, 0) / profits.length;
     if (mean === 0) return 0;
-    const stdDev = Math.sqrt(pnlHistory.map(p => Math.pow(p - mean, 2)).reduce((a, b) => a + b, 0) / pnlHistory.length);
-    if (stdDev === 0) return mean > 0 ? 99 : -99; // Retorno infinito, mas limitado
+    const stdDev = Math.sqrt(profits.map(p => Math.pow(p - mean, 2)).reduce((a, b) => a + b, 0) / profits.length);
+    if (stdDev === 0) return mean > 0 ? 99 : -99; // Infinite return, but capped
     return mean / stdDev;
 };
 
@@ -441,6 +443,8 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
     const performanceMap = new Map(robotPerformance.map(p => [p.id, { ...p, tradeHistory: p.tradeHistory || [], status: p.status || 'Probation' }]));
     let performanceChanged = false;
     
+    const currentRegime = detectMarketRegime(currentIndicators);
+
     // --- Processamento da Arena Virtual ---
     virtualTradesRef.current = virtualTradesRef.current.filter(trade => {
         if(currentTick.epoch >= trade.exitEpoch) {
@@ -453,9 +457,9 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
                 perf.wins = (perf.wins || 0) + (isWin ? 1 : 0);
                 perf.losses = (perf.losses || 0) + (isWin ? 0 : 1);
                 perf.totalProfit = (perf.totalProfit || 0) + pnl;
-                perf.tradeHistory = [...(perf.tradeHistory || []), pnl];
+                perf.tradeHistory = [...(perf.tradeHistory || []), { profit: pnl, regime: trade.regime, timestamp: Date.now() }];
                 perf.winRate = (perf.wins + perf.losses) > 0 ? (perf.wins / (perf.wins + perf.losses)) * 100 : 0;
-                perf.sharpeRatio = calculateSharpeRatio(perf.tradeHistory);
+                perf.sharpeRatio = calculateSharpeRatio(perf.tradeHistory as {profit: number}[]);
                 performanceChanged = true;
             }
             return false;
@@ -464,15 +468,18 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
     });
 
     if (performanceChanged) {
-        const CRITERIA = { sharpe: 1.2, profit: 10, trades: 50 };
+        const PROMOTION_THRESHOLD_WINS = 10;
+        const PROMOTION_THRESHOLD_PROFIT = 0;
+        const PROMOTION_THRESHOLD_SHARPE = 1.2;
+
         performanceMap.forEach(perf => {
-            const currentStatus = perf.status || 'Probation';
-            const meetsCriteria = (perf.sharpeRatio || 0) > CRITERIA.sharpe &&
-                                  (perf.totalProfit || 0) > CRITERIA.profit &&
-                                  ((perf.wins || 0) + (perf.losses || 0)) >= CRITERIA.trades;
-            
+            const meetsCriteria =
+                (perf.wins || 0) >= PROMOTION_THRESHOLD_WINS &&
+                (perf.totalProfit || 0) > PROMOTION_THRESHOLD_PROFIT &&
+                (perf.sharpeRatio || 0) > PROMOTION_THRESHOLD_SHARPE;
+
             const newStatus = meetsCriteria ? 'Certified' : 'Probation';
-            if (currentStatus !== newStatus) {
+            if ((perf.status || 'Probation') !== newStatus) {
                 perf.status = newStatus;
                 toast({ title: 'Status de Robô Alterado!', description: `Robô ${perf.strategyType} agora está: ${newStatus}` });
             }
@@ -486,7 +493,6 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
     
     // --- Lógica de Votação e Consenso ---
     const newVirtualTradesForLog: VirtualTradeLog[] = [];
-    const currentRegime = detectMarketRegime(currentIndicators);
     setActiveCommittee(currentRegime);
 
     const newVotes: CouncilVotes = {};
@@ -532,9 +538,9 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
 
         if(voteResult.vote !== 'HOLD' && confidence > 50) {
              const exitEpoch = currentTick.epoch + durationToSeconds(voteResult.optimalDuration, voteResult.optimalDurationUnit);
-             const newVTrade = {
+             const newVTrade: VirtualTrade = {
                 id: `vt_${Date.now()}_${tradeCounterRef.current++}`, robotId: robot.id, vote: voteResult.vote,
-                entryPrice: currentTick.price, entryEpoch: currentTick.epoch, exitEpoch: exitEpoch,
+                entryPrice: currentTick.price, entryEpoch: currentTick.epoch, exitEpoch: exitEpoch, regime: currentRegime
             };
              virtualTradesRef.current.push(newVTrade);
              newVirtualTradesForLog.push({
@@ -612,9 +618,9 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
     }
 
     let certifiedDecision: 'RISE' | 'FALL' | 'HOLD' = 'HOLD';
-    if (certifiedRiseSum > certifiedFallSum && certifiedRiseSum > consensusThreshold) {
+    if (certifiedRiseSum > certifiedFallSum && certifiedRiseSum > consensusThreshold * 0.8) { // Limiar um pouco mais baixo para a elite
         certifiedDecision = 'RISE';
-    } else if (certifiedFallSum > certifiedRiseSum && certifiedFallSum > consensusThreshold) {
+    } else if (certifiedFallSum > certifiedRiseSum && certifiedFallSum > consensusThreshold * 0.8) {
         certifiedDecision = 'FALL';
     }
     
