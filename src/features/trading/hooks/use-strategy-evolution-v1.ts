@@ -11,10 +11,10 @@ import { initialCouncilStrategies } from '@/services/council-strategies';
 // ============================================================================
 // PARÂMETROS DA EVOLUÇÃO
 // ============================================================================
-const EVOLUTION_TRIGGER_THRESHOLD = 2; 
+const EVOLUTION_TRIGGER_THRESHOLD = 20; 
 const ELITE_COUNT = 5; 
 const WORST_COUNT = 5;
-const MIN_TRADES_FOR_ANALYSIS = 1;
+const MIN_TRADES_FOR_ANALYSIS = 5;
 
 export interface EvolutionEvent {
     timestamp: Date;
