@@ -1,3 +1,4 @@
+// src/features/trading/components/deriv-trader/ai-trade-suggestion-v1.tsx
 'use client';
 
 import {
@@ -46,7 +47,6 @@ export function AITradeSuggestionV1({
     kellyStake
 }: AITradeSuggestionV1Props) {
 
-    // Adicionado guarda de segurança para evitar erro de renderização
     if (!consensusSum && bayesianProbability === undefined) {
         return (
              <Card>
@@ -70,9 +70,13 @@ export function AITradeSuggestionV1({
 
     const isV2 = bayesianProbability !== undefined;
 
-    const totalConsensus = isV2 ? 100 : Math.max(consensusThreshold, (consensusSum?.rise || 0) + (consensusSum?.fall || 0));
-    const risePercentage = isV2 ? (councilDecision === 'RISE' ? bayesianProbability * 100 : 0) : totalConsensus > 0 ? ((consensusSum?.rise || 0) / totalConsensus) * 100 : 0;
-    const fallPercentage = isV2 ? (councilDecision === 'FALL' ? bayesianProbability * 100 : 0) : totalConsensus > 0 ? ((consensusSum?.fall || 0) / totalConsensus) * 100 : 0;
+    // LÓGICA CORRIGIDA: As percentagens V1 são relativas ao limiar para mostrar o progresso até a decisão.
+    const risePercentage = isV2
+      ? (councilDecision === 'RISE' ? bayesianProbability * 100 : 0)
+      : consensusThreshold > 0 ? ((consensusSum?.rise || 0) / consensusThreshold) * 100 : 0;
+    const fallPercentage = isV2
+      ? (councilDecision === 'FALL' ? bayesianProbability * 100 : 0)
+      : consensusThreshold > 0 ? ((consensusSum?.fall || 0) / consensusThreshold) * 100 : 0;
 
 
     if (!isAutopilotOn) {
@@ -136,7 +140,7 @@ export function AITradeSuggestionV1({
                 </div>
                 {!isV2 && (
                     <div className="text-center text-xs text-muted-foreground mt-1">
-                        Limiar de Consenso: {consensusThreshold} (Soma Atual: {Math.round((consensusSum?.rise || 0) + (consensusSum?.fall || 0))})
+                        Limiar de Consenso: {consensusThreshold}
                     </div>
                 )}
             </div>
