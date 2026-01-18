@@ -14,6 +14,7 @@ O Deriv Trader V1 abandonou a abordagem de "estratégia única" e implementou um
 -   **Meritocracia Exponencial (`Sharpe Ratio`):** O poder de voto de um robô não é baseado em simples vitórias, mas no seu **Sharpe Ratio**, que mede o retorno ajustado ao risco. Robôs que são lucrativos *e* consistentes têm uma voz exponencialmente mais forte. Robôs com desempenho negativo são severamente penalizados.
 -   **Gestão de Risco Científica (`Quarter Kelly`):** O valor da aposta (`stake`) é calculado cientificamente a cada oportunidade usando o **Critério de Kelly Fracionado**. O sistema aposta mais agressivamente quando a probabilidade de sucesso do consenso é alta e protege o capital quando a vantagem é baixa.
 -   **Veto de Microestrutura (O "Guarda-Costas"):** Como uma camada final de proteção, o sistema analisa os últimos ticks de preço. Mesmo com um consenso forte de compra, ele pode vetar a operação se detetar uma "micro-queda" súbita e violenta, evitando armadilhas de volatilidade.
+-   **Memória Estratégica & Aprendizagem Colaborativa:** O sistema V1 agora possui uma camada de **inteligência persistente**. Ele guarda no Firestore um "perfil estratégico" para cada ativo, aprendendo o seu "regime preferencial" e o "limiar de consenso ótimo". Mais importante, ele permite que **você, o operador**, insira os seus próprios *insights*, que são fundidos com a análise da IA, criando um cérebro híbrido que se torna mais inteligente a cada sessão.
 
 ### 1.2. Pontos Fracos
 
@@ -23,7 +24,7 @@ O Deriv Trader V1 abandonou a abordagem de "estratégia única" e implementou um
 
 ### 1.3. Ambição do Deriv Trader V1
 
-O objetivo do V1 é ser um sistema de trading **consistentemente lucrativo e robusto**, que sirva como um ambiente de produção estável e, ao mesmo tempo, como um laboratório para provar a eficácia dos nossos princípios de design (contexto, meritocracia e gestão de risco) antes de os migrarmos para ecossistemas mais complexos como o V2 e V3.
+O objetivo do V1 é ser um sistema de trading **consistentemente lucrativo e robusto**, que sirva como um ambiente de produção estável e, ao mesmo tempo, como um laboratório para provar a eficácia dos nossos princípios de design (contexto, meritocracia, gestão de risco e **aprendizagem estratégica**) antes de os migrarmos para ecossistemas mais complexos como o V2 e V3.
 
 ---
 
@@ -48,19 +49,21 @@ Este é o coração e a inteligência do sistema V1, onde a nova arquitetura foi
 
 -   **Responsabilidade Principal**: Analisar o mercado a cada tick, tomar decisões de trading e gerir o risco.
 -   **Ciclo de Decisão**:
-    1.  **Cálculo de Indicadores (`indicator-service.ts`):** Um motor de cálculo autónomo que gera os indicadores técnicos necessários para todos os 22 robôs.
-    2.  **Deteção de Regime (`TRENDING` vs `RANGING`):** Usa o ADX para classificar o estado do mercado.
-    3.  **Votação Probabilística:** Cada robô ativo calcula o seu voto (`RISE`/`FALL`/`HOLD`) e uma **pontuação de confiança (0-100)**.
-    4.  **Consenso Bayesiano Ponderado:** A "magia" acontece aqui. O sistema combina:
+    1.  **Calibração Estratégica:** Ao selecionar um ativo, o cérebro consulta a **Memória Estratégica (`AssetProfileV1`)** no Firestore. Se um perfil existe, ele ajusta parâmetros-chave, como o `consensusThreshold`, com base no que foi aprendido em sessões anteriores.
+    2.  **Cálculo de Indicadores (`indicator-service.ts`):** Um motor de cálculo autónomo que gera os indicadores técnicos necessários para todos os 22 robôs.
+    3.  **Deteção de Regime (`TRENDING` vs `RANGING`):** Usa o ADX para classificar o estado do mercado.
+    4.  **Votação Probabilística:** Cada robô ativo calcula o seu voto (`RISE`/`FALL`/`HOLD`) e uma **pontuação de confiança (0-100)**.
+    5.  **Consenso Bayesiano Ponderado:** A "magia" acontece aqui. O sistema combina:
         -   A **confiança técnica** do sinal.
         -   O **Sharpe Ratio** do robô (meritocracia).
         -   A **relevância contextual** (o regime de mercado).
-    5.  **Cálculo de Risco (Critério de Kelly):** Com a probabilidade final do consenso, calcula o `stake` ideal.
-    6.  **Veto de Microestrutura:** Analisa os últimos ticks e pode vetar a operação.
-    7.  **Execução ou Arena Virtual:**
+    6.  **Cálculo de Risco (Critério de Kelly):** Com a probabilidade final do consenso, calcula o `stake` ideal.
+    7.  **Veto de Microestrutura:** Analisa os últimos ticks e pode vetar a operação.
+    8.  **Execução ou Arena Virtual:**
         -   Se a decisão for forte, envia a ordem para a camada de conexão.
         -   Simultaneamente, executa "paper trades" na **Arena Virtual** para todos os votos, alimentando os dados de desempenho para o `Sharpe Ratio`.
-    8.  **Evolução Genética (`use-strategy-evolution-v1.ts`):** Periodicamente, substitui os robôs de pior desempenho por mutações dos robôs de elite.
+    9.  **Evolução Genética (`use-strategy-evolution-v1.ts`):** Periodicamente, substitui os robôs de pior desempenho por mutações dos robôs de elite.
+    10. **Auditoria Forense:** A cada ciclo, um `TradeDecisionLog` detalhado é gerado e salvo no Firestore, capturando a decisão final (`EXECUTE` ou `HOLD`), o estado de todos os robôs, e **todas as operações iniciadas na Arena Virtual**, criando uma "caixa-preta" completa para análise.
 
 ### 2.3. Camada de Interface: `deriv-trader/page.tsx`
 
@@ -69,10 +72,12 @@ Esta camada visualiza o estado do Cérebro V1 e permite a interação do utiliza
 -   **Responsabilidade Principal**: Apresentar a complexidade do Cérebro de forma clara e interativa.
 -   **Componentes Chave do V1**:
     -   `DerivTraderInterfaceV1`: Painel de negociação manual.
-    -   `CouncilAutopilotInterfaceV1`: Controlo do piloto automático e dos seus parâmetros.
+    -   `CouncilAutopilotInterfaceV1`: Controlo do piloto automático, incluindo o novo interruptor para **ligar/desligar a Auditoria Cognitiva**.
     -   `AITradeSuggestionV1`: Painel que exibe a decisão final do consenso, a probabilidade e o stake.
     -   `TradingDesk`: O *leaderboard* da Arena Virtual, mostrando o ranking de desempenho.
     -   `EvolutionLabV1`: Histórico dos ciclos de evolução genética.
+    -   `AssetIntelligenceCard`: Um novo painel que exibe a **Memória Estratégica** aprendida para o ativo atual e permite que o operador **insira os seus próprios insights**, colaborando com a IA.
+    -   `TradingDecisionLogViewer`: Agora integrado na aba "Auditoria", exibe o log forense completo, incluindo os dados da Arena Virtual.
     -   `HallOfFame`: Exibe os robôs de melhor desempenho histórico, agora com detalhes de configuração.
 
 ---
@@ -85,4 +90,4 @@ Esta camada visualiza o estado do Cérebro V1 e permite a interação do utiliza
 -   **Motor de Evolução:** `src/features/trading/hooks/use-strategy-evolution-v1.ts`
 -   **Cálculo de Indicadores:** `src/services/indicator-service.ts` (partilhado)
 -   **Estratégias Base:** `src/services/council-strategies.ts` (partilhado)
--   **Persistência de Dados:** `src/services/financial-data-service.ts` (funções como `saveRobotPerformance` e `saveEvolutionHistory` com um parâmetro `version: 'v1'`)
+-   **Persistência de Dados:** `src/services/financial-data-service.ts` (funções como `saveRobotPerformance`, `saveTradeDecision`, `saveAssetProfileV1` e `saveEvolutionHistory` com um parâmetro `version: 'v1'`)
