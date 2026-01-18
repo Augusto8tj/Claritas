@@ -1,4 +1,4 @@
-// src/features/trading/hooks/use-strategy-evolution-v1.ts
+// /src/features/trading/hooks/use-strategy-evolution-v1.ts
 'use client';
 
 import { useState, useCallback, useRef, useEffect } from 'react';
@@ -11,10 +11,10 @@ import { initialCouncilStrategies } from '@/services/council-strategies';
 // ============================================================================
 // PARÂMETROS DA EVOLUÇÃO
 // ============================================================================
-const EVOLUTION_TRIGGER_THRESHOLD = 50; 
+const EVOLUTION_TRIGGER_THRESHOLD = 2; 
 const ELITE_COUNT = 5; 
 const WORST_COUNT = 5;
-const MIN_TRADES_FOR_ANALYSIS = 10;
+const MIN_TRADES_FOR_ANALYSIS = 1;
 
 export interface EvolutionEvent {
     timestamp: Date;
