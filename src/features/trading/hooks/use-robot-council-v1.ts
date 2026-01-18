@@ -649,5 +649,3 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
     setIsAuditingOn,
   };
 }
-
-    
