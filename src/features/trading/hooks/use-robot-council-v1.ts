@@ -577,45 +577,47 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
     const finalDecision = supervisionStatus.status === 'approved' ? decision : 'HOLD';
     
     let finalDuration = 0;
-    let finalUnit: DurationUnit = 't';
+    let finalUnit: DurationUnit = 's'; // Default to seconds
 
     if (finalDecision !== 'HOLD' && durationLimits) {
         const votingRobots = Object.values(newVotes).filter(v => v.vote === finalDecision);
         const tickVotes = votingRobots.filter(v => v.optimalDurationUnit === 't');
         const timeVotes = votingRobots.filter(v => v.optimalDurationUnit !== 't');
-
+        
         const tickWeight = tickVotes.reduce((sum, v) => sum + v.weight, 0);
         const timeWeight = timeVotes.reduce((sum, v) => sum + v.weight, 0);
 
         const canUseTicks = durationLimits.t && durationLimits.t.min > 0;
         const canUseSeconds = durationLimits.s && durationLimits.s.min > 0;
-        
-        const defaultUnit = canUseTicks ? 't' : 's';
 
+        let preferredUnit: DurationUnit = 's';
         if (canUseTicks && (!canUseSeconds || tickWeight > timeWeight)) {
+            preferredUnit = 't';
+        }
+
+        if (preferredUnit === 't' && canUseTicks) {
             finalUnit = 't';
         } else if (canUseSeconds) {
             finalUnit = 's';
         } else {
-            finalUnit = defaultUnit;
+            finalUnit = canUseTicks ? 't' : 's';
         }
-
+        
         if (finalUnit === 't' && tickWeight > 0) {
             finalDuration = Math.round(tickVotes.reduce((sum, v) => sum + v.optimalDuration * v.weight, 0) / tickWeight);
         } else if (finalUnit === 's' && timeWeight > 0) {
             const avgSeconds = timeVotes.reduce((sum, v) => sum + durationToSeconds(v.optimalDuration, v.optimalDurationUnit) * v.weight, 0) / timeWeight;
             finalDuration = Math.round(avgSeconds);
         }
-
+        
         const limits = durationLimits[finalUnit];
-        if (limits) {
-            if (isNaN(finalDuration) || finalDuration <= 0) {
-                finalDuration = limits.min;
-            }
-            finalDuration = Math.max(limits.min, Math.min(finalDuration, limits.max));
-        } else {
-            finalDuration = finalUnit === 't' ? 5 : 15;
+        const minDuration = limits?.min || (finalUnit === 't' ? 5 : 15);
+        const maxDuration = limits?.max || (finalUnit === 't' ? 10 : 3600);
+
+        if (isNaN(finalDuration) || finalDuration <= 0) {
+            finalDuration = minDuration;
         }
+        finalDuration = Math.max(minDuration, Math.min(finalDuration, maxDuration));
     }
     
     if (isAuditingOn && user) {
@@ -677,11 +679,8 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
                 }
             });
         } else {
-            // Apenas guarda logs de HOLD se houver uma decisão pendente mas vetada.
             if(decision !== 'HOLD') {
                 const holdLog = { ...baseLog, id: logId };
-                // A LINHA ABAIXO FOI REMOVIDA PARA CORRIGIR O ERRO DE 'RESOURCE EXHAUSTED'
-                // saveTradeDecision(user.uid, holdLog, 'v1');
                 setTradeDecisionLog(prev => [holdLog, ...prev]);
             }
         }
@@ -732,5 +731,3 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
     analyzeAndSaveLearnings,
   };
 }
-
-    
