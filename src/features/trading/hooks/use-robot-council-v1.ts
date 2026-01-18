@@ -409,6 +409,7 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
   }, [user, activeSymbol, robotPerformance, consensusThreshold, isDynamicConsensusOn, toast, assetProfile]);
 
   useEffect(() => {
+    // CORREÇÃO: Adicionada a guarda !durationLimits para prevenir a condição de corrida.
     if (!isConnected || !user || !isCouncilAutopilotOn || !durationLimits || strategyCouncil.length === 0 || !activeSymbol || tickCandles.length < 2) return;
 
     if (councilExecutionRef.current.isExecuting) return; 
@@ -680,7 +681,9 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
             });
         } else {
             if(decision !== 'HOLD') {
-                const holdLog = { ...baseLog, id: logId };
+                const holdLog = { ...baseLog, id: logId, result: 'hold' as const };
+                // A BUG ESTAVA AQUI: A linha abaixo estava a salvar no Firestore em todos os HOLDs com veto.
+                // saveTradeDecision(user.uid, holdLog, 'v1'); // <--- REMOVIDO
                 setTradeDecisionLog(prev => [holdLog, ...prev]);
             }
         }
