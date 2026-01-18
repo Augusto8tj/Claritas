@@ -358,7 +358,7 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
       return source.map((t) => ({ epoch: t.epoch, open: getPrice(t)!, high: getPrice(t)!, low: getPrice(t)!, close: getPrice(t)!, volume: 1 }));
   }, [chartData, priceTicks, dataVersion]);
 
-  const analyzeAndSaveLearnings = useCallback(async () => {
+  const analyzeAndSaveLearnings = useCallback(async (userNotes: string) => {
     if (!user || !activeSymbol || robotPerformance.length === 0) {
         toast({ title: 'Dados Insuficientes', description: 'Nenhum dado de desempenho para analisar.', variant: 'destructive' });
         return;
@@ -373,20 +373,24 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
     const rangeProfit = rangeBots.reduce((sum, p) => sum + (p.totalProfit || 0), 0);
 
     let preferredRegime: 'TRENDING' | 'RANGING' | 'NEUTRAL' = 'NEUTRAL';
-    let notes = "Análise de desempenho da sessão: ";
+    let aiNotes = "Análise da sessão: ";
 
     if (trendProfit > rangeProfit * 1.2) {
         preferredRegime = 'TRENDING';
-        notes += "Estratégias de tendência superaram as de lateralidade. O ativo mostra comportamento direcional."
+        aiNotes += "Estratégias de tendência superaram as de lateralidade. O ativo mostra comportamento direcional."
     } else if (rangeProfit > trendProfit * 1.2) {
         preferredRegime = 'RANGING';
-        notes += "Estratégias de reversão à média foram mais lucrativas. O ativo mostra comportamento lateral."
+        aiNotes += "Estratégias de reversão à média foram mais lucrativas. O ativo mostra comportamento lateral."
     } else {
-        notes += "Nenhum regime dominante claro foi identificado nesta sessão."
+        aiNotes += "Nenhum regime dominante claro foi identificado nesta sessão."
+    }
+
+    let combinedNotes = aiNotes;
+    if (userNotes && userNotes.trim().length > 0) {
+        combinedNotes = `Insight do Operador: "${userNotes.trim()}"\n\n---\n\n${aiNotes}`;
     }
     
     const finalConsensusThreshold = isDynamicConsensusOn ? consensusThreshold : assetProfile?.optimalConsensusThreshold || consensusThreshold;
-
 
     const newProfile: AssetProfileV1 = {
         id: activeSymbol,
@@ -394,7 +398,7 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
         lastAnalyzed: new Date().toISOString(),
         preferredRegime,
         optimalConsensusThreshold: finalConsensusThreshold,
-        notes
+        notes: combinedNotes,
     };
     
     await saveAssetProfileV1(user.uid, newProfile);
@@ -724,5 +728,3 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
     analyzeAndSaveLearnings,
   };
 }
-
-    

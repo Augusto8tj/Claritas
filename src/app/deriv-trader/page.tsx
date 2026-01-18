@@ -256,5 +256,3 @@ export default function DerivTraderPage() {
     </DerivApiProviderV1>
   );
 }
-
-    
