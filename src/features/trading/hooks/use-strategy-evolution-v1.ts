@@ -230,7 +230,7 @@ export function useStrategyEvolutionV1(assetSymbol: string | null) {
                 return newHistory;
             });
         }
-    }, [evolvedStrategies, toast, user, assetSymbol]);
+    }, [evolvedStrategies, toast, user, assetSymbol, evolutionHistory]);
 
     const resetEvolutionHistoryForAsset = useCallback(async () => {
         if (!user || !assetSymbol) {
