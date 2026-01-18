@@ -384,10 +384,13 @@ const executeTrade = useCallback(async (
         throw new Error("A conexão com a API da Deriv não está ativa.");
       }
 
+      // GARANTIA: Arredonda o stake para 2 casas decimais antes de enviar.
+      const sanitizedStake = parseFloat(stake.toFixed(2));
+
       try {
         const proposalResponse: any = await makeRequest({ 
             "proposal": 1,
-            "amount": stake,
+            "amount": sanitizedStake,
             "basis": "stake",
             "contract_type": contractType,
             "currency": "USD",
@@ -419,7 +422,7 @@ const executeTrade = useCallback(async (
             id: buyResult.contract_id,
             asset: symbol,
             direction: tradeDirection,
-            stake: stake,
+            stake: sanitizedStake,
             status: 'pending',
             timestamp: new Date().toISOString(),
             duration: duration,
@@ -439,14 +442,14 @@ const executeTrade = useCallback(async (
             entryPrice: entryPrice,
             direction: tradeDirection,
             status: 'pending',
-            stake: stake,
+            stake: sanitizedStake,
             symbol,
             expirationTime: expirationTimeMs,
         });
 
         return {
           success: true,
-          message: `Ordem do tipo "${contractType}" para ${symbol} no valor de ${stake} USD executada com sucesso.`,
+          message: `Ordem do tipo "${contractType}" para ${symbol} no valor de ${sanitizedStake} USD executada com sucesso.`,
           contractId: buyResult.contract_id,
           entryPrice,
         };
@@ -524,7 +527,7 @@ const executeTrade = useCallback(async (
             // Prioridade 2: Lidar com erros não solicitados
             if (response.error && response.error.message) {
                  if (response.error.code !== 'AlreadySubscribed' && response.error.code !== 'SellNotAvailable' && response.error.code !== 'ContractSellNotAvailable') {
-                  console.error(`[Deriv WS] Unsolicited Error:`, response.error);
+                  console.error(`[Deriv WS] Unsolicited Error:`, response.error.message);
                 }
                  return; // Erro não solicitado, mas não deve continuar o fluxo
             }
@@ -540,6 +543,7 @@ const executeTrade = useCallback(async (
                     const profit = parseFloat(contract.profit);
                     const isLoss = profit < 0;
                     
+                    // CORREÇÃO: Lógica mais robusta para obter o preço de saída
                     const exitPrice = parseFloat(contract.exit_tick_display_value || contract.sell_spot_display_value || contract.sell_spot || '0');
 
                     toast({

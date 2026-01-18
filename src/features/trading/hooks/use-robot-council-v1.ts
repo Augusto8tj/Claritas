@@ -329,7 +329,7 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
   useEffect(() => {
     return () => {
         if (hasPendingChangesRef.current && user) {
-            saveRobotPerformance(user.uid, robotPerformance);
+            saveRobotPerformance(user.uid, robotPerformance, 'v1');
         }
     };
   }, [user, robotPerformance]);
