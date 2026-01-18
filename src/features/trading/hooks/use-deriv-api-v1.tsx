@@ -504,14 +504,9 @@ const executeTrade = useCallback(async (
     ws.onmessage = (event) => {
         try {
             const response = JSON.parse(event.data);
-
-            if (response.error && response.error.message) {
-                if (response.error.code !== 'AlreadySubscribed') {
-                  console.error(`[Deriv WS] Error:`, response.error.message);
-                }
-            }
-            
             const reqId = response.req_id;
+
+            // Prioridade 1: Lidar com respostas a pedidos
             if (reqId && promisesRef.current.has(String(reqId))) {
                 const promise = promisesRef.current.get(String(reqId));
                 if (promise) {
@@ -523,7 +518,15 @@ const executeTrade = useCallback(async (
                     }
                     promisesRef.current.delete(String(reqId));
                 }
-                return;
+                return; // A mensagem foi tratada
+            }
+
+            // Prioridade 2: Lidar com erros não solicitados
+            if (response.error && response.error.message) {
+                 if (response.error.code !== 'AlreadySubscribed' && response.error.code !== 'SellNotAvailable' && response.error.code !== 'ContractSellNotAvailable') {
+                  console.error(`[Deriv WS] Unsolicited Error:`, response.error);
+                }
+                 return; // Erro não solicitado, mas não deve continuar o fluxo
             }
 
             switch (response.msg_type) {

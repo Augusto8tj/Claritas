@@ -210,7 +210,7 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
   
   const [strategyCouncil, setStrategyCouncil] = useState<RobotStrategy[]>([]);
   const [isCouncilAutopilotOn, setIsCouncilAutopilotOn] = useState(false);
-  const [isAuditingOn, setIsAuditingOn] = useState(true);
+  const [isAuditingOn, setIsAuditingOn] = useState(false); // Desativado por padrão para evitar spam
   const [isFetchingCouncil, setIsFetchingCouncil] = useState(false);
   const [councilVotes, setCouncilVotes] = useState<CouncilVotes>({});
   const [dailyBalance, setDailyBalance] = useState(10);
@@ -409,7 +409,7 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
   }, [user, activeSymbol, robotPerformance, consensusThreshold, isDynamicConsensusOn, toast, assetProfile]);
 
   useEffect(() => {
-    // CORREÇÃO: Adicionada a guarda !durationLimits para prevenir a condição de corrida.
+    // CORREÇÃO CRÍTICA: Adicionada a guarda !durationLimits
     if (!isConnected || !user || !isCouncilAutopilotOn || !durationLimits || strategyCouncil.length === 0 || !activeSymbol || tickCandles.length < 2) return;
 
     if (councilExecutionRef.current.isExecuting) return; 
@@ -530,7 +530,7 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
     setConsensusSum({ rise: riseSum, fall: fallSum });
 
     const consensusProbability = totalVoteWeight > 0 ? Math.max(riseSum, fallSum) / totalVoteWeight : 0.5;
-    let decision: 'RISE' | 'FALL' | 'HOLD' = 'HOLD';
+    let decision: 'RISE' | 'FALL' | 'HOLD'> = 'HOLD';
     if(riseSum > fallSum && consensusProbability > 0.54) decision = 'RISE';
     else if (fallSum > riseSum && consensusProbability > 0.54) decision = 'FALL';
     setConsensusDecision(decision);
@@ -578,8 +578,8 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
     const finalDecision = supervisionStatus.status === 'approved' ? decision : 'HOLD';
     
     let finalDuration = 0;
-    let finalUnit: DurationUnit = 's'; // Default to seconds
-
+    let finalUnit: DurationUnit = 's';
+    
     if (finalDecision !== 'HOLD' && durationLimits) {
         const votingRobots = Object.values(newVotes).filter(v => v.vote === finalDecision);
         const tickVotes = votingRobots.filter(v => v.optimalDurationUnit === 't');
@@ -587,15 +587,15 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
         
         const tickWeight = tickVotes.reduce((sum, v) => sum + v.weight, 0);
         const timeWeight = timeVotes.reduce((sum, v) => sum + v.weight, 0);
-
+    
         const canUseTicks = durationLimits.t && durationLimits.t.min > 0;
         const canUseSeconds = durationLimits.s && durationLimits.s.min > 0;
-
+    
         let preferredUnit: DurationUnit = 's';
         if (canUseTicks && (!canUseSeconds || tickWeight > timeWeight)) {
             preferredUnit = 't';
         }
-
+    
         if (preferredUnit === 't' && canUseTicks) {
             finalUnit = 't';
         } else if (canUseSeconds) {
@@ -609,12 +609,24 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
         } else if (finalUnit === 's' && timeWeight > 0) {
             const avgSeconds = timeVotes.reduce((sum, v) => sum + durationToSeconds(v.optimalDuration, v.optimalDurationUnit) * v.weight, 0) / timeWeight;
             finalDuration = Math.round(avgSeconds);
+        } else {
+            // BLINDAGEM: Se a unidade preferida não tiver votos, usa uma unidade válida como fallback.
+            if (canUseSeconds) {
+                finalDuration = durationLimits.s.min;
+                finalUnit = 's';
+            } else if (canUseTicks) {
+                finalDuration = durationLimits.t.min;
+                finalUnit = 't';
+            } else {
+                finalDuration = 15; // Último recurso
+                finalUnit = 's';
+            }
         }
         
         const limits = durationLimits[finalUnit];
         const minDuration = limits?.min || (finalUnit === 't' ? 5 : 15);
         const maxDuration = limits?.max || (finalUnit === 't' ? 10 : 3600);
-
+    
         if (isNaN(finalDuration) || finalDuration <= 0) {
             finalDuration = minDuration;
         }
