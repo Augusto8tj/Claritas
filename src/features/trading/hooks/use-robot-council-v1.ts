@@ -2,7 +2,8 @@
 'use client';
 
 /**
- * @fileoverview Cérebro da Mesa Operacional V1.8 (Promovido a Cérebro Quantitativo)
+ * @fileoverview Cérebro da Mesa Operacional V1.9 (Certificação de Elite)
+ * O sistema agora certifica robôs para operar com capital real, baseado em performance.
  */
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
@@ -26,6 +27,12 @@ import { saveRobotPerformance, loadRobotPerformance, saveTradeDecision, loadAsse
 export type RobotVote = RobotVoteType;
 export type RobotPerformance = RobotPerformanceType;
 type MarketRegimeV1 = 'TRENDING' | 'RANGING';
+
+
+// --- CRITÉRIOS DE PROMOÇÃO (NOVO) ---
+const PROMOTION_THRESHOLD_WINS = 10;
+const PROMOTION_THRESHOLD_PROFIT = 10; // Em USD
+const PROMOTION_THRESHOLD_SHARPE = 0.69;
 
 
 // Representa uma operação simulada (paper trade) na Arena Virtual.
@@ -430,9 +437,11 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
                 perf.wins = (perf.wins || 0) + (isWin ? 1 : 0);
                 perf.losses = (perf.losses || 0) + (isWin ? 0 : 1);
                 perf.totalProfit = (perf.totalProfit || 0) + pnl;
-                perf.tradeHistory = [...(perf.tradeHistory || []), { profit: pnl, regime: trade.regime, timestamp: Date.now() }];
+                
+                const newTradeHistory = [...(perf.tradeHistory || []), { profit: pnl, regime: trade.regime, timestamp: Date.now() }];
+                perf.tradeHistory = newTradeHistory;
                 perf.winRate = (perf.wins + perf.losses) > 0 ? (perf.wins / (perf.wins + perf.losses)) * 100 : 0;
-                perf.sharpeRatio = calculateSharpeRatio(perf.tradeHistory as {profit: number}[]);
+                perf.sharpeRatio = calculateSharpeRatio(newTradeHistory as { profit: number }[]);
                 performanceChanged = true;
             }
             return false;
@@ -441,10 +450,7 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
     });
 
     if (performanceChanged) {
-        const PROMOTION_THRESHOLD_WINS = 10;
-        const PROMOTION_THRESHOLD_PROFIT = 0;
-        const PROMOTION_THRESHOLD_SHARPE = 1.2;
-
+        // --- Lógica de Promoção ---
         performanceMap.forEach(perf => {
             const meetsCriteria =
                 (perf.wins || 0) >= PROMOTION_THRESHOLD_WINS &&
@@ -457,7 +463,7 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
                 toast({ title: 'Status de Robô Alterado!', description: `Robô ${perf.strategyType} agora está: ${newStatus}` });
             }
         });
-
+        
         const updatedPerformance = Array.from(performanceMap.values());
         setRobotPerformance(updatedPerformance);
         hasPendingChangesRef.current = true;
@@ -470,6 +476,9 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
 
     const newVotes: CouncilVotes = {};
     let riseSum = 0, fallSum = 0;
+    
+    // NOVO: Consenso apenas da Tropa de Elite
+    let eliteRiseSum = 0, eliteFallSum = 0;
     
     strategyCouncil.forEach(robot => {
         const voteResult = calculateRobotVote(robot, currentIndicators, tickCandles);
@@ -495,8 +504,8 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
         confidence = Math.min(100, Math.max(0, confidence));
 
         let weight = 1.0;
+        const perf = performanceMap.get(robot.id);
         if (isMeritocracyOn) {
-            const perf = performanceMap.get(robot.id);
             if (perf?.sharpeRatio) {
                 weight = Math.exp((perf.sharpeRatio || 0) * 0.5); 
                 weight = Math.max(0.1, Math.min(3.0, weight));
@@ -508,6 +517,12 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
         
         if (voteResult.vote === 'RISE') riseSum += confidence * weight;
         if (voteResult.vote === 'FALL') fallSum += confidence * weight;
+        
+        // Acumula votos de elite
+        if (perf?.status === 'Certified') {
+            if (voteResult.vote === 'RISE') eliteRiseSum += confidence * weight;
+            if (voteResult.vote === 'FALL') eliteFallSum += confidence * weight;
+        }
 
         if(voteResult.vote !== 'HOLD' && confidence > 50) {
              const exitEpoch = currentTick.epoch + durationToSeconds(voteResult.optimalDuration, voteResult.optimalDurationUnit);
@@ -530,9 +545,10 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
     setConsensusSum({ rise: riseSum, fall: fallSum });
 
     let decision: 'RISE' | 'FALL' | 'HOLD' = 'HOLD';
-    if (riseSum > fallSum && riseSum > consensusThreshold) {
+    // Decisão agora é baseada na elite
+    if (eliteRiseSum > eliteFallSum && eliteRiseSum > consensusThreshold) {
       decision = 'RISE';
-    } else if (fallSum > riseSum && fallSum > consensusThreshold) {
+    } else if (eliteFallSum > eliteRiseSum && eliteFallSum > consensusThreshold) {
       decision = 'FALL';
     }
     setConsensusDecision(decision);
@@ -554,7 +570,7 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
         return;
     }
     if (decision === 'HOLD') {
-      setSupervisionStatus({ status: 'inactive', message: `Aguardando consenso > ${consensusThreshold}.`, analysis: `RISE: ${riseSum.toFixed(0)} | FALL: ${fallSum.toFixed(0)}` });
+      setSupervisionStatus({ status: 'inactive', message: `Aguardando consenso da elite > ${consensusThreshold}.`, analysis: `Elite RISE: ${eliteRiseSum.toFixed(0)} | Elite FALL: ${eliteFallSum.toFixed(0)}` });
     }
     
     const last5Ticks = priceTicks.slice(-5);
@@ -567,7 +583,7 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
         }
     }
     
-    const p = (decision === 'RISE' ? riseSum : fallSum) / (riseSum + fallSum || 1);
+    const p = (decision === 'RISE' ? eliteRiseSum : eliteFallSum) / (eliteRiseSum + eliteFallSum || 1);
     const kellyFraction = (p * 0.94 - (1 - p)) / 0.94;
     let stake = Math.max(0.35, Math.min(dailyBalance * 0.05, dailyBalance * kellyFraction * 0.25));
 
@@ -578,25 +594,18 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
     }
     
     const certifiedRobots = robotPerformance.filter(p => p.status === 'Certified').map(p => p.id);
-    let certifiedRiseSum = 0, certifiedFallSum = 0;
+    let certifiedRiseSumLog = 0, certifiedFallSumLog = 0;
 
     if (certifiedRobots.length > 0) {
         Object.entries(newVotes).forEach(([robotId, voteData]) => {
             if (certifiedRobots.includes(robotId)) {
-                if (voteData.vote === 'RISE') certifiedRiseSum += voteData.confidence * voteData.weight;
-                if (voteData.vote === 'FALL') certifiedFallSum += voteData.confidence * voteData.weight;
+                if (voteData.vote === 'RISE') certifiedRiseSumLog += voteData.confidence * voteData.weight;
+                if (voteData.vote === 'FALL') certifiedFallSumLog += voteData.confidence * voteData.weight;
             }
         });
     }
 
-    let certifiedDecision: 'RISE' | 'FALL' | 'HOLD' = 'HOLD';
-    if (certifiedRiseSum > certifiedFallSum && certifiedRiseSum > consensusThreshold * 0.8) { 
-        certifiedDecision = 'RISE';
-    } else if (certifiedFallSum > certifiedRiseSum && certifiedFallSum > consensusThreshold * 0.8) {
-        certifiedDecision = 'FALL';
-    }
-    
-    const finalDecision = supervisionStatus.status === 'approved' && certifiedRobots.length > 0 ? certifiedDecision : 'HOLD';
+    const finalDecision = supervisionStatus.status === 'approved' && certifiedRobots.length > 0 ? decision : 'HOLD';
 
     let finalDuration = 0;
     let finalUnit: DurationUnit = 's';
@@ -643,9 +652,12 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
     }
     
     const tradeExecution = () => {
+        const sanitizedStake = parseFloat(stake.toFixed(2));
+        const finalContractType = finalDecision === 'RISE' ? 'CALL' : 'PUT';
+
         executeTrade(
-            finalDecision === 'RISE' ? 'CALL' : 'PUT',
-            stake,
+            finalContractType,
+            sanitizedStake,
             activeSymbol!,
             finalDecision.toLowerCase() as 'rise' | 'fall',
             finalDuration,
@@ -663,10 +675,10 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
                     timestamp: new Date().toISOString(),
                     asset: activeSymbol!,
                     timePeriod,
-                    tradeParams: { direction: finalDecision, stake, duration: finalDuration, durationUnit: finalUnit },
+                    tradeParams: { direction: finalDecision, stake: sanitizedStake, duration: finalDuration, durationUnit: finalUnit },
                     context: { 
                         marketRegime: currentRegime, regimeConfidence: 1.0, microstructure: null, indicators: currentIndicators,
-                        supervisionReason: logMessage, payout: stake * 0.94, entryPrice: tradeResult.entryPrice
+                        supervisionReason: logMessage, payout: sanitizedStake * 0.94, entryPrice: tradeResult.entryPrice
                     },
                     consensus: { 
                         consensusSum: { rise: riseSum, fall: fallSum }, consensusThreshold, activeRobots: Object.keys(newVotes).length,
