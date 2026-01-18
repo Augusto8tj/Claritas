@@ -22,6 +22,17 @@ import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
 import type { useRobotCouncilV1 } from "@/features/trading/hooks/use-robot-council-v1";
 import type { Indicators } from '@/services/indicator-service-v1';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 
 const indicatorIcons: { [key: string]: React.ReactNode } = {
     RSI: <BrainCircuit className="h-4 w-4" />,
@@ -103,6 +114,7 @@ export const CouncilAutopilotInterfaceV1: React.FC<CouncilAutopilotInterfaceV1Pr
     consensusSum,
     fetchStrategyCouncil,
     dissolveCouncil,
+    resetEvolutionHistoryForAsset,
  } = props;
   const { toast } = useToast();
   
@@ -151,60 +163,63 @@ export const CouncilAutopilotInterfaceV1: React.FC<CouncilAutopilotInterfaceV1Pr
 
     const renderIndicatorValue = (robot: RobotStrategy) => {
         if (!indicators) return <p>...</p>;
-        const format = (val: number | null | undefined, prec = 4) => val?.toFixed(prec) ?? "...";
+        const formatValue = (value: number | null | undefined, precision = 4) => {
+            if (value === null || value === undefined || isNaN(value)) return '...';
+            return value.toFixed(precision);
+        };
 
         switch (robot.strategyType) {
             case 'RSI':
-                return <p>RSI Atual: <strong>{format(indicators.rsi, 2)}</strong></p>;
+                return <p>RSI Atual: <strong>{formatValue(indicators.rsi, 2)}</strong></p>;
             case 'STOCHASTIC':
-                return <p>Estocástico Atual: <strong>{format(indicators.stoch, 2)}</strong></p>;
+                return <p>Estocástico Atual: <strong>{formatValue(indicators.stoch, 2)}</strong></p>;
             case 'MACD_CROSS':
                 const { macd, signal } = indicators.macd;
-                return <p>MACD/Sinal: <strong>{format(macd, 4)} / {format(signal, 4)}</strong></p>;
+                return <p>MACD/Sinal: <strong>{formatValue(macd, 4)} / {formatValue(signal, 4)}</strong></p>;
             case 'MOVING_AVERAGE_CROSS':
                 const { short, long } = indicators.ma;
-                return <p>Médias Atuais: <strong>{format(short)} / {format(long)}</strong></p>;
+                return <p>Médias Atuais: <strong>{formatValue(short)} / {formatValue(long)}</strong></p>;
             case 'BOLLINGER_BANDS':
                 if (!indicators.bollingerBands || indicators.bollingerBands.length === 0) return <p>Bandas: <strong>...</strong></p>;
                 const lastBand = indicators.bollingerBands[indicators.bollingerBands.length - 1];
                 if (!lastBand) return <p>Bandas: <strong>...</strong></p>;
-                return <p>Bandas: <strong>{format(lastBand.lower)} / {format(lastBand.upper)}</strong></p>;
+                return <p>Bandas: <strong>{formatValue(lastBand.lower)} / {formatValue(lastBand.upper)}</strong></p>;
             case 'ADX_TREND':
-                return <p>Força da Tendência (ADX): <strong>{format(indicators.adx, 2)}</strong></p>;
+                return <p>Força da Tendência (ADX): <strong>{formatValue(indicators.adx, 2)}</strong></p>;
             case 'Z_SCORE':
-                return <p>Z-Score Atual: <strong>{format(indicators.zScore, 2)}</strong></p>;
+                return <p>Z-Score Atual: <strong>{formatValue(indicators.zScore, 2)}</strong></p>;
             case 'KAMA':
-                return <p>KAMA Atual: <strong>{format(indicators.kama)}</strong></p>;
+                return <p>KAMA Atual: <strong>{formatValue(indicators.kama)}</strong></p>;
             case 'STOCH_RSI':
-                return <p>StochRSI Atual: <strong>{format(indicators.stochRSI, 2)}</strong></p>;
+                return <p>StochRSI Atual: <strong>{formatValue(indicators.stochRSI, 2)}</strong></p>;
             case 'AWESOME_OSCILLATOR':
-                return <p>Awesome Osc: <strong>{format(indicators.awesomeOscillator, 2)}</strong></p>;
+                return <p>Awesome Osc: <strong>{formatValue(indicators.ao, 2)}</strong></p>;
             case 'TRIX':
-                return <p>TRIX Atual: <strong>{format(indicators.trix)}%</strong></p>;
+                return <p>TRIX Atual: <strong>{formatValue(indicators.trix)}%</strong></p>;
             case 'ROC':
-                return <p>ROC Atual: <strong>{format(indicators.roc)}%</strong></p>;
+                return <p>ROC Atual: <strong>{formatValue(indicators.roc)}%</strong></p>;
             case 'MFI':
-                 return <p>MFI Atual: <strong>{format(indicators.mfi)}</strong></p>;
+                 return <p>MFI Atual: <strong>{formatValue(indicators.mfi)}</strong></p>;
             case 'OBV':
-                 return <p>OBV Atual: <strong>{format(indicators.obv, 0)}</strong></p>;
+                 return <p>OBV Atual: <strong>{formatValue(indicators.obv, 0)}</strong></p>;
             case 'PARABOLIC_SAR':
-                return <p>SAR Atual: <strong>{format(indicators.parabolicSAR)}</strong></p>;
+                return <p>SAR Atual: <strong>{formatValue(indicators.psar)}</strong></p>;
             case 'RVI':
-                 return <p>RVI Atual: <strong>{format(indicators.rvi)}</strong></p>;
+                 return <p>RVI Atual: <strong>{formatValue(indicators.rvi)}</strong></p>;
             case 'VWAP':
                 const lastVWAP = indicators.vwap && indicators.vwap.length > 0 ? indicators.vwap[indicators.vwap.length - 1] : null;
-                return <p>VWAP Atual: <strong>{format(lastVWAP)}</strong></p>;
+                return <p>VWAP Atual: <strong>{formatValue(lastVWAP)}</strong></p>;
             case 'DONCHIAN_CHANNELS':
                 if (!indicators.donchianChannels || indicators.donchianChannels.length === 0) return <p>Canais: <strong>...</strong></p>;
                 const lastChannel = indicators.donchianChannels[indicators.donchianChannels.length - 1];
                 if (!lastChannel) return <p>Canais: <strong>...</strong></p>;
-                return <p>Canais: <strong>{format(lastChannel.lower)} / {format(lastChannel.upper)}</strong></p>;
+                return <p>Canais: <strong>{formatValue(lastChannel.lower)} / {formatValue(lastChannel.upper)}</strong></p>;
             case 'CHANDELIER_EXIT':
                  if (!indicators.chandelierExit) return <p>Saída: <strong>...</strong></p>;
-                 return <p>Saída Chandelier: <strong>{format(indicators.chandelierExit)}</strong></p>;
+                 return <p>Saída Chandelier: <strong>{formatValue(indicators.chandelierExit)}</strong></p>;
             case 'ICHIMOKU_CLOUD':
                 if (!indicators.ichimoku) return <p>Nuvem: <strong>...</strong></p>;
-                return <p>Nuvem A/B: <strong>{format(indicators.ichimoku.spanA)} / {format(indicators.ichimoku.spanB)}</strong></p>;
+                return <p>Nuvem A/B: <strong>{formatValue(indicators.ichimoku.spanA)} / {formatValue(indicators.ichimoku.spanB)}</strong></p>;
             default:
                 return null;
         }
@@ -351,6 +366,34 @@ export const CouncilAutopilotInterfaceV1: React.FC<CouncilAutopilotInterfaceV1Pr
                     </div>
                 </div>
             )}
+        </div>
+
+        <Separator />
+        
+         <div className="space-y-2 pt-2">
+            <Label>Gestão de Evolução</Label>
+            <AlertDialog>
+                <AlertDialogTrigger asChild>
+                    <Button variant="outline" className="w-full" disabled={isCouncilAutopilotOn}>
+                        <Trash2 className="mr-2 h-4 w-4 text-destructive" /> Resetar Evolução para este Ativo
+                    </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                    <AlertDialogHeader>
+                        <AlertDialogTitle>Tem a certeza absoluta?</AlertDialogTitle>
+                        <AlertDialogDescription>
+                            Esta ação irá apagar permanentemente o histórico de evolução para o ativo atual. A IA recomeçará a aprender do zero para este ativo na próxima sessão.
+                        </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                        <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                        <AlertDialogAction onClick={resetEvolutionHistoryForAsset} className="bg-destructive hover:bg-destructive/90">
+                            Sim, Resetar
+                        </AlertDialogAction>
+                    </AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialog>
+            <p className="text-xs text-muted-foreground">Use se a IA parece estagnada ou se o comportamento do mercado mudou.</p>
         </div>
 
         <Separator />

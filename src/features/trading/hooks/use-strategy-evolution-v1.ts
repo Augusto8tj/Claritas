@@ -5,7 +5,7 @@ import { useState, useCallback, useRef, useEffect } from 'react';
 import type { RobotStrategy, RobotPerformance } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/features/auth/hooks/use-auth';
-import { saveEvolutionHistory, loadEvolutionHistory } from '@/services/financial-data-service';
+import { saveEvolutionHistory, loadEvolutionHistory, clearEvolutionHistory } from '@/services/financial-data-service';
 import { initialCouncilStrategies } from '@/services/council-strategies';
 
 // ============================================================================
@@ -122,7 +122,7 @@ const mutateStrategy = (
 // O HOOK DE EVOLUÇÃO
 // ============================================================================
 
-export function useStrategyEvolutionV1() {
+export function useStrategyEvolutionV1(assetSymbol: string | null) {
     const { toast } = useToast();
     const { user } = useAuth();
     
@@ -130,13 +130,20 @@ export function useStrategyEvolutionV1() {
     const [evolutionHistory, setEvolutionHistory] = useState<EvolutionEvent[]>([]);
 
     useEffect(() => {
-        if (!user) return;
-        loadEvolutionHistory(user.uid, 'v1').then(history => {
+        if (!user || !assetSymbol) {
+            setEvolutionHistory([]);
+            setEvolvedStrategies(initialCouncilStrategies);
+            return;
+        };
+        
+        loadEvolutionHistory(user.uid, 'v1', assetSymbol).then(history => {
             if (history && history.length > 0) {
                 setEvolutionHistory(history as EvolutionEvent[]);
+            } else {
+                setEvolutionHistory([]);
             }
         });
-    }, [user]);
+    }, [user, assetSymbol]);
 
     const tradeCountRef = useRef(0);
 
@@ -147,7 +154,7 @@ export function useStrategyEvolutionV1() {
             return; 
         }
 
-        console.log(`[Evolution V1] Limite de ${EVOLUTION_TRIGGER_THRESHOLD} trades atingido. A iniciar ciclo de evolução...`);
+        console.log(`[Evolution V1] Limite de ${EVOLUTION_TRIGGER_THRESHOLD} trades atingido para ${assetSymbol}. A iniciar ciclo de evolução...`);
         tradeCountRef.current = 0; 
 
         const sortedPerformance = [...performanceData].sort((a, b) => (b.sharpeRatio || -99) - (a.sharpeRatio || -99));
@@ -217,17 +224,35 @@ export function useStrategyEvolutionV1() {
             setEvolvedStrategies(Array.from(newStrategiesMap.values()));
             setEvolutionHistory(prev => {
                 const newHistory = [newEvent, ...prev];
-                if(user) {
-                    saveEvolutionHistory(user.uid, newHistory, 'v1');
+                if(user && assetSymbol) {
+                    saveEvolutionHistory(user.uid, newHistory, 'v1', assetSymbol);
                 }
                 return newHistory;
             });
         }
-    }, [evolvedStrategies, toast, user]);
+    }, [evolvedStrategies, toast, user, assetSymbol]);
+
+    const resetEvolutionHistoryForAsset = useCallback(async () => {
+        if (!user || !assetSymbol) {
+            toast({ title: 'Erro', description: 'Nenhum usuário ou ativo selecionado.', variant: 'destructive'});
+            return;
+        }
+        try {
+            await clearEvolutionHistory(user.uid, 'v1', assetSymbol);
+            setEvolutionHistory([]); // Limpa o estado local
+            setEvolvedStrategies(initialCouncilStrategies); // Reseta as estratégias para o padrão
+            tradeCountRef.current = 0;
+            toast({ title: `Evolução para ${assetSymbol} Resetada`, description: 'O sistema recomeçará a aprender com as estratégias padrão.'});
+        } catch (error) {
+            console.error("Failed to reset evolution history:", error);
+            toast({ title: 'Erro ao Resetar', description: 'Não foi possível apagar o histórico de evolução.', variant: 'destructive'});
+        }
+    }, [user, assetSymbol, toast]);
 
     return {
         evolvedStrategies,
         evolveTrigger,
         evolutionHistory,
+        resetEvolutionHistoryForAsset,
     };
 }

@@ -190,7 +190,7 @@ function DerivTraderPageContent() {
                                         <HallOfFame />
                                     </TabsContent>
                                     <TabsContent value="evolution" className="mt-4">
-                                        <EvolutionLabV1 history={robotCouncil.evolutionHistory} />
+                                        <EvolutionLabV1 history={robotCouncil.evolutionHistory} activeSymbol={activeSymbol} />
                                     </TabsContent>
                                 </Tabs>
                             </div>
@@ -228,7 +228,7 @@ function DerivTraderPageContent() {
                     />
                     <TradingDecisionLogViewer logs={robotCouncil.tradeDecisionLog || []} />
                     <HallOfFame />
-                    <EvolutionLabV1 history={robotCouncil.evolutionHistory} />
+                    <EvolutionLabV1 history={robotCouncil.evolutionHistory} activeSymbol={activeSymbol} />
                 </div>
             </>
 

@@ -9,9 +9,10 @@ import type { EvolutionEvent } from '@/features/trading/hooks/use-strategy-evolu
 
 interface EvolutionLabV1Props {
   history: EvolutionEvent[];
+  activeSymbol: string | null;
 }
 
-export function EvolutionLabV1({ history }: EvolutionLabV1Props) {
+export function EvolutionLabV1({ history, activeSymbol }: EvolutionLabV1Props) {
   return (
     <Card>
       <CardHeader>
@@ -20,14 +21,14 @@ export function EvolutionLabV1({ history }: EvolutionLabV1Props) {
             Laboratório de Evolução V1
         </CardTitle>
         <CardDescription>
-          Histórico de mutações genéticas do conselho de robôs a cada 50 trades.
+          Histórico de mutações para o ativo <span className="font-bold text-primary">{activeSymbol || "..."}</span>. A evolução ocorre a cada 50 trades.
         </CardDescription>
       </CardHeader>
       <CardContent>
         <ScrollArea className="h-[400px] pr-4">
           {history.length === 0 ? (
             <div className="flex h-full items-center justify-center text-muted-foreground">
-              Aguardando o primeiro ciclo de evolução...
+              Aguardando o primeiro ciclo de evolução para este ativo...
             </div>
           ) : (
             <div className="space-y-6">

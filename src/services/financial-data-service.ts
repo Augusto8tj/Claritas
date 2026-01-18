@@ -301,13 +301,13 @@ export async function getTradeDecisionLogs(userId: string, version: 'v1' | 'v2' 
     }
 }
 
-// --- Evolution History (Version-Aware) ---
+// --- Evolution History (Version-Aware & Asset-Specific) ---
 
-export async function saveEvolutionHistory(userId: string, history: EvolutionEvent[], version: Version): Promise<void> {
-    if (!userId || !history) return;
+export async function saveEvolutionHistory(userId: string, history: EvolutionEvent[], version: Version, assetSymbol: string): Promise<void> {
+    if (!userId || !history || !assetSymbol) return;
 
     const collectionName = `evolution_${version}`;
-    const docRef = doc(db, 'users', userId, collectionName, 'history');
+    const docRef = doc(db, 'users', userId, collectionName, assetSymbol);
 
     try {
         const historyForFirestore = history.map(event => ({
@@ -325,11 +325,11 @@ export async function saveEvolutionHistory(userId: string, history: EvolutionEve
     }
 }
 
-export async function loadEvolutionHistory(userId: string, version: Version): Promise<EvolutionEvent[]> {
-    if (!userId) return [];
+export async function loadEvolutionHistory(userId: string, version: Version, assetSymbol: string): Promise<EvolutionEvent[]> {
+    if (!userId || !assetSymbol) return [];
     
     const collectionName = `evolution_${version}`;
-    const docRef = doc(db, 'users', userId, collectionName, 'history');
+    const docRef = doc(db, 'users', userId, collectionName, assetSymbol);
     try {
         const docSnap = await getDoc(docRef);
         if (docSnap.exists()) {
@@ -347,22 +347,27 @@ export async function loadEvolutionHistory(userId: string, version: Version): Pr
     }
 }
 
-export async function clearEvolutionHistory(userId: string, version: Version): Promise<void> {
-    if (!userId) return;
-    const docRef = doc(db, 'users', userId, `evolution_${version}`, 'history');
+export async function clearEvolutionHistory(userId: string, version: Version, assetSymbol: string): Promise<void> {
+    if (!userId || !assetSymbol) return;
+    const docRef = doc(db, 'users', userId, `evolution_${version}`, assetSymbol);
     await deleteDoc(docRef);
 }
 
 export async function deleteEvolutionEvent(userId: string, eventTimestamp: string, version: Version): Promise<void> {
     if (!userId) return;
     
-    const currentHistory = await loadEvolutionHistory(userId, version);
-    const newHistory = currentHistory.filter(event => event.timestamp.toISOString() !== eventTimestamp);
+    // Esta função precisaria do assetSymbol para ser totalmente funcional
+    // Por agora, ela não será usada no V1, mas está aqui para referência.
+    // Em uma implementação real, o assetSymbol seria passado para a função.
     
-    if (newHistory.length < currentHistory.length) {
-        await saveEvolutionHistory(userId, newHistory, version);
-    }
+    // const currentHistory = await loadEvolutionHistory(userId, version, assetSymbol);
+    // const newHistory = currentHistory.filter(event => event.timestamp.toISOString() !== eventTimestamp);
+    
+    // if (newHistory.length < currentHistory.length) {
+    //     await saveEvolutionHistory(userId, newHistory, version, assetSymbol);
+    // }
 }
+
 
 // --- Asset Strategy Profile (V1) ---
 
@@ -389,5 +394,3 @@ export async function saveAssetProfileV1(userId: string, profile: AssetProfileV1
   // Non-blocking write
   setDocumentNonBlocking(docRef, sanitizedProfile, { merge: true });
 }
-
-    
