@@ -609,7 +609,7 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
 
         const limits = durationLimits[finalUnit];
         if (limits) {
-            if (finalDuration <= 0) {
+            if (isNaN(finalDuration) || finalDuration <= 0) {
                 finalDuration = limits.min;
             }
             finalDuration = Math.max(limits.min, Math.min(finalDuration, limits.max));
@@ -647,7 +647,7 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
                 votes: newVotes,
                 virtualTrades: newVirtualTradesForLog,
             },
-            result: finalDecision !== 'HOLD' ? 'pending' : 'hold',
+            result: finalDecision !== 'HOLD' && finalDuration > 0 ? 'pending' : 'hold',
             pnl: 0,
         };
 
@@ -677,10 +677,13 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
                 }
             });
         } else {
-            const holdLog = { ...baseLog, id: logId };
-            // A LINHA ABAIXO FOI REMOVIDA PARA CORRIGIR O ERRO DE 'RESOURCE EXHAUSTED'
-            // saveTradeDecision(user.uid, holdLog, 'v1');
-            setTradeDecisionLog(prev => [holdLog, ...prev]);
+            // Apenas guarda logs de HOLD se houver uma decisão pendente mas vetada.
+            if(decision !== 'HOLD') {
+                const holdLog = { ...baseLog, id: logId };
+                // A LINHA ABAIXO FOI REMOVIDA PARA CORRIGIR O ERRO DE 'RESOURCE EXHAUSTED'
+                // saveTradeDecision(user.uid, holdLog, 'v1');
+                setTradeDecisionLog(prev => [holdLog, ...prev]);
+            }
         }
     }
 
@@ -729,3 +732,5 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
     analyzeAndSaveLearnings,
   };
 }
+
+    
