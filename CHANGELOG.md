@@ -4,7 +4,18 @@ Este documento regista a jornada de desenvolvimento e as principais funcionalida
 
 ---
 
-### v3.1.0 (Atual) - O Laboratório de IA e a Visão Hierárquica
+### v3.5.0 (Atual) - A Fundação Cognitiva: Promoção do Cérebro Quântico V1
+
+**Funcionalidades Principais:**
+- **Promoção da Arquitetura V1:** O motor do Deriv Trader V1 foi solidificado e promovido como a fundação cognitiva estável do sistema. A sua arquitetura, agora documentada em `docs/deriv-trader-v1-architecture.md`, serve como a base comprovada para os nossos princípios de trading.
+- **Memória Estratégica & Aprendizagem Colaborativa:** Implementação da camada de persistência `AssetProfileV1` no Firestore. O sistema agora aprende o "regime preferencial" e o "limiar de consenso ótimo" de cada ativo.
+- **Interface de Colaboração Homem-Máquina:** A adição do painel `AssetIntelligenceCard` permite que **você, o operador**, insira os seus próprios *insights* sobre um ativo, que são fundidos com a análise da IA para criar um cérebro híbrido e colaborativo.
+- **Auditoria Forense Completa:** A "caixa-preta" do sistema V1 foi finalizada. O `TradingDecisionLogViewer` agora captura e exibe não apenas as decisões de execução, mas também todas as operações da **Arena Virtual** iniciadas em cada ciclo de decisão, garantindo transparência total.
+- **Controlo Granular:** Adicionado um interruptor na interface do V1 para ligar ou desligar a "Auditoria Cognitiva", permitindo otimizar a performance ao desativar o logging detalhado quando não for necessário.
+
+---
+
+### v3.1.0 - O Laboratório de IA e a Visão Hierárquica
 
 **Funcionalidades Principais:**
 - **Criação do Deriv Trader 3.0 (IA Lab):** Um ambiente de desenvolvimento totalmente independente e isolado foi criado para permitir a experimentação e implementação de arquiteturas de IA radicais sem afetar a estabilidade da versão 2.5. Isto inclui a duplicação de todos os hooks e componentes essenciais (`use-deriv-api-v3`, `use-robot-council-v3`, `use-strategy-evolution-v3`, etc.).

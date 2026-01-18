@@ -1,4 +1,4 @@
-# Claritas Copilot - Arquitetura Técnica: Deriv Trader 2.5
+# Claritas Copilot - Arquitetura Técnica: Deriv Trader 3.5
 
 Este documento detalha a arquitetura do sistema **Deriv Trader 2.5**, um ambiente de trading de alta frequência impulsionado por um motor cognitivo multicamada. O sistema foi projetado para ser robusto, adaptativo e resiliente, separando a lógica de decisão de alta frequência da camada de apresentação.
 
