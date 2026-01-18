@@ -3,41 +3,7 @@
 
 /**
  * @fileoverview Cérebro da Mesa Operacional V1.8 (Promovido a Cérebro Quantitativo)
- * 
- * =================================================================================
- * EVOLUÇÃO DE ARQUITETURA (ENGENHEIRO, ESTA É A MUDANÇA QUE VOCÊ PEDIU):
- * =================================================================================
- * 
- * O hook V1 foi promovido. Ele agora incorpora os conceitos de "inteligência"
- * que desenvolvemos, garantindo um desempenho superior, enquanto permanece no seu
- * ecossistema original. As novas funcionalidades incluem:
- * 
- * 1.  **VOTAÇÃO PROBABILÍSTICA ("TONS DE CINZA"):**
- *     - Os robôs não dão mais um voto binário. Eles fornecem uma **pontuação de confiança (0-100)**
- *       que reflete a força do sinal. Um RSI de 15 tem mais força que um de 29.
- * 
- * 2.  **CONSCIÊNCIA DE REGIME (CONTEXT-AWARENESS):**
- *     - O sistema agora detecta se o mercado está em 'TENDÊNCIA' ou 'LATERAL' (RANGING).
- *     - Robôs inadequados para um regime têm sua confiança reduzida, mas não são silenciados.
- * 
- * 3.  **MERITOCRACIA EXPONENCIAL (SHARPE RATIO):**
- *     - O poder de voto de um robô já não é baseado em simples vitórias, mas sim no seu
- *       **Sharpe Ratio**, uma medida que relaciona retorno ao risco.
- *     - Um robô com Sharpe Ratio negativo tem o seu voto severamente penalizado, enquanto
- *       um com Sharpe alto tem poder de voto exponencial. Só os melhores lideram.
- * 
- * 4.  **GESTÃO DE RISCO CIENTÍFICA (CRITÉRIO DE KELLY FRACIONADO):**
- *     - O valor da aposta (`stake`) já não é um valor fixo ou um ajuste simples.
- *     - É calculado cientificamente usando o "Quarter Kelly", que aposta mais
- *       agressivamente quando a probabilidade de sucesso do consenso é alta, e protege
- *       o capital quando a vantagem é baixa.
- * 
- * 5.  **VETO DE MICROESTRUTURA (O "GUARDA-COSTAS"):**
- *     - Uma camada final de proteção. Mesmo com um consenso forte de COMPRA, se os últimos
- *       5 ticks mostrarem uma "micro-queda" súbita, a operação é VETADA para evitar
- *       entrar contra um movimento de mercado violento e repentino.
  */
-
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useDerivApiV1 } from './use-deriv-api-v1';
@@ -103,7 +69,6 @@ const calculateSharpeRatio = (pnlHistory: { profit: number }[]): number => {
     if (pnlHistory.length < 10) return 0; // Not enough data
     const profits = pnlHistory.map(t => t.profit);
     const mean = profits.reduce((a, b) => a + b, 0) / profits.length;
-    if (mean === 0) return 0;
     const stdDev = Math.sqrt(profits.map(p => Math.pow(p - mean, 2)).reduce((a, b) => a + b, 0) / profits.length);
     if (stdDev === 0) return mean > 0 ? 99 : -99; // Infinite return, but capped
     return mean / stdDev;
@@ -212,7 +177,7 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
   
   const [strategyCouncil, setStrategyCouncil] = useState<RobotStrategy[]>([]);
   const [isCouncilAutopilotOn, setIsCouncilAutopilotOn] = useState(false);
-  const [isAuditingOn, setIsAuditingOn] = useState(false); // Desativado por padrão para evitar spam
+  const [isAuditingOn, setIsAuditingOn] = useState(false);
   const [isFetchingCouncil, setIsFetchingCouncil] = useState(false);
   const [councilVotes, setCouncilVotes] = useState<CouncilVotes>({});
   const [dailyBalance, setDailyBalance] = useState(10);
@@ -227,14 +192,20 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
   const virtualTradesRef = useRef<VirtualTrade[]>([]);
   const tradeCounterRef = useRef(0);
   const [indicators, setIndicators] = useState<Indicators | null>(null);
-  const [activeCommittee, setActiveCommittee] = useState<string | null>(null); // Agora mostrará o regime
+  const [activeCommittee, setActiveCommittee] = useState<string | null>(null);
   const [supervisionStatus, setSupervisionStatus] = useState<{ status: 'inactive' | 'approved' | 'veto'; message: string; analysis?: string }>({ status: 'inactive', message: 'Aguardando consenso.' });
   const [consensusSum, setConsensusSum] = useState({ rise: 0, fall: 0 });
   const [consensusDecision, setConsensusDecision] = useState<'RISE' | 'FALL' | 'HOLD'>('HOLD');
   const councilExecutionRef = useRef({ isExecuting: false, sellingContracts: new Set<number>() });
   const [tradeDecisionLog, setTradeDecisionLog] = useState<TradeDecisionLog[]>([]);
-  
   const hasPendingChangesRef = useRef(false);
+  
+  // Este ref guardará os dados de desempenho mais recentes para salvamento assíncrono.
+  const robotPerformanceRef = useRef<RobotPerformance[]>(robotPerformance);
+  useEffect(() => {
+    robotPerformanceRef.current = robotPerformance;
+  }, [robotPerformance]);
+
 
   // --- ASSET PROFILE STATES ---
   const [assetProfile, setAssetProfile] = useState<AssetProfileV1 | null>(null);
@@ -304,35 +275,37 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
 
   const dissolveCouncil = useCallback(() => {
     if (hasPendingChangesRef.current && user) {
-        saveRobotPerformance(user.uid, robotPerformance, 'v1');
+        saveRobotPerformance(user.uid, robotPerformanceRef.current, 'v1');
         hasPendingChangesRef.current = false;
     }
     setStrategyCouncil([]);
     setCouncilVotes({});
     setIsCouncilAutopilotOn(false);
     virtualTradesRef.current = [];
-  }, [user, robotPerformance]);
+  }, [user]);
 
+  // Salva periodicamente quaisquer alterações pendentes no desempenho
   useEffect(() => {
     if (!isCouncilAutopilotOn) return;
     
     const saveInterval = setInterval(() => {
-        if(hasPendingChangesRef.current) {
-            saveRobotPerformance(user.uid, robotPerformance, 'v1');
+        if(hasPendingChangesRef.current && user) {
+            saveRobotPerformance(user.uid, robotPerformanceRef.current, 'v1');
             hasPendingChangesRef.current = false;
         }
     }, FIRESTORE_SAVE_INTERVAL_MS);
 
     return () => clearInterval(saveInterval);
-  }, [isCouncilAutopilotOn, user, robotPerformance]);
+  }, [isCouncilAutopilotOn, user]);
 
+  // Salva quaisquer alterações pendentes ao desmontar o componente
   useEffect(() => {
     return () => {
         if (hasPendingChangesRef.current && user) {
-            saveRobotPerformance(user.uid, robotPerformance, 'v1');
+            saveRobotPerformance(user.uid, robotPerformanceRef.current, 'v1');
         }
     };
-  }, [user, robotPerformance]);
+  }, [user]);
   
   useEffect(() => {
     if (isCouncilAutopilotOn) resetArenaPerformance();
