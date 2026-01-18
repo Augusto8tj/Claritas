@@ -678,7 +678,8 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
             });
         } else {
             const holdLog = { ...baseLog, id: logId };
-            saveTradeDecision(user.uid, holdLog, 'v1');
+            // A LINHA ABAIXO FOI REMOVIDA PARA CORRIGIR O ERRO DE 'RESOURCE EXHAUSTED'
+            // saveTradeDecision(user.uid, holdLog, 'v1');
             setTradeDecisionLog(prev => [holdLog, ...prev]);
         }
     }
