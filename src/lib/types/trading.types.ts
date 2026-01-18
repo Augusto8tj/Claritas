@@ -161,6 +161,7 @@ export interface EnhancedRobotPerformance {
   monteCarloScore: number;
   lastUpdated: number;
   tradeHistory: { profit: number; regime: any; timestamp: number }[];
+  status?: 'Probation' | 'Certified';
 }
 
 // Schema for a snapshot of all indicators at a given time
@@ -292,6 +293,7 @@ export const RobotPerformanceSchema = z.object({
     winRateRange: z.number().optional(),
     sharpeRatio: z.number().optional(),
     tradeHistory: z.array(TradeHistoryEventSchema).optional(),
+    status: z.enum(['Probation', 'Certified']).default('Probation').optional(),
 });
 
 export type RobotPerformance = z.infer<typeof RobotPerformanceSchema>;
@@ -311,5 +313,3 @@ export const AssetProfileV1Schema = z.object({
   notes: z.string().optional(),
 });
 export type AssetProfileV1 = z.infer<typeof AssetProfileV1Schema>;
-
-    
