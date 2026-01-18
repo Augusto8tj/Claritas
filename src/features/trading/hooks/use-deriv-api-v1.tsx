@@ -151,7 +151,7 @@ export const DerivApiProviderV1 = ({ children }: { children: ReactNode }) => {
   const [isAssetsLoading, setIsAssetsLoading] = useState(true);
   const { toast } = useToast();
 
-  const [activeSymbol, setActiveSymbol] = useState<string | null>('1HZ10V');
+  const [activeSymbol, setActiveSymbol] = useState<string | null>('1HZ100V');
   const [chartData, setChartData] = useState<ChartData[]>([]);
   const [priceTicks, setPriceTicks] = useState<TickData[]>([]); 
   const [isChartLoading, setIsChartLoading] = useState(true);
