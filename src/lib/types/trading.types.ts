@@ -295,3 +295,21 @@ export const RobotPerformanceSchema = z.object({
 });
 
 export type RobotPerformance = z.infer<typeof RobotPerformanceSchema>;
+
+export const AssetProfileV1Schema = z.object({
+  id: z.string(), // asset symbol will be the id
+  assetSymbol: z.string(),
+  lastAnalyzed: z.string(),
+  preferredRegime: z.enum(["TRENDING", "RANGING", "NEUTRAL"]).optional(),
+  optimalConsensusThreshold: z.number().optional(),
+  performanceSummary: z.object({
+    totalTrades: z.number(),
+    winRate: z.number(),
+    totalPnl: z.number(),
+    sharpeRatio: z.number(),
+  }).optional(),
+  notes: z.string().optional(),
+});
+export type AssetProfileV1 = z.infer<typeof AssetProfileV1Schema>;
+
+    

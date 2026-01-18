@@ -26,6 +26,7 @@ import { HallOfFame } from "@/features/trading/components/deriv-trader/hall-of-f
 import { ApiStatusIndicatorLegacy } from "@/features/trading/components/deriv-trader/ApiStatusIndicatorLegacy";
 import { EvolutionLabV1 } from "@/features/trading/components/deriv-trader/evolution-lab-v1";
 import TradingDecisionLogViewer from "@/components/deriv-trader/TradingDecisionLogViewer";
+import { AssetIntelligenceCard } from "@/features/trading/components/deriv-trader/asset-intelligence-card";
 
 
 function DerivTraderPageContent() {
@@ -154,6 +155,11 @@ function DerivTraderPageContent() {
                                     activeCommittee={robotCouncil.activeCommittee}
                                     isAutopilotOn={robotCouncil.isCouncilAutopilotOn}
                                     />
+                                    <AssetIntelligenceCard
+                                        profile={robotCouncil.assetProfile}
+                                        isLoading={robotCouncil.isAssetProfileLoading}
+                                        onAnalyze={robotCouncil.analyzeAndSaveLearnings}
+                                    />
                                 </div>
                             </div>
                             <div className="mt-6">
@@ -179,7 +185,7 @@ function DerivTraderPageContent() {
                                     </TabsContent>
                                      <TabsContent value="audit" className="mt-4">
                                         <TradingDecisionLogViewer logs={robotCouncil.tradeDecisionLog || []} />
-                                    </TabsContent>
+                                     </TabsContent>
                                     <TabsContent value="fame" className="mt-4">
                                         <HallOfFame />
                                     </TabsContent>
@@ -204,6 +210,11 @@ function DerivTraderPageContent() {
                         supervisionStatus={robotCouncil.supervisionStatus}
                         activeCommittee={robotCouncil.activeCommittee}
                         isAutopilotOn={robotCouncil.isCouncilAutopilotOn}
+                    />
+                    <AssetIntelligenceCard
+                        profile={robotCouncil.assetProfile}
+                        isLoading={robotCouncil.isAssetProfileLoading}
+                        onAnalyze={robotCouncil.analyzeAndSaveLearnings}
                     />
                     <CouncilAutopilotInterfaceV1 {...robotCouncil} />
                     <AIAnalysisInterfaceV1 symbol={activeSymbol} />
@@ -245,3 +256,5 @@ export default function DerivTraderPage() {
     </DerivApiProviderV1>
   );
 }
+
+    

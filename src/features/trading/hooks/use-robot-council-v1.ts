@@ -42,7 +42,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useDerivApiV1 } from './use-deriv-api-v1';
 import { useToast } from '@/hooks/use-toast';
-import type { RobotStrategy, ChartData, TickData, CandleData, DurationUnit, RobotVote as RobotVoteType, CouncilVotes, RobotPerformance as RobotPerformanceType, Operation, TradeDecisionLog, VirtualTradeLog } from '@/lib/types';
+import type { RobotStrategy, ChartData, TickData, CandleData, DurationUnit, RobotVote as RobotVoteType, CouncilVotes, RobotPerformance as RobotPerformanceType, Operation, TradeDecisionLog, VirtualTradeLog, AssetProfileV1 } from '@/lib/types';
 import type { RiseFallFormValues } from '@/features/trading/components/deriv-trader/deriv-trader-interface-v1.types';
 import { useFormContext } from 'react-hook-form';
 import type { Indicators } from '@/services/indicator-service-v1';
@@ -53,7 +53,7 @@ import { useStrategyEvolutionV1 } from './use-strategy-evolution-v1';
 import { errorEmitter, FirestorePermissionError } from '@/firebase';
 import { db } from '@/lib/firebase';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
-import { saveRobotPerformance, loadRobotPerformance, saveTradeDecision } from '@/services/financial-data-service';
+import { saveRobotPerformance, loadRobotPerformance, saveTradeDecision, loadAssetProfileV1, saveAssetProfileV1 } from '@/services/financial-data-service';
 
 
 // --- TIPAGEM E TIPOS DE DADOS ---
@@ -234,6 +234,10 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
   
   const hasPendingChangesRef = useRef(false);
 
+  // --- ASSET PROFILE STATES ---
+  const [assetProfile, setAssetProfile] = useState<AssetProfileV1 | null>(null);
+  const [isAssetProfileLoading, setIsAssetProfileLoading] = useState(false);
+
   useEffect(() => {
     const councilWithIds = evolvedStrategies.map((strat, index) => ({
       ...strat,
@@ -241,14 +245,14 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
     })) as RobotStrategy[];
     setStrategyCouncil(councilWithIds);
   }, [evolvedStrategies]);
-
+  
+  // --- LOADERS ---
   useEffect(() => {
     if (!user || isAuthLoading) return;
     
     loadRobotPerformance(user.uid, 'v1')
       .then(storedPerformance => {
         if (storedPerformance) {
-            // Garante que o histórico existe
             const perfWithHistory = storedPerformance.map(p => ({ ...p, tradeHistory: p.tradeHistory || [] }));
             setRobotPerformance(perfWithHistory as RobotPerformance[]);
         }
@@ -261,6 +265,18 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
         errorEmitter.emit('permission-error', permissionError);
       });
   }, [user, isAuthLoading]);
+
+  useEffect(() => {
+      if (!user || !activeSymbol) return;
+      setIsAssetProfileLoading(true);
+      loadAssetProfileV1(user.uid, activeSymbol).then(profile => {
+          setAssetProfile(profile);
+          setIsAssetProfileLoading(false);
+          if (profile?.optimalConsensusThreshold) {
+            setConsensusThreshold(profile.optimalConsensusThreshold);
+          }
+      });
+  }, [user, activeSymbol]);
 
   const resetArenaPerformance = useCallback(() => {
     if (strategyCouncil.length === 0) return;
@@ -341,6 +357,52 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
       if (source.length === 0) return [];
       return source.map((t) => ({ epoch: t.epoch, open: getPrice(t)!, high: getPrice(t)!, low: getPrice(t)!, close: getPrice(t)!, volume: 1 }));
   }, [chartData, priceTicks, dataVersion]);
+
+  const analyzeAndSaveLearnings = useCallback(async () => {
+    if (!user || !activeSymbol || robotPerformance.length === 0) {
+        toast({ title: 'Dados Insuficientes', description: 'Nenhum dado de desempenho para analisar.', variant: 'destructive' });
+        return;
+    }
+
+    setIsAssetProfileLoading(true);
+
+    const trendBots = robotPerformance.filter(p => ['ADX_TREND', 'MOVING_AVERAGE_CROSS'].includes(p.strategyType));
+    const rangeBots = robotPerformance.filter(p => ['RSI', 'BOLLINGER_BANDS'].includes(p.strategyType));
+
+    const trendProfit = trendBots.reduce((sum, p) => sum + (p.totalProfit || 0), 0);
+    const rangeProfit = rangeBots.reduce((sum, p) => sum + (p.totalProfit || 0), 0);
+
+    let preferredRegime: 'TRENDING' | 'RANGING' | 'NEUTRAL' = 'NEUTRAL';
+    let notes = "Análise de desempenho da sessão: ";
+
+    if (trendProfit > rangeProfit * 1.2) {
+        preferredRegime = 'TRENDING';
+        notes += "Estratégias de tendência superaram as de lateralidade. O ativo mostra comportamento direcional."
+    } else if (rangeProfit > trendProfit * 1.2) {
+        preferredRegime = 'RANGING';
+        notes += "Estratégias de reversão à média foram mais lucrativas. O ativo mostra comportamento lateral."
+    } else {
+        notes += "Nenhum regime dominante claro foi identificado nesta sessão."
+    }
+    
+    const finalConsensusThreshold = isDynamicConsensusOn ? consensusThreshold : assetProfile?.optimalConsensusThreshold || consensusThreshold;
+
+
+    const newProfile: AssetProfileV1 = {
+        id: activeSymbol,
+        assetSymbol: activeSymbol,
+        lastAnalyzed: new Date().toISOString(),
+        preferredRegime,
+        optimalConsensusThreshold: finalConsensusThreshold,
+        notes
+    };
+    
+    await saveAssetProfileV1(user.uid, newProfile);
+    setAssetProfile(newProfile);
+    setIsAssetProfileLoading(false);
+    toast({ title: 'Aprendizado Salvo!', description: `Perfil estratégico para ${activeSymbol} foi atualizado.` });
+
+  }, [user, activeSymbol, robotPerformance, consensusThreshold, isDynamicConsensusOn, toast, assetProfile]);
 
   useEffect(() => {
     if (!isConnected || !user || !isCouncilAutopilotOn || !durationLimits || strategyCouncil.length === 0 || !activeSymbol || tickCandles.length < 2) return;
@@ -619,11 +681,9 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
 
     councilExecutionRef.current.isExecuting = false;
   }, [
-      dataVersion, isConnected, user, isCouncilAutopilotOn, durationLimits, strategyCouncil, robotPerformance, isMeritocracyOn, activeSymbol, operationsLog, toast, executeTrade, timePeriod, evolveTrigger, tickCandles, form, dailyBalance, dailyTarget, consensusThreshold, isDynamicConsensusOn, isAuditingOn
+      dataVersion, isConnected, user, isCouncilAutopilotOn, durationLimits, strategyCouncil, robotPerformance, isMeritocracyOn, activeSymbol, operationsLog, toast, executeTrade, timePeriod, evolveTrigger, tickCandles, form, dailyBalance, dailyTarget, consensusThreshold, isDynamicConsensusOn, isAuditingOn, assetProfile
   ]);
 
-   // O 'isDynamicConsensusOn' e 'isDynamicRiskOn' são sempre verdadeiros nesta nova lógica,
-   // mas mantemos as props para compatibilidade com a UI, apenas desabilitando as switches.
   return {
     isCouncilAutopilotOn,
     setIsCouncilAutopilotOn,
@@ -658,5 +718,11 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
     tradeDecisionLog,
     isAuditingOn,
     setIsAuditingOn,
+    // Novos estados e funções
+    assetProfile,
+    isAssetProfileLoading,
+    analyzeAndSaveLearnings,
   };
 }
+
+    

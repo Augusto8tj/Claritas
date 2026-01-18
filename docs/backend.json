@@ -199,6 +199,47 @@
         "relevanceScore",
         "timestamp"
       ]
+    },
+    "AssetProfileV1": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "AssetProfileV1",
+      "type": "object",
+      "description": "Stores strategic learned data and optimal parameters for a specific trading asset in the V1 ecosystem.",
+      "properties": {
+        "assetSymbol": {
+          "type": "string",
+          "description": "The unique symbol of the trading asset (e.g., '1HZ10V')."
+        },
+        "lastAnalyzed": {
+          "type": "string",
+          "description": "The ISO timestamp of when this profile was last updated.",
+          "format": "date-time"
+        },
+        "preferredRegime": {
+          "type": "string",
+          "description": "The market regime where this asset has historically performed best.",
+          "enum": ["TRENDING", "RANGING", "NEUTRAL"]
+        },
+        "optimalConsensusThreshold": {
+          "type": "number",
+          "description": "A learned optimal consensus threshold for triggering trades on this asset."
+        },
+        "performanceSummary": {
+          "type": "object",
+          "description": "A summary of the trading council's historical performance on this asset.",
+          "properties": {
+            "totalTrades": { "type": "number" },
+            "winRate": { "type": "number" },
+            "totalPnl": { "type": "number" },
+            "sharpeRatio": { "type": "number" }
+          }
+        },
+        "notes": {
+          "type": "string",
+          "description": "AI-generated qualitative notes about the asset's personality and behavior."
+        }
+      },
+      "required": ["assetSymbol", "lastAnalyzed"]
     }
   },
   "auth": {
@@ -304,8 +345,29 @@
             }
           ]
         }
+      },
+      {
+        "path": "/users/{userId}/asset_profiles_v1/{assetSymbol}",
+        "definition": {
+          "entityName": "AssetProfileV1",
+          "schema": {
+            "$ref": "#/backend/entities/AssetProfileV1"
+          },
+          "description": "Stores strategic profiles for specific assets within the V1 ecosystem, under a user's document.",
+          "params": [
+            {
+              "name": "userId",
+              "description": "The user's UID."
+            },
+            {
+              "name": "assetSymbol",
+              "description": "The trading asset symbol, used as the document ID."
+            }
+          ]
+        }
       }
     ],
     "reasoning": "The Firestore structure is designed to ensure security, scalability, and ease of debugging, following the core design principles of Authorization Independence, Clarity of Intent, DBAC (Database-Based Access Control), and QAPs (Rules are not Filters). Authorization Independence is achieved through denormalization. For instance, access control data for FinancialAccounts, Transactions, FinancialGoals, and AiInsights are kept under the user's profile to avoid using `get()` calls in security rules.\n\nStructural Segregation is applied by storing user-specific data like profiles, financial accounts, transactions, goals, and insights in separate collections under each user's document. This allows for homogeneous security postures within each collection, as all documents share similar access requirements.\n\nAccess Modeling is standardized using hierarchical paths for user-owned data, such as `/users/{userId}/financialAccounts/{accountId}`, `/users/{userId}/transactions/{transactionId}`, `/users/{userId}/financialGoals/{goalId}`, and `/users/{userId}/aiInsights/{insightId}`. This structure simplifies ownership-based security rules.\n\nThe structure supports the required QAPs by ensuring that list operations are secure. Since each subcollection is scoped to a specific user, listing documents within these subcollections is inherently limited to that user's data, preventing unauthorized access to other users' information."
   }
 }
+    

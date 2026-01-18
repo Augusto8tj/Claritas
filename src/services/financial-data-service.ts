@@ -1,7 +1,7 @@
 // Service module for financial data operations.
 import { db } from '@/lib/firebase';
 import { collection, getDocs, doc, setDoc, query, where, orderBy, getDoc, addDoc, deleteDoc } from 'firebase/firestore';
-import type { Goal, BudgetCategory, Transaction, RobotPerformance, TradeDecisionLog, EnhancedRobotPerformance } from '@/lib/types';
+import type { Goal, BudgetCategory, Transaction, RobotPerformance, TradeDecisionLog, EnhancedRobotPerformance, AssetProfileV1 } from '@/lib/types';
 import { generateGoalImage } from '@/ai/flows/goal-image-generation';
 import { addDocumentNonBlocking, deleteDocumentNonBlocking, setDocumentNonBlocking, updateDocumentNonBlocking } from '@/firebase/non-blocking-updates';
 import { getChatbotInsightsResponse } from '@/app/actions';
@@ -363,3 +363,31 @@ export async function deleteEvolutionEvent(userId: string, eventTimestamp: strin
         await saveEvolutionHistory(userId, newHistory, version);
     }
 }
+
+// --- Asset Strategy Profile (V1) ---
+
+export async function loadAssetProfileV1(userId: string, assetSymbol: string): Promise<AssetProfileV1 | null> {
+  if (!userId || !assetSymbol) return null;
+  const docRef = doc(db, 'users', userId, 'asset_profiles_v1', assetSymbol);
+  try {
+    const docSnap = await getDoc(docRef);
+    if (docSnap.exists()) {
+      return { id: docSnap.id, ...docSnap.data() } as AssetProfileV1;
+    }
+    return null;
+  } catch (error) {
+    console.error(`[Service Error V1] loadAssetProfileV1 for ${assetSymbol} failed:`, error);
+    // Don't throw, just return null so the app can continue with defaults
+    return null; 
+  }
+}
+
+export async function saveAssetProfileV1(userId: string, profile: AssetProfileV1): Promise<void> {
+  if (!userId || !profile.assetSymbol) return;
+  const docRef = doc(db, 'users', userId, 'asset_profiles_v1', profile.assetSymbol);
+  const sanitizedProfile = sanitizeForFirestore(profile);
+  // Non-blocking write
+  setDocumentNonBlocking(docRef, sanitizedProfile, { merge: true });
+}
+
+    
