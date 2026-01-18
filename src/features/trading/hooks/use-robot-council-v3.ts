@@ -1,4 +1,4 @@
-// src/features/trading/hooks/use-robot-council-v3.ts
+// /src/features/trading/hooks/use-robot-council-v3.ts
 'use client';
 
 // ESTE ARQUIVO É UMA CÓPIA DEDICADA PARA O SISTEMA V3.0 (IA Lab)
@@ -317,8 +317,8 @@ export function useRobotCouncilV3(
   const MAX_REGIME_HISTORY = 50;
 
   // Configurações
-  const [dailyBalance, setDailyBalance] = useState(100); 
-  const [dailyTarget, setDailyTarget] = useState(50);
+  const [dailyBalance, setDailyBalance] = useState(10); 
+  const [dailyTarget, setDailyTarget] = useState(5);
   const [isDynamicConsensusOn, setIsDynamicConsensusOn] = useState(true);
   const [isDynamicRiskOn, setIsDynamicRiskOn] = useState(true);
   const [isMeritocracyOn, setIsMeritocracyOn] = useState(true);

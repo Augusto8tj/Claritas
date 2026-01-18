@@ -213,8 +213,8 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
   const [isAuditingOn, setIsAuditingOn] = useState(true);
   const [isFetchingCouncil, setIsFetchingCouncil] = useState(false);
   const [councilVotes, setCouncilVotes] = useState<CouncilVotes>({});
-  const [dailyBalance, setDailyBalance] = useState(100);
-  const [dailyTarget, setDailyTarget] = useState(50);
+  const [dailyBalance, setDailyBalance] = useState(10);
+  const [dailyTarget, setDailyTarget] = useState(5);
   const [consensusThreshold, setConsensusThreshold] = useState(300);
   const [isDynamicConsensusOn, setIsDynamicConsensusOn] = useState(true);
   const [isDynamicRiskOn, setIsDynamicRiskOn] = useState(true);
@@ -621,7 +621,7 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
         finalDuration = Math.max(minDuration, Math.min(finalDuration, maxDuration));
     }
     
-    if (isAuditingOn && user) {
+    if (isAuditingOn && user && finalDecision !== 'HOLD' && finalDuration > 0) {
         const logId = `log-${Date.now()}`;
         const baseLog: Omit<TradeDecisionLog, 'id' | 'contractId'> & {result: 'hold' | 'pending'} = {
             timestamp: new Date().toISOString(),
@@ -650,7 +650,7 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
                 votes: newVotes,
                 virtualTrades: newVirtualTradesForLog,
             },
-            result: finalDecision !== 'HOLD' && finalDuration > 0 ? 'pending' : 'hold',
+            result: 'pending',
             pnl: 0,
         };
 
@@ -679,13 +679,6 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
                      setTradeDecisionLog(prev => [failedLog, ...prev]);
                 }
             });
-        } else {
-            if(decision !== 'HOLD') {
-                const holdLog = { ...baseLog, id: logId, result: 'hold' as const };
-                // A BUG ESTAVA AQUI: A linha abaixo estava a salvar no Firestore em todos os HOLDs com veto.
-                // saveTradeDecision(user.uid, holdLog, 'v1'); // <--- REMOVIDO
-                setTradeDecisionLog(prev => [holdLog, ...prev]);
-            }
         }
     }
 

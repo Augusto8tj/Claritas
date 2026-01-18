@@ -1,4 +1,4 @@
-// src/features/trading/hooks/use-robot-council-v2.ts
+// /src/features/trading/hooks/use-robot-council-v2.ts
 'use client';
 
 /**
@@ -335,8 +335,8 @@ export function useRobotCouncilV2(
   const MAX_REGIME_HISTORY = 50;
 
   // Configurações
-  const [dailyBalance, setDailyBalance] = useState(100); 
-  const [dailyTarget, setDailyTarget] = useState(50);
+  const [dailyBalance, setDailyBalance] = useState(10); 
+  const [dailyTarget, setDailyTarget] = useState(5);
   const [isDynamicConsensusOn, setIsDynamicConsensusOn] = useState(true);
   const [isDynamicRiskOn, setIsDynamicRiskOn] = useState(true);
   const [isMeritocracyOn, setIsMeritocracyOn] = useState(true);
