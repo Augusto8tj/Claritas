@@ -10,7 +10,7 @@ import {
 } from "@/components/ui/card";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { cn } from "@/lib/utils";
-import { TrendingUp, TrendingDown, HelpCircle, ShieldCheck, ShieldX, Group, Eye, Sigma, Wallet } from "lucide-react";
+import { TrendingUp, TrendingDown, HelpCircle, ShieldCheck, ShieldX, Group, Eye, Sigma, Wallet, Crown } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
 
 interface AITradeSuggestionV1Props {
@@ -20,8 +20,9 @@ interface AITradeSuggestionV1Props {
     supervisionStatus: { status: 'inactive' | 'approved' | 'veto'; message: string; analysis?: string };
     activeCommittee: string | null;
     isAutopilotOn: boolean;
-    bayesianProbability?: number; // Propriedade opcional para V2
-    kellyStake?: number; // Propriedade opcional para V2
+    bayesianProbability?: number;
+    kellyStake?: number;
+    hallOfFameStatus?: string; // NOVO: Status da consulta ao Hall da Fama
 }
 
 const suggestionIcons = {
@@ -44,7 +45,8 @@ export function AITradeSuggestionV1({
     activeCommittee,
     isAutopilotOn,
     bayesianProbability,
-    kellyStake
+    kellyStake,
+    hallOfFameStatus, // NOVO
 }: AITradeSuggestionV1Props) {
 
     if (!consensusSum && bayesianProbability === undefined) {
@@ -70,7 +72,6 @@ export function AITradeSuggestionV1({
 
     const isV2 = bayesianProbability !== undefined;
 
-    // LÓGICA CORRIGIDA: As percentagens V1 são relativas ao limiar para mostrar o progresso até a decisão.
     const risePercentage = isV2
       ? (councilDecision === 'RISE' ? bayesianProbability * 100 : 0)
       : consensusThreshold > 0 ? ((consensusSum?.rise || 0) / consensusThreshold) * 100 : 0;
@@ -173,6 +174,14 @@ export function AITradeSuggestionV1({
                     <span className="font-semibold">Comité Ativo:</span>
                     <span className="text-muted-foreground">{activeCommittee || 'Aguardando...'}</span>
                 </div>
+                 {/* NOVO: Display do Hall da Fama */}
+                 {hallOfFameStatus && (
+                    <div className="flex items-center gap-2 pt-1 border-t mt-2">
+                        <Crown className="h-4 w-4 text-amber-500"/>
+                        <span className="font-semibold">Conselho de Lendas:</span>
+                        <span className="text-muted-foreground text-xs italic">{hallOfFameStatus}</span>
+                    </div>
+                )}
             </div>
         </div>
       </CardContent>

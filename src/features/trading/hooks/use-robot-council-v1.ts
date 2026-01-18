@@ -20,7 +20,7 @@ import { useStrategyEvolutionV1 } from './use-strategy-evolution-v1';
 import { errorEmitter, FirestorePermissionError } from '@/firebase';
 import { db } from '@/lib/firebase';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
-import { saveRobotPerformance, loadRobotPerformance, saveTradeDecision, loadAssetProfileV1, saveAssetProfileV1 } from '@/services/financial-data-service';
+import { saveRobotPerformance, loadRobotPerformance, saveTradeDecision, loadAssetProfileV1, saveAssetProfileV1, getHallOfFameRobots } from '@/services/financial-data-service';
 
 
 // --- TIPAGEM E TIPOS DE DADOS ---
@@ -212,8 +212,8 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
   const councilExecutionRef = useRef({ isExecuting: false, sellingContracts: new Set<number>() });
   const [tradeDecisionLog, setTradeDecisionLog] = useState<TradeDecisionLog[]>([]);
   const hasPendingChangesRef = useRef(false);
+  const [hallOfFameStatus, setHallOfFameStatus] = useState<string>('Aguardando...');
   
-  // Este ref guardará os dados de desempenho mais recentes para salvamento assíncrono.
   const robotPerformanceRef = useRef<RobotPerformance[]>(robotPerformance);
   useEffect(() => {
     robotPerformanceRef.current = robotPerformance;
@@ -483,8 +483,8 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
     const newVotes: CouncilVotes = {};
     let riseSum = 0, fallSum = 0;
     
-    // NOVO: Consenso apenas da Tropa de Elite
     let eliteRiseSum = 0, eliteFallSum = 0;
+    const certifiedRobots = robotPerformance.filter(p => p.status === 'Certified');
     
     strategyCouncil.forEach(robot => {
         const voteResult = calculateRobotVote(robot, currentIndicators, tickCandles);
@@ -524,8 +524,7 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
         if (voteResult.vote === 'RISE') riseSum += confidence * weight;
         if (voteResult.vote === 'FALL') fallSum += confidence * weight;
         
-        // Acumula votos de elite
-        if (perf?.status === 'Certified') {
+        if (certifiedRobots.some(r => r.id === robot.id)) {
             if (voteResult.vote === 'RISE') eliteRiseSum += confidence * weight;
             if (voteResult.vote === 'FALL') eliteFallSum += confidence * weight;
         }
@@ -551,12 +550,36 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
     setConsensusSum({ rise: riseSum, fall: fallSum });
 
     let decision: 'RISE' | 'FALL' | 'HOLD' = 'HOLD';
-    // Decisão agora é baseada na elite
+    let decisionSource = 'Probation';
+
     if (eliteRiseSum > eliteFallSum && eliteRiseSum > consensusThreshold) {
       decision = 'RISE';
+      decisionSource = 'Elite';
     } else if (eliteFallSum > eliteRiseSum && eliteFallSum > consensusThreshold) {
       decision = 'FALL';
+      decisionSource = 'Elite';
+    } else {
+        // NOVO: Consulta ao Hall da Fama se a elite está indecisa
+        setHallOfFameStatus('Consultando Lendas...');
+        getHallOfFameRobots(user.uid).then(fameRobots => {
+            let fameRise = 0, fameFall = 0;
+            fameRobots.forEach(fameBot => {
+                const vote = calculateRobotVote(fameBot.strategy, currentIndicators, tickCandles);
+                if (vote.vote === 'RISE') fameRise += vote.confidence;
+                if (vote.vote === 'FALL') fameFall += vote.confidence;
+            });
+            if (fameRise > fameFall && fameRise > 150) { // Limiar alto para a elite
+                setConsensusDecision('RISE');
+                setHallOfFameStatus('Confirmação de Alta');
+            } else if (fameFall > fameRise && fameFall > 150) {
+                setConsensusDecision('FALL');
+                setHallOfFameStatus('Confirmação de Baixa');
+            } else {
+                setHallOfFameStatus('Decisão Dividida');
+            }
+        });
     }
+
     setConsensusDecision(decision);
 
     const dailyPnl = operationsLog.filter(op => new Date(op.timestamp).toDateString() === new Date().toDateString() && op.initiator === 'Conselho').reduce((sum, op) => sum + (op.result || 0), 0);
@@ -576,7 +599,8 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
         return;
     }
     if (decision === 'HOLD') {
-      setSupervisionStatus({ status: 'inactive', message: `Aguardando consenso da elite > ${consensusThreshold}.`, analysis: `Elite RISE: ${eliteRiseSum.toFixed(0)} | Elite FALL: ${eliteFallSum.toFixed(0)}` });
+      const sum = decisionSource === 'Elite' ? { rise: eliteRiseSum, fall: eliteFallSum } : consensusSum;
+      setSupervisionStatus({ status: 'inactive', message: `Aguardando consenso > ${consensusThreshold}.`, analysis: `${decisionSource} RISE: ${sum.rise.toFixed(0)} | FALL: ${sum.fall.toFixed(0)}` });
     }
     
     const last5Ticks = priceTicks.slice(-5);
@@ -589,7 +613,8 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
         }
     }
     
-    const p = (decision === 'RISE' ? eliteRiseSum : eliteFallSum) / (eliteRiseSum + eliteFallSum || 1);
+    const sumForKelly = decisionSource === 'Elite' ? { rise: eliteRiseSum, fall: eliteFallSum } : consensusSum;
+    const p = (decision === 'RISE' ? sumForKelly.rise : sumForKelly.fall) / (sumForKelly.rise + sumForKelly.fall || 1);
     const kellyFraction = (p * 0.94 - (1 - p)) / 0.94;
     let stake = Math.max(0.35, Math.min(dailyBalance * 0.05, dailyBalance * kellyFraction * 0.25));
 
@@ -599,19 +624,7 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
         setSupervisionStatus({ status: 'approved', message: `Aprovado para execução.`, analysis: `Kelly Stake: $${stake.toFixed(2)}.` });
     }
     
-    const certifiedRobots = robotPerformance.filter(p => p.status === 'Certified').map(p => p.id);
-    let certifiedRiseSumLog = 0, certifiedFallSumLog = 0;
-
-    if (certifiedRobots.length > 0) {
-        Object.entries(newVotes).forEach(([robotId, voteData]) => {
-            if (certifiedRobots.includes(robotId)) {
-                if (voteData.vote === 'RISE') certifiedRiseSumLog += voteData.confidence * voteData.weight;
-                if (voteData.vote === 'FALL') certifiedFallSumLog += voteData.confidence * voteData.weight;
-            }
-        });
-    }
-
-    const finalDecision = supervisionStatus.status === 'approved' && certifiedRobots.length > 0 ? decision : 'HOLD';
+    const finalDecision = supervisionStatus.status === 'approved' ? decision : 'HOLD';
 
     let finalDuration = 0;
     let finalUnit: DurationUnit = 's';
@@ -621,17 +634,15 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
         const totalWeight = votingRobots.reduce((sum, v) => sum + v.weight, 0);
 
         if (totalWeight > 0) {
-            // 1. CALCULA A DURAÇÃO BASE (em segundos)
             const baseDurationInSeconds = votingRobots.reduce((sum, v) => sum + durationToSeconds(v.optimalDuration, v.optimalDurationUnit) * v.weight, 0) / totalWeight;
 
-            // 2. FATOR DE AJUSTE POR VOLATILIDADE (usando BBW)
             let volatilityFactor = 1.0;
-            const bbw = currentIndicators.bbw; // Largura das Bandas de Bollinger
+            const bbw = currentIndicators.bbw;
             if (isValid(bbw)) {
-                if (bbw > 0.08) { // Volatilidade alta, BBs largas -> Contratos mais curtos
+                if (bbw > 0.08) {
                     volatilityFactor = 0.7; 
                     setSupervisionStatus(prev => ({ ...prev, analysis: (prev.analysis || '') + ' | Duração Reduzida (Alta Volatilidade).' }));
-                } else if (bbw < 0.02) { // Volatilidade baixa, BBs estreitas -> Contratos mais longos
+                } else if (bbw < 0.02) {
                     volatilityFactor = 1.5;
                     setSupervisionStatus(prev => ({ ...prev, analysis: (prev.analysis || '') + ' | Duração Aumentada (Baixa Volatilidade).' }));
                 }
@@ -639,20 +650,16 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
             
             let adjustedDuration = baseDurationInSeconds * volatilityFactor;
 
-            // 3. DECIDE A UNIDADE (Ticks vs Segundos) E APLICA LIMITES
             const canUseTicks = durationLimits.t && durationLimits.t.min > 0;
             const canUseSeconds = durationLimits.s && durationLimits.s.min > 0;
             
-            // Prefere Ticks para durações muito curtas se disponível
             if (canUseTicks && adjustedDuration <= 20) {
                 finalUnit = 't';
-                // Converte segundos para uma estimativa de ticks (1s ~ 2 ticks)
                 finalDuration = Math.round(adjustedDuration / 2);
             } else if (canUseSeconds) {
                 finalUnit = 's';
                 finalDuration = Math.round(adjustedDuration);
             } else {
-                // Fallback para ticks se segundos não estiverem disponíveis
                 finalUnit = 't';
                 finalDuration = Math.round(adjustedDuration / 2);
             }
@@ -663,7 +670,6 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
             
             finalDuration = Math.max(minDuration, Math.min(finalDuration, maxDuration));
         } else {
-             // Fallback se não houver robôs votando
             finalDuration = durationLimits.s?.min || 15;
             finalUnit = 's';
         }
@@ -780,5 +786,6 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
     assetProfile,
     isAssetProfileLoading,
     analyzeAndSaveLearnings,
+    hallOfFameStatus, // Exposto para a UI
   };
 }

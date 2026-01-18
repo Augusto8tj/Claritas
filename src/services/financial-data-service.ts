@@ -276,6 +276,24 @@ export async function loadRobotPerformance(userId: string, version: Version): Pr
   }
 };
 
+export async function getHallOfFameRobots(userId: string): Promise<RobotPerformance[]> {
+  const performanceData = await loadRobotPerformance(userId, 'v1');
+  if (!performanceData) {
+    return [];
+  }
+
+  const PROMOTION_THRESHOLD_WINS = 10;
+  const PROMOTION_THRESHOLD_PROFIT = 10; // Em USD
+  const PROMOTION_THRESHOLD_SHARPE = 0.69;
+
+  return (performanceData as RobotPerformance[]).filter(
+    (p) =>
+      (p.wins || 0) >= PROMOTION_THRESHOLD_WINS &&
+      (p.totalProfit || 0) > PROMOTION_THRESHOLD_PROFIT &&
+      (p.sharpeRatio || 0) > PROMOTION_THRESHOLD_SHARPE
+  );
+}
+
 export async function saveTradeDecision(userId: string, log: TradeDecisionLog, version: 'v1' | 'v2' | 'v3' = 'v2') {
     if (!userId) return;
     const collectionName = `decision_logs_${version}`;
