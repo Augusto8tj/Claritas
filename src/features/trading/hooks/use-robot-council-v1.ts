@@ -289,6 +289,17 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
     }
   }, [strategyCouncil, activeSymbol, toast, user]);
 
+  const dissolveCouncil = useCallback(() => {
+    if (hasPendingChangesRef.current && user) {
+        saveRobotPerformance(user.uid, robotPerformance, 'v1');
+        hasPendingChangesRef.current = false;
+    }
+    setStrategyCouncil([]);
+    setCouncilVotes({});
+    setIsCouncilAutopilotOn(false);
+    virtualTradesRef.current = [];
+  }, [user, robotPerformance]);
+
   useEffect(() => {
     if (!isCouncilAutopilotOn) return;
     
@@ -341,23 +352,6 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
   }, [activeSymbol, user, toast, evolvedStrategies, robotPerformance.length]);
 
 
-  const dissolveCouncil = useCallback(() => {
-    if (hasPendingChangesRef.current && user) {
-        saveRobotPerformance(user.uid, robotPerformance, 'v1');
-        hasPendingChangesRef.current = false;
-    }
-    setStrategyCouncil([]);
-    setCouncilVotes({});
-    setIsCouncilAutopilotOn(false);
-    virtualTradesRef.current = [];
-  }, [user, robotPerformance]);
-  
-  const tickCandles = useMemo(() => {
-      const source = chartData.length > 0 ? chartData : priceTicks;
-      if (source.length === 0) return [];
-      return source.map((t) => ({ epoch: t.epoch, open: getPrice(t)!, high: getPrice(t)!, low: getPrice(t)!, close: getPrice(t)!, volume: 1 }));
-  }, [chartData, priceTicks, dataVersion]);
-
   const analyzeAndSaveLearnings = useCallback(async (userNotes: string) => {
     if (!user || !activeSymbol || robotPerformance.length === 0) {
         toast({ title: 'Dados Insuficientes', description: 'Nenhum dado de desempenho para analisar.', variant: 'destructive' });
@@ -407,6 +401,12 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
     toast({ title: 'Aprendizado Salvo!', description: `Perfil estratégico para ${activeSymbol} foi atualizado.` });
 
   }, [user, activeSymbol, robotPerformance, consensusThreshold, isDynamicConsensusOn, toast, assetProfile]);
+  
+  const tickCandles = useMemo(() => {
+      const source = chartData.length > 0 ? chartData : priceTicks;
+      if (source.length === 0) return [];
+      return source.map((t) => ({ epoch: t.epoch, open: getPrice(t)!, high: getPrice(t)!, low: getPrice(t)!, close: getPrice(t)!, volume: 1 }));
+  }, [chartData, priceTicks, dataVersion]);
 
   useEffect(() => {
     if (!isConnected || !user || !isCouncilAutopilotOn || !durationLimits || strategyCouncil.length === 0 || !activeSymbol || tickCandles.length < 2) return;
@@ -536,15 +536,26 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
 
     const dailyPnl = operationsLog.filter(op => new Date(op.timestamp).toDateString() === new Date().toDateString() && op.initiator === 'Conselho').reduce((sum, op) => sum + (op.result || 0), 0);
     
-    if (dailyPnl <= -dailyBalance) { 
-        setSupervisionStatus({ status: 'veto', message: 'Stop Loss Diário Atingido.' }); 
-        councilExecutionRef.current.isExecuting = false; 
-        return; 
+    if (dailyPnl <= -dailyBalance) {
+        setSupervisionStatus({ status: 'veto', message: 'Stop Loss Diário Atingido.' });
+        dissolveCouncil(); // Desliga a mesa
+        toast({
+            title: "🛡️ Stop Loss Atingido",
+            description: `A mesa foi desativada para proteger seu capital de $${dailyBalance}.`,
+            variant: "destructive"
+        });
+        councilExecutionRef.current.isExecuting = false;
+        return;
     }
-    if (dailyPnl >= dailyTarget) { 
-        setSupervisionStatus({ status: 'veto', message: 'Meta Diária Atingida.' }); 
-        councilExecutionRef.current.isExecuting = false; 
-        return; 
+    if (dailyPnl >= dailyTarget) {
+        setSupervisionStatus({ status: 'veto', message: 'Meta Diária Atingida.' });
+        dissolveCouncil(); // Desliga a mesa
+        toast({
+            title: "🏆 Meta Diária Atingida!",
+            description: `Parabéns! Você alcançou seu lucro de $${dailyTarget}. A mesa foi desativada por hoje.`,
+        });
+        councilExecutionRef.current.isExecuting = false;
+        return;
     }
     if (decision === 'HOLD') {
       setSupervisionStatus({ status: 'inactive', message: `Aguardando vantagem (> 54%).`, analysis: `Prob. atual: ${(consensusProbability*100).toFixed(0)}%` });
@@ -608,17 +619,6 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
         } else if (finalUnit === 's' && timeWeight > 0) {
             const avgSeconds = timeVotes.reduce((sum, v) => sum + durationToSeconds(v.optimalDuration, v.optimalDurationUnit) * v.weight, 0) / timeWeight;
             finalDuration = Math.round(avgSeconds);
-        } else {
-            if (canUseSeconds) {
-                finalDuration = durationLimits.s.min;
-                finalUnit = 's';
-            } else if (canUseTicks) {
-                finalDuration = durationLimits.t.min;
-                finalUnit = 't';
-            } else {
-                finalDuration = 15; // Último recurso
-                finalUnit = 's';
-            }
         }
         
         const limits = durationLimits[finalUnit];
@@ -630,74 +630,82 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
         }
         finalDuration = Math.max(minDuration, Math.min(finalDuration, maxDuration));
     }
-
-    if (finalDecision !== 'HOLD' && finalDuration > 0) {
-      executeTrade(
-        finalDecision === 'RISE' ? 'CALL' : 'PUT',
-        stake,
-        activeSymbol!,
-        finalDecision.toLowerCase() as 'rise' | 'fall',
-        finalDuration,
-        finalUnit,
-        'Conselho'
-      ).then(tradeResult => {
-        if (isAuditingOn && user) {
-          const logId = `log-${Date.now()}`;
-          const baseLog: Omit<TradeDecisionLog, 'id' | 'contractId'> = {
-            timestamp: new Date().toISOString(),
-            asset: activeSymbol!,
-            timePeriod,
-            tradeParams: {
-              direction: finalDecision,
-              stake: stake,
-              duration: finalDuration,
-              durationUnit: finalUnit,
-            },
-            context: {
-              marketRegime: currentRegime,
-              regimeConfidence: 1.0,
-              microstructure: null,
-              indicators: currentIndicators,
-              supervisionReason: supervisionStatus.message,
-              payout: stake * 0.94, // Assumindo payout fixo para log
-            },
-            consensus: {
-              consensusSum: { rise: riseSum, fall: fallSum },
-              consensusThreshold: isDynamicConsensusOn ? undefined : consensusThreshold,
-              bayesianProbability: consensusProbability,
-              kellyStake: stake,
-              activeRobots: Object.keys(newVotes).length,
-              votes: newVotes,
-              virtualTrades: newVirtualTradesForLog,
-            },
-            result: 'pending',
-            pnl: 0,
-          };
-
-          if (tradeResult.success && tradeResult.contractId) {
-            const executedLog: TradeDecisionLog = {
-              ...baseLog,
-              id: logId,
-              contractId: tradeResult.contractId,
-              context: { ...baseLog.context, entryPrice: tradeResult.entryPrice },
-            };
-            saveTradeDecision(user.uid, executedLog, 'v1');
-            setTradeDecisionLog(prev => [executedLog, ...prev]);
-          } else {
-            const failedLog: TradeDecisionLog = {
-              ...baseLog,
-              id: logId,
-              result: 'hold',
-              context: { ...baseLog.context, supervisionReason: `Falha na execução: ${tradeResult.message}` },
-            };
-            saveTradeDecision(user.uid, failedLog, 'v1');
-            setTradeDecisionLog(prev => [failedLog, ...prev]);
-          }
-        }
-      });
+    
+    // --- DECISÃO DE EXECUÇÃO ---
+    // Apenas executa se tivermos uma decisão final, uma duração válida, e a supervisão tiver aprovado.
+    if (finalDecision !== 'HOLD' && finalDuration > 0 && supervisionStatus.status === 'approved') {
+        const tradeExecution = () => {
+            executeTrade(
+                finalDecision === 'RISE' ? 'CALL' : 'PUT',
+                stake,
+                activeSymbol!,
+                finalDecision.toLowerCase() as 'rise' | 'fall',
+                finalDuration,
+                finalUnit,
+                'Conselho'
+            ).then(tradeResult => {
+                if (isAuditingOn && user) {
+                    const logId = `log-${Date.now()}`;
+                    const baseLog: Omit<TradeDecisionLog, 'id' | 'contractId'> = {
+                        timestamp: new Date().toISOString(),
+                        asset: activeSymbol!,
+                        timePeriod,
+                        tradeParams: {
+                            direction: finalDecision,
+                            stake: stake,
+                            duration: finalDuration,
+                            durationUnit: finalUnit,
+                        },
+                        context: {
+                            marketRegime: currentRegime,
+                            regimeConfidence: 1.0,
+                            microstructure: null,
+                            indicators: currentIndicators,
+                            supervisionReason: supervisionStatus.message,
+                            payout: stake * 0.94,
+                        },
+                        consensus: {
+                            consensusSum: { rise: riseSum, fall: fallSum },
+                            consensusThreshold: isDynamicConsensusOn ? undefined : consensusThreshold,
+                            bayesianProbability: consensusProbability,
+                            kellyStake: stake,
+                            activeRobots: Object.keys(newVotes).length,
+                            votes: newVotes,
+                            virtualTrades: newVirtualTradesForLog,
+                        },
+                        result: 'pending',
+                        pnl: 0,
+                    };
+    
+                    if (tradeResult.success && tradeResult.contractId) {
+                        const executedLog: TradeDecisionLog = {
+                            ...baseLog,
+                            id: logId,
+                            contractId: tradeResult.contractId,
+                            context: { ...baseLog.context, entryPrice: tradeResult.entryPrice },
+                        };
+                        saveTradeDecision(user.uid, executedLog, 'v1');
+                        setTradeDecisionLog(prev => [executedLog, ...prev]);
+                    } else {
+                        const failedLog: TradeDecisionLog = {
+                            ...baseLog,
+                            id: logId,
+                            result: 'hold', // A ordem foi aprovada mas falhou na execução
+                            context: { ...baseLog.context, supervisionReason: `Falha na execução: ${tradeResult.message}` },
+                        };
+                        saveTradeDecision(user.uid, failedLog, 'v1');
+                        setTradeDecisionLog(prev => [failedLog, ...prev]);
+                    }
+                }
+            });
+        };
+        
+        tradeExecution();
     } 
+    // Logging de decisões 'HOLD' importantes
     else if (isAuditingOn && user) {
-        const shouldLogHold = (decision !== 'HOLD' && finalDecision === 'HOLD');
+        const shouldLogHold = (decision !== 'HOLD' && finalDecision === 'HOLD'); // Aprovado pelo consenso, vetado pela supervisão
+        
         if (shouldLogHold) {
             const logId = `log-${Date.now()}`;
             const holdLog: TradeDecisionLog = {
@@ -731,9 +739,10 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
         }
     }
 
+
     councilExecutionRef.current.isExecuting = false;
   }, [
-      dataVersion, isConnected, user, isCouncilAutopilotOn, durationLimits, strategyCouncil, robotPerformance, isMeritocracyOn, activeSymbol, operationsLog, toast, executeTrade, timePeriod, evolveTrigger, tickCandles, form, dailyBalance, dailyTarget, consensusThreshold, isDynamicConsensusOn, isAuditingOn, assetProfile
+      dataVersion, isConnected, user, isCouncilAutopilotOn, durationLimits, strategyCouncil, robotPerformance, isMeritocracyOn, activeSymbol, operationsLog, toast, executeTrade, timePeriod, evolveTrigger, tickCandles, form, dailyBalance, dailyTarget, consensusThreshold, isDynamicConsensusOn, isAuditingOn, assetProfile, dissolveCouncil
   ]);
 
   return {
