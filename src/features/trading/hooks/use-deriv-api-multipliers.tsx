@@ -493,10 +493,15 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
                 ws.send(JSON.stringify({ "proposal_open_contract": 1, "subscribe": 1 }));
                 ws.send(JSON.stringify({ "balance": 1, "subscribe": 1 }));
                 
-                const assetsRes: any = await makeRequest({ active_symbols: 'full', product_type: 'multipliers' });
+                const assetsRes: any = await makeRequest({ active_symbols: 'full', product_type: 'basic' });
                 
+                // Filtra para mercados que tipicamente suportam multiplicadores
+                const filteredSymbols = assetsRes.active_symbols.filter((symbol: any) => 
+                    symbol.market === 'synthetic_index' || symbol.market === 'forex'
+                );
+
                 const groupedAssets: { [key: string]: Asset[] } = {};
-                assetsRes.active_symbols.forEach((symbol: any) => {
+                filteredSymbols.forEach((symbol: any) => {
                     const marketKey = (symbol.market === 'synthetic_index' && symbol.submarket === 'basket_index') ? 'basket_index' : symbol.market;
                     const groupName = marketNameMapping[marketKey] || 'Outros';
                     if (!groupedAssets[groupName]) groupedAssets[groupName] = [];
@@ -530,7 +535,11 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
           const { wasClean, code, reason } = event;
           
           if (promisesRef.current) {
-              promisesRef.current.forEach((p) => p.reject(new Error("WebSocket connection closed.")));
+              promisesRef.current.forEach((p) => {
+                if (p && typeof p.reject === 'function') {
+                  p.reject(new Error("WebSocket connection closed."))
+                }
+              });
               promisesRef.current.clear();
           }
 
@@ -546,7 +555,11 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
         ws.onerror = (error) => {
           console.error('[Deriv WS] WebSocket error:', error);
           if (promisesRef.current) {
-              promisesRef.current.forEach((p) => p.reject(new Error("WebSocket error occurred.")));
+              promisesRef.current.forEach((p) => {
+                if (p && typeof p.reject === 'function') {
+                  p.reject(new Error("WebSocket error occurred."))
+                }
+              });
               promisesRef.current.clear();
           }
           setConnectionError("Falha na conexão com a API da Deriv. Verifique o seu token e a ligação à internet.");
@@ -655,15 +668,19 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
   };
   
   const reconnect = useCallback(async (): Promise<boolean> => {
-    setIsConnecting(true);
-    setConnectionError(null);
     setTriggerReconnect(c => c + 1);
     
     return new Promise(resolve => {
+        const timeout = setTimeout(() => {
+            resolve(false);
+        }, 10000);
+
         const checkConnection = () => {
             if (wsRef.current?.readyState === WebSocket.OPEN && isConnected) {
+                clearTimeout(timeout);
                 resolve(true);
             } else if (connectionError) {
+                clearTimeout(timeout);
                 resolve(false);
             } else {
                 setTimeout(checkConnection, 500); 
