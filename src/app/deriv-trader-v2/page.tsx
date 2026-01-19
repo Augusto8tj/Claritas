@@ -158,14 +158,13 @@ const MainContent = () => {
                     </div>
                     <div className="lg:col-span-1 space-y-6">
                         <DerivTraderInterfaceV2 symbol={activeSymbol || ""} />
-                        <CouncilAutopilotInterfaceV2 {...robotCouncil} />
                     </div>
                 </div>
 
-                {/* Arena Virtual em destaque */}
+                <CouncilAutopilotInterfaceV2 {...robotCouncil} />
+                
                 <TradingDeskV2 councilState={robotCouncil} />
 
-                {/* Abas restantes */}
                 <div className="mt-6">
                      <Tabs defaultValue="logs" className="h-full">
                         <TabsList className="grid w-full grid-cols-3">
