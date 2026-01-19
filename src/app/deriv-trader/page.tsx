@@ -9,7 +9,7 @@ import { AssetSelectorV1 } from "@/features/trading/components/deriv-trader/asse
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { MarketChart } from "@/features/trading/components/deriv-trader/market-chart";
 import { Button } from "@/components/ui/button";
-import { Trash2, Bot, NotepadText, LayoutGrid, Trophy, Dna, Swords, Archive, CandlestickChart } from "lucide-react";
+import { Trash2, Bot, NotepadText, LayoutGrid, Trophy, Dna, Swords, Archive, CandlestickChart, BrainCircuit } from "lucide-react";
 import { DerivApiProviderV1, useDerivApiV1 } from "@/features/trading/hooks/use-deriv-api-v1";
 import { Skeleton } from "@/components/ui/skeleton";
 import { OperationsLogV1 } from "@/features/trading/components/deriv-trader/operations-log-v1";
@@ -153,17 +153,18 @@ function MainContentV1() {
                     onAnalyze={robotCouncil.analyzeAndSaveLearnings}
                 />
                 <CouncilAutopilotInterfaceV1 {...robotCouncil} />
-                <AIAnalysisInterfaceV1 symbol={activeSymbol} />
                 
                 <Tabs defaultValue="arena" className="w-full">
-                    <TabsList className="grid w-full grid-cols-5">
+                    <TabsList className="grid w-full grid-cols-6">
                         <TabsTrigger value="arena"><Swords className="w-4 h-4" /></TabsTrigger>
+                        <TabsTrigger value="analise"><BrainCircuit className="w-4 h-4" /></TabsTrigger>
                         <TabsTrigger value="auditoria"><Bot className="w-4 h-4" /></TabsTrigger>
                         <TabsTrigger value="logs"><Archive className="w-4 h-4" /></TabsTrigger>
                         <TabsTrigger value="fame"><Trophy className="w-4 h-4" /></TabsTrigger>
                         <TabsTrigger value="evolucao"><Dna className="w-4 h-4" /></TabsTrigger>
                     </TabsList>
                     <TabsContent value="arena" className="mt-4"><TradingDesk {...robotCouncil} /></TabsContent>
+                    <TabsContent value="analise" className="mt-4"><AIAnalysisInterfaceV1 symbol={activeSymbol} /></TabsContent>
                     <TabsContent value="auditoria" className="mt-4"><TradingDecisionLogViewer logs={robotCouncil.tradeDecisionLog || []} /></TabsContent>
                     <TabsContent value="logs" className="mt-4"><OperationsLogV1 operations={operationsLog} sellContract={sellContract} priceTicks={priceTicks} /></TabsContent>
                     <TabsContent value="fame" className="mt-4"><HallOfFame /></TabsContent>
@@ -192,17 +193,18 @@ function MainContentV1() {
                     </div>
                 </div>
                 <CouncilAutopilotInterfaceV1 {...robotCouncil} />
-                <AIAnalysisInterfaceV1 symbol={activeSymbol} />
                 <Tabs defaultValue="arena" className="w-full">
-                    <TabsList className="grid w-full grid-cols-5">
+                    <TabsList className="grid w-full grid-cols-6">
                         <TabsTrigger value="logs"><NotepadText className="w-4 h-4 mr-2"/>Registo</TabsTrigger>
                         <TabsTrigger value="arena"><LayoutGrid className="w-4 h-4 mr-2"/>Arena</TabsTrigger>
+                        <TabsTrigger value="analise"><BrainCircuit className="w-4 h-4 mr-2"/>Análise IA</TabsTrigger>
                         <TabsTrigger value="auditoria"><Archive className="w-4 h-4 mr-2"/>Auditoria</TabsTrigger>
                         <TabsTrigger value="fame"><Trophy className="w-4 h-4 mr-2"/>Fama</TabsTrigger>
                         <TabsTrigger value="evolucao"><Dna className="w-4 h-4 mr-2"/>Evolução</TabsTrigger>
                     </TabsList>
                     <TabsContent value="logs" className="mt-4"><OperationsLogV1 operations={operationsLog} sellContract={sellContract} priceTicks={priceTicks} /></TabsContent>
                     <TabsContent value="arena" className="mt-4"><TradingDesk {...robotCouncil} /></TabsContent>
+                    <TabsContent value="analise" className="mt-4"><AIAnalysisInterfaceV1 symbol={activeSymbol} /></TabsContent>
                     <TabsContent value="auditoria" className="mt-4"><TradingDecisionLogViewer logs={robotCouncil.tradeDecisionLog || []} /></TabsContent>
                     <TabsContent value="fame" className="mt-4"><HallOfFame /></TabsContent>
                     <TabsContent value="evolucao" className="mt-4"><EvolutionLabV1 history={robotCouncil.evolutionHistory} activeSymbol={activeSymbol} /></TabsContent>
