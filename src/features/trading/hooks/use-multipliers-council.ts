@@ -22,7 +22,7 @@ export function useMultipliersCouncil(activeSymbol: string | null, priceTicks: T
     const form = useFormContext<MultipliersFormValues>();
 
     const [isAutopilotOn, setIsAutopilotOn] = useState(false);
-    const [lastSignal, setLastSignal] = useState<'up' | 'down' | null>(null);
+    const lastSignalRef = useRef<'up' | 'down' | null>(null);
     const executionRef = useRef({ isExecuting: false });
 
     // This effect contains the core trading logic
@@ -47,8 +47,8 @@ export function useMultipliersCouncil(activeSymbol: string | null, priceTicks: T
             const currentSignal = shortMA > longMA ? 'up' : 'down';
 
             // Only trade on a new signal
-            if (currentSignal !== lastSignal) {
-                setLastSignal(currentSignal);
+            if (currentSignal !== lastSignalRef.current) {
+                lastSignalRef.current = currentSignal;
                 
                 const { stake, multiplier, takeProfit, stopLoss } = form.getValues();
 
@@ -79,7 +79,7 @@ export function useMultipliersCouncil(activeSymbol: string | null, priceTicks: T
         executeLogic();
 
     }, [
-        priceTicks, isAutopilotOn, isConnected, activeSymbol, lastSignal, 
+        priceTicks, isAutopilotOn, isConnected, activeSymbol,
         executeTrade, toast, form
     ]);
 
@@ -91,7 +91,7 @@ export function useMultipliersCouncil(activeSymbol: string | null, priceTicks: T
                 description: `O sistema ${newState ? 'começará a' : 'parou de'} procurar oportunidades.`,
             });
             if (!newState) {
-                setLastSignal(null); // Reset signal when turning off
+                lastSignalRef.current = null; // Reset signal ref when turning off
             }
             return newState;
         });
