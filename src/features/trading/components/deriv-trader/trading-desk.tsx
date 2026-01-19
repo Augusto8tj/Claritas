@@ -272,7 +272,7 @@ export function TradingDesk({
                     size="sm"
                     className="w-full sm:w-auto"
                 >
-                    Resetar Desempenho da Sessão
+                    está funcionando corretamente?
                 </Button>
             </CardHeader>
             <CardContent>
