@@ -11,7 +11,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
-import { GoalProjectionDialog } from "./goal-projection-dialog";
+import { GoalProjectionDialog } from "@/components/goals/goal-projection-dialog";
 import type { Goal } from "@/lib/types";
 import { Trash2, Loader2, Image as ImageIcon } from "lucide-react";
 import {
