@@ -81,6 +81,7 @@ interface DerivApiContextType {
     multiplier: number,
     takeProfit?: number,
     stopLoss?: number,
+    cancellation?: string,
     initiator?: OperationInitiator,
   ) => Promise<TradeResult>;
   sellContract: (contractId: number) => Promise<TradeResult>;
@@ -158,7 +159,7 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
   const [tradeAnnotations, setTradeAnnotations] = useState<TradeAnnotation[]>([]);
   const [dataVersion, setDataVersion] = useState(0); 
   const [durationLimits, setDurationLimits] = useState<DurationLimits | null>(null);
-  const [multiplierOptions, setMultiplierOptions] = useState<number[]>([]);
+  const [multiplierOptions, setMultiplierOptions] = useState<number[]>([50, 100, 200, 500]);
   
   const wsRef = useRef<WebSocket | null>(null);
   const [isConnected, setIsConnected] = useState(false);
@@ -273,6 +274,7 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
     multiplier: number,
     takeProfit?: number,
     stopLoss?: number,
+    cancellation?: string,
     initiator: OperationInitiator = 'Manual'
   ): Promise<TradeResult> => {
       try {
@@ -292,11 +294,18 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
             "multiplier": multiplier,
         };
 
+        if (cancellation) {
+            proposalRequest.cancellation = cancellation;
+        }
+
         if (takeProfit !== undefined && takeProfit > 0) {
             proposalRequest.take_profit = takeProfit;
         }
+        
         if (stopLoss !== undefined && stopLoss > 0) {
-            proposalRequest.stop_loss = stopLoss;
+             if (stopLoss < sanitizedStake) {
+                proposalRequest.stop_loss = stopLoss;
+            }
         }
 
         const proposalResponse: any = await makeRequest(proposalRequest);
@@ -388,15 +397,6 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
     setPriceTicks([]); 
 
     try {
-        const contractsRes: any = await makeRequest({ contracts_for: symbol });
-        if (contractsRes.contracts_for?.available_contracts?.MULTUP?.multipliers) {
-            const options = contractsRes.contracts_for.available_contracts.MULTUP.multipliers;
-            setMultiplierOptions(options);
-        } else {
-            setMultiplierOptions([]);
-            console.warn(`[API Multipliers] Multiplier options not found for symbol ${symbol}.`);
-        }
-        
         const historyStyle = chartType === 'Candle' ? 'candles' : 'ticks';
         const history = await getHistoricalData(symbol, historyStyle, 1000, timePeriod);
         setChartData(history as ChartData[]);

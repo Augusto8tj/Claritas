@@ -6,6 +6,7 @@ export const multipliersSchema = z.object({
   multiplier: z.coerce.number().min(1, "O multiplicador deve ser de pelo menos 1."),
   takeProfit: z.coerce.number().min(0.01, "O Take Profit deve ser maior que $0.01.").optional(),
   stopLoss: z.coerce.number().min(0.01, "O Stop Loss deve ser maior que $0.01.").optional(),
+  cancellation: z.string().optional(),
 }).refine((data) => {
     if (data.stopLoss !== undefined) {
         return data.stopLoss < data.stake;

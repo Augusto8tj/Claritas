@@ -78,6 +78,7 @@ export default function DerivTraderInterfaceMultipliers({ symbol }: DerivTraderI
         data.multiplier,
         data.takeProfit,
         data.stopLoss,
+        data.cancellation,
         'Manual' as OperationInitiator
     );
     
@@ -161,6 +162,44 @@ export default function DerivTraderInterfaceMultipliers({ symbol }: DerivTraderI
             />
 
             <Separator />
+
+            <FormField
+              control={form.control}
+              name="cancellation"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel className="flex items-center gap-1.5">
+                    <span>Cancelamento (Opcional)</span>
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Info className="h-3.5 w-3.5 text-muted-foreground cursor-help" />
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          <p>Permite cancelar o seu contrato dentro<br/> do período selecionado para um reembolso parcial.</p>
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  </FormLabel>
+                  <Select onValueChange={field.onChange} defaultValue={field.value}>
+                    <FormControl>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Escolha um período..." />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      <SelectItem value={''}>Sem cancelamento</SelectItem>
+                      <SelectItem value="5m">5 minutos</SelectItem>
+                      <SelectItem value="10m">10 minutos</SelectItem>
+                      <SelectItem value="15m">15 minutos</SelectItem>
+                      <SelectItem value="30m">30 minutos</SelectItem>
+                      <SelectItem value="60m">60 minutos</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
             
             <div className="grid grid-cols-2 gap-4">
                <FormField
@@ -182,7 +221,7 @@ export default function DerivTraderInterfaceMultipliers({ symbol }: DerivTraderI
                         </TooltipProvider>
                       </FormLabel>
                       <FormControl>
-                        <Input type="number" placeholder="Ex: 20" {...field} onChange={e => field.onChange(e.target.value ? parseFloat(e.target.value) : undefined)} />
+                        <Input type="number" placeholder="Ex: 0.10" {...field} onChange={e => field.onChange(e.target.value ? parseFloat(e.target.value) : undefined)} />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -207,7 +246,7 @@ export default function DerivTraderInterfaceMultipliers({ symbol }: DerivTraderI
                         </TooltipProvider>
                       </FormLabel>
                       <FormControl>
-                        <Input type="number" placeholder="Ex: 5" {...field} onChange={e => field.onChange(e.target.value ? parseFloat(e.target.value) : undefined)} />
+                        <Input type="number" placeholder="Ex: 0.10" {...field} onChange={e => field.onChange(e.target.value ? parseFloat(e.target.value) : undefined)} />
                       </FormControl>
                       <FormMessage />
                     </FormItem>

@@ -35,6 +35,7 @@ export function useMultipliersCouncil(
     const lastRsiRef = useRef<number | null>(null);
     const executionRef = useRef({ isExecuting: false });
     const openPositionsRef = useRef<Set<number>>(new Set());
+    const lastSignalRef = useRef<'up' | 'down' | null>(null);
 
     // Core Trading Logic
     useEffect(() => {
@@ -75,17 +76,19 @@ export function useMultipliersCouncil(
                     signal = 'down';
                 }
             }
+            
+            const hasChangedDirection = lastSignalRef.current !== signal;
             lastRsiRef.current = rsi;
 
-            if (signal) {
+            if (signal && hasChangedDirection) {
+                lastSignalRef.current = signal;
                 setBotStatus('EXECUTING_TRADE');
 
                 // 3. Gestão de Risco e Tamanho da Posição
                 const riskPercentage = 0.01; // 1% da banca
-                const stake = Math.max(1.0, accountBalance * riskPercentage); // Mínimo de $1.00
-                const takeProfit = stake * 2; // Relação R:R de 1:2
+                const stake = Math.max(1.0, accountBalance * riskPercentage);
+                const takeProfit = stake * 2;
                 
-                // Para a UI, mostramos o risco como sendo o stake total.
                 setCalculatedRisk({ stake, stopLoss: stake, takeProfit });
 
                 setTimeout(() => {
@@ -101,7 +104,8 @@ export function useMultipliersCouncil(
                     activeSymbol,
                     form.getValues('multiplier'),
                     takeProfit,
-                    undefined, // Não definimos stop_loss, o risco máximo é o stake.
+                    undefined,
+                    undefined,
                     'Piloto'
                 );
 
@@ -135,7 +139,6 @@ export function useMultipliersCouncil(
                 const tp = calculatedRisk.takeProfit;
                 const currentProfit = op.result || 0;
 
-                // Trailing Take Profit: Se atingir 50% do alvo, encerra para travar o lucro.
                 if (tp > 0 && currentProfit >= tp * 0.5) {
                     setTimeout(() => {
                         toast({
@@ -156,21 +159,21 @@ export function useMultipliersCouncil(
 
 
     const toggleAutopilot = useCallback(() => {
-        const newState = !isAutopilotOn;
-        setIsAutopilotOn(newState);
-        
-        toast({
-            title: `Piloto Automático ${newState ? 'Ativado' : 'Desativado'}`,
-            description: `O sistema ${newState ? 'começará a' : 'parou de'} procurar oportunidades.`,
+        setIsAutopilotOn(prevState => {
+            const newState = !prevState;
+            toast({
+                title: `Piloto Automático ${newState ? 'Ativado' : 'Desativado'}`,
+                description: `O sistema ${newState ? 'começará a' : 'parou de'} procurar oportunidades.`,
+            });
+            if (!newState) {
+                setBotStatus('PAUSED');
+                lastRsiRef.current = null;
+            } else {
+                setBotStatus('MONITORING');
+            }
+            return newState;
         });
-
-        if (!newState) {
-            setBotStatus('PAUSED');
-            lastRsiRef.current = null;
-        } else {
-            setBotStatus('MONITORING');
-        }
-    }, [isAutopilotOn, toast]);
+    }, [toast]);
     
     return {
         isAutopilotOn,

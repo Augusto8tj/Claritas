@@ -140,10 +140,11 @@ const PageContent = () => {
     const form = useForm<MultipliersFormValues>({
         resolver: zodResolver(multipliersSchema),
         defaultValues: {
-            stake: 1.0,
-            multiplier: 400,
-            takeProfit: undefined,
-            stopLoss: undefined,
+            stake: 0.35,
+            multiplier: 50,
+            takeProfit: 0.10,
+            stopLoss: 0.10,
+            cancellation: '',
         },
     });
 
