@@ -220,7 +220,7 @@ export const DerivApiProviderV1 = ({ children }: { children: ReactNode }) => {
   
   const activeToken = accountType === 'demo' ? demoToken : realToken;
 
-  const makeRequest = useCallback(<T,>(request: object): Promise<T> => {
+  const makeRequest = useCallback(<T,>(request: object, noResponse = false): Promise<T> => {
     return new Promise((resolve, reject) => {
         const ws = wsRef.current;
         if (!ws || ws.readyState !== WebSocket.OPEN) {
@@ -230,25 +230,31 @@ export const DerivApiProviderV1 = ({ children }: { children: ReactNode }) => {
         const req_id = Date.now() + Math.floor(Math.random() * 1000000);
         const payload = { ...request, req_id };
         
-        const timeoutId = setTimeout(() => {
-            if (promisesRef.current.has(String(req_id))) {
-                promisesRef.current.delete(String(req_id));
-                reject(new Error(`O pedido à API expirou (req_id: ${req_id}). Verifique se o seu token de API da Deriv é válido.`));
-            }
-        }, 15000);
-        
-        promisesRef.current.set(String(req_id), {
-            resolve: (value: any) => {
-                clearTimeout(timeoutId);
-                resolve(value);
-            },
-            reject: (reason: any) => {
-                clearTimeout(timeoutId);
-                reject(reason);
-            }
-        });
+        if (!noResponse) {
+            const timeoutId = setTimeout(() => {
+                if (promisesRef.current.has(String(req_id))) {
+                    promisesRef.current.delete(String(req_id));
+                    reject(new Error(`O pedido à API expirou (req_id: ${req_id}). Verifique se o seu token de API da Deriv é válido.`));
+                }
+            }, 15000);
+            
+            promisesRef.current.set(String(req_id), {
+                resolve: (value: any) => {
+                    clearTimeout(timeoutId);
+                    resolve(value);
+                },
+                reject: (reason: any) => {
+                    clearTimeout(timeoutId);
+                    reject(reason);
+                }
+            });
+        }
 
         ws.send(JSON.stringify(payload));
+
+        if (noResponse) {
+            resolve({} as T);
+        }
     });
   }, []);
   
@@ -307,7 +313,7 @@ const subscribeToMarketData = useCallback(async (symbol: string) => {
 
     if (activeSubscriptionIdRef.current) {
         try { 
-            await makeRequest({ forget: activeSubscriptionIdRef.current }); 
+            await makeRequest({ forget: activeSubscriptionIdRef.current }, true); 
         } catch (e) { 
             console.log('[Market Data] Previous subscription cancelled'); 
         }
