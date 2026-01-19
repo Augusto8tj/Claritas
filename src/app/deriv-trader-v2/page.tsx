@@ -151,16 +151,13 @@ const MainContent = () => {
 
             {/* Layout Desktop */}
             <div className="hidden lg:block space-y-6">
-                <div className="grid lg:grid-cols-3 gap-6">
-                    <div className="lg:col-span-2 space-y-6">
-                        <IsolatedMarketChart />
-                        <CouncilDashboardV2 consensusDecision={robotCouncil.consensusDecision} supervisionStatus={robotCouncil.supervisionStatus} activeCommittee={robotCouncil.currentRegime.regime} isCouncilAutopilotOn={robotCouncil.isCouncilAutopilotOn} />
-                    </div>
-                    <div className="lg:col-span-1 space-y-6">
-                        <DerivTraderInterfaceV2 symbol={activeSymbol || ""} />
-                    </div>
-                </div>
+                <IsolatedMarketChart />
 
+                <div className="grid lg:grid-cols-2 gap-6">
+                   <DerivTraderInterfaceV2 symbol={activeSymbol || ""} />
+                   <CouncilDashboardV2 consensusDecision={robotCouncil.consensusDecision} supervisionStatus={robotCouncil.supervisionStatus} activeCommittee={robotCouncil.currentRegime.regime} isCouncilAutopilotOn={robotCouncil.isCouncilAutopilotOn} />
+                </div>
+                
                 <CouncilAutopilotInterfaceV2 {...robotCouncil} />
                 
                 <TradingDeskV2 councilState={robotCouncil} />
