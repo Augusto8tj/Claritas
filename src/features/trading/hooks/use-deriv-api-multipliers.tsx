@@ -87,6 +87,7 @@ interface DerivApiContextType {
   clearActiveContracts: () => void;
   tradeAnnotations: TradeAnnotation[];
   durationLimits: DurationLimits | null;
+  multiplierOptions: number[];
 }
 
 const DerivApiMultipliersContext = createContext<DerivApiContextType | undefined>(undefined);
@@ -154,6 +155,7 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
   const [tradeAnnotations, setTradeAnnotations] = useState<TradeAnnotation[]>([]);
   const [dataVersion, setDataVersion] = useState(0); 
   const [durationLimits, setDurationLimits] = useState<DurationLimits | null>(null);
+  const [multiplierOptions, setMultiplierOptions] = useState<number[]>([]);
   
   const wsRef = useRef<WebSocket | null>(null);
   const [isConnected, setIsConnected] = useState(false);
@@ -383,6 +385,15 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
     setPriceTicks([]); 
 
     try {
+        const contractsRes: any = await makeRequest({ contracts_for: symbol });
+        if (contractsRes.contracts_for?.available_contracts?.MULTUP?.multipliers) {
+            const options = contractsRes.contracts_for.available_contracts.MULTUP.multipliers;
+            setMultiplierOptions(options);
+        } else {
+            setMultiplierOptions([]);
+            console.warn(`[API Multipliers] Multiplier options not found for symbol ${symbol}.`);
+        }
+        
         const historyStyle = chartType === 'Candle' ? 'candles' : 'ticks';
         const history = await getHistoricalData(symbol, historyStyle, 1000, timePeriod);
         setChartData(history as ChartData[]);
@@ -622,7 +633,7 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
       setIsConnected(false);
       setAccountBalance({ balance: null, currency: null, loading: false });
     };
-  }, [activeToken, isLoading, makeRequest, toast]);
+  }, [activeToken, isLoading]);
 
   useEffect(() => {
     connect();
@@ -743,6 +754,7 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
     clearActiveContracts,
     tradeAnnotations,
     durationLimits,
+    multiplierOptions,
     getHistoricalData
   };
 

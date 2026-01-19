@@ -25,6 +25,7 @@ import { Separator } from "@/components/ui/separator";
 import type { OperationInitiator } from "@/lib/types";
 import type { MultipliersFormValues } from "./deriv-trader-interface-multipliers.types";
 import { useDerivApiMultipliers } from "@/features/trading/hooks/use-deriv-api-multipliers";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 interface DerivTraderInterfaceProps {
   symbol: string;
@@ -33,7 +34,7 @@ interface DerivTraderInterfaceProps {
 export default function DerivTraderInterfaceMultipliers({ symbol }: DerivTraderInterfaceProps) {
   const { toast } = useToast();
   const [loading, setLoading] = useState<"up" | "down" | null>(null);
-  const { isConnected, executeTrade } = useDerivApiMultipliers();
+  const { isConnected, executeTrade, multiplierOptions } = useDerivApiMultipliers();
   const form = useFormContext<MultipliersFormValues>();
 
   const handleStakeChange = (amount: number) => {
@@ -42,14 +43,6 @@ export default function DerivTraderInterfaceMultipliers({ symbol }: DerivTraderI
     newStake = Math.max(0.35, newStake);
     form.setValue('stake', parseFloat(newStake.toFixed(2)));
     form.trigger('stake');
-  };
-
-  const handleMultiplierChange = (amount: number) => {
-    const currentMultiplier = form.getValues('multiplier') || 1;
-    let newMultiplier = currentMultiplier + amount;
-    newMultiplier = Math.max(1, newMultiplier);
-    form.setValue('multiplier', newMultiplier);
-    form.trigger('multiplier');
   };
 
   const handleTrade = async (tradeDirection: "up" | "down") => {
@@ -141,16 +134,24 @@ export default function DerivTraderInterfaceMultipliers({ symbol }: DerivTraderI
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>Multiplicador</FormLabel>
-                   <div className="flex items-center justify-center gap-2">
-                      <Button type="button" variant="outline" size="icon" onClick={() => handleMultiplierChange(-10)}><Minus className="h-4 w-4"/></Button>
-                      <div className="relative flex-1">
-                          <FormControl>
-                            <Input type="number" {...field} onChange={e => field.onChange(parseInt(e.target.value) || 0)} className="text-center font-bold text-lg pr-12"/>
-                          </FormControl>
-                          <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">x</span>
-                      </div>
-                      <Button type="button" variant="outline" size="icon" onClick={() => handleMultiplierChange(10)}><Plus className="h-4 w-4"/></Button>
-                  </div>
+                  <Select
+                    onValueChange={(value) => field.onChange(parseInt(value))}
+                    value={String(field.value)}
+                    disabled={isButtonDisabled || !multiplierOptions || multiplierOptions.length === 0}
+                  >
+                    <FormControl>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Selecione..." />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      {multiplierOptions?.map(option => (
+                        <SelectItem key={option} value={String(option)}>
+                          x{option}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                   <FormMessage />
                 </FormItem>
               )}

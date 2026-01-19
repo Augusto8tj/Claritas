@@ -1,7 +1,7 @@
 // /src/app/deriv-trader-multipliers/page.tsx
 'use client';
 
-import React from "react";
+import React, { useEffect } from "react";
 import { useForm, FormProvider } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import DerivTraderInterfaceMultipliers from "@/features/trading/components/deriv-trader/deriv-trader-interface-multipliers";
@@ -134,11 +134,22 @@ const PageContent = () => {
         resolver: zodResolver(multipliersSchema),
         defaultValues: {
             stake: 10,
-            multiplier: 100,
+            multiplier: 400,
             takeProfit: undefined,
             stopLoss: undefined,
         },
     });
+
+    const { multiplierOptions } = useDerivApiMultipliers();
+
+    useEffect(() => {
+        if (multiplierOptions && multiplierOptions.length > 0) {
+            const currentMultiplier = form.getValues('multiplier');
+            if (!multiplierOptions.includes(currentMultiplier)) {
+                form.setValue('multiplier', multiplierOptions[0]);
+            }
+        }
+    }, [multiplierOptions, form]);
 
     return (
         <FormProvider {...form}>
