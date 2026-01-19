@@ -127,44 +127,50 @@ const DerivTraderV3Core = () => {
                 <DerivTraderInterfaceV3 symbol={activeSymbol || ""} />
                 <CouncilDashboardV3 councilState={robotCouncil} />
                 <CouncilAutopilotInterfaceV3 {...robotCouncil} />
-                <OperationsLogV3 operations={operationsLog} sellContract={sellContract} />
-                <TradingDeskV2 councilState={robotCouncil} />
-                <DebugCouncilViewV3 councilState={robotCouncil} isCouncilAutopilotOn={robotCouncil.isCouncilAutopilotOn} />
-                <EvolutionLabV3 {...robotCouncil} />
-                <TradingDecisionLogViewer logs={robotCouncil.tradeDecisionLog} showFilters={false} />
+                <Tabs defaultValue="arena" className="w-full">
+                    <TabsList className="grid w-full grid-cols-4">
+                        <TabsTrigger value="arena"><Swords className="w-4 h-4" /></TabsTrigger>
+                        <TabsTrigger value="auditoria"><Bot className="w-4 h-4" /></TabsTrigger>
+                        <TabsTrigger value="evolucao"><Dna className="w-4 h-4" /></TabsTrigger>
+                        <TabsTrigger value="debug"><BrainCircuit className="w-4 h-4" /></TabsTrigger>
+                    </TabsList>
+                    <TabsContent value="arena" className="mt-4"><TradingDeskV2 councilState={robotCouncil} /></TabsContent>
+                    <TabsContent value="auditoria" className="mt-4 space-y-4">
+                        <OperationsLogV3 operations={operationsLog} sellContract={sellContract} />
+                        <TradingDecisionLogViewer logs={robotCouncil.tradeDecisionLog} showFilters={false} />
+                    </TabsContent>
+                    <TabsContent value="evolucao" className="mt-4"><EvolutionLabV3 {...robotCouncil} /></TabsContent>
+                    <TabsContent value="debug" className="mt-4"><DebugCouncilViewV3 councilState={robotCouncil} isCouncilAutopilotOn={robotCouncil.isCouncilAutopilotOn} /></TabsContent>
+                </Tabs>
             </div>
 
             {/* Desktop View */}
-            <div className="hidden lg:grid lg:grid-cols-3 gap-6">
-                {/* Coluna 1: Negociação e Painel de Decisão */}
-                 <div className="space-y-6">
-                    <DerivTraderInterfaceV3 symbol={activeSymbol || ""} />
-                    <CouncilDashboardV3 councilState={robotCouncil} />
+            <div className="hidden lg:block space-y-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                   <DerivTraderInterfaceV3 symbol={activeSymbol || ""} />
+                   <CouncilDashboardV3 councilState={robotCouncil} />
                 </div>
                 
-                {/* Coluna 2: Autopilot e Debug */}
-                 <div className="space-y-6">
-                    <CouncilAutopilotInterfaceV3 {...robotCouncil} />
-                    <DebugCouncilViewV3 councilState={robotCouncil} isCouncilAutopilotOn={robotCouncil.isCouncilAutopilotOn} />
-                </div>
-
-                {/* Coluna 3: Logs, Arena e Evolução */}
-                <div className="space-y-6">
+                <CouncilAutopilotInterfaceV3 {...robotCouncil} />
+                
+                <div className="mt-6">
                      <Tabs defaultValue="arena" className="h-full">
-                        <TabsList className="grid w-full grid-cols-3">
-                            <TabsTrigger value="arena">Arena</TabsTrigger>
-                            <TabsTrigger value="logs">Logs</TabsTrigger>
-                            <TabsTrigger value="evolucao">Evolução</TabsTrigger>
+                        <TabsList className="grid w-full grid-cols-4">
+                            <TabsTrigger value="arena"><Swords className="mr-2 h-4 w-4"/>Arena Virtual</TabsTrigger>
+                            <TabsTrigger value="auditoria"><Bot className="mr-2 h-4 w-4"/>Logs e Auditoria</TabsTrigger>
+                            <TabsTrigger value="evolucao"><Dna className="mr-2 h-4 w-4"/>Evolução Genética</TabsTrigger>
+                            <TabsTrigger value="debug"><BrainCircuit className="mr-2 h-4 w-4"/>Debug Avançado</TabsTrigger>
                         </TabsList>
                         <TabsContent value="arena" className="mt-4">
                             <TradingDeskV2 councilState={robotCouncil} />
                         </TabsContent>
-                         <TabsContent value="logs" className="mt-4 space-y-4">
+                        <TabsContent value="auditoria" className="mt-4 space-y-4">
                             <OperationsLogV3 operations={operationsLog} sellContract={sellContract} />
                             <TradingDecisionLogViewer logs={robotCouncil.tradeDecisionLog} showFilters={false} />
                         </TabsContent>
-                        <TabsContent value="evolucao" className="mt-4">
-                            <EvolutionLabV3 {...robotCouncil} />
+                        <TabsContent value="evolucao" className="mt-4"><EvolutionLabV3 {...robotCouncil} /></TabsContent>
+                        <TabsContent value="debug" className="mt-4">
+                            <DebugCouncilViewV3 councilState={robotCouncil} isCouncilAutopilotOn={robotCouncil.isCouncilAutopilotOn} />
                         </TabsContent>
                     </Tabs>
                 </div>
