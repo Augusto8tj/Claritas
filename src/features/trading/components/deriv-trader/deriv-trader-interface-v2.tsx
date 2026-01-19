@@ -31,7 +31,20 @@ import type { DurationUnit, RiseFallFormValues } from "./deriv-trader-interface-
 import { useDerivApiV2 } from "@/features/trading/hooks/use-deriv-api-v2";
 import { Switch } from "@/components/ui/switch";
 
-type TradeType = 'rise_fall' | 'higher_lower' | 'touch_no_touch';
+type TradeType = 
+  | 'rise_fall' 
+  | 'higher_lower' 
+  | 'high_low_ticks'
+  | 'matches_differs'
+  | 'over_under'
+  | 'even_odd'
+  | 'stays_between'
+  | 'goes_outside'
+  | 'touch_no_touch'
+  | 'multipliers'
+  | 'accumulators'
+  | 'vanillas'
+  | 'turbos';
 
 interface DerivTraderInterfaceProps {
   symbol: string;
@@ -48,7 +61,17 @@ const durationUnitLabels: Record<DurationUnit, string> = {
 const tradeTypeLabels: Record<TradeType, string> = {
   rise_fall: "Rise/Fall",
   higher_lower: "Higher/Lower",
+  high_low_ticks: "High/Low Ticks",
+  matches_differs: "Matches/Differs",
+  over_under: "Over/Under",
+  even_odd: "Even/Odd",
+  stays_between: "Stays Between",
+  goes_outside: "Goes Outside",
   touch_no_touch: "Touch/No Touch",
+  multipliers: "Multiplicadores",
+  accumulators: "Acumuladores",
+  vanillas: "Opções Vanilla",
+  turbos: "Opções Turbo",
 };
 
 function DerivTraderInterfaceV2({ symbol }: DerivTraderInterfaceProps) {
@@ -170,7 +193,7 @@ function DerivTraderInterfaceV2({ symbol }: DerivTraderInterfaceProps) {
       <Card className="bg-card/50">
         <CardContent className="p-4 space-y-4">
             
-            <Popover>
+             <Popover>
                 <PopoverTrigger asChild>
                     <Button variant="outline" className="w-full justify-between">
                         <span>{tradeTypeLabels[tradeType]}</span>
@@ -180,24 +203,54 @@ function DerivTraderInterfaceV2({ symbol }: DerivTraderInterfaceProps) {
                 <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0">
                     <RadioGroup value={tradeType} onValueChange={(val) => setTradeType(val as TradeType)}>
                         <div className="space-y-1 p-2">
-                            <Label className="px-2 text-xs text-muted-foreground">Tipos de Negociação</Label>
-                            <RadioGroupItem value="rise_fall" className="w-full">
+                             <Label className="px-2 text-xs text-muted-foreground">Sobe & Desce</Label>
+                             <RadioGroupItem value="rise_fall">
                                 <Label className="flex items-center justify-between w-full cursor-pointer p-2 hover:bg-accent rounded-md">
                                     <span>Rise/Fall</span>
                                 </Label>
                             </RadioGroupItem>
-                            <RadioGroupItem value="higher_lower" disabled className="w-full">
+                             <RadioGroupItem value="higher_lower" disabled>
                                 <Label className="flex items-center justify-between w-full cursor-not-allowed p-2 text-muted-foreground">
                                     <span>Higher/Lower</span>
                                     <span className="text-xs font-bold">EM BREVE</span>
                                 </Label>
                             </RadioGroupItem>
-                            <RadioGroupItem value="touch_no_touch" disabled className="w-full">
+
+                            <Separator className="my-1" />
+                            <Label className="px-2 text-xs text-muted-foreground">Altos & Baixos</Label>
+                            <RadioGroupItem value="high_low_ticks" disabled>
+                                <Label className="flex items-center justify-between w-full cursor-not-allowed p-2 text-muted-foreground">
+                                    <span>High/Low Ticks</span>
+                                    <span className="text-xs font-bold">EM BREVE</span>
+                                </Label>
+                            </RadioGroupItem>
+
+                             <Separator className="my-1" />
+                            <Label className="px-2 text-xs text-muted-foreground">Dígitos</Label>
+                            <RadioGroupItem value="matches_differs" disabled><Label className="flex items-center justify-between w-full cursor-not-allowed p-2 text-muted-foreground"><span>Matches/Differs</span><span className="text-xs font-bold">EM BREVE</span></Label></RadioGroupItem>
+                            <RadioGroupItem value="over_under" disabled><Label className="flex items-center justify-between w-full cursor-not-allowed p-2 text-muted-foreground"><span>Over/Under</span><span className="text-xs font-bold">EM BREVE</span></Label></RadioGroupItem>
+                            <RadioGroupItem value="even_odd" disabled><Label className="flex items-center justify-between w-full cursor-not-allowed p-2 text-muted-foreground"><span>Even/Odd</span><span className="text-xs font-bold">EM BREVE</span></Label></RadioGroupItem>
+
+                             <Separator className="my-1" />
+                            <Label className="px-2 text-xs text-muted-foreground">Dentro/Fora</Label>
+                            <RadioGroupItem value="stays_between" disabled><Label className="flex items-center justify-between w-full cursor-not-allowed p-2 text-muted-foreground"><span>Stays Between</span><span className="text-xs font-bold">EM BREVE</span></Label></RadioGroupItem>
+                            <RadioGroupItem value="goes_outside" disabled><Label className="flex items-center justify-between w-full cursor-not-allowed p-2 text-muted-foreground"><span>Goes Outside</span><span className="text-xs font-bold">EM BREVE</span></Label></RadioGroupItem>
+
+                             <Separator className="my-1" />
+                            <Label className="px-2 text-xs text-muted-foreground">Toca/Não Toca</Label>
+                             <RadioGroupItem value="touch_no_touch" disabled>
                                 <Label className="flex items-center justify-between w-full cursor-not-allowed p-2 text-muted-foreground">
                                     <span>Touch/No Touch</span>
                                     <span className="text-xs font-bold">EM BREVE</span>
                                 </Label>
                             </RadioGroupItem>
+                            
+                             <Separator className="my-1" />
+                            <Label className="px-2 text-xs text-muted-foreground">Avançados</Label>
+                            <RadioGroupItem value="multipliers" disabled><Label className="flex items-center justify-between w-full cursor-not-allowed p-2 text-muted-foreground"><span>Multiplicadores</span><span className="text-xs font-bold">EM BREVE</span></Label></RadioGroupItem>
+                            <RadioGroupItem value="accumulators" disabled><Label className="flex items-center justify-between w-full cursor-not-allowed p-2 text-muted-foreground"><span>Acumuladores</span><span className="text-xs font-bold">EM BREVE</span></Label></RadioGroupItem>
+                            <RadioGroupItem value="vanillas" disabled><Label className="flex items-center justify-between w-full cursor-not-allowed p-2 text-muted-foreground"><span>Opções Vanilla</span><span className="text-xs font-bold">EM BREVE</span></Label></RadioGroupItem>
+                            <RadioGroupItem value="turbos" disabled><Label className="flex items-center justify-between w-full cursor-not-allowed p-2 text-muted-foreground"><span>Opções Turbo</span><span className="text-xs font-bold">EM BREVE</span></Label></RadioGroupItem>
                         </div>
                     </RadioGroup>
                 </PopoverContent>
