@@ -190,9 +190,41 @@ const calculateTechnicalVote = (
   const setVote = (newVote: 'RISE' | 'FALL', newConfidence: number, newReason: string) => {
     if (newConfidence <= 0) return;
     vote = newVote;
-    confidence = newConfidence;
+    // Cap confidence at 100
+    confidence = Math.min(100, Math.max(0, newConfidence));
     reason = newReason;
-    suggestedStake = baseStake * (1 + (newConfidence / 100)); 
+    suggestedStake = baseStake * (1 + (confidence / 100)); 
+  };
+  
+  // Helper for confidence interpolation
+  const interpolateConfidence = (
+    value: number, 
+    weakThreshold: number, 
+    strongThreshold: number, 
+    weakConfidence: number, 
+    strongConfidence: number,
+    isRise: boolean
+  ): number => {
+    if (isRise) { // For RISE signals, lower values are better
+        if (value >= weakThreshold) return 0;
+        if (value <= strongThreshold) {
+            const overshoot = strongThreshold - value;
+            // Agressivamente aumenta a confiança para sinais extremos
+            return Math.min(100, strongConfidence + overshoot * 4); 
+        }
+        const range = weakThreshold - strongThreshold;
+        const progress = (weakThreshold - value) / range;
+        return weakConfidence + (strongConfidence - weakConfidence) * progress;
+    } else { // For FALL signals, higher values are better
+        if (value <= weakThreshold) return 0;
+        if (value >= strongThreshold) {
+            const overshoot = value - strongThreshold;
+            return Math.min(100, strongConfidence + overshoot * 4);
+        }
+        const range = strongThreshold - weakThreshold;
+        const progress = (value - weakThreshold) / range;
+        return weakConfidence + (strongConfidence - weakConfidence) * progress;
+    }
   };
 
   const { 
@@ -202,16 +234,22 @@ const calculateTechnicalVote = (
   } = indicators;
 
   try {
-      if (robot.strategyType === 'RSI' && isValid(rsi)) {
-        if (rsi <= robot.strongBuyThreshold!) setVote('RISE', 93, `RSI Extremo Baixo`);
-        else if (rsi <= robot.weakBuyThreshold!) setVote('RISE', 45, `RSI Baixo`);
-        else if (rsi >= robot.strongSellThreshold!) setVote('FALL', 93, `RSI Extremo Alto`);
-        else if (rsi >= robot.weakSellThreshold!) setVote('FALL', 45, `RSI Alto`);
-      }
-      
-      else if (robot.strategyType === 'STOCHASTIC' && isValid(stoch)) {
-        if (stoch <= robot.strongBuyThreshold!) setVote('RISE', 80, `Stoch Sobrevenda`);
-        else if (stoch >= robot.strongSellThreshold!) setVote('FALL', 80, `Stoch Sobrecompra`);
+      if ((robot.strategyType === 'RSI' || robot.strategyType === 'STOCHASTIC' || robot.strategyType === 'STOCH_RSI') && indicators[robot.strategyType.toLowerCase() as keyof Indicators]) {
+        const value = indicators[robot.strategyType.toLowerCase() as keyof Indicators] as number;
+        const { 
+            strongBuyThreshold: sbt, weakBuyThreshold: wbt,
+            strongSellThreshold: sst, weakSellThreshold: wst,
+            strongConfidence: sc, weakConfidence: wc
+        } = robot;
+        
+        const riseConfidence = interpolateConfidence(value, wbt!, sbt!, wc, sc, true);
+        const fallConfidence = interpolateConfidence(value, wst!, sst!, wc, sc, false);
+        
+        if (riseConfidence > fallConfidence) {
+            setVote('RISE', riseConfidence, `${robot.strategyType}(${value.toFixed(1)}) em zona de compra`);
+        } else if (fallConfidence > riseConfidence) {
+            setVote('FALL', fallConfidence, `${robot.strategyType}(${value.toFixed(1)}) em zona de venda`);
+        }
       }
       
       else if (robot.strategyType === 'MACD_CROSS' && isValid(macd?.macd) && isValid(macd?.signal)) {
@@ -245,12 +283,8 @@ const calculateTechnicalVote = (
           if (lowerShadow > body) setVote('RISE', 60, 'Rejeição de Fundo');
           else setVote('FALL', 40, 'Pressão Vendedora');
       }
-
-      else if (robot.strategyType === 'STOCH_RSI' && isValid(stochRSI)) {
-          if (stochRSI < 0.2) setVote('RISE', 70, 'StochRSI Sobrevenda');
-          else if (stochRSI > 0.8) setVote('FALL', 70, 'StochRSI Sobrecompra');
-      }
       
+      // Keep a fallback for generic RSI-like behavior
       else if (isValid(rsi)) {
           if (rsi < 45) setVote('RISE', 35, 'Zona de Compra (Genérico)');
           else if (rsi > 55) setVote('FALL', 35, 'Zona de Venda (Genérico)');
@@ -262,6 +296,7 @@ const calculateTechnicalVote = (
 
   return { vote, confidence, reason, optimalDuration: dynamicDuration, optimalDurationUnit: dynamicUnit, suggestedStake };
 };
+
 
 // ════════════════════════════════════════════════════════════════════
 // 5. HOOK PRINCIPAL
