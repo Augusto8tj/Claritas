@@ -276,9 +276,8 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
         }
 
         const sanitizedStake = parseFloat(stake.toFixed(2));
-        const parameters: any = { take_profit: takeProfit, stop_loss: stopLoss };
-
-        const proposalResponse: any = await makeRequest({ 
+        
+        const proposalRequest: any = { 
             "proposal": 1,
             "amount": sanitizedStake,
             "basis": "stake",
@@ -286,8 +285,16 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
             "currency": "USD",
             "symbol": symbol,
             "multiplier": multiplier,
-            "parameters": parameters,
-        });
+        };
+
+        if (takeProfit !== undefined && takeProfit > 0) {
+            proposalRequest.take_profit = takeProfit;
+        }
+        if (stopLoss !== undefined && stopLoss > 0) {
+            proposalRequest.stop_loss = stopLoss;
+        }
+
+        const proposalResponse: any = await makeRequest(proposalRequest);
 
         const proposal = proposalResponse.proposal;
         if (!proposal || !proposal.id) {
@@ -402,223 +409,222 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
   }, [getHistoricalData, makeRequest, chartType, timePeriod]);
 
 
-  useEffect(() => {
+  const connect = useCallback(() => {
     if (!activeToken || isLoading) {
       if (wsRef.current) wsRef.current.close();
       return;
     }
+    
+    setIsConnecting(true);
+    setConnectionError(null);
+    setIsAssetsLoading(true);
   
-    const connect = () => {
-        setIsConnecting(true);
-        setConnectionError(null);
-        setIsAssetsLoading(true);
-      
-        if (wsRef.current) {
-            wsRef.current.close();
-            wsRef.current = null;
-        }
+    if (wsRef.current) {
+        wsRef.current.close();
+        wsRef.current = null;
+    }
+
+    const ws = new WebSocket(`wss://ws.derivws.com/websockets/v3?app_id=${DERIV_APP_ID}`);
+    wsRef.current = ws;
     
-        const ws = new WebSocket(`wss://ws.derivws.com/websockets/v3?app_id=${DERIV_APP_ID}`);
-        wsRef.current = ws;
-        
-        ws.onmessage = (event) => {
-            try {
-                const response = JSON.parse(event.data);
-                const reqId = response.req_id;
-                
-                if (reqId && promisesRef.current.has(String(reqId))) {
-                    const promise = promisesRef.current.get(String(reqId));
-                    if (promise) {
-                        if (response.error) {
-                            promise.reject(new Error(response.error.message));
-                        } else {
-                            promise.resolve(response);
-                        }
-                        promisesRef.current.delete(String(reqId));
+    ws.onmessage = (event) => {
+        try {
+            const response = JSON.parse(event.data);
+            const reqId = response.req_id;
+            
+            if (reqId && promisesRef.current.has(String(reqId))) {
+                const promise = promisesRef.current.get(String(reqId));
+                if (promise) {
+                    if (response.error) {
+                        promise.reject(new Error(response.error.message));
+                    } else {
+                        promise.resolve(response);
                     }
-                    return;
+                    promisesRef.current.delete(String(reqId));
                 }
-    
-                if (response.error && response.error.message) {
-                     if (response.error.code !== 'AlreadySubscribed' && response.error.code !== 'SellNotAvailable' && response.error.code !== 'ContractSellNotAvailable') {
-                      console.error(`[Deriv WS] Error:`, response.error.message);
-                    }
-                     return;
+                return;
+            }
+
+            if (response.error && response.error.message) {
+                 if (response.error.code !== 'AlreadySubscribed' && response.error.code !== 'SellNotAvailable' && response.error.code !== 'ContractSellNotAvailable') {
+                  console.error(`[Deriv WS] Error:`, response.error.message);
                 }
-    
-                switch (response.msg_type) {
-                    case 'balance':
-                        setAccountBalance({ balance: response.balance.balance, currency: response.balance.currency, loading: false });
-                        break;
-                    case 'proposal_open_contract':
-                        const contract = response.proposal_open_contract;
-                        if (!contract) return;
-                        
-                        const contractId = contract.contract_id;
-                        
-                        setOperationsLog(prevLog => prevLog.map(op => {
-                            if (op.id === contractId) {
-                                const newStatus = contract.is_sold ? (contract.profit >= 0 ? 'won' : 'lost') : 'pending';
-                                const exitPrice = contract.exit_tick_display_value ? parseFloat(contract.exit_tick_display_value) : op.exitPrice;
-                                
-                                if (contract.is_sold) {
-                                    const sellTime = contract.sell_time ? new Date(contract.sell_time * 1000).toISOString() : new Date().toISOString();
-                                    toast({
-                                        title: "Posição Fechada",
-                                        description: `Contrato ${contractId}: ${contract.profit >= 0 ? `Lucro de ${contract.currency} ${contract.profit.toFixed(2)}` : `Prejuízo de ${contract.currency} ${Math.abs(contract.profit).toFixed(2)}`}`,
-                                        variant: contract.profit < 0 ? "destructive" : "default",
-                                    });
-                                    
-                                    if (wsRef.current?.readyState === WebSocket.OPEN) {
-                                        wsRef.current.send(JSON.stringify({"balance": 1}));
-                                    }
-    
-                                    return { ...op, status: newStatus, result: contract.profit, exitPrice: exitPrice, exitTimestamp: sellTime };
-                                } else {
-                                    // Live profit update for pending multiplier
-                                    return { ...op, result: contract.profit };
-                                }
-                            }
-                            return op;
-                        }));
-                        
-                        break;
-                    case 'tick':
-                        if (response.tick?.symbol === activeSymbol) {
-                            const tick = response.tick;
-                            const newTick = { epoch: tick.epoch, price: tick.quote };
-                            if (chartTypeRef.current === 'Area') {
-                               setChartData(prev => addDataPoint(prev, newTick));
-                            }
-                            setPriceTicks(prev => {
-                                const newTicks = [...prev, newTick];
-                                 if (newTicks.length > MAX_DATA_POINTS) {
-                                    return newTicks.slice(1);
-                                }
-                                return newTicks;
-                            });
-                            setDataVersion(v => v + 1);
-                        }
-                        break;
+                 return;
+            }
+
+            switch (response.msg_type) {
+                case 'balance':
+                    setAccountBalance({ balance: response.balance.balance, currency: response.balance.currency, loading: false });
+                    break;
+                case 'proposal_open_contract':
+                    const contract = response.proposal_open_contract;
+                    if (!contract) return;
                     
-                    case 'ohlc':
-                    case 'candles':
-                        const candleData = response.ohlc || (response.candles && response.candles[0]);
-                        if (chartTypeRef.current === 'Candle' && candleData && candleData.symbol === activeSymbol) {
-                            const newCandle: CandleData = {
-                                epoch: candleData.open_time || candleData.epoch,
-                                open: parseFloat(candleData.open),
-                                high: parseFloat(candleData.high),
-                                low: parseFloat(candleData.low),
-                                close: parseFloat(candleData.close),
-                            };
-                            setChartData(prev => addDataPoint(prev, newCandle));
-                            const newTickFromCandle: TickData = {
-                                epoch: newCandle.epoch,
-                                price: newCandle.close,
-                            };
-                            setPriceTicks(prev => {
-                                const newTicks = [...prev, newTickFromCandle];
-                                if (newTicks.length > MAX_DATA_POINTS) {
-                                    return newTicks.slice(1);
+                    const contractId = contract.contract_id;
+                    
+                    setOperationsLog(prevLog => prevLog.map(op => {
+                        if (op.id === contractId) {
+                            const newStatus = contract.is_sold ? (contract.profit >= 0 ? 'won' : 'lost') : 'pending';
+                            const exitPrice = contract.exit_tick_display_value ? parseFloat(contract.exit_tick_display_value) : op.exitPrice;
+                            
+                            if (contract.is_sold) {
+                                const sellTime = contract.sell_time ? new Date(contract.sell_time * 1000).toISOString() : new Date().toISOString();
+                                toast({
+                                    title: "Posição Fechada",
+                                    description: `Contrato ${contractId}: ${contract.profit >= 0 ? `Lucro de ${contract.currency} ${contract.profit.toFixed(2)}` : `Prejuízo de ${contract.currency} ${Math.abs(contract.profit).toFixed(2)}`}`,
+                                    variant: contract.profit < 0 ? "destructive" : "default",
+                                });
+                                
+                                if (wsRef.current?.readyState === WebSocket.OPEN) {
+                                    wsRef.current.send(JSON.stringify({"balance": 1}));
                                 }
-                                return newTicks;
-                            });
-                            setDataVersion(v => v + 1);
+
+                                return { ...op, status: newStatus, result: contract.profit, exitPrice: exitPrice, exitTimestamp: sellTime };
+                            } else {
+                                // Live profit update for pending multiplier
+                                return { ...op, result: contract.profit };
+                            }
                         }
-                        break;
-                }
-            } catch (parseError) {
-                console.error('[Deriv WS] Failed to parse message:', parseError);
+                        return op;
+                    }));
+                    
+                    break;
+                case 'tick':
+                    if (response.tick?.symbol === activeSymbol) {
+                        const tick = response.tick;
+                        const newTick = { epoch: tick.epoch, price: tick.quote };
+                        if (chartTypeRef.current === 'Area') {
+                           setChartData(prev => addDataPoint(prev, newTick));
+                        }
+                        setPriceTicks(prev => {
+                            const newTicks = [...prev, newTick];
+                             if (newTicks.length > MAX_DATA_POINTS) {
+                                return newTicks.slice(1);
+                            }
+                            return newTicks;
+                        });
+                        setDataVersion(v => v + 1);
+                    }
+                    break;
+                
+                case 'ohlc':
+                case 'candles':
+                    const candleData = response.ohlc || (response.candles && response.candles[0]);
+                    if (chartTypeRef.current === 'Candle' && candleData && candleData.symbol === activeSymbol) {
+                        const newCandle: CandleData = {
+                            epoch: candleData.open_time || candleData.epoch,
+                            open: parseFloat(candleData.open),
+                            high: parseFloat(candleData.high),
+                            low: parseFloat(candleData.low),
+                            close: parseFloat(candleData.close),
+                        };
+                        setChartData(prev => addDataPoint(prev, newCandle));
+                        const newTickFromCandle: TickData = {
+                            epoch: newCandle.epoch,
+                            price: newCandle.close,
+                        };
+                        setPriceTicks(prev => {
+                            const newTicks = [...prev, newTickFromCandle];
+                            if (newTicks.length > MAX_DATA_POINTS) {
+                                return newTicks.slice(1);
+                            }
+                            return newTicks;
+                        });
+                        setDataVersion(v => v + 1);
+                    }
+                    break;
             }
-        };
-    
-        ws.onopen = async () => {
-            try {
-                await makeRequest({ authorize: activeToken });
-                setIsConnected(true);
-                setIsConnecting(false);
-                setConnectionError(null);
-                
-                ws.send(JSON.stringify({ "proposal_open_contract": 1, "subscribe": 1 }));
-                ws.send(JSON.stringify({ "balance": 1, "subscribe": 1 }));
-                
-                const assetsRes: any = await makeRequest({ active_symbols: 'full', product_type: 'basic' });
-                
-                // Filtra para mercados que tipicamente suportam multiplicadores
-                const filteredSymbols = assetsRes.active_symbols.filter((symbol: any) => 
-                    symbol.market === 'synthetic_index' || symbol.market === 'forex'
-                );
-
-                const groupedAssets: { [key: string]: Asset[] } = {};
-                filteredSymbols.forEach((symbol: any) => {
-                    const marketKey = (symbol.market === 'synthetic_index' && symbol.submarket === 'basket_index') ? 'basket_index' : symbol.market;
-                    const groupName = marketNameMapping[marketKey] || 'Outros';
-                    if (!groupedAssets[groupName]) groupedAssets[groupName] = [];
-                    groupedAssets[groupName].push({
-                        value: symbol.symbol,
-                        label: symbol.display_name,
-                        marketIsOpen: symbol.exchange_is_open === 1,
-                        submarket: symbol.submarket,
-                        market: marketKey,
-                        minDuration: 'N/A', 
-                    });
-                });
-                
-                setAssetGroups(Object.keys(groupedAssets)
-                    .map(label => ({ label, options: groupedAssets[label].sort((a, b) => a.label.localeCompare(b.label)) }))
-                    .sort((a, b) => a.label.localeCompare(b.label)));
-                setIsAssetsLoading(false);
-        
-            } catch (error: any) {
-                let errorMessage = error instanceof Error ? error.message : 'Erro desconhecido ao conectar';
-                setConnectionError(`Falha na autorização: ${errorMessage}`);
-                setIsConnected(false);
-                setIsConnecting(false);
-                setIsAssetsLoading(false);
-                if (ws.readyState === WebSocket.OPEN) ws.close();
-            }
-        };
-      
-        ws.onclose = (event) => {
-          if (!wsRef.current) return;
-          const { wasClean, code, reason } = event;
-          
-          if (promisesRef.current) {
-              promisesRef.current.forEach((p) => {
-                if (p && typeof p.reject === 'function') {
-                  p.reject(new Error("WebSocket connection closed."))
-                }
-              });
-              promisesRef.current.clear();
-          }
-
-          if (!wasClean) {
-            setConnectionError(`A conexão foi encerrada inesperadamente. Código: ${code}. Razão: ${reason || 'N/A'}.`);
-          }
-          setIsConnected(false);
-          setIsConnecting(false);
-          setAccountBalance({ balance: null, currency: null, loading: false });
-          wsRef.current = null;
-        };
-      
-        ws.onerror = (error) => {
-          console.error('[Deriv WS] WebSocket error:', error);
-          if (promisesRef.current) {
-              promisesRef.current.forEach((p) => {
-                if (p && typeof p.reject === 'function') {
-                  p.reject(new Error("WebSocket error occurred."))
-                }
-              });
-              promisesRef.current.clear();
-          }
-          setConnectionError("Falha na conexão com a API da Deriv. Verifique o seu token e a ligação à internet.");
-          setIsConnecting(false);
-          setIsConnected(false);
-          setAccountBalance({ balance: null, currency: null, loading: false });
-        };
+        } catch (parseError) {
+            console.error('[Deriv WS] Failed to parse message:', parseError);
+        }
     };
 
+    ws.onopen = async () => {
+        try {
+            await makeRequest({ authorize: activeToken });
+            setIsConnected(true);
+            setIsConnecting(false);
+            setConnectionError(null);
+            
+            ws.send(JSON.stringify({ "proposal_open_contract": 1, "subscribe": 1 }));
+            ws.send(JSON.stringify({ "balance": 1, "subscribe": 1 }));
+            
+            const assetsRes: any = await makeRequest({ active_symbols: 'full', product_type: 'basic' });
+            
+            const filteredSymbols = assetsRes.active_symbols.filter((symbol: any) => 
+                symbol.market === 'synthetic_index' || symbol.market === 'forex'
+            );
+
+            const groupedAssets: { [key: string]: Asset[] } = {};
+            filteredSymbols.forEach((symbol: any) => {
+                const marketKey = (symbol.market === 'synthetic_index' && symbol.submarket === 'basket_index') ? 'basket_index' : symbol.market;
+                const groupName = marketNameMapping[marketKey] || 'Outros';
+                if (!groupedAssets[groupName]) groupedAssets[groupName] = [];
+                groupedAssets[groupName].push({
+                    value: symbol.symbol,
+                    label: symbol.display_name,
+                    marketIsOpen: symbol.exchange_is_open === 1,
+                    submarket: symbol.submarket,
+                    market: marketKey,
+                    minDuration: 'N/A', 
+                });
+            });
+            
+            setAssetGroups(Object.keys(groupedAssets)
+                .map(label => ({ label, options: groupedAssets[label].sort((a, b) => a.label.localeCompare(b.label)) }))
+                .sort((a, b) => a.label.localeCompare(b.label)));
+            setIsAssetsLoading(false);
+    
+        } catch (error: any) {
+            let errorMessage = error instanceof Error ? error.message : 'Erro desconhecido ao conectar';
+            setConnectionError(`Falha na autorização: ${errorMessage}`);
+            setIsConnected(false);
+            setIsConnecting(false);
+            setIsAssetsLoading(false);
+            if (ws.readyState === WebSocket.OPEN) ws.close();
+        }
+    };
+  
+    ws.onclose = (event) => {
+      if (!wsRef.current) return;
+      const { wasClean, code, reason } = event;
+      
+      if (promisesRef.current) {
+          promisesRef.current.forEach((p) => {
+            if (p && typeof p.reject === 'function') {
+              p.reject(new Error("WebSocket connection closed."))
+            }
+          });
+          promisesRef.current.clear();
+      }
+
+      if (!wasClean) {
+        setConnectionError(`A conexão foi encerrada inesperadamente. Código: ${code}. Razão: ${reason || 'N/A'}.`);
+      }
+      setIsConnected(false);
+      setIsConnecting(false);
+      setAccountBalance({ balance: null, currency: null, loading: false });
+      wsRef.current = null;
+    };
+  
+    ws.onerror = (error) => {
+      console.error('[Deriv WS] WebSocket error:', error);
+      if (promisesRef.current) {
+          promisesRef.current.forEach((p) => {
+            if (p && typeof p.reject === 'function') {
+              p.reject(new Error("WebSocket error occurred."))
+            }
+          });
+          promisesRef.current.clear();
+      }
+      setConnectionError("Falha na conexão com a API da Deriv. Verifique o seu token e a ligação à internet.");
+      setIsConnecting(false);
+      setIsConnected(false);
+      setAccountBalance({ balance: null, currency: null, loading: false });
+    };
+  }, [activeToken, isLoading, makeRequest, toast]);
+
+  useEffect(() => {
     connect();
   
     return () => {
@@ -627,7 +633,7 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
         wsRef.current.close();
       }
     };
-  }, [activeToken, isLoading, makeRequest, toast, triggerReconnect]);
+  }, [connect, triggerReconnect]);
 
   
   useEffect(() => {
