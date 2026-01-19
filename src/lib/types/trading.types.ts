@@ -35,6 +35,12 @@ export const OperationSchema = z.object({
   duration: z.number().optional(),
   durationUnit: z.string().optional(),
   entryPrice: z.number().optional(),
+  exitPrice: z.number().optional(),
+  exitTimestamp: z.string().optional(),
+  isSellable: z.boolean().optional(),
+  expirationTime: z.number().optional(),
+  multiplier: z.number().optional(),
+  contractType: z.string().optional(),
 });
 
 

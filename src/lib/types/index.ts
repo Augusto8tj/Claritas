@@ -81,6 +81,7 @@ export interface TradeAnnotation {
   stake: number;
   profit?: number;
   symbol: string;
+  expirationTime?: number;
 }
 
 export type OperationStatus = 'pending' | 'won' | 'lost';
@@ -102,6 +103,8 @@ export interface Operation {
   exitPrice?: number;
   isSellable?: boolean;
   expirationTime?: number; // Expiration time in milliseconds
+  multiplier?: number;
+  contractType?: string;
 }
 
 // =/src/lib/types/index.ts
@@ -194,5 +197,3 @@ export const GenerateGoalImageOutputSchema = z.object({
 export type GenerateGoalImageOutput = z.infer<typeof GenerateGoalImageOutputSchema>;
 
 export { IndicatorsSchema, AssetAnalysisInputSchema, AssetAnalysisOutputSchema, OperationSchema };
-
-    
