@@ -154,10 +154,10 @@ const MainContent = () => {
                 <div className="grid lg:grid-cols-3 gap-6">
                     <div className="lg:col-span-2 space-y-6">
                         <IsolatedMarketChart />
+                        <CouncilDashboardV2 consensusDecision={robotCouncil.consensusDecision} supervisionStatus={robotCouncil.supervisionStatus} activeCommittee={robotCouncil.currentRegime.regime} isCouncilAutopilotOn={robotCouncil.isCouncilAutopilotOn} />
                     </div>
                     <div className="lg:col-span-1 space-y-6">
                         <DerivTraderInterfaceV2 symbol={activeSymbol || ""} />
-                        <CouncilDashboardV2 consensusDecision={robotCouncil.consensusDecision} supervisionStatus={robotCouncil.supervisionStatus} activeCommittee={robotCouncil.currentRegime.regime} isCouncilAutopilotOn={robotCouncil.isCouncilAutopilotOn} />
                         <CouncilAutopilotInterfaceV2 {...robotCouncil} />
                     </div>
                 </div>
@@ -177,9 +177,7 @@ const MainContent = () => {
                             <OperationsLogV2 operations={operationsLog} sellContract={sellContract} priceTicks={priceTicks} />
                             <TradingDecisionLogViewer logs={robotCouncil.tradeDecisionLog} showFilters={false} />
                         </TabsContent>
-                        <TabsContent value="evolucao" className="mt-4">
-                            <EvolutionLabV2 {...robotCouncil} />
-                        </TabsContent>
+                        <TabsContent value="evolucao" className="mt-4"><EvolutionLabV2 {...robotCouncil} /></TabsContent>
                         <TabsContent value="debug" className="mt-4">
                             <DebugCouncilViewV2 councilState={robotCouncil} isCouncilAutopilotOn={robotCouncil.isCouncilAutopilotOn} />
                         </TabsContent>
