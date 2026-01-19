@@ -150,9 +150,18 @@ const MainContent = () => {
             </div>
 
             {/* Layout Desktop */}
-            <div className="hidden lg:grid lg:grid-cols-3 gap-6">
-                <div className="lg:col-span-2 space-y-6">
-                    <IsolatedMarketChart />
+            <div className="hidden lg:block">
+                <div className="grid lg:grid-cols-3 gap-6">
+                    <div className="lg:col-span-2 space-y-6">
+                        <IsolatedMarketChart />
+                    </div>
+                    <div className="lg:col-span-1 space-y-6">
+                        <DerivTraderInterfaceV2 symbol={activeSymbol || ""} />
+                        <CouncilDashboardV2 consensusDecision={robotCouncil.consensusDecision} supervisionStatus={robotCouncil.supervisionStatus} activeCommittee={robotCouncil.currentRegime.regime} isCouncilAutopilotOn={robotCouncil.isCouncilAutopilotOn} />
+                        <CouncilAutopilotInterfaceV2 {...robotCouncil} />
+                    </div>
+                </div>
+                <div className="mt-6">
                      <Tabs defaultValue="arena" className="h-full">
                         <TabsList className="grid w-full grid-cols-4">
                             <TabsTrigger value="arena"><Swords className="mr-2 h-4 w-4"/>Arena</TabsTrigger>
@@ -174,11 +183,6 @@ const MainContent = () => {
                             <DebugCouncilViewV2 councilState={robotCouncil} isCouncilAutopilotOn={robotCouncil.isCouncilAutopilotOn} />
                         </TabsContent>
                     </Tabs>
-                </div>
-                <div className="lg:col-span-1 space-y-6">
-                    <DerivTraderInterfaceV2 symbol={activeSymbol || ""} />
-                    <CouncilDashboardV2 consensusDecision={robotCouncil.consensusDecision} supervisionStatus={robotCouncil.supervisionStatus} activeCommittee={robotCouncil.currentRegime.regime} isCouncilAutopilotOn={robotCouncil.isCouncilAutopilotOn} />
-                    <CouncilAutopilotInterfaceV2 {...robotCouncil} />
                 </div>
             </div>
         </div>
