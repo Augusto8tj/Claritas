@@ -549,6 +549,32 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
     setCouncilVotes(newVotes);
     setConsensusSum({ rise: riseSum, fall: fallSum });
 
+    // --- NOVO: Lógica de Limiar de Consenso Dinâmico ---
+    if (isDynamicConsensusOn) {
+        const activeVotersCount = Object.values(newVotes).filter(v => v.vote !== 'HOLD').length;
+
+        // Base é proporcional aos bots ativos, visando 30% do potencial máximo.
+        const participationBasedThreshold = (activeVotersCount * 100) * 0.3;
+
+        // Ajuste por volatilidade. Mais volátil = mais cautela (limiar maior).
+        let volatilityMultiplier = 1.0;
+        const bbw = currentIndicators.bbw;
+        if (isValid(bbw)) {
+            if (bbw > 0.09) { // Alta volatilidade
+                volatilityMultiplier = 1.25;
+            } else if (bbw < 0.03) { // Baixa volatilidade (squeeze)
+                volatilityMultiplier = 0.8;
+            }
+        }
+        
+        let newThreshold = participationBasedThreshold * volatilityMultiplier;
+
+        // Limita o valor a um intervalo razoável.
+        newThreshold = Math.max(100, Math.min(newThreshold, 800));
+
+        setConsensusThreshold(Math.round(newThreshold));
+    }
+    
     let decision: 'RISE' | 'FALL' | 'HOLD' = 'HOLD';
     let decisionSource = 'Probation';
 
