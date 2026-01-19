@@ -52,10 +52,12 @@ export function useMultipliersCouncil(activeSymbol: string | null, priceTicks: T
                 
                 const { stake, multiplier, takeProfit, stopLoss } = form.getValues();
 
-                toast({
-                    title: `🤖 Piloto Automático de Multiplicadores`,
-                    description: `Sinal de ${currentSignal.toUpperCase()} detectado para ${activeSymbol}. Executando ordem...`,
-                });
+                setTimeout(() => {
+                    toast({
+                        title: `🤖 Piloto Automático de Multiplicadores`,
+                        description: `Sinal de ${currentSignal.toUpperCase()} detectado para ${activeSymbol}. Executando ordem...`,
+                    });
+                }, 0);
                 
                 await executeTrade(
                     currentSignal === 'up' ? 'MULTUP' : 'MULTDOWN',
