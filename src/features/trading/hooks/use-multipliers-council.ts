@@ -36,6 +36,20 @@ export function useMultipliersCouncil(
     const executionRef = useRef({ isExecuting: false });
     const openPositionsRef = useRef<Set<number>>(new Set());
     const lastSignalRef = useRef<'up' | 'down' | null>(null);
+    const highestProfitRef = useRef<Map<number, number>>(new Map());
+
+    // Cleanup closed positions from refs
+    useEffect(() => {
+        const openContractIds = new Set(operationsLog.filter(op => op.status === 'pending').map(op => op.id));
+        
+        for (const id of openPositionsRef.current) {
+            if (!openContractIds.has(id)) {
+                openPositionsRef.current.delete(id);
+                highestProfitRef.current.delete(id);
+            }
+        }
+    }, [operationsLog]);
+
 
     // Core Trading Logic
     useEffect(() => {
@@ -84,17 +98,24 @@ export function useMultipliersCouncil(
                 lastSignalRef.current = signal;
                 setBotStatus('EXECUTING_TRADE');
 
-                // 3. Gestão de Risco e Tamanho da Posição
-                const riskPercentage = 0.01; // 1% da banca
-                const stake = Math.max(1.0, accountBalance * riskPercentage);
-                const takeProfit = stake * 2;
+                // 3. Gestão de Risco e Tamanho da Posição baseada em ATR
+                const baseRiskPercentage = 0.01; // 1%
+                const atr = indicators.atr || 0;
+                const normalizedAtr = atr > 0 && lastPrice > 0 ? atr / lastPrice : 0.001; // ATR como % do preço
+
+                const volatilityFactor = normalizedAtr / 0.0005; // Normalizado contra uma volatilidade "padrão" de 0.05%
+                const cappedVolatilityFactor = Math.max(0.5, Math.min(2.0, volatilityFactor));
+                const adjustedRiskPercentage = baseRiskPercentage / cappedVolatilityFactor;
+                
+                const stake = Math.max(1.0, accountBalance * adjustedRiskPercentage);
+                const takeProfit = stake * 2; // Relação Risco-Recompensa 2:1
                 
                 setCalculatedRisk({ stake, stopLoss: stake, takeProfit });
 
                 setTimeout(() => {
                     toast({
                         title: `🤖 Piloto Automático: Sinal ${signal!.toUpperCase()}!`,
-                        description: `Tendência ${currentTrend} confirmada com cruzamento do RSI. Executando ordem para ${activeSymbol}.`,
+                        description: `Tendência ${currentTrend} confirmada. Stake de $${stake.toFixed(2)} (ATR ajustado).`,
                     });
                 }, 0);
                 
@@ -104,13 +125,14 @@ export function useMultipliersCouncil(
                     activeSymbol,
                     form.getValues('multiplier'),
                     takeProfit,
-                    undefined,
+                    undefined, // Stop-loss é o próprio stake
                     undefined,
                     'Piloto'
                 );
 
                 if (result.success && result.contractId) {
                     openPositionsRef.current.add(result.contractId);
+                    highestProfitRef.current.set(result.contractId, 0); // Inicia o tracking de lucro
                 }
 
                 await new Promise(resolve => setTimeout(resolve, 10000));
@@ -136,23 +158,39 @@ export function useMultipliersCouncil(
             const openOps = operationsLog.filter(op => openPositionsRef.current.has(op.id) && op.status === 'pending');
 
             openOps.forEach(op => {
-                const tp = calculatedRisk.takeProfit;
                 const currentProfit = op.result || 0;
+                const contractId = op.id;
+                
+                const highestProfit = highestProfitRef.current.get(contractId) || 0;
 
-                if (tp > 0 && currentProfit >= tp * 0.5) {
+                // Update highest profit for the contract
+                if (currentProfit > highestProfit) {
+                    highestProfitRef.current.set(contractId, currentProfit);
+                }
+
+                // Define a trailing distance, e.g., 50% of the initial take profit target.
+                const takeProfitTarget = calculatedRisk.takeProfit; // This comes from the state set on trade execution
+                const trailingDistance = takeProfitTarget * 0.5; // Trail by 50% of the original TP target
+
+                // Check if trailing stop is hit
+                if (highestProfit > 0.1 && // Only start trailing after a small profit is made
+                    currentProfit < highestProfit - trailingDistance) {
+
                     setTimeout(() => {
                         toast({
-                            title: "📈 Trailing Take Profit Acionado!",
-                            description: `Garantindo lucro de $${currentProfit.toFixed(2)} no contrato #${op.id}.`
+                            title: "📈 Trailing Stop Acionado!",
+                            description: `Protegendo lucro no contrato #${contractId}. Vendendo com lucro de $${currentProfit.toFixed(2)}.`,
                         });
                     }, 0);
-                    sellContract(op.id);
-                    openPositionsRef.current.delete(op.id);
+                    
+                    sellContract(contractId);
+                    openPositionsRef.current.delete(contractId);
+                    highestProfitRef.current.delete(contractId);
                 }
             });
         };
         
-        const intervalId = setInterval(checkTrailingStops, 2000);
+        const intervalId = setInterval(checkTrailingStops, 2000); // Check every 2 seconds
         return () => clearInterval(intervalId);
 
     }, [isAutopilotOn, operationsLog, calculatedRisk, sellContract, toast]);
@@ -161,13 +199,17 @@ export function useMultipliersCouncil(
     const toggleAutopilot = useCallback(() => {
         setIsAutopilotOn(prevState => {
             const newState = !prevState;
-            toast({
-                title: `Piloto Automático ${newState ? 'Ativado' : 'Desativado'}`,
-                description: `O sistema ${newState ? 'começará a' : 'parou de'} procurar oportunidades.`,
-            });
+            setTimeout(() => {
+                toast({
+                    title: `Piloto Automático ${newState ? 'Ativado' : 'Desativado'}`,
+                    description: `O sistema ${newState ? 'começará a' : 'parou de'} procurar oportunidades.`,
+                });
+            }, 0);
             if (!newState) {
                 setBotStatus('PAUSED');
                 lastRsiRef.current = null;
+                openPositionsRef.current.clear();
+                highestProfitRef.current.clear();
             } else {
                 setBotStatus('MONITORING');
             }
