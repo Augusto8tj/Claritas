@@ -183,35 +183,41 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
   
   const activeToken = accountType === 'demo' ? demoToken : realToken;
 
-  const makeRequest = useCallback(<T,>(request: object): Promise<T> => {
+  const makeRequest = useCallback(<T,>(request: object, noResponse = false): Promise<T> => {
     return new Promise((resolve, reject) => {
         const ws = wsRef.current;
         if (!ws || ws.readyState !== WebSocket.OPEN) {
-            return reject(new Error("WebSocket não está conectado. Verifique o token e a conexão."));
+            return reject(new Error("WebSocket não está conectado."));
         }
-        
+
         const req_id = Date.now() + Math.floor(Math.random() * 1000000);
         const payload = { ...request, req_id };
         
-        const timeoutId = setTimeout(() => {
-            if (promisesRef.current.has(String(req_id))) {
-                promisesRef.current.delete(String(req_id));
-                reject(new Error(`O pedido à API expirou (req_id: ${req_id}).`));
-            }
-        }, 15000);
+        if (!noResponse) {
+            const timeoutId = setTimeout(() => {
+                if (promisesRef.current.has(String(req_id))) {
+                    promisesRef.current.delete(String(req_id));
+                    reject(new Error(`O pedido à API expirou (req_id: ${req_id}). O token pode ser inválido ou a rede está lenta.`));
+                }
+            }, 15000);
+            
+            promisesRef.current.set(String(req_id), {
+                resolve: (value: any) => {
+                    clearTimeout(timeoutId);
+                    resolve(value);
+                },
+                reject: (reason: any) => {
+                    clearTimeout(timeoutId);
+                    reject(reason);
+                }
+            });
+        }
         
-        promisesRef.current.set(String(req_id), {
-            resolve: (value: any) => {
-                clearTimeout(timeoutId);
-                resolve(value);
-            },
-            reject: (reason: any) => {
-                clearTimeout(timeoutId);
-                reject(reason);
-            }
-        });
-
         ws.send(JSON.stringify(payload));
+        
+        if (noResponse) {
+            resolve({} as T);
+        }
     });
   }, []);
   
@@ -352,6 +358,50 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
     }
   }, [isConnected, makeRequest]);
   
+  const subscribeToMarketData = useCallback(async (symbol: string) => {
+    if (wsRef.current?.readyState !== WebSocket.OPEN) return;
+
+    if (activeSubscriptionIdRef.current) {
+        try { 
+            await makeRequest({ forget: activeSubscriptionIdRef.current }, true); 
+        } catch (e) { 
+            console.log('[Market Data] Previous subscription cancelled'); 
+        }
+        activeSubscriptionIdRef.current = null;
+    }
+
+    setIsChartLoading(true);
+    setChartError(null);
+    setChartData([]);
+    setPriceTicks([]); 
+
+    try {
+        const historyStyle = chartType === 'Candle' ? 'candles' : 'ticks';
+        const history = await getHistoricalData(symbol, historyStyle, 1000, timePeriod);
+        setChartData(history as ChartData[]);
+        if (historyStyle === 'ticks') {
+            setPriceTicks(history as TickData[]);
+        }
+        setDataVersion(v => v + 1);
+
+        let subRequest: any;
+        if (chartType === 'Candle') {
+            subRequest = { ticks_history: symbol, style: 'candles', granularity: getGranularityForTimePeriod(timePeriod), subscribe: 1, end: "latest", count: 1, adjust_start_time: 1 };
+        } else {
+            subRequest = { ticks: symbol, subscribe: 1 };
+        }
+        const subResponse: any = await makeRequest(subRequest);
+        if (subResponse.subscription?.id) {
+            activeSubscriptionIdRef.current = subResponse.subscription.id;
+        }
+    } catch (error: any) {
+        setChartError(error.message || 'Falha ao carregar dados do mercado.');
+    } finally {
+        setIsChartLoading(false);
+    }
+  }, [getHistoricalData, makeRequest, chartType, timePeriod]);
+
+
   useEffect(() => {
     if (!activeToken || isLoading) {
       if (wsRef.current) wsRef.current.close();
@@ -582,51 +632,9 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
   
   useEffect(() => {
     if (isConnected && activeSymbol) {
-        const subscribeToMarketData = async (symbol: string) => {
-          if (activeSubscriptionIdRef.current && wsRef.current?.readyState === WebSocket.OPEN) {
-              try { await makeRequest({ forget: activeSubscriptionIdRef.current }); } catch (e) { console.log('Previous subscription cancelled'); }
-              activeSubscriptionIdRef.current = null;
-          }
-
-          setIsChartLoading(true);
-          setChartError(null);
-          setChartData([]);
-          setPriceTicks([]); 
-
-          try {
-              const historyStyle = chartType === 'Candle' ? 'candles' : 'ticks';
-              const history = await getHistoricalData(symbol, historyStyle, 1000, timePeriod);
-              setChartData(history as ChartData[]);
-              if (historyStyle === 'ticks') {
-                  setPriceTicks(history as TickData[]);
-              }
-              setDataVersion(v => v + 1);
-
-              let subRequest: any;
-              if (chartType === 'Candle') {
-                  subRequest = { ticks_history: symbol, style: 'candles', granularity: getGranularityForTimePeriod(timePeriod), subscribe: 1, end: "latest", count: 1, adjust_start_time: 1 };
-              } else {
-                  subRequest = { ticks: symbol, subscribe: 1 };
-              }
-              const subResponse: any = await makeRequest(subRequest);
-              if (subResponse.subscription?.id) {
-                  activeSubscriptionIdRef.current = subResponse.subscription.id;
-              }
-          } catch (error: any) {
-              setChartError(error.message || 'Falha ao carregar dados do mercado.');
-          } finally {
-              setIsChartLoading(false);
-          }
-      };
       subscribeToMarketData(activeSymbol);
     }
-    return () => {
-        if (activeSubscriptionIdRef.current && wsRef.current?.readyState === WebSocket.OPEN) {
-            try { wsRef.current.send(JSON.stringify({ forget: activeSubscriptionIdRef.current })); } catch (e) { console.warn('Could not unsubscribe on cleanup:', e); }
-            activeSubscriptionIdRef.current = null;
-        }
-    };
-  }, [isConnected, chartType, timePeriod, activeSymbol, getHistoricalData, makeRequest]);
+  }, [isConnected, chartType, timePeriod, activeSymbol, subscribeToMarketData]);
 
   const setAccountType = useCallback((type: AccountType) => {
     try {
