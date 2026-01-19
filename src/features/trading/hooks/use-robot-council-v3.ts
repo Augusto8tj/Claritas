@@ -16,7 +16,7 @@ import { calculateAllIndicators, type Indicators } from '@/services/indicator-se
 import { useAuth } from '@/features/auth/hooks/use-auth';
 import { saveRobotPerformanceV3, loadRobotPerformanceV3, saveTradeDecisionV3 } from '@/services/financial-data-service-v3';
 import { useStrategyEvolutionV3 } from './use-strategy-evolution-v3';
-import { getCouncilStrategies } from '@/services/council-strategies';
+import { initialCouncilStrategies } from '@/services/council-strategies';
 import {
   detectMarketRegime, calculateKellyStake, bayesianUpdate,
   extractMicrostructureFeatures, calculatePerformanceMetrics,
@@ -299,8 +299,8 @@ export function useRobotCouncilV3(
     },
     robotPerformance: [],
     consensusReached: false,
-    consensusSum: { rise: 0, fall: 0 },
-    totalWeight: 0,
+    consensusSum: { rise: number, fall: number },
+    totalWeight: number,
   });
 
   const [robotPerformance, setRobotPerformance] = useState<EnhancedRobotPerformance[]>([]);
@@ -321,13 +321,13 @@ export function useRobotCouncilV3(
   const [dailyTarget, setDailyTarget] = useState(5);
   const [isDynamicConsensusOn, setIsDynamicConsensusOn] = useState(true);
   const [isDynamicRiskOn, setIsDynamicRiskOn] = useState(true);
-  const [isMeritocracyOn, setIsMeritocracyOn] = useState(true);
-  const [isDynamicExitOn, setIsDynamicExitOn] = useState(false);
-  const [consensusSensitivity, setConsensusSensitivity] = useState(60); 
-  const [confidenceFactor, setConfidenceFactor] = useState(RISK_CONFIG.MIN_REAL_CONFIDENCE);
-  const [durationRange, setDurationRange] = useState<[number, number]>([15, 300]); 
-  const [takeProfitThreshold, setTakeProfitThreshold] = useState(10);
-  const [stopLossThreshold, setStopLossThreshold] = useState(20);
+  const [isMeritocracyOn, setIsMeritocracyOn = useState(true);
+  const [isDynamicExitOn, setIsDynamicExitOn = useState(false);
+  const [consensusSensitivity, setConsensusSensitivity = useState(60); 
+  const [confidenceFactor, setConfidenceFactor = useState(RISK_CONFIG.MIN_REAL_CONFIDENCE);
+  const [durationRange, setDurationRange = useState<[number, number]>([15, 300]); 
+  const [takeProfitThreshold, setTakeProfitThreshold = useState(10);
+  const [stopLossThreshold, setStopLossThreshold = useState(20);
 
   const councilExecutionRef = useRef<{ isExecuting: boolean; sellingContracts: Set<number>; }>({
     isExecuting: false, sellingContracts: new Set()
@@ -378,13 +378,13 @@ export function useRobotCouncilV3(
     resetArenaPerformance();
     
     setSessionStartTime(Date.now());
-    setIsCouncilAutopilotOn(true);
+    setIsCouncilAutopilotOn = useState(true);
     setIsFetchingCouncil(false);
     toast({ title: '🚀 Sistema V3.0 (IA Lab) Iniciado', description: 'Monitoramento em tempo real ativo.' });
   }, [activeSymbol, evolvedStrategies, resetArenaPerformance, toast]);
 
   const dissolveCouncil = useCallback(() => {
-    setIsCouncilAutopilotOn(false);
+    setIsCouncilAutopilotOn = useState(false);
     setSessionStartTime(null);
     toast({ title: '⏸️ Sistema V3.0 (IA Lab) Pausado', description: 'Mesa Operacional suspensa.' });
   }, [toast]);
@@ -907,3 +907,5 @@ function markLogAsProcessed(logs: TradeDecisionLog[], contractId: number): Trade
         log.contractId === contractId ? { ...log, processed: true } : log
     );
 }
+
+    
