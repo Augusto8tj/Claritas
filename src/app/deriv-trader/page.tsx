@@ -9,7 +9,7 @@ import { AssetSelectorV1 } from "@/features/trading/components/deriv-trader/asse
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { MarketChart } from "@/features/trading/components/deriv-trader/market-chart";
 import { Button } from "@/components/ui/button";
-import { Trash2, Bot, NotepadText, LayoutGrid, Trophy, Dna, Swords, Archive, CandlestickChart, BrainCircuit, Brain } from "lucide-react";
+import { Trash2, Bot, NotepadText, LayoutGrid, Trophy, Dna, Swords, Archive, CandlestickChart, BrainCircuit, Brain, Briefcase } from "lucide-react";
 import { DerivApiProviderV1, useDerivApiV1 } from "@/features/trading/hooks/use-deriv-api-v1";
 import { Skeleton } from "@/components/ui/skeleton";
 import { OperationsLogV1 } from "@/features/trading/components/deriv-trader/operations-log-v1";
@@ -27,6 +27,7 @@ import { ApiStatusIndicatorLegacy } from "@/features/trading/components/deriv-tr
 import { EvolutionLabV1 } from "@/features/trading/components/deriv-trader/evolution-lab-v1";
 import TradingDecisionLogViewer from "@/components/deriv-trader/TradingDecisionLogViewer";
 import { AssetIntelligenceCard } from "@/features/trading/components/deriv-trader/asset-intelligence-card";
+import { OpenPositions } from "@/features/trading/components/deriv-trader/OpenPositions";
 
 
 function HeaderV1() {
@@ -189,8 +190,9 @@ function MainContentV1() {
                     />
                 </div>
                 <CouncilAutopilotInterfaceV1 {...robotCouncil} />
-                <Tabs defaultValue="arena" className="w-full">
-                     <TabsList className="grid w-full grid-cols-7">
+                <Tabs defaultValue="posicoes" className="w-full">
+                     <TabsList className="grid w-full grid-cols-8">
+                        <TabsTrigger value="posicoes"><Briefcase className="w-4 h-4 mr-2"/>Posições</TabsTrigger>
                         <TabsTrigger value="logs"><NotepadText className="w-4 h-4 mr-2"/>Registo</TabsTrigger>
                         <TabsTrigger value="arena"><LayoutGrid className="w-4 h-4 mr-2"/>Arena</TabsTrigger>
                         <TabsTrigger value="memoria"><Brain className="w-4 h-4 mr-2"/>Memória</TabsTrigger>
@@ -199,6 +201,13 @@ function MainContentV1() {
                         <TabsTrigger value="fame"><Trophy className="w-4 h-4 mr-2"/>Fama</TabsTrigger>
                         <TabsTrigger value="evolucao"><Dna className="w-4 h-4 mr-2"/>Evolução</TabsTrigger>
                     </TabsList>
+                    <TabsContent value="posicoes" className="mt-4">
+                        <OpenPositions 
+                            title="Posições Abertas (V1)"
+                            description="Contratos de opções digitais atualmente em aberto."
+                            operations={operationsLog}
+                        />
+                    </TabsContent>
                     <TabsContent value="logs" className="mt-4"><OperationsLogV1 operations={operationsLog} sellContract={sellContract} priceTicks={priceTicks} /></TabsContent>
                     <TabsContent value="arena" className="mt-4"><TradingDesk {...robotCouncil} /></TabsContent>
                     <TabsContent value="memoria" className="mt-4">
