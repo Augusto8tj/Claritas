@@ -1,3 +1,4 @@
+// src/features/trading/components/deriv-trader/deriv-trader-interface-multipliers.tsx
 "use client";
 
 import { useState } from "react";
@@ -42,7 +43,7 @@ export default function DerivTraderInterfaceMultipliers({ symbol }: DerivTraderI
   const handleStakeChange = (amount: number) => {
     const currentStake = form.getValues('stake') || 0;
     let newStake = currentStake + amount;
-    newStake = Math.max(0.35, newStake);
+    newStake = Math.max(1.0, newStake);
     form.setValue('stake', parseFloat(newStake.toFixed(2)));
     form.trigger('stake');
   };

@@ -30,7 +30,7 @@ export function useMultipliersCouncil(
     const [botStatus, setBotStatus] = useState<BotStatus>('PAUSED');
     const [trend, setTrend] = useState<TrendDirection>('NONE');
     
-    const [calculatedRisk, setCalculatedRisk] = useState({ stake: 0.35, stopLoss: 0.35, takeProfit: 0.70 });
+    const [calculatedRisk, setCalculatedRisk] = useState({ stake: 1.0, stopLoss: 1.0, takeProfit: 2.0 });
 
     const lastRsiRef = useRef<number | null>(null);
     const executionRef = useRef({ isExecuting: false });
@@ -82,7 +82,7 @@ export function useMultipliersCouncil(
 
                 // 3. Gestão de Risco e Tamanho da Posição
                 const riskPercentage = 0.01; // 1% da banca
-                const stake = Math.max(0.35, accountBalance * riskPercentage);
+                const stake = Math.max(1.0, accountBalance * riskPercentage); // Mínimo de $1.00
                 const takeProfit = stake * 2; // Relação R:R de 1:2
                 
                 // Para a UI, mostramos o risco como sendo o stake total.
@@ -155,11 +155,10 @@ export function useMultipliersCouncil(
     }, [isAutopilotOn, operationsLog, calculatedRisk, sellContract, toast]);
 
 
-    const toggleAutopilot = () => {
+    const toggleAutopilot = useCallback(() => {
         const newState = !isAutopilotOn;
         setIsAutopilotOn(newState);
         
-        // A notificação agora é disparada de forma síncrona
         toast({
             title: `Piloto Automático ${newState ? 'Ativado' : 'Desativado'}`,
             description: `O sistema ${newState ? 'começará a' : 'parou de'} procurar oportunidades.`,
@@ -171,7 +170,7 @@ export function useMultipliersCouncil(
         } else {
             setBotStatus('MONITORING');
         }
-    };
+    }, [isAutopilotOn, toast]);
     
     return {
         isAutopilotOn,
