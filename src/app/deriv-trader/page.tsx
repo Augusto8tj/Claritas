@@ -9,7 +9,7 @@ import { AssetSelectorV1 } from "@/features/trading/components/deriv-trader/asse
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { MarketChart } from "@/features/trading/components/deriv-trader/market-chart";
 import { Button } from "@/components/ui/button";
-import { Trash2, Bot, NotepadText, LayoutGrid, Trophy, Dna, Swords, Archive, CandlestickChart, BrainCircuit } from "lucide-react";
+import { Trash2, Bot, NotepadText, LayoutGrid, Trophy, Dna, Swords, Archive, CandlestickChart, BrainCircuit, Brain } from "lucide-react";
 import { DerivApiProviderV1, useDerivApiV1 } from "@/features/trading/hooks/use-deriv-api-v1";
 import { Skeleton } from "@/components/ui/skeleton";
 import { OperationsLogV1 } from "@/features/trading/components/deriv-trader/operations-log-v1";
@@ -147,16 +147,12 @@ function MainContentV1() {
                     activeCommittee={robotCouncil.activeCommittee}
                     isAutopilotOn={robotCouncil.isCouncilAutopilotOn}
                 />
-                <AssetIntelligenceCard
-                    profile={robotCouncil.assetProfile}
-                    isLoading={robotCouncil.isAssetProfileLoading}
-                    onAnalyze={robotCouncil.analyzeAndSaveLearnings}
-                />
                 <CouncilAutopilotInterfaceV1 {...robotCouncil} />
                 
                 <Tabs defaultValue="arena" className="w-full">
-                    <TabsList className="grid w-full grid-cols-6">
+                    <TabsList className="grid w-full grid-cols-7">
                         <TabsTrigger value="arena"><Swords className="w-4 h-4" /></TabsTrigger>
+                        <TabsTrigger value="memoria"><Brain className="w-4 h-4" /></TabsTrigger>
                         <TabsTrigger value="analise"><BrainCircuit className="w-4 h-4" /></TabsTrigger>
                         <TabsTrigger value="auditoria"><Bot className="w-4 h-4" /></TabsTrigger>
                         <TabsTrigger value="logs"><Archive className="w-4 h-4" /></TabsTrigger>
@@ -164,6 +160,13 @@ function MainContentV1() {
                         <TabsTrigger value="evolucao"><Dna className="w-4 h-4" /></TabsTrigger>
                     </TabsList>
                     <TabsContent value="arena" className="mt-4"><TradingDesk {...robotCouncil} /></TabsContent>
+                    <TabsContent value="memoria" className="mt-4">
+                        <AssetIntelligenceCard
+                            profile={robotCouncil.assetProfile}
+                            isLoading={robotCouncil.isAssetProfileLoading}
+                            onAnalyze={robotCouncil.analyzeAndSaveLearnings}
+                        />
+                    </TabsContent>
                     <TabsContent value="analise" className="mt-4"><AIAnalysisInterfaceV1 symbol={activeSymbol} /></TabsContent>
                     <TabsContent value="auditoria" className="mt-4"><TradingDecisionLogViewer logs={robotCouncil.tradeDecisionLog || []} /></TabsContent>
                     <TabsContent value="logs" className="mt-4"><OperationsLogV1 operations={operationsLog} sellContract={sellContract} priceTicks={priceTicks} /></TabsContent>
@@ -176,27 +179,21 @@ function MainContentV1() {
             <div className="hidden lg:block space-y-6">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                    <DerivTraderInterfaceV1 symbol={activeSymbol || ""} />
-                    <div className="space-y-6">
-                         <AITradeSuggestionV1
-                            councilDecision={robotCouncil.consensusDecision}
-                            consensusSum={robotCouncil.consensusSum}
-                            consensusThreshold={robotCouncil.consensusThreshold}
-                            supervisionStatus={robotCouncil.supervisionStatus}
-                            activeCommittee={robotCouncil.activeCommittee}
-                            isAutopilotOn={robotCouncil.isCouncilAutopilotOn}
-                        />
-                         <AssetIntelligenceCard
-                            profile={robotCouncil.assetProfile}
-                            isLoading={robotCouncil.isAssetProfileLoading}
-                            onAnalyze={robotCouncil.analyzeAndSaveLearnings}
-                        />
-                    </div>
+                   <AITradeSuggestionV1
+                        councilDecision={robotCouncil.consensusDecision}
+                        consensusSum={robotCouncil.consensusSum}
+                        consensusThreshold={robotCouncil.consensusThreshold}
+                        supervisionStatus={robotCouncil.supervisionStatus}
+                        activeCommittee={robotCouncil.activeCommittee}
+                        isAutopilotOn={robotCouncil.isCouncilAutopilotOn}
+                    />
                 </div>
                 <CouncilAutopilotInterfaceV1 {...robotCouncil} />
                 <Tabs defaultValue="arena" className="w-full">
-                    <TabsList className="grid w-full grid-cols-6">
+                     <TabsList className="grid w-full grid-cols-7">
                         <TabsTrigger value="logs"><NotepadText className="w-4 h-4 mr-2"/>Registo</TabsTrigger>
                         <TabsTrigger value="arena"><LayoutGrid className="w-4 h-4 mr-2"/>Arena</TabsTrigger>
+                        <TabsTrigger value="memoria"><Brain className="w-4 h-4 mr-2"/>Memória</TabsTrigger>
                         <TabsTrigger value="analise"><BrainCircuit className="w-4 h-4 mr-2"/>Análise IA</TabsTrigger>
                         <TabsTrigger value="auditoria"><Archive className="w-4 h-4 mr-2"/>Auditoria</TabsTrigger>
                         <TabsTrigger value="fame"><Trophy className="w-4 h-4 mr-2"/>Fama</TabsTrigger>
@@ -204,6 +201,13 @@ function MainContentV1() {
                     </TabsList>
                     <TabsContent value="logs" className="mt-4"><OperationsLogV1 operations={operationsLog} sellContract={sellContract} priceTicks={priceTicks} /></TabsContent>
                     <TabsContent value="arena" className="mt-4"><TradingDesk {...robotCouncil} /></TabsContent>
+                    <TabsContent value="memoria" className="mt-4">
+                        <AssetIntelligenceCard
+                            profile={robotCouncil.assetProfile}
+                            isLoading={robotCouncil.isAssetProfileLoading}
+                            onAnalyze={robotCouncil.analyzeAndSaveLearnings}
+                        />
+                    </TabsContent>
                     <TabsContent value="analise" className="mt-4"><AIAnalysisInterfaceV1 symbol={activeSymbol} /></TabsContent>
                     <TabsContent value="auditoria" className="mt-4"><TradingDecisionLogViewer logs={robotCouncil.tradeDecisionLog || []} /></TabsContent>
                     <TabsContent value="fame" className="mt-4"><HallOfFame /></TabsContent>
