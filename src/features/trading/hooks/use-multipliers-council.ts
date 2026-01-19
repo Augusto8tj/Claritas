@@ -84,17 +84,18 @@ export function useMultipliersCouncil(activeSymbol: string | null, priceTicks: T
     ]);
 
     const toggleAutopilot = () => {
-        setIsAutopilotOn(prev => {
-            const newState = !prev;
-            toast({
-                title: `Piloto Automático ${newState ? 'Ativado' : 'Desativado'}`,
-                description: `O sistema ${newState ? 'começará a' : 'parou de'} procurar oportunidades.`,
-            });
-            if (!newState) {
-                lastSignalRef.current = null; // Reset signal ref when turning off
-            }
-            return newState;
+        const newState = !isAutopilotOn;
+        setIsAutopilotOn(newState);
+        
+        // Efeito colateral (toast) é chamado *depois* da atualização do estado.
+        toast({
+            title: `Piloto Automático ${newState ? 'Ativado' : 'Desativado'}`,
+            description: `O sistema ${newState ? 'começará a' : 'parou de'} procurar oportunidades.`,
         });
+
+        if (!newState) {
+            lastSignalRef.current = null; // Reset signal ref when turning off
+        }
     };
     
     return {
