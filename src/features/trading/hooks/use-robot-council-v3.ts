@@ -322,7 +322,7 @@ export function useRobotCouncilV3(
   const [isDynamicConsensusOn, setIsDynamicConsensusOn] = useState(true);
   const [isDynamicRiskOn, setIsDynamicRiskOn] = useState(true);
   const [isMeritocracyOn, setIsMeritocracyOn] = useState(true);
-  const [isDynamicExitOn, setIsDynamicExitOn] = useState(true);
+  const [isDynamicExitOn, setIsDynamicExitOn] = useState(false);
   const [consensusSensitivity, setConsensusSensitivity] = useState(60); 
   const [confidenceFactor, setConfidenceFactor] = useState(RISK_CONFIG.MIN_REAL_CONFIDENCE);
   const [durationRange, setDurationRange] = useState<[number, number]>([15, 300]); 
