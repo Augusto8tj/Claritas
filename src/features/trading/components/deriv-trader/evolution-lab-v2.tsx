@@ -24,7 +24,7 @@ import {
 import { EVOLUTION_CONFIG } from '@/features/trading/config/trader-config';
 
 interface EvolutionLabV2Props {
-  history: EvolutionEvent[];
+  evolutionHistory: EvolutionEvent[];
   resetEvolutionHistory?: () => void;
   deleteSingleEvolution?: (timestamp: string) => void;
   currentGeneration?: number;
@@ -36,7 +36,7 @@ interface EvolutionLabV2Props {
 }
 
 export function EvolutionLabV2({ 
-    history, 
+    evolutionHistory,
     resetEvolutionHistory, 
     deleteSingleEvolution, 
     currentGeneration = 0,
@@ -46,6 +46,7 @@ export function EvolutionLabV2({
     isEvolving = false,
     evolutionProgress = 0,
 }: EvolutionLabV2Props) {
+  const history = evolutionHistory || [];
   return (
     <Card>
       <CardHeader>
