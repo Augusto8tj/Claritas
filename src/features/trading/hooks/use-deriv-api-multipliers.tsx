@@ -306,6 +306,7 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
 
         const sanitizedStake = parseFloat(stake.toFixed(2));
         
+        // CORREÇÃO: `take_profit` e `stop_loss` não fazem parte do pedido de proposta.
         const proposalRequest: any = { 
             "proposal": 1,
             "amount": sanitizedStake,
@@ -320,16 +321,6 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
             proposalRequest.cancellation = cancellation;
         }
 
-        if (takeProfit !== undefined && takeProfit > 0) {
-            proposalRequest.take_profit = takeProfit;
-        }
-        
-        if (stopLoss !== undefined && stopLoss > 0) {
-             if (stopLoss < sanitizedStake) {
-                proposalRequest.stop_loss = stopLoss;
-            }
-        }
-
         const proposalResponse: any = await makeRequest(proposalRequest);
 
         const proposal = proposalResponse.proposal;
@@ -337,7 +328,23 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
           throw new Error("Falha ao obter uma proposta de negociação da API.");
         }
         
-        const buyResponse: any = await makeRequest({ "buy": proposal.id, "price": proposal.ask_price });
+        // CORREÇÃO: Construir o pedido de compra (`buy`) com os parâmetros de risco.
+        const buyRequest: any = {
+            "buy": proposal.id,
+            "price": proposal.ask_price,
+        };
+        
+        if (takeProfit !== undefined && takeProfit > 0) {
+            buyRequest.take_profit = takeProfit;
+        }
+
+        if (stopLoss !== undefined && stopLoss > 0) {
+             if (stopLoss < sanitizedStake) {
+                buyRequest.stop_loss = stopLoss;
+            }
+        }
+        
+        const buyResponse: any = await makeRequest(buyRequest);
         const buyResult = buyResponse.buy;
         
         const latestTick = priceTicks.length > 0 ? priceTicks[priceTicks.length - 1].price : 0;
