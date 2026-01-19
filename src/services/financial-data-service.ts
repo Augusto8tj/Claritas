@@ -282,9 +282,9 @@ export async function getHallOfFameRobots(userId: string): Promise<RobotPerforma
     return [];
   }
 
-  const PROMOTION_THRESHOLD_WINS = 10;
-  const PROMOTION_THRESHOLD_PROFIT = 10; // Em USD
-  const PROMOTION_THRESHOLD_SHARPE = 0.69;
+  const PROMOTION_THRESHOLD_WINS = 3;
+  const PROMOTION_THRESHOLD_PROFIT = 4; // Em USD
+  const PROMOTION_THRESHOLD_SHARPE = 0.62;
 
   return (performanceData as RobotPerformance[]).filter(
     (p) =>

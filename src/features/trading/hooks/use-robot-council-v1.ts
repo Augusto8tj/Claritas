@@ -30,9 +30,9 @@ type MarketRegimeV1 = 'TRENDING' | 'RANGING';
 
 
 // --- CRITÉRIOS DE PROMOÇÃO (NOVO) ---
-const PROMOTION_THRESHOLD_WINS = 10;
-const PROMOTION_THRESHOLD_PROFIT = 10; // Em USD
-const PROMOTION_THRESHOLD_SHARPE = 0.69;
+const PROMOTION_THRESHOLD_WINS = 3;
+const PROMOTION_THRESHOLD_PROFIT = 4; // Em USD
+const PROMOTION_THRESHOLD_SHARPE = 0.62;
 
 
 // Representa uma operação simulada (paper trade) na Arena Virtual.
