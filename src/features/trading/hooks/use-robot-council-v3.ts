@@ -16,7 +16,7 @@ import { calculateAllIndicators, type Indicators } from '@/services/indicator-se
 import { useAuth } from '@/features/auth/hooks/use-auth';
 import { saveRobotPerformanceV3, loadRobotPerformanceV3, saveTradeDecisionV3 } from '@/services/financial-data-service-v3';
 import { useStrategyEvolutionV3 } from './use-strategy-evolution-v3';
-import { initialCouncilStrategies } from '@/services/council-strategies';
+import { getCouncilStrategies } from '@/services/council-strategies';
 import {
   detectMarketRegime, calculateKellyStake, bayesianUpdate,
   extractMicrostructureFeatures, calculatePerformanceMetrics,
@@ -334,7 +334,7 @@ export function useRobotCouncilV3(
   });
 
   useEffect(() => {
-    setStrategyCouncil(evolvedStrategies as RobotStrategy[]);
+    setStrategyCouncil(evolvedStrategies);
   }, [evolvedStrategies]);
   
   const resetArenaPerformance = useCallback(() => {
@@ -776,12 +776,10 @@ export function useRobotCouncilV3(
                         finalDuration = Math.max(durationLimits.t.min, Math.min(durationInTicks, durationLimits.t.max));
                     }
                     else {
-                        console.warn(`[Council V3] Nenhuma unidade de duração suportada. Usando fallback: ${defaultDuration}${defaultUnit}.`);
                         finalDurationUnit = defaultUnit;
                         finalDuration = defaultDuration;
                     }
                 } else {
-                     console.warn(`[Council V3] Limites de duração não disponíveis. Usando fallback: ${defaultDuration}${defaultUnit}.`);
                     finalDurationUnit = defaultUnit;
                     finalDuration = defaultDuration;
                 }

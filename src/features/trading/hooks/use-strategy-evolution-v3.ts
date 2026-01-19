@@ -1,4 +1,4 @@
-// /src/features/trading/hooks/use-strategy-evolution-v3.ts
+// src/features/trading/hooks/use-strategy-evolution-v3.ts
 'use client';
 
 /**
@@ -129,11 +129,11 @@ const mutateStrategy = (
 // ============================================================================
 // HOOK PRINCIPAL
 // ============================================================================
-export function useStrategyEvolutionV3(initialStrategies: Omit<RobotStrategy, 'id'>[]) {
+export function useStrategyEvolutionV3(initialStrategies: RobotStrategy[]) {
   const { toast } = useToast();
   const { user } = useAuth();
 
-  const [evolvedStrategies, setEvolvedStrategies] = useState<Omit<RobotStrategy, 'id'>[]>(initialStrategies);
+  const [evolvedStrategies, setEvolvedStrategies] = useState<RobotStrategy[]>(initialStrategies);
   const [evolutionHistory, setEvolutionHistory] = useState<EvolutionEvent[]>([]);
   
   const [isEvolving, setIsEvolving] = useState(false);

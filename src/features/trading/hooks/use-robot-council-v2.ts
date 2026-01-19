@@ -357,7 +357,7 @@ export function useRobotCouncilV2(
   });
 
   useEffect(() => {
-    setStrategyCouncil(evolvedStrategies as RobotStrategy[]);
+    setStrategyCouncil(evolvedStrategies);
   }, [evolvedStrategies]);
   
   const resetArenaPerformance = useCallback(() => {
@@ -458,6 +458,7 @@ export function useRobotCouncilV2(
                 let shouldSell = false;
                 let reason = '';
 
+                // 1. Chandelier Exit (Stop de Volatilidade)
                 if (exitPrice) {
                     if (contract.direction === 'rise' && currentTick.price < exitPrice) {
                         shouldSell = true;
@@ -468,6 +469,7 @@ export function useRobotCouncilV2(
                     }
                 }
 
+                // 2. Mudança de Regime (Stop de Contexto)
                 const tradeLog = tradeDecisionLog.find(l => l.contractId === contract.id);
                 if (tradeLog) {
                     const entryRegime = tradeLog.context.marketRegime;

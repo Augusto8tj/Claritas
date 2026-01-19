@@ -125,11 +125,11 @@ const mutateStrategy = (
 // ============================================================================
 // HOOK PRINCIPAL
 // ============================================================================
-export function useStrategyEvolution(initialStrategies: Omit<RobotStrategy, 'id'>[]) {
+export function useStrategyEvolution(initialStrategies: RobotStrategy[]) {
   const { toast } = useToast();
   const { user } = useAuth();
 
-  const [evolvedStrategies, setEvolvedStrategies] = useState<Omit<RobotStrategy, 'id'>[]>(initialStrategies);
+  const [evolvedStrategies, setEvolvedStrategies] = useState<RobotStrategy[]>(initialStrategies);
   const [evolutionHistory, setEvolutionHistory] = useState<EvolutionEvent[]>([]);
   
   const [isEvolving, setIsEvolving] = useState(false);

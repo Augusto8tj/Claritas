@@ -261,9 +261,10 @@ const baseStrategies: Omit<RobotStrategy, 'id'>[] = [
   }
 ];
 
-export const getCouncilStrategies = (mode: TradingMode = 'standard'): Omit<RobotStrategy, 'id'>[] => {
-    const strategiesWithDefaults = baseStrategies.map(strat => {
+export const getCouncilStrategies = (mode: TradingMode = 'standard'): RobotStrategy[] => {
+    const strategiesWithDefaults = baseStrategies.map((strat, index) => {
         const fullStrat = {
+            id: `${strat.strategyType}_BOT_${index + 1}`,
             period: undefined,
             strongBuyThreshold: undefined,
             weakBuyThreshold: undefined,
@@ -294,7 +295,7 @@ export const getCouncilStrategies = (mode: TradingMode = 'standard'): Omit<Robot
     return strategiesWithDefaults.map(strat => ({
       ...strat,
       justification: strat.justification.replace('{{timePeriod}}', 'Padrão'),
-    }));
+    })) as RobotStrategy[];
   }
 
   // High Frequency Mode: Adjust parameters
@@ -316,12 +317,9 @@ export const getCouncilStrategies = (mode: TradingMode = 'standard'): Omit<Robot
     
     newStrat.justification = newStrat.justification.replace('{{timePeriod}}', 'Alta Frequência');
     
-    return newStrat;
+    return newStrat as RobotStrategy;
   });
 };
 
 // For compatibility, export the standard version as initialCouncilStrategies
-export const initialCouncilStrategies = getCouncilStrategies('standard').map((strat, index) => ({
-    ...strat,
-    id: (strat as any).id || `${strat.strategyType}_${index}`
-}));
+export const initialCouncilStrategies = getCouncilStrategies('standard');
