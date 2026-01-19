@@ -526,7 +526,7 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
         
         if (certifiedRobots.some(r => r.id === robot.id)) {
             if (voteResult.vote === 'RISE') eliteRiseSum += confidence * weight;
-            if (voteResult.vote === 'FALL') eliteFallSum += confidence * weight;
+            if (voteResult.vote === 'FALL') fallSum += confidence * weight;
         }
 
         if(voteResult.vote !== 'HOLD' && confidence > 50) {
@@ -655,7 +655,7 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
     let finalDuration = 0;
     let finalUnit: DurationUnit = 's';
     
-    if (finalDecision !== 'HOLD' && durationLimits) {
+    if (finalDecision !== 'HOLD') {
         const votingRobots = Object.values(newVotes).filter(v => v.vote === finalDecision);
         const totalWeight = votingRobots.reduce((sum, v) => sum + v.weight, 0);
 
@@ -674,29 +674,45 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
                 }
             }
             
-            let adjustedDuration = baseDurationInSeconds * volatilityFactor;
+            const adjustedDuration = baseDurationInSeconds * volatilityFactor;
 
-            const canUseTicks = durationLimits.t && durationLimits.t.min > 0;
-            const canUseSeconds = durationLimits.s && durationLimits.s.min > 0;
-            
-            if (canUseTicks && adjustedDuration <= 20) {
-                finalUnit = 't';
-                finalDuration = Math.round(adjustedDuration / 2);
-            } else if (canUseSeconds) {
-                finalUnit = 's';
-                finalDuration = Math.round(adjustedDuration);
+            // --- LÓGICA DE DURAÇÃO ROBUSTA ---
+            const defaultDuration = 15;
+            const defaultUnit: DurationUnit = 's';
+
+            if (durationLimits) {
+                const canUseTicks = durationLimits.t && durationLimits.t.min > 0;
+                const canUseSeconds = durationLimits.s && durationLimits.s.min > 0;
+
+                if (canUseTicks && adjustedDuration <= (durationLimits.t.max * 2)) {
+                    finalUnit = 't';
+                    const durationInTicks = Math.round(adjustedDuration / 2);
+                    finalDuration = Math.max(durationLimits.t.min, Math.min(durationInTicks, durationLimits.t.max));
+                } 
+                else if (canUseSeconds) {
+                    finalUnit = 's';
+                    finalDuration = Math.round(adjustedDuration);
+                    finalDuration = Math.max(durationLimits.s.min, Math.min(finalDuration, durationLimits.s.max));
+                }
+                else if (canUseTicks) { // Fallback para ticks se for a única opção
+                    finalUnit = 't';
+                    const durationInTicks = Math.round(adjustedDuration / 2);
+                    finalDuration = Math.max(durationLimits.t.min, Math.min(durationInTicks, durationLimits.t.max));
+                }
+                else {
+                    console.warn(`[Council V1] Nenhuma unidade de duração suportada. Usando fallback: ${defaultDuration}${defaultUnit}.`);
+                    finalUnit = defaultUnit;
+                    finalDuration = defaultDuration;
+                }
             } else {
-                finalUnit = 't';
-                finalDuration = Math.round(adjustedDuration / 2);
+                 console.warn(`[Council V1] Limites de duração não disponíveis. Usando fallback: ${defaultDuration}${defaultUnit}.`);
+                finalUnit = defaultUnit;
+                finalDuration = defaultDuration;
             }
-            
-            const limits = durationLimits[finalUnit];
-            const minDuration = limits?.min || (finalUnit === 't' ? 5 : 15);
-            const maxDuration = limits?.max || (finalUnit === 't' ? 10 : 3600);
-            
-            finalDuration = Math.max(minDuration, Math.min(finalDuration, maxDuration));
+            // --- FIM DA LÓGICA DE DURAÇÃO ---
+
         } else {
-            finalDuration = durationLimits.s?.min || 15;
+            finalDuration = durationLimits?.s?.min || 15;
             finalUnit = 's';
         }
     }

@@ -1,4 +1,4 @@
-// /src/features/trading/hooks/use-robot-council-v2.ts
+// src/features/trading/hooks/use-robot-council-v2.ts
 'use client';
 
 /**
@@ -757,33 +757,53 @@ export function useRobotCouncilV2(
         if (consensusReached && consensusDirection !== 'HOLD' && user && consensusProbability > 0.52) {
              if (kellyStake > 0) {
                  
-                 const votingRobots = Object.values(localBayesianVotes).filter(v => v.vote === consensusDirection);
-                 const totalConfidence = votingRobots.reduce((sum, v) => sum + v.bayesianProbability, 0);
+                let finalDuration: number;
+                let finalDurationUnit: DurationUnit;
 
-                 let weightedAvgDuration = totalConfidence > 0 
+                const votingRobots = Object.values(localBayesianVotes).filter(v => v.vote === consensusDirection);
+                const totalConfidence = votingRobots.reduce((sum, v) => sum + v.bayesianProbability, 0);
+
+                let weightedAvgDuration = totalConfidence > 0 
                     ? votingRobots.reduce((sum, v) => sum + durationToSeconds(v.optimalDuration, v.optimalDurationUnit) * v.bayesianProbability, 0) / totalConfidence
                     : durationRange[0];
                 
                 if (currentIndicators.bbw && currentIndicators.bbw > 0.08) weightedAvgDuration *= 0.75;
                 else if (currentIndicators.bbw && currentIndicators.bbw < 0.02) weightedAvgDuration *= 1.25;
 
-                let finalDuration = Math.round(weightedAvgDuration);
-                let finalDurationUnit: DurationUnit = 's';
-                
+                // --- LÓGICA DE DURAÇÃO ROBUSTA ---
+                const defaultDuration = 15;
+                const defaultUnit: DurationUnit = 's';
+
                 if (durationLimits) {
-                    const canUseTicks = durationLimits.t.min > 0;
-                    if (canUseTicks && finalDuration <= 20) {
+                    const canUseTicks = durationLimits.t && durationLimits.t.min > 0;
+                    const canUseSeconds = durationLimits.s && durationLimits.s.min > 0;
+
+                    if (canUseTicks && weightedAvgDuration <= (durationLimits.t.max * 2)) {
                         finalDurationUnit = 't';
-                        finalDuration = Math.max(durationLimits.t.min, Math.round(finalDuration / 2));
-                        finalDuration = Math.min(finalDuration, durationLimits.t.max);
-                    } else {
+                        const durationInTicks = Math.round(weightedAvgDuration / 2);
+                        finalDuration = Math.max(durationLimits.t.min, Math.min(durationInTicks, durationLimits.t.max));
+                    } 
+                    else if (canUseSeconds) {
                         finalDurationUnit = 's';
-                        finalDuration = Math.max(durationLimits.s.min, finalDuration);
-                        finalDuration = Math.min(finalDuration, durationLimits.s.max);
+                        finalDuration = Math.round(weightedAvgDuration);
+                        finalDuration = Math.max(durationLimits.s.min, Math.min(finalDuration, durationLimits.s.max));
+                    }
+                    else if (canUseTicks) { // Fallback para ticks se for a única opção
+                        finalDurationUnit = 't';
+                        const durationInTicks = Math.round(weightedAvgDuration / 2);
+                        finalDuration = Math.max(durationLimits.t.min, Math.min(durationInTicks, durationLimits.t.max));
+                    }
+                    else {
+                        console.warn(`[Council V2] Nenhuma unidade de duração suportada. Usando fallback: ${defaultDuration}${defaultUnit}.`);
+                        finalDurationUnit = defaultUnit;
+                        finalDuration = defaultDuration;
                     }
                 } else {
-                    finalDuration = Math.max(15, finalDuration);
+                     console.warn(`[Council V2] Limites de duração não disponíveis. Usando fallback: ${defaultDuration}${defaultUnit}.`);
+                    finalDurationUnit = defaultUnit;
+                    finalDuration = defaultDuration;
                 }
+                // --- FIM DA LÓGICA DE DURAÇÃO ---
 
                  executeTrade(
                     consensusDirection === 'RISE' ? 'CALL' : 'PUT',
