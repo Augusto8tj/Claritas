@@ -150,7 +150,7 @@ const MainContent = () => {
             </div>
 
             {/* Layout Desktop */}
-            <div className="hidden lg:block">
+            <div className="hidden lg:block space-y-6">
                 <div className="grid lg:grid-cols-3 gap-6">
                     <div className="lg:col-span-2 space-y-6">
                         <IsolatedMarketChart />
@@ -161,25 +161,26 @@ const MainContent = () => {
                         <CouncilAutopilotInterfaceV2 {...robotCouncil} />
                     </div>
                 </div>
+
+                {/* Arena Virtual em destaque */}
+                <TradingDeskV2 councilState={robotCouncil} />
+
+                {/* Abas restantes */}
                 <div className="mt-6">
-                     <Tabs defaultValue="arena" className="h-full">
-                        <TabsList className="grid w-full grid-cols-4">
-                            <TabsTrigger value="arena"><Swords className="mr-2 h-4 w-4"/>Arena</TabsTrigger>
+                     <Tabs defaultValue="logs" className="h-full">
+                        <TabsList className="grid w-full grid-cols-3">
                             <TabsTrigger value="logs"><Archive className="mr-2 h-4 w-4"/>Logs</TabsTrigger>
                             <TabsTrigger value="evolucao"><Dna className="mr-2 h-4 w-4"/>Evolução</TabsTrigger>
                             <TabsTrigger value="debug"><BrainCircuit className="mr-2 h-4 w-4"/>Debug</TabsTrigger>
                         </TabsList>
-                        <TabsContent value="arena" className="mt-4">
-                            <TradingDeskV2 councilState={robotCouncil} />
-                        </TabsContent>
-                         <TabsContent value="logs" className="mt-4 space-y-4">
+                        <TabsContent value="logs" className="mt-4 space-y-4">
                             <OperationsLogV2 operations={operationsLog} sellContract={sellContract} priceTicks={priceTicks} />
-                             <TradingDecisionLogViewer logs={robotCouncil.tradeDecisionLog} showFilters={false} />
+                            <TradingDecisionLogViewer logs={robotCouncil.tradeDecisionLog} showFilters={false} />
                         </TabsContent>
                         <TabsContent value="evolucao" className="mt-4">
                             <EvolutionLabV2 {...robotCouncil} />
                         </TabsContent>
-                         <TabsContent value="debug" className="mt-4">
+                        <TabsContent value="debug" className="mt-4">
                             <DebugCouncilViewV2 councilState={robotCouncil} isCouncilAutopilotOn={robotCouncil.isCouncilAutopilotOn} />
                         </TabsContent>
                     </Tabs>
