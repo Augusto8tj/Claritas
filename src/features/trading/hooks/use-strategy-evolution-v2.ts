@@ -21,6 +21,7 @@ import {
   clearEvolutionHistory as clearEvolutionHistoryV2,
   deleteEvolutionEvent as deleteEvolutionEventV2
 } from '@/services/financial-data-service';
+import { EVOLUTION_CONFIG } from '@/features/trading/config/trader-config';
 
 // ============================================================================
 // CONFIGURAÇÃO
@@ -75,7 +76,7 @@ const mutateStrategy = (
   const changedParams: string[] = [];
 
   const bigMutation = 1 + (Math.random() - 0.5) * 0.4;
-  const smallMutation = 1 + (Math.random() - 0.5) * 0.1;
+  const smallMutation = 1 + (Math.random() - 0.5) * EVOLUTION_CONFIG.DIRECTED_MUTATION_STRENGTH; // Usa config
   const smallChange = Math.random() > 0.5 ? 1 : -1;
 
   if (analysis?.worstRegime === 'trending_bull' || analysis?.worstRegime === 'trending_bear') {
@@ -137,6 +138,11 @@ export function useStrategyEvolution(initialStrategies: Omit<RobotStrategy, 'id'
 
   const [tradeCounts, setTradeCounts] = useState<TradeCounts>({ virtual: 0, real: 0, total: 0 });
   const tradeCountsRef = useRef<TradeCounts>({ virtual: 0, real: 0, total: 0 });
+
+  // Re-initialize strategies when the initial prop changes (e.g., due to mode switch)
+  useEffect(() => {
+    setEvolvedStrategies(initialStrategies);
+  }, [initialStrategies]);
 
   useEffect(() => {
     if (!user) return;

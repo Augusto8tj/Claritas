@@ -9,7 +9,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Loader2, LayoutGrid, Power, PowerOff, Clock, TrendingUp, TrendingDown, Wallet, BarChart2 } from "lucide-react";
+import { Loader2, LayoutGrid, Power, PowerOff, Clock, TrendingUp, TrendingDown, Wallet, BarChart2, Zap } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
@@ -19,6 +19,8 @@ import { Input } from "@/components/ui/input";
 import type { useRobotCouncilV2 } from "@/features/trading/hooks/use-robot-council-v2";
 import { Slider } from "@/components/ui/slider";
 import { cn } from "@/lib/utils";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import type { TradingMode } from '@/services/council-strategies';
 
 interface CouncilAutopilotInterfaceV2Props extends ReturnType<typeof useRobotCouncilV2> {}
 
@@ -55,6 +57,8 @@ export function CouncilAutopilotInterfaceV2(props: CouncilAutopilotInterfaceV2Pr
     effectiveThreshold,
     councilConfidence,
     portfolioStats,
+    tradingMode,
+    setTradingMode,
  } = props;
   const { toast } = useToast();
 
@@ -101,6 +105,22 @@ export function CouncilAutopilotInterfaceV2(props: CouncilAutopilotInterfaceV2Pr
               </div>
           </div>
         )}
+
+        <div className="space-y-2">
+            <Label>Modo de Frequência</Label>
+            <ToggleGroup 
+                type="single" 
+                value={tradingMode} 
+                onValueChange={(value: TradingMode) => {
+                    if (value) setTradingMode(value);
+                }} 
+                className="grid grid-cols-2"
+                disabled={isCouncilAutopilotOn}
+            >
+                <ToggleGroupItem value="standard">Padrão</ToggleGroupItem>
+                <ToggleGroupItem value="high_frequency" className="flex items-center gap-1.5"><Zap className="h-4 w-4"/>Alta Frequência</ToggleGroupItem>
+            </ToggleGroup>
+        </div>
 
         <div className="grid grid-cols-2 gap-4">
              <div className="space-y-2">

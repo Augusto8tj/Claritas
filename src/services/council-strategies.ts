@@ -1,18 +1,19 @@
 // src/features/trading/services/council-strategies.ts
 import type { RobotStrategy } from '@/lib/types';
 
+export type TradingMode = 'standard' | 'high_frequency';
+
 // This file contains the pre-defined, local configuration for the 22 robot analysts.
 // Each robot now has a stable, unique 'id' to ensure consistent performance tracking.
 
-export const initialCouncilStrategies: Omit<RobotStrategy, 'id'>[] = [
+const baseStrategies: Omit<RobotStrategy, 'id'>[] = [
   // --- Momentum & Trend (Short-Term Specialists) ---
   {
-    id: 'rsi_scalper',
     strategyType: "RSI",
-    justification: "Usa RSI curto (10) para scalp em {{timePeriod}}.",
+    justification: "Usa RSI para scalp em {{timePeriod}}.",
     strongConfidence: 90,
     weakConfidence: 60,
-    period: 10,
+    period: 14,
     strongBuyThreshold: 25,
     weakBuyThreshold: 35,
     strongSellThreshold: 75,
@@ -22,7 +23,6 @@ export const initialCouncilStrategies: Omit<RobotStrategy, 'id'>[] = [
     suggestedStake: 1.5,
   },
   {
-    id: 'stochastic_momentum',
     strategyType: "STOCHASTIC",
     justification: "Identifica sobrecompra/ sobrevenda em {{timePeriod}}.",
     strongConfidence: 90,
@@ -37,7 +37,6 @@ export const initialCouncilStrategies: Omit<RobotStrategy, 'id'>[] = [
     suggestedStake: 1.5,
   },
   {
-    id: 'macd_cross_trend',
     strategyType: "MACD_CROSS",
     justification: "Confirma momentum de tendência em {{timePeriod}}.",
     strongConfidence: 80,
@@ -50,7 +49,6 @@ export const initialCouncilStrategies: Omit<RobotStrategy, 'id'>[] = [
     suggestedStake: 1.0,
   },
   {
-    id: 'adx_strength',
     strategyType: "ADX_TREND",
     justification: "Mede a força da tendência, ignorando mercados laterais em {{timePeriod}}.",
     strongConfidence: 85,
@@ -62,7 +60,6 @@ export const initialCouncilStrategies: Omit<RobotStrategy, 'id'>[] = [
     suggestedStake: 1.2,
   },
   {
-    id: 'awesome_osc',
     strategyType: "AWESOME_OSCILLATOR",
     justification: "Mede o momentum do mercado em {{timePeriod}}.",
     strongConfidence: 75,
@@ -72,7 +69,6 @@ export const initialCouncilStrategies: Omit<RobotStrategy, 'id'>[] = [
     suggestedStake: 0.8,
   },
   {
-    id: 'trix_noise_filter',
     strategyType: "TRIX",
     justification: "Média móvel triplamente suavizada para filtrar ruído em {{timePeriod}}.",
     strongConfidence: 70,
@@ -83,7 +79,6 @@ export const initialCouncilStrategies: Omit<RobotStrategy, 'id'>[] = [
     suggestedStake: 0.7,
   },
   {
-    id: 'roc_velocity',
     strategyType: "ROC",
     justification: "Mede a taxa de variação do preço em {{timePeriod}}.",
     strongConfidence: 70,
@@ -94,7 +89,6 @@ export const initialCouncilStrategies: Omit<RobotStrategy, 'id'>[] = [
     suggestedStake: 0.9,
   },
   {
-    id: 'rvi_conviction',
     strategyType: "RVI",
     justification: "Índice de Vigor Relativo para medir a convicção do movimento em {{timePeriod}}.",
     strongConfidence: 80,
@@ -109,7 +103,6 @@ export const initialCouncilStrategies: Omit<RobotStrategy, 'id'>[] = [
     suggestedStake: 1.0,
   },
   {
-    id: 'psar_follower',
     strategyType: "PARABOLIC_SAR",
     justification: "Segue a tendência do preço e indica reversões em {{timePeriod}}.",
     strongConfidence: 85,
@@ -122,7 +115,6 @@ export const initialCouncilStrategies: Omit<RobotStrategy, 'id'>[] = [
   },
   // --- Volatility & Structure ---
   {
-    id: 'bollinger_reversal',
     strategyType: "BOLLINGER_BANDS",
     justification: "Opera em reversões à média ou rompimentos de volatilidade em {{timePeriod}}.",
     strongConfidence: 85,
@@ -134,7 +126,6 @@ export const initialCouncilStrategies: Omit<RobotStrategy, 'id'>[] = [
     suggestedStake: 1.4,
   },
   {
-    id: 'ichimoku_geopolitics',
     strategyType: "ICHIMOKU_CLOUD",
     justification: "Análise completa de tendência, suporte e resistência em {{timePeriod}}.",
     strongConfidence: 88,
@@ -144,7 +135,6 @@ export const initialCouncilStrategies: Omit<RobotStrategy, 'id'>[] = [
     suggestedStake: 1.5,
   },
   {
-    id: 'kama_adaptive',
     strategyType: "KAMA",
     justification: "Média móvel adaptativa que se ajusta à volatilidade em {{timePeriod}}.",
     strongConfidence: 80,
@@ -157,7 +147,6 @@ export const initialCouncilStrategies: Omit<RobotStrategy, 'id'>[] = [
     suggestedStake: 1.1,
   },
   {
-    id: 'donchian_breakout',
     strategyType: "DONCHIAN_CHANNELS",
     justification: "Identifica rompimentos de máximas e mínimas em {{timePeriod}}.",
     strongConfidence: 80,
@@ -168,7 +157,6 @@ export const initialCouncilStrategies: Omit<RobotStrategy, 'id'>[] = [
     suggestedStake: 1.0,
   },
   {
-    id: 'chandelier_exit_atr',
     strategyType: "CHANDELIER_EXIT",
     justification: "Usa o próprio Chandelier como sinal de entrada, além de stop.",
     strongConfidence: 85,
@@ -181,7 +169,6 @@ export const initialCouncilStrategies: Omit<RobotStrategy, 'id'>[] = [
   },
   // --- Volume & Order Flow ---
   {
-    id: 'volume_poc',
     strategyType: "VOLUME_PROFILE",
     justification: "Identifica zonas de alta liquidez (POC) como suporte/resistência em {{timePeriod}}.",
     strongConfidence: 75,
@@ -192,7 +179,6 @@ export const initialCouncilStrategies: Omit<RobotStrategy, 'id'>[] = [
     suggestedStake: 0.9,
   },
   {
-    id: 'vwap_fair_price',
     strategyType: "VWAP",
     justification: "Usa o preço médio ponderado por volume como referência de valor em {{timePeriod}}.",
     strongConfidence: 85,
@@ -202,7 +188,6 @@ export const initialCouncilStrategies: Omit<RobotStrategy, 'id'>[] = [
     suggestedStake: 1.3,
   },
   {
-    id: 'mfi_volume_rsi',
     strategyType: "MFI",
     justification: "RSI ponderado pelo volume para medir o fluxo de dinheiro em {{timePeriod}}.",
     strongConfidence: 80,
@@ -217,7 +202,6 @@ export const initialCouncilStrategies: Omit<RobotStrategy, 'id'>[] = [
     suggestedStake: 1.2,
   },
   {
-    id: 'obv_smart_money',
     strategyType: "OBV",
     justification: "Segue o fluxo de volume acumulado para confirmar tendências em {{timePeriod}}.",
     strongConfidence: 75,
@@ -228,7 +212,6 @@ export const initialCouncilStrategies: Omit<RobotStrategy, 'id'>[] = [
   },
   // --- Statistical & Mean Reversion ---
   {
-    id: 'zscore_reversion',
     strategyType: "Z_SCORE",
     justification: "Identifica desvios estatísticos extremos do preço em {{timePeriod}}.",
     strongConfidence: 80,
@@ -240,7 +223,6 @@ export const initialCouncilStrategies: Omit<RobotStrategy, 'id'>[] = [
     suggestedStake: 1.1,
   },
   {
-    id: 'stoch_rsi_sensitive',
     strategyType: "STOCH_RSI",
     justification: "Combina Estocástico e RSI para sinais de sobrecompra/venda mais sensíveis em {{timePeriod}}.",
     strongConfidence: 90,
@@ -256,7 +238,6 @@ export const initialCouncilStrategies: Omit<RobotStrategy, 'id'>[] = [
   },
   // --- Patterns ---
   {
-    id: 'price_action_hammer',
     strategyType: "PRICE_ACTION_PATTERN",
     justification: "Busca por padrões de vela de reversão como 'hammer' em {{timePeriod}}.",
     strongConfidence: 95,
@@ -268,7 +249,6 @@ export const initialCouncilStrategies: Omit<RobotStrategy, 'id'>[] = [
   },
   // --- Moving Average ---
   {
-    id: 'ma_cross_classic',
     strategyType: "MOVING_AVERAGE_CROSS",
     justification: "Cruzamento clássico de médias para identificar mudanças de tendência em {{timePeriod}}.",
     strongConfidence: 78,
@@ -279,30 +259,69 @@ export const initialCouncilStrategies: Omit<RobotStrategy, 'id'>[] = [
     optimalDurationUnit: 'm',
     suggestedStake: 1.0,
   }
-].map((strat) => {
-    const fullStrat = {
-        period: undefined,
-        strongBuyThreshold: undefined,
-        weakBuyThreshold: undefined,
-        strongSellThreshold: undefined,
-        weakSellThreshold: undefined,
-        shortPeriod: undefined,
-        longPeriod: undefined,
-        fastPeriod: undefined,
-        slowPeriod: undefined,
-        signalPeriod: undefined,
-        stdDev: undefined,
-        pattern: undefined,
-        trendStrengthThreshold: undefined,
-        profileBars: undefined,
-        zScoreThreshold: undefined,
-        fastEnd: undefined,
-        slowEnd: undefined,
-        acceleration: undefined,
-        maxAcceleration: undefined,
-        chandelierPeriod: undefined,
-        chandelierMultiplier: undefined,
-        ...strat,
-    };
-    return fullStrat;
-}) as Omit<RobotStrategy, 'id'>[];
+];
+
+export const getCouncilStrategies = (mode: TradingMode = 'standard'): Omit<RobotStrategy, 'id'>[] => {
+    const strategiesWithDefaults = baseStrategies.map(strat => {
+        const fullStrat = {
+            period: undefined,
+            strongBuyThreshold: undefined,
+            weakBuyThreshold: undefined,
+            strongSellThreshold: undefined,
+            weakSellThreshold: undefined,
+            shortPeriod: undefined,
+            longPeriod: undefined,
+            fastPeriod: undefined,
+            slowPeriod: undefined,
+            signalPeriod: undefined,
+            stdDev: undefined,
+            pattern: undefined,
+            trendStrengthThreshold: undefined,
+            profileBars: undefined,
+            zScoreThreshold: undefined,
+            fastEnd: undefined,
+            slowEnd: undefined,
+            acceleration: undefined,
+            maxAcceleration: undefined,
+            chandelierPeriod: undefined,
+            chandelierMultiplier: undefined,
+            ...strat,
+        };
+        return fullStrat;
+    });
+
+  if (mode === 'standard') {
+    return strategiesWithDefaults.map(strat => ({
+      ...strat,
+      justification: strat.justification.replace('{{timePeriod}}', 'Padrão'),
+    }));
+  }
+
+  // High Frequency Mode: Adjust parameters
+  return strategiesWithDefaults.map(strat => {
+    const newStrat = { ...strat };
+    
+    const hfMultiplier = 0.5; // Reduz os períodos pela metade
+
+    if (newStrat.period) newStrat.period = Math.max(5, Math.floor(newStrat.period * hfMultiplier));
+    if (newStrat.shortPeriod) newStrat.shortPeriod = Math.max(3, Math.floor(newStrat.shortPeriod * hfMultiplier));
+    if (newStrat.longPeriod) newStrat.longPeriod = Math.max(7, Math.floor(newStrat.longPeriod * hfMultiplier));
+    if (newStrat.fastPeriod) newStrat.fastPeriod = Math.max(5, Math.floor(newStrat.fastPeriod * hfMultiplier));
+    if (newStrat.slowPeriod) newStrat.slowPeriod = Math.max(10, Math.floor(newStrat.slowPeriod * hfMultiplier));
+    if (newStrat.signalPeriod) newStrat.signalPeriod = Math.max(4, Math.floor(newStrat.signalPeriod * hfMultiplier));
+    if (newStrat.chandelierPeriod) newStrat.chandelierPeriod = Math.max(10, Math.floor(newStrat.chandelierPeriod * hfMultiplier));
+    
+    newStrat.optimalDuration = Math.floor(Math.random() * 6) + 5; // Random integer from 5 to 10
+    newStrat.optimalDurationUnit = 't';
+    
+    newStrat.justification = newStrat.justification.replace('{{timePeriod}}', 'Alta Frequência');
+    
+    return newStrat;
+  });
+};
+
+// For compatibility, export the standard version as initialCouncilStrategies
+export const initialCouncilStrategies = getCouncilStrategies('standard').map((strat, index) => ({
+    ...strat,
+    id: (strat as any).id || `${strat.strategyType}_${index}`
+}));

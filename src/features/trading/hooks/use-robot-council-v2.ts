@@ -34,7 +34,7 @@ import { calculateAllIndicators, type Indicators } from '@/services/indicator-se
 import { useAuth } from '@/features/auth/hooks/use-auth';
 import { saveRobotPerformance, loadRobotPerformance, saveTradeDecision, saveEvolutionHistory, clearEvolutionHistory, deleteEvolutionEvent } from '@/services/financial-data-service';
 import { useStrategyEvolution } from './use-strategy-evolution-v2';
-import { initialCouncilStrategies } from '@/services/council-strategies';
+import { getCouncilStrategies, type TradingMode } from '@/services/council-strategies';
 import {
   detectMarketRegime, calculateKellyStake, bayesianUpdate,
   extractMicrostructureFeatures, calculatePerformanceMetrics,
@@ -276,6 +276,11 @@ export function useRobotCouncilV2(
   const { operationsLog, executeTrade, timePeriod, isConnected, durationLimits, sellContract } = useDerivApiV2();
   const { user, loading: isAuthLoading } = useAuth();
   const { toast } = useToast();
+  
+  const [tradingMode, setTradingMode] = useState<TradingMode>('standard');
+
+  const initialStrategiesForMode = useMemo(() => getCouncilStrategies(tradingMode), [tradingMode]);
+
   const { 
     evolvedStrategies, 
     evolveTrigger, 
@@ -287,7 +292,7 @@ export function useRobotCouncilV2(
     tradeCounts,
     resetEvolutionHistory,
     deleteSingleEvolution,
-  } = useStrategyEvolution(initialCouncilStrategies);
+  } = useStrategyEvolution(initialStrategiesForMode);
   
   const executionIdRef = useRef(0);
   const processedRealTradesRef = useRef<Set<number>>(new Set());
@@ -365,11 +370,10 @@ export function useRobotCouncilV2(
           monteCarloScore: 0, lastUpdated: Date.now(), tradeHistory: []
         };
     });
-    console.log(`[Arena Reset] ${initialPerformance.length} robôs inicializados com tradeHistory vazio`);
     robotPerformanceRef.current = initialPerformance;
     setRobotPerformance(initialPerformance);
     virtualTradesRef.current = [];
-    setVirtualTradeCount(0); // Reseta o contador
+    setVirtualTradeCount(0);
   }, [strategyCouncil]);
 
   useEffect(() => {
@@ -392,14 +396,16 @@ export function useRobotCouncilV2(
     setIsFetchingCouncil(true);
     await new Promise((r) => setTimeout(r, 500));
     
+    // As estratégias já são inicializadas com base no modo pelo useMemo + useStrategyEvolution
+    // Apenas precisamos garantir que o `resetArena` use as estratégias corretas
     setStrategyCouncil(evolvedStrategies as RobotStrategy[]);
     resetArenaPerformance();
     
     setSessionStartTime(Date.now());
     setIsCouncilAutopilotOn(true);
     setIsFetchingCouncil(false);
-    toast({ title: '🚀 Sistema V2.5 Iniciado', description: 'Monitoramento em tempo real ativo.' });
-  }, [activeSymbol, evolvedStrategies, resetArenaPerformance, toast]);
+    toast({ title: '🚀 Sistema V2.5 Iniciado', description: `Modo: ${tradingMode === 'standard' ? 'Padrão' : 'Alta Frequência'}. Monitoramento ativo.` });
+  }, [activeSymbol, evolvedStrategies, resetArenaPerformance, toast, tradingMode]);
 
   const dissolveCouncil = useCallback(() => {
     setIsCouncilAutopilotOn(false);
@@ -452,7 +458,6 @@ export function useRobotCouncilV2(
                 let shouldSell = false;
                 let reason = '';
 
-                // 1. Chandelier Exit (Stop de Volatilidade)
                 if (exitPrice) {
                     if (contract.direction === 'rise' && currentTick.price < exitPrice) {
                         shouldSell = true;
@@ -463,7 +468,6 @@ export function useRobotCouncilV2(
                     }
                 }
 
-                // 2. Mudança de Regime (Stop de Contexto)
                 const tradeLog = tradeDecisionLog.find(l => l.contractId === contract.id);
                 if (tradeLog) {
                     const entryRegime = tradeLog.context.marketRegime;
@@ -494,7 +498,7 @@ export function useRobotCouncilV2(
         }
         
         const now = Date.now();
-        const REGIME_CACHE_TTL = 5000; // 5 segundos
+        const REGIME_CACHE_TTL = 5000; 
         let regimeResult: RegimeDetectionResult;
 
         if (regimeCacheRef.current && (now - regimeCacheRef.current.timestamp < REGIME_CACHE_TTL)) {
@@ -723,7 +727,7 @@ export function useRobotCouncilV2(
               }
             }
         } else {
-             kellyStake = 1.0; // Stake fixo se o risco dinâmico estiver desligado
+             kellyStake = 1.0; 
         }
         
         kellyStake = Math.max(RISK_CONFIG.MIN_STAKE, kellyStake);
@@ -770,7 +774,6 @@ export function useRobotCouncilV2(
                 if (currentIndicators.bbw && currentIndicators.bbw > 0.08) weightedAvgDuration *= 0.75;
                 else if (currentIndicators.bbw && currentIndicators.bbw < 0.02) weightedAvgDuration *= 1.25;
 
-                // --- LÓGICA DE DURAÇÃO ROBUSTA ---
                 const defaultDuration = 15;
                 const defaultUnit: DurationUnit = 's';
 
@@ -788,22 +791,19 @@ export function useRobotCouncilV2(
                         finalDuration = Math.round(weightedAvgDuration);
                         finalDuration = Math.max(durationLimits.s.min, Math.min(finalDuration, durationLimits.s.max));
                     }
-                    else if (canUseTicks) { // Fallback para ticks se for a única opção
+                    else if (canUseTicks) {
                         finalDurationUnit = 't';
                         const durationInTicks = Math.round(weightedAvgDuration / 2);
                         finalDuration = Math.max(durationLimits.t.min, Math.min(durationInTicks, durationLimits.t.max));
                     }
                     else {
-                        console.warn(`[Council V2] Nenhuma unidade de duração suportada. Usando fallback: ${defaultDuration}${defaultUnit}.`);
                         finalDurationUnit = defaultUnit;
                         finalDuration = defaultDuration;
                     }
                 } else {
-                     console.warn(`[Council V2] Limites de duração não disponíveis. Usando fallback: ${defaultDuration}${defaultUnit}.`);
                     finalDurationUnit = defaultUnit;
                     finalDuration = defaultDuration;
                 }
-                // --- FIM DA LÓGICA DE DURAÇÃO ---
 
                  executeTrade(
                     consensusDirection === 'RISE' ? 'CALL' : 'PUT',
@@ -889,7 +889,7 @@ export function useRobotCouncilV2(
     tradeCounts,
     virtualTradesRef,
     ...councilState,
-    virtualTradeCount, // Exporta o contador
+    virtualTradeCount, 
     dailyBalance,
     setDailyBalance,
     dailyTarget,
@@ -918,10 +918,11 @@ export function useRobotCouncilV2(
     evolveTrigger,
     resetEvolutionHistory,
     deleteSingleEvolution,
+    tradingMode,
+    setTradingMode,
   };
 }
 
-// Helper to mark a log as processed without modifying the original array
 function markLogAsProcessed(logs: TradeDecisionLog[], contractId: number): TradeDecisionLog[] {
     return logs.map(log => 
         log.contractId === contractId ? { ...log, processed: true } : log
