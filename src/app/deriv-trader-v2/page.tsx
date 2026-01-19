@@ -126,21 +126,24 @@ const MainContent = () => {
             {/* Layout Mobile */}
             <div className="lg:hidden space-y-6">
                 <IsolatedMarketChart />
-                <DerivTraderInterfaceV2 symbol={activeSymbol || ""} />
-                <CouncilDashboardV2 consensusDecision={robotCouncil.consensusDecision} supervisionStatus={robotCouncil.supervisionStatus} activeCommittee={robotCouncil.currentRegime.regime} isCouncilAutopilotOn={robotCouncil.isCouncilAutopilotOn} />
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <DerivTraderInterfaceV2 symbol={activeSymbol || ""} />
+                    <CouncilDashboardV2 consensusDecision={robotCouncil.consensusDecision} supervisionStatus={robotCouncil.supervisionStatus} activeCommittee={robotCouncil.currentRegime.regime} isCouncilAutopilotOn={robotCouncil.isCouncilAutopilotOn} />
+                </div>
                 <CouncilAutopilotInterfaceV2 {...robotCouncil} />
                 
                 <Tabs defaultValue="arena" className="w-full">
-                    <TabsList className="grid w-full grid-cols-4">
+                    <TabsList className="grid w-full grid-cols-5">
                         <TabsTrigger value="arena"><Swords className="w-4 h-4" /></TabsTrigger>
+                        <TabsTrigger value="auditoria"><Bot className="w-4 h-4" /></TabsTrigger>
                         <TabsTrigger value="logs"><Archive className="w-4 h-4" /></TabsTrigger>
                         <TabsTrigger value="evolucao"><Dna className="w-4 h-4" /></TabsTrigger>
                         <TabsTrigger value="debug"><BrainCircuit className="w-4 h-4" /></TabsTrigger>
                     </TabsList>
                     <TabsContent value="arena" className="mt-4"><TradingDeskV2 councilState={robotCouncil} /></TabsContent>
+                    <TabsContent value="auditoria" className="mt-4"><TradingDecisionLogViewer logs={robotCouncil.tradeDecisionLog} showFilters={false} /></TabsContent>
                     <TabsContent value="logs" className="mt-4 space-y-4">
                         <OperationsLogV2 operations={operationsLog} sellContract={sellContract} priceTicks={priceTicks} />
-                        <TradingDecisionLogViewer logs={robotCouncil.tradeDecisionLog} showFilters={false} />
                     </TabsContent>
                     <TabsContent value="evolucao" className="mt-4"><EvolutionLabV2 {...robotCouncil} /></TabsContent>
                     <TabsContent value="debug" className="mt-4">
@@ -153,25 +156,30 @@ const MainContent = () => {
             <div className="hidden lg:block space-y-6">
                 <IsolatedMarketChart />
 
-                <div className="grid lg:grid-cols-2 gap-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                    <DerivTraderInterfaceV2 symbol={activeSymbol || ""} />
                    <CouncilDashboardV2 consensusDecision={robotCouncil.consensusDecision} supervisionStatus={robotCouncil.supervisionStatus} activeCommittee={robotCouncil.currentRegime.regime} isCouncilAutopilotOn={robotCouncil.isCouncilAutopilotOn} />
                 </div>
                 
                 <CouncilAutopilotInterfaceV2 {...robotCouncil} />
                 
-                <TradingDeskV2 councilState={robotCouncil} />
-
                 <div className="mt-6">
-                     <Tabs defaultValue="logs" className="h-full">
-                        <TabsList className="grid w-full grid-cols-3">
-                            <TabsTrigger value="logs"><Archive className="mr-2 h-4 w-4"/>Logs</TabsTrigger>
+                     <Tabs defaultValue="arena" className="h-full">
+                        <TabsList className="grid w-full grid-cols-5">
+                            <TabsTrigger value="arena"><Swords className="mr-2 h-4 w-4"/>Arena Virtual</TabsTrigger>
+                            <TabsTrigger value="auditoria"><Bot className="mr-2 h-4 w-4"/>Auditoria Cognitiva</TabsTrigger>
+                            <TabsTrigger value="logs"><Archive className="mr-2 h-4 w-4"/>Logs de Operações</TabsTrigger>
                             <TabsTrigger value="evolucao"><Dna className="mr-2 h-4 w-4"/>Evolução</TabsTrigger>
                             <TabsTrigger value="debug"><BrainCircuit className="mr-2 h-4 w-4"/>Debug</TabsTrigger>
                         </TabsList>
+                        <TabsContent value="arena" className="mt-4">
+                            <TradingDeskV2 councilState={robotCouncil} />
+                        </TabsContent>
+                        <TabsContent value="auditoria" className="mt-4">
+                            <TradingDecisionLogViewer logs={robotCouncil.tradeDecisionLog} showFilters={false} />
+                        </TabsContent>
                         <TabsContent value="logs" className="mt-4 space-y-4">
                             <OperationsLogV2 operations={operationsLog} sellContract={sellContract} priceTicks={priceTicks} />
-                            <TradingDecisionLogViewer logs={robotCouncil.tradeDecisionLog} showFilters={false} />
                         </TabsContent>
                         <TabsContent value="evolucao" className="mt-4"><EvolutionLabV2 {...robotCouncil} /></TabsContent>
                         <TabsContent value="debug" className="mt-4">
