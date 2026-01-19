@@ -144,6 +144,7 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
   const [assetGroups, setAssetGroups] = useState<AssetGroup[]>([]);
   const [isAssetsLoading, setIsAssetsLoading] = useState(true);
   const { toast } = useToast();
+  const [toastQueue, setToastQueue] = useState<any[]>([]);
 
   const [activeSymbol, setActiveSymbol] = useState<string | null>('1HZ75V');
   const [chartData, setChartData] = useState<ChartData[]>([]);
@@ -168,6 +169,20 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
   const promisesRef = useRef<Map<string, PromiseCallbacks>>(new Map());
   const [triggerReconnect, setTriggerReconnect] = useState(0);
 
+    const addTradeAnnotation = useCallback((annotation: Omit<TradeAnnotation, 'id'>) => {
+    const newAnnotation: TradeAnnotation = {
+      ...annotation,
+      id: `annotation-${annotation.contractId}`,
+    };
+    setTradeAnnotations(prev => [...prev, newAnnotation]);
+  }, []);
+
+  const updateTradeAnnotation = useCallback((contractId: string, updates: Partial<TradeAnnotation>) => {
+      setTradeAnnotations(prev => prev.map(ann => 
+        ann.contractId === contractId ? { ...ann, ...updates } : ann
+      ));
+  }, []);
+
   useEffect(() => {
     chartTypeRef.current = chartType;
   }, [chartType]);
@@ -186,6 +201,13 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
     }
     setIsLoading(false);
   }, []);
+
+   useEffect(() => {
+    if (toastQueue.length > 0) {
+      toastQueue.forEach(t => toast(t));
+      setToastQueue([]);
+    }
+  }, [toastQueue, toast]);
   
   const activeToken = accountType === 'demo' ? demoToken : realToken;
 
@@ -510,34 +532,93 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
                 case 'proposal_open_contract':
                     const contract = response.proposal_open_contract;
                     if (!contract) return;
-                    
-                    const contractId = contract.contract_id;
-                    
-                    setOperationsLog(prevLog => prevLog.map(op => {
-                        if (op.id === contractId) {
-                            const newStatus = contract.is_sold ? (contract.profit >= 0 ? 'won' : 'lost') : 'pending';
-                            const exitPrice = contract.exit_tick_display_value ? parseFloat(contract.exit_tick_display_value) : op.exitPrice;
-                            
-                            if (contract.is_sold) {
-                                const sellTime = contract.sell_time ? new Date(contract.sell_time * 1000).toISOString() : new Date().toISOString();
-                                toast({
-                                    title: "Posição Fechada",
-                                    description: `Contrato ${contractId}: ${contract.profit >= 0 ? `Lucro de ${contract.currency} ${contract.profit.toFixed(2)}` : `Prejuízo de ${contract.currency} ${Math.abs(contract.profit).toFixed(2)}`}`,
-                                    variant: contract.profit < 0 ? "destructive" : "default",
-                                });
-                                
-                                if (wsRef.current?.readyState === WebSocket.OPEN) {
-                                    wsRef.current.send(JSON.stringify({"balance": 1}));
-                                }
 
-                                return { ...op, status: newStatus, result: contract.profit, exitPrice: exitPrice, exitTimestamp: sellTime };
-                            } else {
-                                return { ...op, result: contract.profit };
+                    setOperationsLog(prevLog => {
+                        const existingOpIndex = prevLog.findIndex(op => op.id === contract.contract_id);
+                        const isSold = contract.is_sold === 1;
+
+                        if (existingOpIndex !== -1) {
+                            // UPDATE EXISTING OPERATION
+                            const updatedLog = [...prevLog];
+                            const op = updatedLog[existingOpIndex];
+
+                            if (op.status === 'pending') {
+                                if (isSold) {
+                                    const newStatus = contract.profit >= 0 ? 'won' : 'lost';
+                                    const exitPrice = contract.exit_tick_display_value ? parseFloat(contract.exit_tick_display_value) : contract.sell_spot ? parseFloat(contract.sell_spot) : op.exitPrice;
+                                    const sellTime = contract.sell_time ? new Date(contract.sell_time * 1000).toISOString() : new Date().toISOString();
+
+                                    updatedLog[existingOpIndex] = { ...op, status: newStatus, result: contract.profit, exitPrice: exitPrice, exitTimestamp: sellTime };
+                                    
+                                    if(typeof updateTradeAnnotation === 'function') {
+                                        updateTradeAnnotation(String(contract.contract_id), { status: newStatus, profit: contract.profit, exitPrice, exitTime: contract.sell_time });
+                                    }
+                                    
+                                    const toastMessage = {
+                                        title: `Posição Fechada (${op.asset})`,
+                                        description: `Resultado: ${contract.currency} ${contract.profit.toFixed(2)}`,
+                                        variant: newStatus === 'won' ? 'default' : 'destructive',
+                                    };
+                                    
+                                    if (typeof setToastQueue === 'function') {
+                                        setToastQueue(prev => [...prev, toastMessage]);
+                                    } else if(typeof toast === 'function') {
+                                        toast(toastMessage);
+                                    }
+
+                                    if (wsRef.current?.readyState === WebSocket.OPEN) {
+                                        wsRef.current.send(JSON.stringify({"balance": 1}));
+                                    }
+                                    return updatedLog;
+                                } else if (op.contractType?.startsWith('MULT') && contract.profit !== op.result) {
+                                    updatedLog[existingOpIndex] = { ...op, result: contract.profit };
+                                    return updatedLog;
+                                }
                             }
+                            return prevLog;
+
+                        } else if (!isSold) {
+                            // ADD NEW EXTERNALLY OPENED OPERATION
+                            const direction = contract.contract_type.includes('CALL') || contract.contract_type.includes('MULTUP') ? 'rise' : 'fall';
+                            const durationInSeconds = contract.date_expiry ? (contract.date_expiry - contract.purchase_time) : 0;
+                            const durationUnit: DurationUnit = 's'; // Safe default
+
+                            const newOperation: Operation = {
+                                id: contract.contract_id,
+                                asset: contract.symbol,
+                                direction: direction,
+                                stake: contract.buy_price,
+                                status: 'pending',
+                                result: contract.profit,
+                                timestamp: new Date(contract.purchase_time * 1000).toISOString(),
+                                initiator: 'Manual',
+                                entryPrice: parseFloat(contract.entry_spot_display_value || contract.entry_tick_display_value || '0'),
+                                isSellable: contract.is_sellable === 1,
+                                expirationTime: contract.date_expiry ? contract.date_expiry * 1000 : undefined,
+                                duration: durationInSeconds,
+                                durationUnit: durationUnit,
+                                multiplier: contract.multiplier,
+                                contractType: contract.contract_type,
+                            };
+                            
+                            if(typeof addTradeAnnotation === 'function') {
+                                addTradeAnnotation({
+                                    contractId: String(newOperation.id),
+                                    entryTime: contract.purchase_time,
+                                    entryPrice: newOperation.entryPrice!,
+                                    direction: newOperation.direction,
+                                    status: 'pending',
+                                    stake: newOperation.stake,
+                                    symbol: newOperation.asset,
+                                    expirationTime: newOperation.expirationTime,
+                                });
+                            }
+
+                            return [newOperation, ...prevLog];
                         }
-                        return op;
-                    }));
-                    
+                        
+                        return prevLog;
+                    });
                     break;
                 case 'tick':
                     if (response.tick?.symbol === activeSymbol) {
@@ -683,7 +764,7 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
       setIsConnected(false);
       setAccountBalance({ balance: null, currency: null, loading: false });
     };
-  }, [activeToken, isLoading]);
+  }, [activeToken, isLoading, makeRequest, toast, triggerReconnect, updateTradeAnnotation, addTradeAnnotation]);
 
   useEffect(() => {
     connect();

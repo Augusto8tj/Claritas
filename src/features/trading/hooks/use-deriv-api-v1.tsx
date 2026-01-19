@@ -189,6 +189,14 @@ export const DerivApiProviderV1 = ({ children }: { children: ReactNode }) => {
     setIsLoading(false);
   }, []);
 
+  const addTradeAnnotation = useCallback((annotation: Omit<TradeAnnotation, 'id'>) => {
+    const newAnnotation: TradeAnnotation = {
+      ...annotation,
+      id: `annotation-${annotation.contractId}`,
+    };
+    setTradeAnnotations(prev => [...prev, newAnnotation]);
+  }, []);
+
   const updateTradeAnnotation = useCallback((contractId: string, updates: Partial<TradeAnnotation>) => {
       setTradeAnnotations(prev => prev.map(ann => 
         ann.contractId === contractId ? { ...ann, ...updates } : ann
@@ -257,14 +265,6 @@ export const DerivApiProviderV1 = ({ children }: { children: ReactNode }) => {
         }
     });
   }, []);
-  
-    const addTradeAnnotation = useCallback((annotation: Omit<TradeAnnotation, 'id'>) => {
-      const newAnnotation: TradeAnnotation = {
-        ...annotation,
-        id: `annotation-${annotation.contractId}`,
-      };
-      setTradeAnnotations(prev => [...prev, newAnnotation]);
-    }, []);
 
 const getHistoricalData = useCallback(async (symbol: string, style: 'ticks' | 'candles', count: number, period?: TimePeriod): Promise<ApiHistoricalData[]> => {
     const request: any = {
@@ -550,37 +550,90 @@ const subscribeToMarketData = useCallback(async (symbol: string) => {
                         break;
                     case 'proposal_open_contract':
                         const contract = response.proposal_open_contract;
-                        if (!contract || !contract.is_sold) return;
-    
-                        const profit = parseFloat(contract.profit);
-                        const isLoss = profit < 0;
-                        
-                        const exitPrice = parseFloat(contract.exit_tick_display_value || contract.sell_spot_display_value || contract.sell_spot || '0');
-    
-                        toast({
-                            title: "Negociação Encerrada",
-                            description: `Contrato ${contract.contract_id}: ${profit >= 0 ? `Lucro de ${contract.currency} ${profit.toFixed(2)}` : `Prejuízo de ${contract.currency} ${Math.abs(profit).toFixed(2)}`}`,
-                            variant: isLoss ? "destructive" : "default",
+                        if (!contract) return;
+                    
+                        setOperationsLog(prevLog => {
+                            const existingOpIndex = prevLog.findIndex(op => op.id === contract.contract_id);
+                            const isSold = contract.is_sold === 1;
+                    
+                            if (existingOpIndex !== -1) {
+                                // UPDATE EXISTING OPERATION
+                                const updatedLog = [...prevLog];
+                                const op = updatedLog[existingOpIndex];
+                    
+                                if (op.status === 'pending') {
+                                    if (isSold) {
+                                        const newStatus = contract.profit >= 0 ? 'won' : 'lost';
+                                        const exitPrice = contract.exit_tick_display_value ? parseFloat(contract.exit_tick_display_value) : contract.sell_spot ? parseFloat(contract.sell_spot) : op.exitPrice;
+                                        const sellTime = contract.sell_time ? new Date(contract.sell_time * 1000).toISOString() : new Date().toISOString();
+                    
+                                        updatedLog[existingOpIndex] = { ...op, status: newStatus, result: contract.profit, exitPrice: exitPrice, exitTimestamp: sellTime };
+                                        
+                                        if(typeof updateTradeAnnotation === 'function') {
+                                            updateTradeAnnotation(String(contract.contract_id), { status: newStatus, profit: contract.profit, exitPrice, exitTime: contract.sell_time });
+                                        }
+                                        
+                                        const toastMessage = {
+                                            title: `Posição Fechada (${op.asset})`,
+                                            description: `Resultado: ${contract.currency} ${contract.profit.toFixed(2)}`,
+                                            variant: newStatus === 'won' ? 'default' : 'destructive',
+                                        };
+                                        
+                                        toast(toastMessage);
+                    
+                                        if (wsRef.current?.readyState === WebSocket.OPEN) {
+                                            wsRef.current.send(JSON.stringify({"balance": 1}));
+                                        }
+                                        return updatedLog;
+                                    } else if (op.contractType?.startsWith('MULT') && contract.profit !== op.result) {
+                                        updatedLog[existingOpIndex] = { ...op, result: contract.profit };
+                                        return updatedLog;
+                                    }
+                                }
+                                return prevLog;
+                    
+                            } else if (!isSold) {
+                                // ADD NEW EXTERNALLY OPENED OPERATION
+                                const direction = contract.contract_type.includes('CALL') || contract.contract_type.includes('MULTUP') ? 'rise' : 'fall';
+                                const durationInSeconds = contract.date_expiry ? (contract.date_expiry - contract.purchase_time) : 0;
+                                const durationUnit: DurationUnit = 's'; // Safe default
+                    
+                                const newOperation: Operation = {
+                                    id: contract.contract_id,
+                                    asset: contract.symbol,
+                                    direction: direction,
+                                    stake: contract.buy_price,
+                                    status: 'pending',
+                                    result: contract.profit,
+                                    timestamp: new Date(contract.purchase_time * 1000).toISOString(),
+                                    initiator: 'Manual',
+                                    entryPrice: parseFloat(contract.entry_spot_display_value || contract.entry_tick_display_value || '0'),
+                                    isSellable: contract.is_sellable === 1,
+                                    expirationTime: contract.date_expiry ? contract.date_expiry * 1000 : undefined,
+                                    duration: durationInSeconds,
+                                    durationUnit: durationUnit,
+                                    multiplier: contract.multiplier,
+                                    contractType: contract.contract_type,
+                                };
+                                
+                                if(typeof addTradeAnnotation === 'function') {
+                                    addTradeAnnotation({
+                                        contractId: String(newOperation.id),
+                                        entryTime: contract.purchase_time,
+                                        entryPrice: newOperation.entryPrice!,
+                                        direction: newOperation.direction,
+                                        status: 'pending',
+                                        stake: newOperation.stake,
+                                        symbol: newOperation.asset,
+                                        expirationTime: newOperation.expirationTime,
+                                    });
+                                }
+                    
+                                return [newOperation, ...prevLog];
+                            }
+                            
+                            return prevLog;
                         });
-                        
-                        const sellTime = contract.sell_time ? new Date(contract.sell_time * 1000).toISOString() : new Date().toISOString();
-    
-                        setOperationsLog(prevLog => prevLog.map(op =>
-                            op.id === contract.contract_id 
-                            ? { ...op, status: profit >= 0 ? 'won' : 'lost', result: profit, exitPrice: exitPrice, exitTimestamp: sellTime } 
-                            : op
-                        ));
-    
-                        updateTradeAnnotation(String(contract.contract_id), {
-                            exitTime: contract.sell_time || Math.floor(Date.now() / 1000),
-                            exitPrice: exitPrice,
-                            status: profit >= 0 ? 'won' : 'lost',
-                            profit,
-                        });
-                        
-                        if (wsRef.current?.readyState === WebSocket.OPEN) {
-                            wsRef.current.send(JSON.stringify({"balance": 1, "req_id": Date.now()}));
-                        }
                         break;
                     case 'tick':
                         if (response.tick?.symbol === activeSymbol) {
@@ -737,7 +790,7 @@ const subscribeToMarketData = useCallback(async (symbol: string) => {
         wsRef.current.close();
       }
     };
-  }, [activeToken, isLoading, makeRequest, toast, triggerReconnect, updateTradeAnnotation]);
+  }, [activeToken, isLoading, makeRequest, toast, triggerReconnect, updateTradeAnnotation, addTradeAnnotation]);
 
   
   useEffect(() => {
