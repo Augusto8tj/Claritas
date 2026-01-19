@@ -16,6 +16,9 @@ import OperationsLogMultipliers from "@/features/trading/components/deriv-trader
 import { multipliersSchema, type MultipliersFormValues } from "@/features/trading/components/deriv-trader/deriv-trader-interface-multipliers.types";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { ApiStatusIndicatorMultipliers } from "@/features/trading/components/deriv-trader/ApiStatusIndicatorMultipliers";
+// NEW IMPORTS
+import { useMultipliersCouncil } from "@/features/trading/hooks/use-multipliers-council";
+import { MultipliersAutopilotInterface } from "@/features/trading/components/deriv-trader/multipliers-autopilot-interface";
 
 const Header = () => {
     const { 
@@ -98,7 +101,7 @@ const IsolatedMarketChart = () => {
                     timePeriod={timePeriod}
                     setTimePeriod={setTimePeriod}
                     operations={operationsLog}
-                    indicators={null} // Sem conselho de robôs aqui
+                    indicators={null}
                     tradeAnnotations={tradeAnnotations}
                 />
             </CardContent>
@@ -106,17 +109,21 @@ const IsolatedMarketChart = () => {
     );
 };
 
-const MainContent = () => {
-    const { activeSymbol, operationsLog, sellContract } = useDerivApiMultipliers();
+const MultipliersTraderCore = () => {
+    const { activeSymbol, operationsLog, sellContract, priceTicks } = useDerivApiMultipliers();
+    const multipliersCouncil = useMultipliersCouncil(activeSymbol, priceTicks);
     
     return (
-        <div className="mt-6 grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <div className="lg:col-span-1">
-                <DerivTraderInterfaceMultipliers symbol={activeSymbol || ""} />
+        <div className="space-y-6 mt-6">
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <div className="lg:col-span-1">
+                    <DerivTraderInterfaceMultipliers symbol={activeSymbol || ""} />
+                </div>
+                <div className="lg:col-span-2 space-y-6">
+                    <MultipliersAutopilotInterface {...multipliersCouncil} />
+                </div>
             </div>
-            <div className="lg:col-span-2">
-                <OperationsLogMultipliers operations={operationsLog} sellContract={sellContract} />
-            </div>
+             <OperationsLogMultipliers operations={operationsLog} sellContract={sellContract} />
         </div>
     );
 };
@@ -138,7 +145,7 @@ const PageContent = () => {
             <div className="flex-1 space-y-4 p-4 sm:p-8 pt-6">
                 <Header />
                 <IsolatedMarketChart />
-                <MainContent />
+                <MultipliersTraderCore />
             </div>
         </FormProvider>
     );
