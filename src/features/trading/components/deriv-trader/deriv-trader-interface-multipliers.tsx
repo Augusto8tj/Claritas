@@ -181,14 +181,14 @@ export default function DerivTraderInterfaceMultipliers({ symbol }: DerivTraderI
                       </Tooltip>
                     </TooltipProvider>
                   </FormLabel>
-                  <Select onValueChange={field.onChange} defaultValue={field.value}>
+                  <Select onValueChange={field.onChange} value={field.value}>
                     <FormControl>
                       <SelectTrigger>
                         <SelectValue placeholder="Escolha um período..." />
                       </SelectTrigger>
                     </FormControl>
                     <SelectContent>
-                      <SelectItem value={''}>Sem cancelamento</SelectItem>
+                      <SelectItem value={'none'}>Sem cancelamento</SelectItem>
                       <SelectItem value="5m">5 minutos</SelectItem>
                       <SelectItem value="10m">10 minutos</SelectItem>
                       <SelectItem value="15m">15 minutos</SelectItem>

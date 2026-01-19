@@ -294,7 +294,7 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
             "multiplier": multiplier,
         };
 
-        if (cancellation) {
+        if (cancellation && cancellation !== 'none') {
             proposalRequest.cancellation = cancellation;
         }
 
