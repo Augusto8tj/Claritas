@@ -163,6 +163,7 @@ export const DerivApiProviderV3 = ({ children }: { children: ReactNode }) => {
   const [isChartLoading, setIsChartLoading] = useState(true);
   const [chartError, setChartError] = useState<string | null>(null);
   const [chartType, setChartType] = useState<ChartType>('Candle');
+  const chartTypeRef = useRef(chartType);
   const [timePeriod, setTimePeriod] = useState<TimePeriod>('1m');
   const activeSubscriptionIdRef = useRef<string | null>(null);
   const [tradeAnnotations, setTradeAnnotations] = useState<TradeAnnotation[]>([]);
@@ -175,6 +176,10 @@ export const DerivApiProviderV3 = ({ children }: { children: ReactNode }) => {
   const [connectionError, setConnectionError] = useState<string | null>(null);
   const promisesRef = useRef<Map<string, PromiseCallbacks>>(new Map());
   const [triggerReconnect, setTriggerReconnect] = useState(0);
+
+  useEffect(() => {
+    chartTypeRef.current = chartType;
+  }, [chartType]);
 
   useEffect(() => {
     try {
@@ -543,7 +548,7 @@ export const DerivApiProviderV3 = ({ children }: { children: ReactNode }) => {
                       if (response.tick?.symbol === activeSymbol) {
                           const tick = response.tick;
                           const newTick = { epoch: tick.epoch, price: tick.quote };
-                          if (chartType === 'Area') {
+                          if (chartTypeRef.current === 'Area') {
                              setChartData(prev => addDataPoint(prev, newTick));
                           }
                           setPriceTicks(prev => {
@@ -560,7 +565,7 @@ export const DerivApiProviderV3 = ({ children }: { children: ReactNode }) => {
                   case 'ohlc':
                   case 'candles':
                       const candleData = response.ohlc || (response.candles && response.candles[0]);
-                      if (chartType === 'Candle' && candleData && candleData.symbol === activeSymbol) {
+                      if (chartTypeRef.current === 'Candle' && candleData && candleData.symbol === activeSymbol) {
                           const newCandle: CandleData = {
                               epoch: candleData.open_time || candleData.epoch,
                               open: parseFloat(candleData.open),

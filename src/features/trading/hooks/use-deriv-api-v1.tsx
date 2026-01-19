@@ -157,6 +157,7 @@ export const DerivApiProviderV1 = ({ children }: { children: ReactNode }) => {
   const [isChartLoading, setIsChartLoading] = useState(true);
   const [chartError, setChartError] = useState<string | null>(null);
   const [chartType, setChartType] = useState<ChartType>('Area');
+  const chartTypeRef = useRef(chartType);
   const [timePeriod, setTimePeriod] = useState<TimePeriod>('5m');
   const activeSubscriptionIdRef = useRef<string | null>(null);
   const [tradeAnnotations, setTradeAnnotations] = useState<TradeAnnotation[]>([]);
@@ -168,6 +169,10 @@ export const DerivApiProviderV1 = ({ children }: { children: ReactNode }) => {
   const [connectionError, setConnectionError] = useState<string | null>(null);
   const promisesRef = useRef<Map<string, PromiseCallbacks>>(new Map());
   const [triggerReconnect, setTriggerReconnect] = useState(0);
+
+  useEffect(() => {
+    chartTypeRef.current = chartType;
+  }, [chartType]);
 
   useEffect(() => {
     try {
@@ -574,7 +579,7 @@ const subscribeToMarketData = useCallback(async (symbol: string) => {
                     if (response.tick?.symbol === activeSymbol) {
                         const tick = response.tick;
                         const newTick = { epoch: tick.epoch, price: tick.quote };
-                        if (chartType === 'Area') {
+                        if (chartTypeRef.current === 'Area') {
                            setChartData(prev => addDataPoint(prev, newTick));
                         }
                         setPriceTicks(prev => {
@@ -588,7 +593,7 @@ const subscribeToMarketData = useCallback(async (symbol: string) => {
                     break;
                 
                 case 'ohlc':
-                    if (chartType === 'Candle' && response.ohlc?.symbol === activeSymbol) {
+                    if (chartTypeRef.current === 'Candle' && response.ohlc?.symbol === activeSymbol) {
                         const ohlc = response.ohlc;
                         const newCandle: CandleData = {
                             epoch: ohlc.open_time,
@@ -603,7 +608,7 @@ const subscribeToMarketData = useCallback(async (symbol: string) => {
                             price: newCandle.close,
                         };
                         setPriceTicks(prev => {
-                            const newTicks = [...prev, newTickFromCandle];
+                             const newTicks = [...prev, newTickFromCandle];
                             if (newTicks.length > MAX_DATA_POINTS) {
                                 return newTicks.slice(1);
                             }
@@ -613,7 +618,7 @@ const subscribeToMarketData = useCallback(async (symbol: string) => {
                     break;
                 
                 case 'candles':
-                    if (chartType === 'Candle' && response.candles?.length > 0) {
+                    if (chartTypeRef.current === 'Candle' && response.candles?.length > 0) {
                         const candle = response.candles[0];
                         if (candle && (!activeSymbol || response.echo_req?.ticks_history === activeSymbol)) {
                             const newCandle: CandleData = {
