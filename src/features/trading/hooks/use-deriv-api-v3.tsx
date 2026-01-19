@@ -329,83 +329,83 @@ export const DerivApiProviderV3 = ({ children }: { children: ReactNode }) => {
         durationUnit: DurationUnit,
         initiator: OperationInitiator
       ): Promise<TradeResult> => {
+        try {
           if (!wsRef.current || !isConnected) {
             throw new Error("A conexão com a API da Deriv não está ativa.");
           }
 
           const sanitizedStake = parseFloat(stake.toFixed(2));
 
-          try {
-            const proposalResponse: any = await makeRequest({ 
-                "proposal": 1,
-                "amount": sanitizedStake,
-                "basis": "stake",
-                "contract_type": contractType,
-                "currency": "USD",
-                "duration": duration,
-                "duration_unit": durationUnit,
-                "symbol": symbol,
-            });
+          const proposalResponse: any = await makeRequest({ 
+              "proposal": 1,
+              "amount": sanitizedStake,
+              "basis": "stake",
+              "contract_type": contractType,
+              "currency": "USD",
+              "duration": duration,
+              "duration_unit": durationUnit,
+              "symbol": symbol,
+          });
 
-            const proposal = proposalResponse.proposal;
-            if (!proposal || !proposal.id) {
-              throw new Error("Falha ao obter uma proposta de negociação da API.");
-            }
-            
-            const buyResponse: any = await makeRequest({ "buy": proposal.id, "price": proposal.ask_price });
-            const buyResult = buyResponse.buy;
-            
-            const latestTick = priceTicks.length > 0 ? priceTicks[priceTicks.length - 1].price : 0;
-            const entryPrice = buyResult.entry_tick_display_value 
-              ? parseFloat(buyResult.entry_tick_display_value) 
-              : (buyResult.entry_spot_display_value ? parseFloat(buyResult.entry_spot_display_value) : latestTick);
-
-            const isSellable = durationUnit !== 't';
-            
-            const durationInSeconds = getDurationInSeconds(duration, durationUnit);
-            const purchaseTimeMs = (buyResult.purchase_time || Math.floor(Date.now() / 1000)) * 1000;
-            const expirationTimeMs = purchaseTimeMs + durationInSeconds * 1000;
-
-            const newOperation: Operation = {
-                id: buyResult.contract_id,
-                asset: symbol,
-                direction: tradeDirection,
-                stake: sanitizedStake,
-                status: 'pending',
-                timestamp: new Date(purchaseTimeMs).toISOString(),
-                duration: duration,
-                durationUnit: durationUnit,
-                initiator,
-                entryPrice: entryPrice,
-                isSellable,
-                expirationTime: expirationTimeMs,
-            };
-            setOperationsLog(prevLog => [newOperation, ...prevLog]);
-
-            const entryTime = buyResult.purchase_time;
-            
-            addTradeAnnotation({
-                contractId: String(buyResult.contract_id),
-                entryTime: entryTime,
-                entryPrice: entryPrice,
-                direction: tradeDirection,
-                status: 'pending',
-                stake: sanitizedStake,
-                symbol,
-                expirationTime: expirationTimeMs,
-            });
-
-            return {
-              success: true,
-              message: `Ordem do tipo "${contractType}" para ${symbol} no valor de ${sanitizedStake} USD executada com sucesso.`,
-              contractId: buyResult.contract_id,
-              entryPrice: entryPrice,
-            };
-          } catch (error) {
-             console.error("[Deriv Hook] Erro durante a negociação:", error);
-             const message = error instanceof Error ? error.message : "Um erro desconhecido ocorreu.";
-             return { success: false, message };
+          const proposal = proposalResponse.proposal;
+          if (!proposal || !proposal.id) {
+            throw new Error("Falha ao obter uma proposta de negociação da API.");
           }
+          
+          const buyResponse: any = await makeRequest({ "buy": proposal.id, "price": proposal.ask_price });
+          const buyResult = buyResponse.buy;
+          
+          const latestTick = priceTicks.length > 0 ? priceTicks[priceTicks.length - 1].price : 0;
+          const entryPrice = buyResult.entry_tick_display_value 
+            ? parseFloat(buyResult.entry_tick_display_value) 
+            : (buyResult.entry_spot_display_value ? parseFloat(buyResult.entry_spot_display_value) : latestTick);
+
+          const isSellable = durationUnit !== 't';
+          
+          const durationInSeconds = getDurationInSeconds(duration, durationUnit);
+          const purchaseTimeMs = (buyResult.purchase_time || Math.floor(Date.now() / 1000)) * 1000;
+          const expirationTimeMs = purchaseTimeMs + durationInSeconds * 1000;
+
+          const newOperation: Operation = {
+              id: buyResult.contract_id,
+              asset: symbol,
+              direction: tradeDirection,
+              stake: sanitizedStake,
+              status: 'pending',
+              timestamp: new Date(purchaseTimeMs).toISOString(),
+              duration: duration,
+              durationUnit: durationUnit,
+              initiator,
+              entryPrice: entryPrice,
+              isSellable,
+              expirationTime: expirationTimeMs,
+          };
+          setOperationsLog(prevLog => [newOperation, ...prevLog]);
+
+          const entryTime = buyResult.purchase_time;
+          
+          addTradeAnnotation({
+              contractId: String(buyResult.contract_id),
+              entryTime: entryTime,
+              entryPrice: entryPrice,
+              direction: tradeDirection,
+              status: 'pending',
+              stake: sanitizedStake,
+              symbol,
+              expirationTime: expirationTimeMs,
+          });
+
+          return {
+            success: true,
+            message: `Ordem do tipo "${contractType}" para ${symbol} no valor de ${sanitizedStake} USD executada com sucesso.`,
+            contractId: buyResult.contract_id,
+            entryPrice: entryPrice,
+          };
+        } catch (error) {
+           console.error("[Deriv Hook] Erro durante a negociação:", error);
+           const message = error instanceof Error ? error.message : "Um erro desconhecido ocorreu.";
+           return { success: false, message };
+        }
       }, [isConnected, makeRequest, addTradeAnnotation, priceTicks]);
 
   const sellContract = useCallback(async (contractId: number): Promise<TradeResult> => {

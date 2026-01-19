@@ -1,4 +1,4 @@
-// src/features/trading/hooks/use-deriv-api-v1.tsx
+// /src/features/trading/hooks/use-deriv-api-v1.tsx
 'use client';
 
 import { createContext, useContext, useState, useEffect, type ReactNode, useCallback, useRef, useMemo } from 'react';
@@ -371,7 +371,7 @@ const subscribeToMarketData = useCallback(async (symbol: string) => {
 }, [getHistoricalData, makeRequest, chartType, timePeriod]);
 
 
-const executeTrade = useCallback(async (
+  const executeTrade = useCallback(async (
     contractType: string,
     stake: number,
     symbol: string,
@@ -380,14 +380,13 @@ const executeTrade = useCallback(async (
     durationUnit: DurationUnit,
     initiator: OperationInitiator
   ): Promise<TradeResult> => {
-      if (!wsRef.current || !isConnected) {
-        throw new Error("A conexão com a API da Deriv não está ativa.");
-      }
-
-      // GARANTIA: Arredonda o stake para 2 casas decimais antes de enviar.
-      const sanitizedStake = parseFloat(stake.toFixed(2));
-
       try {
+        if (!wsRef.current || !isConnected) {
+          throw new Error("A conexão com a API da Deriv não está ativa.");
+        }
+
+        const sanitizedStake = parseFloat(stake.toFixed(2));
+
         const proposalResponse: any = await makeRequest({ 
             "proposal": 1,
             "amount": sanitizedStake,
@@ -424,7 +423,7 @@ const executeTrade = useCallback(async (
             direction: tradeDirection,
             stake: sanitizedStake,
             status: 'pending',
-            timestamp: new Date().toISOString(),
+            timestamp: new Date(purchaseTimeMs).toISOString(),
             duration: duration,
             durationUnit: durationUnit,
             initiator,
