@@ -11,9 +11,10 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import type { Operation } from "@/lib/types";
 import { ArrowDown, ArrowUp, Briefcase, Clock } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
 
 interface OpenPositionsProps {
-  operations: Operation[];
+  operations: (Operation & { source?: string })[];
   title: string;
   description: string;
 }
@@ -46,7 +47,7 @@ export function OpenPositions({ operations, title, description }: OpenPositionsP
                 </div>
             </CardHeader>
             <CardContent className="p-0">
-                <ScrollArea className="h-[240px]">
+                <ScrollArea className="h-[400px]">
                     <div className="p-6 pt-0 space-y-4">
                         {openOperations.length === 0 ? (
                             <div className="text-center text-muted-foreground pt-10 h-full flex items-center justify-center">
@@ -64,7 +65,10 @@ export function OpenPositions({ operations, title, description }: OpenPositionsP
                                         </div>
                                         <div className="flex-1 grid grid-cols-2 md:grid-cols-3 gap-x-4 gap-y-1 text-xs">
                                             <div>
-                                                <p className="font-bold text-sm">{op.asset}</p>
+                                                <div className="flex items-center gap-2">
+                                                    <p className="font-bold text-sm">{op.asset}</p>
+                                                    {op.source && <Badge variant="secondary" className="text-[10px]">{op.source}</Badge>}
+                                                </div>
                                                 <p className="text-muted-foreground">{isMultiplier ? `Multiplicador x${op.multiplier}` : 'Opção Digital'}</p>
                                             </div>
                                             <div className="text-muted-foreground">

@@ -24,7 +24,6 @@ import TradingDecisionLogViewer from "@/components/deriv-trader/TradingDecisionL
 import { CouncilAutopilotInterfaceV2 } from "@/features/trading/components/deriv-trader/council-autopilot-interface-v2";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { ApiStatusIndicatorV2 } from "@/features/trading/components/deriv-trader/ApiStatusIndicatorV2";
-import { OpenPositions } from "@/features/trading/components/deriv-trader/OpenPositions";
 
 const Header = () => {
     const { 
@@ -165,22 +164,14 @@ const MainContent = () => {
                 <CouncilAutopilotInterfaceV2 {...robotCouncil} />
                 
                 <div className="mt-6">
-                     <Tabs defaultValue="posicoes" className="h-full">
-                        <TabsList className="grid w-full grid-cols-6">
-                            <TabsTrigger value="posicoes"><Briefcase className="mr-2 h-4 w-4"/>Posições</TabsTrigger>
+                     <Tabs defaultValue="arena" className="h-full">
+                        <TabsList className="grid w-full grid-cols-5">
                             <TabsTrigger value="arena"><Swords className="mr-2 h-4 w-4"/>Arena Virtual</TabsTrigger>
                             <TabsTrigger value="auditoria"><Bot className="mr-2 h-4 w-4"/>Auditoria Cognitiva</TabsTrigger>
                             <TabsTrigger value="logs"><Archive className="mr-2 h-4 w-4"/>Logs de Operações</TabsTrigger>
                             <TabsTrigger value="evolucao"><Dna className="mr-2 h-4 w-4"/>Evolução</TabsTrigger>
                             <TabsTrigger value="debug"><BrainCircuit className="mr-2 h-4 w-4"/>Debug</TabsTrigger>
                         </TabsList>
-                        <TabsContent value="posicoes" className="mt-4">
-                             <OpenPositions 
-                                title="Posições Abertas (V2.5)"
-                                description="Contratos de opções digitais atualmente em aberto."
-                                operations={operationsLog}
-                            />
-                        </TabsContent>
                         <TabsContent value="arena" className="mt-4">
                             <TradingDeskV2 councilState={robotCouncil} />
                         </TabsContent>

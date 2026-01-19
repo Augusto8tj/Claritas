@@ -19,7 +19,6 @@ import { ApiStatusIndicatorMultipliers } from "@/features/trading/components/der
 // NEW IMPORTS
 import { useMultipliersCouncil } from "@/features/trading/hooks/use-multipliers-council";
 import { MultipliersAutopilotInterface } from "@/features/trading/components/deriv-trader/multipliers-autopilot-interface";
-import { OpenPositions } from "@/features/trading/components/deriv-trader/OpenPositions";
 
 
 const Header = () => {
@@ -125,14 +124,7 @@ const MultipliersTraderCore = () => {
                     <MultipliersAutopilotInterface {...multipliersCouncil} />
                 </div>
             </div>
-             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <OpenPositions 
-                    title="Posições Abertas (Multiplicadores)"
-                    description="Contratos de multiplicadores atualmente ativos."
-                    operations={operationsLog}
-                />
-                <OperationsLogMultipliers operations={operationsLog} sellContract={sellContract} />
-            </div>
+             <OperationsLogMultipliers operations={operationsLog} sellContract={sellContract} />
         </div>
     );
 };

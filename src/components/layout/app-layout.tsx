@@ -25,6 +25,7 @@ import {
   PanelRightClose,
   Archive,
   Wand2,
+  Briefcase,
 } from "lucide-react";
 import {
   Sidebar,
@@ -74,6 +75,11 @@ const navItems = [
     href: "/goals",
     icon: Target,
     label: "Metas",
+  },
+   {
+    href: "/portfolio",
+    icon: Briefcase,
+    label: "Portfólio",
   },
   {
     href: "/backtesting",
@@ -236,7 +242,7 @@ function DesktopSidebar() {
     )
 }
 
-function SidebarContent({children}: {children: React.Node}) {
+function SidebarContent({children}: {children: React.ReactNode}) {
   return (
     <div
       data-sidebar="content"
@@ -250,7 +256,7 @@ function SidebarContent({children}: {children: React.Node}) {
 }
 
 
-export function AppLayout({ children }: { children: React.Node }) {
+export function AppLayout({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
   const pathname = usePathname();
   const isMobile = useIsMobile();

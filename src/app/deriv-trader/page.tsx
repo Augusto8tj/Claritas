@@ -27,7 +27,6 @@ import { ApiStatusIndicatorLegacy } from "@/features/trading/components/deriv-tr
 import { EvolutionLabV1 } from "@/features/trading/components/deriv-trader/evolution-lab-v1";
 import TradingDecisionLogViewer from "@/components/deriv-trader/TradingDecisionLogViewer";
 import { AssetIntelligenceCard } from "@/features/trading/components/deriv-trader/asset-intelligence-card";
-import { OpenPositions } from "@/features/trading/components/deriv-trader/OpenPositions";
 
 
 function HeaderV1() {
@@ -190,9 +189,8 @@ function MainContentV1() {
                     />
                 </div>
                 <CouncilAutopilotInterfaceV1 {...robotCouncil} />
-                <Tabs defaultValue="posicoes" className="w-full">
-                     <TabsList className="grid w-full grid-cols-8">
-                        <TabsTrigger value="posicoes"><Briefcase className="w-4 h-4 mr-2"/>Posições</TabsTrigger>
+                <Tabs defaultValue="logs" className="w-full">
+                     <TabsList className="grid w-full grid-cols-7">
                         <TabsTrigger value="logs"><NotepadText className="w-4 h-4 mr-2"/>Registo</TabsTrigger>
                         <TabsTrigger value="arena"><LayoutGrid className="w-4 h-4 mr-2"/>Arena</TabsTrigger>
                         <TabsTrigger value="memoria"><Brain className="w-4 h-4 mr-2"/>Memória</TabsTrigger>
@@ -201,13 +199,6 @@ function MainContentV1() {
                         <TabsTrigger value="fame"><Trophy className="w-4 h-4 mr-2"/>Fama</TabsTrigger>
                         <TabsTrigger value="evolucao"><Dna className="w-4 h-4 mr-2"/>Evolução</TabsTrigger>
                     </TabsList>
-                    <TabsContent value="posicoes" className="mt-4">
-                        <OpenPositions 
-                            title="Posições Abertas (V1)"
-                            description="Contratos de opções digitais atualmente em aberto."
-                            operations={operationsLog}
-                        />
-                    </TabsContent>
                     <TabsContent value="logs" className="mt-4"><OperationsLogV1 operations={operationsLog} sellContract={sellContract} priceTicks={priceTicks} /></TabsContent>
                     <TabsContent value="arena" className="mt-4"><TradingDesk {...robotCouncil} /></TabsContent>
                     <TabsContent value="memoria" className="mt-4">
