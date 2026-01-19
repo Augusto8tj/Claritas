@@ -18,7 +18,7 @@ import {
   FormLabel,
   FormMessage,
 } from "@/components/ui/form";
-import { ArrowDown, ArrowUp, Loader2, Minus, Plus } from "lucide-react";
+import { ArrowDown, ArrowUp, Loader2, Minus, Plus, Info } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
@@ -26,6 +26,8 @@ import type { OperationInitiator } from "@/lib/types";
 import type { MultipliersFormValues } from "./deriv-trader-interface-multipliers.types";
 import { useDerivApiMultipliers } from "@/features/trading/hooks/use-deriv-api-multipliers";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+
 
 interface DerivTraderInterfaceProps {
   symbol: string;
@@ -89,7 +91,7 @@ export default function DerivTraderInterfaceMultipliers({ symbol }: DerivTraderI
       toast({
         variant: "destructive",
         title: "Falha na Negociação",
-        description: result.message || "Não foi possível executar a ordem.",
+        description: result.message || "Não foi possível executar la ordem.",
       });
     }
   };
@@ -165,7 +167,19 @@ export default function DerivTraderInterfaceMultipliers({ symbol }: DerivTraderI
                   name="takeProfit"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Take Profit (Opcional)</FormLabel>
+                      <FormLabel className="flex items-center gap-1.5">
+                        <span>Take Profit (Opcional)</span>
+                        <TooltipProvider>
+                            <Tooltip>
+                                <TooltipTrigger asChild>
+                                    <Info className="h-3.5 w-3.5 text-muted-foreground cursor-help" />
+                                </TooltipTrigger>
+                                <TooltipContent>
+                                    <p>O valor em USD. A posição fechará<br/>automaticamente se o lucro atingir este valor.</p>
+                                </TooltipContent>
+                            </Tooltip>
+                        </TooltipProvider>
+                      </FormLabel>
                       <FormControl>
                         <Input type="number" placeholder="Ex: 20" {...field} onChange={e => field.onChange(e.target.value ? parseFloat(e.target.value) : undefined)} />
                       </FormControl>
@@ -178,7 +192,19 @@ export default function DerivTraderInterfaceMultipliers({ symbol }: DerivTraderI
                   name="stopLoss"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Stop Loss (Opcional)</FormLabel>
+                      <FormLabel className="flex items-center gap-1.5">
+                        <span>Stop Loss (Opcional)</span>
+                         <TooltipProvider>
+                            <Tooltip>
+                                <TooltipTrigger asChild>
+                                    <Info className="h-3.5 w-3.5 text-muted-foreground cursor-help" />
+                                </TooltipTrigger>
+                                <TooltipContent>
+                                    <p>O valor em USD. A posição fechará<br/>automaticamente se a perda atingir este valor.<br/>Não pode ser maior que o valor da aposta.</p>
+                                </TooltipContent>
+                            </Tooltip>
+                        </TooltipProvider>
+                      </FormLabel>
                       <FormControl>
                         <Input type="number" placeholder="Ex: 5" {...field} onChange={e => field.onChange(e.target.value ? parseFloat(e.target.value) : undefined)} />
                       </FormControl>
