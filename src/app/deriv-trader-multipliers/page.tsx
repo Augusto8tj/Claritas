@@ -110,8 +110,8 @@ const IsolatedMarketChart = () => {
 };
 
 const MultipliersTraderCore = () => {
-    const { activeSymbol, operationsLog, sellContract, priceTicks } = useDerivApiMultipliers();
-    const multipliersCouncil = useMultipliersCouncil(activeSymbol, priceTicks);
+    const { activeSymbol, operationsLog, sellContract, botCandleData, accountBalance } = useDerivApiMultipliers();
+    const multipliersCouncil = useMultipliersCouncil(activeSymbol, botCandleData, accountBalance.balance);
     
     return (
         <div className="space-y-6 mt-6">

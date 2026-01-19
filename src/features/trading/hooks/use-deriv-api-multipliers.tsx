@@ -60,6 +60,7 @@ interface DerivApiContextType {
   activeSymbol: string | null;
   setActiveSymbol: (symbol: string | null) => void;
   chartData: ChartData[];
+  botCandleData: CandleData[];
   priceTicks: TickData[]; 
   isChartLoading: boolean;
   chartError: string | null;
@@ -143,8 +144,9 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
   const [isAssetsLoading, setIsAssetsLoading] = useState(true);
   const { toast } = useToast();
 
-  const [activeSymbol, setActiveSymbol] = useState<string | null>('1HZ10V');
+  const [activeSymbol, setActiveSymbol] = useState<string | null>('1HZ75V');
   const [chartData, setChartData] = useState<ChartData[]>([]);
+  const [botCandleData, setBotCandleData] = useState<CandleData[]>([]);
   const [priceTicks, setPriceTicks] = useState<TickData[]>([]); 
   const [isChartLoading, setIsChartLoading] = useState(true);
   const [chartError, setChartError] = useState<string | null>(null);
@@ -152,6 +154,7 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
   const chartTypeRef = useRef(chartType);
   const [timePeriod, setTimePeriod] = useState<TimePeriod>('5m');
   const activeSubscriptionIdRef = useRef<string | null>(null);
+  const botSubscriptionIdRef = useRef<string | null>(null);
   const [tradeAnnotations, setTradeAnnotations] = useState<TradeAnnotation[]>([]);
   const [dataVersion, setDataVersion] = useState(0); 
   const [durationLimits, setDurationLimits] = useState<DurationLimits | null>(null);
@@ -374,7 +377,7 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
         try { 
             await makeRequest({ forget: activeSubscriptionIdRef.current }, true); 
         } catch (e) { 
-            console.log('[Market Data] Previous subscription cancelled'); 
+            console.log('[Market Data] Previous UI subscription cancelled'); 
         }
         activeSubscriptionIdRef.current = null;
     }
@@ -418,6 +421,43 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
         setIsChartLoading(false);
     }
   }, [getHistoricalData, makeRequest, chartType, timePeriod]);
+
+  // Specific data subscription for the bot (1-minute candles)
+  const subscribeToBotData = useCallback(async (symbol: string) => {
+    if (wsRef.current?.readyState !== WebSocket.OPEN) return;
+
+    if (botSubscriptionIdRef.current) {
+        try {
+            await makeRequest({ forget: botSubscriptionIdRef.current }, true);
+        } catch (e) {
+            console.log('[Bot Data] Previous bot subscription cancelled');
+        }
+        botSubscriptionIdRef.current = null;
+    }
+
+    setBotCandleData([]); // Reset bot data
+
+    try {
+        const history = await getHistoricalData(symbol, 'candles', 1000, '1m') as CandleData[];
+        setBotCandleData(history);
+        
+        const subRequest = { 
+            ticks_history: symbol, 
+            style: 'candles', 
+            granularity: 60, // 1 minute
+            subscribe: 1, 
+            end: "latest", 
+            count: 1, 
+            adjust_start_time: 1 
+        };
+        const subResponse: any = await makeRequest(subRequest);
+        if (subResponse.subscription?.id) {
+            botSubscriptionIdRef.current = subResponse.subscription.id;
+        }
+    } catch (error: any) {
+        console.error(`[Bot Data] Error for ${symbol}:`, error);
+    }
+  }, [getHistoricalData, makeRequest]);
 
 
   const connect = useCallback(() => {
@@ -492,7 +532,6 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
 
                                 return { ...op, status: newStatus, result: contract.profit, exitPrice: exitPrice, exitTimestamp: sellTime };
                             } else {
-                                // Live profit update for pending multiplier
                                 return { ...op, result: contract.profit };
                             }
                         }
@@ -521,7 +560,11 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
                 case 'ohlc':
                 case 'candles':
                     const candleData = response.ohlc || (response.candles && response.candles[0]);
-                    if (chartTypeRef.current === 'Candle' && candleData && candleData.symbol === activeSymbol) {
+                    
+                    const isForUI = response.subscription?.id === activeSubscriptionIdRef.current;
+                    const isForBot = response.subscription?.id === botSubscriptionIdRef.current;
+
+                    if (candleData && candleData.symbol === activeSymbol) {
                         const newCandle: CandleData = {
                             epoch: candleData.open_time || candleData.epoch,
                             open: parseFloat(candleData.open),
@@ -529,7 +572,14 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
                             low: parseFloat(candleData.low),
                             close: parseFloat(candleData.close),
                         };
-                        setChartData(prev => addDataPoint(prev, newCandle));
+
+                        if (isForUI && chartTypeRef.current === 'Candle') {
+                            setChartData(prev => addDataPoint(prev, newCandle));
+                        }
+                        if (isForBot) {
+                            setBotCandleData(prev => addDataPoint(prev, newCandle) as CandleData[]);
+                        }
+                        
                         const newTickFromCandle: TickData = {
                             epoch: newCandle.epoch,
                             price: newCandle.close,
@@ -650,8 +700,9 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
   useEffect(() => {
     if (isConnected && activeSymbol) {
       subscribeToMarketData(activeSymbol);
+      subscribeToBotData(activeSymbol);
     }
-  }, [isConnected, chartType, timePeriod, activeSymbol, subscribeToMarketData]);
+  }, [isConnected, chartType, timePeriod, activeSymbol, subscribeToMarketData, subscribeToBotData]);
 
   const setAccountType = useCallback((type: AccountType) => {
     try {
@@ -741,6 +792,7 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
     activeSymbol,
     setActiveSymbol,
     chartData,
+    botCandleData,
     priceTicks,
     isChartLoading,
     chartError,
