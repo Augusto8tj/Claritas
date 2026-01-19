@@ -80,6 +80,11 @@ const navItems = [
     icon: TestTube,
     label: "Backtesting",
   },
+  {
+    href: "/deriv-trader-multipliers",
+    icon: Layers,
+    label: "Deriv Multipliers",
+  },
    {
     href: "/audit-log",
     icon: Archive,
@@ -231,7 +236,7 @@ function DesktopSidebar() {
     )
 }
 
-function SidebarContent({children}: {children: React.ReactNode}) {
+function SidebarContent({children}: {children: React.Node}) {
   return (
     <div
       data-sidebar="content"
@@ -245,7 +250,7 @@ function SidebarContent({children}: {children: React.ReactNode}) {
 }
 
 
-export function AppLayout({ children }: { children: React.ReactNode }) {
+export function AppLayout({ children }: { children: React.Node }) {
   const { user } = useAuth();
   const pathname = usePathname();
   const isMobile = useIsMobile();
