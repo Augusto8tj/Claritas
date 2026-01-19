@@ -30,7 +30,7 @@ export function useMultipliersCouncil(
     const [botStatus, setBotStatus] = useState<BotStatus>('PAUSED');
     const [trend, setTrend] = useState<TrendDirection>('NONE');
     
-    const [calculatedRisk, setCalculatedRisk] = useState({ stake: 0, stopLoss: 0, takeProfit: 0 });
+    const [calculatedRisk, setCalculatedRisk] = useState({ stake: 0.35, stopLoss: 0.35, takeProfit: 0.70 });
 
     const lastRsiRef = useRef<number | null>(null);
     const executionRef = useRef({ isExecuting: false });
@@ -83,23 +83,25 @@ export function useMultipliersCouncil(
                 // 3. Gestão de Risco e Tamanho da Posição
                 const riskPercentage = 0.01; // 1% da banca
                 const stake = Math.max(0.35, accountBalance * riskPercentage);
-                const stopLoss = stake; // Arrisca 100% do stake para este trade
                 const takeProfit = stake * 2; // Relação R:R de 1:2
                 
-                setCalculatedRisk({ stake, stopLoss, takeProfit });
+                // Para a UI, mostramos o risco como sendo o stake total.
+                setCalculatedRisk({ stake, stopLoss: stake, takeProfit });
 
-                toast({
-                    title: `🤖 Piloto Automático: Sinal ${signal.toUpperCase()}!`,
-                    description: `Tendência ${currentTrend} confirmada com cruzamento do RSI. Executando ordem para ${activeSymbol}.`,
-                });
+                setTimeout(() => {
+                    toast({
+                        title: `🤖 Piloto Automático: Sinal ${signal!.toUpperCase()}!`,
+                        description: `Tendência ${currentTrend} confirmada com cruzamento do RSI. Executando ordem para ${activeSymbol}.`,
+                    });
+                }, 0);
                 
                 const result = await executeTrade(
                     signal === 'up' ? 'MULTUP' : 'MULTDOWN',
                     stake,
                     activeSymbol,
-                    form.getValues('multiplier'), // Usa o multiplicador da UI
+                    form.getValues('multiplier'),
                     takeProfit,
-                    stopLoss,
+                    undefined, // Não definimos stop_loss, o risco máximo é o stake.
                     'Piloto'
                 );
 
@@ -130,16 +132,17 @@ export function useMultipliersCouncil(
             const openOps = operationsLog.filter(op => openPositionsRef.current.has(op.id) && op.status === 'pending');
 
             openOps.forEach(op => {
-                const sl = calculatedRisk.stopLoss; 
                 const tp = calculatedRisk.takeProfit;
                 const currentProfit = op.result || 0;
 
                 // Trailing Take Profit: Se atingir 50% do alvo, encerra para travar o lucro.
                 if (tp > 0 && currentProfit >= tp * 0.5) {
-                    toast({
-                        title: "📈 Trailing Take Profit Acionado!",
-                        description: `Garantindo lucro de $${currentProfit.toFixed(2)} no contrato #${op.id}.`
-                    });
+                    setTimeout(() => {
+                        toast({
+                            title: "📈 Trailing Take Profit Acionado!",
+                            description: `Garantindo lucro de $${currentProfit.toFixed(2)} no contrato #${op.id}.`
+                        });
+                    }, 0);
                     sellContract(op.id);
                     openPositionsRef.current.delete(op.id);
                 }
@@ -156,6 +159,7 @@ export function useMultipliersCouncil(
         const newState = !isAutopilotOn;
         setIsAutopilotOn(newState);
         
+        // A notificação agora é disparada de forma síncrona
         toast({
             title: `Piloto Automático ${newState ? 'Ativado' : 'Desativado'}`,
             description: `O sistema ${newState ? 'começará a' : 'parou de'} procurar oportunidades.`,
