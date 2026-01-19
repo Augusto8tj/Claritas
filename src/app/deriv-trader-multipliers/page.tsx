@@ -125,12 +125,14 @@ const MultipliersTraderCore = () => {
                     <MultipliersAutopilotInterface {...multipliersCouncil} />
                 </div>
             </div>
-            <OpenPositions 
-                title="Posições Abertas (Multiplicadores)"
-                description="Contratos de multiplicadores atualmente ativos."
-                operations={operationsLog}
-            />
-             <OperationsLogMultipliers operations={operationsLog} sellContract={sellContract} />
+             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <OpenPositions 
+                    title="Posições Abertas (Multiplicadores)"
+                    description="Contratos de multiplicadores atualmente ativos."
+                    operations={operationsLog}
+                />
+                <OperationsLogMultipliers operations={operationsLog} sellContract={sellContract} />
+            </div>
         </div>
     );
 };
@@ -143,7 +145,6 @@ const PageContent = () => {
             stake: 1.0,
             multiplier: 50,
             takeProfit: 0.10,
-            stopLoss: 0.10,
             cancellation: 'none',
         },
     });
