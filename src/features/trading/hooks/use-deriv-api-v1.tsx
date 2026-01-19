@@ -458,6 +458,7 @@ const subscribeToMarketData = useCallback(async (symbol: string) => {
             stake: sanitizedStake,
             symbol,
             expirationTime: expirationTimeMs,
+            contractType: 'option'
         });
 
         return {
@@ -626,6 +627,7 @@ const subscribeToMarketData = useCallback(async (symbol: string) => {
                                         stake: newOperation.stake,
                                         symbol: newOperation.asset,
                                         expirationTime: newOperation.expirationTime,
+                                        contractType: contract.contract_type?.startsWith('MULT') ? 'multiplier' : 'option'
                                     });
                                 }
                     

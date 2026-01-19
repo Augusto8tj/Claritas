@@ -176,7 +176,7 @@ export const DerivApiProviderV3 = ({ children }: { children: ReactNode }) => {
   const [connectionError, setConnectionError] = useState<string | null>(null);
   const promisesRef = useRef<Map<string, PromiseCallbacks>>(new Map());
   const [triggerReconnect, setTriggerReconnect] = useState(0);
-
+  
   useEffect(() => {
     chartTypeRef.current = chartType;
   }, [chartType]);
@@ -397,6 +397,7 @@ export const DerivApiProviderV3 = ({ children }: { children: ReactNode }) => {
               stake: sanitizedStake,
               symbol,
               expirationTime: expirationTimeMs,
+              contractType: 'option'
           });
 
           return {
@@ -469,7 +470,7 @@ export const DerivApiProviderV3 = ({ children }: { children: ReactNode }) => {
           try {
               const response = JSON.parse(event.data);
               const reqId = response.req_id;
-              
+    
               if (reqId && promisesRef.current.has(String(reqId))) {
                   const promise = promisesRef.current.get(String(reqId));
                   if (promise) {
@@ -579,6 +580,7 @@ export const DerivApiProviderV3 = ({ children }: { children: ReactNode }) => {
                                     stake: newOperation.stake,
                                     symbol: newOperation.asset,
                                     expirationTime: newOperation.expirationTime,
+                                    contractType: contract.contract_type?.startsWith('MULT') ? 'multiplier' : 'option'
                                 });
                     
                                 return [newOperation, ...prevLog];

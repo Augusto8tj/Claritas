@@ -469,6 +469,8 @@ export function MarketChart({
     const entryX = getX(entryDataIndex);
     const entryY = getY(ann.entryPrice);
     
+    const isMultiplier = ann.contractType === 'multiplier';
+
     let annColor: string;
     if (ann.status === 'won') {
         annColor = colors.bull;
@@ -479,21 +481,45 @@ export function MarketChart({
     }
     
     ctx.save();
-    ctx.beginPath();
-    ctx.arc(entryX, entryY, 10, 0, 2 * Math.PI);
-    ctx.fillStyle = colors.bg;
-    ctx.fill();
-    ctx.strokeStyle = 'white';
-    ctx.lineWidth = 3;
-    ctx.stroke();
-    ctx.beginPath();
-    ctx.arc(entryX, entryY, 8, 0, 2 * Math.PI);
-    ctx.fillStyle = annColor;
-    ctx.fill();
-    ctx.beginPath();
-    ctx.arc(entryX, entryY, 6, 0, 2 * Math.PI);
-    ctx.fillStyle = annColor;
-    ctx.fill();
+    
+    if (isMultiplier) {
+        // Draw diamond for multiplier
+        ctx.beginPath();
+        ctx.moveTo(entryX, entryY - 10);
+        ctx.lineTo(entryX + 10, entryY);
+        ctx.lineTo(entryX, entryY + 10);
+        ctx.lineTo(entryX - 10, entryY);
+        ctx.closePath();
+        ctx.fillStyle = colors.bg;
+        ctx.fill();
+        ctx.strokeStyle = 'white';
+        ctx.lineWidth = 3;
+        ctx.stroke();
+
+        ctx.beginPath();
+        ctx.moveTo(entryX, entryY - 8);
+        ctx.lineTo(entryX + 8, entryY);
+        ctx.lineTo(entryX, entryY + 8);
+        ctx.lineTo(entryX - 8, entryY);
+        ctx.closePath();
+        ctx.fillStyle = annColor;
+        ctx.fill();
+    } else {
+        // Draw circle (original logic for options)
+        ctx.beginPath();
+        ctx.arc(entryX, entryY, 10, 0, 2 * Math.PI);
+        ctx.fillStyle = colors.bg;
+        ctx.fill();
+        ctx.strokeStyle = 'white';
+        ctx.lineWidth = 3;
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.arc(entryX, entryY, 8, 0, 2 * Math.PI);
+        ctx.fillStyle = annColor;
+        ctx.fill();
+    }
+    
+    // Draw arrow (common for both)
     ctx.strokeStyle = 'white';
     ctx.lineWidth = 2.5;
     ctx.lineCap = 'round';
@@ -692,7 +718,11 @@ export function MarketChart({
         if (dataIndex >= 0 && dataIndex < visibleData.length) {
             const dataPoint = visibleData[dataIndex];
             const date = new Date(dataPoint.epoch * 1000);
-            const timeString = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+            const timeString = date.toLocaleTimeString([], {
+              hour: '2-digit',
+              minute: '2-digit',
+              second: '2-digit',
+            });
 
             const textWidth = ctx.measureText(timeString).width;
             ctx.fillStyle = colors.priceBg;

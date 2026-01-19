@@ -82,6 +82,7 @@ export interface TradeAnnotation {
   profit?: number;
   symbol: string;
   expirationTime?: number;
+  contractType?: 'option' | 'multiplier';
 }
 
 export type OperationStatus = 'pending' | 'won' | 'lost';

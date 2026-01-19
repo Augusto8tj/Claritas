@@ -197,7 +197,7 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
     setIsLoading(false);
   }, []);
 
-    const addTradeAnnotation = useCallback((annotation: Omit<TradeAnnotation, 'id'>) => {
+  const addTradeAnnotation = useCallback((annotation: Omit<TradeAnnotation, 'id'>) => {
     const newAnnotation: TradeAnnotation = {
       ...annotation,
       id: `annotation-${annotation.contractId}`,
@@ -220,7 +220,7 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
         if (op.status === 'pending' && op.expirationTime && now > op.expirationTime) {
           hasChanges = true;
           updateTradeAnnotation(String(op.id), { status: 'lost', profit: -op.stake });
-           // CORREÇÃO: Adicionar o exitTimestamp na expiração por timer
+          // CORREÇÃO: Adicionar o exitTimestamp na expiração por timer
           return { ...op, status: 'lost' as const, result: -op.stake, exitTimestamp: new Date().toISOString() };
         }
         return op;
@@ -397,6 +397,7 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
               stake: sanitizedStake,
               symbol,
               expirationTime: expirationTimeMs,
+              contractType: 'option'
           });
 
           return {
@@ -579,6 +580,7 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
                                     stake: newOperation.stake,
                                     symbol: newOperation.asset,
                                     expirationTime: newOperation.expirationTime,
+                                    contractType: contract.contract_type?.startsWith('MULT') ? 'multiplier' : 'option'
                                 });
 
                                 return [newOperation, ...prevLog];

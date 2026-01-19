@@ -7,7 +7,7 @@ import { createContext, useContext, useState, useEffect, type ReactNode, useCall
 import type { TradeResult } from '@/services/deriv-api-service';
 import { useToast } from '@/hooks/use-toast';
 import type { Operation, OperationInitiator, DurationUnit, ChartType, TimePeriod, ChartData, CandleData, TradeAnnotation, TickData, DurationLimits, Asset } from '@/lib/types';
-import { FirebaseErrorListener } from '@/components/firebase-error-listener';
+import { FirebaseErrorListener } from '@/components/FirebaseErrorListener';
 
 
 const DERIV_DEMO_TOKEN_KEY = 'derivDemoApiToken';
@@ -145,6 +145,7 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
   const [isAssetsLoading, setIsAssetsLoading] = useState(true);
   const { toast } = useToast();
   const [toastQueue, setToastQueue] = useState<any[]>([]);
+  const [tradeAnnotations, setTradeAnnotations] = useState<TradeAnnotation[]>([]);
 
   const [activeSymbol, setActiveSymbol] = useState<string | null>('1HZ75V');
   const [chartData, setChartData] = useState<ChartData[]>([]);
@@ -157,7 +158,6 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
   const [timePeriod, setTimePeriod] = useState<TimePeriod>('5m');
   const activeSubscriptionIdRef = useRef<string | null>(null);
   const botSubscriptionIdRef = useRef<string | null>(null);
-  const [tradeAnnotations, setTradeAnnotations] = useState<TradeAnnotation[]>([]);
   const [dataVersion, setDataVersion] = useState(0); 
   const [durationLimits, setDurationLimits] = useState<DurationLimits | null>(null);
   const [multiplierOptions, setMultiplierOptions] = useState<number[]>([50, 100, 200, 500]);
@@ -364,6 +364,18 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
         };
         setOperationsLog(prevLog => [newOperation, ...prevLog]);
 
+        addTradeAnnotation({
+            contractId: String(buyResult.contract_id),
+            entryTime: purchaseTimeMs / 1000,
+            entryPrice: entryPrice,
+            direction: contractType === 'MULTUP' ? 'rise' : 'fall',
+            status: 'pending',
+            stake: sanitizedStake,
+            symbol,
+            expirationTime: undefined,
+            contractType: 'multiplier'
+        });
+
         return {
           success: true,
           message: `Ordem do tipo "${contractType}" para ${symbol} no valor de ${sanitizedStake} USD executada com sucesso.`,
@@ -375,7 +387,7 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
          const message = error instanceof Error ? error.message : "Um erro desconhecido ocorreu.";
          return { success: false, message };
       }
-  }, [isConnected, makeRequest, priceTicks]);
+  }, [isConnected, makeRequest, priceTicks, addTradeAnnotation]);
 
   const sellContract = useCallback(async (contractId: number): Promise<TradeResult> => {
     if (!wsRef.current || !isConnected) {
@@ -611,6 +623,7 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
                                     stake: newOperation.stake,
                                     symbol: newOperation.asset,
                                     expirationTime: newOperation.expirationTime,
+                                    contractType: contract.contract_type?.startsWith('MULT') ? 'multiplier' : 'option'
                                 });
                             }
 
