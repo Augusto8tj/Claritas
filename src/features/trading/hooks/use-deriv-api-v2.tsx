@@ -549,7 +549,7 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
 
                             } else if (!isSold) {
                                 // ADD NEW EXTERNALLY OPENED OPERATION
-                                const direction = contract.contract_type.includes('CALL') || contract.contract_type.includes('MULTUP') ? 'rise' : 'fall';
+                                const direction = (contract.contract_type || '').includes('CALL') || (contract.contract_type || '').includes('MULTUP') ? 'rise' : 'fall';
                                 const durationInSeconds = contract.date_expiry ? (contract.date_expiry - contract.purchase_time) : 0;
                                 const durationUnit: DurationUnit = 's'; // Safe default
 
@@ -580,7 +580,7 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
                                     stake: newOperation.stake,
                                     symbol: newOperation.asset,
                                     expirationTime: newOperation.expirationTime,
-                                    contractType: contract.contract_type?.startsWith('MULT') ? 'multiplier' : 'option'
+                                    contractType: (contract.contract_type || '').startsWith('MULT') ? 'multiplier' : 'option'
                                 });
 
                                 return [newOperation, ...prevLog];

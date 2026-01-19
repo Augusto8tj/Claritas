@@ -508,22 +508,22 @@ export const DerivApiProviderV3 = ({ children }: { children: ReactNode }) => {
                    case 'proposal_open_contract':
                         const contract = response.proposal_open_contract;
                         if (!contract) return;
-                    
+
                         setOperationsLog(prevLog => {
                             const existingOpIndex = prevLog.findIndex(op => op.id === contract.contract_id);
                             const isSold = contract.is_sold === 1;
-                    
+
                             if (existingOpIndex !== -1) {
                                 // UPDATE EXISTING OPERATION
                                 const updatedLog = [...prevLog];
                                 const op = updatedLog[existingOpIndex];
-                    
+
                                 if (op.status === 'pending') {
                                     if (isSold) {
                                         const newStatus = contract.profit >= 0 ? 'won' : 'lost';
                                         const exitPrice = contract.exit_tick_display_value ? parseFloat(contract.exit_tick_display_value) : contract.sell_spot ? parseFloat(contract.sell_spot) : op.exitPrice;
                                         const sellTime = contract.sell_time ? new Date(contract.sell_time * 1000).toISOString() : new Date().toISOString();
-                    
+
                                         updatedLog[existingOpIndex] = { ...op, status: newStatus, result: contract.profit, exitPrice: exitPrice, exitTimestamp: sellTime };
                                         
                                         updateTradeAnnotation(String(contract.contract_id), { status: newStatus, profit: contract.profit, exitPrice, exitTime: contract.sell_time });
@@ -535,7 +535,7 @@ export const DerivApiProviderV3 = ({ children }: { children: ReactNode }) => {
                                         };
                                         
                                         setToastQueue(prev => [...prev, toastMessage]);
-                    
+
                                         if (wsRef.current?.readyState === WebSocket.OPEN) {
                                             wsRef.current.send(JSON.stringify({"balance": 1}));
                                         }
@@ -546,13 +546,13 @@ export const DerivApiProviderV3 = ({ children }: { children: ReactNode }) => {
                                     }
                                 }
                                 return prevLog;
-                    
+
                             } else if (!isSold) {
                                 // ADD NEW EXTERNALLY OPENED OPERATION
-                                const direction = contract.contract_type.includes('CALL') || contract.contract_type.includes('MULTUP') ? 'rise' : 'fall';
+                                const direction = (contract.contract_type || '').includes('CALL') || (contract.contract_type || '').includes('MULTUP') ? 'rise' : 'fall';
                                 const durationInSeconds = contract.date_expiry ? (contract.date_expiry - contract.purchase_time) : 0;
                                 const durationUnit: DurationUnit = 's'; // Safe default
-                    
+
                                 const newOperation: Operation = {
                                     id: contract.contract_id,
                                     asset: contract.symbol,
@@ -580,9 +580,9 @@ export const DerivApiProviderV3 = ({ children }: { children: ReactNode }) => {
                                     stake: newOperation.stake,
                                     symbol: newOperation.asset,
                                     expirationTime: newOperation.expirationTime,
-                                    contractType: contract.contract_type?.startsWith('MULT') ? 'multiplier' : 'option'
+                                    contractType: (contract.contract_type || '').startsWith('MULT') ? 'multiplier' : 'option'
                                 });
-                    
+
                                 return [newOperation, ...prevLog];
                             }
                             
