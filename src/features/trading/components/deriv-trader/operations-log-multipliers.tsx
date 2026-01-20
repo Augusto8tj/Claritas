@@ -1,3 +1,4 @@
+// src/features/trading/components/deriv-trader/operations-log-multipliers.tsx
 'use client';
 
 import {
@@ -10,10 +11,11 @@ import {
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import type { Operation, OperationInitiator } from "@/lib/types";
-import { ArrowDown, ArrowUp, Bot, User, Users, MoveRight, Clock, XSquare, Loader2, Target, MoveUpRight, ShieldAlert } from "lucide-react";
+import { ArrowDown, ArrowUp, Bot, User, Users, MoveRight, Clock, XSquare, Loader2, Target, MoveUpRight, ShieldAlert, Settings } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Button } from "@/components/ui/button";
+import { ManagePositionDialog } from './manage-position-dialog';
 
 interface OperationsLogMultipliersProps {
   operations: Operation[];
@@ -135,7 +137,7 @@ export default function OperationsLogMultipliers({ operations, sellContract }: O
                                                     )}
                                                 </div>
                                             </div>
-                                            <div className="w-40 flex justify-end">
+                                            <div className="w-48 flex justify-end">
                                                 {op.status === 'pending' ? (
                                                     <div className="flex items-center gap-2">
                                                         <span className={cn(
@@ -144,6 +146,11 @@ export default function OperationsLogMultipliers({ operations, sellContract }: O
                                                         )}>
                                                             {currentProfit.toLocaleString('pt-BR', { style: 'currency', currency: 'USD' })}
                                                         </span>
+                                                        <ManagePositionDialog operation={op}>
+                                                            <Button variant="ghost" size="icon" className="h-8 w-8" disabled={isSelling}>
+                                                                <Settings className="h-4 w-4" />
+                                                            </Button>
+                                                        </ManagePositionDialog>
                                                         <Button
                                                             variant="outline"
                                                             size="sm"

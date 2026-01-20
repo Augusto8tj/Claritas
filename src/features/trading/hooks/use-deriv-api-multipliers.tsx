@@ -86,6 +86,7 @@ interface DerivApiContextType {
     initiator?: OperationInitiator,
   ) => Promise<TradeResult>;
   sellContract: (contractId: number) => Promise<TradeResult>;
+  updateContract: (contractId: number, takeProfit?: number, stopLoss?: number) => Promise<TradeResult>;
   getHistoricalData: (symbol: string, style: 'ticks' | 'candles', count: number, period?: TimePeriod) => Promise<ApiHistoricalData[]>;
   clearActiveContracts: () => void;
   tradeAnnotations: TradeAnnotation[];
@@ -341,30 +342,22 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
       }
 
       const sanitizedStake = parseFloat(stake.toFixed(2));
-
-      // ETAPA 1: Obter proposta de preço limpa (sem TP/SL)
-      const proposalRequest: any = {
-        proposal: 1,
-        amount: sanitizedStake,
-        basis: "stake",
-        contract_type: contractType,
-        currency: "USD",
-        symbol: symbol,
-        multiplier: multiplier,
+      const buyRequest: any = {
+        buy: "1",
+        price: 10000,
+        parameters: {
+            amount: sanitizedStake,
+            basis: "stake",
+            contract_type: contractType,
+            currency: "USD",
+            symbol: symbol,
+            multiplier: multiplier,
+        }
       };
 
-      if (cancellation && cancellation !== 'none') {
-        proposalRequest.cancellation = cancellation;
-      }
-
-      const proposalResponse: any = await makeRequest(proposalRequest);
-      const proposal = proposalResponse.proposal;
-      if (!proposal || !proposal.id) {
-        throw new Error("Falha ao obter uma proposta de negociação da API.");
-      }
-
-      // ETAPA 2: Comprar o contrato usando o ID da proposta (sem TP/SL)
-      const buyRequest: any = { buy: proposal.id, price: proposal.ask_price };
+      if (takeProfit !== undefined) buyRequest.parameters.take_profit = takeProfit;
+      if (stopLoss !== undefined) buyRequest.parameters.stop_loss = stopLoss;
+      if (cancellation && cancellation !== 'none') buyRequest.parameters.cancellation = cancellation;
       
       const buyResponse: any = await makeRequest(buyRequest);
       const buyResult = buyResponse.buy;
@@ -372,23 +365,6 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
 
       if (!contractId) {
         throw new Error("Falha na compra do contrato, ID não retornado.");
-      }
-
-      // ETAPA 3: ATUALIZAR o contrato com TP/SL após a compra bem-sucedida
-      if (takeProfit || stopLoss) {
-        const updateRequest: any = { contract_update: contractId };
-        if (takeProfit) updateRequest.take_profit = takeProfit;
-        if (stopLoss) updateRequest.stop_loss = stopLoss;
-        
-        // Enviar a atualização de forma assíncrona ("fire and forget")
-        makeRequest(updateRequest).catch(err => {
-          console.error(`[Deriv Hook] Falha ao atualizar contrato #${contractId} com TP/SL:`, err);
-          toast({
-            title: "Aviso de Negociação",
-            description: `A posição foi aberta, mas houve uma falha ao definir os limites de Take Profit / Stop Loss.`,
-            variant: "destructive"
-          });
-        });
       }
       
       const latestTick = priceTicks.length > 0 ? priceTicks[priceTicks.length - 1].price : 0;
@@ -441,7 +417,7 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
        const message = error instanceof Error ? error.message : "Um erro desconhecido ocorreu.";
        return { success: false, message };
     }
-  }, [isConnected, makeRequest, priceTicks, addTradeAnnotation, toast, setAndPersistOperationsLog]);
+  }, [isConnected, makeRequest, priceTicks, addTradeAnnotation, setAndPersistOperationsLog]);
 
 
   const sellContract = useCallback(async (contractId: number): Promise<TradeResult> => {
@@ -474,6 +450,64 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
         return { success: false, message };
     }
   }, [isConnected, makeRequest]);
+  
+  const updateContract = useCallback(async (
+    contractId: number,
+    takeProfit?: number,
+    stopLoss?: number
+): Promise<TradeResult> => {
+    if (!wsRef.current || !isConnected) {
+        return { success: false, message: "A conexão com a API da Deriv não está ativa." };
+    }
+
+    try {
+        const updateRequest: any = { contract_update: contractId };
+        let hasUpdate = false;
+
+        // A API da Deriv espera 'null' para remover um limite. 'undefined' não funciona.
+        updateRequest.take_profit = takeProfit !== undefined && takeProfit > 0 ? takeProfit : null;
+        updateRequest.stop_loss = stopLoss !== undefined && stopLoss > 0 ? stopLoss : null;
+        
+        // O pedido só é válido se pelo menos um dos valores for alterado (incluindo para null)
+        const originalContract = operationsLogRef.current.find(op => op.id === contractId);
+        if (!originalContract) return { success: false, message: "Contrato não encontrado no log." };
+        
+        if (updateRequest.take_profit !== originalContract.takeProfit || updateRequest.stop_loss !== originalContract.stopLoss) {
+             hasUpdate = true;
+        }
+
+        if (!hasUpdate) {
+            return { success: true, message: "Nenhuma alteração nos limites de risco foi feita." };
+        }
+
+        const response: any = await makeRequest(updateRequest);
+        const updateResult = response.contract_update;
+
+        if (updateResult) {
+             setAndPersistOperationsLog(prevLog => {
+                const newLog = prevLog.map(op => {
+                    if (op.id === contractId) {
+                        return {
+                            ...op,
+                            takeProfit: updateResult.take_profit?.order_amount,
+                            stopLoss: updateResult.stop_loss?.order_amount,
+                        };
+                    }
+                    return op;
+                });
+                return newLog;
+            });
+            return { success: true, message: `Contrato #${contractId} atualizado com sucesso.` };
+        } else {
+            throw new Error("A resposta da API não continha os dados de atualização esperados.");
+        }
+
+    } catch (error) {
+        console.error("[Deriv Hook] Erro ao atualizar contrato:", error);
+        const message = error instanceof Error ? error.message : "Um erro desconhecido ocorreu.";
+        return { success: false, message };
+    }
+}, [isConnected, makeRequest, setAndPersistOperationsLog]);
   
   const subscribeToMarketData = useCallback(async (symbol: string) => {
     if (wsRef.current?.readyState !== WebSocket.OPEN) return;
@@ -876,6 +910,10 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
 
   // Client-side Trailing Stop and Take Profit/Stop Loss watcher
     useEffect(() => {
+        if (!isConnecting && !isConnected && operationsLogRef.current.some(op => op.status === 'pending')) {
+            return;
+        }
+
         const trailingStopInterval = setInterval(() => {
             const openMultiplierOps = operationsLogRef.current.filter(
                 op => op.status === 'pending' && op.contractType?.startsWith('MULT')
@@ -949,10 +987,10 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
                 setAndPersistOperationsLog(updatedOps);
             }
 
-        }, 2000); // Check every 2 seconds
+        }, 1500); // Check every 1.5 seconds
 
         return () => clearInterval(trailingStopInterval);
-    }, [sellContract, setAndPersistOperationsLog]);
+    }, [sellContract, setAndPersistOperationsLog, isConnected, isConnecting]);
 
 
   const setAccountType = useCallback((type: AccountType) => {
@@ -1054,6 +1092,7 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
     dataVersion,
     executeTrade,
     sellContract,
+    updateContract,
     clearActiveContracts,
     tradeAnnotations,
     durationLimits,
