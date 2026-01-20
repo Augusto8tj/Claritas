@@ -221,7 +221,13 @@ export default function DerivTraderInterfaceMultipliers({ symbol }: DerivTraderI
                         </TooltipProvider>
                       </FormLabel>
                       <FormControl>
-                        <Input type="number" placeholder="Ex: 0.10" {...field} onChange={e => field.onChange(e.target.value ? parseFloat(e.target.value) : undefined)} />
+                        <Input
+                          type="number"
+                          placeholder="Ex: 2.00"
+                          {...field}
+                          value={field.value ?? ''}
+                          onChange={e => field.onChange(e.target.value ? parseFloat(e.target.value) : undefined)}
+                        />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -246,7 +252,13 @@ export default function DerivTraderInterfaceMultipliers({ symbol }: DerivTraderI
                         </TooltipProvider>
                       </FormLabel>
                       <FormControl>
-                        <Input type="number" placeholder="Ex: 0.10" {...field} onChange={e => field.onChange(e.target.value ? parseFloat(e.target.value) : undefined)} />
+                        <Input
+                          type="number"
+                          placeholder="Ex: 1.00"
+                          {...field}
+                          value={field.value ?? ''}
+                          onChange={e => field.onChange(e.target.value ? parseFloat(e.target.value) : undefined)}
+                        />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
