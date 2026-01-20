@@ -599,7 +599,8 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
                             } else if (!isSold) {
                                 // ADD NEW EXTERNALLY OPENED OPERATION
                                 const direction = (contract.contract_type || '').includes('CALL') || (contract.contract_type || '').includes('MULTUP') ? 'rise' : 'fall';
-                                const durationInSeconds = contract.date_expiry ? (contract.date_expiry - contract.purchase_time) : 0;
+                                const purchaseTime = contract.purchase_time || Math.floor(Date.now() / 1000);
+                                const durationInSeconds = contract.date_expiry ? (contract.date_expiry - purchaseTime) : 0;
                                 const durationUnit: DurationUnit = 's'; // Safe default
     
                                 const newOperation: Operation = {
@@ -609,7 +610,7 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
                                     stake: contract.buy_price,
                                     status: 'pending',
                                     result: contract.profit,
-                                    timestamp: new Date(contract.purchase_time * 1000).toISOString(),
+                                    timestamp: new Date(purchaseTime * 1000).toISOString(),
                                     initiator: 'Manual',
                                     entryPrice: parseFloat(contract.entry_spot_display_value || contract.entry_tick_display_value || '0'),
                                     isSellable: contract.is_sellable === 1,
@@ -625,7 +626,7 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
                                 if(typeof addTradeAnnotation === 'function') {
                                     addTradeAnnotation({
                                         contractId: String(newOperation.id),
-                                        entryTime: contract.purchase_time,
+                                        entryTime: purchaseTime,
                                         entryPrice: newOperation.entryPrice!,
                                         direction: newOperation.direction,
                                         status: 'pending',
