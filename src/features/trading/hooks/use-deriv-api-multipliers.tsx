@@ -342,6 +342,7 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
   
         const sanitizedStake = parseFloat(stake.toFixed(2));
   
+        // ETAPA 1: Obter proposta sem parâmetros de risco
         const proposalRequest: any = {
           "proposal": 1,
           "amount": sanitizedStake,
@@ -362,6 +363,7 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
           throw new Error("Falha ao obter uma proposta de negociação da API.");
         }
   
+        // ETAPA 2: Comprar o contrato usando o ID da proposta
         const buyRequest: any = { "buy": proposal.id, "price": proposal.ask_price };
         
         const buyResponse: any = await makeRequest(buyRequest);
@@ -371,12 +373,14 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
         if (!contractId) {
           throw new Error("Falha na compra do contrato, ID não retornado.");
         }
-  
+
+        // ETAPA 3: Atualizar o contrato com TP/SL após a compra
         if (takeProfit || stopLoss) {
           const updateRequest: any = { "contract_update": contractId };
           if (takeProfit) updateRequest.take_profit = takeProfit;
           if (stopLoss) updateRequest.stop_loss = stopLoss;
           
+          // Enviar a atualização de forma assíncrona, não precisamos esperar por ela.
           makeRequest(updateRequest).catch(err => {
             console.error(`[Deriv Hook] Falha ao atualizar contrato #${contractId} com TP/SL:`, err);
             toast({
@@ -603,6 +607,10 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
                     case 'proposal_open_contract':
                         const contract = response.proposal_open_contract;
                         if (!contract) return;
+                        
+                        if (!(contract.contract_type || '').startsWith('MULT')) {
+                            return;
+                        }
     
                         setAndPersistOperationsLog(prevLog => {
                             const existingOpIndex = prevLog.findIndex(op => op.id === contract.contract_id);
@@ -655,7 +663,7 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
     
                             } else if (!isSold) {
                                 // ADD NEW EXTERNALLY OPENED OPERATION
-                                const direction = (contract.contract_type || '').includes('CALL') || (contract.contract_type || '').includes('MULTUP') ? 'rise' : 'fall';
+                                const direction = (contract.contract_type || '').includes('MULTUP') ? 'rise' : 'fall';
                                 const purchaseTime = contract.purchase_time || Math.floor(Date.now() / 1000);
                                 const purchaseTimeMs = purchaseTime * 1000;
                                 const durationInSeconds = contract.date_expiry ? (contract.date_expiry - purchaseTime) : 0;
@@ -804,6 +812,7 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
                 setIsConnected(false);
                 setIsConnecting(false);
                 setIsAssetsLoading(false);
+                setAccountBalance({ balance: null, currency: null, loading: false });
                 if (ws.readyState === WebSocket.OPEN) ws.close();
             }
         };

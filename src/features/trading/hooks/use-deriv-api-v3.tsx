@@ -509,6 +509,10 @@ export const DerivApiProviderV3 = ({ children }: { children: ReactNode }) => {
                         const contract = response.proposal_open_contract;
                         if (!contract) return;
 
+                        if ((contract.contract_type || '').startsWith('MULT')) {
+                          return;
+                        }
+
                         setOperationsLog(prevLog => {
                             const existingOpIndex = prevLog.findIndex(op => op.id === contract.contract_id);
                             const isSold = contract.is_sold === 1;
@@ -549,7 +553,7 @@ export const DerivApiProviderV3 = ({ children }: { children: ReactNode }) => {
 
                             } else if (!isSold) {
                                 // ADD NEW EXTERNALLY OPENED OPERATION
-                                const direction = (contract.contract_type || '').includes('CALL') || (contract.contract_type || '').includes('MULTUP') ? 'rise' : 'fall';
+                                const direction = (contract.contract_type || '').includes('CALL') ? 'rise' : 'fall';
                                 const purchaseTime = contract.purchase_time || Math.floor(Date.now() / 1000);
                                 const durationInSeconds = contract.date_expiry ? (contract.date_expiry - purchaseTime) : 0;
                                 const durationUnit: DurationUnit = 's'; // Safe default
