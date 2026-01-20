@@ -1,4 +1,3 @@
-// src/features/trading/components/deriv-trader/operations-log-multipliers.tsx
 'use client';
 
 import {
@@ -11,7 +10,7 @@ import {
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import type { Operation, OperationInitiator } from "@/lib/types";
-import { ArrowDown, ArrowUp, Bot, User, Users, MoveRight, Clock, XSquare, Loader2, Target, MoveUpRight } from "lucide-react";
+import { ArrowDown, ArrowUp, Bot, User, Users, MoveRight, Clock, XSquare, Loader2, Target, MoveUpRight, ShieldAlert } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Button } from "@/components/ui/button";
@@ -127,6 +126,7 @@ export default function OperationsLogMultipliers({ operations, sellContract }: O
                                                 <div className="text-muted-foreground font-mono col-span-2 md:col-span-1">
                                                     <p>Entrada: @{op.entryPrice?.toFixed(4) || '...'}</p>
                                                      {op.takeProfit && <p className="text-green-600 flex items-center gap-1"><Target className="h-3 w-3" />Alvo: ${op.takeProfit.toFixed(2)}</p>}
+                                                     {op.stopLoss && <p className="text-red-600 flex items-center gap-1"><ShieldAlert className="h-3 w-3" />Stop: ${op.stopLoss.toFixed(2)}</p>}
                                                     {op.exitPrice && <p>Saída: @{op.exitPrice?.toFixed(4) || '...'}</p>}
                                                     {isAutopilotTrade && op.status === 'pending' &&
                                                         <p className="text-blue-500 flex items-center gap-1"><MoveUpRight className="h-3 w-3" />Stop Móvel Ativo</p>
