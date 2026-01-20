@@ -226,6 +226,5 @@ export function useMultipliersCouncil(
         botStatus,
         trend,
         calculatedRisk,
-        indicators,
     };
 }
