@@ -11,7 +11,7 @@ import {
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import type { Operation, OperationInitiator } from "@/lib/types";
-import { ArrowDown, ArrowUp, Bot, User, Users, MoveRight, Clock, XSquare, Loader2, Target } from "lucide-react";
+import { ArrowDown, ArrowUp, Bot, User, Users, MoveRight, Clock, XSquare, Loader2, Target, MoveUpRight } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Button } from "@/components/ui/button";
@@ -94,7 +94,9 @@ export default function OperationsLogMultipliers({ operations, sellContract }: O
                                     const isWinning = currentProfit >= 0;
                                     const isSelling = sellingContractId === op.id;
                                     
-                                    const direction = op.contractType === 'MULTUP' ? 'rise' : 'fall';
+                                    const direction = (op.contractType || '').includes('MULTUP') ? 'rise' : 'fall';
+                                    const isAutopilotTrade = op.initiator === 'Piloto';
+
 
                                     return (
                                         <div key={op.id} className="flex items-center gap-4">
@@ -126,6 +128,9 @@ export default function OperationsLogMultipliers({ operations, sellContract }: O
                                                     <p>Entrada: @{op.entryPrice?.toFixed(4) || '...'}</p>
                                                      {op.takeProfit && <p className="text-green-600 flex items-center gap-1"><Target className="h-3 w-3" />Alvo: ${op.takeProfit.toFixed(2)}</p>}
                                                     {op.exitPrice && <p>Saída: @{op.exitPrice?.toFixed(4) || '...'}</p>}
+                                                    {isAutopilotTrade && op.status === 'pending' &&
+                                                        <p className="text-blue-500 flex items-center gap-1"><MoveUpRight className="h-3 w-3" />Stop Móvel Ativo</p>
+                                                    }
                                                 </div>
                                             </div>
                                             <div className="w-40 flex justify-end">

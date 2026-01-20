@@ -125,7 +125,7 @@ export function useMultipliersCouncil(
                     activeSymbol,
                     form.getValues('multiplier'),
                     takeProfit,
-                    undefined, // Stop-loss é o próprio stake
+                    stake, // Stop-loss é o próprio stake
                     undefined,
                     'Piloto'
                 );
@@ -169,7 +169,7 @@ export function useMultipliersCouncil(
                 }
 
                 // Define a trailing distance, e.g., 50% of the initial take profit target.
-                const takeProfitTarget = calculatedRisk.takeProfit; // This comes from the state set on trade execution
+                const takeProfitTarget = op.takeProfit || (op.stake * 2);
                 const trailingDistance = takeProfitTarget * 0.5; // Trail by 50% of the original TP target
 
                 // Check if trailing stop is hit
@@ -193,7 +193,7 @@ export function useMultipliersCouncil(
         const intervalId = setInterval(checkTrailingStops, 2000); // Check every 2 seconds
         return () => clearInterval(intervalId);
 
-    }, [isAutopilotOn, operationsLog, calculatedRisk, sellContract, toast]);
+    }, [isAutopilotOn, operationsLog, sellContract, toast]);
 
 
     const toggleAutopilot = useCallback(() => {
