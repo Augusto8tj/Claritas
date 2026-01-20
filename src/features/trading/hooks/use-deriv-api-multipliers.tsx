@@ -41,6 +41,7 @@ export type ApiHistoricalData = {
     high?: number;
     low?: number;
     close?: number;
+    volume?: number;
 };
 
 interface DerivApiContextType {
@@ -123,15 +124,19 @@ const getGranularityForTimePeriod = (timePeriod: TimePeriod): number => {
 
 const MAX_DATA_POINTS = 5000;
 
+const isCandle = (d: ChartData): d is CandleData => d != null && 'close' in d;
+
 const addDataPoint = (prevData: ChartData[], newPoint: ChartData): ChartData[] => {
     let data = [...prevData];
-    if (data.length > 0 && data[data.length - 1].epoch === newPoint.epoch) {
+    // Apenas substitui o último ponto se for uma VELA com a mesma época.
+    // Para ticks, sempre adiciona.
+    if (data.length > 0 && isCandle(newPoint) && data[data.length - 1].epoch === newPoint.epoch) {
         data[data.length - 1] = newPoint;
         return data;
     }
     data.push(newPoint);
     if (data.length > MAX_DATA_POINTS) {
-        return data.slice(1);
+        return data.slice(data.length - MAX_DATA_POINTS);
     }
     return data;
 };
@@ -312,10 +317,11 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
           if (response.candles) {
               return response.candles.map((candle: any) => ({
                   epoch: candle.epoch,
-                  open: candle.open,
-                  high: candle.high,
-                  low: candle.low,
-                  close: candle.close,
+                  open: parseFloat(candle.open),
+                  high: parseFloat(candle.high),
+                  low: parseFloat(candle.low),
+                  close: parseFloat(candle.close),
+                  volume: candle.tick_count || 1,
               }));
           }
           
@@ -326,131 +332,6 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
       }
   }, [makeRequest]);
 
-  const executeTrade = useCallback(async (
-    contractType: string,
-    stake: number,
-    symbol: string,
-    multiplier: number,
-    takeProfit?: number,
-    stopLoss?: number,
-    cancellation?: string,
-    initiator: OperationInitiator = 'Manual'
-  ): Promise<TradeResult> => {
-    try {
-      if (!wsRef.current || !isConnected) {
-        throw new Error("A conexão com a API da Deriv não está ativa.");
-      }
-
-      const sanitizedStake = parseFloat(stake.toFixed(2));
-      const buyRequest: any = {
-        buy: "1",
-        price: 10000,
-        parameters: {
-            amount: sanitizedStake,
-            basis: "stake",
-            contract_type: contractType,
-            currency: "USD",
-            symbol: symbol,
-            multiplier: multiplier,
-        }
-      };
-
-      if (takeProfit !== undefined) buyRequest.parameters.take_profit = takeProfit;
-      if (stopLoss !== undefined) buyRequest.parameters.stop_loss = stopLoss;
-      if (cancellation && cancellation !== 'none') buyRequest.parameters.cancellation = cancellation;
-      
-      const buyResponse: any = await makeRequest(buyRequest);
-      const buyResult = buyResponse.buy;
-      const contractId = buyResult.contract_id;
-
-      if (!contractId) {
-        throw new Error("Falha na compra do contrato, ID não retornado.");
-      }
-      
-      const latestTick = priceTicks.length > 0 ? priceTicks[priceTicks.length - 1].price : 0;
-      const entryPrice = buyResult.entry_tick_display_value 
-        ? parseFloat(buyResult.entry_tick_display_value) 
-        : (buyResult.entry_spot_display_value ? parseFloat(buyResult.entry_spot_display_value) : latestTick);
-
-      const purchaseTime = buyResult.purchase_time || Math.floor(Date.now() / 1000);
-      const purchaseTimeMs = purchaseTime * 1000;
-
-      const newOperation: Operation = {
-          id: contractId,
-          asset: symbol,
-          direction: contractType === 'MULTUP' ? 'rise' : 'fall',
-          stake: sanitizedStake,
-          status: 'pending',
-          timestamp: new Date(purchaseTimeMs).toISOString(),
-          initiator,
-          entryPrice: entryPrice,
-          isSellable: true,
-          contractType,
-          multiplier,
-          duration: 0, 
-          durationUnit: 's', 
-          takeProfit: takeProfit,
-          stopLoss: stopLoss,
-      };
-      setAndPersistOperationsLog(prevLog => [newOperation, ...prevLog]);
-
-      addTradeAnnotation({
-          contractId: String(contractId),
-          entryTime: purchaseTime,
-          entryPrice: entryPrice,
-          direction: contractType === 'MULTUP' ? 'rise' : 'fall',
-          status: 'pending',
-          stake: sanitizedStake,
-          symbol,
-          expirationTime: undefined,
-          contractType: 'multiplier'
-      });
-
-      return {
-        success: true,
-        message: `Ordem do tipo "${contractType}" para ${symbol} no valor de ${sanitizedStake} USD executada com sucesso.`,
-        contractId: contractId,
-        entryPrice,
-      };
-    } catch (error) {
-       console.error("[Deriv Hook] Erro durante a negociação de Multiplicadores:", error);
-       const message = error instanceof Error ? error.message : "Um erro desconhecido ocorreu.";
-       return { success: false, message };
-    }
-  }, [isConnected, makeRequest, priceTicks, addTradeAnnotation, setAndPersistOperationsLog]);
-
-
-  const sellContract = useCallback(async (contractId: number): Promise<TradeResult> => {
-    if (!wsRef.current || !isConnected) {
-        return { success: false, message: "A conexão com a API da Deriv não está ativa." };
-    }
-    
-    if (sellingContractsRef.current.has(contractId)) {
-        return { success: false, message: `A venda do contrato #${contractId} já está em andamento.` };
-    }
-
-    try {
-        sellingContractsRef.current.add(contractId);
-        const sellResponse: any = await makeRequest({ 
-            "sell": contractId,
-            "price": 0,
-        });
-
-        const sellResult = sellResponse.sell;
-        if (sellResult) {
-            return { success: true, message: `Ordem de venda para o contrato ${contractId} enviada.` };
-        } else {
-            sellingContractsRef.current.delete(contractId);
-            throw new Error("A resposta da API não continha os dados de venda esperados.");
-        }
-    } catch (error) {
-        console.error("[Deriv Hook] Erro ao vender o contrato de multiplicador:", error);
-        sellingContractsRef.current.delete(contractId);
-        const message = error instanceof Error ? error.message : "Um erro desconhecido ocorreu ao vender o contrato.";
-        return { success: false, message };
-    }
-  }, [isConnected, makeRequest]);
-  
   const updateContract = useCallback(async (
     contractId: number,
     takeProfit?: number,
@@ -464,11 +345,9 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
         const updateRequest: any = { contract_update: contractId };
         let hasUpdate = false;
 
-        // A API da Deriv espera 'null' para remover um limite. 'undefined' não funciona.
         updateRequest.take_profit = takeProfit !== undefined && takeProfit > 0 ? takeProfit : null;
         updateRequest.stop_loss = stopLoss !== undefined && stopLoss > 0 ? stopLoss : null;
         
-        // O pedido só é válido se pelo menos um dos valores for alterado (incluindo para null)
         const originalContract = operationsLogRef.current.find(op => op.id === contractId);
         if (!originalContract) return { success: false, message: "Contrato não encontrado no log." };
         
@@ -508,6 +387,150 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
         return { success: false, message };
     }
 }, [isConnected, makeRequest, setAndPersistOperationsLog]);
+  
+  const executeTrade = useCallback(async (
+    contractType: string,
+    stake: number,
+    symbol: string,
+    multiplier: number,
+    takeProfit?: number,
+    stopLoss?: number,
+    cancellation?: string,
+    initiator: OperationInitiator = 'Manual'
+  ): Promise<TradeResult> => {
+    try {
+      if (!wsRef.current || !isConnected) {
+        throw new Error("A conexão com a API da Deriv não está ativa.");
+      }
+
+      const sanitizedStake = parseFloat(stake.toFixed(2));
+
+      // PASSO 1: Criar o pedido de compra LIMPO, sem take_profit/stop_loss
+      const buyRequest: any = {
+        buy: "1",
+        price: 10000, 
+        parameters: {
+            amount: sanitizedStake,
+            basis: "stake",
+            contract_type: contractType,
+            currency: "USD",
+            symbol: symbol,
+            multiplier: multiplier,
+        }
+      };
+      
+      if (cancellation && cancellation !== 'none') {
+        buyRequest.parameters.cancellation = cancellation;
+      }
+
+      // PASSO 2: Executar a compra
+      const buyResponse: any = await makeRequest(buyRequest);
+      const buyResult = buyResponse.buy;
+      const contractId = buyResult.contract_id;
+
+      if (!contractId) {
+        throw new Error("Falha na compra do contrato, ID não retornado.");
+      }
+
+      // PASSO 3: APÓS a compra, se houver limites de risco, enviar o pedido de atualização
+      if (takeProfit !== undefined || stopLoss !== undefined) {
+        setTimeout(async () => {
+          try {
+            await updateContract(contractId, takeProfit, stopLoss);
+          } catch (error) {
+            console.warn('Falha ao definir limites de risco automaticamente:', error);
+            setToastQueue(prev => [...prev, {
+              title: 'Aviso',
+              description: 'A posição foi aberta, mas os limites de risco não foram aplicados. Defina-os manualmente.',
+              variant: 'default',
+            }]);
+          }
+        }, 500); // 500ms de delay
+      }
+      
+      const latestTick = priceTicks.length > 0 ? priceTicks[priceTicks.length - 1].price : 0;
+      const entryPrice = buyResult.entry_tick_display_value 
+        ? parseFloat(buyResult.entry_tick_display_value) 
+        : (buyResult.entry_spot_display_value ? parseFloat(buyResult.entry_spot_display_value) : latestTick);
+
+      const purchaseTime = buyResult.purchase_time || Math.floor(Date.now() / 1000);
+      const purchaseTimeMs = purchaseTime * 1000;
+
+      const newOperation: Operation = {
+          id: contractId,
+          asset: symbol,
+          direction: contractType === 'MULTUP' ? 'rise' : 'fall',
+          stake: sanitizedStake,
+          status: 'pending',
+          timestamp: new Date(purchaseTimeMs).toISOString(),
+          initiator,
+          entryPrice: entryPrice,
+          isSellable: true,
+          contractType,
+          multiplier,
+          duration: 0, 
+          durationUnit: 's', 
+          takeProfit: takeProfit, // Guardamos o valor alvo na nossa UI
+          stopLoss: stopLoss,     // Guardamos o valor alvo na nossa UI
+      };
+      setAndPersistOperationsLog(prevLog => [newOperation, ...prevLog]);
+
+      addTradeAnnotation({
+          contractId: String(contractId),
+          entryTime: purchaseTime,
+          entryPrice: entryPrice,
+          direction: contractType === 'MULTUP' ? 'rise' : 'fall',
+          status: 'pending',
+          stake: sanitizedStake,
+          symbol,
+          expirationTime: undefined,
+          contractType: 'multiplier'
+      });
+
+      return {
+        success: true,
+        message: `Ordem executada para ${symbol}. Limites de risco estão a ser definidos.`,
+        contractId: contractId,
+        entryPrice,
+      };
+    } catch (error) {
+       console.error("[Deriv Hook] Erro durante a negociação de Multiplicadores:", error);
+       const message = error instanceof Error ? error.message : "Um erro desconhecido ocorreu.";
+       return { success: false, message };
+    }
+  }, [isConnected, makeRequest, priceTicks, addTradeAnnotation, setAndPersistOperationsLog, updateContract, setToastQueue]);
+
+
+  const sellContract = useCallback(async (contractId: number): Promise<TradeResult> => {
+    if (!wsRef.current || !isConnected) {
+        return { success: false, message: "A conexão com a API da Deriv não está ativa." };
+    }
+    
+    if (sellingContractsRef.current.has(contractId)) {
+        return { success: false, message: `A venda do contrato #${contractId} já está em andamento.` };
+    }
+
+    try {
+        sellingContractsRef.current.add(contractId);
+        const sellResponse: any = await makeRequest({ 
+            "sell": contractId,
+            "price": 0,
+        });
+
+        const sellResult = sellResponse.sell;
+        if (sellResult) {
+            return { success: true, message: `Ordem de venda para o contrato ${contractId} enviada.` };
+        } else {
+            sellingContractsRef.current.delete(contractId);
+            throw new Error("A resposta da API não continha os dados de venda esperados.");
+        }
+    } catch (error) {
+        console.error("[Deriv Hook] Erro ao vender o contrato de multiplicador:", error);
+        sellingContractsRef.current.delete(contractId);
+        const message = error instanceof Error ? error.message : "Um erro desconhecido ocorreu ao vender o contrato.";
+        return { success: false, message };
+    }
+  }, [isConnected, makeRequest]);
   
   const subscribeToMarketData = useCallback(async (symbol: string) => {
     if (wsRef.current?.readyState !== WebSocket.OPEN) return;
@@ -753,7 +776,7 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
                             setPriceTicks(prev => {
                                 const newTicks = [...prev, newTick];
                                  if (newTicks.length > MAX_DATA_POINTS) {
-                                    return newTicks.slice(1);
+                                    return newTicks.slice(newTicks.length - MAX_DATA_POINTS);
                                 }
                                 return newTicks;
                             });
@@ -775,6 +798,7 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
                                 high: parseFloat(candleData.high),
                                 low: parseFloat(candleData.low),
                                 close: parseFloat(candleData.close),
+                                volume: candleData.tick_count || 1, // Adiciona volume padrão
                             };
     
                             if (isForUI && chartTypeRef.current === 'Candle') {
@@ -791,7 +815,7 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
                             setPriceTicks(prev => {
                                 const newTicks = [...prev, newTickFromCandle];
                                 if (newTicks.length > MAX_DATA_POINTS) {
-                                    return newTicks.slice(1);
+                                    return newTicks.slice(newTicks.length - MAX_DATA_POINTS);
                                 }
                                 return newTicks;
                             });
@@ -846,7 +870,6 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
                 setIsConnected(false);
                 setIsConnecting(false);
                 setIsAssetsLoading(false);
-                setAccountBalance({ balance: null, currency: null, loading: false });
                 if (ws.readyState === WebSocket.OPEN) ws.close();
             }
         };
@@ -873,20 +896,8 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
           wsRef.current = null;
         };
       
-        ws.onerror = (error) => {
-          console.error('[Deriv WS] WebSocket error:', error);
-          if (promisesRef.current) {
-              promisesRef.current.forEach((p) => {
-                if (p && typeof p.reject === 'function') {
-                  p.reject(new Error("WebSocket error occurred."))
-                }
-              });
-              promisesRef.current.clear();
-          }
-          setConnectionError("Falha na conexão com a API da Deriv. Verifique o seu token e a ligação à internet.");
-          setIsConnecting(false);
-          setIsConnected(false);
-          setAccountBalance({ balance: null, currency: null, loading: false });
+        ws.onerror = (errorEvent) => {
+          console.error('[Deriv WS] WebSocket error occurred.');
         };
     };
 
@@ -898,7 +909,7 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
         wsRef.current.close();
       }
     };
-  }, [activeToken, isLoading, makeRequest, toast, triggerReconnect, updateTradeAnnotation, addTradeAnnotation, setAndPersistOperationsLog]);
+  }, [activeToken, isLoading, makeRequest, toast, triggerReconnect, updateTradeAnnotation, addTradeAnnotation, setAndPersistOperationsLog, setToastQueue, updateContract]);
 
   
   useEffect(() => {
@@ -990,7 +1001,7 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
         }, 1500); // Check every 1.5 seconds
 
         return () => clearInterval(trailingStopInterval);
-    }, [sellContract, setAndPersistOperationsLog, isConnected, isConnecting]);
+    }, [sellContract, setAndPersistOperationsLog, isConnected, isConnecting, setToastQueue]);
 
 
   const setAccountType = useCallback((type: AccountType) => {
