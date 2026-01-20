@@ -169,10 +169,20 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
   const [connectionError, setConnectionError] = useState<string | null>(null);
   const promisesRef = useRef<Map<string, PromiseCallbacks>>(new Map());
   const [triggerReconnect, setTriggerReconnect] = useState(0);
+  const sellingContractsRef = useRef<Set<number>>(new Set());
 
     const setAndPersistOperationsLog = useCallback((updater: React.SetStateAction<Operation[]>) => {
         setOperationsLog(prevLog => {
-            const newLog = typeof updater === 'function' ? updater(prevLog) : updater;
+            const newLogWithPotentialDuplicates = typeof updater === 'function' ? updater(prevLog) : updater;
+            // Desduplicação
+            const uniqueOpsMap = new Map<number, Operation>();
+            for(const op of newLogWithPotentialDuplicates) {
+                if(!uniqueOpsMap.has(op.id)) {
+                    uniqueOpsMap.set(op.id, op);
+                }
+            }
+            const newLog = Array.from(uniqueOpsMap.values());
+            
             try {
                 localStorage.setItem(DERIV_MULTIPLIERS_LOG_KEY, JSON.stringify(newLog));
             } catch (error) {
@@ -321,6 +331,7 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
 
       const sanitizedStake = parseFloat(stake.toFixed(2));
       
+      // PASSO 1: Obter proposta sem take_profit ou stop_loss
       const proposalRequest: any = { 
           "proposal": 1,
           "amount": sanitizedStake,
@@ -330,33 +341,31 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
           "symbol": symbol,
           "multiplier": multiplier,
       };
-      
       if (cancellation && cancellation !== 'none') {
           proposalRequest.cancellation = cancellation;
       }
-      
       const proposalResponse: any = await makeRequest(proposalRequest);
       const proposal = proposalResponse.proposal;
-
       if (!proposal || !proposal.id) {
         throw new Error("Falha ao obter uma proposta de negociação da API.");
       }
       
+      // PASSO 2: Comprar o contrato
       const buyRequest: any = { "buy": proposal.id, "price": proposal.ask_price };
-      
       const buyResponse: any = await makeRequest(buyRequest);
       const buyResult = buyResponse.buy;
       const contractId = buyResult.contract_id;
-      
       if (!contractId) {
           throw new Error("Falha na compra do contrato, ID não retornado.");
       }
 
+      // PASSO 3: Atualizar o contrato com TP/SL se existirem
       if (takeProfit || stopLoss) {
         const updateRequest: any = { "contract_update": contractId };
         if (takeProfit) updateRequest.take_profit = takeProfit;
         if (stopLoss) updateRequest.stop_loss = stopLoss;
-        makeRequest(updateRequest).catch(console.error);
+        // Envia a atualização como fire-and-forget
+        makeRequest(updateRequest).catch(console.error); 
       }
       
       const latestTick = priceTicks.length > 0 ? priceTicks[priceTicks.length - 1].price : 0;
@@ -416,8 +425,13 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
     if (!wsRef.current || !isConnected) {
         return { success: false, message: "A conexão com a API da Deriv não está ativa." };
     }
+    
+    if (sellingContractsRef.current.has(contractId)) {
+        return { success: false, message: `A venda do contrato #${contractId} já está em andamento.` };
+    }
 
     try {
+        sellingContractsRef.current.add(contractId);
         const sellResponse: any = await makeRequest({ 
             "sell": contractId,
             "price": 0,
@@ -427,10 +441,12 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
         if (sellResult) {
             return { success: true, message: `Ordem de venda para o contrato ${contractId} enviada.` };
         } else {
+            sellingContractsRef.current.delete(contractId);
             throw new Error("A resposta da API não continha os dados de venda esperados.");
         }
     } catch (error) {
         console.error("[Deriv Hook] Erro ao vender o contrato de multiplicador:", error);
+        sellingContractsRef.current.delete(contractId);
         const message = error instanceof Error ? error.message : "Um erro desconhecido ocorreu ao vender o contrato.";
         return { success: false, message };
     }
@@ -573,6 +589,10 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
                             const existingOpIndex = prevLog.findIndex(op => op.id === contract.contract_id);
                             const isSold = contract.is_sold === 1;
     
+                            if (isSold) {
+                                sellingContractsRef.current.delete(contract.contract_id);
+                            }
+
                             if (existingOpIndex !== -1) {
                                 // UPDATE EXISTING OPERATION
                                 const updatedLog = [...prevLog];
@@ -824,6 +844,56 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
       subscribeToBotData(activeSymbol);
     }
   }, [isConnected, chartType, timePeriod, activeSymbol, subscribeToMarketData, subscribeToBotData]);
+
+  useEffect(() => {
+    const checkClientSideLimits = () => {
+        const openMultiplierOps = operationsLog.filter(op => 
+            op.status === 'pending' && 
+            (op.contractType || '').startsWith('MULT') &&
+            (op.takeProfit || op.stopLoss)
+        );
+
+        if (openMultiplierOps.length === 0) return;
+
+        openMultiplierOps.forEach(op => {
+            const currentProfit = op.result || 0;
+            const contractId = op.id;
+
+            let shouldSell = false;
+            let reason = '';
+
+            // Check for Take Profit
+            if (op.takeProfit && currentProfit >= op.takeProfit) {
+                shouldSell = true;
+                reason = `🎯 Alvo de Lucro Atingido! (Cliente)`;
+            }
+            
+            // Check for Stop Loss
+            else if (op.stopLoss && currentProfit <= -(op.stopLoss)) {
+                shouldSell = true;
+                reason = `🛡️ Stop Loss Atingido! (Cliente)`;
+            }
+
+            if(shouldSell) {
+                sellContract(contractId).then(result => {
+                    if(result.success) {
+                        toast({
+                            title: reason,
+                            description: `Posição #${contractId} fechada com um resultado de $${currentProfit.toFixed(2)}.`,
+                            variant: reason.includes('Stop Loss') ? 'destructive' : 'default',
+                        });
+                    }
+                });
+            }
+        });
+    };
+
+    const interval = setInterval(checkClientSideLimits, 1500); // Check every 1.5 seconds
+
+    return () => clearInterval(interval);
+
+}, [operationsLog, sellContract, toast]);
+
 
   const setAccountType = useCallback((type: AccountType) => {
     try {
