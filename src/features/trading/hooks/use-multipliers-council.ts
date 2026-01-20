@@ -29,6 +29,7 @@ export function useMultipliersCouncil(
     const [isAutopilotOn, setIsAutopilotOn] = useState(false);
     const [botStatus, setBotStatus] = useState<BotStatus>('PAUSED');
     const [trend, setTrend] = useState<TrendDirection>('NONE');
+    const [indicators, setIndicators] = useState<Indicators | null>(null);
     
     const [calculatedRisk, setCalculatedRisk] = useState({ stake: 1.0, stopLoss: 1.0, takeProfit: 2.0 });
 
@@ -63,16 +64,18 @@ export function useMultipliersCouncil(
         const executeLogic = async () => {
             executionRef.current.isExecuting = true;
 
-            const indicators = calculateAllIndicators(botCandleData, initialCouncilStrategies, '1m', {duration: 15, unit: 's'});
-            if (!indicators || !indicators.rsi || !indicators.ma.long || !accountBalance) {
+            const calculatedIndicators = calculateAllIndicators(botCandleData, initialCouncilStrategies, '1m', {duration: 15, unit: 's'});
+            setIndicators(calculatedIndicators);
+
+            if (!calculatedIndicators || !calculatedIndicators.rsi || !calculatedIndicators.ma.long || !accountBalance) {
                 setBotStatus('MONITORING');
                 executionRef.current.isExecuting = false;
                 return;
             }
             
             const lastPrice = botCandleData[botCandleData.length - 1].close;
-            const longEMA = indicators.ma.long;
-            const rsi = indicators.rsi;
+            const longEMA = calculatedIndicators.ma.long;
+            const rsi = calculatedIndicators.rsi;
             
             // 1. Definição de Tendência Macro
             const currentTrend: TrendDirection = lastPrice > longEMA ? 'UP' : lastPrice < longEMA ? 'DOWN' : 'NONE';
@@ -100,7 +103,7 @@ export function useMultipliersCouncil(
 
                 // 3. Gestão de Risco e Tamanho da Posição baseada em ATR
                 const baseRiskPercentage = 0.01; // 1%
-                const atr = indicators.atr || 0;
+                const atr = calculatedIndicators.atr || 0;
                 const normalizedAtr = atr > 0 && lastPrice > 0 ? atr / lastPrice : 0.001; // ATR como % do preço
 
                 const volatilityFactor = normalizedAtr / 0.0005; // Normalizado contra uma volatilidade "padrão" de 0.05%
@@ -223,5 +226,6 @@ export function useMultipliersCouncil(
         botStatus,
         trend,
         calculatedRisk,
+        indicators,
     };
 }

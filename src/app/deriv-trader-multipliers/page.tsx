@@ -19,6 +19,7 @@ import { ApiStatusIndicatorMultipliers } from "@/features/trading/components/der
 // NEW IMPORTS
 import { useMultipliersCouncil } from "@/features/trading/hooks/use-multipliers-council";
 import { MultipliersAutopilotInterface } from "@/features/trading/components/deriv-trader/multipliers-autopilot-interface";
+import { IndicatorPanel } from "@/features/trading/components/deriv-trader/indicator-panel";
 
 
 const Header = () => {
@@ -111,11 +112,13 @@ const IsolatedMarketChart = () => {
 };
 
 const MultipliersTraderCore = () => {
-    const { activeSymbol, operationsLog, sellContract, botCandleData, accountBalance } = useDerivApiMultipliers();
+    const { activeSymbol, operationsLog, sellContract, botCandleData, accountBalance, chartData } = useDerivApiMultipliers();
     const multipliersCouncil = useMultipliersCouncil(activeSymbol, botCandleData, accountBalance.balance);
+    const latestDataPoint = chartData.length > 0 ? chartData[chartData.length - 1] : null;
     
     return (
         <div className="space-y-6 mt-6">
+            {multipliersCouncil.indicators && <IndicatorPanel indicators={multipliersCouncil.indicators} latestDataPoint={latestDataPoint} />}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 <div>
                     <DerivTraderInterfaceMultipliers symbol={activeSymbol || ""} />
@@ -137,6 +140,8 @@ const PageContent = () => {
             stake: 1.0,
             multiplier: 50,
             cancellation: 'none',
+            takeProfit: undefined,
+            stopLoss: undefined,
         },
     });
 
