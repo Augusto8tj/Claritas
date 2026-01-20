@@ -13,6 +13,7 @@ import { FirebaseErrorListener } from '@/components/FirebaseErrorListener';
 const DERIV_DEMO_TOKEN_KEY = 'derivDemoApiToken';
 const DERIV_REAL_TOKEN_KEY = 'derivRealApiToken';
 const DERIV_ACCOUNT_TYPE_KEY = 'derivAccountType';
+const DERIV_MULTIPLIERS_LOG_KEY = 'derivMultipliersOperationsLog_v2'; // Chave para persistência
 const DERIV_APP_ID = process.env.NEXT_PUBLIC_DERIV_APP_ID || "1089";
 
 export type AccountType = 'demo' | 'real';
@@ -169,6 +170,18 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
   const promisesRef = useRef<Map<string, PromiseCallbacks>>(new Map());
   const [triggerReconnect, setTriggerReconnect] = useState(0);
 
+    const setAndPersistOperationsLog = useCallback((updater: React.SetStateAction<Operation[]>) => {
+        setOperationsLog(prevLog => {
+            const newLog = typeof updater === 'function' ? updater(prevLog) : updater;
+            try {
+                localStorage.setItem(DERIV_MULTIPLIERS_LOG_KEY, JSON.stringify(newLog));
+            } catch (error) {
+                console.error("Failed to save operations log to localStorage:", error);
+            }
+            return newLog;
+        });
+    }, []);
+
     const addTradeAnnotation = useCallback((annotation: Omit<TradeAnnotation, 'id'>) => {
     const newAnnotation: TradeAnnotation = {
       ...annotation,
@@ -192,10 +205,12 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
       const storedDemoToken = localStorage.getItem(DERIV_DEMO_TOKEN_KEY);
       const storedRealToken = localStorage.getItem(DERIV_REAL_TOKEN_KEY);
       const storedAccountType = localStorage.getItem(DERIV_ACCOUNT_TYPE_KEY) as AccountType | null;
+      const storedLog = localStorage.getItem(DERIV_MULTIPLIERS_LOG_KEY);
 
       if (storedDemoToken) setDemoToken(storedDemoToken);
       if (storedRealToken) setRealToken(storedRealToken);
       if (storedAccountType) setAccountTypeState(storedAccountType);
+      if (storedLog) setOperationsLog(JSON.parse(storedLog));
     } catch (error) {
       console.error("Failed to access localStorage:", error);
     }
@@ -327,11 +342,7 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
         throw new Error("Falha ao obter uma proposta de negociação da API.");
       }
       
-      // PASSO 2: Comprar o contrato (sem TP/SL)
-      const buyRequest: any = {
-          "buy": proposal.id,
-          "price": proposal.ask_price,
-      };
+      const buyRequest: any = { "buy": proposal.id, "price": proposal.ask_price };
       
       const buyResponse: any = await makeRequest(buyRequest);
       const buyResult = buyResponse.buy;
@@ -341,26 +352,11 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
           throw new Error("Falha na compra do contrato, ID não retornado.");
       }
 
-      // PASSO 3 (CORRIGIDO): Atualizar o contrato com TP/SL se existirem
       if (takeProfit || stopLoss) {
-        const updateRequest: any = {
-          "contract_update": contractId,
-        };
-        if (takeProfit && takeProfit > 0) {
-          updateRequest.take_profit = takeProfit;
-        }
-        if (stopLoss && stopLoss > 0) {
-          updateRequest.stop_loss = stopLoss;
-        }
-
-        makeRequest(updateRequest).catch(error => {
-          console.error(`[Deriv Hook] Falha ao definir TP/SL para o contrato ${contractId}:`, error);
-          toast({
-            variant: "destructive",
-            title: "Falha na Gestão de Risco",
-            description: `A ordem foi aberta, mas não foi possível definir os limites de Take Profit/Stop Loss.`,
-          });
-        });
+        const updateRequest: any = { "contract_update": contractId };
+        if (takeProfit) updateRequest.take_profit = takeProfit;
+        if (stopLoss) updateRequest.stop_loss = stopLoss;
+        makeRequest(updateRequest).catch(console.error);
       }
       
       const latestTick = priceTicks.length > 0 ? priceTicks[priceTicks.length - 1].price : 0;
@@ -388,7 +384,7 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
           takeProfit: takeProfit,
           stopLoss: stopLoss,
       };
-      setOperationsLog(prevLog => [newOperation, ...prevLog]);
+      setAndPersistOperationsLog(prevLog => [newOperation, ...prevLog]);
 
       addTradeAnnotation({
           contractId: String(contractId),
@@ -413,7 +409,7 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
        const message = error instanceof Error ? error.message : "Um erro desconhecido ocorreu.";
        return { success: false, message };
     }
-  }, [isConnected, makeRequest, priceTicks, addTradeAnnotation, toast]);
+  }, [isConnected, makeRequest, priceTicks, addTradeAnnotation, toast, setAndPersistOperationsLog]);
 
 
   const sellContract = useCallback(async (contractId: number): Promise<TradeResult> => {
@@ -573,7 +569,7 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
                         const contract = response.proposal_open_contract;
                         if (!contract) return;
     
-                        setOperationsLog(prevLog => {
+                        setAndPersistOperationsLog(prevLog => {
                             const existingOpIndex = prevLog.findIndex(op => op.id === contract.contract_id);
                             const isSold = contract.is_sold === 1;
     
@@ -819,7 +815,7 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
         wsRef.current.close();
       }
     };
-  }, [activeToken, isLoading, makeRequest, toast, triggerReconnect, updateTradeAnnotation, addTradeAnnotation]);
+  }, [activeToken, isLoading, makeRequest, toast, triggerReconnect, updateTradeAnnotation, addTradeAnnotation, setAndPersistOperationsLog]);
 
   
   useEffect(() => {
@@ -893,7 +889,7 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
 
 
   const clearActiveContracts = () => {
-    setOperationsLog([]);
+    setAndPersistOperationsLog([]);
     setTradeAnnotations([]);
   };
 

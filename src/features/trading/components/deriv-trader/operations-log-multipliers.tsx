@@ -88,7 +88,7 @@ export default function OperationsLogMultipliers({ operations, sellContract }: O
                                     <p>Nenhuma operação recente.</p>
                                 </div>
                             ) : (
-                                operations.filter(op => op && typeof op.id !== 'undefined' && typeof op.stake === 'number').map((op) => {
+                                operations.filter(op => op && typeof op.id !== 'undefined' && typeof (op.stake || 0) === 'number').map((op) => {
                                     const currentProfit = op.result || 0;
                                     const isWinning = currentProfit >= 0;
                                     const isSelling = sellingContractId === op.id;
@@ -113,7 +113,7 @@ export default function OperationsLogMultipliers({ operations, sellContract }: O
                                             </div>
                                             <div className="flex-1 grid grid-cols-2 md:grid-cols-4 gap-x-4 gap-y-1 text-xs">
                                                 <div className="col-span-2 md:col-span-4">
-                                                    <p className="text-sm font-medium leading-none">{op.asset} - {direction === "rise" ? "Up" : "Down"}</p>
+                                                    <p className="text-sm font-medium leading-none">{(op.asset || 'Símbolo')} - {direction === "rise" ? "Up" : "Down"}</p>
                                                 </div>
                                                 <div className="text-muted-foreground">
                                                     <p>Entrada: <span className="font-semibold text-foreground">${(op.stake || 0).toFixed(2)}</span></p>
@@ -129,7 +129,7 @@ export default function OperationsLogMultipliers({ operations, sellContract }: O
                                                      {op.stopLoss && <p className="text-red-600 flex items-center gap-1"><ShieldAlert className="h-3 w-3" />Stop: ${op.stopLoss.toFixed(2)}</p>}
                                                     {op.exitPrice && <p>Saída: @{op.exitPrice?.toFixed(4) || '...'}</p>}
                                                     {isAutopilotTrade && op.status === 'pending' &&
-                                                        <p className="text-blue-500 flex items-center gap-1"><MoveUpRight className="h-3 w-3" />Stop Móvel Ativo</p>
+                                                        <p className="text-blue-500 flex items-center gap-1 text-[11px]"><MoveUpRight className="h-3 w-3" />Stop Móvel Ativo</p>
                                                     }
                                                 </div>
                                             </div>
