@@ -10,7 +10,7 @@ import {
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import type { Operation } from "@/lib/types";
-import { ArrowDown, ArrowUp, Briefcase, Clock } from "lucide-react";
+import { ArrowDown, ArrowUp, Briefcase, Clock, Target } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 
 interface OpenPositionsProps {
@@ -29,7 +29,7 @@ const formatTime = (isoString: string | undefined): string => {
 };
 
 export function OpenPositions({ operations, title, description }: OpenPositionsProps) {
-    const openOperations = operations.filter(op => op.status === 'pending');
+    const openOperations = operations.filter(op => op && op.status === 'pending');
 
     return (
         <Card>
@@ -54,10 +54,15 @@ export function OpenPositions({ operations, title, description }: OpenPositionsP
                                 <p>Nenhuma posição aberta no momento.</p>
                             </div>
                         ) : (
-                            openOperations.map((op) => {
-                                const isMultiplier = op.contractType?.startsWith('MULT');
+                            openOperations
+                              .filter(op => op && typeof op.id !== 'undefined' && typeof op.stake === 'number')
+                              .map((op) => {
+                                const isMultiplier = (op.contractType || '').startsWith('MULT');
+                                const targetValue = op.takeProfit;
+                                const key = `${op.source || 'op'}-${op.id}`;
+
                                 return (
-                                    <div key={op.id} className="flex items-center gap-4 border-b pb-3 last:border-b-0 last:pb-0">
+                                    <div key={key} className="flex items-center gap-4 border-b pb-3 last:border-b-0 last:pb-0">
                                         <div className="flex-shrink-0">
                                             <div className={cn("p-2 rounded-full", op.direction === 'rise' ? 'bg-green-500/10 text-green-600' : 'bg-red-500/10 text-red-600')}>
                                                 {op.direction === 'rise' ? <ArrowUp className="h-4 w-4" /> : <ArrowDown className="h-4 w-4" />}
@@ -77,7 +82,7 @@ export function OpenPositions({ operations, title, description }: OpenPositionsP
                                             </div>
                                             <div className="text-muted-foreground">
                                                 {isMultiplier ? (
-                                                     <p>Contrato: <span className="font-semibold text-foreground">MULTIPLICADOR</span></p>
+                                                     <p className="flex items-center gap-1.5"><Target className="h-3 w-3"/> Alvo: <span className="font-semibold text-foreground">{targetValue ? `$${targetValue.toFixed(2)}` : 'N/A'}</span></p>
                                                 ) : (
                                                     <p>Duração: <span className="font-semibold text-foreground">{op.duration} {op.durationUnit}</span></p>
                                                 )}
