@@ -315,20 +315,7 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
             "symbol": symbol,
             "multiplier": multiplier,
         };
-
-        if (cancellation && cancellation !== 'none') {
-            proposalRequest.cancellation = cancellation;
-        }
-
-        if (takeProfit !== undefined && takeProfit > 0) {
-            proposalRequest.take_profit = takeProfit;
-        }
-        if (stopLoss !== undefined && stopLoss > 0) {
-             if (stopLoss < sanitizedStake) {
-                proposalRequest.stop_loss = stopLoss;
-            }
-        }
-
+        
         const proposalResponse: any = await makeRequest(proposalRequest);
 
         const proposal = proposalResponse.proposal;
@@ -341,6 +328,19 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
             "price": proposal.ask_price,
         };
         
+        if (cancellation && cancellation !== 'none') {
+            buyRequest.cancellation = cancellation;
+        }
+
+        if (takeProfit !== undefined && takeProfit > 0) {
+            buyRequest.take_profit = takeProfit;
+        }
+        if (stopLoss !== undefined && stopLoss > 0) {
+             if (stopLoss < sanitizedStake) {
+                buyRequest.stop_loss = stopLoss;
+            }
+        }
+        
         const buyResponse: any = await makeRequest(buyRequest);
         const buyResult = buyResponse.buy;
         
@@ -349,7 +349,8 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
           ? parseFloat(buyResult.entry_tick_display_value) 
           : (buyResult.entry_spot_display_value ? parseFloat(buyResult.entry_spot_display_value) : latestTick);
 
-        const purchaseTimeMs = (buyResult.purchase_time || Math.floor(Date.now() / 1000)) * 1000;
+        const purchaseTime = buyResult.purchase_time || Math.floor(Date.now() / 1000);
+        const purchaseTimeMs = purchaseTime * 1000;
 
         const newOperation: Operation = {
             id: buyResult.contract_id,
@@ -372,7 +373,7 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
 
         addTradeAnnotation({
             contractId: String(buyResult.contract_id),
-            entryTime: purchaseTimeMs / 1000,
+            entryTime: purchaseTime,
             entryPrice: entryPrice,
             direction: contractType === 'MULTUP' ? 'rise' : 'fall',
             status: 'pending',
