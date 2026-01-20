@@ -136,7 +136,6 @@ const PageContent = () => {
         defaultValues: {
             stake: 1.0,
             multiplier: 50,
-            takeProfit: 0.10,
             cancellation: 'none',
         },
     });
