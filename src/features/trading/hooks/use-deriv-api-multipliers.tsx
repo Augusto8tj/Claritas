@@ -306,7 +306,7 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
 
       const sanitizedStake = parseFloat(stake.toFixed(2));
       
-      // PASSO 1: Obter a proposta de preço.
+      // PASSO 1: Obter a proposta de preço (limpa, sem take_profit/stop_loss)
       const proposalRequest: any = { 
           "proposal": 1,
           "amount": sanitizedStake,
@@ -328,11 +328,19 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
         throw new Error("Falha ao obter uma proposta de negociação da API.");
       }
       
-      // PASSO 2: Comprar o contrato SEM os parâmetros de risco.
+      // PASSO 2: Comprar o contrato, AGORA incluindo TP/SL.
       const buyRequest: any = {
           "buy": proposal.id,
           "price": proposal.ask_price,
       };
+      
+      // Adicionar os parâmetros de risco aqui, no pedido de 'buy'.
+      if (takeProfit && takeProfit > 0) {
+          buyRequest.take_profit = takeProfit;
+      }
+      if (stopLoss && stopLoss > 0) {
+          buyRequest.stop_loss = stopLoss;
+      }
       
       const buyResponse: any = await makeRequest(buyRequest);
       const buyResult = buyResponse.buy;
@@ -341,31 +349,7 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
       if (!contractId) {
           throw new Error("Falha na compra do contrato, ID não retornado.");
       }
-
-      // PASSO 3: APÓS a compra, enviar uma atualização para definir TP/SL, se existirem.
-      if ((takeProfit !== undefined && takeProfit > 0) || (stopLoss !== undefined && stopLoss > 0)) {
-          const updateRequest: any = {
-              contract_update: contractId,
-          };
-          if (takeProfit !== undefined && takeProfit > 0) {
-              updateRequest.take_profit = takeProfit;
-          }
-          if (stopLoss !== undefined && stopLoss > 0) {
-              updateRequest.stop_loss = stopLoss;
-          }
-          
-          // Envia a atualização de forma assíncrona. A UI não precisa esperar por isso.
-          makeRequest(updateRequest).catch(err => {
-              console.error(`[Multipliers] Falha ao atualizar contrato ${contractId} com TP/SL:`, err);
-              toast({
-                  variant: "destructive",
-                  title: "Falha ao definir TP/SL",
-                  description: `A posição foi aberta, mas não foi possível definir os limites. Erro: ${err.message}`,
-              });
-          });
-      }
       
-      // Restante da lógica (atualização da UI) permanece a mesma.
       const latestTick = priceTicks.length > 0 ? priceTicks[priceTicks.length - 1].price : 0;
       const entryPrice = buyResult.entry_tick_display_value 
         ? parseFloat(buyResult.entry_tick_display_value) 
