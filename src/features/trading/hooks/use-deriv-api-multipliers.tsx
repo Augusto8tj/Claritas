@@ -299,102 +299,119 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
     cancellation?: string,
     initiator: OperationInitiator = 'Manual'
   ): Promise<TradeResult> => {
-      try {
-        if (!wsRef.current || !isConnected) {
-          throw new Error("A conexão com a API da Deriv não está ativa.");
-        }
-
-        const sanitizedStake = parseFloat(stake.toFixed(2));
-        
-        const proposalRequest: any = { 
-            "proposal": 1,
-            "amount": sanitizedStake,
-            "basis": "stake",
-            "contract_type": contractType,
-            "currency": "USD",
-            "symbol": symbol,
-            "multiplier": multiplier,
-        };
-        
-        const proposalResponse: any = await makeRequest(proposalRequest);
-
-        const proposal = proposalResponse.proposal;
-        if (!proposal || !proposal.id) {
-          throw new Error("Falha ao obter uma proposta de negociação da API.");
-        }
-        
-        const buyRequest: any = {
-            "buy": proposal.id,
-            "price": proposal.ask_price,
-        };
-        
-        if (cancellation && cancellation !== 'none') {
-            buyRequest.cancellation = cancellation;
-        }
-
-        if (takeProfit !== undefined && takeProfit > 0) {
-            buyRequest.take_profit = takeProfit;
-        }
-        if (stopLoss !== undefined && stopLoss > 0) {
-             if (stopLoss < sanitizedStake) {
-                buyRequest.stop_loss = stopLoss;
-            }
-        }
-        
-        const buyResponse: any = await makeRequest(buyRequest);
-        const buyResult = buyResponse.buy;
-        
-        const latestTick = priceTicks.length > 0 ? priceTicks[priceTicks.length - 1].price : 0;
-        const entryPrice = buyResult.entry_tick_display_value 
-          ? parseFloat(buyResult.entry_tick_display_value) 
-          : (buyResult.entry_spot_display_value ? parseFloat(buyResult.entry_spot_display_value) : latestTick);
-
-        const purchaseTime = buyResult.purchase_time || Math.floor(Date.now() / 1000);
-        const purchaseTimeMs = purchaseTime * 1000;
-
-        const newOperation: Operation = {
-            id: buyResult.contract_id,
-            asset: symbol,
-            direction: contractType === 'MULTUP' ? 'rise' : 'fall',
-            stake: sanitizedStake,
-            status: 'pending',
-            timestamp: new Date(purchaseTimeMs).toISOString(),
-            initiator,
-            entryPrice: entryPrice,
-            isSellable: true,
-            contractType,
-            multiplier,
-            duration: 0, 
-            durationUnit: 's', 
-            takeProfit: takeProfit,
-            stopLoss: stopLoss,
-        };
-        setOperationsLog(prevLog => [newOperation, ...prevLog]);
-
-        addTradeAnnotation({
-            contractId: String(buyResult.contract_id),
-            entryTime: purchaseTime,
-            entryPrice: entryPrice,
-            direction: contractType === 'MULTUP' ? 'rise' : 'fall',
-            status: 'pending',
-            stake: sanitizedStake,
-            symbol,
-            expirationTime: undefined,
-            contractType: 'multiplier'
-        });
-
-        return {
-          success: true,
-          message: `Ordem do tipo "${contractType}" para ${symbol} no valor de ${sanitizedStake} USD executada com sucesso.`,
-          contractId: buyResult.contract_id,
-          entryPrice,
-        };
-      } catch (error) {
-         console.error("[Deriv Hook] Erro durante a negociação de Multiplicadores:", error);
-         const message = error instanceof Error ? error.message : "Um erro desconhecido ocorreu.";
-         return { success: false, message };
+    try {
+      if (!wsRef.current || !isConnected) {
+        throw new Error("A conexão com a API da Deriv não está ativa.");
       }
-  }, [isConnected, makeRequest, priceTicks, addTradeAnnotation]);
+
+      const sanitizedStake = parseFloat(stake.toFixed(2));
+      
+      const proposalRequest: any = { 
+          "proposal": 1,
+          "amount": sanitizedStake,
+          "basis": "stake",
+          "contract_type": contractType,
+          "currency": "USD",
+          "symbol": symbol,
+          "multiplier": multiplier,
+      };
+      
+      const proposalResponse: any = await makeRequest(proposalRequest);
+
+      const proposal = proposalResponse.proposal;
+      if (!proposal || !proposal.id) {
+        throw new Error("Falha ao obter uma proposta de negociação da API.");
+      }
+      
+      const buyRequest: any = {
+          "buy": proposal.id,
+          "price": proposal.ask_price,
+      };
+      
+      if (cancellation && cancellation !== 'none') {
+          buyRequest.cancellation = cancellation;
+      }
+      
+      const buyResponse: any = await makeRequest(buyRequest);
+      const buyResult = buyResponse.buy;
+      const contractId = buyResult.contract_id;
+      
+      if (!contractId) {
+          throw new Error("Falha na compra do contrato, ID não retornado.");
+      }
+
+      if ((takeProfit !== undefined && takeProfit > 0) || (stopLoss !== undefined && stopLoss > 0)) {
+          const updateRequest: any = {
+              contract_update: contractId,
+          };
+          if (takeProfit !== undefined && takeProfit > 0) {
+              updateRequest.take_profit = takeProfit;
+          }
+          if (stopLoss !== undefined && stopLoss > 0 && stopLoss < sanitizedStake) {
+              updateRequest.stop_loss = stopLoss;
+          }
+          
+          makeRequest(updateRequest).catch(err => {
+              console.error(`[Multipliers] Falha ao atualizar contrato ${contractId} com TP/SL:`, err);
+              toast({
+                  variant: "destructive",
+                  title: "Falha ao definir TP/SL",
+                  description: `A posição foi aberta, mas não foi possível definir os limites de lucro/perda. Erro: ${err.message}`,
+              });
+          });
+      }
+      
+      const latestTick = priceTicks.length > 0 ? priceTicks[priceTicks.length - 1].price : 0;
+      const entryPrice = buyResult.entry_tick_display_value 
+        ? parseFloat(buyResult.entry_tick_display_value) 
+        : (buyResult.entry_spot_display_value ? parseFloat(buyResult.entry_spot_display_value) : latestTick);
+
+      const purchaseTime = buyResult.purchase_time || Math.floor(Date.now() / 1000);
+      const purchaseTimeMs = purchaseTime * 1000;
+
+      const newOperation: Operation = {
+          id: contractId,
+          asset: symbol,
+          direction: contractType === 'MULTUP' ? 'rise' : 'fall',
+          stake: sanitizedStake,
+          status: 'pending',
+          timestamp: new Date(purchaseTimeMs).toISOString(),
+          initiator,
+          entryPrice: entryPrice,
+          isSellable: true,
+          contractType,
+          multiplier,
+          duration: 0, 
+          durationUnit: 's', 
+          takeProfit: takeProfit,
+          stopLoss: stopLoss,
+      };
+      setOperationsLog(prevLog => [newOperation, ...prevLog]);
+
+      addTradeAnnotation({
+          contractId: String(contractId),
+          entryTime: purchaseTime,
+          entryPrice: entryPrice,
+          direction: contractType === 'MULTUP' ? 'rise' : 'fall',
+          status: 'pending',
+          stake: sanitizedStake,
+          symbol,
+          expirationTime: undefined,
+          contractType: 'multiplier'
+      });
+
+      return {
+        success: true,
+        message: `Ordem do tipo "${contractType}" para ${symbol} no valor de ${sanitizedStake} USD executada com sucesso.`,
+        contractId: contractId,
+        entryPrice,
+      };
+    } catch (error) {
+       console.error("[Deriv Hook] Erro durante a negociação de Multiplicadores:", error);
+       const message = error instanceof Error ? error.message : "Um erro desconhecido ocorreu.";
+       return { success: false, message };
+    }
+  }, [isConnected, makeRequest, priceTicks, addTradeAnnotation, toast]);
 
   const sellContract = useCallback(async (contractId: number): Promise<TradeResult> => {
     if (!wsRef.current || !isConnected) {
@@ -601,6 +618,7 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
                                 // ADD NEW EXTERNALLY OPENED OPERATION
                                 const direction = (contract.contract_type || '').includes('CALL') || (contract.contract_type || '').includes('MULTUP') ? 'rise' : 'fall';
                                 const purchaseTime = contract.purchase_time || Math.floor(Date.now() / 1000);
+                                const purchaseTimeMs = purchaseTime * 1000;
                                 const durationInSeconds = contract.date_expiry ? (contract.date_expiry - purchaseTime) : 0;
                                 const durationUnit: DurationUnit = 's'; // Safe default
     
@@ -611,7 +629,7 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
                                     stake: contract.buy_price || 0,
                                     status: 'pending',
                                     result: contract.profit,
-                                    timestamp: new Date(purchaseTime * 1000).toISOString(),
+                                    timestamp: new Date(purchaseTimeMs).toISOString(),
                                     initiator: 'Manual',
                                     entryPrice: parseFloat(contract.entry_spot_display_value || contract.entry_tick_display_value || '0'),
                                     isSellable: contract.is_sellable === 1,
