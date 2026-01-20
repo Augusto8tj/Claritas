@@ -53,7 +53,7 @@ export function MultipliersAutopilotInterface({
             </Badge>
         </div>
         <CardDescription>
-          Deixe a IA gerenciar suas posições com base em cruzamento de EMAs e RSI para confirmação de momentum.
+          Deixe a IA gerenciar suas posições com base em cruzamento de EMAs, RSI e um Trailing Stop automático. Os parâmetros de risco são calculados dinamicamente.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
@@ -63,7 +63,7 @@ export function MultipliersAutopilotInterface({
                     Ativar Piloto Automático
                 </Label>
                 <p className="text-xs text-muted-foreground mt-1">
-                    O sistema irá abrir posições automaticamente.
+                    O sistema irá abrir e gerir posições automaticamente.
                 </p>
             </div>
           <Switch
@@ -102,38 +102,6 @@ export function MultipliersAutopilotInterface({
                 </div>
             </div>
         )}
-
-         <div className="space-y-4">
-            <h4 className="font-semibold text-sm">Parâmetros de Execução do Robô</h4>
-             <div className="grid grid-cols-2 gap-4">
-                <FormField
-                    control={form.control}
-                    name="takeProfit"
-                    render={({ field }) => (
-                        <FormItem>
-                        <FormLabel>Take Profit (USD)</FormLabel>
-                        <FormControl>
-                            <Input type="number" placeholder="Ex: 2" {...field} onChange={e => field.onChange(e.target.value ? parseFloat(e.target.value) : undefined)} disabled={isAutopilotOn} />
-                        </FormControl>
-                        <FormMessage />
-                        </FormItem>
-                    )}
-                />
-                <FormField
-                    control={form.control}
-                    name="stopLoss"
-                    render={({ field }) => (
-                        <FormItem>
-                        <FormLabel>Stop Loss (USD)</FormLabel>
-                        <FormControl>
-                            <Input type="number" placeholder="Ex: 1" {...field} onChange={e => field.onChange(e.target.value ? parseFloat(e.target.value) : undefined)} disabled={isAutopilotOn} />
-                        </FormControl>
-                        <FormMessage />
-                        </FormItem>
-                    )}
-                />
-            </div>
-        </div>
       </CardContent>
     </Card>
   );
