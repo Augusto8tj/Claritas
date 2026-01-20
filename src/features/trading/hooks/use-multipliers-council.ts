@@ -30,6 +30,8 @@ export function useMultipliersCouncil(
     const [botStatus, setBotStatus] = useState<BotStatus>('PAUSED');
     const [trend, setTrend] = useState<TrendDirection>('NONE');
     const [indicators, setIndicators] = useState<Indicators | null>(null);
+    const [dailyBalance, setDailyBalance] = useState(10.0);
+    const [dailyTarget, setDailyTarget] = useState(5.0);
     
     const [calculatedRisk, setCalculatedRisk] = useState({ stake: 1.0, stopLoss: 1.0, takeProfit: 2.0 });
 
@@ -38,6 +40,13 @@ export function useMultipliersCouncil(
     const openPositionsRef = useRef<Set<number>>(new Set());
     const lastSignalRef = useRef<'up' | 'down' | null>(null);
     const highestProfitRef = useRef<Map<number, number>>(new Map());
+
+    const dailyPnL = useMemo(() => {
+        const today = new Date().toDateString();
+        return operationsLog
+            .filter(op => op.status !== 'pending' && new Date(op.timestamp).toDateString() === today && op.initiator === 'Piloto')
+            .reduce((sum, op) => sum + (op.result || 0), 0);
+    }, [operationsLog]);
 
     // Cleanup closed positions from refs
     useEffect(() => {
@@ -60,6 +69,29 @@ export function useMultipliersCouncil(
         }
 
         if (executionRef.current.isExecuting) return;
+
+        if (dailyPnL <= -dailyBalance) {
+            if (isAutopilotOn) {
+                setIsAutopilotOn(false);
+                toast({
+                    title: "🤖 Piloto Automático: Limite de Perda Atingido",
+                    description: `O sistema foi pausado para proteger seu capital. Perda do dia: $${dailyPnL.toFixed(2)}`,
+                    variant: "destructive"
+                });
+            }
+            return;
+        }
+
+        if (dailyPnL >= dailyTarget) {
+            if (isAutopilotOn) {
+                setIsAutopilotOn(false);
+                toast({
+                    title: "🏆 Piloto Automático: Meta de Lucro Atingida!",
+                    description: `Parabéns! O sistema foi pausado. Lucro do dia: $${dailyPnL.toFixed(2)}`,
+                });
+            }
+            return;
+        }
         
         const executeLogic = async () => {
             executionRef.current.isExecuting = true;
@@ -150,7 +182,7 @@ export function useMultipliersCouncil(
 
     }, [
         botCandleData, isAutopilotOn, isConnected, activeSymbol,
-        executeTrade, toast, accountBalance, form
+        executeTrade, toast, accountBalance, form, dailyPnL, dailyBalance, dailyTarget, setIsAutopilotOn
     ]);
     
      // Trailing Stop Logic (Client-Side)
@@ -226,5 +258,10 @@ export function useMultipliersCouncil(
         botStatus,
         trend,
         calculatedRisk,
+        dailyBalance,
+        setDailyBalance,
+        dailyTarget,
+        setDailyTarget,
+        dailyPnL,
     };
 }
