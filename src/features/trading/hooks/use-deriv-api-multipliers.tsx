@@ -306,7 +306,6 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
 
       const sanitizedStake = parseFloat(stake.toFixed(2));
       
-      // PASSO 1: Obter a proposta de preço (limpa, sem take_profit/stop_loss)
       const proposalRequest: any = { 
           "proposal": 1,
           "amount": sanitizedStake,
@@ -328,19 +327,11 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
         throw new Error("Falha ao obter uma proposta de negociação da API.");
       }
       
-      // PASSO 2: Comprar o contrato, AGORA incluindo TP/SL.
+      // PASSO 2: Comprar o contrato (sem TP/SL)
       const buyRequest: any = {
           "buy": proposal.id,
           "price": proposal.ask_price,
       };
-      
-      // Adicionar os parâmetros de risco aqui, no pedido de 'buy'.
-      if (takeProfit && takeProfit > 0) {
-          buyRequest.take_profit = takeProfit;
-      }
-      if (stopLoss && stopLoss > 0) {
-          buyRequest.stop_loss = stopLoss;
-      }
       
       const buyResponse: any = await makeRequest(buyRequest);
       const buyResult = buyResponse.buy;
@@ -348,6 +339,28 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
       
       if (!contractId) {
           throw new Error("Falha na compra do contrato, ID não retornado.");
+      }
+
+      // PASSO 3 (CORRIGIDO): Atualizar o contrato com TP/SL se existirem
+      if (takeProfit || stopLoss) {
+        const updateRequest: any = {
+          "contract_update": contractId,
+        };
+        if (takeProfit && takeProfit > 0) {
+          updateRequest.take_profit = takeProfit;
+        }
+        if (stopLoss && stopLoss > 0) {
+          updateRequest.stop_loss = stopLoss;
+        }
+
+        makeRequest(updateRequest).catch(error => {
+          console.error(`[Deriv Hook] Falha ao definir TP/SL para o contrato ${contractId}:`, error);
+          toast({
+            variant: "destructive",
+            title: "Falha na Gestão de Risco",
+            description: `A ordem foi aberta, mas não foi possível definir os limites de Take Profit/Stop Loss.`,
+          });
+        });
       }
       
       const latestTick = priceTicks.length > 0 ? priceTicks[priceTicks.length - 1].price : 0;
