@@ -1,3 +1,4 @@
+// /src/app/portfolio/page.tsx
 'use client';
 
 import { DerivApiProviderV1, useDerivApiV1 } from "@/features/trading/hooks/use-deriv-api-v1";
@@ -14,17 +15,31 @@ function PortfolioContent() {
     const { operationsLog: opsV2 } = useDerivApiV2();
     const { operationsLog: opsMultipliers } = useDerivApiMultipliers();
 
-    const allOpenPositions = useMemo(() => {
-        const openV1 = opsV1.filter(op => op.status === 'pending');
-        const openV2 = opsV2.filter(op => op.status === 'pending');
-        const openMultipliers = opsMultipliers.filter(op => op.status === 'pending');
+    // Combine all operations from different sources and de-duplicate by contract ID.
+    const allUniqueOperations = useMemo(() => {
+        const combined = [
+            ...opsV1.map(op => ({...op, source: 'V1'})),
+            ...opsV2.map(op => ({...op, source: 'V2.5'})),
+            ...opsMultipliers.map(op => ({...op, source: 'Multiplicadores'}))
+        ];
+
+        // Use a Map to ensure uniqueness based on the contract `id`.
+        const uniqueOpsMap = new Map<number, typeof combined[0]>();
+        combined.forEach(op => {
+            if (op && op.id) { // Ensure op and op.id are valid
+                 uniqueOpsMap.set(op.id, op);
+            }
+        });
         
-        return [
-            ...openV1.map(op => ({...op, source: 'V1'})),
-            ...openV2.map(op => ({...op, source: 'V2.5'})),
-            ...openMultipliers.map(op => ({...op, source: 'Multiplicadores'}))
-        ].sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+        return Array.from(uniqueOpsMap.values());
     }, [opsV1, opsV2, opsMultipliers]);
+
+    // Filter for open positions and sort them.
+    const allOpenPositions = useMemo(() => {
+        return allUniqueOperations
+            .filter(op => op && op.status === 'pending')
+            .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+    }, [allUniqueOperations]);
 
     return (
         <div className="flex-1 space-y-4 p-4 sm:p-8 pt-6">
