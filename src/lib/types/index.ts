@@ -106,6 +106,9 @@ export interface Operation {
   expirationTime?: number; // Expiration time in milliseconds
   multiplier?: number;
   contractType?: string;
+  takeProfit?: number;
+  stopLoss?: number;
+  trailingStop?: number;
 }
 
 // =/src/lib/types/index.ts

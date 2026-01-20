@@ -13,7 +13,7 @@ import { FirebaseErrorListener } from '@/components/FirebaseErrorListener';
 const DERIV_DEMO_TOKEN_KEY = 'derivDemoApiToken';
 const DERIV_REAL_TOKEN_KEY = 'derivRealApiToken';
 const DERIV_ACCOUNT_TYPE_KEY = 'derivAccountType';
-const DERIV_MULTIPLIERS_LOG_KEY = 'derivMultipliersOperationsLog_v2'; // Chave para persistência
+const DERIV_MULTIPLIERS_LOG_KEY = 'derivMultipliersOperationsLog_v3'; // Chave para persistência
 const DERIV_APP_ID = process.env.NEXT_PUBLIC_DERIV_APP_ID || "1089";
 
 export type AccountType = 'demo' | 'real';
@@ -143,6 +143,8 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
   const [isLoading, setIsLoading] = useState(true);
   const [operationsLog, setOperationsLog] = useState<Operation[]>([]);
   const operationsLogRef = useRef(operationsLog);
+  const sellingContractsRef = useRef<Set<number>>(new Set());
+  const trailingStateRef = useRef<Map<number, { highestProfit: number }>>(new Map());
   useEffect(() => {
       operationsLogRef.current = operationsLog;
   }, [operationsLog]);
@@ -174,15 +176,14 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
   const [connectionError, setConnectionError] = useState<string | null>(null);
   const promisesRef = useRef<Map<string, PromiseCallbacks>>(new Map());
   const [triggerReconnect, setTriggerReconnect] = useState(0);
-  const sellingContractsRef = useRef<Set<number>>(new Set());
-
+  
     const setAndPersistOperationsLog = useCallback((updater: React.SetStateAction<Operation[]>) => {
         setOperationsLog(prevLog => {
             const newLogWithPotentialDuplicates = typeof updater === 'function' ? updater(prevLog) : updater;
             
             const uniqueOpsMap = new Map<number, Operation>();
             for(const op of newLogWithPotentialDuplicates) {
-                if(!uniqueOpsMap.has(op.id)) {
+                if(op && op.id) { // GARANTIA DE INTEGRIDADE
                     uniqueOpsMap.set(op.id, op);
                 }
             }
@@ -225,7 +226,12 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
       if (storedDemoToken) setDemoToken(storedDemoToken);
       if (storedRealToken) setRealToken(storedRealToken);
       if (storedAccountType) setAccountTypeState(storedAccountType);
-      if (storedLog) setOperationsLog(JSON.parse(storedLog));
+      if (storedLog) {
+        const parsedLog = JSON.parse(storedLog);
+        if(Array.isArray(parsedLog)) {
+             setOperationsLog(parsedLog.filter(op => op && op.id)); // Filtra entradas inválidas
+        }
+      }
     } catch (error) {
       console.error("Failed to access localStorage:", error);
     }
@@ -319,7 +325,7 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
       }
   }, [makeRequest]);
 
- const executeTrade = useCallback(async (
+  const executeTrade = useCallback(async (
     contractType: string,
     stake: number,
     symbol: string,
@@ -329,14 +335,14 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
     cancellation?: string,
     initiator: OperationInitiator = 'Manual'
   ): Promise<TradeResult> => {
-    try {
-      if (!wsRef.current || !isConnected) {
-        throw new Error("A conexão com a API da Deriv não está ativa.");
-      }
-
-      const sanitizedStake = parseFloat(stake.toFixed(2));
-      
-      const proposalRequest: any = { 
+      try {
+        if (!wsRef.current || !isConnected) {
+          throw new Error("A conexão com a API da Deriv não está ativa.");
+        }
+  
+        const sanitizedStake = parseFloat(stake.toFixed(2));
+  
+        const proposalRequest: any = {
           "proposal": 1,
           "amount": sanitizedStake,
           "basis": "stake",
@@ -344,95 +350,93 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
           "currency": "USD",
           "symbol": symbol,
           "multiplier": multiplier,
-      };
+        };
 
-      if (cancellation && cancellation !== 'none') {
+        if (cancellation && cancellation !== 'none') {
           proposalRequest.cancellation = cancellation;
-      }
-      
-      const proposalResponse: any = await makeRequest(proposalRequest);
-      const proposal = proposalResponse.proposal;
-      if (!proposal || !proposal.id) {
-        throw new Error("Falha ao obter uma proposta de negociação da API.");
-      }
-      
-      const buyRequest: any = { 
-        "buy": proposal.id, 
-        "price": proposal.ask_price
-      };
-      
-      const buyResponse: any = await makeRequest(buyRequest);
-      const buyResult = buyResponse.buy;
-      const contractId = buyResult.contract_id;
-      if (!contractId) {
-          throw new Error("Falha na compra do contrato, ID não retornado.");
-      }
-
-      if (takeProfit || stopLoss) {
-        const updateRequest: any = { "contract_update": contractId };
-        if (takeProfit) updateRequest.take_profit = takeProfit;
-        if (stopLoss) updateRequest.stop_loss = stopLoss;
+        }
+  
+        const proposalResponse: any = await makeRequest(proposalRequest);
+        const proposal = proposalResponse.proposal;
+        if (!proposal || !proposal.id) {
+          throw new Error("Falha ao obter uma proposta de negociação da API.");
+        }
+  
+        const buyRequest: any = { "buy": proposal.id, "price": proposal.ask_price };
         
-        makeRequest(updateRequest).catch(err => {
-          console.error(`[Deriv Hook] Falha ao atualizar contrato #${contractId} com TP/SL:`, err);
-          toast({
-            title: "Aviso de Negociação",
-            description: `A posição foi aberta, mas houve uma falha ao definir os limites de Take Profit / Stop Loss.`,
-            variant: "destructive"
-          })
+        const buyResponse: any = await makeRequest(buyRequest);
+        const buyResult = buyResponse.buy;
+        const contractId = buyResult.contract_id;
+  
+        if (!contractId) {
+          throw new Error("Falha na compra do contrato, ID não retornado.");
+        }
+  
+        if (takeProfit || stopLoss) {
+          const updateRequest: any = { "contract_update": contractId };
+          if (takeProfit) updateRequest.take_profit = takeProfit;
+          if (stopLoss) updateRequest.stop_loss = stopLoss;
+          
+          makeRequest(updateRequest).catch(err => {
+            console.error(`[Deriv Hook] Falha ao atualizar contrato #${contractId} com TP/SL:`, err);
+            toast({
+              title: "Aviso de Negociação",
+              description: `A posição foi aberta, mas houve uma falha ao definir os limites de Take Profit / Stop Loss.`,
+              variant: "destructive"
+            });
+          });
+        }
+        
+        const latestTick = priceTicks.length > 0 ? priceTicks[priceTicks.length - 1].price : 0;
+        const entryPrice = buyResult.entry_tick_display_value 
+          ? parseFloat(buyResult.entry_tick_display_value) 
+          : (buyResult.entry_spot_display_value ? parseFloat(buyResult.entry_spot_display_value) : latestTick);
+  
+        const purchaseTime = buyResult.purchase_time || Math.floor(Date.now() / 1000);
+        const purchaseTimeMs = purchaseTime * 1000;
+  
+        const newOperation: Operation = {
+            id: contractId,
+            asset: symbol,
+            direction: contractType === 'MULTUP' ? 'rise' : 'fall',
+            stake: sanitizedStake,
+            status: 'pending',
+            timestamp: new Date(purchaseTimeMs).toISOString(),
+            initiator,
+            entryPrice: entryPrice,
+            isSellable: true,
+            contractType,
+            multiplier,
+            duration: 0, 
+            durationUnit: 's', 
+            takeProfit: takeProfit,
+            stopLoss: stopLoss,
+        };
+        setAndPersistOperationsLog(prevLog => [newOperation, ...prevLog]);
+  
+        addTradeAnnotation({
+            contractId: String(contractId),
+            entryTime: purchaseTime,
+            entryPrice: entryPrice,
+            direction: contractType === 'MULTUP' ? 'rise' : 'fall',
+            status: 'pending',
+            stake: sanitizedStake,
+            symbol,
+            expirationTime: undefined,
+            contractType: 'multiplier'
         });
+  
+        return {
+          success: true,
+          message: `Ordem do tipo "${contractType}" para ${symbol} no valor de ${sanitizedStake} USD executada com sucesso.`,
+          contractId: contractId,
+          entryPrice,
+        };
+      } catch (error) {
+         console.error("[Deriv Hook] Erro durante a negociação de Multiplicadores:", error);
+         const message = error instanceof Error ? error.message : "Um erro desconhecido ocorreu.";
+         return { success: false, message };
       }
-      
-      const latestTick = priceTicks.length > 0 ? priceTicks[priceTicks.length - 1].price : 0;
-      const entryPrice = buyResult.entry_tick_display_value 
-        ? parseFloat(buyResult.entry_tick_display_value) 
-        : (buyResult.entry_spot_display_value ? parseFloat(buyResult.entry_spot_display_value) : latestTick);
-
-      const purchaseTime = buyResult.purchase_time || Math.floor(Date.now() / 1000);
-      const purchaseTimeMs = purchaseTime * 1000;
-
-      const newOperation: Operation = {
-          id: contractId,
-          asset: symbol,
-          direction: contractType === 'MULTUP' ? 'rise' : 'fall',
-          stake: sanitizedStake,
-          status: 'pending',
-          timestamp: new Date(purchaseTimeMs).toISOString(),
-          initiator,
-          entryPrice: entryPrice,
-          isSellable: true,
-          contractType,
-          multiplier,
-          duration: 0, 
-          durationUnit: 's', 
-          takeProfit: takeProfit,
-          stopLoss: stopLoss,
-      };
-      setAndPersistOperationsLog(prevLog => [newOperation, ...prevLog]);
-
-      addTradeAnnotation({
-          contractId: String(contractId),
-          entryTime: purchaseTime,
-          entryPrice: entryPrice,
-          direction: contractType === 'MULTUP' ? 'rise' : 'fall',
-          status: 'pending',
-          stake: sanitizedStake,
-          symbol,
-          expirationTime: undefined,
-          contractType: 'multiplier'
-      });
-
-      return {
-        success: true,
-        message: `Ordem do tipo "${contractType}" para ${symbol} no valor de ${sanitizedStake} USD executada com sucesso.`,
-        contractId: contractId,
-        entryPrice,
-      };
-    } catch (error) {
-       console.error("[Deriv Hook] Erro durante a negociação de Multiplicadores:", error);
-       const message = error instanceof Error ? error.message : "Um erro desconhecido ocorreu.";
-       return { success: false, message };
-    }
   }, [isConnected, makeRequest, priceTicks, addTradeAnnotation, toast, setAndPersistOperationsLog]);
 
 
@@ -606,6 +610,7 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
     
                             if (isSold) {
                                 sellingContractsRef.current.delete(contract.contract_id);
+                                trailingStateRef.current.delete(contract.contract_id);
                             }
 
                             if (existingOpIndex !== -1) {
@@ -860,57 +865,85 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
     }
   }, [isConnected, chartType, timePeriod, activeSymbol, subscribeToMarketData, subscribeToBotData]);
 
-  useEffect(() => {
-    const checkClientSideLimits = () => {
-        const openMultiplierOps = operationsLogRef.current.filter(op => 
-            op.status === 'pending' && 
-            (op.contractType || '').startsWith('MULT') &&
-            (op.takeProfit || op.stopLoss)
-        );
+  // Client-side Trailing Stop and Take Profit/Stop Loss watcher
+    useEffect(() => {
+        const trailingStopInterval = setInterval(() => {
+            const openMultiplierOps = operationsLogRef.current.filter(
+                op => op.status === 'pending' && op.contractType?.startsWith('MULT')
+            );
+            
+            if (openMultiplierOps.length === 0) return;
 
-        if (openMultiplierOps.length === 0) return;
+            let logNeedsUpdate = false;
+            const updatedOps = [...operationsLogRef.current];
 
-        openMultiplierOps.forEach(op => {
-            if (sellingContractsRef.current.has(op.id)) return;
-
-            const currentProfit = op.result || 0;
-            const contractId = op.id;
-
-            let shouldSell = false;
-            let reason = '';
-
-            if (op.takeProfit && currentProfit >= op.takeProfit) {
-                shouldSell = true;
-                reason = `🎯 Alvo de Lucro Atingido! (Cliente)`;
-            }
-            else if (op.stopLoss && currentProfit <= -(op.stopLoss)) {
-                shouldSell = true;
-                reason = `🛡️ Stop Loss Atingido! (Cliente)`;
-            }
-
-            if(shouldSell) {
-                sellingContractsRef.current.add(contractId);
+            openMultiplierOps.forEach(op => {
+                const currentProfit = op.result || 0;
                 
-                sellContract(contractId).then(result => {
-                    if(result.success) {
-                        toast({
-                            title: reason,
-                            description: `Posição #${contractId} fechada com um resultado de $${currentProfit.toFixed(2)}.`,
-                            variant: reason.includes('Stop Loss') ? 'destructive' : 'default',
-                        });
-                    } else {
-                        sellingContractsRef.current.delete(contractId);
+                // --- Take Profit & Stop Loss (Client-Side Fallback) ---
+                let shouldSell = false;
+                let reason = '';
+
+                if (op.takeProfit && currentProfit >= op.takeProfit) {
+                    shouldSell = true;
+                    reason = `🎯 Alvo de Lucro Atingido! (Cliente)`;
+                } else if (op.stopLoss && currentProfit <= -(op.stopLoss)) {
+                    shouldSell = true;
+                    reason = `🛡️ Stop Loss Atingido! (Cliente)`;
+                }
+                
+                // --- Trailing Stop Logic ---
+                if (currentProfit > 0) { // Only trail when in profit
+                    if (!trailingStateRef.current.has(op.id)) {
+                        trailingStateRef.current.set(op.id, { highestProfit: 0 });
                     }
-                });
+                    const state = trailingStateRef.current.get(op.id)!;
+                    
+                    if (currentProfit > state.highestProfit) {
+                        state.highestProfit = currentProfit;
+                        trailingStateRef.current.set(op.id, state);
+                    }
+
+                    const trailingDistance = op.stake * 0.5; // Trail by 50% of initial stake
+                    const newTrailingStopLevel = state.highestProfit - trailingDistance;
+
+                    const opIndex = updatedOps.findIndex(logOp => logOp.id === op.id);
+                    if (opIndex !== -1 && newTrailingStopLevel > (updatedOps[opIndex].trailingStop || 0)) {
+                        updatedOps[opIndex] = { ...updatedOps[opIndex], trailingStop: newTrailingStopLevel };
+                        logNeedsUpdate = true;
+                    }
+                    
+                    if (currentProfit < (updatedOps[opIndex]?.trailingStop || -Infinity)) {
+                        shouldSell = true;
+                        reason = `📈 Trailing Stop Acionado!`;
+                    }
+                }
+
+                // --- Execute Sell Order ---
+                if (shouldSell && !sellingContractsRef.current.has(op.id)) {
+                    sellingContractsRef.current.add(op.id);
+                    sellContract(op.id).then(result => {
+                         if (result.success) {
+                            setToastQueue(prev => [...prev, {
+                                title: reason,
+                                description: `Posição #${op.id} fechada com um resultado de $${currentProfit.toFixed(2)}.`,
+                                variant: reason.includes('Stop Loss') ? 'destructive' : 'default',
+                            }]);
+                        } else {
+                           sellingContractsRef.current.delete(op.id);
+                        }
+                    });
+                }
+            });
+
+            if (logNeedsUpdate) {
+                setAndPersistOperationsLog(updatedOps);
             }
-        });
-    };
 
-    const interval = setInterval(checkClientSideLimits, 1500);
+        }, 2000); // Check every 2 seconds
 
-    return () => clearInterval(interval);
-
-  }, [sellContract, toast]);
+        return () => clearInterval(trailingStopInterval);
+    }, [sellContract, setAndPersistOperationsLog]);
 
 
   const setAccountType = useCallback((type: AccountType) => {

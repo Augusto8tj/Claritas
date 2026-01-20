@@ -41,6 +41,9 @@ export const OperationSchema = z.object({
   expirationTime: z.number().optional(),
   multiplier: z.number().optional(),
   contractType: z.string().optional(),
+  takeProfit: z.number().optional(),
+  stopLoss: z.number().optional(),
+  trailingStop: z.number().optional(),
 });
 
 

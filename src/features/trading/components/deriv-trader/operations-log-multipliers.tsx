@@ -95,7 +95,7 @@ export default function OperationsLogMultipliers({ operations, sellContract }: O
                                     
                                     const direction = (op.contractType || '').includes('MULTUP') ? 'rise' : 'fall';
                                     const isAutopilotTrade = op.initiator === 'Piloto';
-
+                                    const trailingStop = op.trailingStop;
 
                                     return (
                                         <div key={op.id} className="flex items-center gap-4">
@@ -125,12 +125,14 @@ export default function OperationsLogMultipliers({ operations, sellContract }: O
                                                 </div>
                                                 <div className="text-muted-foreground font-mono col-span-2 md:col-span-1">
                                                     <p>Entrada: @{op.entryPrice?.toFixed(4) || '...'}</p>
-                                                     {op.takeProfit && <p className="text-green-600 flex items-center gap-1"><Target className="h-3 w-3" />Alvo: ${op.takeProfit.toFixed(2)}</p>}
-                                                     {op.stopLoss && <p className="text-red-600 flex items-center gap-1"><ShieldAlert className="h-3 w-3" />Stop: ${op.stopLoss.toFixed(2)}</p>}
-                                                    {op.exitPrice && <p>Saída: @{op.exitPrice?.toFixed(4) || '...'}</p>}
-                                                    {isAutopilotTrade && op.status === 'pending' &&
-                                                        <p className="text-blue-500 flex items-center gap-1 text-[11px]"><MoveUpRight className="h-3 w-3" />Stop Móvel Ativo</p>
-                                                    }
+                                                     {op.exitPrice && <p>Saída: @{op.exitPrice?.toFixed(4) || '...'}</p>}
+                                                </div>
+                                                <div className="text-muted-foreground">
+                                                    {op.takeProfit && <p className="text-green-600 flex items-center gap-1"><Target className="h-3 w-3" />Alvo: ${op.takeProfit.toFixed(2)}</p>}
+                                                    {op.stopLoss && <p className="text-red-600 flex items-center gap-1"><ShieldAlert className="h-3 w-3" />Stop: ${op.stopLoss.toFixed(2)}</p>}
+                                                    {op.status === 'pending' && trailingStop !== undefined && trailingStop > 0 && (
+                                                        <p className="text-cyan-600 flex items-center gap-1.5"><MoveUpRight className="h-3 w-3" /> Trailing: <span className="font-semibold">${trailingStop.toFixed(2)}</span></p>
+                                                    )}
                                                 </div>
                                             </div>
                                             <div className="w-40 flex justify-end">
