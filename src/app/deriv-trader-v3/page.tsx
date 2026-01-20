@@ -24,6 +24,7 @@ import TradingDecisionLogViewer from "@/components/deriv-trader/TradingDecisionL
 import { CouncilAutopilotInterfaceV3 } from "@/features/trading/components/deriv-trader/council-autopilot-interface-v3";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { ApiStatusIndicatorV3 } from "@/features/trading/components/deriv-trader/ApiStatusIndicatorV3";
+import { IndicatorPanel } from "@/features/trading/components/deriv-trader/indicator-panel";
 
 const Header = () => {
     const { 
@@ -90,29 +91,32 @@ const IsolatedMarketChart = () => {
     const { indicators: councilIndicators } = useRobotCouncilV3(activeSymbol, [], chartData, 0);
 
     return (
-        <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <div>
-                    <CardTitle className="font-headline text-lg">Gráfico ({activeSymbol})</CardTitle>
-                    <CardDescription className="text-xs">Desempenho em tempo real do ativo.</CardDescription>
-                </div>
-            </CardHeader>
-            <CardContent>
-                <MarketChart
-                    activeSymbol={activeSymbol || ''}
-                    chartData={chartData}
-                    isChartLoading={isChartLoading}
-                    chartError={chartError}
-                    chartType={chartType}
-                    setChartType={setChartType}
-                    timePeriod={timePeriod}
-                    setTimePeriod={setTimePeriod}
-                    operations={operationsLog}
-                    indicators={councilIndicators}
-                    tradeAnnotations={tradeAnnotations}
-                />
-            </CardContent>
-        </Card>
+        <>
+            {councilIndicators && <IndicatorPanel indicators={councilIndicators} latestDataPoint={chartData[chartData.length -1]} />}
+            <Card>
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                    <div>
+                        <CardTitle className="font-headline text-lg">Gráfico ({activeSymbol})</CardTitle>
+                        <CardDescription className="text-xs">Desempenho em tempo real do ativo.</CardDescription>
+                    </div>
+                </CardHeader>
+                <CardContent>
+                    <MarketChart
+                        activeSymbol={activeSymbol || ''}
+                        chartData={chartData}
+                        isChartLoading={isChartLoading}
+                        chartError={chartError}
+                        chartType={chartType}
+                        setChartType={setChartType}
+                        timePeriod={timePeriod}
+                        setTimePeriod={setTimePeriod}
+                        operations={operationsLog}
+                        indicators={councilIndicators}
+                        tradeAnnotations={tradeAnnotations}
+                    />
+                </CardContent>
+            </Card>
+        </>
     );
 };
 

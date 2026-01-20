@@ -71,10 +71,13 @@ export function IndicatorPanel({ indicators, latestDataPoint }: IndicatorPanelPr
                     <p>SAR: <span className="font-bold text-foreground">{formatValue(indicators.psar)}</span></p>
                 </div>
                  <div className="space-y-1">
-                    <h4 className="font-bold text-muted-foreground">Volatilidade</h4>
+                    <h4 className="font-bold text-muted-foreground">Volatilidade & Bandas</h4>
                     <p>ATR: <span className="font-bold text-foreground">{formatValue(indicators.atr, 4)}</span></p>
                     <p>BBW: <span className="font-bold text-foreground">{formatValue(indicators.bbw, 2)}%</span></p>
                     <p>Z-Score: <span className="font-bold text-foreground">{formatValue(indicators.zScore, 2)}</span></p>
+                    <p>BB Sup: <span className="font-bold text-foreground">{formatValue(indicators.bb?.upper)}</span></p>
+                    <p>BB Mid: <span className="font-bold text-foreground">{formatValue(indicators.bb?.middle)}</span></p>
+                    <p>BB Inf: <span className="font-bold text-foreground">{formatValue(indicators.bb?.lower)}</span></p>
                 </div>
                 <div className="space-y-1">
                     <h4 className="font-bold text-muted-foreground">Médias/Volume</h4>
