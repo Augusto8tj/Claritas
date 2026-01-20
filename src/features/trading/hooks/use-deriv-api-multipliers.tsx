@@ -433,6 +433,7 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
       }
 
       // PASSO 3: APÓS a compra, se houver limites de risco, enviar o pedido de atualização
+      // Aguardamos um pequeno delay para garantir que o contrato está pronto na API
       if (takeProfit !== undefined || stopLoss !== undefined) {
         setTimeout(async () => {
           try {
@@ -499,7 +500,6 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
        return { success: false, message };
     }
   }, [isConnected, makeRequest, priceTicks, addTradeAnnotation, setAndPersistOperationsLog, updateContract, setToastQueue]);
-
 
   const sellContract = useCallback(async (contractId: number): Promise<TradeResult> => {
     if (!wsRef.current || !isConnected) {
@@ -798,7 +798,7 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
                                 high: parseFloat(candleData.high),
                                 low: parseFloat(candleData.low),
                                 close: parseFloat(candleData.close),
-                                volume: candleData.tick_count || 1, // Adiciona volume padrão
+                                volume: candleData.tick_count || 1,
                             };
     
                             if (isForUI && chartTypeRef.current === 'Candle') {
@@ -898,6 +898,7 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
       
         ws.onerror = (errorEvent) => {
           console.error('[Deriv WS] WebSocket error occurred.');
+          setAccountBalance({ balance: null, currency: null, loading: false });
         };
     };
 
