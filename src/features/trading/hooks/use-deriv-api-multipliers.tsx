@@ -142,6 +142,11 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
   const [accountBalance, setAccountBalance] = useState<AccountBalance>({ balance: null, currency: null, loading: true });
   const [isLoading, setIsLoading] = useState(true);
   const [operationsLog, setOperationsLog] = useState<Operation[]>([]);
+  const operationsLogRef = useRef(operationsLog);
+  useEffect(() => {
+      operationsLogRef.current = operationsLog;
+  }, [operationsLog]);
+  
   const [assetGroups, setAssetGroups] = useState<AssetGroup[]>([]);
   const [isAssetsLoading, setIsAssetsLoading] = useState(true);
   const { toast } = useToast();
@@ -174,7 +179,7 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
     const setAndPersistOperationsLog = useCallback((updater: React.SetStateAction<Operation[]>) => {
         setOperationsLog(prevLog => {
             const newLogWithPotentialDuplicates = typeof updater === 'function' ? updater(prevLog) : updater;
-            // Desduplicação
+            
             const uniqueOpsMap = new Map<number, Operation>();
             for(const op of newLogWithPotentialDuplicates) {
                 if(!uniqueOpsMap.has(op.id)) {
@@ -331,7 +336,6 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
 
       const sanitizedStake = parseFloat(stake.toFixed(2));
       
-      // PASSO 1: Obter proposta sem take_profit ou stop_loss
       const proposalRequest: any = { 
           "proposal": 1,
           "amount": sanitizedStake,
@@ -344,14 +348,15 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
       if (cancellation && cancellation !== 'none') {
           proposalRequest.cancellation = cancellation;
       }
+      
       const proposalResponse: any = await makeRequest(proposalRequest);
       const proposal = proposalResponse.proposal;
       if (!proposal || !proposal.id) {
         throw new Error("Falha ao obter uma proposta de negociação da API.");
       }
       
-      // PASSO 2: Comprar o contrato
       const buyRequest: any = { "buy": proposal.id, "price": proposal.ask_price };
+      
       const buyResponse: any = await makeRequest(buyRequest);
       const buyResult = buyResponse.buy;
       const contractId = buyResult.contract_id;
@@ -359,13 +364,12 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
           throw new Error("Falha na compra do contrato, ID não retornado.");
       }
 
-      // PASSO 3: Atualizar o contrato com TP/SL se existirem
+      // Passo 3: Atualizar o contrato com TP/SL se existirem
       if (takeProfit || stopLoss) {
         const updateRequest: any = { "contract_update": contractId };
         if (takeProfit) updateRequest.take_profit = takeProfit;
         if (stopLoss) updateRequest.stop_loss = stopLoss;
-        // Envia a atualização como fire-and-forget
-        makeRequest(updateRequest).catch(console.error); 
+        makeRequest(updateRequest).catch(console.error); // Envia como fire-and-forget
       }
       
       const latestTick = priceTicks.length > 0 ? priceTicks[priceTicks.length - 1].price : 0;
@@ -643,7 +647,7 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
     
                                 const newOperation: Operation = {
                                     id: contract.contract_id,
-                                    asset: contract.symbol,
+                                    asset: contract.symbol || 'Símbolo desconhecido',
                                     direction: direction,
                                     stake: contract.buy_price || 0,
                                     status: 'pending',
@@ -847,7 +851,7 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
 
   useEffect(() => {
     const checkClientSideLimits = () => {
-        const openMultiplierOps = operationsLog.filter(op => 
+        const openMultiplierOps = operationsLogRef.current.filter(op => 
             op.status === 'pending' && 
             (op.contractType || '').startsWith('MULT') &&
             (op.takeProfit || op.stopLoss)
@@ -856,25 +860,26 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
         if (openMultiplierOps.length === 0) return;
 
         openMultiplierOps.forEach(op => {
+            if (sellingContractsRef.current.has(op.id)) return;
+
             const currentProfit = op.result || 0;
             const contractId = op.id;
 
             let shouldSell = false;
             let reason = '';
 
-            // Check for Take Profit
             if (op.takeProfit && currentProfit >= op.takeProfit) {
                 shouldSell = true;
                 reason = `🎯 Alvo de Lucro Atingido! (Cliente)`;
             }
-            
-            // Check for Stop Loss
             else if (op.stopLoss && currentProfit <= -(op.stopLoss)) {
                 shouldSell = true;
                 reason = `🛡️ Stop Loss Atingido! (Cliente)`;
             }
 
             if(shouldSell) {
+                sellingContractsRef.current.add(contractId);
+                
                 sellContract(contractId).then(result => {
                     if(result.success) {
                         toast({
@@ -882,17 +887,19 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
                             description: `Posição #${contractId} fechada com um resultado de $${currentProfit.toFixed(2)}.`,
                             variant: reason.includes('Stop Loss') ? 'destructive' : 'default',
                         });
+                    } else {
+                        sellingContractsRef.current.delete(contractId);
                     }
                 });
             }
         });
     };
 
-    const interval = setInterval(checkClientSideLimits, 1500); // Check every 1.5 seconds
+    const interval = setInterval(checkClientSideLimits, 1500);
 
     return () => clearInterval(interval);
 
-}, [operationsLog, sellContract, toast]);
+  }, [sellContract, toast]);
 
 
   const setAccountType = useCallback((type: AccountType) => {
