@@ -707,8 +707,8 @@ export const DerivApiProviderV3 = ({ children }: { children: ReactNode }) => {
       };
     
       ws.onerror = (errorEvent) => {
-        console.error('[Deriv WS] WebSocket error occurred.');
-        setAccountBalance({ balance: null, currency: null, loading: false });
+        // O evento onclose, que se segue, fornecerá os detalhes do erro.
+        // Manter este manipulador vazio evita logs de erro genéricos no console.
       };
     };
 

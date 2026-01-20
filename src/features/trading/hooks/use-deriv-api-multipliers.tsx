@@ -897,8 +897,8 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
         };
       
         ws.onerror = (errorEvent) => {
-          console.error('[Deriv WS] WebSocket error occurred.');
-          setAccountBalance({ balance: null, currency: null, loading: false });
+          // O evento onclose, que se segue, fornecerá os detalhes do erro.
+          // Manter este manipulador vazio evita logs de erro genéricos no console.
         };
     };
 
@@ -938,6 +938,7 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
 
             openMultiplierOps.forEach(op => {
                 const currentProfit = op.result || 0;
+                const contractId = op.id;
                 
                 // --- Take Profit & Stop Loss (Client-Side Fallback) ---
                 let shouldSell = false;

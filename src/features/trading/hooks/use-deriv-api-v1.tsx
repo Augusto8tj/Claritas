@@ -774,16 +774,9 @@ const subscribeToMarketData = useCallback(async (symbol: string) => {
           wsRef.current = null;
         };
       
-        ws.onerror = (error) => {
-          console.error('[Deriv WS] WebSocket error:', error);
-          if (promisesRef.current) {
-              promisesRef.current.forEach((p) => p.reject(new Error("WebSocket error occurred.")));
-              promisesRef.current.clear();
-          }
-          setConnectionError("Falha na conexão com a API da Deriv. Verifique o seu token e a ligação à internet.");
-          setIsConnecting(false);
-          setIsConnected(false);
-          setAccountBalance({ balance: null, currency: null, loading: false });
+      ws.onerror = (error) => {
+          // O evento onclose, que se segue, fornecerá os detalhes do erro.
+          // Manter este manipulador vazio evita logs de erro genéricos no console.
         };
     };
 
