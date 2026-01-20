@@ -77,7 +77,7 @@ export function OpenPositions({ operations, title, description }: OpenPositionsP
                                                 <p className="text-muted-foreground">{isMultiplier ? `Multiplicador x${op.multiplier}` : 'Opção Digital'}</p>
                                             </div>
                                             <div className="text-muted-foreground">
-                                                <p>Entrada: <span className="font-semibold text-foreground">${op.stake.toFixed(2)}</span></p>
+                                                <p>Entrada: <span className="font-semibold text-foreground">${(op.stake || 0).toFixed(2)}</span></p>
                                                 <p className="flex items-center gap-1"><Clock className="h-3 w-3"/><span>{formatTime(op.timestamp)}</span></p>
                                             </div>
                                             <div className="text-muted-foreground">

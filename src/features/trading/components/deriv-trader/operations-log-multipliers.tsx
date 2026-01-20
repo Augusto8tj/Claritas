@@ -11,7 +11,7 @@ import {
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import type { Operation, OperationInitiator } from "@/lib/types";
-import { ArrowDown, ArrowUp, Bot, User, Users, MoveRight, Clock, XSquare, Loader2 } from "lucide-react";
+import { ArrowDown, ArrowUp, Bot, User, Users, MoveRight, Clock, XSquare, Loader2, Target } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Button } from "@/components/ui/button";
@@ -89,7 +89,7 @@ export default function OperationsLogMultipliers({ operations, sellContract }: O
                                     <p>Nenhuma operação recente.</p>
                                 </div>
                             ) : (
-                                operations.map((op) => {
+                                operations.filter(op => op && typeof op.id !== 'undefined' && typeof op.stake === 'number').map((op) => {
                                     const currentProfit = op.result || 0;
                                     const isWinning = currentProfit >= 0;
                                     const isSelling = sellingContractId === op.id;
@@ -115,7 +115,7 @@ export default function OperationsLogMultipliers({ operations, sellContract }: O
                                                     <p className="text-sm font-medium leading-none">{op.asset} - {direction === "rise" ? "Up" : "Down"}</p>
                                                 </div>
                                                 <div className="text-muted-foreground">
-                                                    <p>Entrada: <span className="font-semibold text-foreground">${op.stake.toFixed(2)}</span></p>
+                                                    <p>Entrada: <span className="font-semibold text-foreground">${(op.stake || 0).toFixed(2)}</span></p>
                                                      <p>Multiplicador: <span className="font-semibold text-foreground">x{op.multiplier || '??'}</span></p>
                                                 </div>
                                                 <div className="text-muted-foreground">
@@ -124,6 +124,7 @@ export default function OperationsLogMultipliers({ operations, sellContract }: O
                                                 </div>
                                                 <div className="text-muted-foreground font-mono col-span-2 md:col-span-1">
                                                     <p>Entrada: @{op.entryPrice?.toFixed(4) || '...'}</p>
+                                                     {op.takeProfit && <p className="text-green-600 flex items-center gap-1"><Target className="h-3 w-3" />Alvo: ${op.takeProfit.toFixed(2)}</p>}
                                                     {op.exitPrice && <p>Saída: @{op.exitPrice?.toFixed(4) || '...'}</p>}
                                                 </div>
                                             </div>
