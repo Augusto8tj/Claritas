@@ -345,6 +345,7 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
           "symbol": symbol,
           "multiplier": multiplier,
       };
+
       if (cancellation && cancellation !== 'none') {
           proposalRequest.cancellation = cancellation;
       }
@@ -355,7 +356,10 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
         throw new Error("Falha ao obter uma proposta de negociação da API.");
       }
       
-      const buyRequest: any = { "buy": proposal.id, "price": proposal.ask_price };
+      const buyRequest: any = { 
+        "buy": proposal.id, 
+        "price": proposal.ask_price
+      };
       
       const buyResponse: any = await makeRequest(buyRequest);
       const buyResult = buyResponse.buy;
@@ -364,12 +368,19 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
           throw new Error("Falha na compra do contrato, ID não retornado.");
       }
 
-      // Passo 3: Atualizar o contrato com TP/SL se existirem
       if (takeProfit || stopLoss) {
         const updateRequest: any = { "contract_update": contractId };
         if (takeProfit) updateRequest.take_profit = takeProfit;
         if (stopLoss) updateRequest.stop_loss = stopLoss;
-        makeRequest(updateRequest).catch(console.error); // Envia como fire-and-forget
+        
+        makeRequest(updateRequest).catch(err => {
+          console.error(`[Deriv Hook] Falha ao atualizar contrato #${contractId} com TP/SL:`, err);
+          toast({
+            title: "Aviso de Negociação",
+            description: `A posição foi aberta, mas houve uma falha ao definir os limites de Take Profit / Stop Loss.`,
+            variant: "destructive"
+          })
+        });
       }
       
       const latestTick = priceTicks.length > 0 ? priceTicks[priceTicks.length - 1].price : 0;
