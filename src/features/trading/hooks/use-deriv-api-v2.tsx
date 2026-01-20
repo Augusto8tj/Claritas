@@ -558,7 +558,7 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
                                     id: contract.contract_id,
                                     asset: contract.symbol,
                                     direction: direction,
-                                    stake: contract.buy_price,
+                                    stake: contract.buy_price || 0,
                                     status: 'pending',
                                     result: contract.profit,
                                     timestamp: new Date(purchaseTime * 1000).toISOString(),

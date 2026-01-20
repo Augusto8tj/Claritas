@@ -600,23 +600,20 @@ const subscribeToMarketData = useCallback(async (symbol: string) => {
                                 const purchaseTime = contract.purchase_time || Math.floor(Date.now() / 1000);
                                 const durationInSeconds = contract.date_expiry ? (contract.date_expiry - purchaseTime) : 0;
                                 const durationUnit: DurationUnit = 's'; // Safe default
-                    
+    
                                 const newOperation: Operation = {
                                     id: contract.contract_id,
                                     asset: contract.symbol,
                                     direction: direction,
-                                    stake: contract.buy_price,
+                                    stake: contract.buy_price || 0,
                                     status: 'pending',
-                                    result: contract.profit,
                                     timestamp: new Date(purchaseTime * 1000).toISOString(),
+                                    duration: durationInSeconds,
+                                    durationUnit: durationUnit,
                                     initiator: 'Manual',
                                     entryPrice: parseFloat(contract.entry_spot_display_value || contract.entry_tick_display_value || '0'),
                                     isSellable: contract.is_sellable === 1,
                                     expirationTime: contract.date_expiry ? contract.date_expiry * 1000 : undefined,
-                                    duration: durationInSeconds,
-                                    durationUnit: durationUnit,
-                                    multiplier: contract.multiplier,
-                                    contractType: contract.contract_type,
                                 };
                                 
                                 if(typeof addTradeAnnotation === 'function') {
