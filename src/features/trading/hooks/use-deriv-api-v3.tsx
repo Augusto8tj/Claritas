@@ -252,7 +252,7 @@ export const DerivApiProviderV3 = ({ children }: { children: ReactNode }) => {
         if (!ws || ws.readyState !== WebSocket.OPEN) {
             return reject(new Error("WebSocket não está conectado."));
         }
-
+        
         const req_id = Date.now() + Math.floor(Math.random() * 1000000);
         const payload = { ...request, req_id };
         
@@ -708,8 +708,8 @@ export const DerivApiProviderV3 = ({ children }: { children: ReactNode }) => {
           wsRef.current = null;
       };
     
-      ws.onerror = (errorEvent) => {
-        // A lógica de erro é centralizada no onclose para obter detalhes específicos.
+      ws.onerror = () => {
+          // O evento onclose é mais fiável para obter o motivo do erro.
       };
     };
 

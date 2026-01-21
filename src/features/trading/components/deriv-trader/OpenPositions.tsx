@@ -10,8 +10,9 @@ import {
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import type { Operation } from "@/lib/types";
-import { ArrowDown, ArrowUp, Briefcase, Clock, Target, MoveUpRight, ShieldAlert } from "lucide-react";
+import { ArrowDown, ArrowUp, Briefcase, Clock, Target, MoveUpRight, ShieldAlert, Settings } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 
 interface OpenPositionsProps {
   operations: (Operation & { source?: string })[];
@@ -62,6 +63,8 @@ export function OpenPositions({ operations, title, description }: OpenPositionsP
                                 const stopLossValue = op.stopLoss;
                                 const key = `${op.source || 'op'}-${op.id}`;
                                 const isAutopilotTrade = op.initiator === 'Piloto' || op.initiator === 'Conselho';
+                                const trailingStop = op.trailingStop;
+                                const isTrailingActive = isAutopilotTrade && op.status === 'pending' && trailingStop !== undefined && trailingStop > 0;
 
                                 return (
                                     <div key={key} className="flex items-center gap-4 border-b pb-3 last:border-b-0 last:pb-0">
@@ -91,11 +94,27 @@ export function OpenPositions({ operations, title, description }: OpenPositionsP
                                                   <>
                                                     <p className="flex items-center gap-1.5 text-green-600"><Target className="h-3 w-3"/> Alvo: <span className="font-semibold">{targetValue ? `$${targetValue.toFixed(2)}` : 'N/A'}</span></p>
                                                     <p className="flex items-center gap-1.5 text-red-600"><ShieldAlert className="h-3 w-3"/> Stop: <span className="font-semibold">{stopLossValue ? `$${stopLossValue.toFixed(2)}` : 'N/A'}</span></p>
-                                                    {isAutopilotTrade && <p className="text-blue-500 flex items-center gap-1 text-xs"><MoveUpRight className="h-3 w-3" />Stop Móvel</p>}
+                                                    {isAutopilotTrade && (
+                                                        <p className={cn(
+                                                            "flex items-center gap-1.5 text-xs", 
+                                                            isTrailingActive ? "text-cyan-600 font-semibold" : "text-muted-foreground/80 italic"
+                                                        )}>
+                                                            <MoveUpRight className="h-3 w-3" /> 
+                                                            Stop Móvel: 
+                                                            <span className="font-semibold">
+                                                                {isTrailingActive ? `$${trailingStop.toFixed(2)}` : 'Ativará com lucro'}
+                                                            </span>
+                                                        </p>
+                                                    )}
                                                   </>
                                                 )}
                                             </div>
                                         </div>
+                                         {op.initiator === 'Manual' && isMultiplier && (
+                                            <Button variant="ghost" size="icon" className="h-8 w-8" disabled>
+                                                <Settings className="h-4 w-4" />
+                                            </Button>
+                                        )}
                                     </div>
                                 );
                             })

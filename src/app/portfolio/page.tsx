@@ -92,6 +92,5 @@ function PortfolioContent() {
 }
 
 export default function PortfolioPage() {
-    // O FormProvider e os provedores de API foram removidos para desacoplar a página.
     return <PortfolioContent />;
 }

@@ -725,7 +725,7 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
           wsRef.current = null;
       };
     
-      ws.onerror = (errorEvent) => {
+      ws.onerror = () => {
         // A lógica de erro é centralizada no onclose para obter detalhes específicos.
       };
     };

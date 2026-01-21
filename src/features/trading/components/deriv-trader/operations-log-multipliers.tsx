@@ -98,7 +98,7 @@ export default function OperationsLogMultipliers({ operations, sellContract }: O
                                     const direction = (op.contractType || '').includes('MULTUP') ? 'rise' : 'fall';
                                     const isAutopilotTrade = op.initiator === 'Piloto';
                                     const trailingStop = op.trailingStop;
-                                    const isTrailingActive = trailingStop !== undefined && trailingStop > 0;
+                                    const isTrailingActive = isAutopilotTrade && op.status === 'pending' && trailingStop !== undefined && trailingStop > 0;
 
 
                                     return (
