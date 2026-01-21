@@ -157,11 +157,13 @@ export default function OperationsLogMultipliers({ operations, sellContract }: O
                                                         )}>
                                                             {currentProfit.toLocaleString('pt-BR', { style: 'currency', currency: 'USD' })}
                                                         </span>
-                                                        <ManagePositionDialog operation={op}>
-                                                            <Button variant="ghost" size="icon" className="h-8 w-8" disabled={isSelling}>
-                                                                <Settings className="h-4 w-4" />
-                                                            </Button>
-                                                        </ManagePositionDialog>
+                                                        {op.initiator === 'Manual' && (
+                                                            <ManagePositionDialog operation={op}>
+                                                                <Button variant="ghost" size="icon" className="h-8 w-8" disabled={isSelling}>
+                                                                    <Settings className="h-4 w-4" />
+                                                                </Button>
+                                                            </ManagePositionDialog>
+                                                        )}
                                                         <Button
                                                             variant="outline"
                                                             size="sm"
