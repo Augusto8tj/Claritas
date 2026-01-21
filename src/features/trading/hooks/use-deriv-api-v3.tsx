@@ -178,7 +178,7 @@ export const DerivApiProviderV3 = ({ children }: { children: ReactNode }) => {
   const [connectionError, setConnectionError] = useState<string | null>(null);
   const promisesRef = useRef<Map<string, PromiseCallbacks>>(new Map());
   const [triggerReconnect, setTriggerReconnect] = useState(0);
-  
+
   useEffect(() => {
     chartTypeRef.current = chartType;
   }, [chartType]);

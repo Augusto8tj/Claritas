@@ -275,7 +275,7 @@ export const DerivApiProviderV1 = ({ children }: { children: ReactNode }) => {
                     promisesRef.current.delete(String(req_id));
                     reject(new Error(`O pedido à API expirou (60s) para req_id: ${req_id}. O token pode ser inválido ou a rede está lenta.`));
                 }
-            }, 60000);
+            }, 60000); // Aumentado para 60 segundos
             
             promisesRef.current.set(String(req_id), {
                 resolve: (value: any) => {
@@ -588,7 +588,7 @@ const subscribeToMarketData = useCallback(async (symbol: string) => {
                     case 'balance':
                         setAccountBalance({ balance: response.balance.balance, currency: response.balance.currency, loading: false });
                         break;
-                    case 'proposal_open_contract':
+                   case 'proposal_open_contract':
                         const contract = response.proposal_open_contract;
                         if (!contract) return;
 
@@ -816,6 +816,8 @@ const subscribeToMarketData = useCallback(async (symbol: string) => {
         };
       
         ws.onerror = (error) => {
+          // O evento onclose é mais fiável para obter o motivo do erro.
+          // Este manipulador está aqui para prevenir que um erro não tratado feche a aplicação.
           setAccountBalance({ balance: null, currency: null, loading: false });
         };
     };

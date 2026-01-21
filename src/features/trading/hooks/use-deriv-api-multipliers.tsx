@@ -182,6 +182,9 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
   const [connectionError, setConnectionError] = useState<string | null>(null);
   const promisesRef = useRef<Map<string, PromiseCallbacks>>(new Map());
   const [triggerReconnect, setTriggerReconnect] = useState(0);
+  const [lastPingTime, setLastPingTime] = useState<number>(Date.now());
+  const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const pingIntervalRef = useRef<NodeJS.Timeout | null>(null);
   
     const setAndPersistOperationsLog = useCallback((updater: React.SetStateAction<Operation[]>) => {
         setOperationsLog(prevLog => {
@@ -267,9 +270,9 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
             const timeoutId = setTimeout(() => {
                 if (promisesRef.current.has(String(req_id))) {
                     promisesRef.current.delete(String(req_id));
-                    reject(new Error(`O pedido à API expirou (60s) para req_id: ${req_id}. O token pode ser inválido ou a rede está lenta.`));
+                    reject(new Error(`O pedido à API expirou (15s) para req_id: ${req_id}.`));
                 }
-            }, 60000);
+            }, 15000); // Reduzido de 60s para 15s
             
             promisesRef.current.set(String(req_id), {
                 resolve: (value: any) => {
@@ -342,6 +345,10 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
     }
 
     try {
+        if (takeProfit === undefined && stopLoss === undefined) {
+            return { success: true, message: "Nenhuma alteração nos limites de risco." };
+        }
+
         const updateRequest: any = {
             contract_update: 1,
             contract_id: contractId,
@@ -357,12 +364,25 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
         }
 
         const response: any = await makeRequest(updateRequest);
+        const updateResult = response.contract_update;
 
-        if (response.contract_update) {
-            // A atualização do estado será feita pelo stream 'proposal_open_contract'
+        if (updateResult) {
+            setAndPersistOperationsLog(prevLog => {
+                return prevLog.map(op => {
+                    if (op.id === contractId) {
+                        return {
+                            ...op,
+                            takeProfit: updateResult.limit_order?.take_profit || op.takeProfit,
+                            stopLoss: updateResult.limit_order?.stop_loss || op.stopLoss,
+                        };
+                    }
+                    return op;
+                });
+            });
+            
             return { 
                 success: true, 
-                message: `Pedido de atualização para o contrato #${contractId} enviado.` 
+                message: `Limites de risco atualizados para o contrato #${contractId}.` 
             };
         } else {
             throw new Error("A resposta da API não continha os dados de atualização esperados.");
@@ -373,7 +393,7 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
         const message = error instanceof Error ? error.message : "Um erro desconhecido ocorreu.";
         return { success: false, message };
     }
-}, [isConnected, makeRequest]);
+}, [isConnected, makeRequest, setAndPersistOperationsLog]);
   
   const executeTrade = useCallback(async (
     contractType: string,
@@ -595,10 +615,54 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
     }
   }, [getHistoricalData, makeRequest]);
 
+  const startConnectionMonitor = useCallback(() => {
+    if (pingIntervalRef.current) {
+        clearInterval(pingIntervalRef.current);
+    }
+    
+    pingIntervalRef.current = setInterval(() => {
+        if (wsRef.current?.readyState === WebSocket.OPEN) {
+            try {
+                wsRef.current.send(JSON.stringify({ ping: 1 }));
+                setLastPingTime(Date.now());
+            } catch (error) {
+                console.error('[Connection Monitor] Failed to send ping:', error);
+            }
+        }
+    }, 30000);
+    
+    const checkInterval = setInterval(() => {
+        const timeSinceLastPing = Date.now() - lastPingTime;
+        if (timeSinceLastPing > 45000 && wsRef.current?.readyState === WebSocket.OPEN) {
+            console.warn('[Connection Monitor] No response for 45s, reconnecting...');
+            setTriggerReconnect(c => c + 1);
+        }
+    }, 10000);
+    
+    return () => {
+        if (pingIntervalRef.current) clearInterval(pingIntervalRef.current);
+        clearInterval(checkInterval);
+    };
+  }, [lastPingTime]);
+  
+  const renewSubscriptions = useCallback(async () => {
+    if (!isConnected || !activeSymbol) return;
+    
+    console.log('[Subscriptions] Renewing market data subscriptions...');
+    
+    try {
+        await subscribeToMarketData(activeSymbol);
+        await subscribeToBotData(activeSymbol);
+    } catch (error) {
+        console.error('[Subscriptions] Failed to renew:', error);
+    }
+  }, [isConnected, activeSymbol, subscribeToMarketData, subscribeToBotData]);
+
 
   useEffect(() => {
     if (!activeToken || isLoading) {
       if (wsRef.current) wsRef.current.close();
+      if (pingIntervalRef.current) clearInterval(pingIntervalRef.current);
       return;
     }
     
@@ -618,6 +682,12 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
         ws.onmessage = (event) => {
             try {
                 const response = JSON.parse(event.data);
+                
+                if (response.msg_type === 'ping' || response.pong) {
+                    setLastPingTime(Date.now());
+                    return;
+                }
+                
                 const reqId = response.req_id;
                 
                 if (reqId && promisesRef.current.has(String(reqId))) {
@@ -824,6 +894,8 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
                 ws.send(JSON.stringify({ "proposal_open_contract": 1, "subscribe": 1 }));
                 ws.send(JSON.stringify({ "balance": 1, "subscribe": 1 }));
                 
+                startConnectionMonitor();
+                
                 const assetsRes: any = await makeRequest({ active_symbols: 'full', product_type: 'basic' });
                 
                 const filteredSymbols = assetsRes.active_symbols.filter((symbol: any) => 
@@ -864,6 +936,11 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
           if (!wsRef.current) return;
           const { wasClean, code, reason } = event;
           
+          if (pingIntervalRef.current) {
+              clearInterval(pingIntervalRef.current);
+              pingIntervalRef.current = null;
+          }
+          
           if (promisesRef.current) {
               promisesRef.current.forEach((p) => {
                 if (p && typeof p.reject === 'function') {
@@ -875,7 +952,16 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
     
           if (!wasClean) {
             setConnectionError(`A conexão foi encerrada inesperadamente. Código: ${code}. Razão: ${reason || 'N/A'}.`);
+            
+            if (reconnectTimeoutRef.current) {
+                clearTimeout(reconnectTimeoutRef.current);
+            }
+            reconnectTimeoutRef.current = setTimeout(() => {
+                console.log('[Auto-Reconnect] Attempting to reconnect...');
+                setTriggerReconnect(c => c + 1);
+            }, 3000);
           }
+          
           setIsConnected(false);
           setIsConnecting(false);
           setAccountBalance({ balance: null, currency: null, loading: false });
@@ -883,8 +969,8 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
         };
       
         ws.onerror = (errorEvent) => {
-            // O evento onclose é mais fiável para obter o motivo do erro.
-            setAccountBalance({ balance: null, currency: null, loading: false });
+          console.error('[Deriv WS] WebSocket error event');
+          setAccountBalance({ balance: null, currency: null, loading: false });
         };
     };
 
@@ -895,101 +981,25 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
         wsRef.current.onclose = null;
         wsRef.current.close();
       }
+      if (pingIntervalRef.current) {
+          clearInterval(pingIntervalRef.current);
+      }
+      if (reconnectTimeoutRef.current) {
+          clearTimeout(reconnectTimeoutRef.current);
+      }
     };
-  }, [activeToken, isLoading, makeRequest, toast, triggerReconnect, updateTradeAnnotation, addTradeAnnotation, setAndPersistOperationsLog, setToastQueue, updateContract]);
+  }, [activeToken, isLoading, makeRequest, toast, triggerReconnect, updateTradeAnnotation, addTradeAnnotation, setAndPersistOperationsLog, setToastQueue, updateContract, startConnectionMonitor]);
 
   
   useEffect(() => {
-    if (isConnected && activeSymbol) {
-      subscribeToMarketData(activeSymbol);
-      subscribeToBotData(activeSymbol);
+    if (isConnected && activeSymbol && !isConnecting) {
+      const timer = setTimeout(() => {
+          renewSubscriptions();
+      }, 1000);
+      
+      return () => clearTimeout(timer);
     }
-  }, [isConnected, chartType, timePeriod, activeSymbol, subscribeToMarketData, subscribeToBotData]);
-
-  // Client-side Trailing Stop and Take Profit/Stop Loss watcher
-    useEffect(() => {
-        if (!isConnecting && !isConnected && operationsLogRef.current.some(op => op.status === 'pending')) {
-            return;
-        }
-
-        const trailingStopInterval = setInterval(() => {
-            const openMultiplierOps = operationsLogRef.current.filter(
-                op => op.status === 'pending' && op.contractType?.startsWith('MULT')
-            );
-            
-            if (openMultiplierOps.length === 0) return;
-
-            let logNeedsUpdate = false;
-            const updatedOps = [...operationsLogRef.current];
-
-            openMultiplierOps.forEach(op => {
-                const currentProfit = op.result || 0;
-                const contractId = op.id;
-                
-                // --- Take Profit & Stop Loss (Client-Side Fallback) ---
-                let shouldSell = false;
-                let reason = '';
-
-                if (op.takeProfit && currentProfit >= op.takeProfit) {
-                    shouldSell = true;
-                    reason = `🎯 Alvo de Lucro Atingido! (Cliente)`;
-                } else if (op.stopLoss && currentProfit <= -(op.stopLoss)) {
-                    shouldSell = true;
-                    reason = `🛡️ Stop Loss Atingido! (Cliente)`;
-                }
-                
-                // --- Trailing Stop Logic ---
-                if (currentProfit > 0) { // Only trail when in profit
-                    if (!trailingStateRef.current.has(op.id)) {
-                        trailingStateRef.current.set(op.id, { highestProfit: 0 });
-                    }
-                    const state = trailingStateRef.current.get(op.id)!;
-                    
-                    if (currentProfit > state.highestProfit) {
-                        state.highestProfit = currentProfit;
-                        trailingStateRef.current.set(op.id, state);
-                    }
-
-                    const trailingDistance = op.stake * 0.5; // Trail by 50% of initial stake
-                    const newTrailingStopLevel = state.highestProfit - trailingDistance;
-
-                    const opIndex = updatedOps.findIndex(logOp => logOp.id === op.id);
-                    if (opIndex !== -1 && newTrailingStopLevel > (updatedOps[opIndex].trailingStop || 0)) {
-                        updatedOps[opIndex] = { ...updatedOps[opIndex], trailingStop: newTrailingStopLevel };
-                        logNeedsUpdate = true;
-                    }
-                    
-                    if (opIndex !== -1 && currentProfit < (updatedOps[opIndex]?.trailingStop || -Infinity)) {
-                        shouldSell = true;
-                        reason = `📈 Trailing Stop Acionado!`;
-                    }
-                }
-
-                // --- Execute Sell Order ---
-                if (shouldSell && !sellingContractsRef.current.has(op.id)) {
-                    sellingContractsRef.current.add(op.id);
-                    sellContract(op.id).then(result => {
-                         if (result.success) {
-                            setToastQueue(prev => [...prev, {
-                                title: reason,
-                                description: `Posição #${op.id} fechada com um resultado de $${currentProfit.toFixed(2)}.`,
-                                variant: reason.includes('Stop Loss') ? 'destructive' : 'default',
-                            }]);
-                        } else {
-                           sellingContractsRef.current.delete(op.id);
-                        }
-                    });
-                }
-            });
-
-            if (logNeedsUpdate) {
-                setAndPersistOperationsLog(updatedOps);
-            }
-
-        }, 1500); // Check every 1.5 seconds
-
-        return () => clearInterval(trailingStopInterval);
-    }, [sellContract, setAndPersistOperationsLog, isConnected, isConnecting, setToastQueue]);
+  }, [isConnected, isConnecting, renewSubscriptions]);
 
 
   const setAccountType = useCallback((type: AccountType) => {

@@ -269,7 +269,7 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
         if (!ws || ws.readyState !== WebSocket.OPEN) {
             return reject(new Error("WebSocket não está conectado."));
         }
-
+        
         const req_id = Date.now() + Math.floor(Math.random() * 1000000);
         const payload = { ...request, req_id };
         
@@ -279,7 +279,7 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
                     promisesRef.current.delete(String(req_id));
                     reject(new Error(`O pedido à API expirou (60s) para req_id: ${req_id}. O token pode ser inválido ou a rede está lenta.`));
                 }
-            }, 60000);
+            }, 60000); // Aumentado para 60 segundos
             
             promisesRef.current.set(String(req_id), {
                 resolve: (value: any) => {
