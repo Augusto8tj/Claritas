@@ -13,6 +13,7 @@ import { FirebaseErrorListener } from '@/components/firebase-error-listener';
 const DERIV_DEMO_TOKEN_KEY = 'derivDemoApiToken';
 const DERIV_REAL_TOKEN_KEY = 'derivRealApiToken';
 const DERIV_ACCOUNT_TYPE_KEY = 'derivAccountType';
+const DERIV_V2_LOG_KEY = 'derivV2OperationsLog_v2.5';
 const DERIV_APP_ID = process.env.NEXT_PUBLIC_DERIV_APP_ID || "1089";
 
 export type AccountType = 'demo' | 'real';
@@ -123,7 +124,7 @@ const isCandle = (d: ChartData): d is CandleData => d != null && 'close' in d;
 
 const addDataPoint = (prevData: ChartData[], newPoint: ChartData): ChartData[] => {
     let data = [...prevData];
-    if (data.length > 0 && isCandle(newPoint) && data[data.length - 1].epoch === newPoint.epoch) {
+    if (isCandle(newPoint) && data.length > 0 && data[data.length - 1].epoch === newPoint.epoch) {
         data[data.length - 1] = newPoint;
         return data;
     }
@@ -178,6 +179,18 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
   const [connectionError, setConnectionError] = useState<string | null>(null);
   const promisesRef = useRef<Map<string, PromiseCallbacks>>(new Map());
   const [triggerReconnect, setTriggerReconnect] = useState(0);
+
+  const setAndPersistOperationsLog = useCallback((updater: React.SetStateAction<Operation[]>) => {
+    setOperationsLog(prevLog => {
+        const newLog = typeof updater === 'function' ? updater(prevLog) : updater;
+        try {
+            localStorage.setItem(DERIV_V2_LOG_KEY, JSON.stringify(newLog));
+        } catch (error) {
+            console.error("Failed to save V2 operations log to localStorage:", error);
+        }
+        return newLog;
+    });
+  }, []);
   
   useEffect(() => {
     chartTypeRef.current = chartType;
@@ -188,11 +201,17 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
       const storedDemoToken = localStorage.getItem(DERIV_DEMO_TOKEN_KEY);
       const storedRealToken = localStorage.getItem(DERIV_REAL_TOKEN_KEY);
       const storedAccountType = localStorage.getItem(DERIV_ACCOUNT_TYPE_KEY) as AccountType | null;
+      const storedLog = localStorage.getItem(DERIV_V2_LOG_KEY);
 
       if (storedDemoToken) setDemoToken(storedDemoToken);
       if (storedRealToken) setRealToken(storedRealToken);
       if (storedAccountType) setAccountTypeState(storedAccountType);
-      
+      if (storedLog) {
+        const parsedLog = JSON.parse(storedLog);
+        if(Array.isArray(parsedLog)) {
+            setOperationsLog(parsedLog.filter(op => op && op.id));
+        }
+      }
     } catch (error) {
       console.error("Failed to access localStorage:", error);
     }
@@ -213,7 +232,6 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
       ));
   }, []);
 
-  // Client-side timer to check for expired contracts
   useEffect(() => {
     const interval = setInterval(() => {
       const now = Date.now();
@@ -222,19 +240,18 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
         if (op.status === 'pending' && op.expirationTime && now > op.expirationTime) {
           hasChanges = true;
           updateTradeAnnotation(String(op.id), { status: 'lost', profit: -op.stake });
-          // CORREÇÃO: Adicionar o exitTimestamp na expiração por timer
           return { ...op, status: 'lost' as const, result: -op.stake, exitTimestamp: new Date().toISOString() };
         }
         return op;
       });
 
       if (hasChanges) {
-        setOperationsLog(updatedOps);
+        setAndPersistOperationsLog(updatedOps);
       }
-    }, 2000); // Check every 2 seconds
+    }, 2000);
 
     return () => clearInterval(interval);
-  }, [operationsLog, updateTradeAnnotation]);
+  }, [operationsLog, updateTradeAnnotation, setAndPersistOperationsLog]);
   
   const activeToken = accountType === 'demo' ? demoToken : realToken;
 
@@ -262,7 +279,7 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
                     promisesRef.current.delete(String(req_id));
                     reject(new Error(`O pedido à API expirou (30s) para req_id: ${req_id}. O token pode ser inválido ou a rede está lenta.`));
                 }
-            }, 30000); // 30 second timeout
+            }, 30000);
             
             promisesRef.current.set(String(req_id), {
                 resolve: (value: any) => {
@@ -386,7 +403,7 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
               isSellable,
               expirationTime: expirationTimeMs,
           };
-          setOperationsLog(prevLog => [newOperation, ...prevLog]);
+          setAndPersistOperationsLog(prevLog => [newOperation, ...prevLog]);
 
           const entryTime = buyResult.purchase_time;
           
@@ -413,7 +430,7 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
            const message = error instanceof Error ? error.message : "Um erro desconhecido ocorreu.";
            return { success: false, message };
         }
-      }, [isConnected, makeRequest, addTradeAnnotation, priceTicks]);
+      }, [isConnected, makeRequest, addTradeAnnotation, priceTicks, setAndPersistOperationsLog]);
 
   const sellContract = useCallback(async (contractId: number): Promise<TradeResult> => {
     if (!wsRef.current || !isConnected) {
@@ -515,12 +532,11 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
                           return;
                         }
 
-                        setOperationsLog(prevLog => {
+                        setAndPersistOperationsLog(prevLog => {
                             const existingOpIndex = prevLog.findIndex(op => op.id === contract.contract_id);
                             const isSold = contract.is_sold === 1;
 
                             if (existingOpIndex !== -1) {
-                                // UPDATE EXISTING OPERATION
                                 const updatedLog = [...prevLog];
                                 const op = updatedLog[existingOpIndex];
 
@@ -554,7 +570,6 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
                                 return prevLog;
 
                             } else if (!isSold) {
-                                // ADD NEW EXTERNALLY OPENED OPERATION
                                 const direction = (contract.contract_type || '').includes('CALL') ? 'rise' : 'fall';
                                 const purchaseTime = contract.purchase_time || Math.floor(Date.now() / 1000);
                                 const durationInSeconds = contract.date_expiry ? (contract.date_expiry - purchaseTime) : 0;
@@ -709,8 +724,7 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
       };
     
       ws.onerror = (errorEvent) => {
-        // O evento onclose é mais fiável para obter o motivo do erro.
-        // Manter este manipulador vazio evita logs de erro genéricos e duplicados.
+        // A lógica de erro é centralizada no onclose para obter detalhes específicos.
       };
     };
 
@@ -722,7 +736,7 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
           wsRef.current.close();
       }
     };
-  }, [activeToken, isLoading, makeRequest, updateTradeAnnotation, addTradeAnnotation, toast, triggerReconnect]);
+  }, [activeToken, isLoading, makeRequest, updateTradeAnnotation, addTradeAnnotation, toast, triggerReconnect, setAndPersistOperationsLog, setToastQueue]);
 
   const subscribeToMarketData = useCallback(async (symbol: string) => {
     if (wsRef.current?.readyState !== WebSocket.OPEN) return;
@@ -869,7 +883,7 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
 }, [isConnected, connectionError]);
 
   const clearActiveContracts = () => {
-    setOperationsLog([]);
+    setAndPersistOperationsLog([]);
     setTradeAnnotations([]);
   };
 

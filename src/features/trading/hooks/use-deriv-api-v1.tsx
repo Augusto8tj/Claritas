@@ -11,6 +11,7 @@ import { FirebaseErrorListener } from '@/components/FirebaseErrorListener';
 const DERIV_DEMO_TOKEN_KEY = 'derivDemoApiToken';
 const DERIV_REAL_TOKEN_KEY = 'derivRealApiToken';
 const DERIV_ACCOUNT_TYPE_KEY = 'derivAccountType';
+const DERIV_V1_LOG_KEY = 'derivV1OperationsLog_v1';
 const DERIV_APP_ID = process.env.NEXT_PUBLIC_DERIV_APP_ID || "1089";
 
 export type AccountType = 'demo' | 'real';
@@ -117,7 +118,9 @@ const MAX_DATA_POINTS = 5000;
 
 const addDataPoint = (prevData: ChartData[], newPoint: ChartData): ChartData[] => {
     let data = [...prevData];
-    if (data.length > 0 && isCandle(newPoint) && data[data.length - 1].epoch === newPoint.epoch) {
+    // Apenas substitui o último ponto se for uma VELA com a mesma época.
+    // Para ticks, sempre adiciona.
+    if (isCandle(newPoint) && data.length > 0 && data[data.length - 1].epoch === newPoint.epoch) {
         data[data.length - 1] = newPoint;
         return data;
     }
@@ -151,6 +154,8 @@ export const DerivApiProviderV1 = ({ children }: { children: ReactNode }) => {
   const [assetGroups, setAssetGroups] = useState<AssetGroup[]>([]);
   const [isAssetsLoading, setIsAssetsLoading] = useState(true);
   const { toast } = useToast();
+  
+  const [toastQueue, setToastQueue] = useState<any[]>([]);
 
   const [activeSymbol, setActiveSymbol] = useState<string | null>('1HZ100V');
   const [chartData, setChartData] = useState<ChartData[]>([]);
@@ -171,6 +176,18 @@ export const DerivApiProviderV1 = ({ children }: { children: ReactNode }) => {
   const promisesRef = useRef<Map<string, PromiseCallbacks>>(new Map());
   const [triggerReconnect, setTriggerReconnect] = useState(0);
 
+  const setAndPersistOperationsLog = useCallback((updater: React.SetStateAction<Operation[]>) => {
+    setOperationsLog(prevLog => {
+        const newLog = typeof updater === 'function' ? updater(prevLog) : updater;
+        try {
+            localStorage.setItem(DERIV_V1_LOG_KEY, JSON.stringify(newLog));
+        } catch (error) {
+            console.error("Failed to save V1 operations log to localStorage:", error);
+        }
+        return newLog;
+    });
+  }, []);
+
   useEffect(() => {
     chartTypeRef.current = chartType;
   }, [chartType]);
@@ -180,10 +197,17 @@ export const DerivApiProviderV1 = ({ children }: { children: ReactNode }) => {
       const storedDemoToken = localStorage.getItem(DERIV_DEMO_TOKEN_KEY);
       const storedRealToken = localStorage.getItem(DERIV_REAL_TOKEN_KEY);
       const storedAccountType = localStorage.getItem(DERIV_ACCOUNT_TYPE_KEY) as AccountType | null;
+      const storedLog = localStorage.getItem(DERIV_V1_LOG_KEY);
 
       if (storedDemoToken) setDemoToken(storedDemoToken);
       if (storedRealToken) setRealToken(storedRealToken);
       if (storedAccountType) setAccountTypeState(storedAccountType);
+      if (storedLog) {
+        const parsedLog = JSON.parse(storedLog);
+        if(Array.isArray(parsedLog)) {
+             setOperationsLog(parsedLog.filter(op => op && op.id));
+        }
+      }
     } catch (error) {
       console.error("Failed to access localStorage:", error);
     }
@@ -204,7 +228,6 @@ export const DerivApiProviderV1 = ({ children }: { children: ReactNode }) => {
       ));
   }, []);
 
-  // Client-side timer to check for expired contracts
   useEffect(() => {
     const interval = setInterval(() => {
       const now = Date.now();
@@ -213,21 +236,28 @@ export const DerivApiProviderV1 = ({ children }: { children: ReactNode }) => {
         if (op.status === 'pending' && op.expirationTime && now > op.expirationTime) {
           hasChanges = true;
           updateTradeAnnotation(String(op.id), { status: 'lost', profit: -op.stake });
-           // CORREÇÃO: Adicionar o exitTimestamp na expiração por timer
           return { ...op, status: 'lost' as const, result: -op.stake, exitTimestamp: new Date().toISOString() };
         }
         return op;
       });
 
       if (hasChanges) {
-        setOperationsLog(updatedOps);
+        setAndPersistOperationsLog(updatedOps);
       }
-    }, 2000); // Check every 2 seconds
+    }, 2000); 
 
     return () => clearInterval(interval);
-  }, [operationsLog, updateTradeAnnotation]);
+  }, [operationsLog, updateTradeAnnotation, setAndPersistOperationsLog]);
   
   const activeToken = accountType === 'demo' ? demoToken : realToken;
+
+  useEffect(() => {
+    if (toastQueue.length > 0) {
+      toastQueue.forEach(t => toast(t));
+      setToastQueue([]);
+    }
+  }, [toastQueue, toast]);
+
 
   const makeRequest = useCallback(<T,>(request: object, noResponse = false): Promise<T> => {
     return new Promise((resolve, reject) => {
@@ -245,7 +275,7 @@ export const DerivApiProviderV1 = ({ children }: { children: ReactNode }) => {
                     promisesRef.current.delete(String(req_id));
                     reject(new Error(`O pedido à API expirou (30s) para req_id: ${req_id}. O token pode ser inválido ou a rede está lenta.`));
                 }
-            }, 30000); // AUMENTADO PARA 30 SEGUNDOS
+            }, 30000);
             
             promisesRef.current.set(String(req_id), {
                 resolve: (value: any) => {
@@ -447,7 +477,7 @@ const subscribeToMarketData = useCallback(async (symbol: string) => {
             isSellable,
             expirationTime: expirationTimeMs,
         };
-        setOperationsLog(prevLog => [newOperation, ...prevLog]);
+        setAndPersistOperationsLog(prevLog => [newOperation, ...prevLog]);
 
         const entryTime = buyResult.purchase_time;
         
@@ -474,22 +504,29 @@ const subscribeToMarketData = useCallback(async (symbol: string) => {
          const message = error instanceof Error ? error.message : "Um erro desconhecido ocorreu.";
          return { success: false, message };
       }
-  }, [isConnected, makeRequest, addTradeAnnotation, priceTicks]);
+  }, [isConnected, makeRequest, addTradeAnnotation, priceTicks, setAndPersistOperationsLog]);
 
   const sellContract = useCallback(async (contractId: number): Promise<TradeResult> => {
     if (!wsRef.current || !isConnected) {
         return { success: false, message: "A conexão com a API da Deriv não está ativa." };
     }
 
+    const contract = operationsLog.find(op => op.id === contractId);
+    if (contract && contract.expirationTime) {
+      const remainingTime = contract.expirationTime - Date.now();
+      if (remainingTime < 15000) { 
+        return { success: false, message: `O contrato ${contractId} está no período de bloqueio final e não pode ser vendido.` };
+      }
+    }
+
     try {
         const sellResponse: any = await makeRequest({ 
             "sell": contractId,
-            "price": 0, // Vende pelo preço atual de mercado
+            "price": 0, 
         });
 
         const sellResult = sellResponse.sell;
         if (sellResult) {
-            // A atualização do contrato virá da subscrição 'proposal_open_contract'
             return { success: true, message: `Ordem de venda para o contrato ${contractId} enviada.` };
         } else {
             throw new Error("A resposta da API não continha os dados de venda esperados.");
@@ -499,7 +536,7 @@ const subscribeToMarketData = useCallback(async (symbol: string) => {
         const message = error instanceof Error ? error.message : "Um erro desconhecido ocorreu ao vender o contrato.";
         return { success: false, message };
     }
-  }, [isConnected, makeRequest]);
+  }, [isConnected, makeRequest, operationsLog]);
 
 
   useEffect(() => {
@@ -559,7 +596,7 @@ const subscribeToMarketData = useCallback(async (symbol: string) => {
                           return;
                         }
                     
-                        setOperationsLog(prevLog => {
+                        setAndPersistOperationsLog(prevLog => {
                             const existingOpIndex = prevLog.findIndex(op => op.id === contract.contract_id);
                             const isSold = contract.is_sold === 1;
                     
@@ -586,7 +623,7 @@ const subscribeToMarketData = useCallback(async (symbol: string) => {
                                             variant: newStatus === 'won' ? 'default' : 'destructive',
                                         };
                                         
-                                        toast(toastMessage);
+                                        setToastQueue(prev => [...prev, toastMessage]);
                     
                                         if (wsRef.current?.readyState === WebSocket.OPEN) {
                                             wsRef.current.send(JSON.stringify({"balance": 1}));
@@ -613,12 +650,12 @@ const subscribeToMarketData = useCallback(async (symbol: string) => {
                                     stake: contract.buy_price || 0,
                                     status: 'pending',
                                     timestamp: new Date(purchaseTime * 1000).toISOString(),
-                                    duration: durationInSeconds,
-                                    durationUnit: durationUnit,
                                     initiator: 'Manual',
                                     entryPrice: parseFloat(contract.entry_spot_display_value || contract.entry_tick_display_value || '0'),
                                     isSellable: contract.is_sellable === 1,
                                     expirationTime: contract.date_expiry ? contract.date_expiry * 1000 : undefined,
+                                    duration: durationInSeconds,
+                                    durationUnit: durationUnit,
                                 };
                                 
                                 if(typeof addTradeAnnotation === 'function') {
@@ -738,7 +775,7 @@ const subscribeToMarketData = useCallback(async (symbol: string) => {
                         marketIsOpen: symbol.exchange_is_open === 1,
                         submarket: symbol.submarket,
                         market: marketKey,
-                        minDuration: symbol.min_contract_duration ?? '5t', // Fallback
+                        minDuration: symbol.min_contract_duration ?? '5t', 
                     });
                 });
                 
@@ -775,9 +812,8 @@ const subscribeToMarketData = useCallback(async (symbol: string) => {
           wsRef.current = null;
         };
       
-      ws.onerror = (error) => {
-          // O evento onclose é mais fiável para obter o motivo do erro.
-          // Manter este manipulador vazio evita logs de erro genéricos e duplicados.
+        ws.onerror = (error) => {
+          // A lógica de erro está centralizada no onclose
         };
     };
 
@@ -789,7 +825,7 @@ const subscribeToMarketData = useCallback(async (symbol: string) => {
         wsRef.current.close();
       }
     };
-  }, [activeToken, isLoading, makeRequest, toast, triggerReconnect, updateTradeAnnotation, addTradeAnnotation]);
+  }, [activeToken, isLoading, makeRequest, toast, triggerReconnect, updateTradeAnnotation, addTradeAnnotation, setAndPersistOperationsLog, setToastQueue]);
 
   
   useEffect(() => {
@@ -867,7 +903,7 @@ const subscribeToMarketData = useCallback(async (symbol: string) => {
   }, [isConnected, connectionError]);
 
   const clearActiveContracts = () => {
-    setOperationsLog([]);
+    setAndPersistOperationsLog([]);
     setTradeAnnotations([]);
   };
 
