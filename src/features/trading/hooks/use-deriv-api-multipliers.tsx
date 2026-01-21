@@ -267,9 +267,9 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
             const timeoutId = setTimeout(() => {
                 if (promisesRef.current.has(String(req_id))) {
                     promisesRef.current.delete(String(req_id));
-                    reject(new Error(`O pedido à API expirou (req_id: ${req_id}). O token pode ser inválido ou a rede está lenta.`));
+                    reject(new Error(`O pedido à API expirou (30s) para req_id: ${req_id}. O token pode ser inválido ou a rede está lenta.`));
                 }
-            }, 15000);
+            }, 30000); // AUMENTADO PARA 30 SEGUNDOS
             
             promisesRef.current.set(String(req_id), {
                 resolve: (value: any) => {
@@ -342,33 +342,21 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
     }
 
     try {
-        // Verifica se há alguma alteração para fazer
-        const originalContract = operationsLogRef.current.find(op => op.id === contractId);
-        if (!originalContract) {
-             return { success: false, message: "Contrato não encontrado no log de operações." };
-        }
-        const hasTakeProfitChanged = takeProfit !== undefined && takeProfit !== originalContract.takeProfit;
-        const hasStopLossChanged = stopLoss !== undefined && stopLoss !== originalContract.stopLoss;
-        
-        if (!hasTakeProfitChanged && !hasStopLossChanged) {
-            return { success: true, message: "Nenhuma alteração nos limites de risco." };
-        }
-
         const updateRequest: any = {
             contract_update: 1,
             contract_id: contractId,
             limit_order: {}
         };
         
-        // A API espera null para remover um limite. Se o valor for 0 ou indefinido, consideramos remoção.
-        if (hasTakeProfitChanged) {
-            updateRequest.limit_order.take_profit = (takeProfit || 0) > 0 ? takeProfit : null;
+        // A API da Deriv espera 'null' para remover um limite.
+        // Se o valor for undefined (campo não tocado) ou <= 0 (limpo pelo usuário), enviamos null.
+        if (takeProfit !== undefined) {
+            updateRequest.limit_order.take_profit = takeProfit > 0 ? takeProfit : null;
         }
         
-        if (hasStopLossChanged) {
-             updateRequest.limit_order.stop_loss = (stopLoss || 0) > 0 ? stopLoss : null;
+        if (stopLoss !== undefined) {
+            updateRequest.limit_order.stop_loss = stopLoss > 0 ? stopLoss : null;
         }
-
 
         const response: any = await makeRequest(updateRequest);
         const updateResult = response.contract_update;
@@ -420,7 +408,6 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
 
       const sanitizedStake = parseFloat(stake.toFixed(2));
 
-      // PASSO 1: Criar o pedido de compra LIMPO, sem take_profit/stop_loss
       const buyRequest: any = {
         buy: "1",
         price: 10000, 
@@ -438,7 +425,6 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
         buyRequest.parameters.cancellation = cancellation;
       }
 
-      // PASSO 2: Executar a compra
       const buyResponse: any = await makeRequest(buyRequest);
       const buyResult = buyResponse.buy;
       const contractId = buyResult.contract_id;
@@ -447,22 +433,19 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
         throw new Error("Falha na compra do contrato, ID não retornado.");
       }
 
-      // PASSO 3: APÓS a compra, se houver limites de risco, enviar o pedido de atualização
-      // Aguardamos um pequeno delay para garantir que o contrato está pronto na API
-      if (takeProfit !== undefined || stopLoss !== undefined) {
-        setTimeout(async () => {
-          try {
-            await updateContract(contractId, takeProfit, stopLoss);
-          } catch (error) {
-            console.warn('Falha ao definir limites de risco automaticamente:', error);
-            setToastQueue(prev => [...prev, {
-              title: 'Aviso',
-              description: 'A posição foi aberta, mas os limites de risco não foram aplicados. Defina-os manualmente.',
-              variant: 'default',
-            }]);
-          }
-        }, 500); // 500ms de delay
-      }
+      // Delay para garantir que o contrato está pronto para ser atualizado
+      setTimeout(async () => {
+        try {
+          await updateContract(contractId, takeProfit, stopLoss);
+        } catch (error) {
+          console.warn('Falha ao definir limites de risco automaticamente:', error);
+          setToastQueue(prev => [...prev, {
+            title: 'Aviso de Risco',
+            description: `Posição #${contractId} aberta, mas os limites de risco não foram aplicados. Defina-os manualmente.`,
+            variant: 'default',
+          }]);
+        }
+      }, 500);
       
       const latestTick = priceTicks.length > 0 ? priceTicks[priceTicks.length - 1].price : 0;
       const entryPrice = buyResult.entry_tick_display_value 
@@ -486,8 +469,8 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
           multiplier,
           duration: 0, 
           durationUnit: 's', 
-          takeProfit: takeProfit, // Guardamos o valor alvo na nossa UI
-          stopLoss: stopLoss,     // Guardamos o valor alvo na nossa UI
+          takeProfit: takeProfit,
+          stopLoss: stopLoss,
       };
       setAndPersistOperationsLog(prevLog => [newOperation, ...prevLog]);
 
@@ -912,8 +895,8 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
         };
       
         ws.onerror = (errorEvent) => {
-          // O evento onclose, que se segue, fornecerá os detalhes do erro.
-          // Manter este manipulador vazio evita logs de erro genéricos no console.
+            // O evento onclose é mais fiável para obter o motivo do erro.
+            // Manter este manipulador vazio evita logs de erro genéricos e duplicados.
         };
     };
 

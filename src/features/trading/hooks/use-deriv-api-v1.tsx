@@ -117,7 +117,7 @@ const MAX_DATA_POINTS = 5000;
 
 const addDataPoint = (prevData: ChartData[], newPoint: ChartData): ChartData[] => {
     let data = [...prevData];
-    if (data.length > 0 && data[data.length - 1].epoch === newPoint.epoch) {
+    if (data.length > 0 && isCandle(newPoint) && data[data.length - 1].epoch === newPoint.epoch) {
         data[data.length - 1] = newPoint;
         return data;
     }
@@ -139,6 +139,7 @@ const getDurationInSeconds = (duration: number, unit: DurationUnit): number => {
     }
 };
 
+const isCandle = (d: ChartData): d is CandleData => d != null && 'close' in d;
 
 export const DerivApiProviderV1 = ({ children }: { children: ReactNode }) => {
   const [demoToken, setDemoToken] = useState<string | null>('ljUGk6wbLSrtEDo');
@@ -242,9 +243,9 @@ export const DerivApiProviderV1 = ({ children }: { children: ReactNode }) => {
             const timeoutId = setTimeout(() => {
                 if (promisesRef.current.has(String(req_id))) {
                     promisesRef.current.delete(String(req_id));
-                    reject(new Error(`O pedido à API expirou (req_id: ${req_id}). Verifique se o seu token de API da Deriv é válido.`));
+                    reject(new Error(`O pedido à API expirou (30s) para req_id: ${req_id}. O token pode ser inválido ou a rede está lenta.`));
                 }
-            }, 15000);
+            }, 30000); // AUMENTADO PARA 30 SEGUNDOS
             
             promisesRef.current.set(String(req_id), {
                 resolve: (value: any) => {
@@ -775,8 +776,8 @@ const subscribeToMarketData = useCallback(async (symbol: string) => {
         };
       
       ws.onerror = (error) => {
-          // O evento onclose, que se segue, fornecerá os detalhes do erro.
-          // Manter este manipulador vazio evita logs de erro genéricos no console.
+          // O evento onclose é mais fiável para obter o motivo do erro.
+          // Manter este manipulador vazio evita logs de erro genéricos e duplicados.
         };
     };
 
