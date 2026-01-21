@@ -140,7 +140,7 @@ export function useMultipliersCouncil(
                 const cappedVolatilityFactor = Math.max(0.5, Math.min(2.0, volatilityFactor));
                 const adjustedRiskPercentage = baseRiskPercentage / cappedVolatilityFactor;
                 
-                const stake = Math.max(1.0, accountBalance * adjustedRiskPercentage);
+                const stake = Math.max(1.0, dailyBalance * adjustedRiskPercentage);
                 const takeProfit = stake * 2; // Relação Risco-Recompensa 2:1
                 
                 setCalculatedRisk({ stake, stopLoss: stake, takeProfit });
