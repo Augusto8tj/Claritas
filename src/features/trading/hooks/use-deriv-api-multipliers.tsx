@@ -267,9 +267,9 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
             const timeoutId = setTimeout(() => {
                 if (promisesRef.current.has(String(req_id))) {
                     promisesRef.current.delete(String(req_id));
-                    reject(new Error(`O pedido à API expirou (req_id: ${req_id}). O token pode ser inválido ou a rede está lenta.`));
+                    reject(new Error(`O pedido à API expirou (60s) para req_id: ${req_id}. O token pode ser inválido ou a rede está lenta.`));
                 }
-            }, 30000); 
+            }, 60000);
             
             promisesRef.current.set(String(req_id), {
                 resolve: (value: any) => {
@@ -662,11 +662,11 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
                                 const isSold = contract.is_sold === 1;
 
                                 // Build the updated operation from the stream data
-                                const updatedOp = {
+                                const updatedOp: Operation = {
                                     ...op,
                                     result: contract.profit,
-                                    takeProfit: contract.limit_order?.take_profit?.order_amount || undefined,
-                                    stopLoss: contract.limit_order?.stop_loss?.order_amount || undefined,
+                                    takeProfit: contract.limit_order?.take_profit?.order_amount || op.takeProfit,
+                                    stopLoss: contract.limit_order?.stop_loss?.order_amount || op.stopLoss,
                                 };
 
                                 if (isSold) {
@@ -884,7 +884,7 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
       
         ws.onerror = (errorEvent) => {
             // O evento onclose é mais fiável para obter o motivo do erro.
-            // Manter este manipulador vazio evita logs de erro genéricos e duplicados.
+            setAccountBalance({ balance: null, currency: null, loading: false });
         };
     };
 

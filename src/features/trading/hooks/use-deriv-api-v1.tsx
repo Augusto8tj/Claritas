@@ -273,9 +273,9 @@ export const DerivApiProviderV1 = ({ children }: { children: ReactNode }) => {
             const timeoutId = setTimeout(() => {
                 if (promisesRef.current.has(String(req_id))) {
                     promisesRef.current.delete(String(req_id));
-                    reject(new Error(`O pedido à API expirou (30s) para req_id: ${req_id}. O token pode ser inválido ou a rede está lenta.`));
+                    reject(new Error(`O pedido à API expirou (60s) para req_id: ${req_id}. O token pode ser inválido ou a rede está lenta.`));
                 }
-            }, 30000);
+            }, 60000);
             
             promisesRef.current.set(String(req_id), {
                 resolve: (value: any) => {
@@ -649,6 +649,7 @@ const subscribeToMarketData = useCallback(async (symbol: string) => {
                                     direction: direction,
                                     stake: contract.buy_price || 0,
                                     status: 'pending',
+                                    result: contract.profit,
                                     timestamp: new Date(purchaseTime * 1000).toISOString(),
                                     initiator: 'Manual',
                                     entryPrice: parseFloat(contract.entry_spot_display_value || contract.entry_tick_display_value || '0'),
@@ -656,6 +657,8 @@ const subscribeToMarketData = useCallback(async (symbol: string) => {
                                     expirationTime: contract.date_expiry ? contract.date_expiry * 1000 : undefined,
                                     duration: durationInSeconds,
                                     durationUnit: durationUnit,
+                                    multiplier: contract.multiplier,
+                                    contractType: contract.contract_type,
                                 };
                                 
                                 if(typeof addTradeAnnotation === 'function') {
@@ -813,7 +816,7 @@ const subscribeToMarketData = useCallback(async (symbol: string) => {
         };
       
         ws.onerror = (error) => {
-          // A lógica de erro está centralizada no onclose
+          setAccountBalance({ balance: null, currency: null, loading: false });
         };
     };
 

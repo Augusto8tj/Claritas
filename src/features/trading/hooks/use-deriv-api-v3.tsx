@@ -260,9 +260,9 @@ export const DerivApiProviderV3 = ({ children }: { children: ReactNode }) => {
             const timeoutId = setTimeout(() => {
                 if (promisesRef.current.has(String(req_id))) {
                     promisesRef.current.delete(String(req_id));
-                    reject(new Error(`O pedido à API expirou (30s) para req_id: ${req_id}. O token pode ser inválido ou a rede está lenta.`));
+                    reject(new Error(`O pedido à API expirou (60s) para req_id: ${req_id}. O token pode ser inválido ou a rede está lenta.`));
                 }
-            }, 30000); // 30 second timeout
+            }, 60000);
             
             promisesRef.current.set(String(req_id), {
                 resolve: (value: any) => {
@@ -709,8 +709,7 @@ export const DerivApiProviderV3 = ({ children }: { children: ReactNode }) => {
       };
     
       ws.onerror = (errorEvent) => {
-        // O evento onclose é mais fiável para obter o motivo do erro.
-        // Manter este manipulador vazio evita logs de erro genéricos e duplicados.
+        // A lógica de erro é centralizada no onclose para obter detalhes específicos.
       };
     };
 
