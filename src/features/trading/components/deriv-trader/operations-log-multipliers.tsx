@@ -98,6 +98,8 @@ export default function OperationsLogMultipliers({ operations, sellContract }: O
                                     const direction = (op.contractType || '').includes('MULTUP') ? 'rise' : 'fall';
                                     const isAutopilotTrade = op.initiator === 'Piloto';
                                     const trailingStop = op.trailingStop;
+                                    const isTrailingActive = trailingStop !== undefined && trailingStop > 0;
+
 
                                     return (
                                         <div key={op.id} className="flex items-center gap-4">
@@ -132,8 +134,17 @@ export default function OperationsLogMultipliers({ operations, sellContract }: O
                                                 <div className="text-muted-foreground">
                                                     {op.takeProfit && <p className="text-green-600 flex items-center gap-1"><Target className="h-3 w-3" />Alvo: ${op.takeProfit.toFixed(2)}</p>}
                                                     {op.stopLoss && <p className="text-red-600 flex items-center gap-1"><ShieldAlert className="h-3 w-3" />Stop: ${op.stopLoss.toFixed(2)}</p>}
-                                                    {op.status === 'pending' && trailingStop !== undefined && trailingStop > 0 && (
-                                                        <p className="text-cyan-600 flex items-center gap-1.5"><MoveUpRight className="h-3 w-3" /> Trailing: <span className="font-semibold">${trailingStop.toFixed(2)}</span></p>
+                                                    {isAutopilotTrade && op.status === 'pending' && (
+                                                        <p className={cn(
+                                                            "flex items-center gap-1.5", 
+                                                            isTrailingActive ? "text-cyan-600" : "text-muted-foreground/80 italic"
+                                                        )}>
+                                                            <MoveUpRight className="h-3 w-3" /> 
+                                                            Stop Móvel: 
+                                                            <span className="font-semibold">
+                                                                {isTrailingActive ? `$${trailingStop.toFixed(2)}` : 'Ativará com lucro'}
+                                                            </span>
+                                                        </p>
                                                     )}
                                                 </div>
                                             </div>
