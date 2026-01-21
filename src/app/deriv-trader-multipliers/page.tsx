@@ -16,11 +16,10 @@ import OperationsLogMultipliers from "@/features/trading/components/deriv-trader
 import { multipliersSchema, type MultipliersFormValues } from "@/features/trading/components/deriv-trader/deriv-trader-interface-multipliers.types";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { ApiStatusIndicatorMultipliers } from "@/features/trading/components/deriv-trader/ApiStatusIndicatorMultipliers";
-// NEW IMPORTS
 import { useMultipliersCouncil } from "@/features/trading/hooks/use-multipliers-council";
 import { MultipliersAutopilotInterface } from "@/features/trading/components/deriv-trader/multipliers-autopilot-interface";
 import { IndicatorPanel } from "@/features/trading/components/deriv-trader/indicator-panel";
-import { calculateAllIndicators } from '@/services/indicator-service';
+import { calculateAllIndicators, type Indicators } from '@/services/indicator-service';
 import { initialCouncilStrategies } from '@/services/council-strategies';
 import type { CandleData, ChartData } from '@/lib/types';
 
@@ -81,7 +80,7 @@ const Header = () => {
     );
 };
 
-const IsolatedMarketChart = () => {
+const IsolatedMarketChart = ({ indicators }: { indicators: Indicators | null }) => {
     const { 
         activeSymbol, operationsLog, chartData, isChartLoading, chartError, 
         chartType, setChartType, timePeriod, setTimePeriod, tradeAnnotations
@@ -106,7 +105,7 @@ const IsolatedMarketChart = () => {
                     timePeriod={timePeriod}
                     setTimePeriod={setTimePeriod}
                     operations={operationsLog}
-                    indicators={null}
+                    indicators={indicators}
                     tradeAnnotations={tradeAnnotations}
                 />
             </CardContent>
@@ -116,29 +115,14 @@ const IsolatedMarketChart = () => {
 
 const isCandle = (d: ChartData): d is CandleData => d != null && 'close' in d;
 
-const MultipliersTraderCore = () => {
-    const { activeSymbol, operationsLog, sellContract, botCandleData, accountBalance, chartData, timePeriod } = useDerivApiMultipliers();
+const MultipliersTraderCore = ({ indicators }: { indicators: Indicators | null }) => {
+    const { activeSymbol, operationsLog, sellContract, botCandleData, accountBalance, chartData, chartType } = useDerivApiMultipliers();
     const multipliersCouncil = useMultipliersCouncil(activeSymbol, botCandleData, accountBalance.balance);
     const latestDataPoint = chartData.length > 0 ? chartData[chartData.length - 1] : null;
     
-    const uiIndicators = useMemo(() => {
-        if (chartData.length < 2) return null;
-
-        // If chartData is ticks, convert them to 1-tick candles for calculation.
-        const candlesForIndicators: CandleData[] = chartData.map(d => {
-            if (isCandle(d)) {
-                return d;
-            }
-            // It's TickData, create a pseudo-candle
-            return { epoch: d.epoch, open: d.price, high: d.price, low: d.price, close: d.price, volume: 1 };
-        });
-
-        return calculateAllIndicators(candlesForIndicators, initialCouncilStrategies, timePeriod, {duration: 15, unit: 's'});
-    }, [chartData, timePeriod]);
-    
     return (
         <div className="space-y-6 mt-6">
-            {uiIndicators && <IndicatorPanel indicators={uiIndicators} latestDataPoint={latestDataPoint} />}
+            {chartType === 'Candle' && indicators && <IndicatorPanel indicators={indicators} latestDataPoint={latestDataPoint} />}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 <div>
                     <DerivTraderInterfaceMultipliers symbol={activeSymbol || ""} />
@@ -165,7 +149,7 @@ const PageContent = () => {
         },
     });
 
-    const { multiplierOptions } = useDerivApiMultipliers();
+    const { multiplierOptions, chartData, timePeriod, chartType } = useDerivApiMultipliers();
 
     useEffect(() => {
         if (multiplierOptions && multiplierOptions.length > 0) {
@@ -176,12 +160,25 @@ const PageContent = () => {
         }
     }, [multiplierOptions, form]);
 
+    const uiIndicators = useMemo(() => {
+        if (chartType !== 'Candle' || chartData.length < 2) return null;
+
+        const candlesForIndicators: CandleData[] = chartData.map(d => {
+            if (isCandle(d)) {
+                return d;
+            }
+            return { epoch: d.epoch, open: d.price, high: d.price, low: d.price, close: d.price, volume: 1 };
+        });
+
+        return calculateAllIndicators(candlesForIndicators, initialCouncilStrategies, timePeriod, {duration: 15, unit: 's'});
+    }, [chartData, timePeriod, chartType]);
+
     return (
         <FormProvider {...form}>
             <div className="flex-1 space-y-4 p-4 sm:p-8 pt-6">
                 <Header />
-                <IsolatedMarketChart />
-                <MultipliersTraderCore />
+                <IsolatedMarketChart indicators={uiIndicators} />
+                <MultipliersTraderCore indicators={uiIndicators} />
             </div>
         </FormProvider>
     );
