@@ -267,9 +267,9 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
             const timeoutId = setTimeout(() => {
                 if (promisesRef.current.has(String(req_id))) {
                     promisesRef.current.delete(String(req_id));
-                    reject(new Error(`O pedido à API expirou (30s) para req_id: ${req_id}. O token pode ser inválido ou a rede está lenta.`));
+                    reject(new Error(`O pedido à API expirou (req_id: ${req_id}). O token pode ser inválido ou a rede está lenta.`));
                 }
-            }, 30000); // AUMENTADO PARA 30 SEGUNDOS
+            }, 30000); 
             
             promisesRef.current.set(String(req_id), {
                 resolve: (value: any) => {
@@ -348,8 +348,6 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
             limit_order: {}
         };
         
-        // A API da Deriv espera 'null' para remover um limite.
-        // Se o valor for undefined (campo não tocado) ou <= 0 (limpo pelo usuário), enviamos null.
         if (takeProfit !== undefined) {
             updateRequest.limit_order.take_profit = takeProfit > 0 ? takeProfit : null;
         }
@@ -359,26 +357,12 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
         }
 
         const response: any = await makeRequest(updateRequest);
-        const updateResult = response.contract_update;
 
-        if (updateResult) {
-            // Atualiza o log local com os novos valores retornados pela API
-            setAndPersistOperationsLog(prevLog => {
-                return prevLog.map(op => {
-                    if (op.id === contractId) {
-                        return {
-                            ...op,
-                            takeProfit: updateResult.limit_order?.take_profit || undefined,
-                            stopLoss: updateResult.limit_order?.stop_loss || undefined,
-                        };
-                    }
-                    return op;
-                });
-            });
-            
+        if (response.contract_update) {
+            // A atualização do estado será feita pelo stream 'proposal_open_contract'
             return { 
                 success: true, 
-                message: `Limites de risco atualizados para o contrato #${contractId}.` 
+                message: `Pedido de atualização para o contrato #${contractId} enviado.` 
             };
         } else {
             throw new Error("A resposta da API não continha os dados de atualização esperados.");
@@ -389,7 +373,7 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
         const message = error instanceof Error ? error.message : "Um erro desconhecido ocorreu.";
         return { success: false, message };
     }
-}, [isConnected, makeRequest, setAndPersistOperationsLog]);
+}, [isConnected, makeRequest]);
   
   const executeTrade = useCallback(async (
     contractType: string,
@@ -432,20 +416,21 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
       if (!contractId) {
         throw new Error("Falha na compra do contrato, ID não retornado.");
       }
-
-      // Delay para garantir que o contrato está pronto para ser atualizado
-      setTimeout(async () => {
-        try {
-          await updateContract(contractId, takeProfit, stopLoss);
-        } catch (error) {
-          console.warn('Falha ao definir limites de risco automaticamente:', error);
-          setToastQueue(prev => [...prev, {
-            title: 'Aviso de Risco',
-            description: `Posição #${contractId} aberta, mas os limites de risco não foram aplicados. Defina-os manualmente.`,
-            variant: 'default',
-          }]);
-        }
-      }, 500);
+      
+      if (takeProfit || stopLoss) {
+        setTimeout(async () => {
+          try {
+            await updateContract(contractId, takeProfit, stopLoss);
+          } catch (error) {
+            console.warn('Falha ao definir limites de risco automaticamente:', error);
+            setToastQueue(prev => [...prev, {
+              title: 'Aviso de Risco',
+              description: `Posição #${contractId} aberta, mas os limites de risco não foram aplicados. Defina-os manualmente.`,
+              variant: 'default',
+            }]);
+          }
+        }, 500);
+      }
       
       const latestTick = priceTicks.length > 0 ? priceTicks[priceTicks.length - 1].price : 0;
       const entryPrice = buyResult.entry_tick_display_value 
@@ -488,7 +473,7 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
 
       return {
         success: true,
-        message: `Ordem executada para ${symbol}. Limites de risco estão a ser definidos.`,
+        message: `Ordem executada para ${symbol}.`,
         contractId: contractId,
         entryPrice,
       };
@@ -669,53 +654,56 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
     
                         setAndPersistOperationsLog(prevLog => {
                             const existingOpIndex = prevLog.findIndex(op => op.id === contract.contract_id);
-                            const isSold = contract.is_sold === 1;
-    
-                            if (isSold) {
-                                sellingContractsRef.current.delete(contract.contract_id);
-                                trailingStateRef.current.delete(contract.contract_id);
-                            }
-
+                            
                             if (existingOpIndex !== -1) {
                                 // UPDATE EXISTING OPERATION
                                 const updatedLog = [...prevLog];
                                 const op = updatedLog[existingOpIndex];
-    
-                                if (op.status === 'pending') {
-                                    if (isSold) {
-                                        const newStatus = contract.profit >= 0 ? 'won' : 'lost';
-                                        const exitPrice = contract.exit_tick_display_value ? parseFloat(contract.exit_tick_display_value) : contract.sell_spot ? parseFloat(contract.sell_spot) : op.exitPrice;
-                                        const sellTime = contract.sell_time ? new Date(contract.sell_time * 1000).toISOString() : new Date().toISOString();
-    
-                                        updatedLog[existingOpIndex] = { ...op, status: newStatus, result: contract.profit, exitPrice: exitPrice, exitTimestamp: sellTime };
-                                        
-                                        if(typeof updateTradeAnnotation === 'function') {
-                                            updateTradeAnnotation(String(contract.contract_id), { status: newStatus, profit: contract.profit, exitPrice, exitTime: contract.sell_time });
-                                        }
-                                        
-                                        const toastMessage = {
-                                            title: `Posição Fechada (${op.asset})`,
-                                            description: `Resultado: ${contract.currency} ${contract.profit.toFixed(2)}`,
-                                            variant: newStatus === 'won' ? 'default' : 'destructive',
-                                        };
-                                        
-                                        if (typeof setToastQueue === 'function') {
-                                            setToastQueue(prev => [...prev, toastMessage]);
-                                        } else if(typeof toast === 'function') {
-                                            toast(toastMessage);
-                                        }
-    
-                                        if (wsRef.current?.readyState === WebSocket.OPEN) {
-                                            wsRef.current.send(JSON.stringify({"balance": 1}));
-                                        }
-                                        return updatedLog;
-                                    } else if ((op.contractType || '').startsWith('MULT') && contract.profit !== op.result) {
-                                        updatedLog[existingOpIndex] = { ...op, result: contract.profit };
-                                        return updatedLog;
+                                const isSold = contract.is_sold === 1;
+
+                                // Build the updated operation from the stream data
+                                const updatedOp = {
+                                    ...op,
+                                    result: contract.profit,
+                                    takeProfit: contract.limit_order?.take_profit?.order_amount || undefined,
+                                    stopLoss: contract.limit_order?.stop_loss?.order_amount || undefined,
+                                };
+
+                                if (isSold) {
+                                    sellingContractsRef.current.delete(contract.contract_id);
+                                    trailingStateRef.current.delete(contract.contract_id);
+
+                                    const newStatus = contract.profit >= 0 ? 'won' : 'lost';
+                                    const exitPrice = contract.exit_tick_display_value ? parseFloat(contract.exit_tick_display_value) : contract.sell_spot ? parseFloat(contract.sell_spot) : op.exitPrice;
+                                    const sellTime = contract.sell_time ? new Date(contract.sell_time * 1000).toISOString() : new Date().toISOString();
+                                    
+                                    updatedOp.status = newStatus;
+                                    updatedOp.exitPrice = exitPrice;
+                                    updatedOp.exitTimestamp = sellTime;
+
+                                    if(typeof updateTradeAnnotation === 'function') {
+                                        updateTradeAnnotation(String(contract.contract_id), { status: newStatus, profit: contract.profit, exitPrice, exitTime: contract.sell_time });
+                                    }
+                                    
+                                    const toastMessage = {
+                                        title: `Posição Fechada (${op.asset})`,
+                                        description: `Resultado: ${contract.currency} ${contract.profit.toFixed(2)}`,
+                                        variant: newStatus === 'won' ? 'default' : 'destructive',
+                                    };
+                                    
+                                    if (typeof setToastQueue === 'function') {
+                                        setToastQueue(prev => [...prev, toastMessage]);
+                                    } else if(typeof toast === 'function') {
+                                        toast(toastMessage);
+                                    }
+
+                                    if (wsRef.current?.readyState === WebSocket.OPEN) {
+                                        wsRef.current.send(JSON.stringify({"balance": 1}));
                                     }
                                 }
-                                return prevLog;
-    
+                                
+                                updatedLog[existingOpIndex] = updatedOp;
+                                return updatedLog;
                             } else if (!isSold) {
                                 // ADD NEW EXTERNALLY OPENED OPERATION
                                 const direction = (contract.contract_type || '').includes('MULTUP') ? 'rise' : 'fall';
@@ -740,8 +728,8 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
                                     durationUnit: durationUnit,
                                     multiplier: contract.multiplier,
                                     contractType: contract.contract_type,
-                                    takeProfit: contract.take_profit?.order_amount,
-                                    stopLoss: contract.stop_loss?.order_amount
+                                    takeProfit: contract.limit_order?.take_profit?.order_amount,
+                                    stopLoss: contract.limit_order?.stop_loss?.order_amount
                                 };
                                 
                                 if(typeof addTradeAnnotation === 'function') {
