@@ -342,41 +342,56 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
     }
 
     try {
-        const updateRequest: any = { contract_update: contractId };
-        let hasUpdate = false;
-
-        updateRequest.take_profit = takeProfit !== undefined && takeProfit > 0 ? takeProfit : null;
-        updateRequest.stop_loss = stopLoss !== undefined && stopLoss > 0 ? stopLoss : null;
-        
+        // Verifica se há alguma alteração para fazer
         const originalContract = operationsLogRef.current.find(op => op.id === contractId);
-        if (!originalContract) return { success: false, message: "Contrato não encontrado no log." };
+        if (!originalContract) {
+             return { success: false, message: "Contrato não encontrado no log de operações." };
+        }
+        const hasTakeProfitChanged = takeProfit !== undefined && takeProfit !== originalContract.takeProfit;
+        const hasStopLossChanged = stopLoss !== undefined && stopLoss !== originalContract.stopLoss;
         
-        if (updateRequest.take_profit !== originalContract.takeProfit || updateRequest.stop_loss !== originalContract.stopLoss) {
-             hasUpdate = true;
+        if (!hasTakeProfitChanged && !hasStopLossChanged) {
+            return { success: true, message: "Nenhuma alteração nos limites de risco." };
         }
 
-        if (!hasUpdate) {
-            return { success: true, message: "Nenhuma alteração nos limites de risco foi feita." };
+        const updateRequest: any = {
+            contract_update: 1,
+            contract_id: contractId,
+            limit_order: {}
+        };
+        
+        // A API espera null para remover um limite. Se o valor for 0 ou indefinido, consideramos remoção.
+        if (hasTakeProfitChanged) {
+            updateRequest.limit_order.take_profit = (takeProfit || 0) > 0 ? takeProfit : null;
         }
+        
+        if (hasStopLossChanged) {
+             updateRequest.limit_order.stop_loss = (stopLoss || 0) > 0 ? stopLoss : null;
+        }
+
 
         const response: any = await makeRequest(updateRequest);
         const updateResult = response.contract_update;
 
         if (updateResult) {
-             setAndPersistOperationsLog(prevLog => {
-                const newLog = prevLog.map(op => {
+            // Atualiza o log local com os novos valores retornados pela API
+            setAndPersistOperationsLog(prevLog => {
+                return prevLog.map(op => {
                     if (op.id === contractId) {
                         return {
                             ...op,
-                            takeProfit: updateResult.take_profit?.order_amount,
-                            stopLoss: updateResult.stop_loss?.order_amount,
+                            takeProfit: updateResult.limit_order?.take_profit || undefined,
+                            stopLoss: updateResult.limit_order?.stop_loss || undefined,
                         };
                     }
                     return op;
                 });
-                return newLog;
             });
-            return { success: true, message: `Contrato #${contractId} atualizado com sucesso.` };
+            
+            return { 
+                success: true, 
+                message: `Limites de risco atualizados para o contrato #${contractId}.` 
+            };
         } else {
             throw new Error("A resposta da API não continha os dados de atualização esperados.");
         }
