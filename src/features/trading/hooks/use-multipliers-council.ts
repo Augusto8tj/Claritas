@@ -39,7 +39,6 @@ export function useMultipliersCouncil(
     const executionRef = useRef({ isExecuting: false });
     const openPositionsRef = useRef<Set<number>>(new Set());
     const lastSignalRef = useRef<'up' | 'down' | null>(null);
-    const highestProfitRef = useRef<Map<number, number>>(new Map());
 
     const dailyPnL = useMemo(() => {
         const today = new Date().toDateString();
@@ -55,7 +54,6 @@ export function useMultipliersCouncil(
         for (const id of openPositionsRef.current) {
             if (!openContractIds.has(id)) {
                 openPositionsRef.current.delete(id);
-                highestProfitRef.current.delete(id);
             }
         }
     }, [operationsLog]);
@@ -167,7 +165,6 @@ export function useMultipliersCouncil(
 
                 if (result.success && result.contractId) {
                     openPositionsRef.current.add(result.contractId);
-                    highestProfitRef.current.set(result.contractId, 0); // Inicia o tracking de lucro
                 }
 
                 await new Promise(resolve => setTimeout(resolve, 10000));
@@ -184,51 +181,6 @@ export function useMultipliersCouncil(
         botCandleData, isAutopilotOn, isConnected, activeSymbol,
         executeTrade, toast, accountBalance, form, dailyPnL, dailyBalance, dailyTarget, setIsAutopilotOn
     ]);
-    
-     // Trailing Stop Logic (Client-Side)
-    useEffect(() => {
-        if (!isAutopilotOn || openPositionsRef.current.size === 0) return;
-
-        const checkTrailingStops = () => {
-            const openOps = operationsLog.filter(op => openPositionsRef.current.has(op.id) && op.status === 'pending');
-
-            openOps.forEach(op => {
-                const currentProfit = op.result || 0;
-                const contractId = op.id;
-                
-                const highestProfit = highestProfitRef.current.get(contractId) || 0;
-
-                // Update highest profit for the contract
-                if (currentProfit > highestProfit) {
-                    highestProfitRef.current.set(contractId, currentProfit);
-                }
-
-                // Define a trailing distance, e.g., 50% of the initial take profit target.
-                const takeProfitTarget = op.takeProfit || (op.stake * 2);
-                const trailingDistance = takeProfitTarget * 0.5; // Trail by 50% of the original TP target
-
-                // Check if trailing stop is hit
-                if (highestProfit > 0.1 && // Only start trailing after a small profit is made
-                    currentProfit < highestProfit - trailingDistance) {
-
-                    setTimeout(() => {
-                        toast({
-                            title: "📈 Trailing Stop Acionado!",
-                            description: `Protegendo lucro no contrato #${contractId}. Vendendo com lucro de $${currentProfit.toFixed(2)}.`,
-                        });
-                    }, 0);
-                    
-                    sellContract(contractId);
-                    openPositionsRef.current.delete(contractId);
-                    highestProfitRef.current.delete(contractId);
-                }
-            });
-        };
-        
-        const intervalId = setInterval(checkTrailingStops, 2000); // Check every 2 seconds
-        return () => clearInterval(intervalId);
-
-    }, [isAutopilotOn, operationsLog, sellContract, toast]);
 
 
     const toggleAutopilot = useCallback(() => {
@@ -244,7 +196,6 @@ export function useMultipliersCouncil(
                 setBotStatus('PAUSED');
                 lastRsiRef.current = null;
                 openPositionsRef.current.clear();
-                highestProfitRef.current.clear();
             } else {
                 setBotStatus('MONITORING');
             }
