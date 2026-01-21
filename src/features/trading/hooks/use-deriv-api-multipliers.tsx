@@ -257,42 +257,42 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
   const activeToken = accountType === 'demo' ? demoToken : realToken;
 
   const makeRequest = useCallback(<T,>(request: object, noResponse = false): Promise<T> => {
-  return new Promise((resolve, reject) => {
-      const ws = wsRef.current;
-      if (!ws || ws.readyState !== WebSocket.OPEN) {
-          return reject(new Error("WebSocket não está conectado."));
-      }
+    return new Promise((resolve, reject) => {
+        const ws = wsRef.current;
+        if (!ws || ws.readyState !== WebSocket.OPEN) {
+            return reject(new Error("WebSocket não está conectado."));
+        }
 
-      const req_id = Date.now() + Math.floor(Math.random() * 1000000);
-      const payload = { ...request, req_id };
-      
-      if (!noResponse) {
-          const timeoutId = setTimeout(() => {
-              if (promisesRef.current.has(String(req_id))) {
-                  promisesRef.current.delete(String(req_id));
-                  reject(new Error(`O pedido à API expirou (15s) para req_id: ${req_id}.`));
-              }
-          }, 15000); // Reduzido de 60s para 15s
-          
-          promisesRef.current.set(String(req_id), {
-              resolve: (value: any) => {
-                  clearTimeout(timeoutId);
-                  resolve(value);
-              },
-              reject: (reason: any) => {
-                  clearTimeout(timeoutId);
-                  reject(reason);
-              }
-          });
-      }
-      
-      ws.send(JSON.stringify(payload));
-      
-      if (noResponse) {
-          resolve({} as T);
-      }
-  });
-}, []);
+        const req_id = Date.now() + Math.floor(Math.random() * 1000000);
+        const payload = { ...request, req_id };
+        
+        if (!noResponse) {
+            const timeoutId = setTimeout(() => {
+                if (promisesRef.current.has(String(req_id))) {
+                    promisesRef.current.delete(String(req_id));
+                    reject(new Error(`O pedido à API expirou (60s). O token pode ser inválido ou a rede está lenta.`));
+                }
+            }, 60000); // Timeout aumentado para 60 segundos
+            
+            promisesRef.current.set(String(req_id), {
+                resolve: (value: any) => {
+                    clearTimeout(timeoutId);
+                    resolve(value);
+                },
+                reject: (reason: any) => {
+                    clearTimeout(timeoutId);
+                    reject(reason);
+                }
+            });
+        }
+        
+        ws.send(JSON.stringify(payload));
+        
+        if (noResponse) {
+            resolve({} as T);
+        }
+    });
+  }, []);
   
   const getHistoricalData = useCallback(async (symbol: string, style: 'ticks' | 'candles', count: number, period?: TimePeriod): Promise<ApiHistoricalData[]> => {
       const request: any = {
@@ -372,8 +372,8 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
                     if (op.id === contractId) {
                         return {
                             ...op,
-                            takeProfit: updateResult.limit_order?.take_profit || op.takeProfit,
-                            stopLoss: updateResult.limit_order?.stop_loss || op.stopLoss,
+                            takeProfit: updateResult.limit_order?.take_profit?.order_amount || op.takeProfit,
+                            stopLoss: updateResult.limit_order?.stop_loss?.order_amount || op.stopLoss,
                         };
                     }
                     return op;
@@ -428,7 +428,7 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
       if (cancellation && cancellation !== 'none') {
         buyRequest.parameters.cancellation = cancellation;
       }
-
+      
       const buyResponse: any = await makeRequest(buyRequest);
       const buyResult = buyResponse.buy;
       const contractId = buyResult.contract_id;
@@ -437,6 +437,7 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
         throw new Error("Falha na compra do contrato, ID não retornado.");
       }
       
+      // Apenas adiciona os limites se eles forem definidos
       if (takeProfit || stopLoss) {
         setTimeout(async () => {
           try {
@@ -449,7 +450,7 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
               variant: 'default',
             }]);
           }
-        }, 500);
+        }, 500); // Pequeno delay para garantir que o contrato existe
       }
       
       const latestTick = priceTicks.length > 0 ? priceTicks[priceTicks.length - 1].price : 0;
@@ -730,7 +731,24 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
                             result: contract.profit,
                             takeProfit: contract.limit_order?.take_profit?.order_amount || op.takeProfit,
                             stopLoss: contract.limit_order?.stop_loss?.order_amount || op.stopLoss,
+                            trailingStop: op.trailingStop,
                         };
+
+                        if (!isSold && op.initiator === 'Piloto' && contract.profit > 0) {
+                            const trailingState = trailingStateRef.current.get(op.id) || { highestProfit: 0 };
+                            const activationThreshold = op.stake * 0.15; 
+                            const trailingDistance = op.stake * 0.10;   
+
+                            if (contract.profit > trailingState.highestProfit) {
+                                trailingState.highestProfit = contract.profit;
+                                trailingStateRef.current.set(op.id, trailingState);
+                            }
+
+                            if (trailingState.highestProfit > activationThreshold) {
+                                const newStopProfitLevel = trailingState.highestProfit - trailingDistance;
+                                updatedOp.trailingStop = newStopProfitLevel;
+                            }
+                        }
 
                         if (isSold) {
                             sellingContractsRef.current.delete(contract.contract_id);
@@ -959,8 +977,8 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
 };
       
         ws.onerror = () => {
-    // Silencioso - onclose tratará o erro
-};
+          // Silencioso - onclose tratará o erro
+        };
     };
 
     connect();
