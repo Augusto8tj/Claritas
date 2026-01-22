@@ -67,11 +67,7 @@ export function useAccumulatorsCouncil() {
   }, [operationsLog]);
 
   const toggleAutopilot = useCallback(() => {
-    setIsAutopilotOn(prev => {
-        const newState = !prev;
-        // Move a notificação para um useEffect para evitar chamadas durante a renderização
-        return newState;
-    });
+    setIsAutopilotOn(prev => !prev);
   }, []);
 
   useEffect(() => {
@@ -87,7 +83,7 @@ export function useAccumulatorsCouncil() {
           title: `Piloto Automático (Acumuladores) ${isAutopilotOn ? 'Ativado' : 'Desativado'}`,
         });
     }
-  }, [isAutopilotOn]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [isAutopilotOn, botStatus, toast, operationsLog]); 
 
   const analyzeAndAdjustStrategy = useCallback((lastOp: Operation, localIndicators: Indicators, localMetrics: { avgBbw: number; avgAtr: number; }) => {
     if (lastOp.status === 'lost') {
@@ -198,7 +194,7 @@ export function useAccumulatorsCouncil() {
       setMetrics(localMetrics);
       
       const lastOp = operationsLog.length > 0 ? operationsLog[0] : null;
-      if (lastOp && lastOp.status !== 'pending' && op.initiator === 'Piloto' && lastOp.id > lastOpIdRef.current) {
+      if (lastOp && lastOp.status !== 'pending' && lastOp.initiator === 'Piloto' && lastOp.id > lastOpIdRef.current) {
          analyzeAndAdjustStrategy(lastOp, calculatedIndicators, localMetrics);
          lastOpIdRef.current = lastOp.id;
          executionRef.current = false;
@@ -239,9 +235,16 @@ export function useAccumulatorsCouncil() {
         
         const { adx, bbw, atr } = calculatedIndicators;
         
-        const adxScore = Math.max(0, (25 - adx) / 15) * 100;
-        const bbwScore = avgBbw > 0 ? Math.max(0, 1 - (bbw / avgBbw)) * 100 : 50;
-        const atrScore = avgAtr > 0 ? Math.max(0, 1 - (atr / avgAtr)) * 100 : 50;
+        // --- ANÁLISE DE CALMARIA RECALIBRADA ---
+        
+        // ADX Score: Menos punitivo. Zera apenas em ADX=35+
+        const adxScore = Math.max(0, (35 - adx) / 25) * 100;
+        
+        // BBW Score: Mais tolerante. Zera se BBW for > 1.5x a média.
+        const bbwScore = avgBbw > 0 ? Math.max(0, 1 - (bbw / (avgBbw * 1.5))) * 100 : 50;
+        
+        // ATR Score: Mais tolerante. Zera se ATR for > 1.5x a média.
+        const atrScore = avgAtr > 0 ? Math.max(0, 1 - (atr / (avgAtr * 1.5))) * 100 : 50;
 
         const finalCalmnessScore = (adxScore * 0.45) + (bbwScore * 0.45) + (atrScore * 0.10);
         setCalmnessScore(finalCalmnessScore);
