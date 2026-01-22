@@ -8,76 +8,27 @@ import type { CandleData, Operation, TickData } from '@/lib/types';
 import { calculateAllIndicators, type Indicators } from '@/services/indicator-service';
 import { initialCouncilStrategies } from '@/services/council-strategies';
 
-// --- TIPOS E CONFIGURAÇÕES DA ESTRATÉGIA V3 (ADAPTATIVA) ---
+// --- TIPOS E CONFIGURAÇÕES DA ESTRATÉGIA ---
 
 type BotStatus = 'PAUSED' | 'MONITORING' | 'ANALYZING_LOSS' | 'COOLDOWN' | 'CALM_DETECTED' | 'POSITION_OPEN';
 
 interface RiskManagerStatus {
   mode: 'Normal' | 'Cautious';
   lastLossReason: string | null;
-  calmnessScoreThreshold: number; // Limiar de Calmaria ajustável
+  calmnessScoreThreshold: number;
 }
 
 const VOLATILITY_LOOKBACK = 50;
-const BASE_CALMNESS_THRESHOLD = 70; // Limiar base para entrar numa operação
-const MAX_LOSS_PERCENT = 0.50; 
+const BASE_CALMNESS_THRESHOLD = 70;
+const MAX_LOSS_PERCENT = 0.50; // Perda máxima de 50% do stake
+const TAKE_PROFIT_PERCENT = 0.25; // Alvo de lucro de 25% do stake
+const KILL_SWITCH_SECONDS = 45; // Tempo máximo de exposição em segundos
+
 const VOLATILITY_EXIT_MULTIPLIER_BBW = 1.8;
 const ADX_EXIT_THRESHOLD = 25;
 const ATR_EXIT_MULTIPLIER = 1.6;
 const COOLDOWN_PERIOD_MS = 30000;
-const DEFAULT_GROWTH_RATE = 0.03;
-
-const calculateSafetyDuration = (
-  indicators: Indicators,
-  candles: CandleData[],
-  lookback: number = 100
-): number => {
-  const adxSeries = indicators.adxSeries?.slice(-lookback);
-  const bbwSeries = indicators.bbwSeries?.slice(-lookback);
-
-  if (!adxSeries || !bbwSeries || adxSeries.length < lookback || bbwSeries.length < lookback) {
-    return 90; // Default 90 segundos se dados insuficientes
-  }
-
-  const validBbw = bbwSeries.filter(v => v !== null) as number[];
-  const avgBbw = validBbw.length > 0 ? validBbw.reduce((s, v) => s + v, 0) / validBbw.length : 0;
-  
-  let calmStreaks: number[] = [];
-  let currentStreak = 0;
-
-  for (let i = 0; i < lookback; i++) {
-    const isCalm = (adxSeries[i] || 30) < 22 && (bbwSeries[i] || 99) < avgBbw * 1.2;
-    if (isCalm) {
-      currentStreak++;
-    } else {
-      if (currentStreak > 1) { // Apenas conta sequências de 2+ minutos
-        calmStreaks.push(currentStreak);
-      }
-      currentStreak = 0;
-    }
-  }
-  if (currentStreak > 1) {
-    calmStreaks.push(currentStreak);
-  }
-
-  if (calmStreaks.length < 3) {
-    return 120; // Um padrão seguro se não houver streaks suficientes
-  }
-
-  // Média ponderada, dando mais peso às streaks recentes
-  let weightedSum = 0;
-  let weightSum = 0;
-  calmStreaks.forEach((streak, i) => {
-    const weight = i + 1;
-    weightedSum += streak * weight;
-    weightSum += weight;
-  });
-
-  const avgStreakInMinutes = weightedSum / weightSum;
-  
-  // Converte para segundos e aplica limites de segurança
-  return Math.max(60, Math.min(300, avgStreakInMinutes * 60)); 
-};
+const DEFAULT_GROWTH_RATE = 0.03; // Taxa de crescimento padrão de 3%
 
 
 export function useAccumulatorsCouncil() {
@@ -108,7 +59,6 @@ export function useAccumulatorsCouncil() {
     calmnessScoreThreshold: BASE_CALMNESS_THRESHOLD,
   });
 
-  const safetyDurationsRef = useRef<Map<number, number>>(new Map());
   const lastOpIdRef = useRef<number>(0);
   const executionRef = useRef(false);
   const cooldownTimerRef = useRef<NodeJS.Timeout | null>(null);
@@ -255,23 +205,35 @@ export function useAccumulatorsCouncil() {
         setBotStatus('POSITION_OPEN');
         
         const isVolatilityExpanding = 
-            calculatedIndicators.bbw > avgBbw * VOLATILITY_EXIT_MULTIPLIER_BBW ||
-            calculatedIndicators.atr > avgAtr * ATR_EXIT_MULTIPLIER ||
-            calculatedIndicators.adx > ADX_EXIT_THRESHOLD;
+            calculatedIndicators.bbw! > localMetrics.avgBbw * VOLATILITY_EXIT_MULTIPLIER_BBW ||
+            calculatedIndicators.atr! > localMetrics.avgAtr * ATR_EXIT_MULTIPLIER ||
+            calculatedIndicators.adx! > ADX_EXIT_THRESHOLD;
             
         const hasReachedStopLoss = (openPosition.result || 0) <= -openPosition.stake * MAX_LOSS_PERCENT;
-        
-        const safetyDuration = safetyDurationsRef.current.get(openPosition.id) || 120;
-        const entryTime = new Date(openPosition.timestamp).getTime();
-        const elapsedTime = Date.now() - entryTime;
-        const hasReachedTimeTarget = elapsedTime >= safetyDuration * 1000;
-        
-        if (hasReachedTimeTarget || isVolatilityExpanding || hasReachedStopLoss) {
-          let reason = 'Condição de saída atingida.';
-          if(hasReachedTimeTarget) reason = `Saída por tempo de segurança (${(safetyDuration/60).toFixed(1)} min).`;
-          else if(hasReachedStopLoss) reason = `Stop Loss de ${MAX_LOSS_PERCENT * 100}% atingido.`;
-          else if(isVolatilityExpanding) reason = 'Veto de Volatilidade: Risco de mercado aumentou.';
+        const hasReachedTakeProfit = (openPosition.result || 0) >= openPosition.stake * TAKE_PROFIT_PERCENT;
 
+        const entryTime = new Date(openPosition.timestamp).getTime();
+        const elapsedTimeInSeconds = (Date.now() - entryTime) / 1000;
+        const killSwitchTriggered = elapsedTimeInSeconds >= KILL_SWITCH_SECONDS;
+        
+        let shouldSell = false;
+        let reason = '';
+
+        if (hasReachedTakeProfit) {
+            shouldSell = true;
+            reason = `Alvo de ${TAKE_PROFIT_PERCENT*100}% atingido ($${(openPosition.result || 0).toFixed(2)}).`;
+        } else if (killSwitchTriggered) {
+            shouldSell = true;
+            reason = `Kill Switch de Tempo (${KILL_SWITCH_SECONDS}s) ativado para limitar exposição.`;
+        } else if (isVolatilityExpanding) {
+            shouldSell = true;
+            reason = 'Veto de Volatilidade: Risco de mercado aumentou.';
+        } else if (hasReachedStopLoss) {
+            shouldSell = true;
+            reason = `Stop Loss de ${MAX_LOSS_PERCENT * 100}% atingido.`;
+        }
+        
+        if (shouldSell) {
           toast({
             title: "🤖 Piloto: A fechar posição",
             description: reason,
@@ -290,7 +252,7 @@ export function useAccumulatorsCouncil() {
         const { adx, bbw } = calculatedIndicators;
         
         const adxScore = Math.max(0, 100 - ((Math.max(0, (adx || 35) - 15) / 20) * 100));
-        const bbwScore = localMetrics.avgBbw > 0 ? Math.max(0, 100 - ((bbw / (localMetrics.avgBbw * 1.5)) * 100)) : 50;
+        const bbwScore = localMetrics.avgBbw > 0 ? Math.max(0, 100 - ((bbw! / (localMetrics.avgBbw * 1.5)) * 100)) : 50;
         
         const TICK_VOL_WINDOW = 20;
         let tickVolatilityScore = 50;
@@ -313,17 +275,14 @@ export function useAccumulatorsCouncil() {
           setBotStatus('CALM_DETECTED');
           const stake = Math.max(1.0, Math.min(dailyBalance * 0.1, 10));
           
-          const safetyDurationSeconds = calculateSafetyDuration(calculatedIndicators, realtimeBotCandles);
-
           toast({
             title: "🤖 Piloto: Posição Aberta!",
-            description: `Calmaria detectada. Alvo de tempo: ${(safetyDurationSeconds / 60).toFixed(1)} min.`,
+            description: `Calmaria detectada. Contrato aberto com taxa de ${DEFAULT_GROWTH_RATE * 100}%.`,
           });
 
           const result = await executeTrade(stake, DEFAULT_GROWTH_RATE, activeSymbol, 'Piloto');
           if (result.success && result.contractId) {
               openPilotContractIdRef.current = result.contractId;
-              safetyDurationsRef.current.set(result.contractId, safetyDurationSeconds);
           }
 
         } else {
