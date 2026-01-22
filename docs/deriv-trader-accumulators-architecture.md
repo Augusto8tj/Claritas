@@ -29,27 +29,31 @@ Esta é a ponte de comunicação dedicada para o ambiente de Acumuladores.
 *   **Funções Chave**:
     *   **Execução de Contrato `ACCU`**: A função `executeTrade` foi totalmente reescrita para enviar o tipo de contrato `ACCU`, incluindo os novos parâmetros como `growth_rate`.
     *   **Gestão de Estado**: Mantém o `operationsLog` para Acumuladores e outros estados essenciais, de forma isolada dos outros sistemas.
+    *   **Gestão de Posições Abertas**: Ouve o stream de `proposal_open_contract` para atualizar o lucro em tempo real e o estado de cada posição aberta.
+    *   **Função de Venda**: Expõe a função `sellContract` para fechar posições manualmente ou via piloto automático.
 
-### 2.2. (Futuro) Cérebro Cognitivo: `use-robot-council-accumulators.ts`
+### 2.2. Cérebro Cognitivo: `use-accumulators-council.ts` (O "Caçador de Calmaria")
 
-Este hook foi criado, mas a sua lógica ainda é um espelho do V1. A sua evolução será o próximo passo no desenvolvimento.
+Este hook contém a inteligência do piloto automático, projetado especificamente para Acumuladores.
 
-*   **Visão Futura**:
-    1.  **Decisão de "Comprar" ou "Esperar"**: Em vez de votar `RISE`/`FALL`, os robôs votarão `BUY` se as condições de baixa volatilidade forem atendidas, ou `HOLD` caso contrário.
-    2.  **Análise de Volatilidade**: O conselho de robôs será composto por especialistas em volatilidade (ex: BBW, ATR, desvio padrão).
-    3.  **Seleção da Taxa de Crescimento**: A IA poderá sugerir a taxa de crescimento ideal com base na volatilidade atual do mercado (ex: taxa de 1% em mercados calmos, taxa de 5% em mercados ligeiramente mais ativos, mas ainda contidos).
-    4.  **Gestão de Saída**: O sistema decidirá quando fechar uma posição lucrativa, talvez após um número X de ticks ou se a volatilidade começar a aumentar perigosamente.
+*   **Responsabilidade Principal**: Identificar períodos de baixa volatilidade para abrir e fechar posições de forma autónoma.
+*   **Estratégia "Calm Seeker"**:
+    1.  **Condição de Entrada**: O piloto só abre uma posição quando há uma **confluência** de sinais de baixa volatilidade:
+        *   **Bollinger Bands Width (BBW):** A largura das bandas deve estar significativamente abaixo da sua média recente.
+        *   **Average True Range (ATR):** O ATR normalizado deve estar abaixo de um limiar pré-definido.
+        *   **Z-Score:** O preço deve estar próximo da sua média móvel (Z-Score perto de zero), indicando falta de momentum direcional.
+    2.  **Condição de Saída**: Uma posição aberta é fechada se uma das seguintes condições for atendida:
+        *   **Alvo de Lucro:** Atinge um lucro pré-definido (ex: 10% do valor da aposta) para garantir ganhos rápidos.
+        *   **Expansão da Volatilidade:** O BBW aumenta subitamente, indicando que o período de "calmaria" terminou e o risco de a barreira ser atingida aumentou.
 
 ### 2.3. Camada de Interface: `deriv-trader-accumulators/page.tsx`
 
-A interface do utilizador, totalmente redesenhada para a simplicidade dos Acumuladores.
+A interface do utilizador, focada na simplicidade e no controlo do novo piloto automático.
 
-*   **Responsabilidade Principal**: Fornecer uma interface clara e direta para a compra de contratos Acumuladores.
+*   **Responsabilidade Principal**: Fornecer uma interface clara para a negociação manual e para a gestão do piloto automático.
 *   **Componentes Chave**:
-    *   `DerivTraderInterfaceAccumulators`: O painel de negociação principal. Remove a complexidade de direção e tempo, focando-se em:
-        *   **Valor da Aposta (Stake)**: O capital a ser arriscado.
-        *   **Taxa de Crescimento (Growth Rate)**: Um slider que permite ao operador escolher o seu apetite de risco (de 1% a 5%).
-        *   **Botão Único de Compra**: Um único botão para iniciar a operação.
-    *   `OperationsLogAccumulators`: Um log de operações adaptado para mostrar os detalhes específicos dos contratos `ACCU`, como o lucro acumulado em tempo real.
+    *   `DerivTraderInterfaceAccumulators`: O painel de negociação manual, focado no `stake` e na `growth_rate`.
+    *   `AccumulatorsAutopilotInterface`: Um novo painel que permite ao operador ligar/desligar o piloto automático e visualizar em tempo real as métricas de volatilidade (BBW, ATR, Z-Score) que o cérebro está a analisar.
+    *   `OperationsLogAccumulators`: Um log de operações que exibe o lucro/prejuízo em tempo real para cada contrato e inclui um botão para fechar a posição manualmente.
 
-Este design cria um ambiente focado e especializado, pronto para que possamos construir e testar as nossas novas estratégias de negociação de volatilidade.
+Este design cria um ambiente focado e especializado, onde podemos testar e refinar as nossas novas estratégias de negociação de volatilidade de forma segura e eficiente.

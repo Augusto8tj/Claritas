@@ -139,6 +139,7 @@ export default function OperationsLogAccumulators({ operations, sellContract }: 
                                                             disabled={isSelling}
                                                         >
                                                             {isSelling ? <Loader2 className="h-4 w-4 animate-spin"/> : <XSquare className="h-4 w-4"/>}
+                                                            <span className="ml-1.5 hidden sm:inline">Encerrar</span>
                                                         </Button>
                                                     </div>
                                                 ) : (

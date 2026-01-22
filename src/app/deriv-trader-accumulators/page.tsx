@@ -16,6 +16,8 @@ import OperationsLogAccumulators from "@/features/trading/components/deriv-trade
 import { accumulatorSchema, type AccumulatorFormValues } from "@/features/trading/components/deriv-trader/deriv-trader-interface-accumulators.types";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { ApiStatusIndicatorAccumulators } from "@/features/trading/components/deriv-trader/ApiStatusIndicatorAccumulators";
+import { useAccumulatorsCouncil } from "@/features/trading/hooks/use-accumulators-council";
+import { AccumulatorsAutopilotInterface } from "@/features/trading/components/deriv-trader/accumulators-autopilot-interface";
 
 
 function Header() {
@@ -106,7 +108,7 @@ function IsolatedMarketChart() {
                     timePeriod={timePeriod}
                     setTimePeriod={setTimePeriod}
                     operations={operationsLog}
-                    indicators={null} // Placeholder for now
+                    indicators={null}
                     tradeAnnotations={tradeAnnotations}
                 />
             </CardContent>
@@ -116,11 +118,13 @@ function IsolatedMarketChart() {
 
 function MainContent() {
     const { activeSymbol, operationsLog, sellContract, priceTicks } = useDerivApiAccumulators();
+    const council = useAccumulatorsCouncil();
     
     return (
         <div className="mt-6 grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <div className="lg:col-span-1">
+            <div className="lg:col-span-1 space-y-6">
                  <DerivTraderInterfaceAccumulators symbol={activeSymbol || ""} />
+                 <AccumulatorsAutopilotInterface {...council} />
             </div>
             <div className="lg:col-span-2">
                 <OperationsLogAccumulators operations={operationsLog} sellContract={sellContract} priceTicks={priceTicks} />
