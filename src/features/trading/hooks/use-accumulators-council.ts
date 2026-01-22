@@ -155,12 +155,26 @@ export function useAccumulatorsCouncil() {
           const lastCandle = realtimeBotCandles[realtimeBotCandles.length - 1];
           const latestTick = priceTicks[priceTicks.length - 1];
           
-          if (latestTick && lastCandle && latestTick.epoch >= lastCandle.epoch && latestTick.epoch < lastCandle.epoch + 60) {
-              const lastCandleMutable = { ...lastCandle };
-              lastCandleMutable.close = latestTick.price;
-              lastCandleMutable.high = Math.max(lastCandle.high, latestTick.price);
-              lastCandleMutable.low = Math.min(lastCandle.low, latestTick.price);
-              realtimeBotCandles[realtimeBotCandles.length - 1] = lastCandleMutable;
+          if (latestTick && lastCandle) {
+              if (latestTick.epoch >= lastCandle.epoch && latestTick.epoch < lastCandle.epoch + 60) {
+                  // Tick belongs to the current candle -> UPDATE it
+                  const lastCandleMutable = { ...lastCandle };
+                  lastCandleMutable.close = latestTick.price;
+                  lastCandleMutable.high = Math.max(lastCandle.high, latestTick.price);
+                  lastCandleMutable.low = Math.min(lastCandle.low, latestTick.price);
+                  realtimeBotCandles[realtimeBotCandles.length - 1] = lastCandleMutable;
+              } else if (latestTick.epoch >= lastCandle.epoch + 60) {
+                  // Tick belongs to a NEW candle -> CREATE it
+                  const newCandle: CandleData = {
+                      epoch: Math.floor(latestTick.epoch / 60) * 60, // Start of the minute
+                      open: latestTick.price,
+                      high: latestTick.price,
+                      low: latestTick.price,
+                      close: latestTick.price,
+                      volume: 1,
+                  };
+                  realtimeBotCandles.push(newCandle);
+              }
           }
       }
 
