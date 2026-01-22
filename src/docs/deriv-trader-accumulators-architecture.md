@@ -44,6 +44,7 @@ Este hook contém a inteligência do piloto automático, projetado especificamen
     1.  **Condição de Entrada**: O piloto só abre uma posição quando há uma **confluência** de sinais de baixa volatilidade:
         *   **Bollinger Bands Width (BBW):** A largura das bandas deve estar significativamente abaixo da sua média recente.
         *   **Average Directional Index (ADX):** O ADX deve estar abaixo de um limiar (ex: 20), indicando um mercado sem tendência definida.
+        *   **Average True Range (ATR):** O ATR deve estar abaixo da sua média histórica, confirmando baixa amplitude de movimento.
     2.  **Condição de Saída (Multi-Fator)**: Uma posição aberta é fechada se uma das seguintes condições for atendida:
         *   **Alvo de Lucro:** Atinge um lucro pré-definido (10% do valor da aposta).
         *   **Expansão da Volatilidade:** O BBW, o ATR ou o ADX aumentam subitamente, indicando que o período de "calmaria" terminou e o risco aumentou.
@@ -60,7 +61,7 @@ A interface do utilizador, focada na simplicidade e no controlo do novo piloto a
 *   **Responsabilidade Principal**: Fornecer uma interface clara para a negociação manual e para a gestão do piloto automático.
 *   **Componentes Chave**:
     *   `DerivTraderInterfaceAccumulators`: O painel de negociação manual, focado no `stake` e na `growth_rate`.
-    *   `AccumulatorsAutopilotInterface`: Um novo painel que permite ao operador ligar/desligar o piloto automático e visualizar as métricas de volatilidade (BBW, ADX) e o estado do novo **Gerente de Risco**.
+    *   `AccumulatorsAutopilotInterface`: Um novo painel que permite ao operador ligar/desligar o piloto automático e visualizar as métricas de volatilidade (BBW, ATR, ADX) e o estado do novo **Gerente de Risco**.
     *   `OperationsLogAccumulators`: Um log de operações que exibe o lucro/prejuízo em tempo real para cada contrato e inclui um botão para fechar a posição manualmente.
 
 Este design cria um ambiente focado e especializado, onde podemos testar e refinar as nossas novas estratégias de negociação de volatilidade de forma segura e eficiente.
