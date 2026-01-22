@@ -415,10 +415,14 @@ export const DerivApiProviderAccumulators = ({ children }: { children: ReactNode
   const subscribeToStreams = useCallback(async (symbol: string) => {
     if (wsRef.current?.readyState !== WebSocket.OPEN) return;
     
-    try {
-        await makeRequest({ "forget_all": ["ticks", "ohlc"] }, true);
-    } catch(e) {
-        console.warn('[Deriv WS] Non-critical failure to forget all streams, proceeding.', e);
+    if (activeSubscriptionIdRef.current) {
+        try { await makeRequest({ forget: activeSubscriptionIdRef.current }, true); } catch (e) { /* silent */ }
+    }
+    if (botSubscriptionIdRef.current) {
+        try { await makeRequest({ forget: botSubscriptionIdRef.current }, true); } catch (e) { /* silent */ }
+    }
+    if (tickSubscriptionIdRef.current) {
+        try { await makeRequest({ forget: tickSubscriptionIdRef.current }, true); } catch (e) { /* silent */ }
     }
 
     activeSubscriptionIdRef.current = null;
