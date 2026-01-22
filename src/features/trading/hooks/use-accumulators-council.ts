@@ -35,17 +35,26 @@ export function useAccumulatorsCouncil() {
   
   const executionRef = useRef(false);
   const openPositionRef = useRef<Operation | null>(null);
+  const isInitialMount = useRef(true);
+
+  // UseEffect para lidar com o side-effect (toast) na mudança do estado do piloto automático
+  useEffect(() => {
+    if (isInitialMount.current) {
+      isInitialMount.current = false;
+      return;
+    }
+    toast({
+      title: `Piloto Automático (Acumuladores) ${isAutopilotOn ? 'Ativado' : 'Desativado'}`,
+    });
+  }, [isAutopilotOn, toast]);
 
   const toggleAutopilot = useCallback(() => {
     setIsAutopilotOn(prev => {
       const newState = !prev;
       setBotStatus(newState ? 'MONITORING' : 'PAUSED');
-      toast({
-        title: `Piloto Automático (Acumuladores) ${newState ? 'Ativado' : 'Desativado'}`,
-      });
       return newState;
     });
-  }, [toast]);
+  }, []);
 
   useEffect(() => {
     if (!isAutopilotOn || !isConnected || !activeSymbol || chartData.length < VOLATILITY_LOOKBACK) {
