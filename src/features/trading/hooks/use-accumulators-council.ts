@@ -178,7 +178,7 @@ export function useAccumulatorsCouncil() {
           }
       }
 
-      const calculatedIndicators = calculateAllIndicators(realtimeBotCandles, initialCouncilStrategies, '1m', { duration: 15, unit: 's' });
+      const calculatedIndicators = calculateAllIndicators(realtimeBotCandles, initialCouncilStrategies, '1m', {duration: 15, unit: 's'});
       if (!calculatedIndicators || !calculatedIndicators.bbw || !calculatedIndicators.atr || !calculatedIndicators.adx) {
           executionRef.current = false;
           return;
@@ -194,7 +194,7 @@ export function useAccumulatorsCouncil() {
       setMetrics(localMetrics);
       
       const lastOp = operationsLog.length > 0 ? operationsLog[0] : null;
-      if (lastOp && lastOp.status !== 'pending' && op.initiator === 'Piloto' && lastOp.id > lastOpIdRef.current) {
+      if (lastOp && lastOp.status !== 'pending' && lastOp.initiator === 'Piloto' && lastOp.id > lastOpIdRef.current) {
          analyzeAndAdjustStrategy(lastOp, calculatedIndicators, localMetrics);
          lastOpIdRef.current = lastOp.id;
          executionRef.current = false;
@@ -235,8 +235,8 @@ export function useAccumulatorsCouncil() {
         
         const { adx, bbw, atr } = calculatedIndicators;
         
-        const adxScore = Math.max(0, (35 - adx) / 25) * 100;
-        const bbwScore = localMetrics.avgBbw > 0 ? Math.max(0, 1 - (bbw / (localMetrics.avgBbw * 1.5))) * 100 : 50;
+        const adxScore = Math.max(0, 100 - ((Math.max(0, adx - 15) / 20) * 100)); // Gradual
+        const bbwScore = localMetrics.avgBbw > 0 ? Math.max(0, 100 - ((bbw / (localMetrics.avgBbw * 1.5)) * 100)) : 50;
         
         // --- NOVO: TICK VOLATILITY SCORE ---
         const TICK_VOL_WINDOW = 20;
@@ -246,12 +246,8 @@ export function useAccumulatorsCouncil() {
             const avgTickPrice = recentTickPrices.reduce((s, p) => s + p, 0) / TICK_VOL_WINDOW;
             const tickStdDev = Math.sqrt(recentTickPrices.reduce((s, p) => s + Math.pow(p - avgTickPrice, 2), 0) / TICK_VOL_WINDOW);
             
-            // Normaliza o desvio padrão em relação ao preço médio para obter uma medida relativa de volatilidade.
             const normalizedTickVolatility = avgTickPrice > 0 ? (tickStdDev / avgTickPrice) : 0;
             
-            // Converte a volatilidade em um score de 0 a 100.
-            // Quanto menor a volatilidade, maior o score.
-            // O multiplicador 100000 é um fator empírico para escalar o valor para a faixa 0-100.
             tickVolatilityScore = Math.max(0, 100 - (normalizedTickVolatility * 100000));
         }
 
