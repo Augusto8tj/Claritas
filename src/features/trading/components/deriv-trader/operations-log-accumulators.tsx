@@ -11,7 +11,7 @@ import {
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import type { Operation, OperationInitiator, TickData } from "@/lib/types";
-import { Bot, User, Users, MoveRight, Clock, XSquare, Loader2 } from "lucide-react";
+import { Bot, User, Users, MoveRight, Clock, XSquare, Loader2, Trash2 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Button } from "@/components/ui/button";
@@ -20,6 +20,7 @@ interface OperationsLogAccumulatorsProps {
   operations: Operation[];
   sellContract: (contractId: number) => Promise<any>;
   priceTicks: TickData[];
+  clearActiveContracts: () => void;
 }
 
 const initiatorIcons: Record<OperationInitiator, React.ReactNode> = {
@@ -37,7 +38,7 @@ const formatTime = (isoString: string | undefined): string => {
     }
 };
 
-export default function OperationsLogAccumulators({ operations, sellContract }: OperationsLogAccumulatorsProps) {
+export default function OperationsLogAccumulators({ operations, sellContract, clearActiveContracts }: OperationsLogAccumulatorsProps) {
     const [sellingContractId, setSellingContractId] = useState<number | null>(null);
 
     const dailySummary = useMemo(() => {
@@ -65,15 +66,23 @@ export default function OperationsLogAccumulators({ operations, sellContract }: 
                             Acompanhe suas posições abertas e o histórico de negociações.
                         </CardDescription>
                     </div>
-                    <div className="text-right">
-                        <p className="text-xs text-muted-foreground">Resultado do Dia</p>
-                        <p className={cn(
-                            "text-lg font-bold",
-                            dailySummary >= 0 && "text-green-600",
-                            dailySummary < 0 && "text-destructive"
-                        )}>
-                            {dailySummary.toLocaleString('pt-BR', { style: 'currency', currency: 'USD' })}
-                        </p>
+                    <div className="flex items-center gap-2">
+                        <div className="text-right">
+                            <p className="text-xs text-muted-foreground">Resultado do Dia</p>
+                            <p className={cn(
+                                "text-lg font-bold",
+                                dailySummary >= 0 && "text-green-600",
+                                dailySummary < 0 && "text-destructive"
+                            )}>
+                                {dailySummary.toLocaleString('pt-BR', { style: 'currency', currency: 'USD' })}
+                            </p>
+                        </div>
+                        {operations.length > 0 && (
+                            <Button variant="ghost" size="icon" onClick={clearActiveContracts}>
+                                <Trash2 className="h-4 w-4" />
+                                <span className="sr-only">Limpar log</span>
+                            </Button>
+                        )}
                     </div>
                 </div>
             </CardHeader>

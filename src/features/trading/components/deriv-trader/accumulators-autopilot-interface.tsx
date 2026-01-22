@@ -10,10 +10,12 @@ import {
 } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Bot, Zap, Waves, TrendingUp } from "lucide-react";
+import { Bot, Zap, Waves, TrendingUp, Wallet } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { useAccumulatorsCouncil } from "../../hooks/use-accumulators-council";
+import { Separator } from "@/components/ui/separator";
 
 interface AccumulatorsAutopilotInterfaceProps extends ReturnType<typeof useAccumulatorsCouncil> {}
 
@@ -22,6 +24,11 @@ export function AccumulatorsAutopilotInterface({
   toggleAutopilot,
   botStatus,
   volatilityMetrics,
+  dailyBalance,
+  setDailyBalance,
+  dailyTarget,
+  setDailyTarget,
+  dailyPnL,
 }: AccumulatorsAutopilotInterfaceProps) {
   
   const statusInfo = {
@@ -50,6 +57,58 @@ export function AccumulatorsAutopilotInterface({
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
+        {isAutopilotOn && (
+           <div className="space-y-3 rounded-lg border bg-card p-4">
+              <h4 className="font-headline flex items-center gap-2 text-primary"><Wallet className="h-5 w-5"/>Gestão de Risco do Dia</h4>
+              <div className="grid grid-cols-3 gap-3 text-center text-xs">
+                  <div>
+                      <p className="text-muted-foreground">P&L (Piloto)</p>
+                      <p className={cn("font-bold text-sm", dailyPnL > 0 && "text-green-600", dailyPnL < 0 && "text-destructive")}>
+                          {dailyPnL.toLocaleString('pt-BR', { style: 'currency', currency: 'USD' })}
+                      </p>
+                  </div>
+                   <div>
+                      <p className="text-muted-foreground">Meta de Lucro</p>
+                      <p className="font-bold text-sm text-green-600">
+                          {dailyTarget.toLocaleString('pt-BR', { style: 'currency', currency: 'USD' })}
+                      </p>
+                  </div>
+                   <div>
+                      <p className="text-muted-foreground">Limite de Perda</p>
+                      <p className="font-bold text-sm text-destructive">
+                          {dailyBalance.toLocaleString('pt-BR', { style: 'currency', currency: 'USD' })}
+                      </p>
+                  </div>
+              </div>
+          </div>
+        )}
+        <div className="grid grid-cols-2 gap-4">
+             <div className="space-y-2">
+                <Label htmlFor="autopilot-daily-balance">Banca do Dia (USD)</Label>
+                <Input 
+                    id="autopilot-daily-balance"
+                    type="number"
+                    value={dailyBalance}
+                    onChange={(e) => setDailyBalance(parseFloat(e.target.value) || 0)}
+                    placeholder="Ex: 10"
+                    disabled={isAutopilotOn}
+                />
+            </div>
+            <div className="space-y-2">
+                <Label htmlFor="autopilot-daily-target">Alvo de Lucro (USD)</Label>
+                <Input 
+                    id="autopilot-daily-target"
+                    type="number"
+                    value={dailyTarget}
+                    onChange={(e) => setDailyTarget(parseFloat(e.target.value) || 0)}
+                    placeholder="Ex: 5"
+                    disabled={isAutopilotOn}
+                />
+            </div>
+        </div>
+
+        <Separator />
+
         <div className="flex items-center justify-between rounded-lg border p-3">
           <Label htmlFor="autopilot-status" className="font-semibold">
             Status do Piloto:

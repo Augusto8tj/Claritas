@@ -8,8 +8,6 @@ import DerivTraderInterfaceAccumulators from "@/features/trading/components/deri
 import { AssetSelectorAccumulators } from "@/features/trading/components/deriv-trader/asset-selector-accumulators";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { MarketChart } from "@/features/trading/components/deriv-trader/market-chart";
-import { Button } from "@/components/ui/button";
-import { Trash2 } from "lucide-react";
 import { DerivApiProviderAccumulators, useDerivApiAccumulators } from "@/features/trading/hooks/use-deriv-api-accumulators";
 import { Skeleton } from "@/components/ui/skeleton";
 import OperationsLogAccumulators from "@/features/trading/components/deriv-trader/operations-log-accumulators";
@@ -25,8 +23,6 @@ function Header() {
         accountType, 
         setAccountType, 
         accountBalance, 
-        clearActiveContracts, 
-        operationsLog,
         isConnecting,
         isAssetsLoading,
         assetGroups,
@@ -71,12 +67,6 @@ function Header() {
                             </div>
                         ) : null}
                     </div>
-                    {operationsLog.length > 0 && (
-                        <Button variant="outline" size="icon" className="h-8 w-8" onClick={clearActiveContracts}>
-                            <Trash2 className="h-4 w-4" />
-                            <span className="sr-only">Limpar negociações</span>
-                        </Button>
-                    )}
                 </div>
             </div>
         </div>
@@ -117,7 +107,7 @@ function IsolatedMarketChart() {
 };
 
 function MainContent() {
-    const { activeSymbol, operationsLog, sellContract, priceTicks } = useDerivApiAccumulators();
+    const { activeSymbol, operationsLog, sellContract, priceTicks, clearActiveContracts } = useDerivApiAccumulators();
     const council = useAccumulatorsCouncil();
     
     return (
@@ -127,7 +117,7 @@ function MainContent() {
                  <AccumulatorsAutopilotInterface {...council} />
             </div>
             <div className="lg:col-span-2">
-                <OperationsLogAccumulators operations={operationsLog} sellContract={sellContract} priceTicks={priceTicks} />
+                <OperationsLogAccumulators operations={operationsLog} sellContract={sellContract} priceTicks={priceTicks} clearActiveContracts={clearActiveContracts} />
             </div>
         </div>
     );
@@ -147,7 +137,7 @@ export default function DerivAccumulatorsPage() {
   const form = useForm<AccumulatorFormValues>({
     resolver: zodResolver(accumulatorSchema),
     defaultValues: {
-      stake: 10,
+      stake: 1.00,
       growth_rate: 0.01,
     },
   });

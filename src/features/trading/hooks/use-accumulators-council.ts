@@ -1,7 +1,7 @@
 // src/features/trading/hooks/use-accumulators-council.ts
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useDerivApiAccumulators } from './use-deriv-api-accumulators';
 import { useToast } from '@/hooks/use-toast';
 import type { CandleData, Operation } from '@/lib/types';
@@ -33,9 +33,20 @@ export function useAccumulatorsCouncil() {
   const [botStatus, setBotStatus] = useState<BotStatus>('PAUSED');
   const [metrics, setMetrics] = useState<{ bbw: number; atr: number; adx: number; avgBbw: number }>({ bbw: 0, atr: 0, adx: 0, avgBbw: 0 });
   
+  const [dailyBalance, setDailyBalance] = useState(10.0);
+  const [dailyTarget, setDailyTarget] = useState(5.0);
+
   const executionRef = useRef(false);
   const openPositionRef = useRef<Operation | null>(null);
   const isInitialMount = useRef(true);
+
+  const dailyPnL = useMemo(() => {
+    const today = new Date().toDateString();
+    return operationsLog
+        .filter(op => op.status !== 'pending' && new Date(op.timestamp).toDateString() === today && op.initiator === 'Piloto')
+        .reduce((sum, op) => sum + (op.result || 0), 0);
+  }, [operationsLog]);
+
 
   // Efeito para disparar o toast na mudança de estado do piloto
   useEffect(() => {
@@ -64,6 +75,29 @@ export function useAccumulatorsCouncil() {
     }
 
     if (executionRef.current) return;
+    
+    if (dailyPnL <= -dailyBalance) {
+        if (isAutopilotOn) {
+            setIsAutopilotOn(false);
+            toast({
+                title: "🤖 Piloto Automático: Limite de Perda Atingido",
+                description: `O sistema foi pausado para proteger seu capital. Perda do dia: $${dailyPnL.toFixed(2)}`,
+                variant: "destructive"
+            });
+        }
+        return;
+    }
+
+    if (dailyPnL >= dailyTarget) {
+        if (isAutopilotOn) {
+            setIsAutopilotOn(false);
+            toast({
+                title: "🏆 Piloto Automático: Meta de Lucro Atingida!",
+                description: `Parabéns! O sistema foi pausado. Lucro do dia: $${dailyPnL.toFixed(2)}`,
+            });
+        }
+        return;
+    }
 
     const runCycle = async () => {
       executionRef.current = true;
@@ -105,8 +139,7 @@ export function useAccumulatorsCouncil() {
 
         if (isCalm) {
           setBotStatus('CALM_DETECTED');
-          // Para este protótipo, usamos stake e growth rate fixos.
-          const stake = 10.0;
+          const stake = Math.max(1.0, Math.min(dailyBalance * 0.1, 10));
           const growthRate = 0.01;
           
           toast({
@@ -126,9 +159,10 @@ export function useAccumulatorsCouncil() {
     runCycle();
 
   }, [
-      isAutopilotOn, isConnected, activeSymbol, dataVersion, // Acionado por novos dados
-      executeTrade, sellContract, operationsLog, toast, botCandleData
+      isAutopilotOn, isConnected, activeSymbol, dataVersion,
+      executeTrade, sellContract, operationsLog, toast, botCandleData,
+      dailyBalance, dailyTarget, dailyPnL, setIsAutopilotOn
   ]);
 
-  return { isAutopilotOn, toggleAutopilot, botStatus, volatilityMetrics: metrics };
+  return { isAutopilotOn, toggleAutopilot, botStatus, volatilityMetrics: metrics, dailyBalance, setDailyBalance, dailyTarget, setDailyTarget, dailyPnL };
 }
