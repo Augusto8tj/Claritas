@@ -25,6 +25,7 @@ const VOLATILITY_LOOKBACK = 50;
 const BASE_ADX_THRESHOLD = 20;
 const BASE_BBW_SHRINK_FACTOR = 0.7;
 const PROFIT_TAKE_PERCENT = 0.10; // 10% de lucro
+const MAX_LOSS_PERCENT = 0.50; // Vende se a perda atingir 50% do stake
 const VOLATILITY_EXIT_MULTIPLIER_BBW = 1.8;
 const ADX_EXIT_THRESHOLD = 25;
 const ATR_EXIT_MULTIPLIER = 1.6;
@@ -194,11 +195,17 @@ export function useAccumulatorsCouncil() {
             calculatedIndicators.adx > ADX_EXIT_THRESHOLD;
             
         const hasReachedProfitTarget = profit >= openPosition.stake * PROFIT_TAKE_PERCENT;
+        const hasReachedStopLoss = profit <= -openPosition.stake * MAX_LOSS_PERCENT;
         
-        if (isVolatilityExpanding || hasReachedProfitTarget) {
+        if (isVolatilityExpanding || hasReachedProfitTarget || hasReachedStopLoss) {
+          let reason = 'Condição de saída atingida.';
+          if(hasReachedProfitTarget) reason = `Take Profit de ${PROFIT_TAKE_PERCENT * 100}% atingido.`;
+          else if(hasReachedStopLoss) reason = `Stop Loss de ${MAX_LOSS_PERCENT * 100}% atingido para limitar perdas.`;
+          else if(isVolatilityExpanding) reason = 'Veto de Volatilidade: Risco de mercado aumentou.';
+
           toast({
             title: "🤖 Piloto: A fechar posição",
-            description: hasReachedProfitTarget ? `Take Profit de ${PROFIT_TAKE_PERCENT * 100}% atingido.` : `Risco de Volatilidade detectado.`,
+            description: reason,
           });
           await sellContract(openPosition.id);
         }
