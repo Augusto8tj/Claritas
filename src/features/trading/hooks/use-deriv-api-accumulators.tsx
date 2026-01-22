@@ -415,12 +415,12 @@ export const DerivApiProviderAccumulators = ({ children }: { children: ReactNode
   const subscribeToStreams = useCallback(async (symbol: string) => {
     if (wsRef.current?.readyState !== WebSocket.OPEN) return;
     
-    // 1. Forget all previous subscriptions
-    for(const subId of [activeSubscriptionIdRef.current, botSubscriptionIdRef.current, tickSubscriptionIdRef.current]) {
-        if(subId) {
-            try { await makeRequest({ forget: subId }, true); } catch (e) { console.warn(`Could not forget sub ${subId}`, e); }
-        }
+    try {
+        await makeRequest({ "forget_all": ["ticks", "ohlc"] }, true);
+    } catch(e) {
+        console.warn('[Deriv WS] Non-critical failure to forget all streams, proceeding.', e);
     }
+
     activeSubscriptionIdRef.current = null;
     botSubscriptionIdRef.current = null;
     tickSubscriptionIdRef.current = null;
@@ -432,7 +432,6 @@ export const DerivApiProviderAccumulators = ({ children }: { children: ReactNode
     setPriceTicks([]);
     
     try {
-        // 2. Subscribe to bot's 1-minute candles
         const botHistory = await getHistoricalData(symbol, 'candles', 1000, '1m') as CandleData[];
         setBotCandleData(botHistory);
         const botSubRequest = { ticks_history: symbol, style: 'candles', granularity: 60, subscribe: 1, end: "latest", count: 1, adjust_start_time: 1 };
@@ -441,28 +440,23 @@ export const DerivApiProviderAccumulators = ({ children }: { children: ReactNode
             botSubscriptionIdRef.current = botSubResponse.subscription.id;
         }
 
-        // 3. Subscribe to high-frequency ticks
         const tickSubRequest = { ticks: symbol, subscribe: 1 };
         const tickSubResponse: any = await makeRequest(tickSubRequest);
         if (tickSubResponse.subscription?.id) {
             tickSubscriptionIdRef.current = tickSubResponse.subscription.id;
         }
         
-        // 4. Handle UI Chart data and potential third subscription
         const isUICandle = chartType === 'Candle';
         const isUI1mCandle = isUICandle && timePeriod === '1m';
         const isUIArea = chartType === 'Area';
         
         if (isUI1mCandle) {
-            // UI needs 1m candles, which we already have from the bot's data
             setChartData(botHistory);
         } else if (isUIArea) {
-            // UI needs ticks, which we will get from the tick subscription. Load initial history.
             const tickHistory = await getHistoricalData(symbol, 'ticks', 1000);
             setChartData(tickHistory as TickData[]);
             setPriceTicks(tickHistory as TickData[]);
         } else if (isUICandle) {
-            // UI needs a different candle granularity (e.g., 5m, 1h). This requires a new subscription.
             const uiHistory = await getHistoricalData(symbol, 'candles', 1000, timePeriod);
             setChartData(uiHistory as CandleData[]);
             const uiSubRequest = { ticks_history: symbol, style: 'candles', granularity: getGranularityForTimePeriod(timePeriod), subscribe: 1, end: "latest", count: 1, adjust_start_time: 1 };
@@ -513,8 +507,16 @@ export const DerivApiProviderAccumulators = ({ children }: { children: ReactNode
                 if (reqId && promisesRef.current.has(String(reqId))) {
                     const promise = promisesRef.current.get(String(reqId));
                     if (promise) {
-                        if (response.error) promise.reject(new Error(response.error.message));
-                        else promise.resolve(response);
+                        if (response.error) {
+                            if (response.error.code === 'AlreadySubscribed') {
+                                console.warn(`[Deriv WS] Ignorando erro 'AlreadySubscribed' para req_id ${reqId}. A subscrição provavelmente já existe.`);
+                                promise.resolve(response);
+                            } else {
+                                promise.reject(new Error(response.error.message));
+                            }
+                        } else {
+                            promise.resolve(response);
+                        }
                         promisesRef.current.delete(String(reqId));
                     }
                     return;
@@ -669,25 +671,15 @@ export const DerivApiProviderAccumulators = ({ children }: { children: ReactNode
     };
   }, [activeToken, isLoading, makeRequest, toast, triggerReconnect, setToastQueue, startConnectionMonitor, addTradeAnnotation, updateTradeAnnotation, setAndPersistOperationsLog, subscribeToStreams]);
 
+  const isInitialMount = useRef(true);
   useEffect(() => {
-    if (isConnected && activeSymbol && !isConnecting) {
-        const timer = setTimeout(() => subscribeToStreams(activeSymbol), 250);
-        return () => clearTimeout(timer);
+    if (isInitialMount.current) {
+        isInitialMount.current = false;
+        return;
     }
-  }, [isConnected, isConnecting, activeSymbol, chartType, timePeriod, subscribeToStreams]);
-
-  useEffect(() => {
-    if (isConnected && !isConnecting) {
-      const checkInterval = setInterval(() => {
-          const timeSinceLastPing = Date.now() - lastPingTime;
-          if (timeSinceLastPing > 45000 && wsRef.current?.readyState === WebSocket.OPEN) {
-              setTriggerReconnect(c => c + 1);
-          }
-      }, 10000);
-      return () => clearInterval(checkInterval);
-    }
-  }, [isConnected, isConnecting, lastPingTime]);
-
+    reconnect();
+  }, [activeSymbol, chartType, timePeriod]);
+  
   const setAccountType = useCallback((type: AccountType) => {
     try {
         localStorage.setItem(DERIV_ACCOUNT_TYPE_KEY, type);
