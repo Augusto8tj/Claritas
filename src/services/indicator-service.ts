@@ -558,7 +558,7 @@ export function calculateAllIndicators(
     }
     
     const lastCandle = validCandles[validCandles.length - 1];
-    const cacheKey = `${timePeriod}-${validCandles.length}-${lastCandle.epoch}`;
+    const cacheKey = `${timePeriod}-${validCandles.length}-${lastCandle.epoch}-${lastCandle.close}`;
 
     // Verifica o cache primeiro
     const cached = indicatorCache.get(cacheKey);
