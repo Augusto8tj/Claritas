@@ -13,8 +13,8 @@ O Deriv Accumulators abandona a necessidade de prever a direção do mercado. O 
 1.  **A Volatilidade é o Alvo:** O sucesso não depende de o preço subir ou descer, mas sim de ele **não se mover de forma explosiva**. O sistema deve ser capaz de identificar períodos de baixa volatilidade para maximizar a probabilidade de sucesso.
 2.  **Taxa de Crescimento vs. Risco:** A "Taxa de Crescimento" (Growth Rate) é o parâmetro central. Taxas mais altas oferecem um retorno potencial maior, mas estreitam as barreiras, aumentando o risco. O sistema deve encontrar um equilíbrio ótimo entre ganho e risco.
 3.  **Análise de Volatilidade (Multi-Fator):** Indicadores como a Largura das Bandas de Bollinger (BBW), o ATR e o ADX (Average Directional Index) são cruciais. Uma confluência de sinais (bandas estreitas, ATR baixo e ADX baixo) indica um mercado "calmo", ideal para os Acumuladores.
-4.  **Gestão de Risco e Saída Inteligente:**
-    *   **Take Profit Automático:** As posições são fechadas automaticamente ao atingir 10% de lucro para garantir ganhos consistentes.
+4.  **Gestão de Risco e Saída Inteligente (Foco no Tempo):**
+    *   **Saída por Tempo de Segurança:** Em vez de um alvo de lucro fixo, o sistema agora analisa o histórico recente para determinar a duração média dos períodos de "calmaria". Cada posição é aberta com um "cronómetro de segurança" e é fechada quando o tempo se esgota, focando em garantir consistência temporal em vez de um lucro específico.
     *   **Veto de Volatilidade:** A posição é encerrada prematuramente se qualquer indicador (BBW, ATR ou ADX) sinalizar um aumento súbito de risco.
     *   **Stop-Loss de Capital:** Como uma rede de segurança final, a posição é vendida se a perda atingir 50% do valor da aposta, transformando uma perda potencial de 100% numa perda máxima e controlada.
     *   **Gerente de Risco Estratégico:** Após uma perda, o sistema entra em "Modo Cauteloso", tornando os seus critérios de entrada mais rigorosos e impondo um período de "cooldown" para evitar decisões precipitadas.
@@ -41,18 +41,18 @@ Esta é a ponte de comunicação dedicada para o ambiente de Acumuladores.
 Este hook contém a inteligência do piloto automático, projetado especificamente para Acumuladores.
 
 *   **Responsabilidade Principal**: Identificar períodos de baixa volatilidade para abrir e fechar posições de forma autónoma e gerir o risco de forma adaptativa.
-*   **Estratégia "Calm Seeker" V3 (Adaptativa)**:
-    1.  **"Nível de Calmaria" (Calmness Score):** Em vez de limiares fixos, o sistema calcula um score de 0 a 100 que representa a estabilidade do mercado. Este score é uma média ponderada da compressão das Bandas de Bollinger (BBW), da falta de tendência (ADX) e do baixo range (ATR).
+*   **Estratégia "Calm Seeker" V3 (Saída Adaptativa por Tempo)**:
+    1.  **"Nível de Calmaria" (Calmness Score):** O sistema calcula um score de 0 a 100 que representa a estabilidade do mercado. Este score é uma média ponderada da compressão das Bandas de Bollinger (BBW), da falta de tendência (ADX) e da volatilidade dos ticks em tempo real.
     2.  **Condição de Entrada Dinâmica**: O piloto só abre uma posição quando o "Nível de Calmaria" calculado ultrapassa um **limiar de entrada dinâmico** (ex: 70/100).
-    3.  **Condição de Saída (Multi-Fator)**: Uma posição aberta é fechada se **uma** das seguintes condições for atendida (a que ocorrer primeiro):
-        *   **Alvo de Lucro:** Atinge um lucro pré-definido (10% do valor da aposta).
+    3.  **Cálculo do Tempo de Segurança:** No momento da entrada, o sistema analisa o histórico recente para determinar a duração média dos períodos de "calmaria" e define este tempo como o alvo para a operação.
+    4.  **Condição de Saída (Multi-Fator)**: Uma posição aberta é fechada se **uma** das seguintes condições for atendida (a que ocorrer primeiro):
+        *   **Tempo de Segurança Esgotado:** O cronómetro interno, baseado na análise histórica, chega ao fim.
         *   **Stop-Loss de Capital:** A perda atinge 50% do valor da aposta inicial.
-        *   **Expansão da Volatilidade:** O BBW, o ATR ou o ADX aumentam subitamente, indicando que o período de "calmaria" terminou e o risco aumentou.
-    4.  **Gerente de Risco Estratégico (Auto-Calibração):**
-        *   **Análise Pós-Perda:** Após cada perda, o sistema diagnostica a causa (ex: pico de ADX, expansão de BBW).
-        *   **Ajuste Adaptativo:** Entra em **"Modo Cauteloso"**, tornando-se mais exigente. Ele **aumenta o limiar do Nível de Calmaria** necessário para a próxima entrada (ex: de 70 para 85), em vez de alterar os parâmetros dos indicadores.
-        *   **Cooldown:** Aguarda um período de tempo antes de procurar uma nova entrada.
-        *   **Retorno à Normalidade:** Volta ao "Modo Normal", restaurando o limiar de calmaria padrão, após uma operação bem-sucedida.
+        *   **Expansão da Volatilidade:** O BBW, o ATR ou o ADX aumentam subitamente, indicando que o período de "calmaria" terminou.
+    5.  **Gerente de Risco Estratégico (Auto-Calibração):**
+        *   **Análise Pós-Perda:** Após cada perda, o sistema diagnostica a causa (ex: pico de ADX).
+        *   **Ajuste Adaptativo:** Entra em **"Modo Cauteloso"**, tornando-se mais exigente. Ele **aumenta o limiar do Nível de Calmaria** necessário para a próxima entrada (ex: de 70 para 85).
+        *   **Retorno à Normalidade:** Volta ao "Modo Normal" após uma operação bem-sucedida.
 
 ### 2.3. Camada de Interface: `deriv-trader-accumulators/page.tsx`
 

@@ -37,6 +37,7 @@ export interface Indicators {
 
     // --- Indicadores de Tendência ---
     adx: number | null;      // Average Directional Index: Força da tendência (sem direção)
+    adxSeries: (number | null)[];
     pdi: number | null;      // Positive Directional Indicator: Força dos touros
     ndi: number | null;      // Negative Directional Indicator: Força dos ursos
     macd: { 
@@ -277,8 +278,7 @@ const calculateBB = (data: CandleData[], period = 20, stdDev = 2): ({ upper: num
  */
 const calculateADX = (data: CandleData[], period = 14) => {
     if (data.length < period * 3) {
-        // console.warn(`⚠️ ADX precisa de ${period * 3} candles, tem ${data.length}`);
-        return { adx: null, pdi: null, ndi: null };
+        return { adx: Array(data.length).fill(null), pdi: Array(data.length).fill(null), ndi: Array(data.length).fill(null) };
     }
     
     try {
@@ -286,7 +286,6 @@ const calculateADX = (data: CandleData[], period = 14) => {
         const pDM: number[] = [0];
         const nDM: number[] = [0];
         
-        // Movimento Direcional (+DM e -DM)
         for(let i=1; i<data.length; i++) {
             const up = data[i].high - data[i-1].high;
             const down = data[i-1].low - data[i].low;
@@ -294,7 +293,6 @@ const calculateADX = (data: CandleData[], period = 14) => {
             nDM.push((down > up && down > 0) ? down : 0);
         }
         
-        // Função de Suavização Wilder
         const smooth = (vals: number[], p: number): number[] => {
             if (vals.length < p) return Array(vals.length).fill(0);
             
@@ -327,26 +325,15 @@ const calculateADX = (data: CandleData[], period = 14) => {
         const dxCandles = dx.map(d => ({close: d} as CandleData));
         const adxEma = calculateEMA(dxCandles, period);
         
-        const lastIdx = data.length - 1;
-        
-        const adxValue = adxEma[lastIdx];
-        const pdiValue = pdi[lastIdx];
-        const ndiValue = ndi[lastIdx];
-        
-        if (!Number.isFinite(adxValue) || !Number.isFinite(pdiValue) || !Number.isFinite(ndiValue)) {
-            // console.warn('⚠️ ADX calculou valores inválidos');
-            return { adx: null, pdi: null, ndi: null };
-        }
-        
         return { 
-            adx: adxValue, 
-            pdi: pdiValue, 
-            ndi: ndiValue 
+            adx: adxEma,
+            pdi: pdi, 
+            ndi: ndi 
         };
         
     } catch (error) {
         console.error('❌ Erro ao calcular ADX:', error);
-        return { adx: 20, pdi: 0, ndi: 0 }; 
+        return { adx: Array(data.length).fill(20), pdi: Array(data.length).fill(0), ndi: Array(data.length).fill(0) }; 
     }
 };
 
@@ -533,7 +520,6 @@ export function calculateAllIndicators(
 ): Indicators | null {
     
     if (!chartData || chartData.length < 30) {
-        // console.warn(`⚠️ [Indicators] Dados insuficientes: ${chartData?.length || 0}/30 candles`);
         return null;
     }
     
@@ -545,7 +531,6 @@ export function calculateAllIndicators(
     );
     
     if (validCandles.length < 30) {
-        // console.warn(`⚠️ [Indicators] Apenas ${validCandles.length}/30 candles válidos`);
         return null;
     }
     
@@ -610,9 +595,10 @@ export function calculateAllIndicators(
             stoch: stochSeries[stochSeries.length - 1],
             atr: atrSeries[atrSeries.length - 1],
             atrSeries,
-            adx: adxData.adx,
-            pdi: adxData.pdi,
-            ndi: adxData.ndi,
+            adx: adxData.adx[adxData.adx.length - 1],
+            adxSeries: adxData.adx,
+            pdi: adxData.pdi[adxData.pdi.length - 1],
+            ndi: adxData.ndi[adxData.ndi.length - 1],
             macd: {
                 macd: macdData.macd[macdData.macd.length - 1],
                 signal: macdData.signal[macdData.signal.length - 1],
