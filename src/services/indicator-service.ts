@@ -62,8 +62,10 @@ export interface Indicators {
 
     // --- Volatilidade e Canais ---
     atr: number | null;      // Average True Range: Volatilidade absoluta em pontos
+    atrSeries: (number | null)[];
     bb: { upper: number | null; middle: number | null; lower: number | null }; // Bandas de Bollinger
     bbw: number | null;      // Bandwidth: Largura das bandas (indica compressão/explosão)
+    bbwSeries: (number | null)[];
     bollingerBands: ({ upper: number; middle: number; lower: number } | null)[]; // Histórico para gráficos
     donchian: { upper: number | null; lower: number | null } | null; // Máximas e Mínimas de N períodos
     chandelier: { exitLong: number | null; exitShort: number | null } | null; // Trailing Stop baseado em ATR
@@ -275,7 +277,7 @@ const calculateBB = (data: CandleData[], period = 20, stdDev = 2): ({ upper: num
  */
 const calculateADX = (data: CandleData[], period = 14) => {
     if (data.length < period * 3) {
-        console.warn(`⚠️ ADX precisa de ${period * 3} candles, tem ${data.length}`);
+        // console.warn(`⚠️ ADX precisa de ${period * 3} candles, tem ${data.length}`);
         return { adx: null, pdi: null, ndi: null };
     }
     
@@ -313,20 +315,15 @@ const calculateADX = (data: CandleData[], period = 14) => {
         const sPDM = smooth(pDM, period);
         const sNDM = smooth(nDM, period);
         
-        // Cálculo Seguro de DI (Directional Indicators)
-        // Evita dividir por zero se o True Range for 0
         const pdi = sTR.map((v, i) => v === 0 ? 0 : 100 * (sPDM[i] / v));
         const ndi = sTR.map((v, i) => v === 0 ? 0 : 100 * (sNDM[i] / v));
         
-        // Cálculo do DX
         const dx = pdi.map((p, i) => {
             const n = ndi[i];
-            // FAIL-SAFE CRÍTICO: Se sum for 0, DX é 0
             const sum = p + n;
             return (sum === 0) ? 0 : 100 * Math.abs(p - n) / sum;
         });
         
-        // ADX é a EMA do DX
         const dxCandles = dx.map(d => ({close: d} as CandleData));
         const adxEma = calculateEMA(dxCandles, period);
         
@@ -337,7 +334,7 @@ const calculateADX = (data: CandleData[], period = 14) => {
         const ndiValue = ndi[lastIdx];
         
         if (!Number.isFinite(adxValue) || !Number.isFinite(pdiValue) || !Number.isFinite(ndiValue)) {
-            console.warn('⚠️ ADX calculou valores inválidos');
+            // console.warn('⚠️ ADX calculou valores inválidos');
             return { adx: null, pdi: null, ndi: null };
         }
         
@@ -349,7 +346,6 @@ const calculateADX = (data: CandleData[], period = 14) => {
         
     } catch (error) {
         console.error('❌ Erro ao calcular ADX:', error);
-        // Fallback neutro em caso de erro matemático extremo
         return { adx: 20, pdi: 0, ndi: 0 }; 
     }
 };
@@ -395,7 +391,6 @@ const calculateAO = (data: CandleData[]) => {
 };
 
 const calculateIchimoku = (data: CandleData[]) => {
-    // Standard params: 9, 26, 52
     if(data.length < 52) return null;
     
     const getAvg = (len: number) => {
@@ -407,20 +402,18 @@ const calculateIchimoku = (data: CandleData[]) => {
     
     const tenkan = getAvg(9);
     const kijun = getAvg(26);
-    const spanA = (tenkan + kijun) / 2; // Projetado 26 no futuro, mas usamos o valor atual para calculo de suporte
+    const spanA = (tenkan + kijun) / 2; 
     const spanB = getAvg(52);
     
     return { tenkan, kijun, spanA, spanB };
 };
 
 const calculateTRIX = (data: CandleData[], period = 15) => {
-    // Triple EMA of Log Price
     if (data.length < period * 3) return { current: null, prev: null };
     
     const logPrices = data.map(d => ({ ...d, close: Math.log(d.close) }));
     const ema1 = calculateEMA(logPrices, period);
     
-    // Helper to extract numeric array for next EMA
     const toCandles = (nums: (number|null)[]) => nums.map(n => ({ close: n || 0 } as CandleData));
     
     const ema2 = calculateEMA(toCandles(ema1), period);
@@ -429,7 +422,7 @@ const calculateTRIX = (data: CandleData[], period = 15) => {
     const trixSeries = [];
     for(let i=1; i<ema3.length; i++) {
         if(ema3[i] && ema3[i-1]) {
-            trixSeries.push((ema3[i]! - ema3[i-1]!) * 10000); // Multiplicador arbitrário para legibilidade
+            trixSeries.push((ema3[i]! - ema3[i-1]!) * 10000); 
         } else {
             trixSeries.push(null);
         }
@@ -471,7 +464,6 @@ const calculateMFI = (data: CandleData[], period = 14) => {
     
     const typicalPrice = (i: number) => (data[i].high + data[i].low + data[i].close) / 3;
     
-    // Loop simples nos últimos 'period' candles
     for(let i = data.length - period; i < data.length; i++) {
         const tpCurrent = typicalPrice(i);
         const tpPrev = typicalPrice(i-1);
@@ -488,7 +480,6 @@ const calculateMFI = (data: CandleData[], period = 14) => {
 
 const calculateOBV = (data: CandleData[]) => {
     if (data.length < 2) return { current: null, prev: null };
-    // OBV é cumulativo desde o início do array carregado
     let obv = 0;
     const obvHistory: number[] = [0];
     
@@ -506,7 +497,6 @@ const calculateOBV = (data: CandleData[]) => {
 };
 
 const calculateStochRSI = (data: CandleData[], rsiValues: (number|null)[], period = 14) => {
-    // Stoch do RSI
     const validRSI = rsiValues.filter(v => v !== null) as number[];
     if (validRSI.length < period) return null;
     
@@ -543,11 +533,10 @@ export function calculateAllIndicators(
 ): Indicators | null {
     
     if (!chartData || chartData.length < 30) {
-        console.warn(`⚠️ [Indicators] Dados insuficientes: ${chartData?.length || 0}/30 candles`);
+        // console.warn(`⚠️ [Indicators] Dados insuficientes: ${chartData?.length || 0}/30 candles`);
         return null;
     }
     
-    // Validação de dados de entrada
     const validCandles = chartData.filter(isCandle).filter(c => 
         c && c.close > 0 && Number.isFinite(c.close) &&
         c.open > 0 && Number.isFinite(c.open) &&
@@ -556,14 +545,13 @@ export function calculateAllIndicators(
     );
     
     if (validCandles.length < 30) {
-        console.warn(`⚠️ [Indicators] Apenas ${validCandles.length}/30 candles válidos`);
+        // console.warn(`⚠️ [Indicators] Apenas ${validCandles.length}/30 candles válidos`);
         return null;
     }
     
     const lastCandle = validCandles[validCandles.length - 1];
     const cacheKey = `${timePeriod}-${validCandles.length}-${lastCandle.epoch}-${lastCandle.close}`;
 
-    // Verifica o cache primeiro
     const cached = indicatorCache.get(cacheKey);
     if (cached) {
         return cached.indicators;
@@ -590,6 +578,9 @@ export function calculateAllIndicators(
         const macdData = calculateMACD(validCandles);
         const bbSeries = calculateBB(validCandles);
         const bbData = bbSeries[bbSeries.length - 1];
+        const bbwSeries = bbSeries.map(band => 
+            (band && band.middle && band.middle > 0) ? ((band.upper! - band.lower!) / band.middle!) * 100 : null
+        );
         const adxData = calculateADX(validCandles);
         const donchian = calculateDonchian(validCandles);
         const kama = calculateKAMA(validCandles);
@@ -618,6 +609,7 @@ export function calculateAllIndicators(
             rsi: rsiSeries[rsiSeries.length - 1],
             stoch: stochSeries[stochSeries.length - 1],
             atr: atrSeries[atrSeries.length - 1],
+            atrSeries,
             adx: adxData.adx,
             pdi: adxData.pdi,
             ndi: adxData.ndi,
@@ -633,7 +625,8 @@ export function calculateAllIndicators(
             sma: smaLong,
             ema: emaShort,
             bb: bbData || { upper: null, middle: null, lower: null },
-            bbw: bbData && bbData.middle ? ((bbData.upper! - bbData.lower!) / bbData.middle!) * 100 : null,
+            bbw: bbwSeries[bbwSeries.length - 1],
+            bbwSeries,
             donchian,
             kama,
             chandelier,
@@ -654,14 +647,12 @@ export function calculateAllIndicators(
             bollingerBands: bbSeries,
         };
         
-        // Salva no cache
         indicatorCache.set(cacheKey, {
             indicators,
             lastCandleEpoch: lastCandle.epoch,
             timePeriod
         });
 
-        // Limita o tamanho do cache para evitar memory leaks
         if (indicatorCache.size > 20) {
             const firstKey = indicatorCache.keys().next().value;
             indicatorCache.delete(firstKey);

@@ -67,7 +67,11 @@ export function useAccumulatorsCouncil() {
   }, [operationsLog]);
 
   const toggleAutopilot = useCallback(() => {
-    setIsAutopilotOn(prev => !prev);
+    setIsAutopilotOn(prev => {
+        const newState = !prev;
+        // Move a notificação para um useEffect para evitar chamadas durante a renderização
+        return newState;
+    });
   }, []);
 
   useEffect(() => {
@@ -77,9 +81,12 @@ export function useAccumulatorsCouncil() {
         if(lastOp && lastOpIdRef.current === lastOp.id) return;
     }
     
-    toast({
-      title: `Piloto Automático (Acumuladores) ${isAutopilotOn ? 'Ativado' : 'Desativado'}`,
-    });
+    // Apenas mostra o toast se o estado não for o inicial de pausa
+    if (botStatus !== 'PAUSED' || isAutopilotOn) {
+        toast({
+          title: `Piloto Automático (Acumuladores) ${isAutopilotOn ? 'Ativado' : 'Desativado'}`,
+        });
+    }
   }, [isAutopilotOn]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const analyzeAndAdjustStrategy = useCallback((lastOp: Operation, localIndicators: Indicators, localMetrics: { avgBbw: number; avgAtr: number; }) => {
@@ -149,7 +156,6 @@ export function useAccumulatorsCouncil() {
           return;
       }
 
-      // CORREÇÃO: Cria uma cópia em tempo real das velas, atualizada pelo último tick
       const realtimeBotCandles = [...botCandleData];
       if (realtimeBotCandles.length > 0 && priceTicks.length > 0) {
           const lastCandle = realtimeBotCandles[realtimeBotCandles.length - 1];
@@ -157,16 +163,14 @@ export function useAccumulatorsCouncil() {
           
           if (latestTick && lastCandle) {
               if (latestTick.epoch >= lastCandle.epoch && latestTick.epoch < lastCandle.epoch + 60) {
-                  // Tick belongs to the current candle -> UPDATE it
                   const lastCandleMutable = { ...lastCandle };
                   lastCandleMutable.close = latestTick.price;
                   lastCandleMutable.high = Math.max(lastCandle.high, latestTick.price);
                   lastCandleMutable.low = Math.min(lastCandle.low, latestTick.price);
                   realtimeBotCandles[realtimeBotCandles.length - 1] = lastCandleMutable;
               } else if (latestTick.epoch >= lastCandle.epoch + 60) {
-                  // Tick belongs to a NEW candle -> CREATE it
                   const newCandle: CandleData = {
-                      epoch: Math.floor(latestTick.epoch / 60) * 60, // Start of the minute
+                      epoch: Math.floor(latestTick.epoch / 60) * 60,
                       open: latestTick.price,
                       high: latestTick.price,
                       low: latestTick.price,
@@ -184,17 +188,17 @@ export function useAccumulatorsCouncil() {
           return;
       }
 
-      const recentCandles = realtimeBotCandles.slice(-VOLATILITY_LOOKBACK);
-      const recentBbwValues = recentCandles.map(c => ((c.high - c.low) / c.close) * 100).filter(v => v > 0);
-      const recentAtrValues = calculateAllIndicators(recentCandles, [], '1m', {duration:1,unit:'s'})?.atrSeries || [];
+      const recentBbwValues = (calculatedIndicators.bbwSeries || []).slice(-VOLATILITY_LOOKBACK).filter(v => v !== null) as number[];
+      const recentAtrValues = (calculatedIndicators.atrSeries || []).slice(-VOLATILITY_LOOKBACK).filter(v => v !== null) as number[];
+
       const avgBbw = recentBbwValues.length > 0 ? recentBbwValues.reduce((s, v) => s + v, 0) / recentBbwValues.length : 0;
-      const avgAtr = recentAtrValues.length > 0 ? recentAtrValues.reduce((s, v) => s + (v || 0), 0) / recentAtrValues.length : 0;
+      const avgAtr = recentAtrValues.length > 0 ? recentAtrValues.reduce((s, v) => s + v, 0) / recentAtrValues.length : 0;
       
       const localMetrics = { bbw: calculatedIndicators.bbw, atr: calculatedIndicators.atr, adx: calculatedIndicators.adx, avgBbw, avgAtr };
       setMetrics(localMetrics);
       
       const lastOp = operationsLog.length > 0 ? operationsLog[0] : null;
-      if (lastOp && lastOp.status !== 'pending' && lastOp.initiator === 'Piloto' && lastOp.id > lastOpIdRef.current) {
+      if (lastOp && lastOp.status !== 'pending' && op.initiator === 'Piloto' && lastOp.id > lastOpIdRef.current) {
          analyzeAndAdjustStrategy(lastOp, calculatedIndicators, localMetrics);
          lastOpIdRef.current = lastOp.id;
          executionRef.current = false;
