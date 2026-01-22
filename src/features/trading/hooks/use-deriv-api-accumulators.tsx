@@ -531,7 +531,14 @@ export const DerivApiProviderAccumulators = ({ children }: { children: ReactNode
                             if (existingOpIndex !== -1) {
                                 const updatedLog = [...prevLog];
                                 const op = updatedLog[existingOpIndex];
-                                const updatedOp: Operation = { ...op, result: contract.profit };
+                                const updatedOp: Operation = {
+                                  ...op,
+                                  result: contract.profit,
+                                  // Se o preço de entrada ainda não foi definido (está 0) e a API o envia, atualize-o.
+                                  entryPrice: (op.entryPrice === 0 || !op.entryPrice) && contract.entry_spot
+                                    ? parseFloat(contract.entry_spot)
+                                    : op.entryPrice,
+                                };
                                 if (isSold) {
                                     sellingContractsRef.current.delete(contract.contract_id);
                                     const newStatus = contract.profit >= 0 ? 'won' : 'lost';
