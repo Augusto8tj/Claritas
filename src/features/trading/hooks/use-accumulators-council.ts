@@ -4,7 +4,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useDerivApiAccumulators } from './use-deriv-api-accumulators';
 import { useToast } from '@/hooks/use-toast';
-import type { CandleData, Operation } from '@/lib/types';
+import type { CandleData, Operation, TickData } from '@/lib/types';
 import { calculateAllIndicators, type Indicators } from '@/services/indicator-service';
 import { initialCouncilStrategies } from '@/services/council-strategies';
 
@@ -31,6 +31,7 @@ export function useAccumulatorsCouncil() {
   const { 
     activeSymbol, 
     botCandleData,
+    priceTicks, // Adicionado para reatividade tick-a-tick
     executeTrade, 
     sellContract, 
     operationsLog, 
@@ -70,6 +71,7 @@ export function useAccumulatorsCouncil() {
   }, []);
 
   useEffect(() => {
+    // Evita notificação no carregamento inicial
     if (botStatus === 'PAUSED' && !isAutopilotOn) {
         const lastOp = operationsLog.length > 0 ? operationsLog[0] : null;
         if(lastOp && lastOpIdRef.current === lastOp.id) return;
@@ -78,7 +80,7 @@ export function useAccumulatorsCouncil() {
     toast({
       title: `Piloto Automático (Acumuladores) ${isAutopilotOn ? 'Ativado' : 'Desativado'}`,
     });
-  }, [isAutopilotOn]);
+  }, [isAutopilotOn]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const analyzeAndAdjustStrategy = useCallback((lastOp: Operation, localIndicators: Indicators, localMetrics: { avgBbw: number; avgAtr: number; }) => {
     if (lastOp.status === 'lost') {
@@ -147,13 +149,28 @@ export function useAccumulatorsCouncil() {
           return;
       }
 
-      const calculatedIndicators = calculateAllIndicators(botCandleData, initialCouncilStrategies, '1m', { duration: 15, unit: 's' });
+      // CORREÇÃO: Cria uma cópia em tempo real das velas, atualizada pelo último tick
+      const realtimeBotCandles = [...botCandleData];
+      if (realtimeBotCandles.length > 0 && priceTicks.length > 0) {
+          const lastCandle = realtimeBotCandles[realtimeBotCandles.length - 1];
+          const latestTick = priceTicks[priceTicks.length - 1];
+          
+          if (latestTick && lastCandle && latestTick.epoch >= lastCandle.epoch && latestTick.epoch < lastCandle.epoch + 60) {
+              const lastCandleMutable = { ...lastCandle };
+              lastCandleMutable.close = latestTick.price;
+              lastCandleMutable.high = Math.max(lastCandle.high, latestTick.price);
+              lastCandleMutable.low = Math.min(lastCandle.low, latestTick.price);
+              realtimeBotCandles[realtimeBotCandles.length - 1] = lastCandleMutable;
+          }
+      }
+
+      const calculatedIndicators = calculateAllIndicators(realtimeBotCandles, initialCouncilStrategies, '1m', { duration: 15, unit: 's' });
       if (!calculatedIndicators || !calculatedIndicators.bbw || !calculatedIndicators.atr || !calculatedIndicators.adx) {
           executionRef.current = false;
           return;
       }
 
-      const recentCandles = botCandleData.slice(-VOLATILITY_LOOKBACK);
+      const recentCandles = realtimeBotCandles.slice(-VOLATILITY_LOOKBACK);
       const recentBbwValues = recentCandles.map(c => ((c.high - c.low) / c.close) * 100).filter(v => v > 0);
       const recentAtrValues = calculateAllIndicators(recentCandles, [], '1m', {duration:1,unit:'s'})?.atrSeries || [];
       const avgBbw = recentBbwValues.length > 0 ? recentBbwValues.reduce((s, v) => s + v, 0) / recentBbwValues.length : 0;
@@ -162,14 +179,12 @@ export function useAccumulatorsCouncil() {
       const localMetrics = { bbw: calculatedIndicators.bbw, atr: calculatedIndicators.atr, adx: calculatedIndicators.adx, avgBbw, avgAtr };
       setMetrics(localMetrics);
       
-      if (operationsLog.length > 0) {
-          const lastOp = operationsLog[0];
-          if (lastOp.status !== 'pending' && op.initiator === 'Piloto' && lastOp.id > lastOpIdRef.current) {
-             analyzeAndAdjustStrategy(lastOp, calculatedIndicators, localMetrics);
-             lastOpIdRef.current = lastOp.id;
-             executionRef.current = false;
-             return;
-          }
+      const lastOp = operationsLog.length > 0 ? operationsLog[0] : null;
+      if (lastOp && lastOp.status !== 'pending' && lastOp.initiator === 'Piloto' && lastOp.id > lastOpIdRef.current) {
+         analyzeAndAdjustStrategy(lastOp, calculatedIndicators, localMetrics);
+         lastOpIdRef.current = lastOp.id;
+         executionRef.current = false;
+         return;
       }
 
       const openPosition = operationsLog.find(op => op.initiator === 'Piloto' && op.status === 'pending');
@@ -234,7 +249,7 @@ export function useAccumulatorsCouncil() {
     };
     runCycle();
   }, [
-      isAutopilotOn, isConnected, activeSymbol, dataVersion, botCandleData, 
+      isAutopilotOn, isConnected, activeSymbol, dataVersion, botCandleData, priceTicks,
       dailyPnL, dailyBalance, dailyTarget, executeTrade, sellContract, toast, 
       riskManager, analyzeAndAdjustStrategy, operationsLog, botStatus
   ]);
