@@ -194,7 +194,7 @@ export function useAccumulatorsCouncil() {
       setMetrics(localMetrics);
       
       const lastOp = operationsLog.length > 0 ? operationsLog[0] : null;
-      if (lastOp && lastOp.status !== 'pending' && lastOp.initiator === 'Piloto' && lastOp.id > lastOpIdRef.current) {
+      if (lastOp && lastOp.status !== 'pending' && op.initiator === 'Piloto' && lastOp.id > lastOpIdRef.current) {
          analyzeAndAdjustStrategy(lastOp, calculatedIndicators, localMetrics);
          lastOpIdRef.current = lastOp.id;
          executionRef.current = false;
@@ -235,18 +235,28 @@ export function useAccumulatorsCouncil() {
         
         const { adx, bbw, atr } = calculatedIndicators;
         
-        // --- ANÁLISE DE CALMARIA RECALIBRADA ---
-        
-        // ADX Score: Menos punitivo. Zera apenas em ADX=35+
         const adxScore = Math.max(0, (35 - adx) / 25) * 100;
+        const bbwScore = localMetrics.avgBbw > 0 ? Math.max(0, 1 - (bbw / (localMetrics.avgBbw * 1.5))) * 100 : 50;
         
-        // BBW Score: Mais tolerante. Zera se BBW for > 1.5x a média.
-        const bbwScore = avgBbw > 0 ? Math.max(0, 1 - (bbw / (avgBbw * 1.5))) * 100 : 50;
-        
-        // ATR Score: Mais tolerante. Zera se ATR for > 1.5x a média.
-        const atrScore = avgAtr > 0 ? Math.max(0, 1 - (atr / (avgAtr * 1.5))) * 100 : 50;
+        // --- NOVO: TICK VOLATILITY SCORE ---
+        const TICK_VOL_WINDOW = 20;
+        let tickVolatilityScore = 50; // Default neutro
+        if (priceTicks.length >= TICK_VOL_WINDOW) {
+            const recentTickPrices = priceTicks.slice(-TICK_VOL_WINDOW).map(t => t.price);
+            const avgTickPrice = recentTickPrices.reduce((s, p) => s + p, 0) / TICK_VOL_WINDOW;
+            const tickStdDev = Math.sqrt(recentTickPrices.reduce((s, p) => s + Math.pow(p - avgTickPrice, 2), 0) / TICK_VOL_WINDOW);
+            
+            // Normaliza o desvio padrão em relação ao preço médio para obter uma medida relativa de volatilidade.
+            const normalizedTickVolatility = avgTickPrice > 0 ? (tickStdDev / avgTickPrice) : 0;
+            
+            // Converte a volatilidade em um score de 0 a 100.
+            // Quanto menor a volatilidade, maior o score.
+            // O multiplicador 100000 é um fator empírico para escalar o valor para a faixa 0-100.
+            tickVolatilityScore = Math.max(0, 100 - (normalizedTickVolatility * 100000));
+        }
 
-        const finalCalmnessScore = (adxScore * 0.45) + (bbwScore * 0.45) + (atrScore * 0.10);
+        // --- PONTUAÇÃO FINAL COM PESOS AJUSTADOS ---
+        const finalCalmnessScore = (adxScore * 0.25) + (bbwScore * 0.25) + (tickVolatilityScore * 0.50);
         setCalmnessScore(finalCalmnessScore);
 
         const isCalm = finalCalmnessScore >= riskManager.calmnessScoreThreshold;
