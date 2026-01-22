@@ -21,7 +21,7 @@ interface RiskManagerStatus {
 const VOLATILITY_LOOKBACK = 50;
 const BASE_CALMNESS_THRESHOLD = 70;
 const MAX_LOSS_PERCENT = 0.50; // Perda máxima de 50% do stake
-const TAKE_PROFIT_PERCENT = 0.25; // Alvo de lucro de 25% do stake
+const TAKE_PROFIT_PERCENT = 1.25; // Alvo de lucro de 125% do stake
 const KILL_SWITCH_SECONDS = 45; // Tempo máximo de exposição em segundos
 
 const VOLATILITY_EXIT_MULTIPLIER_BBW = 1.8;
@@ -191,7 +191,7 @@ export function useAccumulatorsCouncil() {
       const localMetrics = { bbw: calculatedIndicators.bbw, atr: calculatedIndicators.atr, adx: calculatedIndicators.adx, avgBbw, avgAtr };
       setMetrics(localMetrics);
       
-      const lastOp = operationsLog.length > 0 ? operationsLog[0] : null;
+      const lastOp = operationsLog[0];
       if (lastOp && lastOp.status !== 'pending' && lastOp.initiator === 'Piloto' && lastOp.id > lastOpIdRef.current) {
          analyzeAndAdjustStrategy(lastOp, calculatedIndicators, localMetrics);
          lastOpIdRef.current = lastOp.id;
