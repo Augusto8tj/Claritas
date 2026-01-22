@@ -87,18 +87,18 @@ export function useAccumulatorsCouncil() {
       const newState = !prev;
       setBotStatus(newState ? 'MONITORING' : 'PAUSED');
       if (newState) {
-          lastOpIdRef.current = operationsLog[0]?.id || 0; // Sincroniza com o log mais recente
+          lastOpIdRef.current = operationsLog[0]?.id || 0;
       }
       return newState;
     });
   }, [operationsLog]);
 
-  const analyzeAndAdjustStrategy = useCallback((lastOp: Operation, indicators: Indicators, metrics: { avgBbw: number; avgAtr: number; }) => {
+  const analyzeAndAdjustStrategy = useCallback((lastOp: Operation, localIndicators: Indicators, localMetrics: { avgBbw: number; avgAtr: number; }) => {
     if (lastOp.status === 'lost') {
       let reason = "Perda por quebra de barreira.";
-      if (indicators.adx > ADX_EXIT_THRESHOLD) reason = `Pico de Tendência (ADX: ${indicators.adx.toFixed(1)})`;
-      else if (indicators.bbw > metrics.avgBbw * VOLATILITY_EXIT_MULTIPLIER_BBW) reason = `Expansão de Volatilidade (BBW)`;
-      else if (indicators.atr > metrics.avgAtr * ATR_EXIT_MULTIPLIER) reason = `Aumento do Range (ATR)`;
+      if (localIndicators.adx! > ADX_EXIT_THRESHOLD) reason = `Pico de Tendência (ADX: ${localIndicators.adx!.toFixed(1)})`;
+      else if (localIndicators.bbw! > localMetrics.avgBbw * VOLATILITY_EXIT_MULTIPLIER_BBW) reason = `Expansão de Volatilidade (BBW)`;
+      else if (localIndicators.atr! > localMetrics.avgAtr * ATR_EXIT_MULTIPLIER) reason = `Aumento do Range (ATR)`;
 
       setRiskManager(prev => {
         const newAdjustments = {
@@ -125,18 +125,6 @@ export function useAccumulatorsCouncil() {
   }, [riskManager.mode, toast]);
 
   useEffect(() => {
-      if (operationsLog.length > 0) {
-          const lastOp = operationsLog[0];
-          if (lastOp.status !== 'pending' && lastOp.initiator === 'Piloto' && lastOp.id > lastOpIdRef.current) {
-             if (metrics.avgBbw > 0 && indicators) {
-                analyzeAndAdjustStrategy(lastOp, indicators, metrics);
-             }
-             lastOpIdRef.current = lastOp.id;
-          }
-      }
-  }, [operationsLog, analyzeAndAdjustStrategy, indicators, metrics]);
-
-  useEffect(() => {
     if (!isAutopilotOn || !isConnected || !activeSymbol || botCandleData.length < VOLATILITY_LOOKBACK || botStatus === 'COOLDOWN') {
       if(isAutopilotOn && botStatus !== 'COOLDOWN') setBotStatus('MONITORING');
       return;
@@ -147,14 +135,14 @@ export function useAccumulatorsCouncil() {
     const checkStopConditions = () => {
         if (dailyPnL <= -dailyBalance) {
             if (isAutopilotOn) {
-                setIsAutopilotOn(false);
+                toggleAutopilot();
                 toast({ title: "🤖 Piloto: Limite de Perda Atingido", description: `Sistema pausado. Perda do dia: $${dailyPnL.toFixed(2)}`, variant: "destructive" });
             }
             return true;
         }
         if (dailyPnL >= dailyTarget) {
             if (isAutopilotOn) {
-                setIsAutopilotOn(false);
+                toggleAutopilot();
                 toast({ title: "🏆 Piloto: Meta de Lucro Atingida!", description: `Sistema pausado. Lucro do dia: $${dailyPnL.toFixed(2)}` });
             }
             return true;
@@ -183,7 +171,16 @@ export function useAccumulatorsCouncil() {
       const avgBbw = recentBbwValues.length > 0 ? recentBbwValues.reduce((s, v) => s + v, 0) / recentBbwValues.length : 0;
       const avgAtr = recentAtrValues.length > 0 ? recentAtrValues.reduce((s, v) => s + (v || 0), 0) / recentAtrValues.length : 0;
       
-      setMetrics({ bbw: calculatedIndicators.bbw, atr: calculatedIndicators.atr, adx: calculatedIndicators.adx, avgBbw, avgAtr });
+      const localMetrics = { bbw: calculatedIndicators.bbw, atr: calculatedIndicators.atr, adx: calculatedIndicators.adx, avgBbw, avgAtr };
+      setMetrics(localMetrics);
+      
+      if (operationsLog.length > 0) {
+          const lastOp = operationsLog[0];
+          if (lastOp.status !== 'pending' && lastOp.initiator === 'Piloto' && lastOp.id > lastOpIdRef.current) {
+             analyzeAndAdjustStrategy(lastOp, calculatedIndicators, localMetrics);
+             lastOpIdRef.current = lastOp.id;
+          }
+      }
 
       const openPosition = operationsLog.find(op => op.initiator === 'Piloto' && op.status === 'pending');
 
@@ -229,7 +226,11 @@ export function useAccumulatorsCouncil() {
       executionRef.current = false;
     };
     runCycle();
-  }, [isAutopilotOn, isConnected, activeSymbol, dataVersion, botCandleData, dailyPnL, dailyBalance, dailyTarget, executeTrade, sellContract, toast, riskManager, analyzeAndAdjustStrategy, metrics, indicators]);
+  }, [
+      isAutopilotOn, isConnected, activeSymbol, dataVersion, botCandleData, 
+      dailyPnL, dailyBalance, dailyTarget, executeTrade, sellContract, toast, 
+      riskManager, analyzeAndAdjustStrategy, toggleAutopilot, operationsLog
+  ]);
 
   return { isAutopilotOn, toggleAutopilot, botStatus, volatilityMetrics: metrics, dailyBalance, setDailyBalance, dailyTarget, setDailyTarget, dailyPnL, riskManager };
 }
