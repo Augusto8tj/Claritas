@@ -293,15 +293,18 @@ const calculateADX = (data: CandleData[], period = 14) => {
         }
         
         // Função de Suavização Wilder
-        const smooth = (vals: number[], p: number) => {
-            const res = Array(vals.length).fill(0);
+        const smooth = (vals: number[], p: number): number[] => {
+            if (vals.length < p) return Array(vals.length).fill(0);
+            
+            const res: number[] = Array(vals.length).fill(0);
             let sum = 0;
-            for(let i=0; i<p && i<vals.length; i++) sum += vals[i];
-            
-            if (p - 1 < vals.length) res[p-1] = sum;
-            
-            for(let i=p; i<vals.length; i++) {
-                res[i] = res[i-1] - (res[i-1]/p) + vals[i];
+            for (let i = 0; i < p; i++) {
+                sum += vals[i];
+            }
+            res[p - 1] = sum;
+
+            for (let i = p; i < vals.length; i++) {
+                res[i] = res[i-1] - (res[i-1] / p) + vals[i];
             }
             return res;
         };
