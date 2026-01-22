@@ -12,10 +12,12 @@ import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Bot, Zap, Waves, TrendingUp, Wallet } from "lucide-react";
+import { Bot, Zap, Waves, TrendingUp, Wallet, ShieldCheck, AlertCircle, Clock } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { useAccumulatorsCouncil } from "../../hooks/use-accumulators-council";
 import { Separator } from "@/components/ui/separator";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+
 
 interface AccumulatorsAutopilotInterfaceProps extends ReturnType<typeof useAccumulatorsCouncil> {}
 
@@ -29,6 +31,7 @@ export function AccumulatorsAutopilotInterface({
   dailyTarget,
   setDailyTarget,
   dailyPnL,
+  riskManager, // Nova prop
 }: AccumulatorsAutopilotInterfaceProps) {
   
   const statusInfo = {
@@ -36,6 +39,8 @@ export function AccumulatorsAutopilotInterface({
     'MONITORING': { text: 'A Monitorizar Volatilidade...', color: 'bg-blue-500' },
     'CALM_DETECTED': { text: 'Calmaria Detectada! A Abrir Posição...', color: 'bg-green-500 animate-pulse' },
     'POSITION_OPEN': { text: 'Posição Aberta. A Gerir Risco...', color: 'bg-yellow-500' },
+    'ANALYZING_LOSS': { text: 'Analisando Perda...', color: 'bg-orange-500' },
+    'COOLDOWN': { text: 'Cooldown Pós-Perda', color: 'bg-red-500' },
   };
 
   return (
@@ -115,6 +120,7 @@ export function AccumulatorsAutopilotInterface({
           </Label>
           <Badge variant="outline" className="flex items-center gap-1.5 text-sm">
             <div className={cn("h-2.5 w-2.5 rounded-full", statusInfo[botStatus].color)}></div>
+            {botStatus === 'COOLDOWN' ? <Clock className="h-3 w-3 mr-1" /> : null}
             {statusInfo[botStatus].text}
           </Badge>
         </div>
@@ -133,6 +139,41 @@ export function AccumulatorsAutopilotInterface({
             <p className="font-bold text-sm text-foreground">{volatilityMetrics.adx.toFixed(2)}</p>
           </div>
         </div>
+        
+        {isAutopilotOn && (
+            <>
+                <Separator />
+                <div className="space-y-3">
+                    <h4 className="font-headline flex items-center gap-2">
+                        <ShieldCheck className="h-5 w-5 text-primary/80" />
+                        Gerente de Risco Estratégico
+                    </h4>
+                    <div className="grid grid-cols-2 gap-3 text-center text-xs">
+                        <div className="p-2 border rounded-lg bg-muted/50">
+                            <p className="text-muted-foreground font-semibold mb-1">Modo Atual</p>
+                            <Badge variant={riskManager.mode === 'Cautious' ? 'destructive' : 'secondary'}>{riskManager.mode}</Badge>
+                        </div>
+                        <div className="p-2 border rounded-lg bg-muted/50">
+                            <p className="text-muted-foreground font-semibold mb-1">Última Perda</p>
+                            <p className="font-bold text-sm text-foreground truncate" title={riskManager.lastLossReason || 'N/A'}>
+                                {riskManager.lastLossReason || 'N/A'}
+                            </p>
+                        </div>
+                    </div>
+                    {riskManager.mode === 'Cautious' && (
+                        <Alert variant="destructive" className="text-xs">
+                            <AlertCircle className="h-4 w-4" />
+                            <AlertTitle>Parâmetros Ajustados!</AlertTitle>
+                            <AlertDescription>
+                                O sistema está mais seletivo. Limites: 
+                                ADX &lt; {riskManager.adjustments.adxThreshold.toFixed(1)}, 
+                                BBW &lt; {riskManager.adjustments.bbwFactor.toFixed(2)}x da média.
+                            </AlertDescription>
+                        </Alert>
+                    )}
+                </div>
+            </>
+        )}
 
       </CardContent>
     </Card>

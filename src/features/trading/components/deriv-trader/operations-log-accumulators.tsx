@@ -10,7 +10,7 @@ import {
 } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
-import type { Operation, OperationInitiator, TickData } from "@/lib/types";
+import type { Operation, OperationInitiator } from "@/lib/types";
 import { Bot, User, Users, MoveRight, Clock, XSquare, Loader2, Trash2 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
@@ -19,7 +19,6 @@ import { Button } from "@/components/ui/button";
 interface OperationsLogAccumulatorsProps {
   operations: Operation[];
   sellContract: (contractId: number) => Promise<any>;
-  priceTicks: TickData[];
   clearActiveContracts: () => void;
 }
 

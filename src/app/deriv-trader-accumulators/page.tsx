@@ -117,7 +117,7 @@ function MainContent() {
                  <AccumulatorsAutopilotInterface {...council} />
             </div>
             <div className="lg:col-span-2">
-                <OperationsLogAccumulators operations={operationsLog} sellContract={sellContract} priceTicks={priceTicks} clearActiveContracts={clearActiveContracts} />
+                <OperationsLogAccumulators operations={operationsLog} sellContract={sellContract} clearActiveContracts={clearActiveContracts} />
             </div>
         </div>
     );
