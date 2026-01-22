@@ -415,9 +415,10 @@ export const DerivApiProviderAccumulators = ({ children }: { children: ReactNode
   const subscribeToStreams = useCallback(async (symbol: string) => {
     if (wsRef.current?.readyState !== WebSocket.OPEN) return;
     
+    // 1. Forget all previous subscriptions
     for(const subId of [activeSubscriptionIdRef.current, botSubscriptionIdRef.current, tickSubscriptionIdRef.current]) {
         if(subId) {
-            try { await makeRequest({ forget: subId }, true); } catch (e) { /* ignore */ }
+            try { await makeRequest({ forget: subId }, true); } catch (e) { console.warn(`Could not forget sub ${subId}`, e); }
         }
     }
     activeSubscriptionIdRef.current = null;
@@ -431,31 +432,48 @@ export const DerivApiProviderAccumulators = ({ children }: { children: ReactNode
     setPriceTicks([]);
     
     try {
-        const historyStyle = chartType === 'Candle' ? 'candles' : 'ticks';
-        const history = await getHistoricalData(symbol, historyStyle, 1000, timePeriod);
-        setChartData(history as ChartData[]);
-        
-        let subRequest: any;
-        if (chartType === 'Candle') {
-            subRequest = { ticks_history: symbol, style: 'candles', granularity: getGranularityForTimePeriod(timePeriod), subscribe: 1, end: "latest", count: 1, adjust_start_time: 1 };
-        } else {
-            subRequest = { ticks: symbol, subscribe: 1 };
-        }
-        const subResponse: any = await makeRequest(subRequest);
-        if (subResponse.subscription?.id) activeSubscriptionIdRef.current = subResponse.subscription.id;
-
+        // 2. Subscribe to bot's 1-minute candles
         const botHistory = await getHistoricalData(symbol, 'candles', 1000, '1m') as CandleData[];
         setBotCandleData(botHistory);
         const botSubRequest = { ticks_history: symbol, style: 'candles', granularity: 60, subscribe: 1, end: "latest", count: 1, adjust_start_time: 1 };
         const botSubResponse: any = await makeRequest(botSubRequest);
-        if (botSubResponse.subscription?.id) botSubscriptionIdRef.current = botSubResponse.subscription.id;
-        
+        if (botSubResponse.subscription?.id) {
+            botSubscriptionIdRef.current = botSubResponse.subscription.id;
+        }
+
+        // 3. Subscribe to high-frequency ticks
         const tickSubRequest = { ticks: symbol, subscribe: 1 };
         const tickSubResponse: any = await makeRequest(tickSubRequest);
-        if (tickSubResponse.subscription?.id) tickSubscriptionIdRef.current = tickSubResponse.subscription.id;
-
+        if (tickSubResponse.subscription?.id) {
+            tickSubscriptionIdRef.current = tickSubResponse.subscription.id;
+        }
+        
+        // 4. Handle UI Chart data and potential third subscription
+        const isUICandle = chartType === 'Candle';
+        const isUI1mCandle = isUICandle && timePeriod === '1m';
+        const isUIArea = chartType === 'Area';
+        
+        if (isUI1mCandle) {
+            // UI needs 1m candles, which we already have from the bot's data
+            setChartData(botHistory);
+        } else if (isUIArea) {
+            // UI needs ticks, which we will get from the tick subscription. Load initial history.
+            const tickHistory = await getHistoricalData(symbol, 'ticks', 1000);
+            setChartData(tickHistory as TickData[]);
+            setPriceTicks(tickHistory as TickData[]);
+        } else if (isUICandle) {
+            // UI needs a different candle granularity (e.g., 5m, 1h). This requires a new subscription.
+            const uiHistory = await getHistoricalData(symbol, 'candles', 1000, timePeriod);
+            setChartData(uiHistory as CandleData[]);
+            const uiSubRequest = { ticks_history: symbol, style: 'candles', granularity: getGranularityForTimePeriod(timePeriod), subscribe: 1, end: "latest", count: 1, adjust_start_time: 1 };
+            const uiSubResponse: any = await makeRequest(uiSubRequest);
+            if (uiSubResponse.subscription?.id) {
+                activeSubscriptionIdRef.current = uiSubResponse.subscription.id;
+            }
+        }
     } catch (error: any) {
-        setChartError(error.message || 'Falha ao carregar dados do mercado.');
+        console.error("Error in subscribeToStreams:", error);
+        setChartError(error.message || 'Falha ao subscrever aos dados do mercado.');
     } finally {
         setIsChartLoading(false);
     }
@@ -558,23 +576,38 @@ export const DerivApiProviderAccumulators = ({ children }: { children: ReactNode
                                 if (newTicks.length > MAX_DATA_POINTS) return newTicks.slice(1);
                                 return newTicks;
                             });
+                    
+                            if (chartTypeRef.current === 'Area') {
+                                setChartData(prev => addDataPoint(prev, newTick));
+                            }
+                    
                             setDataVersion(v => v + 1);
-                        } else if (response.subscription?.id === activeSubscriptionIdRef.current && chartTypeRef.current === 'Area') {
-                             const newTick = { epoch: response.tick.epoch, price: response.tick.quote };
-                             setChartData(prev => addDataPoint(prev, newTick));
                         }
                         break;
                     case 'ohlc':
                     case 'candles':
                         const candleData = response.ohlc || (response.candles && response.candles[0]);
                         if (candleData && candleData.symbol === activeSymbol) {
-                             const newCandle: CandleData = { epoch: candleData.open_time || candleData.epoch, open: parseFloat(candleData.open), high: parseFloat(candleData.high), low: parseFloat(candleData.low), close: parseFloat(candleData.close), volume: candleData.tick_count || 1 };
-                             if (response.subscription?.id === activeSubscriptionIdRef.current && chartTypeRef.current === 'Candle') {
-                                setChartData(prev => addDataPoint(prev, newCandle));
-                             }
+                             const newCandle: CandleData = {
+                                epoch: candleData.open_time || candleData.epoch,
+                                open: parseFloat(candleData.open),
+                                high: parseFloat(candleData.high),
+                                low: parseFloat(candleData.low),
+                                close: parseFloat(candleData.close),
+                                volume: candleData.tick_count || 1
+                             };
+                    
                              if(response.subscription?.id === botSubscriptionIdRef.current) {
                                 setBotCandleData(prev => addDataPoint(prev, newCandle) as CandleData[]);
+                                if (chartTypeRef.current === 'Candle' && timePeriod === '1m') {
+                                    setChartData(prev => addDataPoint(prev, newCandle));
+                                }
                              }
+                             else if (response.subscription?.id === activeSubscriptionIdRef.current) {
+                                setChartData(prev => addDataPoint(prev, newCandle));
+                             }
+                    
+                             setDataVersion(v => v + 1);
                         }
                         break;
                 }
