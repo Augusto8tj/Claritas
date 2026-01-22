@@ -4,7 +4,20 @@ Este documento regista a jornada de desenvolvimento e as principais funcionalida
 
 ---
 
-### v3.5.0 (Atual) - A Fundação Cognitiva: Promoção do Cérebro Quântico V1
+### v4.0.0 (IA Lab) - O Mestre da Volatilidade: Deriv Accumulators
+
+**Funcionalidades Principais:**
+- **Criação da Plataforma "Deriv Accumulators":** Um novo ambiente de trading foi construído do zero, inspirado na estabilidade do Deriv Trader V1, mas focado exclusivamente no novo tipo de contrato "Accumulator".
+- **Mudança de Paradigma:** O sistema abandona a negociação direcional (subida/queda) e foca-se em apostar na **estabilidade da volatilidade**. O objetivo é lucrar enquanto o preço se mantém dentro de barreiras dinâmicas.
+- **Nova Interface de Trading:** Foi criada uma interface de utilizador simplificada e especializada (`deriv-trader-interface-accumulators.tsx`) que remove os botões de "Rise/Fall" e introduz controlos para os parâmetros chave dos Acumuladores:
+    - **Taxa de Crescimento (Growth Rate):** Um slider permite ao operador escolher o seu apetite de risco (de 1% a 5%).
+    - **Valor da Aposta (Stake):** Controlo de risco para cada operação.
+- **Motor de API Dedicado:** O hook `use-deriv-api-accumulators.tsx` foi desenvolvido para lidar com a lógica de compra de contratos do tipo `ACCU`, garantindo que os pedidos corretos são enviados à API da Deriv.
+- **Arquitetura Isolada:** Toda a plataforma de Acumuladores (página, hooks, componentes) opera de forma independente, garantindo que a experimentação com este novo tipo de contrato não afete a estabilidade dos sistemas V1, V2.5 e Multiplicadores.
+
+---
+
+### v3.5.0 - A Fundação Cognitiva: Promoção do Cérebro Quântico V1
 
 **Funcionalidades Principais:**
 - **Promoção da Arquitetura V1:** O motor do Deriv Trader V1 foi solidificado e promovido como a fundação cognitiva estável do sistema. A sua arquitetura, agora documentada em `docs/deriv-trader-v1-architecture.md`, serve como a base comprovada para os nossos princípios de trading.

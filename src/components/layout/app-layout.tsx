@@ -26,6 +26,7 @@ import {
   Archive,
   Wand2,
   Briefcase,
+  BarChartHorizontal,
 } from "lucide-react";
 import {
   Sidebar,
@@ -85,6 +86,11 @@ const navItems = [
     href: "/backtesting",
     icon: TestTube,
     label: "Backtesting",
+  },
+  {
+    href: "/deriv-trader-accumulators",
+    icon: BarChartHorizontal,
+    label: "Deriv Accumulators",
   },
   {
     href: "/deriv-trader-multipliers",

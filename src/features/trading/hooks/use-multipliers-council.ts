@@ -107,18 +107,14 @@ export function useMultipliersCouncil(
             const longEMA = calculatedIndicators.ma.long;
             const rsi = calculatedIndicators.rsi;
             
-            // 1. Definição de Tendência Macro
             const currentTrend: TrendDirection = lastPrice > longEMA ? 'UP' : lastPrice < longEMA ? 'DOWN' : 'NONE';
             setTrend(currentTrend);
 
-            // 2. Lógica de Entrada
             let signal: 'up' | 'down' | null = null;
             if (lastRsiRef.current !== null) {
-                // Cruzamento de alta do RSI
                 if (currentTrend === 'UP' && lastRsiRef.current <= RSI_MID_LEVEL && rsi > RSI_MID_LEVEL) {
                     signal = 'up';
                 }
-                // Cruzamento de baixa do RSI
                 else if (currentTrend === 'DOWN' && lastRsiRef.current >= RSI_MID_LEVEL && rsi < RSI_MID_LEVEL) {
                     signal = 'down';
                 }
@@ -131,12 +127,11 @@ export function useMultipliersCouncil(
                 lastSignalRef.current = signal;
                 setBotStatus('EXECUTING_TRADE');
 
-                // 3. Gestão de Risco e Tamanho da Posição baseada em ATR
                 const baseRiskPercentage = 0.01; // 1%
                 const atr = calculatedIndicators.atr || 0;
-                const normalizedAtr = atr > 0 && lastPrice > 0 ? atr / lastPrice : 0.001; // ATR como % do preço
+                const normalizedAtr = atr > 0 && lastPrice > 0 ? atr / lastPrice : 0.001;
 
-                const volatilityFactor = normalizedAtr / 0.0005; // Normalizado contra uma volatilidade "padrão" de 0.05%
+                const volatilityFactor = normalizedAtr / 0.0005;
                 const cappedVolatilityFactor = Math.max(0.5, Math.min(2.0, volatilityFactor));
                 const adjustedRiskPercentage = baseRiskPercentage / cappedVolatilityFactor;
                 

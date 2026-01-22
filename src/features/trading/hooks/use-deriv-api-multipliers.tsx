@@ -262,7 +262,7 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
         if (!ws || ws.readyState !== WebSocket.OPEN) {
             return reject(new Error("WebSocket não está conectado."));
         }
-
+  
         const req_id = Date.now() + Math.floor(Math.random() * 1000000);
         const payload = { ...request, req_id };
         
@@ -270,9 +270,9 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
             const timeoutId = setTimeout(() => {
                 if (promisesRef.current.has(String(req_id))) {
                     promisesRef.current.delete(String(req_id));
-                    reject(new Error(`O pedido à API expirou (60s). O token pode ser inválido ou a rede está lenta.`));
+                    reject(new Error(`O pedido à API expirou (15s).`));
                 }
-            }, 60000); // Timeout aumentado para 60 segundos
+            }, 15000);
             
             promisesRef.current.set(String(req_id), {
                 resolve: (value: any) => {
@@ -286,7 +286,15 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
             });
         }
         
-        ws.send(JSON.stringify(payload));
+        try {
+            ws.send(JSON.stringify(payload));
+        } catch (sendError) {
+            console.error('[makeRequest] Send failed:', sendError);
+            if (!noResponse && promisesRef.current.has(String(req_id))) {
+                promisesRef.current.delete(String(req_id));
+                reject(sendError);
+            }
+        }
         
         if (noResponse) {
             resolve({} as T);
@@ -372,8 +380,8 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
                     if (op.id === contractId) {
                         return {
                             ...op,
-                            takeProfit: updateResult.limit_order?.take_profit?.order_amount || op.takeProfit,
-                            stopLoss: updateResult.limit_order?.stop_loss?.order_amount || op.stopLoss,
+                            takeProfit: updateResult.limit_order?.take_profit?.order_amount,
+                            stopLoss: updateResult.limit_order?.stop_loss?.order_amount,
                         };
                     }
                     return op;
@@ -393,7 +401,7 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
         const message = error instanceof Error ? error.message : "Um erro desconhecido ocorreu.";
         return { success: false, message };
     }
-  }, [isConnected, makeRequest, setAndPersistOperationsLog]);
+}, [isConnected, makeRequest, setAndPersistOperationsLog]);
   
   const executeTrade = useCallback(async (
     contractType: string,
@@ -437,7 +445,6 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
         throw new Error("Falha na compra do contrato, ID não retornado.");
       }
       
-      // Apenas adiciona os limites se eles forem definidos
       if (takeProfit || stopLoss) {
         setTimeout(async () => {
           try {
@@ -450,7 +457,7 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
               variant: 'default',
             }]);
           }
-        }, 500); // Pequeno delay para garantir que o contrato existe
+        }, 500);
       }
       
       const latestTick = priceTicks.length > 0 ? priceTicks[priceTicks.length - 1].price : 0;
@@ -579,7 +586,6 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
     }
   }, [getHistoricalData, makeRequest, chartType, timePeriod]);
 
-  // Specific data subscription for the bot (1-minute candles)
   const subscribeToBotData = useCallback(async (symbol: string) => {
     if (wsRef.current?.readyState !== WebSocket.OPEN) return;
 
@@ -592,7 +598,7 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
         botSubscriptionIdRef.current = null;
     }
 
-    setBotCandleData([]); // Reset bot data
+    setBotCandleData([]); 
 
     try {
         const history = await getHistoricalData(symbol, 'candles', 1000, '1m') as CandleData[];
@@ -601,7 +607,7 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
         const subRequest = { 
             ticks_history: symbol, 
             style: 'candles', 
-            granularity: 60, // 1 minute
+            granularity: 60,
             subscribe: 1, 
             end: "latest", 
             count: 1, 

@@ -46,9 +46,7 @@ export default function OperationsLogMultipliers({ operations, sellContract }: O
 
         return operations
         .filter(op => op.status !== 'pending' && new Date(op.timestamp).toDateString() === today.toDateString())
-        .reduce((sum, op) => {
-            return sum + (op.result || 0);
-        }, 0);
+        .reduce((sum, op) => sum + (op.result || 0), 0);
     }, [operations]);
 
     const handleSell = async (contractId: number) => {
@@ -100,7 +98,6 @@ export default function OperationsLogMultipliers({ operations, sellContract }: O
                                     const trailingStop = op.trailingStop;
                                     const isTrailingActive = isAutopilotTrade && op.status === 'pending' && trailingStop !== undefined && trailingStop > 0;
 
-
                                     return (
                                         <div key={op.id} className="flex items-center gap-4">
                                             <div className="flex-shrink-0">
@@ -136,8 +133,8 @@ export default function OperationsLogMultipliers({ operations, sellContract }: O
                                                     {op.stopLoss && <p className="text-red-600 flex items-center gap-1"><ShieldAlert className="h-3 w-3" />Stop: ${op.stopLoss.toFixed(2)}</p>}
                                                     {isAutopilotTrade && op.status === 'pending' && (
                                                         <p className={cn(
-                                                            "flex items-center gap-1.5", 
-                                                            isTrailingActive ? "text-cyan-600" : "text-muted-foreground/80 italic"
+                                                            "flex items-center gap-1.5 text-xs", 
+                                                            isTrailingActive ? "text-cyan-600 font-semibold" : "text-muted-foreground/80 italic"
                                                         )}>
                                                             <MoveUpRight className="h-3 w-3" /> 
                                                             Stop Móvel: 
@@ -179,8 +176,7 @@ export default function OperationsLogMultipliers({ operations, sellContract }: O
                                                         op.status === "won" && "text-green-600",
                                                         op.status === "lost" && "text-destructive"
                                                     )}>
-                                                        {op.status === "won" ? <ArrowUp className="h-4 w-4" /> : <ArrowDown className="h-4 w-4" />}
-                                                        <span>{currentProfit.toLocaleString('pt-BR', { style: 'currency', currency: 'USD' })}</span>
+                                                        {currentProfit.toLocaleString('pt-BR', { style: 'currency', currency: 'USD' })}
                                                     </div>
                                                 )}
                                             </div>
