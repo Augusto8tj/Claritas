@@ -68,6 +68,7 @@ interface DerivApiAccumulatorsContextType {
   timePeriod: TimePeriod;
   setTimePeriod: (period: TimePeriod) => void;
   dataVersion: number;
+  tradeAnnotations: TradeAnnotation[];
 
   setAccountType: (type: AccountType) => void;
   setTokens: (tokens: { demo?: string; real?: string }) => void;
@@ -148,6 +149,8 @@ export const DerivApiProviderAccumulators = ({ children }: { children: ReactNode
   const activeSubscriptionIdRef = useRef<string | null>(null);
   const botSubscriptionIdRef = useRef<string | null>(null);
   
+  const [tradeAnnotations, setTradeAnnotations] = useState<TradeAnnotation[]>([]);
+
   const wsRef = useRef<WebSocket | null>(null);
   const [isConnected, setIsConnected] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
@@ -168,6 +171,20 @@ export const DerivApiProviderAccumulators = ({ children }: { children: ReactNode
             }
             return newLog;
         });
+    }, []);
+
+    const addTradeAnnotation = useCallback((annotation: Omit<TradeAnnotation, 'id'>) => {
+        const newAnnotation: TradeAnnotation = {
+          ...annotation,
+          id: `annotation-${annotation.contractId}`,
+        };
+        setTradeAnnotations(prev => [...prev, newAnnotation]);
+    }, []);
+
+    const updateTradeAnnotation = useCallback((contractId: string, updates: Partial<TradeAnnotation>) => {
+        setTradeAnnotations(prev => prev.map(ann => 
+            ann.contractId === contractId ? { ...ann, ...updates } : ann
+        ));
     }, []);
 
   useEffect(() => {
@@ -325,6 +342,7 @@ export const DerivApiProviderAccumulators = ({ children }: { children: ReactNode
       
       const entryPrice = buyResult.entry_spot_display_value ? parseFloat(buyResult.entry_spot_display_value) : 0;
       const purchaseTimeMs = (buyResult.purchase_time || Math.floor(Date.now() / 1000)) * 1000;
+      const purchaseTime = purchaseTimeMs / 1000;
 
       const newOperation: any = {
           id: contractId,
@@ -343,6 +361,18 @@ export const DerivApiProviderAccumulators = ({ children }: { children: ReactNode
       };
       setAndPersistOperationsLog(prevLog => [newOperation, ...prevLog]);
 
+      addTradeAnnotation({
+        contractId: String(contractId),
+        entryTime: purchaseTime,
+        entryPrice: entryPrice,
+        direction: 'rise', // Acumuladores não tem direção, mas o tipo exige.
+        status: 'pending',
+        stake: sanitizedStake,
+        symbol,
+        expirationTime: undefined,
+        contractType: 'accumulator'
+      });
+
       return {
         success: true,
         message: `Contrato Acumulador para ${symbol} comprado.`,
@@ -354,7 +384,7 @@ export const DerivApiProviderAccumulators = ({ children }: { children: ReactNode
        const message = error instanceof Error ? error.message : "Um erro desconhecido ocorreu.";
        return { success: false, message };
     }
-  }, [isConnected, makeRequest, setAndPersistOperationsLog]);
+  }, [isConnected, makeRequest, setAndPersistOperationsLog, addTradeAnnotation]);
 
   const sellContract = useCallback(async (contractId: number): Promise<TradeResult> => {
     if (!wsRef.current || !isConnected) {
@@ -508,6 +538,14 @@ export const DerivApiProviderAccumulators = ({ children }: { children: ReactNode
                                     updatedOp.status = newStatus;
                                     updatedOp.exitPrice = parseFloat(contract.sell_spot || contract.exit_tick_display_value || '0');
                                     updatedOp.exitTimestamp = new Date(contract.sell_time * 1000).toISOString();
+                                    
+                                    updateTradeAnnotation(String(contract.contract_id), { 
+                                        status: newStatus, 
+                                        profit: contract.profit, 
+                                        exitPrice: updatedOp.exitPrice, 
+                                        exitTime: contract.sell_time 
+                                    });
+
                                     setToastQueue(prev => [...prev, { title: `Posição Fechada (${op.asset})`, description: `Resultado: ${contract.currency} ${contract.profit.toFixed(2)}`, variant: newStatus === 'won' ? 'default' : 'destructive' }]);
                                     if (wsRef.current?.readyState === WebSocket.OPEN) wsRef.current.send(JSON.stringify({"balance": 1}));
                                 }
@@ -593,7 +631,7 @@ export const DerivApiProviderAccumulators = ({ children }: { children: ReactNode
       if (pingIntervalRef.current) clearInterval(pingIntervalRef.current);
       if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
     };
-  }, [activeToken, isLoading, makeRequest, toast, triggerReconnect, setToastQueue, startConnectionMonitor]);
+  }, [activeToken, isLoading, makeRequest, toast, triggerReconnect, setToastQueue, startConnectionMonitor, addTradeAnnotation, updateTradeAnnotation, setAndPersistOperationsLog]);
 
   useEffect(() => {
     if (isConnected && activeSymbol && !isConnecting) {
@@ -656,6 +694,7 @@ export const DerivApiProviderAccumulators = ({ children }: { children: ReactNode
 
   const clearActiveContracts = () => {
     setAndPersistOperationsLog([]);
+    setTradeAnnotations([]);
   };
 
   const contextValue: DerivApiAccumulatorsContextType = {
@@ -663,7 +702,7 @@ export const DerivApiProviderAccumulators = ({ children }: { children: ReactNode
     accountType, setAccountType, setTokens, disconnect, reconnect, accountBalance, operationsLog,
     assetGroups, isAssetsLoading, activeSymbol, setActiveSymbol, chartData, botCandleData, isChartLoading,
     chartError, chartType, setChartType, timePeriod, setTimePeriod, executeTrade, sellContract,
-    getHistoricalData, clearActiveContracts, dataVersion
+    getHistoricalData, clearActiveContracts, dataVersion, tradeAnnotations
   };
 
   return (
