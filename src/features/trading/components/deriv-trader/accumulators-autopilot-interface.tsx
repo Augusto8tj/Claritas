@@ -17,6 +17,7 @@ import { cn } from "@/lib/utils";
 import type { useAccumulatorsCouncil } from "../../hooks/use-accumulators-council";
 import { Separator } from "@/components/ui/separator";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Progress } from "@/components/ui/progress";
 
 
 interface AccumulatorsAutopilotInterfaceProps extends ReturnType<typeof useAccumulatorsCouncil> {}
@@ -31,7 +32,8 @@ export function AccumulatorsAutopilotInterface({
   dailyTarget,
   setDailyTarget,
   dailyPnL,
-  riskManager, // Nova prop
+  riskManager,
+  calmnessScore,
 }: AccumulatorsAutopilotInterfaceProps) {
   
   const statusInfo = {
@@ -58,7 +60,7 @@ export function AccumulatorsAutopilotInterface({
           />
         </div>
         <CardDescription>
-          O sistema procura períodos de baixa volatilidade (ADX e BBW) para abrir posições automaticamente.
+          O sistema procura períodos de baixa volatilidade para abrir posições automaticamente.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -114,6 +116,31 @@ export function AccumulatorsAutopilotInterface({
 
         <Separator />
 
+         <div className="space-y-2">
+            <div className="flex justify-between items-center mb-1">
+                <Label htmlFor="calmness-progress" className="font-semibold">
+                    Nível de Calmaria do Mercado
+                </Label>
+                <span className="font-mono text-lg font-bold text-primary">{calmnessScore.toFixed(0)} / 100</span>
+            </div>
+            <Progress value={calmnessScore} className="h-3" />
+            <div className="h-1 relative mt-1">
+                <div 
+                    className="absolute top-0 h-full w-1 bg-destructive rounded-full" 
+                    style={{ left: `${riskManager.calmnessScoreThreshold}%` }}
+                >
+                    <div className="absolute -top-5 -translate-x-1/2 text-xs text-destructive font-bold">
+                        {riskManager.calmnessScoreThreshold}
+                    </div>
+                </div>
+            </div>
+            <p className="text-xs text-muted-foreground pt-1 text-center">
+                O piloto entrará quando o nível de calmaria (azul) ultrapassar o limiar de entrada (vermelho).
+            </p>
+        </div>
+
+        <Separator />
+
         <div className="flex items-center justify-between rounded-lg border p-3">
           <Label htmlFor="autopilot-status" className="font-semibold">
             Status do Piloto:
@@ -165,9 +192,8 @@ export function AccumulatorsAutopilotInterface({
                             <AlertCircle className="h-4 w-4" />
                             <AlertTitle>Parâmetros Ajustados!</AlertTitle>
                             <AlertDescription>
-                                O sistema está mais seletivo. Limites: 
-                                ADX &lt; {riskManager.adjustments.adxThreshold.toFixed(1)}, 
-                                BBW &lt; {riskManager.adjustments.bbwFactor.toFixed(2)}x da média.
+                                O sistema está mais seletivo. Limiar de Calmaria para entrada agora é
+                                <strong> {riskManager.calmnessScoreThreshold}</strong>.
                             </AlertDescription>
                         </Alert>
                     )}

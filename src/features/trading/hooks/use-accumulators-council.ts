@@ -8,28 +8,24 @@ import type { CandleData, Operation } from '@/lib/types';
 import { calculateAllIndicators, type Indicators } from '@/services/indicator-service';
 import { initialCouncilStrategies } from '@/services/council-strategies';
 
-// --- TIPOS E CONFIGURAÇÕES DA ESTRATÉGIA V2 ---
+// --- TIPOS E CONFIGURAÇÕES DA ESTRATÉGIA V3 (ADAPTATIVA) ---
 
 type BotStatus = 'PAUSED' | 'MONITORING' | 'ANALYZING_LOSS' | 'COOLDOWN' | 'CALM_DETECTED' | 'POSITION_OPEN';
 
 interface RiskManagerStatus {
   mode: 'Normal' | 'Cautious';
   lastLossReason: string | null;
-  adjustments: {
-    adxThreshold: number;
-    bbwFactor: number;
-  }
+  calmnessScoreThreshold: number; // Limiar de Calmaria ajustável
 }
 
 const VOLATILITY_LOOKBACK = 50;
-const BASE_ADX_THRESHOLD = 20;
-const BASE_BBW_SHRINK_FACTOR = 0.7;
-const PROFIT_TAKE_PERCENT = 0.10; // 10% de lucro
-const MAX_LOSS_PERCENT = 0.50; // Vende se a perda atingir 50% do stake
+const BASE_CALMNESS_THRESHOLD = 70; // Limiar base para entrar numa operação
+const PROFIT_TAKE_PERCENT = 0.10;
+const MAX_LOSS_PERCENT = 0.50; 
 const VOLATILITY_EXIT_MULTIPLIER_BBW = 1.8;
 const ADX_EXIT_THRESHOLD = 25;
 const ATR_EXIT_MULTIPLIER = 1.6;
-const COOLDOWN_PERIOD_MS = 30000; // 30 segundos
+const COOLDOWN_PERIOD_MS = 30000;
 
 export function useAccumulatorsCouncil() {
   const { 
@@ -46,7 +42,8 @@ export function useAccumulatorsCouncil() {
   const [isAutopilotOn, setIsAutopilotOn] = useState(false);
   const [botStatus, setBotStatus] = useState<BotStatus>('PAUSED');
   const [metrics, setMetrics] = useState<{ bbw: number; atr: number; adx: number; avgBbw: number; avgAtr: number; }>({ bbw: 0, atr: 0, adx: 0, avgBbw: 0, avgAtr: 0 });
-  const [indicators, setIndicators] = useState<Indicators | null>(null);
+  
+  const [calmnessScore, setCalmnessScore] = useState(0);
 
   const [dailyBalance, setDailyBalance] = useState(10.0);
   const [dailyTarget, setDailyTarget] = useState(5.0);
@@ -54,16 +51,12 @@ export function useAccumulatorsCouncil() {
   const [riskManager, setRiskManager] = useState<RiskManagerStatus>({
     mode: 'Normal',
     lastLossReason: null,
-    adjustments: {
-      adxThreshold: BASE_ADX_THRESHOLD,
-      bbwFactor: BASE_BBW_SHRINK_FACTOR,
-    }
+    calmnessScoreThreshold: BASE_CALMNESS_THRESHOLD,
   });
 
   const lastOpIdRef = useRef<number>(0);
   const executionRef = useRef(false);
   const cooldownTimerRef = useRef<NodeJS.Timeout | null>(null);
-  const isInitialMount = useRef(true);
 
   const dailyPnL = useMemo(() => {
     const today = new Date().toDateString();
@@ -74,14 +67,13 @@ export function useAccumulatorsCouncil() {
 
 
   useEffect(() => {
-    if (isInitialMount.current) {
-      isInitialMount.current = false;
-      return;
-    }
+    // Evita o toast na montagem inicial
+    if (botStatus === 'PAUSED' && !isAutopilotOn) return;
+    
     toast({
       title: `Piloto Automático (Acumuladores) ${isAutopilotOn ? 'Ativado' : 'Desativado'}`,
     });
-  }, [isAutopilotOn, toast]);
+  }, [isAutopilotOn]);
 
   const toggleAutopilot = useCallback(() => {
     setIsAutopilotOn(prev => {
@@ -102,12 +94,9 @@ export function useAccumulatorsCouncil() {
       else if (localIndicators.atr! > localMetrics.avgAtr * ATR_EXIT_MULTIPLIER) reason = `Aumento do Range (ATR)`;
 
       setRiskManager(prev => {
-        const newAdjustments = {
-          adxThreshold: Math.max(15, prev.adjustments.adxThreshold * 0.9),
-          bbwFactor: Math.max(0.4, prev.adjustments.bbwFactor * 0.9),
-        };
-        toast({ title: '🤖 Gerente de Risco: Ajustando Estratégia', description: `Modo Cauteloso ativado após perda. Próxima entrada será mais seletiva.`, variant: 'destructive' });
-        return { mode: 'Cautious', lastLossReason: reason, adjustments: newAdjustments };
+        const newThreshold = Math.min(90, prev.calmnessScoreThreshold + 15);
+        toast({ title: '🤖 Gerente de Risco: Modo Cauteloso', description: `Limiar de Calmaria aumentado para ${newThreshold}. O sistema será mais seletivo.`, variant: 'destructive' });
+        return { mode: 'Cautious', lastLossReason: reason, calmnessScoreThreshold: newThreshold };
       });
 
       setBotStatus('COOLDOWN');
@@ -119,9 +108,9 @@ export function useAccumulatorsCouncil() {
        setRiskManager({
          mode: 'Normal',
          lastLossReason: null,
-         adjustments: { adxThreshold: BASE_ADX_THRESHOLD, bbwFactor: BASE_BBW_SHRINK_FACTOR }
+         calmnessScoreThreshold: BASE_CALMNESS_THRESHOLD
        });
-       toast({ title: '🤖 Gerente de Risco: Modo Normal', description: 'Confiança recuperada. Parâmetros de entrada restaurados.' });
+       toast({ title: '🤖 Gerente de Risco: Modo Normal', description: 'Confiança recuperada. Limiar de Calmaria restaurado.' });
     }
   }, [riskManager.mode, toast]);
 
@@ -133,7 +122,10 @@ export function useAccumulatorsCouncil() {
 
     if (executionRef.current) return;
     
-    const checkStopConditions = () => {
+    const runCycle = async () => {
+      executionRef.current = true;
+      
+      const checkStopConditions = () => {
         if (dailyPnL <= -dailyBalance) {
             if (isAutopilotOn) {
                 toggleAutopilot();
@@ -149,10 +141,7 @@ export function useAccumulatorsCouncil() {
             return true;
         }
         return false;
-    }
-
-    const runCycle = async () => {
-      executionRef.current = true;
+      }
       
       if (checkStopConditions()) {
           executionRef.current = false;
@@ -164,7 +153,6 @@ export function useAccumulatorsCouncil() {
           executionRef.current = false;
           return;
       }
-      setIndicators(calculatedIndicators);
 
       const recentCandles = botCandleData.slice(-VOLATILITY_LOOKBACK);
       const recentBbwValues = recentCandles.map(c => ((c.high - c.low) / c.close) * 100).filter(v => v > 0);
@@ -180,6 +168,9 @@ export function useAccumulatorsCouncil() {
           if (lastOp.status !== 'pending' && lastOp.initiator === 'Piloto' && lastOp.id > lastOpIdRef.current) {
              analyzeAndAdjustStrategy(lastOp, calculatedIndicators, localMetrics);
              lastOpIdRef.current = lastOp.id;
+             // Sai do ciclo para esperar o cooldown ou a próxima análise
+             executionRef.current = false;
+             return;
           }
       }
 
@@ -197,7 +188,7 @@ export function useAccumulatorsCouncil() {
         const hasReachedProfitTarget = profit >= openPosition.stake * PROFIT_TAKE_PERCENT;
         const hasReachedStopLoss = profit <= -openPosition.stake * MAX_LOSS_PERCENT;
         
-        if (isVolatilityExpanding || hasReachedProfitTarget || hasReachedStopLoss) {
+        if (hasReachedProfitTarget || isVolatilityExpanding || hasReachedStopLoss) {
           let reason = 'Condição de saída atingida.';
           if(hasReachedProfitTarget) reason = `Take Profit de ${PROFIT_TAKE_PERCENT * 100}% atingido.`;
           else if(hasReachedStopLoss) reason = `Stop Loss de ${MAX_LOSS_PERCENT * 100}% atingido para limitar perdas.`;
@@ -210,10 +201,16 @@ export function useAccumulatorsCouncil() {
           await sellContract(openPosition.id);
         }
       } else {
-        const { adxThreshold, bbwFactor } = riskManager.adjustments;
-        const isCalm = 
-          calculatedIndicators.adx < adxThreshold &&
-          calculatedIndicators.bbw < avgBbw * bbwFactor;
+        const { adx, bbw, atr } = calculatedIndicators;
+        
+        const adxScore = Math.max(0, (25 - adx) / 15) * 100;
+        const bbwScore = avgBbw > 0 ? Math.max(0, 1 - (bbw / avgBbw)) * 100 : 50;
+        const atrScore = avgAtr > 0 ? Math.max(0, 1 - (atr / avgAtr)) * 100 : 50;
+
+        const finalCalmnessScore = (adxScore * 0.45) + (bbwScore * 0.45) + (atrScore * 0.10);
+        setCalmnessScore(finalCalmnessScore);
+
+        const isCalm = finalCalmnessScore >= riskManager.calmnessScoreThreshold;
 
         if (isCalm) {
           setBotStatus('CALM_DETECTED');
@@ -222,7 +219,7 @@ export function useAccumulatorsCouncil() {
           
           toast({
             title: "🤖 Piloto: Calmaria Detectada!",
-            description: `ADX(${calculatedIndicators.adx.toFixed(1)}) e BBW(${calculatedIndicators.bbw.toFixed(2)}) baixos. A abrir posição.`,
+            description: `Score: ${finalCalmnessScore.toFixed(0)}. Limiar: ${riskManager.calmnessScoreThreshold}. A abrir posição.`,
           });
 
           await executeTrade(stake, growthRate, activeSymbol, 'Piloto');
@@ -239,5 +236,5 @@ export function useAccumulatorsCouncil() {
       riskManager, analyzeAndAdjustStrategy, toggleAutopilot, operationsLog
   ]);
 
-  return { isAutopilotOn, toggleAutopilot, botStatus, volatilityMetrics: metrics, dailyBalance, setDailyBalance, dailyTarget, setDailyTarget, dailyPnL, riskManager };
+  return { isAutopilotOn, toggleAutopilot, botStatus, volatilityMetrics: metrics, dailyBalance, setDailyBalance, dailyTarget, setDailyTarget, dailyPnL, riskManager, calmnessScore };
 }
