@@ -11,7 +11,7 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { Bot, Zap, Waves, Sigma } from "lucide-react";
+import { Bot, Zap, Waves, TrendingUp } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { useAccumulatorsCouncil } from "../../hooks/use-accumulators-council";
 
@@ -46,7 +46,7 @@ export function AccumulatorsAutopilotInterface({
           />
         </div>
         <CardDescription>
-          O sistema procura períodos de baixa volatilidade para abrir posições automaticamente.
+          O sistema procura períodos de baixa volatilidade (ADX e BBW) para abrir posições automaticamente.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -66,12 +66,12 @@ export function AccumulatorsAutopilotInterface({
             <p className="font-bold text-sm text-foreground">{volatilityMetrics.bbw.toFixed(4)}</p>
           </div>
           <div className="p-2 border rounded-lg bg-muted/50">
-            <p className="text-muted-foreground font-semibold mb-1 flex items-center justify-center gap-1.5"><Zap className="h-4 w-4"/>ATR Norm.</p>
+            <p className="text-muted-foreground font-semibold mb-1 flex items-center justify-center gap-1.5"><Zap className="h-4 w-4"/>ATR</p>
             <p className="font-bold text-sm text-foreground">{volatilityMetrics.atr.toFixed(5)}</p>
           </div>
           <div className="p-2 border rounded-lg bg-muted/50">
-            <p className="text-muted-foreground font-semibold mb-1 flex items-center justify-center gap-1.5"><Sigma className="h-4 w-4"/>Z-Score</p>
-            <p className="font-bold text-sm text-foreground">{volatilityMetrics.zScore.toFixed(2)}</p>
+            <p className="text-muted-foreground font-semibold mb-1 flex items-center justify-center gap-1.5"><TrendingUp className="h-4 w-4"/>ADX</p>
+            <p className="font-bold text-sm text-foreground">{volatilityMetrics.adx.toFixed(2)}</p>
           </div>
         </div>
 

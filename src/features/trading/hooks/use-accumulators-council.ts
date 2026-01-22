@@ -10,34 +10,34 @@ import { initialCouncilStrategies } from '@/services/council-strategies';
 
 type BotStatus = 'PAUSED' | 'MONITORING' | 'CALM_DETECTED' | 'POSITION_OPEN';
 
-// --- Parâmetros da Estratégia ---
-const VOLATILITY_LOOKBACK = 50;
-const BBW_THRESHOLD = 0.2; // Entrar se a largura for menor que 20%
-const ATR_THRESHOLD_NORMALIZED = 0.0003; // Entrar se ATR/preço for baixo
-const ZSCORE_THRESHOLD = 0.8; // Entrar se o preço estiver a menos de 0.8 desvios padrão da média
-const PROFIT_TAKE_PERCENT = 0.10; // Realizar lucro com 10% do stake
-const VOLATILITY_EXIT_MULTIPLIER = 1.8; // Sair se a volatilidade atual for 80% maior que a média recente
+// --- Parâmetros da Estratégia "Caçador de Calmaria" ---
+const VOLATILITY_LOOKBACK = 50; // Candles para calcular a média da volatilidade
+const ADX_THRESHOLD = 20; // Entrar apenas se ADX (força da tendência) for menor que 20
+const BBW_SHRINK_FACTOR = 0.7; // Entrar se a largura das bandas for 70% da média recente
+const PROFIT_TAKE_PERCENT = 0.10; // Alvo de lucro: 10% do valor da aposta
+const VOLATILITY_EXIT_MULTIPLIER = 1.8; // Sair se a volatilidade atual for 80% maior que a média
 
 export function useAccumulatorsCouncil() {
   const { 
-    chartData, 
+    activeSymbol, 
+    botCandleData, // Usando o novo stream de dados dedicado
     executeTrade, 
     sellContract, 
     operationsLog, 
-    activeSymbol, 
-    isConnected 
+    isConnected,
+    dataVersion // Usando o dataVersion como gatilho
   } = useDerivApiAccumulators();
   const { toast } = useToast();
 
   const [isAutopilotOn, setIsAutopilotOn] = useState(false);
   const [botStatus, setBotStatus] = useState<BotStatus>('PAUSED');
-  const [volatilityMetrics, setVolatilityMetrics] = useState<{ bbw: number; atr: number; zScore: number; avgBbw: number }>({ bbw: 0, atr: 0, zScore: 0, avgBbw: 0 });
+  const [metrics, setMetrics] = useState<{ bbw: number; atr: number; adx: number; avgBbw: number }>({ bbw: 0, atr: 0, adx: 0, avgBbw: 0 });
   
   const executionRef = useRef(false);
   const openPositionRef = useRef<Operation | null>(null);
   const isInitialMount = useRef(true);
 
-  // UseEffect para lidar com o side-effect (toast) na mudança do estado do piloto automático
+  // Efeito para disparar o toast na mudança de estado do piloto
   useEffect(() => {
     if (isInitialMount.current) {
       isInitialMount.current = false;
@@ -56,8 +56,9 @@ export function useAccumulatorsCouncil() {
     });
   }, []);
 
+  // Ciclo principal de lógica do bot
   useEffect(() => {
-    if (!isAutopilotOn || !isConnected || !activeSymbol || chartData.length < VOLATILITY_LOOKBACK) {
+    if (!isAutopilotOn || !isConnected || !activeSymbol || botCandleData.length < VOLATILITY_LOOKBACK) {
       if (isAutopilotOn) setBotStatus('MONITORING');
       return;
     }
@@ -67,24 +68,16 @@ export function useAccumulatorsCouncil() {
     const runCycle = async () => {
       executionRef.current = true;
       
-      const candleData = chartData.filter(d => 'close' in d) as CandleData[];
-      if (candleData.length < VOLATILITY_LOOKBACK) {
-        executionRef.current = false;
-        return;
-      }
-      
-      const indicators = calculateAllIndicators(candleData, initialCouncilStrategies, '1m', { duration: 15, unit: 's' });
-      if (!indicators || !indicators.bbw || !indicators.atr || !indicators.zScore) {
+      const indicators = calculateAllIndicators(botCandleData, initialCouncilStrategies, '1m', { duration: 15, unit: 's' });
+      if (!indicators || !indicators.bbw || !indicators.atr || !indicators.adx) {
           executionRef.current = false;
           return;
       }
 
-      const lastPrice = candleData[candleData.length - 1].close;
-      const normalizedAtr = indicators.atr / lastPrice;
       const recentBbwValues = (indicators.bollingerBands || []).slice(-VOLATILITY_LOOKBACK).map(b => b ? ((b.upper - b.lower) / b.middle) * 100 : 0).filter(v => v > 0);
-      const avgBbw = recentBbwValues.reduce((sum, val) => sum + val, 0) / recentBbwValues.length;
+      const avgBbw = recentBbwValues.length > 0 ? recentBbwValues.reduce((sum, val) => sum + val, 0) / recentBbwValues.length : 0;
       
-      setVolatilityMetrics({ bbw: indicators.bbw, atr: normalizedAtr, zScore: indicators.zScore, avgBbw });
+      setMetrics({ bbw: indicators.bbw, atr: indicators.atr, adx: indicators.adx, avgBbw });
 
       openPositionRef.current = operationsLog.find(op => op.initiator === 'Piloto' && op.status === 'pending') || null;
 
@@ -100,16 +93,15 @@ export function useAccumulatorsCouncil() {
         if (isVolatilityExpanding || hasReachedProfitTarget) {
           toast({
             title: "🤖 Piloto: A fechar posição",
-            description: isVolatilityExpanding ? `Volatilidade a aumentar (BBW: ${indicators.bbw.toFixed(2)} > ${avgBbw.toFixed(2)})` : `Meta de lucro de ${PROFIT_TAKE_PERCENT * 100}% atingida.`,
+            description: hasReachedProfitTarget ? `Take Profit de ${PROFIT_TAKE_PERCENT * 100}% atingido.` : `Volatilidade a aumentar (BBW: ${indicators.bbw.toFixed(2)} > ${avgBbw.toFixed(2)})`,
           });
           await sellContract(position.id);
         }
       } else {
         // --- LÓGICA DE ENTRADA ---
         const isCalm = 
-          indicators.bbw < avgBbw * 0.7 && // BBW 30% abaixo da média
-          normalizedAtr < ATR_THRESHOLD_NORMALIZED && 
-          Math.abs(indicators.zScore) < ZSCORE_THRESHOLD;
+          indicators.adx < ADX_THRESHOLD &&
+          indicators.bbw < avgBbw * BBW_SHRINK_FACTOR;
 
         if (isCalm) {
           setBotStatus('CALM_DETECTED');
@@ -119,7 +111,7 @@ export function useAccumulatorsCouncil() {
           
           toast({
             title: "🤖 Piloto: Calmaria Detectada!",
-            description: `A abrir posição de Acumulador em ${activeSymbol}.`,
+            description: `ADX(${indicators.adx.toFixed(1)}) e BBW(${indicators.bbw.toFixed(2)}) baixos. A abrir posição.`,
           });
 
           await executeTrade(stake, growthRate, activeSymbol, 'Piloto');
@@ -131,10 +123,12 @@ export function useAccumulatorsCouncil() {
       executionRef.current = false;
     };
 
-    const timeoutId = setTimeout(runCycle, 1000);
-    return () => clearTimeout(timeoutId);
+    runCycle();
 
-  }, [isAutopilotOn, chartData, operationsLog, activeSymbol, isConnected, executeTrade, sellContract, toast]);
+  }, [
+      isAutopilotOn, isConnected, activeSymbol, dataVersion, // Acionado por novos dados
+      executeTrade, sellContract, operationsLog, toast, botCandleData
+  ]);
 
-  return { isAutopilotOn, toggleAutopilot, botStatus, volatilityMetrics };
+  return { isAutopilotOn, toggleAutopilot, botStatus, volatilityMetrics: metrics };
 }
