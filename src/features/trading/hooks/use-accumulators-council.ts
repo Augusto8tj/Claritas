@@ -25,6 +25,7 @@ const VOLATILITY_EXIT_MULTIPLIER_BBW = 1.8;
 const ADX_EXIT_THRESHOLD = 25;
 const ATR_EXIT_MULTIPLIER = 1.6;
 const COOLDOWN_PERIOD_MS = 30000;
+const DEFAULT_GROWTH_RATE = 0.03;
 
 const calculateSafetyDuration = (
   indicators: Indicators,
@@ -111,6 +112,7 @@ export function useAccumulatorsCouncil() {
   const lastOpIdRef = useRef<number>(0);
   const executionRef = useRef(false);
   const cooldownTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const openPilotContractIdRef = useRef<number | null>(null);
 
   const dailyPnL = useMemo(() => {
     const today = new Date().toDateString();
@@ -124,17 +126,12 @@ export function useAccumulatorsCouncil() {
   }, []);
 
   useEffect(() => {
-    if (botStatus === 'PAUSED' && !isAutopilotOn) {
-        const lastOp = operationsLog.length > 0 ? operationsLog[0] : null;
-        if(lastOp && lastOpIdRef.current === lastOp.id) return;
-    }
-    
-    if (botStatus !== 'PAUSED' || isAutopilotOn) {
-        toast({
-          title: `Piloto Automático (Acumuladores) ${isAutopilotOn ? 'Ativado' : 'Desativado'}`,
-        });
-    }
-  }, [isAutopilotOn, botStatus, toast, operationsLog]); 
+    if (botStatus === 'PAUSED' && !isAutopilotOn) return;
+
+    toast({
+      title: `Piloto Automático (Acumuladores) ${isAutopilotOn ? 'Ativado' : 'Desativado'}`,
+    });
+  }, [isAutopilotOn, toast]); 
 
   const analyzeAndAdjustStrategy = useCallback((lastOp: Operation, localIndicators: Indicators, localMetrics: { avgBbw: number; avgAtr: number; }) => {
     if (lastOp.status === 'lost') {
@@ -252,7 +249,7 @@ export function useAccumulatorsCouncil() {
          return;
       }
 
-      const openPosition = operationsLog.find(op => op.initiator === 'Piloto' && op.status === 'pending');
+      const openPosition = operationsLog.find(op => op.id === openPilotContractIdRef.current && op.status === 'pending');
 
       if (openPosition) {
         setBotStatus('POSITION_OPEN');
@@ -280,8 +277,11 @@ export function useAccumulatorsCouncil() {
             description: reason,
           });
           await sellContract(openPosition.id);
+          openPilotContractIdRef.current = null;
         }
       } else {
+        if(openPilotContractIdRef.current) openPilotContractIdRef.current = null;
+
         if(botStatus === 'COOLDOWN') {
           executionRef.current = false;
           return;
@@ -289,7 +289,7 @@ export function useAccumulatorsCouncil() {
         
         const { adx, bbw } = calculatedIndicators;
         
-        const adxScore = Math.max(0, 100 - ((Math.max(0, (adx || 30) - 15) / 20) * 100));
+        const adxScore = Math.max(0, 100 - ((Math.max(0, (adx || 35) - 15) / 20) * 100));
         const bbwScore = localMetrics.avgBbw > 0 ? Math.max(0, 100 - ((bbw / (localMetrics.avgBbw * 1.5)) * 100)) : 50;
         
         const TICK_VOL_WINDOW = 20;
@@ -312,7 +312,6 @@ export function useAccumulatorsCouncil() {
         if (isCalm) {
           setBotStatus('CALM_DETECTED');
           const stake = Math.max(1.0, Math.min(dailyBalance * 0.1, 10));
-          const growthRate = 0.01;
           
           const safetyDurationSeconds = calculateSafetyDuration(calculatedIndicators, realtimeBotCandles);
 
@@ -321,8 +320,9 @@ export function useAccumulatorsCouncil() {
             description: `Calmaria detectada. Alvo de tempo: ${(safetyDurationSeconds / 60).toFixed(1)} min.`,
           });
 
-          const result = await executeTrade(stake, growthRate, activeSymbol, 'Piloto');
+          const result = await executeTrade(stake, DEFAULT_GROWTH_RATE, activeSymbol, 'Piloto');
           if (result.success && result.contractId) {
+              openPilotContractIdRef.current = result.contractId;
               safetyDurationsRef.current.set(result.contractId, safetyDurationSeconds);
           }
 

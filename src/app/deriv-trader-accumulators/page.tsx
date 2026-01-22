@@ -107,7 +107,7 @@ function IsolatedMarketChart() {
 };
 
 function MainContent() {
-    const { activeSymbol, operationsLog, sellContract, priceTicks, clearActiveContracts } = useDerivApiAccumulators();
+    const { activeSymbol, operationsLog, sellContract, clearActiveContracts } = useDerivApiAccumulators();
     const council = useAccumulatorsCouncil();
     
     return (
@@ -138,7 +138,7 @@ export default function DerivAccumulatorsPage() {
     resolver: zodResolver(accumulatorSchema),
     defaultValues: {
       stake: 1.00,
-      growth_rate: 0.01,
+      growth_rate: 0.03,
     },
   });
 
