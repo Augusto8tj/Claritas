@@ -1,8 +1,6 @@
 // /src/features/trading/hooks/use-deriv-api-accumulators.tsx
 'use client';
 
-// ESTE ARQUIVO É UMA CÓPIA DEDICADA PARA O SISTEMA DE ACCUMULATORS
-
 import { createContext, useContext, useState, useEffect, type ReactNode, useCallback, useRef } from 'react';
 import type { TradeResult } from '@/services/deriv-api-service';
 import { useToast } from '@/hooks/use-toast';
@@ -12,7 +10,7 @@ import { FirebaseErrorListener } from '@/components/FirebaseErrorListener';
 const DERIV_DEMO_TOKEN_KEY = 'derivDemoApiToken';
 const DERIV_REAL_TOKEN_KEY = 'derivRealApiToken';
 const DERIV_ACCOUNT_TYPE_KEY = 'derivAccountType';
-const DERIV_ACCUMULATORS_LOG_KEY = 'derivAccumulatorsOperationsLog_v4'; // Chave para persistência
+const DERIV_ACCUMULATORS_LOG_KEY = 'derivAccumulatorsOperationsLog_v4';
 const DERIV_APP_ID = process.env.NEXT_PUBLIC_DERIV_APP_ID || "1089";
 
 export type AccountType = 'demo' | 'real';
@@ -417,7 +415,6 @@ export const DerivApiProviderAccumulators = ({ children }: { children: ReactNode
   const subscribeToStreams = useCallback(async (symbol: string) => {
     if (wsRef.current?.readyState !== WebSocket.OPEN) return;
     
-    // Unsubscribe from all previous streams
     for(const subId of [activeSubscriptionIdRef.current, botSubscriptionIdRef.current, tickSubscriptionIdRef.current]) {
         if(subId) {
             try { await makeRequest({ forget: subId }, true); } catch (e) { /* ignore */ }
@@ -434,7 +431,6 @@ export const DerivApiProviderAccumulators = ({ children }: { children: ReactNode
     setPriceTicks([]);
     
     try {
-        // Subscribe to UI Chart Data (Ticks or Candles)
         const historyStyle = chartType === 'Candle' ? 'candles' : 'ticks';
         const history = await getHistoricalData(symbol, historyStyle, 1000, timePeriod);
         setChartData(history as ChartData[]);
@@ -448,14 +444,12 @@ export const DerivApiProviderAccumulators = ({ children }: { children: ReactNode
         const subResponse: any = await makeRequest(subRequest);
         if (subResponse.subscription?.id) activeSubscriptionIdRef.current = subResponse.subscription.id;
 
-        // Subscribe to Bot Data (1-min candles)
         const botHistory = await getHistoricalData(symbol, 'candles', 1000, '1m') as CandleData[];
         setBotCandleData(botHistory);
         const botSubRequest = { ticks_history: symbol, style: 'candles', granularity: 60, subscribe: 1, end: "latest", count: 1, adjust_start_time: 1 };
         const botSubResponse: any = await makeRequest(botSubRequest);
         if (botSubResponse.subscription?.id) botSubscriptionIdRef.current = botSubResponse.subscription.id;
         
-        // Subscribe to Ticks (for dataVersion trigger)
         const tickSubRequest = { ticks: symbol, subscribe: 1 };
         const tickSubResponse: any = await makeRequest(tickSubRequest);
         if (tickSubResponse.subscription?.id) tickSubscriptionIdRef.current = tickSubResponse.subscription.id;
@@ -557,7 +551,7 @@ export const DerivApiProviderAccumulators = ({ children }: { children: ReactNode
                         });
                         break;
                     case 'tick':
-                        if (response.tick?.symbol === activeSymbol) {
+                        if (response.subscription?.id === tickSubscriptionIdRef.current) {
                             const newTick = { epoch: response.tick.epoch, price: response.tick.quote };
                             setPriceTicks(prev => {
                                 const newTicks = [...prev, newTick];
@@ -565,6 +559,9 @@ export const DerivApiProviderAccumulators = ({ children }: { children: ReactNode
                                 return newTicks;
                             });
                             setDataVersion(v => v + 1);
+                        } else if (response.subscription?.id === activeSubscriptionIdRef.current && chartTypeRef.current === 'Area') {
+                             const newTick = { epoch: response.tick.epoch, price: response.tick.quote };
+                             setChartData(prev => addDataPoint(prev, newTick));
                         }
                         break;
                     case 'ohlc':
@@ -578,7 +575,6 @@ export const DerivApiProviderAccumulators = ({ children }: { children: ReactNode
                              if(response.subscription?.id === botSubscriptionIdRef.current) {
                                 setBotCandleData(prev => addDataPoint(prev, newCandle) as CandleData[]);
                              }
-                             setDataVersion(v => v + 1);
                         }
                         break;
                 }

@@ -65,26 +65,20 @@ export function useAccumulatorsCouncil() {
         .reduce((sum, op) => sum + (op.result || 0), 0);
   }, [operationsLog]);
 
+  const toggleAutopilot = useCallback(() => {
+    setIsAutopilotOn(prev => !prev);
+  }, []);
 
   useEffect(() => {
-    // Evita o toast na montagem inicial
-    if (botStatus === 'PAUSED' && !isAutopilotOn) return;
+    if (botStatus === 'PAUSED' && !isAutopilotOn) {
+        const lastOp = operationsLog.length > 0 ? operationsLog[0] : null;
+        if(lastOp && lastOpIdRef.current === lastOp.id) return;
+    }
     
     toast({
       title: `Piloto Automático (Acumuladores) ${isAutopilotOn ? 'Ativado' : 'Desativado'}`,
     });
   }, [isAutopilotOn]);
-
-  const toggleAutopilot = useCallback(() => {
-    setIsAutopilotOn(prev => {
-      const newState = !prev;
-      setBotStatus(newState ? 'MONITORING' : 'PAUSED');
-      if (newState) {
-          lastOpIdRef.current = operationsLog[0]?.id || 0;
-      }
-      return newState;
-    });
-  }, [operationsLog]);
 
   const analyzeAndAdjustStrategy = useCallback((lastOp: Operation, localIndicators: Indicators, localMetrics: { avgBbw: number; avgAtr: number; }) => {
     if (lastOp.status === 'lost') {
@@ -115,8 +109,13 @@ export function useAccumulatorsCouncil() {
   }, [riskManager.mode, toast]);
 
   useEffect(() => {
-    if (!isAutopilotOn || !isConnected || !activeSymbol || botCandleData.length < VOLATILITY_LOOKBACK || botStatus === 'COOLDOWN') {
-      if(isAutopilotOn && botStatus !== 'COOLDOWN') setBotStatus('MONITORING');
+    if (!isAutopilotOn) {
+        setBotStatus('PAUSED');
+        return;
+    }
+
+    if (!isConnected || !activeSymbol || botCandleData.length < VOLATILITY_LOOKBACK) {
+      setBotStatus('MONITORING');
       return;
     }
 
@@ -128,14 +127,14 @@ export function useAccumulatorsCouncil() {
       const checkStopConditions = () => {
         if (dailyPnL <= -dailyBalance) {
             if (isAutopilotOn) {
-                toggleAutopilot();
+                setIsAutopilotOn(false);
                 toast({ title: "🤖 Piloto: Limite de Perda Atingido", description: `Sistema pausado. Perda do dia: $${dailyPnL.toFixed(2)}`, variant: "destructive" });
             }
             return true;
         }
         if (dailyPnL >= dailyTarget) {
             if (isAutopilotOn) {
-                toggleAutopilot();
+                setIsAutopilotOn(false);
                 toast({ title: "🏆 Piloto: Meta de Lucro Atingida!", description: `Sistema pausado. Lucro do dia: $${dailyPnL.toFixed(2)}` });
             }
             return true;
@@ -165,10 +164,9 @@ export function useAccumulatorsCouncil() {
       
       if (operationsLog.length > 0) {
           const lastOp = operationsLog[0];
-          if (lastOp.status !== 'pending' && lastOp.initiator === 'Piloto' && lastOp.id > lastOpIdRef.current) {
+          if (lastOp.status !== 'pending' && op.initiator === 'Piloto' && lastOp.id > lastOpIdRef.current) {
              analyzeAndAdjustStrategy(lastOp, calculatedIndicators, localMetrics);
              lastOpIdRef.current = lastOp.id;
-             // Sai do ciclo para esperar o cooldown ou a próxima análise
              executionRef.current = false;
              return;
           }
@@ -201,6 +199,11 @@ export function useAccumulatorsCouncil() {
           await sellContract(openPosition.id);
         }
       } else {
+        if(botStatus === 'COOLDOWN') {
+          executionRef.current = false;
+          return;
+        }
+        
         const { adx, bbw, atr } = calculatedIndicators;
         
         const adxScore = Math.max(0, (25 - adx) / 15) * 100;
@@ -233,7 +236,7 @@ export function useAccumulatorsCouncil() {
   }, [
       isAutopilotOn, isConnected, activeSymbol, dataVersion, botCandleData, 
       dailyPnL, dailyBalance, dailyTarget, executeTrade, sellContract, toast, 
-      riskManager, analyzeAndAdjustStrategy, toggleAutopilot, operationsLog
+      riskManager, analyzeAndAdjustStrategy, operationsLog, botStatus
   ]);
 
   return { isAutopilotOn, toggleAutopilot, botStatus, volatilityMetrics: metrics, dailyBalance, setDailyBalance, dailyTarget, setDailyTarget, dailyPnL, riskManager, calmnessScore };
