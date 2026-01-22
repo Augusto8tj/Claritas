@@ -1,4 +1,4 @@
-// src/features/trading/components/deriv-trader/deriv-trader-interface-v2.tsx
+
 "use client";
 
 import { useState, useEffect } from "react";
@@ -432,3 +432,5 @@ function DerivTraderInterfaceV2({ symbol }: DerivTraderInterfaceProps) {
 }
 
 export default DerivTraderInterfaceV2;
+
+    
