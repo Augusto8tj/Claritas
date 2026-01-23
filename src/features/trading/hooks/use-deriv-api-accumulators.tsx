@@ -395,7 +395,8 @@ export const DerivApiProviderAccumulators = ({ children }: { children: ReactNode
     }
     try {
         sellingContractsRef.current.add(contractId);
-        const sellResponse: any = await makeRequest({ "sell": contractId, "price": 0 });
+        // O parâmetro 'price' foi removido para uma venda a mercado.
+        const sellResponse: any = await makeRequest({ "sell": contractId });
         const sellResult = sellResponse.sell;
         if (sellResult) {
             return { success: true, message: `Ordem de venda para o contrato ${contractId} enviada.` };
