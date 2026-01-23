@@ -608,13 +608,20 @@ const subscribeToMarketData = useCallback(async (symbol: string) => {
                                 if (op.status === 'pending') {
                                     if (isSold) {
                                         const newStatus = contract.profit >= 0 ? 'won' : 'lost';
-                                        const exitPrice = contract.exit_tick_display_value ? parseFloat(contract.exit_tick_display_value) : contract.sell_spot ? parseFloat(contract.sell_spot) : op.exitPrice;
-                                        const sellTime = contract.sell_time ? new Date(contract.sell_time * 1000).toISOString() : new Date().toISOString();
-                    
-                                        updatedLog[existingOpIndex] = { ...op, status: newStatus, result: contract.profit, exitPrice: exitPrice, exitTimestamp: sellTime };
+
+                                        // CORREÇÃO: Usar os campos corretos tanto para venda manual quanto para expiração.
+                                        const exitPrice = contract.sell_spot 
+                                            ? parseFloat(contract.sell_spot) 
+                                            : (contract.exit_tick_display_value ? parseFloat(contract.exit_tick_display_value) : op.exitPrice);
+
+                                        const exitEpoch = contract.sell_time || contract.exit_tick_time;
+                                        const exitTimestamp = exitEpoch ? new Date(exitEpoch * 1000).toISOString() : new Date().toISOString();
+
+                                        updatedLog[existingOpIndex] = { ...op, status: newStatus, result: contract.profit, exitPrice: exitPrice, exitTimestamp: exitTimestamp };
                                         
                                         if(typeof updateTradeAnnotation === 'function') {
-                                            updateTradeAnnotation(String(contract.contract_id), { status: newStatus, profit: contract.profit, exitPrice, exitTime: contract.sell_time });
+                                            // Passa o epoch, que é o que o 'trade-legend' espera.
+                                            updateTradeAnnotation(String(contract.contract_id), { status: newStatus, profit: contract.profit, exitPrice, exitTime: exitEpoch });
                                         }
                                         
                                         const toastMessage = {
