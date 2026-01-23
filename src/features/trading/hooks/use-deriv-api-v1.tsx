@@ -520,10 +520,7 @@ const subscribeToMarketData = useCallback(async (symbol: string) => {
     }
 
     try {
-        const sellResponse: any = await makeRequest({ 
-            "sell": contractId,
-            "price": 0, 
-        });
+        const sellResponse: any = await makeRequest({ "sell": contractId });
 
         const sellResult = sellResponse.sell;
         if (sellResult) {
