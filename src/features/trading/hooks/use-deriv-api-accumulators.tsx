@@ -88,11 +88,6 @@ const DerivApiAccumulatorsContext = createContext<DerivApiAccumulatorsContextTyp
 
 const marketNameMapping: Record<string, string> = {
     'synthetic_index': 'Índices Sintéticos',
-    'forex': 'Forex',
-    'commodities': 'Matérias-Primas',
-    'stock_index': 'Índices de Ações',
-    'cryptocurrency': 'Criptomoedas',
-    'basket_index': 'Cestas de Moedas e Matérias-Primas'
 };
 
 const getGranularityForTimePeriod = (timePeriod: TimePeriod): number => {
@@ -110,8 +105,6 @@ const getGranularityForTimePeriod = (timePeriod: TimePeriod): number => {
         default: return 60;
     }
 }
-
-const isValidPrice = (price: any): price is number => price != null && typeof price === 'number' && Number.isFinite(price) && price > 0;
 
 const MAX_DATA_POINTS = 5000;
 const isCandle = (d: ChartData): d is CandleData => d != null && 'close' in d;
@@ -293,25 +286,21 @@ export const DerivApiProviderAccumulators = ({ children }: { children: ReactNode
           const response: any = await makeRequest(request);
 
           if (response.history) {
-              return response.history.times
-                .map((time: number, index: number) => ({
-                    epoch: time,
-                    price: parseFloat(response.history.prices[index]),
-                }))
-                .filter((p: any) => isValidPrice(p.price));
+              return response.history.times.map((time: number, index: number) => ({
+                  epoch: time,
+                  price: response.history.prices[index],
+              }));
           }
         
           if (response.candles) {
-              return response.candles
-                .map((candle: any) => ({
-                    epoch: candle.epoch,
-                    open: parseFloat(candle.open),
-                    high: parseFloat(candle.high),
-                    low: parseFloat(candle.low),
-                    close: parseFloat(candle.close),
-                    volume: candle.tick_count || 1,
-                }))
-                .filter((c: any) => isValidPrice(c.close));
+              return response.candles.map((candle: any) => ({
+                  epoch: candle.epoch,
+                  open: parseFloat(candle.open),
+                  high: parseFloat(candle.high),
+                  low: parseFloat(candle.low),
+                  close: parseFloat(candle.close),
+                  volume: candle.tick_count || 1,
+              }));
           }
           
           return [];
@@ -351,7 +340,7 @@ export const DerivApiProviderAccumulators = ({ children }: { children: ReactNode
         throw new Error("Falha na compra do contrato, ID não retornado.");
       }
       
-      const entryPrice = isValidPrice(buyResult.entry_spot_display_value) ? parseFloat(buyResult.entry_spot_display_value) : 0;
+      const entryPrice = buyResult.entry_spot_display_value ? parseFloat(buyResult.entry_spot_display_value) : 0;
       const purchaseTimeMs = (buyResult.purchase_time || Math.floor(Date.now() / 1000)) * 1000;
       const purchaseTime = purchaseTimeMs / 1000;
 
@@ -406,7 +395,7 @@ export const DerivApiProviderAccumulators = ({ children }: { children: ReactNode
     }
     try {
         sellingContractsRef.current.add(contractId);
-        const sellResponse: any = await makeRequest({ "sell": contractId });
+        const sellResponse: any = await makeRequest({ sell: contractId });
         const sellResult = sellResponse.sell;
         if (sellResult) {
             return { success: true, message: `Ordem de venda para o contrato ${contractId} enviada.` };
@@ -425,15 +414,14 @@ export const DerivApiProviderAccumulators = ({ children }: { children: ReactNode
   const subscribeToStreams = useCallback(async (symbol: string) => {
     if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
     
-    // Unsubscribe from all previous streams
     if (activeSubscriptionIdRef.current) {
-        try { await makeRequest({ forget: activeSubscriptionIdRef.current }, true); } catch (e) {}
+        try { await makeRequest({ forget: activeSubscriptionIdRef.current }, true); } catch (e) { /* silent */ }
     }
     if (botSubscriptionIdRef.current) {
-        try { await makeRequest({ forget: botSubscriptionIdRef.current }, true); } catch (e) {}
+        try { await makeRequest({ forget: botSubscriptionIdRef.current }, true); } catch (e) { /* silent */ }
     }
     if (tickSubscriptionIdRef.current) {
-        try { await makeRequest({ forget: tickSubscriptionIdRef.current }, true); } catch (e) {}
+        try { await makeRequest({ forget: tickSubscriptionIdRef.current }, true); } catch (e) { /* silent */ }
     }
 
     activeSubscriptionIdRef.current = null;
@@ -447,7 +435,6 @@ export const DerivApiProviderAccumulators = ({ children }: { children: ReactNode
     setPriceTicks([]);
     
     try {
-        // Subscribe to Bot Data (1-minute candles) first
         const botHistory = await getHistoricalData(symbol, 'candles', 1000, '1m') as CandleData[];
         setBotCandleData(botHistory);
         const botSubRequest = { ticks_history: symbol, style: 'candles', granularity: 60, subscribe: 1, end: "latest", count: 1, adjust_start_time: 1 };
@@ -456,23 +443,38 @@ export const DerivApiProviderAccumulators = ({ children }: { children: ReactNode
             botSubscriptionIdRef.current = botSubResponse.subscription.id;
         }
 
-        // Subscribe to UI Data (Ticks) second
-        const tickHistory = await getHistoricalData(symbol, 'ticks', 1000);
-        setChartData(tickHistory as TickData[]);
-        setPriceTicks(tickHistory as TickData[]);
         const tickSubRequest = { ticks: symbol, subscribe: 1 };
         const tickSubResponse: any = await makeRequest(tickSubRequest);
         if (tickSubResponse.subscription?.id) {
             tickSubscriptionIdRef.current = tickSubResponse.subscription.id;
         }
         
+        const isUICandle = chartType === 'Candle';
+        const isUI1mCandle = isUICandle && timePeriod === '1m';
+        const isUIArea = chartType === 'Area';
+        
+        if (isUI1mCandle) {
+            setChartData(botHistory);
+        } else if (isUIArea) {
+            const tickHistory = await getHistoricalData(symbol, 'ticks', 1000);
+            setChartData(tickHistory as TickData[]);
+            setPriceTicks(tickHistory as TickData[]);
+        } else if (isUICandle) {
+            const uiHistory = await getHistoricalData(symbol, 'candles', 1000, timePeriod);
+            setChartData(uiHistory as CandleData[]);
+            const uiSubRequest = { ticks_history: symbol, style: 'candles', granularity: getGranularityForTimePeriod(timePeriod), subscribe: 1, end: "latest", count: 1, adjust_start_time: 1 };
+            const uiSubResponse: any = await makeRequest(uiSubRequest);
+            if (uiSubResponse.subscription?.id) {
+                activeSubscriptionIdRef.current = uiSubResponse.subscription.id;
+            }
+        }
     } catch (error: any) {
         console.error("Error in subscribeToStreams:", error);
         setChartError(error.message || 'Falha ao subscrever aos dados do mercado.');
     } finally {
         setIsChartLoading(false);
     }
-  }, [getHistoricalData, makeRequest]);
+  }, [getHistoricalData, makeRequest, chartType, timePeriod]);
   
   const startConnectionMonitor = useCallback(() => {
     if (pingIntervalRef.current) clearInterval(pingIntervalRef.current);
@@ -487,13 +489,11 @@ export const DerivApiProviderAccumulators = ({ children }: { children: ReactNode
     }, 30000);
   }, []);
   
-  // Efeito principal para gerir a conexão WebSocket
   useEffect(() => {
     if (!activeToken || isLoading) {
       if (wsRef.current) { wsRef.current.close(); wsRef.current = null; }
       return;
     }
-    
     const connect = () => {
         setIsConnecting(true);
         setConnectionError(null);
@@ -514,15 +514,12 @@ export const DerivApiProviderAccumulators = ({ children }: { children: ReactNode
                 ws.send(JSON.stringify({ "balance": 1, "subscribe": 1 }));
                 startConnectionMonitor();
                 const assetsRes: any = await makeRequest({ active_symbols: 'full', product_type: 'basic' });
-                
-                const filteredSymbols = assetsRes.active_symbols.filter((symbol: any) => symbol.allow_accumulator_contracts === 1);
-                
+                const filteredSymbols = assetsRes.active_symbols.filter((symbol: any) => symbol.market === 'synthetic_index' && symbol.allow_accumulator_contracts === 1);
                 const groupedAssets: { [key: string]: Asset[] } = {};
                 filteredSymbols.forEach((symbol: any) => {
-                    const marketKey = (symbol.market === 'synthetic_index' && symbol.submarket === 'basket_index') ? 'basket_index' : symbol.market;
-                    const groupName = marketNameMapping[marketKey] || 'Outros';
+                    const groupName = marketNameMapping[symbol.market] || 'Outros';
                     if (!groupedAssets[groupName]) groupedAssets[groupName] = [];
-                    groupedAssets[groupName].push({ value: symbol.symbol, label: symbol.display_name, marketIsOpen: symbol.exchange_is_open === 1, submarket: symbol.submarket, market: marketKey, minDuration: 'N/A' });
+                    groupedAssets[groupName].push({ value: symbol.symbol, label: symbol.display_name, marketIsOpen: symbol.exchange_is_open === 1, submarket: symbol.submarket, market: symbol.market, minDuration: 'N/A' });
                 });
                 
                 const sortedGroups = Object.keys(groupedAssets)
@@ -534,6 +531,9 @@ export const DerivApiProviderAccumulators = ({ children }: { children: ReactNode
                 
                 if (!activeSymbol && sortedGroups.length > 0 && sortedGroups[0].options.length > 0) {
                     setActiveSymbol(sortedGroups[0].options[0].value);
+                } else if (activeSymbol) {
+                    // Se já houver um activeSymbol, re-subscreve
+                    await subscribeToStreams(activeSymbol);
                 }
             } catch (error: any) {
                 const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
@@ -553,7 +553,12 @@ export const DerivApiProviderAccumulators = ({ children }: { children: ReactNode
                     const promise = promisesRef.current.get(String(reqId));
                     if (promise) {
                         if (response.error) {
-                            promise.reject(new Error(response.error.message));
+                            if (response.error.code === 'AlreadySubscribed') {
+                                console.warn(`[Deriv WS] Ignorando erro 'AlreadySubscribed' para req_id ${reqId}. A subscrição provavelmente já existe.`);
+                                promise.resolve(response);
+                            } else {
+                                promise.reject(new Error(response.error.message));
+                            }
                         } else {
                             promise.resolve(response);
                         }
@@ -580,13 +585,12 @@ export const DerivApiProviderAccumulators = ({ children }: { children: ReactNode
                             if (existingOpIndex !== -1) {
                                 const updatedLog = [...prevLog];
                                 const op = updatedLog[existingOpIndex];
-                                const entryPriceValue = (op.entryPrice === 0 || !op.entryPrice) && isValidPrice(contract.entry_spot)
-                                    ? parseFloat(contract.entry_spot)
-                                    : op.entryPrice;
                                 const updatedOp: Operation = {
                                   ...op,
                                   result: contract.profit,
-                                  entryPrice: entryPriceValue,
+                                  entryPrice: (op.entryPrice === 0 || !op.entryPrice) && contract.entry_spot
+                                    ? parseFloat(contract.entry_spot)
+                                    : op.entryPrice,
                                 };
                                 if (isSold) {
                                     sellingContractsRef.current.delete(contract.contract_id);
@@ -612,24 +616,44 @@ export const DerivApiProviderAccumulators = ({ children }: { children: ReactNode
                         });
                         break;
                     case 'tick':
-                        if (response.subscription.id === tickSubscriptionIdRef.current) {
+                        if (response.subscription?.id === tickSubscriptionIdRef.current) {
                             const newTick = { epoch: response.tick.epoch, price: response.tick.quote };
-                            setChartData(prev => addDataPoint(prev, newTick));
-                            setPriceTicks(prev => addDataPoint(prev, newTick) as TickData[]);
+                            setPriceTicks(prev => {
+                                const newTicks = [...prev, newTick];
+                                if (newTicks.length > MAX_DATA_POINTS) return newTicks.slice(1);
+                                return newTicks;
+                            });
+                    
+                            if (chartTypeRef.current === 'Area') {
+                                setChartData(prev => addDataPoint(prev, newTick));
+                            }
+                    
                             setDataVersion(v => v + 1);
                         }
                         break;
                     case 'ohlc':
-                        if (response.subscription.id === botSubscriptionIdRef.current) {
-                            const candleData = response.ohlc;
-                            const newCandle: CandleData = {
-                                epoch: candleData.open_time, open: parseFloat(candleData.open),
-                                high: parseFloat(candleData.high), low: parseFloat(candleData.low),
-                                close: parseFloat(candleData.close), volume: candleData.tick_count || 1,
+                    case 'candles':
+                        const candleData = response.ohlc || (response.candles && response.candles[0]);
+                        if (candleData && candleData.symbol === activeSymbol) {
+                             const newCandle: CandleData = {
+                                epoch: candleData.open_time || candleData.epoch,
+                                open: parseFloat(candleData.open),
+                                high: parseFloat(candleData.high),
+                                low: parseFloat(candleData.low),
+                                close: parseFloat(candleData.close),
+                                volume: candleData.tick_count || 1
                              };
-                            setBotCandleData(prev => addDataPoint(prev, newCandle) as CandleData[]);
-                            const newTickFromCandle: TickData = { epoch: newCandle.epoch, price: newCandle.close };
-                            setPriceTicks(prev => addDataPoint(prev, newTickFromCandle) as TickData[]);
+                    
+                             if(response.subscription?.id === botSubscriptionIdRef.current) {
+                                setBotCandleData(prev => addDataPoint(prev, newCandle) as CandleData[]);
+                                if (chartTypeRef.current === 'Candle' && timePeriod === '1m') {
+                                    setChartData(prev => addDataPoint(prev, newCandle));
+                                }
+                             }
+                             else if (response.subscription?.id === activeSubscriptionIdRef.current) {
+                                setChartData(prev => addDataPoint(prev, newCandle));
+                             }
+                    
                              setDataVersion(v => v + 1);
                         }
                         break;
@@ -638,7 +662,7 @@ export const DerivApiProviderAccumulators = ({ children }: { children: ReactNode
                 console.error('[Deriv WS] Parse error:', parseError);
             }
         };
-
+        
         ws.onclose = (event) => {
           if (!wsRef.current) return;
           if (pingIntervalRef.current) clearInterval(pingIntervalRef.current);
@@ -653,18 +677,15 @@ export const DerivApiProviderAccumulators = ({ children }: { children: ReactNode
           setAccountBalance({ balance: null, currency: null, loading: false });
           wsRef.current = null;
         };
-
         ws.onerror = () => { /* Silencioso */ };
     };
-
     connect();
-    
     return () => {
       if (wsRef.current) { wsRef.current.onclose = null; wsRef.current.close(); }
       if (pingIntervalRef.current) clearInterval(pingIntervalRef.current);
       if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
     };
-  }, [activeToken, isLoading, triggerReconnect]);
+  }, [activeToken, isLoading, makeRequest, toast, triggerReconnect, setToastQueue, startConnectionMonitor, addTradeAnnotation, updateTradeAnnotation, setAndPersistOperationsLog, subscribeToStreams]);
 
   useEffect(() => {
     if (isConnected && activeSymbol) {
