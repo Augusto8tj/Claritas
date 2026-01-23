@@ -16,6 +16,9 @@ import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { ApiStatusIndicatorAccumulators } from "@/features/trading/components/deriv-trader/ApiStatusIndicatorAccumulators";
 import { useAccumulatorsCouncil } from "@/features/trading/hooks/use-accumulators-council";
 import { AccumulatorsAutopilotInterface } from "@/features/trading/components/deriv-trader/accumulators-autopilot-interface";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { VirtualArenaAccumulators } from "@/features/trading/components/deriv-trader/VirtualArenaAccumulators";
+import { Archive, Swords } from "lucide-react";
 
 
 function Header() {
@@ -117,7 +120,18 @@ function MainContent() {
                  <AccumulatorsAutopilotInterface {...council} />
             </div>
             <div className="lg:col-span-2">
-                <OperationsLogAccumulators operations={operationsLog} sellContract={sellContract} clearActiveContracts={clearActiveContracts} />
+                 <Tabs defaultValue="real" className="w-full">
+                    <TabsList className="grid w-full grid-cols-2">
+                        <TabsTrigger value="real" className="flex items-center gap-2"><Archive className="h-4 w-4"/>Operações Reais</TabsTrigger>
+                        <TabsTrigger value="virtual" className="flex items-center gap-2"><Swords className="h-4 w-4"/>Arena Virtual</TabsTrigger>
+                    </TabsList>
+                    <TabsContent value="real" className="mt-4">
+                        <OperationsLogAccumulators operations={operationsLog} sellContract={sellContract} clearActiveContracts={clearActiveContracts} />
+                    </TabsContent>
+                    <TabsContent value="virtual" className="mt-4">
+                        <VirtualArenaAccumulators virtualOperations={council.virtualOperationsLog} />
+                    </TabsContent>
+                </Tabs>
             </div>
         </div>
     );

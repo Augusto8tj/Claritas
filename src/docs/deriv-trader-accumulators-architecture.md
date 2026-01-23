@@ -4,19 +4,27 @@ Este documento detalha a arquitetura do sistema **Deriv Accumulators**, uma plat
 
 ---
 
-## 1. Filosofia de Design: O Mestre da Volatilidade
+## 1. Filosofia de Design: O Mestre da Volatilidade e do Tempo
 
-O Deriv Accumulators abandona a necessidade de prever a direção do mercado. O seu único objetivo é apostar na **estabilidade da volatilidade**. O contrato é ganho se o preço do ativo permanecer dentro de uma faixa definida, acumulando ganhos a cada tick.
+O Deriv Accumulators abandona a necessidade de prever a direção do mercado. O seu único objetivo é apostar na **estabilidade da volatilidade** e sair da posição antes que a aleatoriedade estatística jogue contra nós.
 
 **Princípios Fundamentais:**
 
 1.  **A Volatilidade é o Alvo:** O sucesso não depende de o preço subir ou descer, mas sim de ele **não se mover de forma explosiva**. O sistema deve ser capaz de identificar períodos de baixa volatilidade para maximizar a probabilidade de sucesso.
-2.  **Taxa de Crescimento vs. Risco:** A "Taxa de Crescimento" (Growth Rate) é o parâmetro central. Taxas mais altas oferecem um retorno potencial maior, mas estreitam as barreiras, aumentando o risco. O sistema deve encontrar um equilíbrio ótimo entre ganho e risco.
-3.  **Análise de Volatilidade (Multi-Fator):** Indicadores como a Largura das Bandas de Bollinger (BBW), o ATR e o ADX (Average Directional Index) são cruciais. Uma confluência de sinais (bandas estreitas, ATR baixo e ADX baixo) indica um mercado "calmo", ideal para os Acumuladores.
-4.  **Gestão de Risco e Saída Inteligente:**
-    *   **Take Profit Automático:** As posições são fechadas automaticamente ao atingir 10% de lucro para garantir ganhos consistentes.
-    *   **Veto de Volatilidade:** A posição é encerrada prematuramente se qualquer indicador (BBW, ATR ou ADX) sinalizar um aumento súbito de risco.
-    *   **Gerente de Risco Estratégico:** Após uma perda, o sistema entra em "Modo Cauteloso", tornando os seus critérios de entrada mais rigorosos e impondo um período de "cooldown" para evitar decisões precipitadas.
+2.  **Taxa de Crescimento vs. Risco:** A "Taxa de Crescimento" (Growth Rate) é o parâmetro central. Taxas mais altas oferecem um retorno potencial maior, mas estreitam as barreiras, aumentando o risco. O sistema opera com um valor equilibrado de 3%.
+3.  **Entrada por Confluência de Calmaria:** Uma posição só é aberta quando há uma **confluência de três sinais** de baixa volatilidade:
+    *   **BBW (Largura das Bandas de Bollinger):** Deve estar num percentil baixo, indicando compressão de mercado.
+    *   **ATR (Average True Range):** Deve estar abaixo da sua média, confirmando baixa amplitude de movimento.
+    *   **Z-Score:** O preço deve estar próximo da sua média estatística, indicando ausência de desvios extremos.
+4.  **Gestão de Risco e Saída Multi-Fator (Foco no Tempo):**
+    *   **Alvo de Lucro (Take Profit):** Um lucro de **125% sobre o valor da aposta** é o alvo, capturando ganhos significativos em períodos de estabilidade.
+    *   **"Kill Switch" Temporal e Adaptativo:** O sistema pré-define um tempo máximo de exposição com base no "ritmo" do mercado (**25s** para volátil, **40s** para normal, **55s** para calmo). Se o alvo de lucro não for atingido nesse tempo, a posição é encerrada.
+    *   **Veto de Volatilidade Macro:** A posição é encerrada prematuramente se qualquer indicador (BBW, ATR ou ADX) sinalizar um aumento súbito de risco.
+    *   **Veto de Micro-Volatilidade (Disjuntor Dinâmico Multi-Escala):** Um "disjuntor" de alta frequência monitoriza o desvio padrão em múltiplas janelas de tempo (5, 10 e 20 ticks). Se a volatilidade em qualquer uma destas escalas explodir (por um fator que varia de 2.0x a 3.5x com base no "humor" do mercado), a posição é vendida imediatamente para prevenir perdas por picos súbitos.
+    *   **Stop-Loss de Capital:** Como uma rede de segurança final, a posição é vendida se a perda atingir 50% do valor da aposta, transformando uma perda potencial de 100% numa perda máxima e controlada.
+    *   **Gerente de Risco Estratégico:** Após uma perda, o sistema diagnostica a causa (tempo ou volatilidade) e ajusta a sua estratégia futura, seja tornando os seus critérios de entrada mais rigorosos ou reduzindo o seu tempo de exposição.
+5.  **Arena Virtual:** O sistema executa "paper trades" em paralelo, simulando uma barreira de perda baseada em um múltiplo do ATR no momento da entrada. Isso permite validar e refinar a lógica de entrada/saída continuamente, sem arriscar capital.
+
 
 ---
 
@@ -40,19 +48,17 @@ Esta é a ponte de comunicação dedicada para o ambiente de Acumuladores.
 Este hook contém a inteligência do piloto automático, projetado especificamente para Acumuladores.
 
 *   **Responsabilidade Principal**: Identificar períodos de baixa volatilidade para abrir e fechar posições de forma autónoma e gerir o risco de forma adaptativa.
-*   **Estratégia "Calm Seeker" V2**:
-    1.  **Condição de Entrada**: O piloto só abre uma posição quando há uma **confluência** de sinais de baixa volatilidade:
-        *   **Bollinger Bands Width (BBW):** A largura das bandas deve estar significativamente abaixo da sua média recente.
-        *   **Average Directional Index (ADX):** O ADX deve estar abaixo de um limiar (ex: 20), indicando um mercado sem tendência definida.
-        *   **Average True Range (ATR):** O ATR deve estar abaixo da sua média histórica, confirmando baixa amplitude de movimento.
-    2.  **Condição de Saída (Multi-Fator)**: Uma posição aberta é fechada se uma das seguintes condições for atendida:
-        *   **Alvo de Lucro:** Atinge um lucro pré-definido (10% do valor da aposta).
-        *   **Expansão da Volatilidade:** O BBW, o ATR ou o ADX aumentam subitamente, indicando que o período de "calmaria" terminou e o risco aumentou.
-    3.  **Gerente de Risco Estratégico:**
-        *   **Análise Pós-Perda:** Após cada perda, o sistema diagnostica a causa (ex: pico de ADX, expansão de BBW).
-        *   **Ajuste Adaptativo:** Entra em "Modo Cauteloso", tornando os limiares de entrada para ADX e BBW mais rigorosos.
-        *   **Cooldown:** Aguarda um período de tempo antes de procurar uma nova entrada.
-        *   **Retorno à Normalidade:** Volta ao "Modo Normal" após uma operação bem-sucedida.
+*   **Estratégia "Calm Seeker" V4 (Adaptive Time-Exit & Confluence)**:
+    1.  **Deteção de Ritmo de Mercado:** O sistema classifica o mercado como 'calmo', 'normal' ou 'volátil'.
+    2.  **Condição de Entrada (Confluência Tripla)**: O piloto só abre uma posição quando o "Nível de Calmaria" (uma métrica composta) ultrapassa um limiar dinâmico E as condições de BBW, ATR e Z-Score são satisfeitas.
+    3.  **Gestão de Posição Única**: O sistema garante que apenas **um contrato** é aberto de cada vez, focando toda a sua análise na gestão dessa posição.
+    4.  **Arena Virtual Simultânea**: No momento da entrada real, um "trade fantasma" é criado na Arena Virtual. Este trade virtual é considerado perdido se o preço ultrapassar um limite simulado (e.g., 2x ATR), permitindo testar a lógica de entrada continuamente.
+    5.  **Condição de Saída (Multi-Fator)**: Uma posição aberta é fechada se **uma** das seguintes condições for atendida (a que ocorrer primeiro):
+        *   **Alvo de Lucro (Take Profit):** Atinge um lucro de 125% do valor da aposta.
+        *   **"Kill Switch" Temporal:** O alvo de lucro não é atingido no tempo de segurança definido pelo ritmo do mercado.
+        *   **Stop-Loss de Capital:** A perda atinge 50% do valor da aposta inicial.
+        *   **Veto de Volatilidade (Macro e Micro):** O BBW, o ATR, o ADX ou a volatilidade instantânea dos ticks (via disjuntor dinâmico) aumentam subitamente.
+    6.  **Gerente de Risco Estratégico (Auto-Calibração):** Após cada perda, o sistema diagnostica a causa (tempo ou volatilidade). Se a perda foi por tempo, ele se torna mais seletivo na próxima entrada. Se foi por volatilidade, ele aumenta o limiar de "Calmaria". Após uma vitória, ele gradualmente retorna aos parâmetros normais.
 
 ### 2.3. Camada de Interface: `deriv-trader-accumulators/page.tsx`
 
@@ -61,7 +67,8 @@ A interface do utilizador, focada na simplicidade e no controlo do novo piloto a
 *   **Responsabilidade Principal**: Fornecer uma interface clara para a negociação manual e para a gestão do piloto automático.
 *   **Componentes Chave**:
     *   `DerivTraderInterfaceAccumulators`: O painel de negociação manual, focado no `stake` e na `growth_rate`.
-    *   `AccumulatorsAutopilotInterface`: Um novo painel que permite ao operador ligar/desligar o piloto automático e visualizar as métricas de volatilidade (BBW, ATR, ADX) e o estado do novo **Gerente de Risco**.
+    *   `AccumulatorsAutopilotInterface`: Um novo painel que permite ao operador ligar/desligar o piloto automático, visualizar o novo **Nível de Calmaria** e o seu limiar, o **Checklist de Entrada** e monitorizar o estado do **Gerente de Risco**, incluindo o **tempo de duração adaptativo**.
     *   `OperationsLogAccumulators`: Um log de operações que exibe o lucro/prejuízo em tempo real para cada contrato e inclui um botão para fechar a posição manualmente.
+    *   **`VirtualArenaAccumulators`**: Um novo painel em um separador dedicado que exibe os resultados da Arena Virtual, permitindo a validação contínua da estratégia.
 
 Este design cria um ambiente focado e especializado, onde podemos testar e refinar as nossas novas estratégias de negociação de volatilidade de forma segura e eficiente.

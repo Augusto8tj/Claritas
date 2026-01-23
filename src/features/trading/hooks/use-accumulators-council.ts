@@ -55,7 +55,20 @@ interface LossPattern {
   };
 }
 
+export interface VirtualOperation {
+    id: string;
+    entryPrice: number;
+    entryTime: number;
+    exitTime: number;
+    status: 'pending' | 'win' | 'loss';
+    reason: string;
+    initialConditions: {
+        atr: number;
+        calmnessScore: number;
+    };
+}
 
+const VIRTUAL_TRADE_LOG_KEY = 'derivAccumulatorsVirtualLog_v4';
 const VOLATILITY_LOOKBACK = 50;
 const BASE_CALMNESS_THRESHOLD = 70;
 const MAX_LOSS_PERCENT = 0.50;
@@ -72,8 +85,9 @@ const MICRO_VOLATILITY_WINDOW = 20;
 const calculatePercentile = (series: (number|null)[], value: number): number => {
     const validSeries = series.filter((v): v is number => v !== null && isFinite(v));
     if (validSeries.length === 0) return 50;
-    const count = validSeries.filter(v => v < value);
-    return (count.length / validSeries.length) * 100;
+    const sorted = [...validSeries].sort((a,b) => a-b);
+    const count = sorted.filter(v => v < value).length;
+    return (count / sorted.length) * 100;
 };
 
 const calculateTickRange = (ticks: TickData[]): number => {
@@ -82,7 +96,6 @@ const calculateTickRange = (ticks: TickData[]): number => {
     return Math.max(...prices) - Math.min(...prices);
 };
 
-// IMPROVEMENT 3: Dynamic Volatility Threshold
 function detectMarketRhythm(
   indicators: { adx?: number | null; bbw?: number | null; bbwSeries?: (number | null)[], atr?: number | null },
   ticks: TickData[]
@@ -94,8 +107,6 @@ function detectMarketRhythm(
   const recentTicks = ticks.slice(-30);
   const recentTickRange = calculateTickRange(recentTicks);
   const bbwPercentile = calculatePercentile(indicators.bbwSeries, indicators.bbw);
-
-  // Use ATR as a dynamic reference for volatility threshold
   const volatileTickRangeThreshold = indicators.atr * 1.5;
   
   if (bbwPercentile > 70 || indicators.adx > 22 || recentTickRange > volatileTickRangeThreshold) {
@@ -136,11 +147,8 @@ const calculateTickConsistency = (ticks: TickData[]): number => {
   const avgRange = ranges.reduce((a, b) => a + b, 0) / ranges.length;
   if (avgRange === 0) return 100;
   const rangeStdDev = Math.sqrt(ranges.map(r => Math.pow(r - avgRange, 2)).reduce((a, b) => a + b, 0) / ranges.length);
-  // Score alto = movimentos consistentes (bom)
-  // Score baixo = movimentos erráticos (ruim)
   return avgRange > 0 ? Math.max(0, 100 - (rangeStdDev / avgRange * 200)) : 50;
 };
-
 
 const calculateTimeToLoss = (operation: Operation): number => {
     if (!operation.exitTimestamp) return 0;
@@ -149,21 +157,13 @@ const calculateTimeToLoss = (operation: Operation): number => {
     return (exitTime - entryTime) / 1000;
 };
 
-// IMPROVEMENT 5: Dynamic Take Profit
 function calculateDynamicTakeProfit(
   calmnessScore: number,
   marketRegime: 'volatile' | 'normal' | 'calm'
 ): number {
   let baseTarget = 1.25;
-  
-  if (calmnessScore > 85 && marketRegime === 'calm') {
-    baseTarget = 1.40; // 140%
-  }
-  
-  if (calmnessScore < 75 || marketRegime === 'volatile') {
-    baseTarget = 1.10; // 110%
-  }
-  
+  if (calmnessScore > 85 && marketRegime === 'calm') baseTarget = 1.40;
+  if (calmnessScore < 75 || marketRegime === 'volatile') baseTarget = 1.10;
   return baseTarget;
 }
 
@@ -202,7 +202,29 @@ export function useAccumulatorsCouncil() {
   const lastSellReasonRef = useRef<string | null>(null);
   const entryVolatilityRef = useRef<MultiScaleVolatility | null>(null);
   const lossHistoryRef = useRef<LossPattern[]>([]);
+  
+  // Arena Virtual
+  const [virtualOperationsLog, setVirtualOperationsLog] = useState<VirtualOperation[]>([]);
+  const activeVirtualTradesRef = useRef<VirtualOperation[]>([]);
+  const [virtualTradeCounter, setVirtualTradeCounter] = useState(0);
 
+  useEffect(() => {
+      try {
+          const storedLog = localStorage.getItem(VIRTUAL_TRADE_LOG_KEY);
+          if (storedLog) {
+              const parsed = JSON.parse(storedLog);
+              if (Array.isArray(parsed)) setVirtualOperationsLog(parsed);
+          }
+      } catch (e) { console.error("Falha ao carregar log virtual", e) }
+  }, []);
+  
+  const setAndPersistVirtualLog = useCallback((updater: React.SetStateAction<VirtualOperation[]>) => {
+      setVirtualOperationsLog(prev => {
+          const newState = typeof updater === 'function' ? updater(prev) : updater;
+          localStorage.setItem(VIRTUAL_TRADE_LOG_KEY, JSON.stringify(newState));
+          return newState;
+      });
+  }, []);
 
   const dailyPnL = useMemo(() => {
     const today = new Date().toDateString();
@@ -222,7 +244,6 @@ export function useAccumulatorsCouncil() {
     }, 0);
   }, [isAutopilotOn, toast, botStatus]); 
 
-  // IMPROVEMENT 1 & 4
   const analyzeAndAdjustStrategy = useCallback((
     lastOp: Operation, 
     localIndicators: Indicators, 
@@ -251,7 +272,6 @@ export function useAccumulatorsCouncil() {
       };
       lossHistoryRef.current.push(pattern);
       const recentLosses = lossHistoryRef.current.slice(-5);
-      
       const timeoutInCalmMarkets = recentLosses.filter(p => p.reason.includes('Kill Switch') && p.marketConditions.calmnessScore > 70).length;
       
       if (timeoutInCalmMarkets >= 3) {
@@ -259,7 +279,8 @@ export function useAccumulatorsCouncil() {
           mode: 'Hyper-Cautious',
           lastLossReason: 'Padrão: Falsa Calmaria Detectada',
           calmnessScoreThreshold: Math.min(85, prev.calmnessScoreThreshold + 5),
-          adaptiveDuration: Math.max(20, prev.adaptiveDuration - 10)
+          adaptiveDuration: Math.max(20, prev.adaptiveDuration - 10),
+          marketRhythm: prev.marketRhythm,
         }));
         setTimeout(() => toast({ title: '🤖 Gerente: Modo Hyper-Cauteloso', description: `Mercado falso-calmo. Reduzindo tempo de exposição.`, variant: "destructive" }), 0);
       } else {
@@ -306,7 +327,6 @@ export function useAccumulatorsCouncil() {
     }
   }, [riskManager.mode, toast]);
 
-  // IMPROVEMENT 6: Stuck Cooldown Protection
   useEffect(() => {
     if (botStatus === 'COOLDOWN') {
       const maxCooldownTimer = setTimeout(() => {
@@ -314,7 +334,7 @@ export function useAccumulatorsCouncil() {
           setBotStatus('MONITORING');
           console.warn('⚠️ Cooldown forçado a terminar após timeout');
         }
-      }, COOLDOWN_PERIOD_MS + 5000); // 5s de margem
+      }, COOLDOWN_PERIOD_MS + 5000);
       return () => clearTimeout(maxCooldownTimer);
     }
   }, [botStatus]);
@@ -359,7 +379,6 @@ export function useAccumulatorsCouncil() {
           return;
       }
       
-      // IMPROVEMENT 2: Continuous Market Regime Calculation
       const marketRhythm = detectMarketRhythm(calculatedIndicators, priceTicks);
       const baseDuration = TIMING_REGIMES[marketRhythm];
       const effectiveDuration = riskManager.mode === 'Hyper-Cautious' 
@@ -382,7 +401,6 @@ export function useAccumulatorsCouncil() {
       const localMetrics = { bbw: calculatedIndicators.bbw, atr: calculatedIndicators.atr, adx: calculatedIndicators.adx, avgBbw, avgAtr };
       setMetrics(localMetrics);
       
-      // IMPROVEMENT 3: Enhanced Calmness Score Calculation
       const { adx, bbw, zScore, bbwSeries } = calculatedIndicators;
       const bbwDelta = calculateDelta(bbwSeries!, 5);
       const accelerationScore = bbwDelta < 0 ? 100 : Math.max(0, 100 - (Math.abs(bbwDelta) * 500));
@@ -403,20 +421,34 @@ export function useAccumulatorsCouncil() {
       const finalCalmnessScore = (adxScore * 0.20) + (bbwScore * 0.20) + (tickVolatilityScore * 0.40) + (accelerationScore * 0.10) + (tickConsistencyScore * 0.10);
       setCalmnessScore(finalCalmnessScore);
       
-      // IMPROVEMENT 5: Debug Logging
-      if (process.env.NODE_ENV === 'development') {
-        console.log('🔍 Market Analysis:', {
-          calmnessScore: finalCalmnessScore.toFixed(1),
-          threshold: riskManager.calmnessScoreThreshold,
-          regime: marketRhythm,
-          components: {
-            adx: adxScore.toFixed(1),
-            bbw: bbwScore.toFixed(1),
-            tickVol: tickVolatilityScore.toFixed(1),
-            acceleration: accelerationScore.toFixed(1),
-            consistency: tickConsistencyScore.toFixed(1)
+      // ARENA VIRTUAL: Resolve trades passados
+      const nowEpoch = priceTicks[priceTicks.length-1]?.epoch;
+      if(nowEpoch) {
+          const finishedTrades: VirtualOperation[] = [];
+          const stillActiveTrades: VirtualOperation[] = [];
+
+          activeVirtualTradesRef.current.forEach(trade => {
+              if (nowEpoch >= trade.exitTime) {
+                  trade.status = 'win';
+                  trade.reason = 'Sobreviveu';
+                  finishedTrades.push(trade);
+              } else {
+                  const barrier = trade.initialConditions.atr * 2;
+                  if (Math.abs(priceTicks[priceTicks.length-1].price - trade.entryPrice) > barrier) {
+                      trade.status = 'loss';
+                      trade.reason = 'Pico de Volatilidade';
+                      finishedTrades.push(trade);
+                  } else {
+                      stillActiveTrades.push(trade);
+                  }
+              }
+          });
+          
+          if(finishedTrades.length > 0) {
+              setAndPersistVirtualLog(prev => [...finishedTrades, ...prev]);
+              activeVirtualTradesRef.current = stillActiveTrades;
+              setVirtualTradeCounter(c => c + finishedTrades.length);
           }
-        });
       }
       
       const lastOp = operationsLog.find(op => op.initiator === 'Piloto' && op.status !== 'pending' && op.id > lastOpIdRef.current);
@@ -490,12 +522,28 @@ export function useAccumulatorsCouncil() {
         const isCalm = calmnessScoreMet && bbwIsLow && atrIsLow && zScoreIsStable;
 
         if (isCalm) {
-          setBotStatus('CALM_DETECTED');
           const stake = Math.max(1.0, Math.min(dailyBalance * 0.1, 10));
-          entryVolatilityRef.current = calculateMultiScaleVolatility(priceTicks);
-          
-          setTimeout(() => toast({ title: "🤖 Piloto: Posição Aberta!", description: `Calmaria detectada. Contrato aberto com taxa de ${DEFAULT_GROWTH_RATE * 100}%.` }), 0);
 
+          // ARENA VIRTUAL: Cria trade virtual
+          const newVirtualTrade: VirtualOperation = {
+              id: `vt_${Date.now()}`,
+              entryPrice: priceTicks[priceTicks.length - 1].price,
+              entryTime: priceTicks[priceTicks.length - 1].epoch,
+              exitTime: priceTicks[priceTicks.length - 1].epoch + effectiveDuration,
+              status: 'pending',
+              reason: 'Em jogo',
+              initialConditions: {
+                  atr: calculatedIndicators.atr!,
+                  calmnessScore: finalCalmnessScore,
+              },
+          };
+          activeVirtualTradesRef.current.push(newVirtualTrade);
+          setVirtualTradeCounter(c => c + 1);
+          
+          // AÇÃO REAL
+          setBotStatus('CALM_DETECTED');
+          entryVolatilityRef.current = calculateMultiScaleVolatility(priceTicks);
+          setTimeout(() => toast({ title: "🤖 Piloto: Posição Aberta!", description: `Calmaria detectada. Contrato aberto com taxa de ${DEFAULT_GROWTH_RATE * 100}%.` }), 0);
           const result = await executeTrade(stake, DEFAULT_GROWTH_RATE, activeSymbol, 'Piloto');
           if (result.success && result.contractId) {
               openPilotContractContextRef.current = { id: result.contractId, dynamicSpikeMultiplier: 2.5, };
@@ -507,5 +555,5 @@ export function useAccumulatorsCouncil() {
     runCycle();
   }, [ isAutopilotOn, isConnected, activeSymbol, dataVersion, botCandleData, priceTicks, dailyPnL, dailyBalance, dailyTarget, executeTrade, sellContract, toast, analyzeAndAdjustStrategy, operationsLog, botStatus, riskManager.adaptiveDuration ]);
 
-  return { isAutopilotOn, toggleAutopilot, botStatus, volatilityMetrics: metrics, dailyBalance, setDailyBalance, dailyTarget, setDailyTarget, dailyPnL, riskManager, calmnessScore, entryConditions };
+  return { isAutopilotOn, toggleAutopilot, botStatus, volatilityMetrics: metrics, dailyBalance, setDailyBalance, dailyTarget, setDailyTarget, dailyPnL, riskManager, calmnessScore, entryConditions, virtualOperationsLog, virtualTradeCounter };
 }
