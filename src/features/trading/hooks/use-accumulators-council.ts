@@ -30,8 +30,8 @@ const ADX_EXIT_THRESHOLD = 25;
 const ATR_EXIT_MULTIPLIER = 1.6;
 const COOLDOWN_PERIOD_MS = 30000;
 const DEFAULT_GROWTH_RATE = 0.03;
-const MICRO_VOLATILITY_SPIKE_MULTIPLIER = 2.5; // NOVO: Fator de pico de volatilidade
-const MICRO_VOLATILITY_WINDOW = 10;          // NOVO: Janela para análise de ticks
+const MICRO_VOLATILITY_SPIKE_MULTIPLIER = 2.5;
+const MICRO_VOLATILITY_WINDOW = 10;
 
 
 export function useAccumulatorsCouncil() {
@@ -75,7 +75,7 @@ export function useAccumulatorsCouncil() {
   const cooldownTimerRef = useRef<NodeJS.Timeout | null>(null);
   const openPilotContractIdRef = useRef<number | null>(null);
   const lastSellReasonRef = useRef<string | null>(null);
-  const entryTickVolatilityRef = useRef<number | null>(null); // NOVO: Armazena volatilidade no momento da entrada
+  const entryTickVolatilityRef = useRef<number | null>(null);
 
   const dailyPnL = useMemo(() => {
     const today = new Date().toDateString();
@@ -236,9 +236,13 @@ export function useAccumulatorsCouncil() {
          return;
       }
 
-      const openPosition = operationsLog.find(op => op.id === openPilotContractIdRef.current && op.status === 'pending');
+      const pilotOpenPosition = operationsLog.find(op => op.initiator === 'Piloto' && op.status === 'pending');
 
-      if (openPosition) {
+      if (pilotOpenPosition) {
+        if (openPilotContractIdRef.current !== pilotOpenPosition.id) {
+          openPilotContractIdRef.current = pilotOpenPosition.id;
+        }
+
         setBotStatus('POSITION_OPEN');
         
         let microVolatilityVeto = false;
@@ -258,10 +262,10 @@ export function useAccumulatorsCouncil() {
             calculatedIndicators.atr! > localMetrics.avgAtr * ATR_EXIT_MULTIPLIER ||
             calculatedIndicators.adx! > ADX_EXIT_THRESHOLD;
             
-        const hasReachedStopLoss = (openPosition.result || 0) <= -openPosition.stake * MAX_LOSS_PERCENT;
-        const hasReachedTakeProfit = (openPosition.result || 0) >= openPosition.stake * TAKE_PROFIT_PERCENT;
+        const hasReachedStopLoss = (pilotOpenPosition.result || 0) <= -pilotOpenPosition.stake * MAX_LOSS_PERCENT;
+        const hasReachedTakeProfit = (pilotOpenPosition.result || 0) >= pilotOpenPosition.stake * TAKE_PROFIT_PERCENT;
 
-        const entryTime = new Date(openPosition.timestamp).getTime();
+        const entryTime = new Date(pilotOpenPosition.timestamp).getTime();
         const elapsedTimeInSeconds = (Date.now() - entryTime) / 1000;
         const killSwitchTriggered = elapsedTimeInSeconds >= riskManager.adaptiveDuration;
         
@@ -270,7 +274,7 @@ export function useAccumulatorsCouncil() {
 
         if (hasReachedTakeProfit) {
             shouldSell = true;
-            reason = `Alvo de ${TAKE_PROFIT_PERCENT*100}% atingido ($${(openPosition.result || 0).toFixed(2)}).`;
+            reason = `Alvo de ${TAKE_PROFIT_PERCENT*100}% atingido ($${(pilotOpenPosition.result || 0).toFixed(2)}).`;
         } else if (microVolatilityVeto) {
             shouldSell = true;
             reason = 'Veto de Micro-Volatilidade: Pico de instabilidade nos ticks.';
@@ -291,13 +295,15 @@ export function useAccumulatorsCouncil() {
             description: reason,
           }), 0);
           lastSellReasonRef.current = reason;
-          await sellContract(openPosition.id);
+          await sellContract(pilotOpenPosition.id);
           openPilotContractIdRef.current = null;
-          entryTickVolatilityRef.current = null; // Limpa a volatilidade de entrada
+          entryTickVolatilityRef.current = null;
         }
       } else {
-        if(openPilotContractIdRef.current) openPilotContractIdRef.current = null;
-        if(entryTickVolatilityRef.current) entryTickVolatilityRef.current = null;
+        if(openPilotContractIdRef.current !== null) {
+            openPilotContractIdRef.current = null;
+            entryTickVolatilityRef.current = null;
+        }
 
         if(botStatus === 'COOLDOWN') {
           executionRef.current = false;
@@ -330,7 +336,7 @@ export function useAccumulatorsCouncil() {
         
         const isCalm = calmnessScoreMet && bbwIsLow && atrIsLow && zScoreIsStable;
 
-        if (isCalm && openPilotContractIdRef.current === null) {
+        if (isCalm) {
           setBotStatus('CALM_DETECTED');
           const stake = Math.max(1.0, Math.min(dailyBalance * 0.1, 10));
           
