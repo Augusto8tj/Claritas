@@ -90,10 +90,12 @@ export function useAccumulatorsCouncil() {
   useEffect(() => {
     if (botStatus === 'PAUSED' && !isAutopilotOn) return;
 
-    toast({
-      title: `Piloto Automático (Acumuladores) ${isAutopilotOn ? 'Ativado' : 'Desativado'}`,
-    });
-  }, [isAutopilotOn, toast]); 
+    setTimeout(() => {
+        toast({
+          title: `Piloto Automático (Acumuladores) ${isAutopilotOn ? 'Ativado' : 'Desativado'}`,
+        });
+    }, 0);
+  }, [isAutopilotOn, toast, botStatus]); 
 
   const analyzeAndAdjustStrategy = useCallback((lastOp: Operation, localIndicators: Indicators, localMetrics: { avgBbw: number; avgAtr: number; }) => {
     const sellReason = lastSellReasonRef.current;
@@ -119,11 +121,11 @@ export function useAccumulatorsCouncil() {
         if (reason.includes('Kill Switch')) {
             // Se a perda foi por tempo, seja mais rápido
             newDuration = Math.max(15, Math.floor(prev.adaptiveDuration / 2));
-            toast({ title: '🤖 Gerente de Estratégia: Adaptando Tempo', description: `O mercado está instável. Próxima operação terá um tempo limite de ${newDuration}s.`, variant: "default" });
+            setTimeout(() => toast({ title: '🤖 Gerente de Estratégia: Adaptando Tempo', description: `O mercado está instável. Próxima operação terá um tempo limite de ${newDuration}s.`, variant: "default" }), 0);
         } else {
             // Se a perda foi por volatilidade, seja mais seletivo
             newThreshold = Math.min(90, prev.calmnessScoreThreshold + 15);
-            toast({ title: '🤖 Gerente de Estratégia: Modo Cauteloso', description: `Limiar de Calmaria aumentado para ${newThreshold}. O sistema será mais seletivo.`, variant: 'destructive' });
+            setTimeout(() => toast({ title: '🤖 Gerente de Estratégia: Modo Cauteloso', description: `Limiar de Calmaria aumentado para ${newThreshold}. O sistema será mais seletivo.`, variant: 'destructive' }), 0);
         }
         
         setAdaptiveKillSwitch(newDuration);
@@ -145,7 +147,7 @@ export function useAccumulatorsCouncil() {
          adaptiveDuration: KILL_SWITCH_SECONDS,
        });
        if(riskManager.mode === 'Cautious') {
-           toast({ title: '🤖 Gerente de Estratégia: Modo Normal', description: 'Confiança recuperada. Parâmetros de risco restaurados.' });
+           setTimeout(() => toast({ title: '🤖 Gerente de Estratégia: Modo Normal', description: 'Confiança recuperada. Parâmetros de risco restaurados.' }), 0);
        }
     }
   }, [riskManager.mode, toast]);
@@ -170,14 +172,14 @@ export function useAccumulatorsCouncil() {
         if (dailyPnL <= -dailyBalance) {
             if (isAutopilotOn) {
                 setIsAutopilotOn(false);
-                toast({ title: "🤖 Piloto: Limite de Perda Atingido", description: `Sistema pausado. Perda do dia: $${dailyPnL.toFixed(2)}`, variant: "destructive" });
+                setTimeout(() => toast({ title: "🤖 Piloto: Limite de Perda Atingido", description: `Sistema pausado. Perda do dia: $${dailyPnL.toFixed(2)}`, variant: "destructive" }), 0);
             }
             return true;
         }
         if (dailyPnL >= dailyTarget) {
             if (isAutopilotOn) {
                 setIsAutopilotOn(false);
-                toast({ title: "🏆 Piloto: Meta de Lucro Atingida!", description: `Sistema pausado. Lucro do dia: $${dailyPnL.toFixed(2)}` });
+                setTimeout(() => toast({ title: "🏆 Piloto: Meta de Lucro Atingida!", description: `Parabéns! O sistema foi pausado. Lucro do dia: $${dailyPnL.toFixed(2)}` }), 0);
             }
             return true;
         }
@@ -273,10 +275,10 @@ export function useAccumulatorsCouncil() {
         }
         
         if (shouldSell) {
-          toast({
+          setTimeout(() => toast({
             title: "🤖 Piloto: A fechar posição",
             description: reason,
-          });
+          }), 0);
           lastSellReasonRef.current = reason;
           await sellContract(openPosition.id);
           openPilotContractIdRef.current = null;
@@ -328,10 +330,10 @@ export function useAccumulatorsCouncil() {
           setBotStatus('CALM_DETECTED');
           const stake = Math.max(1.0, Math.min(dailyBalance * 0.1, 10));
           
-          toast({
+          setTimeout(() => toast({
             title: "🤖 Piloto: Posição Aberta!",
             description: `Calmaria detectada. Contrato aberto com taxa de ${DEFAULT_GROWTH_RATE * 100}%.`,
-          });
+          }), 0);
 
           const result = await executeTrade(stake, DEFAULT_GROWTH_RATE, activeSymbol, 'Piloto');
           if (result.success && result.contractId) {
