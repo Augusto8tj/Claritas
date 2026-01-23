@@ -1,3 +1,4 @@
+
 // /src/features/trading/hooks/use-deriv-api-v1.tsx
 'use client';
 
@@ -178,7 +179,17 @@ export const DerivApiProviderV1 = ({ children }: { children: ReactNode }) => {
 
   const setAndPersistOperationsLog = useCallback((updater: React.SetStateAction<Operation[]>) => {
     setOperationsLog(prevLog => {
-        const newLog = typeof updater === 'function' ? updater(prevLog) : updater;
+        const newLogWithPotentialDuplicates = typeof updater === 'function' ? updater(prevLog) : updater;
+        
+        // CORREÇÃO: Garante que a lista de operações não tenha chaves duplicadas.
+        const uniqueOpsMap = new Map<number, Operation>();
+        for(const op of newLogWithPotentialDuplicates) {
+            if(op && op.id) {
+                uniqueOpsMap.set(op.id, op);
+            }
+        }
+        const newLog = Array.from(uniqueOpsMap.values());
+
         try {
             localStorage.setItem(DERIV_V1_LOG_KEY, JSON.stringify(newLog));
         } catch (error) {
@@ -236,6 +247,7 @@ export const DerivApiProviderV1 = ({ children }: { children: ReactNode }) => {
         if (op.status === 'pending' && op.expirationTime && now > op.expirationTime) {
           hasChanges = true;
           updateTradeAnnotation(String(op.id), { status: 'lost', profit: -op.stake });
+          // CORREÇÃO: Adicionar o exitTimestamp na expiração por timer
           return { ...op, status: 'lost' as const, result: -op.stake, exitTimestamp: new Date().toISOString() };
         }
         return op;
@@ -416,7 +428,7 @@ const subscribeToMarketData = useCallback(async (symbol: string) => {
 }, [getHistoricalData, makeRequest, chartType, timePeriod]);
 
 
-  const executeTrade = useCallback(async (
+const executeTrade = useCallback(async (
     contractType: string,
     stake: number,
     symbol: string,
