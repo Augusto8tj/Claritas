@@ -12,11 +12,26 @@ import { initialCouncilStrategies } from '@/services/council-strategies';
 
 type BotStatus = 'PAUSED' | 'MONITORING' | 'ANALYZING_LOSS' | 'COOLDOWN' | 'CALM_DETECTED' | 'POSITION_OPEN';
 
+// NOVO: Regimes de ritmo e configuração de tempo
+type MarketRhythm = 'volatile' | 'normal' | 'calm';
+interface TimingRegime {
+  volatile: number;
+  normal: number;
+  calm: number;
+}
+const TIMING_REGIMES: TimingRegime = {
+  volatile: 25,    // 25s em mercados agitados
+  normal: 40,      // 40s em condições normais
+  calm: 55,        // 55s em períodos muito calmos
+};
+
+
 interface RiskManagerStatus {
   mode: 'Normal' | 'Cautious';
   lastLossReason: string | null;
   calmnessScoreThreshold: number;
   adaptiveDuration: number;
+  marketRhythm: MarketRhythm;
 }
 
 interface PilotContractContext {
@@ -28,7 +43,7 @@ const VOLATILITY_LOOKBACK = 50;
 const BASE_CALMNESS_THRESHOLD = 70;
 const MAX_LOSS_PERCENT = 0.50; 
 const TAKE_PROFIT_PERCENT = 1.25; 
-const KILL_SWITCH_SECONDS = 45; 
+// O KILL_SWITCH_SECONDS foi substituído por TIMING_REGIMES
 
 const VOLATILITY_EXIT_MULTIPLIER_BBW = 1.8;
 const ADX_EXIT_THRESHOLD = 25;
@@ -36,6 +51,44 @@ const ATR_EXIT_MULTIPLIER = 1.6;
 const COOLDOWN_PERIOD_MS = 30000;
 const DEFAULT_GROWTH_RATE = 0.03;
 const MICRO_VOLATILITY_WINDOW = 10;
+
+// --- NOVAS FUNÇÕES HELPER ---
+
+const calculatePercentile = (series: (number|null)[], value: number): number => {
+    const validSeries = series.filter((v): v is number => v !== null && isFinite(v));
+    if (validSeries.length === 0) return 50;
+    const count = validSeries.filter(v => v < value);
+    return (count.length / validSeries.length) * 100;
+};
+
+const calculateTickRange = (ticks: TickData[]): number => {
+    if (ticks.length === 0) return 0;
+    const prices = ticks.map(t => t.price);
+    return Math.max(...prices) - Math.min(...prices);
+};
+
+function detectMarketRhythm(
+  indicators: { adx?: number | null; bbw?: number | null; bbwSeries?: (number | null)[] },
+  ticks: TickData[]
+): MarketRhythm {
+  if (!indicators.adx || !indicators.bbw || !indicators.bbwSeries || ticks.length < 30) {
+    return 'normal';
+  }
+
+  const recentTicks = ticks.slice(-30);
+  const recentTickRange = calculateTickRange(recentTicks);
+  const bbwPercentile = calculatePercentile(indicators.bbwSeries, indicators.bbw);
+
+  // Limiares ajustáveis
+  const volatileTickRangeThreshold = (recentTicks[0]?.price || 1) * 0.0005; // 0.05% do preço
+  
+  if (bbwPercentile > 70 || indicators.adx > 22 || recentTickRange > volatileTickRangeThreshold) {
+    return 'volatile';
+  } else if (bbwPercentile < 30 && indicators.adx < 18) {
+    return 'calm';
+  }
+  return 'normal';
+}
 
 
 export function useAccumulatorsCouncil() {
@@ -64,7 +117,8 @@ export function useAccumulatorsCouncil() {
     mode: 'Normal',
     lastLossReason: null,
     calmnessScoreThreshold: BASE_CALMNESS_THRESHOLD,
-    adaptiveDuration: KILL_SWITCH_SECONDS,
+    adaptiveDuration: TIMING_REGIMES.normal,
+    marketRhythm: 'normal',
   });
   
   const [entryConditions, setEntryConditions] = useState({
@@ -121,17 +175,18 @@ export function useAccumulatorsCouncil() {
 
       setRiskManager(prev => {
         let newThreshold = prev.calmnessScoreThreshold;
-        let newDuration = prev.adaptiveDuration;
 
         if (reason.includes('Kill Switch')) {
-            newDuration = Math.max(15, Math.floor(prev.adaptiveDuration / 2));
-            setTimeout(() => toast({ title: '🤖 Gerente de Estratégia: Adaptando Tempo', description: `O mercado está instável. Próxima operação terá um tempo limite de ${newDuration}s.`, variant: "default" }), 0);
+            // Se perdemos por tempo, o problema é a seletividade, não o tempo em si.
+            newThreshold = Math.min(90, prev.calmnessScoreThreshold + 5); 
+            setTimeout(() => toast({ title: '🤖 Gerente de Estratégia: Aprendizado Temporal', description: `O mercado está instável. O sistema será mais seletivo na próxima entrada.`, variant: "default" }), 0);
         } else {
+            // Se perdemos por volatilidade, o problema é ser permissivo demais.
             newThreshold = Math.min(90, prev.calmnessScoreThreshold + 15);
             setTimeout(() => toast({ title: '🤖 Gerente de Estratégia: Modo Cauteloso', description: `Limiar de Calmaria aumentado para ${newThreshold}. O sistema será mais seletivo.`, variant: 'destructive' }), 0);
         }
         
-        return { mode: 'Cautious', lastLossReason: reason, calmnessScoreThreshold: newThreshold, adaptiveDuration: newDuration };
+        return { ...prev, mode: 'Cautious', lastLossReason: reason, calmnessScoreThreshold: newThreshold };
       });
 
       setBotStatus('COOLDOWN');
@@ -141,12 +196,12 @@ export function useAccumulatorsCouncil() {
       }, COOLDOWN_PERIOD_MS);
     } else if (lastOp.status === 'won') {
        if(riskManager.mode === 'Cautious') {
-           setRiskManager({
+           setRiskManager(prev => ({
+             ...prev,
              mode: 'Normal',
              lastLossReason: null,
              calmnessScoreThreshold: BASE_CALMNESS_THRESHOLD,
-             adaptiveDuration: KILL_SWITCH_SECONDS,
-           });
+           }));
            setTimeout(() => toast({ title: '🤖 Gerente de Estratégia: Modo Normal', description: 'Confiança recuperada. Parâmetros de risco restaurados.' }), 0);
        }
     }
@@ -223,6 +278,10 @@ export function useAccumulatorsCouncil() {
           return;
       }
 
+      const marketRhythm = detectMarketRhythm(calculatedIndicators, priceTicks);
+      const baseDuration = TIMING_REGIMES[marketRhythm];
+      setRiskManager(prev => ({...prev, marketRhythm, adaptiveDuration: baseDuration }));
+
       const recentBbwValues = (calculatedIndicators.bbwSeries || []).slice(-VOLATILITY_LOOKBACK).filter(v => v !== null) as number[];
       const recentAtrValues = (calculatedIndicators.atrSeries || []).slice(-VOLATILITY_LOOKBACK).filter(v => v !== null) as number[];
 
@@ -244,11 +303,7 @@ export function useAccumulatorsCouncil() {
 
       if (pilotOpenPosition) {
         if (openPilotContractContextRef.current?.id !== pilotOpenPosition.id) {
-          // Sync context if it's out of sync
-          openPilotContractContextRef.current = {
-            id: pilotOpenPosition.id,
-            dynamicSpikeMultiplier: 2.5 // Fallback
-          };
+          openPilotContractContextRef.current = { id: pilotOpenPosition.id, dynamicSpikeMultiplier: 2.5 };
         }
 
         setBotStatus('POSITION_OPEN');
@@ -261,73 +316,42 @@ export function useAccumulatorsCouncil() {
             const stdDev = Math.sqrt(recentPrices.map(p => Math.pow(p - mean, 2)).reduce((a, b) => a + b) / recentPrices.length);
 
             const context = openPilotContractContextRef.current;
-            const spikeMultiplier = (context && context.id === pilotOpenPosition.id) 
-                ? context.dynamicSpikeMultiplier 
-                : 2.5; // Fallback to default
+            const spikeMultiplier = (context && context.id === pilotOpenPosition.id) ? context.dynamicSpikeMultiplier : 2.5;
 
             if (stdDev > entryTickVolatilityRef.current * spikeMultiplier) {
                 microVolatilityVeto = true;
             }
         }
         
-        const isVolatilityExpanding = 
-            calculatedIndicators.bbw! > localMetrics.avgBbw * VOLATILITY_EXIT_MULTIPLIER_BBW ||
-            calculatedIndicators.atr! > localMetrics.avgAtr * ATR_EXIT_MULTIPLIER ||
-            calculatedIndicators.adx! > ADX_EXIT_THRESHOLD;
-            
+        const isVolatilityExpanding = calculatedIndicators.bbw! > localMetrics.avgBbw * VOLATILITY_EXIT_MULTIPLIER_BBW || calculatedIndicators.atr! > localMetrics.avgAtr * ATR_EXIT_MULTIPLIER || calculatedIndicators.adx! > ADX_EXIT_THRESHOLD;
         const hasReachedStopLoss = (pilotOpenPosition.result || 0) <= -pilotOpenPosition.stake * MAX_LOSS_PERCENT;
         const hasReachedTakeProfit = (pilotOpenPosition.result || 0) >= pilotOpenPosition.stake * TAKE_PROFIT_PERCENT;
-
         const entryTime = new Date(pilotOpenPosition.timestamp).getTime();
         const elapsedTimeInSeconds = (Date.now() - entryTime) / 1000;
         const killSwitchTriggered = elapsedTimeInSeconds >= riskManager.adaptiveDuration;
         
-        let shouldSell = false;
-        let reason = '';
+        let shouldSell = false; let reason = '';
 
-        if (hasReachedTakeProfit) {
-            shouldSell = true;
-            reason = `Alvo de ${TAKE_PROFIT_PERCENT*100}% atingido ($${(pilotOpenPosition.result || 0).toFixed(2)}).`;
-        } else if (microVolatilityVeto) {
-            shouldSell = true;
-            reason = 'Veto de Micro-Volatilidade: Pico de instabilidade nos ticks.';
-        } else if (killSwitchTriggered) {
-            shouldSell = true;
-            reason = `Kill Switch de Tempo (${riskManager.adaptiveDuration}s) ativado para limitar exposição.`;
-        } else if (isVolatilityExpanding) {
-            shouldSell = true;
-            reason = 'Veto de Volatilidade: Risco de mercado aumentou.';
-        } else if (hasReachedStopLoss) {
-            shouldSell = true;
-            reason = `Stop Loss de ${MAX_LOSS_PERCENT * 100}% atingido.`;
-        }
+        if (hasReachedTakeProfit) { shouldSell = true; reason = `Alvo de ${TAKE_PROFIT_PERCENT*100}% atingido ($${(pilotOpenPosition.result || 0).toFixed(2)}).`;
+        } else if (microVolatilityVeto) { shouldSell = true; reason = 'Veto de Micro-Volatilidade: Pico de instabilidade nos ticks.';
+        } else if (killSwitchTriggered) { shouldSell = true; reason = `Kill Switch de Tempo (${riskManager.adaptiveDuration}s) ativado para limitar exposição.`;
+        } else if (isVolatilityExpanding) { shouldSell = true; reason = 'Veto de Volatilidade: Risco de mercado aumentou.';
+        } else if (hasReachedStopLoss) { shouldSell = true; reason = `Stop Loss de ${MAX_LOSS_PERCENT * 100}% atingido.`; }
         
         if (shouldSell) {
-          setTimeout(() => toast({
-            title: "🤖 Piloto: A fechar posição",
-            description: reason,
-          }), 0);
+          setTimeout(() => toast({ title: "🤖 Piloto: A fechar posição", description: reason, }), 0);
           lastSellReasonRef.current = reason;
           await sellContract(pilotOpenPosition.id);
           openPilotContractContextRef.current = null;
           entryTickVolatilityRef.current = null;
         }
       } else {
-        if(openPilotContractContextRef.current !== null) {
-            openPilotContractContextRef.current = null;
-            entryTickVolatilityRef.current = null;
-        }
-
-        if(botStatus === 'COOLDOWN') {
-          executionRef.current = false;
-          return;
-        }
+        if(openPilotContractContextRef.current !== null) { openPilotContractContextRef.current = null; entryTickVolatilityRef.current = null; }
+        if(botStatus === 'COOLDOWN') { executionRef.current = false; return; }
         
         const { adx, bbw, zScore } = calculatedIndicators;
-        
         const adxScore = Math.max(0, 100 - ((Math.max(0, (adx || 35) - 15) / 20) * 100));
         const bbwScore = localMetrics.avgBbw > 0 ? Math.max(0, 100 - ((bbw! / (localMetrics.avgBbw * 1.5)) * 100)) : 50;
-        
         let tickVolatilityScore = 50;
         if (priceTicks.length >= 20) {
             const recentTickPrices = priceTicks.slice(-20).map(t => t.price);
@@ -349,14 +373,9 @@ export function useAccumulatorsCouncil() {
         
         const isCalm = calmnessScoreMet && bbwIsLow && atrIsLow && zScoreIsStable;
 
-        let dynamicSpikeMultiplier = 2.5; // Padrão
+        let dynamicSpikeMultiplier = 2.5; 
         const bbwRatio = localMetrics.avgBbw > 0 ? bbw! / localMetrics.avgBbw : 1;
-
-        if (bbwRatio < 0.7) {
-            dynamicSpikeMultiplier = 2.0; // Mais sensível em baixa volatilidade
-        } else if (bbwRatio > 1.3) {
-            dynamicSpikeMultiplier = 3.5; // Menos sensível em alta volatilidade
-        }
+        if (bbwRatio < 0.7) { dynamicSpikeMultiplier = 2.0; } else if (bbwRatio > 1.3) { dynamicSpikeMultiplier = 3.5; }
 
         if (isCalm) {
           setBotStatus('CALM_DETECTED');
@@ -367,32 +386,20 @@ export function useAccumulatorsCouncil() {
               const recentPrices = recentTicks.map(t => t.price);
               const mean = recentPrices.reduce((a, b) => a + b, 0) / recentPrices.length;
               entryTickVolatilityRef.current = Math.sqrt(recentPrices.map(p => Math.pow(p - mean, 2)).reduce((a, b) => a + b) / recentPrices.length);
-          } else {
-              entryTickVolatilityRef.current = null;
-          }
+          } else { entryTickVolatilityRef.current = null; }
 
           setTimeout(() => toast({ title: "🤖 Piloto: Posição Aberta!", description: `Calmaria detectada. Contrato aberto com taxa de ${DEFAULT_GROWTH_RATE * 100}%.` }), 0);
 
           const result = await executeTrade(stake, DEFAULT_GROWTH_RATE, activeSymbol, 'Piloto');
           if (result.success && result.contractId) {
-              openPilotContractContextRef.current = {
-                id: result.contractId,
-                dynamicSpikeMultiplier,
-              };
+              openPilotContractContextRef.current = { id: result.contractId, dynamicSpikeMultiplier, };
           }
-
-        } else {
-          setBotStatus('MONITORING');
-        }
+        } else { setBotStatus('MONITORING'); }
       }
       executionRef.current = false;
     };
     runCycle();
-  }, [
-      isAutopilotOn, isConnected, activeSymbol, dataVersion, botCandleData, priceTicks,
-      dailyPnL, dailyBalance, dailyTarget, executeTrade, sellContract, toast, 
-      riskManager, analyzeAndAdjustStrategy, operationsLog, botStatus
-  ]);
+  }, [ isAutopilotOn, isConnected, activeSymbol, dataVersion, botCandleData, priceTicks, dailyPnL, dailyBalance, dailyTarget, executeTrade, sellContract, toast, analyzeAndAdjustStrategy, operationsLog, botStatus ]);
 
   return { isAutopilotOn, toggleAutopilot, botStatus, volatilityMetrics: metrics, dailyBalance, setDailyBalance, dailyTarget, setDailyTarget, dailyPnL, riskManager, calmnessScore, entryConditions };
 }

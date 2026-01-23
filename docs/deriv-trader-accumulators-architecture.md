@@ -18,7 +18,7 @@ O Deriv Accumulators abandona a necessidade de prever a direção do mercado. O 
     *   **Z-Score:** O preço deve estar próximo da sua média estatística, indicando ausência de desvios extremos.
 4.  **Gestão de Risco e Saída Multi-Fator (Foco no Tempo):**
     *   **Alvo de Lucro (Take Profit):** Um lucro de **125% sobre o valor da aposta** é o alvo, capturando ganhos significativos em períodos de estabilidade.
-    *   **"Kill Switch" Temporal e Adaptativo:** Se o alvo de lucro não for atingido em **45 segundos**, a posição é encerrada para limitar a exposição ao risco. Se esta saída resultar em perda, o sistema "aprende" e **reduzirá o tempo do próximo "Kill Switch"**, adaptando-se ao ritmo real do mercado.
+    *   **"Kill Switch" Temporal e Adaptativo:** O sistema pré-define um tempo máximo de exposição com base no "ritmo" do mercado (**25s** para volátil, **40s** para normal, **55s** para calmo). Se o alvo de lucro não for atingido nesse tempo, a posição é encerrada.
     *   **Veto de Volatilidade Macro:** A posição é encerrada prematuramente se qualquer indicador (BBW, ATR ou ADX) sinalizar um aumento súbito de risco.
     *   **Veto de Micro-Volatilidade (Disjuntor Dinâmico):** Um "disjuntor" de alta frequência monitoriza o desvio padrão dos últimos 10 ticks. Se a volatilidade instantânea explodir (por um fator que varia de 2.0x a 3.5x com base no "humor" do mercado), a posição é vendida imediatamente para prevenir perdas por picos súbitos.
     *   **Stop-Loss de Capital:** Como uma rede de segurança final, a posição é vendida se a perda atingir 50% do valor da aposta, transformando uma perda potencial de 100% numa perda máxima e controlada.
@@ -47,15 +47,15 @@ Este hook contém a inteligência do piloto automático, projetado especificamen
 
 *   **Responsabilidade Principal**: Identificar períodos de baixa volatilidade para abrir e fechar posições de forma autónoma e gerir o risco de forma adaptativa.
 *   **Estratégia "Calm Seeker" V4 (Adaptive Time-Exit & Confluence)**:
-    1.  **"Nível de Calmaria" (Calmness Score):** O sistema calcula um score de 0 a 100 que representa a estabilidade do mercado, com um peso de **70% na volatilidade dos ticks em tempo real** e 30% nos indicadores macro (ADX, BBW).
-    2.  **Condição de Entrada (Confluência Tripla)**: O piloto só abre uma posição quando o "Nível de Calmaria" ultrapassa um limiar dinâmico E as condições de BBW, ATR e Z-Score são satisfeitas.
+    1.  **Deteção de Ritmo de Mercado:** O sistema classifica o mercado como 'calmo', 'normal' ou 'volátil'.
+    2.  **Condição de Entrada (Confluência Tripla)**: O piloto só abre uma posição quando o "Nível de Calmaria" (uma métrica composta) ultrapassa um limiar dinâmico E as condições de BBW, ATR e Z-Score são satisfeitas.
     3.  **Gestão de Posição Única**: O sistema garante que apenas **um contrato** é aberto de cada vez, focando toda a sua análise na gestão dessa posição.
     4.  **Condição de Saída (Multi-Fator)**: Uma posição aberta é fechada se **uma** das seguintes condições for atendida (a que ocorrer primeiro):
         *   **Alvo de Lucro (Take Profit):** Atinge um lucro de 125% do valor da aposta.
-        *   **"Kill Switch" Temporal:** O alvo de lucro não é atingido no tempo de segurança adaptativo (inicialmente 45 segundos).
+        *   **"Kill Switch" Temporal:** O alvo de lucro não é atingido no tempo de segurança definido pelo ritmo do mercado.
         *   **Stop-Loss de Capital:** A perda atinge 50% do valor da aposta inicial.
-        *   **Veto de Volatilidade (Macro e Micro):** O BBW, o ATR, o ADX ou a volatilidade instantânea dos ticks (via disjuntor dinâmico) aumentam subitamente, indicando que o período de "calmaria" terminou.
-    5.  **Gerente de Risco Estratégico (Auto-Calibração):** Após cada perda, o sistema diagnostica a causa (tempo ou volatilidade). Se a perda foi por tempo, ele **reduz o próximo "Kill Switch"**. Se foi por volatilidade, ele aumenta o limiar de "Calmaria" para ser mais seletivo. Após uma vitória, ele gradualmente retorna aos parâmetros normais.
+        *   **Veto de Volatilidade (Macro e Micro):** O BBW, o ATR, o ADX ou a volatilidade instantânea dos ticks (via disjuntor dinâmico) aumentam subitamente.
+    5.  **Gerente de Risco Estratégico (Auto-Calibração):** Após cada perda, o sistema diagnostica a causa (tempo ou volatilidade). Se a perda foi por tempo, ele se torna mais seletivo na próxima entrada. Se foi por volatilidade, ele aumenta o limiar de "Calmaria". Após uma vitória, ele gradualmente retorna aos parâmetros normais.
 
 ### 2.3. Camada de Interface: `deriv-trader-accumulators/page.tsx`
 
