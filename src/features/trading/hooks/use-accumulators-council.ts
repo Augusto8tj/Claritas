@@ -16,6 +16,7 @@ interface RiskManagerStatus {
   mode: 'Normal' | 'Cautious';
   lastLossReason: string | null;
   calmnessScoreThreshold: number;
+  adaptiveDuration: number;
 }
 
 const VOLATILITY_LOOKBACK = 50;
@@ -53,16 +54,20 @@ export function useAccumulatorsCouncil() {
   const [dailyBalance, setDailyBalance] = useState(10.0);
   const [dailyTarget, setDailyTarget] = useState(5.0);
   
+  const [adaptiveKillSwitch, setAdaptiveKillSwitch] = useState(KILL_SWITCH_SECONDS);
+
   const [riskManager, setRiskManager] = useState<RiskManagerStatus>({
     mode: 'Normal',
     lastLossReason: null,
     calmnessScoreThreshold: BASE_CALMNESS_THRESHOLD,
+    adaptiveDuration: KILL_SWITCH_SECONDS,
   });
 
   const lastOpIdRef = useRef<number>(0);
   const executionRef = useRef(false);
   const cooldownTimerRef = useRef<NodeJS.Timeout | null>(null);
   const openPilotContractIdRef = useRef<number | null>(null);
+  const lastSellReasonRef = useRef<string | null>(null);
 
   const dailyPnL = useMemo(() => {
     const today = new Date().toDateString();
@@ -84,16 +89,38 @@ export function useAccumulatorsCouncil() {
   }, [isAutopilotOn, toast]); 
 
   const analyzeAndAdjustStrategy = useCallback((lastOp: Operation, localIndicators: Indicators, localMetrics: { avgBbw: number; avgAtr: number; }) => {
+    const sellReason = lastSellReasonRef.current;
+    lastSellReasonRef.current = null; // Reset reason after analysis
+
     if (lastOp.status === 'lost') {
       let reason = "Perda por quebra de barreira.";
-      if (localIndicators.adx! > ADX_EXIT_THRESHOLD) reason = `Pico de Tendência (ADX: ${localIndicators.adx!.toFixed(1)})`;
-      else if (localIndicators.bbw! > localMetrics.avgBbw * VOLATILITY_EXIT_MULTIPLIER_BBW) reason = `Expansão de Volatilidade (BBW)`;
-      else if (localIndicators.atr! > localMetrics.avgAtr * ATR_EXIT_MULTIPLIER) reason = `Aumento do Range (ATR)`;
+
+      if (sellReason) {
+        reason = sellReason;
+      } else if (localIndicators.adx! > ADX_EXIT_THRESHOLD) {
+        reason = `Pico de Tendência (ADX: ${localIndicators.adx!.toFixed(1)})`;
+      } else if (localIndicators.bbw! > localMetrics.avgBbw * VOLATILITY_EXIT_MULTIPLIER_BBW) {
+        reason = `Expansão de Volatilidade (BBW)`;
+      } else if (localIndicators.atr! > localMetrics.avgAtr * ATR_EXIT_MULTIPLIER) {
+        reason = `Aumento do Range (ATR)`;
+      }
 
       setRiskManager(prev => {
-        const newThreshold = Math.min(90, prev.calmnessScoreThreshold + 15);
-        toast({ title: '🤖 Gerente de Risco: Modo Cauteloso', description: `Limiar de Calmaria aumentado para ${newThreshold}. O sistema será mais seletivo.`, variant: 'destructive' });
-        return { mode: 'Cautious', lastLossReason: reason, calmnessScoreThreshold: newThreshold };
+        let newThreshold = prev.calmnessScoreThreshold;
+        let newDuration = prev.adaptiveDuration;
+
+        if (reason.includes('Kill Switch')) {
+            // Se a perda foi por tempo, seja mais rápido
+            newDuration = Math.max(15, Math.floor(prev.adaptiveDuration / 2));
+            toast({ title: '🤖 Gerente de Estratégia: Adaptando Tempo', description: `O mercado está instável. Próxima operação terá um tempo limite de ${newDuration}s.`, variant: "default" });
+        } else {
+            // Se a perda foi por volatilidade, seja mais seletivo
+            newThreshold = Math.min(90, prev.calmnessScoreThreshold + 15);
+            toast({ title: '🤖 Gerente de Estratégia: Modo Cauteloso', description: `Limiar de Calmaria aumentado para ${newThreshold}. O sistema será mais seletivo.`, variant: 'destructive' });
+        }
+        
+        setAdaptiveKillSwitch(newDuration);
+        return { mode: 'Cautious', lastLossReason: reason, calmnessScoreThreshold: newThreshold, adaptiveDuration: newDuration };
       });
 
       setBotStatus('COOLDOWN');
@@ -101,13 +128,18 @@ export function useAccumulatorsCouncil() {
       cooldownTimerRef.current = setTimeout(() => {
         setBotStatus('MONITORING');
       }, COOLDOWN_PERIOD_MS);
-    } else if (lastOp.status === 'won' && riskManager.mode === 'Cautious') {
+    } else if (lastOp.status === 'won') {
+       // Reset para o modo normal após um ganho
+       setAdaptiveKillSwitch(KILL_SWITCH_SECONDS);
        setRiskManager({
          mode: 'Normal',
          lastLossReason: null,
-         calmnessScoreThreshold: BASE_CALMNESS_THRESHOLD
+         calmnessScoreThreshold: BASE_CALMNESS_THRESHOLD,
+         adaptiveDuration: KILL_SWITCH_SECONDS,
        });
-       toast({ title: '🤖 Gerente de Risco: Modo Normal', description: 'Confiança recuperada. Limiar de Calmaria restaurado.' });
+       if(riskManager.mode === 'Cautious') {
+           toast({ title: '🤖 Gerente de Estratégia: Modo Normal', description: 'Confiança recuperada. Parâmetros de risco restaurados.' });
+       }
     }
   }, [riskManager.mode, toast]);
 
@@ -214,7 +246,7 @@ export function useAccumulatorsCouncil() {
 
         const entryTime = new Date(openPosition.timestamp).getTime();
         const elapsedTimeInSeconds = (Date.now() - entryTime) / 1000;
-        const killSwitchTriggered = elapsedTimeInSeconds >= KILL_SWITCH_SECONDS;
+        const killSwitchTriggered = elapsedTimeInSeconds >= adaptiveKillSwitch;
         
         let shouldSell = false;
         let reason = '';
@@ -224,7 +256,7 @@ export function useAccumulatorsCouncil() {
             reason = `Alvo de ${TAKE_PROFIT_PERCENT*100}% atingido ($${(openPosition.result || 0).toFixed(2)}).`;
         } else if (killSwitchTriggered) {
             shouldSell = true;
-            reason = `Kill Switch de Tempo (${KILL_SWITCH_SECONDS}s) ativado para limitar exposição.`;
+            reason = `Kill Switch de Tempo (${adaptiveKillSwitch}s) ativado para limitar exposição.`;
         } else if (isVolatilityExpanding) {
             shouldSell = true;
             reason = 'Veto de Volatilidade: Risco de mercado aumentou.';
@@ -238,6 +270,7 @@ export function useAccumulatorsCouncil() {
             title: "🤖 Piloto: A fechar posição",
             description: reason,
           });
+          lastSellReasonRef.current = reason;
           await sellContract(openPosition.id);
           openPilotContractIdRef.current = null;
         }
@@ -249,7 +282,7 @@ export function useAccumulatorsCouncil() {
           return;
         }
         
-        const { adx, bbw } = calculatedIndicators;
+        const { adx, bbw, zScore } = calculatedIndicators;
         
         const adxScore = Math.max(0, 100 - ((Math.max(0, (adx || 35) - 15) / 20) * 100));
         const bbwScore = localMetrics.avgBbw > 0 ? Math.max(0, 100 - ((bbw! / (localMetrics.avgBbw * 1.5)) * 100)) : 50;
@@ -268,8 +301,13 @@ export function useAccumulatorsCouncil() {
 
         const finalCalmnessScore = (adxScore * 0.25) + (bbwScore * 0.25) + (tickVolatilityScore * 0.50);
         setCalmnessScore(finalCalmnessScore);
+        
+        // CONFLUÊNCIA DE CONDIÇÕES
+        const bbwIsLow = bbw! < localMetrics.avgBbw;
+        const atrIsLow = calculatedIndicators.atr! < localMetrics.avgAtr;
+        const zScoreIsStable = Math.abs(zScore || 0) < 1.0;
 
-        const isCalm = finalCalmnessScore >= riskManager.calmnessScoreThreshold;
+        const isCalm = finalCalmnessScore >= riskManager.calmnessScoreThreshold && bbwIsLow && atrIsLow && zScoreIsStable;
 
         if (isCalm) {
           setBotStatus('CALM_DETECTED');
@@ -295,7 +333,7 @@ export function useAccumulatorsCouncil() {
   }, [
       isAutopilotOn, isConnected, activeSymbol, dataVersion, botCandleData, priceTicks,
       dailyPnL, dailyBalance, dailyTarget, executeTrade, sellContract, toast, 
-      riskManager, analyzeAndAdjustStrategy, operationsLog, botStatus
+      riskManager, analyzeAndAdjustStrategy, operationsLog, botStatus, adaptiveKillSwitch
   ]);
 
   return { isAutopilotOn, toggleAutopilot, botStatus, volatilityMetrics: metrics, dailyBalance, setDailyBalance, dailyTarget, setDailyTarget, dailyPnL, riskManager, calmnessScore };

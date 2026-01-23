@@ -151,21 +151,6 @@ export function AccumulatorsAutopilotInterface({
             {statusInfo[botStatus].text}
           </Badge>
         </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-center text-xs">
-          <div className="p-2 border rounded-lg bg-muted/50">
-            <p className="text-muted-foreground font-semibold mb-1 flex items-center justify-center gap-1.5"><Waves className="h-4 w-4"/>BBW</p>
-            <p className="font-bold text-sm text-foreground">{volatilityMetrics.bbw.toFixed(4)}</p>
-          </div>
-          <div className="p-2 border rounded-lg bg-muted/50">
-            <p className="text-muted-foreground font-semibold mb-1 flex items-center justify-center gap-1.5"><Zap className="h-4 w-4"/>ATR</p>
-            <p className="font-bold text-sm text-foreground">{volatilityMetrics.atr.toFixed(5)}</p>
-          </div>
-          <div className="p-2 border rounded-lg bg-muted/50">
-            <p className="text-muted-foreground font-semibold mb-1 flex items-center justify-center gap-1.5"><TrendingUp className="h-4 w-4"/>ADX</p>
-            <p className="font-bold text-sm text-foreground">{volatilityMetrics.adx.toFixed(2)}</p>
-          </div>
-        </div>
         
         {isAutopilotOn && (
             <>
@@ -173,7 +158,7 @@ export function AccumulatorsAutopilotInterface({
                 <div className="space-y-3">
                     <h4 className="font-headline flex items-center gap-2">
                         <ShieldCheck className="h-5 w-5 text-primary/80" />
-                        Gerente de Risco Estratégico
+                        Gerente de Estratégia
                     </h4>
                     <div className="grid grid-cols-2 gap-3 text-center text-xs">
                         <div className="p-2 border rounded-lg bg-muted/50">
@@ -181,10 +166,8 @@ export function AccumulatorsAutopilotInterface({
                             <Badge variant={riskManager.mode === 'Cautious' ? 'destructive' : 'secondary'}>{riskManager.mode}</Badge>
                         </div>
                         <div className="p-2 border rounded-lg bg-muted/50">
-                            <p className="text-muted-foreground font-semibold mb-1">Última Perda</p>
-                            <p className="font-bold text-sm text-foreground truncate" title={riskManager.lastLossReason || 'N/A'}>
-                                {riskManager.lastLossReason || 'N/A'}
-                            </p>
+                             <p className="text-muted-foreground font-semibold mb-1">Duração Adaptativa</p>
+                             <p className="font-bold text-sm text-foreground">{riskManager.adaptiveDuration}s</p>
                         </div>
                     </div>
                     {riskManager.mode === 'Cautious' && (
@@ -192,8 +175,7 @@ export function AccumulatorsAutopilotInterface({
                             <AlertCircle className="h-4 w-4" />
                             <AlertTitle>Parâmetros Ajustados!</AlertTitle>
                             <AlertDescription>
-                                O sistema está mais seletivo. Limiar de Calmaria para entrada agora é
-                                <strong> {riskManager.calmnessScoreThreshold}</strong>.
+                                {riskManager.lastLossReason}
                             </AlertDescription>
                         </Alert>
                     )}
