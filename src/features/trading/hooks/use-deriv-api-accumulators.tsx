@@ -395,7 +395,6 @@ export const DerivApiProviderAccumulators = ({ children }: { children: ReactNode
     }
     try {
         sellingContractsRef.current.add(contractId);
-        // O parâmetro 'price' foi removido para uma venda a mercado.
         const sellResponse: any = await makeRequest({ "sell": contractId });
         const sellResult = sellResponse.sell;
         if (sellResult) {
@@ -673,7 +672,7 @@ export const DerivApiProviderAccumulators = ({ children }: { children: ReactNode
       if (pingIntervalRef.current) clearInterval(pingIntervalRef.current);
       if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
     };
-  }, [activeToken, isLoading, makeRequest, toast, triggerReconnect, setToastQueue, startConnectionMonitor, addTradeAnnotation, updateTradeAnnotation, setAndPersistOperationsLog, subscribeToStreams]);
+  }, [activeToken, isLoading, makeRequest, toast, triggerReconnect, setToastQueue, startConnectionMonitor, addTradeAnnotation, updateTradeAnnotation, setAndPersistOperationsLog, subscribeToStreams, activeSymbol]);
 
   const isInitialMount = useRef(true);
   useEffect(() => {
