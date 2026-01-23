@@ -19,6 +19,11 @@ interface RiskManagerStatus {
   adaptiveDuration: number;
 }
 
+interface PilotContractContext {
+  id: number;
+  dynamicSpikeMultiplier: number;
+}
+
 const VOLATILITY_LOOKBACK = 50;
 const BASE_CALMNESS_THRESHOLD = 70;
 const MAX_LOSS_PERCENT = 0.50; 
@@ -30,7 +35,6 @@ const ADX_EXIT_THRESHOLD = 25;
 const ATR_EXIT_MULTIPLIER = 1.6;
 const COOLDOWN_PERIOD_MS = 30000;
 const DEFAULT_GROWTH_RATE = 0.03;
-const MICRO_VOLATILITY_SPIKE_MULTIPLIER = 2.5;
 const MICRO_VOLATILITY_WINDOW = 10;
 
 
@@ -73,7 +77,7 @@ export function useAccumulatorsCouncil() {
   const lastOpIdRef = useRef<number>(0);
   const executionRef = useRef(false);
   const cooldownTimerRef = useRef<NodeJS.Timeout | null>(null);
-  const openPilotContractIdRef = useRef<number | null>(null);
+  const openPilotContractContextRef = useRef<PilotContractContext | null>(null);
   const lastSellReasonRef = useRef<string | null>(null);
   const entryTickVolatilityRef = useRef<number | null>(null);
 
@@ -229,7 +233,7 @@ export function useAccumulatorsCouncil() {
       setMetrics(localMetrics);
       
       const lastOp = operationsLog[0];
-      if (lastOp && lastOp.status !== 'pending' && lastOp.initiator === 'Piloto' && lastOp.id > lastOpIdRef.current) {
+      if (lastOp && lastOp.status !== 'pending' && op.initiator === 'Piloto' && lastOp.id > lastOpIdRef.current) {
          analyzeAndAdjustStrategy(lastOp, calculatedIndicators, localMetrics);
          lastOpIdRef.current = lastOp.id;
          executionRef.current = false;
@@ -239,8 +243,12 @@ export function useAccumulatorsCouncil() {
       const pilotOpenPosition = operationsLog.find(op => op.initiator === 'Piloto' && op.status === 'pending');
 
       if (pilotOpenPosition) {
-        if (openPilotContractIdRef.current !== pilotOpenPosition.id) {
-          openPilotContractIdRef.current = pilotOpenPosition.id;
+        if (openPilotContractContextRef.current?.id !== pilotOpenPosition.id) {
+          // Sync context if it's out of sync
+          openPilotContractContextRef.current = {
+            id: pilotOpenPosition.id,
+            dynamicSpikeMultiplier: 2.5 // Fallback
+          };
         }
 
         setBotStatus('POSITION_OPEN');
@@ -252,7 +260,12 @@ export function useAccumulatorsCouncil() {
             const mean = recentPrices.reduce((a, b) => a + b) / recentPrices.length;
             const stdDev = Math.sqrt(recentPrices.map(p => Math.pow(p - mean, 2)).reduce((a, b) => a + b) / recentPrices.length);
 
-            if (stdDev > entryTickVolatilityRef.current * MICRO_VOLATILITY_SPIKE_MULTIPLIER) {
+            const context = openPilotContractContextRef.current;
+            const spikeMultiplier = (context && context.id === pilotOpenPosition.id) 
+                ? context.dynamicSpikeMultiplier 
+                : 2.5; // Fallback to default
+
+            if (stdDev > entryTickVolatilityRef.current * spikeMultiplier) {
                 microVolatilityVeto = true;
             }
         }
@@ -296,12 +309,12 @@ export function useAccumulatorsCouncil() {
           }), 0);
           lastSellReasonRef.current = reason;
           await sellContract(pilotOpenPosition.id);
-          openPilotContractIdRef.current = null;
+          openPilotContractContextRef.current = null;
           entryTickVolatilityRef.current = null;
         }
       } else {
-        if(openPilotContractIdRef.current !== null) {
-            openPilotContractIdRef.current = null;
+        if(openPilotContractContextRef.current !== null) {
+            openPilotContractContextRef.current = null;
             entryTickVolatilityRef.current = null;
         }
 
@@ -336,6 +349,15 @@ export function useAccumulatorsCouncil() {
         
         const isCalm = calmnessScoreMet && bbwIsLow && atrIsLow && zScoreIsStable;
 
+        let dynamicSpikeMultiplier = 2.5; // Padrão
+        const bbwRatio = localMetrics.avgBbw > 0 ? bbw! / localMetrics.avgBbw : 1;
+
+        if (bbwRatio < 0.7) {
+            dynamicSpikeMultiplier = 2.0; // Mais sensível em baixa volatilidade
+        } else if (bbwRatio > 1.3) {
+            dynamicSpikeMultiplier = 3.5; // Menos sensível em alta volatilidade
+        }
+
         if (isCalm) {
           setBotStatus('CALM_DETECTED');
           const stake = Math.max(1.0, Math.min(dailyBalance * 0.1, 10));
@@ -353,7 +375,10 @@ export function useAccumulatorsCouncil() {
 
           const result = await executeTrade(stake, DEFAULT_GROWTH_RATE, activeSymbol, 'Piloto');
           if (result.success && result.contractId) {
-              openPilotContractIdRef.current = result.contractId;
+              openPilotContractContextRef.current = {
+                id: result.contractId,
+                dynamicSpikeMultiplier,
+              };
           }
 
         } else {
