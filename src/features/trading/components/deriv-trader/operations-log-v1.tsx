@@ -96,7 +96,9 @@ export function OperationsLogV1({ operations, sellContract, priceTicks }: Operat
                                 <p>Nenhuma operação recente.</p>
                             </div>
                             ) : (
-                            operations.map((op) => {
+                            operations
+                                .filter(op => op && op.id != null)
+                                .map((op) => {
                                 const currentStatus = (() => {
                                     if (op.status !== 'pending' || !latestTick || !op.entryPrice) return 'even';
                                     if (op.direction === 'rise') {
