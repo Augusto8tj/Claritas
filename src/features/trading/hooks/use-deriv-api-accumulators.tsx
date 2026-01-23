@@ -1,4 +1,4 @@
-// /src/features/trading/hooks/use-deriv-api-accumulators.tsx
+// src/features/trading/hooks/use-deriv-api-accumulators.tsx
 'use client';
 
 import { createContext, useContext, useState, useEffect, type ReactNode, useCallback, useRef } from 'react';
@@ -323,7 +323,6 @@ export const DerivApiProviderAccumulators = ({ children }: { children: ReactNode
       const sanitizedStake = parseFloat(stake.toFixed(2));
       const buyRequest: any = {
         buy: "1",
-        price: 10000,
         parameters: {
             amount: sanitizedStake,
             basis: "stake",
