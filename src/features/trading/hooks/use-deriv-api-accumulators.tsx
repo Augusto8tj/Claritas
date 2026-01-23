@@ -1,4 +1,4 @@
-// /src/features/trading/hooks/use-deriv-api-accumulators.tsx
+// src/features/trading/hooks/use-deriv-api-accumulators.tsx
 'use client';
 
 import { createContext, useContext, useState, useEffect, type ReactNode, useCallback, useRef } from 'react';
@@ -123,8 +123,8 @@ const addDataPoint = (prevData: ChartData[], newPoint: ChartData): ChartData[] =
 };
 
 export const DerivApiProviderAccumulators = ({ children }: { children: ReactNode }) => {
-  const [demoToken, setDemoToken] = useState<string | null>(null);
-  const [realToken, setRealToken] = useState<string | null>(null);
+  const [demoToken, setDemoToken] = useState<string | null>('ljUGk6wbLSrtEDo');
+  const [realToken, setRealToken] = useState<string | null>('GU5MwbX1kwvSoyw');
   const [accountType, setAccountTypeState] = useState<AccountType>('demo');
   const [accountBalance, setAccountBalance] = useState<AccountBalance>({ balance: null, currency: null, loading: true });
   const [isLoading, setIsLoading] = useState(true);
@@ -136,7 +136,7 @@ export const DerivApiProviderAccumulators = ({ children }: { children: ReactNode
   const { toast } = useToast();
   const [toastQueue, setToastQueue] = useState<any[]>([]);
   
-  const [activeSymbol, setActiveSymbol] = useState<string | null>(null);
+  const [activeSymbol, setActiveSymbol] = useState<string | null>('1HZ10V');
   const [chartData, setChartData] = useState<ChartData[]>([]);
   const [botCandleData, setBotCandleData] = useState<CandleData[]>([]);
   const [priceTicks, setPriceTicks] = useState<TickData[]>([]);
@@ -412,7 +412,7 @@ export const DerivApiProviderAccumulators = ({ children }: { children: ReactNode
   }, [isConnected, makeRequest]);
   
   const subscribeToStreams = useCallback(async (symbol: string) => {
-    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
+    if (wsRef.current?.readyState !== WebSocket.OPEN) return;
     
     if (activeSubscriptionIdRef.current) {
         try { await makeRequest({ forget: activeSubscriptionIdRef.current }, true); } catch (e) { /* silent */ }
@@ -491,58 +491,16 @@ export const DerivApiProviderAccumulators = ({ children }: { children: ReactNode
   
   useEffect(() => {
     if (!activeToken || isLoading) {
-      if (wsRef.current) { wsRef.current.close(); wsRef.current = null; }
+      if (wsRef.current) wsRef.current.close();
       return;
     }
     const connect = () => {
         setIsConnecting(true);
         setConnectionError(null);
         setIsAssetsLoading(true);
-        if (wsRef.current) { wsRef.current.close(); wsRef.current = null; }
-        
+        if (wsRef.current) wsRef.current.close();
         const ws = new WebSocket(`wss://ws.derivws.com/websockets/v3?app_id=${DERIV_APP_ID}`);
         wsRef.current = ws;
-
-        ws.onopen = async () => {
-            try {
-                await makeRequest({ authorize: activeToken });
-                setIsConnected(true);
-                setIsConnecting(false);
-                setConnectionError(null);
-                setLastPingTime(Date.now());
-                ws.send(JSON.stringify({ "proposal_open_contract": 1, "subscribe": 1 }));
-                ws.send(JSON.stringify({ "balance": 1, "subscribe": 1 }));
-                startConnectionMonitor();
-                const assetsRes: any = await makeRequest({ active_symbols: 'full', product_type: 'basic' });
-                const filteredSymbols = assetsRes.active_symbols.filter((symbol: any) => symbol.market === 'synthetic_index' && symbol.allow_accumulator_contracts === 1);
-                const groupedAssets: { [key: string]: Asset[] } = {};
-                filteredSymbols.forEach((symbol: any) => {
-                    const groupName = marketNameMapping[symbol.market] || 'Outros';
-                    if (!groupedAssets[groupName]) groupedAssets[groupName] = [];
-                    groupedAssets[groupName].push({ value: symbol.symbol, label: symbol.display_name, marketIsOpen: symbol.exchange_is_open === 1, submarket: symbol.submarket, market: symbol.market, minDuration: 'N/A' });
-                });
-                
-                const sortedGroups = Object.keys(groupedAssets)
-                    .map(label => ({ label, options: groupedAssets[label].sort((a, b) => a.label.localeCompare(b.label)) }))
-                    .sort((a, b) => a.label.localeCompare(b.label));
-
-                setAssetGroups(sortedGroups);
-                setIsAssetsLoading(false);
-                
-                if (!activeSymbol && sortedGroups.length > 0 && sortedGroups[0].options.length > 0) {
-                    setActiveSymbol(sortedGroups[0].options[0].value);
-                } else if (activeSymbol) {
-                    // Se já houver um activeSymbol, re-subscreve
-                    await subscribeToStreams(activeSymbol);
-                }
-            } catch (error: any) {
-                const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
-                setConnectionError(`Falha na autorização: ${errorMessage}`);
-                setIsConnected(false); setIsConnecting(false); setIsAssetsLoading(false);
-                if (ws.readyState === WebSocket.OPEN) ws.close();
-            }
-        };
-        
         ws.onmessage = (event) => {
             try {
                 const response = JSON.parse(event.data);
@@ -662,7 +620,36 @@ export const DerivApiProviderAccumulators = ({ children }: { children: ReactNode
                 console.error('[Deriv WS] Parse error:', parseError);
             }
         };
-        
+        ws.onopen = async () => {
+            try {
+                await makeRequest({ authorize: activeToken });
+                setIsConnected(true);
+                setIsConnecting(false);
+                setConnectionError(null);
+                setLastPingTime(Date.now());
+                ws.send(JSON.stringify({ "proposal_open_contract": 1, "subscribe": 1 }));
+                ws.send(JSON.stringify({ "balance": 1, "subscribe": 1 }));
+                startConnectionMonitor();
+                const assetsRes: any = await makeRequest({ active_symbols: 'full', product_type: 'basic' });
+                const filteredSymbols = assetsRes.active_symbols.filter((symbol: any) => symbol.market === 'synthetic_index' && symbol.allow_accumulator_contracts === 1);
+                const groupedAssets: { [key: string]: Asset[] } = {};
+                filteredSymbols.forEach((symbol: any) => {
+                    const groupName = marketNameMapping[symbol.market] || 'Outros';
+                    if (!groupedAssets[groupName]) groupedAssets[groupName] = [];
+                    groupedAssets[groupName].push({ value: symbol.symbol, label: symbol.display_name, marketIsOpen: symbol.exchange_is_open === 1, submarket: symbol.submarket, market: symbol.market, minDuration: 'N/A' });
+                });
+                setAssetGroups(Object.keys(groupedAssets)
+                    .map(label => ({ label, options: groupedAssets[label].sort((a, b) => a.label.localeCompare(b.label)) }))
+                    .sort((a, b) => a.label.localeCompare(b.label)));
+                setIsAssetsLoading(false);
+                if (activeSymbol) await subscribeToStreams(activeSymbol);
+            } catch (error: any) {
+                const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+                setConnectionError(`Falha na autorização: ${errorMessage}`);
+                setIsConnected(false); setIsConnecting(false); setIsAssetsLoading(false);
+                if (ws.readyState === WebSocket.OPEN) ws.close();
+            }
+        };
         ws.onclose = (event) => {
           if (!wsRef.current) return;
           if (pingIntervalRef.current) clearInterval(pingIntervalRef.current);
@@ -687,11 +674,14 @@ export const DerivApiProviderAccumulators = ({ children }: { children: ReactNode
     };
   }, [activeToken, isLoading, makeRequest, toast, triggerReconnect, setToastQueue, startConnectionMonitor, addTradeAnnotation, updateTradeAnnotation, setAndPersistOperationsLog, subscribeToStreams]);
 
+  const isInitialMount = useRef(true);
   useEffect(() => {
-    if (isConnected && activeSymbol) {
-        subscribeToStreams(activeSymbol);
+    if (isInitialMount.current) {
+        isInitialMount.current = false;
+        return;
     }
-  }, [isConnected, activeSymbol, timePeriod, chartType, subscribeToStreams]);
+    reconnect();
+  }, [activeSymbol, chartType, timePeriod]);
   
   const setAccountType = useCallback((type: AccountType) => {
     try {
