@@ -19,7 +19,8 @@ O Deriv Accumulators abandona a necessidade de prever a direção do mercado. O 
 4.  **Gestão de Risco e Saída Multi-Fator (Foco no Tempo):**
     *   **Alvo de Lucro (Take Profit):** Um lucro de **125% sobre o valor da aposta** é o alvo, capturando ganhos significativos em períodos de estabilidade.
     *   **"Kill Switch" Temporal e Adaptativo:** Se o alvo de lucro não for atingido em **45 segundos**, a posição é encerrada para limitar a exposição ao risco. Se esta saída resultar em perda, o sistema "aprende" e **reduzirá o tempo do próximo "Kill Switch"**, adaptando-se ao ritmo real do mercado.
-    *   **Veto de Volatilidade:** A posição é encerrada prematuramente se qualquer indicador (BBW, ATR ou ADX) sinalizar um aumento súbito de risco.
+    *   **Veto de Volatilidade Macro:** A posição é encerrada prematuramente se qualquer indicador (BBW, ATR ou ADX) sinalizar um aumento súbito de risco.
+    *   **Veto de Micro-Volatilidade (NOVO):** Um "disjuntor" de alta frequência monitoriza o desvio padrão dos últimos 10 ticks. Se a volatilidade instantânea explodir (ex: 2.5x a volatilidade no momento da entrada), a posição é vendida imediatamente para prevenir perdas por picos súbitos.
     *   **Stop-Loss de Capital:** Como uma rede de segurança final, a posição é vendida se a perda atingir 50% do valor da aposta, transformando uma perda potencial de 100% numa perda máxima e controlada.
     *   **Gerente de Risco Estratégico:** Após uma perda, o sistema diagnostica a causa (tempo ou volatilidade) e ajusta a sua estratégia futura, seja tornando os seus critérios de entrada mais rigorosos ou reduzindo o seu tempo de exposição.
 
@@ -53,7 +54,7 @@ Este hook contém a inteligência do piloto automático, projetado especificamen
         *   **Alvo de Lucro (Take Profit):** Atinge um lucro de 125% do valor da aposta.
         *   **"Kill Switch" Temporal:** O alvo de lucro não é atingido no tempo de segurança adaptativo (inicialmente 45 segundos).
         *   **Stop-Loss de Capital:** A perda atinge 50% do valor da aposta inicial.
-        *   **Expansão da Volatilidade:** O BBW, o ATR ou o ADX aumentam subitamente, indicando que o período de "calmaria" terminou.
+        *   **Veto de Volatilidade (Macro e Micro):** O BBW, o ATR, o ADX ou a volatilidade instantânea dos ticks aumentam subitamente, indicando que o período de "calmaria" terminou.
     5.  **Gerente de Risco Estratégico (Auto-Calibração):** Após cada perda, o sistema diagnostica a causa (tempo ou volatilidade). Se a perda foi por tempo, ele **reduz o próximo "Kill Switch"**. Se foi por volatilidade, ele aumenta o limiar de "Calmaria" para ser mais seletivo. Após uma vitória, ele gradualmente retorna aos parâmetros normais.
 
 ### 2.3. Camada de Interface: `deriv-trader-accumulators/page.tsx`
