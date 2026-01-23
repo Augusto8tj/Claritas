@@ -50,8 +50,8 @@ export function VirtualArenaAccumulators({ virtualOperations }: VirtualArenaAccu
                         <p className="text-xs text-muted-foreground">Taxa de Acerto Virtual</p>
                         <p className={cn(
                             "text-lg font-bold",
-                            summary.winRate >= 50 && "text-green-600",
-                            summary.winRate < 50 && "text-destructive"
+                            summary.winRate >= 75 && "text-green-600",
+                            summary.winRate < 75 && "text-destructive"
                         )}>
                             {summary.winRate.toFixed(1)}%
                         </p>
@@ -66,13 +66,16 @@ export function VirtualArenaAccumulators({ virtualOperations }: VirtualArenaAccu
                                 <p>Nenhuma simulação concluída ainda.</p>
                             </div>
                         ) : (
-                            virtualOperations.map((op) => (
+                            virtualOperations.map((op) => {
+                                const duration = op.exitTime - op.entryTime;
+                                return (
                                 <div key={op.id} className="flex items-center justify-between gap-4 border-b pb-2 last:border-b-0 last:pb-0">
                                     <div className="flex-1 space-y-1">
                                         <p className="font-mono text-xs text-muted-foreground">ID: {op.id}</p>
-                                        <div className="flex items-center gap-2 text-xs">
-                                             <div className="flex items-center gap-1"><Timer className="h-3 w-3"/><span>{formatTime(op.entryTime)}</span></div>
+                                        <div className="flex items-center gap-4 text-xs">
+                                             <div className="flex items-center gap-1"><Timer className="h-3 w-3"/><span>Entrada: {formatTime(op.entryTime)}</span></div>
                                              <div className="flex items-center gap-1"><BarChart2 className="h-3 w-3"/><span>Calma: {op.initialConditions.calmnessScore.toFixed(0)}</span></div>
+                                             <div className="flex items-center gap-1"><Timer className="h-3 w-3"/><span>Duração: {duration}s</span></div>
                                         </div>
                                     </div>
                                     <div className="flex flex-col items-end">
@@ -85,7 +88,7 @@ export function VirtualArenaAccumulators({ virtualOperations }: VirtualArenaAccu
                                         <p className="text-[10px] text-muted-foreground mt-1">{op.reason}</p>
                                     </div>
                                 </div>
-                            ))
+                            )})
                         )}
                     </div>
                 </ScrollArea>

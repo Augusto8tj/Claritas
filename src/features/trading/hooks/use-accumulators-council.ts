@@ -232,6 +232,17 @@ export function useAccumulatorsCouncil() {
         .filter(op => op.status !== 'pending' && new Date(op.timestamp).toDateString() === today && op.initiator === 'Piloto')
         .reduce((sum, op) => sum + (op.result || 0), 0);
   }, [operationsLog]);
+  
+  const virtualArenaStats = useMemo(() => {
+    const recentTrades = virtualOperationsLog.slice(0, 100);
+    if (recentTrades.length === 0) return { wins: 0, losses: 0, winRate: 100 };
+    const wins = recentTrades.filter(op => op.status === 'win').length;
+    const losses = recentTrades.filter(op => op.status === 'loss').length;
+    const total = wins + losses;
+    const winRate = total > 0 ? (wins / total) * 100 : 100;
+    return { wins, losses, winRate };
+  }, [virtualOperationsLog]);
+
 
   const toggleAutopilot = useCallback(() => {
     setIsAutopilotOn(prev => !prev);
@@ -421,7 +432,6 @@ export function useAccumulatorsCouncil() {
       const finalCalmnessScore = (adxScore * 0.20) + (bbwScore * 0.20) + (tickVolatilityScore * 0.40) + (accelerationScore * 0.10) + (tickConsistencyScore * 0.10);
       setCalmnessScore(finalCalmnessScore);
       
-      // ARENA VIRTUAL: Resolve trades passados
       const nowEpoch = priceTicks[priceTicks.length-1]?.epoch;
       if(nowEpoch) {
           const finishedTrades: VirtualOperation[] = [];
@@ -519,12 +529,31 @@ export function useAccumulatorsCouncil() {
 
         setEntryConditions({ calmnessScore: calmnessScoreMet, bbwIsLow, atrIsLow, zScoreIsStable });
         
+        const VIRTUAL_WIN_RATE_THRESHOLD = 75;
+        const isArenaHealthy = virtualArenaStats.winRate >= VIRTUAL_WIN_RATE_THRESHOLD;
+        
+        if (!isArenaHealthy && riskManager.mode === 'Normal') {
+            setRiskManager(prev => ({
+              ...prev,
+              mode: 'Cautious',
+              lastLossReason: `Baixa performance da Arena (${virtualArenaStats.winRate.toFixed(0)}% WR)`,
+              calmnessScoreThreshold: Math.min(85, prev.calmnessScoreThreshold + 5),
+            }));
+            setTimeout(() => toast({ title: '🤖 Gerente: Prevenção Ativada!', description: 'A Arena Virtual indica alto risco. Aumentando a cautela.', variant: "default" }), 0);
+        } else if (isArenaHealthy && riskManager.mode === 'Cautious' && riskManager.lastLossReason?.includes('Arena')) {
+            setRiskManager(prev => ({
+              ...prev,
+              mode: 'Normal',
+              lastLossReason: null,
+              calmnessScoreThreshold: BASE_CALMNESS_THRESHOLD,
+            }));
+        }
+
         const isCalm = calmnessScoreMet && bbwIsLow && atrIsLow && zScoreIsStable;
 
         if (isCalm) {
           const stake = Math.max(1.0, Math.min(dailyBalance * 0.1, 10));
-
-          // ARENA VIRTUAL: Cria trade virtual
+          
           const newVirtualTrade: VirtualOperation = {
               id: `vt_${Date.now()}`,
               entryPrice: priceTicks[priceTicks.length - 1].price,
@@ -540,7 +569,6 @@ export function useAccumulatorsCouncil() {
           activeVirtualTradesRef.current.push(newVirtualTrade);
           setVirtualTradeCounter(c => c + 1);
           
-          // AÇÃO REAL
           setBotStatus('CALM_DETECTED');
           entryVolatilityRef.current = calculateMultiScaleVolatility(priceTicks);
           setTimeout(() => toast({ title: "🤖 Piloto: Posição Aberta!", description: `Calmaria detectada. Contrato aberto com taxa de ${DEFAULT_GROWTH_RATE * 100}%.` }), 0);
@@ -553,7 +581,7 @@ export function useAccumulatorsCouncil() {
       executionRef.current = false;
     };
     runCycle();
-  }, [ isAutopilotOn, isConnected, activeSymbol, dataVersion, botCandleData, priceTicks, dailyPnL, dailyBalance, dailyTarget, executeTrade, sellContract, toast, analyzeAndAdjustStrategy, operationsLog, botStatus, riskManager.adaptiveDuration ]);
+  }, [ isAutopilotOn, isConnected, activeSymbol, dataVersion, botCandleData, priceTicks, dailyPnL, dailyBalance, dailyTarget, executeTrade, sellContract, toast, analyzeAndAdjustStrategy, operationsLog, botStatus, riskManager.adaptiveDuration, virtualArenaStats ]);
 
   return { isAutopilotOn, toggleAutopilot, botStatus, volatilityMetrics: metrics, dailyBalance, setDailyBalance, dailyTarget, setDailyTarget, dailyPnL, riskManager, calmnessScore, entryConditions, virtualOperationsLog, virtualTradeCounter };
 }
