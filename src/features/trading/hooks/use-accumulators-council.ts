@@ -62,6 +62,13 @@ export function useAccumulatorsCouncil() {
     calmnessScoreThreshold: BASE_CALMNESS_THRESHOLD,
     adaptiveDuration: KILL_SWITCH_SECONDS,
   });
+  
+  const [entryConditions, setEntryConditions] = useState({
+    calmnessScore: false,
+    bbwIsLow: false,
+    atrIsLow: false,
+    zScoreIsStable: false,
+  });
 
   const lastOpIdRef = useRef<number>(0);
   const executionRef = useRef(false);
@@ -303,11 +310,19 @@ export function useAccumulatorsCouncil() {
         setCalmnessScore(finalCalmnessScore);
         
         // CONFLUÊNCIA DE CONDIÇÕES
+        const calmnessScoreMet = finalCalmnessScore >= riskManager.calmnessScoreThreshold;
         const bbwIsLow = bbw! < localMetrics.avgBbw;
         const atrIsLow = calculatedIndicators.atr! < localMetrics.avgAtr;
         const zScoreIsStable = Math.abs(zScore || 0) < 1.0;
 
-        const isCalm = finalCalmnessScore >= riskManager.calmnessScoreThreshold && bbwIsLow && atrIsLow && zScoreIsStable;
+        setEntryConditions({
+          calmnessScore: calmnessScoreMet,
+          bbwIsLow,
+          atrIsLow,
+          zScoreIsStable,
+        });
+        
+        const isCalm = calmnessScoreMet && bbwIsLow && atrIsLow && zScoreIsStable;
 
         if (isCalm) {
           setBotStatus('CALM_DETECTED');
@@ -336,5 +351,5 @@ export function useAccumulatorsCouncil() {
       riskManager, analyzeAndAdjustStrategy, operationsLog, botStatus, adaptiveKillSwitch
   ]);
 
-  return { isAutopilotOn, toggleAutopilot, botStatus, volatilityMetrics: metrics, dailyBalance, setDailyBalance, dailyTarget, setDailyTarget, dailyPnL, riskManager, calmnessScore };
+  return { isAutopilotOn, toggleAutopilot, botStatus, volatilityMetrics: metrics, dailyBalance, setDailyBalance, dailyTarget, setDailyTarget, dailyPnL, riskManager, calmnessScore, entryConditions };
 }

@@ -12,7 +12,7 @@ import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Bot, Zap, Waves, TrendingUp, Wallet, ShieldCheck, AlertCircle, Clock } from "lucide-react";
+import { Bot, Zap, Waves, TrendingUp, Wallet, ShieldCheck, AlertCircle, Clock, CheckCircle, XCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { useAccumulatorsCouncil } from "../../hooks/use-accumulators-council";
 import { Separator } from "@/components/ui/separator";
@@ -21,6 +21,17 @@ import { Progress } from "@/components/ui/progress";
 
 
 interface AccumulatorsAutopilotInterfaceProps extends ReturnType<typeof useAccumulatorsCouncil> {}
+
+const ConditionCheck = ({ label, isMet }: { label: string, isMet: boolean }) => (
+    <div className={cn(
+        "flex items-center justify-between text-xs p-2 rounded-md",
+        isMet ? 'bg-green-500/10 text-green-800 dark:text-green-300' : 'bg-red-500/10 text-red-800 dark:text-red-300'
+    )}>
+        <span className="font-medium">{label}</span>
+        {isMet ? <CheckCircle className="h-4 w-4" /> : <XCircle className="h-4 w-4" />}
+    </div>
+);
+
 
 export function AccumulatorsAutopilotInterface({
   isAutopilotOn,
@@ -34,6 +45,7 @@ export function AccumulatorsAutopilotInterface({
   dailyPnL,
   riskManager,
   calmnessScore,
+  entryConditions,
 }: AccumulatorsAutopilotInterfaceProps) {
   
   const statusInfo = {
@@ -137,6 +149,16 @@ export function AccumulatorsAutopilotInterface({
             <p className="text-xs text-muted-foreground pt-1 text-center">
                 O piloto entrará quando o nível de calmaria (azul) ultrapassar o limiar de entrada (vermelho).
             </p>
+        </div>
+
+        <Separator />
+
+        <div className="space-y-2">
+            <Label className="font-semibold">Checklist de Entrada</Label>
+            <ConditionCheck label="Nível de Calmaria" isMet={entryConditions.calmnessScore} />
+            <ConditionCheck label="Compressão (BBW)" isMet={entryConditions.bbwIsLow} />
+            <ConditionCheck label="Volatilidade (ATR)" isMet={entryConditions.atrIsLow} />
+            <ConditionCheck label="Estabilidade (Z-Score)" isMet={entryConditions.zScoreIsStable} />
         </div>
 
         <Separator />
