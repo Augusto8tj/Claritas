@@ -1,4 +1,4 @@
-// src/features/trading/hooks/use-deriv-api-accumulators.tsx
+// /src/features/trading/hooks/use-deriv-api-accumulators.tsx
 'use client';
 
 import { createContext, useContext, useState, useEffect, type ReactNode, useCallback, useRef } from 'react';
@@ -90,6 +90,9 @@ const marketNameMapping: Record<string, string> = {
     'synthetic_index': 'Índices Sintéticos',
     'forex': 'Forex',
     'commodities': 'Matérias-Primas',
+    'stock_index': 'Índices de Ações',
+    'cryptocurrency': 'Criptomoedas',
+    'basket_index': 'Cestas de Moedas e Matérias-Primas'
 };
 
 const getGranularityForTimePeriod = (timePeriod: TimePeriod): number => {
@@ -484,18 +487,62 @@ export const DerivApiProviderAccumulators = ({ children }: { children: ReactNode
     }, 30000);
   }, []);
   
+  // Efeito principal para gerir a conexão WebSocket
   useEffect(() => {
     if (!activeToken || isLoading) {
-      if (wsRef.current) wsRef.current.close();
+      if (wsRef.current) { wsRef.current.close(); wsRef.current = null; }
       return;
     }
+    
     const connect = () => {
         setIsConnecting(true);
         setConnectionError(null);
         setIsAssetsLoading(true);
-        if (wsRef.current) wsRef.current.close();
+        if (wsRef.current) { wsRef.current.close(); wsRef.current = null; }
+        
         const ws = new WebSocket(`wss://ws.derivws.com/websockets/v3?app_id=${DERIV_APP_ID}`);
         wsRef.current = ws;
+
+        ws.onopen = async () => {
+            try {
+                await makeRequest({ authorize: activeToken });
+                setIsConnected(true);
+                setIsConnecting(false);
+                setConnectionError(null);
+                setLastPingTime(Date.now());
+                ws.send(JSON.stringify({ "proposal_open_contract": 1, "subscribe": 1 }));
+                ws.send(JSON.stringify({ "balance": 1, "subscribe": 1 }));
+                startConnectionMonitor();
+                const assetsRes: any = await makeRequest({ active_symbols: 'full', product_type: 'basic' });
+                
+                const filteredSymbols = assetsRes.active_symbols.filter((symbol: any) => symbol.allow_accumulator_contracts === 1);
+                
+                const groupedAssets: { [key: string]: Asset[] } = {};
+                filteredSymbols.forEach((symbol: any) => {
+                    const marketKey = (symbol.market === 'synthetic_index' && symbol.submarket === 'basket_index') ? 'basket_index' : symbol.market;
+                    const groupName = marketNameMapping[marketKey] || 'Outros';
+                    if (!groupedAssets[groupName]) groupedAssets[groupName] = [];
+                    groupedAssets[groupName].push({ value: symbol.symbol, label: symbol.display_name, marketIsOpen: symbol.exchange_is_open === 1, submarket: symbol.submarket, market: marketKey, minDuration: 'N/A' });
+                });
+                
+                const sortedGroups = Object.keys(groupedAssets)
+                    .map(label => ({ label, options: groupedAssets[label].sort((a, b) => a.label.localeCompare(b.label)) }))
+                    .sort((a, b) => a.label.localeCompare(b.label));
+
+                setAssetGroups(sortedGroups);
+                setIsAssetsLoading(false);
+                
+                if (!activeSymbol && sortedGroups.length > 0 && sortedGroups[0].options.length > 0) {
+                    setActiveSymbol(sortedGroups[0].options[0].value);
+                }
+            } catch (error: any) {
+                const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+                setConnectionError(`Falha na autorização: ${errorMessage}`);
+                setIsConnected(false); setIsConnecting(false); setIsAssetsLoading(false);
+                if (ws.readyState === WebSocket.OPEN) ws.close();
+            }
+        };
+        
         ws.onmessage = (event) => {
             try {
                 const response = JSON.parse(event.data);
@@ -506,12 +553,7 @@ export const DerivApiProviderAccumulators = ({ children }: { children: ReactNode
                     const promise = promisesRef.current.get(String(reqId));
                     if (promise) {
                         if (response.error) {
-                            if (response.error.code === 'AlreadySubscribed') {
-                                console.warn(`[Deriv WS] Ignorando erro 'AlreadySubscribed' para req_id ${reqId}. A subscrição provavelmente já existe.`);
-                                promise.resolve(response);
-                            } else {
-                                promise.reject(new Error(response.error.message));
-                            }
+                            promise.reject(new Error(response.error.message));
                         } else {
                             promise.resolve(response);
                         }
@@ -570,33 +612,22 @@ export const DerivApiProviderAccumulators = ({ children }: { children: ReactNode
                         });
                         break;
                     case 'tick':
-                        if (response.tick && isValidPrice(response.tick.quote)) {
+                        if (response.subscription.id === tickSubscriptionIdRef.current) {
                             const newTick = { epoch: response.tick.epoch, price: response.tick.quote };
+                            setChartData(prev => addDataPoint(prev, newTick));
                             setPriceTicks(prev => addDataPoint(prev, newTick) as TickData[]);
-                             if (chartTypeRef.current === 'Area') {
-                                setChartData(prev => addDataPoint(prev, newTick));
-                            }
                             setDataVersion(v => v + 1);
                         }
                         break;
                     case 'ohlc':
-                        const candleData = response.ohlc;
-                        if (candleData && candleData.symbol === activeSymbol) {
-                             const newCandle: CandleData = {
-                                epoch: candleData.open_time || candleData.epoch,
-                                open: parseFloat(candleData.open),
-                                high: parseFloat(candleData.high),
-                                low: parseFloat(candleData.low),
-                                close: parseFloat(candleData.close),
-                                volume: candleData.tick_count || 1
+                        if (response.subscription.id === botSubscriptionIdRef.current) {
+                            const candleData = response.ohlc;
+                            const newCandle: CandleData = {
+                                epoch: candleData.open_time, open: parseFloat(candleData.open),
+                                high: parseFloat(candleData.high), low: parseFloat(candleData.low),
+                                close: parseFloat(candleData.close), volume: candleData.tick_count || 1,
                              };
-                    
-                             if(response.subscription?.id === botSubscriptionIdRef.current) {
-                                setBotCandleData(prev => addDataPoint(prev, newCandle) as CandleData[]);
-                             }
-                             else if (response.subscription?.id === activeSubscriptionIdRef.current) {
-                                setChartData(prev => addDataPoint(prev, newCandle));
-                             }
+                            setBotCandleData(prev => addDataPoint(prev, newCandle) as CandleData[]);
                             const newTickFromCandle: TickData = { epoch: newCandle.epoch, price: newCandle.close };
                             setPriceTicks(prev => addDataPoint(prev, newTickFromCandle) as TickData[]);
                              setDataVersion(v => v + 1);
@@ -607,45 +638,7 @@ export const DerivApiProviderAccumulators = ({ children }: { children: ReactNode
                 console.error('[Deriv WS] Parse error:', parseError);
             }
         };
-        ws.onopen = async () => {
-            try {
-                await makeRequest({ authorize: activeToken });
-                setIsConnected(true);
-                setIsConnecting(false);
-                setConnectionError(null);
-                setLastPingTime(Date.now());
-                ws.send(JSON.stringify({ "proposal_open_contract": 1, "subscribe": 1 }));
-                ws.send(JSON.stringify({ "balance": 1, "subscribe": 1 }));
-                startConnectionMonitor();
-                const assetsRes: any = await makeRequest({ active_symbols: 'full', product_type: 'basic' });
-                const filteredSymbols = assetsRes.active_symbols.filter((symbol: any) => symbol.allow_accumulator_contracts === 1);
-                
-                const groupedAssets: { [key: string]: Asset[] } = {};
-                filteredSymbols.forEach((symbol: any) => {
-                    const groupName = marketNameMapping[symbol.market] || 'Outros';
-                    if (!groupedAssets[groupName]) groupedAssets[groupName] = [];
-                    groupedAssets[groupName].push({ value: symbol.symbol, label: symbol.display_name, marketIsOpen: symbol.exchange_is_open === 1, submarket: symbol.submarket, market: symbol.market, minDuration: 'N/A' });
-                });
-                
-                const sortedGroups = Object.keys(groupedAssets)
-                    .map(label => ({ label, options: groupedAssets[label].sort((a, b) => a.label.localeCompare(b.label)) }))
-                    .sort((a, b) => a.label.localeCompare(b.label));
 
-                setAssetGroups(sortedGroups);
-                setIsAssetsLoading(false);
-                
-                if (!activeSymbol && sortedGroups.length > 0 && sortedGroups[0].options.length > 0) {
-                    setActiveSymbol(sortedGroups[0].options[0].value);
-                } else if (activeSymbol) {
-                    await subscribeToStreams(activeSymbol);
-                }
-            } catch (error: any) {
-                const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
-                setConnectionError(`Falha na autorização: ${errorMessage}`);
-                setIsConnected(false); setIsConnecting(false); setIsAssetsLoading(false);
-                if (ws.readyState === WebSocket.OPEN) ws.close();
-            }
-        };
         ws.onclose = (event) => {
           if (!wsRef.current) return;
           if (pingIntervalRef.current) clearInterval(pingIntervalRef.current);
@@ -660,15 +653,18 @@ export const DerivApiProviderAccumulators = ({ children }: { children: ReactNode
           setAccountBalance({ balance: null, currency: null, loading: false });
           wsRef.current = null;
         };
+
         ws.onerror = () => { /* Silencioso */ };
     };
+
     connect();
+    
     return () => {
       if (wsRef.current) { wsRef.current.onclose = null; wsRef.current.close(); }
       if (pingIntervalRef.current) clearInterval(pingIntervalRef.current);
       if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
     };
-  }, [activeToken, isLoading, makeRequest, toast, triggerReconnect, setToastQueue, startConnectionMonitor, addTradeAnnotation, updateTradeAnnotation, setAndPersistOperationsLog]);
+  }, [activeToken, isLoading, triggerReconnect]);
 
   useEffect(() => {
     if (isConnected && activeSymbol) {
