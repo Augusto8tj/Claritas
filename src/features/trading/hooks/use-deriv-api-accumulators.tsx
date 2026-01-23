@@ -581,7 +581,7 @@ export const DerivApiProviderAccumulators = ({ children }: { children: ReactNode
                         break;
                     case 'ohlc':
                         const candleData = response.ohlc;
-                        if (candleData && candleData.symbol === activeSymbol && isValidPrice(candleData.close)) {
+                        if (candleData && candleData.symbol === activeSymbol) {
                              const newCandle: CandleData = {
                                 epoch: candleData.open_time || candleData.epoch,
                                 open: parseFloat(candleData.open),
@@ -593,14 +593,12 @@ export const DerivApiProviderAccumulators = ({ children }: { children: ReactNode
                     
                              if(response.subscription?.id === botSubscriptionIdRef.current) {
                                 setBotCandleData(prev => addDataPoint(prev, newCandle) as CandleData[]);
-                                // Adicionado para manter os ticks sincronizados com as velas do bot
-                                const newTickFromCandle: TickData = { epoch: newCandle.epoch, price: newCandle.close };
-                                setPriceTicks(prev => addDataPoint(prev, newTickFromCandle) as TickData[]);
                              }
                              else if (response.subscription?.id === activeSubscriptionIdRef.current) {
                                 setChartData(prev => addDataPoint(prev, newCandle));
                              }
-                    
+                            const newTickFromCandle: TickData = { epoch: newCandle.epoch, price: newCandle.close };
+                            setPriceTicks(prev => addDataPoint(prev, newTickFromCandle) as TickData[]);
                              setDataVersion(v => v + 1);
                         }
                         break;
@@ -676,7 +674,7 @@ export const DerivApiProviderAccumulators = ({ children }: { children: ReactNode
     if (isConnected && activeSymbol) {
         subscribeToStreams(activeSymbol);
     }
-  }, [isConnected, activeSymbol, timePeriod, chartType]);
+  }, [isConnected, activeSymbol, timePeriod, chartType, subscribeToStreams]);
   
   const setAccountType = useCallback((type: AccountType) => {
     try {
