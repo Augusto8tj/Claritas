@@ -88,9 +88,9 @@ export const useManualTimeApprentice = (
     // Determine the stake to use for profit calculation
     const stake = activeManualTrade?.stake || formStake || 1.0;
 
-    // 3. Calculate take-profit target
+    // 3. Calculate take-profit target - NOW PROPORTIONAL TO VOLATILITY
     const volatilityFactor = 1 + (maxVolatility * APPRENTICE_CONFIG.VOLATILITY_SENSITIVITY);
-    const profitSuggestion = (APPRENTICE_CONFIG.BASE_TAKE_PROFIT / volatilityFactor) * stake;
+    const profitSuggestion = (APPRENTICE_CONFIG.BASE_TAKE_PROFIT * volatilityFactor) * stake;
     const minProfit = stake * APPRENTICE_CONFIG.MIN_PROFIT_PERCENTAGE;
     const finalTakeProfit = Math.max(minProfit, profitSuggestion);
 
