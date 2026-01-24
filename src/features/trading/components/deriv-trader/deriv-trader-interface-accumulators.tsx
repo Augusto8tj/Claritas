@@ -38,13 +38,12 @@ interface DerivTraderInterfaceProps {
 export default function DerivTraderInterfaceAccumulators({ symbol }: DerivTraderInterfaceProps) {
   const { toast } = useToast();
   const [loading, setLoading] = useState(false);
-  const { isConnected, executeTrade, priceTicks } = useDerivApiAccumulators();
+  const { isConnected, executeTrade, priceTicks, operationsLog, sellContract } = useDerivApiAccumulators();
   const form = useFormContext<AccumulatorFormValues>();
   
   const growthRateValue = form.watch('growth_rate');
-  const stakeValue = form.watch('stake');
-
-  const { isMarketCalm, suggestedTakeProfit } = useManualTimeApprentice(priceTicks, stakeValue);
+  
+  const { isMarketCalm, suggestedTakeProfit } = useManualTimeApprentice(priceTicks, operationsLog, sellContract);
 
   const handleStakeChange = (amount: number) => {
     const currentStake = form.getValues('stake') || 0;
