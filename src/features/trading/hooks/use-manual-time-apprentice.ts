@@ -43,7 +43,8 @@ export interface ManualTimeApprenticeState {
 export const useManualTimeApprentice = (
   priceTicks: TickData[],
   operationsLog: Operation[],
-  sellContract: (contractId: number) => Promise<any>
+  sellContract: (contractId: number) => Promise<any>,
+  formStake: number
 ): ManualTimeApprenticeState => {
   const { toast } = useToast();
   const [state, setState] = useState<ManualTimeApprenticeState>({
@@ -85,7 +86,7 @@ export const useManualTimeApprentice = (
     const calm = maxVolatility < APPRENTICE_CONFIG.VOLATILITY_THRESHOLD;
     
     // Determine the stake to use for profit calculation
-    const stake = activeManualTrade?.stake || 1.0;
+    const stake = activeManualTrade?.stake || formStake || 1.0;
 
     // 3. Calculate take-profit target
     const volatilityFactor = 1 + (maxVolatility * APPRENTICE_CONFIG.VOLATILITY_SENSITIVITY);
@@ -118,7 +119,7 @@ export const useManualTimeApprentice = (
           });
         }
     }
-  }, [priceTicks, activeManualTrade, sellContract, toast]);
+  }, [priceTicks, activeManualTrade, sellContract, toast, formStake]);
 
   return state;
 };

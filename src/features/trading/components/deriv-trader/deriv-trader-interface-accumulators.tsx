@@ -45,8 +45,14 @@ export default function DerivTraderInterfaceAccumulators({ symbol }: DerivTrader
   const form = useFormContext<AccumulatorFormValues>();
   
   const growthRateValue = form.watch('growth_rate');
+  const stakeValue = form.watch('stake');
   
-  const { isMarketCalm, suggestedTakeProfit, volatilityDetails } = useManualTimeApprentice(priceTicks, operationsLog, sellContract);
+  const { isMarketCalm, suggestedTakeProfit, volatilityDetails } = useManualTimeApprentice(
+    priceTicks, 
+    operationsLog, 
+    sellContract,
+    stakeValue
+  );
 
   const handleStakeChange = (amount: number) => {
     const currentStake = form.getValues('stake') || 0;
