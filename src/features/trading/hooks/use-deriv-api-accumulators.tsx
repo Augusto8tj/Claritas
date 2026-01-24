@@ -237,9 +237,9 @@ export const DerivApiProviderAccumulators = ({ children }: { children: ReactNode
             const timeoutId = setTimeout(() => {
                 if (promisesRef.current.has(String(req_id))) {
                     promisesRef.current.delete(String(req_id));
-                    reject(new Error(`O pedido à API expirou (15s).`));
+                    reject(new Error(`O pedido à API expirou (60s). O token pode ser inválido ou a rede está lenta.`));
                 }
-            }, 15000);
+            }, 60000);
             
             promisesRef.current.set(String(req_id), {
                 resolve: (value: any) => {
@@ -321,7 +321,6 @@ export const DerivApiProviderAccumulators = ({ children }: { children: ReactNode
         throw new Error("A conexão com a API da Deriv não está ativa.");
       }
       const sanitizedStake = parseFloat(stake.toFixed(2));
-      
       const buyRequest: any = {
         buy: "1",
         price: sanitizedStake,
@@ -397,7 +396,7 @@ export const DerivApiProviderAccumulators = ({ children }: { children: ReactNode
     }
     try {
         sellingContractsRef.current.add(contractId);
-        const sellResponse: any = await makeRequest({ sell: contractId, price: 0 }); 
+        const sellResponse: any = await makeRequest({ sell: contractId, price: 0 });
         const sellResult = sellResponse.sell;
         if (sellResult) {
             return { success: true, message: `Ordem de venda para o contrato ${contractId} enviada.` };
