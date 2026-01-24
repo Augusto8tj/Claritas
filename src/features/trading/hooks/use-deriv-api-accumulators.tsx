@@ -321,6 +321,7 @@ export const DerivApiProviderAccumulators = ({ children }: { children: ReactNode
         throw new Error("A conexão com a API da Deriv não está ativa.");
       }
       const sanitizedStake = parseFloat(stake.toFixed(2));
+      
       const buyRequest: any = {
         buy: "1",
         price: sanitizedStake,
@@ -679,7 +680,7 @@ export const DerivApiProviderAccumulators = ({ children }: { children: ReactNode
     if (isConnected && activeSymbol) {
         subscribeToStreams(activeSymbol);
     }
-  }, [isConnected, activeSymbol, timePeriod, chartType]);
+  }, [isConnected, activeSymbol, timePeriod, chartType, subscribeToStreams]);
   
   const setAccountType = useCallback((type: AccountType) => {
     try {
@@ -749,5 +750,3 @@ export function useDerivApiAccumulators() {
   }
   return context;
 }
-
-    
