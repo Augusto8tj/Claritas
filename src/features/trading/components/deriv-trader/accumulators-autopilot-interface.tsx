@@ -14,7 +14,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Bot, Zap, Waves, TrendingUp, Wallet, ShieldCheck, AlertCircle, Clock, CheckCircle, XCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
-import type { useAccumulatorsCouncil } from "../../hooks/use-accumulators-council";
+import type { useAccumulatorsCouncil, BreakdownStatistics } from "../../hooks/use-accumulators-council";
 import { Separator } from "@/components/ui/separator";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Progress } from "@/components/ui/progress";
@@ -46,6 +46,7 @@ export function AccumulatorsAutopilotInterface({
   riskManager,
   calmnessScore,
   entryConditions,
+  breakdownStatistics,
 }: AccumulatorsAutopilotInterfaceProps) {
   
   const statusInfo = {
@@ -188,19 +189,36 @@ export function AccumulatorsAutopilotInterface({
                             <Badge variant={riskManager.mode === 'Cautious' ? 'destructive' : 'secondary'}>{riskManager.mode}</Badge>
                         </div>
                         <div className="p-2 border rounded-lg bg-muted/50">
-                             <p className="text-muted-foreground font-semibold mb-1">Duração Adaptativa</p>
+                             <p className="text-muted-foreground font-semibold mb-1">Kill Switch Ativo</p>
                              <p className="font-bold text-sm text-foreground">{riskManager.adaptiveDuration}s</p>
                         </div>
                     </div>
-                    {riskManager.mode === 'Cautious' && (
+                     {riskManager.lastLossReason && (
                         <Alert variant="destructive" className="text-xs">
                             <AlertCircle className="h-4 w-4" />
-                            <AlertTitle>Parâmetros Ajustados!</AlertTitle>
+                            <AlertTitle>Motivo do Ajuste</AlertTitle>
                             <AlertDescription>
                                 {riskManager.lastLossReason}
                             </AlertDescription>
                         </Alert>
                     )}
+                </div>
+                 <Separator />
+                <div className="space-y-3">
+                    <h4 className="font-headline flex items-center gap-2">
+                        <Clock className="h-5 w-5 text-primary/80" />
+                        Mestre do Tempo (IA)
+                    </h4>
+                    <div className="grid grid-cols-2 gap-3 text-center text-xs">
+                        <div className="p-2 border rounded-lg bg-muted/50">
+                            <p className="text-muted-foreground font-semibold mb-1">Quebra Média (Arena)</p>
+                            <p className="font-bold text-sm text-foreground">{breakdownStatistics.averageTime.toFixed(1)}s</p>
+                        </div>
+                        <div className="p-2 border rounded-lg bg-muted/50">
+                            <p className="text-muted-foreground font-semibold mb-1">Tempo de Saída Seguro</p>
+                            <p className="font-bold text-sm text-foreground">{breakdownStatistics.safeTime.toFixed(0)}s</p>
+                        </div>
+                    </div>
                 </div>
             </>
         )}

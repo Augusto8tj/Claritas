@@ -69,6 +69,12 @@ export interface VirtualOperation {
     };
 }
 
+export interface BreakdownStatistics {
+    history: number[];
+    averageTime: number;
+    safeTime: number;
+}
+
 const VIRTUAL_TRADE_LOG_KEY = 'derivAccumulatorsVirtualLog_v4';
 const MAX_VIRTUAL_LOG_SIZE = 101; 
 const VOLATILITY_LOOKBACK = 50;
@@ -82,7 +88,6 @@ const COOLDOWN_PERIOD_MS = 30000;
 const DEFAULT_GROWTH_RATE = 0.03;
 const MICRO_VOLATILITY_WINDOW = 20;
 
-// NOVO: Mapeamento de Taxa de Crescimento para Índice de Barreira (Multiplicador de ATR)
 const BARRIER_INDICES: { [key: string]: number } = {
   '0.01': 0.397,
   '0.02': 0.371,
@@ -171,11 +176,19 @@ const calculateTimeToLoss = (operation: Operation): number => {
 
 function calculateDynamicTakeProfit(
   calmnessScore: number,
-  marketRegime: 'volatile' | 'normal' | 'calm'
+  marketRegime: 'volatile' | 'normal' | 'calm',
+  effectiveDuration: number
 ): number {
-  let baseTarget = 1.25;
+  let baseTarget = 1.25; 
   if (calmnessScore > 85 && marketRegime === 'calm') baseTarget = 1.40;
   if (calmnessScore < 75 || marketRegime === 'volatile') baseTarget = 1.10;
+
+  if (effectiveDuration < 30) {
+      baseTarget = Math.max(0.50, baseTarget - 0.25);
+  } else if (effectiveDuration < 45) {
+      baseTarget = Math.max(0.80, baseTarget - 0.15);
+  }
+  
   return baseTarget;
 }
 
@@ -206,6 +219,7 @@ export function useAccumulatorsCouncil() {
   const [entryConditions, setEntryConditions] = useState({
     calmnessScore: false, bbwIsLow: false, atrIsLow: false, zScoreIsStable: false,
   });
+  const [breakdownStatistics, setBreakdownStatistics] = useState<BreakdownStatistics>({ history: [], averageTime: 45, safeTime: 40 });
 
   const lastOpIdRef = useRef<number>(0);
   const executionRef = useRef(false);
@@ -403,7 +417,10 @@ export function useAccumulatorsCouncil() {
       }
       
       const marketRhythm = detectMarketRhythm(calculatedIndicators, priceTicks);
-      const baseDuration = TIMING_REGIMES[marketRhythm];
+      const marketRhythmDuration = TIMING_REGIMES[marketRhythm];
+      const learnedSafeDuration = breakdownStatistics.safeTime;
+      const baseDuration = Math.min(marketRhythmDuration, learnedSafeDuration);
+      
       const effectiveDuration = riskManager.mode === 'Hyper-Cautious' 
         ? Math.max(20, baseDuration - 10) 
         : baseDuration;
@@ -455,13 +472,13 @@ export function useAccumulatorsCouncil() {
                   trade.reason = 'Sobreviveu';
                   finishedTrades.push(trade);
               } else {
-                  // MODIFICADO: Usa o índice de barreira correto baseado na taxa de crescimento do trade virtual
-                  const barrierMultiplier = BARRIER_INDICES[trade.growthRate.toFixed(2)] || 2.0; // Fallback para 2.0 se não encontrar
+                  const barrierMultiplier = BARRIER_INDICES[trade.growthRate.toFixed(2)] || 2.0;
                   const barrier = trade.initialConditions.atr * barrierMultiplier;
                   
                   if (Math.abs(priceTicks[priceTicks.length-1].price - trade.entryPrice) > barrier) {
                       trade.status = 'loss';
-                      trade.reason = 'Quebra de Barreira Virtual'; // Motivo mais claro
+                      trade.reason = 'Quebra de Barreira Virtual';
+                      trade.exitTime = nowEpoch;
                       finishedTrades.push(trade);
                   } else {
                       stillActiveTrades.push(trade);
@@ -470,9 +487,28 @@ export function useAccumulatorsCouncil() {
           });
           
           if(finishedTrades.length > 0) {
+              const breakTimes = finishedTrades
+                  .filter(t => t.status === 'loss' && t.reason.includes('Barreira'))
+                  .map(t => t.exitTime - t.entryTime)
+                  .filter(t => t > 0);
+
+              if (breakTimes.length > 0) {
+                  setBreakdownStatistics(prev => {
+                      const newHistory = [...prev.history, ...breakTimes].slice(-50);
+                      const averageTime = newHistory.reduce((a, b) => a + b, 0) / newHistory.length;
+                      
+                      let safeTime = 40; 
+                      if (newHistory.length >= 10) {
+                          const sorted = [...newHistory].sort((a,b) => a-b);
+                          const q1Index = Math.floor(sorted.length * 0.25);
+                          safeTime = Math.max(15, Math.ceil(sorted[q1Index]));
+                      }
+                      return { history: newHistory, averageTime, safeTime };
+                  });
+              }
+
               setAndPersistVirtualLog(prev => {
                 const updatedLog = [...finishedTrades, ...prev];
-                // Mantém apenas os últimos N registros para otimizar memória
                 return updatedLog.slice(0, MAX_VIRTUAL_LOG_SIZE);
               });
               activeVirtualTradesRef.current = stillActiveTrades;
@@ -516,7 +552,7 @@ export function useAccumulatorsCouncil() {
         const isVolatilityExpanding = calculatedIndicators.bbw > localMetrics.avgBbw * VOLATILITY_EXIT_MULTIPLIER_BBW || calculatedIndicators.atr > localMetrics.avgAtr * ATR_EXIT_MULTIPLIER || calculatedIndicators.adx > ADX_EXIT_THRESHOLD;
         const hasReachedStopLoss = (pilotOpenPosition.result || 0) <= -pilotOpenPosition.stake * MAX_LOSS_PERCENT;
         
-        const dynamicTakeProfit = calculateDynamicTakeProfit(finalCalmnessScore, riskManager.marketRhythm);
+        const dynamicTakeProfit = calculateDynamicTakeProfit(finalCalmnessScore, riskManager.marketRhythm, effectiveDuration);
         const hasReachedTakeProfit = (pilotOpenPosition.result || 0) >= pilotOpenPosition.stake * dynamicTakeProfit;
         
         const entryTime = new Date(pilotOpenPosition.timestamp).getTime();
@@ -580,7 +616,7 @@ export function useAccumulatorsCouncil() {
               exitTime: priceTicks[priceTicks.length - 1].epoch + effectiveDuration,
               status: 'pending',
               reason: 'Em jogo',
-              growthRate: DEFAULT_GROWTH_RATE, // ADICIONADO: Usa a taxa padrão para a simulação
+              growthRate: DEFAULT_GROWTH_RATE,
               initialConditions: {
                   atr: calculatedIndicators.atr!,
                   calmnessScore: finalCalmnessScore,
@@ -601,7 +637,7 @@ export function useAccumulatorsCouncil() {
       executionRef.current = false;
     };
     runCycle();
-  }, [ isAutopilotOn, isConnected, activeSymbol, dataVersion, botCandleData, priceTicks, dailyPnL, dailyBalance, dailyTarget, executeTrade, sellContract, toast, analyzeAndAdjustStrategy, operationsLog, botStatus, riskManager.adaptiveDuration, virtualArenaStats, setAndPersistVirtualLog ]);
+  }, [ isAutopilotOn, isConnected, activeSymbol, dataVersion, botCandleData, priceTicks, dailyPnL, dailyBalance, dailyTarget, executeTrade, sellContract, toast, analyzeAndAdjustStrategy, operationsLog, botStatus, riskManager.adaptiveDuration, virtualArenaStats, setAndPersistVirtualLog, breakdownStatistics ]);
 
-  return { isAutopilotOn, toggleAutopilot, botStatus, volatilityMetrics: metrics, dailyBalance, setDailyBalance, dailyTarget, setDailyTarget, dailyPnL, riskManager, calmnessScore, entryConditions, virtualOperationsLog, virtualTradeCounter };
+  return { isAutopilotOn, toggleAutopilot, botStatus, volatilityMetrics: metrics, dailyBalance, setDailyBalance, dailyTarget, setDailyTarget, dailyPnL, riskManager, calmnessScore, entryConditions, virtualOperationsLog, virtualTradeCounter, breakdownStatistics };
 }
