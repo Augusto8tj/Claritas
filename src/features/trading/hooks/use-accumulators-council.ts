@@ -1,4 +1,3 @@
-// src/features/trading/hooks/use-accumulators-council.ts
 'use client';
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
@@ -69,8 +68,6 @@ export interface VirtualOperation {
         calmnessScore: number;
     };
 }
-
-// Removido BreakdownStatistics, pois a lógica agora está no useTimeMaster
 
 const VIRTUAL_TRADE_LOG_KEY = 'derivAccumulatorsVirtualLog_v4';
 const MAX_VIRTUAL_LOG_SIZE = 101; 
@@ -173,17 +170,32 @@ const calculateTimeToLoss = (operation: Operation): number => {
 
 function calculateDynamicTakeProfit(
   calmnessScore: number,
-  marketRegime: 'volatile' | 'normal' | 'calm',
-  effectiveDuration: number
+  marketRhythm: 'volatile' | 'normal' | 'calm',
+  effectiveDuration: number,
+  averageBreakTime: number
 ): number {
-  let baseTarget = 1.25; 
-  if (calmnessScore > 85 && marketRegime === 'calm') baseTarget = 1.40;
-  if (calmnessScore < 75 || marketRegime === 'volatile') baseTarget = 1.10;
+  let baseTarget = 1.25; // Padrão
 
+  // Sugestão 1: Ajuste principal pelo Mestre do Tempo
+  if (averageBreakTime > 65) { // Tempo de sobrevivência longo
+    baseTarget = 1.40; // Alvo ambicioso
+  } else if (averageBreakTime < 35) { // Tempo de sobrevivência curto
+    baseTarget = 1.10; // Alvo modesto e rápido
+  }
+
+  // Refinamento com base na calmaria atual
+  if (calmnessScore > 85 && marketRhythm === 'calm') {
+    baseTarget = Math.min(1.50, baseTarget + 0.10); // Aumenta em condições ideais
+  }
+  if (calmnessScore < 75 || marketRhythm === 'volatile') {
+    baseTarget = Math.max(1.05, baseTarget - 0.10); // Reduz em condições arriscadas
+  }
+  
+  // Ajuste final baseado na janela de tempo de saída efetiva
   if (effectiveDuration < 30) {
-      baseTarget = Math.max(0.50, baseTarget - 0.25);
+    baseTarget = Math.max(0.50, baseTarget - 0.30); // Reduz agressivamente para saídas rápidas
   } else if (effectiveDuration < 45) {
-      baseTarget = Math.max(0.80, baseTarget - 0.15);
+    baseTarget = Math.max(0.80, baseTarget - 0.15);
   }
   
   return baseTarget;
@@ -200,7 +212,6 @@ export function useAccumulatorsCouncil() {
   } = useDerivApiAccumulators();
   const { toast } = useToast();
   
-  // Invoca o Mestre do Tempo
   const timeMaster = useTimeMaster(botCandleData, priceTicks);
 
   const [isAutopilotOn, setIsAutopilotOn] = useState(false);
@@ -228,7 +239,6 @@ export function useAccumulatorsCouncil() {
   const entryVolatilityRef = useRef<MultiScaleVolatility | null>(null);
   const lossHistoryRef = useRef<LossPattern[]>([]);
   
-  // Arena Virtual
   const [virtualOperationsLog, setVirtualOperationsLog] = useState<VirtualOperation[]>([]);
   const activeVirtualTradesRef = useRef<VirtualOperation[]>([]);
   const [virtualTradeCounter, setVirtualTradeCounter] = useState(0);
@@ -417,7 +427,6 @@ export function useAccumulatorsCouncil() {
       
       const marketRhythm = detectMarketRhythm(calculatedIndicators, priceTicks);
       
-      // AQUI É A MUDANÇA PRINCIPAL: Usamos o tempo seguro do Mestre do Tempo
       const effectiveDuration = Math.min(
         TIMING_REGIMES[marketRhythm],
         timeMaster.safeExitTime
@@ -507,8 +516,11 @@ export function useAccumulatorsCouncil() {
       if (pilotOpenPosition) {
         if (openPilotContractContextRef.current?.id !== pilotOpenPosition.id) {
             let dynamicSpikeMultiplier = 2.5; 
-            const bbwRatio = localMetrics.avgBbw > 0 ? calculatedIndicators.bbw / localMetrics.avgBbw : 1;
-            if (bbwRatio < 0.7) dynamicSpikeMultiplier = 2.0; else if (bbwRatio > 1.3) dynamicSpikeMultiplier = 3.5;
+            if (localMetrics.avgBbw > 0.9) { 
+              dynamicSpikeMultiplier = 3.5;
+            } else if (localMetrics.avgBbw < 0.4) {
+              dynamicSpikeMultiplier = 2.0;
+            }
             openPilotContractContextRef.current = { id: pilotOpenPosition.id, dynamicSpikeMultiplier };
         }
 
@@ -530,7 +542,7 @@ export function useAccumulatorsCouncil() {
         const isVolatilityExpanding = calculatedIndicators.bbw > localMetrics.avgBbw * VOLATILITY_EXIT_MULTIPLIER_BBW || calculatedIndicators.atr > localMetrics.avgAtr * ATR_EXIT_MULTIPLIER || calculatedIndicators.adx > ADX_EXIT_THRESHOLD;
         const hasReachedStopLoss = (pilotOpenPosition.result || 0) <= -pilotOpenPosition.stake * MAX_LOSS_PERCENT;
         
-        const dynamicTakeProfit = calculateDynamicTakeProfit(finalCalmnessScore, riskManager.marketRhythm, effectiveDuration);
+        const dynamicTakeProfit = calculateDynamicTakeProfit(finalCalmnessScore, riskManager.marketRhythm, effectiveDuration, timeMaster.averageBreakTime);
         const hasReachedTakeProfit = (pilotOpenPosition.result || 0) >= pilotOpenPosition.stake * dynamicTakeProfit;
         
         const entryTime = new Date(pilotOpenPosition.timestamp).getTime();
