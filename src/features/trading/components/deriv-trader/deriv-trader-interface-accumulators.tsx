@@ -18,7 +18,7 @@ import {
   FormItem,
   FormMessage,
 } from "@/components/ui/form";
-import { Loader2, Minus, Plus, TrendingUp, Wind, Target } from "lucide-react";
+import { Loader2, Minus, Plus, TrendingUp, Wind, Target, ChevronRight } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -30,6 +30,9 @@ import { useDerivApiAccumulators } from "@/features/trading/hooks/use-deriv-api-
 import { useManualTimeApprentice } from "@/features/trading/hooks/use-manual-time-apprentice";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { cn } from "@/lib/utils";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { Progress } from "@/components/ui/progress";
+
 
 interface DerivTraderInterfaceProps {
   symbol: string;
@@ -43,7 +46,7 @@ export default function DerivTraderInterfaceAccumulators({ symbol }: DerivTrader
   
   const growthRateValue = form.watch('growth_rate');
   
-  const { isMarketCalm, suggestedTakeProfit } = useManualTimeApprentice(priceTicks, operationsLog, sellContract);
+  const { isMarketCalm, suggestedTakeProfit, volatilityDetails } = useManualTimeApprentice(priceTicks, operationsLog, sellContract);
 
   const handleStakeChange = (amount: number) => {
     const currentStake = form.getValues('stake') || 0;
@@ -165,30 +168,60 @@ export default function DerivTraderInterfaceAccumulators({ symbol }: DerivTrader
         </Form>
         
         <Separator />
-        <div>
-          <h4 className="text-sm font-semibold mb-2 text-muted-foreground">Aprendiz do Mestre do Tempo</h4>
-          <Alert className={cn("mb-3", isMarketCalm ? "bg-green-500/10 border-green-500/30 text-green-700" : "bg-amber-500/10 border-amber-500/30 text-amber-700")}>
-            <Wind className="h-4 w-4" />
-            <AlertTitle className="font-bold">
-              {isMarketCalm ? "Mercado Calmo Detectado" : "Mercado Instável"}
-            </AlertTitle>
-            <AlertDescription>
-              {isMarketCalm ? "Condições favoráveis para entradas manuais." : "Volatilidade alta. Considere aguardar."}
-            </AlertDescription>
-          </Alert>
-          <div className="mt-3 flex items-center justify-between rounded-lg border p-3">
-             <div className="flex items-center gap-2">
-                <Target className="h-5 w-5 text-primary"/>
-                <div>
-                    <p className="font-semibold text-sm">Take Profit Sugerido</p>
-                    <p className="text-xs text-muted-foreground">Para fecho manual.</p>
-                </div>
-             </div>
-             <span className="text-lg font-bold text-primary font-mono">
-                ${suggestedTakeProfit.toFixed(2)}
-             </span>
+        <Collapsible className="space-y-2">
+          <CollapsibleTrigger asChild>
+            <div className="flex items-center justify-between cursor-pointer group">
+              <h4 className="text-sm font-semibold text-muted-foreground">Aprendiz do Mestre do Tempo</h4>
+              <ChevronRight className="h-4 w-4 text-muted-foreground transition-transform group-data-[state=open]:rotate-90" />
+            </div>
+          </CollapsibleTrigger>
+          <div className="pl-2">
+            <Alert className={cn("mb-3", isMarketCalm ? "bg-green-500/10 border-green-500/30 text-green-700" : "bg-amber-500/10 border-amber-500/30 text-amber-700")}>
+              <Wind className="h-4 w-4" />
+              <AlertTitle className="font-bold">
+                {isMarketCalm ? "Mercado Calmo Detectado" : "Mercado Instável"}
+              </AlertTitle>
+              <AlertDescription>
+                {isMarketCalm ? "Condições favoráveis para entradas manuais." : "Volatilidade alta. Considere aguardar."}
+              </AlertDescription>
+            </Alert>
+            <div className="mt-3 flex items-center justify-between rounded-lg border p-3">
+               <div className="flex items-center gap-2">
+                  <Target className="h-5 w-5 text-primary"/>
+                  <div>
+                      <p className="font-semibold text-sm">Take Profit Sugerido</p>
+                      <p className="text-xs text-muted-foreground">Para fecho manual.</p>
+                  </div>
+               </div>
+               <span className="text-lg font-bold text-primary font-mono">
+                  ${suggestedTakeProfit.toFixed(2)}
+               </span>
+            </div>
           </div>
-        </div>
+          <CollapsibleContent className="space-y-3 pt-2 pl-2">
+              <div className="p-3 border rounded-md bg-muted/30">
+                  <h5 className="text-xs font-semibold mb-2">Cálculos de Volatilidade (Desvio Padrão Normalizado)</h5>
+                  <div className="space-y-2">
+                      {volatilityDetails.windows.map(({ seconds, volatility }) => {
+                          const percentage = Math.min(100, (volatility / (0.0003 * 2)) * 100);
+                          return (
+                              <div key={seconds} className="grid grid-cols-3 items-center gap-2 text-xs">
+                                  <span className="text-muted-foreground">{seconds} segundos</span>
+                                  <Progress value={percentage} className="h-1.5" />
+                                  <span className="font-mono text-right">{(volatility * 10000).toFixed(2)}</span>
+                              </div>
+                          )
+                      })}
+                       <Separator className="my-2"/>
+                       <div className="grid grid-cols-3 items-center gap-2 text-xs font-semibold">
+                          <span className="text-primary">Volatilidade Máx.</span>
+                           <div className="h-1.5 bg-primary/20 rounded-full w-full"></div>
+                          <span className="font-mono text-right text-primary">{(volatilityDetails.max * 10000).toFixed(2)}</span>
+                       </div>
+                  </div>
+              </div>
+          </CollapsibleContent>
+        </Collapsible>
         
         <div className="space-y-2 pt-4">
             <Button
