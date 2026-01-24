@@ -62,6 +62,7 @@ export interface VirtualOperation {
     exitTime: number;
     status: 'pending' | 'win' | 'loss';
     reason: string;
+    growthRate: number;
     initialConditions: {
         atr: number;
         calmnessScore: number;
@@ -69,7 +70,7 @@ export interface VirtualOperation {
 }
 
 const VIRTUAL_TRADE_LOG_KEY = 'derivAccumulatorsVirtualLog_v4';
-const MAX_VIRTUAL_LOG_SIZE = 101; // Limita o histórico para otimização de memória
+const MAX_VIRTUAL_LOG_SIZE = 101; 
 const VOLATILITY_LOOKBACK = 50;
 const BASE_CALMNESS_THRESHOLD = 70;
 const MAX_LOSS_PERCENT = 0.50;
@@ -80,6 +81,16 @@ const ATR_EXIT_MULTIPLIER = 1.6;
 const COOLDOWN_PERIOD_MS = 30000;
 const DEFAULT_GROWTH_RATE = 0.03;
 const MICRO_VOLATILITY_WINDOW = 20;
+
+// NOVO: Mapeamento de Taxa de Crescimento para Índice de Barreira (Multiplicador de ATR)
+const BARRIER_INDICES: { [key: string]: number } = {
+  '0.01': 0.397,
+  '0.02': 0.371,
+  '0.03': 0.348,
+  '0.04': 0.331,
+  '0.05': 0.315,
+};
+
 
 // --- FUNÇÕES HELPER ---
 
@@ -444,10 +455,13 @@ export function useAccumulatorsCouncil() {
                   trade.reason = 'Sobreviveu';
                   finishedTrades.push(trade);
               } else {
-                  const barrier = trade.initialConditions.atr * 2;
+                  // MODIFICADO: Usa o índice de barreira correto baseado na taxa de crescimento do trade virtual
+                  const barrierMultiplier = BARRIER_INDICES[trade.growthRate.toFixed(2)] || 2.0; // Fallback para 2.0 se não encontrar
+                  const barrier = trade.initialConditions.atr * barrierMultiplier;
+                  
                   if (Math.abs(priceTicks[priceTicks.length-1].price - trade.entryPrice) > barrier) {
                       trade.status = 'loss';
-                      trade.reason = 'Pico de Volatilidade';
+                      trade.reason = 'Quebra de Barreira Virtual'; // Motivo mais claro
                       finishedTrades.push(trade);
                   } else {
                       stillActiveTrades.push(trade);
@@ -566,6 +580,7 @@ export function useAccumulatorsCouncil() {
               exitTime: priceTicks[priceTicks.length - 1].epoch + effectiveDuration,
               status: 'pending',
               reason: 'Em jogo',
+              growthRate: DEFAULT_GROWTH_RATE, // ADICIONADO: Usa a taxa padrão para a simulação
               initialConditions: {
                   atr: calculatedIndicators.atr!,
                   calmnessScore: finalCalmnessScore,
@@ -586,7 +601,7 @@ export function useAccumulatorsCouncil() {
       executionRef.current = false;
     };
     runCycle();
-  }, [ isAutopilotOn, isConnected, activeSymbol, dataVersion, botCandleData, priceTicks, dailyPnL, dailyBalance, dailyTarget, executeTrade, sellContract, toast, analyzeAndAdjustStrategy, operationsLog, botStatus, riskManager.adaptiveDuration, virtualArenaStats ]);
+  }, [ isAutopilotOn, isConnected, activeSymbol, dataVersion, botCandleData, priceTicks, dailyPnL, dailyBalance, dailyTarget, executeTrade, sellContract, toast, analyzeAndAdjustStrategy, operationsLog, botStatus, riskManager.adaptiveDuration, virtualArenaStats, setAndPersistVirtualLog ]);
 
   return { isAutopilotOn, toggleAutopilot, botStatus, volatilityMetrics: metrics, dailyBalance, setDailyBalance, dailyTarget, setDailyTarget, dailyPnL, riskManager, calmnessScore, entryConditions, virtualOperationsLog, virtualTradeCounter };
 }
