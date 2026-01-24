@@ -674,14 +674,13 @@ export const DerivApiProviderAccumulators = ({ children }: { children: ReactNode
     };
   }, [activeToken, isLoading, makeRequest, toast, triggerReconnect, setToastQueue, startConnectionMonitor, addTradeAnnotation, updateTradeAnnotation, setAndPersistOperationsLog, subscribeToStreams]);
 
-  const isInitialMount = useRef(true);
   useEffect(() => {
-    if (isInitialMount.current) {
-        isInitialMount.current = false;
-        return;
+    if (isConnected && activeSymbol) {
+      subscribeToStreams(activeSymbol);
     }
-    reconnect();
-  }, [activeSymbol, chartType, timePeriod]);
+  // EVITA RECONEXÃO DESNECESSÁRIA: Removido `reconnect` como dependência
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isConnected, activeSymbol, timePeriod, chartType, subscribeToStreams]);
   
   const setAccountType = useCallback((type: AccountType) => {
     try {
