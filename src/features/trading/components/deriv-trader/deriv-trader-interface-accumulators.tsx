@@ -18,7 +18,7 @@ import {
   FormItem,
   FormMessage,
 } from "@/components/ui/form";
-import { Loader2, Minus, Plus, TrendingUp } from "lucide-react";
+import { Loader2, Minus, Plus, TrendingUp, Wind, Target } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -27,20 +27,24 @@ import type { OperationInitiator } from "@/lib/types";
 import { Slider } from "@/components/ui/slider";
 import type { AccumulatorFormValues } from "./deriv-trader-interface-accumulators.types";
 import { useDerivApiAccumulators } from "@/features/trading/hooks/use-deriv-api-accumulators";
+import { useManualTimeApprentice } from "@/features/trading/hooks/use-manual-time-apprentice";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { cn } from "@/lib/utils";
 
 interface DerivTraderInterfaceProps {
   symbol: string;
 }
 
-const growthRateOptions = [0.01, 0.02, 0.03, 0.04, 0.05];
-
 export default function DerivTraderInterfaceAccumulators({ symbol }: DerivTraderInterfaceProps) {
   const { toast } = useToast();
   const [loading, setLoading] = useState(false);
-  const { isConnected, executeTrade } = useDerivApiAccumulators();
+  const { isConnected, executeTrade, priceTicks } = useDerivApiAccumulators();
   const form = useFormContext<AccumulatorFormValues>();
+  
   const growthRateValue = form.watch('growth_rate');
+  const stakeValue = form.watch('stake');
+
+  const { isMarketCalm, suggestedTakeProfit } = useManualTimeApprentice(priceTicks, stakeValue);
 
   const handleStakeChange = (amount: number) => {
     const currentStake = form.getValues('stake') || 0;
@@ -160,6 +164,32 @@ export default function DerivTraderInterfaceAccumulators({ symbol }: DerivTrader
             />
           </form>
         </Form>
+        
+        <Separator />
+        <div>
+          <h4 className="text-sm font-semibold mb-2 text-muted-foreground">Aprendiz do Mestre do Tempo</h4>
+          <Alert className={cn("mb-3", isMarketCalm ? "bg-green-500/10 border-green-500/30 text-green-700" : "bg-amber-500/10 border-amber-500/30 text-amber-700")}>
+            <Wind className="h-4 w-4" />
+            <AlertTitle className="font-bold">
+              {isMarketCalm ? "Mercado Calmo Detectado" : "Mercado Instável"}
+            </AlertTitle>
+            <AlertDescription>
+              {isMarketCalm ? "Condições favoráveis para entradas manuais." : "Volatilidade alta. Considere aguardar."}
+            </AlertDescription>
+          </Alert>
+          <div className="mt-3 flex items-center justify-between rounded-lg border p-3">
+             <div className="flex items-center gap-2">
+                <Target className="h-5 w-5 text-primary"/>
+                <div>
+                    <p className="font-semibold text-sm">Take Profit Sugerido</p>
+                    <p className="text-xs text-muted-foreground">Para fecho manual.</p>
+                </div>
+             </div>
+             <span className="text-lg font-bold text-primary font-mono">
+                ${suggestedTakeProfit.toFixed(2)}
+             </span>
+          </div>
+        </div>
         
         <div className="space-y-2 pt-4">
             <Button
