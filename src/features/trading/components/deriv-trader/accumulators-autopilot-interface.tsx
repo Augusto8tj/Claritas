@@ -14,13 +14,16 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Bot, Zap, Waves, TrendingUp, Wallet, ShieldCheck, AlertCircle, Clock, CheckCircle, XCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
-import type { useAccumulatorsCouncil, BreakdownStatistics } from "../../hooks/use-accumulators-council";
+import type { useAccumulatorsCouncil, VirtualOperation } from "../../hooks/use-accumulators-council";
 import { Separator } from "@/components/ui/separator";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Progress } from "@/components/ui/progress";
+import type { TimeMasterState } from '../../hooks/use-time-master';
 
 
-interface AccumulatorsAutopilotInterfaceProps extends ReturnType<typeof useAccumulatorsCouncil> {}
+interface AccumulatorsAutopilotInterfaceProps extends ReturnType<typeof useAccumulatorsCouncil> {
+    timeMaster: TimeMasterState;
+}
 
 const ConditionCheck = ({ label, isMet }: { label: string, isMet: boolean }) => (
     <div className={cn(
@@ -46,7 +49,7 @@ export function AccumulatorsAutopilotInterface({
   riskManager,
   calmnessScore,
   entryConditions,
-  breakdownStatistics,
+  timeMaster, // Adicionada prop
 }: AccumulatorsAutopilotInterfaceProps) {
   
   const statusInfo = {
@@ -207,16 +210,16 @@ export function AccumulatorsAutopilotInterface({
                 <div className="space-y-3">
                     <h4 className="font-headline flex items-center gap-2">
                         <Clock className="h-5 w-5 text-primary/80" />
-                        Mestre do Tempo (IA)
+                        Mestre do Tempo (IA Sentinela)
                     </h4>
                     <div className="grid grid-cols-2 gap-3 text-center text-xs">
                         <div className="p-2 border rounded-lg bg-muted/50">
-                            <p className="text-muted-foreground font-semibold mb-1">Quebra Média (Arena)</p>
-                            <p className="font-bold text-sm text-foreground">{breakdownStatistics.averageTime.toFixed(1)}s</p>
+                            <p className="text-muted-foreground font-semibold mb-1">Quebra Média Projetada</p>
+                            <p className="font-bold text-sm text-foreground">{timeMaster.averageBreakTime.toFixed(1)}s</p>
                         </div>
                         <div className="p-2 border rounded-lg bg-muted/50">
                             <p className="text-muted-foreground font-semibold mb-1">Tempo de Saída Seguro</p>
-                            <p className="font-bold text-sm text-foreground">{breakdownStatistics.safeTime.toFixed(0)}s</p>
+                            <p className="font-bold text-sm text-foreground">{timeMaster.safeExitTime.toFixed(0)}s</p>
                         </div>
                     </div>
                 </div>

@@ -7,6 +7,7 @@ import { useToast } from '@/hooks/use-toast';
 import type { CandleData, Operation, TickData } from '@/lib/types';
 import { calculateAllIndicators, type Indicators } from '@/services/indicator-service';
 import { initialCouncilStrategies } from '@/services/council-strategies';
+import { useTimeMaster } from './use-time-master'; // Importa o novo Sentinela
 
 // --- TIPOS E CONFIGURAÇÕES DA ESTRATÉGIA ---
 
@@ -69,11 +70,7 @@ export interface VirtualOperation {
     };
 }
 
-export interface BreakdownStatistics {
-    history: number[];
-    averageTime: number;
-    safeTime: number;
-}
+// Removido BreakdownStatistics, pois a lógica agora está no useTimeMaster
 
 const VIRTUAL_TRADE_LOG_KEY = 'derivAccumulatorsVirtualLog_v4';
 const MAX_VIRTUAL_LOG_SIZE = 101; 
@@ -202,6 +199,9 @@ export function useAccumulatorsCouncil() {
     sellContract, operationsLog, isConnected, dataVersion
   } = useDerivApiAccumulators();
   const { toast } = useToast();
+  
+  // Invoca o Mestre do Tempo
+  const timeMaster = useTimeMaster(botCandleData, priceTicks);
 
   const [isAutopilotOn, setIsAutopilotOn] = useState(false);
   const [botStatus, setBotStatus] = useState<BotStatus>('PAUSED');
@@ -219,7 +219,6 @@ export function useAccumulatorsCouncil() {
   const [entryConditions, setEntryConditions] = useState({
     calmnessScore: false, bbwIsLow: false, atrIsLow: false, zScoreIsStable: false,
   });
-  const [breakdownStatistics, setBreakdownStatistics] = useState<BreakdownStatistics>({ history: [], averageTime: 45, safeTime: 40 });
 
   const lastOpIdRef = useRef<number>(0);
   const executionRef = useRef(false);
@@ -417,13 +416,12 @@ export function useAccumulatorsCouncil() {
       }
       
       const marketRhythm = detectMarketRhythm(calculatedIndicators, priceTicks);
-      const marketRhythmDuration = TIMING_REGIMES[marketRhythm];
-      const learnedSafeDuration = breakdownStatistics.safeTime;
-      const baseDuration = Math.min(marketRhythmDuration, learnedSafeDuration);
       
-      const effectiveDuration = riskManager.mode === 'Hyper-Cautious' 
-        ? Math.max(20, baseDuration - 10) 
-        : baseDuration;
+      // AQUI É A MUDANÇA PRINCIPAL: Usamos o tempo seguro do Mestre do Tempo
+      const effectiveDuration = Math.min(
+        TIMING_REGIMES[marketRhythm],
+        timeMaster.safeExitTime
+      );
 
       if (riskManager.marketRhythm !== marketRhythm || riskManager.adaptiveDuration !== effectiveDuration) {
         setRiskManager(prev => ({
@@ -487,26 +485,6 @@ export function useAccumulatorsCouncil() {
           });
           
           if(finishedTrades.length > 0) {
-              const breakTimes = finishedTrades
-                  .filter(t => t.status === 'loss' && t.reason.includes('Barreira'))
-                  .map(t => t.exitTime - t.entryTime)
-                  .filter(t => t > 0);
-
-              if (breakTimes.length > 0) {
-                  setBreakdownStatistics(prev => {
-                      const newHistory = [...prev.history, ...breakTimes].slice(-50);
-                      const averageTime = newHistory.reduce((a, b) => a + b, 0) / newHistory.length;
-                      
-                      let safeTime = 40; 
-                      if (newHistory.length >= 10) {
-                          const sorted = [...newHistory].sort((a,b) => a-b);
-                          const q1Index = Math.floor(sorted.length * 0.25);
-                          safeTime = Math.max(15, Math.ceil(sorted[q1Index]));
-                      }
-                      return { history: newHistory, averageTime, safeTime };
-                  });
-              }
-
               setAndPersistVirtualLog(prev => {
                 const updatedLog = [...finishedTrades, ...prev];
                 return updatedLog.slice(0, MAX_VIRTUAL_LOG_SIZE);
@@ -637,7 +615,7 @@ export function useAccumulatorsCouncil() {
       executionRef.current = false;
     };
     runCycle();
-  }, [ isAutopilotOn, isConnected, activeSymbol, dataVersion, botCandleData, priceTicks, dailyPnL, dailyBalance, dailyTarget, executeTrade, sellContract, toast, analyzeAndAdjustStrategy, operationsLog, botStatus, riskManager.adaptiveDuration, virtualArenaStats, setAndPersistVirtualLog, breakdownStatistics ]);
+  }, [ isAutopilotOn, isConnected, activeSymbol, dataVersion, botCandleData, priceTicks, dailyPnL, dailyBalance, dailyTarget, executeTrade, sellContract, toast, analyzeAndAdjustStrategy, operationsLog, botStatus, riskManager.adaptiveDuration, virtualArenaStats, setAndPersistVirtualLog, timeMaster ]);
 
-  return { isAutopilotOn, toggleAutopilot, botStatus, volatilityMetrics: metrics, dailyBalance, setDailyBalance, dailyTarget, setDailyTarget, dailyPnL, riskManager, calmnessScore, entryConditions, virtualOperationsLog, virtualTradeCounter, breakdownStatistics };
+  return { isAutopilotOn, toggleAutopilot, botStatus, volatilityMetrics: metrics, dailyBalance, setDailyBalance, dailyTarget, setDailyTarget, dailyPnL, riskManager, calmnessScore, entryConditions, virtualOperationsLog, virtualTradeCounter, timeMaster };
 }
