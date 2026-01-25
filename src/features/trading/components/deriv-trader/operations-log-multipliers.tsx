@@ -114,7 +114,7 @@ export default function OperationsLogMultipliers({ operations, sellContract }: O
                                             </div>
                                             <div className="flex-1 grid grid-cols-2 md:grid-cols-4 gap-x-4 gap-y-1 text-xs">
                                                 <div className="col-span-2 md:col-span-4">
-                                                    <p className="text-sm font-medium leading-none">{(op.asset || 'Símbolo')} - {direction === "rise" ? "Up" : "Down"}</p>
+                                                    <p className="text-sm font-medium leading-none">{op.asset || 'Símbolo'} - {direction === "rise" ? "Up" : "Down"}</p>
                                                 </div>
                                                 <div className="text-muted-foreground">
                                                     <p>Entrada: <span className="font-semibold text-foreground">${(op.stake || 0).toFixed(2)}</span></p>

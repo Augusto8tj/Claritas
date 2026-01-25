@@ -1,3 +1,4 @@
+// src/features/trading/components/deriv-trader/manage-position-dialog.tsx
 'use client';
 
 import { useState } from 'react';

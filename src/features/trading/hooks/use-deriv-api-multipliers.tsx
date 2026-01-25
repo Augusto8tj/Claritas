@@ -270,9 +270,9 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
             const timeoutId = setTimeout(() => {
                 if (promisesRef.current.has(String(req_id))) {
                     promisesRef.current.delete(String(req_id));
-                    reject(new Error(`O pedido à API expirou (15s).`));
+                    reject(new Error(`O pedido à API expirou (60s).`));
                 }
-            }, 15000);
+            }, 60000);
             
             promisesRef.current.set(String(req_id), {
                 resolve: (value: any) => {
@@ -751,8 +751,12 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
                             }
 
                             if (trailingState.highestProfit > activationThreshold) {
-                                const newStopProfitLevel = trailingState.highestProfit - trailingDistance;
-                                updatedOp.trailingStop = newStopProfitLevel;
+                                const newStopLoss = trailingState.highestProfit - trailingDistance;
+                                updatedOp.trailingStop = newStopLoss;
+
+                                if (newStopLoss > (op.stopLoss || 0)) {
+                                    updateContract(op.id, undefined, newStopLoss);
+                                }
                             }
                         }
 
