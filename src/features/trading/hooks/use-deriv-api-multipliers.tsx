@@ -363,14 +363,19 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
         };
         
         if (takeProfit !== undefined) {
-            updateRequest.limit_order.take_profit = takeProfit > 0 ? takeProfit : null;
+            updateRequest.limit_order.take_profit = takeProfit > 0 ? parseFloat(takeProfit.toFixed(2)) : null;
         }
         
         if (stopLoss !== undefined) {
-            updateRequest.limit_order.stop_loss = stopLoss > 0 ? stopLoss : null;
+            updateRequest.limit_order.stop_loss = stopLoss > 0 ? parseFloat(stopLoss.toFixed(2)) : null;
         }
 
         const response: any = await makeRequest(updateRequest);
+        
+        if (response.error) {
+            throw new Error(response.error.message);
+        }
+
         const updateResult = response.contract_update;
 
         if (updateResult) {
@@ -436,6 +441,11 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
       }
       
       const buyResponse: any = await makeRequest(buyRequest);
+      
+      if (buyResponse.error) {
+          throw new Error(buyResponse.error.message);
+      }
+
       const buyResult = buyResponse.buy;
       const contractId = buyResult.contract_id;
 
@@ -522,6 +532,10 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
     try {
         sellingContractsRef.current.add(contractId);
         const sellResponse: any = await makeRequest({ "sell": contractId });
+
+        if (sellResponse.error) {
+            throw new Error(sellResponse.error.message);
+        }
 
         const sellResult = sellResponse.sell;
         if (sellResult) {
@@ -746,10 +760,13 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
                             }
 
                             if (trailingState.highestProfit > activationThreshold) {
-                                const newStopLoss = trailingState.highestProfit - trailingDistance;
+                                // CORREÇÃO CRÍTICA: Arredondamento do Trailing Stop
+                                const rawNewStop = trailingState.highestProfit - trailingDistance;
+                                const newStopLoss = parseFloat(rawNewStop.toFixed(2));
                                 updatedOp.trailingStop = newStopLoss;
 
                                 if (newStopLoss > (op.stopLoss || 0)) {
+                                    // A função updateContract agora tem sanitização, mas mandamos limpo daqui também
                                     updateContract(op.id, undefined, newStopLoss);
                                 }
                             }
