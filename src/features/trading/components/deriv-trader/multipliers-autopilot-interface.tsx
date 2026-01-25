@@ -40,11 +40,13 @@ export function MultipliersAutopilotInterface({
   
   const statusInfo = {
     'PAUSED': { text: 'Pausado', color: 'bg-gray-500' },
-    'IDLE': { text: 'Ocioso', color: 'bg-gray-500' },
-    'MONITORING': { text: 'Monitorando Mercado...', color: 'bg-blue-500' },
-    'TREND_FOUND': { text: 'Tendência Detectada', color: 'bg-yellow-500' },
+    'RANGING': { text: 'Mercado Lateral', color: 'bg-yellow-500' },
+    'LOW_VOLATILITY': { text: 'Baixa Volatilidade', color: 'bg-slate-500' },
+    'MONITORING': { text: 'Monitorando Pullback', color: 'bg-blue-500' },
+    'POSITION_OPEN': { text: 'Gerenciando Posição', color: 'bg-purple-500' },
+    'COOL_DOWN': { text: 'Pausa Pós-Trade', color: 'bg-orange-500' },
     'EXECUTING_TRADE': { text: 'Executando Ordem!', color: 'bg-green-500 animate-pulse' },
-  }
+  };
 
   return (
     <Card>
