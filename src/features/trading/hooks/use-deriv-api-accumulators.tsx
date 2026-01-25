@@ -322,22 +322,20 @@ export const DerivApiProviderAccumulators = ({ children }: { children: ReactNode
       }
       const sanitizedStake = parseFloat(stake.toFixed(2));
       
-      const proposalResponse: any = await makeRequest({
-        proposal: 1,
-        amount: sanitizedStake,
-        basis: "stake",
-        contract_type: "ACCU",
-        currency: "USD",
-        symbol: symbol,
-        growth_rate: growth_rate,
-      });
-
-      const proposal = proposalResponse.proposal;
-      if (!proposal || !proposal.id) {
-        throw new Error("Falha ao obter uma proposta de negociação da API.");
-      }
+      const buyRequest: any = {
+        buy: "1",
+        price: 10000, 
+        parameters: {
+            amount: sanitizedStake,
+            basis: "stake",
+            contract_type: "ACCU",
+            currency: "USD",
+            symbol: symbol,
+            growth_rate: growth_rate,
+        }
+      };
       
-      const buyResponse: any = await makeRequest({ "buy": proposal.id, "price": proposal.ask_price });
+      const buyResponse: any = await makeRequest(buyRequest);
 
       const buyResult = buyResponse.buy;
       const contractId = buyResult.contract_id;
@@ -352,7 +350,7 @@ export const DerivApiProviderAccumulators = ({ children }: { children: ReactNode
       const newOperation: any = {
           id: contractId,
           asset: symbol,
-          direction: 'rise', // Placeholder
+          direction: 'rise', // Placeholder for accumulators
           stake: sanitizedStake,
           status: 'pending',
           timestamp: new Date(purchaseTimeMs).toISOString(),
@@ -360,8 +358,8 @@ export const DerivApiProviderAccumulators = ({ children }: { children: ReactNode
           entryPrice: entryPrice,
           isSellable: true,
           contractType: 'ACCU',
-          duration: 0,
-          durationUnit: 's',
+          duration: 0, // Not applicable for accumulators in the same way
+          durationUnit: 's', // Placeholder
           growth_rate: growth_rate,
       };
       setAndPersistOperationsLog(prevLog => [newOperation, ...prevLog]);
@@ -370,11 +368,11 @@ export const DerivApiProviderAccumulators = ({ children }: { children: ReactNode
         contractId: String(contractId),
         entryTime: purchaseTime,
         entryPrice: entryPrice,
-        direction: 'rise', 
+        direction: 'rise', // Placeholder
         status: 'pending',
         stake: sanitizedStake,
         symbol,
-        expirationTime: undefined,
+        expirationTime: undefined, // Accumulators don't have a fixed expiration
         contractType: 'accumulator'
       });
 
