@@ -68,13 +68,13 @@ Estes hooks contêm a inteligência do sistema, agora separados por responsabili
 
 ### 2.3. Camada de Interface: `deriv-trader-accumulators/page.tsx`
 
-A interface do utilizador, focada na simplicidade e no controlo do novo piloto automático.
+A interface do utilizador, focada na simplicidade e na colaboração entre homem e máquina.
 
-*   **Responsabilidade Principal**: Fornecer uma interface clara para a negociação manual e para a gestão do piloto automático.
+*   **Responsabilidade Principal**: Fornecer uma interface clara para a negociação manual, gestão do piloto automático e visualização de resultados.
 *   **Componentes Chave**:
-    *   `DerivTraderInterfaceAccumulators`: O painel de negociação manual, que agora inclui o painel do **"Aprendiz do Mestre do Tempo"** com a bandeira de "Mercado Calmo" e a sugestão de take profit.
-    *   `AccumulatorsAutopilotInterface`: Um novo painel que permite ao operador ligar/desligar o piloto automático e visualizar o **Nível de Calmaria**, o **Checklist de Entrada** e o estado do **Gerente de Risco**. Inclui também o novo painel **"Mestre do Tempo"**.
-    *   `OperationsLogAccumulators`: Um log de operações que exibe o lucro/prejuízo em tempo real para cada contrato.
-    *   `VirtualArenaAccumulators`: Um painel que exibe os resultados da Arena Virtual, agora com a lógica de barreira corrigida.
+    *   `DerivTraderInterfaceAccumulators`: O painel central de negociação. Além dos controlos manuais de aposta (`stake`) e taxa de crescimento (`growth_rate`), ele agora incorpora o painel do **"Aprendiz do Mestre do Tempo"**. Este copiloto exibe a bandeira de "Mercado Calmo" e a sugestão de take profit para a operação manual, executando autonomamente o fecho da posição para garantir o lucro.
+    *   `AccumulatorsAutopilotInterface`: O painel de controlo do sistema autónomo. Permite ligar/desligar o piloto e visualizar as métricas-chave do **"Caçador de Calmaria"** (Nível de Calmaria, Checklist de Entrada, estado do Gerente de Risco) e do **"Mestre do Tempo"** (Tempo de Saída Seguro).
+    *   `OperationsLogAccumulators`: O registo de todas as operações **reais** executadas, mostrando o lucro/prejuízo em tempo real e permitindo o fecho manual de posições.
+    *   `VirtualArenaAccumulators`: Um painel dedicado que exibe os resultados das simulações da **Arena Virtual**, permitindo a validação contínua da estratégia de entrada do piloto automático.
 
 Este design cria um ambiente focado e especializado, onde podemos testar e refinar as nossas novas estratégias de negociação de volatilidade de forma segura e eficiente.
