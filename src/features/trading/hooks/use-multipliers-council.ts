@@ -4,193 +4,234 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useDerivApiMultipliers } from './use-deriv-api-multipliers';
 import { useToast } from '@/hooks/use-toast';
-import type { CandleData, Operation } from '@/lib/types';
+import type { CandleData } from '@/lib/types';
 import { useFormContext } from 'react-hook-form';
 import type { MultipliersFormValues } from '../components/deriv-trader/deriv-trader-interface-multipliers.types';
 import { calculateAllIndicators, type Indicators } from '@/services/indicator-service';
 import { initialCouncilStrategies } from '@/services/council-strategies';
 
-type BotStatus = 'IDLE' | 'MONITORING' | 'TREND_FOUND' | 'EXECUTING_TRADE' | 'PAUSED';
+// ============================================================================
+// 1. CONFIGURAÇÕES E TIPOS
+// ============================================================================
+
+type BotStatus = 'PAUSED' | 'RANGING' | 'LOW_VOLATILITY' | 'MONITORING' | 'POSITION_OPEN' | 'COOL_DOWN';
 type TrendDirection = 'UP' | 'DOWN' | 'NONE';
 
-const RSI_PERIOD = 14;
-const RSI_MID_LEVEL = 50;
-const LONG_EMA_PERIOD = 100;
+const ADX_THRESHOLD = 25;
+const RSI_UPPER_BOUND = 60;
+const RSI_LOWER_BOUND = 40;
+const COMMISSION_PERCENT = 0.02; // 0.02%
+const SPREAD_ESTIMATE_PERCENT = 0.01; // 0.01%
+const MMB_ATR_MULTIPLIER = 2.0;
+const BREAKEVEN_PROFIT_PERCENT = 15;
+const TRAILING_STOP_PROFIT_PERCENT = 30;
+const COOLDOWN_CANDLES = 3;
+const LONG_EMA_PERIOD = 100; // Constante para a EMA longa
+
+// ============================================================================
+// 2. HOOK PRINCIPAL
+// ============================================================================
 
 export function useMultipliersCouncil(
-    activeSymbol: string | null, 
+    activeSymbol: string | null,
     botCandleData: CandleData[],
     accountBalance: number | null
 ) {
-    const { executeTrade, isConnected, operationsLog, sellContract } = useDerivApiMultipliers();
+    const {
+        executeTrade,
+        isConnected,
+        operationsLog,
+        updateContract, // Importado para gerenciar trades
+    } = useDerivApiMultipliers();
+
     const { toast } = useToast();
     const form = useFormContext<MultipliersFormValues>();
 
+    // --- ESTADOS INTERNOS ---
     const [isAutopilotOn, setIsAutopilotOn] = useState(false);
     const [botStatus, setBotStatus] = useState<BotStatus>('PAUSED');
     const [trend, setTrend] = useState<TrendDirection>('NONE');
-    const [indicators, setIndicators] = useState<Indicators | null>(null);
     const [dailyBalance, setDailyBalance] = useState(10.0);
     const [dailyTarget, setDailyTarget] = useState(5.0);
-    
     const [calculatedRisk, setCalculatedRisk] = useState({ stake: 1.0, stopLoss: 1.0, takeProfit: 2.0 });
 
-    const lastRsiRef = useRef<number | null>(null);
+    // --- REFS PARA MANTER ESTADO ENTRE RENDERS ---
     const executionRef = useRef({ isExecuting: false });
-    const openPositionsRef = useRef<Set<number>>(new Set());
-    const lastSignalRef = useRef<'up' | 'down' | null>(null);
-
+    const rsiStateRef = useRef({ prev: 50, crossedDownFromUpper: false, crossedUpFromLower: false });
+    const cooldownRef = useRef(0);
+    const trailingStateRef = useRef<{ breakevenSet: boolean; trailingActive: boolean }>({ breakevenSet: false, trailingActive: false });
+    
+    // --- MEMOIZAÇÃO DE DADOS DERIVADOS ---
     const dailyPnL = useMemo(() => {
         const today = new Date().toDateString();
         return operationsLog
             .filter(op => op.status !== 'pending' && new Date(op.timestamp).toDateString() === today && op.initiator === 'Piloto')
             .reduce((sum, op) => sum + (op.result || 0), 0);
     }, [operationsLog]);
+    
+    const autopilotPosition = useMemo(() => 
+        operationsLog.find(op => op.initiator === 'Piloto' && op.status === 'pending'),
+    [operationsLog]);
 
-    // Cleanup closed positions from refs
+    // --- LÓGICA PRINCIPAL (EXECUTADA A CADA NOVA VELA) ---
     useEffect(() => {
-        const openContractIds = new Set(operationsLog.filter(op => op.status === 'pending').map(op => op.id));
-        
-        for (const id of openPositionsRef.current) {
-            if (!openContractIds.has(id)) {
-                openPositionsRef.current.delete(id);
-            }
-        }
-    }, [operationsLog]);
-
-
-    // Core Trading Logic
-    useEffect(() => {
-        if (!isAutopilotOn || !isConnected || !activeSymbol || botCandleData.length < LONG_EMA_PERIOD) {
+        // --- CLÁUSULAS DE GUARDA (CONDIÇÕES PARA NÃO EXECUTAR) ---
+        if (!isAutopilotOn || !isConnected || !activeSymbol || !accountBalance || botCandleData.length < LONG_EMA_PERIOD) {
             setBotStatus(isAutopilotOn ? 'MONITORING' : 'PAUSED');
             return;
         }
-
         if (executionRef.current.isExecuting) return;
 
-        if (dailyPnL <= -dailyBalance) {
+        // Proteção de banca
+        if (dailyPnL <= -dailyBalance || dailyPnL >= dailyTarget) {
             if (isAutopilotOn) {
                 setIsAutopilotOn(false);
-                toast({
-                    title: "🤖 Piloto Automático: Limite de Perda Atingido",
-                    description: `O sistema foi pausado para proteger seu capital. Perda do dia: $${dailyPnL.toFixed(2)}`,
-                    variant: "destructive"
-                });
+                const reason = dailyPnL <= -dailyBalance ? "Limite de Perda Atingido" : "Meta de Lucro Atingida";
+                toast({ title: `🤖 Piloto Pausado: ${reason}`, variant: "destructive" });
             }
             return;
         }
 
-        if (dailyPnL >= dailyTarget) {
-            if (isAutopilotOn) {
-                setIsAutopilotOn(false);
-                toast({
-                    title: "🏆 Piloto Automático: Meta de Lucro Atingida!",
-                    description: `Parabéns! O sistema foi pausado. Lucro do dia: $${dailyPnL.toFixed(2)}`,
-                });
-            }
-            return;
-        }
-        
         const executeLogic = async () => {
             executionRef.current.isExecuting = true;
 
-            const calculatedIndicators = calculateAllIndicators(botCandleData, initialCouncilStrategies, '1m', {duration: 15, unit: 's'});
-            setIndicators(calculatedIndicators);
+            const indicators = calculateAllIndicators(botCandleData, initialCouncilStrategies, '1m', { duration: 15, unit: 's' });
+            if (!indicators || !indicators.adx || !indicators.ma.long || !indicators.rsi || !indicators.atr) {
+                executionRef.current.isExecuting = false;
+                return;
+            }
 
-            if (!calculatedIndicators || !calculatedIndicators.rsi || !calculatedIndicators.ma.long || !accountBalance) {
-                setBotStatus('MONITORING');
+            // --- GESTÃO DE TRADE (TRAILING STOP) ---
+            if (autopilotPosition) {
+                setBotStatus('POSITION_OPEN');
+                const { stake = 0, result = 0, id: contractId, entryPrice } = autopilotPosition;
+                const profitPercent = stake > 0 ? (result / stake) * 100 : 0;
+                
+                // 1. Mover para o Breakeven
+                if (!trailingStateRef.current.breakevenSet && profitPercent >= BREAKEVEN_PROFIT_PERCENT) {
+                    await updateContract(contractId, undefined, entryPrice);
+                    trailingStateRef.current.breakevenSet = true;
+                    toast({ title: "🛡️ Stop no Breakeven", description: `Posição #${contractId} protegida.` });
+                }
+                // 2. Ativar Trailing Stop
+                else if (profitPercent >= TRAILING_STOP_PROFIT_PERCENT) {
+                    const newStopLoss = botCandleData[botCandleData.length-1].close - indicators.atr;
+                    if(newStopLoss > (autopilotPosition.stopLoss || 0)) {
+                        await updateContract(contractId, undefined, newStopLoss);
+                        trailingStateRef.current.trailingActive = true;
+                    }
+                }
+                executionRef.current.isExecuting = false;
+                return;
+            } else {
+                 // Resetar estado do trailing stop se não há posição
+                if(trailingStateRef.current.breakevenSet || trailingStateRef.current.trailingActive) {
+                    trailingStateRef.current = { breakevenSet: false, trailingActive: false };
+                }
+            }
+
+            // --- LÓGICA DE ABERTURA DE POSIÇÃO ---
+            if (cooldownRef.current > 0) {
+                setBotStatus('COOL_DOWN');
+                cooldownRef.current--;
+                executionRef.current.isExecuting = false;
+                return;
+            }
+
+            const { adx, ma: { long: ema100 }, rsi, atr } = indicators;
+            const lastPrice = botCandleData[botCandleData.length - 1].close;
+
+            // 1. FILTRO DE QUALIDADE DE TENDÊNCIA
+            if (adx < ADX_THRESHOLD) {
+                setBotStatus('RANGING');
+                executionRef.current.isExecuting = false;
+                return;
+            }
+
+            // 2. CÁLCULO DE BREAKEVEN DINÂMICO
+            const multiplier = form.getValues('multiplier');
+            const mmbPercent = (((COMMISSION_PERCENT / 100) * 2) / multiplier) + (SPREAD_ESTIMATE_PERCENT / 100);
+            const projectedMove = atr; // ATR já é um movimento projetado
+            const projectedMovePercent = projectedMove / lastPrice;
+
+            if (projectedMovePercent < (mmbPercent * MMB_ATR_MULTIPLIER)) {
+                setBotStatus('LOW_VOLATILITY');
                 executionRef.current.isExecuting = false;
                 return;
             }
             
-            const lastPrice = botCandleData[botCandleData.length - 1].close;
-            const longEMA = calculatedIndicators.ma.long;
-            const rsi = calculatedIndicators.rsi;
-            
-            const currentTrend: TrendDirection = lastPrice > longEMA ? 'UP' : lastPrice < longEMA ? 'DOWN' : 'NONE';
+            // 3. LÓGICA DE ENTRADA REFINADA (PULLBACK)
+            const currentTrend: TrendDirection = lastPrice > ema100! ? 'UP' : 'DOWN';
             setTrend(currentTrend);
+            
+            const prevRsi = rsiStateRef.current.prev;
+            
+            // Detecta se o RSI esteve na zona de pullback
+            if (rsi < RSI_LOWER_BOUND) rsiStateRef.current.crossedUpFromLower = true;
+            if (rsi > RSI_UPPER_BOUND) rsiStateRef.current.crossedDownFromUpper = true;
+            
+            rsiStateRef.current.prev = rsi;
 
             let signal: 'up' | 'down' | null = null;
-            if (lastRsiRef.current !== null) {
-                if (currentTrend === 'UP' && lastRsiRef.current <= RSI_MID_LEVEL && rsi > RSI_MID_LEVEL) {
-                    signal = 'up';
-                }
-                else if (currentTrend === 'DOWN' && lastRsiRef.current >= RSI_MID_LEVEL && rsi < RSI_MID_LEVEL) {
-                    signal = 'down';
-                }
+            if (currentTrend === 'UP' && rsiStateRef.current.crossedUpFromLower && rsi > RSI_LOWER_BOUND) {
+                signal = 'up';
+                rsiStateRef.current.crossedUpFromLower = false;
+            } else if (currentTrend === 'DOWN' && rsiStateRef.current.crossedDownFromUpper && rsi < RSI_UPPER_BOUND) {
+                signal = 'down';
+                rsiStateRef.current.crossedDownFromUpper = false;
             }
             
-            const hasChangedDirection = lastSignalRef.current !== signal;
-            lastRsiRef.current = rsi;
-
-            if (signal && hasChangedDirection) {
-                lastSignalRef.current = signal;
+            if (signal) {
                 setBotStatus('EXECUTING_TRADE');
+                const baseStake = Math.max(1.0, dailyBalance * 0.02); // 2% da banca do dia
+                const volatilityFactor = Math.max(0.5, 1 - (atr/lastPrice * 100)); // Reduz stake se vol > 1%
+                const finalStake = Math.max(1.0, Math.min(baseStake * volatilityFactor, 5.0));
 
-                const baseRiskPercentage = 0.01; // 1%
-                const atr = calculatedIndicators.atr || 0;
-                const normalizedAtr = atr > 0 && lastPrice > 0 ? atr / lastPrice : 0.001;
+                const stopLoss = finalStake; // Stop Loss inicial igual ao stake
+                const takeProfit = finalStake * 1.5; // Alvo de 150%
 
-                const volatilityFactor = normalizedAtr / 0.0005;
-                const cappedVolatilityFactor = Math.max(0.5, Math.min(2.0, volatilityFactor));
-                const adjustedRiskPercentage = baseRiskPercentage / cappedVolatilityFactor;
-                
-                const stake = Math.max(1.0, dailyBalance * adjustedRiskPercentage);
-                const takeProfit = stake * 0.25; // Alvo de 25% de lucro
-                
-                setCalculatedRisk({ stake, stopLoss: stake, takeProfit });
+                setCalculatedRisk({ stake: finalStake, stopLoss, takeProfit });
 
-                setTimeout(() => {
-                    toast({
-                        title: `🤖 Piloto Automático: Sinal ${signal!.toUpperCase()}!`,
-                        description: `Tendência ${currentTrend} confirmada. Stake de $${stake.toFixed(2)} (ATR ajustado).`,
-                    });
-                }, 0);
-                
                 const result = await executeTrade(
                     signal === 'up' ? 'MULTUP' : 'MULTDOWN',
-                    stake,
-                    activeSymbol,
-                    form.getValues('multiplier'),
+                    finalStake,
+                    activeSymbol!,
+                    multiplier,
                     takeProfit,
-                    stake, // Stop-loss é o próprio stake
+                    stopLoss,
                     undefined,
                     'Piloto'
                 );
 
-                if (result.success && result.contractId) {
-                    openPositionsRef.current.add(result.contractId);
+                if (result.success) {
+                    cooldownRef.current = COOLDOWN_CANDLES;
+                    toast({ title: `🤖 Pullback de ${signal.toUpperCase()}!`, description: `Posição aberta com stake de $${finalStake.toFixed(2)}.` });
+                } else {
+                    toast({ title: `❌ Falha na Execução`, description: result.message, variant: "destructive" });
                 }
-
-                await new Promise(resolve => setTimeout(resolve, 10000));
             } else {
-                 setBotStatus('TREND_FOUND');
+                setBotStatus('MONITORING');
             }
-
+            
             executionRef.current.isExecuting = false;
         };
 
         executeLogic();
 
     }, [
-        botCandleData, isAutopilotOn, isConnected, activeSymbol,
-        executeTrade, toast, accountBalance, form, dailyPnL, dailyBalance, dailyTarget, setIsAutopilotOn
+        botCandleData, isAutopilotOn, isConnected, activeSymbol, form, toast,
+        accountBalance, dailyBalance, dailyTarget, dailyPnL,
+        executeTrade, updateContract, operationsLog, autopilotPosition
     ]);
-
 
     const toggleAutopilot = useCallback(() => {
         setIsAutopilotOn(prevState => {
             const newState = !prevState;
-            setTimeout(() => {
-                toast({
-                    title: `Piloto Automático ${newState ? 'Ativado' : 'Desativado'}`,
-                    description: `O sistema ${newState ? 'começará a' : 'parou de'} procurar oportunidades.`,
-                });
-            }, 0);
+            toast({ title: `Piloto ${newState ? 'Ativado' : 'Desativado'}` });
             if (!newState) {
-                setBotStatus('PAUSED');
-                lastRsiRef.current = null;
-                openPositionsRef.current.clear();
+                 setBotStatus('PAUSED');
+                 rsiStateRef.current = { prev: 50, crossedDownFromUpper: false, crossedUpFromLower: false };
+                 cooldownRef.current = 0;
             } else {
                 setBotStatus('MONITORING');
             }
