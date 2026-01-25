@@ -323,7 +323,7 @@ export const DerivApiProviderAccumulators = ({ children }: { children: ReactNode
       const sanitizedStake = parseFloat(stake.toFixed(2));
       const buyRequest: any = {
         buy: "1",
-        price: sanitizedStake,
+        price: 10000,
         parameters: {
             amount: sanitizedStake,
             basis: "stake",
