@@ -1,3 +1,4 @@
+
 // src/features/trading/components/deriv-trader/operations-log-multipliers.tsx
 'use client';
 
@@ -11,7 +12,7 @@ import {
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import type { Operation, OperationInitiator } from "@/lib/types";
-import { ArrowDown, ArrowUp, Bot, User, Users, MoveRight, Clock, XSquare, Loader2, Target, MoveUpRight, ShieldAlert, Settings } from "lucide-react";
+import { ArrowDown, ArrowUp, Bot, User, Users, MoveRight, Clock, XSquare, Loader2, Target, MoveUpRight, ShieldAlert, Settings, Trash2 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Button } from "@/components/ui/button";
@@ -20,6 +21,7 @@ import { ManagePositionDialog } from './manage-position-dialog';
 interface OperationsLogMultipliersProps {
   operations: Operation[];
   sellContract: (contractId: number) => Promise<any>;
+  clearActiveContracts: () => void;
 }
 
 const initiatorIcons: Record<OperationInitiator, React.ReactNode> = {
@@ -37,7 +39,7 @@ const formatTime = (isoString: string | undefined): string => {
     }
 };
 
-export default function OperationsLogMultipliers({ operations, sellContract }: OperationsLogMultipliersProps) {
+export default function OperationsLogMultipliers({ operations, sellContract, clearActiveContracts }: OperationsLogMultipliersProps) {
     const [sellingContractId, setSellingContractId] = useState<number | null>(null);
 
     const dailySummary = useMemo(() => {
@@ -67,15 +69,23 @@ export default function OperationsLogMultipliers({ operations, sellContract }: O
                             Acompanhe suas posições abertas e o histórico de negociações.
                         </CardDescription>
                     </div>
-                    <div className="text-right">
-                        <p className="text-xs text-muted-foreground">Resultado do Dia</p>
-                        <p className={cn(
-                            "text-lg font-bold",
-                            dailySummary >= 0 && "text-green-600",
-                            dailySummary < 0 && "text-destructive"
-                        )}>
-                            {dailySummary.toLocaleString('pt-BR', { style: 'currency', currency: 'USD' })}
-                        </p>
+                    <div className="flex items-center gap-2">
+                        <div className="text-right">
+                            <p className="text-xs text-muted-foreground">Resultado do Dia</p>
+                            <p className={cn(
+                                "text-lg font-bold",
+                                dailySummary >= 0 && "text-green-600",
+                                dailySummary < 0 && "text-destructive"
+                            )}>
+                                {dailySummary.toLocaleString('pt-BR', { style: 'currency', currency: 'USD' })}
+                            </p>
+                        </div>
+                        {operations.length > 0 && (
+                            <Button variant="ghost" size="icon" onClick={clearActiveContracts}>
+                                <Trash2 className="h-4 w-4" />
+                                <span className="sr-only">Limpar log</span>
+                            </Button>
+                        )}
                     </div>
                 </div>
             </CardHeader>

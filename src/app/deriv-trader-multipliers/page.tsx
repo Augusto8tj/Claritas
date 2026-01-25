@@ -1,3 +1,4 @@
+
 // /src/app/deriv-trader-multipliers/page.tsx
 'use client';
 
@@ -116,7 +117,7 @@ const IsolatedMarketChart = ({ indicators }: { indicators: Indicators | null }) 
 const isCandle = (d: ChartData): d is CandleData => d != null && 'close' in d;
 
 const MultipliersTraderCore = ({ indicators }: { indicators: Indicators | null }) => {
-    const { activeSymbol, operationsLog, sellContract, botCandleData, accountBalance, chartData, chartType } = useDerivApiMultipliers();
+    const { activeSymbol, operationsLog, sellContract, botCandleData, accountBalance, chartData, chartType, clearActiveContracts } = useDerivApiMultipliers();
     const multipliersCouncil = useMultipliersCouncil(activeSymbol, botCandleData, accountBalance.balance);
     const latestDataPoint = chartData.length > 0 ? chartData[chartData.length - 1] : null;
     
@@ -131,7 +132,7 @@ const MultipliersTraderCore = ({ indicators }: { indicators: Indicators | null }
                     <MultipliersAutopilotInterface {...multipliersCouncil} />
                 </div>
             </div>
-             <OperationsLogMultipliers operations={operationsLog} sellContract={sellContract} />
+             <OperationsLogMultipliers operations={operationsLog} sellContract={sellContract} clearActiveContracts={clearActiveContracts} />
         </div>
     );
 };
