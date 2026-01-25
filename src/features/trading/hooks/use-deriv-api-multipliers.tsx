@@ -1,4 +1,3 @@
-
 // /src/features/trading/hooks/use-deriv-api-multipliers.tsx
 'use client';
 
@@ -333,7 +332,7 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
                   high: parseFloat(candle.high),
                   low: parseFloat(candle.low),
                   close: parseFloat(candle.close),
-                  volume: candle.tick_count || 1,
+                  volume: candle.tick_count || 1
               }));
           }
           
@@ -359,8 +358,7 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
         }
 
         const updateRequest: any = {
-            contract_update: 1,
-            contract_id: contractId,
+            contract_update: contractId,
             limit_order: {}
         };
         
