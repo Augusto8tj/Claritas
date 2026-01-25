@@ -162,7 +162,7 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
   const [toastQueue, setToastQueue] = useState<any[]>([]);
   const [tradeAnnotations, setTradeAnnotations] = useState<TradeAnnotation[]>([]);
 
-  const [activeSymbol, setActiveSymbol] = useState<string | null>('1HZ75V');
+  const [activeSymbol, setActiveSymbol] = useState<string | null>('R_75');
   const [chartData, setChartData] = useState<ChartData[]>([]);
   const [botCandleData, setBotCandleData] = useState<CandleData[]>([]);
   const [priceTicks, setPriceTicks] = useState<TickData[]>([]); 
