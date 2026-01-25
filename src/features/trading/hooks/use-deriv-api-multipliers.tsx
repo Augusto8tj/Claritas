@@ -1,3 +1,4 @@
+
 // /src/features/trading/hooks/use-deriv-api-multipliers.tsx
 'use client';
 
@@ -363,11 +364,11 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
         };
         
         if (takeProfit !== undefined) {
-            updateRequest.limit_order.take_profit = takeProfit > 0 ? parseFloat(takeProfit.toFixed(2)) : null;
+            updateRequest.limit_order.take_profit = parseFloat(takeProfit.toFixed(2));
         }
         
         if (stopLoss !== undefined) {
-            updateRequest.limit_order.stop_loss = stopLoss > 0 ? parseFloat(stopLoss.toFixed(2)) : null;
+            updateRequest.limit_order.stop_loss = parseFloat(stopLoss.toFixed(2));
         }
 
         const response: any = await makeRequest(updateRequest);
@@ -532,7 +533,6 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
 
     try {
         sellingContractsRef.current.add(contractId);
-        // CORREÇÃO: A API exige "price: 0" para fechar a preço de mercado.
         const sellResponse: any = await makeRequest({ "sell": contractId, "price": 0 });
 
         if (sellResponse.error) {
@@ -1167,3 +1167,5 @@ export function useDerivApiMultipliers() {
   }
   return context;
 }
+
+    

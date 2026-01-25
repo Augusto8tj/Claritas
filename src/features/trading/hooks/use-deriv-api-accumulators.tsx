@@ -1,3 +1,4 @@
+
 // src/features/trading/hooks/use-deriv-api-accumulators.tsx
 'use client';
 
@@ -338,7 +339,7 @@ export const DerivApiProviderAccumulators = ({ children }: { children: ReactNode
           throw new Error("Falha ao obter uma proposta de negociação da API. A resposta não continha um ID.");
       }
 
-      const buyResponse: any = await makeRequest({ "buy": proposal.id });
+      const buyResponse: any = await makeRequest({ "buy": proposal.id, "price": proposal.ask_price });
 
       const buyResult = buyResponse.buy;
       const contractId = buyResult.contract_id;
@@ -754,3 +755,5 @@ export function useDerivApiAccumulators() {
   }
   return context;
 }
+
+    
