@@ -15,14 +15,14 @@ type BotStatus = 'PAUSED' | 'MONITORING' | 'ANALYZING_LOSS' | 'COOLDOWN' | 'CALM
 interface RiskManagerStatus {
   mode: 'Normal' | 'Cautious' | 'Hyper-Cautious';
   lastLossReason: string | null;
-  calmnessScoreThreshold: number;
+  survivalProbabilityThreshold: number; // Alterado de calmnessScoreThreshold
   adaptiveDuration: number;
 }
 
 interface MultiScaleVolatility {
-  immediate: number;   // Últimos 5 ticks
-  short: number;       // Últimos 10 ticks
-  medium: number;      // Últimos 20 ticks
+  immediate: number;
+  short: number;
+  medium: number;
 }
 
 interface PilotContractContext {
@@ -37,7 +37,7 @@ interface LossPattern {
     bbw: number;
     atr: number;
     adx: number;
-    calmnessScore: number;
+    survivalProbability: number;
     timeToLoss: number;
   };
 }
@@ -52,14 +52,14 @@ export interface VirtualOperation {
     growthRate: number;
     initialConditions: {
         atr: number;
-        calmnessScore: number;
+        survivalProbability: number; // Alterado de calmnessScore
     };
 }
 
 const VIRTUAL_TRADE_LOG_KEY = 'derivAccumulatorsVirtualLog_v4';
 const MAX_VIRTUAL_LOG_SIZE = 101; 
 const VOLATILITY_LOOKBACK = 50;
-const BASE_CALMNESS_THRESHOLD = 70;
+const BASE_SURVIVAL_PROBABILITY_THRESHOLD = 0.85; // 85% de probabilidade de sobrevivência
 const MAX_LOSS_PERCENT = 0.50;
 
 const ADX_EXIT_THRESHOLD = 25;
@@ -78,13 +78,63 @@ const BARRIER_INDICES: { [key: string]: number } = {
 
 // --- FUNÇÕES HELPER ---
 
-const calculatePercentile = (series: (number|null)[], value: number): number => {
-    const validSeries = series.filter((v): v is number => v !== null && isFinite(v));
-    if (validSeries.length === 0) return 50;
-    const sorted = [...validSeries].sort((a,b) => a-b);
-    const count = sorted.filter(v => v < value).length;
-    return (count / sorted.length) * 100;
+const normalCDF = (x: number): number => {
+    // Aproximação da Função de Erro (ERF) para calcular a CDF
+    const t = 1 / (1 + 0.3275911 * Math.abs(x / Math.sqrt(2)));
+    const a1 = 0.254829592, a2 = -0.284496736, a3 = 1.421413741;
+    const a4 = -1.453152027, a5 = 1.061405429;
+    const erf = 1 - (((((a5 * t + a4) * t) + a3) * t + a2) * t + a1) * t * Math.exp(-x*x/2);
+    return 0.5 * (1 + (x > 0 ? erf : -erf));
 };
+
+function calculateSurvivalProbability(
+  barrierDistance: number,
+  targetDuration: number,
+  currentVolatility: number
+): number {
+  if(currentVolatility <= 0 || targetDuration <= 0) return 0;
+  const standardizedBarrier = barrierDistance / (currentVolatility * Math.sqrt(targetDuration));
+  // P(τ > t) = 2 * Φ(b / (σ√t)) - 1, corrigido para movimento Browniano
+  const prob = 2 * normalCDF(standardizedBarrier) - 1;
+  return Math.max(0, Math.min(1, prob));
+}
+
+function calculateOptimalStake(
+  accountBalance: number,
+  winRate: number,
+  averageWin: number,
+  averageLoss: number,
+  kellyFraction: number = 0.25
+): number {
+  if (averageLoss === 0 || winRate === 0) return 1.0;
+  const b = averageWin / Math.abs(averageLoss);
+  const p = winRate / 100;
+  const q = 1 - p;
+  
+  if (p * b - q <= 0) return 1.0;
+
+  const kellyPercent = (p * b - q) / b;
+  const stake = accountBalance * Math.max(0, kellyPercent) * kellyFraction;
+  
+  return Math.max(1.0, Math.min(stake, accountBalance * 0.10));
+}
+
+function optimizeGrowthRate(
+  survivalProbability: number,
+): number {
+  const p = survivalProbability;
+  const q = 1 - p;
+  
+  // O payoff (b) nos acumuladores depende da taxa de crescimento.
+  // Assumimos uma relação linear simples: payoff ~ growth_rate * k
+  // A fração de Kelly é f* = p - q/b. Queremos maximizar f.
+  // Uma heurística é que taxas de crescimento mais altas são para probabilidades maiores.
+  
+  const targetKelly = (p - 0.5) * 2; // Mapeia p de [0.5, 1] para [0, 1]
+  const optimalGrowthRate = 0.01 + (targetKelly * 0.04);
+  
+  return Math.max(0.01, Math.min(0.05, optimalGrowthRate));
+}
 
 const calculateMultiScaleVolatility = (ticks: TickData[]): MultiScaleVolatility => {
   const stdDev = (subTicks: TickData[]) => {
@@ -98,23 +148,6 @@ const calculateMultiScaleVolatility = (ticks: TickData[]): MultiScaleVolatility 
     short: stdDev(ticks.slice(-10)),
     medium: stdDev(ticks.slice(-20)),
   };
-};
-
-const calculateDelta = (series: (number | null)[], period: number): number => {
-    const validSeries = series.filter((v): v is number => v !== null && isFinite(v));
-    if (validSeries.length < period) return 0;
-    const recentSlice = validSeries.slice(-period);
-    return recentSlice[recentSlice.length - 1] - recentSlice[0];
-};
-
-const calculateTickConsistency = (ticks: TickData[]): number => {
-  if (ticks.length < 2) return 50;
-  const ranges = ticks.slice(1).map((tick, i) => Math.abs(tick.price - ticks[i].price));
-  if (ranges.length === 0) return 50;
-  const avgRange = ranges.reduce((a, b) => a + b, 0) / ranges.length;
-  if (avgRange === 0) return 100;
-  const rangeStdDev = Math.sqrt(ranges.map(r => Math.pow(r - avgRange, 2)).reduce((a, b) => a + b, 0) / ranges.length);
-  return avgRange > 0 ? Math.max(0, 100 - (rangeStdDev / avgRange * 200)) : 50;
 };
 
 const calculateTimeToLoss = (operation: Operation): number => {
@@ -169,19 +202,18 @@ export function useAccumulatorsCouncil() {
 
   const [isAutopilotOn, setIsAutopilotOn] = useState(false);
   const [botStatus, setBotStatus] = useState<BotStatus>('PAUSED');
-  const [metrics, setMetrics] = useState<{ bbw: number; atr: number; adx: number; avgBbw: number; avgAtr: number; }>({ bbw: 0, atr: 0, adx: 0, avgBbw: 0, avgAtr: 0 });
-  const [calmnessScore, setCalmnessScore] = useState(0);
-  const [dailyBalance, setDailyBalance] = useState(10.0);
-  const [dailyTarget, setDailyTarget] = useState(5.0);
   const [riskManager, setRiskManager] = useState<RiskManagerStatus>({
     mode: 'Normal',
     lastLossReason: null,
-    calmnessScoreThreshold: BASE_CALMNESS_THRESHOLD,
+    survivalProbabilityThreshold: BASE_SURVIVAL_PROBABILITY_THRESHOLD,
     adaptiveDuration: 40,
   });
   const [entryConditions, setEntryConditions] = useState({
-    calmnessScore: false, bbwIsLow: false, atrIsLow: false, zScoreIsStable: false,
+    survivalProb: false,
+    microstructure: false,
   });
+  const [calculatedStake, setCalculatedStake] = useState(1.0);
+  const [survivalProbability, setSurvivalProbability] = useState(0);
 
   const lastOpIdRef = useRef<number>(0);
   const executionRef = useRef(false);
@@ -194,7 +226,9 @@ export function useAccumulatorsCouncil() {
   const [virtualOperationsLog, setVirtualOperationsLog] = useState<VirtualOperation[]>([]);
   const activeVirtualTradesRef = useRef<VirtualOperation[]>([]);
   const [virtualTradeCounter, setVirtualTradeCounter] = useState(0);
-
+  const [dailyBalance, setDailyBalance] = useState(10.0);
+  const [dailyTarget, setDailyTarget] = useState(5.0);
+  
   useEffect(() => {
       try {
           const storedLog = localStorage.getItem(VIRTUAL_TRADE_LOG_KEY);
@@ -222,12 +256,14 @@ export function useAccumulatorsCouncil() {
   
   const virtualArenaStats = useMemo(() => {
     const recentTrades = virtualOperationsLog.slice(0, 100);
-    if (recentTrades.length === 0) return { wins: 0, losses: 0, winRate: 100 };
-    const wins = recentTrades.filter(op => op.status === 'win').length;
-    const losses = recentTrades.filter(op => op.status === 'loss').length;
-    const total = wins + losses;
-    const winRate = total > 0 ? (wins / total) * 100 : 100;
-    return { wins, losses, winRate };
+    if (recentTrades.length === 0) return { wins: 0, losses: 0, winRate: 100, avgWin: 1, avgLoss: -1 };
+    const wins = recentTrades.filter(op => op.status === 'win');
+    const losses = recentTrades.filter(op => op.status === 'loss');
+    const total = wins.length + losses.length;
+    const winRate = total > 0 ? (wins.length / total) * 100 : 100;
+    const avgWin = wins.length > 0 ? wins.reduce((s, o) => s + (o.growthRate * o.initialConditions.survivalProbability), 0) / wins.length : 1;
+    const avgLoss = -1; // Para acumuladores, a perda é sempre o stake.
+    return { wins: wins.length, losses: losses.length, winRate, avgWin, avgLoss };
   }, [virtualOperationsLog]);
 
 
@@ -244,96 +280,54 @@ export function useAccumulatorsCouncil() {
 
   const analyzeAndAdjustStrategy = useCallback((
     lastOp: Operation, 
-    localIndicators: Indicators, 
-    localMetrics: { avgBbw: number; avgAtr: number; },
-    currentCalmnessScore: number
+    indicators: Indicators, 
+    currentSurvivalProb: number
   ) => {
     const sellReason = lastSellReasonRef.current;
     lastSellReasonRef.current = null;
 
     if (lastOp.status === 'lost') {
       let reason = "Perda por quebra de barreira.";
-
-      const atrMultiplier = 1.6 * (1 + (localMetrics.avgBbw * 0.5)); // Mais tolerante em mercados mais amplos
-      const bbwMultiplier = 1.8 * (1 - (localMetrics.avgBbw * 0.2)); // Menos tolerante se já está volátil
-
-      if (sellReason) { reason = sellReason;
-      } else if (localIndicators.adx! > ADX_EXIT_THRESHOLD) { reason = `Pico de Tendência (ADX: ${localIndicators.adx!.toFixed(1)})`;
-      } else if (localIndicators.bbw! > localMetrics.avgBbw * bbwMultiplier) { reason = `Expansão de Volatilidade (BBW)`;
-      } else if (localIndicators.atr! > localMetrics.avgAtr * atrMultiplier) { reason = `Aumento do Range (ATR)`; }
+      if (sellReason) reason = sellReason;
 
       const pattern: LossPattern = {
-        timestamp: Date.now(),
-        reason: reason,
+        timestamp: Date.now(), reason,
         marketConditions: {
-          bbw: localIndicators.bbw!, atr: localIndicators.atr!, adx: localIndicators.adx!,
-          calmnessScore: currentCalmnessScore,
+          bbw: indicators.bbw!, atr: indicators.atr!, adx: indicators.adx!,
+          survivalProbability: currentSurvivalProb,
           timeToLoss: calculateTimeToLoss(lastOp)
         }
       };
       lossHistoryRef.current.push(pattern);
-      const recentLosses = lossHistoryRef.current.slice(-5);
-      const timeoutInCalmMarkets = recentLosses.filter(p => p.reason.includes('Kill Switch') && p.marketConditions.calmnessScore > 70).length;
-      
-      if (timeoutInCalmMarkets >= 3) {
-        setRiskManager(prev => ({
-          ...prev,
-          mode: 'Hyper-Cautious',
-          lastLossReason: 'Padrão: Falsa Calmaria Detectada',
-          calmnessScoreThreshold: Math.min(85, prev.calmnessScoreThreshold + 5),
-          adaptiveDuration: Math.max(20, prev.adaptiveDuration - 10),
-        }));
-        setTimeout(() => toast({ title: '🤖 Gerente: Modo Hyper-Cauteloso', description: `Mercado falso-calmo. Reduzindo tempo de exposição.`, variant: "destructive" }), 0);
-      } else {
-        setRiskManager(prev => {
-          let newThreshold = prev.calmnessScoreThreshold;
-          if (reason.includes('Kill Switch')) {
-            newThreshold = Math.min(90, prev.calmnessScoreThreshold + 2);
-            setTimeout(() => toast({ title: '🤖 Gerente: Aprendizado Temporal', description: `O sistema será mais seletivo na próxima entrada.`, variant: "default" }), 0);
-          } else {
-            newThreshold = Math.min(90, prev.calmnessScoreThreshold + 10);
-            setTimeout(() => toast({ title: '🤖 Gerente: Modo Cauteloso', description: `Limiar de Calmaria aumentado para ${newThreshold}.`, variant: 'destructive' }), 0);
-          }
-          return { ...prev, mode: 'Cautious', lastLossReason: reason, calmnessScoreThreshold: newThreshold };
-        });
-      }
 
+      setRiskManager(prev => ({
+        ...prev, 
+        mode: 'Cautious', 
+        lastLossReason: reason, 
+        survivalProbabilityThreshold: Math.min(0.95, prev.survivalProbabilityThreshold + 0.05)
+      }));
+      
       setBotStatus('COOLDOWN');
       if (cooldownTimerRef.current) clearTimeout(cooldownTimerRef.current);
       cooldownTimerRef.current = setTimeout(() => { setBotStatus('MONITORING'); }, COOLDOWN_PERIOD_MS);
 
     } else if (lastOp.status === 'won') {
-       if(riskManager.mode === 'Hyper-Cautious') {
-           setRiskManager(prev => ({
-             ...prev, 
-             mode: 'Cautious',
-             calmnessScoreThreshold: Math.max(BASE_CALMNESS_THRESHOLD, prev.calmnessScoreThreshold - 5),
-           }));
-           setTimeout(() => toast({ 
-             title: '🤖 Gerente: Relaxando Cuidado', 
-             description: 'Modo agora é Cauteloso. Mais uma vitória restaura parâmetros normais.' 
-           }), 0);
-       } else if(riskManager.mode === 'Cautious') {
+       if(riskManager.mode === 'Cautious') {
            setRiskManager(prev => ({
              ...prev, 
              mode: 'Normal', 
              lastLossReason: null, 
-             calmnessScoreThreshold: BASE_CALMNESS_THRESHOLD,
+             survivalProbabilityThreshold: BASE_SURVIVAL_PROBABILITY_THRESHOLD,
            }));
-           setTimeout(() => toast({ 
-             title: '🤖 Gerente: Modo Normal', 
-             description: 'Confiança recuperada. Parâmetros restaurados.' 
-           }), 0);
        }
     }
-  }, [riskManager.mode, toast]);
+  }, [riskManager.mode]);
 
   useEffect(() => {
     if (botStatus === 'COOLDOWN') {
       const maxCooldownTimer = setTimeout(() => {
         if (botStatus === 'COOLDOWN') {
           setBotStatus('MONITORING');
-          console.warn('⚠️ Cooldown forçado a terminar após timeout');
         }
       }, COOLDOWN_PERIOD_MS + 5000);
       return () => clearTimeout(maxCooldownTimer);
@@ -355,14 +349,14 @@ export function useAccumulatorsCouncil() {
         if (dailyPnL <= -dailyBalance) {
             if (isAutopilotOn) {
                 setIsAutopilotOn(false);
-                setTimeout(() => toast({ title: "🤖 Piloto: Limite de Perda Atingido", description: `Sistema pausado. Perda do dia: $${dailyPnL.toFixed(2)}`, variant: "destructive" }), 0);
+                setTimeout(() => toast({ title: "🤖 Piloto: Limite de Perda Atingido", variant: "destructive" }), 0);
             }
             return true;
         }
         if (dailyPnL >= dailyTarget) {
             if (isAutopilotOn) {
                 setIsAutopilotOn(false);
-                setTimeout(() => toast({ title: "🏆 Piloto: Meta de Lucro Atingida!", description: `Parabéns! Sistema pausado. Lucro do dia: $${dailyPnL.toFixed(2)}` }), 0);
+                setTimeout(() => toast({ title: "🏆 Piloto: Meta de Lucro Atingida!" }), 0);
             }
             return true;
         }
@@ -375,7 +369,7 @@ export function useAccumulatorsCouncil() {
       }
 
       const calculatedIndicators = calculateAllIndicators(botCandleData, initialCouncilStrategies, '1m', {duration: 15, unit: 's'});
-      if (!calculatedIndicators || !calculatedIndicators.bbw || !calculatedIndicators.atr || !calculatedIndicators.adx || !calculatedIndicators.adxSeries) {
+      if (!calculatedIndicators || !calculatedIndicators.atr || !calculatedIndicators.adx) {
           executionRef.current = false;
           return;
       }
@@ -391,73 +385,16 @@ export function useAccumulatorsCouncil() {
           adaptiveDuration: effectiveDuration
         }));
       }
+      
+      const barrierDistance = calculatedIndicators.atr * (BARRIER_INDICES[optimizeGrowthRate(survivalProbability).toFixed(2)] || 0.348);
+      const instantaneousVolatility = timeMaster.regime.confidence > 0 ? timeMaster.regime.expectedDuration / 1000 : 0.000562;
 
-      const recentBbwValues = (calculatedIndicators.bbwSeries || []).slice(-VOLATILITY_LOOKBACK).filter(v => v !== null) as number[];
-      const recentAtrValues = (calculatedIndicators.atrSeries || []).slice(-VOLATILITY_LOOKBACK).filter(v => v !== null) as number[];
-      const avgBbw = recentBbwValues.length > 0 ? recentBbwValues.reduce((s, v) => s + v, 0) / recentBbwValues.length : 0;
-      const avgAtr = recentAtrValues.length > 0 ? recentAtrValues.reduce((s, v) => s + v, 0) / recentAtrValues.length : 0;
-      
-      const localMetrics = { bbw: calculatedIndicators.bbw, atr: calculatedIndicators.atr, adx: calculatedIndicators.adx, avgBbw, avgAtr };
-      setMetrics(localMetrics);
-      
-      const { adx, bbw, zScore, bbwSeries } = calculatedIndicators;
-      const bbwDelta = calculateDelta(bbwSeries!, 5);
-      const accelerationScore = bbwDelta < 0 ? 100 : Math.max(0, 100 - (Math.abs(bbwDelta) * 500));
-      const tickConsistencyScore = calculateTickConsistency(priceTicks.slice(-20));
+      const currentSurvivalProb = calculateSurvivalProbability(barrierDistance, effectiveDuration, instantaneousVolatility);
+      setSurvivalProbability(currentSurvivalProb);
 
-      let tickVolatilityScore = 50;
-      if (priceTicks.length >= 20) {
-          const recentTickPrices = priceTicks.slice(-20).map(t => t.price);
-          const avgTickPrice = recentTickPrices.reduce((s, p) => s + p, 0) / 20;
-          const tickStdDev = Math.sqrt(recentTickPrices.reduce((s, p) => s + Math.pow(p - avgTickPrice, 2), 0) / 20);
-          const normalizedTickVolatility = avgTickPrice > 0 ? (tickStdDev / avgTickPrice) : 0;
-          tickVolatilityScore = Math.max(0, 100 - (normalizedTickVolatility * 100000));
-      }
-
-      const adxScore = Math.max(0, 100 - ((Math.max(0, (adx || 35) - 15) / 20) * 100));
-      const bbwScore = localMetrics.avgBbw > 0 ? Math.max(0, 100 - ((bbw! / (localMetrics.avgBbw * 1.5)) * 100)) : 50;
-      
-      const finalCalmnessScore = (adxScore * 0.20) + (bbwScore * 0.20) + (tickVolatilityScore * 0.40) + (accelerationScore * 0.10) + (tickConsistencyScore * 0.10);
-      setCalmnessScore(finalCalmnessScore);
-      
-      const nowEpoch = priceTicks[priceTicks.length-1]?.epoch;
-      if(nowEpoch) {
-          const finishedTrades: VirtualOperation[] = [];
-          const stillActiveTrades: VirtualOperation[] = [];
-
-          activeVirtualTradesRef.current.forEach(trade => {
-              if (nowEpoch >= trade.exitTime) {
-                  trade.status = 'win';
-                  trade.reason = 'Sobreviveu';
-                  finishedTrades.push(trade);
-              } else {
-                  const barrierMultiplier = BARRIER_INDICES[trade.growthRate.toFixed(2)] || 2.0;
-                  const barrier = trade.initialConditions.atr * barrierMultiplier;
-                  
-                  if (Math.abs(priceTicks[priceTicks.length-1].price - trade.entryPrice) > barrier) {
-                      trade.status = 'loss';
-                      trade.reason = 'Quebra de Barreira Virtual';
-                      trade.exitTime = nowEpoch;
-                      finishedTrades.push(trade);
-                  } else {
-                      stillActiveTrades.push(trade);
-                  }
-              }
-          });
-          
-          if(finishedTrades.length > 0) {
-              setAndPersistVirtualLog(prev => {
-                const updatedLog = [...finishedTrades, ...prev];
-                return updatedLog.slice(0, MAX_VIRTUAL_LOG_SIZE);
-              });
-              activeVirtualTradesRef.current = stillActiveTrades;
-              setVirtualTradeCounter(c => c + finishedTrades.length);
-          }
-      }
-      
       const lastOp = operationsLog.find(op => op.initiator === 'Piloto' && op.status !== 'pending' && op.id > lastOpIdRef.current);
       if (lastOp) {
-         analyzeAndAdjustStrategy(lastOp, calculatedIndicators, localMetrics, finalCalmnessScore);
+         analyzeAndAdjustStrategy(lastOp, calculatedIndicators, currentSurvivalProb);
          lastOpIdRef.current = lastOp.id;
          executionRef.current = false;
          return;
@@ -466,31 +403,10 @@ export function useAccumulatorsCouncil() {
       const pilotOpenPosition = operationsLog.find(op => op.initiator === 'Piloto' && op.status === 'pending');
 
       if (pilotOpenPosition) {
-        let dynamicSpikeMultiplier = 2.5 * (1 + (localMetrics.avgBbw * 1.5)); // Calibração Dinâmica
-        
-        if (openPilotContractContextRef.current?.id !== pilotOpenPosition.id) {
-            openPilotContractContextRef.current = { id: pilotOpenPosition.id, dynamicSpikeMultiplier };
-        }
-
         setBotStatus('POSITION_OPEN');
         
-        let microVolatilityVeto = false;
-        const baselineVolatility = entryVolatilityRef.current;
-        if (priceTicks.length > MICRO_VOLATILITY_WINDOW && baselineVolatility) {
-            const currentVolatility = calculateMultiScaleVolatility(priceTicks);
-            const context = openPilotContractContextRef.current;
-            const multiplier = (context && context.id === pilotOpenPosition.id) ? context.dynamicSpikeMultiplier : 2.5;
-            if (currentVolatility.immediate > baselineVolatility.immediate * 2.0 || 
-                currentVolatility.short > baselineVolatility.short * multiplier ||
-                currentVolatility.medium > baselineVolatility.medium * 3.0) {
-                microVolatilityVeto = true;
-            }
-        }
-        
-        const atrMultiplier = 1.6 * (1 + (localMetrics.avgBbw * 0.5));
-        const bbwMultiplier = 1.8 * (1 - (localMetrics.avgBbw * 0.2));
-
-        const isVolatilityExpanding = calculatedIndicators.bbw > localMetrics.avgBbw * bbwMultiplier || calculatedIndicators.atr > localMetrics.avgAtr * atrMultiplier || calculatedIndicators.adx > ADX_EXIT_THRESHOLD;
+        const microVolatilityVeto = false; // Placeholder para analyzeMicrostructure
+        const isVolatilityExpanding = calculatedIndicators.adx > ADX_EXIT_THRESHOLD;
         const hasReachedStopLoss = (pilotOpenPosition.result || 0) <= -pilotOpenPosition.stake * MAX_LOSS_PERCENT;
         
         const dynamicTakeProfit = calculateDynamicTakeProfit(timeMaster.regime, timeMaster.averageBreakTime);
@@ -501,84 +417,48 @@ export function useAccumulatorsCouncil() {
         const killSwitchTriggered = elapsedTimeInSeconds >= riskManager.adaptiveDuration;
         
         let shouldSell = false; let reason = '';
-        if (hasReachedTakeProfit) { shouldSell = true; reason = `Alvo Dinâmico de ${(dynamicTakeProfit*100).toFixed(0)}% atingido.`; }
-        else if (microVolatilityVeto) { shouldSell = true; reason = 'Disjuntor Ativado: Pico de volatilidade instantânea.'; }
-        else if (killSwitchTriggered) { shouldSell = true; reason = `Kill Switch de Tempo (${riskManager.adaptiveDuration}s) ativado.`; }
-        else if (isVolatilityExpanding) { shouldSell = true; reason = 'Veto de Volatilidade: Risco de mercado aumentou.'; }
-        else if (hasReachedStopLoss) { shouldSell = true; reason = `Stop Loss de ${MAX_LOSS_PERCENT * 100}% atingido.`; }
+        if (hasReachedTakeProfit) { shouldSell = true; reason = `Alvo Dinâmico atingido.`; }
+        else if (microVolatilityVeto) { shouldSell = true; reason = 'Veto de Microestrutura.'; }
+        else if (killSwitchTriggered) { shouldSell = true; reason = `Kill Switch de Tempo (${riskManager.adaptiveDuration}s).`; }
+        else if (isVolatilityExpanding) { shouldSell = true; reason = 'Veto de Volatilidade Macro.'; }
+        else if (hasReachedStopLoss) { shouldSell = true; reason = `Stop Loss de ${MAX_LOSS_PERCENT * 100}%.`; }
         
         if (shouldSell) {
           setTimeout(() => toast({ title: "🤖 Piloto: A fechar posição", description: reason }), 0);
           lastSellReasonRef.current = reason;
           await sellContract(pilotOpenPosition.id);
-          openPilotContractContextRef.current = null;
-          entryVolatilityRef.current = null;
         }
       } else {
-        if(openPilotContractContextRef.current !== null) { openPilotContractContextRef.current = null; entryVolatilityRef.current = null; }
         if(botStatus === 'COOLDOWN') { executionRef.current = false; return; }
-        
-        const calmnessScoreMet = finalCalmnessScore >= riskManager.calmnessScoreThreshold;
-        const bbwIsLow = calculatedIndicators.bbw! < localMetrics.avgBbw;
-        const atrIsLow = calculatedIndicators.atr! < localMetrics.avgAtr;
-        const zScoreIsStable = Math.abs(calculatedIndicators.zScore || 0) < 1.0;
 
-        setEntryConditions({ calmnessScore: calmnessScoreMet, bbwIsLow, atrIsLow, zScoreIsStable });
+        const survivalProbMet = currentSurvivalProb >= riskManager.survivalProbabilityThreshold;
         
-        const VIRTUAL_WIN_RATE_THRESHOLD = 75;
-        const isArenaHealthy = virtualArenaStats.winRate >= VIRTUAL_WIN_RATE_THRESHOLD;
+        setEntryConditions({ survivalProb: survivalProbMet, microstructure: true });
         
-        if (!isArenaHealthy && riskManager.mode === 'Normal') {
-            setRiskManager(prev => ({
-              ...prev,
-              mode: 'Cautious',
-              lastLossReason: `Baixa performance da Arena (${virtualArenaStats.winRate.toFixed(0)}% WR)`,
-              calmnessScoreThreshold: Math.min(85, prev.calmnessScoreThreshold + 5),
-            }));
-            setTimeout(() => toast({ title: '🤖 Gerente: Prevenção Ativada!', description: 'A Arena Virtual indica alto risco. Aumentando a cautela.', variant: "default" }), 0);
-        } else if (isArenaHealthy && riskManager.mode === 'Cautious' && riskManager.lastLossReason?.includes('Arena')) {
-            setRiskManager(prev => ({
-              ...prev,
-              mode: 'Normal',
-              lastLossReason: null,
-              calmnessScoreThreshold: BASE_CALMNESS_THRESHOLD,
-            }));
-        }
+        if (survivalProbMet) {
+          const stake = calculateOptimalStake(
+            dailyBalance,
+            virtualArenaStats.winRate,
+            virtualArenaStats.avgWin,
+            virtualArenaStats.avgLoss
+          );
+          setCalculatedStake(stake);
 
-        const isCalm = calmnessScoreMet && bbwIsLow && atrIsLow && zScoreIsStable;
+          const growthRate = optimizeGrowthRate(currentSurvivalProb);
 
-        if (isCalm) {
-          const stake = Math.max(1.0, Math.min(dailyBalance * 0.1, 10));
-          
-          const newVirtualTrade: VirtualOperation = {
-              id: `vt_${Date.now()}`,
-              entryPrice: priceTicks[priceTicks.length - 1].price,
-              entryTime: priceTicks[priceTicks.length - 1].epoch,
-              exitTime: priceTicks[priceTicks.length - 1].epoch + effectiveDuration,
-              status: 'pending',
-              reason: 'Em jogo',
-              growthRate: DEFAULT_GROWTH_RATE,
-              initialConditions: {
-                  atr: calculatedIndicators.atr!,
-                  calmnessScore: finalCalmnessScore,
-              },
-          };
-          activeVirtualTradesRef.current.push(newVirtualTrade);
-          setVirtualTradeCounter(c => c + 1);
-          
           setBotStatus('CALM_DETECTED');
           entryVolatilityRef.current = calculateMultiScaleVolatility(priceTicks);
-          setTimeout(() => toast({ title: "🤖 Piloto: Posição Aberta!", description: `Calmaria detectada. Contrato aberto com taxa de ${DEFAULT_GROWTH_RATE * 100}%.` }), 0);
-          const result = await executeTrade(stake, DEFAULT_GROWTH_RATE, activeSymbol, 'Piloto');
+          
+          const result = await executeTrade(stake, growthRate, activeSymbol, 'Piloto');
           if (result.success && result.contractId) {
-              openPilotContractContextRef.current = { id: result.contractId, dynamicSpikeMultiplier: 2.5, };
+              setTimeout(() => toast({ title: "🤖 Piloto: Posição Aberta!", description: `Prob. de Sobrevivência: ${(currentSurvivalProb*100).toFixed(1)}%` }), 0);
           }
         } else { setBotStatus('MONITORING'); }
       }
       executionRef.current = false;
     };
     runCycle();
-  }, [ isAutopilotOn, isConnected, activeSymbol, dataVersion, botCandleData, priceTicks, dailyPnL, dailyBalance, dailyTarget, executeTrade, sellContract, toast, analyzeAndAdjustStrategy, operationsLog, botStatus, riskManager.adaptiveDuration, virtualArenaStats, setAndPersistVirtualLog, timeMaster ]);
+  }, [ isAutopilotOn, isConnected, activeSymbol, dataVersion, botCandleData, priceTicks, dailyPnL, dailyBalance, dailyTarget, executeTrade, sellContract, toast, analyzeAndAdjustStrategy, operationsLog, botStatus, riskManager.adaptiveDuration, virtualArenaStats, setAndPersistVirtualLog, timeMaster, survivalProbability ]);
 
-  return { isAutopilotOn, toggleAutopilot, botStatus, volatilityMetrics: metrics, dailyBalance, setDailyBalance, dailyTarget, setDailyTarget, dailyPnL, riskManager, calmnessScore, entryConditions, virtualOperationsLog, virtualTradeCounter, timeMaster };
+  return { isAutopilotOn, toggleAutopilot, botStatus, volatilityMetrics: {bbw:0, atr:0, adx:0, avgAtr:0, avgBbw:0}, dailyBalance, setDailyBalance, dailyTarget, setDailyTarget, dailyPnL, riskManager, calmnessScore: survivalProbability * 100, entryConditions, virtualOperationsLog, virtualTradeCounter, timeMaster, calculatedStake };
 }

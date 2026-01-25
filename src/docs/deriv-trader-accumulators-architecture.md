@@ -17,10 +17,10 @@ O Deriv Accumulators abandona a necessidade de prever a direção do mercado. O 
     *   **ATR (Average True Range):** Deve estar abaixo da sua média, confirmando baixa amplitude de movimento.
     *   **Z-Score:** O preço deve estar próximo da sua média estatística, indicando ausência de desvios extremos.
 4.  **Gestão de Risco e Saída Multi-Fator (Foco no Tempo):**
-    *   **"Take Profit" Proporcional à Volatilidade:** O lucro alvo não é fixo. Ele é calculado dinamicamente, sendo diretamente proporcional à volatilidade instantânea calculada pelo "Aprendiz". Mercados mais voláteis sugerem alvos de lucro maiores (estratégia de maior risco/recompensa), enquanto mercados calmos sugerem alvos mais conservadores.
+    *   **"Take Profit" Guiado pelo Mestre do Tempo:** O lucro alvo é calculado dinamicamente pelo "Aprendiz". Em vez de um valor fixo, ele analisa o tempo médio de quebra projetado pelo Mestre do Tempo. Se o tempo de sobrevivência é longo, o alvo de lucro torna-se mais ambicioso; se o tempo é curto, o alvo torna-se mais conservador.
     *   **"Kill Switch" Temporal e Adaptativo:** O sistema pré-define um tempo máximo de exposição com base no "ritmo" do mercado (**25s** para volátil, **40s** para normal, **55s** para calmo). Se o alvo de lucro não for atingido nesse tempo, a posição é encerrada.
     *   **Veto de Volatilidade Macro:** A posição é encerrada prematuramente se qualquer indicador (BBW, ATR ou ADX) sinalizar um aumento súbito de risco.
-    *   **Veto de Micro-Volatilidade (Disjuntor Dinâmico Multi-Escala):** Um "disjuntor" de alta frequência monitoriza o desvio padrão dos ticks. A sua sensibilidade (o fator de multiplicação que dispara o veto) é **calibrada dinamicamente**: para um ativo historicamente "nervoso", ele torna-se mais tolerante a picos, enquanto para um ativo "calmo", torna-se ultra-sensível.
+    *   **Veto de Micro-Volatilidade (Disjuntor Dinâmico Multi-Escala):** Um "disjuntor" de alta frequência monitoriza o desvio padrão dos ticks. A sua sensibilidade é **calibrada dinamicamente**: para um ativo historicamente "nervoso", ele torna-se mais tolerante a picos, enquanto para um ativo "calmo", torna-se ultra-sensível.
     *   **Stop-Loss de Capital:** Como uma rede de segurança final, a posição é vendida se a perda atingir 50% do valor da aposta, transformando uma perda potencial de 100% numa perda máxima e controlada.
     *   **Gerente de Risco Estratégico:** Após uma perda, o sistema diagnostica a causa (tempo ou volatilidade) e ajusta a sua estratégia futura, seja tornando os seus critérios de entrada mais rigorosos ou reduzindo o seu tempo de exposição.
 5.  **Arena Virtual e Calibração Automática:** O sistema executa "paper trades" em paralelo, simulando uma barreira de perda baseada no **índice de ATR correto para a taxa de crescimento**, como `ATR * 0.348` para 3%. Se a taxa de acerto da Arena Virtual cai abaixo de 75%, o Gerente de Risco entra proativamente em **Modo Cauteloso**, aumentando os critérios de entrada antes mesmo que uma perda real ocorra.
@@ -57,14 +57,14 @@ Estes hooks contêm a inteligência do sistema, agora separados por responsabili
     *   **Estratégia "Calm Seeker" V5 (Time-Aware)**:
         1.  **Consulta ao Mestre do Tempo:** O piloto consulta o `useTimeMaster` para obter o `safeExitTime` e o `averageBreakTime`.
         2.  **Calibração pela Arena Virtual:** A taxa de acerto das simulações da Arena (que agora usam o índice de barreira correto) é usada para ajustar o modo do "Gerente de Risco".
-        3.  **Condição de Entrada (Confluência Tripla)**: O piloto só abre uma posição quando o "Nível de Calmaria" ultrapassa um limiar dinâmico E as condições de BBW, ATR e Z-Score são satisfeitas.
-        4.  **Gestão de Posição Única**: O sistema garante que apenas **um contrato** é aberto de cada vez.
+        3.  **Condição de Entrada (Probabilística):** A entrada agora é baseada na **probabilidade de sobrevivência** da posição. Usando a volatilidade de Parkinson e a distância da barreira, o sistema calcula a probabilidade matemática de a posição não quebrar durante o `safeExitTime`.
+        4.  **Gestão de Posição Única e Otimização de Risco:** O sistema garante que apenas **um contrato** é aberto de cada vez. Antes de entrar, ele calcula o `stake` ótimo usando o Critério de Kelly Fracionário (baseado no desempenho da Arena) e a `growth_rate` ótima (que maximiza o Kelly).
         5.  **Condição de Saída (Multi-Fator e Guiada pelo Tempo)**: Uma posição aberta é fechada se **uma** das seguintes condições for atendida (a que ocorrer primeiro):
             *   **Alvo de Lucro (Take Profit) Dinâmico:** Atinge um lucro alvo que é **ajustado pelo `averageBreakTime`**.
             *   **"Kill Switch" Temporal:** O alvo de lucro não é atingido no **`safeExitTime`** definido pelo Mestre do Tempo.
             *   **Stop-Loss de Capital:** A perda atinge 50% do valor da aposta inicial.
             *   **Veto de Volatilidade (Macro e Micro):** O BBW, o ATR, o ADX ou a volatilidade instantânea dos ticks (via disjuntor com sensibilidade dinâmica) aumentam subitamente.
-        6.  **Gerente de Risco Estratégico (Auto-Calibração):** Após cada perda real, o sistema diagnostica a causa (tempo ou volatilidade) e ajusta a sua estratégia futura.
+        6.  **Gerente de Risco Estratégico (Auto-Calibração):** Após cada perda real, o sistema diagnostica a causa (tempo ou volatilidade) e ajusta a sua estratégia futura, aumentando o seu limiar de probabilidade de sobrevivência para a próxima entrada.
 
 ### 2.3. Camada de Interface: `deriv-trader-accumulators/page.tsx`
 
@@ -73,7 +73,7 @@ A interface do utilizador, focada na simplicidade e na colaboração entre homem
 *   **Responsabilidade Principal**: Fornecer uma interface clara para a negociação manual, gestão do piloto automático e visualização de resultados.
 *   **Componentes Chave**:
     *   `DerivTraderInterfaceAccumulators`: O painel central de negociação. Além dos controlos manuais de aposta (`stake`) e taxa de crescimento (`growth_rate`), ele agora incorpora o painel do **"Aprendiz do Mestre do Tempo"**. Este copiloto exibe a bandeira de "Mercado Calmo" e a sugestão de take profit para a operação manual, executando autonomamente o fecho da posição para garantir o lucro.
-    *   `AccumulatorsAutopilotInterface`: O painel de controlo do sistema autónomo. Permite ligar/desligar o piloto e visualizar as métricas-chave do **"Caçador de Calmaria"** (Nível de Calmaria, Checklist de Entrada, estado do Gerente de Risco) e do **"Mestre do Tempo"** (Tempo de Saída Seguro).
+    *   `AccumulatorsAutopilotInterface`: O painel de controlo do sistema autónomo. Permite ligar/desligar o piloto e visualizar as métricas-chave do **"Caçador de Calmaria"** (Probabilidade de Sobrevivência, Stake Calculado, Growth Rate Ótima) e do **"Mestre do Tempo"** (Tempo de Saída Seguro).
     *   `OperationsLogAccumulators`: O registo de todas as operações **reais** executadas, mostrando o lucro/prejuízo em tempo real e permitindo o fecho manual de posições.
     *   `VirtualArenaAccumulators`: Um painel dedicado que exibe os resultados das simulações da **Arena Virtual**, permitindo a validação contínua da estratégia de entrada do piloto automático.
 

@@ -5,16 +5,17 @@ import type { TickData, Operation } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
 
 const APPRENTICE_CONFIG = {
-  // Time windows in seconds to analyze for volatility
   TIME_WINDOWS_S: [5, 10, 15, 20, 25, 30],
-  // Base volatility threshold to be considered "calm"
   VOLATILITY_THRESHOLD: 0.0003,
-  // Base profit target for a $1 stake in a perfectly calm market
-  BASE_TAKE_PROFIT: 1.25, // More conservative start
-  // How much volatility reduces the profit target. Higher means more sensitive.
+  BASE_TAKE_PROFIT: 1.25,
   VOLATILITY_SENSITIVITY: 150,
-  // Minimum profit target as a percentage of stake
   MIN_PROFIT_PERCENTAGE: 0.05,
+  RISK_AVERSION: 0.5, // 0 = risk-neutral, 1 = max risk-averse
+};
+
+// Helper para a Cumulative Distribution Function (CDF) da distribuição Normal
+const normalCDF = (x: number): number => {
+    return 0.5 * (1 + (x / Math.sqrt(2)) / Math.sqrt(1 + (x*x)/2));
 };
 
 const calculateStdDev = (ticks: TickData[]): number => {
@@ -22,9 +23,39 @@ const calculateStdDev = (ticks: TickData[]): number => {
     const prices = ticks.map(t => t.price);
     const mean = prices.reduce((a, b) => a + b, 0) / prices.length;
     const stdDev = Math.sqrt(prices.map(p => Math.pow(p - mean, 2)).reduce((a, b) => a + b, 0) / prices.length);
-    // Normalize by mean to make it comparable
     return mean > 0 ? stdDev / mean : 0;
 };
+
+/**
+ * Estima o take profit que maximiza a utilidade esperada
+ * usando a distribuição empírica de lucros históricos
+ */
+function calculateOptimalTakeProfit(
+  historicalProfits: number[],
+  currentVolatility: number,
+  riskAversion: number // 0-1
+): number {
+  if (historicalProfits.length < 5) {
+    // Fallback para lógica de volatilidade se não houver histórico suficiente
+    const volatilityFactor = 1 + (currentVolatility * APPRENTICE_CONFIG.VOLATILITY_SENSITIVITY);
+    return APPRENTICE_CONFIG.BASE_TAKE_PROFIT * volatilityFactor;
+  }
+  
+  // 1. Ajustar distribuição aos dados históricos
+  const meanProfit = historicalProfits.reduce((sum, p) => sum + p, 0) / historicalProfits.length;
+  const variance = historicalProfits.reduce((sum, p) => sum + Math.pow(p - meanProfit, 2), 0) / historicalProfits.length;
+  const stdDevProfit = Math.sqrt(variance);
+
+  // 3. Maximizar E[U(profit)]
+  // Uma aproximação é pegar um percentil da distribuição de lucros.
+  // Maior aversão ao risco = percentil menor (mais conservador).
+  const percentile = 0.75 - (riskAversion * 0.25); // Varia de 75% a 50%
+  const sortedProfits = [...historicalProfits].sort((a,b) => a - b);
+  const targetIndex = Math.floor(sortedProfits.length * percentile);
+  
+  return sortedProfits[targetIndex] || meanProfit;
+}
+
 
 export interface ManualTimeApprenticeState {
     isMarketCalm: boolean;
@@ -35,11 +66,6 @@ export interface ManualTimeApprenticeState {
     };
 }
 
-
-/**
- * An "apprentice" hook that provides insights for manual trading AND
- * automatically closes manual positions based on a dynamic, conservative take-profit target.
- */
 export const useManualTimeApprentice = (
   priceTicks: TickData[],
   operationsLog: Operation[],
@@ -57,8 +83,17 @@ export const useManualTimeApprentice = (
   });
   const [activeManualTrade, setActiveManualTrade] = useState<Operation | null>(null);
   const closingInProgressRef = useRef<Set<number>>(new Set());
+  
+  const historicalManualProfits = useRef<number[]>([]);
 
-  // Find the currently open manual trade
+  useEffect(() => {
+    const manualWins = operationsLog.filter(op => op.initiator === 'Manual' && op.status === 'won' && op.result);
+    if(manualWins.length > 0) {
+      historicalManualProfits.current = manualWins.map(op => op.result!);
+    }
+  }, [operationsLog]);
+
+
   useEffect(() => {
     const openManualTrade = operationsLog.find(
       op => op.initiator === 'Manual' && op.status === 'pending'
@@ -66,13 +101,11 @@ export const useManualTimeApprentice = (
     setActiveManualTrade(openManualTrade || null);
   }, [operationsLog]);
 
-  // Main logic for calculation and auto-closing
   useEffect(() => {
     if (priceTicks.length < 10) return;
 
     const now = Date.now() / 1000;
 
-    // 1. Calculate volatility for each window
     const windowVolatilities = APPRENTICE_CONFIG.TIME_WINDOWS_S.map(windowInSeconds => {
         const startIndex = priceTicks.findIndex(t => t.epoch > now - windowInSeconds);
         if (startIndex === -1) return { seconds: windowInSeconds, volatility: 0 };
@@ -82,19 +115,20 @@ export const useManualTimeApprentice = (
 
     const maxVolatility = Math.max(...windowVolatilities.map(w => w.volatility));
     
-    // 2. Determine market calmness
     const calm = maxVolatility < APPRENTICE_CONFIG.VOLATILITY_THRESHOLD;
     
-    // Determine the stake to use for profit calculation
     const stake = activeManualTrade?.stake || formStake || 1.0;
 
-    // 3. Calculate take-profit target - NOW PROPORTIONAL TO VOLATILITY
-    const volatilityFactor = 1 + (maxVolatility * APPRENTICE_CONFIG.VOLATILITY_SENSITIVITY);
-    const profitSuggestion = (APPRENTICE_CONFIG.BASE_TAKE_PROFIT * volatilityFactor) * stake;
+    const optimalProfitRatio = calculateOptimalTakeProfit(
+      historicalManualProfits.current,
+      maxVolatility,
+      APPRENTICE_CONFIG.RISK_AVERSION
+    );
+    
+    const profitSuggestion = optimalProfitRatio * stake;
     const minProfit = stake * APPRENTICE_CONFIG.MIN_PROFIT_PERCENTAGE;
     const finalTakeProfit = Math.max(minProfit, profitSuggestion);
-
-    // 4. Update the entire state at once
+    
     setState({
         isMarketCalm: calm,
         suggestedTakeProfit: finalTakeProfit,
@@ -104,7 +138,6 @@ export const useManualTimeApprentice = (
         }
     });
 
-    // 5. Auto-close logic (if there's an active trade)
     if (activeManualTrade && !closingInProgressRef.current.has(activeManualTrade.id)) {
         const currentProfit = activeManualTrade.result || 0;
         if (currentProfit >= finalTakeProfit) {
@@ -114,7 +147,6 @@ export const useManualTimeApprentice = (
             description: `Fechando posição manual #${activeManualTrade.id} com lucro de $${currentProfit.toFixed(2)}.`,
           });
           sellContract(activeManualTrade.id).finally(() => {
-            // Remove from the set after some time, even if the sell fails, to allow retries
             setTimeout(() => closingInProgressRef.current.delete(activeManualTrade.id), 5000);
           });
         }

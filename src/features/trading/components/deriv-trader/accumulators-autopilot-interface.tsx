@@ -37,26 +37,28 @@ export function AccumulatorsAutopilotInterface({
   isAutopilotOn,
   toggleAutopilot,
   botStatus,
-  volatilityMetrics,
   dailyBalance,
   setDailyBalance,
   dailyTarget,
   setDailyTarget,
   dailyPnL,
   riskManager,
-  calmnessScore,
+  survivalProbability, // Alterado de calmnessScore
   entryConditions,
   timeMaster,
+  calculatedStake,
 }: AccumulatorsAutopilotInterfaceProps) {
   
   const statusInfo = {
     'PAUSED': { text: 'Pausado', color: 'bg-gray-500' },
     'MONITORING': { text: 'A Monitorizar Volatilidade...', color: 'bg-blue-500' },
-    'CALM_DETECTED': { text: 'Calmaria Detectada! A Abrir Posição...', color: 'bg-green-500 animate-pulse' },
+    'CALM_DETECTED': { text: 'Oportunidade Detectada! A Abrir Posição...', color: 'bg-green-500 animate-pulse' },
     'POSITION_OPEN': { text: 'Posição Aberta. A Gerir Risco...', color: 'bg-yellow-500' },
     'ANALYZING_LOSS': { text: 'Analisando Perda...', color: 'bg-orange-500' },
     'COOLDOWN': { text: 'Cooldown Pós-Perda', color: 'bg-red-500' },
   };
+
+  const survivalProbPercent = survivalProbability * 100;
 
   return (
     <Card>
@@ -73,7 +75,7 @@ export function AccumulatorsAutopilotInterface({
           />
         </div>
         <CardDescription>
-          O sistema procura períodos de baixa volatilidade para abrir posições automaticamente.
+          O sistema avalia a probabilidade de sobrevivência para abrir posições.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -94,9 +96,9 @@ export function AccumulatorsAutopilotInterface({
                       </p>
                   </div>
                    <div>
-                      <p className="text-muted-foreground">Limite de Perda</p>
-                      <p className="font-bold text-sm text-destructive">
-                          {dailyBalance.toLocaleString('pt-BR', { style: 'currency', currency: 'USD' })}
+                      <p className="text-muted-foreground">Stake (Kelly)</p>
+                       <p className="font-bold text-sm text-primary">
+                          {calculatedStake.toLocaleString('pt-BR', { style: 'currency', currency: 'USD' })}
                       </p>
                   </div>
               </div>
@@ -131,24 +133,24 @@ export function AccumulatorsAutopilotInterface({
 
          <div className="space-y-2">
             <div className="flex justify-between items-center mb-1">
-                <Label htmlFor="calmness-progress" className="font-semibold">
-                    Nível de Calmaria do Mercado
+                <Label htmlFor="survival-progress" className="font-semibold">
+                    Probabilidade de Sobrevivência
                 </Label>
-                <span className="font-mono text-lg font-bold text-primary">{calmnessScore.toFixed(0)} / 100</span>
+                <span className="font-mono text-lg font-bold text-primary">{survivalProbPercent.toFixed(1)}%</span>
             </div>
-            <Progress value={calmnessScore} className="h-3" />
+            <Progress value={survivalProbPercent} className="h-3" />
             <div className="h-1 relative mt-1">
                 <div 
                     className="absolute top-0 h-full w-1 bg-destructive rounded-full" 
-                    style={{ left: `${riskManager.calmnessScoreThreshold}%` }}
+                    style={{ left: `${riskManager.survivalProbabilityThreshold * 100}%` }}
                 >
                     <div className="absolute -top-5 -translate-x-1/2 text-xs text-destructive font-bold">
-                        {riskManager.calmnessScoreThreshold}
+                        {(riskManager.survivalProbabilityThreshold * 100).toFixed(0)}%
                     </div>
                 </div>
             </div>
             <p className="text-xs text-muted-foreground pt-1 text-center">
-                O piloto entrará quando o nível de calmaria (azul) ultrapassar o limiar de entrada (vermelho).
+                O piloto entrará quando a probabilidade (azul) ultrapassar o limiar de entrada (vermelho).
             </p>
         </div>
 
@@ -156,10 +158,8 @@ export function AccumulatorsAutopilotInterface({
 
         <div className="space-y-2">
             <Label className="font-semibold">Checklist de Entrada</Label>
-            <ConditionCheck label="Nível de Calmaria" isMet={entryConditions.calmnessScore} />
-            <ConditionCheck label="Compressão (BBW)" isMet={entryConditions.bbwIsLow} />
-            <ConditionCheck label="Volatilidade (ATR)" isMet={entryConditions.atrIsLow} />
-            <ConditionCheck label="Estabilidade (Z-Score)" isMet={entryConditions.zScoreIsStable} />
+            <ConditionCheck label="Probabilidade de Sobrevivência" isMet={entryConditions.survivalProb} />
+            <ConditionCheck label="Microestrutura Segura" isMet={entryConditions.microstructure} />
         </div>
 
         <Separator />
