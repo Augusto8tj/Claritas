@@ -1,3 +1,4 @@
+
 // /src/features/trading/hooks/use-deriv-api-multipliers.tsx
 'use client';
 
@@ -422,7 +423,6 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
 
       const buyRequest: any = {
         buy: "1",
-        price: 10000, 
         parameters: {
             amount: sanitizedStake,
             basis: "stake",
