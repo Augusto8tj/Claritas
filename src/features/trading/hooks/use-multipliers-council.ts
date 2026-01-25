@@ -173,10 +173,10 @@ export function useMultipliersCouncil(
             rsiStateRef.current.prev = rsi;
 
             let signal: 'up' | 'down' | null = null;
-            if (currentTrend === 'UP' && rsiStateRef.current.crossedUpFromLower && rsi > RSI_LOWER_BOUND) {
+            if (currentTrend === 'UP' && rsiStateRef.current.crossedUpFromLower && rsi > RSI_LOWER_BOUND && prevRsi <= RSI_LOWER_BOUND) {
                 signal = 'up';
                 rsiStateRef.current.crossedUpFromLower = false;
-            } else if (currentTrend === 'DOWN' && rsiStateRef.current.crossedDownFromUpper && rsi < RSI_UPPER_BOUND) {
+            } else if (currentTrend === 'DOWN' && rsiStateRef.current.crossedDownFromUpper && rsi < RSI_UPPER_BOUND && prevRsi >= RSI_UPPER_BOUND) {
                 signal = 'down';
                 rsiStateRef.current.crossedDownFromUpper = false;
             }
@@ -227,7 +227,11 @@ export function useMultipliersCouncil(
     const toggleAutopilot = useCallback(() => {
         setIsAutopilotOn(prevState => {
             const newState = !prevState;
-            toast({ title: `Piloto ${newState ? 'Ativado' : 'Desativado'}` });
+            // Adiar a chamada do toast para evitar conflitos de renderização do React.
+            setTimeout(() => {
+                toast({ title: `Piloto ${newState ? 'Ativado' : 'Desativado'}` });
+            }, 0);
+            
             if (!newState) {
                  setBotStatus('PAUSED');
                  rsiStateRef.current = { prev: 50, crossedDownFromUpper: false, crossedUpFromLower: false };
