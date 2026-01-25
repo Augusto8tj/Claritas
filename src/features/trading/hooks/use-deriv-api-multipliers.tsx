@@ -343,7 +343,7 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
       }
   }, [makeRequest]);
 
-  const updateContract = useCallback(async (
+const updateContract = useCallback(async (
     contractId: number,
     takeProfit?: number,
     stopLoss?: number
@@ -362,18 +362,23 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
             limit_order: {}
         };
         
+        // --- CORREÇÃO: ARREDONDAMENTO OBRIGATÓRIO (2 CASAS) ---
         if (takeProfit !== undefined) {
+            // Garante que é número e tem no máximo 2 decimais
             updateRequest.limit_order.take_profit = takeProfit > 0 ? parseFloat(takeProfit.toFixed(2)) : null;
         }
         
         if (stopLoss !== undefined) {
+            // Garante que é número e tem no máximo 2 decimais
             updateRequest.limit_order.stop_loss = stopLoss > 0 ? parseFloat(stopLoss.toFixed(2)) : null;
         }
+        // -----------------------------------------------------
 
         const response: any = await makeRequest(updateRequest);
         
+        // Verificação extra para erro dentro da resposta (às vezes a API retorna 200 OK mas com erro no corpo)
         if (response.error) {
-            throw new Error(response.error.message);
+             throw new Error(response.error.message);
         }
 
         const updateResult = response.contract_update;
@@ -401,7 +406,8 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
         }
 
     } catch (error) {
-        console.error("[Deriv Hook] Erro ao atualizar contrato:", error);
+        // Log mais detalhado para debug
+        console.error(`[Deriv Hook] Erro ao atualizar contrato #${contractId}:`, error);
         const message = error instanceof Error ? error.message : "Um erro desconhecido ocorreu.";
         return { success: false, message };
     }
@@ -531,6 +537,7 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
 
     try {
         sellingContractsRef.current.add(contractId);
+        // CORREÇÃO FINAL: Removido o parâmetro `price` da chamada de venda.
         const sellResponse: any = await makeRequest({ "sell": contractId });
 
         if (sellResponse.error) {
@@ -760,13 +767,9 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
                             }
 
                             if (trailingState.highestProfit > activationThreshold) {
-                                // CORREÇÃO CRÍTICA: Arredondamento do Trailing Stop
                                 const rawNewStop = trailingState.highestProfit - trailingDistance;
                                 const newStopLoss = parseFloat(rawNewStop.toFixed(2));
-                                updatedOp.trailingStop = newStopLoss;
-
                                 if (newStopLoss > (op.stopLoss || 0)) {
-                                    // A função updateContract agora tem sanitização, mas mandamos limpo daqui também
                                     updateContract(op.id, undefined, newStopLoss);
                                 }
                             }
