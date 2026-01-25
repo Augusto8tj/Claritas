@@ -362,16 +362,21 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
             limit_order: {}
         };
         
+        // --- CORREÇÃO: ARREDONDAMENTO OBRIGATÓRIO (2 CASAS) ---
         if (takeProfit !== undefined) {
-            updateRequest.limit_order.take_profit = takeProfit > 0 ? parseFloat(takeProfit.toFixed(2)) : undefined;
+            // Garante que é número e tem no máximo 2 decimais
+            updateRequest.limit_order.take_profit = takeProfit > 0 ? parseFloat(takeProfit.toFixed(2)) : null;
         }
         
         if (stopLoss !== undefined) {
-            updateRequest.limit_order.stop_loss = stopLoss > 0 ? parseFloat(stopLoss.toFixed(2)) : undefined;
+            // Garante que é número e tem no máximo 2 decimais
+            updateRequest.limit_order.stop_loss = stopLoss > 0 ? parseFloat(stopLoss.toFixed(2)) : null;
         }
+        // -----------------------------------------------------
 
         const response: any = await makeRequest(updateRequest);
         
+        // Verificação extra para erro dentro da resposta (às vezes a API retorna 200 OK mas com erro no corpo)
         if (response.error) {
              throw new Error(response.error.message);
         }
@@ -401,6 +406,7 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
         }
 
     } catch (error) {
+        // Log mais detalhado para debug
         console.error(`[Deriv Hook] Erro ao atualizar contrato #${contractId}:`, error);
         const message = error instanceof Error ? error.message : "Um erro desconhecido ocorreu.";
         return { success: false, message };
@@ -761,11 +767,15 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
                             }
 
                             if (trailingState.highestProfit > activationThreshold) {
+                                // --- CORREÇÃO: CÁLCULO ARREDONDADO ---
                                 const rawNewStop = trailingState.highestProfit - trailingDistance;
-                                const newStopLoss = parseFloat(rawNewStop.toFixed(2));
-                                updatedOp.trailingStop = newStopLoss;
+                                const newStopLoss = parseFloat(rawNewStop.toFixed(2)); // <--- AQUI
+                                // -------------------------------------
 
+                                // Verifica se o novo stop é válido e maior que o anterior (para garantir lucro)
+                                // Nota: Para Multipliers, o stop loss é um valor positivo (valor monetário a perder/ganhar)
                                 if (newStopLoss > (op.stopLoss || 0)) {
+                                    // Chama o updateContract que agora também tem sanitização
                                     updateContract(op.id, undefined, newStopLoss);
                                 }
                             }
@@ -1166,29 +1176,4 @@ export function useDerivApiMultipliers() {
   }
   return context;
 }
-I see this error with the app, reported by NextJS, please fix it. The error is reported as HTML but presented visually to the user).
-
-A > before the line number in the error source usually indicates the line of interest: 
-
-> Console Error: Cannot read properties of undefined (reading 'color'). Error source: src/features/trading/components/deriv-trader/multipliers-autopilot-interface.tsx (143:90) @ MultipliersAutopilotInterface
-> 
->   141 |                     <p className="text-muted-foreground font-semibold mb-1 flex items-center justify-center gap-1.5"><Activity className="h-4 w-4"/>Status</p>
->   142 |                     <Badge variant="outline" className="flex items-center gap-1.5">
-> > 143 |                         <div className={cn("h-2 w-2 rounded-full", statusInfo[botStatus].color)}></div>
->       |                                                                                          ^
->   144 |                         {statusInfo[botStatus].text}
->   145 |                     </Badge>
->   146 |                 </div>
-> 
-> Call Stack
-> 18
-> 
-> Show 14 ignore-listed frame(s)
-> MultipliersAutopilotInterface
-> src/features/trading/components/deriv-trader/multipliers-autopilot-interface.tsx (143:90)
-> MultipliersTraderCore
-> src/app/deriv-trader-multipliers/page.tsx (132:21)
-> PageContent
-> src/app/deriv-trader-multipliers/page.tsx (182:17)
-> DerivMultipliersPage
-> src/app/deriv-trader-multipliers/page.tsx (191:13)
+```
