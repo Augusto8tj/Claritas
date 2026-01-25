@@ -321,17 +321,29 @@ export const DerivApiProviderAccumulators = ({ children }: { children: ReactNode
         throw new Error("A conexão com a API da Deriv não está ativa.");
       }
       const sanitizedStake = parseFloat(stake.toFixed(2));
+      
+      // 1. Obter a proposta
+      const proposalRequest: any = {
+        proposal: 1,
+        amount: sanitizedStake,
+        basis: "stake",
+        contract_type: "ACCU",
+        currency: "USD",
+        symbol: symbol,
+        growth_rate: growth_rate,
+      };
+
+      const proposalResponse: any = await makeRequest(proposalRequest);
+      const proposal = proposalResponse.proposal;
+
+      if (!proposal || !proposal.id) {
+          throw new Error("Falha ao obter uma proposta de negociação da API para Acumuladores.");
+      }
+
+      // 2. Comprar o contrato usando o ID da proposta
       const buyRequest: any = {
-        buy: "1",
-        price: 10000, // This is expected by the API for market orders.
-        parameters: {
-            amount: sanitizedStake,
-            basis: "stake",
-            contract_type: "ACCU",
-            currency: "USD",
-            symbol: symbol,
-            growth_rate: growth_rate,
-        }
+        buy: proposal.id,
+        price: proposal.ask_price
       };
       
       const buyResponse: any = await makeRequest(buyRequest);
