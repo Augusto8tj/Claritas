@@ -322,20 +322,22 @@ export const DerivApiProviderAccumulators = ({ children }: { children: ReactNode
       }
       const sanitizedStake = parseFloat(stake.toFixed(2));
       
-      // ✅ CORREÇÃO: Compra direta sem proposta, que é mais rápido e evita expiração.
-      const buyRequest: any = {
-        buy: 1,
-        parameters: {
-          amount: sanitizedStake,
-          basis: "stake",
-          contract_type: "ACCU",
-          currency: "USD",
-          symbol: symbol,
-          growth_rate: growth_rate,
-        }
-      };
+      const proposalResponse: any = await makeRequest({
+        proposal: 1,
+        amount: sanitizedStake,
+        basis: "stake",
+        contract_type: "ACCU",
+        currency: "USD",
+        symbol: symbol,
+        growth_rate: growth_rate,
+      });
 
-      const buyResponse: any = await makeRequest(buyRequest);
+      const proposal = proposalResponse.proposal;
+      if (!proposal || !proposal.id) {
+        throw new Error("Falha ao obter uma proposta de negociação da API.");
+      }
+      
+      const buyResponse: any = await makeRequest({ "buy": proposal.id, "price": proposal.ask_price });
 
       const buyResult = buyResponse.buy;
       const contractId = buyResult.contract_id;
