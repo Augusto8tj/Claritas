@@ -73,6 +73,24 @@ export function useMultipliersCouncil(
         operationsLog.find(op => op.initiator === 'Piloto' && op.status === 'pending'),
     [operationsLog]);
 
+    const toggleAutopilot = useCallback(() => {
+        setIsAutopilotOn(prevState => {
+            const newState = !prevState;
+            setTimeout(() => {
+                toast({ title: `Piloto ${newState ? 'Ativado' : 'Desativado'}` });
+            }, 0);
+            
+            if (!newState) {
+                 setBotStatus('PAUSED');
+                 rsiStateRef.current = { prev: 50, crossedDownFromUpper: false, crossedUpFromLower: false };
+                 cooldownRef.current = 0;
+            } else {
+                setBotStatus('MONITORING');
+            }
+            return newState;
+        });
+    }, [toast]);
+
     // --- LÓGICA PRINCIPAL (EXECUTADA A CADA NOVA VELA) ---
     useEffect(() => {
         // --- CLÁUSULAS DE GUARDA (CONDIÇÕES PARA NÃO EXECUTAR) ---
@@ -101,24 +119,44 @@ export function useMultipliersCouncil(
                 return;
             }
 
-            // --- GESTÃO DE TRADE (TRAILING STOP) ---
+            // =================================================================
+            // CORREÇÃO 1: LÓGICA DE TRAILING STOP DIRECIONAL
+            // =================================================================
             if (autopilotPosition) {
                 setBotStatus('POSITION_OPEN');
-                const { stake = 0, result = 0, id: contractId, entryPrice } = autopilotPosition;
+                const { stake = 0, result = 0, id: contractId, entryPrice, contractType } = autopilotPosition;
+                
+                const currentPrice = botCandleData[botCandleData.length-1].close;
                 const profitPercent = stake > 0 ? (result / stake) * 100 : 0;
                 
                 // 1. Mover para o Breakeven
-                if (!trailingStateRef.current.breakevenSet && profitPercent >= BREAKEVEN_PROFIT_PERCENT) {
+                if (!trailingStateRef.current.breakevenSet && profitPercent >= BREAKEVEN_PROFIT_PERCENT && entryPrice) {
                     await updateContract(contractId, undefined, entryPrice);
                     trailingStateRef.current.breakevenSet = true;
-                    toast({ title: "🛡️ Stop no Breakeven", description: `Posição #${contractId} protegida.` });
+                    toast({ title: "🛡️ Stop no Breakeven", description: `Posição protegida.` });
                 }
-                // 2. Ativar Trailing Stop
+                // 2. Ativar Trailing Stop (Corrigido para Short)
                 else if (profitPercent >= TRAILING_STOP_PROFIT_PERCENT) {
-                    const newStopLoss = botCandleData[botCandleData.length-1].close - indicators.atr;
-                    if(newStopLoss > (autopilotPosition.stopLoss || 0)) {
-                        await updateContract(contractId, undefined, newStopLoss);
-                        trailingStateRef.current.trailingActive = true;
+                    let newStopLoss;
+                    
+                    // Se for COMPRA, Stop sobe (Preço - ATR)
+                    if (contractType === 'MULTUP') {
+                        newStopLoss = currentPrice - indicators.atr;
+                        // Só atualiza se o novo stop for maior (mais alto) que o atual
+                        if (newStopLoss > (autopilotPosition.stopLoss || 0)) {
+                             await updateContract(contractId, undefined, newStopLoss);
+                             trailingStateRef.current.trailingActive = true;
+                        }
+                    } 
+                    // Se for VENDA, Stop desce (Preço + ATR)
+                    else {
+                        newStopLoss = currentPrice + indicators.atr;
+                        // Só atualiza se o novo stop for menor (mais baixo) que o atual
+                        // Nota: stopLoss || Infinity para garantir que o primeiro update funcione
+                        if (newStopLoss < (autopilotPosition.stopLoss || 999999999)) {
+                             await updateContract(contractId, undefined, newStopLoss);
+                             trailingStateRef.current.trailingActive = true;
+                        }
                     }
                 }
                 executionRef.current.isExecuting = false;
@@ -129,6 +167,7 @@ export function useMultipliersCouncil(
                     trailingStateRef.current = { breakevenSet: false, trailingActive: false };
                 }
             }
+            
 
             // --- LÓGICA DE ABERTURA DE POSIÇÃO ---
             if (cooldownRef.current > 0) {
@@ -141,6 +180,17 @@ export function useMultipliersCouncil(
             const { adx, ma: { long: ema100 }, rsi, atr } = indicators;
             const lastPrice = botCandleData[botCandleData.length - 1].close;
 
+            // =================================================================
+            // CORREÇÃO 2: RESET DE ESTADO RSI NA MUDANÇA DE TENDÊNCIA
+            // =================================================================
+            const currentTrend: TrendDirection = lastPrice > ema100! ? 'UP' : 'DOWN';
+            
+            // Se a tendência mudou desde o último tick, limpa as flags de pullback antigo
+            if (currentTrend !== trend) {
+                rsiStateRef.current = { prev: rsi, crossedDownFromUpper: false, crossedUpFromLower: false };
+                setTrend(currentTrend);
+            }
+            
             // 1. FILTRO DE QUALIDADE DE TENDÊNCIA
             if (adx < ADX_THRESHOLD) {
                 setBotStatus('RANGING');
@@ -151,7 +201,7 @@ export function useMultipliersCouncil(
             // 2. CÁLCULO DE BREAKEVEN DINÂMICO
             const multiplier = form.getValues('multiplier');
             const mmbPercent = (((COMMISSION_PERCENT / 100) * 2) / multiplier) + (SPREAD_ESTIMATE_PERCENT / 100);
-            const projectedMove = atr; // ATR já é um movimento projetado
+            const projectedMove = atr;
             const projectedMovePercent = projectedMove / lastPrice;
 
             if (projectedMovePercent < (mmbPercent * MMB_ATR_MULTIPLIER)) {
@@ -160,35 +210,35 @@ export function useMultipliersCouncil(
                 return;
             }
             
-            // 3. LÓGICA DE ENTRADA REFINADA (PULLBACK)
-            const currentTrend: TrendDirection = lastPrice > ema100! ? 'UP' : 'DOWN';
-            setTrend(currentTrend);
-            
-            const prevRsi = rsiStateRef.current.prev;
-            
-            // Detecta se o RSI esteve na zona de pullback
+            // LÓGICA DE DETECÇÃO DE PULLBACK (Mantida, mas agora segura pelo reset acima)
             if (rsi < RSI_LOWER_BOUND) rsiStateRef.current.crossedUpFromLower = true;
             if (rsi > RSI_UPPER_BOUND) rsiStateRef.current.crossedDownFromUpper = true;
             
-            rsiStateRef.current.prev = rsi;
+            // Reset da flag oposta para garantir pureza do movimento
+            if (currentTrend === 'UP') rsiStateRef.current.crossedDownFromUpper = false;
+            if (currentTrend === 'DOWN') rsiStateRef.current.crossedUpFromLower = false;
 
             let signal: 'up' | 'down' | null = null;
+            const prevRsi = rsiStateRef.current.prev;
+            rsiStateRef.current.prev = rsi;
+
+            // Gatilho: Estava lá embaixo, e agora cruzou 40 para cima
             if (currentTrend === 'UP' && rsiStateRef.current.crossedUpFromLower && rsi > RSI_LOWER_BOUND && prevRsi <= RSI_LOWER_BOUND) {
                 signal = 'up';
-                rsiStateRef.current.crossedUpFromLower = false;
-            } else if (currentTrend === 'DOWN' && rsiStateRef.current.crossedDownFromUpper && rsi < RSI_UPPER_BOUND && prevRsi >= RSI_UPPER_BOUND) {
+            } 
+            // Gatilho: Estava lá em cima, e agora cruzou 60 para baixo
+            else if (currentTrend === 'DOWN' && rsiStateRef.current.crossedDownFromUpper && rsi < RSI_UPPER_BOUND && prevRsi >= RSI_UPPER_BOUND) {
                 signal = 'down';
-                rsiStateRef.current.crossedDownFromUpper = false;
             }
-            
+
             if (signal) {
                 setBotStatus('EXECUTING_TRADE');
-                const baseStake = Math.max(1.0, dailyBalance * 0.02); // 2% da banca do dia
-                const volatilityFactor = Math.max(0.5, 1 - (atr/lastPrice * 100)); // Reduz stake se vol > 1%
+                const baseStake = Math.max(1.0, dailyBalance * 0.02);
+                const volatilityFactor = Math.max(0.5, 1 - (atr/lastPrice * 100));
                 const finalStake = Math.max(1.0, Math.min(baseStake * volatilityFactor, 5.0));
 
-                const stopLoss = finalStake; // Stop Loss inicial igual ao stake
-                const takeProfit = finalStake * 1.5; // Alvo de 150%
+                const stopLoss = finalStake;
+                const takeProfit = finalStake * 1.5;
 
                 setCalculatedRisk({ stake: finalStake, stopLoss, takeProfit });
 
@@ -204,6 +254,8 @@ export function useMultipliersCouncil(
                 );
 
                 if (result.success) {
+                    // IMPORTANTE: Resetar as flags após o trade para não entrar duas vezes no mesmo pullback
+                    rsiStateRef.current = { prev: rsi, crossedDownFromUpper: false, crossedUpFromLower: false };
                     cooldownRef.current = COOLDOWN_CANDLES;
                     toast({ title: `🤖 Pullback de ${signal.toUpperCase()}!`, description: `Posição aberta com stake de $${finalStake.toFixed(2)}.` });
                 } else {
@@ -221,27 +273,8 @@ export function useMultipliersCouncil(
     }, [
         botCandleData, isAutopilotOn, isConnected, activeSymbol, form, toast,
         accountBalance, dailyBalance, dailyTarget, dailyPnL,
-        executeTrade, updateContract, operationsLog, autopilotPosition
+        executeTrade, updateContract, operationsLog, autopilotPosition, trend
     ]);
-
-    const toggleAutopilot = useCallback(() => {
-        setIsAutopilotOn(prevState => {
-            const newState = !prevState;
-            // Adiar a chamada do toast para evitar conflitos de renderização do React.
-            setTimeout(() => {
-                toast({ title: `Piloto ${newState ? 'Ativado' : 'Desativado'}` });
-            }, 0);
-            
-            if (!newState) {
-                 setBotStatus('PAUSED');
-                 rsiStateRef.current = { prev: 50, crossedDownFromUpper: false, crossedUpFromLower: false };
-                 cooldownRef.current = 0;
-            } else {
-                setBotStatus('MONITORING');
-            }
-            return newState;
-        });
-    }, [toast]);
     
     return {
         isAutopilotOn,
