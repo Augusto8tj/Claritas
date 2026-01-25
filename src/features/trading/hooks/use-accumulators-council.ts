@@ -76,6 +76,10 @@ const normalCDF = (x: number): number => {
     return prob;
 };
 
+/**
+ * Calcula a probabilidade de sobrevivência da posição
+ * usando a distribuição de primeira passagem
+ */
 function calculateSurvivalProbability(
   barrierDistance: number,
   targetDuration: number,
@@ -83,55 +87,81 @@ function calculateSurvivalProbability(
 ): number {
   if (currentVolatility <= 0 || targetDuration <= 0) return 0;
   
+  // Para movimento browniano sem drift:
+  // P(max|X(t)| < b para t ∈ [0,T]) ≈ erf(b / (σ√(2T)))
   const normalized = barrierDistance / (currentVolatility * Math.sqrt(2 * targetDuration));
+  
+  // erf(x) ≈ 2 * Φ(x√2) - 1
   const survivalProb = 2 * normalCDF(normalized * Math.sqrt(2)) - 1;
   
   return Math.max(0, Math.min(1, survivalProb));
 }
 
+
+/**
+ * Calcula o tamanho ótimo da posição usando Kelly fracionário
+ */
 function calculateOptimalStake(
   accountBalance: number,
   winRate: number,
   averageWin: number,
   averageLoss: number,
-  kellyFraction: number = 0.25
+  kellyFraction: number = 0.25 // Conservative: 1/4 Kelly
 ): number {
-  if (averageLoss === 0 || winRate === 0 || winRate === 100 || accountBalance < 1.0) return 1.0;
+  // ✅ Proteções adicionadas
+  if (averageLoss === 0 || winRate === 0 || winRate === 100) return 1.0;
+  if (accountBalance < 1.0) return 1.0;
   
   const b = Math.abs(averageWin / averageLoss);
   const p = Math.max(0.01, Math.min(0.99, winRate / 100));
   const q = 1 - p;
   
   const kellyEdge = p * b - q;
+  
+  // Se não há edge matemático, apostar mínimo
   if (kellyEdge <= 0) return 1.0;
 
   const fullKelly = kellyEdge / b;
   const fractionalKelly = fullKelly * kellyFraction;
   const stake = accountBalance * fractionalKelly;
   
+  // Limites: mín 1 USD, máx 10% do saldo
   return Math.max(1.0, Math.min(stake, accountBalance * 0.10));
 }
 
+/**
+ * Calcula o growth rate que maximiza o Kelly Criterion
+ * ajustado pelo risco de quebra de barreira
+ */
 function optimizeGrowthRate(
   survivalProbability: number,
   virtualArenaWinRate: number
 ): number {
+  // Base: mapear probabilidade de sobrevivência para growth rate
   const baseRate = 0.01 + (Math.max(0, survivalProbability - 0.75) / 0.25) * 0.04;
   
+  // Ajuste pela performance da Arena Virtual
   let adjustment = 1.0;
-  if (virtualArenaWinRate < 0.75) adjustment = 0.8;
-  else if (virtualArenaWinRate > 0.85) adjustment = 1.1;
+  if (virtualArenaWinRate < 0.75) {
+    adjustment = 0.8; // Reduz growth rate se Arena está falhando
+  } else if (virtualArenaWinRate > 0.85) {
+    adjustment = 1.1; // Aumenta se Arena está excelente
+  }
   
   const optimized = baseRate * adjustment;
   return Math.max(0.01, Math.min(0.05, optimized));
 }
 
+/**
+ * Analisa a microestrutura dos últimos N ticks
+ */
 function analyzeMicrostructure(ticks: TickData[]): MicrostructureSignal {
   if (ticks.length < 20) return { isSafe: true, tickVelocityAnomaly: false, priceJumpDetected: false, safetyScore: 50 };
   
   const recentTicks = ticks.slice(-20);
   const prices = recentTicks.map(t => t.price);
   
+  // 1. Detectar price jumps (Lee-Mykland test simplificado)
   const returns = [];
   for (let i = 1; i < prices.length; i++) {
     returns.push(Math.abs(Math.log(prices[i] / prices[i-1])));
@@ -141,6 +171,7 @@ function analyzeMicrostructure(ticks: TickData[]): MicrostructureSignal {
   
   const priceJumpDetected = returns.some(r => r > meanReturn + 3 * stdReturn);
   
+  // 2. Analisar velocidade de ticks (variação na chegada)
   const epochs = recentTicks.map(t => t.epoch);
   const intervals = [];
   for (let i = 1; i < epochs.length; i++) {
@@ -148,8 +179,9 @@ function analyzeMicrostructure(ticks: TickData[]): MicrostructureSignal {
   }
   const meanInterval = intervals.reduce((a,b) => a+b, 0) / intervals.length;
   const stdInterval = Math.sqrt(intervals.reduce((s, i) => s + Math.pow(i - meanInterval, 2), 0) / intervals.length);
-  const tickVelocityAnomaly = stdInterval > meanInterval * 0.5;
+  const tickVelocityAnomaly = stdInterval > meanInterval * 0.5; // Alta variação na chegada
   
+  // 3. Score geral
   let safetyScore = 100;
   if (priceJumpDetected) safetyScore -= 40;
   if (tickVelocityAnomaly) safetyScore -= 30;
@@ -162,6 +194,7 @@ function analyzeMicrostructure(ticks: TickData[]): MicrostructureSignal {
   };
 }
 
+
 const calculateTimeToLoss = (operation: Operation): number => {
     if (!operation.exitTimestamp) return 0;
     const entryTime = new Date(operation.timestamp).getTime();
@@ -169,24 +202,44 @@ const calculateTimeToLoss = (operation: Operation): number => {
     return (exitTime - entryTime) / 1000;
 };
 
+/**
+ * Estima o take profit que maximiza a utilidade esperada
+ */
 function calculateDynamicTakeProfit(
   volatilityRegime: VolatilityRegime,
   averageBreakTime: number,
-  survivalProbability: number
+  survivalProbability: number // ✅ Novo parâmetro
 ): number {
   let baseTarget = 1.25; 
 
-  if (averageBreakTime > 65) baseTarget = 1.40;
-  else if (averageBreakTime < 35) baseTarget = 1.10;
+  // Ajuste principal pelo tempo de sobrevivência
+  if (averageBreakTime > 65) {
+    baseTarget = 1.40;
+  } else if (averageBreakTime < 35) {
+    baseTarget = 1.10;
+  }
 
-  if (survivalProbability > 0.90) baseTarget *= 1.15;
-  else if (survivalProbability < 0.80) baseTarget *= 0.85;
+  // ✅ NOVO: Ajuste pela probabilidade de sobrevivência
+  if (survivalProbability > 0.90) {
+    baseTarget *= 1.15; // Aumenta 15% se prob. muito alta
+  } else if (survivalProbability < 0.80) {
+    baseTarget *= 0.85; // Reduz 15% se prob. baixa
+  }
 
+  // Refinamento pelo regime
   switch(volatilityRegime.regime) {
-    case 'ultra-calm': baseTarget = Math.min(1.50, baseTarget + 0.15); break;
-    case 'calm': baseTarget = Math.min(1.50, baseTarget + 0.05); break;
-    case 'agitated': baseTarget = Math.max(1.05, baseTarget - 0.10); break;
-    case 'volatile': baseTarget = Math.max(1.05, baseTarget - 0.20); break;
+    case 'ultra-calm':
+      baseTarget = Math.min(1.50, baseTarget + 0.15);
+      break;
+    case 'calm':
+      baseTarget = Math.min(1.50, baseTarget + 0.05);
+      break;
+    case 'agitated':
+      baseTarget = Math.max(1.05, baseTarget - 0.10);
+      break;
+    case 'volatile':
+      baseTarget = Math.max(1.05, baseTarget - 0.20);
+      break;
   }
   
   return baseTarget;
@@ -368,9 +421,12 @@ export function useAccumulatorsCouncil() {
         setRiskManager(prev => ({ ...prev, adaptiveDuration: effectiveDuration }));
       }
       
-      const barrierDistance = calculatedIndicators.atr * (BARRIER_INDICES[optimizedGrowthRate.toFixed(2)] || 0.348);
-      const instantaneousVolatility = timeMaster.instantaneousVolatility || 0.000562;
+      const growthRateForCalc = optimizeGrowthRate(survivalProbability, virtualArenaStats.winRate / 100);
+      const barrierMultiplierForCalc = BARRIER_INDICES[growthRateForCalc.toFixed(2)] || 0.348;
+      const barrierDistance = calculatedIndicators.atr * barrierMultiplierForCalc;
 
+      const instantaneousVolatility = timeMaster.instantaneousVolatility || 0.000562;
+      
       const currentSurvivalProb = calculateSurvivalProbability(barrierDistance, effectiveDuration, instantaneousVolatility);
       setSurvivalProbability(currentSurvivalProb);
 
@@ -383,6 +439,7 @@ export function useAccumulatorsCouncil() {
       }
 
       const pilotOpenPosition = operationsLog.find(op => op.initiator === 'Piloto' && op.status === 'pending');
+      const anyOpenPosition = operationsLog.find(op => op.status === 'pending');
 
       if (pilotOpenPosition) {
         setBotStatus('POSITION_OPEN');
@@ -408,6 +465,12 @@ export function useAccumulatorsCouncil() {
           await sellContract(pilotOpenPosition.id);
         }
       } else {
+        if (anyOpenPosition) {
+            setBotStatus('MONITORING');
+            executionRef.current = false;
+            return;
+        }
+
         if(botStatus === 'COOLDOWN') { executionRef.current = false; return; }
 
         const survivalProbMet = currentSurvivalProb >= riskManager.survivalProbabilityThreshold;
@@ -420,7 +483,7 @@ export function useAccumulatorsCouncil() {
           const stake = calculateOptimalStake(dailyBalance, virtualArenaStats.winRate, virtualArenaStats.avgWin, virtualArenaStats.avgLoss);
           setCalculatedStake(stake);
 
-          const growthRate = optimizeGrowthRate(currentSurvivalProb, virtualArenaStats.winRate / 100);
+          const growthRate = optimizeGrowthRate(currentSurvivalProb, virtualArenaStats.winRate);
           setOptimizedGrowthRate(growthRate);
 
           setBotStatus('CALM_DETECTED');
