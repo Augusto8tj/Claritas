@@ -152,7 +152,6 @@ export function useMultipliersCouncil(
                     else {
                         newStopLoss = currentPrice + indicators.atr;
                         // Só atualiza se o novo stop for menor (mais baixo) que o atual
-                        // Nota: stopLoss || Infinity para garantir que o primeiro update funcione
                         if (newStopLoss < (autopilotPosition.stopLoss || 999999999)) {
                              await updateContract(contractId, undefined, newStopLoss);
                              trailingStateRef.current.trailingActive = true;
@@ -162,14 +161,12 @@ export function useMultipliersCouncil(
                 executionRef.current.isExecuting = false;
                 return;
             } else {
-                 // Resetar estado do trailing stop se não há posição
                 if(trailingStateRef.current.breakevenSet || trailingStateRef.current.trailingActive) {
                     trailingStateRef.current = { breakevenSet: false, trailingActive: false };
                 }
             }
             
 
-            // --- LÓGICA DE ABERTURA DE POSIÇÃO ---
             if (cooldownRef.current > 0) {
                 setBotStatus('COOL_DOWN');
                 cooldownRef.current--;
@@ -177,44 +174,27 @@ export function useMultipliersCouncil(
                 return;
             }
 
-            const { adx, ma: { long: ema100 }, rsi, atr } = indicators;
-            const lastPrice = botCandleData[botCandleData.length - 1].close;
-
             // =================================================================
             // CORREÇÃO 2: RESET DE ESTADO RSI NA MUDANÇA DE TENDÊNCIA
             // =================================================================
+            const { adx, ma: { long: ema100 }, rsi, atr } = indicators;
+            const lastPrice = botCandleData[botCandleData.length - 1].close;
+            
             const currentTrend: TrendDirection = lastPrice > ema100! ? 'UP' : 'DOWN';
             
-            // Se a tendência mudou desde o último tick, limpa as flags de pullback antigo
             if (currentTrend !== trend) {
                 rsiStateRef.current = { prev: rsi, crossedDownFromUpper: false, crossedUpFromLower: false };
                 setTrend(currentTrend);
             }
-            
-            // 1. FILTRO DE QUALIDADE DE TENDÊNCIA
-            if (adx < ADX_THRESHOLD) {
-                setBotStatus('RANGING');
-                executionRef.current.isExecuting = false;
-                return;
-            }
 
-            // 2. CÁLCULO DE BREAKEVEN DINÂMICO
             const multiplier = form.getValues('multiplier');
             const mmbPercent = (((COMMISSION_PERCENT / 100) * 2) / multiplier) + (SPREAD_ESTIMATE_PERCENT / 100);
             const projectedMove = atr;
             const projectedMovePercent = projectedMove / lastPrice;
-
-            if (projectedMovePercent < (mmbPercent * MMB_ATR_MULTIPLIER)) {
-                setBotStatus('LOW_VOLATILITY');
-                executionRef.current.isExecuting = false;
-                return;
-            }
             
-            // LÓGICA DE DETECÇÃO DE PULLBACK (Mantida, mas agora segura pelo reset acima)
             if (rsi < RSI_LOWER_BOUND) rsiStateRef.current.crossedUpFromLower = true;
             if (rsi > RSI_UPPER_BOUND) rsiStateRef.current.crossedDownFromUpper = true;
             
-            // Reset da flag oposta para garantir pureza do movimento
             if (currentTrend === 'UP') rsiStateRef.current.crossedDownFromUpper = false;
             if (currentTrend === 'DOWN') rsiStateRef.current.crossedUpFromLower = false;
 
@@ -222,17 +202,14 @@ export function useMultipliersCouncil(
             const prevRsi = rsiStateRef.current.prev;
             rsiStateRef.current.prev = rsi;
 
-            // Gatilho: Estava lá embaixo, e agora cruzou 40 para cima
             if (currentTrend === 'UP' && rsiStateRef.current.crossedUpFromLower && rsi > RSI_LOWER_BOUND && prevRsi <= RSI_LOWER_BOUND) {
                 signal = 'up';
             } 
-            // Gatilho: Estava lá em cima, e agora cruzou 60 para baixo
             else if (currentTrend === 'DOWN' && rsiStateRef.current.crossedDownFromUpper && rsi < RSI_UPPER_BOUND && prevRsi >= RSI_UPPER_BOUND) {
                 signal = 'down';
             }
 
             if (signal) {
-                setBotStatus('EXECUTING_TRADE');
                 const baseStake = Math.max(1.0, dailyBalance * 0.02);
                 const volatilityFactor = Math.max(0.5, 1 - (atr/lastPrice * 100));
                 const finalStake = Math.max(1.0, Math.min(baseStake * volatilityFactor, 5.0));
@@ -254,7 +231,6 @@ export function useMultipliersCouncil(
                 );
 
                 if (result.success) {
-                    // IMPORTANTE: Resetar as flags após o trade para não entrar duas vezes no mesmo pullback
                     rsiStateRef.current = { prev: rsi, crossedDownFromUpper: false, crossedUpFromLower: false };
                     cooldownRef.current = COOLDOWN_CANDLES;
                     toast({ title: `🤖 Pullback de ${signal.toUpperCase()}!`, description: `Posição aberta com stake de $${finalStake.toFixed(2)}.` });
@@ -262,7 +238,12 @@ export function useMultipliersCouncil(
                     toast({ title: `❌ Falha na Execução`, description: result.message, variant: "destructive" });
                 }
             } else {
-                setBotStatus('MONITORING');
+                // =================================================================
+                // SUGESTÃO DE UX IMPLEMENTADA
+                // =================================================================
+                if (adx < ADX_THRESHOLD) setBotStatus('RANGING');
+                else if (projectedMovePercent < (mmbPercent * MMB_ATR_MULTIPLIER)) setBotStatus('LOW_VOLATILITY');
+                else setBotStatus('MONITORING');
             }
             
             executionRef.current.isExecuting = false;
