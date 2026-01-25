@@ -1,3 +1,4 @@
+// src/features/trading/hooks/use-time-master.ts
 'use client';
 
 /**
@@ -5,7 +6,7 @@
  *
  * Este hook opera de forma independente, analisando o mercado a cada segundo
  * para projetar o "tempo até a quebra da barreira" usando modelos estocásticos
- * otimizados para o ativo 1HZ10V.
+ * otimizados.
  */
 import { useState, useEffect, useMemo, useRef } from 'react';
 import type { CandleData, TickData } from '@/lib/types';
@@ -38,6 +39,7 @@ export interface TimeMasterState {
   safeExitTime: number;
   breakTimeHistory: number[];
   regime: VolatilityRegime;
+  instantaneousVolatility: number;
 }
 
 // --- FUNÇÕES MATEMÁTICAS ---
@@ -110,6 +112,7 @@ export function useTimeMaster(botCandleData: CandleData[], priceTicks: TickData[
     safeExitTime: 35,
     breakTimeHistory: [],
     regime: { regime: 'normal', confidence: 1, expectedDuration: 40 },
+    instantaneousVolatility: 0.000562,
   });
 
   const indicatorsRef = useRef<Indicators | null>(null);
@@ -161,6 +164,7 @@ export function useTimeMaster(botCandleData: CandleData[], priceTicks: TickData[
           safeExitTime: Math.max(15, Math.min(safeTime, 90)), // Limita entre 15s e 90s
           breakTimeHistory: newHistory,
           regime: regime,
+          instantaneousVolatility,
         };
       });
 

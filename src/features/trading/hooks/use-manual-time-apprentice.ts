@@ -1,3 +1,4 @@
+// src/features/trading/hooks/use-manual-time-apprentice.ts
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
@@ -7,15 +8,8 @@ import { useToast } from '@/hooks/use-toast';
 const APPRENTICE_CONFIG = {
   TIME_WINDOWS_S: [5, 10, 15, 20, 25, 30],
   VOLATILITY_THRESHOLD: 0.0003,
-  BASE_TAKE_PROFIT: 1.25,
-  VOLATILITY_SENSITIVITY: 150,
-  MIN_PROFIT_PERCENTAGE: 0.05,
   RISK_AVERSION: 0.5, // 0 = risk-neutral, 1 = max risk-averse
-};
-
-// Helper para a Cumulative Distribution Function (CDF) da distribuição Normal
-const normalCDF = (x: number): number => {
-    return 0.5 * (1 + (x / Math.sqrt(2)) / Math.sqrt(1 + (x*x)/2));
+  MIN_PROFIT_PERCENTAGE: 0.05,
 };
 
 const calculateStdDev = (ticks: TickData[]): number => {
@@ -31,29 +25,23 @@ const calculateStdDev = (ticks: TickData[]): number => {
  * usando a distribuição empírica de lucros históricos
  */
 function calculateOptimalTakeProfit(
-  historicalProfits: number[],
-  currentVolatility: number,
+  historicalProfitRatios: number[], // Expects ratios (profit/stake)
   riskAversion: number // 0-1
 ): number {
-  if (historicalProfits.length < 5) {
-    // Fallback para lógica de volatilidade se não houver histórico suficiente
-    const volatilityFactor = 1 + (currentVolatility * APPRENTICE_CONFIG.VOLATILITY_SENSITIVITY);
-    return APPRENTICE_CONFIG.BASE_TAKE_PROFIT * volatilityFactor;
+  if (historicalProfitRatios.length < 5) {
+    return 0.25; // Fallback para 25% de lucro se não houver histórico
   }
   
-  // 1. Ajustar distribuição aos dados históricos
-  const meanProfit = historicalProfits.reduce((sum, p) => sum + p, 0) / historicalProfits.length;
-  const variance = historicalProfits.reduce((sum, p) => sum + Math.pow(p - meanProfit, 2), 0) / historicalProfits.length;
-  const stdDevProfit = Math.sqrt(variance);
-
-  // 3. Maximizar E[U(profit)]
-  // Uma aproximação é pegar um percentil da distribuição de lucros.
-  // Maior aversão ao risco = percentil menor (mais conservador).
-  const percentile = 0.75 - (riskAversion * 0.25); // Varia de 75% a 50%
-  const sortedProfits = [...historicalProfits].sort((a,b) => a - b);
-  const targetIndex = Math.floor(sortedProfits.length * percentile);
+  const sortedRatios = [...historicalProfitRatios].sort((a, b) => a - b);
   
-  return sortedProfits[targetIndex] || meanProfit;
+  // Aversão ao risco mapeia para um percentil. 
+  // 0 (risk neutral) -> 75th percentile
+  // 1 (max risk averse) -> 50th percentile (mediana)
+  const percentile = 0.75 - (riskAversion * 0.25);
+  const targetIndex = Math.floor(sortedRatios.length * percentile);
+  
+  // Retorna o ratio de lucro ótimo
+  return sortedRatios[targetIndex] || 0.25;
 }
 
 
@@ -84,12 +72,12 @@ export const useManualTimeApprentice = (
   const [activeManualTrade, setActiveManualTrade] = useState<Operation | null>(null);
   const closingInProgressRef = useRef<Set<number>>(new Set());
   
-  const historicalManualProfits = useRef<number[]>([]);
+  const historicalManualProfitRatios = useRef<number[]>([]);
 
   useEffect(() => {
-    const manualWins = operationsLog.filter(op => op.initiator === 'Manual' && op.status === 'won' && op.result);
+    const manualWins = operationsLog.filter(op => op.initiator === 'Manual' && op.status === 'won' && op.result && op.stake > 0);
     if(manualWins.length > 0) {
-      historicalManualProfits.current = manualWins.map(op => op.result!);
+      historicalManualProfitRatios.current = manualWins.map(op => op.result! / op.stake);
     }
   }, [operationsLog]);
 
@@ -120,8 +108,7 @@ export const useManualTimeApprentice = (
     const stake = activeManualTrade?.stake || formStake || 1.0;
 
     const optimalProfitRatio = calculateOptimalTakeProfit(
-      historicalManualProfits.current,
-      maxVolatility,
+      historicalManualProfitRatios.current,
       APPRENTICE_CONFIG.RISK_AVERSION
     );
     

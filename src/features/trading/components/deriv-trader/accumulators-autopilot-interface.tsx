@@ -11,13 +11,12 @@ import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Bot, Zap, Waves, TrendingUp, Wallet, ShieldCheck, AlertCircle, Clock, CheckCircle, XCircle } from "lucide-react";
+import { Bot, Zap, Wallet, ShieldCheck, AlertCircle, Clock, CheckCircle, XCircle, BarChartHorizontal } from "lucide-react";
 import { cn } from "@/lib/utils";
-import type { useAccumulatorsCouncil, VirtualOperation } from "../../hooks/use-accumulators-council";
+import type { useAccumulatorsCouncil } from "../../hooks/use-accumulators-council";
 import { Separator } from "@/components/ui/separator";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Progress } from "@/components/ui/progress";
-import type { TimeMasterState } from '../../hooks/use-time-master';
 
 
 interface AccumulatorsAutopilotInterfaceProps extends ReturnType<typeof useAccumulatorsCouncil> {}
@@ -43,10 +42,12 @@ export function AccumulatorsAutopilotInterface({
   setDailyTarget,
   dailyPnL,
   riskManager,
-  survivalProbability, // Alterado de calmnessScore
+  survivalProbability,
   entryConditions,
   timeMaster,
   calculatedStake,
+  optimizedGrowthRate,
+  virtualArenaStats,
 }: AccumulatorsAutopilotInterfaceProps) {
   
   const statusInfo = {
@@ -130,28 +131,30 @@ export function AccumulatorsAutopilotInterface({
         </div>
 
         <Separator />
-
-         <div className="space-y-2">
-            <div className="flex justify-between items-center mb-1">
-                <Label htmlFor="survival-progress" className="font-semibold">
-                    Probabilidade de Sobrevivência
-                </Label>
-                <span className="font-mono text-lg font-bold text-primary">{survivalProbPercent.toFixed(1)}%</span>
-            </div>
-            <Progress value={survivalProbPercent} className="h-3" />
-            <div className="h-1 relative mt-1">
-                <div 
-                    className="absolute top-0 h-full w-1 bg-destructive rounded-full" 
-                    style={{ left: `${riskManager.survivalProbabilityThreshold * 100}%` }}
-                >
-                    <div className="absolute -top-5 -translate-x-1/2 text-xs text-destructive font-bold">
-                        {(riskManager.survivalProbabilityThreshold * 100).toFixed(0)}%
-                    </div>
-                </div>
-            </div>
-            <p className="text-xs text-muted-foreground pt-1 text-center">
-                O piloto entrará quando a probabilidade (azul) ultrapassar o limiar de entrada (vermelho).
+        
+        <div className="grid grid-cols-2 gap-4">
+          <div className="p-4 border rounded-lg">
+            <p className="text-xs text-muted-foreground">Prob. Sobrevivência</p>
+            <p className="text-2xl font-bold text-primary">{survivalProbPercent.toFixed(1)}%</p>
+            <Progress value={survivalProbPercent} className="mt-2" />
+          </div>
+          
+          <div className="p-4 border rounded-lg">
+            <p className="text-xs text-muted-foreground">Stake Calculado (Kelly)</p>
+            <p className="text-2xl font-bold font-mono">${calculatedStake.toFixed(2)}</p>
+          </div>
+          
+          <div className="p-4 border rounded-lg">
+            <p className="text-xs text-muted-foreground">Growth Rate Ótimo</p>
+            <p className="text-2xl font-bold">{(optimizedGrowthRate * 100).toFixed(0)}%</p>
+          </div>
+          
+          <div className="p-4 border rounded-lg">
+            <p className="text-xs text-muted-foreground">Win Rate Arena</p>
+            <p className={cn("text-2xl font-bold", virtualArenaStats.winRate >= 75 ? "text-green-600" : "text-destructive")}>
+              {virtualArenaStats.winRate.toFixed(1)}%
             </p>
+          </div>
         </div>
 
         <Separator />
