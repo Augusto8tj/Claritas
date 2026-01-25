@@ -74,7 +74,7 @@ export function VirtualArenaAccumulators({ virtualOperations }: VirtualArenaAccu
                                         <p className="font-mono text-xs text-muted-foreground">ID: {op.id}</p>
                                         <div className="flex items-center gap-4 text-xs">
                                              <div className="flex items-center gap-1"><Timer className="h-3 w-3"/><span>Entrada: {formatTime(op.entryTime)}</span></div>
-                                             <div className="flex items-center gap-1"><BarChart2 className="h-3 w-3"/><span>Calma: {op.initialConditions.calmnessScore.toFixed(0)}</span></div>
+                                             <div className="flex items-center gap-1"><BarChart2 className="h-3 w-3"/><span>Prob. Sobrev.: {(op.initialConditions.survivalProbability * 100).toFixed(0)}%</span></div>
                                              <div className="flex items-center gap-1"><Timer className="h-3 w-3"/><span>Duração: {duration}s</span></div>
                                         </div>
                                     </div>
