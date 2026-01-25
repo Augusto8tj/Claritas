@@ -1,4 +1,3 @@
-// src/features/trading/components/deriv-trader/accumulators-autopilot-interface.tsx
 'use client';
 
 import {
@@ -21,9 +20,7 @@ import { Progress } from "@/components/ui/progress";
 import type { TimeMasterState } from '../../hooks/use-time-master';
 
 
-interface AccumulatorsAutopilotInterfaceProps extends ReturnType<typeof useAccumulatorsCouncil> {
-    timeMaster: TimeMasterState;
-}
+interface AccumulatorsAutopilotInterfaceProps extends ReturnType<typeof useAccumulatorsCouncil> {}
 
 const ConditionCheck = ({ label, isMet }: { label: string, isMet: boolean }) => (
     <div className={cn(
@@ -49,7 +46,7 @@ export function AccumulatorsAutopilotInterface({
   riskManager,
   calmnessScore,
   entryConditions,
-  timeMaster, // Adicionada prop
+  timeMaster,
 }: AccumulatorsAutopilotInterfaceProps) {
   
   const statusInfo = {
@@ -214,8 +211,8 @@ export function AccumulatorsAutopilotInterface({
                     </h4>
                     <div className="grid grid-cols-2 gap-3 text-center text-xs">
                         <div className="p-2 border rounded-lg bg-muted/50">
-                            <p className="text-muted-foreground font-semibold mb-1">Quebra Média Projetada</p>
-                            <p className="font-bold text-sm text-foreground">{timeMaster.averageBreakTime.toFixed(1)}s</p>
+                            <p className="text-muted-foreground font-semibold mb-1">Regime de Volatilidade</p>
+                            <p className="font-bold text-sm text-foreground capitalize">{timeMaster.regime.regime.replace('_', ' ')}</p>
                         </div>
                         <div className="p-2 border rounded-lg bg-muted/50">
                             <p className="text-muted-foreground font-semibold mb-1">Tempo de Saída Seguro</p>

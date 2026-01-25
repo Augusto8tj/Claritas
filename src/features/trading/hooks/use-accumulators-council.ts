@@ -6,30 +6,17 @@ import { useToast } from '@/hooks/use-toast';
 import type { CandleData, Operation, TickData } from '@/lib/types';
 import { calculateAllIndicators, type Indicators } from '@/services/indicator-service';
 import { initialCouncilStrategies } from '@/services/council-strategies';
-import { useTimeMaster } from './use-time-master'; // Importa o novo Sentinela
+import { useTimeMaster, type VolatilityRegime } from './use-time-master';
 
 // --- TIPOS E CONFIGURAÇÕES DA ESTRATÉGIA ---
 
 type BotStatus = 'PAUSED' | 'MONITORING' | 'ANALYZING_LOSS' | 'COOLDOWN' | 'CALM_DETECTED' | 'POSITION_OPEN';
-
-type MarketRhythm = 'volatile' | 'normal' | 'calm';
-interface TimingRegime {
-  volatile: number;
-  normal: number;
-  calm: number;
-}
-const TIMING_REGIMES: TimingRegime = {
-  volatile: 25,
-  normal: 40,
-  calm: 55,
-};
 
 interface RiskManagerStatus {
   mode: 'Normal' | 'Cautious' | 'Hyper-Cautious';
   lastLossReason: string | null;
   calmnessScoreThreshold: number;
   adaptiveDuration: number;
-  marketRhythm: MarketRhythm;
 }
 
 interface MultiScaleVolatility {
@@ -101,46 +88,17 @@ const calculatePercentile = (series: (number|null)[], value: number): number => 
     return (count / sorted.length) * 100;
 };
 
-const calculateTickRange = (ticks: TickData[]): number => {
-    if (ticks.length === 0) return 0;
-    const prices = ticks.map(t => t.price);
-    return Math.max(...prices) - Math.min(...prices);
-};
-
-function detectMarketRhythm(
-  indicators: { adx?: number | null; bbw?: number | null; bbwSeries?: (number | null)[], atr?: number | null },
-  ticks: TickData[]
-): MarketRhythm {
-  if (!indicators.adx || !indicators.bbw || !indicators.bbwSeries || !indicators.atr || ticks.length < 30) {
-    return 'normal';
-  }
-
-  const recentTicks = ticks.slice(-30);
-  const recentTickRange = calculateTickRange(recentTicks);
-  const bbwPercentile = calculatePercentile(indicators.bbwSeries, indicators.bbw);
-  const volatileTickRangeThreshold = indicators.atr * 1.5;
-  
-  if (bbwPercentile > 70 || indicators.adx > 22 || recentTickRange > volatileTickRangeThreshold) {
-    return 'volatile';
-  } else if (bbwPercentile < 30 && indicators.adx < 18) {
-    return 'calm';
-  }
-  return 'normal';
-}
-
-const calculateStdDev = (ticks: TickData[]): number => {
-    if (ticks.length < 2) return 0;
-    const prices = ticks.map(t => t.price);
-    const mean = prices.reduce((a, b) => a + b, 0) / prices.length;
-    const stdDev = Math.sqrt(prices.map(p => Math.pow(p - mean, 2)).reduce((a, b) => a + b, 0) / prices.length);
-    return stdDev;
-};
-
 const calculateMultiScaleVolatility = (ticks: TickData[]): MultiScaleVolatility => {
+  const stdDev = (subTicks: TickData[]) => {
+      if (subTicks.length < 2) return 0;
+      const prices = subTicks.map(t => t.price);
+      const mean = prices.reduce((a, b) => a + b, 0) / prices.length;
+      return Math.sqrt(prices.map(p => Math.pow(p - mean, 2)).reduce((a, b) => a + b, 0) / prices.length);
+  }
   return {
-    immediate: calculateStdDev(ticks.slice(-5)),
-    short: calculateStdDev(ticks.slice(-10)),
-    medium: calculateStdDev(ticks.slice(-20)),
+    immediate: stdDev(ticks.slice(-5)),
+    short: stdDev(ticks.slice(-10)),
+    medium: stdDev(ticks.slice(-20)),
   };
 };
 
@@ -169,33 +127,30 @@ const calculateTimeToLoss = (operation: Operation): number => {
 };
 
 function calculateDynamicTakeProfit(
-  calmnessScore: number,
-  marketRhythm: 'volatile' | 'normal' | 'calm',
-  effectiveDuration: number,
+  volatilityRegime: VolatilityRegime,
   averageBreakTime: number
 ): number {
-  let baseTarget = 1.25; // Padrão
+  let baseTarget = 1.25; 
 
-  // Sugestão 1: Ajuste principal pelo Mestre do Tempo
-  if (averageBreakTime > 65) { // Tempo de sobrevivência longo
-    baseTarget = 1.40; // Alvo ambicioso
-  } else if (averageBreakTime < 35) { // Tempo de sobrevivência curto
-    baseTarget = 1.10; // Alvo modesto e rápido
+  if (averageBreakTime > 65) {
+    baseTarget = 1.40;
+  } else if (averageBreakTime < 35) {
+    baseTarget = 1.10;
   }
 
-  // Refinamento com base na calmaria atual
-  if (calmnessScore > 85 && marketRhythm === 'calm') {
-    baseTarget = Math.min(1.50, baseTarget + 0.10); // Aumenta em condições ideais
-  }
-  if (calmnessScore < 75 || marketRhythm === 'volatile') {
-    baseTarget = Math.max(1.05, baseTarget - 0.10); // Reduz em condições arriscadas
-  }
-  
-  // Ajuste final baseado na janela de tempo de saída efetiva
-  if (effectiveDuration < 30) {
-    baseTarget = Math.max(0.50, baseTarget - 0.30); // Reduz agressivamente para saídas rápidas
-  } else if (effectiveDuration < 45) {
-    baseTarget = Math.max(0.80, baseTarget - 0.15);
+  switch(volatilityRegime.regime) {
+      case 'ultra-calm':
+        baseTarget = Math.min(1.50, baseTarget + 0.15);
+        break;
+      case 'calm':
+        baseTarget = Math.min(1.50, baseTarget + 0.05);
+        break;
+      case 'agitated':
+         baseTarget = Math.max(1.05, baseTarget - 0.10);
+        break;
+      case 'volatile':
+         baseTarget = Math.max(1.05, baseTarget - 0.20);
+        break;
   }
   
   return baseTarget;
@@ -224,8 +179,7 @@ export function useAccumulatorsCouncil() {
     mode: 'Normal',
     lastLossReason: null,
     calmnessScoreThreshold: BASE_CALMNESS_THRESHOLD,
-    adaptiveDuration: TIMING_REGIMES.normal,
-    marketRhythm: 'normal',
+    adaptiveDuration: 40,
   });
   const [entryConditions, setEntryConditions] = useState({
     calmnessScore: false, bbwIsLow: false, atrIsLow: false, zScoreIsStable: false,
@@ -322,11 +276,11 @@ export function useAccumulatorsCouncil() {
       
       if (timeoutInCalmMarkets >= 3) {
         setRiskManager(prev => ({
+          ...prev,
           mode: 'Hyper-Cautious',
           lastLossReason: 'Padrão: Falsa Calmaria Detectada',
           calmnessScoreThreshold: Math.min(85, prev.calmnessScoreThreshold + 5),
           adaptiveDuration: Math.max(20, prev.adaptiveDuration - 10),
-          marketRhythm: prev.marketRhythm,
         }));
         setTimeout(() => toast({ title: '🤖 Gerente: Modo Hyper-Cauteloso', description: `Mercado falso-calmo. Reduzindo tempo de exposição.`, variant: "destructive" }), 0);
       } else {
@@ -425,17 +379,14 @@ export function useAccumulatorsCouncil() {
           return;
       }
       
-      const marketRhythm = detectMarketRhythm(calculatedIndicators, priceTicks);
-      
       const effectiveDuration = Math.min(
-        TIMING_REGIMES[marketRhythm],
+        timeMaster.regime.expectedDuration,
         timeMaster.safeExitTime
       );
 
-      if (riskManager.marketRhythm !== marketRhythm || riskManager.adaptiveDuration !== effectiveDuration) {
+      if (riskManager.adaptiveDuration !== effectiveDuration) {
         setRiskManager(prev => ({
           ...prev, 
-          marketRhythm, 
           adaptiveDuration: effectiveDuration
         }));
       }
@@ -514,13 +465,14 @@ export function useAccumulatorsCouncil() {
       const pilotOpenPosition = operationsLog.find(op => op.initiator === 'Piloto' && op.status === 'pending');
 
       if (pilotOpenPosition) {
+        let dynamicSpikeMultiplier = 2.5; 
+        if (localMetrics.avgBbw > 0.9) { 
+          dynamicSpikeMultiplier = 3.5;
+        } else if (localMetrics.avgBbw < 0.4) {
+          dynamicSpikeMultiplier = 2.0;
+        }
+
         if (openPilotContractContextRef.current?.id !== pilotOpenPosition.id) {
-            let dynamicSpikeMultiplier = 2.5; 
-            if (localMetrics.avgBbw > 0.9) { 
-              dynamicSpikeMultiplier = 3.5;
-            } else if (localMetrics.avgBbw < 0.4) {
-              dynamicSpikeMultiplier = 2.0;
-            }
             openPilotContractContextRef.current = { id: pilotOpenPosition.id, dynamicSpikeMultiplier };
         }
 
@@ -531,9 +483,9 @@ export function useAccumulatorsCouncil() {
         if (priceTicks.length > MICRO_VOLATILITY_WINDOW && baselineVolatility) {
             const currentVolatility = calculateMultiScaleVolatility(priceTicks);
             const context = openPilotContractContextRef.current;
-            const dynamicMultiplier = (context && context.id === pilotOpenPosition.id) ? context.dynamicSpikeMultiplier : 2.5;
+            const multiplier = (context && context.id === pilotOpenPosition.id) ? context.dynamicSpikeMultiplier : 2.5;
             if (currentVolatility.immediate > baselineVolatility.immediate * 2.0 || 
-                currentVolatility.short > baselineVolatility.short * dynamicMultiplier ||
+                currentVolatility.short > baselineVolatility.short * multiplier ||
                 currentVolatility.medium > baselineVolatility.medium * 3.0) {
                 microVolatilityVeto = true;
             }
@@ -542,7 +494,7 @@ export function useAccumulatorsCouncil() {
         const isVolatilityExpanding = calculatedIndicators.bbw > localMetrics.avgBbw * VOLATILITY_EXIT_MULTIPLIER_BBW || calculatedIndicators.atr > localMetrics.avgAtr * ATR_EXIT_MULTIPLIER || calculatedIndicators.adx > ADX_EXIT_THRESHOLD;
         const hasReachedStopLoss = (pilotOpenPosition.result || 0) <= -pilotOpenPosition.stake * MAX_LOSS_PERCENT;
         
-        const dynamicTakeProfit = calculateDynamicTakeProfit(finalCalmnessScore, riskManager.marketRhythm, effectiveDuration, timeMaster.averageBreakTime);
+        const dynamicTakeProfit = calculateDynamicTakeProfit(timeMaster.regime, timeMaster.averageBreakTime);
         const hasReachedTakeProfit = (pilotOpenPosition.result || 0) >= pilotOpenPosition.stake * dynamicTakeProfit;
         
         const entryTime = new Date(pilotOpenPosition.timestamp).getTime();
