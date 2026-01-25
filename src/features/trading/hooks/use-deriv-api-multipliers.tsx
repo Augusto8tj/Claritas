@@ -364,12 +364,10 @@ const updateContract = useCallback(async (
         
         // --- CORREÇÃO: ARREDONDAMENTO OBRIGATÓRIO (2 CASAS) ---
         if (takeProfit !== undefined) {
-            // Garante que é número e tem no máximo 2 decimais
             updateRequest.limit_order.take_profit = takeProfit > 0 ? parseFloat(takeProfit.toFixed(2)) : null;
         }
         
         if (stopLoss !== undefined) {
-            // Garante que é número e tem no máximo 2 decimais
             updateRequest.limit_order.stop_loss = stopLoss > 0 ? parseFloat(stopLoss.toFixed(2)) : null;
         }
         // -----------------------------------------------------
@@ -430,8 +428,10 @@ const updateContract = useCallback(async (
 
       const sanitizedStake = parseFloat(stake.toFixed(2));
 
+      // --- CORREÇÃO FINAL: ADICIONADO O CAMPO 'price' NO PEDIDO DE COMPRA ---
       const buyRequest: any = {
         buy: "1",
+        price: sanitizedStake, // O preço/valor que estamos dispostos a pagar
         parameters: {
             amount: sanitizedStake,
             basis: "stake",
@@ -537,7 +537,6 @@ const updateContract = useCallback(async (
 
     try {
         sellingContractsRef.current.add(contractId);
-        // CORREÇÃO FINAL: Removido o parâmetro `price` da chamada de venda.
         const sellResponse: any = await makeRequest({ "sell": contractId });
 
         if (sellResponse.error) {
@@ -769,6 +768,8 @@ const updateContract = useCallback(async (
                             if (trailingState.highestProfit > activationThreshold) {
                                 const rawNewStop = trailingState.highestProfit - trailingDistance;
                                 const newStopLoss = parseFloat(rawNewStop.toFixed(2));
+                                updatedOp.trailingStop = newStopLoss;
+
                                 if (newStopLoss > (op.stopLoss || 0)) {
                                     updateContract(op.id, undefined, newStopLoss);
                                 }
