@@ -121,53 +121,50 @@ export function useMultipliersCouncil(
                 return;
             }
 
+            const currentPrice = botCandleData[botCandleData.length-1].close;
+
             // =================================================================
             // 3. GESTÃO DE POSIÇÃO (TRAILING STOP)
             // =================================================================
             if (autopilotPosition) {
                 setBotStatus('POSITION_OPEN');
-                const { stake = 0, result = 0, id: contractId, entryPrice, contractType, multiplier = 1 } = autopilotPosition;
+                const { stake = 0, result = 0, id: contractId, entryPrice, contractType, stopLoss: currentStopLoss, multiplier = 1 } = autopilotPosition;
                 
-                const currentPrice = botCandleData[botCandleData.length-1].close;
                 const profitPercent = stake > 0 ? (result / stake) * 100 : 0;
                 
                 const trailingState = trailingStateRef.current[contractId] || { breakevenSet: false, trailingActive: false };
 
                 // A. Mover para Breakeven
                 if (!trailingState.breakevenSet && profitPercent >= BREAKEVEN_PROFIT_PERCENT && entryPrice) {
-                    // Para garantir que não haja perda, definimos o stop loss para o valor total da aposta menos um centavo.
-                    // Isso significa que se o lucro cair para quase zero, a posição fecha com uma perda mínima.
-                    const breakevenStopLoss = stake - 0.01;
-                    await updateContract(contractId, undefined, breakevenStopLoss);
+                    await updateContract(contractId, undefined, 0.01);
                     trailingStateRef.current[contractId] = { ...trailingState, breakevenSet: true };
                     toast({ title: "🛡️ Stop no Breakeven", description: `Risco na posição #${contractId} minimizado.` });
                 }
                 // B. Trailing Stop Dinâmico (ATR)
                 else if (profitPercent >= TRAILING_STOP_PROFIT_PERCENT) {
-                    
-                    const currentStopLossAmount = autopilotPosition.stopLoss || stake;
                     let newStopLossAmount;
-
-                    if (contractType === 'MULTUP') {
-                        const stopPrice = currentPrice - indicators.atr;
-                        const stopProfit = multiplier * stake * ((stopPrice / entryPrice!) - 1);
-                        newStopLossAmount = stake - stopProfit; // A perda é o stake menos o lucro no ponto de stop
-                    } else { // MULTDOWN
-                        const stopPrice = currentPrice + indicators.atr;
-                        const stopProfit = multiplier * stake * (1 - (stopPrice / entryPrice!));
-                        newStopLossAmount = stake - stopProfit;
-                    }
                     
-                    // Garante que o novo stop loss é válido e melhora a posição atual
-                    if (newStopLossAmount > 0 && newStopLossAmount < currentStopLossAmount) {
-                         await updateContract(contractId, undefined, newStopLossAmount);
-                         trailingStateRef.current[contractId] = { ...trailingState, trailingActive: true };
+                    if (contractType === 'MULTUP' && entryPrice) {
+                        const stopPrice = currentPrice - indicators.atr;
+                        const stopProfit = multiplier * stake * ((stopPrice / entryPrice) - 1);
+                        newStopLossAmount = stake - stopProfit;
+                        if (newStopLossAmount < (currentStopLoss || stake)) {
+                            await updateContract(contractId, undefined, newStopLossAmount);
+                            trailingStateRef.current[contractId] = { ...trailingState, trailingActive: true };
+                        }
+                    } else if (contractType === 'MULTDOWN' && entryPrice) {
+                        const stopPrice = currentPrice + indicators.atr;
+                        const stopProfit = multiplier * stake * (1 - (stopPrice / entryPrice));
+                        newStopLossAmount = stake - stopProfit;
+                        if (newStopLossAmount < (currentStopLoss || stake)) {
+                            await updateContract(contractId, undefined, newStopLossAmount);
+                            trailingStateRef.current[contractId] = { ...trailingState, trailingActive: true };
+                        }
                     }
                 }
                 executionRef.current.isExecuting = false;
                 return;
             } else {
-                // Reset do estado de trailing se não houver posição aberta
                  if (Object.keys(trailingStateRef.current).length > 0) {
                      trailingStateRef.current = {};
                  }
@@ -184,11 +181,8 @@ export function useMultipliersCouncil(
             }
 
             const { adx, ma: { long: ema100 }, rsi, atr } = indicators;
-            const lastPrice = botCandleData[botCandleData.length - 1].close;
-            
-            const currentTrend: TrendDirection = lastPrice > ema100! ? 'UP' : 'DOWN';
-            
-            // Reset de estado se a tendência mudou
+            const currentTrend: TrendDirection = currentPrice > ema100! ? 'UP' : 'DOWN';
+
             if (currentTrend !== trend) {
                 rsiStateRef.current = { prev: rsi, crossedDownFromUpper: false, crossedUpFromLower: false };
                 setTrend(currentTrend);
@@ -196,7 +190,7 @@ export function useMultipliersCouncil(
 
             const multiplier = form.getValues('multiplier');
             const mmbPercent = (((COMMISSION_PERCENT / 100) * 2) / multiplier) + (SPREAD_ESTIMATE_PERCENT / 100);
-            const projectedMovePercent = atr / lastPrice;
+            const projectedMovePercent = atr / currentPrice;
 
             // =================================================================
             // 5. FILTROS DE SEGURANÇA (BLOQUEANTES)
@@ -242,7 +236,7 @@ export function useMultipliersCouncil(
                 setBotStatus('EXECUTING_TRADE');
                 
                 const baseStake = Math.max(1.0, dailyBalance * 0.02);
-                const volatilityFactor = Math.max(0.5, 1 - (atr/lastPrice * 100));
+                const volatilityFactor = Math.max(0.5, 1 - (atr/currentPrice * 100));
                 const finalStake = Math.max(1.0, Math.min(baseStake * volatilityFactor, 5.0));
 
                 const stopLoss = finalStake;
@@ -296,3 +290,5 @@ export function useMultipliersCouncil(
         dailyPnL,
     };
 }
+
+    
