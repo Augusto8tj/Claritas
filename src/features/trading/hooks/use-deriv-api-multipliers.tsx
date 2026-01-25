@@ -343,7 +343,7 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
       }
   }, [makeRequest]);
 
-const updateContract = useCallback(async (
+  const updateContract = useCallback(async (
     contractId: number,
     takeProfit?: number,
     stopLoss?: number
@@ -362,19 +362,16 @@ const updateContract = useCallback(async (
             limit_order: {}
         };
         
-        // --- CORREÇÃO: ARREDONDAMENTO OBRIGATÓRIO (2 CASAS) ---
         if (takeProfit !== undefined) {
-            updateRequest.limit_order.take_profit = takeProfit > 0 ? parseFloat(takeProfit.toFixed(2)) : null;
+            updateRequest.limit_order.take_profit = takeProfit > 0 ? parseFloat(takeProfit.toFixed(2)) : undefined;
         }
         
         if (stopLoss !== undefined) {
-            updateRequest.limit_order.stop_loss = stopLoss > 0 ? parseFloat(stopLoss.toFixed(2)) : null;
+            updateRequest.limit_order.stop_loss = stopLoss > 0 ? parseFloat(stopLoss.toFixed(2)) : undefined;
         }
-        // -----------------------------------------------------
 
         const response: any = await makeRequest(updateRequest);
         
-        // Verificação extra para erro dentro da resposta (às vezes a API retorna 200 OK mas com erro no corpo)
         if (response.error) {
              throw new Error(response.error.message);
         }
@@ -404,7 +401,6 @@ const updateContract = useCallback(async (
         }
 
     } catch (error) {
-        // Log mais detalhado para debug
         console.error(`[Deriv Hook] Erro ao atualizar contrato #${contractId}:`, error);
         const message = error instanceof Error ? error.message : "Um erro desconhecido ocorreu.";
         return { success: false, message };
@@ -428,10 +424,9 @@ const updateContract = useCallback(async (
 
       const sanitizedStake = parseFloat(stake.toFixed(2));
 
-      // --- CORREÇÃO FINAL: ADICIONADO O CAMPO 'price' NO PEDIDO DE COMPRA ---
       const buyRequest: any = {
         buy: "1",
-        price: sanitizedStake, // O preço/valor que estamos dispostos a pagar
+        price: sanitizedStake,
         parameters: {
             amount: sanitizedStake,
             basis: "stake",
@@ -537,7 +532,7 @@ const updateContract = useCallback(async (
 
     try {
         sellingContractsRef.current.add(contractId);
-        const sellResponse: any = await makeRequest({ "sell": contractId });
+        const sellResponse: any = await makeRequest({ "sell": contractId, "price": 0 });
 
         if (sellResponse.error) {
             throw new Error(sellResponse.error.message);
@@ -1171,3 +1166,29 @@ export function useDerivApiMultipliers() {
   }
   return context;
 }
+I see this error with the app, reported by NextJS, please fix it. The error is reported as HTML but presented visually to the user).
+
+A > before the line number in the error source usually indicates the line of interest: 
+
+> Console Error: Cannot read properties of undefined (reading 'color'). Error source: src/features/trading/components/deriv-trader/multipliers-autopilot-interface.tsx (143:90) @ MultipliersAutopilotInterface
+> 
+>   141 |                     <p className="text-muted-foreground font-semibold mb-1 flex items-center justify-center gap-1.5"><Activity className="h-4 w-4"/>Status</p>
+>   142 |                     <Badge variant="outline" className="flex items-center gap-1.5">
+> > 143 |                         <div className={cn("h-2 w-2 rounded-full", statusInfo[botStatus].color)}></div>
+>       |                                                                                          ^
+>   144 |                         {statusInfo[botStatus].text}
+>   145 |                     </Badge>
+>   146 |                 </div>
+> 
+> Call Stack
+> 18
+> 
+> Show 14 ignore-listed frame(s)
+> MultipliersAutopilotInterface
+> src/features/trading/components/deriv-trader/multipliers-autopilot-interface.tsx (143:90)
+> MultipliersTraderCore
+> src/app/deriv-trader-multipliers/page.tsx (132:21)
+> PageContent
+> src/app/deriv-trader-multipliers/page.tsx (182:17)
+> DerivMultipliersPage
+> src/app/deriv-trader-multipliers/page.tsx (191:13)
