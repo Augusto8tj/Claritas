@@ -62,9 +62,7 @@ const VOLATILITY_LOOKBACK = 50;
 const BASE_CALMNESS_THRESHOLD = 70;
 const MAX_LOSS_PERCENT = 0.50;
 
-const VOLATILITY_EXIT_MULTIPLIER_BBW = 1.8;
 const ADX_EXIT_THRESHOLD = 25;
-const ATR_EXIT_MULTIPLIER = 1.6;
 const COOLDOWN_PERIOD_MS = 30000;
 const DEFAULT_GROWTH_RATE = 0.03;
 const MICRO_VOLATILITY_WINDOW = 20;
@@ -256,10 +254,13 @@ export function useAccumulatorsCouncil() {
     if (lastOp.status === 'lost') {
       let reason = "Perda por quebra de barreira.";
 
+      const atrMultiplier = 1.6 * (1 + (localMetrics.avgBbw * 0.5)); // Mais tolerante em mercados mais amplos
+      const bbwMultiplier = 1.8 * (1 - (localMetrics.avgBbw * 0.2)); // Menos tolerante se já está volátil
+
       if (sellReason) { reason = sellReason;
       } else if (localIndicators.adx! > ADX_EXIT_THRESHOLD) { reason = `Pico de Tendência (ADX: ${localIndicators.adx!.toFixed(1)})`;
-      } else if (localIndicators.bbw! > localMetrics.avgBbw * VOLATILITY_EXIT_MULTIPLIER_BBW) { reason = `Expansão de Volatilidade (BBW)`;
-      } else if (localIndicators.atr! > localMetrics.avgAtr * ATR_EXIT_MULTIPLIER) { reason = `Aumento do Range (ATR)`; }
+      } else if (localIndicators.bbw! > localMetrics.avgBbw * bbwMultiplier) { reason = `Expansão de Volatilidade (BBW)`;
+      } else if (localIndicators.atr! > localMetrics.avgAtr * atrMultiplier) { reason = `Aumento do Range (ATR)`; }
 
       const pattern: LossPattern = {
         timestamp: Date.now(),
@@ -465,13 +466,8 @@ export function useAccumulatorsCouncil() {
       const pilotOpenPosition = operationsLog.find(op => op.initiator === 'Piloto' && op.status === 'pending');
 
       if (pilotOpenPosition) {
-        let dynamicSpikeMultiplier = 2.5; 
-        if (localMetrics.avgBbw > 0.9) { 
-          dynamicSpikeMultiplier = 3.5;
-        } else if (localMetrics.avgBbw < 0.4) {
-          dynamicSpikeMultiplier = 2.0;
-        }
-
+        let dynamicSpikeMultiplier = 2.5 * (1 + (localMetrics.avgBbw * 1.5)); // Calibração Dinâmica
+        
         if (openPilotContractContextRef.current?.id !== pilotOpenPosition.id) {
             openPilotContractContextRef.current = { id: pilotOpenPosition.id, dynamicSpikeMultiplier };
         }
@@ -491,7 +487,10 @@ export function useAccumulatorsCouncil() {
             }
         }
         
-        const isVolatilityExpanding = calculatedIndicators.bbw > localMetrics.avgBbw * VOLATILITY_EXIT_MULTIPLIER_BBW || calculatedIndicators.atr > localMetrics.avgAtr * ATR_EXIT_MULTIPLIER || calculatedIndicators.adx > ADX_EXIT_THRESHOLD;
+        const atrMultiplier = 1.6 * (1 + (localMetrics.avgBbw * 0.5));
+        const bbwMultiplier = 1.8 * (1 - (localMetrics.avgBbw * 0.2));
+
+        const isVolatilityExpanding = calculatedIndicators.bbw > localMetrics.avgBbw * bbwMultiplier || calculatedIndicators.atr > localMetrics.avgAtr * atrMultiplier || calculatedIndicators.adx > ADX_EXIT_THRESHOLD;
         const hasReachedStopLoss = (pilotOpenPosition.result || 0) <= -pilotOpenPosition.stake * MAX_LOSS_PERCENT;
         
         const dynamicTakeProfit = calculateDynamicTakeProfit(timeMaster.regime, timeMaster.averageBreakTime);

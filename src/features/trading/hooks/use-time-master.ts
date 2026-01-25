@@ -62,6 +62,7 @@ function parkinsonVolatility(ticks: TickData[], window: number): number {
   return volatility;
 }
 
+
 /**
  * Calcula o tempo esperado até a barreira ser atingida
  * baseado na teoria de primeira passagem de Brownian Motion
