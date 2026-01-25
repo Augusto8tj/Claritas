@@ -322,30 +322,19 @@ export const DerivApiProviderAccumulators = ({ children }: { children: ReactNode
       }
       const sanitizedStake = parseFloat(stake.toFixed(2));
       
-      // 1. Obter a proposta
-      const proposalRequest: any = {
-        proposal: 1,
-        amount: sanitizedStake,
-        basis: "stake",
-        contract_type: "ACCU",
-        currency: "USD",
-        symbol: symbol,
-        growth_rate: growth_rate,
-      };
-
-      const proposalResponse: any = await makeRequest(proposalRequest);
-      const proposal = proposalResponse.proposal;
-
-      if (!proposal || !proposal.id) {
-          throw new Error("Falha ao obter uma proposta de negociação da API para Acumuladores.");
-      }
-
-      // 2. Comprar o contrato usando o ID da proposta
+      // Direct buy request for Accumulators
       const buyRequest: any = {
-        buy: proposal.id,
-        price: proposal.ask_price
+        buy: "1",
+        parameters: {
+          amount: sanitizedStake,
+          basis: "stake",
+          contract_type: "ACCU",
+          currency: "USD",
+          symbol: symbol,
+          growth_rate: growth_rate,
+        }
       };
-      
+
       const buyResponse: any = await makeRequest(buyRequest);
       const buyResult = buyResponse.buy;
       const contractId = buyResult.contract_id;
