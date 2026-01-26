@@ -295,6 +295,14 @@ export function useAccumulatorsCouncil() {
       });
   }, []);
 
+  const clearVirtualLog = useCallback(() => {
+    setAndPersistVirtualLog([]);
+    toast({
+        title: "Arena Virtual Limpa",
+        description: "O histórico de simulações foi apagado.",
+    });
+  }, [setAndPersistVirtualLog, toast]);
+
   const dailyPnL = useMemo(() => {
     const today = new Date().toDateString();
     return operationsLog
@@ -317,6 +325,9 @@ export function useAccumulatorsCouncil() {
 
   const toggleAutopilot = useCallback((checked: boolean) => {
     setIsAutopilotOn(checked);
+    if (!checked) {
+      setBotStatus('PAUSED');
+    }
   }, []);
 
   useEffect(() => {
@@ -491,7 +502,6 @@ export function useAccumulatorsCouncil() {
       const nowEpoch = currentTick.epoch;
       const survivalProbMet = currentSurvivalProb >= riskManager.survivalProbabilityThreshold;
 
-      // CORREÇÃO: Apenas cria trade virtual se não houver um ativo
       if (nowEpoch && survivalProbMet && activeVirtualTradesRef.current.length === 0) {
         const newVirtualTrade: VirtualOperation = { id: `vt_${Date.now()}`, entryPrice: priceTicks[priceTicks.length - 1].price, entryTime: nowEpoch, exitTime: nowEpoch + effectiveDuration, status: 'pending', reason: 'Em jogo', growthRate: optimizedGrowthRate, initialConditions: { atr: calculatedIndicators.atr!, survivalProbability: currentSurvivalProb, }, };
         activeVirtualTradesRef.current.push(newVirtualTrade);
@@ -519,5 +529,5 @@ export function useAccumulatorsCouncil() {
     runCycle();
   }, [ isAutopilotOn, isConnected, activeSymbol, dataVersion, botCandleData, priceTicks, dailyPnL, dailyBalance, dailyTarget, executeTrade, sellContract, toast, analyzeAndAdjustStrategy, operationsLog, botStatus, riskManager.adaptiveDuration, virtualArenaStats, setAndPersistVirtualLog, timeMaster, survivalProbability, optimizedGrowthRate ]);
 
-  return { isAutopilotOn, toggleAutopilot, botStatus, dailyBalance, setDailyBalance, dailyTarget, setDailyTarget, dailyPnL, riskManager, entryConditions, virtualOperationsLog, virtualArenaStats, timeMaster, calculatedStake, optimizedGrowthRate, survivalProbability };
+  return { isAutopilotOn, toggleAutopilot, botStatus, dailyBalance, setDailyBalance, dailyTarget, setDailyTarget, dailyPnL, riskManager, entryConditions, virtualOperationsLog, virtualArenaStats, timeMaster, calculatedStake, optimizedGrowthRate, survivalProbability, clearVirtualLog };
 }

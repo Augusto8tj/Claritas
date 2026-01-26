@@ -10,12 +10,14 @@ import {
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import type { VirtualOperation } from "@/features/trading/hooks/use-accumulators-council";
-import { Swords, CheckCircle, XCircle, Timer, BarChart2 } from "lucide-react";
+import { Swords, CheckCircle, XCircle, Timer, BarChart2, Trash2 } from "lucide-react";
 import { useMemo } from "react";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 
 interface VirtualArenaAccumulatorsProps {
   virtualOperations: VirtualOperation[];
+  clearVirtualLog: () => void;
 }
 
 const formatTime = (epoch: number): string => {
@@ -23,7 +25,7 @@ const formatTime = (epoch: number): string => {
     return new Date(epoch * 1000).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 };
 
-export function VirtualArenaAccumulators({ virtualOperations }: VirtualArenaAccumulatorsProps) {
+export function VirtualArenaAccumulators({ virtualOperations, clearVirtualLog }: VirtualArenaAccumulatorsProps) {
 
     const summary = useMemo(() => {
         const wins = virtualOperations.filter(op => op.status === 'win').length;
@@ -46,15 +48,21 @@ export function VirtualArenaAccumulators({ virtualOperations }: VirtualArenaAccu
                             Simulações em tempo real para validar a eficácia dos sinais de entrada.
                         </CardDescription>
                     </div>
-                     <div className="text-right">
-                        <p className="text-xs text-muted-foreground">Taxa de Acerto Virtual</p>
-                        <p className={cn(
-                            "text-lg font-bold",
-                            summary.winRate >= 75 && "text-green-600",
-                            summary.winRate < 75 && "text-destructive"
-                        )}>
-                            {summary.winRate.toFixed(1)}%
-                        </p>
+                     <div className="flex items-center gap-2">
+                        <div className="text-right">
+                            <p className="text-xs text-muted-foreground">Taxa de Acerto Virtual</p>
+                            <p className={cn(
+                                "text-lg font-bold",
+                                summary.winRate >= 75 && "text-green-600",
+                                summary.winRate < 75 && "text-destructive"
+                            )}>
+                                {summary.winRate.toFixed(1)}%
+                            </p>
+                        </div>
+                        <Button variant="ghost" size="icon" onClick={clearVirtualLog} title="Limpar Log da Arena">
+                            <Trash2 className="h-4 w-4" />
+                            <span className="sr-only">Limpar Log da Arena</span>
+                        </Button>
                     </div>
                 </div>
             </CardHeader>

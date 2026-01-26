@@ -129,7 +129,7 @@ function MainContent() {
                         <OperationsLogAccumulators operations={operationsLog} sellContract={sellContract} clearActiveContracts={clearActiveContracts} />
                     </TabsContent>
                     <TabsContent value="virtual" className="mt-4">
-                        <VirtualArenaAccumulators virtualOperations={council.virtualOperationsLog} />
+                        <VirtualArenaAccumulators virtualOperations={council.virtualOperationsLog} clearVirtualLog={council.clearVirtualLog} />
                     </TabsContent>
                 </Tabs>
             </div>
