@@ -44,6 +44,8 @@ export interface VirtualOperation {
     status: 'pending' | 'win' | 'loss';
     reason: string;
     growthRate: number;
+    entryStake: number; // NOVO: Stake da simulação
+    pnl: number;        // NOVO: P&L final
     initialConditions: {
         atr: number;
         survivalProbability: number;
@@ -311,15 +313,18 @@ export function useAccumulatorsCouncil() {
   }, [operationsLog]);
   
   const virtualArenaStats = useMemo(() => {
-    const recentTrades = virtualOperationsLog.slice(0, 100);
-    if (recentTrades.length === 0) return { wins: 0, losses: 0, winRate: 100, avgWin: 1, avgLoss: -1 };
+    const recentTrades = virtualOperationsLog.slice(0, 100).filter(op => op.status !== 'pending');
+    if (recentTrades.length === 0) return { wins: 0, losses: 0, winRate: 100, avgWin: 0.25, avgLoss: -1 };
+    
     const wins = recentTrades.filter(op => op.status === 'win');
     const losses = recentTrades.filter(op => op.status === 'loss');
     const total = wins.length + losses.length;
     const winRate = total > 0 ? (wins.length / total) * 100 : 100;
-    const avgWin = wins.length > 0 ? wins.reduce((s, o) => s + (o.growthRate * o.initialConditions.survivalProbability), 0) / wins.length : 1;
-    const avgLoss = -1;
-    return { wins: wins.length, losses: losses.length, winRate, avgWin, avgLoss };
+    
+    const avgWin = wins.length > 0 ? wins.reduce((s, o) => s + o.pnl, 0) / wins.length : 0.25;
+    const avgLoss = losses.length > 0 ? losses.reduce((s, o) => s + o.pnl, 0) / losses.length : -1;
+    
+    return { wins: wins.length, losses: losses.length, winRate, avgWin, avgLoss: avgLoss === 0 ? -1 : avgLoss };
   }, [virtualOperationsLog]);
 
 
@@ -488,8 +493,24 @@ export function useAccumulatorsCouncil() {
           const stake = calculateOptimalStake(dailyBalance, virtualArenaStats.winRate, virtualArenaStats.avgWin, virtualArenaStats.avgLoss);
           setCalculatedStake(stake);
 
-          const growthRate = optimizeGrowthRate(currentSurvivalProb, virtualArenaStats.winRate);
+          const growthRate = optimizeGrowthRate(currentSurvivalProb, virtualArenaStats.winRate / 100);
           setOptimizedGrowthRate(growthRate);
+
+          if (activeVirtualTradesRef.current.length === 0) {
+              const newVirtualTrade: VirtualOperation = { 
+                  id: `vt_${Date.now()}`, 
+                  entryPrice: priceTicks[priceTicks.length - 1].price, 
+                  entryTime: currentTick.epoch, 
+                  exitTime: currentTick.epoch + effectiveDuration, 
+                  status: 'pending', 
+                  reason: 'Em jogo', 
+                  growthRate: growthRate, 
+                  entryStake: stake,
+                  pnl: 0,
+                  initialConditions: { atr: calculatedIndicators.atr!, survivalProbability: currentSurvivalProb }, 
+              };
+              activeVirtualTradesRef.current.push(newVirtualTrade);
+          }
 
           setBotStatus('CALM_DETECTED');
           const result = await executeTrade(stake, growthRate, activeSymbol, 'Piloto');
@@ -500,22 +521,30 @@ export function useAccumulatorsCouncil() {
       }
       
       const nowEpoch = currentTick.epoch;
-      const survivalProbMet = currentSurvivalProb >= riskManager.survivalProbabilityThreshold;
-
-      if (nowEpoch && survivalProbMet && activeVirtualTradesRef.current.length === 0) {
-        const newVirtualTrade: VirtualOperation = { id: `vt_${Date.now()}`, entryPrice: priceTicks[priceTicks.length - 1].price, entryTime: nowEpoch, exitTime: nowEpoch + effectiveDuration, status: 'pending', reason: 'Em jogo', growthRate: optimizedGrowthRate, initialConditions: { atr: calculatedIndicators.atr!, survivalProbability: currentSurvivalProb, }, };
-        activeVirtualTradesRef.current.push(newVirtualTrade);
-      }
-
+      
       const finishedTrades: VirtualOperation[] = [];
       const stillActiveTrades: VirtualOperation[] = [];
+
       activeVirtualTradesRef.current.forEach(trade => {
-        if (nowEpoch >= trade.exitTime) { trade.status = 'win'; trade.reason = 'Sobreviveu'; finishedTrades.push(trade); } 
+        if (nowEpoch >= trade.exitTime) { 
+            trade.status = 'win'; 
+            trade.reason = 'Sobreviveu'; 
+            trade.pnl = trade.entryStake * 0.25; // Lucro estimado de 25% para simulação
+            finishedTrades.push(trade); 
+        } 
         else {
           const barrierMultiplier = BARRIER_INDICES[trade.growthRate.toFixed(2)] || 0.348;
           const barrier = trade.initialConditions.atr * barrierMultiplier;
-          if (Math.abs(priceTicks[priceTicks.length-1].price - trade.entryPrice) > barrier) { trade.status = 'loss'; trade.reason = 'Quebra de Barreira Virtual'; trade.exitTime = nowEpoch; finishedTrades.push(trade); } 
-          else { stillActiveTrades.push(trade); }
+          if (Math.abs(priceTicks[priceTicks.length-1].price - trade.entryPrice) > barrier) { 
+              trade.status = 'loss'; 
+              trade.reason = 'Quebra de Barreira Virtual'; 
+              trade.exitTime = nowEpoch; 
+              trade.pnl = -trade.entryStake; // Perda total do stake
+              finishedTrades.push(trade); 
+          } 
+          else { 
+              stillActiveTrades.push(trade); 
+          }
         }
       });
 
@@ -527,7 +556,7 @@ export function useAccumulatorsCouncil() {
       executionRef.current = false;
     };
     runCycle();
-  }, [ isAutopilotOn, isConnected, activeSymbol, dataVersion, botCandleData, priceTicks, dailyPnL, dailyBalance, dailyTarget, executeTrade, sellContract, toast, analyzeAndAdjustStrategy, operationsLog, botStatus, riskManager.adaptiveDuration, virtualArenaStats, setAndPersistVirtualLog, timeMaster, survivalProbability, optimizedGrowthRate ]);
+  }, [ isAutopilotOn, isConnected, activeSymbol, dataVersion, botCandleData, priceTicks, dailyPnL, dailyBalance, dailyTarget, executeTrade, sellContract, toast, analyzeAndAdjustStrategy, operationsLog, botStatus, riskManager, virtualArenaStats, setAndPersistVirtualLog, timeMaster, survivalProbability, optimizedGrowthRate, clearVirtualLog ]);
 
   return { isAutopilotOn, toggleAutopilot, botStatus, dailyBalance, setDailyBalance, dailyTarget, setDailyTarget, dailyPnL, riskManager, entryConditions, virtualOperationsLog, virtualArenaStats, timeMaster, calculatedStake, optimizedGrowthRate, survivalProbability, clearVirtualLog };
 }
