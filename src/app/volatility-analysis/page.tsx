@@ -51,8 +51,8 @@ function StochasticLab({ realData, activeSymbol }: { realData: ChartData[], acti
   const [futurePath10s, setFuturePath10s] = useState<any[]>([]);
   const [futurePath20s, setFuturePath20s] = useState<any[]>([]);
   const [futurePath40s, setFuturePath40s] = useState<any[]>([]);
-  const [driftCorrectionForDisplay, setDriftCorrectionForDisplay] = useState({drift: 0, mae: 0, rmse: 0});
   const driftCorrectionRef = useRef(0);
+  const [driftCorrectionForDisplay, setDriftCorrectionForDisplay] = useState({drift: 0, mae: 0, rmse: 0});
 
   // --- Estados para Assertividade da Projeção ---
   const [predictionAccuracyHistory6t, setPredictionAccuracyHistory6t] = useState<boolean[]>([]);
@@ -279,7 +279,7 @@ function StochasticLab({ realData, activeSymbol }: { realData: ChartData[], acti
 
   const lineData = useMemo(() => {
     if (qqData.length === 0) return [];
-    const allValues = [...qqData.map(d => d.theoretical), ...qqData.map(d => d.empirical)].filter(v => Number.is.Finite(v));
+    const allValues = [...qqData.map(d => d.theoretical), ...qqData.map(d => d.empirical)].filter(v => Number.isFinite(v));
     if (allValues.length === 0) return [{ theoretical: 0, empirical: 0}, { theoretical: 0, empirical: 0}];
     const minVal = Math.min(...allValues);
     const maxVal = Math.max(...allValues);
@@ -473,7 +473,7 @@ function StochasticLab({ realData, activeSymbol }: { realData: ChartData[], acti
                                                     </p>
                                                 </TooltipTrigger>
                                                 <TooltipContent>
-                                                    <p className="max-w-xs">O ajuste aplicado às projeções futuras com base no viés (erro médio) recente do modelo.&lt;br/&gt;Um valor positivo corrige um viés de subestimação.</p>
+                                                    <p className="max-w-xs">O ajuste aplicado às projeções futuras com base no viés (erro médio) recente do modelo. Um valor positivo corrige um viés de subestimação.</p>
                                                 </TooltipContent>
                                             </ShadTooltip>
                                         </TooltipProvider>
@@ -489,7 +489,7 @@ function StochasticLab({ realData, activeSymbol }: { realData: ChartData[], acti
                                                     </p>
                                                 </TooltipTrigger>
                                                 <TooltipContent>
-                                                    <p className="max-w-xs">A percentagem de vezes que o modelo acertou a &lt;strong&gt;direção&lt;/strong&gt; do preço (subiu/desceu) nas últimas {predictionAccuracyHistory6t.length} projeções de 6 ticks.</p>
+                                                    <p className="max-w-xs">A percentagem de vezes que o modelo acertou a <strong>direção</strong> do preço (subiu/desceu) nas últimas {predictionAccuracyHistory6t.length} projeções de 6 ticks.</p>
                                                 </TooltipContent>
                                             </ShadTooltip>
                                         </TooltipProvider>
@@ -508,7 +508,7 @@ function StochasticLab({ realData, activeSymbol }: { realData: ChartData[], acti
                                                     </p>
                                                 </TooltipTrigger>
                                                 <TooltipContent>
-                                                    <p className="max-w-xs">A percentagem de vezes que o modelo acertou a &lt;strong&gt;direção&lt;/strong&gt; do preço (subiu/desceu) nas últimas {predictionAccuracyHistory10s.length} projeções de 10s.</p>
+                                                    <p className="max-w-xs">A percentagem de vezes que o modelo acertou a <strong>direção</strong> do preço (subiu/desceu) nas últimas {predictionAccuracyHistory10s.length} projeções de 10s.</p>
                                                 </TooltipContent>
                                             </ShadTooltip>
                                         </TooltipProvider>
@@ -527,7 +527,7 @@ function StochasticLab({ realData, activeSymbol }: { realData: ChartData[], acti
                                                     </p>
                                                 </TooltipTrigger>
                                                 <TooltipContent>
-                                                    <p className="max-w-xs">A percentagem de vezes que o modelo acertou a &lt;strong&gt;direção&lt;/strong&gt; do preço (subiu/desceu) nas últimas {predictionAccuracyHistory20s.length} projeções de 20s.</p>
+                                                    <p className="max-w-xs">A percentagem de vezes que o modelo acertou a <strong>direção</strong> do preço (subiu/desceu) nas últimas {predictionAccuracyHistory20s.length} projeções de 20s.</p>
                                                 </TooltipContent>
                                             </ShadTooltip>
                                         </TooltipProvider>
@@ -546,7 +546,7 @@ function StochasticLab({ realData, activeSymbol }: { realData: ChartData[], acti
                                                     </p>
                                                 </TooltipTrigger>
                                                 <TooltipContent>
-                                                    <p className="max-w-xs">A percentagem de vezes que o modelo acertou a &lt;strong&gt;direção&lt;/strong&gt; do preço (subiu/desceu) nas últimas {predictionAccuracyHistory40s.length} projeções de 40s.</p>
+                                                    <p className="max-w-xs">A percentagem de vezes que o modelo acertou a <strong>direção</strong> do preço (subiu/desceu) nas últimas {predictionAccuracyHistory40s.length} projeções de 40s.</p>
                                                 </TooltipContent>
                                             </ShadTooltip>
                                         </TooltipProvider>
@@ -573,7 +573,7 @@ function StochasticLab({ realData, activeSymbol }: { realData: ChartData[], acti
                                 </ResponsiveContainer>
                                 <div className="mt-4 p-4 bg-slate-50 rounded">
                                   <p className="text-sm text-slate-700 mb-2">
-                                    &lt;strong&gt;Retorno Logarítmico:&lt;/strong&gt; r(t) = ln(S(t)/S(t-1))
+                                    <strong>Retorno Logarítmico:</strong> r(t) = ln(S(t)/S(t-1))
                                   </p>
                                   <p className="text-sm text-slate-700">
                                     Sob GBM, os retornos logarítmicos são independentes e identicamente distribuídos (i.i.d.) 
@@ -598,7 +598,7 @@ function StochasticLab({ realData, activeSymbol }: { realData: ChartData[], acti
                                 </ResponsiveContainer>
                                 <div className="mt-4 p-4 bg-slate-50 rounded">
                                   <p className="text-sm text-slate-700 mb-2">
-                                    &lt;strong&gt;Cálculo:&lt;/strong&gt; σ̂ = √(Var(r)) × √N_ano
+                                    <strong>Cálculo:</strong> σ̂ = √(Var(r)) × √N_ano
                                   </p>
                                   <p className="text-sm text-slate-700">
                                     A volatilidade realizada (verde) deve flutuar em torno do valor alvo de 10% (vermelho). 
@@ -630,7 +630,7 @@ function StochasticLab({ realData, activeSymbol }: { realData: ChartData[], acti
                                 </ResponsiveContainer>
                                 <div className="mt-4 p-4 bg-slate-50 rounded">
                                   <p className="text-sm text-slate-700">
-                                    &lt;strong&gt;Interpretação:&lt;/strong&gt; Pontos próximos à linha diagonal (vermelho) indicam que os 
+                                    <strong>Interpretação:</strong> Pontos próximos à linha diagonal (vermelho) indicam que os 
                                     retornos seguem distribuição normal, confirmando a adequação do modelo GBM. Desvios nas 
                                     caudas podem indicar eventos extremos (fat tails).
                                   </p>
@@ -713,3 +713,5 @@ export default function VolatilityAnalysisPage() {
         </DerivApiProviderAccumulators>
     );
 }
+
+    
