@@ -4,6 +4,7 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useDerivApiV2 } from './use-deriv-api-v2';
 import { useDerivApiAccumulators } from './use-deriv-api-accumulators';
+import { useDerivApiMultipliers } from './use-deriv-api-multipliers';
 import { useToast } from '@/hooks/use-toast';
 import { calculateAllIndicators } from '@/services/indicator-service';
 import { getCouncilStrategies } from '@/services/council-strategies';
@@ -46,7 +47,7 @@ export function useMasterAutopilot() {
   const { 
     priceTicks: priceTicksV2, 
     botCandleData: botCandleDataV2, 
-    executeTrade,
+    executeTrade: executeRiseFallTrade,
     operationsLog: operationsLogV2,
     isConnected: isConnectedV2,
     activeSymbol: activeSymbolV2,
@@ -60,6 +61,15 @@ export function useMasterAutopilot() {
     priceTicks: priceTicksAccumulators,
     botCandleData: botCandleDataAccumulators,
   } = useDerivApiAccumulators();
+
+  const {
+    executeTrade: executeMultiplierTrade,
+    isConnected: isConnectedMultipliers,
+    activeSymbol: activeSymbolMultipliers,
+    priceTicks: priceTicksMultipliers,
+    botCandleData: botCandleDataMultipliers,
+    operationsLog: operationsLogMultipliers,
+  } = useDerivApiMultipliers();
   
   const { toast } = useToast();
 
@@ -88,11 +98,26 @@ export function useMasterAutopilot() {
   const [macroTrend, setMacroTrend] = useState<TrendDirection>('NONE');
   const isCoolingDownRef = useRef(false);
   
-  const activeSymbol = contractType === 'Accumulators' ? activeSymbolAccumulators : activeSymbolV2;
-  const priceTicks = contractType === 'Accumulators' ? priceTicksAccumulators : priceTicksV2;
-  const botCandleData = contractType === 'Accumulators' ? botCandleDataAccumulators : botCandleDataV2;
-  const operationsLog = contractType === 'Accumulators' ? operationsLogAccumulators : operationsLogV2;
-  const isConnected = contractType === 'Accumulators' ? isConnectedAccumulators : isConnectedV2;
+  const activeSymbol = 
+      contractType === 'Accumulators' ? activeSymbolAccumulators : 
+      contractType === 'Multipliers' ? activeSymbolMultipliers : 
+      activeSymbolV2;
+  const priceTicks = 
+      contractType === 'Accumulators' ? priceTicksAccumulators : 
+      contractType === 'Multipliers' ? priceTicksMultipliers :
+      priceTicksV2;
+  const botCandleData = 
+      contractType === 'Accumulators' ? botCandleDataAccumulators : 
+      contractType === 'Multipliers' ? botCandleDataMultipliers :
+      botCandleDataV2;
+  const operationsLog = 
+      contractType === 'Accumulators' ? operationsLogAccumulators : 
+      contractType === 'Multipliers' ? operationsLogMultipliers :
+      operationsLogV2;
+  const isConnected = 
+      contractType === 'Accumulators' ? isConnectedAccumulators : 
+      contractType === 'Multipliers' ? isConnectedMultipliers :
+      isConnectedV2;
 
   const accuracyHistoryRefs = {
     '3t': useRef<boolean[]>([]), '6t': useRef<boolean[]>([]), '10s': useRef<boolean[]>([]),
@@ -262,8 +287,8 @@ export function useMasterAutopilot() {
                         } else {
                            triggerReason = `Sinal ${signalCandidate} ignorado. Assertividade alta, mas contra a tendência macro (${macroTrend}).`;
                         }
-                    } else {
-                        triggerSignal = 'RISE'; // Para Accumulators, qualquer sinal forte é um sinal de estabilidade
+                    } else { // Accumulators
+                        triggerSignal = 'RISE'; // Sinal de estabilidade
                         triggeredBy = [prevHorizon, currentHorizon];
                         triggerReason = `Gatilho de estabilidade detectado por assertividade em ${prevHorizon} e ${currentHorizon}.`;
                         break;
@@ -285,9 +310,9 @@ export function useMasterAutopilot() {
                 if (durationMatch) {
                     const duration = parseInt(durationMatch[1], 10);
                     const durationUnit = durationMatch[2] as 's' | 't';
-                    executeTrade(
+                    executeRiseFallTrade(
                         triggerSignal === 'RISE' ? 'CALL' : 'PUT',
-                        1.0, // Stake fixo por segurança
+                        1.0,
                         activeSymbol!,
                         triggerSignal.toLowerCase() as 'rise' | 'fall',
                         duration,
@@ -295,18 +320,40 @@ export function useMasterAutopilot() {
                         'Piloto'
                     );
                 }
+            } else if (contractType === 'Multipliers' && triggeredBy && indicators && indicators.atr) {
+                const currentPrice = priceTicks[priceTicks.length-1].price;
+                const baseStake = dailyBalance * 0.02;
+                const volatilityFactor = Math.max(0.5, 1 - (indicators.atr / currentPrice * 100));
+                const finalStake = parseFloat(Math.max(1.0, Math.min(baseStake * volatilityFactor, 5.0)).toFixed(2));
+                const stopLoss = finalStake;
+                const takeProfit = finalStake * 1.5;
+
+                executeMultiplierTrade(
+                    triggerSignal === 'RISE' ? 'MULTUP' : 'MULTDOWN',
+                    finalStake,
+                    activeSymbol!,
+                    100, // Multiplicador Fixo
+                    takeProfit,
+                    stopLoss,
+                    undefined,
+                    'Piloto'
+                );
             }
             
             setTimeout(() => { isCoolingDownRef.current = false; }, 60000);
         } else {
-             setMasterState({ isReady: true, assertiveness: newAssertiveness, trigger: { signal: triggerSignal, reason: triggerReason, triggeredBy: triggeredBy } });
+             setMasterState({ isReady: true, assertiveness: newAssertiveness, trigger: { signal: 'HOLD', reason: triggerReason, triggeredBy: triggeredBy } });
         }
 
     }, 2000);
 
     return () => clearInterval(interval);
 
-  }, [isAutopilotOn, priceTicks, operationsLog, activeSymbol, contractType, executeAccumulatorTrade, executeTrade, toast, riskManager.assertivenessThreshold, botCandleData, macroTrend]);
+  }, [
+      isAutopilotOn, priceTicks, operationsLog, activeSymbol, contractType, 
+      executeAccumulatorTrade, executeRiseFallTrade, executeMultiplierTrade,
+      toast, riskManager.assertivenessThreshold, botCandleData, macroTrend, dailyBalance
+    ]);
 
   return {
     isAutopilotOn,
@@ -322,3 +369,5 @@ export function useMasterAutopilot() {
     macroTrend,
   };
 }
+
+    

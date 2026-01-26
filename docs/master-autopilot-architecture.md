@@ -18,7 +18,7 @@ O Master Autopilot V3 abandona a ideia de "sinais cegos" e abraça uma filosofia
     *   **Passo 1 (Assertividade):** Dois "especialistas temporais" vizinhos (ex: 6-ticks e 10-segundos) devem demonstrar uma taxa de acerto direcional superior ao limiar atual.
     *   **Passo 2 (Confirmação de Tendência):** Para contratos direcionais (`Rise/Fall`, `Multipliers`), a direção do sinal deve corresponder à tendência macro. Um sinal `RISE` só é válido se o preço estiver acima da EMA 100.
     *   **Passo 3 (Lógica de Contrato):**
-        *   **Direcional (`Multipliers`):** Executa uma ordem na direção confirmada.
+        *   **Direcional (`Multipliers`, `Rise/Fall`):** Executa uma ordem na direção confirmada. Para `Rise/Fall`, usa a duração do horizonte de tempo mais longo que ativou o gatilho. Para `Multipliers`, calcula o risco com base na volatilidade.
         *   **Não-Direcional (`Accumulators`):** Ignora a tendência e interpreta o gatilho de assertividade como um sinal puro de **estabilidade e previsibilidade**, ideal para abrir um contrato de acumulador.
 
 4.  **Gestor de Risco Adaptativo (O Cérebro que Aprende):**
@@ -44,7 +44,7 @@ Este hook contém toda a lógica de decisão e aprendizagem.
     4.  **Monitorizar o Gatilho Duplo:**
         *   Verifica se a condição de assertividade é cumprida.
         *   Se o contrato for direcional, verifica se o sinal está alinhado com a `macroTrend`.
-    5.  **Executar Ordem:** Se todas as condições forem cumpridas, executa a ordem de acordo com o `contractType` e entra em *cooldown*.
+    5.  **Executar Ordem:** Se todas as condições forem cumpridas, chama o hook de API apropriado (`useDerivApiV2` para Rise/Fall, `useDerivApiMultipliers` para Multipliers, etc.) para executar a ordem com os parâmetros calculados (stake, duração, etc.) e entra em *cooldown*.
     6.  **Expor Estado para a UI:** O hook expõe o estado atual (ex: "Gatilho Detectado: EXECUTANDO" ou "Aguardando alinhamento de tendência"), as taxas de assertividade, o **estado atual do Gestor de Risco** e a **tendência macro detetada**.
 
 ### 2.2. Interface de Comando: `master-autopilot-interface.tsx`
@@ -57,3 +57,6 @@ Este componente fornece ao operador o controlo e a visibilidade total sobre o si
     *   **NOVO: Análise de Tendência Macro:** Um novo painel que exibe a tendência de longo prazo detetada (`UP`/`DOWN`), permitindo ao operador entender o "viés" direcional do piloto.
     *   **Painel de Assertividade:** Exibe o desempenho de cada especialista preditivo.
     *   **Gestor de Risco Adaptativo:** Mostra o **modo atual do piloto** (`Normal` ou `Cauteloso`) e o **limiar de assertividade dinâmico**.
+*   **Gráfico Integrado:** A página agora inclui um gráfico completo para visualização do ativo selecionado.
+
+    

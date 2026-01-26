@@ -64,7 +64,7 @@ export function MasterAutopilotInterface() {
             </div>
             <div className="space-y-2">
               <Label htmlFor="contract-type">Tipo de Contrato</Label>
-              <Select value={contractType} onValueChange={setContractType} disabled={isAutopilotOn}>
+              <Select value={contractType} onValueChange={(value) => setContractType(value as ContractType)} disabled={isAutopilotOn}>
                 <SelectTrigger id="contract-type">
                   <SelectValue placeholder="Selecione..." />
                 </SelectTrigger>
@@ -210,3 +210,5 @@ export function MasterAutopilotInterface() {
     </div>
   );
 }
+
+    

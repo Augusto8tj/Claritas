@@ -2,17 +2,19 @@
 'use client';
 
 import React from "react";
-import { DerivApiProviderV2, useDerivApiV2 } from "@/features/trading/hooks/use-deriv-api-v2";
+import { DerivApiProviderV2 } from "@/features/trading/hooks/use-deriv-api-v2";
 import { DerivApiProviderAccumulators } from "@/features/trading/hooks/use-deriv-api-accumulators";
+import { DerivApiProviderMultipliers } from "@/features/trading/hooks/use-deriv-api-multipliers";
 import { MasterAutopilotInterface } from "@/features/trading/components/master-autopilot/master-autopilot-interface";
-import { AssetSelectorV2 } from "@/features/trading/components/deriv-trader/asset-selector-v2";
-import { ApiStatusIndicatorV2 } from "@/features/trading/components/deriv-trader/ApiStatusIndicatorV2";
+import { AssetSelectorV2 as AssetSelector } from "@/features/trading/components/deriv-trader/asset-selector-v2";
+import { ApiStatusIndicatorV2 as ApiStatusIndicator } from "@/features/trading/components/deriv-trader/ApiStatusIndicatorV2";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { MarketChart } from "@/features/trading/components/deriv-trader/market-chart";
+import { useDerivApiV2 as useDerivApi } from "@/features/trading/hooks/use-deriv-api-v2";
 
 
 function Header() {
-    const { activeSymbol, setActiveSymbol, assetGroups, isAssetsLoading } = useDerivApiV2();
+    const { activeSymbol, setActiveSymbol, assetGroups, isAssetsLoading } = useDerivApi();
     return (
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
             <h1 className="text-3xl font-bold tracking-tight font-headline shrink-0 text-center md:text-left">
@@ -20,7 +22,7 @@ function Header() {
             </h1>
             <div className="flex-1 grid grid-cols-1 md:grid-cols-2 gap-4 items-center">
                  <div className="flex justify-center">
-                    <AssetSelectorV2
+                    <AssetSelector
                         selectedAsset={activeSymbol || ""} 
                         onAssetChange={(asset) => setActiveSymbol(asset)} 
                         assetGroups={assetGroups}
@@ -28,7 +30,7 @@ function Header() {
                     />
                  </div>
                 <div className="flex justify-center">
-                    <ApiStatusIndicatorV2 />
+                    <ApiStatusIndicator />
                 </div>
             </div>
         </div>
@@ -39,7 +41,7 @@ function IsolatedMarketChart() {
     const { 
         activeSymbol, operationsLog, chartData, isChartLoading, chartError, 
         chartType, setChartType, timePeriod, setTimePeriod, tradeAnnotations
-    } = useDerivApiV2();
+    } = useDerivApi();
     
     return (
         <Card>
@@ -86,8 +88,12 @@ export default function MasterAutopilotPage() {
   return (
     <DerivApiProviderV2>
         <DerivApiProviderAccumulators>
-            <MasterAutopilotPageContent />
+            <DerivApiProviderMultipliers>
+                <MasterAutopilotPageContent />
+            </DerivApiProviderMultipliers>
         </DerivApiProviderAccumulators>
     </DerivApiProviderV2>
   );
 }
+
+    
