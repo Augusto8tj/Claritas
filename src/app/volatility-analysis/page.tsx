@@ -34,7 +34,7 @@ const normalQuantile = (p: number): number => {
 
 const isCandle = (d: ChartData): d is CandleData => d != null && 'close' in d;
 
-function StochasticLab({ realData }: { realData: ChartData[] }) {
+function StochasticLab({ realData, activeSymbol }: { realData: ChartData[], activeSymbol: string | null }) {
   const [activeTab, setActiveTab] = useState('prediction');
   const [priceData, setPriceData] = useState<any[]>([]);
   const [returns, setReturns] = useState<any[]>([]);
@@ -242,7 +242,7 @@ function StochasticLab({ realData }: { realData: ChartData[] }) {
         <CardHeader>
             <CardTitle className="font-headline flex items-center gap-2">
                 <FlaskConical className="h-5 w-5 text-purple-600" />
-                Laboratório Preditivo (Cientista de IA)
+                Laboratório Preditivo (Cientista de IA) - {activeSymbol}
             </CardTitle>
             <CardDescription>O cientista usa GBM para prever o próximo tick (histórico) e projetar 6 ticks no futuro.</CardDescription>
         </CardHeader>
@@ -446,12 +446,12 @@ function Header() {
 };
 
 function PageContent() {
-    const { chartData } = useDerivApiAccumulators();
+    const { chartData, activeSymbol } = useDerivApiAccumulators();
     return (
         <div className="flex-1 space-y-4 p-4 sm:p-8 pt-6">
             <Header />
             <div className="grid grid-cols-1 gap-6 items-start">
-                <StochasticLab realData={chartData} />
+                <StochasticLab realData={chartData} activeSymbol={activeSymbol} />
             </div>
         </div>
     );
