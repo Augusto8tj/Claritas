@@ -21,12 +21,15 @@ import { Progress } from "@/components/ui/progress";
 
 interface AccumulatorsAutopilotInterfaceProps extends ReturnType<typeof useAccumulatorsCouncil> {}
 
-const ConditionCheck = ({ label, isMet }: { label: string, isMet: boolean }) => (
+const ConditionCheck = ({ label, isMet, reason }: { label: string, isMet: boolean, reason?: string }) => (
     <div className={cn(
         "flex items-center justify-between text-xs p-2 rounded-md",
         isMet ? 'bg-green-500/10 text-green-800 dark:text-green-300' : 'bg-red-500/10 text-red-800 dark:text-red-300'
     )}>
-        <span className="font-medium">{label}</span>
+        <div className="flex flex-col">
+            <span className="font-medium">{label}</span>
+            {reason && <span className="text-xs opacity-70">{reason}</span>}
+        </div>
         {isMet ? <CheckCircle className="h-4 w-4" /> : <XCircle className="h-4 w-4" />}
     </div>
 );
@@ -66,10 +69,10 @@ export function AccumulatorsAutopilotInterface({
       <CardHeader>
         <CardTitle className="font-headline flex items-center gap-2">
             <Bot className="h-5 w-5 text-primary" />
-            Piloto Automático (Acumuladores)
+            Piloto Automático (Acumuladores V4)
         </CardTitle>
         <CardDescription>
-          O sistema avalia a probabilidade de sobrevivência para abrir posições.
+          O sistema avalia a probabilidade de sobrevivência e o ruído do mercado para operar.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
@@ -172,8 +175,8 @@ export function AccumulatorsAutopilotInterface({
 
         <div className="space-y-2">
             <Label className="font-semibold">Checklist de Entrada</Label>
-            <ConditionCheck label="Probabilidade de Sobrevivência" isMet={entryConditions.survivalProb} />
-            <ConditionCheck label="Microestrutura Segura" isMet={entryConditions.microstructure} />
+            <ConditionCheck label="Prob. de Sobrevivência" isMet={entryConditions.survivalProb} reason={`Atual: ${survivalProbPercent.toFixed(1)}% | Limiar: ${(riskManager.survivalProbabilityThreshold * 100).toFixed(1)}%`} />
+            <ConditionCheck label="Disjuntor de Microestrutura" isMet={entryConditions.microstructure} reason={entryConditions.microstructureReason} />
         </div>
 
         <Separator />

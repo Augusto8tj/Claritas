@@ -4,7 +4,7 @@
 import { useState, useEffect, useRef } from 'react';
 import type { TickData, Operation } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
-import type { VolatilityRegime } from './use-time-master'; // Importação necessária
+import type { VolatilityRegime } from './use-time-master'; 
 
 // --- CONFIGURAÇÕES DO APRENDIZ ---
 const APPRENTICE_CONFIG = {

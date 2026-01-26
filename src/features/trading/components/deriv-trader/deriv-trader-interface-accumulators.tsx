@@ -177,7 +177,7 @@ export default function DerivTraderInterfaceAccumulators({ symbol }: DerivTrader
         <Collapsible className="space-y-2">
           <CollapsibleTrigger asChild>
             <div className="flex items-center justify-between cursor-pointer group">
-              <h4 className="text-sm font-semibold text-muted-foreground">Aprendiz do Mestre do Tempo</h4>
+              <h4 className="text-sm font-semibold text-muted-foreground">Aprendiz do Mestre do Tempo (v3)</h4>
               <ChevronRight className="h-4 w-4 text-muted-foreground transition-transform group-data-[state=open]:rotate-90" />
             </div>
           </CollapsibleTrigger>
@@ -195,8 +195,8 @@ export default function DerivTraderInterfaceAccumulators({ symbol }: DerivTrader
                <div className="flex items-center gap-2">
                   <Target className="h-5 w-5 text-primary"/>
                   <div>
-                      <p className="font-semibold text-sm">Take Profit Sugerido</p>
-                      <p className="text-xs text-muted-foreground">Para fecho manual.</p>
+                      <p className="font-semibold text-sm">Take Profit Dinâmico</p>
+                      <p className="text-xs text-muted-foreground">O Aprendiz fechará a sua posição neste lucro.</p>
                   </div>
                </div>
                <span className="text-lg font-bold text-primary font-mono">
