@@ -4,7 +4,9 @@
 import { useState, useEffect, useRef } from 'react';
 import type { TickData, Operation } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
+import type { VolatilityRegime } from './use-time-master'; // Importação necessária
 
+// --- CONFIGURAÇÕES DO APRENDIZ ---
 const APPRENTICE_CONFIG = {
   TIME_WINDOWS_S: [5, 10, 15, 20, 25, 30],
   VOLATILITY_THRESHOLD: 0.0003,
@@ -12,6 +14,7 @@ const APPRENTICE_CONFIG = {
   MIN_PROFIT_PERCENTAGE: 0.05,
 };
 
+// --- FUNÇÕES HELPER ---
 const calculateStdDev = (ticks: TickData[]): number => {
     if (ticks.length < 2) return 0;
     const prices = ticks.map(t => t.price);
@@ -20,31 +23,21 @@ const calculateStdDev = (ticks: TickData[]): number => {
     return mean > 0 ? stdDev / mean : 0;
 };
 
-/**
- * Estima o take profit que maximiza a utilidade esperada
- * usando a distribuição empírica de lucros históricos
- */
 function calculateOptimalTakeProfit(
-  historicalProfitRatios: number[], // Expects ratios (profit/stake)
-  riskAversion: number // 0-1
+  historicalProfitRatios: number[]
 ): number {
   if (historicalProfitRatios.length < 5) {
-    return 0.25; // Fallback para 25% de lucro se não houver histórico
+    return 0.25; // Fallback para 25% de lucro
   }
   
   const sortedRatios = [...historicalProfitRatios].sort((a, b) => a - b);
-  
-  // Aversão ao risco mapeia para um percentil. 
-  // 0 (risk neutral) -> 75th percentile
-  // 1 (max risk averse) -> 50th percentile (mediana)
-  const percentile = 0.75 - (riskAversion * 0.25);
+  const percentile = 0.65; // Aponta para um lucro alcançável mas não ganancioso
   const targetIndex = Math.floor(sortedRatios.length * percentile);
   
-  // Retorna o ratio de lucro ótimo
   return sortedRatios[targetIndex] || 0.25;
 }
 
-
+// --- TIPOS DE SAÍDA ---
 export interface ManualTimeApprenticeState {
     isMarketCalm: boolean;
     suggestedTakeProfit: number;
@@ -54,6 +47,7 @@ export interface ManualTimeApprenticeState {
     };
 }
 
+// --- HOOK PRINCIPAL ---
 export const useManualTimeApprentice = (
   priceTicks: TickData[],
   operationsLog: Operation[],
@@ -81,7 +75,6 @@ export const useManualTimeApprentice = (
     }
   }, [operationsLog]);
 
-
   useEffect(() => {
     const openManualTrade = operationsLog.find(
       op => op.initiator === 'Manual' && op.status === 'pending'
@@ -102,16 +95,11 @@ export const useManualTimeApprentice = (
     });
 
     const maxVolatility = Math.max(...windowVolatilities.map(w => w.volatility));
-    
     const calm = maxVolatility < APPRENTICE_CONFIG.VOLATILITY_THRESHOLD;
     
     const stake = activeManualTrade?.stake || formStake || 1.0;
-
-    const optimalProfitRatio = calculateOptimalTakeProfit(
-      historicalManualProfitRatios.current,
-      APPRENTICE_CONFIG.RISK_AVERSION
-    );
     
+    const optimalProfitRatio = calculateOptimalTakeProfit(historicalManualProfitRatios.current);
     const profitSuggestion = optimalProfitRatio * stake;
     const minProfit = stake * APPRENTICE_CONFIG.MIN_PROFIT_PERCENTAGE;
     const finalTakeProfit = Math.max(minProfit, profitSuggestion);

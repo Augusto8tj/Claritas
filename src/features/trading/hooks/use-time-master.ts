@@ -26,6 +26,7 @@ const BARRIER_INDICES: { [key: string]: number } = {
   '0.05': 0.315,
 };
 const DEFAULT_GROWTH_RATE = 0.03;
+const MAX_TIME_TO_BREAK_S = 300; // NOVO: Teto máximo para evitar projeções infinitas
 
 // --- TIPOS ---
 export interface VolatilityRegime {
@@ -74,15 +75,14 @@ function calculateFirstPassageTime(
   instantaneousVolatility: number
 ): number {
   const MIN_VOLATILITY = 1e-9;
-  const MAX_TIME_TO_BREAK_S = 300; 
-
   // CORREÇÃO: Piso de Incerteza para evitar tempos de quebra infinitos.
   const VOLATILITY_FLOOR = 0.00005;
   const effectiveVolatility = Math.max(instantaneousVolatility, MIN_VOLATILITY, VOLATILITY_FLOOR);
   
   const expectedTime = Math.pow(barrierDistance, 2) / 
                        (2 * Math.pow(effectiveVolatility, 2));
-
+  
+  // CORREÇÃO: Impõe um teto máximo para a projeção
   return Math.min(expectedTime, MAX_TIME_TO_BREAK_S);
 }
 

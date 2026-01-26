@@ -85,6 +85,7 @@ function calculateSurvivalProbability(
   currentVolatility: number
 ): number {
   const MIN_VOLATILITY = 1e-9;
+  // Piso de incerteza para evitar probabilidade de 100%
   const VOLATILITY_FLOOR = 0.00005; 
   const effectiveVolatility = Math.max(currentVolatility, MIN_VOLATILITY, VOLATILITY_FLOOR);
   
@@ -94,6 +95,7 @@ function calculateSurvivalProbability(
   
   const survivalProb = 2 * normalCDF(normalized * Math.sqrt(2)) - 1;
   
+  // Impõe um teto de 99.9% para evitar a falácia do "risco zero"
   return Math.max(0, Math.min(0.999, survivalProb));
 }
 
