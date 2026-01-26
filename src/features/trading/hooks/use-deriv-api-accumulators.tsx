@@ -339,7 +339,7 @@ export const DerivApiProviderAccumulators = ({ children }: { children: ReactNode
       if (!proposal || !proposal.id) {
           throw new Error("Falha ao obter uma proposta de negociação da API. A resposta não continha um ID.");
       }
-
+      
       const sanitizedAskPrice = parseFloat(proposal.ask_price.toFixed(2));
       const buyResponse: any = await makeRequest({ "buy": proposal.id, "price": sanitizedAskPrice });
       
@@ -405,6 +405,9 @@ export const DerivApiProviderAccumulators = ({ children }: { children: ReactNode
     try {
         sellingContractsRef.current.add(contractId);
         const sellResponse: any = await makeRequest({ sell: contractId, price: 0 });
+        if (sellResponse.error) {
+            throw new Error(sellResponse.error.message);
+        }
         const sellResult = sellResponse.sell;
         if (sellResult) {
             return { success: true, message: `Ordem de venda para o contrato ${contractId} enviada.` };
@@ -413,12 +416,25 @@ export const DerivApiProviderAccumulators = ({ children }: { children: ReactNode
             throw new Error("A resposta da API não continha os dados de venda esperados.");
         }
     } catch (error) {
-        console.error("[Deriv Hook] Erro ao vender o contrato:", error);
-        sellingContractsRef.current.delete(contractId);
         const message = error instanceof Error ? error.message : "Um erro desconhecido ocorreu.";
+        sellingContractsRef.current.delete(contractId);
+        
+        if (message.toLowerCase().includes("contract has expired") || message.toLowerCase().includes("contract is already closed")) {
+            console.warn(`[Deriv Hook] Tentativa de vender contrato #${contractId} que já estava fechado. A operação será marcada como concluída.`);
+            
+            setAndPersistOperationsLog(prevLog => prevLog.map(op => 
+                op.id === contractId && op.status === 'pending'
+                    ? { ...op, status: 'lost', result: -op.stake, exitTimestamp: new Date().toISOString() }
+                    : op
+            ));
+            
+            return { success: true, message: "Contrato já estava fechado no servidor." };
+        }
+        
+        console.error("[Deriv Hook] Erro ao vender o contrato:", error);
         return { success: false, message };
     }
-  }, [isConnected, makeRequest]);
+  }, [isConnected, makeRequest, setAndPersistOperationsLog]);
   
   const subscribeToStreams = useCallback(async (symbol: string) => {
     if (wsRef.current?.readyState !== WebSocket.OPEN) return;
@@ -757,3 +773,5 @@ export function useDerivApiAccumulators() {
   }
   return context;
 }
+
+    
