@@ -179,7 +179,6 @@ function StochasticLab({ realData, activeSymbol }: { realData: ChartData[], acti
         const newRMSE = Math.sqrt(sumSquaredErrors / errors.length);
         const newDrift = errors.reduce((a,e) => a + e, 0) / errors.length;
         
-        // FIX: Update ref for calculation, conditionally update state for display
         driftCorrectionRef.current = newDrift;
         if (newDrift !== driftCorrectionForDisplay.drift || newMAE !== driftCorrectionForDisplay.mae) {
              setDriftCorrectionForDisplay({ drift: newDrift, mae: newMAE, rmse: newRMSE });
@@ -286,7 +285,7 @@ function StochasticLab({ realData, activeSymbol }: { realData: ChartData[], acti
     
     setPredictionData(newPredictionData.slice(-200));
 
-  }, [realData]); // FIX: Dependency array only on realData
+  }, [realData]);
 
   const chartDisplayData = useMemo(() => {
     const combined = [...predictionData.filter(p => p && (p.real || p.predicted_1_tick))];
@@ -643,7 +642,7 @@ function StochasticLab({ realData, activeSymbol }: { realData: ChartData[], acti
                                   <ScatterChart>
                                     <CartesianGrid strokeDasharray="3 3" />
                                     <XAxis dataKey="index" label={{ value: 'Observação', position: 'insideBottom', offset: -5 }} />
-                                    <YAxis label={{ value: 'Retorno Log. por Tick (%)', angle: -90, position: 'insideLeft' }} />
+                                    <YAxis dataKey="return" label={{ value: 'Retorno Log. por Tick (%)', angle: -90, position: 'insideLeft' }} />
                                     <ShadTooltip />
                                     <Scatter data={returns} fill="#8b5cf6" />
                                   </ScatterChart>
@@ -751,7 +750,7 @@ function StochasticLab({ realData, activeSymbol }: { realData: ChartData[], acti
                         </div>
                     )}
                 </div>
-            </ScrollArea>
+          </ScrollArea>
         </CardContent>
     </Card>
   );
