@@ -83,7 +83,6 @@ function StochasticLab({ realData, activeSymbol }: { realData: ChartData[], acti
     if (currentPrice <= 0 || recentMean <= 0) return 0;
     const distanceFromMean = Math.log(currentPrice / recentMean);
     const meanReversionComponent = -meanReversionSpeed * distanceFromMean;
-    // REMOÇÃO DO FATOR DE CORREÇÃO NEGATIVO PARA EVITAR VIÉS DE QUEDA
     return meanReversionComponent;
   };
 
