@@ -1,3 +1,4 @@
+// /src/app/volatility-analysis/page.tsx
 'use client';
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
@@ -53,6 +54,8 @@ function StochasticLab({ realData, activeSymbol }: { realData: ChartData[], acti
   const [futurePath20s, setFuturePath20s] = useState<any[]>([]);
   const [futurePath30s, setFuturePath30s] = useState<any[]>([]);
   const [futurePath40s, setFuturePath40s] = useState<any[]>([]);
+  
+  // FIX: Use ref for calculation, state for display to prevent loops
   const driftCorrectionRef = useRef(0);
   const [driftCorrectionForDisplay, setDriftCorrectionForDisplay] = useState({drift: 0, mae: 0, rmse: 0});
 
@@ -175,10 +178,10 @@ function StochasticLab({ realData, activeSymbol }: { realData: ChartData[], acti
         const newMAE = sumAbsErrors / errors.length;
         const newRMSE = Math.sqrt(sumSquaredErrors / errors.length);
         const newDrift = errors.reduce((a,e) => a + e, 0) / errors.length;
-
-        driftCorrectionRef.current = newDrift;
         
-        if (newDrift !== driftCorrectionForDisplay.drift) {
+        // FIX: Update ref for calculation, conditionally update state for display
+        driftCorrectionRef.current = newDrift;
+        if (newDrift !== driftCorrectionForDisplay.drift || newMAE !== driftCorrectionForDisplay.mae) {
              setDriftCorrectionForDisplay({ drift: newDrift, mae: newMAE, rmse: newRMSE });
         }
     }
@@ -191,7 +194,6 @@ function StochasticLab({ realData, activeSymbol }: { realData: ChartData[], acti
       const lastSigma = Math.sqrt(lastVariance);
       const lastTime = prices.length - 1;
 
-      // CORREÇÃO: Calcular a média de preços para o modelo de reversão à média
       const lastPrices = prices.slice(-VOL_WINDOW);
       const meanLastPrice = lastPrices.reduce((a,b) => a + b, 0) / VOL_WINDOW;
 
@@ -200,7 +202,6 @@ function StochasticLab({ realData, activeSymbol }: { realData: ChartData[], acti
         const path = [{ time: lastTime, price: lastPrice }];
         for (let i = 1; i <= steps; i++) {
           const Z = normalRandom();
-          // CORREÇÃO: Usar o drift adaptativo com a média de preço correta
           const drift_future = calculateAdaptiveDrift(currentSimPrice, meanLastPrice, lastSigma);
           const diffusion_future = lastSigma * Math.sqrt(1) * Z;
           currentSimPrice = currentSimPrice * Math.exp(drift_future + diffusion_future);
@@ -285,7 +286,7 @@ function StochasticLab({ realData, activeSymbol }: { realData: ChartData[], acti
     
     setPredictionData(newPredictionData.slice(-200));
 
-  }, [realData, driftCorrectionForDisplay.drift]);
+  }, [realData]); // FIX: Dependency array only on realData
 
   const chartDisplayData = useMemo(() => {
     const combined = [...predictionData.filter(p => p && (p.real || p.predicted_1_tick))];
