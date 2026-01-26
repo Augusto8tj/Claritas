@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ScatterChart, Scatter } from 'recharts';
-import { Calculator, TrendingUp, Activity, BarChart3, Bot, FlaskConical, Target, Info, Brain } from 'lucide-react';
+import { Calculator, TrendingUp, Activity, BarChart3, Bot, FlaskConical, Target, Info, Brain, HelpCircle, ChevronRight } from 'lucide-react';
 import { DerivApiProviderAccumulators, useDerivApiAccumulators } from "@/features/trading/hooks/use-deriv-api-accumulators";
 import { AssetSelectorAccumulators } from "@/features/trading/components/deriv-trader/asset-selector-accumulators";
 import { ApiStatusIndicatorAccumulators } from "@/features/trading/components/deriv-trader/ApiStatusIndicatorAccumulators";
@@ -12,6 +12,7 @@ import type { ChartData, CandleData } from '@/lib/types';
 import { Progress } from "@/components/ui/progress";
 import { TooltipProvider, Tooltip as ShadTooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 
 
 // Aproximação da função quantil normal inversa
@@ -50,8 +51,8 @@ function StochasticLab({ realData, activeSymbol }: { realData: ChartData[], acti
   const [futurePath10s, setFuturePath10s] = useState<any[]>([]);
   const [futurePath20s, setFuturePath20s] = useState<any[]>([]);
   const [futurePath40s, setFuturePath40s] = useState<any[]>([]);
-  const driftCorrectionRef = useRef(0);
   const [driftCorrectionForDisplay, setDriftCorrectionForDisplay] = useState({drift: 0, mae: 0, rmse: 0});
+  const driftCorrectionRef = useRef(0);
 
   // --- Estados para Assertividade da Projeção ---
   const [predictionAccuracyHistory6t, setPredictionAccuracyHistory6t] = useState<boolean[]>([]);
@@ -185,9 +186,15 @@ function StochasticLab({ realData, activeSymbol }: { realData: ChartData[], acti
         }
         return path;
       };
+      
+      const ACCURACY_WINDOW_6T = 6;
+      const ACCURACY_WINDOW_10S = 10;
+      const ACCURACY_WINDOW_20S = 10;
+      const ACCURACY_WINDOW_40S = 10;
 
       const processPredictionHorizon = (
           horizonTicks: number,
+          accuracyWindow: number,
           prices: number[],
           pendingPredictionsRef: React.MutableRefObject<{ startTimeIndex: number; startPrice: number; predictedEndPrice: number }[]>,
           setAccuracyHistory: React.Dispatch<React.SetStateAction<boolean[]>>,
@@ -203,7 +210,7 @@ function StochasticLab({ realData, activeSymbol }: { realData: ChartData[], acti
                   const predictedDirection = pred.predictedEndPrice > pred.startPrice ? 'RISE' : 'FALL';
                   const actualDirection = actualEndPrice > pred.startPrice ? 'RISE' : 'FALL';
                   newHistory.push(predictedDirection === actualDirection);
-                  return false; // Remove completed prediction
+                  return false;
               }
               return true;
           });
@@ -211,7 +218,7 @@ function StochasticLab({ realData, activeSymbol }: { realData: ChartData[], acti
           pendingPredictionsRef.current = updatedPending;
           
           if (newHistory.length > 0) {
-              setAccuracyHistory(prev => [...prev, ...newHistory]);
+              setAccuracyHistory(prev => [...prev.slice(-accuracyWindow + newHistory.length), ...newHistory]);
           }
 
           if (newFuturePath.length === horizonTicks + 1) {
@@ -228,14 +235,14 @@ function StochasticLab({ realData, activeSymbol }: { realData: ChartData[], acti
       };
 
       const horizons = [
-          { ticks: 6, ref: pendingPredictions6tRef, setAccuracyHistory: setPredictionAccuracyHistory6t },
-          { ticks: 10, ref: pendingPredictions10sRef, setAccuracyHistory: setPredictionAccuracyHistory10s }, 
-          { ticks: 20, ref: pendingPredictions20sRef, setAccuracyHistory: setPredictionAccuracyHistory20s }, 
-          { ticks: 40, ref: pendingPredictions40sRef, setAccuracyHistory: setPredictionAccuracyHistory40s }, 
+          { ticks: 6, window: ACCURACY_WINDOW_6T, ref: pendingPredictions6tRef, setAccuracyHistory: setPredictionAccuracyHistory6t },
+          { ticks: 10, window: ACCURACY_WINDOW_10S, ref: pendingPredictions10sRef, setAccuracyHistory: setPredictionAccuracyHistory10s }, 
+          { ticks: 20, window: ACCURACY_WINDOW_20S, ref: pendingPredictions20sRef, setAccuracyHistory: setPredictionAccuracyHistory20s }, 
+          { ticks: 40, window: ACCURACY_WINDOW_40S, ref: pendingPredictions40sRef, setAccuracyHistory: setPredictionAccuracyHistory40s }, 
       ];
       
       horizons.forEach(h => {
-          processPredictionHorizon(h.ticks, prices, h.ref, h.setAccuracyHistory);
+          processPredictionHorizon(h.ticks, h.window, prices, h.ref, h.setAccuracyHistory);
       });
 
       setFuturePath6t(projectPath(6).map(p => ({ time: p.time, predicted_6t_ahead: p.price })));
@@ -272,25 +279,24 @@ function StochasticLab({ realData, activeSymbol }: { realData: ChartData[], acti
 
   const lineData = useMemo(() => {
     if (qqData.length === 0) return [];
-    const allValues = [...qqData.map(d => d.theoretical), ...qqData.map(d => d.empirical)].filter(v => Number.isFinite(v));
+    const allValues = [...qqData.map(d => d.theoretical), ...qqData.map(d => d.empirical)].filter(v => Number.is.Finite(v));
     if (allValues.length === 0) return [{ theoretical: 0, empirical: 0}, { theoretical: 0, empirical: 0}];
     const minVal = Math.min(...allValues);
     const maxVal = Math.max(...allValues);
     return [{ theoretical: minVal, empirical: minVal }, { theoretical: maxVal, empirical: maxVal }];
   }, [qqData]);
 
-  const calculateRollingAccuracy = (history: boolean[], windowSize: number) => {
-    const recentHistory = history.slice(-windowSize);
-    const hits = recentHistory.filter(h => h).length;
-    const total = recentHistory.length;
+  const calculateRollingAccuracy = (history: boolean[]) => {
+    const hits = history.filter(h => h).length;
+    const total = history.length;
     const percentage = total > 0 ? (hits / total) * 100 : 0;
     return { hits, total, percentage };
   };
 
-  const accuracy6t = calculateRollingAccuracy(predictionAccuracyHistory6t, 6);
-  const accuracy10s = calculateRollingAccuracy(predictionAccuracyHistory10s, 10);
-  const accuracy20s = calculateRollingAccuracy(predictionAccuracyHistory20s, 10);
-  const accuracy40s = calculateRollingAccuracy(predictionAccuracyHistory40s, 10);
+  const accuracy6t = calculateRollingAccuracy(predictionAccuracyHistory6t);
+  const accuracy10s = calculateRollingAccuracy(predictionAccuracyHistory10s);
+  const accuracy20s = calculateRollingAccuracy(predictionAccuracyHistory20s);
+  const accuracy40s = calculateRollingAccuracy(predictionAccuracyHistory40s);
   
   const getProgressColor = (percentage: number) => {
     if (percentage > 75) return 'bg-green-500';
@@ -298,6 +304,50 @@ function StochasticLab({ realData, activeSymbol }: { realData: ChartData[], acti
     if (percentage < 40) return 'bg-red-500';
     return 'bg-gray-400';
   };
+  
+  // --- Lógica para Consenso das Projeções ---
+  const projectionConsensus = useMemo(() => {
+    const projections = [
+      { name: '10s', path: futurePath10s, accuracy: accuracy10s.percentage },
+      { name: '20s', path: futurePath20s, accuracy: accuracy20s.percentage },
+      { name: '40s', path: futurePath40s, accuracy: accuracy40s.percentage },
+    ];
+
+    let riseWeight = 0;
+    let fallWeight = 0;
+    const votes: Record<string, 'RISE' | 'FALL' | 'HOLD'> = {};
+
+    projections.forEach(p => {
+      if (p.path.length > 1) {
+        const startPrice = p.path[0].price;
+        const endPrice = p.path[p.path.length - 1].price;
+        
+        const vote = endPrice > startPrice ? 'RISE' : 'FALL';
+        votes[p.name] = vote;
+        
+        // Ponderação: mais distante de 50%, maior o peso
+        const weight = Math.abs(p.accuracy - 50) / 50;
+
+        if (vote === 'RISE') {
+          riseWeight += weight;
+        } else {
+          fallWeight += weight;
+        }
+      } else {
+        votes[p.name] = 'HOLD';
+      }
+    });
+
+    const totalWeight = riseWeight + fallWeight;
+    if (totalWeight === 0) return { decision: 'HOLD', confidence: 0, votes };
+
+    const decision = riseWeight > fallWeight ? 'RISE' : 'FALL';
+    const confidence = Math.abs(riseWeight - fallWeight) / totalWeight * 100;
+
+    return { decision, confidence, votes };
+
+  }, [futurePath10s, futurePath20s, futurePath40s, accuracy10s, accuracy20s, accuracy40s]);
+
 
   return (
     <Card className="h-full flex flex-col">
@@ -309,7 +359,7 @@ function StochasticLab({ realData, activeSymbol }: { realData: ChartData[], acti
             <CardDescription>O cientista usa GBM para prever o próximo tick (histórico) e projetar o futuro.</CardDescription>
         </CardHeader>
         <CardContent className="flex-1 flex flex-col min-h-0">
-            <ScrollArea className="flex-1">
+          <ScrollArea className="flex-1">
                 <div className="p-1 space-y-6">
                     <div className="flex gap-2 mb-6 flex-wrap">
                       {[
@@ -333,9 +383,40 @@ function StochasticLab({ realData, activeSymbol }: { realData: ChartData[], acti
                             <p className="text-sm">É necessário um histórico mínimo para a análise estatística.</p>
                         </div>
                     ) : (
-                        <div className="min-h-[450px]">
+                        <div className="min-h-0">
                             {activeTab === 'prediction' && (
                               <div>
+                                <Collapsible defaultOpen>
+                                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                                      <div className="p-4 bg-slate-50 rounded border col-span-1 md:col-span-2">
+                                          <CollapsibleTrigger className="w-full flex justify-between items-center cursor-pointer group">
+                                            <h3 className="text-lg font-semibold flex items-center gap-2"><Brain className="h-5 w-5 text-indigo-500"/>Consenso das Projeções</h3>
+                                            <ChevronRight className="h-4 w-4 text-muted-foreground transition-transform group-data-[state=open]:rotate-90"/>
+                                          </CollapsibleTrigger>
+                                          <CollapsibleContent>
+                                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-4">
+                                               <div className={cn("p-4 rounded-lg flex flex-col items-center justify-center text-white",
+                                                  projectionConsensus.decision === 'RISE' && 'bg-green-600',
+                                                  projectionConsensus.decision === 'FALL' && 'bg-red-600',
+                                                  projectionConsensus.decision === 'HOLD' && 'bg-gray-500',
+                                               )}>
+                                                  <span className="text-sm font-medium opacity-80">Decisão Final</span>
+                                                  <span className="text-3xl font-bold">{projectionConsensus.decision}</span>
+                                                  <span className="text-xs font-mono opacity-90">Confiança: {projectionConsensus.confidence.toFixed(1)}%</span>
+                                               </div>
+                                               <div className="space-y-2 text-xs">
+                                                  {Object.entries(projectionConsensus.votes).map(([name, vote]) => (
+                                                      <div key={name} className="flex justify-between items-center bg-background p-2 rounded">
+                                                          <span className="font-semibold">{name}</span>
+                                                          <span className={cn("font-bold", vote === 'RISE' && 'text-green-500', vote === 'FALL' && 'text-red-500')}>{vote}</span>
+                                                      </div>
+                                                  ))}
+                                               </div>
+                                            </div>
+                                          </CollapsibleContent>
+                                      </div>
+                                  </div>
+                                </Collapsible>
                                 <h3 className="text-lg font-semibold mb-2">Previsão (1-Tick) & Projeções Futuras</h3>
                                 <ResponsiveContainer width="100%" height={350}>
                                   <LineChart data={chartDisplayData}>
@@ -362,7 +443,7 @@ function StochasticLab({ realData, activeSymbol }: { realData: ChartData[], acti
                                                     </p>
                                                 </TooltipTrigger>
                                                 <TooltipContent>
-                                                    <p className="max-w-xs">A média da distância absoluta entre o preço previsto e o real para a projeção de 1 tick.<br/><strong>Menor é melhor.</strong></p>
+                                                    <p className="max-w-xs">Em média, as previsões para o próximo tick erraram por este valor. Menor é melhor.</p>
                                                 </TooltipContent>
                                             </ShadTooltip>
                                         </TooltipProvider>
@@ -377,7 +458,7 @@ function StochasticLab({ realData, activeSymbol }: { realData: ChartData[], acti
                                                     </p>
                                                 </TooltipTrigger>
                                                 <TooltipContent>
-                                                    <p className="max-w-xs">Mede o erro médio, mas penaliza erros grandes mais do que o MAE.<br/>Se RMSE > MAE, indica a presença de erros maiores (outliers).</p>
+                                                    <p className="max-w-xs">Mede o erro médio, mas penaliza erros grandes mais do que o MAE.&lt;br/&gt;Se RMSE &gt; MAE, indica a presença de erros maiores (outliers).</p>
                                                 </TooltipContent>
                                             </ShadTooltip>
                                         </TooltipProvider>
@@ -392,7 +473,7 @@ function StochasticLab({ realData, activeSymbol }: { realData: ChartData[], acti
                                                     </p>
                                                 </TooltipTrigger>
                                                 <TooltipContent>
-                                                    <p className="max-w-xs">O ajuste aplicado às projeções futuras com base no viés (erro médio) recente do modelo.<br/>Um valor positivo corrige um viés de subestimação.</p>
+                                                    <p className="max-w-xs">O ajuste aplicado às projeções futuras com base no viés (erro médio) recente do modelo.&lt;br/&gt;Um valor positivo corrige um viés de subestimação.</p>
                                                 </TooltipContent>
                                             </ShadTooltip>
                                         </TooltipProvider>
@@ -408,7 +489,7 @@ function StochasticLab({ realData, activeSymbol }: { realData: ChartData[], acti
                                                     </p>
                                                 </TooltipTrigger>
                                                 <TooltipContent>
-                                                    <p className="max-w-xs">A percentagem de vezes que o modelo acertou a <strong>direção</strong> do preço (subiu/desceu) nas últimas 6 projeções de 6 ticks.</p>
+                                                    <p className="max-w-xs">A percentagem de vezes que o modelo acertou a &lt;strong&gt;direção&lt;/strong&gt; do preço (subiu/desceu) nas últimas {predictionAccuracyHistory6t.length} projeções de 6 ticks.</p>
                                                 </TooltipContent>
                                             </ShadTooltip>
                                         </TooltipProvider>
@@ -427,7 +508,7 @@ function StochasticLab({ realData, activeSymbol }: { realData: ChartData[], acti
                                                     </p>
                                                 </TooltipTrigger>
                                                 <TooltipContent>
-                                                    <p className="max-w-xs">A percentagem de vezes que o modelo acertou a <strong>direção</strong> do preço (subiu/desceu) nas últimas 10 projeções de 10s.</p>
+                                                    <p className="max-w-xs">A percentagem de vezes que o modelo acertou a &lt;strong&gt;direção&lt;/strong&gt; do preço (subiu/desceu) nas últimas {predictionAccuracyHistory10s.length} projeções de 10s.</p>
                                                 </TooltipContent>
                                             </ShadTooltip>
                                         </TooltipProvider>
@@ -446,7 +527,7 @@ function StochasticLab({ realData, activeSymbol }: { realData: ChartData[], acti
                                                     </p>
                                                 </TooltipTrigger>
                                                 <TooltipContent>
-                                                    <p className="max-w-xs">A percentagem de vezes que o modelo acertou a <strong>direção</strong> do preço (subiu/desceu) nas últimas 10 projeções de 20s.</p>
+                                                    <p className="max-w-xs">A percentagem de vezes que o modelo acertou a &lt;strong&gt;direção&lt;/strong&gt; do preço (subiu/desceu) nas últimas {predictionAccuracyHistory20s.length} projeções de 20s.</p>
                                                 </TooltipContent>
                                             </ShadTooltip>
                                         </TooltipProvider>
@@ -465,7 +546,7 @@ function StochasticLab({ realData, activeSymbol }: { realData: ChartData[], acti
                                                     </p>
                                                 </TooltipTrigger>
                                                 <TooltipContent>
-                                                    <p className="max-w-xs">A percentagem de vezes que o modelo acertou a <strong>direção</strong> do preço (subiu/desceu) nas últimas 10 projeções de 40s.</p>
+                                                    <p className="max-w-xs">A percentagem de vezes que o modelo acertou a &lt;strong&gt;direção&lt;/strong&gt; do preço (subiu/desceu) nas últimas {predictionAccuracyHistory40s.length} projeções de 40s.</p>
                                                 </TooltipContent>
                                             </ShadTooltip>
                                         </TooltipProvider>
@@ -473,7 +554,7 @@ function StochasticLab({ realData, activeSymbol }: { realData: ChartData[], acti
                                             <Progress value={accuracy40s.percentage} className="h-2 w-full flex-1" indicatorClassName={getProgressColor(accuracy40s.percentage)} />
                                             <span className="font-mono font-semibold w-16 text-right">{accuracy40s.percentage.toFixed(1)}%</span>
                                         </div>
-                                        <span className="text-[10px] text-muted-foreground">({accuracy40s.total > 0 ? `${accuracy40s.hits} de ${accuracy40s.total}` : '0 de 0'})</span>
+                                        <span className="text-[10px] text-muted-foreground">({accuracy40s.hits} de {accuracy40s.total})</span>
                                     </div>
                                 </div>
                               </div>
@@ -492,7 +573,7 @@ function StochasticLab({ realData, activeSymbol }: { realData: ChartData[], acti
                                 </ResponsiveContainer>
                                 <div className="mt-4 p-4 bg-slate-50 rounded">
                                   <p className="text-sm text-slate-700 mb-2">
-                                    <strong>Retorno Logarítmico:</strong> r(t) = ln(S(t)/S(t-1))
+                                    &lt;strong&gt;Retorno Logarítmico:&lt;/strong&gt; r(t) = ln(S(t)/S(t-1))
                                   </p>
                                   <p className="text-sm text-slate-700">
                                     Sob GBM, os retornos logarítmicos são independentes e identicamente distribuídos (i.i.d.) 
@@ -517,7 +598,7 @@ function StochasticLab({ realData, activeSymbol }: { realData: ChartData[], acti
                                 </ResponsiveContainer>
                                 <div className="mt-4 p-4 bg-slate-50 rounded">
                                   <p className="text-sm text-slate-700 mb-2">
-                                    <strong>Cálculo:</strong> σ̂ = √(Var(r)) × √N_ano
+                                    &lt;strong&gt;Cálculo:&lt;/strong&gt; σ̂ = √(Var(r)) × √N_ano
                                   </p>
                                   <p className="text-sm text-slate-700">
                                     A volatilidade realizada (verde) deve flutuar em torno do valor alvo de 10% (vermelho). 
@@ -549,7 +630,7 @@ function StochasticLab({ realData, activeSymbol }: { realData: ChartData[], acti
                                 </ResponsiveContainer>
                                 <div className="mt-4 p-4 bg-slate-50 rounded">
                                   <p className="text-sm text-slate-700">
-                                    <strong>Interpretação:</strong> Pontos próximos à linha diagonal (vermelho) indicam que os 
+                                    &lt;strong&gt;Interpretação:&lt;/strong&gt; Pontos próximos à linha diagonal (vermelho) indicam que os 
                                     retornos seguem distribuição normal, confirmando a adequação do modelo GBM. Desvios nas 
                                     caudas podem indicar eventos extremos (fat tails).
                                   </p>
