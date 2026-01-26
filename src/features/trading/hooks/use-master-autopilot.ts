@@ -1,31 +1,11 @@
 // src/features/trading/hooks/use-master-autopilot.ts
 'use client';
 
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useDerivApiAccumulators } from './use-deriv-api-accumulators';
 import { useToast } from '@/hooks/use-toast';
 
-// --- COPIADO E ADAPTADO DO StochasticLab ---
-// Em um refactor futuro, isso seria extraído para um hook reutilizável.
-
-const normalQuantile = (p: number): number => {
-  const a1 = -39.69683028665376; const a2 = 220.9460984245205; const a3 = -275.9285104469687; const a4 = 138.357751867269; const a5 = -30.66479806614716; const a6 = 2.506628277459239;
-  const b1 = -54.47609879822406; const b2 = 161.5858368580409; const b3 = -155.6989798598866; const b4 = 66.80131188771972; const b5 = -13.28068155288572;
-  const c1 = -0.007784894002430293; const c2 = -0.3223964580411365; const c3 = -2.400758277161838; const c4 = -2.549732539343734; const c5 = 4.374664141464968; const c6 = 2.938163982698783;
-  const d1 = 0.007784695709041462; const d2 = 0.3224671290700398; const d3 = 2.445134137142996; const d4 = 3.754408661907416;
-  const pLow = 0.02425; const pHigh = 1 - pLow;
-  if (p < pLow) {
-    const q = Math.sqrt(-2 * Math.log(p));
-    return (((((c1*q+c2)*q+c3)*q+c4)*q+c5)*q+c6) / ((((d1*q+d2)*q+d3)*q+d4)*q+1);
-  } else if (p <= pHigh) {
-    const q = p - 0.5;
-    const r = q * q;
-    return (((((a1*r+a2)*r+a3)*r+a4)*r+a5)*r+a6)*q / (((((b1*r+b2)*r+b3)*r+b4)*r+b5)*r+1);
-  } else {
-    const q = Math.sqrt(-2 * Math.log(1-p));
-    return -(((((c1*q+c2)*q+c3)*q+c4)*q+c5)*q+c6) / ((((d1*q+d2)*q+d3)*q+d4)*q+1);
-  }
-};
+// --- LÓGICA COPIADA DO StochasticLab ---
 const normalRandom = (): number => {
     let u1 = 0; while (u1 === 0) u1 = Math.random();
     const u2 = Math.random();
@@ -35,9 +15,16 @@ const normalRandom = (): number => {
 
 type ContractType = 'Accumulators' | 'Rise/Fall' | 'Multipliers';
 type Signal = 'RISE' | 'FALL' | 'HOLD';
+
 interface AssertivenessData {
     accuracy: number;
     vote: Signal;
+}
+
+export interface RiskManagerStatus {
+    mode: 'Normal' | 'Cautious';
+    assertivenessThreshold: number;
+    lastAdjustmentReason: string;
 }
 
 export interface MasterAutopilotState {
@@ -64,6 +51,13 @@ export function useMasterAutopilot() {
   const [contractType, setContractType] = useState<ContractType>('Accumulators');
   const [dailyBalance, setDailyBalance] = useState(100.0);
   const [dailyTarget, setDailyTarget] = useState(20.0);
+  
+  const [riskManager, setRiskManager] = useState<RiskManagerStatus>({
+      mode: 'Normal',
+      assertivenessThreshold: 80,
+      lastAdjustmentReason: 'N/A'
+  });
+  const processedTradesRef = useRef<Set<number>>(new Set());
 
   const [masterState, setMasterState] = useState<MasterAutopilotState>({
     isReady: false,
@@ -77,7 +71,6 @@ export function useMasterAutopilot() {
   
   const isCoolingDownRef = useRef(false);
 
-  // Refs para manter o estado das projeções sem causar re-renderizações excessivas
   const accuracyHistoryRefs = {
     '3t': useRef<boolean[]>([]), '6t': useRef<boolean[]>([]), '10s': useRef<boolean[]>([]),
     '20s': useRef<boolean[]>([]), '30s': useRef<boolean[]>([]), '40s': useRef<boolean[]>([]),
@@ -91,10 +84,13 @@ export function useMasterAutopilot() {
     '40s': useRef<{ startTimeIndex: number; startPrice: number; predictedEndPrice: number }[]>([]),
   };
 
-  const toggleAutopilot = (checked: boolean) => {
+  const toggleAutopilot = useCallback((checked: boolean) => {
     setIsAutopilotOn(checked);
     toast({ title: `Master Autopilot ${checked ? 'Ativado' : 'Desativado'}` });
-  };
+    if (!checked) {
+        setMasterState(prev => ({...prev, trigger: { signal: 'HOLD', reason: 'Piloto desativado.', triggeredBy: null}}));
+    }
+  }, [toast]);
 
   useEffect(() => {
     if (!isAutopilotOn || priceTicks.length < 50) {
@@ -107,7 +103,36 @@ export function useMasterAutopilot() {
     }
 
     const interval = setInterval(() => {
-        // --- GUARDAS DE EXECUÇÃO ---
+        const lastClosedPilotTrade = operationsLog.find(op => 
+            op.initiator === 'Piloto' && 
+            op.status !== 'pending' && 
+            !processedTradesRef.current.has(op.id)
+        );
+
+        if (lastClosedPilotTrade) {
+            processedTradesRef.current.add(lastClosedPilotTrade.id);
+            if ((lastClosedPilotTrade.result || 0) < 0) {
+                setRiskManager(prev => {
+                    const newThreshold = Math.min(95, prev.assertivenessThreshold + 5);
+                    return {
+                        mode: 'Cautious',
+                        assertivenessThreshold: newThreshold,
+                        lastAdjustmentReason: `Perda de $${Math.abs(lastClosedPilotTrade.result || 0).toFixed(2)}. Aumentando limiar para ${newThreshold}%.`
+                    };
+                });
+                toast({ title: "Master Autopilot: Modo Cauteloso Ativado", description: "Limiar de assertividade aumentado.", variant: "destructive" });
+            } else {
+                setRiskManager(prev => {
+                    const newThreshold = Math.max(80, prev.assertivenessThreshold - 1);
+                    return {
+                        mode: 'Normal',
+                        assertivenessThreshold: newThreshold,
+                        lastAdjustmentReason: `Ganho de $${(lastClosedPilotTrade.result || 0).toFixed(2)}. Reduzindo limiar para ${newThreshold}%.`
+                    };
+                });
+            }
+        }
+        
         if (isCoolingDownRef.current) {
             setMasterState(prev => ({...prev, trigger: { ...prev.trigger, reason: 'Em cooldown pós-trade.'}}))
             return;
@@ -157,7 +182,6 @@ export function useMasterAutopilot() {
             const { name, ticks, window } = h;
             const pendingRef = pendingPredictionsRefs[name as keyof typeof pendingPredictionsRefs];
             const historyRef = accuracyHistoryRefs[name as keyof typeof accuracyHistoryRefs];
-
             const newFuturePath = projectPath(ticks);
             const currentTimeIndex = prices.length - 1;
             let newHistory: boolean[] = [];
@@ -173,13 +197,8 @@ export function useMasterAutopilot() {
                 }
                 return true;
             });
-            
             pendingRef.current = updatedPending;
-            
-            if (newHistory.length > 0) {
-                historyRef.current = [...historyRef.current.slice(-window + newHistory.length), ...newHistory];
-            }
-
+            if (newHistory.length > 0) historyRef.current = [...historyRef.current.slice(-window + newHistory.length), ...newHistory];
             if (newFuturePath.length === ticks) {
                 pendingRef.current.push({
                     startTimeIndex: prices.length -1,
@@ -187,25 +206,21 @@ export function useMasterAutopilot() {
                     predictedEndPrice: newFuturePath[ticks - 1].price,
                 });
             }
-            
             const hits = historyRef.current.filter(h => h).length;
             const total = historyRef.current.length;
             const accuracy = total > 0 ? (hits / total) * 100 : 0;
             const vote: Signal = newFuturePath.length > 0 ? (newFuturePath[newFuturePath.length - 1].price > lastPrice ? 'RISE' : 'FALL') : 'HOLD';
-            
             newAssertiveness[name] = { accuracy, vote };
         });
 
-        // Lógica do Gatilho de Assertividade Dupla
         let triggerSignal: Signal = 'HOLD';
-        let triggerReason = 'Nenhuma confirmação dupla de alta assertividade (>80%).';
+        let triggerReason = `Nenhuma confirmação dupla de assertividade (> ${riskManager.assertivenessThreshold}%).`;
         let triggeredBy: [string, string] | null = null;
         
         for (let i = 1; i < horizons.length; i++) {
             const currentHorizon = horizons[i].name;
             const prevHorizon = horizons[i-1].name;
-            
-            if (newAssertiveness[currentHorizon].accuracy > 80 && newAssertiveness[prevHorizon].accuracy > 80) {
+            if (newAssertiveness[currentHorizon].accuracy > riskManager.assertivenessThreshold && newAssertiveness[prevHorizon].accuracy > riskManager.assertivenessThreshold) {
                 if (newAssertiveness[currentHorizon].vote === newAssertiveness[prevHorizon].vote && newAssertiveness[currentHorizon].vote !== 'HOLD') {
                     triggerSignal = newAssertiveness[currentHorizon].vote;
                     triggeredBy = [prevHorizon, currentHorizon];
@@ -215,40 +230,25 @@ export function useMasterAutopilot() {
             }
         }
         
-        // --- EXECUÇÃO DO TRADE ---
-        if (triggerSignal !== 'HOLD' && contractType === 'Accumulators') {
+        if (triggerSignal !== 'HOLD') {
             isCoolingDownRef.current = true;
-            setMasterState(prev => ({
-                ...prev,
-                isReady: true,
-                assertiveness: newAssertiveness,
-                trigger: { signal: triggerSignal, reason: `Gatilho ${triggerSignal} detectado! A executar...`, triggeredBy }
-            }));
-            
+            setMasterState(prev => ({ ...prev, isReady: true, assertiveness: newAssertiveness, trigger: { signal: triggerSignal, reason: `Gatilho ${triggerSignal} detectado! A executar...`, triggeredBy } }));
             toast({ title: `🤖 Master Autopilot: Gatilho ${triggerSignal}!`, description: `Executando ordem de ${contractType} em ${activeSymbol}`});
-
-            executeAccumulatorTrade(1.0, 0.03, activeSymbol!, 'Piloto');
-
-            setTimeout(() => {
-                isCoolingDownRef.current = false;
-            }, 60000); // Cooldown de 60 segundos
+            
+            if(contractType === 'Accumulators') {
+                executeAccumulatorTrade(1.0, 0.03, activeSymbol!, 'Piloto');
+            }
+            
+            setTimeout(() => { isCoolingDownRef.current = false; }, 60000);
         } else {
-             setMasterState({
-                isReady: true,
-                assertiveness: newAssertiveness,
-                trigger: {
-                    signal: triggerSignal,
-                    reason: triggerReason,
-                    triggeredBy: triggeredBy,
-                }
-            });
+             setMasterState({ isReady: true, assertiveness: newAssertiveness, trigger: { signal: triggerSignal, reason: triggerReason, triggeredBy: triggeredBy } });
         }
 
     }, 2000);
 
     return () => clearInterval(interval);
 
-  }, [isAutopilotOn, priceTicks, operationsLog, activeSymbol, contractType, executeAccumulatorTrade, toast]);
+  }, [isAutopilotOn, priceTicks, operationsLog, activeSymbol, contractType, executeAccumulatorTrade, toast, riskManager.assertivenessThreshold]);
 
   return {
     isAutopilotOn,
@@ -260,5 +260,6 @@ export function useMasterAutopilot() {
     dailyTarget,
     setDailyTarget,
     masterState,
+    riskManager
   };
 }

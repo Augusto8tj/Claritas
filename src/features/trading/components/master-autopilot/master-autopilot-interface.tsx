@@ -9,7 +9,7 @@ import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
 import { Button } from '@/components/ui/button';
-import { Crosshair, Target, Bot, Power, BarChart, TrendingUp, TrendingDown } from 'lucide-react';
+import { Crosshair, Target, Bot, Power, BarChart, TrendingUp, TrendingDown, ShieldQuestion } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
 import { Progress } from '@/components/ui/progress';
@@ -25,6 +25,7 @@ export function MasterAutopilotInterface() {
     dailyTarget,
     setDailyTarget,
     masterState,
+    riskManager,
   } = useMasterAutopilot();
 
   const getProgressColor = (percentage: number) => {
@@ -76,7 +77,7 @@ export function MasterAutopilotInterface() {
         </Card>
         <Card>
             <CardHeader>
-                <CardTitle className="font-headline">Gestão de Risco</CardTitle>
+                <CardTitle className="font-headline">Gestão de Risco Diário</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
                 <div className="space-y-2">
@@ -87,6 +88,30 @@ export function MasterAutopilotInterface() {
                     <Label htmlFor="daily-target">Alvo de Lucro (USD)</Label>
                     <Input id="daily-target" type="number" value={dailyTarget} onChange={e => setDailyTarget(Number(e.target.value))} disabled={isAutopilotOn}/>
                 </div>
+            </CardContent>
+        </Card>
+        <Card>
+            <CardHeader>
+                <CardTitle className="font-headline flex items-center gap-2">
+                    <ShieldQuestion className="h-5 w-5 text-primary"/>
+                    Gestor de Risco Adaptativo
+                </CardTitle>
+            </CardHeader>
+             <CardContent className="space-y-3">
+                <div className="flex justify-between items-center text-sm">
+                    <span className="text-muted-foreground">Modo Atual:</span>
+                    <Badge variant={riskManager.mode === 'Cautious' ? 'destructive' : 'secondary'}>{riskManager.mode}</Badge>
+                </div>
+                <div className="flex justify-between items-center text-sm">
+                    <span className="text-muted-foreground">Limiar de Assertividade:</span>
+                    <span className="font-bold text-primary">{riskManager.assertivenessThreshold}%</span>
+                </div>
+                <Alert variant="outline" className="text-xs">
+                    <AlertTitle className="font-semibold">Último Ajuste</AlertTitle>
+                    <AlertDescription>
+                        {riskManager.lastAdjustmentReason}
+                    </AlertDescription>
+                </Alert>
             </CardContent>
         </Card>
       </div>
