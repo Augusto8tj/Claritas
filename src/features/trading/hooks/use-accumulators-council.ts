@@ -86,10 +86,13 @@ function calculateSurvivalProbability(
   targetDuration: number,
   currentVolatility: number
 ): number {
-  // ✅ CORREÇÃO: Adicionar um epsilon para evitar divisão por zero
-  // e representar a incerteza mínima do mercado.
-  const MIN_VOLATILITY = 1e-9; 
-  const effectiveVolatility = Math.max(currentVolatility, MIN_VOLATILITY);
+  const MIN_VOLATILITY = 1e-9;
+  
+  // --- CORREÇÃO: Piso de Incerteza ---
+  // Previne que uma volatilidade irrealisticamente baixa gere uma probabilidade de 100%.
+  const VOLATILITY_FLOOR = 0.00005; // Valor empírico para risco mínimo
+  const effectiveVolatility = Math.max(currentVolatility, MIN_VOLATILITY, VOLATILITY_FLOOR);
+  // ------------------------------------
   
   if (targetDuration <= 0) return 0;
   
