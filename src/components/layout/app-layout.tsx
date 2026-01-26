@@ -28,6 +28,7 @@ import {
   Briefcase,
   BarChartHorizontal,
   Calculator,
+  Crosshair,
 } from "lucide-react";
 import {
   Sidebar,
@@ -81,6 +82,11 @@ const navItems = [
     href: "/portfolio",
     icon: Briefcase,
     label: "Portfólio",
+  },
+  {
+    href: "/master-autopilot",
+    icon: Crosshair,
+    label: "Master Autopilot",
   },
   {
     href: "/backtesting",
