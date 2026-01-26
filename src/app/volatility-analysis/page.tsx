@@ -42,15 +42,14 @@ function StochasticLab({ realData }: { realData: ChartData[] }) {
   const [qqData, setQQData] = useState<any[]>([]);
   const [stats, setStats] = useState<any>({});
   
-  // States para a Previsão
+  // --- States para Previsão ---
   const [predictionData, setPredictionData] = useState<any[]>([]);
+  const [futurePath, setFuturePath] = useState<any[]>([]); // NOVO: Para a projeção futura
   const [predictionError, setPredictionError] = useState({ mae: 0, rmse: 0, count: 0 });
 
   const normalRandom = (): number => {
     let u1 = 0;
-    while (u1 === 0) {
-      u1 = Math.random();
-    }
+    while (u1 === 0) { u1 = Math.random(); }
     const u2 = Math.random();
     return Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
   };
@@ -59,8 +58,12 @@ function StochasticLab({ realData }: { realData: ChartData[] }) {
   useEffect(() => {
     const analyzeData = (data: ChartData[]) => {
       const VOL_WINDOW = 50;
+      const mu = 0; // Drift
+      const dt = 1; // Time step
+      
       if (data.length < VOL_WINDOW) {
-        setPriceData([]); setReturns([]); setVolatilityData([]); setQQData([]); setStats({}); setPredictionData([]); setPredictionError({ mae: 0, rmse: 0, count: 0 });
+        setPriceData([]); setReturns([]); setVolatilityData([]); setQQData([]); setStats({}); 
+        setPredictionData([]); setFuturePath([]); setPredictionError({ mae: 0, rmse: 0, count: 0 });
         return;
       }
       
@@ -101,10 +104,9 @@ function StochasticLab({ realData }: { realData: ChartData[] }) {
       }
       setVolatilityData(volData);
 
-      // --- Lógica de Previsão Preditiva (NOVO) ---
+      // --- Lógica de Previsão Preditiva (Histórica e Futura) ---
       const newPredictionData: any[] = [];
       const errors: number[] = [];
-      const dt = 1, mu = 0;
       
       for (let i = VOL_WINDOW; i < prices.length; i++) {
           const S_prev = prices[i-1];
@@ -118,11 +120,11 @@ function StochasticLab({ realData }: { realData: ChartData[] }) {
           const Z = normalRandom();
           const drift = (mu - 0.5 * sigma * sigma) * dt;
           const diffusion = sigma * Math.sqrt(dt) * Z;
-          const S_predicted = S_prev * Math.exp(drift + diffusion);
+          const S_predicted_1_tick = S_prev * Math.exp(drift + diffusion);
           
-          if (Number.isFinite(S_real) && Number.isFinite(S_predicted)) {
-              newPredictionData.push({ time: i, real: S_real, predicted: S_predicted });
-              errors.push(S_real - S_predicted);
+          if (Number.isFinite(S_real) && Number.isFinite(S_predicted_1_tick)) {
+              newPredictionData.push({ time: i, real: S_real, predicted_1_tick: S_predicted_1_tick });
+              errors.push(S_real - S_predicted_1_tick);
           }
       }
       
@@ -133,11 +135,53 @@ function StochasticLab({ realData }: { realData: ChartData[] }) {
               mae: sumAbsErrors / errors.length, rmse: Math.sqrt(sumSquaredErrors / errors.length), count: errors.length
           });
       }
+
+      // --- Lógica de Previsão 6-Ticks-Ahead (NOVO) ---
+      const newFuturePath: any[] = [];
+      if (prices.length > VOL_WINDOW) {
+          const lastPrice = prices[prices.length - 1];
+          const lastLogReturns = logReturns.slice(-VOL_WINDOW);
+          const meanLastReturn = lastLogReturns.reduce((a, b) => a + b, 0) / VOL_WINDOW;
+          const lastVariance = lastLogReturns.reduce((s, r) => s + Math.pow(r - meanLastReturn, 2), 0) / (VOL_WINDOW - 1);
+          const lastSigma = Math.sqrt(lastVariance);
+
+          let currentSimPrice = lastPrice;
+          const lastTime = prices.length - 1;
+          
+          newFuturePath.push({ time: lastTime, predicted_6_ticks_ahead: lastPrice });
+
+          for (let i = 1; i <= 6; i++) {
+              const Z = normalRandom();
+              const drift_future = (mu - 0.5 * lastSigma * lastSigma) * dt;
+              const diffusion_future = lastSigma * Math.sqrt(dt) * Z;
+              currentSimPrice = currentSimPrice * Math.exp(drift_future + diffusion_future);
+              if (Number.isFinite(currentSimPrice)) {
+                  newFuturePath.push({ time: lastTime + i, predicted_6_ticks_ahead: currentSimPrice });
+              }
+          }
+      }
+      
       setPredictionData(newPredictionData.slice(-200));
+      setFuturePath(newFuturePath); // Atualiza o estado com a projeção futura
     };
 
     analyzeData(realData);
   }, [realData]);
+
+  const chartDisplayData = useMemo(() => {
+    const combined = [...predictionData];
+    if (futurePath.length > 0) {
+      futurePath.forEach(point => {
+        const existingPointIndex = combined.findIndex(p => p.time === point.time);
+        if (existingPointIndex !== -1) {
+          combined[existingPointIndex] = { ...combined[existingPointIndex], ...point };
+        } else {
+          combined.push(point);
+        }
+      });
+    }
+    return combined;
+  }, [predictionData, futurePath]);
 
   const lineData = useMemo(() => {
     if (qqData.length === 0) return [];
@@ -154,14 +198,14 @@ function StochasticLab({ realData }: { realData: ChartData[] }) {
                 <FlaskConical className="h-5 w-5 text-purple-600" />
                 Laboratório Preditivo (Cientista de IA)
             </CardTitle>
-            <CardDescription>O cientista usa o modelo GBM para prever o próximo tick e compara com os dados reais.</CardDescription>
+            <CardDescription>O cientista usa GBM para prever o próximo tick (histórico) e projetar 6 ticks no futuro.</CardDescription>
         </CardHeader>
         <CardContent className="flex-1 flex flex-col">
             <ScrollArea className="flex-1">
                 <div className="p-1 space-y-6">
                     <div className="flex gap-2 mb-6 flex-wrap">
                       {[
-                        { id: 'prediction', icon: TrendingUp, label: 'Previsão (1-Tick-Ahead)' },
+                        { id: 'prediction', icon: TrendingUp, label: 'Previsão & Projeção' },
                         { id: 'returns', icon: Activity, label: 'Retornos' },
                         { id: 'volatility', icon: BarChart3, label: 'Volatilidade' },
                         { id: 'qq', icon: Calculator, label: 'Q-Q Plot' }
@@ -184,16 +228,17 @@ function StochasticLab({ realData }: { realData: ChartData[] }) {
                         <div className="min-h-[450px]">
                             {activeTab === 'prediction' && (
                               <div>
-                                <h3 className="text-lg font-semibold mb-2">Previsão vs. Realidade (1 Tick à Frente)</h3>
+                                <h3 className="text-lg font-semibold mb-2">Previsão (1-Tick-Ahead) & Projeção (6-Ticks Futuros)</h3>
                                 <ResponsiveContainer width="100%" height={350}>
-                                  <LineChart data={predictionData}>
+                                  <LineChart data={chartDisplayData}>
                                     <CartesianGrid strokeDasharray="3 3" />
                                     <XAxis dataKey="time" label={{ value: 'Tempo (ticks)', position: 'insideBottom', offset: -5 }} />
                                     <YAxis domain={['dataMin - 0.5', 'dataMax + 0.5']} label={{ value: 'Preço', angle: -90, position: 'insideLeft' }} />
                                     <Tooltip />
                                     <Legend />
                                     <Line type="monotone" dataKey="real" stroke="#2563eb" strokeWidth={2.5} dot={false} name="Preço Real" />
-                                    <Line type="monotone" dataKey="predicted" stroke="#f59e0b" strokeWidth={1.5} strokeDasharray="3 3" dot={false} name="Previsão GBM" />
+                                    <Line type="monotone" dataKey="predicted_1_tick" stroke="#f59e0b" strokeWidth={1.5} strokeDasharray="3 3" dot={false} name="Previsão (1-Tick)" />
+                                    <Line type="monotone" dataKey="predicted_6_ticks_ahead" stroke="#ef4444" strokeWidth={2} strokeDasharray="8 4" dot={false} name="Projeção (6-Ticks)" />
                                   </LineChart>
                                 </ResponsiveContainer>
                                 <div className="mt-4 grid grid-cols-2 gap-4">
@@ -268,7 +313,8 @@ function StochasticLab({ realData }: { realData: ChartData[] }) {
                                     <Scatter data={qqData} fill="#f59e0b" />
                                     <Line
                                       type="monotone"
-                                      dataKey="theoretical"
+                                      data={lineData}
+                                      dataKey="empirical"
                                       stroke="#dc2626"
                                       strokeWidth={2}
                                       dot={false}
