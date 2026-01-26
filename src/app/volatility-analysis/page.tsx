@@ -66,6 +66,18 @@ function StochasticLab({ realData, activeSymbol }: { realData: ChartData[], acti
   const pendingPredictions20sRef = useRef<{ startTimeIndex: number; startPrice: number; predictedEndPrice: number }[]>([]);
   const pendingPredictions40sRef = useRef<{ startTimeIndex: number; startPrice: number; predictedEndPrice: number }[]>([]);
 
+  const calculateAdaptiveDrift = (
+    currentPrice: number,
+    recentMean: number,
+    sigma: number,
+    meanReversionSpeed: number = 0.15
+  ): number => {
+    if (currentPrice <= 0 || recentMean <= 0) return -0.5 * sigma * sigma;
+    const distanceFromMean = Math.log(currentPrice / recentMean);
+    const meanReversionComponent = -meanReversionSpeed * distanceFromMean;
+    return meanReversionComponent - 0.5 * sigma * sigma;
+  };
+
 
   const normalRandom = (): number => {
     let u1 = 0;
@@ -170,12 +182,17 @@ function StochasticLab({ realData, activeSymbol }: { realData: ChartData[], acti
       const lastSigma = Math.sqrt(lastVariance);
       const lastTime = prices.length - 1;
 
+      // CORREÇÃO: Calcular a média de preços para o modelo de reversão à média
+      const lastPrices = prices.slice(-VOL_WINDOW);
+      const meanLastPrice = lastPrices.reduce((a,b) => a + b, 0) / VOL_WINDOW;
+
       const projectPath = (steps: number) => {
         let currentSimPrice = lastPrice;
         const path = [{ time: lastTime, price: lastPrice }];
         for (let i = 1; i <= steps; i++) {
           const Z = normalRandom();
-          const drift_future = (meanLastReturn - 0.5 * lastSigma * lastSigma) + driftCorrectionRef.current;
+          // CORREÇÃO: Usar o drift adaptativo com a média de preço correta
+          const drift_future = calculateAdaptiveDrift(currentSimPrice, meanLastPrice, lastSigma);
           const diffusion_future = lastSigma * Math.sqrt(1) * Z;
           currentSimPrice = currentSimPrice * Math.exp(drift_future + diffusion_future);
           if (Number.isFinite(currentSimPrice)) {
@@ -458,7 +475,7 @@ function StochasticLab({ realData, activeSymbol }: { realData: ChartData[], acti
                                                     </p>
                                                 </TooltipTrigger>
                                                 <TooltipContent>
-                                                    <p className="max-w-xs">Mede o erro médio, mas penaliza erros grandes mais do que o MAE.&lt;br/&gt;Se RMSE &gt; MAE, indica a presença de erros maiores (outliers).</p>
+                                                    <p className="max-w-xs">Mede o erro médio, mas penaliza erros grandes mais do que o MAE. Se RMSE &gt; MAE, indica a presença de erros maiores (outliers).</p>
                                                 </TooltipContent>
                                             </ShadTooltip>
                                         </TooltipProvider>
@@ -713,5 +730,3 @@ export default function VolatilityAnalysisPage() {
         </DerivApiProviderAccumulators>
     );
 }
-
-    
