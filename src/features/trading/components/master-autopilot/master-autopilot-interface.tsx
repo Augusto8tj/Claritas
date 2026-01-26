@@ -9,7 +9,7 @@ import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
 import { Button } from '@/components/ui/button';
-import { Crosshair, Target, CheckCircle, XCircle, HelpCircle, Bot, Power, Loader2, BarChart, TrendingUp, TrendingDown } from 'lucide-react';
+import { Crosshair, Target, Bot, Power, BarChart, TrendingUp, TrendingDown } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
 import { Progress } from '@/components/ui/progress';
@@ -141,23 +141,29 @@ export function MasterAutopilotInterface() {
                 </CardDescription>
             </CardHeader>
             <CardContent className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                {masterState.assertiveness && Object.entries(masterState.assertiveness).map(([horizon, data]) => (
-                    <div key={horizon} className="p-3 border rounded-lg bg-muted/50">
-                        <div className="flex justify-between items-center text-xs text-muted-foreground">
-                            <span className="font-semibold">{horizon}</span>
-                            <div className={cn(
-                                'font-bold flex items-center gap-1',
-                                data.vote === 'RISE' && 'text-green-600',
-                                data.vote === 'FALL' && 'text-red-600',
-                            )}>
-                                {data.vote === 'RISE' ? <TrendingUp className="h-3 w-3"/> : <TrendingDown className="h-3 w-3"/>}
-                                {data.vote}
-                            </div>
-                        </div>
-                        <Progress value={data.accuracy} className="h-1.5 my-2" indicatorClassName={getProgressColor(data.accuracy)}/>
-                        <div className="text-right text-sm font-bold">{data.accuracy.toFixed(1)}%</div>
-                    </div>
-                ))}
+                {masterState.assertiveness && Object.keys(masterState.assertiveness).length > 0 ? (
+                  Object.entries(masterState.assertiveness).map(([horizon, data]) => (
+                      <div key={horizon} className="p-3 border rounded-lg bg-muted/50">
+                          <div className="flex justify-between items-center text-xs text-muted-foreground">
+                              <span className="font-semibold">{horizon}</span>
+                              <div className={cn(
+                                  'font-bold flex items-center gap-1',
+                                  data.vote === 'RISE' && 'text-green-600',
+                                  data.vote === 'FALL' && 'text-red-600',
+                              )}>
+                                  {data.vote === 'RISE' ? <TrendingUp className="h-3 w-3"/> : <TrendingDown className="h-3 w-3"/>}
+                                  {data.vote}
+                              </div>
+                          </div>
+                          <Progress value={data.accuracy} className="h-1.5 my-2" indicatorClassName={getProgressColor(data.accuracy)}/>
+                          <div className="text-right text-sm font-bold">{data.accuracy.toFixed(1)}%</div>
+                      </div>
+                  ))
+                ) : (
+                  <div className="col-span-full text-center text-muted-foreground p-4">
+                    Aguardando dados de assertividade...
+                  </div>
+                )}
             </CardContent>
         </Card>
       </div>
