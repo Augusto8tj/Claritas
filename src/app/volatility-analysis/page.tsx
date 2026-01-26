@@ -44,7 +44,10 @@ function StochasticLab({ realData, activeSymbol }: { realData: ChartData[], acti
   
   // --- States para Previsão ---
   const [predictionData, setPredictionData] = useState<any[]>([]);
-  const [futurePath, setFuturePath] = useState<any[]>([]);
+  const [futurePath6t, setFuturePath6t] = useState<any[]>([]);
+  const [futurePath10s, setFuturePath10s] = useState<any[]>([]);
+  const [futurePath20s, setFuturePath20s] = useState<any[]>([]);
+  const [futurePath40s, setFuturePath40s] = useState<any[]>([]);
   const [predictionError, setPredictionError] = useState({ mae: 0, rmse: 0, count: 0 });
 
   // --- Estados para Assertividade da Projeção ---
@@ -54,7 +57,7 @@ function StochasticLab({ realData, activeSymbol }: { realData: ChartData[], acti
 
   const normalRandom = (): number => {
     let u1 = 0;
-    while (u1 === 0) { u1 = Math.random(); } // Correção para evitar Math.log(0)
+    while (u1 === 0) { u1 = Math.random(); }
     const u2 = Math.random();
     return Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
   };
@@ -68,7 +71,8 @@ function StochasticLab({ realData, activeSymbol }: { realData: ChartData[], acti
       
       if (data.length < VOL_WINDOW) {
         setPriceData([]); setReturns([]); setVolatilityData([]); setQQData([]); setStats({}); 
-        setPredictionData([]); setFuturePath([]); setPredictionError({ mae: 0, rmse: 0, count: 0 });
+        setPredictionData([]); setFuturePath6t([]); setFuturePath10s([]); setFuturePath20s([]); setFuturePath40s([]);
+        setPredictionError({ mae: 0, rmse: 0, count: 0 });
         return;
       }
       
@@ -111,7 +115,6 @@ function StochasticLab({ realData, activeSymbol }: { realData: ChartData[], acti
       }
       setVolatilityData(volData);
 
-      // --- Lógica de Previsão Preditiva (Histórica e Futura) ---
       const newPredictionData: any[] = [];
       const errors: number[] = [];
       
@@ -143,71 +146,73 @@ function StochasticLab({ realData, activeSymbol }: { realData: ChartData[], acti
           });
       }
 
-      // --- Lógica de Previsão 6-Ticks-Ahead ---
-      const newFuturePath: any[] = [];
       if (prices.length > VOL_WINDOW) {
-          const lastPrice = prices[prices.length - 1];
-          const lastLogReturns = logReturns.slice(-VOL_WINDOW);
-          const meanLastReturn = lastLogReturns.reduce((a, b) => a + b, 0) / VOL_WINDOW;
-          const lastVariance = lastLogReturns.reduce((s, r) => s + Math.pow(r - meanLastReturn, 2), 0) / (VOL_WINDOW - 1);
-          const lastSigma = Math.sqrt(lastVariance);
+        const lastPrice = prices[prices.length - 1];
+        const lastLogReturns = logReturns.slice(-VOL_WINDOW);
+        const meanLastReturn = lastLogReturns.reduce((a, b) => a + b, 0) / VOL_WINDOW;
+        const lastVariance = lastLogReturns.reduce((s, r) => s + Math.pow(r - meanLastReturn, 2), 0) / (VOL_WINDOW - 1);
+        const lastSigma = Math.sqrt(lastVariance);
+        const lastTime = prices.length - 1;
 
+        const projectPath = (steps: number) => {
           let currentSimPrice = lastPrice;
-          const lastTime = prices.length - 1;
-          
-          newFuturePath.push({ time: lastTime, predicted_6_ticks_ahead: lastPrice });
-
-          for (let i = 1; i <= 6; i++) {
-              const Z = normalRandom();
-              const drift_future = (mu - 0.5 * lastSigma * lastSigma) * dt;
-              const diffusion_future = lastSigma * Math.sqrt(dt) * Z;
-              currentSimPrice = currentSimPrice * Math.exp(drift_future + diffusion_future);
-              if (Number.isFinite(currentSimPrice)) {
-                  newFuturePath.push({ time: lastTime + i, predicted_6_ticks_ahead: currentSimPrice });
-              }
+          const path = [{ time: lastTime, price: lastPrice }];
+          for (let i = 1; i <= steps; i++) {
+            const Z = normalRandom();
+            const drift_future = (mu - 0.5 * lastSigma * lastSigma) * dt;
+            const diffusion_future = lastSigma * Math.sqrt(dt) * Z;
+            currentSimPrice = currentSimPrice * Math.exp(drift_future + diffusion_future);
+            if (Number.isFinite(currentSimPrice)) {
+              path.push({ time: lastTime + i, price: currentSimPrice });
+            } else {
+              path.push({ time: lastTime + i, price: path[path.length - 1].price });
+            }
           }
+          return path;
+        };
+
+        setFuturePath6t(projectPath(6).map(p => ({ time: p.time, predicted_6t_ahead: p.price })));
+        setFuturePath10s(projectPath(5).map(p => ({ time: p.time, predicted_10s_ahead: p.price })));
+        setFuturePath20s(projectPath(10).map(p => ({ time: p.time, predicted_20s_ahead: p.price })));
+        setFuturePath40s(projectPath(20).map(p => ({ time: p.time, predicted_40s_ahead: p.price })));
+
+        const newFuturePathForValidation = projectPath(6);
+        const currentTimeIndex = prices.length - 1;
+        const completedPredictionsIndices: number[] = [];
+
+        pendingPredictionsRef.current.forEach((pred, index) => {
+          if (currentTimeIndex >= pred.startTimeIndex + 6) {
+            const actualEndPrice = prices[pred.startTimeIndex + 6];
+            if (actualEndPrice === undefined) return;
+            const predictedDirection = pred.predictedEndPrice > pred.startPrice ? 'RISE' : 'FALL';
+            const actualDirection = actualEndPrice > pred.startPrice ? 'RISE' : 'FALL';
+            setPredictionAccuracy(prev => ({
+              hits: prev.hits + (predictedDirection === actualDirection ? 1 : 0),
+              total: prev.total + 1,
+            }));
+            completedPredictionsIndices.push(index);
+          }
+        });
+        
+        if (completedPredictionsIndices.length > 0) {
+          pendingPredictionsRef.current = pendingPredictionsRef.current.filter((_, index) => !completedPredictionsIndices.includes(index));
+        }
+
+        if (newFuturePathForValidation.length === 7) {
+            const newPredictionTimeIndex = newFuturePathForValidation[0].time;
+            const alreadyPending = pendingPredictionsRef.current.some(p => p.startTimeIndex === newPredictionTimeIndex);
+            if (!alreadyPending) {
+                pendingPredictionsRef.current.push({
+                    startTimeIndex: newPredictionTimeIndex,
+                    startPrice: newFuturePathForValidation[0].price,
+                    predictedEndPrice: newFuturePathForValidation[6].price,
+                });
+            }
+        }
       }
       
       setPredictionData(newPredictionData.slice(-200));
-      setFuturePath(newFuturePath);
 
-       // --- Lógica de Validação da Projeção de 6 Ticks ---
-      const currentTimeIndex = prices.length - 1;
-      const completedPredictionsIndices: number[] = [];
-
-      pendingPredictionsRef.current.forEach((pred, index) => {
-        if (currentTimeIndex >= pred.startTimeIndex + 6) {
-          const actualEndPrice = prices[pred.startTimeIndex + 6];
-          if(actualEndPrice === undefined) return;
-
-          const predictedDirection = pred.predictedEndPrice > pred.startPrice ? 'RISE' : 'FALL';
-          const actualDirection = actualEndPrice > pred.startPrice ? 'RISE' : 'FALL';
-
-          setPredictionAccuracy(prev => ({
-            hits: prev.hits + (predictedDirection === actualDirection ? 1 : 0),
-            total: prev.total + 1,
-          }));
-          completedPredictionsIndices.push(index);
-        }
-      });
-
-      // Remove as previsões já validadas do ref
-      if (completedPredictionsIndices.length > 0) {
-        pendingPredictionsRef.current = pendingPredictionsRef.current.filter((_, index) => !completedPredictionsIndices.includes(index));
-      }
-
-      // Adiciona a nova previsão de 6 ticks à lista de pendentes, se for nova
-      if (newFuturePath.length === 7) {
-        const newPredictionTimeIndex = newFuturePath[0].time;
-        const alreadyPending = pendingPredictionsRef.current.some(p => p.startTimeIndex === newPredictionTimeIndex);
-        if (!alreadyPending) {
-            pendingPredictionsRef.current.push({
-                startTimeIndex: newPredictionTimeIndex,
-                startPrice: newFuturePath[0].predicted_6_ticks_ahead,
-                predictedEndPrice: newFuturePath[6].predicted_6_ticks_ahead,
-            });
-        }
-      }
     };
 
     analyzeData(realData);
@@ -215,18 +220,25 @@ function StochasticLab({ realData, activeSymbol }: { realData: ChartData[], acti
 
   const chartDisplayData = useMemo(() => {
     const combined = [...predictionData];
-    if (futurePath.length > 0) {
-      futurePath.forEach(point => {
-        const existingPointIndex = combined.findIndex(p => p.time === point.time);
-        if (existingPointIndex !== -1) {
-          combined[existingPointIndex] = { ...combined[existingPointIndex], ...point };
-        } else {
-          combined.push(point);
-        }
-      });
-    }
+    
+    const mergePath = (path: any[]) => {
+        path.forEach(point => {
+          const existingPointIndex = combined.findIndex(p => p.time === point.time);
+          if (existingPointIndex !== -1) {
+            combined[existingPointIndex] = { ...combined[existingPointIndex], ...point };
+          } else {
+            combined.push(point);
+          }
+        });
+    };
+
+    mergePath(futurePath6t);
+    mergePath(futurePath10s);
+    mergePath(futurePath20s);
+    mergePath(futurePath40s);
+
     return combined;
-  }, [predictionData, futurePath]);
+  }, [predictionData, futurePath6t, futurePath10s, futurePath20s, futurePath40s]);
 
   const lineData = useMemo(() => {
     if (qqData.length === 0) return [];
@@ -274,7 +286,7 @@ function StochasticLab({ realData, activeSymbol }: { realData: ChartData[], acti
                         <div className="min-h-[450px]">
                             {activeTab === 'prediction' && (
                               <div>
-                                <h3 className="text-lg font-semibold mb-2">Previsão (1-Tick-Ahead) & Projeção (6-Ticks Futuros)</h3>
+                                <h3 className="text-lg font-semibold mb-2">Previsão (1-Tick) & Projeções Futuras</h3>
                                 <ResponsiveContainer width="100%" height={350}>
                                   <LineChart data={chartDisplayData}>
                                     <CartesianGrid strokeDasharray="3 3" />
@@ -284,7 +296,10 @@ function StochasticLab({ realData, activeSymbol }: { realData: ChartData[], acti
                                     <Legend />
                                     <Line type="monotone" dataKey="real" stroke="#2563eb" strokeWidth={2.5} dot={false} name="Preço Real" />
                                     <Line type="monotone" dataKey="predicted_1_tick" stroke="#f59e0b" strokeWidth={1.5} strokeDasharray="3 3" dot={false} name="Previsão (1-Tick)" />
-                                    <Line type="monotone" dataKey="predicted_6_ticks_ahead" stroke="#ef4444" strokeWidth={2} strokeDasharray="8 4" dot={false} name="Projeção (6-Ticks)" />
+                                    <Line type="monotone" dataKey="predicted_6t_ahead" stroke="#ef4444" strokeWidth={2} strokeDasharray="8 4" dot={false} name="Projeção (6 Ticks)" />
+                                    <Line type="monotone" dataKey="predicted_10s_ahead" stroke="#8b5cf6" strokeWidth={2} strokeDasharray="8 4" dot={false} name="Projeção (10s)" />
+                                    <Line type="monotone" dataKey="predicted_20s_ahead" stroke="#3b82f6" strokeWidth={2} strokeDasharray="8 4" dot={false} name="Projeção (20s)" />
+                                    <Line type="monotone" dataKey="predicted_40s_ahead" stroke="#10b981" strokeWidth={2} strokeDasharray="8 4" dot={false} name="Projeção (40s)" />
                                   </LineChart>
                                 </ResponsiveContainer>
                                 <div className="mt-4 grid grid-cols-2 lg:grid-cols-3 gap-4">
@@ -450,9 +465,7 @@ function PageContent() {
     return (
         <div className="flex-1 space-y-4 p-4 sm:p-8 pt-6">
             <Header />
-            <div className="grid grid-cols-1 gap-6 items-start">
-                <StochasticLab realData={chartData} activeSymbol={activeSymbol} />
-            </div>
+            <StochasticLab realData={chartData} activeSymbol={activeSymbol} />
         </div>
     );
 }
