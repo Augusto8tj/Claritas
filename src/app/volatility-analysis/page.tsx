@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ScatterChart, Scatter } from 'recharts';
 import { Calculator, TrendingUp, Activity, BarChart3, Bot, FlaskConical } from 'lucide-react';
 import { DerivApiProviderAccumulators, useDerivApiAccumulators } from "@/features/trading/hooks/use-deriv-api-accumulators";
@@ -126,6 +126,14 @@ function StochasticLab({ realData }: { realData: ChartData[] }) {
     analyzeData(realData);
   }, [realData]);
 
+  const lineData = useMemo(() => {
+    if (qqData.length === 0) return [];
+    const allValues = [...qqData.map(d => d.theoretical), ...qqData.map(d => d.empirical)];
+    const minVal = Math.min(...allValues);
+    const maxVal = Math.max(...allValues);
+    return [{ theoretical: minVal, empirical: minVal }, { theoretical: maxVal, empirical: maxVal }];
+  }, [qqData]);
+
   return (
     <Card className="h-full flex flex-col">
         <CardHeader>
@@ -187,19 +195,119 @@ function StochasticLab({ realData }: { realData: ChartData[] }) {
                                 </div>
                               </div>
                             )}
-                            {activeTab === 'returns' && ( /* ... JSX inalterado ... */ )}
-                            {activeTab === 'volatility' && ( /* ... JSX inalterado ... */ )}
-                            {activeTab === 'qq' && ( /* ... JSX inalterado ... */ )}
+                            {activeTab === 'returns' && (
+                              <div>
+                                <h3 className="text-xl font-semibold mb-4 text-slate-800">Retornos Logarítmicos</h3>
+                                <ResponsiveContainer width="100%" height={400}>
+                                  <ScatterChart>
+                                    <CartesianGrid strokeDasharray="3 3" />
+                                    <XAxis dataKey="index" label={{ value: 'Observação', position: 'insideBottom', offset: -5 }} />
+                                    <YAxis label={{ value: 'Retorno (%)', angle: -90, position: 'insideLeft' }} />
+                                    <Tooltip />
+                                    <Scatter data={returns} fill="#8b5cf6" />
+                                  </ScatterChart>
+                                </ResponsiveContainer>
+                                <div className="mt-4 p-4 bg-slate-50 rounded">
+                                  <p className="text-sm text-slate-700 mb-2">
+                                    <strong>Retorno Logarítmico:</strong> r(t) = ln(S(t)/S(t-1))
+                                  </p>
+                                  <p className="text-sm text-slate-700">
+                                    Sob GBM, os retornos logarítmicos são independentes e identicamente distribuídos (i.i.d.) 
+                                    seguindo distribuição normal: r(t) ~ N(μ - σ²/2, σ²)
+                                  </p>
+                                </div>
+                              </div>
+                            )}
+                            {activeTab === 'volatility' && (
+                              <div>
+                                <h3 className="text-xl font-semibold mb-4 text-slate-800">Volatilidade Realizada vs. Alvo</h3>
+                                <ResponsiveContainer width="100%" height={400}>
+                                  <LineChart data={volatilityData}>
+                                    <CartesianGrid strokeDasharray="3 3" />
+                                    <XAxis dataKey="time" label={{ value: 'Tempo (segundos)', position: 'insideBottom', offset: -5 }} />
+                                    <YAxis label={{ value: 'Volatilidade (%)', angle: -90, position: 'insideLeft' }} />
+                                    <Tooltip />
+                                    <Legend />
+                                    <Line type="monotone" dataKey="realizedVol" stroke="#059669" strokeWidth={2} dot={false} name="Volatilidade Realizada (50-período)" />
+                                    <Line type="monotone" dataKey="targetVol" stroke="#dc2626" strokeWidth={2} strokeDasharray="5 5" dot={false} name="Volatilidade Alvo (10%)" />
+                                  </LineChart>
+                                </ResponsiveContainer>
+                                <div className="mt-4 p-4 bg-slate-50 rounded">
+                                  <p className="text-sm text-slate-700 mb-2">
+                                    <strong>Cálculo:</strong> σ̂ = √(1/(n-1) × Σ(r_i - r̄)²)
+                                  </p>
+                                  <p className="text-sm text-slate-700">
+                                    A volatilidade realizada oscila em torno do valor alvo de 10% devido à variação amostral. 
+                                    Com janelas maiores, a estimativa converge para o valor teórico.
+                                  </p>
+                                </div>
+                              </div>
+                            )}
+                            {activeTab === 'qq' && (
+                                <div>
+                                <h3 className="text-xl font-semibold mb-4 text-slate-800">Q-Q Plot (Normalidade dos Retornos)</h3>
+                                <ResponsiveContainer width="100%" height={400}>
+                                  <ScatterChart>
+                                    <CartesianGrid strokeDasharray="3 3" />
+                                    <XAxis type="number" dataKey="theoretical" name="Quantis Teóricos" label={{ value: 'Quantis Teóricos N(0,σ²)', position: 'insideBottom', offset: -5 }} />
+                                    <YAxis type="number" dataKey="empirical" name="Quantis Empíricos" label={{ value: 'Quantis Empíricos', angle: -90, position: 'insideLeft' }} />
+                                    <Tooltip cursor={{ strokeDasharray: '3 3' }} />
+                                    <Scatter data={qqData} fill="#f59e0b" />
+                                    <Scatter data={lineData} line={{ stroke: '#dc2626', strokeWidth: 2 }} shape={() => null} name="Referência (y=x)" />
+                                  </ScatterChart>
+                                </ResponsiveContainer>
+                                <div className="mt-4 p-4 bg-slate-50 rounded">
+                                  <p className="text-sm text-slate-700">
+                                    <strong>Interpretação:</strong> Pontos próximos à linha diagonal (vermelho) indicam que os 
+                                    retornos seguem distribuição normal, confirmando a adequação do modelo GBM. Desvios nas 
+                                    caudas podem indicar eventos extremos (fat tails).
+                                  </p>
+                                </div>
+                              </div>
+                            )}
                         </div>
                     )}
                     
-                    {stats.observations > 0 && ( /* ... JSX inalterado ... */ )}
+                     {stats.observations > 0 && (
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
+                            <div className="bg-white rounded-lg shadow-inner p-4 border">
+                              <h3 className="text-lg font-semibold mb-3 text-slate-700">Estatísticas dos Retornos Reais</h3>
+                              <div className="space-y-2 text-sm">
+                                <div className="flex justify-between items-center p-2 bg-slate-50 rounded">
+                                  <span className="text-slate-600">Média (μ̂):</span>
+                                  <span className="font-mono font-semibold">{stats.mean}%</span>
+                                </div>
+                                <div className="flex justify-between items-center p-2 bg-slate-50 rounded">
+                                  <span className="text-slate-600">Desvio Padrão (σ̂):</span>
+                                  <span className="font-mono font-semibold">{stats.stdDev}%</span>
+                                </div>
+                                <div className="flex justify-between items-center p-2 bg-blue-50 rounded border-l-4 border-blue-500">
+                                  <span className="text-blue-800 font-semibold">Vol. Anualizada:</span>
+                                  <span className="font-mono font-semibold text-blue-900">{stats.annualizedVol}%</span>
+                                </div>
+                                <div className="flex justify-between items-center p-2 bg-slate-50 rounded">
+                                  <span className="text-slate-600">Assimetria (Skewness):</span>
+                                  <span className="font-mono font-semibold">{stats.skewness}</span>
+                                </div>
+                                <div className="flex justify-between items-center p-2 bg-slate-50 rounded">
+                                  <span className="text-slate-600">Curtose (Kurtosis):</span>
+                                  <span className="font-mono font-semibold">{stats.kurtosis}</span>
+                                </div>
+                                <div className="flex justify-between items-center p-2 bg-slate-50 rounded">
+                                  <span className="text-slate-600">Observações:</span>
+                                  <span className="font-mono font-semibold">{stats.observations}</span>
+                                </div>
+                              </div>
+                            </div>
+                        </div>
+                    )}
                 </div>
             </ScrollArea>
         </CardContent>
     </Card>
   );
 };
+
 
 function Header() {
     const { activeSymbol, setActiveSymbol, assetGroups, isAssetsLoading } = useDerivApiAccumulators();
