@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ScatterChart, Scatter } from 'recharts';
-import { Calculator, TrendingUp, Activity, BarChart3, Bot, FlaskConical, Target } from 'lucide-react';
+import { Calculator, TrendingUp, Activity, BarChart3, Bot, FlaskConical, Target, Info, Brain } from 'lucide-react';
 import { DerivApiProviderAccumulators, useDerivApiAccumulators } from "@/features/trading/hooks/use-deriv-api-accumulators";
 import { AssetSelectorAccumulators } from "@/features/trading/components/deriv-trader/asset-selector-accumulators";
 import { ApiStatusIndicatorAccumulators } from "@/features/trading/components/deriv-trader/ApiStatusIndicatorAccumulators";
@@ -10,6 +10,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { ScrollArea } from '@/components/ui/scroll-area';
 import type { ChartData, CandleData } from '@/lib/types';
 import { Progress } from "@/components/ui/progress";
+import { TooltipProvider, Tooltip as ShadTooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { cn } from '@/lib/utils';
 
 
 // Aproximação da função quantil normal inversa
@@ -38,7 +40,7 @@ function StochasticLab({ realData, activeSymbol }: { realData: ChartData[], acti
   const [activeTab, setActiveTab] = useState('prediction');
   const [priceData, setPriceData] = useState<any[]>([]);
   const [returns, setReturns] = useState<any[]>([]);
-  const [volatilityData, setVolatilityData] = useState<any[]>([]);
+  const [volatilityData, setVolatilityData] = useState<any[]>(([]);
   const [qqData, setQQData] = useState<any[]>([]);
   const [stats, setStats] = useState<any>({});
   
@@ -48,7 +50,7 @@ function StochasticLab({ realData, activeSymbol }: { realData: ChartData[], acti
   const [futurePath10s, setFuturePath10s] = useState<any[]>([]);
   const [futurePath20s, setFuturePath20s] = useState<any[]>([]);
   const [futurePath40s, setFuturePath40s] = useState<any[]>([]);
-  const [predictionError, setPredictionError] = useState({ mae: 0, rmse: 0, count: 0 });
+  const [driftCorrectionForDisplay, setDriftCorrectionForDisplay] = useState({drift: 0, mae: 0, rmse: 0});
 
   // --- Estados para Assertividade da Projeção ---
   const [predictionAccuracyHistory, setPredictionAccuracyHistory] = useState<boolean[]>([]);
@@ -56,7 +58,8 @@ function StochasticLab({ realData, activeSymbol }: { realData: ChartData[], acti
   const [predictionAccuracy20sHistory, setPredictionAccuracy20sHistory] = useState<boolean[]>([]);
   const [predictionAccuracy40sHistory, setPredictionAccuracy40sHistory] = useState<boolean[]>([]);
 
-
+  const predictionErrorsRef = useRef<number[]>([]);
+  const driftCorrectionRef = useRef(0);
   const pendingPredictionsRef = useRef<{ startTimeIndex: number; startPrice: number; predictedEndPrice: number }[]>([]);
   const pendingPredictions10sRef = useRef<{ startTimeIndex: number; startPrice: number; predictedEndPrice: number }[]>([]);
   const pendingPredictions20sRef = useRef<{ startTimeIndex: number; startPrice: number; predictedEndPrice: number }[]>([]);
@@ -72,175 +75,180 @@ function StochasticLab({ realData, activeSymbol }: { realData: ChartData[], acti
 
 
   useEffect(() => {
-    const analyzeData = (data: ChartData[]) => {
-      const VOL_WINDOW = 50;
-      const mu = 0; // Drift (agora será ajustado)
-      const dt = 1; // Time step
-      
-      if (data.length < VOL_WINDOW) {
-        setPriceData([]); setReturns([]); setVolatilityData([]); setQQData([]); setStats({}); 
-        setPredictionData([]); setFuturePath6t([]); setFuturePath10s([]); setFuturePath20s([]); setFuturePath40s([]);
-        setPredictionError({ mae: 0, rmse: 0, count: 0 });
-        return;
-      }
-      
-      const prices = data.map(d => isCandle(d) ? d.close : d.price);
-      setPriceData(data.map((d, i) => ({ time: i, price: isCandle(d) ? d.close : d.price })));
+    const VOL_WINDOW = 50;
+    const ERROR_MEMORY = 50; 
+    
+    if (realData.length < VOL_WINDOW) {
+      // Limpar todos os estados se não houver dados suficientes
+      setPriceData([]); setReturns([]); setVolatilityData([]); setQQData([]); setStats({}); 
+      setPredictionData([]); setFuturePath6t([]); setFuturePath10s([]); setFuturePath20s([]); setFuturePath40s([]);
+      return;
+    }
+    
+    const prices = realData.map(d => isCandle(d) ? d.close : d.price);
+    setPriceData(realData.map((d, i) => ({ time: i, price: isCandle(d) ? d.close : d.price })));
 
-      const logReturns: number[] = [];
-      for (let i = 1; i < prices.length; i++) {
-        if(prices[i-1] > 0) logReturns.push(Math.log(prices[i] / prices[i - 1]));
-      }
-      
-      const volData: any[] = [];
-      const annualizationFactor = Math.sqrt(31536000); // Ticks por segundo (para anualizar)
-      for (let i = VOL_WINDOW; i < logReturns.length; i++) {
-        const window = logReturns.slice(i - VOL_WINDOW, i);
-        const mean = window.reduce((a, b) => a + b, 0) / window.length;
-        const variance = window.reduce((sum, r) => sum + Math.pow(r - mean, 2), 0) / (window.length - 1);
-        const realizedVol = Math.sqrt(variance) * annualizationFactor * 100;
-        volData.push({ time: i, realizedVol: parseFloat(realizedVol.toFixed(4)), targetVol: 10 });
-      }
+    const logReturns: number[] = [];
+    for (let i = 1; i < prices.length; i++) {
+      if(prices[i-1] > 0) logReturns.push(Math.log(prices[i] / prices[i - 1]));
+    }
+    
+    const volData: any[] = [];
+    const annualizationFactor = Math.sqrt(31536000); // Assumindo ticks por segundo
+    for (let i = VOL_WINDOW; i < logReturns.length; i++) {
+      const window = logReturns.slice(i - VOL_WINDOW, i);
+      const mean = window.reduce((a, b) => a + b, 0) / window.length;
+      const variance = window.reduce((sum, r) => sum + Math.pow(r - mean, 2), 0) / (window.length - 1);
+      const realizedVol = Math.sqrt(variance) * annualizationFactor * 100;
+      volData.push({ time: i, realizedVol: parseFloat(realizedVol.toFixed(4)), targetVol: 10 });
+    }
 
-      if (logReturns.length > 1) {
-        const mean = logReturns.reduce((a, b) => a + b, 0) / logReturns.length;
-        const variance = logReturns.reduce((sum, r) => sum + Math.pow(r - mean, 2), 0) / (logReturns.length - 1);
-        const stdDev = Math.sqrt(variance);
-        const skewness = logReturns.reduce((sum, r) => sum + Math.pow((r - mean) / stdDev, 3), 0) / logReturns.length;
-        const kurtosis = logReturns.reduce((sum, r) => sum + Math.pow((r - mean) / stdDev, 4), 0) / logReturns.length - 3;
-        const returnHistogram = logReturns.map((r, i) => ({ 'return': parseFloat((r * 100).toFixed(4)), index: i }));
-        const sortedReturns = [...logReturns].sort((a, b) => a - b);
-        const qqPlotData = sortedReturns.map((r, i) => {
-          const p = (i + 0.5) / sortedReturns.length;
-          const theoreticalQuantile = normalQuantile(p) * stdDev + mean;
-          return { theoretical: parseFloat((theoreticalQuantile * 100).toFixed(4)), empirical: parseFloat((r * 100).toFixed(4)) };
-        });
-        setReturns(returnHistogram); setQQData(qqPlotData);
-        setStats({
-          mean: (mean * 100).toFixed(6), stdDev: (stdDev * 100).toFixed(6), annualizedVol: (stdDev * Math.sqrt(31536000) * 100).toFixed(4),
-          skewness: skewness.toFixed(4), kurtosis: kurtosis.toFixed(4), observations: logReturns.length
-        });
-      }
-      setVolatilityData(volData);
+    if (logReturns.length > 1) {
+      const mean = logReturns.reduce((a, b) => a + b, 0) / logReturns.length;
+      const variance = logReturns.reduce((sum, r) => sum + Math.pow(r - mean, 2), 0) / (logReturns.length - 1);
+      const stdDev = Math.sqrt(variance);
+      const skewness = logReturns.reduce((sum, r) => sum + Math.pow((r - mean) / stdDev, 3), 0) / logReturns.length;
+      const kurtosis = logReturns.reduce((sum, r) => sum + Math.pow((r - mean) / stdDev, 4), 0) / logReturns.length - 3;
+      const returnHistogram = logReturns.map((r, i) => ({ 'return': parseFloat((r * 100).toFixed(4)), index: i }));
+      const sortedReturns = [...logReturns].sort((a, b) => a - b);
+      const qqPlotData = sortedReturns.map((r, i) => {
+        const p = (i + 0.5) / sortedReturns.length;
+        const theoreticalQuantile = normalQuantile(p) * stdDev + mean;
+        return { theoretical: parseFloat((theoreticalQuantile * 100).toFixed(4)), empirical: parseFloat((r * 100).toFixed(4)) };
+      });
+      setReturns(returnHistogram); setQQData(qqPlotData);
+      setStats({
+        mean: (mean * 100).toFixed(6), stdDev: (stdDev * 100).toFixed(6), annualizedVol: (stdDev * annualizationFactor * 100).toFixed(4),
+        skewness: skewness.toFixed(4), kurtosis: kurtosis.toFixed(4), observations: logReturns.length
+      });
+    }
+    setVolatilityData(volData);
 
-      const newPredictionData: any[] = [];
-      const errors: number[] = [];
-      
-      for (let i = VOL_WINDOW; i < prices.length; i++) {
-          const S_prev = prices[i-1];
-          const S_real = prices[i];
-          
-          const pastLogReturns = logReturns.slice(i - VOL_WINDOW, i);
-          const meanPastReturn = pastLogReturns.reduce((a, b) => a + b, 0) / VOL_WINDOW;
-          const variance = pastLogReturns.reduce((s, r) => s + Math.pow(r - meanPastReturn, 2), 0) / (VOL_WINDOW - 1);
-          const sigma = Math.sqrt(variance);
-
-          const Z = normalRandom();
-          const drift = (mu - 0.5 * sigma * sigma) * dt;
-          const diffusion = sigma * Math.sqrt(dt) * Z;
-          const S_predicted_1_tick = S_prev * Math.exp(drift + diffusion);
-          
-          if (Number.isFinite(S_real) && Number.isFinite(S_predicted_1_tick)) {
-              newPredictionData.push({ time: i, real: S_real, predicted_1_tick: S_predicted_1_tick });
-              errors.push(S_real - S_predicted_1_tick);
-          }
-      }
-      
-      if (errors.length > 0) {
-          const sumSquaredErrors = errors.reduce((a, e) => a + e * e, 0);
-          const sumAbsErrors = errors.reduce((a, e) => a + Math.abs(e), 0);
-          setPredictionError({
-              mae: sumAbsErrors / errors.length, rmse: Math.sqrt(sumSquaredErrors / errors.length), count: errors.length
-          });
-      }
-
-      if (prices.length > VOL_WINDOW) {
-        const lastPrice = prices[prices.length - 1];
-        const lastLogReturns = logReturns.slice(-VOL_WINDOW);
-        const meanLastReturn = lastLogReturns.reduce((a, b) => a + b, 0) / VOL_WINDOW;
-        const lastVariance = lastLogReturns.reduce((s, r) => s + Math.pow(r - meanLastReturn, 2), 0) / (VOL_WINDOW - 1);
-        const lastSigma = Math.sqrt(lastVariance);
-        const lastTime = prices.length - 1;
-
-        const projectPath = (steps: number) => {
-          let currentSimPrice = lastPrice;
-          const path = [{ time: lastTime, price: lastPrice }];
-          for (let i = 1; i <= steps; i++) {
-            const Z = normalRandom();
-            const drift_future = (mu - 0.5 * lastSigma * lastSigma) * dt;
-            const diffusion_future = lastSigma * Math.sqrt(dt) * Z;
-            currentSimPrice = currentSimPrice * Math.exp(drift_future + diffusion_future);
-            if (Number.isFinite(currentSimPrice)) {
-              path.push({ time: lastTime + i, price: currentSimPrice });
-            } else {
-              path.push({ time: lastTime + i, price: path[path.length - 1].price });
-            }
-          }
-          return path;
-        };
-
-        const processPredictionHorizon = (
-            horizonTicks: number,
-            prices: number[],
-            pendingPredictionsRef: React.MutableRefObject<{ startTimeIndex: number; startPrice: number; predictedEndPrice: number }[]>,
-            setAccuracyHistory: React.Dispatch<React.SetStateAction<boolean[]>>,
-            projectPathFn: (steps: number) => { time: number; price: number }[]
-        ) => {
-            const newFuturePath = projectPathFn(horizonTicks);
-            const currentTimeIndex = prices.length - 1;
-            const completedIndices: number[] = [];
-
-            pendingPredictionsRef.current.forEach((pred, index) => {
-                if (currentTimeIndex >= pred.startTimeIndex + horizonTicks) {
-                    const actualEndPrice = prices[pred.startTimeIndex + horizonTicks];
-                    if (actualEndPrice === undefined) return;
-                    const predictedDirection = pred.predictedEndPrice > pred.startPrice ? 'RISE' : 'FALL';
-                    const actualDirection = actualEndPrice > pred.startPrice ? 'RISE' : 'FALL';
-                    const isHit = predictedDirection === actualDirection;
-                    setAccuracyHistory(prev => [...prev, isHit]);
-                    completedIndices.push(index);
-                }
-            });
-
-            if (completedIndices.length > 0) {
-                pendingPredictionsRef.current = pendingPredictionsRef.current.filter((_, index) => !completedIndices.includes(index));
-            }
-
-            if (newFuturePath.length === horizonTicks + 1) {
-                const newPredictionTimeIndex = newFuturePath[0].time;
-                const alreadyPending = pendingPredictionsRef.current.some(p => p.startTimeIndex === newPredictionTimeIndex);
-                if (!alreadyPending) {
-                    pendingPredictionsRef.current.push({
-                        startTimeIndex: newPredictionTimeIndex,
-                        startPrice: newFuturePath[0].price,
-                        predictedEndPrice: newFuturePath[horizonTicks].price,
-                    });
-                }
-            }
-        };
-
-        const horizons = [
-            { ticks: 6, ref: pendingPredictionsRef, setAccuracyHistory: setPredictionAccuracyHistory },
-            { ticks: 5, ref: pendingPredictions10sRef, setAccuracyHistory: setPredictionAccuracy10sHistory }, // 10s
-            { ticks: 10, ref: pendingPredictions20sRef, setAccuracyHistory: setPredictionAccuracy20sHistory }, // 20s
-            { ticks: 20, ref: pendingPredictions40sRef, setAccuracyHistory: setPredictionAccuracy40sHistory }, // 40s
-        ];
+    const newPredictionData: any[] = [];
+    
+    for (let i = VOL_WINDOW; i < prices.length; i++) {
+        const S_prev = prices[i-1];
+        const S_real = prices[i];
         
-        horizons.forEach(h => {
-            processPredictionHorizon(h.ticks, prices, h.ref, h.setAccuracyHistory, projectPath);
-        });
+        const pastLogReturns = logReturns.slice(i - VOL_WINDOW, i);
+        const meanPastReturn = pastLogReturns.reduce((a, b) => a + b, 0) / VOL_WINDOW;
+        const variance = pastLogReturns.reduce((s, r) => s + Math.pow(r - meanPastReturn, 2), 0) / (VOL_WINDOW - 1);
+        const sigma = Math.sqrt(variance);
 
-        setFuturePath6t(projectPath(6).map(p => ({ time: p.time, predicted_6t_ahead: p.price })));
-        setFuturePath10s(projectPath(5).map(p => ({ time: p.time, predicted_10s_ahead: p.price })));
-        setFuturePath20s(projectPath(10).map(p => ({ time: p.time, predicted_20s_ahead: p.price })));
-        setFuturePath40s(projectPath(20).map(p => ({ time: p.time, predicted_40s_ahead: p.price })));
-      }
+        const Z = normalRandom();
+        const drift = (meanPastReturn - 0.5 * sigma * sigma);
+        const diffusion = sigma * Math.sqrt(1) * Z;
+        const S_predicted_1_tick = S_prev * Math.exp(drift + diffusion);
+        
+        if (Number.isFinite(S_real) && Number.isFinite(S_predicted_1_tick)) {
+            newPredictionData.push({ time: i, real: S_real, predicted_1_tick: S_predicted_1_tick });
+            const error = S_real - S_predicted_1_tick;
+            predictionErrorsRef.current.push(error);
+            if(predictionErrorsRef.current.length > ERROR_MEMORY) {
+              predictionErrorsRef.current.shift();
+            }
+        }
+    }
+    
+    if (predictionErrorsRef.current.length > 0) {
+        const errors = predictionErrorsRef.current;
+        const sumSquaredErrors = errors.reduce((a, e) => a + e * e, 0);
+        const sumAbsErrors = errors.reduce((a, e) => a + Math.abs(e), 0);
+        const newMAE = sumAbsErrors / errors.length;
+        const newRMSE = Math.sqrt(sumSquaredErrors / errors.length);
+        const newDrift = errors.reduce((a,e) => a + e, 0) / errors.length;
+
+        if (Math.abs(newDrift - driftCorrectionRef.current) > 1e-9) {
+          driftCorrectionRef.current = newDrift;
+          setDriftCorrectionForDisplay({ drift: newDrift, mae: newMAE, rmse: newRMSE });
+        }
+    }
+
+    if (prices.length > VOL_WINDOW) {
+      const lastPrice = prices[prices.length - 1];
+      const lastLogReturns = logReturns.slice(-VOL_WINDOW);
+      const meanLastReturn = lastLogReturns.reduce((a, b) => a + b, 0) / VOL_WINDOW;
+      const lastVariance = lastLogReturns.reduce((s, r) => s + Math.pow(r - meanLastReturn, 2), 0) / (VOL_WINDOW - 1);
+      const lastSigma = Math.sqrt(lastVariance);
+      const lastTime = prices.length - 1;
+
+      const projectPath = (steps: number) => {
+        let currentSimPrice = lastPrice;
+        const path = [{ time: lastTime, price: lastPrice }];
+        for (let i = 1; i <= steps; i++) {
+          const Z = normalRandom();
+          const drift_future = (meanLastReturn - 0.5 * lastSigma * lastSigma) + driftCorrectionRef.current;
+          const diffusion_future = lastSigma * Math.sqrt(1) * Z;
+          currentSimPrice = currentSimPrice * Math.exp(drift_future + diffusion_future);
+          if (Number.isFinite(currentSimPrice)) {
+            path.push({ time: lastTime + i, price: currentSimPrice });
+          } else {
+            path.push({ time: lastTime + i, price: path[path.length - 1].price });
+          }
+        }
+        return path;
+      };
+
+      const processPredictionHorizon = (
+          horizonTicks: number,
+          prices: number[],
+          pendingPredictionsRef: React.MutableRefObject<{ startTimeIndex: number; startPrice: number; predictedEndPrice: number }[]>,
+          setAccuracyHistory: React.Dispatch<React.SetStateAction<boolean[]>>,
+      ) => {
+          const newFuturePath = projectPath(horizonTicks);
+          const currentTimeIndex = prices.length - 1;
+          const completedIndices: number[] = [];
+          let newHistory: boolean[] = [];
+
+          pendingPredictionsRef.current.forEach((pred, index) => {
+              if (currentTimeIndex >= pred.startTimeIndex + horizonTicks) {
+                  const actualEndPrice = prices[pred.startTimeIndex + horizonTicks];
+                  if (actualEndPrice === undefined) return;
+                  const predictedDirection = pred.predictedEndPrice > pred.startPrice ? 'RISE' : 'FALL';
+                  const actualDirection = actualEndPrice > pred.startPrice ? 'RISE' : 'FALL';
+                  const isHit = predictedDirection === actualDirection;
+                  newHistory.push(isHit);
+                  completedIndices.push(index);
+              }
+          });
+
+          if (completedIndices.length > 0) {
+              pendingPredictionsRef.current = pendingPredictionsRef.current.filter((_, index) => !completedIndices.includes(index));
+              setAccuracyHistory(prev => [...prev, ...newHistory]);
+          }
+
+          if (newFuturePath.length === horizonTicks + 1) {
+              const newPredictionTimeIndex = newFuturePath[0].time;
+              const alreadyPending = pendingPredictionsRef.current.some(p => p.startTimeIndex === newPredictionTimeIndex);
+              if (!alreadyPending) {
+                  pendingPredictionsRef.current.push({
+                      startTimeIndex: newPredictionTimeIndex,
+                      startPrice: newFuturePath[0].price,
+                      predictedEndPrice: newFuturePath[horizonTicks].price,
+                  });
+              }
+          }
+      };
+
+      const horizons = [
+          { ticks: 6, ref: pendingPredictionsRef, setAccuracyHistory: setPredictionAccuracyHistory },
+          { ticks: 10, ref: pendingPredictions10sRef, setAccuracyHistory: setPredictionAccuracy10sHistory }, 
+          { ticks: 20, ref: pendingPredictions20sRef, setAccuracyHistory: setPredictionAccuracy20sHistory }, 
+          { ticks: 40, ref: pendingPredictions40sRef, setAccuracyHistory: setPredictionAccuracy40sHistory }, 
+      ];
       
-      setPredictionData(newPredictionData.slice(-200));
+      horizons.forEach(h => {
+          processPredictionHorizon(h.ticks, prices, h.ref, h.setAccuracyHistory);
+      });
 
-    };
+      setFuturePath6t(projectPath(6).map(p => ({ time: p.time, predicted_6t_ahead: p.price })));
+      setFuturePath10s(projectPath(10).map(p => ({ time: p.time, predicted_10s_ahead: p.price })));
+      setFuturePath20s(projectPath(20).map(p => ({ time: p.time, predicted_20s_ahead: p.price })));
+      setFuturePath40s(projectPath(40).map(p => ({ time: p.time, predicted_40s_ahead: p.price })));
+    }
+    
+    setPredictionData(newPredictionData.slice(-200));
 
-    analyzeData(realData);
   }, [realData]);
 
   const chartDisplayData = useMemo(() => {
@@ -286,6 +294,13 @@ function StochasticLab({ realData, activeSymbol }: { realData: ChartData[], acti
   const accuracy10s = calculateRollingAccuracy(predictionAccuracy10sHistory, 10);
   const accuracy20s = calculateRollingAccuracy(predictionAccuracy20sHistory, 10);
   const accuracy40s = calculateRollingAccuracy(predictionAccuracy40sHistory, 10);
+  
+  const getProgressColor = (percentage: number) => {
+    if (percentage > 75) return 'bg-green-500';
+    if (percentage > 60) return 'bg-blue-500';
+    if (percentage < 40) return 'bg-red-500';
+    return 'bg-gray-400';
+  };
 
   return (
     <Card className="h-full flex flex-col">
@@ -294,9 +309,9 @@ function StochasticLab({ realData, activeSymbol }: { realData: ChartData[], acti
                 <FlaskConical className="h-5 w-5 text-purple-600" />
                 Laboratório Preditivo (Cientista de IA) - {activeSymbol}
             </CardTitle>
-            <CardDescription>O cientista usa GBM para prever o próximo tick (histórico) e projetar 6 ticks no futuro.</CardDescription>
+            <CardDescription>O cientista usa GBM para prever o próximo tick (histórico) e projetar o futuro.</CardDescription>
         </CardHeader>
-        <CardContent className="flex-1 flex flex-col">
+        <CardContent className="flex-1 flex flex-col min-h-0">
             <ScrollArea className="flex-1">
                 <div className="p-1 space-y-6">
                     <div className="flex gap-2 mb-6 flex-wrap">
@@ -342,15 +357,64 @@ function StochasticLab({ realData, activeSymbol }: { realData: ChartData[], acti
                                 </ResponsiveContainer>
                                 <div className="mt-4 grid grid-cols-2 lg:grid-cols-3 gap-4">
                                     <div className="p-3 bg-slate-50 rounded border">
-                                        <p className="text-xs text-muted-foreground">Erro Médio Absoluto (MAE)</p>
-                                        <p className="text-lg font-bold font-mono">{predictionError.mae.toFixed(4)}</p>
+                                        <TooltipProvider>
+                                            <ShadTooltip>
+                                                <TooltipTrigger asChild>
+                                                    <p className="text-xs text-muted-foreground flex items-center gap-1.5 cursor-help">
+                                                        Erro Médio Absoluto (MAE) <Info className="h-3 w-3" />
+                                                    </p>
+                                                </TooltipTrigger>
+                                                <TooltipContent>
+                                                    <p className="max-w-xs">A média da distância absoluta entre o preço previsto e o real para a projeção de 1 tick.<br/><strong>Menor é melhor.</strong></p>
+                                                </TooltipContent>
+                                            </ShadTooltip>
+                                        </TooltipProvider>
+                                        <p className="text-lg font-bold font-mono">{driftCorrectionForDisplay.mae.toFixed(4)}</p>
                                     </div>
                                     <div className="p-3 bg-slate-50 rounded border">
-                                        <p className="text-xs text-muted-foreground">Raiz do Erro Quadrático Médio (RMSE)</p>
-                                        <p className="text-lg font-bold font-mono">{predictionError.rmse.toFixed(4)}</p>
+                                        <TooltipProvider>
+                                            <ShadTooltip>
+                                                <TooltipTrigger asChild>
+                                                    <p className="text-xs text-muted-foreground flex items-center gap-1.5 cursor-help">
+                                                        Raiz do Erro Quadrático Médio (RMSE) <Info className="h-3 w-3" />
+                                                    </p>
+                                                </TooltipTrigger>
+                                                <TooltipContent>
+                                                    <p className="max-w-xs">Mede o erro médio, mas penaliza erros grandes mais do que o MAE.<br/>Se RMSE > MAE, indica a presença de erros maiores (outliers).</p>
+                                                </TooltipContent>
+                                            </ShadTooltip>
+                                        </TooltipProvider>
+                                        <p className="text-lg font-bold font-mono">{driftCorrectionForDisplay.rmse.toFixed(4)}</p>
                                     </div>
                                     <div className="p-3 bg-slate-50 rounded border">
-                                        <p className="text-xs text-muted-foreground flex items-center gap-1.5"><Target className="h-4 w-4"/>Assertividade (6 Ticks)</p>
+                                        <TooltipProvider>
+                                            <ShadTooltip>
+                                                <TooltipTrigger asChild>
+                                                    <p className="text-xs text-muted-foreground flex items-center gap-1.5 cursor-help">
+                                                        Fator de Correção (Drift) <Info className="h-3 w-3" />
+                                                    </p>
+                                                </TooltipTrigger>
+                                                <TooltipContent>
+                                                    <p className="max-w-xs">O ajuste aplicado às projeções futuras com base no viés (erro médio) recente do modelo.<br/>Um valor positivo corrige um viés de subestimação.</p>
+                                                </TooltipContent>
+                                            </ShadTooltip>
+                                        </TooltipProvider>
+                                        <p className="text-lg font-bold font-mono">{driftCorrectionForDisplay.drift.toFixed(6)}</p>
+                                    </div>
+                                    
+                                     <div className="p-3 bg-slate-50 rounded border">
+                                        <TooltipProvider>
+                                            <ShadTooltip>
+                                                <TooltipTrigger asChild>
+                                                    <p className="text-xs text-muted-foreground flex items-center gap-1.5 cursor-help">
+                                                        <Target className="h-4 w-4"/>Assertividade (6 Ticks) <Info className="h-3 w-3" />
+                                                    </p>
+                                                </TooltipTrigger>
+                                                <TooltipContent>
+                                                    <p className="max-w-xs">A percentagem de vezes que o modelo acertou a <strong>direção</strong> do preço (subiu/desceu) nas últimas 6 projeções de 6 ticks.</p>
+                                                </TooltipContent>
+                                            </ShadTooltip>
+                                        </TooltipProvider>
                                         <div className="flex items-baseline gap-2">
                                             <p className="text-lg font-bold font-mono">
                                                 {accuracy6t.percentage.toFixed(1)}%
@@ -359,7 +423,18 @@ function StochasticLab({ realData, activeSymbol }: { realData: ChartData[], acti
                                         </div>
                                     </div>
                                      <div className="p-3 bg-slate-50 rounded border">
-                                        <p className="text-xs text-muted-foreground flex items-center gap-1.5"><Target className="h-4 w-4"/>Assertividade (10s)</p>
+                                        <TooltipProvider>
+                                            <ShadTooltip>
+                                                <TooltipTrigger asChild>
+                                                    <p className="text-xs text-muted-foreground flex items-center gap-1.5 cursor-help">
+                                                        <Target className="h-4 w-4"/>Assertividade (10s) <Info className="h-3 w-3" />
+                                                    </p>
+                                                </TooltipTrigger>
+                                                <TooltipContent>
+                                                    <p className="max-w-xs">A percentagem de vezes que o modelo acertou a <strong>direção</strong> do preço (subiu/desceu) nas últimas 10 projeções de 10s.</p>
+                                                </TooltipContent>
+                                            </ShadTooltip>
+                                        </TooltipProvider>
                                         <div className="flex items-baseline gap-2">
                                             <p className="text-lg font-bold font-mono">
                                                 {accuracy10s.percentage.toFixed(1)}%
@@ -368,7 +443,18 @@ function StochasticLab({ realData, activeSymbol }: { realData: ChartData[], acti
                                         </div>
                                     </div>
                                      <div className="p-3 bg-slate-50 rounded border">
-                                        <p className="text-xs text-muted-foreground flex items-center gap-1.5"><Target className="h-4 w-4"/>Assertividade (20s)</p>
+                                        <TooltipProvider>
+                                            <ShadTooltip>
+                                                <TooltipTrigger asChild>
+                                                    <p className="text-xs text-muted-foreground flex items-center gap-1.5 cursor-help">
+                                                        <Target className="h-4 w-4"/>Assertividade (20s) <Info className="h-3 w-3" />
+                                                    </p>
+                                                </TooltipTrigger>
+                                                <TooltipContent>
+                                                    <p className="max-w-xs">A percentagem de vezes que o modelo acertou a <strong>direção</strong> do preço (subiu/desceu) nas últimas 10 projeções de 20s.</p>
+                                                </TooltipContent>
+                                            </ShadTooltip>
+                                        </TooltipProvider>
                                         <div className="flex items-baseline gap-2">
                                             <p className="text-lg font-bold font-mono">
                                                 {accuracy20s.percentage.toFixed(1)}%
@@ -376,8 +462,19 @@ function StochasticLab({ realData, activeSymbol }: { realData: ChartData[], acti
                                             <span className="text-xs text-muted-foreground">({accuracy20s.hits} de {accuracy20s.total})</span>
                                         </div>
                                     </div>
-                                     <div className="p-3 bg-slate-50 rounded border">
-                                        <p className="text-xs text-muted-foreground flex items-center gap-1.5"><Target className="h-4 w-4"/>Assertividade (40s)</p>
+                                     <div className="p-3 bg-slate-50 rounded border col-span-2 lg:col-span-1">
+                                        <TooltipProvider>
+                                            <ShadTooltip>
+                                                <TooltipTrigger asChild>
+                                                    <p className="text-xs text-muted-foreground flex items-center gap-1.5 cursor-help">
+                                                        <Target className="h-4 w-4"/>Assertividade (40s) <Info className="h-3 w-3" />
+                                                    </p>
+                                                </TooltipTrigger>
+                                                <TooltipContent>
+                                                    <p className="max-w-xs">A percentagem de vezes que o modelo acertou a <strong>direção</strong> do preço (subiu/desceu) nas últimas 10 projeções de 40s.</p>
+                                                </TooltipContent>
+                                            </ShadTooltip>
+                                        </TooltipProvider>
                                         <div className="flex items-baseline gap-2">
                                             <p className="text-lg font-bold font-mono">
                                                 {accuracy40s.percentage.toFixed(1)}%
@@ -396,7 +493,7 @@ function StochasticLab({ realData, activeSymbol }: { realData: ChartData[], acti
                                     <CartesianGrid strokeDasharray="3 3" />
                                     <XAxis dataKey="index" label={{ value: 'Observação', position: 'insideBottom', offset: -5 }} />
                                     <YAxis label={{ value: 'Retorno Log. por Tick (%)', angle: -90, position: 'insideLeft' }} />
-                                    <Tooltip />
+                                    <ShadTooltip />
                                     <Scatter data={returns} fill="#8b5cf6" />
                                   </ScatterChart>
                                 </ResponsiveContainer>
@@ -419,7 +516,7 @@ function StochasticLab({ realData, activeSymbol }: { realData: ChartData[], acti
                                     <CartesianGrid strokeDasharray="3 3" />
                                     <XAxis dataKey="time" label={{ value: 'Tempo (segundos)', position: 'insideBottom', offset: -5 }} />
                                     <YAxis label={{ value: 'Vol. Anualizada (%)', angle: -90, position: 'insideLeft' }} />
-                                    <Tooltip />
+                                    <ShadTooltip />
                                     <Legend />
                                     <Line type="monotone" dataKey="realizedVol" stroke="#059669" strokeWidth={2} dot={false} name="Volatilidade Realizada (50-período)" />
                                     <Line type="monotone" dataKey="targetVol" stroke="#dc2626" strokeWidth={2} strokeDasharray="5 5" dot={false} name="Volatilidade Alvo (10%)" />
@@ -444,7 +541,7 @@ function StochasticLab({ realData, activeSymbol }: { realData: ChartData[], acti
                                     <CartesianGrid strokeDasharray="3 3" />
                                     <XAxis type="number" dataKey="theoretical" name="Quantis Teóricos" label={{ value: 'Quantis Teóricos N(0,σ²)', position: 'insideBottom', offset: -5 }} />
                                     <YAxis type="number" dataKey="empirical" name="Quantis Empíricos" label={{ value: 'Quantis Empíricos', angle: -90, position: 'insideLeft' }} />
-                                    <Tooltip cursor={{ strokeDasharray: '3 3' }} />
+                                    <ShadTooltip cursor={{ strokeDasharray: '3 3' }} />
                                     <Scatter data={qqData} fill="#f59e0b" />
                                     <Line
                                       type="monotone"
@@ -542,3 +639,5 @@ export default function VolatilityAnalysisPage() {
         </DerivApiProviderAccumulators>
     );
 }
+
+    
