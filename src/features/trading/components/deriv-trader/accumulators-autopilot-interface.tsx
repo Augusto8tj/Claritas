@@ -53,10 +53,10 @@ export function AccumulatorsAutopilotInterface({
   const statusInfo = {
     'PAUSED': { text: 'Pausado', color: 'bg-gray-500' },
     'MONITORING': { text: 'A Monitorizar Volatilidade...', color: 'bg-blue-500' },
-    'CALM_DETECTED': { text: 'Oportunidade Detectada! A Abrir Posição...', color: 'bg-green-500 animate-pulse' },
-    'POSITION_OPEN': { text: 'Posição Aberta. A Gerir Risco...', color: 'bg-yellow-500' },
     'ANALYZING_LOSS': { text: 'Analisando Perda...', color: 'bg-orange-500' },
     'COOLDOWN': { text: 'Cooldown Pós-Perda', color: 'bg-red-500' },
+    'CALM_DETECTED': { text: 'Oportunidade Detectada! A Abrir Posição...', color: 'bg-green-500 animate-pulse' },
+    'POSITION_OPEN': { text: 'Posição Aberta. A Gerir Risco...', color: 'bg-yellow-500' },
   };
 
   const survivalProbPercent = survivalProbability * 100;
