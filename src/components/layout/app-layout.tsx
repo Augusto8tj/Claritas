@@ -27,6 +27,7 @@ import {
   Wand2,
   Briefcase,
   BarChartHorizontal,
+  Calculator,
 } from "lucide-react";
 import {
   Sidebar,
@@ -53,7 +54,6 @@ import { cn } from "@/lib/utils";
 import React from "react";
 import Link from "next/link";
 import { Button } from "../ui/button";
-import packageJson from '../../../package.json';
 
 
 const navItems = [
@@ -86,6 +86,11 @@ const navItems = [
     href: "/backtesting",
     icon: TestTube,
     label: "Backtesting",
+  },
+   {
+    href: "/volatility-analysis",
+    icon: Calculator,
+    label: "Análise de Volatilidade",
   },
   {
     href: "/deriv-trader-accumulators",
@@ -237,7 +242,7 @@ function DesktopSidebar() {
             </SidebarContent>
              <SidebarFooter>
                 <div className="text-xs text-muted-foreground text-center p-2 group-data-[collapsible=icon]:hidden">
-                    Versão {packageJson.version}
+                    Versão 4.0.0
                 </div>
                 <Button variant="ghost" onClick={toggleSidebar} className="w-full justify-start">
                     {state === 'expanded' ? <PanelLeftClose /> : <PanelRightClose />}
