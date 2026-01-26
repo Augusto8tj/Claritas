@@ -1,8 +1,8 @@
 'use client';
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ScatterChart, Scatter } from 'recharts';
-import { Calculator, TrendingUp, Activity, BarChart3, Bot, FlaskConical } from 'lucide-react';
+import { Calculator, TrendingUp, Activity, BarChart3, Bot, FlaskConical, Target } from 'lucide-react';
 import { DerivApiProviderAccumulators, useDerivApiAccumulators } from "@/features/trading/hooks/use-deriv-api-accumulators";
 import { MarketChart } from "@/features/trading/components/deriv-trader/market-chart";
 import { AssetSelectorAccumulators } from "@/features/trading/components/deriv-trader/asset-selector-accumulators";
@@ -44,12 +44,17 @@ function StochasticLab({ realData }: { realData: ChartData[] }) {
   
   // --- States para Previsão ---
   const [predictionData, setPredictionData] = useState<any[]>([]);
-  const [futurePath, setFuturePath] = useState<any[]>([]); // NOVO: Para a projeção futura
+  const [futurePath, setFuturePath] = useState<any[]>([]);
   const [predictionError, setPredictionError] = useState({ mae: 0, rmse: 0, count: 0 });
+
+  // --- Estados para Assertividade da Projeção ---
+  const [predictionAccuracy, setPredictionAccuracy] = useState({ hits: 0, total: 0 });
+  const pendingPredictionsRef = useRef<{ startTimeIndex: number; startPrice: number; predictedEndPrice: number }[]>([]);
+
 
   const normalRandom = (): number => {
     let u1 = 0;
-    while (u1 === 0) { u1 = Math.random(); }
+    while (u1 === 0) { u1 = Math.random(); } // Correção para evitar Math.log(0)
     const u2 = Math.random();
     return Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
   };
@@ -136,7 +141,7 @@ function StochasticLab({ realData }: { realData: ChartData[] }) {
           });
       }
 
-      // --- Lógica de Previsão 6-Ticks-Ahead (NOVO) ---
+      // --- Lógica de Previsão 6-Ticks-Ahead ---
       const newFuturePath: any[] = [];
       if (prices.length > VOL_WINDOW) {
           const lastPrice = prices[prices.length - 1];
@@ -162,7 +167,45 @@ function StochasticLab({ realData }: { realData: ChartData[] }) {
       }
       
       setPredictionData(newPredictionData.slice(-200));
-      setFuturePath(newFuturePath); // Atualiza o estado com a projeção futura
+      setFuturePath(newFuturePath);
+
+       // --- Lógica de Validação da Projeção de 6 Ticks ---
+      const currentTimeIndex = prices.length - 1;
+      const completedPredictionsIndices: number[] = [];
+
+      pendingPredictionsRef.current.forEach((pred, index) => {
+        if (currentTimeIndex >= pred.startTimeIndex + 6) {
+          const actualEndPrice = prices[pred.startTimeIndex + 6];
+          if(actualEndPrice === undefined) return;
+
+          const predictedDirection = pred.predictedEndPrice > pred.startPrice ? 'RISE' : 'FALL';
+          const actualDirection = actualEndPrice > pred.startPrice ? 'RISE' : 'FALL';
+
+          setPredictionAccuracy(prev => ({
+            hits: prev.hits + (predictedDirection === actualDirection ? 1 : 0),
+            total: prev.total + 1,
+          }));
+          completedPredictionsIndices.push(index);
+        }
+      });
+
+      // Remove as previsões já validadas do ref
+      if (completedPredictionsIndices.length > 0) {
+        pendingPredictionsRef.current = pendingPredictionsRef.current.filter((_, index) => !completedPredictionsIndices.includes(index));
+      }
+
+      // Adiciona a nova previsão de 6 ticks à lista de pendentes, se for nova
+      if (newFuturePath.length === 7) {
+        const newPredictionTimeIndex = newFuturePath[0].time;
+        const alreadyPending = pendingPredictionsRef.current.some(p => p.startTimeIndex === newPredictionTimeIndex);
+        if (!alreadyPending) {
+            pendingPredictionsRef.current.push({
+                startTimeIndex: newPredictionTimeIndex,
+                startPrice: newFuturePath[0].predicted_6_ticks_ahead,
+                predictedEndPrice: newFuturePath[6].predicted_6_ticks_ahead,
+            });
+        }
+      }
     };
 
     analyzeData(realData);
@@ -185,7 +228,7 @@ function StochasticLab({ realData }: { realData: ChartData[] }) {
 
   const lineData = useMemo(() => {
     if (qqData.length === 0) return [];
-    const allValues = [...qqData.map(d => d.theoretical), ...qqData.map(d => d.empirical)];
+    const allValues = [...qqData.map(d => d.theoretical), ...qqData.map(d => d.empirical)].filter(v => Number.isFinite(v));
     const minVal = Math.min(...allValues);
     const maxVal = Math.max(...allValues);
     return [{ theoretical: minVal, empirical: minVal }, { theoretical: maxVal, empirical: maxVal }];
@@ -241,7 +284,7 @@ function StochasticLab({ realData }: { realData: ChartData[] }) {
                                     <Line type="monotone" dataKey="predicted_6_ticks_ahead" stroke="#ef4444" strokeWidth={2} strokeDasharray="8 4" dot={false} name="Projeção (6-Ticks)" />
                                   </LineChart>
                                 </ResponsiveContainer>
-                                <div className="mt-4 grid grid-cols-2 gap-4">
+                                <div className="mt-4 grid grid-cols-2 lg:grid-cols-3 gap-4">
                                     <div className="p-3 bg-slate-50 rounded border">
                                         <p className="text-xs text-muted-foreground">Erro Médio Absoluto (MAE)</p>
                                         <p className="text-lg font-bold font-mono">{predictionError.mae.toFixed(4)}</p>
@@ -249,6 +292,15 @@ function StochasticLab({ realData }: { realData: ChartData[] }) {
                                     <div className="p-3 bg-slate-50 rounded border">
                                         <p className="text-xs text-muted-foreground">Raiz do Erro Quadrático Médio (RMSE)</p>
                                         <p className="text-lg font-bold font-mono">{predictionError.rmse.toFixed(4)}</p>
+                                    </div>
+                                    <div className="p-3 bg-slate-50 rounded border lg:col-span-1 col-span-2">
+                                        <p className="text-xs text-muted-foreground flex items-center gap-1.5"><Target className="h-4 w-4"/>Assertividade Projeção (6-Ticks)</p>
+                                        <div className="flex items-baseline gap-2">
+                                            <p className="text-lg font-bold font-mono">
+                                                {predictionAccuracy.total > 0 ? ((predictionAccuracy.hits / predictionAccuracy.total) * 100).toFixed(1) : '0.0'}%
+                                            </p>
+                                            <span className="text-xs text-muted-foreground">({predictionAccuracy.hits} de {predictionAccuracy.total})</span>
+                                        </div>
                                     </div>
                                 </div>
                               </div>
