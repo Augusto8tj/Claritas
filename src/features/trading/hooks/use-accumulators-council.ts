@@ -87,12 +87,8 @@ function calculateSurvivalProbability(
   currentVolatility: number
 ): number {
   const MIN_VOLATILITY = 1e-9;
-  
-  // --- CORREÇÃO: Piso de Incerteza ---
-  // Previne que uma volatilidade irrealisticamente baixa gere uma probabilidade de 100%.
-  const VOLATILITY_FLOOR = 0.00005; // Valor empírico para risco mínimo
+  const VOLATILITY_FLOOR = 0.00005; 
   const effectiveVolatility = Math.max(currentVolatility, MIN_VOLATILITY, VOLATILITY_FLOOR);
-  // ------------------------------------
   
   if (targetDuration <= 0) return 0;
   
@@ -100,7 +96,8 @@ function calculateSurvivalProbability(
   
   const survivalProb = 2 * normalCDF(normalized * Math.sqrt(2)) - 1;
   
-  return Math.max(0, Math.min(1, survivalProb));
+  // CORREÇÃO: Impede probabilidade irrealista de 100%
+  return Math.max(0, Math.min(0.999, survivalProb));
 }
 
 
@@ -114,7 +111,6 @@ function calculateOptimalStake(
   averageLoss: number,
   kellyFraction: number = 0.25 // Conservative: 1/4 Kelly
 ): number {
-  // ✅ Proteções adicionadas
   if (averageLoss === 0 || winRate === 0 || winRate === 100) return 1.0;
   if (accountBalance < 1.0) return 1.0;
   
@@ -124,14 +120,12 @@ function calculateOptimalStake(
   
   const kellyEdge = p * b - q;
   
-  // Se não há edge matemático, apostar mínimo
   if (kellyEdge <= 0) return 1.0;
 
   const fullKelly = kellyEdge / b;
   const fractionalKelly = fullKelly * kellyFraction;
   const stake = accountBalance * fractionalKelly;
   
-  // Limites: mín 1 USD, máx 10% do saldo
   return Math.max(1.0, Math.min(stake, accountBalance * 0.10));
 }
 
@@ -143,15 +137,13 @@ function optimizeGrowthRate(
   survivalProbability: number,
   virtualArenaWinRate: number
 ): number {
-  // Base: mapear probabilidade de sobrevivência para growth rate
   const baseRate = 0.01 + (Math.max(0, survivalProbability - 0.75) / 0.25) * 0.04;
   
-  // Ajuste pela performance da Arena Virtual
   let adjustment = 1.0;
   if (virtualArenaWinRate < 0.75) {
-    adjustment = 0.8; // Reduz growth rate se Arena está falhando
+    adjustment = 0.8; 
   } else if (virtualArenaWinRate > 0.85) {
-    adjustment = 1.1; // Aumenta se Arena está excelente
+    adjustment = 1.1;
   }
   
   const optimized = baseRate * adjustment;
@@ -167,7 +159,6 @@ function analyzeMicrostructure(ticks: TickData[]): MicrostructureSignal {
   const recentTicks = ticks.slice(-20);
   const prices = recentTicks.map(t => t.price);
   
-  // 1. Detectar price jumps (Lee-Mykland test simplificado)
   const returns = [];
   for (let i = 1; i < prices.length; i++) {
     returns.push(Math.abs(Math.log(prices[i] / prices[i-1])));
@@ -177,7 +168,6 @@ function analyzeMicrostructure(ticks: TickData[]): MicrostructureSignal {
   
   const priceJumpDetected = returns.some(r => r > meanReturn + 3 * stdReturn);
   
-  // 2. Analisar velocidade de ticks (variação na chegada)
   const epochs = recentTicks.map(t => t.epoch);
   const intervals = [];
   for (let i = 1; i < epochs.length; i++) {
@@ -185,9 +175,8 @@ function analyzeMicrostructure(ticks: TickData[]): MicrostructureSignal {
   }
   const meanInterval = intervals.reduce((a,b) => a+b, 0) / intervals.length;
   const stdInterval = Math.sqrt(intervals.reduce((s, i) => s + Math.pow(i - meanInterval, 2), 0) / intervals.length);
-  const tickVelocityAnomaly = stdInterval > meanInterval * 0.5; // Alta variação na chegada
+  const tickVelocityAnomaly = stdInterval > meanInterval * 0.5;
   
-  // 3. Score geral
   let safetyScore = 100;
   if (priceJumpDetected) safetyScore -= 40;
   if (tickVelocityAnomaly) safetyScore -= 30;
@@ -214,25 +203,22 @@ const calculateTimeToLoss = (operation: Operation): number => {
 function calculateDynamicTakeProfit(
   volatilityRegime: VolatilityRegime,
   averageBreakTime: number,
-  survivalProbability: number // ✅ Novo parâmetro
+  survivalProbability: number
 ): number {
   let baseTarget = 1.25; 
 
-  // Ajuste principal pelo tempo de sobrevivência
   if (averageBreakTime > 65) {
     baseTarget = 1.40;
   } else if (averageBreakTime < 35) {
     baseTarget = 1.10;
   }
 
-  // ✅ NOVO: Ajuste pela probabilidade de sobrevivência
   if (survivalProbability > 0.90) {
-    baseTarget *= 1.15; // Aumenta 15% se prob. muito alta
+    baseTarget *= 1.15;
   } else if (survivalProbability < 0.80) {
-    baseTarget *= 0.85; // Reduz 15% se prob. baixa
+    baseTarget *= 0.85;
   }
 
-  // Refinamento pelo regime
   switch(volatilityRegime.regime) {
     case 'ultra-calm':
       baseTarget = Math.min(1.50, baseTarget + 0.15);
@@ -502,7 +488,9 @@ export function useAccumulatorsCouncil() {
       
       const nowEpoch = currentTick.epoch;
       const survivalProbMet = currentSurvivalProb >= riskManager.survivalProbabilityThreshold;
-      if (nowEpoch && survivalProbMet) {
+
+      // CORREÇÃO: Apenas cria trade virtual se não houver um ativo
+      if (nowEpoch && survivalProbMet && activeVirtualTradesRef.current.length === 0) {
         const newVirtualTrade: VirtualOperation = { id: `vt_${Date.now()}`, entryPrice: priceTicks[priceTicks.length - 1].price, entryTime: nowEpoch, exitTime: nowEpoch + effectiveDuration, status: 'pending', reason: 'Em jogo', growthRate: optimizedGrowthRate, initialConditions: { atr: calculatedIndicators.atr!, survivalProbability: currentSurvivalProb, }, };
         activeVirtualTradesRef.current.push(newVirtualTrade);
       }
