@@ -80,10 +80,11 @@ function StochasticLab({ realData, activeSymbol }: { realData: ChartData[], acti
     sigma: number,
     meanReversionSpeed: number = 0.15
   ): number => {
-    if (currentPrice <= 0 || recentMean <= 0) return -0.5 * sigma * sigma;
+    if (currentPrice <= 0 || recentMean <= 0) return 0;
     const distanceFromMean = Math.log(currentPrice / recentMean);
     const meanReversionComponent = -meanReversionSpeed * distanceFromMean;
-    return meanReversionComponent - 0.5 * sigma * sigma;
+    // REMOÇÃO DO FATOR DE CORREÇÃO NEGATIVO PARA EVITAR VIÉS DE QUEDA
+    return meanReversionComponent;
   };
 
 
@@ -803,4 +804,3 @@ export default function VolatilityAnalysisPage() {
         </DerivApiProviderAccumulators>
     );
 }
-
