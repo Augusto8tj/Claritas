@@ -539,7 +539,17 @@ export const DerivApiProviderAccumulators = ({ children }: { children: ReactNode
                             if (response.error.code === 'AlreadySubscribed') {
                                 console.warn(`[Deriv WS] Ignorando erro 'AlreadySubscribed' para req_id ${reqId}. A subscrição provavelmente já existe.`);
                                 promise.resolve(response);
-                            } else {
+                            } else if (response.error.code === 'ContractSellNotAvailable' && response.error.message === 'The contract has expired.') {
+                                console.warn(`[Deriv WS] Tentativa de vender contrato expirado (req_id ${reqId}). Resolvendo como falha controlada.`);
+                                setAndPersistOperationsLog(prevLog => prevLog.map(op =>
+                                    op.id === response.echo_req.sell ? { ...op, status: 'lost', result: -op.stake, exitTimestamp: new Date().toISOString() } : op
+                                ));
+                                promise.resolve({ sell: { contract_id: response.echo_req.sell } });
+                            } else if (response.error.code === 'ContractSellNotAvailable' && response.error.message.includes('cannot be sold at entry tick')) {
+                                console.warn(`[Deriv WS] Tentativa de venda no tick de entrada para o contrato #${response.echo_req.sell}. A lógica tentará novamente no próximo tick.`);
+                                promise.resolve({ sell: { status: 'too_early' } }); 
+                            }
+                            else {
                                 promise.reject(new Error(response.error.message));
                             }
                         } else {
@@ -773,5 +783,3 @@ export function useDerivApiAccumulators() {
   }
   return context;
 }
-
-    
