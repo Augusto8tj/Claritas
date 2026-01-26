@@ -48,7 +48,7 @@ function StochasticLab({ realData }: { realData: ChartData[] }) {
 
   const normalRandom = (): number => {
     let u1 = 0;
-    while (u1 === 0) { // Previne Math.log(0) que resulta em -Infinity
+    while (u1 === 0) {
       u1 = Math.random();
     }
     const u2 = Math.random();
@@ -58,7 +58,8 @@ function StochasticLab({ realData }: { realData: ChartData[] }) {
 
   useEffect(() => {
     const analyzeData = (data: ChartData[]) => {
-      if (data.length < 50) {
+      const VOL_WINDOW = 50;
+      if (data.length < VOL_WINDOW) {
         setPriceData([]); setReturns([]); setVolatilityData([]); setQQData([]); setStats({}); setPredictionData([]); setPredictionError({ mae: 0, rmse: 0, count: 0 });
         return;
       }
@@ -72,8 +73,8 @@ function StochasticLab({ realData }: { realData: ChartData[] }) {
       }
       
       const volData: any[] = [];
-      for (let i = 50; i < logReturns.length; i++) {
-        const window = logReturns.slice(i - 50, i);
+      for (let i = VOL_WINDOW; i < logReturns.length; i++) {
+        const window = logReturns.slice(i - VOL_WINDOW, i);
         const mean = window.reduce((a, b) => a + b, 0) / window.length;
         const variance = window.reduce((sum, r) => sum + Math.pow(r - mean, 2), 0) / (window.length - 1);
         volData.push({ time: i, realizedVol: parseFloat((Math.sqrt(variance) * 100).toFixed(4)), targetVol: 10 });
@@ -100,20 +101,25 @@ function StochasticLab({ realData }: { realData: ChartData[] }) {
       }
       setVolatilityData(volData);
 
-      // --- Lógica de Previsão ---
+      // --- Lógica de Previsão Preditiva (NOVO) ---
       const newPredictionData: any[] = [];
       const errors: number[] = [];
-      const sigma = 0.10, dt = 1, mu = 0;
-
-      for (let i = 1; i < prices.length; i++) {
+      const dt = 1, mu = 0;
+      
+      for (let i = VOL_WINDOW; i < prices.length; i++) {
           const S_prev = prices[i-1];
           const S_real = prices[i];
+          
+          const pastLogReturns = logReturns.slice(i - VOL_WINDOW, i);
+          const meanPastReturn = pastLogReturns.reduce((a, b) => a + b, 0) / VOL_WINDOW;
+          const variance = pastLogReturns.reduce((s, r) => s + Math.pow(r - meanPastReturn, 2), 0) / (VOL_WINDOW - 1);
+          const sigma = Math.sqrt(variance);
+
           const Z = normalRandom();
           const drift = (mu - 0.5 * sigma * sigma) * dt;
           const diffusion = sigma * Math.sqrt(dt) * Z;
           const S_predicted = S_prev * Math.exp(drift + diffusion);
-
-          // Adicionada verificação para garantir que apenas números finitos são adicionados
+          
           if (Number.isFinite(S_real) && Number.isFinite(S_predicted)) {
               newPredictionData.push({ time: i, real: S_real, predicted: S_predicted });
               errors.push(S_real - S_predicted);
@@ -146,16 +152,16 @@ function StochasticLab({ realData }: { realData: ChartData[] }) {
         <CardHeader>
             <CardTitle className="font-headline flex items-center gap-2">
                 <FlaskConical className="h-5 w-5 text-purple-600" />
-                Laboratório Estocástico (Dados Reais)
+                Laboratório Preditivo (Cientista de IA)
             </CardTitle>
-            <CardDescription>O cientista de IA valida o modelo GBM contra o mercado para prever o próximo movimento.</CardDescription>
+            <CardDescription>O cientista usa o modelo GBM para prever o próximo tick e compara com os dados reais.</CardDescription>
         </CardHeader>
         <CardContent className="flex-1 flex flex-col">
             <ScrollArea className="flex-1">
                 <div className="p-1 space-y-6">
                     <div className="flex gap-2 mb-6 flex-wrap">
                       {[
-                        { id: 'prediction', icon: TrendingUp, label: 'Previsão' },
+                        { id: 'prediction', icon: TrendingUp, label: 'Previsão (1-Tick-Ahead)' },
                         { id: 'returns', icon: Activity, label: 'Retornos' },
                         { id: 'volatility', icon: BarChart3, label: 'Volatilidade' },
                         { id: 'qq', icon: Calculator, label: 'Q-Q Plot' }
