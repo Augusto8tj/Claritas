@@ -32,13 +32,6 @@ const normalQuantile = (p: number): number => {
   }
 };
 
-const normalRandom = (): number => {
-    const u1 = Math.random();
-    const u2 = Math.random();
-    return Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
-};
-
-
 const isCandle = (d: ChartData): d is CandleData => d != null && 'close' in d;
 
 function StochasticLab({ realData }: { realData: ChartData[] }) {
@@ -52,6 +45,16 @@ function StochasticLab({ realData }: { realData: ChartData[] }) {
   // States para a Previsão
   const [predictionData, setPredictionData] = useState<any[]>([]);
   const [predictionError, setPredictionError] = useState({ mae: 0, rmse: 0, count: 0 });
+
+  const normalRandom = (): number => {
+    let u1 = 0;
+    while (u1 === 0) { // Previne Math.log(0) que resulta em -Infinity
+      u1 = Math.random();
+    }
+    const u2 = Math.random();
+    return Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
+  };
+
 
   useEffect(() => {
     const analyzeData = (data: ChartData[]) => {
@@ -109,8 +112,12 @@ function StochasticLab({ realData }: { realData: ChartData[] }) {
           const drift = (mu - 0.5 * sigma * sigma) * dt;
           const diffusion = sigma * Math.sqrt(dt) * Z;
           const S_predicted = S_prev * Math.exp(drift + diffusion);
-          newPredictionData.push({ time: i, real: S_real, predicted: S_predicted });
-          errors.push(S_real - S_predicted);
+
+          // Adicionada verificação para garantir que apenas números finitos são adicionados
+          if (Number.isFinite(S_real) && Number.isFinite(S_predicted)) {
+              newPredictionData.push({ time: i, real: S_real, predicted: S_predicted });
+              errors.push(S_real - S_predicted);
+          }
       }
       
       if (errors.length > 0) {
@@ -253,7 +260,14 @@ function StochasticLab({ realData }: { realData: ChartData[] }) {
                                     <YAxis type="number" dataKey="empirical" name="Quantis Empíricos" label={{ value: 'Quantis Empíricos', angle: -90, position: 'insideLeft' }} />
                                     <Tooltip cursor={{ strokeDasharray: '3 3' }} />
                                     <Scatter data={qqData} fill="#f59e0b" />
-                                    <Scatter data={lineData} line={{ stroke: '#dc2626', strokeWidth: 2 }} shape={() => null} name="Referência (y=x)" />
+                                    <Line
+                                      type="monotone"
+                                      dataKey="theoretical"
+                                      stroke="#dc2626"
+                                      strokeWidth={2}
+                                      dot={false}
+                                      name="Referência (y=x)"
+                                    />
                                   </ScatterChart>
                                 </ResponsiveContainer>
                                 <div className="mt-4 p-4 bg-slate-50 rounded">
