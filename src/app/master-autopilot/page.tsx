@@ -3,6 +3,7 @@
 
 import React from "react";
 import { DerivApiProviderV2, useDerivApiV2 } from "@/features/trading/hooks/use-deriv-api-v2";
+import { DerivApiProviderAccumulators } from "@/features/trading/hooks/use-deriv-api-accumulators";
 import { MasterAutopilotInterface } from "@/features/trading/components/master-autopilot/master-autopilot-interface";
 import { AssetSelectorV2 } from "@/features/trading/components/deriv-trader/asset-selector-v2";
 import { ApiStatusIndicatorV2 } from "@/features/trading/components/deriv-trader/ApiStatusIndicatorV2";
@@ -84,7 +85,9 @@ function MasterAutopilotPageContent() {
 export default function MasterAutopilotPage() {
   return (
     <DerivApiProviderV2>
-        <MasterAutopilotPageContent />
+        <DerivApiProviderAccumulators>
+            <MasterAutopilotPageContent />
+        </DerivApiProviderAccumulators>
     </DerivApiProviderV2>
   );
 }
