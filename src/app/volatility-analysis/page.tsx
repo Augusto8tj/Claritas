@@ -52,7 +52,14 @@ function StochasticLab({ realData, activeSymbol }: { realData: ChartData[], acti
 
   // --- Estados para Assertividade da Projeção ---
   const [predictionAccuracy, setPredictionAccuracy] = useState({ hits: 0, total: 0 });
+  const [predictionAccuracy10s, setPredictionAccuracy10s] = useState({ hits: 0, total: 0 });
+  const [predictionAccuracy20s, setPredictionAccuracy20s] = useState({ hits: 0, total: 0 });
+  const [predictionAccuracy40s, setPredictionAccuracy40s] = useState({ hits: 0, total: 0 });
+
   const pendingPredictionsRef = useRef<{ startTimeIndex: number; startPrice: number; predictedEndPrice: number }[]>([]);
+  const pendingPredictions10sRef = useRef<{ startTimeIndex: number; startPrice: number; predictedEndPrice: number }[]>([]);
+  const pendingPredictions20sRef = useRef<{ startTimeIndex: number; startPrice: number; predictedEndPrice: number }[]>([]);
+  const pendingPredictions40sRef = useRef<{ startTimeIndex: number; startPrice: number; predictedEndPrice: number }[]>([]);
 
 
   const normalRandom = (): number => {
@@ -175,40 +182,59 @@ function StochasticLab({ realData, activeSymbol }: { realData: ChartData[], acti
         setFuturePath10s(projectPath(5).map(p => ({ time: p.time, predicted_10s_ahead: p.price })));
         setFuturePath20s(projectPath(10).map(p => ({ time: p.time, predicted_20s_ahead: p.price })));
         setFuturePath40s(projectPath(20).map(p => ({ time: p.time, predicted_40s_ahead: p.price })));
-
-        const newFuturePathForValidation = projectPath(6);
-        const currentTimeIndex = prices.length - 1;
-        const completedPredictionsIndices: number[] = [];
-
-        pendingPredictionsRef.current.forEach((pred, index) => {
-          if (currentTimeIndex >= pred.startTimeIndex + 6) {
-            const actualEndPrice = prices[pred.startTimeIndex + 6];
-            if (actualEndPrice === undefined) return;
-            const predictedDirection = pred.predictedEndPrice > pred.startPrice ? 'RISE' : 'FALL';
-            const actualDirection = actualEndPrice > pred.startPrice ? 'RISE' : 'FALL';
-            setPredictionAccuracy(prev => ({
-              hits: prev.hits + (predictedDirection === actualDirection ? 1 : 0),
-              total: prev.total + 1,
-            }));
-            completedPredictionsIndices.push(index);
-          }
-        });
         
-        if (completedPredictionsIndices.length > 0) {
-          pendingPredictionsRef.current = pendingPredictionsRef.current.filter((_, index) => !completedPredictionsIndices.includes(index));
-        }
+        const processPredictionHorizon = (
+            horizonTicks: number,
+            prices: number[],
+            pendingPredictionsRef: React.MutableRefObject<{ startTimeIndex: number; startPrice: number; predictedEndPrice: number }[]>,
+            setAccuracy: React.Dispatch<React.SetStateAction<{ hits: number; total: number }>>,
+            projectPathFn: (steps: number) => { time: number; price: number }[]
+        ) => {
+            const newFuturePath = projectPathFn(horizonTicks);
+            const currentTimeIndex = prices.length - 1;
+            const completedIndices: number[] = [];
 
-        if (newFuturePathForValidation.length === 7) {
-            const newPredictionTimeIndex = newFuturePathForValidation[0].time;
-            const alreadyPending = pendingPredictionsRef.current.some(p => p.startTimeIndex === newPredictionTimeIndex);
-            if (!alreadyPending) {
-                pendingPredictionsRef.current.push({
-                    startTimeIndex: newPredictionTimeIndex,
-                    startPrice: newFuturePathForValidation[0].price,
-                    predictedEndPrice: newFuturePathForValidation[6].price,
-                });
+            pendingPredictionsRef.current.forEach((pred, index) => {
+                if (currentTimeIndex >= pred.startTimeIndex + horizonTicks) {
+                    const actualEndPrice = prices[pred.startTimeIndex + horizonTicks];
+                    if (actualEndPrice === undefined) return;
+                    const predictedDirection = pred.predictedEndPrice > pred.startPrice ? 'RISE' : 'FALL';
+                    const actualDirection = actualEndPrice > pred.startPrice ? 'RISE' : 'FALL';
+                    setAccuracy(prev => ({
+                        hits: prev.hits + (predictedDirection === actualDirection ? 1 : 0),
+                        total: prev.total + 1,
+                    }));
+                    completedIndices.push(index);
+                }
+            });
+
+            if (completedIndices.length > 0) {
+                pendingPredictionsRef.current = pendingPredictionsRef.current.filter((_, index) => !completedIndices.includes(index));
             }
-        }
+
+            if (newFuturePath.length === horizonTicks + 1) {
+                const newPredictionTimeIndex = newFuturePath[0].time;
+                const alreadyPending = pendingPredictionsRef.current.some(p => p.startTimeIndex === newPredictionTimeIndex);
+                if (!alreadyPending) {
+                    pendingPredictionsRef.current.push({
+                        startTimeIndex: newPredictionTimeIndex,
+                        startPrice: newFuturePath[0].price,
+                        predictedEndPrice: newFuturePath[horizonTicks].price,
+                    });
+                }
+            }
+        };
+
+        const horizons = [
+            { ticks: 6, ref: pendingPredictionsRef, setAccuracy: setPredictionAccuracy },
+            { ticks: 5, ref: pendingPredictions10sRef, setAccuracy: setPredictionAccuracy10s }, // 10s
+            { ticks: 10, ref: pendingPredictions20sRef, setAccuracy: setPredictionAccuracy20s }, // 20s
+            { ticks: 20, ref: pendingPredictions40sRef, setAccuracy: setPredictionAccuracy40s }, // 40s
+        ];
+
+        horizons.forEach(h => {
+            processPredictionHorizon(h.ticks, prices, h.ref, h.setAccuracy, projectPath);
+        });
       }
       
       setPredictionData(newPredictionData.slice(-200));
@@ -311,13 +337,40 @@ function StochasticLab({ realData, activeSymbol }: { realData: ChartData[], acti
                                         <p className="text-xs text-muted-foreground">Raiz do Erro Quadrático Médio (RMSE)</p>
                                         <p className="text-lg font-bold font-mono">{predictionError.rmse.toFixed(4)}</p>
                                     </div>
-                                    <div className="p-3 bg-slate-50 rounded border lg:col-span-1 col-span-2">
-                                        <p className="text-xs text-muted-foreground flex items-center gap-1.5"><Target className="h-4 w-4"/>Assertividade Projeção (6-Ticks)</p>
+                                    <div className="p-3 bg-slate-50 rounded border">
+                                        <p className="text-xs text-muted-foreground flex items-center gap-1.5"><Target className="h-4 w-4"/>Assertividade (6 Ticks)</p>
                                         <div className="flex items-baseline gap-2">
                                             <p className="text-lg font-bold font-mono">
                                                 {predictionAccuracy.total > 0 ? ((predictionAccuracy.hits / predictionAccuracy.total) * 100).toFixed(1) : '0.0'}%
                                             </p>
                                             <span className="text-xs text-muted-foreground">({predictionAccuracy.hits} de {predictionAccuracy.total})</span>
+                                        </div>
+                                    </div>
+                                     <div className="p-3 bg-slate-50 rounded border">
+                                        <p className="text-xs text-muted-foreground flex items-center gap-1.5"><Target className="h-4 w-4"/>Assertividade (10s)</p>
+                                        <div className="flex items-baseline gap-2">
+                                            <p className="text-lg font-bold font-mono">
+                                                {predictionAccuracy10s.total > 0 ? ((predictionAccuracy10s.hits / predictionAccuracy10s.total) * 100).toFixed(1) : '0.0'}%
+                                            </p>
+                                            <span className="text-xs text-muted-foreground">({predictionAccuracy10s.hits} de {predictionAccuracy10s.total})</span>
+                                        </div>
+                                    </div>
+                                     <div className="p-3 bg-slate-50 rounded border">
+                                        <p className="text-xs text-muted-foreground flex items-center gap-1.5"><Target className="h-4 w-4"/>Assertividade (20s)</p>
+                                        <div className="flex items-baseline gap-2">
+                                            <p className="text-lg font-bold font-mono">
+                                                {predictionAccuracy20s.total > 0 ? ((predictionAccuracy20s.hits / predictionAccuracy20s.total) * 100).toFixed(1) : '0.0'}%
+                                            </p>
+                                            <span className="text-xs text-muted-foreground">({predictionAccuracy20s.hits} de {predictionAccuracy20s.total})</span>
+                                        </div>
+                                    </div>
+                                     <div className="p-3 bg-slate-50 rounded border">
+                                        <p className="text-xs text-muted-foreground flex items-center gap-1.5"><Target className="h-4 w-4"/>Assertividade (40s)</p>
+                                        <div className="flex items-baseline gap-2">
+                                            <p className="text-lg font-bold font-mono">
+                                                {predictionAccuracy40s.total > 0 ? ((predictionAccuracy40s.hits / predictionAccuracy40s.total) * 100).toFixed(1) : '0.0'}%
+                                            </p>
+                                            <span className="text-xs text-muted-foreground">({predictionAccuracy40s.hits} de {predictionAccuracy40s.total})</span>
                                         </div>
                                     </div>
                                 </div>
