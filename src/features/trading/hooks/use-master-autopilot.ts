@@ -51,7 +51,13 @@ export interface MasterAutopilotState {
 }
 
 export function useMasterAutopilot() {
-  const { priceTicks, botCandleData, activeSymbol } = useDerivApiAccumulators();
+  const { 
+    priceTicks, 
+    botCandleData, 
+    activeSymbol,
+    executeTrade: executeAccumulatorTrade,
+    operationsLog
+  } = useDerivApiAccumulators();
   const { toast } = useToast();
 
   const [isAutopilotOn, setIsAutopilotOn] = useState(false);
@@ -69,6 +75,8 @@ export function useMasterAutopilot() {
     },
   });
   
+  const isCoolingDownRef = useRef(false);
+
   // Refs para manter o estado das projeções sem causar re-renderizações excessivas
   const accuracyHistoryRefs = {
     '3t': useRef<boolean[]>([]), '6t': useRef<boolean[]>([]), '10s': useRef<boolean[]>([]),
@@ -99,6 +107,17 @@ export function useMasterAutopilot() {
     }
 
     const interval = setInterval(() => {
+        // --- GUARDAS DE EXECUÇÃO ---
+        if (isCoolingDownRef.current) {
+            setMasterState(prev => ({...prev, trigger: { ...prev.trigger, reason: 'Em cooldown pós-trade.'}}))
+            return;
+        }
+        const openMasterTrade = operationsLog.find(op => op.initiator === 'Piloto' && op.status === 'pending');
+        if (openMasterTrade) {
+            setMasterState(prev => ({...prev, trigger: { ...prev.trigger, reason: `Gerindo posição aberta #${openMasterTrade.id}.`}}))
+            return;
+        }
+
         const prices = priceTicks.map(d => d.price);
         const VOL_WINDOW = 50;
         const lastPrice = prices[prices.length - 1];
@@ -196,21 +215,40 @@ export function useMasterAutopilot() {
             }
         }
         
-        setMasterState({
-            isReady: true,
-            assertiveness: newAssertiveness,
-            trigger: {
-                signal: triggerSignal,
-                reason: triggerReason,
-                triggeredBy: triggeredBy,
-            }
-        });
+        // --- EXECUÇÃO DO TRADE ---
+        if (triggerSignal !== 'HOLD' && contractType === 'Accumulators') {
+            isCoolingDownRef.current = true;
+            setMasterState(prev => ({
+                ...prev,
+                isReady: true,
+                assertiveness: newAssertiveness,
+                trigger: { signal: triggerSignal, reason: `Gatilho ${triggerSignal} detectado! A executar...`, triggeredBy }
+            }));
+            
+            toast({ title: `🤖 Master Autopilot: Gatilho ${triggerSignal}!`, description: `Executando ordem de ${contractType} em ${activeSymbol}`});
+
+            executeAccumulatorTrade(1.0, 0.03, activeSymbol!, 'Piloto');
+
+            setTimeout(() => {
+                isCoolingDownRef.current = false;
+            }, 60000); // Cooldown de 60 segundos
+        } else {
+             setMasterState({
+                isReady: true,
+                assertiveness: newAssertiveness,
+                trigger: {
+                    signal: triggerSignal,
+                    reason: triggerReason,
+                    triggeredBy: triggeredBy,
+                }
+            });
+        }
 
     }, 2000);
 
     return () => clearInterval(interval);
 
-  }, [isAutopilotOn, priceTicks]);
+  }, [isAutopilotOn, priceTicks, operationsLog, activeSymbol, contractType, executeAccumulatorTrade, toast]);
 
   return {
     isAutopilotOn,

@@ -6,7 +6,7 @@ Este documento detalha a arquitetura do **Master Autopilot**, um sistema de coma
 
 ## 1. Filosofia de Design: O Cérebro Preditivo Unificado
 
-O Master Autopilot abandona a ideia de múltiplos sistemas operando em silos. Em vez disso, ele implementa um **cérebro centralizado** que utiliza a nossa ferramenta mais avançada – o **Laboratório Preditivo (Análise de Volatilidade)** – como o seu principal motor de decisão.
+O Master Autopilot abandona a ideia de múltiplos sistemas a operar em silos. Em vez disso, ele implementa um **cérebro centralizado** que utiliza a nossa ferramenta mais avançada – o **Laboratório Preditivo (Análise de Volatilidade)** – como o seu principal motor de decisão.
 
 **Princípios Fundamentais:**
 
@@ -16,6 +16,7 @@ O Master Autopilot abandona a ideia de múltiplos sistemas operando em silos. Em
 4.  **Adaptação ao Contrato:** Embora o gatilho seja universal, a **ação de execução** é específica para cada tipo de contrato:
     *   **Rise/Fall & Multipliers:** Executa uma ordem direcional (`CALL`/`PUT`, `MULTUP`/`MULTDOWN`).
     *   **Accumulators:** Interpreta o gatilho não como um sinal de direção, mas como um sinal de **alta previsibilidade e estabilidade**, indicando uma excelente oportunidade para abrir um contrato de acumulador.
+5.  **Mecanismos de Segurança:** Para evitar operações excessivas, o sistema possui salvaguardas, como um período de **cooldown** após cada trade e a verificação para não abrir novas posições enquanto uma já estiver ativa.
 
 ---
 
@@ -25,16 +26,18 @@ A página serve como a interface para este sistema central.
 
 ### 2.1. Cérebro Cognitivo: `use-master-autopilot.ts`
 
-Este é o hook que contém toda a nova lógica de decisão.
+Este é o hook que contém toda a nova lógica de decisão. O sistema agora está **totalmente operacional**. Ele não apenas identifica as oportunidades, mas **executa as ordens autonomamente** quando o Gatilho de Assertividade é disparado.
 
-*   **Responsabilidade Principal**: Consumir os dados preditivos, aplicar a lógica do "Gatilho de Assertividade" e determinar se uma oportunidade de trading existe.
+*   **Responsabilidade Principal**: Consumir os dados preditivos, aplicar a lógica do "Gatilho de Assertividade", executar a ordem e gerir os mecanismos de segurança.
 *   **Ciclo de Decisão**:
-    1.  **Consumir Dados Preditivos:** O hook integra a lógica do `StochasticLab` (originalmente da página de Análise de Volatilidade) para ter acesso em tempo real às projeções futuras e às taxas de assertividade de todos os seis horizontes de tempo.
-    2.  **Monitorizar o Gatilho de Assertividade:** A cada ciclo, ele verifica a seguinte condição: "Existem dois horizontes de tempo vizinhos (ex: 10s e 20s) cuja assertividade seja > 80% e cujo 'voto' de direção seja o mesmo?"
-    3.  **Determinar o Sinal:**
-        *   Se a condição for cumprida, ele define um sinal claro (`RISE` ou `FALL`).
-        *   Se a condição não for cumprida, ele permanece em `HOLD`, aguardando um momento de alta certeza preditiva.
-    4.  **Expor Estado para a UI:** O hook expõe o estado atual (ex: "Gatilho Detectado: RISE" ou "Aguardando Gatilho") para a interface.
+    1.  **Consumir Dados Preditivos:** O hook integra a lógica do `StochasticLab` para ter acesso em tempo real às projeções futuras e às taxas de assertividade de todos os seis horizontes de tempo.
+    2.  **Verificar Salvaguardas:** Antes de qualquer análise, verifica se o sistema está em período de *cooldown* ou se já existe uma posição aberta pelo piloto. Se sim, aguarda.
+    3.  **Monitorizar o Gatilho de Assertividade:** A cada ciclo, ele verifica a seguinte condição: "Existem dois horizontes de tempo vizinhos (ex: 10s e 20s) cuja assertividade seja > 80% e cujo 'voto' de direção seja o mesmo?"
+    4.  **Executar Ordem:**
+        *   Se a condição for cumprida, ele **executa a ordem** de acordo com o `contractType` selecionado.
+        *   Para `Accumulators`, ele abre um novo contrato.
+        *   O sistema entra em *cooldown* para evitar novas operações imediatas.
+    5.  **Expor Estado para a UI:** O hook expõe o estado atual (ex: "Gatilho Detectado: EXECUTANDO" ou "Aguardando Gatilho") para a interface.
 
 ### 2.2. Interface de Comando: `master-autopilot-interface.tsx`
 
@@ -44,7 +47,5 @@ Este componente fornece ao operador o controlo total sobre o sistema.
     *   **Tipo de Contrato:** Permite ao operador escolher qual ecossistema de trading o Master Autopilot irá controlar.
     *   **Gestão de Risco:** Inputs para definir a "Banca do Dia" e o "Alvo de Lucro".
 *   **Painéis de Status em Tempo Real:**
-    *   **Status do Gatilho:** Um painel de alerta que mostra claramente se o sistema está a aguardar um sinal ou se um gatilho de alta certeza foi detetado, incluindo a direção.
+    *   **Status do Gatilho:** Um painel de alerta que mostra claramente se o sistema está a aguardar um sinal ou se um gatilho de alta certeza foi detetado e uma ordem foi executada.
     *   **Painel de Assertividade:** Exibe o desempenho atual de cada um dos seis especialistas preditivos, permitindo ao operador ver "porquê" um gatilho foi (ou não foi) ativado.
-
-Nesta primeira fase, o sistema está em **modo de análise**. Ele identifica e sinaliza as oportunidades de trading com base nesta nova e poderosa lógica, mas ainda não executa as ordens.
