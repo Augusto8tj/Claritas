@@ -15,22 +15,23 @@ import { errorEmitter, FirestorePermissionError } from '@/firebase';
 
 // --- Trading Robot Performance V3 ---
 
-export function saveRobotPerformanceV3(userId: string, performance: EnhancedRobotPerformance[]): void {
+export async function saveRobotPerformanceV3(userId: string, performance: EnhancedRobotPerformance[]): Promise<void> {
     if (!userId) return;
     const docRef = doc(db, 'users', userId, 'performance_v3', 'robot_council');
     const sanitizedData = sanitizeForFirestore({
         updatedAt: new Date().toISOString(),
         robots: performance,
     });
-    setDoc(docRef, sanitizedData, { merge: true })
-        .catch(error => {
-            errorEmitter.emit('permission-error', new FirestorePermissionError({
-                path: docRef.path,
-                operation: 'write',
-                requestResourceData: sanitizedData,
-            }));
-            console.error("Falha ao salvar desempenho V3:", error);
-        });
+    try {
+        await setDoc(docRef, sanitizedData, { merge: true });
+    } catch (error) {
+        errorEmitter.emit('permission-error', new FirestorePermissionError({
+            path: docRef.path,
+            operation: 'write',
+            requestResourceData: sanitizedData,
+        }));
+        console.error("Falha ao salvar desempenho V3:", error);
+    }
 };
 
 
@@ -61,20 +62,21 @@ export async function loadRobotPerformanceV3(userId: string): Promise<EnhancedRo
 
 // --- Trading Decision Log V3 ---
 
-export function saveTradeDecisionV3(userId: string, log: TradeDecisionLog) {
+export async function saveTradeDecisionV3(userId: string, log: TradeDecisionLog) {
     if (!userId) return;
     const logCollectionRef = collection(db, 'users', userId, 'decision_logs_v3');
     const logDocRef = doc(logCollectionRef, log.id);
     const sanitizedLog = sanitizeForFirestore(log);
-    setDoc(logDocRef, sanitizedLog, { merge: true })
-        .catch(error => {
-            errorEmitter.emit('permission-error', new FirestorePermissionError({
-                path: logDocRef.path,
-                operation: 'write',
-                requestResourceData: sanitizedLog,
-            }));
-             console.error("Falha ao salvar log de decisão V3:", error);
-        });
+    try {
+        await setDoc(logDocRef, sanitizedLog, { merge: true });
+    } catch (error) {
+        errorEmitter.emit('permission-error', new FirestorePermissionError({
+            path: logDocRef.path,
+            operation: 'write',
+            requestResourceData: sanitizedLog,
+        }));
+         console.error("Falha ao salvar log de decisão V3:", error);
+    }
 }
 
 export async function getTradeDecisionLogsV3(userId: string): Promise<TradeDecisionLog[]> {
@@ -99,7 +101,7 @@ export async function getTradeDecisionLogsV3(userId: string): Promise<TradeDecis
 
 // --- Evolution History V3 ---
 
-export function saveEvolutionHistoryV3(userId: string, history: EvolutionEvent[]): void {
+export async function saveEvolutionHistoryV3(userId: string, history: EvolutionEvent[]): Promise<void> {
     if (!userId || !history) return;
     const docRef = doc(db, 'users', userId, 'evolution_v3', 'history');
     const historyForFirestore = history.map(event => ({
@@ -108,15 +110,16 @@ export function saveEvolutionHistoryV3(userId: string, history: EvolutionEvent[]
     }));
     const sanitizedHistory = sanitizeForFirestore({ history: historyForFirestore });
 
-    setDoc(docRef, sanitizedHistory, { merge: true })
-        .catch(error => {
-            errorEmitter.emit('permission-error', new FirestorePermissionError({
-                path: docRef.path,
-                operation: 'write',
-                requestResourceData: sanitizedHistory,
-            }));
-            console.error("❌ [saveEvolutionHistoryV3] Erro ao gravar no Firestore:", error);
-        });
+    try {
+        await setDoc(docRef, sanitizedHistory, { merge: true });
+    } catch (error) {
+        errorEmitter.emit('permission-error', new FirestorePermissionError({
+            path: docRef.path,
+            operation: 'write',
+            requestResourceData: sanitizedHistory,
+        }));
+        console.error("❌ [saveEvolutionHistoryV3] Erro ao gravar no Firestore:", error);
+    }
 }
 
 export async function loadEvolutionHistoryV3(userId: string): Promise<EvolutionEvent[]> {
@@ -144,26 +147,30 @@ export async function loadEvolutionHistoryV3(userId: string): Promise<EvolutionE
     }
 }
 
-export function clearEvolutionHistoryV3(userId: string): void {
+export async function clearEvolutionHistoryV3(userId: string): Promise<void> {
     if (!userId) return;
     const docRef = doc(db, 'users', userId, 'evolution_v3', 'history');
-    deleteDoc(docRef).catch(error => {
+    try {
+        await deleteDoc(docRef);
+    } catch (error) {
         errorEmitter.emit('permission-error', new FirestorePermissionError({
             path: docRef.path,
             operation: 'delete',
         }));
         console.error("Falha ao limpar histórico de evolução V3:", error);
-    });
+    }
 }
 
-export function deleteEvolutionEventV3(userId: string, eventTimestamp: string): void {
+export async function deleteEvolutionEventV3(userId: string, eventTimestamp: string): Promise<void> {
     if (!userId) return;
-    loadEvolutionHistoryV3(userId).then(currentHistory => {
+    try {
+        const currentHistory = await loadEvolutionHistoryV3(userId);
         const newHistory = currentHistory.filter(event => event.timestamp.toISOString() !== eventTimestamp);
         if (newHistory.length < currentHistory.length) {
-            saveEvolutionHistoryV3(userId, newHistory);
+            await saveEvolutionHistoryV3(userId, newHistory);
         }
-    }).catch(() => {
-        // Error already emitted by loadEvolutionHistoryV3
-    });
+    } catch (error) {
+        // Error is already handled by loadEvolutionHistoryV3, we just need to avoid crashing.
+        console.error("Falha ao deletar evento de evolução V3:", error);
+    }
 }
