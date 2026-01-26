@@ -144,7 +144,7 @@ function StochasticLab({ realData, activeSymbol }: { realData: ChartData[], acti
         const sigma = Math.sqrt(variance);
 
         const Z = normalRandom();
-        const drift = (meanPastReturn - 0.5 * sigma * sigma);
+        const drift = meanPastReturn; // Correção: Drift deve ser a tendência observada.
         const diffusion = sigma * Math.sqrt(1) * Z;
         const S_predicted_1_tick = S_prev * Math.exp(drift + diffusion);
         
@@ -185,7 +185,7 @@ function StochasticLab({ realData, activeSymbol }: { realData: ChartData[], acti
         const path = [{ time: lastTime, price: lastPrice }];
         for (let i = 1; i <= steps; i++) {
           const Z = normalRandom();
-          const drift_future = meanLastReturn - 0.5 * Math.pow(lastSigma, 2);
+          const drift_future = meanLastReturn; // CORREÇÃO: Removido o termo -0.5*sigma^2
           const diffusion_future = lastSigma * Math.sqrt(1) * Z;
           currentSimPrice = currentSimPrice * Math.exp(drift_future + diffusion_future);
 
@@ -497,7 +497,7 @@ function StochasticLab({ realData, activeSymbol }: { realData: ChartData[], acti
                                                     </p>
                                                 </TooltipTrigger>
                                                 <TooltipContent>
-                                                    <p className="max-w-xs">Mede o erro médio, mas penaliza erros grandes mais do que o MAE. Se RMSE &gt; MAE, indica a presença de erros maiores (outliers).</p>
+                                                    <p className="max-w-xs">Mede o erro médio, mas penaliza erros grandes mais do que o MAE. Se RMSE for maior que MAE, indica a presença de erros maiores (outliers).</p>
                                                 </TooltipContent>
                                             </ShadTooltip>
                                         </TooltipProvider>
