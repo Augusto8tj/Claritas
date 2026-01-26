@@ -1,3 +1,4 @@
+
 // src/features/trading/components/master-autopilot/master-autopilot-interface.tsx
 'use client';
 
@@ -13,6 +14,7 @@ import { Crosshair, Target, Bot, Power, BarChart, TrendingUp, TrendingDown, Shie
 import { cn } from '@/lib/utils';
 import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
 import { Progress } from '@/components/ui/progress';
+import { Badge } from '@/components/ui/badge';
 
 export function MasterAutopilotInterface() {
   const {
