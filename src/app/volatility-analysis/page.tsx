@@ -47,23 +47,29 @@ function StochasticLab({ realData, activeSymbol }: { realData: ChartData[], acti
   
   // --- States para Previsão ---
   const [predictionData, setPredictionData] = useState<any[]>([]);
+  const [futurePath3t, setFuturePath3t] = useState<any[]>([]);
   const [futurePath6t, setFuturePath6t] = useState<any[]>([]);
   const [futurePath10s, setFuturePath10s] = useState<any[]>([]);
   const [futurePath20s, setFuturePath20s] = useState<any[]>([]);
+  const [futurePath30s, setFuturePath30s] = useState<any[]>([]);
   const [futurePath40s, setFuturePath40s] = useState<any[]>([]);
   const driftCorrectionRef = useRef(0);
   const [driftCorrectionForDisplay, setDriftCorrectionForDisplay] = useState({drift: 0, mae: 0, rmse: 0});
 
   // --- Estados para Assertividade da Projeção ---
+  const [predictionAccuracyHistory3t, setPredictionAccuracyHistory3t] = useState<boolean[]>([]);
   const [predictionAccuracyHistory6t, setPredictionAccuracyHistory6t] = useState<boolean[]>([]);
   const [predictionAccuracyHistory10s, setPredictionAccuracyHistory10s] = useState<boolean[]>([]);
   const [predictionAccuracyHistory20s, setPredictionAccuracyHistory20s] = useState<boolean[]>([]);
+  const [predictionAccuracyHistory30s, setPredictionAccuracyHistory30s] = useState<boolean[]>([]);
   const [predictionAccuracyHistory40s, setPredictionAccuracyHistory40s] = useState<boolean[]>([]);
 
   const predictionErrorsRef = useRef<number[]>([]);
+  const pendingPredictions3tRef = useRef<{ startTimeIndex: number; startPrice: number; predictedEndPrice: number }[]>([]);
   const pendingPredictions6tRef = useRef<{ startTimeIndex: number; startPrice: number; predictedEndPrice: number }[]>([]);
   const pendingPredictions10sRef = useRef<{ startTimeIndex: number; startPrice: number; predictedEndPrice: number }[]>([]);
   const pendingPredictions20sRef = useRef<{ startTimeIndex: number; startPrice: number; predictedEndPrice: number }[]>([]);
+  const pendingPredictions30sRef = useRef<{ startTimeIndex: number; startPrice: number; predictedEndPrice: number }[]>([]);
   const pendingPredictions40sRef = useRef<{ startTimeIndex: number; startPrice: number; predictedEndPrice: number }[]>([]);
 
   const calculateAdaptiveDrift = (
@@ -93,7 +99,7 @@ function StochasticLab({ realData, activeSymbol }: { realData: ChartData[], acti
     
     if (realData.length < VOL_WINDOW) {
       setPriceData([]); setReturns([]); setVolatilityData([]); setQQData([]); setStats({}); 
-      setPredictionData([]); setFuturePath6t([]); setFuturePath10s([]); setFuturePath20s([]); setFuturePath40s([]);
+      setPredictionData([]); setFuturePath3t([]); setFuturePath6t([]); setFuturePath10s([]); setFuturePath20s([]); setFuturePath30s([]); setFuturePath40s([]);
       return;
     }
     
@@ -171,7 +177,10 @@ function StochasticLab({ realData, activeSymbol }: { realData: ChartData[], acti
         const newDrift = errors.reduce((a,e) => a + e, 0) / errors.length;
 
         driftCorrectionRef.current = newDrift;
-        setDriftCorrectionForDisplay({ drift: newDrift, mae: newMAE, rmse: newRMSE });
+        
+        if (newDrift !== driftCorrectionForDisplay.drift) {
+             setDriftCorrectionForDisplay({ drift: newDrift, mae: newMAE, rmse: newRMSE });
+        }
     }
 
     if (prices.length > VOL_WINDOW) {
@@ -204,9 +213,11 @@ function StochasticLab({ realData, activeSymbol }: { realData: ChartData[], acti
         return path;
       };
       
+      const ACCURACY_WINDOW_3T = 6;
       const ACCURACY_WINDOW_6T = 6;
       const ACCURACY_WINDOW_10S = 10;
       const ACCURACY_WINDOW_20S = 10;
+      const ACCURACY_WINDOW_30S = 10;
       const ACCURACY_WINDOW_40S = 10;
 
       const processPredictionHorizon = (
@@ -252,9 +263,11 @@ function StochasticLab({ realData, activeSymbol }: { realData: ChartData[], acti
       };
 
       const horizons = [
+          { ticks: 3, window: ACCURACY_WINDOW_3T, ref: pendingPredictions3tRef, setAccuracyHistory: setPredictionAccuracyHistory3t },
           { ticks: 6, window: ACCURACY_WINDOW_6T, ref: pendingPredictions6tRef, setAccuracyHistory: setPredictionAccuracyHistory6t },
           { ticks: 10, window: ACCURACY_WINDOW_10S, ref: pendingPredictions10sRef, setAccuracyHistory: setPredictionAccuracyHistory10s }, 
           { ticks: 20, window: ACCURACY_WINDOW_20S, ref: pendingPredictions20sRef, setAccuracyHistory: setPredictionAccuracyHistory20s }, 
+          { ticks: 30, window: ACCURACY_WINDOW_30S, ref: pendingPredictions30sRef, setAccuracyHistory: setPredictionAccuracyHistory30s },
           { ticks: 40, window: ACCURACY_WINDOW_40S, ref: pendingPredictions40sRef, setAccuracyHistory: setPredictionAccuracyHistory40s }, 
       ];
       
@@ -262,15 +275,17 @@ function StochasticLab({ realData, activeSymbol }: { realData: ChartData[], acti
           processPredictionHorizon(h.ticks, h.window, prices, h.ref, h.setAccuracyHistory);
       });
 
+      setFuturePath3t(projectPath(3).map(p => ({ time: p.time, predicted_3t_ahead: p.price })));
       setFuturePath6t(projectPath(6).map(p => ({ time: p.time, predicted_6t_ahead: p.price })));
       setFuturePath10s(projectPath(10).map(p => ({ time: p.time, predicted_10s_ahead: p.price })));
       setFuturePath20s(projectPath(20).map(p => ({ time: p.time, predicted_20s_ahead: p.price })));
+      setFuturePath30s(projectPath(30).map(p => ({ time: p.time, predicted_30s_ahead: p.price })));
       setFuturePath40s(projectPath(40).map(p => ({ time: p.time, predicted_40s_ahead: p.price })));
     }
     
     setPredictionData(newPredictionData.slice(-200));
 
-  }, [realData]);
+  }, [realData, driftCorrectionForDisplay.drift]);
 
   const chartDisplayData = useMemo(() => {
     const combined = [...predictionData.filter(p => p && (p.real || p.predicted_1_tick))];
@@ -286,13 +301,15 @@ function StochasticLab({ realData, activeSymbol }: { realData: ChartData[], acti
         });
     };
 
+    mergePath(futurePath3t);
     mergePath(futurePath6t);
     mergePath(futurePath10s);
     mergePath(futurePath20s);
+    mergePath(futurePath30s);
     mergePath(futurePath40s);
 
     return combined;
-  }, [predictionData, futurePath6t, futurePath10s, futurePath20s, futurePath40s]);
+  }, [predictionData, futurePath3t, futurePath6t, futurePath10s, futurePath20s, futurePath30s, futurePath40s]);
 
   const lineData = useMemo(() => {
     if (qqData.length === 0) return [];
@@ -310,9 +327,11 @@ function StochasticLab({ realData, activeSymbol }: { realData: ChartData[], acti
     return { hits, total, percentage };
   };
 
+  const accuracy3t = calculateRollingAccuracy(predictionAccuracyHistory3t);
   const accuracy6t = calculateRollingAccuracy(predictionAccuracyHistory6t);
   const accuracy10s = calculateRollingAccuracy(predictionAccuracyHistory10s);
   const accuracy20s = calculateRollingAccuracy(predictionAccuracyHistory20s);
+  const accuracy30s = calculateRollingAccuracy(predictionAccuracyHistory30s);
   const accuracy40s = calculateRollingAccuracy(predictionAccuracyHistory40s);
   
   const getProgressColor = (percentage: number) => {
@@ -327,6 +346,7 @@ function StochasticLab({ realData, activeSymbol }: { realData: ChartData[], acti
     const projections = [
       { name: '10s', path: futurePath10s, accuracy: accuracy10s.percentage },
       { name: '20s', path: futurePath20s, accuracy: accuracy20s.percentage },
+      { name: '30s', path: futurePath30s, accuracy: accuracy30s.percentage },
       { name: '40s', path: futurePath40s, accuracy: accuracy40s.percentage },
     ];
 
@@ -363,7 +383,7 @@ function StochasticLab({ realData, activeSymbol }: { realData: ChartData[], acti
 
     return { decision, confidence, votes };
 
-  }, [futurePath10s, futurePath20s, futurePath40s, accuracy10s, accuracy20s, accuracy40s]);
+  }, [futurePath10s, futurePath20s, futurePath30s, futurePath40s, accuracy10s, accuracy20s, accuracy30s, accuracy40s]);
 
 
   return (
@@ -444,9 +464,11 @@ function StochasticLab({ realData, activeSymbol }: { realData: ChartData[], acti
                                     <Legend />
                                     <Line type="monotone" dataKey="real" stroke="#2563eb" strokeWidth={2.5} dot={false} name="Preço Real" />
                                     <Line type="monotone" dataKey="predicted_1_tick" stroke="#f59e0b" strokeWidth={1.5} strokeDasharray="3 3" dot={false} name="Previsão (1-Tick)" />
+                                    <Line type="monotone" dataKey="predicted_3t_ahead" stroke="#a16207" strokeWidth={2} strokeDasharray="8 4" dot={false} name="Projeção (3 Ticks)" />
                                     <Line type="monotone" dataKey="predicted_6t_ahead" stroke="#ef4444" strokeWidth={2} strokeDasharray="8 4" dot={false} name="Projeção (6 Ticks)" />
                                     <Line type="monotone" dataKey="predicted_10s_ahead" stroke="#8b5cf6" strokeWidth={2} strokeDasharray="8 4" dot={false} name="Projeção (10s)" />
                                     <Line type="monotone" dataKey="predicted_20s_ahead" stroke="#3b82f6" strokeWidth={2} strokeDasharray="8 4" dot={false} name="Projeção (20s)" />
+                                    <Line type="monotone" dataKey="predicted_30s_ahead" stroke="#f472b6" strokeWidth={2} strokeDasharray="8 4" dot={false} name="Projeção (30s)" />
                                     <Line type="monotone" dataKey="predicted_40s_ahead" stroke="#10b981" strokeWidth={2} strokeDasharray="8 4" dot={false} name="Projeção (40s)" />
                                   </LineChart>
                                 </ResponsiveContainer>
@@ -496,7 +518,25 @@ function StochasticLab({ realData, activeSymbol }: { realData: ChartData[], acti
                                         </TooltipProvider>
                                         <p className="text-lg font-bold font-mono">{driftCorrectionForDisplay.drift.toFixed(6)}</p>
                                     </div>
-                                    
+                                     <div className="p-3 bg-slate-50 rounded border">
+                                        <TooltipProvider>
+                                            <ShadTooltip>
+                                                <TooltipTrigger asChild>
+                                                    <p className="text-xs text-muted-foreground flex items-center gap-1.5 cursor-help">
+                                                        <Target className="h-4 w-4"/>Assertividade (3 Ticks) <Info className="h-3 w-3" />
+                                                    </p>
+                                                </TooltipTrigger>
+                                                <TooltipContent>
+                                                    <p className="max-w-xs">A percentagem de vezes que o modelo acertou a <strong>direção</strong> do preço (subiu/desceu) nas últimas {predictionAccuracyHistory3t.length} projeções de 3 ticks.</p>
+                                                </TooltipContent>
+                                            </ShadTooltip>
+                                        </TooltipProvider>
+                                        <div className="flex items-center gap-2">
+                                            <Progress value={accuracy3t.percentage} className="h-2 w-full flex-1" indicatorClassName={getProgressColor(accuracy3t.percentage)} />
+                                            <span className="font-mono font-semibold w-16 text-right">{accuracy3t.percentage.toFixed(1)}%</span>
+                                        </div>
+                                        <span className="text-[10px] text-muted-foreground">({accuracy3t.hits} de {accuracy3t.total})</span>
+                                    </div>
                                      <div className="p-3 bg-slate-50 rounded border">
                                         <TooltipProvider>
                                             <ShadTooltip>
@@ -553,6 +593,25 @@ function StochasticLab({ realData, activeSymbol }: { realData: ChartData[], acti
                                             <span className="font-mono font-semibold w-16 text-right">{accuracy20s.percentage.toFixed(1)}%</span>
                                         </div>
                                         <span className="text-[10px] text-muted-foreground">({accuracy20s.hits} de {accuracy20s.total})</span>
+                                    </div>
+                                     <div className="p-3 bg-slate-50 rounded border">
+                                        <TooltipProvider>
+                                            <ShadTooltip>
+                                                <TooltipTrigger asChild>
+                                                    <p className="text-xs text-muted-foreground flex items-center gap-1.5 cursor-help">
+                                                        <Target className="h-4 w-4"/>Assertividade (30s) <Info className="h-3 w-3" />
+                                                    </p>
+                                                </TooltipTrigger>
+                                                <TooltipContent>
+                                                    <p className="max-w-xs">A percentagem de vezes que o modelo acertou a <strong>direção</strong> do preço (subiu/desceu) nas últimas {predictionAccuracyHistory30s.length} projeções de 30s.</p>
+                                                </TooltipContent>
+                                            </ShadTooltip>
+                                        </TooltipProvider>
+                                        <div className="flex items-center gap-2">
+                                            <Progress value={accuracy30s.percentage} className="h-2 w-full flex-1" indicatorClassName={getProgressColor(accuracy30s.percentage)} />
+                                            <span className="font-mono font-semibold w-16 text-right">{accuracy30s.percentage.toFixed(1)}%</span>
+                                        </div>
+                                        <span className="text-[10px] text-muted-foreground">({accuracy30s.hits} de {accuracy30s.total})</span>
                                     </div>
                                      <div className="p-3 bg-slate-50 rounded border col-span-2 lg:col-span-1">
                                         <TooltipProvider>
