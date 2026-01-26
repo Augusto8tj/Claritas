@@ -280,6 +280,7 @@ export function useRobotCouncilV3(
   const [tradeDecisionLog, setTradeDecisionLog] = useState<TradeDecisionLog[]>([]);
   const [sessionStartTime, setSessionStartTime] = useState<number | null>(null);
 
+  // NOVO: Gatilho de renderização para a UI
   const [virtualTradeCount, setVirtualTradeCount] = useState(0);
 
   const [councilState, setCouncilState] = useState<Omit<CouncilState, 'virtualTradeCount'>>({
@@ -308,11 +309,14 @@ export function useRobotCouncilV3(
   
   const lastRegimeRef = useRef<MarketRegime>('ranging');
   
+  // Cache para o Regime de Mercado
   const regimeCacheRef = useRef<{ result: RegimeDetectionResult; timestamp: number } | null>(null);
   
+  // NOVO: Histórico para Meta-Regime
   const regimeHistoryRef = useRef<MarketRegime[]>([]);
   const MAX_REGIME_HISTORY = 50;
 
+  // Configurações
   const [dailyBalance, setDailyBalance] = useState(10); 
   const [dailyTarget, setDailyTarget] = useState(5);
   const [isDynamicConsensusOn, setIsDynamicConsensusOn] = useState(true);
@@ -359,7 +363,9 @@ export function useRobotCouncilV3(
         } else {
             resetArenaPerformance();
         }
-    }).catch(console.error);
+    }).catch(() => {
+        // Erro é tratado globalmente pelo emitter no serviço.
+    });
   }, [user, isAuthLoading, resetArenaPerformance]);
 
   const fetchStrategyCouncil = useCallback(async () => {
