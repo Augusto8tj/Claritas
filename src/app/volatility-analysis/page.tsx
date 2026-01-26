@@ -55,7 +55,6 @@ function StochasticLab({ realData, activeSymbol }: { realData: ChartData[], acti
   const [futurePath30s, setFuturePath30s] = useState<any[]>([]);
   const [futurePath40s, setFuturePath40s] = useState<any[]>([]);
   
-  // FIX: Use ref for calculation, state for display to prevent loops
   const driftCorrectionRef = useRef(0);
   const [driftCorrectionForDisplay, setDriftCorrectionForDisplay] = useState({drift: 0, mae: 0, rmse: 0});
 
@@ -341,9 +340,10 @@ function StochasticLab({ realData, activeSymbol }: { realData: ChartData[], acti
     return 'bg-gray-400';
   };
   
-  // --- Lógica para Consenso das Projeções ---
   const projectionConsensus = useMemo(() => {
     const projections = [
+      { name: '3t', path: futurePath3t, accuracy: accuracy3t.percentage },
+      { name: '6t', path: futurePath6t, accuracy: accuracy6t.percentage },
       { name: '10s', path: futurePath10s, accuracy: accuracy10s.percentage },
       { name: '20s', path: futurePath20s, accuracy: accuracy20s.percentage },
       { name: '30s', path: futurePath30s, accuracy: accuracy30s.percentage },
@@ -352,7 +352,7 @@ function StochasticLab({ realData, activeSymbol }: { realData: ChartData[], acti
 
     let riseWeight = 0;
     let fallWeight = 0;
-    const votes: Record<string, 'RISE' | 'FALL' | 'HOLD'> = {};
+    const votes: {name: string, vote: 'RISE' | 'FALL' | 'HOLD', accuracy: number}[] = [];
 
     projections.forEach(p => {
       if (p.path.length > 1) {
@@ -360,9 +360,8 @@ function StochasticLab({ realData, activeSymbol }: { realData: ChartData[], acti
         const endPrice = p.path[p.path.length - 1].price;
         
         const vote = endPrice > startPrice ? 'RISE' : 'FALL';
-        votes[p.name] = vote;
+        votes.push({ name: p.name, vote, accuracy: p.accuracy });
         
-        // Ponderação: mais distante de 50%, maior o peso
         const weight = Math.abs(p.accuracy - 50) / 50;
 
         if (vote === 'RISE') {
@@ -371,7 +370,7 @@ function StochasticLab({ realData, activeSymbol }: { realData: ChartData[], acti
           fallWeight += weight;
         }
       } else {
-        votes[p.name] = 'HOLD';
+        votes.push({ name: p.name, vote: 'HOLD', accuracy: p.accuracy });
       }
     });
 
@@ -383,7 +382,14 @@ function StochasticLab({ realData, activeSymbol }: { realData: ChartData[], acti
 
     return { decision, confidence, votes };
 
-  }, [futurePath10s, futurePath20s, futurePath30s, futurePath40s, accuracy10s, accuracy20s, accuracy30s, accuracy40s]);
+  }, [
+    futurePath3t, accuracy3t,
+    futurePath6t, accuracy6t,
+    futurePath10s, accuracy10s,
+    futurePath20s, accuracy20s,
+    futurePath30s, accuracy30s,
+    futurePath40s, accuracy40s
+  ]);
 
 
   return (
@@ -431,24 +437,32 @@ function StochasticLab({ realData, activeSymbol }: { realData: ChartData[], acti
                                             <ChevronRight className="h-4 w-4 text-muted-foreground transition-transform group-data-[state=open]:rotate-90"/>
                                           </CollapsibleTrigger>
                                           <CollapsibleContent>
-                                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-4">
-                                               <div className={cn("p-4 rounded-lg flex flex-col items-center justify-center text-white",
-                                                  projectionConsensus.decision === 'RISE' && 'bg-green-600',
-                                                  projectionConsensus.decision === 'FALL' && 'bg-red-600',
-                                                  projectionConsensus.decision === 'HOLD' && 'bg-gray-500',
-                                               )}>
-                                                  <span className="text-sm font-medium opacity-80">Decisão Final</span>
-                                                  <span className="text-3xl font-bold">{projectionConsensus.decision}</span>
-                                                  <span className="text-xs font-mono opacity-90">Confiança: {projectionConsensus.confidence.toFixed(1)}%</span>
-                                               </div>
-                                               <div className="space-y-2 text-xs">
-                                                  {Object.entries(projectionConsensus.votes).map(([name, vote]) => (
-                                                      <div key={name} className="flex justify-between items-center bg-background p-2 rounded">
-                                                          <span className="font-semibold">{name}</span>
-                                                          <span className={cn("font-bold", vote === 'RISE' && 'text-green-500', vote === 'FALL' && 'text-red-500')}>{vote}</span>
-                                                      </div>
-                                                  ))}
-                                               </div>
+                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-4">
+                                                <div className={cn("p-4 rounded-lg flex flex-col items-center justify-center text-white",
+                                                    projectionConsensus.decision === 'RISE' && 'bg-green-600',
+                                                    projectionConsensus.decision === 'FALL' && 'bg-red-600',
+                                                    projectionConsensus.decision === 'HOLD' && 'bg-gray-500',
+                                                )}>
+                                                    <span className="text-sm font-medium opacity-80">Decisão Final</span>
+                                                    <span className="text-3xl font-bold">{projectionConsensus.decision}</span>
+                                                    <span className="text-xs font-mono opacity-90">Confiança: {projectionConsensus.confidence.toFixed(1)}%</span>
+                                                </div>
+                                                <div className="space-y-2">
+                                                    {projectionConsensus.votes.map(({ name, vote, accuracy }) => (
+                                                        <div key={name} className="flex justify-between items-center bg-background p-2 rounded-md border text-xs">
+                                                            <span className="font-semibold w-12">{name}</span>
+                                                            <div className="flex items-center gap-2 w-24">
+                                                                <Progress value={accuracy} className="h-1.5 flex-1" indicatorClassName={getProgressColor(accuracy)} />
+                                                                <span className="font-mono w-10 text-right">{accuracy.toFixed(0)}%</span>
+                                                            </div>
+                                                            <span className={cn("font-bold w-10 text-right", 
+                                                                vote === 'RISE' && 'text-green-500', 
+                                                                vote === 'FALL' && 'text-red-500',
+                                                                vote === 'HOLD' && 'text-gray-400'
+                                                            )}>{vote}</span>
+                                                        </div>
+                                                    ))}
+                                                </div>
                                             </div>
                                           </CollapsibleContent>
                                       </div>
@@ -518,7 +532,7 @@ function StochasticLab({ realData, activeSymbol }: { realData: ChartData[], acti
                                         </TooltipProvider>
                                         <p className="text-lg font-bold font-mono">{driftCorrectionForDisplay.drift.toFixed(6)}</p>
                                     </div>
-                                     <div className="p-3 bg-slate-50 rounded border">
+                                    <div className="p-3 bg-slate-50 rounded border">
                                         <TooltipProvider>
                                             <ShadTooltip>
                                                 <TooltipTrigger asChild>
@@ -537,7 +551,7 @@ function StochasticLab({ realData, activeSymbol }: { realData: ChartData[], acti
                                         </div>
                                         <span className="text-[10px] text-muted-foreground">({accuracy3t.hits} de {accuracy3t.total})</span>
                                     </div>
-                                     <div className="p-3 bg-slate-50 rounded border">
+                                    <div className="p-3 bg-slate-50 rounded border">
                                         <TooltipProvider>
                                             <ShadTooltip>
                                                 <TooltipTrigger asChild>
@@ -789,3 +803,4 @@ export default function VolatilityAnalysisPage() {
         </DerivApiProviderAccumulators>
     );
 }
+
