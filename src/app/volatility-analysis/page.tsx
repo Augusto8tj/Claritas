@@ -40,7 +40,7 @@ function StochasticLab({ realData, activeSymbol }: { realData: ChartData[], acti
   const [activeTab, setActiveTab] = useState('prediction');
   const [priceData, setPriceData] = useState<any[]>([]);
   const [returns, setReturns] = useState<any[]>([]);
-  const [volatilityData, setVolatilityData] = useState<any[]>(([]);
+  const [volatilityData, setVolatilityData] = useState<any[]>([]);
   const [qqData, setQQData] = useState<any[]>([]);
   const [stats, setStats] = useState<any>({});
   
@@ -50,17 +50,17 @@ function StochasticLab({ realData, activeSymbol }: { realData: ChartData[], acti
   const [futurePath10s, setFuturePath10s] = useState<any[]>([]);
   const [futurePath20s, setFuturePath20s] = useState<any[]>([]);
   const [futurePath40s, setFuturePath40s] = useState<any[]>([]);
+  const driftCorrectionRef = useRef(0);
   const [driftCorrectionForDisplay, setDriftCorrectionForDisplay] = useState({drift: 0, mae: 0, rmse: 0});
 
   // --- Estados para Assertividade da Projeção ---
-  const [predictionAccuracyHistory, setPredictionAccuracyHistory] = useState<boolean[]>([]);
-  const [predictionAccuracy10sHistory, setPredictionAccuracy10sHistory] = useState<boolean[]>([]);
-  const [predictionAccuracy20sHistory, setPredictionAccuracy20sHistory] = useState<boolean[]>([]);
-  const [predictionAccuracy40sHistory, setPredictionAccuracy40sHistory] = useState<boolean[]>([]);
+  const [predictionAccuracyHistory6t, setPredictionAccuracyHistory6t] = useState<boolean[]>([]);
+  const [predictionAccuracyHistory10s, setPredictionAccuracyHistory10s] = useState<boolean[]>([]);
+  const [predictionAccuracyHistory20s, setPredictionAccuracyHistory20s] = useState<boolean[]>([]);
+  const [predictionAccuracyHistory40s, setPredictionAccuracyHistory40s] = useState<boolean[]>([]);
 
   const predictionErrorsRef = useRef<number[]>([]);
-  const driftCorrectionRef = useRef(0);
-  const pendingPredictionsRef = useRef<{ startTimeIndex: number; startPrice: number; predictedEndPrice: number }[]>([]);
+  const pendingPredictions6tRef = useRef<{ startTimeIndex: number; startPrice: number; predictedEndPrice: number }[]>([]);
   const pendingPredictions10sRef = useRef<{ startTimeIndex: number; startPrice: number; predictedEndPrice: number }[]>([]);
   const pendingPredictions20sRef = useRef<{ startTimeIndex: number; startPrice: number; predictedEndPrice: number }[]>([]);
   const pendingPredictions40sRef = useRef<{ startTimeIndex: number; startPrice: number; predictedEndPrice: number }[]>([]);
@@ -76,10 +76,9 @@ function StochasticLab({ realData, activeSymbol }: { realData: ChartData[], acti
 
   useEffect(() => {
     const VOL_WINDOW = 50;
-    const ERROR_MEMORY = 50; 
+    const ERROR_MEMORY = 50;
     
     if (realData.length < VOL_WINDOW) {
-      // Limpar todos os estados se não houver dados suficientes
       setPriceData([]); setReturns([]); setVolatilityData([]); setQQData([]); setStats({}); 
       setPredictionData([]); setFuturePath6t([]); setFuturePath10s([]); setFuturePath20s([]); setFuturePath40s([]);
       return;
@@ -158,10 +157,8 @@ function StochasticLab({ realData, activeSymbol }: { realData: ChartData[], acti
         const newRMSE = Math.sqrt(sumSquaredErrors / errors.length);
         const newDrift = errors.reduce((a,e) => a + e, 0) / errors.length;
 
-        if (Math.abs(newDrift - driftCorrectionRef.current) > 1e-9) {
-          driftCorrectionRef.current = newDrift;
-          setDriftCorrectionForDisplay({ drift: newDrift, mae: newMAE, rmse: newRMSE });
-        }
+        driftCorrectionRef.current = newDrift;
+        setDriftCorrectionForDisplay({ drift: newDrift, mae: newMAE, rmse: newRMSE });
     }
 
     if (prices.length > VOL_WINDOW) {
@@ -197,23 +194,23 @@ function StochasticLab({ realData, activeSymbol }: { realData: ChartData[], acti
       ) => {
           const newFuturePath = projectPath(horizonTicks);
           const currentTimeIndex = prices.length - 1;
-          const completedIndices: number[] = [];
           let newHistory: boolean[] = [];
 
-          pendingPredictionsRef.current.forEach((pred, index) => {
+          const updatedPending = pendingPredictionsRef.current.filter((pred) => {
               if (currentTimeIndex >= pred.startTimeIndex + horizonTicks) {
                   const actualEndPrice = prices[pred.startTimeIndex + horizonTicks];
-                  if (actualEndPrice === undefined) return;
+                  if (actualEndPrice === undefined) return true;
                   const predictedDirection = pred.predictedEndPrice > pred.startPrice ? 'RISE' : 'FALL';
                   const actualDirection = actualEndPrice > pred.startPrice ? 'RISE' : 'FALL';
-                  const isHit = predictedDirection === actualDirection;
-                  newHistory.push(isHit);
-                  completedIndices.push(index);
+                  newHistory.push(predictedDirection === actualDirection);
+                  return false; // Remove completed prediction
               }
+              return true;
           });
-
-          if (completedIndices.length > 0) {
-              pendingPredictionsRef.current = pendingPredictionsRef.current.filter((_, index) => !completedIndices.includes(index));
+          
+          pendingPredictionsRef.current = updatedPending;
+          
+          if (newHistory.length > 0) {
               setAccuracyHistory(prev => [...prev, ...newHistory]);
           }
 
@@ -231,10 +228,10 @@ function StochasticLab({ realData, activeSymbol }: { realData: ChartData[], acti
       };
 
       const horizons = [
-          { ticks: 6, ref: pendingPredictionsRef, setAccuracyHistory: setPredictionAccuracyHistory },
-          { ticks: 10, ref: pendingPredictions10sRef, setAccuracyHistory: setPredictionAccuracy10sHistory }, 
-          { ticks: 20, ref: pendingPredictions20sRef, setAccuracyHistory: setPredictionAccuracy20sHistory }, 
-          { ticks: 40, ref: pendingPredictions40sRef, setAccuracyHistory: setPredictionAccuracy40sHistory }, 
+          { ticks: 6, ref: pendingPredictions6tRef, setAccuracyHistory: setPredictionAccuracyHistory6t },
+          { ticks: 10, ref: pendingPredictions10sRef, setAccuracyHistory: setPredictionAccuracyHistory10s }, 
+          { ticks: 20, ref: pendingPredictions20sRef, setAccuracyHistory: setPredictionAccuracyHistory20s }, 
+          { ticks: 40, ref: pendingPredictions40sRef, setAccuracyHistory: setPredictionAccuracyHistory40s }, 
       ];
       
       horizons.forEach(h => {
@@ -290,10 +287,10 @@ function StochasticLab({ realData, activeSymbol }: { realData: ChartData[], acti
     return { hits, total, percentage };
   };
 
-  const accuracy6t = calculateRollingAccuracy(predictionAccuracyHistory, 6);
-  const accuracy10s = calculateRollingAccuracy(predictionAccuracy10sHistory, 10);
-  const accuracy20s = calculateRollingAccuracy(predictionAccuracy20sHistory, 10);
-  const accuracy40s = calculateRollingAccuracy(predictionAccuracy40sHistory, 10);
+  const accuracy6t = calculateRollingAccuracy(predictionAccuracyHistory6t, 6);
+  const accuracy10s = calculateRollingAccuracy(predictionAccuracyHistory10s, 10);
+  const accuracy20s = calculateRollingAccuracy(predictionAccuracyHistory20s, 10);
+  const accuracy40s = calculateRollingAccuracy(predictionAccuracyHistory40s, 10);
   
   const getProgressColor = (percentage: number) => {
     if (percentage > 75) return 'bg-green-500';
@@ -415,12 +412,11 @@ function StochasticLab({ realData, activeSymbol }: { realData: ChartData[], acti
                                                 </TooltipContent>
                                             </ShadTooltip>
                                         </TooltipProvider>
-                                        <div className="flex items-baseline gap-2">
-                                            <p className="text-lg font-bold font-mono">
-                                                {accuracy6t.percentage.toFixed(1)}%
-                                            </p>
-                                            <span className="text-xs text-muted-foreground">({accuracy6t.hits} de {accuracy6t.total})</span>
+                                        <div className="flex items-center gap-2">
+                                            <Progress value={accuracy6t.percentage} className="h-2 w-full flex-1" indicatorClassName={getProgressColor(accuracy6t.percentage)} />
+                                            <span className="font-mono font-semibold w-16 text-right">{accuracy6t.percentage.toFixed(1)}%</span>
                                         </div>
+                                        <span className="text-[10px] text-muted-foreground">({accuracy6t.hits} de {accuracy6t.total})</span>
                                     </div>
                                      <div className="p-3 bg-slate-50 rounded border">
                                         <TooltipProvider>
@@ -435,12 +431,11 @@ function StochasticLab({ realData, activeSymbol }: { realData: ChartData[], acti
                                                 </TooltipContent>
                                             </ShadTooltip>
                                         </TooltipProvider>
-                                        <div className="flex items-baseline gap-2">
-                                            <p className="text-lg font-bold font-mono">
-                                                {accuracy10s.percentage.toFixed(1)}%
-                                            </p>
-                                            <span className="text-xs text-muted-foreground">({accuracy10s.hits} de {accuracy10s.total})</span>
+                                        <div className="flex items-center gap-2">
+                                            <Progress value={accuracy10s.percentage} className="h-2 w-full flex-1" indicatorClassName={getProgressColor(accuracy10s.percentage)} />
+                                            <span className="font-mono font-semibold w-16 text-right">{accuracy10s.percentage.toFixed(1)}%</span>
                                         </div>
+                                        <span className="text-[10px] text-muted-foreground">({accuracy10s.hits} de {accuracy10s.total})</span>
                                     </div>
                                      <div className="p-3 bg-slate-50 rounded border">
                                         <TooltipProvider>
@@ -455,12 +450,11 @@ function StochasticLab({ realData, activeSymbol }: { realData: ChartData[], acti
                                                 </TooltipContent>
                                             </ShadTooltip>
                                         </TooltipProvider>
-                                        <div className="flex items-baseline gap-2">
-                                            <p className="text-lg font-bold font-mono">
-                                                {accuracy20s.percentage.toFixed(1)}%
-                                            </p>
-                                            <span className="text-xs text-muted-foreground">({accuracy20s.hits} de {accuracy20s.total})</span>
+                                        <div className="flex items-center gap-2">
+                                            <Progress value={accuracy20s.percentage} className="h-2 w-full flex-1" indicatorClassName={getProgressColor(accuracy20s.percentage)} />
+                                            <span className="font-mono font-semibold w-16 text-right">{accuracy20s.percentage.toFixed(1)}%</span>
                                         </div>
+                                        <span className="text-[10px] text-muted-foreground">({accuracy20s.hits} de {accuracy20s.total})</span>
                                     </div>
                                      <div className="p-3 bg-slate-50 rounded border col-span-2 lg:col-span-1">
                                         <TooltipProvider>
@@ -475,12 +469,11 @@ function StochasticLab({ realData, activeSymbol }: { realData: ChartData[], acti
                                                 </TooltipContent>
                                             </ShadTooltip>
                                         </TooltipProvider>
-                                        <div className="flex items-baseline gap-2">
-                                            <p className="text-lg font-bold font-mono">
-                                                {accuracy40s.percentage.toFixed(1)}%
-                                            </p>
-                                            <span className="text-xs text-muted-foreground">({accuracy40s.total > 0 ? `${accuracy40s.hits} de ${accuracy40s.total}` : '0 de 0'})</span>
+                                        <div className="flex items-center gap-2">
+                                            <Progress value={accuracy40s.percentage} className="h-2 w-full flex-1" indicatorClassName={getProgressColor(accuracy40s.percentage)} />
+                                            <span className="font-mono font-semibold w-16 text-right">{accuracy40s.percentage.toFixed(1)}%</span>
                                         </div>
+                                        <span className="text-[10px] text-muted-foreground">({accuracy40s.total > 0 ? `${accuracy40s.hits} de ${accuracy40s.total}` : '0 de 0'})</span>
                                     </div>
                                 </div>
                               </div>
@@ -639,5 +632,3 @@ export default function VolatilityAnalysisPage() {
         </DerivApiProviderAccumulators>
     );
 }
-
-    
