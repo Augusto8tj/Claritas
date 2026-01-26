@@ -167,7 +167,7 @@ export function useTimeMaster(botCandleData: CandleData[], priceTicks: TickData[
 
         return {
           averageBreakTime: avg,
-          safeExitTime: Math.max(15, Math.min(safeTime, 90)), // Limita entre 15s e 90s
+          safeExitTime: Math.max(15, safeTime), // REMOÇÃO DO TETO ARBITRÁRIO DE 90s
           breakTimeHistory: newHistory,
           regime: regime,
           instantaneousVolatility,
