@@ -71,7 +71,7 @@ export function MasterAutopilotInterface() {
                 <SelectContent>
                   <SelectItem value="Accumulators">Accumulators (Foco em Estabilidade)</SelectItem>
                   <SelectItem value="Multipliers">Multipliers (Foco em Tendência)</SelectItem>
-                  <SelectItem value="Rise/Fall" disabled>Rise/Fall (Em breve)</SelectItem>
+                  <SelectItem value="Rise/Fall">Rise/Fall (Opções Digitais)</SelectItem>
                 </SelectContent>
               </Select>
             </div>

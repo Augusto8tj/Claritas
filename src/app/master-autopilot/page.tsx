@@ -2,16 +2,16 @@
 'use client';
 
 import React from "react";
-import { DerivApiProviderAccumulators, useDerivApiAccumulators } from "@/features/trading/hooks/use-deriv-api-accumulators";
+import { DerivApiProviderV2, useDerivApiV2 } from "@/features/trading/hooks/use-deriv-api-v2";
 import { MasterAutopilotInterface } from "@/features/trading/components/master-autopilot/master-autopilot-interface";
-import { AssetSelectorAccumulators } from "@/features/trading/components/deriv-trader/asset-selector-accumulators";
-import { ApiStatusIndicatorAccumulators } from "@/features/trading/components/deriv-trader/ApiStatusIndicatorAccumulators";
+import { AssetSelectorV2 } from "@/features/trading/components/deriv-trader/asset-selector-v2";
+import { ApiStatusIndicatorV2 } from "@/features/trading/components/deriv-trader/ApiStatusIndicatorV2";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { MarketChart } from "@/features/trading/components/deriv-trader/market-chart";
 
 
 function Header() {
-    const { activeSymbol, setActiveSymbol, assetGroups, isAssetsLoading } = useDerivApiAccumulators();
+    const { activeSymbol, setActiveSymbol, assetGroups, isAssetsLoading } = useDerivApiV2();
     return (
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
             <h1 className="text-3xl font-bold tracking-tight font-headline shrink-0 text-center md:text-left">
@@ -19,7 +19,7 @@ function Header() {
             </h1>
             <div className="flex-1 grid grid-cols-1 md:grid-cols-2 gap-4 items-center">
                  <div className="flex justify-center">
-                    <AssetSelectorAccumulators
+                    <AssetSelectorV2
                         selectedAsset={activeSymbol || ""} 
                         onAssetChange={(asset) => setActiveSymbol(asset)} 
                         assetGroups={assetGroups}
@@ -27,7 +27,7 @@ function Header() {
                     />
                  </div>
                 <div className="flex justify-center">
-                    <ApiStatusIndicatorAccumulators />
+                    <ApiStatusIndicatorV2 />
                 </div>
             </div>
         </div>
@@ -38,7 +38,7 @@ function IsolatedMarketChart() {
     const { 
         activeSymbol, operationsLog, chartData, isChartLoading, chartError, 
         chartType, setChartType, timePeriod, setTimePeriod, tradeAnnotations
-    } = useDerivApiAccumulators();
+    } = useDerivApiV2();
     
     return (
         <Card>
@@ -82,10 +82,9 @@ function MasterAutopilotPageContent() {
 }
 
 export default function MasterAutopilotPage() {
-  // Usando o provider dos Accumulators por enquanto, pois ele tem os dados de volatilidade necessários
   return (
-    <DerivApiProviderAccumulators>
+    <DerivApiProviderV2>
         <MasterAutopilotPageContent />
-    </DerivApiProviderAccumulators>
+    </DerivApiProviderV2>
   );
 }
