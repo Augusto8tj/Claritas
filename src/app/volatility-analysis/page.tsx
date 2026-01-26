@@ -4,12 +4,12 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ScatterChart, Scatter } from 'recharts';
 import { Calculator, TrendingUp, Activity, BarChart3, Bot, FlaskConical, Target } from 'lucide-react';
 import { DerivApiProviderAccumulators, useDerivApiAccumulators } from "@/features/trading/hooks/use-deriv-api-accumulators";
-import { MarketChart } from "@/features/trading/components/deriv-trader/market-chart";
 import { AssetSelectorAccumulators } from "@/features/trading/components/deriv-trader/asset-selector-accumulators";
 import { ApiStatusIndicatorAccumulators } from "@/features/trading/components/deriv-trader/ApiStatusIndicatorAccumulators";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { ScrollArea } from '@/components/ui/scroll-area';
 import type { ChartData, CandleData } from '@/lib/types';
+import { Progress } from "@/components/ui/progress";
 
 
 // Aproximação da função quantil normal inversa
@@ -445,28 +445,12 @@ function Header() {
     );
 };
 
-function IsolatedMarketChart() {
-    const { activeSymbol, chartData, isChartLoading, chartError, chartType, setChartType, timePeriod, setTimePeriod } = useDerivApiAccumulators();
-    return (
-        <Card className="h-full flex flex-col">
-            <CardHeader>
-                <CardTitle className="font-headline">Gráfico em Tempo Real ({activeSymbol})</CardTitle>
-                <CardDescription>Desempenho real do ativo selecionado.</CardDescription>
-            </CardHeader>
-            <CardContent className="flex-1">
-                <MarketChart activeSymbol={activeSymbol || ''} chartData={chartData} isChartLoading={isChartLoading} chartError={chartError} chartType={chartType} setChartType={setChartType} timePeriod={timePeriod} setTimePeriod={setTimePeriod} operations={[]} indicators={null} tradeAnnotations={[]} />
-            </CardContent>
-        </Card>
-    );
-};
-
 function PageContent() {
     const { chartData } = useDerivApiAccumulators();
     return (
         <div className="flex-1 space-y-4 p-4 sm:p-8 pt-6">
             <Header />
-            <div className="grid md:grid-cols-2 gap-6 items-start">
-                <IsolatedMarketChart />
+            <div className="grid grid-cols-1 gap-6 items-start">
                 <StochasticLab realData={chartData} />
             </div>
         </div>
