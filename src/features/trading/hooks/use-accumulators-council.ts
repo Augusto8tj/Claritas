@@ -44,8 +44,8 @@ export interface VirtualOperation {
     status: 'pending' | 'win' | 'loss';
     reason: string;
     growthRate: number;
-    entryStake: number; // NOVO: Stake da simulação
-    pnl: number;        // NOVO: P&L final
+    entryStake: number;
+    pnl: number;
     initialConditions: {
         atr: number;
         survivalProbability: number;
@@ -79,10 +79,6 @@ const normalCDF = (x: number): number => {
     return prob;
 };
 
-/**
- * Calcula a probabilidade de sobrevivência da posição
- * usando a distribuição de primeira passagem
- */
 function calculateSurvivalProbability(
   barrierDistance: number,
   targetDuration: number,
@@ -98,20 +94,16 @@ function calculateSurvivalProbability(
   
   const survivalProb = 2 * normalCDF(normalized * Math.sqrt(2)) - 1;
   
-  // CORREÇÃO: Impede probabilidade irrealista de 100%
   return Math.max(0, Math.min(0.999, survivalProb));
 }
 
 
-/**
- * Calcula o tamanho ótimo da posição usando Kelly fracionário
- */
 function calculateOptimalStake(
   accountBalance: number,
   winRate: number,
   averageWin: number,
   averageLoss: number,
-  kellyFraction: number = 0.25 // Conservative: 1/4 Kelly
+  kellyFraction: number = 0.25
 ): number {
   if (averageLoss === 0 || winRate === 0 || winRate === 100) return 1.0;
   if (accountBalance < 1.0) return 1.0;
@@ -131,10 +123,6 @@ function calculateOptimalStake(
   return Math.max(1.0, Math.min(stake, accountBalance * 0.10));
 }
 
-/**
- * Calcula o growth rate que maximiza o Kelly Criterion
- * ajustado pelo risco de quebra de barreira
- */
 function optimizeGrowthRate(
   survivalProbability: number,
   virtualArenaWinRate: number
@@ -152,9 +140,6 @@ function optimizeGrowthRate(
   return Math.max(0.01, Math.min(0.05, optimized));
 }
 
-/**
- * Analisa a microestrutura dos últimos N ticks
- */
 function analyzeMicrostructure(ticks: TickData[]): MicrostructureSignal {
   if (ticks.length < 20) return { isSafe: true, tickVelocityAnomaly: false, priceJumpDetected: false, safetyScore: 50 };
   
@@ -191,7 +176,6 @@ function analyzeMicrostructure(ticks: TickData[]): MicrostructureSignal {
   };
 }
 
-
 const calculateTimeToLoss = (operation: Operation): number => {
     if (!operation.exitTimestamp) return 0;
     const entryTime = new Date(operation.timestamp).getTime();
@@ -199,46 +183,58 @@ const calculateTimeToLoss = (operation: Operation): number => {
     return (exitTime - entryTime) / 1000;
 };
 
-/**
- * Estima o take profit que maximiza a utilidade esperada
- */
-function calculateDynamicTakeProfit(
-  volatilityRegime: VolatilityRegime,
-  averageBreakTime: number,
-  survivalProbability: number
-): number {
-  let baseTarget = 1.25; 
-
-  if (averageBreakTime > 65) {
-    baseTarget = 1.40;
-  } else if (averageBreakTime < 35) {
-    baseTarget = 1.10;
+const checkMicroVolatilityCircuitBreaker = (
+  ticks: TickData[],
+  baselineVolatility: number | null
+): { trigger: boolean; reason: string } => {
+  if (ticks.length < 15 || baselineVolatility === null) {
+    return { trigger: false, reason: "" };
   }
 
-  if (survivalProbability > 0.90) {
-    baseTarget *= 1.15;
-  } else if (survivalProbability < 0.80) {
-    baseTarget *= 0.85;
-  }
+  const recentTicks = ticks.slice(-10);
+  const prices = recentTicks.map(t => t.price);
+  const mean = prices.reduce((a, b) => a + b, 0) / prices.length;
+  const stdDev = Math.sqrt(
+    prices.map(p => Math.pow(p - mean, 2)).reduce((a, b) => a + b, 0) / prices.length
+  );
+  
+  const THRESHOLD_MULTIPLIER = 3.5;
+  const ABSOLUTE_MIN_TRIGGER = 0.00008;
 
-  switch(volatilityRegime.regime) {
-    case 'ultra-calm':
-      baseTarget = Math.min(1.50, baseTarget + 0.15);
-      break;
-    case 'calm':
-      baseTarget = Math.min(1.50, baseTarget + 0.05);
-      break;
-    case 'agitated':
-      baseTarget = Math.max(1.05, baseTarget - 0.10);
-      break;
-    case 'volatile':
-      baseTarget = Math.max(1.05, baseTarget - 0.20);
-      break;
+  const triggerThreshold = Math.max(baselineVolatility * THRESHOLD_MULTIPLIER, ABSOLUTE_MIN_TRIGGER);
+
+  if (stdDev > triggerThreshold) {
+    return {
+      trigger: true,
+      reason: `Disjuntor: Ruído de curto prazo detectado.`
+    };
   }
   
-  return baseTarget;
-}
+  return { trigger: false, reason: "" };
+};
 
+function calculateDynamicTakeProfit(
+  stake: number,
+  volatilityRegime: VolatilityRegime,
+  survivalProbability: number,
+  historicalProfitRatios: number[]
+): number {
+  let baseProfitRatio = 0.30; 
+
+  if (volatilityRegime.regime === 'ultra-calm' && survivalProbability > 0.9) {
+    baseProfitRatio = 0.50;
+  } else if (volatilityRegime.regime === 'calm') {
+    baseProfitRatio = 0.40;
+  }
+  
+  if (historicalProfitRatios.length > 10) {
+    const sortedRatios = [...historicalProfitRatios].sort((a, b) => a - b);
+    const medianProfit = sortedRatios[Math.floor(sortedRatios.length / 2)];
+    baseProfitRatio = (baseProfitRatio + Math.min(medianProfit, 0.6)) / 2;
+  }
+
+  return stake * Math.max(0.25, baseProfitRatio);
+}
 
 // ============================================================================
 // HOOK PRINCIPAL
@@ -278,6 +274,8 @@ export function useAccumulatorsCouncil() {
   const activeVirtualTradesRef = useRef<VirtualOperation[]>([]);
   const [dailyBalance, setDailyBalance] = useState(10.0);
   const [dailyTarget, setDailyTarget] = useState(5.0);
+  const historicalProfitRatios = useRef<number[]>([]);
+  const baselineVolatilityRef = useRef<number | null>(null);
   
   useEffect(() => {
       try {
@@ -410,6 +408,13 @@ export function useAccumulatorsCouncil() {
         executionRef.current = false;
         return;
       }
+
+      if (priceTicks.length > 100) {
+        const historicalTicks = priceTicks.slice(-100);
+        const prices = historicalTicks.map(t => t.price);
+        const mean = prices.reduce((a, b) => a + b, 0) / prices.length;
+        baselineVolatilityRef.current = Math.sqrt(prices.map(p => Math.pow(p - mean, 2)).reduce((a, b) => a + b, 0) / prices.length);
+      }
       
       if (dailyPnL <= -dailyBalance || dailyPnL >= dailyTarget) {
           if (isAutopilotOn) {
@@ -455,15 +460,17 @@ export function useAccumulatorsCouncil() {
         setBotStatus('POSITION_OPEN');
         
         const microstructureSignal = analyzeMicrostructure(priceTicks);
+        const circuitBreaker = checkMicroVolatilityCircuitBreaker(priceTicks, baselineVolatilityRef.current);
         const isVolatilityExpanding = calculatedIndicators.adx > ADX_EXIT_THRESHOLD;
         const hasReachedStopLoss = (pilotOpenPosition.result || 0) <= -pilotOpenPosition.stake * MAX_LOSS_PERCENT;
-        const dynamicTakeProfit = calculateDynamicTakeProfit(timeMaster.regime, timeMaster.averageBreakTime, currentSurvivalProb);
-        const hasReachedTakeProfit = (pilotOpenPosition.result || 0) >= pilotOpenPosition.stake * dynamicTakeProfit;
+        const dynamicTakeProfit = calculateDynamicTakeProfit(pilotOpenPosition.stake, timeMaster.regime, currentSurvivalProb, historicalProfitRatios.current);
+        const hasReachedTakeProfit = (pilotOpenPosition.result || 0) >= dynamicTakeProfit;
         const elapsedTimeInSeconds = (Date.now() - new Date(pilotOpenPosition.timestamp).getTime()) / 1000;
         const killSwitchTriggered = elapsedTimeInSeconds >= riskManager.adaptiveDuration;
         
         let shouldSell = false; let reason = '';
         if (hasReachedTakeProfit) { shouldSell = true; reason = `Alvo Dinâmico atingido.`; }
+        else if (circuitBreaker.trigger) { shouldSell = true; reason = circuitBreaker.reason; }
         else if (!microstructureSignal.isSafe) { shouldSell = true; reason = 'Veto de Microestrutura.'; }
         else if (killSwitchTriggered) { shouldSell = true; reason = `Kill Switch de Tempo (${riskManager.adaptiveDuration}s).`; }
         else if (isVolatilityExpanding) { shouldSell = true; reason = 'Veto de Volatilidade Macro.'; }
@@ -489,28 +496,26 @@ export function useAccumulatorsCouncil() {
         
         const canEnter = survivalProbMet && microstructureSignal.isSafe;
 
-        if (canEnter) {
+        if (canEnter && activeVirtualTradesRef.current.length === 0) {
           const stake = calculateOptimalStake(dailyBalance, virtualArenaStats.winRate, virtualArenaStats.avgWin, virtualArenaStats.avgLoss);
           setCalculatedStake(stake);
 
           const growthRate = optimizeGrowthRate(currentSurvivalProb, virtualArenaStats.winRate / 100);
           setOptimizedGrowthRate(growthRate);
 
-          if (activeVirtualTradesRef.current.length === 0) {
-              const newVirtualTrade: VirtualOperation = { 
-                  id: `vt_${Date.now()}`, 
-                  entryPrice: priceTicks[priceTicks.length - 1].price, 
-                  entryTime: currentTick.epoch, 
-                  exitTime: currentTick.epoch + effectiveDuration, 
-                  status: 'pending', 
-                  reason: 'Em jogo', 
-                  growthRate: growthRate, 
-                  entryStake: stake,
-                  pnl: 0,
-                  initialConditions: { atr: calculatedIndicators.atr!, survivalProbability: currentSurvivalProb }, 
-              };
-              activeVirtualTradesRef.current.push(newVirtualTrade);
-          }
+          const newVirtualTrade: VirtualOperation = { 
+              id: `vt_${Date.now()}`, 
+              entryPrice: priceTicks[priceTicks.length - 1].price, 
+              entryTime: currentTick.epoch, 
+              exitTime: currentTick.epoch + effectiveDuration, 
+              status: 'pending', 
+              reason: 'Em jogo', 
+              growthRate: growthRate, 
+              entryStake: stake,
+              pnl: 0,
+              initialConditions: { atr: calculatedIndicators.atr!, survivalProbability: currentSurvivalProb }, 
+          };
+          activeVirtualTradesRef.current.push(newVirtualTrade);
 
           setBotStatus('CALM_DETECTED');
           const result = await executeTrade(stake, growthRate, activeSymbol, 'Piloto');
@@ -529,7 +534,7 @@ export function useAccumulatorsCouncil() {
         if (nowEpoch >= trade.exitTime) { 
             trade.status = 'win'; 
             trade.reason = 'Sobreviveu'; 
-            trade.pnl = trade.entryStake * 0.25; // Lucro estimado de 25% para simulação
+            trade.pnl = trade.entryStake * 0.25;
             finishedTrades.push(trade); 
         } 
         else {
@@ -539,7 +544,7 @@ export function useAccumulatorsCouncil() {
               trade.status = 'loss'; 
               trade.reason = 'Quebra de Barreira Virtual'; 
               trade.exitTime = nowEpoch; 
-              trade.pnl = -trade.entryStake; // Perda total do stake
+              trade.pnl = -trade.entryStake;
               finishedTrades.push(trade); 
           } 
           else { 
