@@ -315,7 +315,9 @@ export function useAccumulatorsCouncil() {
   }, [virtualOperationsLog]);
 
 
-  const toggleAutopilot = useCallback(() => setIsAutopilotOn(prev => !prev), []);
+  const toggleAutopilot = useCallback((checked: boolean) => {
+    setIsAutopilotOn(checked);
+  }, []);
 
   useEffect(() => {
     if (botStatus === 'PAUSED' && !isAutopilotOn) return;
