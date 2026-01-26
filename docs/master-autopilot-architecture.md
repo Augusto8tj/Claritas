@@ -1,29 +1,32 @@
-# Claritas Copilot - Arquitetura Técnica: Master Autopilot V2 (Auto-Calibrável)
+# Claritas Copilot - Arquitetura Técnica: Master Autopilot V3 (Trend-Confirmed)
 
-Este documento detalha a arquitetura do **Master Autopilot V2**, um sistema de comando e controlo que evoluiu de um executor de regras fixas para um **cérebro preditivo unificado e auto-calibrável**.
+Este documento detalha a arquitetura do **Master Autopilot V3**, um sistema de comando e controlo que evoluiu para um **cérebro preditivo unificado, com confirmação de tendência e auto-calibrável**.
 
 ---
 
-## 1. Filosofia de Design: O Cérebro Preditivo Adaptativo
+## 1. Filosofia de Design: O Cérebro Preditivo e Tático
 
-O Master Autopilot V2 abandona a ideia de parâmetros fixos e abraça a **aprendizagem contínua**. Ele utiliza o Laboratório Preditivo como motor de decisão, mas com uma camada adicional de inteligência que ajusta o seu próprio comportamento com base nos resultados.
+O Master Autopilot V3 abandona a ideia de "sinais cegos" e abraça uma filosofia de **confluência de fatores**: uma operação só é executada quando a previsibilidade de curto prazo se alinha com a tendência de longo prazo.
 
 **Princípios Fundamentais:**
 
-1.  **Gatilho por Assertividade ("Certainty Trigger"):** A premissa central é que o sistema só deve operar quando tem uma **convicção estatística extremamente alta** de que o mercado está "legível" e previsível.
+1.  **Gatilho por Assertividade ("Certainty Trigger"):** A premissa central é que o sistema só deve operar quando tem uma **convicção estatística extremamente alta** de que o mercado está "legível" e previsível. A confiança é medida pela taxa de acerto das projeções do Laboratório Preditivo.
 
-2.  **Lógica de Confirmação Dupla:** A regra de ouro para a execução é a **confirmação de assertividade em múltiplos horizontes de tempo**. Uma ordem só é considerada quando dois "especialistas temporais" vizinhos (ex: 6-ticks e 10-segundos) demonstram uma taxa de acerto direcional superior ao limiar atual.
+2.  **Confirmação de Tendência Macro (NOVO):** Um sinal de alta assertividade não é suficiente para trades direcionais. O sistema agora calcula a **Média Móvel Exponencial de 100 períodos** para definir a "maré" do mercado. O gatilho só é válido se a direção do sinal estiver alinhada com esta tendência macro.
 
-3.  **Gestor de Risco Adaptativo (O Cérebro que Aprende):** Esta é a evolução chave da V2. O sistema agora possui um "gestor de risco" interno que o torna auto-calibrável:
+3.  **Lógica de Gatilho Dupla e Tática:** A regra de ouro para a execução é a **confirmação de assertividade em múltiplos horizontes de tempo, alinhada com a tendência**:
+    *   **Passo 1 (Assertividade):** Dois "especialistas temporais" vizinhos (ex: 6-ticks e 10-segundos) devem demonstrar uma taxa de acerto direcional superior ao limiar atual.
+    *   **Passo 2 (Confirmação de Tendência):** Para contratos direcionais (`Rise/Fall`, `Multipliers`), a direção do sinal deve corresponder à tendência macro. Um sinal `RISE` só é válido se o preço estiver acima da EMA 100.
+    *   **Passo 3 (Lógica de Contrato):**
+        *   **Direcional (`Multipliers`):** Executa uma ordem na direção confirmada.
+        *   **Não-Direcional (`Accumulators`):** Ignora a tendência e interpreta o gatilho de assertividade como um sinal puro de **estabilidade e previsibilidade**, ideal para abrir um contrato de acumulador.
+
+4.  **Gestor de Risco Adaptativo (O Cérebro que Aprende):**
     *   **Análise Pós-Trade:** Após cada operação, o sistema analisa o resultado.
-    *   **Modo Cauteloso:** Se ocorre uma perda, o sistema entra em **"Modo Cauteloso"**. Ele conclui que o seu limiar de confiança não foi rigoroso o suficiente e **aumenta automaticamente o limiar de assertividade** (ex: de 80% para 85%).
-    *   **Modo Normal:** Após uma vitória, ele gradualmente **reduz o limiar de volta ao normal**, tornando-se mais confiante.
+    *   **Modo Cauteloso:** Se ocorre uma perda, entra em **"Modo Cauteloso"**, concluindo que o seu limiar não foi rigoroso o suficiente e **aumentando automaticamente o limiar de assertividade**.
+    *   **Modo Normal:** Após uma vitória, gradualmente **reduz o limiar de volta ao normal**.
 
-4.  **Adaptação ao Contrato:** Embora o gatilho seja universal, a **ação de execução** é específica para cada tipo de contrato:
-    *   **Rise/Fall & Multipliers:** Executa uma ordem direcional (`CALL`/`PUT`, `MULTUP`/`MULTDOWN`).
-    *   **Accumulators:** Interpreta o gatilho não como um sinal de direção, mas como um sinal de **alta previsibilidade e estabilidade**, indicando uma excelente oportunidade para abrir um contrato de acumulador.
-
-5.  **Mecanismos de Segurança:** Para evitar operações excessivas, o sistema possui salvaguardas, como um período de **cooldown** após cada trade e a verificação para não abrir novas posições enquanto uma já estiver ativa.
+5.  **Mecanismos de Segurança:** Para evitar operações excessivas, o sistema possui salvaguardas, como um período de **cooldown** após cada trade.
 
 ---
 
@@ -33,14 +36,16 @@ O Master Autopilot V2 abandona a ideia de parâmetros fixos e abraça a **aprend
 
 Este hook contém toda a lógica de decisão e aprendizagem.
 
-*   **Responsabilidade Principal**: Consumir os dados preditivos, aplicar a lógica do "Gatilho de Assertividade", executar a ordem e **ajustar os seus próprios parâmetros de risco**.
+*   **Responsabilidade Principal**: Consumir dados preditivos e de tendência, aplicar a lógica do "Gatilho Duplo", executar a ordem e **ajustar os seus próprios parâmetros de risco**.
 *   **Ciclo de Decisão**:
-    1.  **Consumir Dados Preditivos:** Integra a lógica do `StochasticLab` para obter as projeções e taxas de assertividade.
-    2.  **Análise Pós-Trade (Feedback Loop):** Verifica se a última operação do piloto foi concluída. Com base no lucro/perda, atualiza o estado do `RiskManager`, ajustando o `assertivenessThreshold`.
+    1.  **Consumir Dados:** Integra a lógica do `StochasticLab` para obter as projeções e taxas de assertividade, e agora também calcula a **EMA de 100 períodos** para definir a tendência macro.
+    2.  **Análise Pós-Trade (Feedback Loop):** Verifica se a última operação foi concluída e ajusta o `assertivenessThreshold` do `RiskManager`.
     3.  **Verificar Salvaguardas:** Verifica se está em *cooldown* ou se já existe uma posição aberta.
-    4.  **Monitorizar o Gatilho de Assertividade:** A cada ciclo, verifica se a condição de assertividade dupla é cumprida, usando o **limiar de assertividade dinâmico** do `RiskManager`.
-    5.  **Executar Ordem:** Se a condição for cumprida, executa a ordem de acordo com o `contractType` e entra em *cooldown*.
-    6.  **Expor Estado para a UI:** O hook expõe o estado atual (ex: "Gatilho Detectado: EXECUTANDO" ou "Aguardando Gatilho"), as taxas de assertividade e o **estado atual do Gestor de Risco** para a interface.
+    4.  **Monitorizar o Gatilho Duplo:**
+        *   Verifica se a condição de assertividade é cumprida.
+        *   Se o contrato for direcional, verifica se o sinal está alinhado com a `macroTrend`.
+    5.  **Executar Ordem:** Se todas as condições forem cumpridas, executa a ordem de acordo com o `contractType` e entra em *cooldown*.
+    6.  **Expor Estado para a UI:** O hook expõe o estado atual (ex: "Gatilho Detectado: EXECUTANDO" ou "Aguardando alinhamento de tendência"), as taxas de assertividade, o **estado atual do Gestor de Risco** e a **tendência macro detetada**.
 
 ### 2.2. Interface de Comando: `master-autopilot-interface.tsx`
 
@@ -48,6 +53,7 @@ Este componente fornece ao operador o controlo e a visibilidade total sobre o si
 
 *   **Seletores de Configuração:** Para tipo de contrato e gestão de risco.
 *   **Painéis de Status em Tempo Real:**
-    *   **Status do Gatilho:** Mostra o estado atual da lógica de decisão.
+    *   **Status do Gatilho:** Mostra o estado atual da lógica de decisão, incluindo o motivo de espera.
+    *   **NOVO: Análise de Tendência Macro:** Um novo painel que exibe a tendência de longo prazo detetada (`UP`/`DOWN`), permitindo ao operador entender o "viés" direcional do piloto.
     *   **Painel de Assertividade:** Exibe o desempenho de cada especialista preditivo.
-    *   **NOVO: Gestor de Risco Adaptativo:** Um novo painel que mostra o **modo atual do piloto** (`Normal` ou `Cauteloso`), o **limiar de assertividade dinâmico** em uso, e a razão para o último ajuste, tornando o processo de aprendizagem 100% transparente.
+    *   **Gestor de Risco Adaptativo:** Mostra o **modo atual do piloto** (`Normal` ou `Cauteloso`) e o **limiar de assertividade dinâmico**.

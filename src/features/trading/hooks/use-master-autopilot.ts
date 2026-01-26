@@ -4,6 +4,8 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useDerivApiAccumulators } from './use-deriv-api-accumulators';
 import { useToast } from '@/hooks/use-toast';
+import { calculateAllIndicators } from '@/services/indicator-service';
+import { getCouncilStrategies } from '@/services/council-strategies';
 
 // --- LÓGICA COPIADA DO StochasticLab ---
 const normalRandom = (): number => {
@@ -15,6 +17,7 @@ const normalRandom = (): number => {
 
 type ContractType = 'Accumulators' | 'Rise/Fall' | 'Multipliers';
 type Signal = 'RISE' | 'FALL' | 'HOLD';
+type TrendDirection = 'UP' | 'DOWN' | 'NONE';
 
 interface AssertivenessData {
     accuracy: number;
@@ -69,6 +72,7 @@ export function useMasterAutopilot() {
     },
   });
   
+  const [macroTrend, setMacroTrend] = useState<TrendDirection>('NONE');
   const isCoolingDownRef = useRef(false);
 
   const accuracyHistoryRefs = {
@@ -156,6 +160,13 @@ export function useMasterAutopilot() {
         const meanLastReturn = logReturns.reduce((a, b) => a + b, 0) / logReturns.length;
         const lastVariance = logReturns.reduce((s, r) => s + Math.pow(r - meanLastReturn, 2), 0) / (logReturns.length - 1);
         const lastSigma = Math.sqrt(lastVariance);
+        
+        // CÁLCULO DA TENDÊNCIA MACRO
+        const indicators = calculateAllIndicators(botCandleData, getCouncilStrategies(), '1m', {duration: 15, unit: 's'});
+        if (indicators && indicators.ma.long) {
+            const detectedTrend: TrendDirection = lastPrice > indicators.ma.long ? 'UP' : 'DOWN';
+            setMacroTrend(detectedTrend);
+        }
 
         const projectPath = (steps: number) => {
             let currentSimPrice = lastPrice;
@@ -222,10 +233,24 @@ export function useMasterAutopilot() {
             const prevHorizon = horizons[i-1].name;
             if (newAssertiveness[currentHorizon].accuracy > riskManager.assertivenessThreshold && newAssertiveness[prevHorizon].accuracy > riskManager.assertivenessThreshold) {
                 if (newAssertiveness[currentHorizon].vote === newAssertiveness[prevHorizon].vote && newAssertiveness[currentHorizon].vote !== 'HOLD') {
-                    triggerSignal = newAssertiveness[currentHorizon].vote;
-                    triggeredBy = [prevHorizon, currentHorizon];
-                    triggerReason = `Gatilho de ${triggerSignal} confirmado por ${prevHorizon} (${newAssertiveness[prevHorizon].accuracy.toFixed(0)}%) e ${currentHorizon} (${newAssertiveness[currentHorizon].accuracy.toFixed(0)}%).`;
-                    break;
+                    const signalCandidate = newAssertiveness[currentHorizon].vote;
+                    
+                    // LÓGICA DE CONFIRMAÇÃO DE TENDÊNCIA
+                    if (contractType === 'Multipliers' || contractType === 'Rise/Fall') {
+                        if ((signalCandidate === 'RISE' && macroTrend === 'UP') || (signalCandidate === 'FALL' && macroTrend === 'DOWN')) {
+                           triggerSignal = signalCandidate;
+                           triggeredBy = [prevHorizon, currentHorizon];
+                           triggerReason = `Gatilho ${triggerSignal} confirmado por assertividade e alinhamento com a tendência macro.`;
+                           break;
+                        } else {
+                           triggerReason = `Sinal ${signalCandidate} ignorado. Assertividade alta, mas contra a tendência macro (${macroTrend}).`;
+                        }
+                    } else { // Para Accumulators, não precisa de tendência
+                        triggerSignal = signalCandidate;
+                        triggeredBy = [prevHorizon, currentHorizon];
+                        triggerReason = `Gatilho de estabilidade detectado por assertividade em ${prevHorizon} e ${currentHorizon}.`;
+                        break;
+                    }
                 }
             }
         }
@@ -248,7 +273,7 @@ export function useMasterAutopilot() {
 
     return () => clearInterval(interval);
 
-  }, [isAutopilotOn, priceTicks, operationsLog, activeSymbol, contractType, executeAccumulatorTrade, toast, riskManager.assertivenessThreshold]);
+  }, [isAutopilotOn, priceTicks, operationsLog, activeSymbol, contractType, executeAccumulatorTrade, toast, riskManager.assertivenessThreshold, botCandleData, macroTrend]);
 
   return {
     isAutopilotOn,
@@ -260,6 +285,7 @@ export function useMasterAutopilot() {
     dailyTarget,
     setDailyTarget,
     masterState,
-    riskManager
+    riskManager,
+    macroTrend,
   };
 }

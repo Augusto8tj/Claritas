@@ -1,4 +1,3 @@
-
 // src/features/trading/components/master-autopilot/master-autopilot-interface.tsx
 'use client';
 
@@ -28,6 +27,7 @@ export function MasterAutopilotInterface() {
     setDailyTarget,
     masterState,
     riskManager,
+    macroTrend,
   } = useMasterAutopilot();
 
   const getProgressColor = (percentage: number) => {
@@ -70,8 +70,8 @@ export function MasterAutopilotInterface() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="Accumulators">Accumulators (Foco em Estabilidade)</SelectItem>
+                  <SelectItem value="Multipliers">Multipliers (Foco em Tendência)</SelectItem>
                   <SelectItem value="Rise/Fall" disabled>Rise/Fall (Em breve)</SelectItem>
-                  <SelectItem value="Multipliers" disabled>Multipliers (Em breve)</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -130,9 +130,10 @@ export function MasterAutopilotInterface() {
                     O sistema aguarda uma alta convicção preditiva para agir.
                 </CardDescription>
             </CardHeader>
-            <CardContent>
+            <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-4">
                  {isAutopilotOn ? (
                     <Alert className={cn(
+                        "col-span-1 md:col-span-2",
                         trigger.signal === 'HOLD' && 'bg-amber-500/10 border-amber-500/30 text-amber-800',
                         trigger.signal === 'RISE' && 'bg-green-500/10 border-green-500/30 text-green-800 animate-pulse',
                         trigger.signal === 'FALL' && 'bg-red-500/10 border-red-500/30 text-red-800 animate-pulse'
@@ -146,7 +147,7 @@ export function MasterAutopilotInterface() {
                         </AlertDescription>
                     </Alert>
                 ) : (
-                    <Alert>
+                    <Alert className="col-span-1 md:col-span-2">
                         <Bot className="h-4 w-4" />
                         <AlertTitle>Piloto Desativado</AlertTitle>
                         <AlertDescription>
@@ -154,6 +155,18 @@ export function MasterAutopilotInterface() {
                         </AlertDescription>
                     </Alert>
                 )}
+                 <div className="p-4 border rounded-lg bg-muted/30">
+                    <h4 className="text-sm font-medium mb-2">Análise de Tendência Macro (EMA 100)</h4>
+                    <div className={cn(
+                        "p-3 rounded-md text-center font-bold text-lg flex items-center justify-center gap-2",
+                        macroTrend === 'UP' && 'bg-green-500/20 text-green-700',
+                        macroTrend === 'DOWN' && 'bg-red-500/20 text-red-700',
+                        macroTrend === 'NONE' && 'bg-gray-500/20 text-gray-700'
+                    )}>
+                         {macroTrend === 'UP' ? <TrendingUp className="h-5 w-5"/> : macroTrend === 'DOWN' ? <TrendingDown className="h-5 w-5"/> : <BarChart className="h-5 w-5"/>}
+                         <span>Modo {macroTrend === 'UP' ? 'Compra' : macroTrend === 'DOWN' ? 'Venda' : 'Indefinido'}</span>
+                    </div>
+                </div>
             </CardContent>
         </Card>
 
