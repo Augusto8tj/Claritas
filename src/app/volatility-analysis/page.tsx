@@ -74,18 +74,6 @@ function StochasticLab({ realData, activeSymbol }: { realData: ChartData[], acti
   const pendingPredictions30sRef = useRef<{ startTimeIndex: number; startPrice: number; predictedEndPrice: number }[]>([]);
   const pendingPredictions40sRef = useRef<{ startTimeIndex: number; startPrice: number; predictedEndPrice: number }[]>([]);
 
-  const calculateAdaptiveDrift = (
-    currentPrice: number,
-    recentMean: number,
-    sigma: number,
-    meanReversionSpeed: number = 0.15
-  ): number => {
-    if (currentPrice <= 0 || recentMean <= 0) return 0;
-    const distanceFromMean = Math.log(currentPrice / recentMean);
-    const meanReversionComponent = -meanReversionSpeed * distanceFromMean;
-    return meanReversionComponent;
-  };
-
 
   const normalRandom = (): number => {
     let u1 = 0;
@@ -192,17 +180,15 @@ function StochasticLab({ realData, activeSymbol }: { realData: ChartData[], acti
       const lastSigma = Math.sqrt(lastVariance);
       const lastTime = prices.length - 1;
 
-      const lastPrices = prices.slice(-VOL_WINDOW);
-      const meanLastPrice = lastPrices.reduce((a,b) => a + b, 0) / VOL_WINDOW;
-
       const projectPath = (steps: number) => {
         let currentSimPrice = lastPrice;
         const path = [{ time: lastTime, price: lastPrice }];
         for (let i = 1; i <= steps; i++) {
           const Z = normalRandom();
-          const drift_future = calculateAdaptiveDrift(currentSimPrice, meanLastPrice, lastSigma);
+          const drift_future = meanLastReturn - 0.5 * Math.pow(lastSigma, 2);
           const diffusion_future = lastSigma * Math.sqrt(1) * Z;
           currentSimPrice = currentSimPrice * Math.exp(drift_future + diffusion_future);
+
           if (Number.isFinite(currentSimPrice)) {
             path.push({ time: lastTime + i, price: currentSimPrice });
           } else {
@@ -401,7 +387,7 @@ function StochasticLab({ realData, activeSymbol }: { realData: ChartData[], acti
             </CardTitle>
             <CardDescription>O cientista usa GBM para prever o próximo tick (histórico) e projetar o futuro.</CardDescription>
         </CardHeader>
-        <CardContent className="flex-1 flex flex-col min-h-0">
+        <CardContent className="flex flex-col min-h-0">
           <ScrollArea className="flex-1">
                 <div className="p-1 space-y-6">
                     <div className="flex gap-2 mb-6 flex-wrap">
