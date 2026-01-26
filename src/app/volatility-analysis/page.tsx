@@ -51,10 +51,11 @@ function StochasticLab({ realData, activeSymbol }: { realData: ChartData[], acti
   const [predictionError, setPredictionError] = useState({ mae: 0, rmse: 0, count: 0 });
 
   // --- Estados para Assertividade da Projeção ---
-  const [predictionAccuracy, setPredictionAccuracy] = useState({ hits: 0, total: 0 });
-  const [predictionAccuracy10s, setPredictionAccuracy10s] = useState({ hits: 0, total: 0 });
-  const [predictionAccuracy20s, setPredictionAccuracy20s] = useState({ hits: 0, total: 0 });
-  const [predictionAccuracy40s, setPredictionAccuracy40s] = useState({ hits: 0, total: 0 });
+  const [predictionAccuracyHistory, setPredictionAccuracyHistory] = useState<boolean[]>([]);
+  const [predictionAccuracy10sHistory, setPredictionAccuracy10sHistory] = useState<boolean[]>([]);
+  const [predictionAccuracy20sHistory, setPredictionAccuracy20sHistory] = useState<boolean[]>([]);
+  const [predictionAccuracy40sHistory, setPredictionAccuracy40sHistory] = useState<boolean[]>([]);
+
 
   const pendingPredictionsRef = useRef<{ startTimeIndex: number; startPrice: number; predictedEndPrice: number }[]>([]);
   const pendingPredictions10sRef = useRef<{ startTimeIndex: number; startPrice: number; predictedEndPrice: number }[]>([]);
@@ -73,7 +74,7 @@ function StochasticLab({ realData, activeSymbol }: { realData: ChartData[], acti
   useEffect(() => {
     const analyzeData = (data: ChartData[]) => {
       const VOL_WINDOW = 50;
-      const mu = 0; // Drift
+      const mu = 0; // Drift (agora será ajustado)
       const dt = 1; // Time step
       
       if (data.length < VOL_WINDOW) {
@@ -178,16 +179,11 @@ function StochasticLab({ realData, activeSymbol }: { realData: ChartData[], acti
           return path;
         };
 
-        setFuturePath6t(projectPath(6).map(p => ({ time: p.time, predicted_6t_ahead: p.price })));
-        setFuturePath10s(projectPath(5).map(p => ({ time: p.time, predicted_10s_ahead: p.price })));
-        setFuturePath20s(projectPath(10).map(p => ({ time: p.time, predicted_20s_ahead: p.price })));
-        setFuturePath40s(projectPath(20).map(p => ({ time: p.time, predicted_40s_ahead: p.price })));
-        
         const processPredictionHorizon = (
             horizonTicks: number,
             prices: number[],
             pendingPredictionsRef: React.MutableRefObject<{ startTimeIndex: number; startPrice: number; predictedEndPrice: number }[]>,
-            setAccuracy: React.Dispatch<React.SetStateAction<{ hits: number; total: number }>>,
+            setAccuracyHistory: React.Dispatch<React.SetStateAction<boolean[]>>,
             projectPathFn: (steps: number) => { time: number; price: number }[]
         ) => {
             const newFuturePath = projectPathFn(horizonTicks);
@@ -200,10 +196,8 @@ function StochasticLab({ realData, activeSymbol }: { realData: ChartData[], acti
                     if (actualEndPrice === undefined) return;
                     const predictedDirection = pred.predictedEndPrice > pred.startPrice ? 'RISE' : 'FALL';
                     const actualDirection = actualEndPrice > pred.startPrice ? 'RISE' : 'FALL';
-                    setAccuracy(prev => ({
-                        hits: prev.hits + (predictedDirection === actualDirection ? 1 : 0),
-                        total: prev.total + 1,
-                    }));
+                    const isHit = predictedDirection === actualDirection;
+                    setAccuracyHistory(prev => [...prev, isHit]);
                     completedIndices.push(index);
                 }
             });
@@ -226,15 +220,20 @@ function StochasticLab({ realData, activeSymbol }: { realData: ChartData[], acti
         };
 
         const horizons = [
-            { ticks: 6, ref: pendingPredictionsRef, setAccuracy: setPredictionAccuracy },
-            { ticks: 5, ref: pendingPredictions10sRef, setAccuracy: setPredictionAccuracy10s }, // 10s
-            { ticks: 10, ref: pendingPredictions20sRef, setAccuracy: setPredictionAccuracy20s }, // 20s
-            { ticks: 20, ref: pendingPredictions40sRef, setAccuracy: setPredictionAccuracy40s }, // 40s
+            { ticks: 6, ref: pendingPredictionsRef, setAccuracyHistory: setPredictionAccuracyHistory },
+            { ticks: 5, ref: pendingPredictions10sRef, setAccuracyHistory: setPredictionAccuracy10sHistory }, // 10s
+            { ticks: 10, ref: pendingPredictions20sRef, setAccuracyHistory: setPredictionAccuracy20sHistory }, // 20s
+            { ticks: 20, ref: pendingPredictions40sRef, setAccuracyHistory: setPredictionAccuracy40sHistory }, // 40s
         ];
-
+        
         horizons.forEach(h => {
-            processPredictionHorizon(h.ticks, prices, h.ref, h.setAccuracy, projectPath);
+            processPredictionHorizon(h.ticks, prices, h.ref, h.setAccuracyHistory, projectPath);
         });
+
+        setFuturePath6t(projectPath(6).map(p => ({ time: p.time, predicted_6t_ahead: p.price })));
+        setFuturePath10s(projectPath(5).map(p => ({ time: p.time, predicted_10s_ahead: p.price })));
+        setFuturePath20s(projectPath(10).map(p => ({ time: p.time, predicted_20s_ahead: p.price })));
+        setFuturePath40s(projectPath(20).map(p => ({ time: p.time, predicted_40s_ahead: p.price })));
       }
       
       setPredictionData(newPredictionData.slice(-200));
@@ -245,7 +244,7 @@ function StochasticLab({ realData, activeSymbol }: { realData: ChartData[], acti
   }, [realData]);
 
   const chartDisplayData = useMemo(() => {
-    const combined = [...predictionData];
+    const combined = [...predictionData.filter(p => p && (p.real || p.predicted_1_tick))];
     
     const mergePath = (path: any[]) => {
         path.forEach(point => {
@@ -274,6 +273,19 @@ function StochasticLab({ realData, activeSymbol }: { realData: ChartData[], acti
     const maxVal = Math.max(...allValues);
     return [{ theoretical: minVal, empirical: minVal }, { theoretical: maxVal, empirical: maxVal }];
   }, [qqData]);
+
+  const calculateRollingAccuracy = (history: boolean[], windowSize: number) => {
+    const recentHistory = history.slice(-windowSize);
+    const hits = recentHistory.filter(h => h).length;
+    const total = recentHistory.length;
+    const percentage = total > 0 ? (hits / total) * 100 : 0;
+    return { hits, total, percentage };
+  };
+
+  const accuracy6t = calculateRollingAccuracy(predictionAccuracyHistory, 6);
+  const accuracy10s = calculateRollingAccuracy(predictionAccuracy10sHistory, 10);
+  const accuracy20s = calculateRollingAccuracy(predictionAccuracy20sHistory, 10);
+  const accuracy40s = calculateRollingAccuracy(predictionAccuracy40sHistory, 10);
 
   return (
     <Card className="h-full flex flex-col">
@@ -341,36 +353,36 @@ function StochasticLab({ realData, activeSymbol }: { realData: ChartData[], acti
                                         <p className="text-xs text-muted-foreground flex items-center gap-1.5"><Target className="h-4 w-4"/>Assertividade (6 Ticks)</p>
                                         <div className="flex items-baseline gap-2">
                                             <p className="text-lg font-bold font-mono">
-                                                {predictionAccuracy.total > 0 ? ((predictionAccuracy.hits / predictionAccuracy.total) * 100).toFixed(1) : '0.0'}%
+                                                {accuracy6t.percentage.toFixed(1)}%
                                             </p>
-                                            <span className="text-xs text-muted-foreground">({predictionAccuracy.hits} de {predictionAccuracy.total})</span>
+                                            <span className="text-xs text-muted-foreground">({accuracy6t.hits} de {accuracy6t.total})</span>
                                         </div>
                                     </div>
                                      <div className="p-3 bg-slate-50 rounded border">
                                         <p className="text-xs text-muted-foreground flex items-center gap-1.5"><Target className="h-4 w-4"/>Assertividade (10s)</p>
                                         <div className="flex items-baseline gap-2">
                                             <p className="text-lg font-bold font-mono">
-                                                {predictionAccuracy10s.total > 0 ? ((predictionAccuracy10s.hits / predictionAccuracy10s.total) * 100).toFixed(1) : '0.0'}%
+                                                {accuracy10s.percentage.toFixed(1)}%
                                             </p>
-                                            <span className="text-xs text-muted-foreground">({predictionAccuracy10s.hits} de {predictionAccuracy10s.total})</span>
+                                            <span className="text-xs text-muted-foreground">({accuracy10s.hits} de {accuracy10s.total})</span>
                                         </div>
                                     </div>
                                      <div className="p-3 bg-slate-50 rounded border">
                                         <p className="text-xs text-muted-foreground flex items-center gap-1.5"><Target className="h-4 w-4"/>Assertividade (20s)</p>
                                         <div className="flex items-baseline gap-2">
                                             <p className="text-lg font-bold font-mono">
-                                                {predictionAccuracy20s.total > 0 ? ((predictionAccuracy20s.hits / predictionAccuracy20s.total) * 100).toFixed(1) : '0.0'}%
+                                                {accuracy20s.percentage.toFixed(1)}%
                                             </p>
-                                            <span className="text-xs text-muted-foreground">({predictionAccuracy20s.hits} de {predictionAccuracy20s.total})</span>
+                                            <span className="text-xs text-muted-foreground">({accuracy20s.hits} de {accuracy20s.total})</span>
                                         </div>
                                     </div>
                                      <div className="p-3 bg-slate-50 rounded border">
                                         <p className="text-xs text-muted-foreground flex items-center gap-1.5"><Target className="h-4 w-4"/>Assertividade (40s)</p>
                                         <div className="flex items-baseline gap-2">
                                             <p className="text-lg font-bold font-mono">
-                                                {predictionAccuracy40s.total > 0 ? ((predictionAccuracy40s.hits / predictionAccuracy40s.total) * 100).toFixed(1) : '0.0'}%
+                                                {accuracy40s.percentage.toFixed(1)}%
                                             </p>
-                                            <span className="text-xs text-muted-foreground">({predictionAccuracy40s.hits} de {predictionAccuracy40s.total})</span>
+                                            <span className="text-xs text-muted-foreground">({accuracy40s.total > 0 ? `${accuracy40s.hits} de ${accuracy40s.total}` : '0 de 0'})</span>
                                         </div>
                                     </div>
                                 </div>
