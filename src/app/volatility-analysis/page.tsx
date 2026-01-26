@@ -81,11 +81,13 @@ function StochasticLab({ realData }: { realData: ChartData[] }) {
       }
       
       const volData: any[] = [];
+      const annualizationFactor = Math.sqrt(31536000); // Ticks por segundo (para anualizar)
       for (let i = VOL_WINDOW; i < logReturns.length; i++) {
         const window = logReturns.slice(i - VOL_WINDOW, i);
         const mean = window.reduce((a, b) => a + b, 0) / window.length;
         const variance = window.reduce((sum, r) => sum + Math.pow(r - mean, 2), 0) / (window.length - 1);
-        volData.push({ time: i, realizedVol: parseFloat((Math.sqrt(variance) * 100).toFixed(4)), targetVol: 10 });
+        const realizedVol = Math.sqrt(variance) * annualizationFactor * 100;
+        volData.push({ time: i, realizedVol: parseFloat(realizedVol.toFixed(4)), targetVol: 10 });
       }
 
       if (logReturns.length > 1) {
@@ -229,6 +231,7 @@ function StochasticLab({ realData }: { realData: ChartData[] }) {
   const lineData = useMemo(() => {
     if (qqData.length === 0) return [];
     const allValues = [...qqData.map(d => d.theoretical), ...qqData.map(d => d.empirical)].filter(v => Number.isFinite(v));
+    if (allValues.length === 0) return [{ theoretical: 0, empirical: 0}, { theoretical: 0, empirical: 0}];
     const minVal = Math.min(...allValues);
     const maxVal = Math.max(...allValues);
     return [{ theoretical: minVal, empirical: minVal }, { theoretical: maxVal, empirical: maxVal }];
@@ -307,12 +310,12 @@ function StochasticLab({ realData }: { realData: ChartData[] }) {
                             )}
                             {activeTab === 'returns' && (
                               <div>
-                                <h3 className="text-xl font-semibold mb-4 text-slate-800">Retornos Logarítmicos</h3>
+                                <h3 className="text-xl font-semibold mb-4 text-slate-800">Distribuição de Retornos Reais</h3>
                                 <ResponsiveContainer width="100%" height={400}>
                                   <ScatterChart>
                                     <CartesianGrid strokeDasharray="3 3" />
                                     <XAxis dataKey="index" label={{ value: 'Observação', position: 'insideBottom', offset: -5 }} />
-                                    <YAxis label={{ value: 'Retorno (%)', angle: -90, position: 'insideLeft' }} />
+                                    <YAxis label={{ value: 'Retorno Log. por Tick (%)', angle: -90, position: 'insideLeft' }} />
                                     <Tooltip />
                                     <Scatter data={returns} fill="#8b5cf6" />
                                   </ScatterChart>
@@ -330,12 +333,12 @@ function StochasticLab({ realData }: { realData: ChartData[] }) {
                             )}
                             {activeTab === 'volatility' && (
                               <div>
-                                <h3 className="text-xl font-semibold mb-4 text-slate-800">Volatilidade Realizada vs. Alvo</h3>
+                                <h3 className="text-xl font-semibold mb-4 text-slate-800">Volatilidade Anualizada vs. Alvo</h3>
                                 <ResponsiveContainer width="100%" height={400}>
                                   <LineChart data={volatilityData}>
                                     <CartesianGrid strokeDasharray="3 3" />
                                     <XAxis dataKey="time" label={{ value: 'Tempo (segundos)', position: 'insideBottom', offset: -5 }} />
-                                    <YAxis label={{ value: 'Volatilidade (%)', angle: -90, position: 'insideLeft' }} />
+                                    <YAxis label={{ value: 'Vol. Anualizada (%)', angle: -90, position: 'insideLeft' }} />
                                     <Tooltip />
                                     <Legend />
                                     <Line type="monotone" dataKey="realizedVol" stroke="#059669" strokeWidth={2} dot={false} name="Volatilidade Realizada (50-período)" />
@@ -344,11 +347,11 @@ function StochasticLab({ realData }: { realData: ChartData[] }) {
                                 </ResponsiveContainer>
                                 <div className="mt-4 p-4 bg-slate-50 rounded">
                                   <p className="text-sm text-slate-700 mb-2">
-                                    <strong>Cálculo:</strong> σ̂ = √(1/(n-1) × Σ(r_i - r̄)²)
+                                    <strong>Cálculo:</strong> σ̂ = √(Var(r)) × √N_ano
                                   </p>
                                   <p className="text-sm text-slate-700">
-                                    A volatilidade realizada oscila em torno do valor alvo de 10% devido à variação amostral. 
-                                    Com janelas maiores, a estimativa converge para o valor teórico.
+                                    A volatilidade realizada (verde) deve flutuar em torno do valor alvo de 10% (vermelho). 
+                                    Grandes desvios indicam mudanças no comportamento do mercado.
                                   </p>
                                 </div>
                               </div>
