@@ -73,11 +73,16 @@ function calculateFirstPassageTime(
   barrierDistance: number,
   instantaneousVolatility: number
 ): number {
-  if (instantaneousVolatility <= 0) return Infinity;
-  // Fórmula: E[τ] = b² / (2σ²)
+  // ✅ CORREÇÃO: Adicionar epsilon de volatilidade e um teto para o tempo
+  const MIN_VOLATILITY = 1e-9;
+  const MAX_TIME_TO_BREAK_S = 300; // Limite de 5 minutos
+
+  const effectiveVolatility = Math.max(instantaneousVolatility, MIN_VOLATILITY);
+  
   const expectedTime = Math.pow(barrierDistance, 2) / 
-                       (2 * Math.pow(instantaneousVolatility, 2));
-  return expectedTime;
+                       (2 * Math.pow(effectiveVolatility, 2));
+
+  return Math.min(expectedTime, MAX_TIME_TO_BREAK_S);
 }
 
 

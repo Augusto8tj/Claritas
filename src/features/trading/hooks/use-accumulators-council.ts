@@ -1,3 +1,4 @@
+// src/features/trading/hooks/use-accumulators-council.ts
 'use client';
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
@@ -85,13 +86,15 @@ function calculateSurvivalProbability(
   targetDuration: number,
   currentVolatility: number
 ): number {
-  if (currentVolatility <= 0 || targetDuration <= 0) return 0;
+  // ✅ CORREÇÃO: Adicionar um epsilon para evitar divisão por zero
+  // e representar a incerteza mínima do mercado.
+  const MIN_VOLATILITY = 1e-9; 
+  const effectiveVolatility = Math.max(currentVolatility, MIN_VOLATILITY);
   
-  // Para movimento browniano sem drift:
-  // P(max|X(t)| < b para t ∈ [0,T]) ≈ erf(b / (σ√(2T)))
-  const normalized = barrierDistance / (currentVolatility * Math.sqrt(2 * targetDuration));
+  if (targetDuration <= 0) return 0;
   
-  // erf(x) ≈ 2 * Φ(x√2) - 1
+  const normalized = barrierDistance / (effectiveVolatility * Math.sqrt(2 * targetDuration));
+  
   const survivalProb = 2 * normalCDF(normalized * Math.sqrt(2)) - 1;
   
   return Math.max(0, Math.min(1, survivalProb));
@@ -410,7 +413,7 @@ export function useAccumulatorsCouncil() {
           return;
       }
 
-      const calculatedIndicators = calculateAllIndicators(botCandleData, initialCouncilStrategies, '1m', {duration: 15, unit: 's'});
+      const calculatedIndicators = calculateAllIndicators(botCandleData, initialCouncilStrategies, '1m', { duration: 15, unit: 's' });
       if (!calculatedIndicators || !calculatedIndicators.atr || !calculatedIndicators.adx) {
           executionRef.current = false;
           return;
