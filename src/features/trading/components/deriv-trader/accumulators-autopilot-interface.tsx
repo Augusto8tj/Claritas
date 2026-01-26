@@ -11,7 +11,7 @@ import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Bot, Zap, Wallet, ShieldCheck, AlertCircle, Clock, CheckCircle, XCircle, BarChartHorizontal } from "lucide-react";
+import { Bot, Zap, Wallet, ShieldCheck, AlertCircle, Clock, CheckCircle, XCircle, BarChartHorizontal, Power } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { useAccumulatorsCouncil } from "../../hooks/use-accumulators-council";
 import { Separator } from "@/components/ui/separator";
@@ -64,22 +64,33 @@ export function AccumulatorsAutopilotInterface({
   return (
     <Card>
       <CardHeader>
-        <div className="flex justify-between items-center">
-          <CardTitle className="font-headline flex items-center gap-2">
+        <CardTitle className="font-headline flex items-center gap-2">
             <Bot className="h-5 w-5 text-primary" />
             Piloto Automático (Acumuladores)
-          </CardTitle>
-          <Switch
-            id="accumulator-autopilot-switch"
-            checked={isAutopilotOn}
-            onCheckedChange={toggleAutopilot}
-          />
-        </div>
+        </CardTitle>
         <CardDescription>
           O sistema avalia a probabilidade de sobrevivência para abrir posições.
         </CardDescription>
       </CardHeader>
-      <CardContent className="space-y-4">
+      <CardContent className="space-y-6">
+        <div className="flex items-center justify-between rounded-lg border p-4 bg-muted/50">
+            <div>
+                <Label htmlFor="accumulator-autopilot-switch" className="font-semibold text-base flex items-center gap-2">
+                  <Power className={cn("h-5 w-5 transition-colors", isAutopilotOn ? "text-green-500" : "text-muted-foreground")} />
+                  Status do Piloto
+                </Label>
+                <p className="text-sm text-muted-foreground mt-1">
+                    {isAutopilotOn ? "O sistema está operando." : "Ative para começar a negociar."}
+                </p>
+            </div>
+            <Switch
+                id="accumulator-autopilot-switch"
+                checked={isAutopilotOn}
+                onCheckedChange={toggleAutopilot}
+                className="data-[state=checked]:bg-green-600"
+            />
+        </div>
+
         {isAutopilotOn && (
            <div className="space-y-3 rounded-lg border bg-card p-4">
               <h4 className="font-headline flex items-center gap-2 text-primary"><Wallet className="h-5 w-5"/>Gestão de Risco do Dia</h4>

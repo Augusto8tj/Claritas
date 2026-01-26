@@ -114,12 +114,12 @@ function MainContent() {
     const council = useAccumulatorsCouncil();
     
     return (
-        <div className="mt-6 grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <div className="lg:col-span-1 space-y-6">
+        <div className="mt-6 grid grid-cols-1 lg:grid-cols-5 gap-6">
+            <div className="lg:col-span-2 space-y-6">
                  <DerivTraderInterfaceAccumulators symbol={activeSymbol || ""} />
                  <AccumulatorsAutopilotInterface {...council} />
             </div>
-            <div className="lg:col-span-2">
+            <div className="lg:col-span-3">
                  <Tabs defaultValue="real" className="w-full">
                     <TabsList className="grid w-full grid-cols-2">
                         <TabsTrigger value="real" className="flex items-center gap-2"><Archive className="h-4 w-4"/>Operações Reais</TabsTrigger>
