@@ -1,4 +1,4 @@
-// /src/app/volatility-analysis/page.tsx
+// src/app/volatility-analysis/page.tsx
 'use client';
 
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
@@ -209,7 +209,6 @@ function StochasticLab({ realData, activeSymbol, onConsensusUpdate }: Stochastic
         const sigma = Math.sqrt(variance);
 
         const Z = normalRandom();
-        // CORREÇÃO: Aplicação do termo de correção do drift do GBM
         const drift = meanPastReturn - 0.5 * sigma * sigma;
         const diffusion = sigma * Math.sqrt(1) * Z;
         const S_predicted_1_tick = S_prev * Math.exp(drift + diffusion);
@@ -239,7 +238,7 @@ function StochasticLab({ realData, activeSymbol, onConsensusUpdate }: Stochastic
     }
 
     if (prices.length > VOL_WINDOW) {
-      const lastPrice = prices[prices.length - 1];
+      const lastPriceValue = prices[prices.length - 1];
       const lastLogReturns = logReturns.slice(-VOL_WINDOW);
       const meanLastReturn = lastLogReturns.reduce((a, b) => a + b, 0) / VOL_WINDOW;
       const lastVariance = lastLogReturns.reduce((s, r) => s + Math.pow(r - meanLastReturn, 2), 0) / (VOL_WINDOW - 1);
@@ -247,13 +246,14 @@ function StochasticLab({ realData, activeSymbol, onConsensusUpdate }: Stochastic
       const lastTime = prices.length - 1;
 
       const projectPath = (steps: number) => {
-        let currentSimPrice = lastPrice;
-        const path = [{ time: lastTime, price: lastPrice }];
+        if (lastPriceValue === null) return [];
+        let currentSimPrice = lastPriceValue;
+        const path = [{ time: lastTime, price: lastPriceValue }];
         for (let i = 1; i <= steps; i++) {
           const Z = normalRandom();
-          // CORREÇÃO: Aplicação do termo de correção do drift do GBM nas projeções futuras
-          const drift_future = meanLastReturn - 0.5 * lastSigma * lastSigma;
-          const diffusion_future = lastSigma * Math.sqrt(1) * Z;
+          // CORREÇÃO: Removido o termo de convexidade para uma projeção mais intuitiva da tendência.
+          const drift_future = meanLastReturn;
+          const diffusion_future = lastSigma * Z;
           currentSimPrice = currentSimPrice * Math.exp(drift_future + diffusion_future);
 
           if (Number.isFinite(currentSimPrice)) {
@@ -355,44 +355,40 @@ function StochasticLab({ realData, activeSymbol, onConsensusUpdate }: Stochastic
       { name: '30s', path: futurePath30s, accuracy: accuracy30s.percentage },
       { name: '40s', path: futurePath40s, accuracy: accuracy40s.percentage },
     ];
-
-    const PROJECTION_WEIGHT = 0.6;
-    const RSI_WEIGHT = 0.3;
-    const DRIFT_WEIGHT = 0.1;
-
-    let totalWeightedScore = 0;
-    let totalWeightSum = 0;
-
-    // 1. Projection Scores
+    
+    // 1. Calculate a base score from a weighted average of projection votes.
+    let weightedVoteSum = 0;
+    let totalAccuracyWeight = 0;
+    
     projections.forEach(p => {
-      if (p.path.length > 1 && lastPrice) {
-        const startPrice = p.path[0].price;
-        const endPrice = p.path[p.path.length - 1].price;
-        const accuracyWeight = Math.abs(p.accuracy - 50) / 50; 
-        const projectedChange = ((endPrice - startPrice) / startPrice) * 100;
-        
-        totalWeightedScore += projectedChange * accuracyWeight * PROJECTION_WEIGHT;
-        totalWeightSum += accuracyWeight * PROJECTION_WEIGHT;
-      }
+        if (p.path.length > 1) {
+            const voteDirection = p.path[p.path.length - 1].price > p.path[0].price ? 1 : -1; // +1 for RISE, -1 for FALL
+            const accuracyWeight = Math.abs(p.accuracy - 50); // Weight is how far from 50% it is. 0 for 50%, 50 for 0% or 100%.
+            
+            weightedVoteSum += voteDirection * accuracyWeight;
+            totalAccuracyWeight += accuracyWeight;
+        }
     });
 
-    // 2. RSI Score
+    let certaintyScore = 0;
+    if (totalAccuracyWeight > 0) {
+        // Normalize to -100 to 100 range.
+        certaintyScore = (weightedVoteSum / totalAccuracyWeight) * 100;
+    }
+
+    // 2. Influence the score with RSI and Drift.
     if (rsi !== null) {
-      const rsiScore = (50 - rsi) * 0.2; // Scaled down
-      totalWeightedScore += rsiScore * RSI_WEIGHT;
-      totalWeightSum += RSI_WEIGHT;
+        const rsiInfluence = (50 - rsi) / 2; // e.g., RSI=30 -> +10. RSI=70 -> -10.
+        certaintyScore += rsiInfluence;
     }
     
-    // 3. Drift Score
     if (driftCorrectionForDisplay.drift !== 0 && lastPrice) {
-        const driftImpact = (driftCorrectionForDisplay.drift / lastPrice) * 10000;
-        totalWeightedScore += driftImpact * DRIFT_WEIGHT;
-        totalWeightSum += DRIFT_WEIGHT;
+        const driftInfluence = -(driftCorrectionForDisplay.drift / lastPrice) * 5000;
+        certaintyScore += driftInfluence;
     }
     
-    const certaintyScore = totalWeightSum > 0 ? (totalWeightedScore / totalWeightSum) * 10 : 0;
     const finalCertainty = Math.max(-100, Math.min(100, certaintyScore));
-    
+
     const DECISION_THRESHOLD = 5;
     let decision: 'RISE' | 'FALL' | 'HOLD' = 'HOLD';
     if (finalCertainty > DECISION_THRESHOLD) decision = 'RISE';
@@ -402,12 +398,11 @@ function StochasticLab({ realData, activeSymbol, onConsensusUpdate }: Stochastic
 
     const votes = projections.map(p => ({
         name: p.name,
-        vote: p.path.length > 1 ? (p.path[p.path.length-1].price > p.path[0].price ? 'RISE' : 'FALL') : 'HOLD',
+        vote: p.path.length > 1 ? (p.path[p.path.length - 1].price > p.path[0].price ? 'RISE' : 'FALL') : 'HOLD',
         accuracy: p.accuracy
     }));
 
     return { decision, confidence, certaintyScore: finalCertainty, votes };
-
   }, [
     futurePath3t, accuracy3t,
     futurePath6t, accuracy6t,
