@@ -1,4 +1,5 @@
 
+
 // /src/app/volatility-analysis/page.tsx
 'use client';
 
@@ -234,7 +235,7 @@ function StochasticLab({ realData, activeSymbol }: { realData: ChartData[], acti
               return true;
           });
           
-          pendingRef.current = updatedPending;
+          pendingPredictionsRef.current = updatedPending;
           
           if (newHistory.length > 0) {
               setAccuracyHistory(prev => [...prev.slice(-accuracyWindow + newHistory.length), ...newHistory]);
@@ -811,3 +812,4 @@ export default function VolatilityAnalysisPage() {
         </DerivApiProviderV2>
     );
 }
+
