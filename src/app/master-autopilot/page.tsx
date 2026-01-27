@@ -11,6 +11,7 @@ import { ApiStatusIndicatorV2 as ApiStatusIndicator } from "@/features/trading/c
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { MarketChart } from "@/features/trading/components/deriv-trader/market-chart";
 import { useDerivApiV2 as useDerivApi } from "@/features/trading/hooks/use-deriv-api-v2";
+import { useMasterAutopilot } from "@/features/trading/hooks/use-master-autopilot";
 
 
 function Header() {
@@ -42,6 +43,7 @@ function IsolatedMarketChart() {
         activeSymbol, operationsLog, chartData, isChartLoading, chartError, 
         chartType, setChartType, timePeriod, setTimePeriod, tradeAnnotations
     } = useDerivApi();
+    const { masterState } = useMasterAutopilot();
     
     return (
         <Card>
@@ -62,7 +64,7 @@ function IsolatedMarketChart() {
                     timePeriod={timePeriod}
                     setTimePeriod={setTimePeriod}
                     operations={operationsLog}
-                    indicators={null}
+                    indicators={masterState.indicators}
                     tradeAnnotations={tradeAnnotations}
                 />
             </CardContent>
@@ -96,4 +98,3 @@ export default function MasterAutopilotPage() {
   );
 }
 
-    

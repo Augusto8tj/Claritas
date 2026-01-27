@@ -234,7 +234,7 @@ export function useMasterAutopilot() {
   }, []);
 
   useEffect(() => {
-    if (!isAutopilotOn && !isConnected) {
+    if (!isConnected) {
         if(masterState.trigger.signal !== 'HOLD') {
             setMasterState(prev => ({...prev, trigger: { signal: 'HOLD', reason: 'Piloto desativado.', triggeredBy: null }}));
         }

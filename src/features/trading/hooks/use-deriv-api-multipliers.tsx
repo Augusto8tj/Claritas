@@ -753,8 +753,8 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
 
                         if (!isSold && op.initiator === 'Piloto' && contract.profit > 0) {
                             const trailingState = trailingStateRef.current.get(op.id) || { highestProfit: 0 };
-                            const activationThreshold = op.stake * 0.15; 
-                            const trailingDistance = op.stake * 0.10;   
+                            const activationThreshold = op.stake * 0.15; // NOVO: 15%
+                            const trailingDistance = op.stake * 0.10;   // NOVO: 10%
 
                             if (contract.profit > trailingState.highestProfit) {
                                 trailingState.highestProfit = contract.profit;
@@ -1168,4 +1168,3 @@ export function useDerivApiMultipliers() {
   return context;
 }
 
-    
