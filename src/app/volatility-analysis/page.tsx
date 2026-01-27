@@ -56,6 +56,20 @@ interface StochasticLabProps {
   onConsensusUpdate: (consensus: Consensus) => void;
 }
 
+const calculateRollingAccuracy = (history: boolean[]) => {
+  const hits = history.filter(h => h).length;
+  const total = history.length;
+  const percentage = total > 0 ? (hits / total) * 100 : 0;
+  return { hits, total, percentage };
+};
+
+const getProgressColor = (percentage: number) => {
+  if (percentage > 75) return 'bg-green-500';
+  if (percentage > 60) return 'bg-blue-500';
+  if (percentage < 40) return 'bg-red-500';
+  return 'bg-gray-400';
+};
+
 function StochasticLab({ realData, activeSymbol, onConsensusUpdate }: StochasticLabProps) {
   const [activeTab, setActiveTab] = useState('prediction');
   const [priceData, setPriceData] = useState<any[]>([]);
@@ -438,20 +452,6 @@ function StochasticLab({ realData, activeSymbol, onConsensusUpdate }: Stochastic
     const maxVal = Math.max(...allValues);
     return [{ theoretical: minVal, empirical: minVal }, { theoretical: maxVal, empirical: maxVal }];
   }, [qqData]);
-
-  const calculateRollingAccuracy = (history: boolean[]) => {
-    const hits = history.filter(h => h).length;
-    const total = history.length;
-    const percentage = total > 0 ? (hits / total) * 100 : 0;
-    return { hits, total, percentage };
-  };
-  
-  const getProgressColor = (percentage: number) => {
-    if (percentage > 75) return 'bg-green-500';
-    if (percentage > 60) return 'bg-blue-500';
-    if (percentage < 40) return 'bg-red-500';
-    return 'bg-gray-400';
-  };
 
   return (
     <Card className="h-full flex flex-col col-span-1 lg:col-span-3">
