@@ -193,9 +193,9 @@ export function MasterAutopilotInterface() {
               <Select value={autopilot.contractType} onValueChange={(value) => autopilot.setContractType(value as any)} disabled={autopilot.isAutopilotOn}>
                 <SelectTrigger id="contract-type"><SelectValue placeholder="Selecione..." /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="Accumulators">Accumulators (Estabilidade)</SelectItem>
-                  <SelectItem value="Multipliers">Multipliers (Tendência)</SelectItem>
                   <SelectItem value="Rise/Fall">Rise/Fall (Direcional)</SelectItem>
+                  <SelectItem value="Accumulators" disabled>Accumulators (Em Breve)</SelectItem>
+                  <SelectItem value="Multipliers" disabled>Multipliers (Em Breve)</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -288,8 +288,7 @@ function isRegimeCompatible(contractType: string, regime: MarketRegime): boolean
         case 'Multipliers':
             return regime === 'trending_bull' || regime === 'trending_bear';
         case 'Rise/Fall':
-            // Can be used in trending or breakout scenarios
-            return regime === 'trending_bull' || regime === 'trending_bear' || regime === 'breakout';
+            return true;
         default:
             return false;
     }

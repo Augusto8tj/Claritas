@@ -3,8 +3,7 @@
 
 import React from "react";
 import { DerivApiProviderV2 } from "@/features/trading/hooks/use-deriv-api-v2";
-import { DerivApiProviderAccumulators } from "@/features/trading/hooks/use-deriv-api-accumulators";
-import { DerivApiProviderMultipliers } from "@/features/trading/hooks/use-deriv-api-multipliers";
+// Os providers conflitantes de Accumulators e Multipliers foram removidos.
 import { MasterAutopilotInterface } from "@/features/trading/components/master-autopilot/master-autopilot-interface";
 import { AssetSelectorV2 as AssetSelector } from "@/features/trading/components/deriv-trader/asset-selector-v2";
 import { ApiStatusIndicatorV2 as ApiStatusIndicator } from "@/features/trading/components/deriv-trader/ApiStatusIndicatorV2";
@@ -89,12 +88,7 @@ function MasterAutopilotPageContent() {
 export default function MasterAutopilotPage() {
   return (
     <DerivApiProviderV2>
-        <DerivApiProviderAccumulators>
-            <DerivApiProviderMultipliers>
-                <MasterAutopilotPageContent />
-            </DerivApiProviderMultipliers>
-        </DerivApiProviderAccumulators>
+        <MasterAutopilotPageContent />
     </DerivApiProviderV2>
   );
 }
-

@@ -3,8 +3,6 @@
 
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useDerivApiV2 } from './use-deriv-api-v2';
-import { useDerivApiAccumulators } from './use-deriv-api-accumulators';
-import { useDerivApiMultipliers } from './use-deriv-api-multipliers';
 import { useToast } from '@/hooks/use-toast';
 import { calculateAllIndicators, type Indicators } from '@/services/indicator-service';
 import { getCouncilStrategies } from '@/services/council-strategies';
@@ -71,13 +69,11 @@ const isRegimeCompatible = (contract: ContractType, regime: MarketRegime): boole
 
 export function useMasterAutopilot() {
   const v2Api = useDerivApiV2();
-  const accumulatorsApi = useDerivApiAccumulators();
-  const multipliersApi = useDerivApiMultipliers();
   
   const { toast } = useToast();
 
   const [isAutopilotOn, setIsAutopilotOn] = useState(false);
-  const [contractType, setContractType] = useState<ContractType>('Accumulators');
+  const [contractType, setContractType] = useState<ContractType>('Rise/Fall');
   const [dailyBalance, setDailyBalance] = useState(100.0);
   const [dailyTarget, setDailyTarget] = useState(20.0);
   
@@ -87,6 +83,7 @@ export function useMasterAutopilot() {
       lastAdjustmentReason: 'N/A'
   });
   const processedTradesRef = useRef<Set<number>>(new Set());
+  
   const masterStateRef = useRef<MasterAutopilotState>({
     isReady: false,
     assertiveness: {},
@@ -94,7 +91,7 @@ export function useMasterAutopilot() {
     manualTrigger: { signal: 'HOLD', reason: 'Aguardando consenso dos modelos.'},
     indicators: null,
     microstructure: null,
-    currentRegime: { regime: 'ranging', confidence: 0 }, // NOVO
+    currentRegime: { regime: 'ranging', confidence: 0 },
   });
 
   const [masterState, setMasterState] = useState<MasterAutopilotState>(masterStateRef.current);
@@ -103,14 +100,7 @@ export function useMasterAutopilot() {
   
   const isCoolingDownRef = useRef(false);
   
-  const activeApi = useMemo(() => {
-    switch(contractType) {
-        case 'Accumulators': return accumulatorsApi;
-        case 'Multipliers': return multipliersApi;
-        case 'Rise/Fall': return v2Api;
-        default: return v2Api;
-    }
-  }, [contractType, accumulatorsApi, multipliersApi, v2Api]);
+  const activeApi = v2Api;
   
   const { 
     activeSymbol, 
@@ -121,9 +111,7 @@ export function useMasterAutopilot() {
   } = activeApi;
 
   const { executeTrade: executeRiseFallTrade } = v2Api;
-  const { executeTrade: executeAccumulatorTrade } = accumulatorsApi;
-  const { executeTrade: executeMultiplierTrade } = multipliersApi;
-  
+
   const priceTicksRef = useRef(priceTicks);
   priceTicksRef.current = priceTicks;
   const botCandleDataRef = useRef(botCandleData);
@@ -154,7 +142,8 @@ export function useMasterAutopilot() {
     setIsAutopilotOn(checked);
     toast({ title: `Master Autopilot ${checked ? 'Ativado' : 'Desativado'}` });
     if (!checked) {
-        setMasterState(prev => ({...prev, trigger: { signal: 'HOLD', reason: 'Piloto desativado.', triggeredBy: null}}));
+        masterStateRef.current = {...masterStateRef.current, trigger: { signal: 'HOLD', reason: 'Piloto desativado.', triggeredBy: null }};
+        setMasterState(masterStateRef.current);
     }
   }, [toast]);
   
@@ -174,9 +163,7 @@ export function useMasterAutopilot() {
       toast({ title: `🤖 Master Autopilot: Ordem ${initiator} ${signalToUse}!`, description: `Executando ${currentContractType} em ${activeSymbol}`});
 
       try {
-          if (currentContractType === 'Accumulators') {
-              await executeAccumulatorTrade(1.0, 0.03, activeSymbol, initiator);
-          } else if (currentContractType === 'Rise/Fall' && triggeredBy) {
+          if (currentContractType === 'Rise/Fall' && triggeredBy) {
               const longerHorizon = triggeredBy[1]; 
               const durationMatch = longerHorizon.match(/(\d+)([st])/);
               if (durationMatch) {
@@ -184,7 +171,7 @@ export function useMasterAutopilot() {
                   const durationUnit = durationMatch[2] as 's' | 't';
                   await executeRiseFallTrade(
                       signalToUse === 'RISE' ? 'CALL' : 'PUT',
-                      1.0,
+                      1.0, // Stake fixo por enquanto para o piloto
                       activeSymbol,
                       signalToUse.toLowerCase() as 'rise' | 'fall',
                       duration,
@@ -192,30 +179,14 @@ export function useMasterAutopilot() {
                       initiator
                   );
               }
-          } else if (currentContractType === 'Multipliers' && triggeredBy && indicators && indicators.atr) {
-              const currentPrice = priceTicksRef.current[priceTicksRef.current.length-1].price;
-              const baseStake = dailyBalance * 0.02;
-              const volatilityFactor = Math.max(0.5, 1 - (indicators.atr / currentPrice * 100));
-              const finalStake = parseFloat(Math.max(1.0, Math.min(baseStake * volatilityFactor, 5.0)).toFixed(2));
-              const stopLoss = finalStake;
-              const takeProfit = finalStake * 1.5;
-
-              await executeMultiplierTrade(
-                  signalToUse === 'RISE' ? 'MULTUP' : 'MULTDOWN',
-                  finalStake,
-                  activeSymbol,
-                  100, 
-                  takeProfit,
-                  stopLoss,
-                  undefined,
-                  initiator
-              );
+          } else {
+              toast({ title: "Funcionalidade Limitada", description: `A execução para ${currentContractType} ainda não está operacional neste modo unificado.`, variant: "default"});
           }
       } catch (error) {
           console.error("Master Autopilot Execution Error:", error);
           toast({ title: `❌ Erro na Execução ${initiator}`, description: error instanceof Error ? error.message : String(error), variant: "destructive" });
       }
-  }, [activeSymbol, dailyBalance, executeAccumulatorTrade, executeMultiplierTrade, executeRiseFallTrade, toast]);
+  }, [activeSymbol, executeRiseFallTrade, toast]);
   
   const executeManualTrigger = useCallback(async () => {
     const { signal } = masterStateRef.current.manualTrigger;
@@ -227,21 +198,15 @@ export function useMasterAutopilot() {
   }, []);
 
   useEffect(() => {
-    if (!isConnected) {
-        if(masterState.trigger.signal !== 'HOLD') {
-            setMasterState(prev => ({...prev, trigger: { signal: 'HOLD', reason: 'Piloto desativado.', triggeredBy: null }}));
-        }
-        return;
-    }
-    
-    const interval = setInterval(() => {
+    const executeLogic = () => {
         if (priceTicksRef.current.length < 50) {
-          if(!masterState.isReady || masterState.trigger.signal !== 'HOLD') {
-            setMasterState(prev => ({
-              ...prev,
+          if(!masterStateRef.current.isReady || masterStateRef.current.trigger.signal !== 'HOLD') {
+            masterStateRef.current = ({
+              ...masterStateRef.current,
               isReady: false,
               trigger: { signal: 'HOLD', reason: isAutopilotOn ? 'Aguardando dados suficientes...' : 'Piloto desativado.', triggeredBy: null }
-            }));
+            });
+            setMasterState(masterStateRef.current);
           }
           return;
         }
@@ -262,34 +227,32 @@ export function useMasterAutopilot() {
         if (lastClosedPilotTrade) {
             processedTradesRef.current.add(lastClosedPilotTrade.id);
             if ((lastClosedPilotTrade.result || 0) < 0) {
-                setRiskManager(prev => {
-                    const newThreshold = Math.min(95, prev.assertivenessThreshold + 5);
-                    return {
-                        mode: 'Cautious',
-                        assertivenessThreshold: newThreshold,
-                        lastAdjustmentReason: `Perda de $${Math.abs(lastClosedPilotTrade.result || 0).toFixed(2)}. Aumentando limiar para ${newThreshold}%.`
-                    };
+                const newThreshold = Math.min(95, currentRiskManager.assertivenessThreshold + 5);
+                setRiskManager({
+                    mode: 'Cautious',
+                    assertivenessThreshold: newThreshold,
+                    lastAdjustmentReason: `Perda de $${Math.abs(lastClosedPilotTrade.result || 0).toFixed(2)}. Aumentando limiar para ${newThreshold}%.`
                 });
                 toast({ title: "Master Autopilot: Modo Cauteloso Ativado", description: "Limiar de assertividade aumentado.", variant: "destructive" });
             } else {
-                setRiskManager(prev => {
-                    const newThreshold = Math.max(80, prev.assertivenessThreshold - 1);
-                    return {
-                        mode: 'Normal',
-                        assertivenessThreshold: newThreshold,
-                        lastAdjustmentReason: `Ganho de $${(lastClosedPilotTrade.result || 0).toFixed(2)}. Reduzindo limiar para ${newThreshold}%.`
-                    };
+                const newThreshold = Math.max(80, currentRiskManager.assertivenessThreshold - 1);
+                 setRiskManager({
+                    mode: 'Normal',
+                    assertivenessThreshold: newThreshold,
+                    lastAdjustmentReason: `Ganho de $${(lastClosedPilotTrade.result || 0).toFixed(2)}. Reduzindo limiar para ${newThreshold}%.`
                 });
             }
         }
         
         if (isCoolingDownRef.current) {
-            setMasterState(prev => ({...prev, trigger: { ...prev.trigger, reason: 'Em cooldown pós-trade.'}}))
+            masterStateRef.current = {...masterStateRef.current, trigger: { ...masterStateRef.current.trigger, reason: 'Em cooldown pós-trade.'}};
+            setMasterState(masterStateRef.current);
             return;
         }
         const openMasterTrade = currentOperationsLog.find(op => op.initiator === 'Piloto' && op.status === 'pending');
         if (openMasterTrade) {
-            setMasterState(prev => ({...prev, trigger: { ...prev.trigger, reason: `Gerindo posição aberta #${openMasterTrade.id}.`}}))
+            masterStateRef.current = {...masterStateRef.current, trigger: { ...masterStateRef.current.trigger, reason: `Gerindo posição aberta #${openMasterTrade.id}.`}};
+            setMasterState(masterStateRef.current);
             return;
         }
 
@@ -310,9 +273,7 @@ export function useMasterAutopilot() {
         const calculatedIndicators = calculateAllIndicators(currentBotCandleData, getCouncilStrategies(), '1m', {duration: 15, unit: 's'});
         const microFeatures = extractMicrostructureFeatures(currentPriceTicks, currentBotCandleData);
         
-        // NOVO: Detecção de Regime
         const detectedRegimeResult = detectMarketRegimeService(currentBotCandleData, calculatedIndicators, macroTrendRef.current);
-
 
         if (calculatedIndicators && calculatedIndicators.ma.long) {
             const detectedTrend: TrendDirection = lastPrice > calculatedIndicators.ma.long ? 'UP' : 'DOWN';
@@ -452,14 +413,15 @@ export function useMasterAutopilot() {
         } else {
              currentState.trigger = { signal: triggerSignal, reason: triggerReason, triggeredBy: triggeredBy };
         }
+        
+        masterStateRef.current = {...masterStateRef.current, ...currentState, isReady: true};
+        setMasterState(masterStateRef.current);
+    };
 
-        setMasterState(prev => ({...prev, ...currentState, isReady: true }));
+    const intervalId = setInterval(executeLogic, 2000);
+    return () => clearInterval(intervalId);
 
-    }, 2000);
-
-    return () => clearInterval(interval);
-
-  }, [isAutopilotOn, isConnected, executeTradeAction, toast, dailyBalance, setAssertivenessThreshold]);
+  }, [isAutopilotOn, isConnected, executeTradeAction, toast, dailyBalance]);
     
   return {
     isAutopilotOn,
