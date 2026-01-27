@@ -11,16 +11,18 @@ import {
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import type { Operation, OperationInitiator, TickData } from "@/lib/types";
-import { ArrowDown, ArrowUp, Bot, User, Users, MoveRight, Clock } from "lucide-react";
+import { ArrowDown, ArrowUp, Bot, User, Users, MoveRight, Clock, Trash2 } from "lucide-react";
 import { useMemo } from "react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { useDerivApiV2 } from "../../hooks/use-deriv-api-v2";
 import { PendingOperationCounter } from "./pending-operation-counter";
+import { Button } from "@/components/ui/button";
 
 interface OperationsLogV2Props {
   operations: Operation[];
   sellContract: (contractId: number) => Promise<any>;
   priceTicks: TickData[];
+  clearActiveContracts: () => void;
 }
 
 const durationUnitLabels: { [key: string]: string } = {
@@ -46,7 +48,7 @@ const formatTime = (isoString: string | undefined): string => {
     }
 };
 
-export function OperationsLogV2({ operations, sellContract, priceTicks }: OperationsLogV2Props) {
+export function OperationsLogV2({ operations, sellContract, priceTicks, clearActiveContracts }: OperationsLogV2Props) {
     const dailySummary = useMemo(() => {
         const today = new Date();
         today.setHours(0, 0, 0, 0);
@@ -75,15 +77,23 @@ export function OperationsLogV2({ operations, sellContract, priceTicks }: Operat
                             Histórico e status das negociações do Cérebro Quantitativo.
                         </CardDescription>
                     </div>
-                    <div className="text-right">
-                        <p className="text-xs text-muted-foreground">Resultado do Dia</p>
-                        <p className={cn(
-                            "text-lg font-bold",
-                            dailySummary > 0 && "text-green-600",
-                            dailySummary < 0 && "text-destructive"
-                        )}>
-                            {dailySummary.toLocaleString('pt-BR', { style: 'currency', currency: 'USD' })}
-                        </p>
+                    <div className="flex items-center gap-2">
+                        <div className="text-right">
+                            <p className="text-xs text-muted-foreground">Resultado do Dia</p>
+                            <p className={cn(
+                                "text-lg font-bold",
+                                dailySummary > 0 && "text-green-600",
+                                dailySummary < 0 && "text-destructive"
+                            )}>
+                                {dailySummary.toLocaleString('pt-BR', { style: 'currency', currency: 'USD' })}
+                            </p>
+                        </div>
+                         {operations.length > 0 && (
+                            <Button variant="ghost" size="icon" onClick={clearActiveContracts}>
+                                <Trash2 className="h-4 w-4" />
+                                <span className="sr-only">Limpar log</span>
+                            </Button>
+                        )}
                     </div>
                 </div>
             </CardHeader>

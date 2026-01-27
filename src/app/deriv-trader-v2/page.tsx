@@ -122,7 +122,7 @@ const IsolatedMarketChart = () => {
 };
 
 const MainContent = () => {
-    const { activeSymbol, priceTicks, dataVersion, operationsLog, sellContract, chartData } = useDerivApiV2();
+    const { activeSymbol, priceTicks, dataVersion, operationsLog, sellContract, chartData, clearActiveContracts } = useDerivApiV2();
     const robotCouncil = useRobotCouncilV2(activeSymbol, priceTicks, chartData, dataVersion);
     
     return (
@@ -147,7 +147,7 @@ const MainContent = () => {
                     <TabsContent value="arena" className="mt-4"><TradingDeskV2 councilState={robotCouncil} /></TabsContent>
                     <TabsContent value="auditoria" className="mt-4"><TradingDecisionLogViewer logs={robotCouncil.tradeDecisionLog} showFilters={false} /></TabsContent>
                     <TabsContent value="logs" className="mt-4 space-y-4">
-                        <OperationsLogV2 operations={operationsLog} sellContract={sellContract} priceTicks={priceTicks} />
+                        <OperationsLogV2 operations={operationsLog} sellContract={sellContract} priceTicks={priceTicks} clearActiveContracts={clearActiveContracts} />
                     </TabsContent>
                     <TabsContent value="evolucao" className="mt-4"><EvolutionLabV2 {...robotCouncil} /></TabsContent>
                     <TabsContent value="debug" className="mt-4">
@@ -183,7 +183,7 @@ const MainContent = () => {
                             <TradingDecisionLogViewer logs={robotCouncil.tradeDecisionLog} showFilters={false} />
                         </TabsContent>
                         <TabsContent value="logs" className="mt-4 space-y-4">
-                            <OperationsLogV2 operations={operationsLog} sellContract={sellContract} priceTicks={priceTicks} />
+                            <OperationsLogV2 operations={operationsLog} sellContract={sellContract} priceTicks={priceTicks} clearActiveContracts={clearActiveContracts} />
                         </TabsContent>
                         <TabsContent value="evolucao" className="mt-4"><EvolutionLabV2 {...robotCouncil} /></TabsContent>
                         <TabsContent value="debug" className="mt-4">

@@ -1,5 +1,3 @@
-
-
 // /src/app/volatility-analysis/page.tsx
 'use client';
 
@@ -797,7 +795,7 @@ function PageContent() {
                     <StochasticLab realData={chartData} activeSymbol={activeSymbol} />
                     <div className="lg:col-span-2 space-y-6">
                         <VolatilityTraderInterface symbol={activeSymbol || ''} />
-                        <OperationsLogV2 operations={operationsLog} sellContract={sellContract} priceTicks={priceTicks} />
+                        <OperationsLogV2 operations={operationsLog} sellContract={sellContract} priceTicks={priceTicks} clearActiveContracts={clearActiveContracts} />
                     </div>
                 </div>
             </div>
@@ -812,4 +810,3 @@ export default function VolatilityAnalysisPage() {
         </DerivApiProviderV2>
     );
 }
-
