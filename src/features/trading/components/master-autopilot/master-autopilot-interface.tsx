@@ -18,6 +18,8 @@ import type { MasterAutopilotState, RiskManagerStatus } from '../../hooks/use-ma
 import type { Indicators } from '@/services/indicator-service';
 import type { MicrostructureFeatures } from '@/services/advanced-trading-services';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
+import { Slider } from '@/components/ui/slider';
+
 
 const getProgressColor = (percentage: number) => {
     if (percentage > 80) return 'bg-green-500';
@@ -96,7 +98,7 @@ function MasterAutopilotDashboard({ state, riskManager, macroTrend }: { state: M
                 </div>
                  <Alert className={cn("col-span-1 md:col-span-2", state.trigger.signal === 'HOLD' && 'bg-amber-500/10 border-amber-500/30 text-amber-800', state.trigger.signal !== 'HOLD' && 'bg-primary/10 border-primary/30 text-primary')}>
                     <Zap className="h-4 w-4" />
-                    <AlertTitle className="font-bold">Status do Gatilho Preditivo</AlertTitle>
+                    <AlertTitle className="font-bold">Status do Gatilho do Piloto</AlertTitle>
                     <AlertDescription className="text-xs">{state.trigger.reason}</AlertDescription>
                 </Alert>
                 <div className="grid grid-cols-2 gap-4">
@@ -189,18 +191,52 @@ export function MasterAutopilotInterface() {
                 variant="outline" 
                 className="h-14 flex-1"
                 onClick={handleManualExecution}
-                disabled={autopilot.masterState.trigger.signal === 'HOLD' || isExecutingManual}
+                disabled={autopilot.masterState.manualTrigger.signal === 'HOLD' || isExecutingManual || autopilot.isAutopilotOn}
                >
                    {isExecutingManual ? <Loader2 className="h-5 w-5 animate-spin"/> : <Send className="h-5 w-5"/>}
                    <div className="ml-2 text-left">
                        <p className="font-bold">Executar Sinal Manual</p>
-                       <p className="text-xs text-muted-foreground">Sinal Atual: {autopilot.masterState.trigger.signal}</p>
+                       <p className="text-xs text-muted-foreground">Sinal: {autopilot.masterState.manualTrigger.signal} ({autopilot.masterState.manualTrigger.reason})</p>
                    </div>
                </Button>
            </div>
         </CardContent>
       </Card>
-
+      
+      <Collapsible>
+            <CollapsibleTrigger asChild>
+                <Button variant="outline" className="w-full">
+                    <ChevronsUpDown className="h-4 w-4 mr-2"/>
+                    Configurações Avançadas do Piloto
+                </Button>
+            </CollapsibleTrigger>
+            <CollapsibleContent className="pt-4">
+               <Card>
+                  <CardHeader>
+                    <CardTitle className="text-base font-headline">Ajuste de Risco do Piloto Automático</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-2">
+                        <Label htmlFor="assertiveness-threshold">Limiar de Assertividade (%)</Label>
+                        <div className="flex items-center gap-4">
+                            <Slider
+                                id="assertiveness-threshold"
+                                min={65}
+                                max={95}
+                                step={5}
+                                value={[autopilot.riskManager.assertivenessThreshold]}
+                                onValueChange={(value) => autopilot.setAssertivenessThreshold(value[0])}
+                                disabled={autopilot.isAutopilotOn}
+                            />
+                            <span className="font-mono text-primary font-bold">{autopilot.riskManager.assertivenessThreshold}%</span>
+                        </div>
+                        <p className="text-xs text-muted-foreground">Define o quão 'confiante' o piloto deve estar para executar uma ordem. Valores mais altos = menos trades, mas teoricamente mais seguros.</p>
+                    </div>
+                  </CardContent>
+               </Card>
+            </CollapsibleContent>
+      </Collapsible>
+      
       <Collapsible open={isDashboardOpen} onOpenChange={setIsDashboardOpen}>
           <CollapsibleTrigger asChild>
               <Button variant="outline" className="w-full">
