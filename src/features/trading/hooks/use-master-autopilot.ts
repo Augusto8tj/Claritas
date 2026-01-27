@@ -43,6 +43,10 @@ export interface MasterAutopilotState {
         reason: string;
         triggeredBy: [string, string] | null;
     };
+    manualTrigger: { // NOVO para o botão manual
+        signal: Signal;
+        reason: string;
+    };
     indicators: Indicators | null;
     microstructure: MicrostructureFeatures | null;
 }
@@ -92,6 +96,10 @@ export function useMasterAutopilot() {
         signal: 'HOLD',
         reason: 'Piloto desativado ou dados insuficientes.',
         triggeredBy: null,
+    },
+    manualTrigger: {
+        signal: 'HOLD',
+        reason: 'Aguardando consenso dos modelos.'
     },
     indicators: null,
     microstructure: null,
@@ -157,17 +165,19 @@ export function useMasterAutopilot() {
     }
   }, [toast]);
   
-  const executeTradeAction = useCallback(async (initiator: OperationInitiator) => {
+  const executeTradeAction = useCallback(async (initiator: OperationInitiator, signalOverride?: Signal) => {
       const { trigger, indicators } = masterStateRef.current;
       const currentMacroTrend = macroTrendRef.current;
-      const { signal, triggeredBy } = trigger;
-
-      if (signal === 'HOLD' || !activeSymbol) {
+      
+      const signalToUse = signalOverride || trigger.signal;
+      const { triggeredBy } = trigger;
+      
+      if (signalToUse === 'HOLD' || !activeSymbol) {
           toast({ title: "Nenhum sinal válido", description: "O gatilho preditivo não detectou uma oportunidade.", variant: "destructive"});
           return;
       }
 
-      toast({ title: `🤖 Master Autopilot: Ordem ${initiator} ${signal}!`, description: `Executando ${contractType} em ${activeSymbol}`});
+      toast({ title: `🤖 Master Autopilot: Ordem ${initiator} ${signalToUse}!`, description: `Executando ${contractType} em ${activeSymbol}`});
 
       try {
           if (contractType === 'Accumulators') {
@@ -179,10 +189,10 @@ export function useMasterAutopilot() {
                   const duration = parseInt(durationMatch[1], 10);
                   const durationUnit = durationMatch[2] as 's' | 't';
                   await executeRiseFallTrade(
-                      signal === 'RISE' ? 'CALL' : 'PUT',
+                      signalToUse === 'RISE' ? 'CALL' : 'PUT',
                       1.0,
                       activeSymbol,
-                      signal.toLowerCase() as 'rise' | 'fall',
+                      signalToUse.toLowerCase() as 'rise' | 'fall',
                       duration,
                       durationUnit,
                       initiator
@@ -197,7 +207,7 @@ export function useMasterAutopilot() {
               const takeProfit = finalStake * 1.5;
 
               await executeMultiplierTrade(
-                  signal === 'RISE' ? 'MULTUP' : 'MULTDOWN',
+                  signalToUse === 'RISE' ? 'MULTUP' : 'MULTDOWN',
                   finalStake,
                   activeSymbol,
                   100, 
@@ -214,18 +224,31 @@ export function useMasterAutopilot() {
 
   }, [contractType, activeSymbol, executeAccumulatorTrade, executeRiseFallTrade, executeMultiplierTrade, dailyBalance, toast]);
 
-  const executeManualTrigger = useCallback(() => {
-      executeTradeAction('Manual');
+  const executeManualTrigger = useCallback(async () => {
+    const { signal } = masterStateRef.current.manualTrigger;
+    await executeTradeAction('Manual', signal);
   }, [executeTradeAction]);
-
+  
+  const setAssertivenessThreshold = useCallback((value: number) => {
+      setRiskManager(prev => ({...prev, assertivenessThreshold: value}));
+  }, []);
 
   useEffect(() => {
-    if (!isAutopilotOn || priceTicksRef.current.length < 50) {
-      setMasterState(prev => ({
-        ...prev,
-        isReady: false,
-        trigger: { signal: 'HOLD', reason: isAutopilotOn ? 'Aguardando dados suficientes...' : 'Piloto desativado.', triggeredBy: null }
-      }));
+    if (!isAutopilotOn && !isConnected) {
+        if(masterState.trigger.signal !== 'HOLD') {
+            setMasterState(prev => ({...prev, trigger: { signal: 'HOLD', reason: 'Piloto desativado.', triggeredBy: null }}));
+        }
+        return;
+    }
+    
+    if (priceTicksRef.current.length < 50) {
+      if(!masterState.isReady || masterState.trigger.signal !== 'HOLD') {
+        setMasterState(prev => ({
+          ...prev,
+          isReady: false,
+          trigger: { signal: 'HOLD', reason: isAutopilotOn ? 'Aguardando dados suficientes...' : 'Piloto desativado.', triggeredBy: null }
+        }));
+      }
       return;
     }
 
@@ -233,9 +256,7 @@ export function useMasterAutopilot() {
         const currentPriceTicks = priceTicksRef.current;
         const currentBotCandleData = botCandleDataRef.current;
         const currentOperationsLog = operationsLogRef.current;
-        const currentMacroTrend = macroTrendRef.current;
         const currentRiskManager = riskManagerRef.current;
-
 
         const lastClosedPilotTrade = currentOperationsLog.find(op => 
             op.initiator === 'Piloto' && 
@@ -296,7 +317,7 @@ export function useMasterAutopilot() {
 
         if (calculatedIndicators && calculatedIndicators.ma.long) {
             const detectedTrend: TrendDirection = lastPrice > calculatedIndicators.ma.long ? 'UP' : 'DOWN';
-            if (currentMacroTrend !== detectedTrend) setMacroTrend(detectedTrend);
+            if (macroTrendRef.current !== detectedTrend) setMacroTrend(detectedTrend);
         }
 
         const projectPath = (steps: number) => {
@@ -355,6 +376,21 @@ export function useMasterAutopilot() {
             newAssertiveness[name] = { accuracy, vote };
         });
 
+        // --- Lógica para Trigger Manual ---
+        const votes = Object.values(newAssertiveness).map(a => a.vote);
+        const riseVotes = votes.filter(v => v === 'RISE').length;
+        const fallVotes = votes.filter(v => v === 'FALL').length;
+        let manualSignal: Signal = 'HOLD';
+        let manualReason = 'Aguardando consenso dos modelos.';
+        if (riseVotes >= 4) {
+            manualSignal = 'RISE';
+            manualReason = `${riseVotes}/6 modelos concordam com alta.`;
+        } else if (fallVotes >= 4) {
+            manualSignal = 'FALL';
+            manualReason = `${fallVotes}/6 modelos concordam com baixa.`;
+        }
+        
+        // --- Lógica para Trigger do Piloto ---
         let triggerSignal: Signal = 'HOLD';
         let triggerReason = `Nenhuma confirmação dupla de assertividade (> ${currentRiskManager.assertivenessThreshold}%).`;
         let triggeredBy: [string, string] | null = null;
@@ -365,15 +401,14 @@ export function useMasterAutopilot() {
             if (newAssertiveness[currentHorizon].accuracy > currentRiskManager.assertivenessThreshold && newAssertiveness[prevHorizon].accuracy > currentRiskManager.assertivenessThreshold) {
                 if (newAssertiveness[currentHorizon].vote === newAssertiveness[prevHorizon].vote && newAssertiveness[currentHorizon].vote !== 'HOLD') {
                     const signalCandidate = newAssertiveness[currentHorizon].vote;
-                    
                     if (contractType === 'Multipliers' || contractType === 'Rise/Fall') {
-                        if ((signalCandidate === 'RISE' && currentMacroTrend === 'UP') || (signalCandidate === 'FALL' && currentMacroTrend === 'DOWN')) {
+                        if ((signalCandidate === 'RISE' && macroTrendRef.current === 'UP') || (signalCandidate === 'FALL' && macroTrendRef.current === 'DOWN')) {
                            triggerSignal = signalCandidate;
                            triggeredBy = [prevHorizon, currentHorizon];
                            triggerReason = `Gatilho ${triggerSignal} confirmado por assertividade e alinhamento com a tendência macro.`;
                            break;
                         } else {
-                           triggerReason = `Sinal ${signalCandidate} ignorado. Assertividade alta, mas contra a tendência macro (${currentMacroTrend}).`;
+                           triggerReason = `Sinal ${signalCandidate} ignorado. Contra a tendência macro (${macroTrendRef.current}).`;
                         }
                     } else { // Accumulators
                         triggerSignal = 'RISE'; // Sinal de estabilidade
@@ -388,35 +423,29 @@ export function useMasterAutopilot() {
         const currentState: Omit<MasterAutopilotState, 'isReady'> = { 
             assertiveness: newAssertiveness, 
             trigger: { signal: 'HOLD', reason: triggerReason, triggeredBy: null },
+            manualTrigger: { signal: manualSignal, reason: manualReason },
             indicators: calculatedIndicators, 
             microstructure: microFeatures 
         };
 
-        if (triggerSignal !== 'HOLD' && !isCoolingDownRef.current && !openMasterTrade) {
+        if (triggerSignal !== 'HOLD' && !isCoolingDownRef.current && !openMasterTrade && isAutopilotOn) {
             isCoolingDownRef.current = true;
             currentState.trigger = { signal: triggerSignal, reason: `Gatilho ${triggerSignal} detectado! Executando...`, triggeredBy };
-            setMasterState(prev => ({...prev, ...currentState, isReady: true }));
-
+            
             executeTradeAction('Piloto').finally(() => {
                 setTimeout(() => { isCoolingDownRef.current = false; }, 60000);
             });
         } else {
              currentState.trigger = { signal: triggerSignal, reason: triggerReason, triggeredBy: triggeredBy };
-             setMasterState(prev => ({...prev, ...currentState, isReady: true }));
         }
+
+        setMasterState(prev => ({...prev, ...currentState, isReady: true }));
 
     }, 2000);
 
     return () => clearInterval(interval);
 
-  }, [
-      isAutopilotOn,
-      activeSymbol, 
-      contractType, 
-      executeTradeAction, 
-      toast, 
-      dailyBalance
-    ]);
+  }, [isAutopilotOn, isConnected, executeTradeAction, toast, dailyBalance]);
     
   return {
     isAutopilotOn,
@@ -429,7 +458,263 @@ export function useMasterAutopilot() {
     setDailyTarget,
     masterState,
     riskManager,
+    setAssertivenessThreshold,
     macroTrend,
-    executeManualTrigger
+    executeManualTrigger,
   };
+}
+
+```
+<content><![CDATA[// src/features/trading/components/master-autopilot/master-autopilot-interface.tsx
+'use client';
+
+import React, { useState } from 'react';
+import { useMasterAutopilot } from '../../hooks/use-master-autopilot';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Label } from '@/components/ui/label';
+import { Input } from '@/components/ui/input';
+import { Switch } from '@/components/ui/switch';
+import { Button } from '@/components/ui/button';
+import { Crosshair, Target, Bot, Power, BarChart, TrendingUp, TrendingDown, ShieldQuestion, Brain, BarChart3, Scale, Zap, ChevronsUpDown, Send, Loader2 } from 'lucide-react';
+import { cn } from '@/lib/utils';
+import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
+import { Progress } from '@/components/ui/progress';
+import { Badge } from '@/components/ui/badge';
+import type { MasterAutopilotState, RiskManagerStatus } from '../../hooks/use-master-autopilot';
+import type { Indicators } from '@/services/indicator-service';
+import type { MicrostructureFeatures } from '@/services/advanced-trading-services';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
+import { Slider } from '@/components/ui/slider';
+
+
+const getProgressColor = (percentage: number) => {
+    if (percentage > 80) return 'bg-green-500';
+    if (percentage > 60) return 'bg-blue-500';
+    if (percentage < 40) return 'bg-red-500';
+    return 'bg-gray-400';
+};
+
+function MasterAutopilotDashboard({ state, riskManager, macroTrend }: { state: MasterAutopilotState, riskManager: RiskManagerStatus, macroTrend: 'UP' | 'DOWN' | 'NONE' }) {
+    if (!state.isReady) {
+        return (
+            <Card>
+                <CardHeader>
+                    <CardTitle className="font-headline">Painel Analítico Completo</CardTitle>
+                </CardHeader>
+                <CardContent className="text-center text-muted-foreground p-8">
+                    Aguardando dados suficientes para a análise...
+                </CardContent>
+            </Card>
+        );
+    }
+    
+    return (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+            {/* Coluna 1: Assertividade */}
+            <Card className="lg:col-span-1">
+                <CardHeader>
+                    <CardTitle className="text-lg font-headline flex items-center gap-2">
+                        <Target className="h-5 w-5 text-primary" /> Assertividade Preditiva
+                    </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                    {Object.entries(state.assertiveness).map(([horizon, data]) => (
+                        <div key={horizon}>
+                            <div className="flex justify-between items-center text-xs text-muted-foreground mb-1">
+                                <span className="font-semibold">{horizon}</span>
+                                <div className={cn('font-bold flex items-center gap-1', data.vote === 'RISE' && 'text-green-600', data.vote === 'FALL' && 'text-red-600')}>
+                                    {data.vote === 'RISE' ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />} {data.vote}
+                                </div>
+                            </div>
+                            <Progress value={data.accuracy} className="h-1.5" indicatorClassName={getProgressColor(data.accuracy)} />
+                            <div className="text-right text-xs font-bold mt-1">{data.accuracy.toFixed(1)}%</div>
+                        </div>
+                    ))}
+                </CardContent>
+            </Card>
+
+            {/* Coluna 2: Análise e Risco */}
+            <div className="lg:col-span-2 space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <Card>
+                        <CardHeader>
+                            <CardTitle className="text-lg font-headline flex items-center gap-2"><BarChart3 className="h-5 w-5" /> Tendência Macro</CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                            <div className={cn(
+                                "p-3 rounded-md text-center font-bold text-lg flex items-center justify-center gap-2",
+                                macroTrend === 'UP' && 'bg-green-500/20 text-green-700',
+                                macroTrend === 'DOWN' && 'bg-red-500/20 text-red-700',
+                                macroTrend === 'NONE' && 'bg-gray-500/20 text-gray-700'
+                            )}>
+                                {macroTrend === 'UP' ? <TrendingUp className="h-5 w-5" /> : macroTrend === 'DOWN' ? <TrendingDown className="h-5 w-5" /> : <BarChart3 className="h-5 w-5" />}
+                                <span>Modo {macroTrend === 'UP' ? 'Compra' : macroTrend === 'DOWN' ? 'Venda' : 'Indefinido'}</span>
+                            </div>
+                        </CardContent>
+                    </Card>
+                    <Card>
+                        <CardHeader>
+                            <CardTitle className="text-lg font-headline flex items-center gap-2"><ShieldQuestion className="h-5 w-5" /> Risco Adaptativo</CardTitle>
+                        </CardHeader>
+                        <CardContent className="space-y-3">
+                            <div className="flex justify-between items-center text-sm"><span className="text-muted-foreground">Modo:</span><Badge variant={riskManager.mode === 'Cautious' ? 'destructive' : 'secondary'}>{riskManager.mode}</Badge></div>
+                            <div className="flex justify-between items-center text-sm"><span className="text-muted-foreground">Limiar Atual:</span><span className="font-bold text-primary">{riskManager.assertivenessThreshold}%</span></div>
+                        </CardContent>
+                    </Card>
+                </div>
+                 <Alert className={cn("col-span-1 md:col-span-2", state.trigger.signal === 'HOLD' && 'bg-amber-500/10 border-amber-500/30 text-amber-800', state.trigger.signal !== 'HOLD' && 'bg-primary/10 border-primary/30 text-primary')}>
+                    <Zap className="h-4 w-4" />
+                    <AlertTitle className="font-bold">Status do Gatilho do Piloto</AlertTitle>
+                    <AlertDescription className="text-xs">{state.trigger.reason}</AlertDescription>
+                </Alert>
+                <div className="grid grid-cols-2 gap-4">
+                    {state.indicators && <IndicatorCard indicators={state.indicators} />}
+                    {state.microstructure && <MicrostructureCard microstructure={state.microstructure} />}
+                </div>
+            </div>
+        </div>
+    );
+}
+
+const IndicatorCard = ({ indicators }: { indicators: Indicators }) => (
+    <Card>
+        <CardHeader><CardTitle className="text-base font-headline">Indicadores Chave</CardTitle></CardHeader>
+        <CardContent className="space-y-2 text-xs font-mono">
+            <div className="flex justify-between"><span>RSI(14):</span><span className="font-bold">{indicators.rsi?.toFixed(2)}</span></div>
+            <div className="flex justify-between"><span>ADX(14):</span><span className="font-bold">{indicators.adx?.toFixed(2)}</span></div>
+            <div className="flex justify-between"><span>BBW(%):</span><span className="font-bold">{indicators.bbw?.toFixed(2)}</span></div>
+            <div className="flex justify-between"><span>ATR:</span><span className="font-bold">{indicators.atr?.toFixed(4)}</span></div>
+        </CardContent>
+    </Card>
+);
+
+const MicrostructureCard = ({ microstructure }: { microstructure: MicrostructureFeatures }) => (
+    <Card>
+        <CardHeader><CardTitle className="text-base font-headline">Microestrutura</CardTitle></CardHeader>
+        <CardContent className="space-y-2 text-xs font-mono">
+            <div className="flex justify-between"><span>Pressão:</span><span className="font-bold">{microstructure.pressure}</span></div>
+            <div className="flex justify-between"><span>Velocidade:</span><span className="font-bold">{microstructure.tickVelocity.toFixed(1)} t/s</span></div>
+            <div className="flex justify-between"><span>Vol. YZ:</span><span className="font-bold">{(microstructure.yangZhangVolatility*1000).toFixed(2)}</span></div>
+            <div className="flex justify-between"><span>Spike?:</span><span className="font-bold">{microstructure.isSpike ? 'SIM' : 'NÃO'}</span></div>
+        </CardContent>
+    </Card>
+);
+
+export function MasterAutopilotInterface() {
+  const autopilot = useMasterAutopilot();
+  const [isExecutingManual, setIsExecutingManual] = useState(false);
+  const [isDashboardOpen, setIsDashboardOpen] = useState(false);
+
+  const handleManualExecution = async () => {
+      setIsExecutingManual(true);
+      await autopilot.executeManualTrigger();
+      setIsExecutingManual(false);
+  }
+
+  return (
+    <div className="space-y-6">
+      <Card>
+        <CardHeader>
+          <CardTitle className="font-headline flex items-center gap-2">
+            <Bot className="h-5 w-5 text-primary" />
+            Controlo do Piloto Mestre
+          </CardTitle>
+          <CardDescription>
+            Configure e ative o sistema de trading preditivo unificado.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          <div className="flex flex-col sm:flex-row gap-4">
+            <div className="flex-1 space-y-2">
+              <Label htmlFor="contract-type">Tipo de Contrato</Label>
+              <Select value={autopilot.contractType} onValueChange={(value) => autopilot.setContractType(value as any)} disabled={autopilot.isAutopilotOn}>
+                <SelectTrigger id="contract-type"><SelectValue placeholder="Selecione..." /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Accumulators">Accumulators (Estabilidade)</SelectItem>
+                  <SelectItem value="Multipliers">Multipliers (Tendência)</SelectItem>
+                  <SelectItem value="Rise/Fall">Rise/Fall (Direcional)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex-1 space-y-2">
+                <Label htmlFor="daily-balance">Banca do Dia (USD)</Label>
+                <Input id="daily-balance" type="number" value={autopilot.dailyBalance} onChange={e => autopilot.setDailyBalance(Number(e.target.value))} disabled={autopilot.isAutopilotOn} />
+            </div>
+             <div className="flex-1 space-y-2">
+                <Label htmlFor="daily-target">Alvo de Lucro (USD)</Label>
+                <Input id="daily-target" type="number" value={autopilot.dailyTarget} onChange={e => autopilot.setDailyTarget(Number(e.target.value))} disabled={autopilot.isAutopilotOn} />
+            </div>
+          </div>
+           <div className="flex flex-col sm:flex-row items-center justify-center gap-4 pt-4">
+              <div className="flex items-center space-x-2 rounded-lg border p-4">
+                <Label htmlFor="master-autopilot-switch" className="font-semibold text-base flex items-center gap-2">
+                  <Power className={cn("h-5 w-5 transition-colors", autopilot.isAutopilotOn ? "text-green-500" : "text-muted-foreground")} />
+                  Piloto Automático
+                </Label>
+                <Switch id="master-autopilot-switch" checked={autopilot.isAutopilotOn} onCheckedChange={autopilot.toggleAutopilot} />
+              </div>
+               <Button 
+                variant="outline" 
+                className="h-14 flex-1"
+                onClick={handleManualExecution}
+                disabled={autopilot.masterState.manualTrigger.signal === 'HOLD' || isExecutingManual || autopilot.isAutopilotOn}
+               >
+                   {isExecutingManual ? <Loader2 className="h-5 w-5 animate-spin"/> : <Send className="h-5 w-5"/>}
+                   <div className="ml-2 text-left">
+                       <p className="font-bold">Executar Sinal Manual</p>
+                       <p className="text-xs text-muted-foreground">Sinal: {autopilot.masterState.manualTrigger.signal} ({autopilot.masterState.manualTrigger.reason})</p>
+                   </div>
+               </Button>
+           </div>
+        </CardContent>
+      </Card>
+      
+      <Collapsible>
+            <CollapsibleTrigger asChild>
+                <Button variant="outline" className="w-full">
+                    <ChevronsUpDown className="h-4 w-4 mr-2"/>
+                    Configurações Avançadas do Piloto
+                </Button>
+            </CollapsibleTrigger>
+            <CollapsibleContent className="pt-4">
+               <Card>
+                  <CardHeader>
+                    <CardTitle className="text-base font-headline">Ajuste de Risco do Piloto Automático</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-2">
+                        <Label htmlFor="assertiveness-threshold">Limiar de Assertividade (%)</Label>
+                        <div className="flex items-center gap-4">
+                            <Slider
+                                id="assertiveness-threshold"
+                                min={65}
+                                max={95}
+                                step={5}
+                                value={[autopilot.riskManager.assertivenessThreshold]}
+                                onValueChange={(value) => autopilot.setAssertivenessThreshold(value[0])}
+                                disabled={autopilot.isAutopilotOn}
+                            />
+                            <span className="font-mono text-primary font-bold">{autopilot.riskManager.assertivenessThreshold}%</span>
+                        </div>
+                        <p className="text-xs text-muted-foreground">Define o quão 'confiante' o piloto deve estar para executar uma ordem. Valores mais altos = menos trades, mas teoricamente mais seguros.</p>
+                    </div>
+                  </CardContent>
+               </Card>
+            </CollapsibleContent>
+      </Collapsible>
+
+      <Collapsible open={isDashboardOpen} onOpenChange={setIsDashboardOpen}>
+          <CollapsibleTrigger asChild>
+              <Button variant="outline" className="w-full">
+                  <ChevronsUpDown className="h-4 w-4 mr-2"/>
+                  {isDashboardOpen ? "Ocultar" : "Mostrar"} Painel Analítico Completo
+              </Button>
+          </CollapsibleTrigger>
+          <CollapsibleContent className="pt-4">
+              <MasterAutopilotDashboard state={autopilot.masterState} riskManager={autopilot.riskManager} macroTrend={autopilot.macroTrend}/>
+          </CollapsibleContent>
+      </Collapsible>
+    </div>
+  );
 }
