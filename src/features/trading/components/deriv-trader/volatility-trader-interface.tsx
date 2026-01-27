@@ -12,12 +12,18 @@ import { Input } from "@/components/ui/input";
 import type { OperationInitiator } from "@/lib/types";
 import { useDerivApiV2 } from "@/features/trading/hooks/use-deriv-api-v2";
 import type { VolatilityTraderFormValues } from './volatility-trader-interface.types';
+import { getConsensusGradientStyle } from './utils/get-consensus-gradient-style';
+import { cn } from '@/lib/utils';
 
 interface VolatilityTraderInterfaceProps {
   symbol: string;
+  consensus: {
+    decision: 'RISE' | 'FALL' | 'HOLD';
+    certaintyScore: number;
+  }
 }
 
-export default function VolatilityTraderInterface({ symbol }: VolatilityTraderInterfaceProps) {
+export default function VolatilityTraderInterface({ symbol, consensus }: VolatilityTraderInterfaceProps) {
   const { toast } = useToast();
   const [loading, setLoading] = useState<'rise' | 'fall' | null>(null);
   const { isConnected, executeTrade } = useDerivApiV2();
@@ -72,12 +78,14 @@ export default function VolatilityTraderInterface({ symbol }: VolatilityTraderIn
   };
   
   const isButtonDisabled = !!loading || !isConnected;
+  const riseButtonStyle = getConsensusGradientStyle(consensus.certaintyScore, 'rise');
+  const fallButtonStyle = getConsensusGradientStyle(consensus.certaintyScore, 'fall');
 
   return (
     <Card>
       <CardHeader>
         <CardTitle className="font-headline">Negociação Rápida</CardTitle>
-        <CardDescription>Execute trades com base na sua análise.</CardDescription>
+        <CardDescription>Execute trades com base na sua análise e no consenso da IA.</CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
         <Form {...form}>
@@ -112,22 +120,24 @@ export default function VolatilityTraderInterface({ symbol }: VolatilityTraderIn
             </div>
              <div className="grid grid-cols-2 gap-4">
                  <Button
-                    variant="outline"
-                    className="h-12 bg-green-500/10 text-green-600 border-green-500/30 hover:bg-green-500/20 hover:text-green-700"
+                    style={riseButtonStyle}
+                    className="h-16 text-white border-none flex flex-col"
                     onClick={() => handleTrade("rise")}
                     disabled={isButtonDisabled}
                 >
-                    {loading === "rise" ? <Loader2 className="h-5 w-5 animate-spin" /> : <ArrowUp className="h-5 w-5 mr-2" />}
+                    {loading === "rise" ? <Loader2 className="h-5 w-5 animate-spin" /> : <ArrowUp className="h-5 w-5" />}
                     <span className="font-semibold">Rise</span>
+                    <span className="text-xs opacity-80 font-mono">({consensus.certaintyScore > 0 ? `+${consensus.certaintyScore.toFixed(0)}` : consensus.certaintyScore.toFixed(0)}%)</span>
                 </Button>
                 <Button
-                    variant="outline"
-                    className="h-12 bg-red-500/10 text-red-600 border-red-500/30 hover:bg-red-500/20 hover:text-red-700"
+                    style={fallButtonStyle}
+                    className="h-16 text-white border-none flex flex-col"
                     onClick={() => handleTrade("fall")}
                     disabled={isButtonDisabled}
                 >
-                    {loading === "fall" ? <Loader2 className="h-5 w-5 animate-spin" /> : <ArrowDown className="h-5 w-5 mr-2" />}
+                    {loading === "fall" ? <Loader2 className="h-5 w-5 animate-spin" /> : <ArrowDown className="h-5 w-5" />}
                     <span className="font-semibold">Fall</span>
+                    <span className="text-xs opacity-80 font-mono">({consensus.certaintyScore < 0 ? consensus.certaintyScore.toFixed(0) : `+${consensus.certaintyScore.toFixed(0)}`}%)</span>
                 </Button>
              </div>
           </form>
