@@ -52,28 +52,9 @@ export interface MasterAutopilotState {
 }
 
 export function useMasterAutopilot() {
-  const { 
-    priceTicks: priceTicksV2, 
-    botCandleData: botCandleDataV2, 
-    executeTrade: executeRiseFallTrade,
-    operationsLog: operationsLogV2,
-    isConnected: isConnectedV2,
-    activeSymbol: activeSymbolV2,
-  } = useDerivApiV2();
-  
-  const { 
-    executeTrade: executeAccumulatorTrade,
-    operationsLog: operationsLogAccumulators,
-    isConnected: isConnectedAccumulators,
-    activeSymbol: activeSymbolAccumulators,
-  } = useDerivApiAccumulators();
-
-  const {
-    executeTrade: executeMultiplierTrade,
-    isConnected: isConnectedMultipliers,
-    activeSymbol: activeSymbolMultipliers,
-    operationsLog: operationsLogMultipliers,
-  } = useDerivApiMultipliers();
+  const v2Api = useDerivApiV2();
+  const accumulatorsApi = useDerivApiAccumulators();
+  const multipliersApi = useDerivApiMultipliers();
   
   const { toast } = useToast();
 
@@ -97,7 +78,7 @@ export function useMasterAutopilot() {
         reason: 'Piloto desativado ou dados insuficientes.',
         triggeredBy: null,
     },
-    manualTrigger: {
+    manualTrigger: { 
         signal: 'HOLD',
         reason: 'Aguardando consenso dos modelos.'
     },
@@ -109,23 +90,32 @@ export function useMasterAutopilot() {
   masterStateRef.current = masterState;
 
   const [macroTrend, setMacroTrend] = useState<TrendDirection>('NONE');
+  const macroTrendRef = useRef(macroTrend);
+  macroTrendRef.current = macroTrend;
   
   const isCoolingDownRef = useRef(false);
   
-  const activeSymbol = 
-      contractType === 'Accumulators' ? activeSymbolAccumulators : 
-      contractType === 'Multipliers' ? activeSymbolMultipliers : 
-      activeSymbolV2;
-  const priceTicks = priceTicksV2;
-  const botCandleData = botCandleDataV2;
-  const operationsLog = 
-      contractType === 'Accumulators' ? operationsLogAccumulators : 
-      contractType === 'Multipliers' ? operationsLogMultipliers :
-      operationsLogV2;
-  const isConnected = 
-      contractType === 'Accumulators' ? isConnectedAccumulators : 
-      contractType === 'Multipliers' ? isConnectedMultipliers :
-      isConnectedV2;
+  const activeApi = useMemo(() => {
+    switch(contractType) {
+        case 'Accumulators': return accumulatorsApi;
+        case 'Multipliers': return multipliersApi;
+        case 'Rise/Fall': return v2Api;
+        default: return v2Api;
+    }
+  }, [contractType, accumulatorsApi, multipliersApi, v2Api]);
+  
+  const { 
+    activeSymbol, 
+    priceTicks, 
+    botCandleData, 
+    operationsLog, 
+    isConnected,
+    executeTrade: currentExecuteTrade,
+  } = activeApi;
+
+  const { executeTrade: executeRiseFallTrade } = v2Api;
+  const { executeTrade: executeAccumulatorTrade } = accumulatorsApi;
+  const { executeTrade: executeMultiplierTrade } = multipliersApi;
       
   const priceTicksRef = useRef(priceTicks);
   priceTicksRef.current = priceTicks;
@@ -135,8 +125,7 @@ export function useMasterAutopilot() {
   operationsLogRef.current = operationsLog;
   const riskManagerRef = useRef(riskManager);
   riskManagerRef.current = riskManager;
-  const macroTrendRef = useRef(macroTrend);
-  macroTrendRef.current = macroTrend;
+
   const contractTypeRef = useRef(contractType);
   contractTypeRef.current = contractType;
 
@@ -218,7 +207,7 @@ export function useMasterAutopilot() {
           toast({ title: `❌ Erro na Execução ${initiator}`, description: error instanceof Error ? error.message : String(error), variant: "destructive" });
       }
   }, [activeSymbol, dailyBalance, executeAccumulatorTrade, executeMultiplierTrade, executeRiseFallTrade, toast]);
-
+  
   const executeManualTrigger = useCallback(async () => {
     const { signal } = masterStateRef.current.manualTrigger;
     await executeTradeAction('Manual', signal);
@@ -236,18 +225,18 @@ export function useMasterAutopilot() {
         return;
     }
     
-    if (priceTicks.length < 50) {
-      if(!masterState.isReady || masterState.trigger.signal !== 'HOLD') {
-        setMasterState(prev => ({
-          ...prev,
-          isReady: false,
-          trigger: { signal: 'HOLD', reason: isAutopilotOn ? 'Aguardando dados suficientes...' : 'Piloto desativado.', triggeredBy: null }
-        }));
-      }
-      return;
-    }
-
     const interval = setInterval(() => {
+        if (priceTicksRef.current.length < 50) {
+          if(!masterState.isReady || masterState.trigger.signal !== 'HOLD') {
+            setMasterState(prev => ({
+              ...prev,
+              isReady: false,
+              trigger: { signal: 'HOLD', reason: isAutopilotOn ? 'Aguardando dados suficientes...' : 'Piloto desativado.', triggeredBy: null }
+            }));
+          }
+          return;
+        }
+
         const currentPriceTicks = priceTicksRef.current;
         const currentBotCandleData = botCandleDataRef.current;
         const currentOperationsLog = operationsLogRef.current;
@@ -378,12 +367,21 @@ export function useMasterAutopilot() {
         const fallVotes = votes.filter(v => v === 'FALL').length;
         let manualSignal: Signal = 'HOLD';
         let manualReason = 'Aguardando consenso dos modelos.';
+        
+        const totalVotes = riseVotes + fallVotes;
+
         if (riseVotes >= 4) {
             manualSignal = 'RISE';
-            manualReason = `${riseVotes}/6 modelos concordam com alta.`;
+            manualReason = `Consenso forte: ${riseVotes}/6 modelos indicam alta.`;
         } else if (fallVotes >= 4) {
             manualSignal = 'FALL';
-            manualReason = `${fallVotes}/6 modelos concordam com baixa.`;
+            manualReason = `Consenso forte: ${fallVotes}/6 modelos indicam baixa.`;
+        } else if (riseVotes > fallVotes && riseVotes >= 3) {
+            manualSignal = 'RISE';
+            manualReason = `Consenso majoritário: ${riseVotes}/${totalVotes} modelos indicam alta.`;
+        } else if (fallVotes > riseVotes && fallVotes >= 3) {
+            manualSignal = 'FALL';
+            manualReason = `Consenso majoritário: ${fallVotes}/${totalVotes} modelos indicam baixa.`;
         }
         
         let triggerSignal: Signal = 'HOLD';
@@ -405,8 +403,8 @@ export function useMasterAutopilot() {
                         } else {
                            triggerReason = `Sinal ${signalCandidate} ignorado. Contra a tendência macro (${currentMacroTrend}).`;
                         }
-                    } else {
-                        triggerSignal = 'RISE';
+                    } else { // Accumulators
+                        triggerSignal = 'RISE'; // Para acumuladores, qualquer sinal de alta previsibilidade é positivo. Usamos RISE como placeholder.
                         triggeredBy = [prevHorizon, currentHorizon];
                         triggerReason = `Gatilho de estabilidade detectado por assertividade em ${prevHorizon} e ${currentHorizon}.`;
                         break;
@@ -456,5 +454,11 @@ export function useMasterAutopilot() {
     setAssertivenessThreshold,
     macroTrend,
     executeManualTrigger,
+    // Pass-through dos dados da API ativa
+    activeSymbol,
+    priceTicks,
+    botCandleData,
+    operationsLog,
+    isConnected,
   };
 }
