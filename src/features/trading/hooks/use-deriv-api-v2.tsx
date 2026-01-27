@@ -162,7 +162,7 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
 
   const [activeSymbol, setActiveSymbol] = useState<string | null>('1HZ10V');
   const [chartData, setChartData] = useState<ChartData[]>([]);
-  const [priceTicks, setPriceTicks] = useState<TickData[]>([]);
+  const [priceTicks, setPriceTicks] = useState<TickData[]>([]); 
   const [isChartLoading, setIsChartLoading] = useState(true);
   const [chartError, setChartError] = useState<string | null>(null);
   const [chartType, setChartType] = useState<ChartType>('Area');
@@ -182,7 +182,17 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
 
   const setAndPersistOperationsLog = useCallback((updater: React.SetStateAction<Operation[]>) => {
     setOperationsLog(prevLog => {
-        const newLog = typeof updater === 'function' ? updater(prevLog) : updater;
+        const newLogWithPotentialDuplicates = typeof updater === 'function' ? updater(prevLog) : updater;
+        
+        // GARANTIA DE INTEGRIDADE: Evita chaves duplicadas no React.
+        const uniqueOpsMap = new Map<number, Operation>();
+        for(const op of newLogWithPotentialDuplicates) {
+            if(op && op.id) {
+                uniqueOpsMap.set(op.id, op);
+            }
+        }
+        const newLog = Array.from(uniqueOpsMap.values());
+        
         try {
             localStorage.setItem(DERIV_V2_LOG_KEY, JSON.stringify(newLog));
         } catch (error) {
@@ -607,21 +617,22 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
                         });
                         break;
                   case 'tick':
-                        if (response.tick?.symbol === activeSymbol) {
-                            const newTick = { epoch: response.tick.epoch, price: response.tick.quote };
-                            setPriceTicks(prev => {
-                                const newTicks = [...prev, newTick];
-                                if (newTicks.length > MAX_DATA_POINTS) return newTicks.slice(1);
-                                return newTicks;
-                            });
-                    
-                            if (chartTypeRef.current === 'Area') {
-                                setChartData(prev => addDataPoint(prev, newTick));
-                            }
-                    
-                            setDataVersion(v => v + 1);
-                        }
-                        break;
+                      const tick = response.tick;
+                      if (tick?.symbol === activeSymbol) {
+                          const newTick = { epoch: tick.epoch, price: tick.quote };
+                          if (chartTypeRef.current === 'Area') {
+                             setChartData(prev => addDataPoint(prev, newTick));
+                          }
+                          setPriceTicks(prev => {
+                              const newTicks = [...prev, newTick];
+                               if (newTicks.length > MAX_DATA_POINTS) {
+                                  return newTicks.slice(1);
+                              }
+                              return newTicks;
+                          });
+                          setDataVersion(v => v + 1);
+                      }
+                      break;
                   
                   case 'ohlc':
                   case 'candles':

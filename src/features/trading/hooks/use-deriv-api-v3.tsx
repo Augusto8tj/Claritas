@@ -13,6 +13,7 @@ import { FirebaseErrorListener } from '@/components/firebase-error-listener';
 const DERIV_DEMO_TOKEN_KEY = 'derivDemoApiToken';
 const DERIV_REAL_TOKEN_KEY = 'derivRealApiToken';
 const DERIV_ACCOUNT_TYPE_KEY = 'derivAccountType';
+const DERIV_V3_LOG_KEY = 'derivV3OperationsLog_v3.0';
 const DERIV_APP_ID = process.env.NEXT_PUBLIC_DERIV_APP_ID || "1089";
 
 export type AccountType = 'demo' | 'real';
@@ -179,6 +180,27 @@ export const DerivApiProviderV3 = ({ children }: { children: ReactNode }) => {
   const promisesRef = useRef<Map<string, PromiseCallbacks>>(new Map());
   const [triggerReconnect, setTriggerReconnect] = useState(0);
 
+    const setAndPersistOperationsLog = useCallback((updater: React.SetStateAction<Operation[]>) => {
+        setOperationsLog(prevLog => {
+            const newLogWithPotentialDuplicates = typeof updater === 'function' ? updater(prevLog) : updater;
+            
+            const uniqueOpsMap = new Map<number, Operation>();
+            for(const op of newLogWithPotentialDuplicates) {
+                if(op && op.id) {
+                    uniqueOpsMap.set(op.id, op);
+                }
+            }
+            const newLog = Array.from(uniqueOpsMap.values());
+            
+            try {
+                localStorage.setItem(DERIV_V3_LOG_KEY, JSON.stringify(newLog));
+            } catch (error) {
+                console.error("Failed to save V3 operations log to localStorage:", error);
+            }
+            return newLog;
+        });
+    }, []);
+
   useEffect(() => {
     chartTypeRef.current = chartType;
   }, [chartType]);
@@ -188,11 +210,18 @@ export const DerivApiProviderV3 = ({ children }: { children: ReactNode }) => {
       const storedDemoToken = localStorage.getItem(DERIV_DEMO_TOKEN_KEY);
       const storedRealToken = localStorage.getItem(DERIV_REAL_TOKEN_KEY);
       const storedAccountType = localStorage.getItem(DERIV_ACCOUNT_TYPE_KEY) as AccountType | null;
+      const storedLog = localStorage.getItem(DERIV_V3_LOG_KEY);
 
       if (storedDemoToken) setDemoToken(storedDemoToken);
       if (storedRealToken) setRealToken(storedRealToken);
       if (storedAccountType) setAccountTypeState(storedAccountType);
       
+      if (storedLog) {
+        const parsedLog = JSON.parse(storedLog);
+        if(Array.isArray(parsedLog)) {
+            setOperationsLog(parsedLog.filter(op => op && op.id));
+        }
+      }
     } catch (error) {
       console.error("Failed to access localStorage:", error);
     }
@@ -229,12 +258,12 @@ export const DerivApiProviderV3 = ({ children }: { children: ReactNode }) => {
       });
 
       if (hasChanges) {
-        setOperationsLog(updatedOps);
+        setAndPersistOperationsLog(updatedOps);
       }
     }, 2000); // Check every 2 seconds
 
     return () => clearInterval(interval);
-  }, [operationsLog, updateTradeAnnotation]);
+  }, [operationsLog, updateTradeAnnotation, setAndPersistOperationsLog]);
   
   const activeToken = accountType === 'demo' ? demoToken : realToken;
 
@@ -386,7 +415,7 @@ export const DerivApiProviderV3 = ({ children }: { children: ReactNode }) => {
               isSellable,
               expirationTime: expirationTimeMs,
           };
-          setOperationsLog(prevLog => [newOperation, ...prevLog]);
+          setAndPersistOperationsLog(prevLog => [newOperation, ...prevLog]);
 
           const entryTime = buyResult.purchase_time;
           
@@ -413,7 +442,7 @@ export const DerivApiProviderV3 = ({ children }: { children: ReactNode }) => {
            const message = error instanceof Error ? error.message : "Um erro desconhecido ocorreu.";
            return { success: false, message };
         }
-      }, [isConnected, makeRequest, addTradeAnnotation, priceTicks]);
+      }, [isConnected, makeRequest, addTradeAnnotation, priceTicks, setAndPersistOperationsLog]);
 
   const sellContract = useCallback(async (contractId: number): Promise<TradeResult> => {
     if (!wsRef.current || !isConnected) {
@@ -495,13 +524,6 @@ export const DerivApiProviderV3 = ({ children }: { children: ReactNode }) => {
                     console.error('[Deriv WS] Error:', response.error.message);
                   }
               }
-              
-              if (response.subscription && response.subscription.id) {
-                  const req = response.echo_req;
-                  if (req && (req.ticks || req.ticks_history)) {
-                      activeSubscriptionIdRef.current = response.subscription.id;
-                  }
-              }
   
               switch (response.msg_type) {
                   case 'balance':
@@ -515,15 +537,15 @@ export const DerivApiProviderV3 = ({ children }: { children: ReactNode }) => {
                           return;
                         }
 
-                        setOperationsLog(prevLog => {
+                        setAndPersistOperationsLog(prevLog => {
                             const existingOpIndex = prevLog.findIndex(op => op.id === contract.contract_id);
                             const isSold = contract.is_sold === 1;
-
+                    
                             if (existingOpIndex !== -1) {
                                 // UPDATE EXISTING OPERATION
                                 const updatedLog = [...prevLog];
                                 const op = updatedLog[existingOpIndex];
-
+                    
                                 if (op.status === 'pending') {
                                     if (isSold) {
                                         const newStatus = contract.profit >= 0 ? 'won' : 'lost';
@@ -541,7 +563,7 @@ export const DerivApiProviderV3 = ({ children }: { children: ReactNode }) => {
                                         };
                                         
                                         setToastQueue(prev => [...prev, toastMessage]);
-
+                    
                                         if (wsRef.current?.readyState === WebSocket.OPEN) {
                                             wsRef.current.send(JSON.stringify({"balance": 1}));
                                         }
@@ -552,14 +574,14 @@ export const DerivApiProviderV3 = ({ children }: { children: ReactNode }) => {
                                     }
                                 }
                                 return prevLog;
-
+                    
                             } else if (!isSold) {
                                 // ADD NEW EXTERNALLY OPENED OPERATION
                                 const direction = (contract.contract_type || '').includes('CALL') ? 'rise' : 'fall';
                                 const purchaseTime = contract.purchase_time || Math.floor(Date.now() / 1000);
                                 const durationInSeconds = contract.date_expiry ? (contract.date_expiry - purchaseTime) : 0;
                                 const durationUnit: DurationUnit = 's'; // Safe default
-
+    
                                 const newOperation: Operation = {
                                     id: contract.contract_id,
                                     asset: contract.symbol,
@@ -589,7 +611,7 @@ export const DerivApiProviderV3 = ({ children }: { children: ReactNode }) => {
                                     expirationTime: newOperation.expirationTime,
                                     contractType: (contract.contract_type || '').startsWith('MULT') ? 'multiplier' : 'option'
                                 });
-
+                    
                                 return [newOperation, ...prevLog];
                             }
                             
@@ -597,8 +619,8 @@ export const DerivApiProviderV3 = ({ children }: { children: ReactNode }) => {
                         });
                         break;
                   case 'tick':
-                      if (response.tick?.symbol === activeSymbol) {
-                          const tick = response.tick;
+                      const tick = response.tick;
+                      if (tick?.symbol === activeSymbol) {
                           const newTick = { epoch: tick.epoch, price: tick.quote };
                           if (chartTypeRef.current === 'Area') {
                              setChartData(prev => addDataPoint(prev, newTick));
@@ -617,7 +639,7 @@ export const DerivApiProviderV3 = ({ children }: { children: ReactNode }) => {
                   case 'ohlc':
                   case 'candles':
                       const candleData = response.ohlc || (response.candles && response.candles[0]);
-                      if (chartTypeRef.current === 'Candle' && candleData && candleData.symbol === activeSymbol) {
+                      if (response.subscription?.id === activeSubscriptionIdRef.current && chartTypeRef.current === 'Candle' && candleData) {
                           const newCandle: CandleData = {
                               epoch: candleData.open_time || candleData.epoch,
                               open: parseFloat(candleData.open),
@@ -709,7 +731,7 @@ export const DerivApiProviderV3 = ({ children }: { children: ReactNode }) => {
       };
     
       ws.onerror = () => {
-          // O evento onclose é mais fiável para obter o motivo do erro.
+        // A lógica de erro é centralizada no onclose para obter detalhes específicos.
       };
     };
 
@@ -721,7 +743,7 @@ export const DerivApiProviderV3 = ({ children }: { children: ReactNode }) => {
           wsRef.current.close();
       }
     };
-  }, [activeToken, isLoading, makeRequest, updateTradeAnnotation, addTradeAnnotation, toast, triggerReconnect]);
+  }, [activeToken, isLoading, makeRequest, updateTradeAnnotation, addTradeAnnotation, toast, triggerReconnect, setAndPersistOperationsLog, setToastQueue]);
 
   const subscribeToMarketData = useCallback(async (symbol: string) => {
     if (wsRef.current?.readyState !== WebSocket.OPEN) return;
