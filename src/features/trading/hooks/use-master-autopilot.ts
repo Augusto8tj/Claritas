@@ -105,11 +105,11 @@ export function useMasterAutopilot() {
       contractType === 'Multipliers' ? activeSymbolMultipliers : 
       activeSymbolV2;
   const priceTicks = 
-      contractType === 'Accumulators' ? priceTicksV2 : // Accumulators use V2 ticks for now
+      contractType === 'Accumulators' ? priceTicksV2 :
       contractType === 'Multipliers' ? priceTicksV2 :
       priceTicksV2;
   const botCandleData = 
-      contractType === 'Accumulators' ? botCandleDataV2 : // Use V2 candles
+      contractType === 'Accumulators' ? botCandleDataV2 :
       contractType === 'Multipliers' ? botCandleDataV2 :
       botCandleDataV2;
   const operationsLog = 
@@ -120,6 +120,17 @@ export function useMasterAutopilot() {
       contractType === 'Accumulators' ? isConnectedAccumulators : 
       contractType === 'Multipliers' ? isConnectedMultipliers :
       isConnectedV2;
+      
+  const priceTicksRef = useRef(priceTicks);
+  priceTicksRef.current = priceTicks;
+  const botCandleDataRef = useRef(botCandleData);
+  botCandleDataRef.current = botCandleData;
+  const operationsLogRef = useRef(operationsLog);
+  operationsLogRef.current = operationsLog;
+  const macroTrendRef = useRef(macroTrend);
+  macroTrendRef.current = macroTrend;
+  const riskManagerRef = useRef(riskManager);
+  riskManagerRef.current = riskManager;
 
   const accuracyHistoryRefs = {
     '3t': useRef<boolean[]>([]), '6t': useRef<boolean[]>([]), '10s': useRef<boolean[]>([]),
@@ -173,7 +184,7 @@ export function useMasterAutopilot() {
                   );
               }
           } else if (contractType === 'Multipliers' && triggeredBy && indicators && indicators.atr) {
-              const currentPrice = priceTicks[priceTicks.length-1].price;
+              const currentPrice = priceTicksRef.current[priceTicksRef.current.length-1].price;
               const baseStake = dailyBalance * 0.02;
               const volatilityFactor = Math.max(0.5, 1 - (indicators.atr / currentPrice * 100));
               const finalStake = parseFloat(Math.max(1.0, Math.min(baseStake * volatilityFactor, 5.0)).toFixed(2));
@@ -196,7 +207,7 @@ export function useMasterAutopilot() {
           toast({ title: `❌ Erro na Execução ${initiator}`, description: error instanceof Error ? error.message : String(error), variant: "destructive" });
       }
 
-  }, [masterState, contractType, activeSymbol, executeAccumulatorTrade, executeRiseFallTrade, executeMultiplierTrade, priceTicks, dailyBalance, toast]);
+  }, [masterState, contractType, activeSymbol, executeAccumulatorTrade, executeRiseFallTrade, executeMultiplierTrade, dailyBalance, toast]);
 
   const executeManualTrigger = useCallback(() => {
       executeTradeAction('Manual');
@@ -204,7 +215,7 @@ export function useMasterAutopilot() {
 
 
   useEffect(() => {
-    if (!isAutopilotOn || priceTicks.length < 50) {
+    if (!isAutopilotOn || priceTicksRef.current.length < 50) {
       setMasterState(prev => ({
         ...prev,
         isReady: false,
@@ -214,7 +225,14 @@ export function useMasterAutopilot() {
     }
 
     const interval = setInterval(() => {
-        const lastClosedPilotTrade = operationsLog.find(op => 
+        const currentPriceTicks = priceTicksRef.current;
+        const currentBotCandleData = botCandleDataRef.current;
+        const currentOperationsLog = operationsLogRef.current;
+        const currentMacroTrend = macroTrendRef.current;
+        const currentRiskManager = riskManagerRef.current;
+
+
+        const lastClosedPilotTrade = currentOperationsLog.find(op => 
             op.initiator === 'Piloto' && 
             op.status !== 'pending' && 
             !processedTradesRef.current.has(op.id)
@@ -248,13 +266,13 @@ export function useMasterAutopilot() {
             setMasterState(prev => ({...prev, trigger: { ...prev.trigger, reason: 'Em cooldown pós-trade.'}}))
             return;
         }
-        const openMasterTrade = operationsLog.find(op => op.initiator === 'Piloto' && op.status === 'pending');
+        const openMasterTrade = currentOperationsLog.find(op => op.initiator === 'Piloto' && op.status === 'pending');
         if (openMasterTrade) {
             setMasterState(prev => ({...prev, trigger: { ...prev.trigger, reason: `Gerindo posição aberta #${openMasterTrade.id}.`}}))
             return;
         }
 
-        const prices = priceTicks.map(d => d.price);
+        const prices = currentPriceTicks.map(d => d.price);
         const VOL_WINDOW = 50;
         const lastPrice = prices[prices.length - 1];
         const logReturns: number[] = [];
@@ -268,12 +286,12 @@ export function useMasterAutopilot() {
         const lastVariance = logReturns.reduce((s, r) => s + Math.pow(r - meanLastReturn, 2), 0) / (logReturns.length - 1);
         const lastSigma = Math.sqrt(lastVariance);
         
-        const calculatedIndicators = calculateAllIndicators(botCandleData, getCouncilStrategies(), '1m', {duration: 15, unit: 's'});
-        const microFeatures = extractMicrostructureFeatures(priceTicks, botCandleData);
+        const calculatedIndicators = calculateAllIndicators(currentBotCandleData, getCouncilStrategies(), '1m', {duration: 15, unit: 's'});
+        const microFeatures = extractMicrostructureFeatures(currentPriceTicks, currentBotCandleData);
 
         if (calculatedIndicators && calculatedIndicators.ma.long) {
             const detectedTrend: TrendDirection = lastPrice > calculatedIndicators.ma.long ? 'UP' : 'DOWN';
-            if (macroTrend !== detectedTrend) setMacroTrend(detectedTrend);
+            if (currentMacroTrend !== detectedTrend) setMacroTrend(detectedTrend);
         }
 
         const projectPath = (steps: number) => {
@@ -333,24 +351,24 @@ export function useMasterAutopilot() {
         });
 
         let triggerSignal: Signal = 'HOLD';
-        let triggerReason = `Nenhuma confirmação dupla de assertividade (> ${riskManager.assertivenessThreshold}%).`;
+        let triggerReason = `Nenhuma confirmação dupla de assertividade (> ${currentRiskManager.assertivenessThreshold}%).`;
         let triggeredBy: [string, string] | null = null;
         
         for (let i = 1; i < horizons.length; i++) {
             const currentHorizon = horizons[i].name;
             const prevHorizon = horizons[i-1].name;
-            if (newAssertiveness[currentHorizon].accuracy > riskManager.assertivenessThreshold && newAssertiveness[prevHorizon].accuracy > riskManager.assertivenessThreshold) {
+            if (newAssertiveness[currentHorizon].accuracy > currentRiskManager.assertivenessThreshold && newAssertiveness[prevHorizon].accuracy > currentRiskManager.assertivenessThreshold) {
                 if (newAssertiveness[currentHorizon].vote === newAssertiveness[prevHorizon].vote && newAssertiveness[currentHorizon].vote !== 'HOLD') {
                     const signalCandidate = newAssertiveness[currentHorizon].vote;
                     
                     if (contractType === 'Multipliers' || contractType === 'Rise/Fall') {
-                        if ((signalCandidate === 'RISE' && macroTrend === 'UP') || (signalCandidate === 'FALL' && macroTrend === 'DOWN')) {
+                        if ((signalCandidate === 'RISE' && currentMacroTrend === 'UP') || (signalCandidate === 'FALL' && currentMacroTrend === 'DOWN')) {
                            triggerSignal = signalCandidate;
                            triggeredBy = [prevHorizon, currentHorizon];
                            triggerReason = `Gatilho ${triggerSignal} confirmado por assertividade e alinhamento com a tendência macro.`;
                            break;
                         } else {
-                           triggerReason = `Sinal ${signalCandidate} ignorado. Assertividade alta, mas contra a tendência macro (${macroTrend}).`;
+                           triggerReason = `Sinal ${signalCandidate} ignorado. Assertividade alta, mas contra a tendência macro (${currentMacroTrend}).`;
                         }
                     } else { // Accumulators
                         triggerSignal = 'RISE'; // Sinal de estabilidade
@@ -388,10 +406,14 @@ export function useMasterAutopilot() {
     return () => clearInterval(interval);
 
   }, [
-      isAutopilotOn, priceTicks, operationsLog, activeSymbol, contractType, 
-      executeTradeAction, toast, riskManager.assertivenessThreshold, botCandleData, macroTrend, dailyBalance
+      isAutopilotOn,
+      activeSymbol, 
+      contractType, 
+      executeTradeAction, 
+      toast, 
+      dailyBalance
     ]);
-
+    
   return {
     isAutopilotOn,
     toggleAutopilot,
