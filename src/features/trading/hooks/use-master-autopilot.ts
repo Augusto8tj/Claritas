@@ -97,7 +97,13 @@ export function useMasterAutopilot() {
     microstructure: null,
   });
   
+  const masterStateRef = useRef(masterState);
+  masterStateRef.current = masterState;
+
   const [macroTrend, setMacroTrend] = useState<TrendDirection>('NONE');
+  const macroTrendRef = useRef(macroTrend);
+  macroTrendRef.current = macroTrend;
+  
   const isCoolingDownRef = useRef(false);
   
   const activeSymbol = 
@@ -127,8 +133,6 @@ export function useMasterAutopilot() {
   botCandleDataRef.current = botCandleData;
   const operationsLogRef = useRef(operationsLog);
   operationsLogRef.current = operationsLog;
-  const macroTrendRef = useRef(macroTrend);
-  macroTrendRef.current = macroTrend;
   const riskManagerRef = useRef(riskManager);
   riskManagerRef.current = riskManager;
 
@@ -154,7 +158,8 @@ export function useMasterAutopilot() {
   }, [toast]);
   
   const executeTradeAction = useCallback(async (initiator: OperationInitiator) => {
-      const { trigger, indicators } = masterState;
+      const { trigger, indicators } = masterStateRef.current;
+      const currentMacroTrend = macroTrendRef.current;
       const { signal, triggeredBy } = trigger;
 
       if (signal === 'HOLD' || !activeSymbol) {
@@ -207,7 +212,7 @@ export function useMasterAutopilot() {
           toast({ title: `❌ Erro na Execução ${initiator}`, description: error instanceof Error ? error.message : String(error), variant: "destructive" });
       }
 
-  }, [masterState, contractType, activeSymbol, executeAccumulatorTrade, executeRiseFallTrade, executeMultiplierTrade, dailyBalance, toast]);
+  }, [contractType, activeSymbol, executeAccumulatorTrade, executeRiseFallTrade, executeMultiplierTrade, dailyBalance, toast]);
 
   const executeManualTrigger = useCallback(() => {
       executeTradeAction('Manual');
@@ -380,8 +385,7 @@ export function useMasterAutopilot() {
             }
         }
         
-        const currentState: MasterAutopilotState = { 
-            isReady: true, 
+        const currentState: Omit<MasterAutopilotState, 'isReady'> = { 
             assertiveness: newAssertiveness, 
             trigger: { signal: 'HOLD', reason: triggerReason, triggeredBy: null },
             indicators: calculatedIndicators, 
@@ -391,14 +395,14 @@ export function useMasterAutopilot() {
         if (triggerSignal !== 'HOLD' && !isCoolingDownRef.current && !openMasterTrade) {
             isCoolingDownRef.current = true;
             currentState.trigger = { signal: triggerSignal, reason: `Gatilho ${triggerSignal} detectado! Executando...`, triggeredBy };
-            setMasterState(currentState);
+            setMasterState(prev => ({...prev, ...currentState, isReady: true }));
 
             executeTradeAction('Piloto').finally(() => {
                 setTimeout(() => { isCoolingDownRef.current = false; }, 60000);
             });
         } else {
              currentState.trigger = { signal: triggerSignal, reason: triggerReason, triggeredBy: triggeredBy };
-             setMasterState(currentState);
+             setMasterState(prev => ({...prev, ...currentState, isReady: true }));
         }
 
     }, 2000);
