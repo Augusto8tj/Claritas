@@ -9,14 +9,14 @@ import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
 import { Button } from '@/components/ui/button';
-import { Crosshair, Target, Bot, Power, BarChart, TrendingUp, TrendingDown, ShieldQuestion, Brain, BarChart3, Scale, Zap, ChevronsUpDown, Send, Loader2 } from 'lucide-react';
+import { Crosshair, Target, Bot, Power, BarChart, TrendingUp, TrendingDown, ShieldQuestion, Brain, BarChart3, Scale, Zap, ChevronsUpDown, Send, Loader2, ShieldCheck, HelpCircle, GitBranch } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
 import { Progress } from '@/components/ui/progress';
 import { Badge } from '@/components/ui/badge';
 import type { MasterAutopilotState, RiskManagerStatus } from '../../hooks/use-master-autopilot';
 import type { Indicators } from '@/services/indicator-service';
-import type { MicrostructureFeatures } from '@/services/advanced-trading-services';
+import type { MicrostructureFeatures, MarketRegime } from '@/lib/types';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Slider } from '@/components/ui/slider';
 
@@ -28,7 +28,51 @@ const getProgressColor = (percentage: number) => {
     return 'bg-gray-400';
 };
 
-function MasterAutopilotDashboard({ state, riskManager, macroTrend }: { state: MasterAutopilotState, riskManager: RiskManagerStatus, macroTrend: 'UP' | 'DOWN' | 'NONE' }) {
+const regimeLabels: Record<MarketRegime, string> = {
+  trending_bull: 'Tendência de Alta',
+  trending_bear: 'Tendência de Baixa',
+  ranging: 'Lateralizado (Ranging)',
+  high_volatility: 'Alta Volatilidade',
+  breakout: 'Rompimento (Breakout)'
+};
+
+
+function TacticalAnalysisCard({ state, contractType }: { state: MasterAutopilotState, contractType: string }) {
+    if (!state.isReady) return null;
+    
+    const { regime, confidence } = state.currentRegime;
+    const isCompatible = isRegimeCompatible(contractType as any, regime);
+
+    return (
+        <Card>
+            <CardHeader>
+                <CardTitle className="text-lg font-headline flex items-center gap-2">
+                    <GitBranch className="h-5 w-5 text-primary" /> Análise Tática
+                </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+                 <div className="flex justify-between items-center text-sm">
+                    <span className="text-muted-foreground">Regime de Mercado Atual:</span>
+                    <Badge variant="outline" className="font-semibold text-base">{regimeLabels[regime] || 'Indefinido'}</Badge>
+                </div>
+                 <div className="flex justify-between items-center text-sm">
+                    <span className="text-muted-foreground">Confiança no Regime:</span>
+                    <span className="font-mono font-bold">{(confidence * 100).toFixed(1)}%</span>
+                </div>
+                <div className={cn(
+                    "p-3 rounded-md text-center font-bold text-sm flex items-center justify-center gap-2",
+                    isCompatible ? 'bg-green-500/10 text-green-700' : 'bg-destructive/10 text-destructive'
+                )}>
+                    {isCompatible ? <ShieldCheck className="h-4 w-4"/> : <ShieldCheck className="h-4 w-4"/>}
+                    <span>Contrato de {contractType} {isCompatible ? 'é' : 'NÃO é'} compatível com o regime atual.</span>
+                </div>
+            </CardContent>
+        </Card>
+    )
+}
+
+
+function MasterAutopilotDashboard({ state, riskManager, macroTrend, contractType }: { state: MasterAutopilotState, riskManager: RiskManagerStatus, macroTrend: 'UP' | 'DOWN' | 'NONE', contractType: string }) {
     if (!state.isReady) {
         return (
             <Card>
@@ -70,22 +114,7 @@ function MasterAutopilotDashboard({ state, riskManager, macroTrend }: { state: M
             {/* Coluna 2: Análise e Risco */}
             <div className="lg:col-span-2 space-y-4">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <Card>
-                        <CardHeader>
-                            <CardTitle className="text-lg font-headline flex items-center gap-2"><BarChart3 className="h-5 w-5" /> Tendência Macro</CardTitle>
-                        </CardHeader>
-                        <CardContent>
-                            <div className={cn(
-                                "p-3 rounded-md text-center font-bold text-lg flex items-center justify-center gap-2",
-                                macroTrend === 'UP' && 'bg-green-500/20 text-green-700',
-                                macroTrend === 'DOWN' && 'bg-red-500/20 text-red-700',
-                                macroTrend === 'NONE' && 'bg-gray-500/20 text-gray-700'
-                            )}>
-                                {macroTrend === 'UP' ? <TrendingUp className="h-5 w-5" /> : macroTrend === 'DOWN' ? <TrendingDown className="h-5 w-5" /> : <BarChart3 className="h-5 w-5" />}
-                                <span>Modo {macroTrend === 'UP' ? 'Compra' : macroTrend === 'DOWN' ? 'Venda' : 'Indefinido'}</span>
-                            </div>
-                        </CardContent>
-                    </Card>
+                     <TacticalAnalysisCard state={state} contractType={contractType} />
                     <Card>
                         <CardHeader>
                             <CardTitle className="text-lg font-headline flex items-center gap-2"><ShieldQuestion className="h-5 w-5" /> Risco Adaptativo</CardTitle>
@@ -245,9 +274,23 @@ export function MasterAutopilotInterface() {
               </Button>
           </CollapsibleTrigger>
           <CollapsibleContent className="pt-4">
-              <MasterAutopilotDashboard state={autopilot.masterState} riskManager={autopilot.riskManager} macroTrend={autopilot.macroTrend}/>
+              <MasterAutopilotDashboard state={autopilot.masterState} riskManager={autopilot.riskManager} macroTrend={autopilot.macroTrend} contractType={autopilot.contractType}/>
           </CollapsibleContent>
       </Collapsible>
     </div>
   );
+}
+
+function isRegimeCompatible(contractType: string, regime: MarketRegime): boolean {
+    switch(contractType) {
+        case 'Accumulators':
+            return regime === 'ranging';
+        case 'Multipliers':
+            return regime === 'trending_bull' || regime === 'trending_bear';
+        case 'Rise/Fall':
+            // Can be used in trending or breakout scenarios
+            return regime === 'trending_bull' || regime === 'trending_bear' || regime === 'breakout';
+        default:
+            return false;
+    }
 }

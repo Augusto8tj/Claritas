@@ -8,8 +8,8 @@ import { useDerivApiMultipliers } from './use-deriv-api-multipliers';
 import { useToast } from '@/hooks/use-toast';
 import { calculateAllIndicators, type Indicators } from '@/services/indicator-service';
 import { getCouncilStrategies } from '@/services/council-strategies';
-import type { DurationUnit, Operation, OperationInitiator } from '@/lib/types';
-import { extractMicrostructureFeatures, type MicrostructureFeatures } from '@/services/advanced-trading-services';
+import type { DurationUnit, Operation, OperationInitiator, MarketRegime } from '@/lib/types';
+import { extractMicrostructureFeatures, type MicrostructureFeatures, detectMarketRegime as detectMarketRegimeService } from '@/services/advanced-trading-services';
 
 
 // --- LÓGICA COPIADA DO StochasticLab ---
@@ -49,7 +49,25 @@ export interface MasterAutopilotState {
     };
     indicators: Indicators | null;
     microstructure: MicrostructureFeatures | null;
+    currentRegime: { // NOVO
+        regime: MarketRegime;
+        confidence: number;
+    };
 }
+
+const isRegimeCompatible = (contract: ContractType, regime: MarketRegime): boolean => {
+    switch (contract) {
+        case 'Accumulators':
+            return regime === 'ranging';
+        case 'Multipliers':
+            return regime === 'trending_bull' || regime === 'trending_bear' || regime === 'breakout';
+        case 'Rise/Fall':
+            return true; // Rise/Fall is generally applicable for now
+        default:
+            return false;
+    }
+}
+
 
 export function useMasterAutopilot() {
   const v2Api = useDerivApiV2();
@@ -69,29 +87,19 @@ export function useMasterAutopilot() {
       lastAdjustmentReason: 'N/A'
   });
   const processedTradesRef = useRef<Set<number>>(new Set());
-
-  const [masterState, setMasterState] = useState<MasterAutopilotState>({
+  const masterStateRef = useRef<MasterAutopilotState>({
     isReady: false,
     assertiveness: {},
-    trigger: {
-        signal: 'HOLD',
-        reason: 'Piloto desativado ou dados insuficientes.',
-        triggeredBy: null,
-    },
-    manualTrigger: { 
-        signal: 'HOLD',
-        reason: 'Aguardando consenso dos modelos.'
-    },
+    trigger: { signal: 'HOLD', reason: 'Piloto desativado ou dados insuficientes.', triggeredBy: null },
+    manualTrigger: { signal: 'HOLD', reason: 'Aguardando consenso dos modelos.'},
     indicators: null,
     microstructure: null,
+    currentRegime: { regime: 'ranging', confidence: 0 }, // NOVO
   });
-  
-  const masterStateRef = useRef(masterState);
-  masterStateRef.current = masterState;
 
+  const [masterState, setMasterState] = useState<MasterAutopilotState>(masterStateRef.current);
+  
   const [macroTrend, setMacroTrend] = useState<TrendDirection>('NONE');
-  const macroTrendRef = useRef(macroTrend);
-  macroTrendRef.current = macroTrend;
   
   const isCoolingDownRef = useRef(false);
   
@@ -110,13 +118,12 @@ export function useMasterAutopilot() {
     botCandleData, 
     operationsLog, 
     isConnected,
-    executeTrade: currentExecuteTrade,
   } = activeApi;
 
   const { executeTrade: executeRiseFallTrade } = v2Api;
   const { executeTrade: executeAccumulatorTrade } = accumulatorsApi;
   const { executeTrade: executeMultiplierTrade } = multipliersApi;
-      
+  
   const priceTicksRef = useRef(priceTicks);
   priceTicksRef.current = priceTicks;
   const botCandleDataRef = useRef(botCandleData);
@@ -125,7 +132,8 @@ export function useMasterAutopilot() {
   operationsLogRef.current = operationsLog;
   const riskManagerRef = useRef(riskManager);
   riskManagerRef.current = riskManager;
-
+  const macroTrendRef = useRef(macroTrend);
+  macroTrendRef.current = macroTrend;
   const contractTypeRef = useRef(contractType);
   contractTypeRef.current = contractType;
 
@@ -151,7 +159,8 @@ export function useMasterAutopilot() {
   }, [toast]);
   
   const executeTradeAction = useCallback(async (initiator: OperationInitiator, signalOverride?: Signal) => {
-      const { trigger, indicators } = masterStateRef.current;
+      const state = masterStateRef.current;
+      const { trigger, indicators } = state;
       const currentContractType = contractTypeRef.current;
       
       const signalToUse = signalOverride || trigger.signal;
@@ -300,6 +309,10 @@ export function useMasterAutopilot() {
         
         const calculatedIndicators = calculateAllIndicators(currentBotCandleData, getCouncilStrategies(), '1m', {duration: 15, unit: 's'});
         const microFeatures = extractMicrostructureFeatures(currentPriceTicks, currentBotCandleData);
+        
+        // NOVO: Detecção de Regime
+        const detectedRegimeResult = detectMarketRegimeService(currentBotCandleData, calculatedIndicators, macroTrendRef.current);
+
 
         if (calculatedIndicators && calculatedIndicators.ma.long) {
             const detectedTrend: TrendDirection = lastPrice > calculatedIndicators.ma.long ? 'UP' : 'DOWN';
@@ -394,6 +407,13 @@ export function useMasterAutopilot() {
             if (newAssertiveness[currentHorizon].accuracy > currentRiskManager.assertivenessThreshold && newAssertiveness[prevHorizon].accuracy > currentRiskManager.assertivenessThreshold) {
                 if (newAssertiveness[currentHorizon].vote === newAssertiveness[prevHorizon].vote && newAssertiveness[currentHorizon].vote !== 'HOLD') {
                     const signalCandidate = newAssertiveness[currentHorizon].vote;
+                    const regimeIsCompatible = isRegimeCompatible(currentContractType, detectedRegimeResult.regime);
+
+                    if (!regimeIsCompatible) {
+                        triggerReason = `Sinal ${signalCandidate} ignorado. Contrato ${currentContractType} incompatível com o regime ${detectedRegimeResult.regime}.`;
+                        continue;
+                    }
+                    
                     if (currentContractType === 'Multipliers' || currentContractType === 'Rise/Fall') {
                         if ((signalCandidate === 'RISE' && currentMacroTrend === 'UP') || (signalCandidate === 'FALL' && currentMacroTrend === 'DOWN')) {
                            triggerSignal = signalCandidate;
@@ -404,7 +424,7 @@ export function useMasterAutopilot() {
                            triggerReason = `Sinal ${signalCandidate} ignorado. Contra a tendência macro (${currentMacroTrend}).`;
                         }
                     } else { // Accumulators
-                        triggerSignal = 'RISE'; // Para acumuladores, qualquer sinal de alta previsibilidade é positivo. Usamos RISE como placeholder.
+                        triggerSignal = 'RISE'; // Placeholder
                         triggeredBy = [prevHorizon, currentHorizon];
                         triggerReason = `Gatilho de estabilidade detectado por assertividade em ${prevHorizon} e ${currentHorizon}.`;
                         break;
@@ -418,7 +438,8 @@ export function useMasterAutopilot() {
             trigger: { signal: 'HOLD', reason: triggerReason, triggeredBy: null },
             manualTrigger: { signal: manualSignal, reason: manualReason },
             indicators: calculatedIndicators, 
-            microstructure: microFeatures 
+            microstructure: microFeatures,
+            currentRegime: { regime: detectedRegimeResult.regime, confidence: detectedRegimeResult.confidence },
         };
 
         if (triggerSignal !== 'HOLD' && !isCoolingDownRef.current && !openMasterTrade && isAutopilotOn) {
@@ -454,7 +475,6 @@ export function useMasterAutopilot() {
     setAssertivenessThreshold,
     macroTrend,
     executeManualTrigger,
-    // Pass-through dos dados da API ativa
     activeSymbol,
     priceTicks,
     botCandleData,
