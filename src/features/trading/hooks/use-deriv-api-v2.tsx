@@ -160,12 +160,12 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
   
   const [toastQueue, setToastQueue] = useState<any[]>([]);
 
-  const [activeSymbol, setActiveSymbol] = useState<string | null>('1HZ100V');
+  const [activeSymbol, setActiveSymbol] = useState<string | null>('1HZ10V');
   const [chartData, setChartData] = useState<ChartData[]>([]);
   const [priceTicks, setPriceTicks] = useState<TickData[]>([]);
   const [isChartLoading, setIsChartLoading] = useState(true);
   const [chartError, setChartError] = useState<string | null>(null);
-  const [chartType, setChartType] = useState<ChartType>('Candle');
+  const [chartType, setChartType] = useState<ChartType>('Area');
   const chartTypeRef = useRef(chartType);
   const [timePeriod, setTimePeriod] = useState<TimePeriod>('1m');
   const activeSubscriptionIdRef = useRef<string | null>(null);
@@ -512,13 +512,6 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
                     console.error('[Deriv WS] Error:', response.error.message);
                   }
               }
-              
-              if (response.subscription && response.subscription.id) {
-                  const req = response.echo_req;
-                  if (req && (req.ticks || req.ticks_history)) {
-                      activeSubscriptionIdRef.current = response.subscription.id;
-                  }
-              }
   
               switch (response.msg_type) {
                   case 'balance':
@@ -535,12 +528,12 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
                         setAndPersistOperationsLog(prevLog => {
                             const existingOpIndex = prevLog.findIndex(op => op.id === contract.contract_id);
                             const isSold = contract.is_sold === 1;
-
+                    
                             if (existingOpIndex !== -1) {
                                 // UPDATE EXISTING OPERATION
                                 const updatedLog = [...prevLog];
                                 const op = updatedLog[existingOpIndex];
-
+                    
                                 if (op.status === 'pending') {
                                     if (isSold) {
                                         const newStatus = contract.profit >= 0 ? 'won' : 'lost';
@@ -558,7 +551,7 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
                                         };
                                         
                                         setToastQueue(prev => [...prev, toastMessage]);
-
+                    
                                         if (wsRef.current?.readyState === WebSocket.OPEN) {
                                             wsRef.current.send(JSON.stringify({"balance": 1}));
                                         }
@@ -569,14 +562,14 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
                                     }
                                 }
                                 return prevLog;
-
+                    
                             } else if (!isSold) {
                                 // ADD NEW EXTERNALLY OPENED OPERATION
                                 const direction = (contract.contract_type || '').includes('CALL') ? 'rise' : 'fall';
                                 const purchaseTime = contract.purchase_time || Math.floor(Date.now() / 1000);
                                 const durationInSeconds = contract.date_expiry ? (contract.date_expiry - purchaseTime) : 0;
                                 const durationUnit: DurationUnit = 's'; // Safe default
-
+    
                                 const newOperation: Operation = {
                                     id: contract.contract_id,
                                     asset: contract.symbol,
@@ -606,7 +599,7 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
                                     expirationTime: newOperation.expirationTime,
                                     contractType: (contract.contract_type || '').startsWith('MULT') ? 'multiplier' : 'option'
                                 });
-
+                    
                                 return [newOperation, ...prevLog];
                             }
                             
@@ -614,27 +607,26 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
                         });
                         break;
                   case 'tick':
-                      if (response.tick?.symbol === activeSymbol) {
-                          const tick = response.tick;
-                          const newTick = { epoch: tick.epoch, price: tick.quote };
-                          if (chartTypeRef.current === 'Area') {
-                             setChartData(prev => addDataPoint(prev, newTick));
-                          }
-                          setPriceTicks(prev => {
-                              const newTicks = [...prev, newTick];
-                               if (newTicks.length > MAX_DATA_POINTS) {
-                                  return newTicks.slice(1);
-                              }
-                              return newTicks;
-                          });
-                          setDataVersion(v => v + 1);
-                      }
-                      break;
+                        if (response.tick?.symbol === activeSymbol) {
+                            const newTick = { epoch: response.tick.epoch, price: response.tick.quote };
+                            setPriceTicks(prev => {
+                                const newTicks = [...prev, newTick];
+                                if (newTicks.length > MAX_DATA_POINTS) return newTicks.slice(1);
+                                return newTicks;
+                            });
+                    
+                            if (chartTypeRef.current === 'Area') {
+                                setChartData(prev => addDataPoint(prev, newTick));
+                            }
+                    
+                            setDataVersion(v => v + 1);
+                        }
+                        break;
                   
                   case 'ohlc':
                   case 'candles':
                       const candleData = response.ohlc || (response.candles && response.candles[0]);
-                      if (chartTypeRef.current === 'Candle' && candleData && candleData.symbol === activeSymbol) {
+                      if (candleData && candleData.symbol === activeSymbol) {
                           const newCandle: CandleData = {
                               epoch: candleData.open_time || candleData.epoch,
                               open: parseFloat(candleData.open),
@@ -643,7 +635,9 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
                               close: parseFloat(candleData.close),
                               volume: candleData.tick_count || 1,
                           };
-                          setChartData(prev => addDataPoint(prev, newCandle));
+                          if (chartTypeRef.current === 'Candle') {
+                            setChartData(prev => addDataPoint(prev, newCandle));
+                          }
                           
                           const newTick = { epoch: newCandle.epoch, price: newCandle.close };
                            setPriceTicks(prev => {
@@ -809,8 +803,10 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
             };
         }
         
-        makeRequest(subRequest, true);
-        console.log(`[Market Data] Subscription request sent for ${symbol} (${chartType}).`);
+        const subResponse: any = await makeRequest(subRequest);
+        if (subResponse.subscription?.id) {
+            activeSubscriptionIdRef.current = subResponse.subscription.id;
+        }
 
     } catch (error: any) {
         console.error(`[Market Data] Error for ${symbol}:`, error);

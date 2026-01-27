@@ -1,12 +1,15 @@
+
 // /src/app/volatility-analysis/page.tsx
 'use client';
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { useForm, FormProvider } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ScatterChart, Scatter } from 'recharts';
-import { Calculator, TrendingUp, Activity, BarChart3, Bot, FlaskConical, Target, Info, HelpCircle, Brain, ChevronRight } from 'lucide-react';
-import { DerivApiProviderAccumulators, useDerivApiAccumulators } from "@/features/trading/hooks/use-deriv-api-accumulators";
-import { AssetSelectorAccumulators } from "@/features/trading/components/deriv-trader/asset-selector-accumulators";
-import { ApiStatusIndicatorAccumulators } from "@/features/trading/components/deriv-trader/ApiStatusIndicatorAccumulators";
+import { Calculator, TrendingUp, Activity, BarChart3, Bot, FlaskConical, Target, Info, HelpCircle, Brain, ChevronRight, Archive, Swords } from 'lucide-react';
+import { DerivApiProviderV2, useDerivApiV2 } from "@/features/trading/hooks/use-deriv-api-v2";
+import { AssetSelectorV2 } from "@/features/trading/components/deriv-trader/asset-selector-v2";
+import { ApiStatusIndicatorV2 } from "@/features/trading/components/deriv-trader/ApiStatusIndicatorV2";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { ScrollArea } from '@/components/ui/scroll-area';
 import type { ChartData, CandleData } from '@/lib/types';
@@ -14,6 +17,9 @@ import { Progress } from "@/components/ui/progress";
 import { TooltipProvider, Tooltip as ShadTooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { volatilityTraderSchema, type VolatilityTraderFormValues } from "@/features/trading/components/deriv-trader/volatility-trader-interface.types";
+import VolatilityTraderInterface from "@/features/trading/components/deriv-trader/volatility-trader-interface";
+import { OperationsLogV2 } from "@/features/trading/components/deriv-trader/operations-log-v2";
 
 
 // Aproximação da função quantil normal inversa
@@ -144,7 +150,7 @@ function StochasticLab({ realData, activeSymbol }: { realData: ChartData[], acti
         const sigma = Math.sqrt(variance);
 
         const Z = normalRandom();
-        const drift = meanPastReturn; // Correção: Drift deve ser a tendência observada.
+        const drift = meanPastReturn - 0.5 * sigma * sigma; // Drift ajustado para GBM
         const diffusion = sigma * Math.sqrt(1) * Z;
         const S_predicted_1_tick = S_prev * Math.exp(drift + diffusion);
         
@@ -185,7 +191,7 @@ function StochasticLab({ realData, activeSymbol }: { realData: ChartData[], acti
         const path = [{ time: lastTime, price: lastPrice }];
         for (let i = 1; i <= steps; i++) {
           const Z = normalRandom();
-          const drift_future = meanLastReturn; // CORREÇÃO: Removido o termo -0.5*sigma^2
+          const drift_future = meanLastReturn - 0.5 * lastSigma * lastSigma;
           const diffusion_future = lastSigma * Math.sqrt(1) * Z;
           currentSimPrice = currentSimPrice * Math.exp(drift_future + diffusion_future);
 
@@ -228,7 +234,7 @@ function StochasticLab({ realData, activeSymbol }: { realData: ChartData[], acti
               return true;
           });
           
-          pendingPredictionsRef.current = updatedPending;
+          pendingRef.current = updatedPending;
           
           if (newHistory.length > 0) {
               setAccuracyHistory(prev => [...prev.slice(-accuracyWindow + newHistory.length), ...newHistory]);
@@ -379,7 +385,7 @@ function StochasticLab({ realData, activeSymbol }: { realData: ChartData[], acti
 
 
   return (
-    <Card className="h-full flex flex-col">
+    <Card className="h-full flex flex-col col-span-1 lg:col-span-3">
         <CardHeader>
             <CardTitle className="font-headline flex items-center gap-2">
                 <FlaskConical className="h-5 w-5 text-purple-600" />
@@ -758,34 +764,50 @@ function StochasticLab({ realData, activeSymbol }: { realData: ChartData[], acti
 
 
 function Header() {
-    const { activeSymbol, setActiveSymbol, assetGroups, isAssetsLoading } = useDerivApiAccumulators();
+    const { activeSymbol, setActiveSymbol, assetGroups, isAssetsLoading } = useDerivApiV2();
     return (
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
             <h1 className="text-3xl font-bold tracking-tight font-headline shrink-0 text-center md:text-left"> Análise de Volatilidade </h1>
             <div className="flex-1 grid grid-cols-1 md:grid-cols-2 gap-4 items-center">
                 <div className="flex justify-center">
-                    <AssetSelectorAccumulators selectedAsset={activeSymbol || ""} onAssetChange={(asset) => setActiveSymbol(asset)} assetGroups={assetGroups} isAssetsLoading={isAssetsLoading} />
+                    <AssetSelectorV2 selectedAsset={activeSymbol || ""} onAssetChange={(asset) => setActiveSymbol(asset)} assetGroups={assetGroups} isAssetsLoading={isAssetsLoading} />
                 </div>
-                <div className="flex justify-center"> <ApiStatusIndicatorAccumulators /> </div>
+                <div className="flex justify-center"> <ApiStatusIndicatorV2 /> </div>
             </div>
         </div>
     );
 };
 
 function PageContent() {
-    const { chartData, activeSymbol } = useDerivApiAccumulators();
+    const { chartData, activeSymbol, operationsLog, sellContract, priceTicks, clearActiveContracts } = useDerivApiV2();
+    const form = useForm<VolatilityTraderFormValues>({
+        resolver: zodResolver(volatilityTraderSchema),
+        defaultValues: {
+            stake: 1.0,
+            duration: 15,
+        },
+    });
+
     return (
-        <div className="flex-1 space-y-4 p-4 sm:p-8 pt-6">
-            <Header />
-            <StochasticLab realData={chartData} activeSymbol={activeSymbol} />
-        </div>
+        <FormProvider {...form}>
+            <div className="flex-1 space-y-4 p-4 sm:p-8 pt-6">
+                <Header />
+                <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
+                    <StochasticLab realData={chartData} activeSymbol={activeSymbol} />
+                    <div className="lg:col-span-2 space-y-6">
+                        <VolatilityTraderInterface symbol={activeSymbol || ''} />
+                        <OperationsLogV2 operations={operationsLog} sellContract={sellContract} priceTicks={priceTicks} />
+                    </div>
+                </div>
+            </div>
+        </FormProvider>
     );
 }
 
 export default function VolatilityAnalysisPage() {
     return (
-        <DerivApiProviderAccumulators>
+        <DerivApiProviderV2>
             <PageContent />
-        </DerivApiProviderAccumulators>
+        </DerivApiProviderV2>
     );
 }
