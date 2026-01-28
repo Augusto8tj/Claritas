@@ -114,12 +114,12 @@ export default function PredictiveLogViewer({
                 </CardDescription>
             </div>
              {logs.length > 0 && (
-                <div className="flex items-center gap-2">
-                    <Button variant="outline" size="sm" onClick={toggleAll}>
+                <div className="flex flex-col sm:flex-row gap-2">
+                    <Button variant="outline" size="sm" onClick={toggleAll} className="w-full sm:w-auto">
                         <ChevronsUpDown className="mr-2 h-4 w-4" />
                         {openItems.length === logs.length ? 'Recolher Tudo' : 'Expandir Tudo'}
                     </Button>
-                    <Button variant="outline" size="sm" onClick={handleCsvExport}>
+                    <Button variant="outline" size="sm" onClick={handleCsvExport} className="w-full sm:w-auto">
                         <FilePieChart className="mr-2 h-4 w-4" />
                         Gerar Relatório CSV
                     </Button>
