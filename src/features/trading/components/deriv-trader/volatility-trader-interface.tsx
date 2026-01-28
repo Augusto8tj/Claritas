@@ -21,40 +21,14 @@ interface VolatilityTraderInterfaceProps {
     direction: 'RISE' | 'FALL' | 'HOLD';
     certaintyScore: number;
   };
+  onSyncDuration: () => void;
 }
 
-export default function VolatilityTraderInterface({ symbol, consensus }: VolatilityTraderInterfaceProps) {
+export default function VolatilityTraderInterface({ symbol, consensus, onSyncDuration }: VolatilityTraderInterfaceProps) {
   const { toast } = useToast();
   const [loading, setLoading] = useState<'rise' | 'fall' | null>(null);
   const { isConnected, executeTrade } = useDerivApiV2();
   const form = useFormContext<VolatilityTraderFormValues>();
-
-  const handleSyncDuration = () => {
-    const horizon = consensus.horizon;
-    let seconds = 15;
-    let wasAdjusted = false;
-
-    if (horizon.endsWith('s')) {
-      seconds = parseInt(horizon.replace('s', ''), 10);
-    } else if (horizon.endsWith('t')) {
-      // Aproximando 1 tick = 2 segundos
-      seconds = parseInt(horizon.replace('t', ''), 10) * 2;
-    }
-
-    let finalDuration = seconds;
-    if (seconds < 15) {
-      finalDuration = 15;
-      wasAdjusted = true;
-    }
-
-    form.setValue('duration', finalDuration);
-    toast({
-      title: 'Duração Sincronizada!',
-      description: wasAdjusted
-        ? `A duração foi ajustada para ${finalDuration}s para respeitar o mínimo de 15s.`
-        : `Duração definida para ${finalDuration}s, conforme o sinal mais forte (${horizon}).`,
-    });
-  };
 
   const handleTrade = async (tradeDirection: 'rise' | 'fall') => {
     const isValid = await form.trigger();
@@ -78,13 +52,14 @@ export default function VolatilityTraderInterface({ symbol, consensus }: Volatil
     setLoading(tradeDirection);
     const data = form.getValues();
     
+    // FIX: A unidade da duração é enviada como 's' para corresponder ao que o formulário usa
     const result = await executeTrade(
         tradeDirection === 'rise' ? 'CALL' : 'PUT',
         data.stake,
         symbol,
         tradeDirection,
         data.duration,
-        's', // Hardcoded to seconds
+        's', 
         'Manual' as OperationInitiator
     );
     
@@ -105,8 +80,8 @@ export default function VolatilityTraderInterface({ symbol, consensus }: Volatil
   };
   
   const isButtonDisabled = !!loading || !isConnected;
-  const riseButtonStyle = getConsensusGradientStyle(consensus.certaintyScore, 'rise');
-  const fallButtonStyle = getConsensusGradientStyle(consensus.certaintyScore, 'fall');
+  const riseButtonStyle = getConsensusGradientStyle(consensus?.certaintyScore ?? 0, 'rise');
+  const fallButtonStyle = getConsensusGradientStyle(consensus?.certaintyScore ?? 0, 'fall');
 
   return (
     <Card>
@@ -141,7 +116,7 @@ export default function VolatilityTraderInterface({ symbol, consensus }: Volatil
                         <FormControl>
                             <Input type="number" {...field} onChange={e => field.onChange(parseInt(e.target.value) || 0)} />
                         </FormControl>
-                        <Button type="button" variant="outline" size="icon" onClick={handleSyncDuration} title="Sincronizar com tempo ótimo do sinal mais forte">
+                        <Button type="button" variant="outline" size="icon" onClick={onSyncDuration} title="Sincronizar com tempo ótimo do sinal mais forte">
                             <Zap className="h-4 w-4" />
                         </Button>
                       </div>
@@ -159,7 +134,7 @@ export default function VolatilityTraderInterface({ symbol, consensus }: Volatil
                 >
                     {loading === "rise" ? <Loader2 className="h-5 w-5 animate-spin" /> : <ArrowUp className="h-5 w-5" />}
                     <span className="font-semibold">Rise</span>
-                    <span className="text-xs opacity-80 font-mono">({consensus.certaintyScore > 0 ? `+${consensus.certaintyScore.toFixed(0)}` : consensus.certaintyScore.toFixed(0)}%)</span>
+                    <span className="text-xs opacity-80 font-mono">({consensus?.certaintyScore > 0 ? `+${consensus.certaintyScore.toFixed(0)}` : consensus.certaintyScore.toFixed(0)}%)</span>
                 </Button>
                 <Button
                     style={fallButtonStyle}
@@ -169,7 +144,7 @@ export default function VolatilityTraderInterface({ symbol, consensus }: Volatil
                 >
                     {loading === "fall" ? <Loader2 className="h-5 w-5 animate-spin" /> : <ArrowDown className="h-5 w-5" />}
                     <span className="font-semibold">Fall</span>
-                    <span className="text-xs opacity-80 font-mono">({consensus.certaintyScore < 0 ? consensus.certaintyScore.toFixed(0) : `+${consensus.certaintyScore.toFixed(0)}`}%)</span>
+                    <span className="text-xs opacity-80 font-mono">({consensus?.certaintyScore < 0 ? consensus.certaintyScore.toFixed(0) : `+${consensus.certaintyScore.toFixed(0)}`}%)</span>
                 </Button>
              </div>
           </form>

@@ -23,6 +23,7 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { useToast } from '@/hooks/use-toast';
+import { getConsensusGradientStyle } from '@/features/trading/components/deriv-trader/utils/get-consensus-gradient-style';
 
 
 // Aproximação da função quantil normal inversa
@@ -45,6 +46,7 @@ const normalQuantile = (p: number): number => {
   }
 };
 
+// FIX: A função foi movida para o escopo do módulo para ser acessível a todos os componentes
 const getProgressColor = (percentage: number) => {
     if (percentage > 75) return 'bg-green-500';
     if (percentage > 60) return 'bg-blue-500';
@@ -218,6 +220,7 @@ function StochasticLab({ realData, operationsLog, activeSymbol, onConsensusUpdat
         const newRMSE = Math.sqrt(sumSquaredErrors / errors.length);
         const newDrift = errors.reduce((a,e) => a + e, 0) / errors.length;
         
+        // FIX: Atualização funcional para evitar dependência circular
         setDriftCorrectionForDisplay(prev => {
             if (prev.drift !== newDrift || prev.mae !== newMAE) {
                 return { drift: newDrift, mae: newMAE, rmse: newRMSE };
@@ -240,8 +243,8 @@ function StochasticLab({ realData, operationsLog, activeSymbol, onConsensusUpdat
         const path = [{ time: lastTime, price: lastPriceValue }];
         for (let i = 1; i <= steps; i++) {
           const Z = normalRandom();
-          // FIX: A correção de convexidade de Ito introduzia um viés de FALL.
-          // Para predição de direção, usamos apenas o drift médio recente.
+          // FIX: A correção de Ito (-0.5 * sigma^2) foi removida para eliminar o viés de FALL.
+          // Usamos apenas a tendência média recente (drift) para a previsão de direção.
           const drift_future = meanLastReturn;
           const diffusion_future = lastSigma * Z;
           currentSimPrice = currentSimPrice * Math.exp(drift_future + diffusion_future);
@@ -254,6 +257,15 @@ function StochasticLab({ realData, operationsLog, activeSymbol, onConsensusUpdat
         }
         return path;
       };
+      
+      const horizons = [
+          { name: '3t', ticks: 3, window: 6, ref: pendingPredictions3tRef, setHistory: setPredictionAccuracyHistory3t },
+          { name: '6t', ticks: 6, window: 6, ref: pendingPredictions6tRef, setHistory: setPredictionAccuracyHistory6t },
+          { name: '10s', ticks: 10, window: 10, ref: pendingPredictions10sRef, setHistory: setPredictionAccuracyHistory10s },
+          { name: '20s', ticks: 20, window: 10, ref: pendingPredictions20sRef, setHistory: setPredictionAccuracyHistory20s },
+          { name: '30s', ticks: 30, window: 10, ref: pendingPredictions30sRef, setHistory: setPredictionAccuracyHistory30s },
+          { name: '40s', ticks: 40, window: 10, ref: pendingPredictions40sRef, setHistory: setPredictionAccuracyHistory40s },
+      ];
       
       const processPredictionHorizon = (
           horizonTicks: number,
@@ -283,15 +295,6 @@ function StochasticLab({ realData, operationsLog, activeSymbol, onConsensusUpdat
               setAccuracyHistory(prev => [...prev.slice(-accuracyWindow + newHistory.length), ...newHistory]);
           }
       };
-
-      const horizons = [
-          { name: '3t', ticks: 3, window: 6, ref: pendingPredictions3tRef, setHistory: setPredictionAccuracyHistory3t },
-          { name: '6t', ticks: 6, window: 6, ref: pendingPredictions6tRef, setHistory: setPredictionAccuracyHistory6t },
-          { name: '10s', ticks: 10, window: 10, ref: pendingPredictions10sRef, setHistory: setPredictionAccuracyHistory10s },
-          { name: '20s', ticks: 20, window: 10, ref: pendingPredictions20sRef, setHistory: setPredictionAccuracyHistory20s },
-          { name: '30s', ticks: 30, window: 10, ref: pendingPredictions30sRef, setHistory: setPredictionAccuracyHistory30s },
-          { name: '40s', ticks: 40, window: 10, ref: pendingPredictions40sRef, setHistory: setPredictionAccuracyHistory40s },
-      ];
       
       horizons.forEach(h => {
           processPredictionHorizon(h.ticks, h.window, prices, h.ref, h.setHistory);
@@ -379,21 +382,37 @@ function StochasticLab({ realData, operationsLog, activeSymbol, onConsensusUpdat
         const currentExpert = projectionExperts[i];
         const prevExpert = projectionExperts[i-1];
         
-        if (currentExpert.accuracy > 70 && prevExpert.accuracy > 70 && currentExpert.vote === prevExpert.vote && currentExpert.vote !== 'HOLD') {
-            const statusMessage = `Sinal ${currentExpert.vote} detectado para ${currentExpert.name}. Executando...`;
+        const currentVote = currentExpert.accuracy > 50 ? currentExpert.vote : (currentExpert.vote === 'RISE' ? 'FALL' : 'RISE');
+        const prevVote = prevExpert.accuracy > 50 ? prevExpert.vote : (prevExpert.vote === 'RISE' ? 'FALL' : 'RISE');
+
+        const currentEffectiveAccuracy = Math.max(currentExpert.accuracy, 100 - currentExpert.accuracy);
+        const prevEffectiveAccuracy = Math.max(prevExpert.accuracy, 100 - prevExpert.accuracy);
+
+        if (currentEffectiveAccuracy > 70 && prevEffectiveAccuracy > 70 && currentVote === prevVote && currentVote !== 'HOLD') {
+            const statusMessage = `Sinal ${currentVote} confirmado por ${prevExpert.name} (${prevEffectiveAccuracy.toFixed(0)}%) e ${currentExpert.name} (${currentEffectiveAccuracy.toFixed(0)}%). Executando...`;
             setAutopilotStatus(statusMessage);
             toast({ title: '🤖 Piloto Automático Ativado!', description: statusMessage });
 
-            const [durationStr] = currentExpert.name.split(/[st]/);
+            // FIX: Corrigido o envio de ordens para obedecer as regras de negócio
+            const expertName = currentExpert.name;
+            const [durationStr] = expertName.split(/[st]/);
             const duration = parseInt(durationStr, 10);
-            
+
+            let durationUnit: 't' | 's';
+
+            if (expertName === '3t' || expertName === '6t' || expertName === '10s') {
+                durationUnit = 't';
+            } else {
+                durationUnit = 's';
+            }
+
             executeTrade(
-                currentExpert.vote === 'RISE' ? 'CALL' : 'PUT',
+                currentVote === 'RISE' ? 'CALL' : 'PUT',
                 1.0, // Stake fixo para o piloto
                 activeSymbol,
-                currentExpert.vote.toLowerCase() as 'rise' | 'fall',
+                currentVote.toLowerCase() as 'rise' | 'fall',
                 duration,
-                't',
+                durationUnit,
                 'Piloto'
             );
 
@@ -589,7 +608,6 @@ const ProjectionExpertsPanel = ({ experts }: { experts: { name: string; vote: 'R
         <div className="space-y-2">
             {experts.map(({ name, vote, accuracy }) => {
                 // FIX: Calculate the effective direction and accuracy based on the raw accuracy score.
-                // A model that is wrong 70% of the time is a model that is right 70% of the time if you bet the opposite.
                 const effectiveDirection = accuracy > 50 ? vote : (vote === 'RISE' ? 'FALL' : (vote === 'FALL' ? 'RISE' : 'HOLD'));
                 const effectiveAccuracy = accuracy > 50 ? accuracy : 100 - accuracy;
                 
@@ -693,6 +711,31 @@ function PageContent() {
         setAutopilotStatus(checked ? 'Monitorando...' : 'Pausado');
     };
 
+    const handleSyncDuration = () => {
+        const horizon = confirmedSignal.horizon;
+        if (!horizon || horizon === 'N/A') {
+          toast({ variant: 'destructive', title: 'Nenhum Sinal Forte', description: 'Aguarde um sinal preditivo forte para sincronizar.' });
+          return;
+        }
+
+        let duration = 5;
+        if (horizon.endsWith('s')) {
+          duration = parseInt(horizon.replace('s', ''), 10);
+        } else if (horizon.endsWith('t')) {
+          // Aproximação: 1 tick ~ 2 segundos.
+          duration = parseInt(horizon.replace('t', ''), 10) * 2;
+        }
+        
+        // Mínimo de 5 segundos
+        const finalDuration = Math.max(5, duration);
+        form.setValue('duration', finalDuration);
+
+        toast({
+          title: 'Duração Sincronizada!',
+          description: `Duração definida para ${finalDuration}s, com base no sinal de ${horizon}.`,
+        });
+    };
+
     return (
         <FormProvider {...form}>
             <div className="flex-1 space-y-4 p-4 sm:p-8 pt-6">
@@ -708,7 +751,11 @@ function PageContent() {
                         operationsLog={operationsLog}
                     />
                     <div className="lg:col-span-2 space-y-6">
-                        <VolatilityTraderInterface symbol={activeSymbol || ''} consensus={confirmedSignal} />
+                        <VolatilityTraderInterface 
+                          symbol={activeSymbol || ''} 
+                          consensus={confirmedSignal}
+                          onSyncDuration={handleSyncDuration}
+                        />
                         <VolatilityAutopilotInterface 
                             isAutopilotOn={isAutopilotOn} 
                             toggleAutopilot={toggleAutopilot}
