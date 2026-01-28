@@ -19,7 +19,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { volatilityTraderSchema, type VolatilityTraderFormValues } from "@/features/trading/components/deriv-trader/volatility-trader-interface.types";
 import VolatilityTraderInterface from "@/features/trading/components/deriv-trader/volatility-trader-interface";
 import { OperationsLogV2 } from "@/features/trading/components/deriv-trader/operations-log-v2";
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { useToast } from '@/hooks/use-toast';
@@ -31,11 +31,6 @@ import { db } from '@/lib/firebase';
 import { doc, deleteDoc } from 'firebase/firestore';
 import { errorEmitter, FirestorePermissionError } from '@/firebase';
 import type { OperationInitiator } from "@/lib/types";
-
-// --- TIPOS ---
-
-type Signal = 'RISE' | 'FALL' | 'HOLD';
-
 
 // Aproximação da função quantil normal inversa
 const normalQuantile = (p: number): number => {
@@ -83,7 +78,7 @@ interface StochasticLabProps {
   executeTrade: ReturnType<typeof useDerivApiV2>['executeTrade'];
   predictiveLogs: PredictiveTradeLog[];
   onDeletePredictiveLog: (logId: string) => void;
-  deletingPredictiveLogId: string | null;
+  deletingLogId: string | null;
 }
 
 const calculateRollingAccuracy = (history: boolean[]) => {
@@ -104,14 +99,14 @@ function StochasticLab({
     executeTrade,
     predictiveLogs,
     onDeletePredictiveLog,
-    deletingPredictiveLogId
+    deletingLogId
 }: StochasticLabProps) {
   const { toast } = useToast();
   const { user } = useAuth();
   const cooldownRef = useRef(false);
   
   const pendingLogRef = useRef<Omit<PredictiveTradeLog, 'id' | 'contractId' | 'result' | 'pnl'> | null>(null);
-  const [pendingSignal, setPendingSignal] = useState<{ signal: Signal; triggeredBy: [string, string]; epoch: number; } | null>(null);
+  const [pendingSignal, setPendingSignal] = useState<{ signal: 'RISE' | 'FALL'; triggeredBy: [string, string]; epoch: number; } | null>(null);
   
   const [activeTab, setActiveTab] = useState('prediction');
   const [priceData, setPriceData] = useState<any[]>([]);
@@ -381,42 +376,73 @@ function StochasticLab({
   }, [projectionExperts]);
 
   // --- PILOTO AUTOMÁTICO COM CONFIRMAÇÃO ---
-  const executeTradeAction = useCallback(async (initiator: OperationInitiator, signalOverride: Signal, triggeredBy: [string, string] | null) => {
-    const signalToUse = signalOverride;
-    
-    if (signalToUse === 'HOLD' || !activeSymbol || !triggeredBy) {
-        toast({ title: "Nenhum sinal válido", description: "O gatilho preditivo não detectou uma oportunidade.", variant: "destructive"});
+  const executeTradeAction = useCallback(async (initiator: OperationInitiator, signalOverride: 'RISE' | 'FALL', triggeredBy: [string, string], reason: string) => {
+    if (!activeSymbol || !executeTrade) {
+        toast({ title: "Erro de Configuração", description: "O piloto automático não pôde executar.", variant: "destructive"});
         return;
     }
 
-    toast({ title: `🤖 Master Autopilot: Ordem ${initiator} ${signalToUse}!`, description: `Executando em ${activeSymbol}`});
+    toast({ title: `🤖 Master Autopilot: Ordem ${initiator} ${signalOverride}!`, description: `Executando em ${activeSymbol}`});
 
     try {
         const longerHorizon = triggeredBy[1]; 
+        let duration = 15;
+        let durationUnit: DurationUnit = 's';
+        
         const durationMatch = longerHorizon.match(/(\d+)([st])/);
         if (durationMatch) {
-            const duration = parseInt(durationMatch[1], 10);
-            const durationUnit = durationMatch[2] as 's' | 't';
-            await executeTrade(
-                signalToUse === 'RISE' ? 'CALL' : 'PUT',
-                1.0, 
-                activeSymbol,
-                signalToUse.toLowerCase() as 'rise' | 'fall',
-                duration,
-                durationUnit,
-                initiator
-            );
+            duration = Math.max(15, parseInt(durationMatch[1], 10)); // Garante mínimo de 15s
+            durationUnit = 's'; // Assume segundos
         }
+
+        const result = await executeTrade(
+            signalOverride === 'RISE' ? 'CALL' : 'PUT',
+            1.0, 
+            activeSymbol,
+            signalOverride.toLowerCase() as 'rise' | 'fall',
+            duration,
+            durationUnit,
+            initiator
+        );
+
+        if (result.success && result.contractId && user) {
+            const assertivenessSnapshot = projectionExperts.map(p => ({
+                horizon: p.name,
+                accuracy: p.accuracy,
+                vote: p.vote,
+            }));
+            
+            const logToSave: PredictiveTradeLog = {
+                id: `pred_log_${Date.now()}`,
+                contractId: result.contractId,
+                timestamp: new Date().toISOString(),
+                asset: activeSymbol,
+                tradeParams: {
+                    direction: signalOverride,
+                    stake: 1.0, 
+                    duration,
+                    durationUnit
+                },
+                context: {
+                    triggerReason: reason,
+                    assertivenessSnapshot: assertivenessSnapshot,
+                },
+                result: 'pending',
+                pnl: 0,
+            };
+            await savePredictiveTradeLog(user.uid, logToSave);
+        }
+
     } catch (error) {
         console.error("Master Autopilot Execution Error:", error);
         toast({ title: `❌ Erro na Execução ${initiator}`, description: error instanceof Error ? error.message : String(error), variant: "destructive" });
     }
-  }, [activeSymbol, executeTrade, toast]);
+  }, [activeSymbol, executeTrade, toast, user, projectionExperts]);
 
   const evaluateTriggerConditions = useCallback((
-      newAssertiveness: Record<string, { accuracy: number; vote: Signal; }>,
-  ): { newTriggerSignal: Signal, newTriggerReason: string, newTriggeredBy: [string, string] | null } => {
-      let newTriggerSignal: Signal = 'HOLD';
+      newAssertiveness: Record<string, { accuracy: number; vote: 'RISE' | 'FALL' | 'HOLD'; }>
+  ): { newTriggerSignal: 'RISE' | 'FALL' | 'HOLD', newTriggerReason: string, newTriggeredBy: [string, string] | null } => {
+      let newTriggerSignal: 'RISE' | 'FALL' | 'HOLD' = 'HOLD';
       let newTriggerReason = 'Nenhuma confirmação dupla de assertividade (> 70%).';
       let newTriggeredBy: [string, string] | null = null;
       const assertivenessThreshold = 70;
@@ -429,7 +455,7 @@ function StochasticLab({
           const currentExpert = newAssertiveness[currentHorizonName];
           const prevExpert = newAssertiveness[prevHorizonName];
 
-          const getEffectiveVote = (expert: { accuracy: number; vote: Signal; }) => expert.accuracy > 50 ? expert.vote : (expert.vote === 'RISE' ? 'FALL' : (expert.vote === 'FALL' ? 'RISE' : 'HOLD'));
+          const getEffectiveVote = (expert: { accuracy: number; vote: 'RISE' | 'FALL' | 'HOLD'; }) => expert.accuracy > 50 ? expert.vote : (expert.vote === 'RISE' ? 'FALL' : (expert.vote === 'FALL' ? 'RISE' : 'HOLD'));
           const currentVote = getEffectiveVote(currentExpert);
           const prevVote = getEffectiveVote(prevExpert);
 
@@ -439,7 +465,7 @@ function StochasticLab({
           if (currentEffectiveAccuracy > assertivenessThreshold && prevEffectiveAccuracy > assertivenessThreshold && currentVote === prevVote && currentVote !== 'HOLD') {
               newTriggerSignal = currentVote;
               newTriggeredBy = [prevHorizonName, currentHorizonName];
-              newTriggerReason = `Sinal ${currentVote} confirmado por ${prevHorizonName} (${prevEffectiveAccuracy.toFixed(0)}%) e ${currentHorizonName} (${currentEffectiveAccuracy.toFixed(0)}%).`;
+              newTriggerReason = `Sinal ${currentVote} confirmado por ${prevHorizonName} (${prevEffectiveAccuracy.toFixed(0)}%) & ${currentHorizonName} (${currentEffectiveAccuracy.toFixed(0)}%). Executando...`;
               break;
           }
       }
@@ -462,38 +488,18 @@ function StochasticLab({
     
     if (pendingSignal && pendingSignal.epoch < currentTick.epoch) {
         const { newTriggerSignal, newTriggerReason } = evaluateTriggerConditions(newAssertiveness);
+        const confirmedSignal = pendingSignal.signal; // Usa o sinal original
         setPendingSignal(null);
         
-        if (newTriggerSignal === pendingSignal.signal) {
+        if (newTriggerSignal === confirmedSignal) {
             cooldownRef.current = true;
-            setAutopilotStatus(newTriggerReason + " Executando...");
+            setAutopilotStatus(newTriggerReason);
             
-            const assertivenessSnapshot = projectionExperts.map(p => ({
-                horizon: p.name,
-                accuracy: p.accuracy,
-                vote: p.vote,
-            }));
-            
-            pendingLogRef.current = {
-                timestamp: new Date().toISOString(),
-                asset: activeSymbol,
-                tradeParams: {
-                    direction: newTriggerSignal,
-                    stake: 1.0, 
-                    duration: parseInt(pendingSignal.triggeredBy[1].replace(/[st]/, '')),
-                    durationUnit: pendingSignal.triggeredBy[1].endsWith('s') ? 's' : 't'
-                },
-                context: {
-                    triggerReason: newTriggerReason,
-                    assertivenessSnapshot: assertivenessSnapshot,
-                },
-            };
-
-            executeTradeAction('Piloto', newTriggerSignal, pendingSignal.triggeredBy).finally(() => {
+            executeTradeAction('Piloto', confirmedSignal, pendingSignal.triggeredBy, newTriggerReason).finally(() => {
                 setTimeout(() => { cooldownRef.current = false; }, 60000);
             });
         } else {
-            toast({ title: `❌ Sinal ${pendingSignal.signal} Abortado`, description: `A condição não se manteve no tick seguinte.`, variant: "destructive" });
+            toast({ title: `❌ Sinal ${confirmedSignal} Abortado`, description: `A condição não se manteve no tick seguinte.`, variant: "destructive" });
             setAutopilotStatus('Monitorando...');
         }
     } else {
@@ -509,32 +515,15 @@ function StochasticLab({
     }
   }, [projectionExperts, isAutopilotOn, operationsLog, activeSymbol, executeTrade, setAutopilotStatus, toast, executeTradeAction, realData, evaluateTriggerConditions, pendingSignal]);
 
-  useEffect(() => {
-    const lastOp = operationsLog[0];
-    if (
-      user &&
-      lastOp &&
-      lastOp.status === 'pending' &&
-      lastOp.initiator === 'Piloto' &&
-      pendingLogRef.current
-    ) {
-      const logToSave: PredictiveTradeLog = {
-        id: `pred_log_${Date.now()}`,
-        contractId: lastOp.id,
-        ...pendingLogRef.current,
-        result: 'pending',
-        pnl: 0,
-      };
-
-      savePredictiveTradeLog(user.uid, logToSave).catch(console.error);
-      pendingLogRef.current = null; // Limpa o log pendente
-    }
-  }, [operationsLog, user]);
-
-  useEffect(() => {
-    onConsensusUpdate(strongestSignal);
-  }, [strongestSignal, onConsensusUpdate]);
-
+  const allAccuracy = useMemo(() => [
+      { name: '3t', ...accuracy3t },
+      { name: '6t', ...accuracy6t },
+      { name: '10s', ...accuracy10s },
+      { name: '20s', ...accuracy20s },
+      { name: '30s', ...accuracy30s },
+      { name: '40s', ...accuracy40s },
+  ], [accuracy3t, accuracy6t, accuracy10s, accuracy20s, accuracy30s, accuracy40s]);
+  
   const chartDisplayData = useMemo(() => {
     const combined = [...predictionData.filter(p => p && (p.real || p.predicted_1_tick))];
     
@@ -563,15 +552,6 @@ function StochasticLab({
     const maxVal = Math.max(...allValues);
     return [{ theoretical: minVal, empirical: minVal }, { theoretical: maxVal, empirical: maxVal }];
   }, [qqData]);
-
-  const allAccuracy = useMemo(() => [
-      { name: '3t', ...accuracy3t },
-      { name: '6t', ...accuracy6t },
-      { name: '10s', ...accuracy10s },
-      { name: '20s', ...accuracy20s },
-      { name: '30s', ...accuracy30s },
-      { name: '40s', ...accuracy40s },
-  ], [accuracy3t, accuracy6t, accuracy10s, accuracy20s, accuracy30s, accuracy40s]);
 
   return (
     <Card className="h-full flex flex-col col-span-1 lg:col-span-3">
@@ -709,13 +689,13 @@ function StochasticLab({
                             ))}
                         </CardContent>
                     </Card>
-                </div>
-                <div className="p-1 mt-6">
-                    <PredictiveLogViewer
-                        logs={predictiveLogs}
-                        onDeleteLog={onDeletePredictiveLog}
-                        deletingLogId={deletingLogId}
-                    />
+                    <div className="p-1 mt-6">
+                        <PredictiveLogViewer
+                            logs={predictiveLogs}
+                            onDeleteLog={onDeletePredictiveLog}
+                            deletingLogId={deletingLogId}
+                        />
+                    </div>
                 </div>
           </ScrollArea>
         </CardContent>
@@ -951,7 +931,7 @@ function PageContent() {
                         operationsLog={operationsLog}
                         predictiveLogs={predictiveLogs}
                         onDeletePredictiveLog={handleDeletePredictiveLog}
-                        deletingPredictiveLogId={deletingLogId}
+                        deletingLogId={deletingLogId}
                     />
                     <div className="lg:col-span-2 space-y-6">
                         <VolatilityTraderInterface 
@@ -979,3 +959,4 @@ export default function VolatilityAnalysisPage() {
         </DerivApiProviderV2>
     );
 }
+```
