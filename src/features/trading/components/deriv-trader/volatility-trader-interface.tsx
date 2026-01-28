@@ -6,21 +6,21 @@ import { useFormContext } from 'react-hook-form';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
-import { ArrowDown, ArrowUp, Loader2 } from "lucide-react";
+import { ArrowDown, ArrowUp, Loader2, Zap } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Input } from "@/components/ui/input";
 import type { OperationInitiator } from "@/lib/types";
 import { useDerivApiV2 } from "@/features/trading/hooks/use-deriv-api-v2";
 import type { VolatilityTraderFormValues } from './volatility-trader-interface.types';
 import { getConsensusGradientStyle } from './utils/get-consensus-gradient-style';
-import { cn } from '@/lib/utils';
 
 interface VolatilityTraderInterfaceProps {
   symbol: string;
   consensus: {
-    decision: 'RISE' | 'FALL' | 'HOLD';
+    horizon: string;
+    direction: 'RISE' | 'FALL' | 'HOLD';
     certaintyScore: number;
-  }
+  };
 }
 
 export default function VolatilityTraderInterface({ symbol, consensus }: VolatilityTraderInterfaceProps) {
@@ -28,6 +28,33 @@ export default function VolatilityTraderInterface({ symbol, consensus }: Volatil
   const [loading, setLoading] = useState<'rise' | 'fall' | null>(null);
   const { isConnected, executeTrade } = useDerivApiV2();
   const form = useFormContext<VolatilityTraderFormValues>();
+
+  const handleSyncDuration = () => {
+    const horizon = consensus.horizon;
+    let seconds = 15;
+    let wasAdjusted = false;
+
+    if (horizon.endsWith('s')) {
+      seconds = parseInt(horizon.replace('s', ''), 10);
+    } else if (horizon.endsWith('t')) {
+      // Aproximando 1 tick = 2 segundos
+      seconds = parseInt(horizon.replace('t', ''), 10) * 2;
+    }
+
+    let finalDuration = seconds;
+    if (seconds < 15) {
+      finalDuration = 15;
+      wasAdjusted = true;
+    }
+
+    form.setValue('duration', finalDuration);
+    toast({
+      title: 'Duração Sincronizada!',
+      description: wasAdjusted
+        ? `A duração foi ajustada para ${finalDuration}s para respeitar o mínimo de 15s.`
+        : `Duração definida para ${finalDuration}s, conforme o sinal mais forte (${horizon}).`,
+    });
+  };
 
   const handleTrade = async (tradeDirection: 'rise' | 'fall') => {
     const isValid = await form.trigger();
@@ -98,7 +125,7 @@ export default function VolatilityTraderInterface({ symbol, consensus }: Volatil
                     <FormItem>
                       <FormLabel>Valor (USD)</FormLabel>
                       <FormControl>
-                          <Input type="number" {...field} />
+                          <Input type="number" {...field} onChange={e => field.onChange(parseFloat(e.target.value) || 0)} />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -110,9 +137,14 @@ export default function VolatilityTraderInterface({ symbol, consensus }: Volatil
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>Duração (Segundos)</FormLabel>
-                      <FormControl>
-                           <Input type="number" {...field} />
-                      </FormControl>
+                      <div className="flex items-center gap-2">
+                        <FormControl>
+                            <Input type="number" {...field} onChange={e => field.onChange(parseInt(e.target.value) || 0)} />
+                        </FormControl>
+                        <Button type="button" variant="outline" size="icon" onClick={handleSyncDuration} title="Sincronizar com tempo ótimo do sinal mais forte">
+                            <Zap className="h-4 w-4" />
+                        </Button>
+                      </div>
                       <FormMessage />
                     </FormItem>
                   )}
