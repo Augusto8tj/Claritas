@@ -144,7 +144,7 @@ function StochasticLab({ realData, operationsLog, activeSymbol, onConsensusUpdat
     '40s': useRef<{ startTimeIndex: number; startPrice: number; predictedEndPrice: number }[]>([]),
   };
   const pendingLogRef = useRef<Omit<PredictiveTradeLog, 'contractId'> | null>(null);
-  const pendingSignalRef = useRef<{ signal: 'RISE' | 'FALL', triggeredBy: [string, string], epoch: number } | null>(null);
+  const pendingSignalRef = useRef<{ signal: 'RISE' | 'FALL', triggeredBy: [string, string], epoch: number, reason: string } | null>(null);
 
   const normalRandom = (): number => {
     let u1 = 0;
@@ -180,13 +180,11 @@ function StochasticLab({ realData, operationsLog, activeSymbol, onConsensusUpdat
 
 
   useEffect(() => {
+    const VOL_WINDOW = 50;
+    const ERROR_MEMORY = 50;
+
     const executeLogic = () => {
-        const VOL_WINDOW = 50;
-        const ERROR_MEMORY = 50;
-        
-        if (realData.length < VOL_WINDOW) {
-          return;
-        }
+        if (realData.length < VOL_WINDOW) return;
         
         const currentTick = realData[realData.length-1];
         if (!currentTick) return;
@@ -377,17 +375,19 @@ function StochasticLab({ realData, operationsLog, activeSymbol, onConsensusUpdat
             return;
           }
           
+          const isCoolingDown = cooldownRef.current;
+
           if (pendingSignalRef.current && currentTick.epoch > pendingSignalRef.current.epoch) {
               const pending = pendingSignalRef.current;
               pendingSignalRef.current = null;
               
-              const { newTriggerSignal, newTriggerReason, newTriggeredBy } = evaluateTriggerConditions(newAssertiveness, horizons);
+              const { newTriggerSignal, newTriggerReason } = evaluateTriggerConditions(newAssertiveness, horizons);
 
-              if (newTriggerSignal === pending.signal && newTriggeredBy && pending.triggeredBy.every((val, i) => val === newTriggeredBy[i])) {
-                  const confirmedReason = newTriggerReason;
-                  setAutopilotStatus(confirmedReason);
+              if (newTriggerSignal === pending.signal) {
+                  setAutopilotStatus(newTriggerReason);
+                  const assertivenessSnapshot = Object.entries(newAssertiveness).map(([horizon, data]) => ({ horizon, accuracy: data.accuracy, vote: data.vote }));
                   
-                  const expertName = newTriggeredBy[1];
+                  const expertName = pending.triggeredBy[1];
                   const durationMatch = expertName.match(/(\d+)([st])/);
                   
                   if(durationMatch) {
@@ -395,26 +395,24 @@ function StochasticLab({ realData, operationsLog, activeSymbol, onConsensusUpdat
                       const durationUnit: DurationUnit = durationMatch[2] === 't' ? 't' : 's';
                       const tradeParams = { direction: newTriggerSignal, stake: 1.0, duration, durationUnit };
                       
-                      const assertivenessSnapshot = Object.entries(newAssertiveness).map(([horizon, data]) => ({ horizon, accuracy: data.accuracy, vote: data.vote }));
-                      
                       const newPendingLog: Omit<PredictiveTradeLog, 'contractId'> = {
                         id: `pred_log_${Date.now()}`,
                         timestamp: new Date().toISOString(),
                         asset: activeSymbol,
                         tradeParams: tradeParams,
                         context: {
-                            triggerReason: confirmedReason,
+                            triggerReason: newTriggerReason, // Usar a razão do momento da confirmação
                             assertivenessSnapshot: assertivenessSnapshot,
                         },
                         result: 'pending', pnl: 0,
                       };
                       pendingLogRef.current = newPendingLog;
                       
-                      executeTradeAction('Piloto', newTriggerSignal, newTriggeredBy);
+                      executeTradeAction('Piloto', newTriggerSignal, pending.triggeredBy);
                       
-                      isCoolingDownRef.current = true;
+                      cooldownRef.current = true;
                       setTimeout(() => {
-                          isCoolingDownRef.current = false;
+                          cooldownRef.current = false;
                           setAutopilotStatus('Monitorando...');
                       }, 60000);
                   }
@@ -426,7 +424,7 @@ function StochasticLab({ realData, operationsLog, activeSymbol, onConsensusUpdat
           }
           
           const activeAutopilotTrade = operationsLog.find(op => op.initiator === 'Piloto' && op.status === 'pending');
-          if (activeAutopilotTrade || isCoolingDownRef.current || pendingSignalRef.current) {
+          if (activeAutopilotTrade || isCoolingDown || pendingSignalRef.current) {
               if (activeAutopilotTrade) setAutopilotStatus(`Gerindo posição #${activeAutopilotTrade.id}`);
               return;
           }
@@ -438,7 +436,8 @@ function StochasticLab({ realData, operationsLog, activeSymbol, onConsensusUpdat
               pendingSignalRef.current = {
                   signal: newTriggerSignal,
                   triggeredBy: newTriggeredBy,
-                  epoch: currentTick.epoch
+                  epoch: currentTick.epoch,
+                  reason: newTriggerReason
               };
           } else {
               setAutopilotStatus('Monitorando...');
@@ -453,20 +452,21 @@ function StochasticLab({ realData, operationsLog, activeSymbol, onConsensusUpdat
 
 
   useEffect(() => {
-    if (!user || !operationsLog.length) {
-        return;
-    }
-  
-    const newPilotOperation = operationsLog
-        .filter(op => op.initiator === 'Piloto' && op.status === 'pending')
-        .find(op => !predictiveLogs.some(log => log.contractId === op.id));
-  
+    if (!user || !operationsLog.length) return;
+    
+    const newPilotOperation = operationsLog.find(op => 
+        op.initiator === 'Piloto' && 
+        op.status === 'pending' &&
+        pendingLogRef.current && 
+        !predictiveLogs.some(log => log.contractId === op.id)
+    );
+
     if (newPilotOperation && newPilotOperation.id && pendingLogRef.current) {
         const finalLog: PredictiveTradeLog = {
             ...pendingLogRef.current,
             contractId: newPilotOperation.id,
         };
-  
+        
         savePredictiveTradeLog(user.uid, finalLog);
   
         setPredictiveLogs(prev => [finalLog, ...prev].sort((a,b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()));
@@ -696,6 +696,9 @@ function StochasticLab({ realData, operationsLog, activeSymbol, onConsensusUpdat
                             <AccuracyCard horizon="40 Segundos" accuracyData={accuracy40s} />
                         </CardContent>
                     </Card>
+                    <div className="mt-6">
+                        <PredictiveLogViewer logs={predictiveLogs} />
+                    </div>
                 </div>
           </ScrollArea>
         </CardContent>
@@ -859,31 +862,30 @@ function PageContent() {
     useEffect(() => {
         if (!user || !operationsLog.length || !predictiveLogs.length) return;
 
-        const newlyClosedOps = operationsLog.filter(
-            op => op.status !== 'pending' && predictiveLogs.some(pl => pl.contractId === op.id && pl.result === 'pending')
-        );
+        let hasUpdates = false;
+        const updatedLogs = [...predictiveLogs];
 
-        if (newlyClosedOps.length > 0) {
-            let logsWereUpdated = false;
-            const updatedPredictiveLogs = predictiveLogs.map(pl => {
-                const correspondingOp = newlyClosedOps.find(op => op.id === pl.contractId);
-                if (correspondingOp) {
-                    logsWereUpdated = true;
-                    const updatedLog = {
-                        ...pl,
-                        result: correspondingOp.status,
-                        pnl: correspondingOp.result || -correspondingOp.stake,
-                    };
-                    savePredictiveTradeLog(user.uid, updatedLog);
-                    return updatedLog;
-                }
-                return pl;
-            });
+        for (const op of operationsLog) {
+            if (op.status === 'pending') continue;
 
-            if (logsWereUpdated) {
-                setPredictiveLogs(updatedPredictiveLogs.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()));
+            const logIndex = updatedLogs.findIndex(log => log.contractId === op.id && log.result === 'pending');
+            
+            if (logIndex !== -1) {
+                hasUpdates = true;
+                const updatedLog = {
+                    ...updatedLogs[logIndex],
+                    result: op.status,
+                    pnl: op.result ?? -op.stake,
+                };
+                updatedLogs[logIndex] = updatedLog;
+                savePredictiveTradeLog(user.uid, updatedLog);
             }
         }
+        
+        if (hasUpdates) {
+             setPredictiveLogs(updatedLogs.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()));
+        }
+
     }, [operationsLog, predictiveLogs, user]);
 
     const handleSyncDuration = () => {
@@ -937,7 +939,6 @@ function PageContent() {
                             autopilotStatus={autopilotStatus}
                         />
                         <OperationsLogV2 operations={operationsLog} sellContract={sellContract} priceTicks={priceTicks} clearActiveContracts={clearActiveContracts}/>
-                        <PredictiveLogViewer logs={predictiveLogs} />
                     </div>
                 </div>
             </div>
