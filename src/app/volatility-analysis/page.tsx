@@ -198,7 +198,7 @@ function StochasticLab({ realData, operationsLog, activeSymbol, onConsensusUpdat
         const sigma = Math.sqrt(variance);
 
         const Z = normalRandom();
-        const drift = meanPastReturn - 0.5 * sigma * sigma;
+        const drift = meanPastReturn;
         const diffusion = sigma * Math.sqrt(1) * Z;
         const S_predicted_1_tick = S_prev * Math.exp(drift + diffusion);
         
@@ -242,8 +242,7 @@ function StochasticLab({ realData, operationsLog, activeSymbol, onConsensusUpdat
         const path = [{ time: lastTime, price: lastPriceValue }];
         for (let i = 1; i <= steps; i++) {
           const Z = normalRandom();
-          // FIX: Removido o viés negativo `- 0.5 * lastSigma * lastSigma;`
-          const drift_future = meanLastReturn; 
+          const drift_future = meanLastReturn;
           const diffusion_future = lastSigma * Z;
           currentSimPrice = currentSimPrice * Math.exp(drift_future + diffusion_future);
 
@@ -721,5 +720,3 @@ export default function VolatilityAnalysisPage() {
         </DerivApiProviderV2>
     );
 }
-
-```
