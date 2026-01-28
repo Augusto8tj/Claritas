@@ -4,13 +4,13 @@ import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { useForm, FormProvider } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ScatterChart, Scatter } from 'recharts';
-import { TrendingUp, TrendingDown, HelpCircle, Bot, FlaskConical, Target, Info, Brain, Zap, Send, Loader2, ShieldCheck, GitBranch, BarChart, Activity, AlertTriangle, Power, ChevronsUpDown } from 'lucide-react';
+import { TrendingUp, TrendingDown, HelpCircle, Bot, FlaskConical, Target, Info, Brain, Zap, Send, Loader2, ShieldCheck, GitBranch, BarChart, Activity, AlertTriangle, Power, ChevronsUpDown, CheckCircle, XCircle, FilePieChart } from 'lucide-react';
 import { DerivApiProviderV2, useDerivApiV2 } from "@/features/trading/hooks/use-deriv-api-v2";
 import { AssetSelectorV2 } from "@/features/trading/components/deriv-trader/asset-selector-v2";
 import { ApiStatusIndicatorV2 } from "@/features/trading/components/deriv-trader/ApiStatusIndicatorV2";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { ScrollArea } from '@/components/ui/scroll-area';
-import type { ChartData, CandleData, Operation, PredictiveTradeLog } from '@/lib/types';
+import type { ChartData, CandleData, Operation, PredictiveTradeLog, DurationUnit, DurationLimits } from '@/lib/types';
 import { Progress } from "@/components/ui/progress";
 import { TooltipProvider, Tooltip as ShadTooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
@@ -18,7 +18,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { volatilityTraderSchema, type VolatilityTraderFormValues } from "@/features/trading/components/deriv-trader/volatility-trader-interface.types";
 import VolatilityTraderInterface from "@/features/trading/components/deriv-trader/volatility-trader-interface";
 import { OperationsLogV2 } from "@/features/trading/components/deriv-trader/operations-log-v2";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { useToast } from '@/hooks/use-toast';
@@ -29,6 +29,11 @@ import { useAuth } from '@/features/auth/hooks/use-auth';
 import { db } from '@/lib/firebase';
 import { doc, deleteDoc } from 'firebase/firestore';
 import { errorEmitter, FirestorePermissionError } from '@/firebase';
+import type { OperationInitiator } from "@/lib/types";
+
+// --- TIPOS ---
+
+type Signal = 'RISE' | 'FALL' | 'HOLD';
 
 
 // Aproximação da função quantil normal inversa
@@ -91,6 +96,7 @@ interface StochasticLabProps {
   predictiveLogs: PredictiveTradeLog[];
   onDeletePredictiveLog: (logId: string) => void;
   deletingPredictiveLogId: string | null;
+  durationLimits: DurationLimits | null;
 }
 
 const calculateRollingAccuracy = (history: boolean[]) => {
@@ -111,12 +117,25 @@ function StochasticLab({
     executeTrade,
     predictiveLogs,
     onDeletePredictiveLog,
-    deletingPredictiveLogId
+    deletingPredictiveLogId,
+    durationLimits,
 }: StochasticLabProps) {
   const { toast } = useToast();
   const { user } = useAuth();
   const cooldownRef = useRef(false);
-  const pendingSignalRef = useRef<{ signal: 'RISE' | 'FALL'; triggeredBy: [string, string]; epoch: number } | null>(null);
+  
+  const [pendingLog, setPendingLog] = useState<Omit<PredictiveTradeLog, 'id' | 'contractId' | 'result' | 'pnl'> | null>(null);
+  const pendingLogRef = useRef(pendingLog);
+  useEffect(() => {
+    pendingLogRef.current = pendingLog;
+  }, [pendingLog]);
+
+  const [pendingSignal, setPendingSignal] = useState<{ signal: Signal; triggeredBy: [string, string]; epoch: number; } | null>(null);
+  const pendingSignalRef = useRef(pendingSignal);
+  useEffect(() => {
+      pendingSignalRef.current = pendingSignal;
+  }, [pendingSignal]);
+  
   const [activeTab, setActiveTab] = useState('prediction');
   const [priceData, setPriceData] = useState<any[]>([]);
   const [lastPrice, setLastPrice] = useState<number | null>(null);
@@ -385,130 +404,190 @@ function StochasticLab({
   }, [projectionExperts]);
 
   // --- PILOTO AUTOMÁTICO COM CONFIRMAÇÃO ---
+  const executeTradeAction = useCallback(async (initiator: OperationInitiator, signalOverride: Signal, triggeredBy: [string, string] | null) => {
+    const signalToUse = signalOverride;
+    
+    if (signalToUse === 'HOLD' || !activeSymbol || !triggeredBy) {
+        toast({ title: "Nenhum sinal válido", description: "O gatilho preditivo não detectou uma oportunidade.", variant: "destructive"});
+        return;
+    }
+
+    toast({ title: `🤖 Master Autopilot: Ordem ${initiator} ${signalToUse}!`, description: `Executando em ${activeSymbol}`});
+
+    try {
+        const longerHorizon = triggeredBy[1]; 
+        const durationMatch = longerHorizon.match(/(\d+)([st])/);
+        if (durationMatch) {
+            const requestedDuration = parseInt(durationMatch[1], 10);
+            let requestedUnit = durationMatch[2] as 's' | 't';
+            
+            let finalDuration = requestedDuration;
+            let finalUnit = requestedUnit;
+
+            if (durationLimits) {
+                if (finalUnit === 't' && durationLimits.t && durationLimits.t.max > 0) {
+                    finalDuration = Math.max(durationLimits.t.min, Math.min(requestedDuration, durationLimits.t.max));
+                } 
+                else if (finalUnit === 's' && durationLimits.s && durationLimits.s.max > 0) {
+                    finalDuration = Math.max(durationLimits.s.min, Math.min(requestedDuration, durationLimits.s.max));
+                } 
+                else {
+                    toast({ title: 'Aviso de Duração', description: `Duração ${requestedDuration}${requestedUnit} não suportada. Usando fallback.`, variant: 'default'});
+                    if (durationLimits.t && durationLimits.t.max > 0) {
+                        finalUnit = 't';
+                        finalDuration = durationLimits.t.min;
+                    } else if (durationLimits.s && durationLimits.s.max > 0) {
+                        finalUnit = 's';
+                        finalDuration = durationLimits.s.min;
+                    }
+                }
+            }
+            
+            const result = await executeTrade(
+                signalToUse === 'RISE' ? 'CALL' : 'PUT',
+                1.0, 
+                activeSymbol,
+                signalToUse.toLowerCase() as 'rise' | 'fall',
+                finalDuration,
+                finalUnit,
+                initiator
+            );
+            return result;
+        }
+        return { success: false, message: 'Duração do sinal inválida.' };
+    } catch (error) {
+        console.error("Master Autopilot Execution Error:", error);
+        toast({ title: `❌ Erro na Execução ${initiator}`, description: error instanceof Error ? error.message : String(error), variant: "destructive" });
+        return { success: false, message: error instanceof Error ? error.message : String(error) };
+    }
+  }, [activeSymbol, executeTrade, toast, durationLimits]);
+
   useEffect(() => {
     if (!isAutopilotOn || cooldownRef.current || !activeSymbol || !executeTrade) return;
+
+    const currentTick = realData[realData.length-1];
+    if (!currentTick) return;
 
     const activeAutopilotTrade = operationsLog.find(op => op.initiator === 'Piloto' && op.status === 'pending');
     if (activeAutopilotTrade) {
         setAutopilotStatus(`Gerindo posição #${activeAutopilotTrade.id}`);
         return;
     }
-    
-    // NOVO: Armazena o estado atual do snapshot para logging
-    const assertivenessSnapshot = projectionExperts.map(p => ({
-        horizon: p.name,
-        accuracy: p.accuracy,
-        vote: p.vote,
-    }));
-    
-    let tradeExecuted = false;
 
-    // Função de verificação para o loop
-    const checkAndExecute = (reason: string) => {
-        for (let i = 1; i < projectionExperts.length; i++) {
-            const currentExpert = projectionExperts[i];
-            const prevExpert = projectionExperts[i - 1];
-            
-            const getEffectiveVote = (expert: typeof currentExpert) => {
-                return expert.accuracy > 50 ? expert.vote : (expert.vote === 'RISE' ? 'FALL' : 'RISE');
-            };
+    const horizons = [
+      { name: '3t', ticks: 3, window: 6 }, { name: '6t', ticks: 6, window: 6 },
+      { name: '10s', ticks: 10, window: 10 }, { name: '20s', ticks: 20, window: 10 },
+      { name: '30s', ticks: 30, window: 10 }, { name: '40s', ticks: 40, window: 10 },
+    ];
     
+    // --- Lógica de Confirmação do Sinal ---
+    const evaluateTriggerConditions = (
+        newAssertiveness: Record<string, { accuracy: number; vote: Signal; }>,
+    ): { newTriggerSignal: Signal, newTriggerReason: string, newTriggeredBy: [string, string] | null } => {
+        let newTriggerSignal: Signal = 'HOLD';
+        let newTriggerReason = 'Nenhuma confirmação dupla de assertividade (> 70%).';
+        let newTriggeredBy: [string, string] | null = null;
+        const assertivenessThreshold = 70;
+
+        for (let i = 1; i < horizons.length; i++) {
+            const currentHorizonName = horizons[i].name;
+            const prevHorizonName = horizons[i-1].name;
+            const currentExpert = newAssertiveness[currentHorizonName];
+            const prevExpert = newAssertiveness[prevHorizonName];
+
+            const getEffectiveVote = (expert: { accuracy: number; vote: Signal; }) => expert.accuracy > 50 ? expert.vote : (expert.vote === 'RISE' ? 'FALL' : (expert.vote === 'FALL' ? 'RISE' : 'HOLD'));
             const currentVote = getEffectiveVote(currentExpert);
             const prevVote = getEffectiveVote(prevExpert);
-    
+
             const currentEffectiveAccuracy = Math.max(currentExpert.accuracy, 100 - currentExpert.accuracy);
             const prevEffectiveAccuracy = Math.max(prevExpert.accuracy, 100 - prevExpert.accuracy);
-    
-            if (currentEffectiveAccuracy > 70 && prevEffectiveAccuracy > 70 && currentVote === prevVote && currentVote !== 'HOLD') {
-                const triggerReason = reason; // Usa a razão capturada
-                setAutopilotStatus(triggerReason);
-                toast({ title: '🤖 Piloto: Ordem Executada!', description: triggerReason });
-    
-                const expertName = currentExpert.name;
-                const [durationStr] = expertName.split(/[st]/);
-                const duration = parseInt(durationStr, 10);
-                const durationUnit = expertName.endsWith('s') ? 's' : 't';
-    
-                executeTrade(
-                    currentVote === 'RISE' ? 'CALL' : 'PUT',
-                    1.0,
-                    activeSymbol,
-                    currentVote.toLowerCase() as 'rise' | 'fall',
-                    duration,
-                    durationUnit,
-                    'Piloto'
-                ).then(tradeResult => {
-                    if (tradeResult.success && user) {
-                        const newLog: PredictiveTradeLog = {
-                            id: `pred_log_${Date.now()}`,
-                            contractId: tradeResult.contractId!,
-                            timestamp: new Date().toISOString(),
-                            asset: activeSymbol,
-                            tradeParams: { direction: currentVote, stake: 1.0, duration: duration, durationUnit: durationUnit },
-                            context: { triggerReason, assertivenessSnapshot },
-                            result: 'pending',
-                            pnl: 0,
-                        };
-                        savePredictiveTradeLog(user.uid, newLog);
-                    }
-                });
-    
-                cooldownRef.current = true;
-                setTimeout(() => {
-                    cooldownRef.current = false;
-                    setAutopilotStatus('Monitorando...');
-                }, 60000);
-    
-                tradeExecuted = true;
-                return true; // Para o loop
-            }
-        }
-        return false;
-    };
-    
-    // Lógica de confirmação de 2 ticks
-    if (pendingSignalRef.current) {
-        // Estamos no tick de confirmação
-        const currentTick = realData[realData.length-1].epoch;
-        if (currentTick > pendingSignalRef.current.epoch) {
-            const confirmedReason = `Sinal ${pendingSignalRef.current.signal} confirmado por ${pendingSignalRef.current.triggeredBy.join(' & ')}. Executando...`;
-            checkAndExecute(confirmedReason);
-            pendingSignalRef.current = null; // Limpa o sinal pendente
-        }
-    } else {
-        // Estamos no tick de detecção
-        for (let i = 1; i < projectionExperts.length; i++) {
-            const currentExpert = projectionExperts[i];
-            const prevExpert = projectionExperts[i-1];
-            
-            const getEffectiveVote = (expert: typeof currentExpert) => expert.accuracy > 50 ? expert.vote : (expert.vote === 'RISE' ? 'FALL' : 'RISE');
-    
-            const currentVote = getEffectiveVote(currentExpert);
-            const prevVote = getEffectiveVote(prevExpert);
-    
-            const currentEffectiveAccuracy = Math.max(currentExpert.accuracy, 100 - currentExpert.accuracy);
-            const prevEffectiveAccuracy = Math.max(prevExpert.accuracy, 100 - prevExpert.accuracy);
-    
-            if (currentEffectiveAccuracy > 70 && prevEffectiveAccuracy > 70 && currentVote === prevVote && currentVote !== 'HOLD') {
-                const statusMessage = `Sinal ${currentVote} detectado por ${prevExpert.name} (${prevEffectiveAccuracy.toFixed(0)}%) e ${currentExpert.name} (${currentEffectiveAccuracy.toFixed(0)}%). Aguardando confirmação...`;
-                setAutopilotStatus(statusMessage);
-                toast({ title: '⏳ Sinal Detectado!', description: statusMessage });
-                pendingSignalRef.current = {
-                    signal: currentVote,
-                    triggeredBy: [prevExpert.name, currentExpert.name],
-                    epoch: realData[realData.length-1].epoch
-                };
-                tradeExecuted = true;
+
+            if (currentEffectiveAccuracy > assertivenessThreshold && prevEffectiveAccuracy > assertivenessThreshold && currentVote === prevVote && currentVote !== 'HOLD') {
+                newTriggerSignal = currentVote;
+                newTriggeredBy = [prevHorizonName, currentHorizonName];
+                newTriggerReason = `Sinal ${currentVote} confirmado por ${prevHorizonName} (${prevEffectiveAccuracy.toFixed(0)}%) e ${currentHorizonName} (${currentEffectiveAccuracy.toFixed(0)}%). Executando...`;
                 break;
             }
         }
-    }
+        return { newTriggerSignal, newTriggerReason, newTriggeredBy };
+    };
 
-    if (!tradeExecuted && !pendingSignalRef.current) {
-        setAutopilotStatus('Monitorando...');
-    }
+    const newAssertiveness = Object.fromEntries(projectionExperts.map(p => [p.name, { accuracy: p.accuracy, vote: p.vote }]));
 
-  }, [projectionExperts, isAutopilotOn, operationsLog, activeSymbol, executeTrade, setAutopilotStatus, toast, user, realData]);
+    if (pendingSignalRef.current && pendingSignalRef.current.epoch < currentTick.epoch) {
+        const pending = pendingSignalRef.current;
+        setPendingSignal(null);
+        
+        const { newTriggerSignal, newTriggerReason } = evaluateTriggerConditions(newAssertiveness);
+        
+        if (newTriggerSignal === pending.signal) {
+            cooldownRef.current = true;
+            setAutopilotStatus(newTriggerReason);
+            
+            const assertivenessSnapshot = projectionExperts.map(p => ({
+                horizon: p.name,
+                accuracy: p.accuracy,
+                vote: p.vote,
+            }));
+
+            const pendingLogData: Omit<PredictiveTradeLog, 'id' | 'contractId' | 'result' | 'pnl'> = {
+                timestamp: new Date().toISOString(),
+                asset: activeSymbol,
+                tradeParams: {
+                    direction: newTriggerSignal,
+                    stake: 1.0, 
+                    duration: parseInt(pending.triggeredBy[1].replace(/[st]/, '')),
+                    durationUnit: pending.triggeredBy[1].endsWith('s') ? 's' : 't'
+                },
+                context: {
+                    triggerReason: newTriggerReason,
+                    assertivenessSnapshot: assertivenessSnapshot,
+                },
+            };
+            
+            setPendingLog(pendingLogData);
+
+            executeTradeAction('Piloto', newTriggerSignal, pending.triggeredBy).finally(() => {
+                setTimeout(() => { cooldownRef.current = false; }, 60000);
+            });
+        } else {
+            toast({ title: `❌ Sinal ${pending.signal} Abortado`, description: `A condição não se manteve no tick seguinte.`, variant: "destructive" });
+            setAutopilotStatus('Monitorando...');
+        }
+    } else {
+        const { newTriggerSignal, newTriggerReason, newTriggeredBy } = evaluateTriggerConditions(newAssertiveness);
+        if (newTriggerSignal !== 'HOLD' && newTriggeredBy) {
+            setPendingSignal({ signal: newTriggerSignal, triggeredBy: newTriggeredBy, epoch: currentTick.epoch });
+            const reason = `Sinal ${newTriggerSignal} detectado (${newTriggeredBy?.join(' & ')}). Aguardando confirmação...`;
+            toast({ title: '⏳ Sinal Detectado!', description: reason });
+            setAutopilotStatus(reason);
+        } else if (!pendingSignalRef.current) {
+            setAutopilotStatus('Monitorando...');
+        }
+    }
+  }, [projectionExperts, isAutopilotOn, operationsLog, activeSymbol, executeTrade, setAutopilotStatus, toast, executeTradeAction, realData]);
+
+  useEffect(() => {
+    const lastOp = operationsLog[0];
+    if (
+      user &&
+      lastOp &&
+      lastOp.status === 'pending' &&
+      lastOp.initiator === 'Piloto' &&
+      pendingLogRef.current
+    ) {
+      const logToSave: PredictiveTradeLog = {
+        id: `pred_log_${Date.now()}`,
+        contractId: lastOp.id,
+        ...pendingLogRef.current,
+        result: 'pending',
+        pnl: 0,
+      };
+
+      savePredictiveTradeLog(user.uid, logToSave).catch(console.error);
+      setPendingLog(null); // Limpa o log pendente
+    }
+  }, [operationsLog, user]);
   
 
   useEffect(() => {
@@ -657,7 +736,6 @@ function StochasticLab({
 
 const StrongestSignalCard = ({ signal }: { signal: StrongestSignal }) => {
     const isHold = signal.direction === 'HOLD' || signal.certaintyScore === 0;
-    // FIX: Display the effective accuracy of the final signal, not the raw accuracy of the model.
     const displayAccuracy = signal.accuracy > 50 ? signal.accuracy : 100 - signal.accuracy;
 
     return (
@@ -770,7 +848,7 @@ function Header() {
 };
 
 function PageContent() {
-    const { chartData, activeSymbol, operationsLog, sellContract, priceTicks, clearActiveContracts, executeTrade } = useDerivApiV2();
+    const { chartData, activeSymbol, operationsLog, sellContract, priceTicks, clearActiveContracts, executeTrade, durationLimits } = useDerivApiV2();
     const { user } = useAuth();
     const { toast } = useToast();
     const [predictiveLogs, setPredictiveLogs] = useState<PredictiveTradeLog[]>([]);
@@ -879,6 +957,7 @@ function PageContent() {
                         predictiveLogs={predictiveLogs}
                         onDeletePredictiveLog={handleDeletePredictiveLog}
                         deletingPredictiveLogId={deletingLogId}
+                        durationLimits={durationLimits}
                     />
                     <div className="lg:col-span-2 space-y-6">
                         <VolatilityTraderInterface 
