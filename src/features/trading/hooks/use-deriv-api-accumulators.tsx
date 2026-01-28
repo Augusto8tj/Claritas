@@ -742,17 +742,30 @@ export const DerivApiProviderAccumulators = ({ children }: { children: ReactNode
     }
   };
   
- const reconnect = useCallback(async (): Promise<boolean> => {
+  const isConnectedRef = useRef(isConnected);
+  isConnectedRef.current = isConnected;
+
+  const connectionErrorRef = useRef(connectionError);
+  connectionErrorRef.current = connectionError;
+
+  const reconnect = useCallback(async (): Promise<boolean> => {
     setTriggerReconnect(c => c + 1);
+    
     return new Promise(resolve => {
-        const checkConnection = () => {
-            if (wsRef.current?.readyState === WebSocket.OPEN && isConnected) resolve(true);
-            else if (connectionError) resolve(false);
-            else setTimeout(checkConnection, 500);
-        };
-        setTimeout(checkConnection, 500);
+        const checkStartTime = Date.now();
+        const checkInterval = setInterval(() => {
+            const isTimeout = Date.now() - checkStartTime > 10000;
+            
+            if (isConnectedRef.current) {
+                clearInterval(checkInterval);
+                resolve(true);
+            } else if (connectionErrorRef.current || isTimeout) {
+                clearInterval(checkInterval);
+                resolve(false);
+            }
+        }, 200);
     });
-}, [isConnected, connectionError]);
+  }, []);
 
   const clearActiveContracts = () => {
     setAndPersistOperationsLog([]);

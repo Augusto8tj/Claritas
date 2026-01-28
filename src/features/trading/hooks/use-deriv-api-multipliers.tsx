@@ -973,7 +973,7 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
   
   promisesRef.current.forEach((p) => {
     if (p && typeof p.reject === 'function') {
-      p.reject(new Error("WebSocket fechado"))
+      p.reject(new Error("WebSocket connection closed."))
     }
   });
   promisesRef.current.clear();
@@ -1019,20 +1019,6 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
   }, [activeToken, isLoading, makeRequest, toast, triggerReconnect, updateTradeAnnotation, addTradeAnnotation, setAndPersistOperationsLog, setToastQueue, updateContract, startConnectionMonitor]);
 
   
-  useEffect(() => {
-  if (isConnected && !isConnecting) {
-      const checkInterval = setInterval(() => {
-          const timeSinceLastPing = Date.now() - lastPingTime;
-          if (timeSinceLastPing > 45000 && wsRef.current?.readyState === WebSocket.OPEN) {
-              console.warn('[Health Check] Sem resposta há 45s, reconectando...');
-              setTriggerReconnect(c => c + 1);
-          }
-      }, 10000);
-      
-      return () => clearInterval(checkInterval);
-  }
-}, [isConnected, isConnecting, lastPingTime]);
-
   useEffect(() => {
   if (isConnected && activeSymbol && !isConnecting) {
       const timer = setTimeout(() => {
@@ -1083,28 +1069,30 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
     }
   };
   
+  const isConnectedRef = useRef(isConnected);
+  isConnectedRef.current = isConnected;
+
+  const connectionErrorRef = useRef(connectionError);
+  connectionErrorRef.current = connectionError;
+
   const reconnect = useCallback(async (): Promise<boolean> => {
     setTriggerReconnect(c => c + 1);
     
     return new Promise(resolve => {
-        const timeout = setTimeout(() => {
-            resolve(false);
-        }, 10000);
-
-        const checkConnection = () => {
-            if (wsRef.current?.readyState === WebSocket.OPEN && isConnected) {
-                clearTimeout(timeout);
+        const checkStartTime = Date.now();
+        const checkInterval = setInterval(() => {
+            const isTimeout = Date.now() - checkStartTime > 10000;
+            
+            if (isConnectedRef.current) {
+                clearInterval(checkInterval);
                 resolve(true);
-            } else if (connectionError) {
-                clearTimeout(timeout);
+            } else if (connectionErrorRef.current || isTimeout) {
+                clearInterval(checkInterval);
                 resolve(false);
-            } else {
-                setTimeout(checkConnection, 500); 
             }
-        };
-        setTimeout(checkConnection, 500); 
+        }, 200);
     });
-  }, [isConnected, connectionError]);
+  }, []);
 
 
   const clearActiveContracts = () => {

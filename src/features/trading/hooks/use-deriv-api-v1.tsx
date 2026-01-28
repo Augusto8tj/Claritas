@@ -471,7 +471,7 @@ const executeTrade = useCallback(async (
 
         const isSellable = durationUnit === 's';
         
-        const durationInSeconds = getDurationInSeconds(duration, durationUnit);
+        const durationInSeconds = getDurationInSeconds(sanitizedDuration, durationUnit);
         const purchaseTimeMs = (buyResult.purchase_time || Math.floor(Date.now() / 1000)) * 1000;
         const expirationTimeMs = purchaseTimeMs + durationInSeconds * 1000;
 
@@ -905,24 +905,30 @@ const executeTrade = useCallback(async (
     }
   };
   
+  const isConnectedRef = useRef(isConnected);
+  isConnectedRef.current = isConnected;
+
+  const connectionErrorRef = useRef(connectionError);
+  connectionErrorRef.current = connectionError;
+
   const reconnect = useCallback(async (): Promise<boolean> => {
-    setIsConnecting(true);
-    setConnectionError(null);
     setTriggerReconnect(c => c + 1);
     
     return new Promise(resolve => {
-        const checkConnection = () => {
-            if (wsRef.current?.readyState === WebSocket.OPEN && isConnected) {
+        const checkStartTime = Date.now();
+        const checkInterval = setInterval(() => {
+            const isTimeout = Date.now() - checkStartTime > 10000;
+            
+            if (isConnectedRef.current) {
+                clearInterval(checkInterval);
                 resolve(true);
-            } else if (connectionError) {
+            } else if (connectionErrorRef.current || isTimeout) {
+                clearInterval(checkInterval);
                 resolve(false);
-            } else {
-                setTimeout(checkConnection, 500); 
             }
-        };
-        setTimeout(checkConnection, 500); 
+        }, 200);
     });
-  }, [isConnected, connectionError]);
+  }, []);
 
   const clearActiveContracts = () => {
     setAndPersistOperationsLog([]);

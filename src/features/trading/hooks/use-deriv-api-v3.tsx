@@ -481,7 +481,9 @@ export const DerivApiProviderV3 = ({ children }: { children: ReactNode }) => {
   }, [isConnected, makeRequest, operationsLog]);
 
   const startConnectionMonitor = useCallback(() => {
-    if (pingIntervalRef.current) clearInterval(pingIntervalRef.current);
+    if (pingIntervalRef.current) {
+        clearInterval(pingIntervalRef.current);
+    }
     pingIntervalRef.current = setInterval(() => {
         if (wsRef.current?.readyState === WebSocket.OPEN) {
             try {
@@ -492,7 +494,7 @@ export const DerivApiProviderV3 = ({ children }: { children: ReactNode }) => {
         }
     }, 30000);
   }, []);
-
+  
   useEffect(() => {
     if (!activeToken || isLoading) {
       if (wsRef.current) wsRef.current.close();
@@ -574,7 +576,7 @@ export const DerivApiProviderV3 = ({ children }: { children: ReactNode }) => {
                                         const newStatus = contract.profit >= 0 ? 'won' : 'lost';
                                         const exitPrice = contract.exit_tick_display_value ? parseFloat(contract.exit_tick_display_value) : contract.sell_spot ? parseFloat(contract.sell_spot) : op.exitPrice;
                                         const sellTime = contract.sell_time ? new Date(contract.sell_time * 1000).toISOString() : new Date().toISOString();
-
+                                        
                                         updatedLog[existingOpIndex] = { ...op, status: newStatus, result: contract.profit, exitPrice: exitPrice, exitTimestamp: sellTime };
                                         
                                         updateTradeAnnotation(String(contract.contract_id), { status: newStatus, profit: contract.profit, exitPrice, exitTime: contract.sell_time });
@@ -916,24 +918,30 @@ export const DerivApiProviderV3 = ({ children }: { children: ReactNode }) => {
     }
   };
   
- const reconnect = useCallback(async (): Promise<boolean> => {
-    setIsConnecting(true);
-    setConnectionError(null);
+  const isConnectedRef = useRef(isConnected);
+  isConnectedRef.current = isConnected;
+
+  const connectionErrorRef = useRef(connectionError);
+  connectionErrorRef.current = connectionError;
+
+  const reconnect = useCallback(async (): Promise<boolean> => {
     setTriggerReconnect(c => c + 1);
     
     return new Promise(resolve => {
-        const checkConnection = () => {
-            if (wsRef.current?.readyState === WebSocket.OPEN && isConnected) {
+        const checkStartTime = Date.now();
+        const checkInterval = setInterval(() => {
+            const isTimeout = Date.now() - checkStartTime > 10000;
+            
+            if (isConnectedRef.current) {
+                clearInterval(checkInterval);
                 resolve(true);
-            } else if (connectionError) {
+            } else if (connectionErrorRef.current || isTimeout) {
+                clearInterval(checkInterval);
                 resolve(false);
-            } else {
-                setTimeout(checkConnection, 500); 
             }
-        };
-        setTimeout(checkConnection, 500); 
+        }, 200);
     });
-}, [isConnected, connectionError]);
+  }, []);
 
   const clearActiveContracts = () => {
     setAndPersistOperationsLog([]);
@@ -960,8 +968,6 @@ export const DerivApiProviderV3 = ({ children }: { children: ReactNode }) => {
     activeSymbol,
     setActiveSymbol,
     chartData,
-    // V3 doesn't need a separate botCandleData, so we can simplify
-    botCandleData: chartData.filter(isCandle),
     priceTicks,
     isChartLoading,
     chartError,
