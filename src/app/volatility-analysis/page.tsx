@@ -5,7 +5,7 @@ import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { useForm, FormProvider } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ScatterChart, Scatter } from 'recharts';
-import { TrendingUp, TrendingDown, HelpCircle, Bot, FlaskConical, Target, Info, Brain, Zap, Send, Loader2, ShieldCheck, GitBranch, BarChart, Activity, AlertTriangle, Power } from 'lucide-react';
+import { TrendingUp, TrendingDown, HelpCircle, Bot, FlaskConical, Target, Info, Brain, Zap, Send, Loader2, ShieldCheck, GitBranch, BarChart, Activity, AlertTriangle, Power, ChevronsUpDown } from 'lucide-react';
 import { DerivApiProviderV2, useDerivApiV2 } from "@/features/trading/hooks/use-deriv-api-v2";
 import { AssetSelectorV2 } from "@/features/trading/components/deriv-trader/asset-selector-v2";
 import { ApiStatusIndicatorV2 } from "@/features/trading/components/deriv-trader/ApiStatusIndicatorV2";
@@ -45,6 +45,13 @@ const normalQuantile = (p: number): number => {
   }
 };
 
+const getProgressColor = (percentage: number) => {
+    if (percentage > 75) return 'bg-green-500';
+    if (percentage > 60) return 'bg-blue-500';
+    if (percentage < 40) return 'bg-red-500';
+    return 'bg-gray-400';
+};
+
 const isCandle = (d: ChartData): d is CandleData => d != null && 'close' in d;
 
 interface ConfirmationSystem {
@@ -77,15 +84,6 @@ interface StochasticLabProps {
   executeTrade: ReturnType<typeof useDerivApiV2>['executeTrade'];
 }
 
-// FIX: Moved getProgressColor to module scope to be accessible by ProjectionExpertsPanel
-const getProgressColor = (percentage: number) => {
-    if (percentage > 75) return 'bg-green-500';
-    if (percentage > 60) return 'bg-blue-500';
-    if (percentage < 40) return 'bg-red-500';
-    return 'bg-gray-400';
-};
-
-// FIX: Moved calculateRollingAccuracy to module scope to be accessible by useMemo
 const calculateRollingAccuracy = (history: boolean[]) => {
     const hits = history.filter(h => h).length;
     const total = history.length;
@@ -354,8 +352,8 @@ function StochasticLab({ realData, operationsLog, activeSymbol, onConsensusUpdat
                 maxCertainty = certainty;
                 bestSignal = {
                     horizon: p.name,
-                    direction: p.vote,
-                    certaintyScore: p.accuracy > 50 ? certainty : -certainty,
+                    direction: p.accuracy > 50 ? p.vote : (p.vote === 'RISE' ? 'FALL' : 'RISE'),
+                    certaintyScore: certainty,
                     accuracy: p.accuracy,
                 };
             }
@@ -384,7 +382,9 @@ function StochasticLab({ realData, operationsLog, activeSymbol, onConsensusUpdat
             setAutopilotStatus(statusMessage);
             toast({ title: '🤖 Piloto Automático Ativado!', description: statusMessage });
 
-            const [durationStr, unit] = currentExpert.name.split(/([st])/);
+            // FIX: Força a unidade para 'ticks' para cumprir as regras da API para este ativo.
+            // O valor numérico (ex: 10 de '10s') é mantido, mas a unidade é sempre 't'.
+            const [durationStr] = currentExpert.name.split(/[st]/);
             const duration = parseInt(durationStr, 10);
             
             executeTrade(
@@ -392,8 +392,8 @@ function StochasticLab({ realData, operationsLog, activeSymbol, onConsensusUpdat
                 1.0, // Stake fixo para o piloto
                 activeSymbol,
                 currentExpert.vote.toLowerCase() as 'rise' | 'fall',
-                duration,
-                unit as 's' | 't',
+                duration, // e.g., 10
+                't',      // Forçado para 'ticks'
                 'Piloto'
             );
 
@@ -720,3 +720,5 @@ export default function VolatilityAnalysisPage() {
         </DerivApiProviderV2>
     );
 }
+
+```
