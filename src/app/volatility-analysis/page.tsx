@@ -240,6 +240,8 @@ function StochasticLab({ realData, operationsLog, activeSymbol, onConsensusUpdat
         const path = [{ time: lastTime, price: lastPriceValue }];
         for (let i = 1; i <= steps; i++) {
           const Z = normalRandom();
+          // FIX: A correção de convexidade de Ito introduzia um viés de FALL.
+          // Para predição de direção, usamos apenas o drift médio recente.
           const drift_future = meanLastReturn;
           const diffusion_future = lastSigma * Z;
           currentSimPrice = currentSimPrice * Math.exp(drift_future + diffusion_future);
@@ -382,8 +384,6 @@ function StochasticLab({ realData, operationsLog, activeSymbol, onConsensusUpdat
             setAutopilotStatus(statusMessage);
             toast({ title: '🤖 Piloto Automático Ativado!', description: statusMessage });
 
-            // FIX: Força a unidade para 'ticks' para cumprir as regras da API para este ativo.
-            // O valor numérico (ex: 10 de '10s') é mantido, mas a unidade é sempre 't'.
             const [durationStr] = currentExpert.name.split(/[st]/);
             const duration = parseInt(durationStr, 10);
             
@@ -392,8 +392,8 @@ function StochasticLab({ realData, operationsLog, activeSymbol, onConsensusUpdat
                 1.0, // Stake fixo para o piloto
                 activeSymbol,
                 currentExpert.vote.toLowerCase() as 'rise' | 'fall',
-                duration, // e.g., 10
-                't',      // Forçado para 'ticks'
+                duration,
+                't',
                 'Piloto'
             );
 
@@ -554,6 +554,8 @@ function StochasticLab({ realData, operationsLog, activeSymbol, onConsensusUpdat
 
 const StrongestSignalCard = ({ signal }: { signal: StrongestSignal }) => {
     const isHold = signal.direction === 'HOLD' || signal.certaintyScore === 0;
+    // FIX: Display the effective accuracy of the final signal, not the raw accuracy of the model.
+    const displayAccuracy = signal.accuracy > 50 ? signal.accuracy : 100 - signal.accuracy;
 
     return (
         <Card className={cn("p-4 flex flex-col justify-center", 
@@ -573,7 +575,7 @@ const StrongestSignalCard = ({ signal }: { signal: StrongestSignal }) => {
                         {signal.direction} para {signal.horizon}
                     </p>
                     <p className="text-xs text-muted-foreground">
-                        Assertividade do Especialista: <span className="font-bold">{signal.accuracy.toFixed(1)}%</span>
+                        Assertividade do Especialista: <span className="font-bold">{displayAccuracy.toFixed(1)}%</span>
                     </p>
                 </div>
             )}
@@ -585,24 +587,31 @@ const ProjectionExpertsPanel = ({ experts }: { experts: { name: string; vote: 'R
     <Card className="p-4">
         <CardTitle className="text-sm font-semibold text-muted-foreground mb-3">Painel dos Especialistas</CardTitle>
         <div className="space-y-2">
-            {experts.map(({ name, vote, accuracy }) => (
-                <div key={name} className="flex justify-between items-center bg-background p-2 rounded-md border text-xs">
-                    <span className="font-semibold w-12">{name}</span>
-                    <div className="flex items-center gap-2 w-24">
-                        <Progress value={accuracy} className="h-1.5 flex-1" indicatorClassName={getProgressColor(accuracy)} />
-                        <span className="font-mono w-10 text-right">{accuracy.toFixed(0)}%</span>
+            {experts.map(({ name, vote, accuracy }) => {
+                // FIX: Calculate the effective direction and accuracy based on the raw accuracy score.
+                // A model that is wrong 70% of the time is a model that is right 70% of the time if you bet the opposite.
+                const effectiveDirection = accuracy > 50 ? vote : (vote === 'RISE' ? 'FALL' : (vote === 'FALL' ? 'RISE' : 'HOLD'));
+                const effectiveAccuracy = accuracy > 50 ? accuracy : 100 - accuracy;
+                
+                return (
+                    <div key={name} className="flex justify-between items-center bg-background p-2 rounded-md border text-xs">
+                        <span className="font-semibold w-12">{name}</span>
+                        <div className="flex items-center gap-2 w-24">
+                            <Progress value={effectiveAccuracy} className="h-1.5 flex-1" indicatorClassName={getProgressColor(effectiveAccuracy)} />
+                            <span className="font-mono w-10 text-right">{effectiveAccuracy.toFixed(0)}%</span>
+                        </div>
+                        <span className={cn("font-bold w-10 text-right flex items-center justify-end gap-1", 
+                            effectiveDirection === 'RISE' && 'text-green-500', 
+                            effectiveDirection === 'FALL' && 'text-red-500',
+                            effectiveDirection === 'HOLD' && 'text-gray-400'
+                        )}>
+                            {effectiveDirection === 'RISE' && <TrendingUp size={12}/>}
+                            {effectiveDirection === 'FALL' && <TrendingDown size={12}/>}
+                            {effectiveDirection}
+                        </span>
                     </div>
-                    <span className={cn("font-bold w-10 text-right flex items-center justify-end gap-1", 
-                        vote === 'RISE' && 'text-green-500', 
-                        vote === 'FALL' && 'text-red-500',
-                        vote === 'HOLD' && 'text-gray-400'
-                    )}>
-                        {vote === 'RISE' && <TrendingUp size={12}/>}
-                        {vote === 'FALL' && <TrendingDown size={12}/>}
-                        {vote}
-                    </span>
-                </div>
-            ))}
+                );
+            })}
         </div>
     </Card>
 );
@@ -665,7 +674,7 @@ function PageContent() {
         resolver: zodResolver(volatilityTraderSchema),
         defaultValues: {
             stake: 1.0,
-            duration: 5,
+            duration: 15,
         },
     });
 
