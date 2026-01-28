@@ -11,7 +11,7 @@ import { AssetSelectorV2 } from "@/features/trading/components/deriv-trader/asse
 import { ApiStatusIndicatorV2 } from "@/features/trading/components/deriv-trader/ApiStatusIndicatorV2";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { ScrollArea } from '@/components/ui/scroll-area';
-import type { ChartData, CandleData, Operation, PredictiveTradeLog, DurationUnit } from '@/lib/types';
+import type { ChartData, CandleData, Operation, PredictiveTradeLog } from '@/lib/types';
 import { Progress } from "@/components/ui/progress";
 import { TooltipProvider, Tooltip as ShadTooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
@@ -19,7 +19,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { volatilityTraderSchema, type VolatilityTraderFormValues } from "@/features/trading/components/deriv-trader/volatility-trader-interface.types";
 import VolatilityTraderInterface from "@/features/trading/components/deriv-trader/volatility-trader-interface";
 import { OperationsLogV2 } from "@/features/trading/components/deriv-trader/operations-log-v2";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert';
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { useToast } from '@/hooks/use-toast';
@@ -387,7 +387,7 @@ function StochasticLab({
     try {
         const longerHorizon = triggeredBy[1]; 
         let duration = 15;
-        let durationUnit: DurationUnit = 's';
+        let durationUnit: 's' | 't' = 's';
         
         const durationMatch = longerHorizon.match(/(\d+)([st])/);
         if (durationMatch) {
@@ -679,7 +679,7 @@ function StochasticLab({
                            </CardContent>
                        </Card>
                      )}
-                     <Card className="mt-6">
+                    <Card className="mt-6">
                         <CardHeader>
                             <CardTitle>Painel de Assertividade dos Especialistas</CardTitle>
                         </CardHeader>
