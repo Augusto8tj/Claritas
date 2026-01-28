@@ -331,3 +331,12 @@ export interface TradeResult {
   contractId?: number;
   entryPrice?: number;
 }
+
+export type DurationUnit = z.infer<typeof baseRiseFallSchema.shape.duration_unit>;
+
+export const baseRiseFallSchema = z.object({
+  stake: z.coerce.number().min(0.35, "O valor mínimo é $0.35."),
+  duration: z.coerce.number().min(1, "A duração deve ser de pelo menos 1."),
+  duration_unit: z.enum(['t', 's', 'm', 'h', 'd']),
+  allowEquals: z.boolean().default(false),
+});

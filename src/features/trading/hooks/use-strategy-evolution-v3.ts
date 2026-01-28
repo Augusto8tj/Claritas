@@ -243,7 +243,7 @@ export function useStrategyEvolutionV3(initialStrategies: RobotStrategy[], asset
         if (worstIndex === -1) return;
 
         const regimeTrades = worst.tradeHistory.reduce((acc, trade) => {
-          const regime = trade.regime as MarketRegime || 'ranging';
+          const regime = trade.regime || 'ranging';
           if (!acc[regime]) acc[regime] = { wins: 0, losses: 0 };
           if (trade.profit > 0) acc[regime].wins++;
           else acc[regime].losses++;
@@ -355,7 +355,7 @@ export function useStrategyEvolutionV3(initialStrategies: RobotStrategy[], asset
   const deleteSingleEvolution = useCallback(async (eventTimestamp: string) => {
     if (!user || !assetSymbol) return;
     try {
-      await deleteEvolutionEvent(user.uid, eventTimestamp, 'v3');
+      await deleteEvolutionEvent(user.uid, eventTimestamp, 'v3', assetSymbol);
       setEvolutionHistory(prev => prev.filter(e => e.timestamp.toISOString() !== eventTimestamp));
       toast({ title: '🗑️ Geração V3 Removida' });
     } catch (error) {

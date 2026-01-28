@@ -1,6 +1,21 @@
 // /src/lib/types/index.ts
 import { z } from 'zod';
-import type { RobotStrategy as RobotStrategyT, RobotVote as RobotVoteT, RobotPerformance as RobotPerformanceT, EnhancedRobotPerformance as EnhancedRobotPerformanceType, MarketRegime as MarketRegimeType, MicrostructureFeatures as MicrostructureFeaturesType, BayesianVote as BayesianVoteType, TradeDecisionLog as TradeDecisionLogType, AssetProfileV1 as AssetProfileV1Type, CouncilVotes as CouncilVotesT, VirtualTradeLog as VirtualTradeLogT, TradeHistoryEvent as TradeHistoryEventT, TradeResult as TradeResultT } from './trading.types';
+import type { 
+    RobotStrategy as RobotStrategyT, 
+    RobotVote as RobotVoteT, 
+    RobotPerformance as RobotPerformanceT, 
+    EnhancedRobotPerformance as EnhancedRobotPerformanceType, 
+    MarketRegime as MarketRegimeType, 
+    MicrostructureFeatures as MicrostructureFeaturesType, 
+    BayesianVote as BayesianVoteType, 
+    TradeDecisionLog as TradeDecisionLogType, 
+    AssetProfileV1 as AssetProfileV1Type,
+    CouncilVotes as CouncilVotesT,
+    VirtualTradeLog as VirtualTradeLogT,
+    TradeHistoryEvent as TradeHistoryEventT,
+    TradeResult as TradeResultT,
+    DurationUnit as DurationUnitT
+} from './trading.types';
 import { OperationSchema } from './trading.types';
 import type { AssetAnalysisInput as AssetAnalysisInputT, AssetAnalysisOutput as AssetAnalysisOutputT } from '@/ai/flows/asset-analysis.types';
 import { IndicatorsSchema } from './trading.types';
@@ -64,7 +79,7 @@ export type CandleData = {
 
 export type ChartData = TickData | CandleData;
 
-export type DurationUnit = 't' | 's' | 'm' | 'h' | 'd';
+export type DurationUnit = DurationUnitT;
 
 export type DurationLimits = Record<DurationUnit, { min: number; max: number }>;
 
@@ -111,8 +126,6 @@ export interface Operation {
   trailingStop?: number;
 }
 
-// =/src/lib/types/index.ts
-// ... (imports e outros tipos)
 
 // =================================================================
 // Re-exporting trading types for central access

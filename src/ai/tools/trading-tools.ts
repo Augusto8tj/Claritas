@@ -15,7 +15,6 @@ import {
   MqlAnalyzerInputSchema,
   MqlAnalyzerOutputSchema,
   OperationAnalysisOutputSchema,
-  OperationAnalysisInputSchema,
 } from '@/lib/types';
 import { getDerivApiDataForAnalysis } from '@/services/deriv-data-service';
 
