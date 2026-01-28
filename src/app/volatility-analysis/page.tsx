@@ -46,7 +46,6 @@ const normalQuantile = (p: number): number => {
   }
 };
 
-// FIX: A função foi movida para o escopo do módulo para ser acessível a todos os componentes
 const getProgressColor = (percentage: number) => {
     if (percentage > 75) return 'bg-green-500';
     if (percentage > 60) return 'bg-blue-500';
@@ -220,7 +219,6 @@ function StochasticLab({ realData, operationsLog, activeSymbol, onConsensusUpdat
         const newRMSE = Math.sqrt(sumSquaredErrors / errors.length);
         const newDrift = errors.reduce((a,e) => a + e, 0) / errors.length;
         
-        // FIX: Atualização funcional para evitar dependência circular
         setDriftCorrectionForDisplay(prev => {
             if (prev.drift !== newDrift || prev.mae !== newMAE) {
                 return { drift: newDrift, mae: newMAE, rmse: newRMSE };
@@ -243,8 +241,6 @@ function StochasticLab({ realData, operationsLog, activeSymbol, onConsensusUpdat
         const path = [{ time: lastTime, price: lastPriceValue }];
         for (let i = 1; i <= steps; i++) {
           const Z = normalRandom();
-          // FIX: A correção de Ito (-0.5 * sigma^2) foi removida para eliminar o viés de FALL.
-          // Usamos apenas a tendência média recente (drift) para a previsão de direção.
           const drift_future = meanLastReturn;
           const diffusion_future = lastSigma * Z;
           currentSimPrice = currentSimPrice * Math.exp(drift_future + diffusion_future);
@@ -393,7 +389,6 @@ function StochasticLab({ realData, operationsLog, activeSymbol, onConsensusUpdat
             setAutopilotStatus(statusMessage);
             toast({ title: '🤖 Piloto Automático Ativado!', description: statusMessage });
 
-            // FIX: Corrigido o envio de ordens para obedecer as regras de negócio
             const expertName = currentExpert.name;
             const [durationStr] = expertName.split(/[st]/);
             const duration = parseInt(durationStr, 10);
@@ -557,13 +552,80 @@ function StochasticLab({ realData, operationsLog, activeSymbol, onConsensusUpdat
                                 </div>
                               </div>
                             )}
-                            {activeTab === 'returns' && ( <div>...</div> )}
-                            {activeTab === 'volatility' && ( <div>...</div> )}
-                            {activeTab === 'qq' && ( <div>...</div> )}
+                            {activeTab === 'returns' && ( 
+                              <div>
+                                <h3 className="text-lg font-semibold mb-2">Distribuição de Retornos (Log)</h3>
+                                <ResponsiveContainer width="100%" height={300}>
+                                  <ScatterChart margin={{ top: 20, right: 20, bottom: 20, left: 20 }}>
+                                    <CartesianGrid strokeDasharray="3 3" />
+                                    <XAxis type="number" dataKey="index" name="Observation" unit="" label={{ value: 'Observação (Tick)', position: 'insideBottom', offset: -5 }} />
+                                    <YAxis type="number" dataKey="return" name="Return" unit="%" label={{ value: 'Retorno (%)', angle: -90, position: 'insideLeft' }} />
+                                    <Tooltip cursor={{ strokeDasharray: '3 3' }} />
+                                    <Scatter name="Log Returns" data={returns} fill="hsl(var(--primary))" />
+                                  </ScatterChart>
+                                </ResponsiveContainer>
+                              </div>
+                            )}
+                            {activeTab === 'volatility' && ( 
+                                <div>
+                                    <h3 className="text-lg font-semibold mb-2">Volatilidade Realizada (Anualizada)</h3>
+                                    <ResponsiveContainer width="100%" height={300}>
+                                      <LineChart data={volatilityData}>
+                                        <CartesianGrid strokeDasharray="3 3" />
+                                        <XAxis dataKey="time" label={{ value: 'Tempo (ticks)', position: 'insideBottom', offset: -5 }} />
+                                        <YAxis label={{ value: 'Volatilidade Anualizada (%)', angle: -90, position: 'insideLeft' }} domain={[0, 'dataMax + 5']} />
+                                        <Tooltip />
+                                        <Legend />
+                                        <Line type="monotone" dataKey="realizedVol" stroke="hsl(var(--primary))" name="Realizada (Janela 50)" dot={false} />
+                                        <Line type="monotone" dataKey="targetVol" stroke="hsl(var(--accent))" name="Alvo" dot={false} strokeDasharray="5 5"/>
+                                      </LineChart>
+                                    </ResponsiveContainer>
+                                </div>
+                            )}
+                            {activeTab === 'qq' && ( 
+                                <div>
+                                    <h3 className="text-lg font-semibold mb-2">Q-Q Plot (Normalidade dos Retornos)</h3>
+                                    <ResponsiveContainer width="100%" height={300}>
+                                        <ScatterChart margin={{ top: 20, right: 20, bottom: 20, left: 20 }}>
+                                            <CartesianGrid />
+                                            <XAxis type="number" dataKey="theoretical" name="Quantis Teóricos" label={{ value: 'Quantis Teóricos (Normal)', position: 'insideBottom', offset: -5 }} />
+                                            <YAxis type="number" dataKey="empirical" name="Quantis da Amostra" label={{ value: 'Quantis Empíricos (Retornos)', angle: -90, position: 'insideLeft' }} />
+                                            <Tooltip cursor={{ strokeDasharray: '3 3' }} />
+                                            <Scatter name="Retornos" data={qqData} fill="hsl(var(--primary))" />
+                                            <Line data={lineData} dataKey="empirical" stroke="hsl(var(--destructive))" strokeWidth={2} dot={false} legendType="none" />
+                                        </ScatterChart>
+                                    </ResponsiveContainer>
+                                </div>
+                            )}
                         </div>
                     )}
                     
-                     {stats.observations > 0 && ( <div>...</div> )}
+                     {stats.observations > 0 && (
+                        <Card className="mt-6">
+                            <CardHeader>
+                                <CardTitle className="font-headline text-lg">Estatísticas Descritivas dos Retornos</CardTitle>
+                                <CardDescription>Análise da distribuição dos log-returns dos últimos {stats.observations} ticks.</CardDescription>
+                            </CardHeader>
+                            <CardContent className="grid grid-cols-2 md:grid-cols-4 gap-4 text-center">
+                                <div className="p-3 bg-slate-50 rounded border">
+                                    <p className="text-xs text-muted-foreground">Média (%)</p>
+                                    <p className="text-lg font-bold font-mono">{stats.mean}</p>
+                                </div>
+                                <div className="p-3 bg-slate-50 rounded border">
+                                    <p className="text-xs text-muted-foreground">Desvio Padrão (%)</p>
+                                    <p className="text-lg font-bold font-mono">{stats.stdDev}</p>
+                                </div>
+                                <div className="p-3 bg-slate-50 rounded border">
+                                    <p className="text-xs text-muted-foreground">Assimetria (Skewness)</p>
+                                    <p className="text-lg font-bold font-mono">{stats.skewness}</p>
+                                </div>
+                                <div className="p-3 bg-slate-50 rounded border">
+                                    <p className="text-xs text-muted-foreground">Curtose (Kurtosis)</p>
+                                    <p className="text-lg font-bold font-mono">{stats.kurtosis}</p>
+                                </div>
+                            </CardContent>
+                        </Card>
+                     )}
                 </div>
           </ScrollArea>
         </CardContent>
@@ -573,7 +635,6 @@ function StochasticLab({ realData, operationsLog, activeSymbol, onConsensusUpdat
 
 const StrongestSignalCard = ({ signal }: { signal: StrongestSignal }) => {
     const isHold = signal.direction === 'HOLD' || signal.certaintyScore === 0;
-    // FIX: Display the effective accuracy of the final signal, not the raw accuracy of the model.
     const displayAccuracy = signal.accuracy > 50 ? signal.accuracy : 100 - signal.accuracy;
 
     return (
@@ -607,7 +668,6 @@ const ProjectionExpertsPanel = ({ experts }: { experts: { name: string; vote: 'R
         <CardTitle className="text-sm font-semibold text-muted-foreground mb-3">Painel dos Especialistas</CardTitle>
         <div className="space-y-2">
             {experts.map(({ name, vote, accuracy }) => {
-                // FIX: Calculate the effective direction and accuracy based on the raw accuracy score.
                 const effectiveDirection = accuracy > 50 ? vote : (vote === 'RISE' ? 'FALL' : (vote === 'FALL' ? 'RISE' : 'HOLD'));
                 const effectiveAccuracy = accuracy > 50 ? accuracy : 100 - accuracy;
                 
@@ -688,6 +748,7 @@ function Header() {
 
 function PageContent() {
     const { chartData, activeSymbol, operationsLog, sellContract, priceTicks, clearActiveContracts, executeTrade } = useDerivApiV2();
+    const { toast } = useToast();
     const form = useForm<VolatilityTraderFormValues>({
         resolver: zodResolver(volatilityTraderSchema),
         defaultValues: {
@@ -726,8 +787,8 @@ function PageContent() {
           duration = parseInt(horizon.replace('t', ''), 10) * 2;
         }
         
-        // Mínimo de 5 segundos
-        const finalDuration = Math.max(5, duration);
+        // Mínimo de 15 segundos
+        const finalDuration = Math.max(15, duration);
         form.setValue('duration', finalDuration);
 
         toast({
