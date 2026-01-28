@@ -11,7 +11,7 @@ import { AssetSelectorV2 } from "@/features/trading/components/deriv-trader/asse
 import { ApiStatusIndicatorV2 } from "@/features/trading/components/deriv-trader/ApiStatusIndicatorV2";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { ScrollArea } from '@/components/ui/scroll-area';
-import type { ChartData, CandleData, Operation, DurationUnit } from '@/lib/types';
+import type { ChartData, CandleData, Operation, DurationUnit, PredictiveTradeLog } from '@/lib/types';
 import { Progress } from "@/components/ui/progress";
 import { TooltipProvider, Tooltip as ShadTooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
@@ -24,6 +24,9 @@ import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { useToast } from '@/hooks/use-toast';
 import { getConsensusGradientStyle } from '@/features/trading/components/deriv-trader/utils/get-consensus-gradient-style';
+import { useAuth } from '@/features/auth/hooks/use-auth';
+import { getPredictiveTradeLogs, savePredictiveTradeLog } from '@/services/financial-data-service';
+import PredictiveLogViewer from '@/components/deriv-trader/PredictiveLogViewer';
 
 
 // Aproximação da função quantil normal inversa
@@ -117,6 +120,7 @@ const AccuracyCard = ({ horizon, accuracyData }: { horizon: string; accuracyData
 
 
 function StochasticLab({ realData, operationsLog, activeSymbol, onConsensusUpdate, isAutopilotOn, setAutopilotStatus, executeTrade }: StochasticLabProps) {
+  const { user } = useAuth();
   const { toast } = useToast();
   const cooldownRef = useRef(false);
   const [activeTab, setActiveTab] = useState('prediction');
@@ -362,7 +366,7 @@ function StochasticLab({ realData, operationsLog, activeSymbol, onConsensusUpdat
       { name: '20s', vote: futurePath20s.length > 1 ? (futurePath20s[futurePath20s.length - 1].price > futurePath20s[0].price ? 'RISE' : 'FALL') : 'HOLD', accuracy: accuracy20s.percentage },
       { name: '30s', vote: futurePath30s.length > 1 ? (futurePath30s[futurePath30s.length - 1].price > futurePath30s[0].price ? 'RISE' : 'FALL') : 'HOLD', accuracy: accuracy30s.percentage },
       { name: '40s', vote: futurePath40s.length > 1 ? (futurePath40s[futurePath40s.length - 1].price > futurePath40s[0].price ? 'RISE' : 'FALL') : 'HOLD', accuracy: accuracy40s.percentage },
-  ]), [futurePath3t, accuracy3t, futurePath6t, accuracy6t, futurePath10t, accuracy10t, futurePath20s, accuracy20s, futurePath30s, accuracy30s, futurePath40s, accuracy40s]);
+  ]), [futurePath3t, accuracy3t, futurePath6t, accuracy6t, futurePath10t, accuracy10t, futurePath20s, accuracy20s, futurePath30s, accuracy30s, futurePath40s]);
 
   const strongestSignal = useMemo((): StrongestSignal => {
     let bestSignal: StrongestSignal = { horizon: 'N/A', direction: 'HOLD', certaintyScore: 0, accuracy: 50 };
@@ -389,7 +393,7 @@ function StochasticLab({ realData, operationsLog, activeSymbol, onConsensusUpdat
 
   // --- PILOTO AUTOMÁTICO ---
   useEffect(() => {
-    if (!isAutopilotOn || cooldownRef.current || !activeSymbol || !executeTrade) return;
+    if (!isAutopilotOn || cooldownRef.current || !activeSymbol || !executeTrade || !user) return;
 
     const activeAutopilotTrade = operationsLog.find(op => op.initiator === 'Piloto' && op.status === 'pending');
     if (activeAutopilotTrade) {
@@ -402,8 +406,8 @@ function StochasticLab({ realData, operationsLog, activeSymbol, onConsensusUpdat
         const currentExpert = projectionExperts[i];
         const prevExpert = projectionExperts[i-1];
         
-        const currentVote = currentExpert.accuracy > 50 ? currentExpert.vote : (currentExpert.vote === 'RISE' ? 'FALL' : (currentExpert.vote === 'FALL' ? 'RISE' : 'HOLD'));
-        const prevVote = prevExpert.accuracy > 50 ? prevExpert.vote : (prevExpert.vote === 'RISE' ? 'FALL' : (prevExpert.vote === 'FALL' ? 'RISE' : 'HOLD'));
+        const currentVote = currentExpert.accuracy > 50 ? currentExpert.vote : (currentExpert.vote === 'RISE' ? 'FALL' : 'RISE');
+        const prevVote = prevExpert.accuracy > 50 ? prevExpert.vote : (prevExpert.vote === 'RISE' ? 'FALL' : 'RISE');
 
         const currentEffectiveAccuracy = Math.max(currentExpert.accuracy, 100 - currentExpert.accuracy);
         const prevEffectiveAccuracy = Math.max(prevExpert.accuracy, 100 - prevExpert.accuracy);
@@ -411,35 +415,61 @@ function StochasticLab({ realData, operationsLog, activeSymbol, onConsensusUpdat
         if (currentEffectiveAccuracy > 70 && prevEffectiveAccuracy > 70 && currentVote === prevVote && currentVote !== 'HOLD') {
             const statusMessage = `Sinal ${currentVote} confirmado por ${prevExpert.name} (${prevEffectiveAccuracy.toFixed(0)}%) e ${currentExpert.name} (${currentEffectiveAccuracy.toFixed(0)}%). Executando...`;
             setAutopilotStatus(statusMessage);
-            toast({ title: '🤖 Piloto Automático Ativado!', description: statusMessage });
-
+            
             const expertName = currentExpert.name;
             const [durationStr] = expertName.split(/[st]/);
             const duration = parseInt(durationStr, 10);
+            const durationUnit: DurationUnit = expertName.endsWith('t') ? 't' : 's';
+            
+            const tradeParams = {
+                direction: currentVote,
+                stake: 1.0, 
+                duration,
+                durationUnit,
+            };
 
-            let durationUnit: DurationUnit;
-
-            if (expertName.endsWith('t')) {
-                durationUnit = 't';
-            } else {
-                durationUnit = 's';
-            }
+            const logId = `pred_log_${Date.now()}`;
+            const pendingLog: PredictiveTradeLog = {
+              id: logId,
+              contractId: 0, // Placeholder
+              timestamp: new Date().toISOString(),
+              asset: activeSymbol,
+              tradeParams: tradeParams,
+              context: {
+                triggerReason: statusMessage,
+                assertivenessSnapshot: projectionExperts.map(p => ({
+                    horizon: p.name,
+                    accuracy: p.accuracy,
+                    vote: p.vote,
+                }))
+              },
+              result: 'pending',
+              pnl: 0,
+            };
 
             executeTrade(
                 currentVote === 'RISE' ? 'CALL' : 'PUT',
-                1.0, // Stake fixo para o piloto
+                tradeParams.stake,
                 activeSymbol,
                 currentVote.toLowerCase() as 'rise' | 'fall',
-                duration,
-                durationUnit,
+                tradeParams.duration,
+                tradeParams.durationUnit,
                 'Piloto'
-            );
+            ).then(tradeResult => {
+                 if (tradeResult.success && tradeResult.contractId) {
+                     const finalLog = { ...pendingLog, contractId: tradeResult.contractId };
+                     savePredictiveTradeLog(user.uid, finalLog);
+                     toast({ title: '🤖 Piloto Automático: Posição Aberta!', description: statusMessage });
+                 } else {
+                     toast({ title: '❌ Falha do Piloto', description: tradeResult.message, variant: 'destructive' });
+                 }
+            });
 
             cooldownRef.current = true;
             setTimeout(() => {
                 cooldownRef.current = false;
                 setAutopilotStatus('Monitorando...');
-            }, 60000); // Cooldown de 60 segundos
+            }, 60000); 
 
             tradeExecuted = true;
             break;
@@ -450,7 +480,7 @@ function StochasticLab({ realData, operationsLog, activeSymbol, onConsensusUpdat
         setAutopilotStatus('Monitorando...');
     }
 
-  }, [projectionExperts, isAutopilotOn, operationsLog, activeSymbol, executeTrade, setAutopilotStatus, toast]);
+  }, [projectionExperts, isAutopilotOn, operationsLog, activeSymbol, executeTrade, setAutopilotStatus, toast, user]);
   
 
   useEffect(() => {
@@ -712,7 +742,7 @@ const ProjectionExpertsPanel = ({ experts }: { experts: { name: string; vote: 'R
         <CardTitle className="text-sm font-semibold text-muted-foreground mb-3">Painel dos Especialistas</CardTitle>
         <div className="space-y-2">
             {experts.map(({ name, vote, accuracy }) => {
-                const effectiveDirection = accuracy > 50 ? vote : (vote === 'RISE' ? 'FALL' : (vote === 'FALL' ? 'RISE' : 'HOLD'));
+                const effectiveDirection: 'RISE' | 'FALL' | 'HOLD' = accuracy > 50 ? vote : (vote === 'RISE' ? 'FALL' : (vote === 'FALL' ? 'RISE' : 'HOLD'));
                 const effectiveAccuracy = accuracy > 50 ? accuracy : 100 - accuracy;
                 
                 return (
@@ -794,6 +824,9 @@ function Header() {
 function PageContent() {
     const { chartData, activeSymbol, operationsLog, sellContract, priceTicks, clearActiveContracts, executeTrade } = useDerivApiV2();
     const { toast } = useToast();
+    const { user } = useAuth();
+    const [predictiveLogs, setPredictiveLogs] = useState<PredictiveTradeLog[]>([]);
+
     const form = useForm<VolatilityTraderFormValues>({
         resolver: zodResolver(volatilityTraderSchema),
         defaultValues: {
@@ -816,6 +849,18 @@ function PageContent() {
         setIsAutopilotOn(checked);
         setAutopilotStatus(checked ? 'Monitorando...' : 'Pausado');
     };
+
+    useEffect(() => {
+        if (!user) return;
+        
+        const fetchLogs = async () => {
+            const logs = await getPredictiveTradeLogs(user.uid);
+            const sortedLogs = logs.sort((a,b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+            setPredictiveLogs(sortedLogs);
+        };
+        fetchLogs();
+    }, [user, operationsLog]); // Refetch when operationsLog changes (new trade made)
+
 
     const handleSyncDuration = () => {
         const horizon = confirmedSignal.horizon;
@@ -868,6 +913,7 @@ function PageContent() {
                             autopilotStatus={autopilotStatus}
                         />
                         <OperationsLogV2 operations={operationsLog} sellContract={sellContract} priceTicks={priceTicks} clearActiveContracts={clearActiveContracts}/>
+                        <PredictiveLogViewer logs={predictiveLogs} />
                     </div>
                 </div>
             </div>
