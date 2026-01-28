@@ -124,7 +124,7 @@ export default function PredictiveLogViewer({
                     <TooltipProvider>
                         <Tooltip>
                             <TooltipTrigger asChild>
-                                <Button variant="outline" size="icon" onClick={toggleAll} className="hidden sm:inline-flex md:hidden">
+                                <Button variant="outline" size="icon" onClick={toggleAll} className="sm:hidden">
                                 <ChevronsUpDown className="h-4 w-4" />
                                 </Button>
                             </TooltipTrigger>
@@ -137,7 +137,7 @@ export default function PredictiveLogViewer({
 
                         <Tooltip>
                             <TooltipTrigger asChild>
-                                <Button variant="outline" size="icon" onClick={handleCsvExport} className="hidden sm:inline-flex md:hidden">
+                                <Button variant="outline" size="icon" onClick={handleCsvExport} className="sm:hidden">
                                     <FilePieChart className="h-4 w-4" />
                                 </Button>
                             </TooltipTrigger>
@@ -148,15 +148,6 @@ export default function PredictiveLogViewer({
                             Gerar Relatório CSV
                         </Button>
                     </TooltipProvider>
-                    {/* Mobile only buttons */}
-                     <Button variant="outline" size="sm" onClick={toggleAll} className="sm:hidden w-full">
-                        <ChevronsUpDown className="mr-2 h-4 w-4" />
-                        {openItems.length === logs.length ? 'Recolher Tudo' : 'Expandir Tudo'}
-                    </Button>
-                     <Button variant="outline" size="sm" onClick={handleCsvExport} className="sm:hidden w-full">
-                        <FilePieChart className="mr-2 h-4 w-4" />
-                        Gerar Relatório CSV
-                    </Button>
                 </div>
             )}
         </div>

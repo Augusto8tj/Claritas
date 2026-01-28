@@ -1,16 +1,17 @@
+// /src/app/volatility-analysis/page.tsx
 'use client';
 
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useForm, FormProvider } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ScatterChart, Scatter } from 'recharts';
-import { TrendingUp, TrendingDown, HelpCircle, Bot, FlaskConical, Target, Info, Brain, Zap, Send, Loader2, ShieldCheck, GitBranch, BarChart, Activity, AlertTriangle, Power, ChevronsUpDown, CheckCircle, XCircle, FilePieChart } from 'lucide-react';
+import { TrendingUp, TrendingDown, HelpCircle, Bot, FlaskConical, Target, Info, Brain, Zap, Send, Loader2, ShieldCheck, GitBranch, BarChart, Activity, AlertTriangle, Power, ChevronsUpDown } from 'lucide-react';
 import { DerivApiProviderV2, useDerivApiV2 } from "@/features/trading/hooks/use-deriv-api-v2";
 import { AssetSelectorV2 } from "@/features/trading/components/deriv-trader/asset-selector-v2";
 import { ApiStatusIndicatorV2 } from "@/features/trading/components/deriv-trader/ApiStatusIndicatorV2";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { ScrollArea } from '@/components/ui/scroll-area';
-import type { ChartData, CandleData, Operation, PredictiveTradeLog, DurationUnit, DurationLimits } from '@/lib/types';
+import type { ChartData, CandleData, Operation, PredictiveTradeLog, DurationUnit } from '@/lib/types';
 import { Progress } from "@/components/ui/progress";
 import { TooltipProvider, Tooltip as ShadTooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
@@ -65,19 +66,6 @@ const getProgressColor = (percentage: number) => {
 
 const isCandle = (d: ChartData): d is CandleData => d != null && 'close' in d;
 
-interface ConfirmationSystem {
-  gbmSignal: 'RISE' | 'FALL';
-  rsiSignal: 'RISE' | 'FALL' | 'NEUTRAL';
-  momentumSignal: 'RISE' | 'FALL' | 'NEUTRAL';
-}
-
-interface ConfirmedSignal {
-  signal: 'RISE' | 'FALL' | 'NEUTRAL';
-  confidenceScore: number;
-  reason: string;
-}
-
-
 interface StrongestSignal {
     horizon: string;
     direction: 'RISE' | 'FALL' | 'HOLD';
@@ -96,7 +84,6 @@ interface StochasticLabProps {
   predictiveLogs: PredictiveTradeLog[];
   onDeletePredictiveLog: (logId: string) => void;
   deletingPredictiveLogId: string | null;
-  durationLimits: DurationLimits | null;
 }
 
 const calculateRollingAccuracy = (history: boolean[]) => {
@@ -117,24 +104,14 @@ function StochasticLab({
     executeTrade,
     predictiveLogs,
     onDeletePredictiveLog,
-    deletingPredictiveLogId,
-    durationLimits,
+    deletingPredictiveLogId
 }: StochasticLabProps) {
   const { toast } = useToast();
   const { user } = useAuth();
   const cooldownRef = useRef(false);
   
-  const [pendingLog, setPendingLog] = useState<Omit<PredictiveTradeLog, 'id' | 'contractId' | 'result' | 'pnl'> | null>(null);
-  const pendingLogRef = useRef(pendingLog);
-  useEffect(() => {
-    pendingLogRef.current = pendingLog;
-  }, [pendingLog]);
-
+  const pendingLogRef = useRef<Omit<PredictiveTradeLog, 'id' | 'contractId' | 'result' | 'pnl'> | null>(null);
   const [pendingSignal, setPendingSignal] = useState<{ signal: Signal; triggeredBy: [string, string]; epoch: number; } | null>(null);
-  const pendingSignalRef = useRef(pendingSignal);
-  useEffect(() => {
-      pendingSignalRef.current = pendingSignal;
-  }, [pendingSignal]);
   
   const [activeTab, setActiveTab] = useState('prediction');
   const [priceData, setPriceData] = useState<any[]>([]);
@@ -418,49 +395,56 @@ function StochasticLab({
         const longerHorizon = triggeredBy[1]; 
         const durationMatch = longerHorizon.match(/(\d+)([st])/);
         if (durationMatch) {
-            const requestedDuration = parseInt(durationMatch[1], 10);
-            let requestedUnit = durationMatch[2] as 's' | 't';
-            
-            let finalDuration = requestedDuration;
-            let finalUnit = requestedUnit;
-
-            if (durationLimits) {
-                if (finalUnit === 't' && durationLimits.t && durationLimits.t.max > 0) {
-                    finalDuration = Math.max(durationLimits.t.min, Math.min(requestedDuration, durationLimits.t.max));
-                } 
-                else if (finalUnit === 's' && durationLimits.s && durationLimits.s.max > 0) {
-                    finalDuration = Math.max(durationLimits.s.min, Math.min(requestedDuration, durationLimits.s.max));
-                } 
-                else {
-                    toast({ title: 'Aviso de Duração', description: `Duração ${requestedDuration}${requestedUnit} não suportada. Usando fallback.`, variant: 'default'});
-                    if (durationLimits.t && durationLimits.t.max > 0) {
-                        finalUnit = 't';
-                        finalDuration = durationLimits.t.min;
-                    } else if (durationLimits.s && durationLimits.s.max > 0) {
-                        finalUnit = 's';
-                        finalDuration = durationLimits.s.min;
-                    }
-                }
-            }
-            
-            const result = await executeTrade(
+            const duration = parseInt(durationMatch[1], 10);
+            const durationUnit = durationMatch[2] as 's' | 't';
+            await executeTrade(
                 signalToUse === 'RISE' ? 'CALL' : 'PUT',
                 1.0, 
                 activeSymbol,
                 signalToUse.toLowerCase() as 'rise' | 'fall',
-                finalDuration,
-                finalUnit,
+                duration,
+                durationUnit,
                 initiator
             );
-            return result;
         }
-        return { success: false, message: 'Duração do sinal inválida.' };
     } catch (error) {
         console.error("Master Autopilot Execution Error:", error);
         toast({ title: `❌ Erro na Execução ${initiator}`, description: error instanceof Error ? error.message : String(error), variant: "destructive" });
-        return { success: false, message: error instanceof Error ? error.message : String(error) };
     }
-  }, [activeSymbol, executeTrade, toast, durationLimits]);
+  }, [activeSymbol, executeTrade, toast]);
+
+  const evaluateTriggerConditions = useCallback((
+      newAssertiveness: Record<string, { accuracy: number; vote: Signal; }>,
+  ): { newTriggerSignal: Signal, newTriggerReason: string, newTriggeredBy: [string, string] | null } => {
+      let newTriggerSignal: Signal = 'HOLD';
+      let newTriggerReason = 'Nenhuma confirmação dupla de assertividade (> 70%).';
+      let newTriggeredBy: [string, string] | null = null;
+      const assertivenessThreshold = 70;
+
+      const horizons = ['3t', '6t', '10s', '20s', '30s', '40s'];
+
+      for (let i = 1; i < horizons.length; i++) {
+          const currentHorizonName = horizons[i];
+          const prevHorizonName = horizons[i-1];
+          const currentExpert = newAssertiveness[currentHorizonName];
+          const prevExpert = newAssertiveness[prevHorizonName];
+
+          const getEffectiveVote = (expert: { accuracy: number; vote: Signal; }) => expert.accuracy > 50 ? expert.vote : (expert.vote === 'RISE' ? 'FALL' : (expert.vote === 'FALL' ? 'RISE' : 'HOLD'));
+          const currentVote = getEffectiveVote(currentExpert);
+          const prevVote = getEffectiveVote(prevExpert);
+
+          const currentEffectiveAccuracy = Math.max(currentExpert.accuracy, 100 - currentExpert.accuracy);
+          const prevEffectiveAccuracy = Math.max(prevExpert.accuracy, 100 - prevExpert.accuracy);
+
+          if (currentEffectiveAccuracy > assertivenessThreshold && prevEffectiveAccuracy > assertivenessThreshold && currentVote === prevVote && currentVote !== 'HOLD') {
+              newTriggerSignal = currentVote;
+              newTriggeredBy = [prevHorizonName, currentHorizonName];
+              newTriggerReason = `Sinal ${currentVote} confirmado por ${prevHorizonName} (${prevEffectiveAccuracy.toFixed(0)}%) e ${currentHorizonName} (${currentEffectiveAccuracy.toFixed(0)}%).`;
+              break;
+          }
+      }
+      return { newTriggerSignal, newTriggerReason, newTriggeredBy };
+  }, []);
 
   useEffect(() => {
     if (!isAutopilotOn || cooldownRef.current || !activeSymbol || !executeTrade) return;
@@ -474,84 +458,42 @@ function StochasticLab({
         return;
     }
 
-    const horizons = [
-      { name: '3t', ticks: 3, window: 6 }, { name: '6t', ticks: 6, window: 6 },
-      { name: '10s', ticks: 10, window: 10 }, { name: '20s', ticks: 20, window: 10 },
-      { name: '30s', ticks: 30, window: 10 }, { name: '40s', ticks: 40, window: 10 },
-    ];
-    
-    // --- Lógica de Confirmação do Sinal ---
-    const evaluateTriggerConditions = (
-        newAssertiveness: Record<string, { accuracy: number; vote: Signal; }>,
-    ): { newTriggerSignal: Signal, newTriggerReason: string, newTriggeredBy: [string, string] | null } => {
-        let newTriggerSignal: Signal = 'HOLD';
-        let newTriggerReason = 'Nenhuma confirmação dupla de assertividade (> 70%).';
-        let newTriggeredBy: [string, string] | null = null;
-        const assertivenessThreshold = 70;
-
-        for (let i = 1; i < horizons.length; i++) {
-            const currentHorizonName = horizons[i].name;
-            const prevHorizonName = horizons[i-1].name;
-            const currentExpert = newAssertiveness[currentHorizonName];
-            const prevExpert = newAssertiveness[prevHorizonName];
-
-            const getEffectiveVote = (expert: { accuracy: number; vote: Signal; }) => expert.accuracy > 50 ? expert.vote : (expert.vote === 'RISE' ? 'FALL' : (expert.vote === 'FALL' ? 'RISE' : 'HOLD'));
-            const currentVote = getEffectiveVote(currentExpert);
-            const prevVote = getEffectiveVote(prevExpert);
-
-            const currentEffectiveAccuracy = Math.max(currentExpert.accuracy, 100 - currentExpert.accuracy);
-            const prevEffectiveAccuracy = Math.max(prevExpert.accuracy, 100 - prevExpert.accuracy);
-
-            if (currentEffectiveAccuracy > assertivenessThreshold && prevEffectiveAccuracy > assertivenessThreshold && currentVote === prevVote && currentVote !== 'HOLD') {
-                newTriggerSignal = currentVote;
-                newTriggeredBy = [prevHorizonName, currentHorizonName];
-                newTriggerReason = `Sinal ${currentVote} confirmado por ${prevHorizonName} (${prevEffectiveAccuracy.toFixed(0)}%) e ${currentHorizonName} (${currentEffectiveAccuracy.toFixed(0)}%). Executando...`;
-                break;
-            }
-        }
-        return { newTriggerSignal, newTriggerReason, newTriggeredBy };
-    };
-
     const newAssertiveness = Object.fromEntries(projectionExperts.map(p => [p.name, { accuracy: p.accuracy, vote: p.vote }]));
-
-    if (pendingSignalRef.current && pendingSignalRef.current.epoch < currentTick.epoch) {
-        const pending = pendingSignalRef.current;
+    
+    if (pendingSignal && pendingSignal.epoch < currentTick.epoch) {
+        const { newTriggerSignal, newTriggerReason } = evaluateTriggerConditions(newAssertiveness);
         setPendingSignal(null);
         
-        const { newTriggerSignal, newTriggerReason } = evaluateTriggerConditions(newAssertiveness);
-        
-        if (newTriggerSignal === pending.signal) {
+        if (newTriggerSignal === pendingSignal.signal) {
             cooldownRef.current = true;
-            setAutopilotStatus(newTriggerReason);
+            setAutopilotStatus(newTriggerReason + " Executando...");
             
             const assertivenessSnapshot = projectionExperts.map(p => ({
                 horizon: p.name,
                 accuracy: p.accuracy,
                 vote: p.vote,
             }));
-
-            const pendingLogData: Omit<PredictiveTradeLog, 'id' | 'contractId' | 'result' | 'pnl'> = {
+            
+            pendingLogRef.current = {
                 timestamp: new Date().toISOString(),
                 asset: activeSymbol,
                 tradeParams: {
                     direction: newTriggerSignal,
                     stake: 1.0, 
-                    duration: parseInt(pending.triggeredBy[1].replace(/[st]/, '')),
-                    durationUnit: pending.triggeredBy[1].endsWith('s') ? 's' : 't'
+                    duration: parseInt(pendingSignal.triggeredBy[1].replace(/[st]/, '')),
+                    durationUnit: pendingSignal.triggeredBy[1].endsWith('s') ? 's' : 't'
                 },
                 context: {
                     triggerReason: newTriggerReason,
                     assertivenessSnapshot: assertivenessSnapshot,
                 },
             };
-            
-            setPendingLog(pendingLogData);
 
-            executeTradeAction('Piloto', newTriggerSignal, pending.triggeredBy).finally(() => {
+            executeTradeAction('Piloto', newTriggerSignal, pendingSignal.triggeredBy).finally(() => {
                 setTimeout(() => { cooldownRef.current = false; }, 60000);
             });
         } else {
-            toast({ title: `❌ Sinal ${pending.signal} Abortado`, description: `A condição não se manteve no tick seguinte.`, variant: "destructive" });
+            toast({ title: `❌ Sinal ${pendingSignal.signal} Abortado`, description: `A condição não se manteve no tick seguinte.`, variant: "destructive" });
             setAutopilotStatus('Monitorando...');
         }
     } else {
@@ -561,11 +503,11 @@ function StochasticLab({
             const reason = `Sinal ${newTriggerSignal} detectado (${newTriggeredBy?.join(' & ')}). Aguardando confirmação...`;
             toast({ title: '⏳ Sinal Detectado!', description: reason });
             setAutopilotStatus(reason);
-        } else if (!pendingSignalRef.current) {
+        } else if (!pendingSignal) {
             setAutopilotStatus('Monitorando...');
         }
     }
-  }, [projectionExperts, isAutopilotOn, operationsLog, activeSymbol, executeTrade, setAutopilotStatus, toast, executeTradeAction, realData]);
+  }, [projectionExperts, isAutopilotOn, operationsLog, activeSymbol, executeTrade, setAutopilotStatus, toast, executeTradeAction, realData, evaluateTriggerConditions, pendingSignal]);
 
   useEffect(() => {
     const lastOp = operationsLog[0];
@@ -585,10 +527,9 @@ function StochasticLab({
       };
 
       savePredictiveTradeLog(user.uid, logToSave).catch(console.error);
-      setPendingLog(null); // Limpa o log pendente
+      pendingLogRef.current = null; // Limpa o log pendente
     }
   }, [operationsLog, user]);
-  
 
   useEffect(() => {
     onConsensusUpdate(strongestSignal);
@@ -623,6 +564,15 @@ function StochasticLab({
     return [{ theoretical: minVal, empirical: minVal }, { theoretical: maxVal, empirical: maxVal }];
   }, [qqData]);
 
+  const allAccuracy = useMemo(() => [
+      { name: '3t', ...accuracy3t },
+      { name: '6t', ...accuracy6t },
+      { name: '10s', ...accuracy10s },
+      { name: '20s', ...accuracy20s },
+      { name: '30s', ...accuracy30s },
+      { name: '40s', ...accuracy40s },
+  ], [accuracy3t, accuracy6t, accuracy10s, accuracy20s, accuracy30s, accuracy40s]);
+
   return (
     <Card className="h-full flex flex-col col-span-1 lg:col-span-3">
         <CardHeader>
@@ -630,14 +580,14 @@ function StochasticLab({
                 <FlaskConical className="h-5 w-5 text-purple-600" />
                 Laboratório Preditivo (Cientista de IA) - {activeSymbol}
             </CardTitle>
-            <CardDescription>O cientista usa GBM, RSI e Drift para prever o próximo tick e projetar o futuro.</CardDescription>
+            <CardDescription>O cientista usa GBM para projetar o futuro e medir a própria assertividade.</CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col min-h-0">
           <ScrollArea className="flex-1">
                 <div className="p-1 space-y-6">
                     <div className="flex gap-2 mb-6 flex-wrap">
                       {[
-                        { id: 'prediction', icon: TrendingUp, label: 'Previsão & Assertividade' },
+                        { id: 'prediction', icon: TrendingUp, label: 'Previsão & Projeção' },
                         { id: 'returns', icon: Activity, label: 'Retornos' },
                         { id: 'volatility', icon: BarChart, label: 'Volatilidade' },
                         { id: 'qq', icon: GitBranch, label: 'Q-Q Plot' }
@@ -682,50 +632,89 @@ function StochasticLab({
                                     <Line type="monotone" dataKey="predicted_40s_ahead" stroke="#10b981" strokeWidth={2} strokeDasharray="8 4" dot={false} name="Projeção (40s)" />
                                   </LineChart>
                                 </ResponsiveContainer>
-                                <div className="mt-4 grid grid-cols-2 lg:grid-cols-3 gap-4">
-                                    <div className="p-3 bg-slate-50 rounded border">
-                                        <TooltipProvider>
-                                            <ShadTooltip>
-                                                <TooltipTrigger asChild><p className="text-xs text-muted-foreground flex items-center gap-1.5 cursor-help">Erro Médio Absoluto (MAE) <Info className="h-3 w-3" /></p></TooltipTrigger>
-                                                <TooltipContent><p className="max-w-xs">Em média, as previsões para o próximo tick erraram por este valor. Menor é melhor.</p></TooltipContent>
-                                            </ShadTooltip>
-                                        </TooltipProvider>
-                                        <p className="text-lg font-bold font-mono">{driftCorrectionForDisplay.mae.toFixed(4)}</p>
-                                    </div>
-                                    <div className="p-3 bg-slate-50 rounded border">
-                                        <TooltipProvider>
-                                            <ShadTooltip>
-                                                <TooltipTrigger asChild><p className="text-xs text-muted-foreground flex items-center gap-1.5 cursor-help">Raiz do Erro Quadrático Médio (RMSE) <Info className="h-3 w-3" /></p></TooltipTrigger>
-                                                <TooltipContent><p className="max-w-xs">Mede o erro médio, mas penaliza erros grandes mais do que o MAE.</p></TooltipContent>
-                                            </ShadTooltip>
-                                        </TooltipProvider>
-                                        <p className="text-lg font-bold font-mono">{driftCorrectionForDisplay.rmse.toFixed(4)}</p>
-                                    </div>
-                                    <div className="p-3 bg-slate-50 rounded border">
-                                        <TooltipProvider>
-                                            <ShadTooltip>
-                                                <TooltipTrigger asChild><p className="text-xs text-muted-foreground flex items-center gap-1.5 cursor-help">Fator de Correção (Drift) <Info className="h-3 w-3" /></p></TooltipTrigger>
-                                                <TooltipContent><p className="max-w-xs">O ajuste aplicado às projeções futuras com base no viés (erro médio) recente do modelo.</p></TooltipContent>
-                                            </ShadTooltip>
-                                        </TooltipProvider>
-                                        <p className="text-lg font-bold font-mono">{driftCorrectionForDisplay.drift.toFixed(6)}</p>
-                                    </div>
-                                </div>
                               </div>
                             )}
-                            {activeTab === 'returns' && ( <div>...</div> )}
-                            {activeTab === 'volatility' && ( <div>...</div> )}
-                            {activeTab === 'qq' && ( <div>...</div> )}
+                            {activeTab === 'returns' && ( 
+                              <div>
+                                <h3 className="text-lg font-semibold mb-2">Distribuição de Retornos (Logarítmicos)</h3>
+                                <ResponsiveContainer width="100%" height={350}>
+                                  <ScatterChart>
+                                    <CartesianGrid strokeDasharray="3 3" />
+                                    <XAxis type="number" dataKey="index" name="Tick" />
+                                    <YAxis type="number" dataKey="return" name="Retorno" unit="%" domain={['auto', 'auto']} />
+                                    <Tooltip cursor={{ strokeDasharray: '3 3' }} />
+                                    <Scatter name="Retorno por Tick" data={returns} fill="#8884d8" />
+                                  </ScatterChart>
+                                </ResponsiveContainer>
+                              </div>
+                            )}
+                            {activeTab === 'volatility' && (
+                               <div>
+                                 <h3 className="text-lg font-semibold mb-2">Volatilidade Realizada (Anualizada)</h3>
+                                 <ResponsiveContainer width="100%" height={350}>
+                                     <LineChart data={volatilityData}>
+                                         <CartesianGrid strokeDasharray="3 3" />
+                                         <XAxis dataKey="time" />
+                                         <YAxis domain={[0, 'dataMax + 2']} unit="%" />
+                                         <Tooltip />
+                                         <Legend />
+                                         <Line type="monotone" dataKey="realizedVol" stroke="#82ca9d" name="Volatilidade" dot={false} />
+                                     </LineChart>
+                                 </ResponsiveContainer>
+                               </div>
+                            )}
+                            {activeTab === 'qq' && ( 
+                                <div>
+                                    <h3 className="text-lg font-semibold mb-2">Q-Q Plot: Validação da Normalidade dos Retornos</h3>
+                                    <p className="text-sm text-muted-foreground mb-4">Se os pontos seguem a linha vermelha, os retornos do ativo se comportam como uma distribuição normal, validando a premissa do modelo GBM.</p>
+                                    <ResponsiveContainer width="100%" height={350}>
+                                      <ScatterChart>
+                                        <CartesianGrid strokeDasharray="3 3" />
+                                        <XAxis type="number" dataKey="theoretical" name="Quantis Teóricos" />
+                                        <YAxis type="number" dataKey="empirical" name="Quantis Empíricos" />
+                                        <Tooltip cursor={{ strokeDasharray: '3 3' }} />
+                                        <Scatter name="Retornos" data={qqData} fill="#8884d8" shape="circle" />
+                                        <Line dataKey="empirical" data={lineData} stroke="#ff0000" strokeWidth={2} dot={false} name="Linha de Normalidade"/>
+                                      </ScatterChart>
+                                    </ResponsiveContainer>
+                                </div>
+                            )}
                         </div>
                     )}
                     
-                     {stats.observations > 0 && ( <div>...</div> )}
+                     {stats.observations > 0 && (
+                       <Card className="mt-6">
+                           <CardHeader><CardTitle>Estatísticas Descritivas dos Retornos</CardTitle></CardHeader>
+                           <CardContent className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                                <StatItem label="Observações" value={stats.observations} />
+                                <StatItem label="Média (log)" value={stats.mean + '%'} />
+                                <StatItem label="Desvio Padrão (log)" value={stats.stdDev + '%'} />
+                                <StatItem label="Vol. Anualizada" value={stats.annualizedVol + '%'} />
+                                <StatItem label="Assimetria (Skewness)" value={stats.skewness} />
+                                <StatItem label="Curtose (Kurtosis)" value={stats.kurtosis} />
+                           </CardContent>
+                       </Card>
+                     )}
+                     <Card className="mt-6">
+                        <CardHeader>
+                            <CardTitle>Painel de Assertividade dos Especialistas</CardTitle>
+                        </CardHeader>
+                        <CardContent className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+                            {allAccuracy.map(acc => (
+                                <div key={acc.name} className="p-3 border rounded-lg text-center">
+                                    <p className="font-bold text-sm text-muted-foreground">{acc.name.toUpperCase()}</p>
+                                    <p className={cn("text-2xl font-bold", getProgressColor(acc.percentage).replace('bg-', 'text-'))}>{acc.percentage.toFixed(1)}%</p>
+                                    <p className="text-xs text-muted-foreground">({acc.hits}/{acc.total})</p>
+                                </div>
+                            ))}
+                        </CardContent>
+                    </Card>
                 </div>
-                 <div className="p-1 mt-6">
+                <div className="p-1 mt-6">
                     <PredictiveLogViewer
                         logs={predictiveLogs}
                         onDeleteLog={onDeletePredictiveLog}
-                        deletingLogId={deletingPredictiveLogId}
+                        deletingLogId={deletingLogId}
                     />
                 </div>
           </ScrollArea>
@@ -733,6 +722,13 @@ function StochasticLab({
     </Card>
   );
 };
+
+const StatItem = ({ label, value }: { label: string; value: string | number }) => (
+    <div className="flex flex-col p-2 border-l-2 pl-3">
+        <span className="text-xs text-muted-foreground">{label}</span>
+        <span className="font-bold font-mono">{value}</span>
+    </div>
+);
 
 const StrongestSignalCard = ({ signal }: { signal: StrongestSignal }) => {
     const isHold = signal.direction === 'HOLD' || signal.certaintyScore === 0;
@@ -848,7 +844,7 @@ function Header() {
 };
 
 function PageContent() {
-    const { chartData, activeSymbol, operationsLog, sellContract, priceTicks, clearActiveContracts, executeTrade, durationLimits } = useDerivApiV2();
+    const { chartData, activeSymbol, operationsLog, sellContract, priceTicks, clearActiveContracts, executeTrade } = useDerivApiV2();
     const { user } = useAuth();
     const { toast } = useToast();
     const [predictiveLogs, setPredictiveLogs] = useState<PredictiveTradeLog[]>([]);
@@ -910,7 +906,6 @@ function PageContent() {
       accuracy: 50,
     });
     
-    // Autopilot State
     const [isAutopilotOn, setIsAutopilotOn] = useState(false);
     const [autopilotStatus, setAutopilotStatus] = useState('Pausado');
     const toggleAutopilot = (checked: boolean) => {
@@ -925,7 +920,7 @@ function PageContent() {
           return;
         }
 
-        let duration = 5;
+        let duration = 15;
         if (horizon.endsWith('s')) {
           duration = parseInt(horizon.replace('s', ''), 10);
         } else if (horizon.endsWith('t')) {
@@ -957,7 +952,6 @@ function PageContent() {
                         predictiveLogs={predictiveLogs}
                         onDeletePredictiveLog={handleDeletePredictiveLog}
                         deletingPredictiveLogId={deletingLogId}
-                        durationLimits={durationLimits}
                     />
                     <div className="lg:col-span-2 space-y-6">
                         <VolatilityTraderInterface 
