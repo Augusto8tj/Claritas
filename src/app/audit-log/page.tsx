@@ -400,6 +400,3 @@ export default function AuditLogPage() {
     </div>
   );
 }
-
-    
-```
