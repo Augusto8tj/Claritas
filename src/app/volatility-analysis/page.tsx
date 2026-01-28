@@ -351,9 +351,10 @@ function StochasticLab({ realData, operationsLog, activeSymbol, onConsensusUpdat
             
             if (certainty > maxCertainty) {
                 maxCertainty = certainty;
+                const direction: 'RISE' | 'FALL' | 'HOLD' = p.accuracy > 50 ? p.vote : (p.vote === 'RISE' ? 'FALL' : 'RISE');
                 bestSignal = {
                     horizon: p.name,
-                    direction: p.accuracy > 50 ? p.vote : (p.vote === 'RISE' ? 'FALL' : 'RISE'),
+                    direction: direction,
                     certaintyScore: certainty,
                     accuracy: p.accuracy,
                 };
@@ -378,8 +379,8 @@ function StochasticLab({ realData, operationsLog, activeSymbol, onConsensusUpdat
         const currentExpert = projectionExperts[i];
         const prevExpert = projectionExperts[i-1];
         
-        const currentVote = currentExpert.accuracy > 50 ? currentExpert.vote : (currentExpert.vote === 'RISE' ? 'FALL' : 'RISE');
-        const prevVote = prevExpert.accuracy > 50 ? prevExpert.vote : (prevExpert.vote === 'RISE' ? 'FALL' : 'RISE');
+        const currentVote = currentExpert.accuracy > 50 ? currentExpert.vote : (currentExpert.vote === 'RISE' ? 'FALL' : (currentExpert.vote === 'FALL' ? 'RISE' : 'HOLD'));
+        const prevVote = prevExpert.accuracy > 50 ? prevExpert.vote : (prevExpert.vote === 'RISE' ? 'FALL' : (prevExpert.vote === 'FALL' ? 'RISE' : 'HOLD'));
 
         const currentEffectiveAccuracy = Math.max(currentExpert.accuracy, 100 - currentExpert.accuracy);
         const prevEffectiveAccuracy = Math.max(prevExpert.accuracy, 100 - prevExpert.accuracy);
