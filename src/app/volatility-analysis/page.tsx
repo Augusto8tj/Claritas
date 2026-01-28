@@ -5,13 +5,13 @@ import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { useForm, FormProvider } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ScatterChart, Scatter } from 'recharts';
-import { TrendingUp, TrendingDown, HelpCircle, Bot, FlaskConical, Target, Info, Brain, Zap, Send, Loader2, ShieldCheck, GitBranch, BarChart, Activity, AlertTriangle } from 'lucide-react';
+import { TrendingUp, TrendingDown, HelpCircle, Bot, FlaskConical, Target, Info, Brain, Zap, Send, Loader2, ShieldCheck, GitBranch, BarChart, Activity, AlertTriangle, Power } from 'lucide-react';
 import { DerivApiProviderV2, useDerivApiV2 } from "@/features/trading/hooks/use-deriv-api-v2";
 import { AssetSelectorV2 } from "@/features/trading/components/deriv-trader/asset-selector-v2";
 import { ApiStatusIndicatorV2 } from "@/features/trading/components/deriv-trader/ApiStatusIndicatorV2";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { ScrollArea } from '@/components/ui/scroll-area';
-import type { ChartData, CandleData } from '@/lib/types';
+import type { ChartData, CandleData, Operation } from '@/lib/types';
 import { Progress } from "@/components/ui/progress";
 import { TooltipProvider, Tooltip as ShadTooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
@@ -20,6 +20,9 @@ import { volatilityTraderSchema, type VolatilityTraderFormValues } from "@/featu
 import VolatilityTraderInterface from "@/features/trading/components/deriv-trader/volatility-trader-interface";
 import { OperationsLogV2 } from "@/features/trading/components/deriv-trader/operations-log-v2";
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Label } from '@/components/ui/label';
+import { Switch } from '@/components/ui/switch';
+import { useToast } from '@/hooks/use-toast';
 
 
 // Aproximação da função quantil normal inversa
@@ -53,71 +56,8 @@ interface ConfirmationSystem {
 interface ConfirmedSignal {
   signal: 'RISE' | 'FALL' | 'NEUTRAL';
   confidenceScore: number;
+  reason: string;
 }
-
-// --- NOVAS FUNÇÕES DE ANÁLISE ---
-
-const calculateRSI = (prices: number[], period: number = 14): number => {
-  if (prices.length < period + 1) return 50;
-  const changes = prices.slice(1).map((p, i) => p - prices[i]);
-  let gains = 0, losses = 0;
-  
-  for (let i = 0; i < period; i++) {
-    const change = changes[changes.length - period + i];
-    if (change > 0) gains += change;
-    else losses -= change;
-  }
-  
-  let avgGain = gains / period;
-  let avgLoss = losses / period;
-
-  for (let i = changes.length - period + 1; i < changes.length; i++) {
-    const change = changes[i];
-    avgGain = (avgGain * (period - 1) + (change > 0 ? change : 0)) / period;
-    avgLoss = (avgLoss * (period - 1) + (change < 0 ? -change : 0)) / period;
-  }
-
-  if (avgLoss === 0) return 100;
-  const rs = avgGain / avgLoss;
-  return 100 - (100 / (1 + rs));
-};
-
-const calculateMomentumScore = (prices: number[]): number => {
-    if (prices.length < 10) return 0;
-    const last = prices[prices.length - 1];
-    const past = prices[prices.length - 10];
-    return last - past;
-};
-
-const calculateEntropy = (prices: number[]): number => {
-  if (prices.length < 10) return 0;
-  const returns = prices.slice(1).map((p, i) => Math.abs(Math.log(p / (prices[i] === 0 ? 1 : prices[i]))));
-  const sum = returns.reduce((a, b) => a + b, 0);
-  if (sum === 0) return 0;
-  const probs = returns.map(r => r / sum);
-  return -probs.reduce((h, p) => h + (p > 0 ? p * Math.log2(p) : 0), 0);
-};
-
-const getConfirmedSignal = (confirmations: ConfirmationSystem): ConfirmedSignal => {
-    let score = 0;
-    if (confirmations.gbmSignal === 'RISE') score += 2;
-    else score -= 2;
-
-    if (confirmations.rsiSignal === 'RISE') score += 1.5;
-    else if (confirmations.rsiSignal === 'FALL') score -= 1.5;
-
-    if (confirmations.momentumSignal === 'RISE') score += 1;
-    else if (confirmations.momentumSignal === 'FALL') score -= 1;
-    
-    // Converte o score para uma escala de -100 a 100
-    const confidenceScore = (score / 4.5) * 100;
-
-    let signal: 'RISE' | 'FALL' | 'NEUTRAL' = 'NEUTRAL';
-    if (confidenceScore > 20) signal = 'RISE';
-    else if (confidenceScore < -20) signal = 'FALL';
-    
-    return { signal, confidenceScore };
-};
 
 
 interface StrongestSignal {
@@ -129,10 +69,15 @@ interface StrongestSignal {
 
 interface StochasticLabProps {
   realData: ChartData[];
+  operationsLog: Operation[];
   activeSymbol: string | null;
-  onConsensusUpdate: (consensus: any) => void; // Tipo genérico por enquanto
+  onConsensusUpdate: (consensus: any) => void;
+  isAutopilotOn: boolean;
+  setAutopilotStatus: (status: string) => void;
+  executeTrade: ReturnType<typeof useDerivApiV2>['executeTrade'];
 }
 
+// FIX: Moved getProgressColor to module scope to be accessible by ProjectionExpertsPanel
 const getProgressColor = (percentage: number) => {
     if (percentage > 75) return 'bg-green-500';
     if (percentage > 60) return 'bg-blue-500';
@@ -140,6 +85,7 @@ const getProgressColor = (percentage: number) => {
     return 'bg-gray-400';
 };
 
+// FIX: Moved calculateRollingAccuracy to module scope to be accessible by useMemo
 const calculateRollingAccuracy = (history: boolean[]) => {
     const hits = history.filter(h => h).length;
     const total = history.length;
@@ -148,7 +94,9 @@ const calculateRollingAccuracy = (history: boolean[]) => {
 };
 
 
-function StochasticLab({ realData, activeSymbol, onConsensusUpdate }: StochasticLabProps) {
+function StochasticLab({ realData, operationsLog, activeSymbol, onConsensusUpdate, isAutopilotOn, setAutopilotStatus, executeTrade }: StochasticLabProps) {
+  const { toast } = useToast();
+  const cooldownRef = useRef(false);
   const [activeTab, setActiveTab] = useState('prediction');
   const [priceData, setPriceData] = useState<any[]>([]);
   const [lastPrice, setLastPrice] = useState<number | null>(null);
@@ -165,7 +113,6 @@ function StochasticLab({ realData, activeSymbol, onConsensusUpdate }: Stochastic
   const [futurePath30s, setFuturePath30s] = useState<any[]>([]);
   const [futurePath40s, setFuturePath40s] = useState<any[]>([]);
   
-  const driftCorrectionRef = useRef(0);
   const [driftCorrectionForDisplay, setDriftCorrectionForDisplay] = useState({drift: 0, mae: 0, rmse: 0});
 
   const [predictionAccuracyHistory3t, setPredictionAccuracyHistory3t] = useState<boolean[]>([]);
@@ -273,7 +220,6 @@ function StochasticLab({ realData, activeSymbol, onConsensusUpdate }: Stochastic
         const newRMSE = Math.sqrt(sumSquaredErrors / errors.length);
         const newDrift = errors.reduce((a,e) => a + e, 0) / errors.length;
         
-        driftCorrectionRef.current = newDrift;
         setDriftCorrectionForDisplay(prev => {
             if (prev.drift !== newDrift || prev.mae !== newMAE) {
                 return { drift: newDrift, mae: newMAE, rmse: newRMSE };
@@ -340,12 +286,12 @@ function StochasticLab({ realData, activeSymbol, onConsensusUpdate }: Stochastic
       };
 
       const horizons = [
-          { name: '3t', ticks: 3, window: 6, ref: pendingPredictions3tRef, setHistory: setPredictionAccuracyHistory3t },
-          { name: '6t', ticks: 6, window: 6, ref: pendingPredictions6tRef, setHistory: setPredictionAccuracyHistory6t },
-          { name: '10s', ticks: 10, window: 10, ref: pendingPredictions10sRef, setHistory: setPredictionAccuracyHistory10s }, 
-          { name: '20s', ticks: 20, window: 10, ref: pendingPredictions20sRef, setHistory: setPredictionAccuracyHistory20s }, 
-          { name: '30s', ticks: 30, window: 10, ref: pendingPredictions30sRef, setHistory: setPredictionAccuracyHistory30s },
-          { name: '40s', ticks: 40, window: 10, ref: pendingPredictions40sRef, setHistory: setPredictionAccuracyHistory40s }, 
+          { name: '3t', ticks: 3, window: 6 },
+          { name: '6t', ticks: 6, window: 6 },
+          { name: '10s', ticks: 10, window: 10 }, 
+          { name: '20s', ticks: 20, window: 10 }, 
+          { name: '30s', ticks: 30, window: 10 },
+          { name: '40s', ticks: 40, window: 10 }, 
       ];
       
       horizons.forEach(h => {
@@ -388,47 +334,7 @@ function StochasticLab({ realData, activeSymbol, onConsensusUpdate }: Stochastic
   const accuracy30s = useMemo(() => calculateRollingAccuracy(predictionAccuracyHistory30s), [predictionAccuracyHistory30s]);
   const accuracy40s = useMemo(() => calculateRollingAccuracy(predictionAccuracyHistory40s), [predictionAccuracyHistory40s]);
   
-  const strongestSignal = useMemo((): StrongestSignal => {
-    const projections = [
-      { name: '3t', path: futurePath3t, accuracy: accuracy3t.percentage },
-      { name: '6t', path: futurePath6t, accuracy: accuracy6t.percentage },
-      { name: '10s', path: futurePath10s, accuracy: accuracy10s.percentage },
-      { name: '20s', path: futurePath20s, accuracy: accuracy20s.percentage },
-      { name: '30s', path: futurePath30s, accuracy: accuracy30s.percentage },
-      { name: '40s', path: futurePath40s, accuracy: accuracy40s.percentage },
-    ];
-    
-    let bestSignal: StrongestSignal = { horizon: 'N/A', direction: 'HOLD', certaintyScore: 0, accuracy: 50 };
-    let maxCertainty = 0;
-
-    projections.forEach(p => {
-        if (p.path.length > 1) {
-            const certainty = Math.abs(p.accuracy - 50) * 2;
-            
-            if (certainty > maxCertainty) {
-                maxCertainty = certainty;
-                const direction = p.path[p.path.length - 1].price > p.path[0].price ? 'RISE' : 'FALL';
-                bestSignal = {
-                    horizon: p.name,
-                    direction,
-                    certaintyScore: p.accuracy > 50 ? certainty : -certainty,
-                    accuracy: p.accuracy,
-                };
-            }
-        }
-    });
-
-    return bestSignal;
-  }, [
-    futurePath3t, accuracy3t,
-    futurePath6t, accuracy6t,
-    futurePath10s, accuracy10s,
-    futurePath20s, accuracy20s,
-    futurePath30s, accuracy30s,
-    futurePath40s, accuracy40s,
-  ]);
-  
-  const projectionExperts = useMemo(() => ([
+   const projectionExperts = useMemo(() => ([
       { name: '3t', vote: futurePath3t.length > 1 ? (futurePath3t[futurePath3t.length - 1].price > futurePath3t[0].price ? 'RISE' : 'FALL') : 'HOLD', accuracy: accuracy3t.percentage },
       { name: '6t', vote: futurePath6t.length > 1 ? (futurePath6t[futurePath6t.length - 1].price > futurePath6t[0].price ? 'RISE' : 'FALL') : 'HOLD', accuracy: accuracy6t.percentage },
       { name: '10s', vote: futurePath10s.length > 1 ? (futurePath10s[futurePath10s.length - 1].price > futurePath10s[0].price ? 'RISE' : 'FALL') : 'HOLD', accuracy: accuracy10s.percentage },
@@ -437,6 +343,78 @@ function StochasticLab({ realData, activeSymbol, onConsensusUpdate }: Stochastic
       { name: '40s', vote: futurePath40s.length > 1 ? (futurePath40s[futurePath40s.length - 1].price > futurePath40s[0].price ? 'RISE' : 'FALL') : 'HOLD', accuracy: accuracy40s.percentage },
   ]), [futurePath3t, accuracy3t, futurePath6t, accuracy6t, futurePath10s, accuracy10s, futurePath20s, accuracy20s, futurePath30s, accuracy30s, futurePath40s, accuracy40s]);
 
+  const strongestSignal = useMemo((): StrongestSignal => {
+    let bestSignal: StrongestSignal = { horizon: 'N/A', direction: 'HOLD', certaintyScore: 0, accuracy: 50 };
+    let maxCertainty = 0;
+
+    projectionExperts.forEach(p => {
+        if (p.vote !== 'HOLD') {
+            const certainty = Math.abs(p.accuracy - 50) * 2;
+            
+            if (certainty > maxCertainty) {
+                maxCertainty = certainty;
+                bestSignal = {
+                    horizon: p.name,
+                    direction: p.vote,
+                    certaintyScore: p.accuracy > 50 ? certainty : -certainty,
+                    accuracy: p.accuracy,
+                };
+            }
+        }
+    });
+    return bestSignal;
+  }, [projectionExperts]);
+
+  // --- PILOTO AUTOMÁTICO ---
+  useEffect(() => {
+    if (!isAutopilotOn || cooldownRef.current || !activeSymbol || !executeTrade) return;
+
+    const activeAutopilotTrade = operationsLog.find(op => op.initiator === 'Piloto' && op.status === 'pending');
+    if (activeAutopilotTrade) {
+        setAutopilotStatus(`Gerindo posição #${activeAutopilotTrade.id}`);
+        return;
+    }
+    
+    let tradeExecuted = false;
+    for (let i = 1; i < projectionExperts.length; i++) {
+        const currentExpert = projectionExperts[i];
+        const prevExpert = projectionExperts[i-1];
+        
+        if (currentExpert.accuracy > 70 && prevExpert.accuracy > 70 && currentExpert.vote === prevExpert.vote && currentExpert.vote !== 'HOLD') {
+            const statusMessage = `Sinal ${currentExpert.vote} detectado para ${currentExpert.name}. Executando...`;
+            setAutopilotStatus(statusMessage);
+            toast({ title: '🤖 Piloto Automático Ativado!', description: statusMessage });
+
+            const [durationStr, unit] = currentExpert.name.split(/([st])/);
+            const duration = parseInt(durationStr, 10);
+            
+            executeTrade(
+                currentExpert.vote === 'RISE' ? 'CALL' : 'PUT',
+                1.0, // Stake fixo para o piloto
+                activeSymbol,
+                currentExpert.vote.toLowerCase() as 'rise' | 'fall',
+                duration,
+                unit as 's' | 't',
+                'Piloto'
+            );
+
+            cooldownRef.current = true;
+            setTimeout(() => {
+                cooldownRef.current = false;
+                setAutopilotStatus('Monitorando...');
+            }, 60000); // Cooldown de 60 segundos
+
+            tradeExecuted = true;
+            break;
+        }
+    }
+
+    if (!tradeExecuted) {
+        setAutopilotStatus('Monitorando...');
+    }
+
+  }, [projectionExperts, isAutopilotOn, operationsLog, activeSymbol, executeTrade, setAutopilotStatus, toast]);
+  
 
   useEffect(() => {
     onConsensusUpdate(strongestSignal);
@@ -630,6 +608,43 @@ const ProjectionExpertsPanel = ({ experts }: { experts: { name: string; vote: 'R
     </Card>
 );
 
+function VolatilityAutopilotInterface({ isAutopilotOn, toggleAutopilot, autopilotStatus }: { isAutopilotOn: boolean, toggleAutopilot: (checked: boolean) => void, autopilotStatus: string }) {
+    return (
+        <Card>
+            <CardHeader>
+                <CardTitle className="font-headline flex items-center gap-2">
+                    <Bot className="h-5 w-5 text-primary" />
+                    Piloto Automático Preditivo
+                </CardTitle>
+                <CardDescription>
+                    Executa trades automaticamente com base na confirmação dupla de especialistas.
+                </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+                <div className="flex items-center justify-between rounded-lg border p-4">
+                    <Label htmlFor="autopilot-switch" className="font-semibold">Ativar Piloto</Label>
+                    <Switch
+                        id="autopilot-switch"
+                        checked={isAutopilotOn}
+                        onCheckedChange={toggleAutopilot}
+                    />
+                </div>
+                 <Alert className={cn(
+                     "text-sm",
+                     autopilotStatus === 'Pausado' && "bg-muted/50",
+                     autopilotStatus.startsWith('Gerindo') && "bg-blue-500/10 border-blue-500/50 text-blue-700",
+                     autopilotStatus.startsWith('Sinal') && "bg-green-500/10 border-green-500/50 text-green-700",
+                 )}>
+                    <AlertTitle className="font-semibold">Status do Piloto</AlertTitle>
+                    <AlertDescription>
+                        {autopilotStatus}
+                    </AlertDescription>
+                </Alert>
+            </CardContent>
+        </Card>
+    );
+}
+
 function Header() {
     const { activeSymbol, setActiveSymbol, assetGroups, isAssetsLoading } = useDerivApiV2();
     return (
@@ -646,31 +661,51 @@ function Header() {
 };
 
 function PageContent() {
-    const { chartData, activeSymbol, operationsLog, sellContract, priceTicks, clearActiveContracts } = useDerivApiV2();
+    const { chartData, activeSymbol, operationsLog, sellContract, priceTicks, clearActiveContracts, executeTrade } = useDerivApiV2();
     const form = useForm<VolatilityTraderFormValues>({
         resolver: zodResolver(volatilityTraderSchema),
         defaultValues: {
             stake: 1.0,
-            duration: 5,
+            duration: 15, // Defaulting to minimum
         },
     });
 
-    // FIX: Initialize confirmedSignal state to match the shape expected by VolatilityTraderInterface
     const [confirmedSignal, setConfirmedSignal] = useState<any>({
       direction: 'HOLD',
       certaintyScore: 0,
       horizon: 'N/A',
       accuracy: 50,
     });
+    
+    // Autopilot State
+    const [isAutopilotOn, setIsAutopilotOn] = useState(false);
+    const [autopilotStatus, setAutopilotStatus] = useState('Pausado');
+    const toggleAutopilot = (checked: boolean) => {
+        setIsAutopilotOn(checked);
+        setAutopilotStatus(checked ? 'Monitorando...' : 'Pausado');
+    };
 
     return (
         <FormProvider {...form}>
             <div className="flex-1 space-y-4 p-4 sm:p-8 pt-6">
                 <Header />
                 <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
-                    <StochasticLab realData={chartData} activeSymbol={activeSymbol} onConsensusUpdate={setConfirmedSignal} />
+                    <StochasticLab 
+                        realData={chartData} 
+                        activeSymbol={activeSymbol} 
+                        onConsensusUpdate={setConfirmedSignal}
+                        isAutopilotOn={isAutopilotOn}
+                        setAutopilotStatus={setAutopilotStatus}
+                        executeTrade={executeTrade}
+                        operationsLog={operationsLog}
+                    />
                     <div className="lg:col-span-2 space-y-6">
                         <VolatilityTraderInterface symbol={activeSymbol || ''} consensus={confirmedSignal} />
+                        <VolatilityAutopilotInterface 
+                            isAutopilotOn={isAutopilotOn} 
+                            toggleAutopilot={toggleAutopilot}
+                            autopilotStatus={autopilotStatus}
+                        />
                         <OperationsLogV2 operations={operationsLog} sellContract={sellContract} priceTicks={priceTicks} clearActiveContracts={clearActiveContracts}/>
                     </div>
                 </div>
