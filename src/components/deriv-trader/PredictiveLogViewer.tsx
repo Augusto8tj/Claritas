@@ -14,6 +14,12 @@ import type { PredictiveTradeLog } from '@/lib/types';
 import { cn } from '@/lib/utils';
 import { Archive, BrainCircuit, CheckCircle, HelpCircle, Loader2, Target, Trash2, TrendingDown, TrendingUp, XCircle, FilePieChart, ChevronsUpDown } from 'lucide-react';
 import { useToast } from "@/hooks/use-toast";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 
 interface PredictiveLogViewerProps {
@@ -114,15 +120,34 @@ export default function PredictiveLogViewer({
                 </CardDescription>
             </div>
              {logs.length > 0 && (
-                <div className="flex flex-col sm:flex-row gap-2">
-                    <Button variant="outline" size="sm" onClick={toggleAll} className="w-full sm:w-auto">
-                        <ChevronsUpDown className="mr-2 h-4 w-4" />
-                        {openItems.length === logs.length ? 'Recolher Tudo' : 'Expandir Tudo'}
-                    </Button>
-                    <Button variant="outline" size="sm" onClick={handleCsvExport} className="w-full sm:w-auto">
-                        <FilePieChart className="mr-2 h-4 w-4" />
-                        Gerar Relatório CSV
-                    </Button>
+                <div className="flex items-center gap-2">
+                    <TooltipProvider>
+                        <Tooltip>
+                            <TooltipTrigger asChild>
+                                <Button variant="outline" size="icon" onClick={toggleAll} className="sm:hidden">
+                                <ChevronsUpDown className="h-4 w-4" />
+                                </Button>
+                            </TooltipTrigger>
+                            <TooltipContent><p>{openItems.length === logs.length ? 'Recolher Tudo' : 'Expandir Tudo'}</p></TooltipContent>
+                        </Tooltip>
+                        <Button variant="outline" size="sm" onClick={toggleAll} className="hidden sm:flex items-center">
+                            <ChevronsUpDown className="mr-2 h-4 w-4" />
+                            {openItems.length === logs.length ? 'Recolher Tudo' : 'Expandir Tudo'}
+                        </Button>
+
+                        <Tooltip>
+                            <TooltipTrigger asChild>
+                                <Button variant="outline" size="icon" onClick={handleCsvExport} className="sm:hidden">
+                                    <FilePieChart className="h-4 w-4" />
+                                </Button>
+                            </TooltipTrigger>
+                            <TooltipContent><p>Gerar Relatório CSV</p></TooltipContent>
+                        </Tooltip>
+                        <Button variant="outline" size="sm" onClick={handleCsvExport} className="hidden sm:flex items-center">
+                            <FilePieChart className="mr-2 h-4 w-4" />
+                            Gerar Relatório CSV
+                        </Button>
+                    </TooltipProvider>
                 </div>
             )}
         </div>

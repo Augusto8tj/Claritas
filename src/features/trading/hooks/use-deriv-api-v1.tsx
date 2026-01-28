@@ -443,6 +443,7 @@ const executeTrade = useCallback(async (
         }
 
         const sanitizedStake = parseFloat(stake.toFixed(2));
+        const sanitizedDuration = Math.round(duration);
 
         const proposalResponse: any = await makeRequest({ 
             "proposal": 1,
@@ -450,7 +451,7 @@ const executeTrade = useCallback(async (
             "basis": "stake",
             "contract_type": contractType,
             "currency": "USD",
-            "duration": duration,
+            "duration": sanitizedDuration,
             "duration_unit": durationUnit,
             "symbol": symbol,
         });
@@ -482,7 +483,7 @@ const executeTrade = useCallback(async (
             stake: sanitizedStake,
             status: 'pending',
             timestamp: new Date(purchaseTimeMs).toISOString(),
-            duration: duration,
+            duration: sanitizedDuration,
             durationUnit: durationUnit,
             initiator,
             entryPrice: entryPrice,

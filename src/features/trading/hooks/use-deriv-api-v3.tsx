@@ -370,6 +370,7 @@ export const DerivApiProviderV3 = ({ children }: { children: ReactNode }) => {
           }
 
           const sanitizedStake = parseFloat(stake.toFixed(2));
+          const sanitizedDuration = Math.round(duration);
 
           const proposalResponse: any = await makeRequest({ 
               "proposal": 1,
@@ -377,7 +378,7 @@ export const DerivApiProviderV3 = ({ children }: { children: ReactNode }) => {
               "basis": "stake",
               "contract_type": contractType,
               "currency": "USD",
-              "duration": duration,
+              "duration": sanitizedDuration,
               "duration_unit": durationUnit,
               "symbol": symbol,
           });
@@ -397,7 +398,7 @@ export const DerivApiProviderV3 = ({ children }: { children: ReactNode }) => {
 
           const isSellable = durationUnit !== 't';
           
-          const durationInSeconds = getDurationInSeconds(duration, durationUnit);
+          const durationInSeconds = getDurationInSeconds(sanitizedDuration, durationUnit);
           const purchaseTimeMs = (buyResult.purchase_time || Math.floor(Date.now() / 1000)) * 1000;
           const expirationTimeMs = purchaseTimeMs + durationInSeconds * 1000;
 
@@ -408,7 +409,7 @@ export const DerivApiProviderV3 = ({ children }: { children: ReactNode }) => {
               stake: sanitizedStake,
               status: 'pending',
               timestamp: new Date(purchaseTimeMs).toISOString(),
-              duration: duration,
+              duration: sanitizedDuration,
               durationUnit: durationUnit,
               initiator,
               entryPrice: entryPrice,

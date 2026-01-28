@@ -163,6 +163,7 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
 
   const [activeSymbol, setActiveSymbol] = useState<string | null>('1HZ10V');
   const [chartData, setChartData] = useState<ChartData[]>([]);
+  const [botCandleData, setBotCandleData] = useState<CandleData[]>([]);
   const [priceTicks, setPriceTicks] = useState<TickData[]>([]); 
   const [isChartLoading, setIsChartLoading] = useState(true);
   const [chartError, setChartError] = useState<string | null>(null);
@@ -170,10 +171,10 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
   const chartTypeRef = useRef(chartType);
   const [timePeriod, setTimePeriod] = useState<TimePeriod>('1m');
   const activeSubscriptionIdRef = useRef<string | null>(null);
+  const botSubscriptionIdRef = useRef<string | null>(null);
   const [tradeAnnotations, setTradeAnnotations] = useState<TradeAnnotation[]>([]);
   const [dataVersion, setDataVersion] = useState(0); 
   const [durationLimits, setDurationLimits] = useState<DurationLimits | null>(null);
-  const [botCandleData, setBotCandleData] = useState<CandleData[]>([]);
 
   const wsRef = useRef<WebSocket | null>(null);
   const [isConnected, setIsConnected] = useState(false);
@@ -372,6 +373,7 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
           }
 
           const sanitizedStake = parseFloat(stake.toFixed(2));
+          const sanitizedDuration = Math.round(duration);
 
           const proposalResponse: any = await makeRequest({ 
               "proposal": 1,
@@ -379,7 +381,7 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
               "basis": "stake",
               "contract_type": contractType,
               "currency": "USD",
-              "duration": duration,
+              "duration": sanitizedDuration,
               "duration_unit": durationUnit,
               "symbol": symbol,
           });
@@ -399,7 +401,7 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
 
           const isSellable = durationUnit !== 't';
           
-          const durationInSeconds = getDurationInSeconds(duration, durationUnit);
+          const durationInSeconds = getDurationInSeconds(sanitizedDuration, durationUnit);
           const purchaseTimeMs = (buyResult.purchase_time || Math.floor(Date.now() / 1000)) * 1000;
           const expirationTimeMs = purchaseTimeMs + durationInSeconds * 1000;
 
@@ -410,7 +412,7 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
               stake: sanitizedStake,
               status: 'pending',
               timestamp: new Date(purchaseTimeMs).toISOString(),
-              duration: duration,
+              duration: sanitizedDuration,
               durationUnit: durationUnit,
               initiator,
               entryPrice: entryPrice,
@@ -437,7 +439,7 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
             success: true,
             message: `Ordem do tipo "${contractType}" para ${symbol} no valor de ${sanitizedStake} USD executada com sucesso.`,
             contractId: buyResult.contract_id,
-            entryPrice: entryPrice,
+            entryPrice,
           };
         } catch (error) {
            console.error("[Deriv Hook] Erro durante a negociação:", error);
@@ -482,273 +484,321 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
   useEffect(() => {
     if (!activeToken || isLoading) {
       if (wsRef.current) wsRef.current.close();
+      if (pingIntervalRef.current) clearInterval(pingIntervalRef.current);
       return;
     }
-  
+    
     const connect = () => {
-      setIsConnecting(true);
-      setAccountBalance({ balance: null, currency: null, loading: true });
-      setConnectionError(null);
-      setIsAssetsLoading(true);
-    
-      if (wsRef.current) {
-          wsRef.current.close();
-          wsRef.current = null;
-      }
-  
-      const ws = new WebSocket(`wss://ws.derivws.com/websockets/v3?app_id=${DERIV_APP_ID}`);
-      wsRef.current = ws;
+        setIsConnecting(true);
+        setAccountBalance({ balance: null, currency: null, loading: true });
+        setConnectionError(null);
+        setIsAssetsLoading(true);
       
-      ws.onmessage = (event) => {
-          try {
-              const response = JSON.parse(event.data);
-              const reqId = response.req_id;
+        if (wsRef.current) {
+            wsRef.current.close();
+            wsRef.current = null;
+        }
     
-              if (reqId && promisesRef.current.has(String(reqId))) {
-                  const promise = promisesRef.current.get(String(reqId));
-                  if (promise) {
-                    if (response.error) {
-                        const errorMessage = response.error.message || `Unknown API error. Code: ${response.error.code || 'N/A'}`;
-                        promise.reject(new Error(`${errorMessage}`));
-                    } else {
-                        queueMicrotask(() => promise.resolve(response));
-                    }
-                    promisesRef.current.delete(String(reqId));
-                  }
-              }
-              
-              if (response.error && response.error.message) {
-                   if (
-                      response.error.code !== 'AlreadySubscribed' && 
-                      response.error.code !== 'SellNotAvailable' &&
-                      response.error.code !== 'ContractSellNotAvailable'
-                   ) {
-                    console.error('[Deriv WS] Error:', response.error.message);
-                  }
-              }
-  
-              switch (response.msg_type) {
-                  case 'balance':
-                      setAccountBalance({ balance: response.balance.balance, currency: response.balance.currency, loading: false });
-                      break;
-                   case 'proposal_open_contract':
-                        const contract = response.proposal_open_contract;
-                        if (!contract) return;
+        const ws = new WebSocket(`wss://ws.derivws.com/websockets/v3?app_id=${DERIV_APP_ID}`);
+        wsRef.current = ws;
+        
+        ws.onmessage = (event) => {
+    try {
+        const response = JSON.parse(event.data);
+        
+        if (response.msg_type === 'ping' || response.pong) {
+            return;
+        }
+        
+        const reqId = response.req_id;
+        
+        if (reqId && promisesRef.current.has(String(reqId))) {
+            const promise = promisesRef.current.get(String(reqId));
+            if (promise) {
+                if (response.error) {
+                    promise.reject(new Error(response.error.message));
+                } else {
+                    promise.resolve(response);
+                }
+                promisesRef.current.delete(String(reqId));
+            }
+            return;
+        }
 
-                        if ((contract.contract_type || '').startsWith('MULT')) {
-                          return;
-                        }
+        if (response.error && response.error.message) {
+             if (response.error.code !== 'AlreadySubscribed' && 
+                 response.error.code !== 'SellNotAvailable' && 
+                 response.error.code !== 'ContractSellNotAvailable') {
+              console.error(`[Deriv WS] Error:`, response.error.message);
+            }
+             return;
+        }
 
-                        setAndPersistOperationsLog(prevLog => {
-                            const existingOpIndex = prevLog.findIndex(op => op.id === contract.contract_id);
-                            const isSold = contract.is_sold === 1;
-                    
-                            if (existingOpIndex !== -1) {
-                                // UPDATE EXISTING OPERATION
-                                const updatedLog = [...prevLog];
-                                const op = updatedLog[existingOpIndex];
-                    
-                                if (op.status === 'pending') {
-                                    if (isSold) {
-                                        const newStatus = contract.profit >= 0 ? 'won' : 'lost';
-                                        const exitPrice = contract.exit_tick_display_value ? parseFloat(contract.exit_tick_display_value) : contract.sell_spot ? parseFloat(contract.sell_spot) : op.exitPrice;
-                                        const sellTime = contract.sell_time ? new Date(contract.sell_time * 1000).toISOString() : new Date().toISOString();
+        switch (response.msg_type) {
+            case 'balance':
+                setAccountBalance({ 
+                    balance: response.balance.balance, 
+                    currency: response.balance.currency, 
+                    loading: false 
+                });
+                break;
+            case 'proposal_open_contract':
+                const contract = response.proposal_open_contract;
+                if (!contract || (contract.contract_type || '').startsWith('MULT')) {
+                    return;
+                }
 
-                                        updatedLog[existingOpIndex] = { ...op, status: newStatus, result: contract.profit, exitPrice: exitPrice, exitTimestamp: sellTime };
-                                        
-                                        updateTradeAnnotation(String(contract.contract_id), { status: newStatus, profit: contract.profit, exitPrice, exitTime: contract.sell_time });
-                                        
-                                        const toastMessage = {
-                                            title: `Posição Fechada (${op.asset})`,
-                                            description: `Resultado: ${contract.currency} ${contract.profit.toFixed(2)}`,
-                                            variant: newStatus === 'won' ? 'default' : 'destructive',
-                                        };
-                                        
-                                        setToastQueue(prev => [...prev, toastMessage]);
+                setAndPersistOperationsLog(prevLog => {
+                    const existingOpIndex = prevLog.findIndex(op => op.id === contract.contract_id);
+                    const isSold = contract.is_sold === 1;
                     
-                                        if (wsRef.current?.readyState === WebSocket.OPEN) {
-                                            wsRef.current.send(JSON.stringify({"balance": 1}));
-                                        }
-                                        return updatedLog;
-                                    } else if (op.contractType?.startsWith('MULT') && contract.profit !== op.result) {
-                                        updatedLog[existingOpIndex] = { ...op, result: contract.profit };
-                                        return updatedLog;
-                                    }
-                                }
-                                return prevLog;
-                    
-                            } else if (!isSold) {
-                                // ADD NEW EXTERNALLY OPENED OPERATION
-                                const direction = (contract.contract_type || '').includes('CALL') ? 'rise' : 'fall';
-                                const purchaseTime = contract.purchase_time || Math.floor(Date.now() / 1000);
-                                const durationInSeconds = contract.date_expiry ? (contract.date_expiry - purchaseTime) : 0;
-                                const durationUnit: DurationUnit = 's'; // Safe default
-    
-                                const newOperation: Operation = {
-                                    id: contract.contract_id,
-                                    asset: contract.symbol,
-                                    direction: direction,
-                                    stake: contract.buy_price || 0,
-                                    status: 'pending',
-                                    result: contract.profit,
-                                    timestamp: new Date(purchaseTime * 1000).toISOString(),
-                                    initiator: 'Manual',
-                                    entryPrice: parseFloat(contract.entry_spot_display_value || contract.entry_tick_display_value || '0'),
-                                    isSellable: contract.is_sellable === 1,
-                                    expirationTime: contract.date_expiry ? contract.date_expiry * 1000 : undefined,
-                                    duration: durationInSeconds,
-                                    durationUnit: durationUnit,
-                                    multiplier: contract.multiplier,
-                                    contractType: contract.contract_type,
-                                };
+                    if (existingOpIndex !== -1) {
+                        // UPDATE EXISTING OPERATION
+                        const updatedLog = [...prevLog];
+                        const op = updatedLog[existingOpIndex];
+                        
+                        if (op.status === 'pending') {
+                            if (isSold) {
+                                const newStatus = contract.profit >= 0 ? 'won' : 'lost';
+                                const exitPrice = contract.exit_tick_display_value 
+                                    ? parseFloat(contract.exit_tick_display_value) 
+                                    : contract.sell_spot 
+                                    ? parseFloat(contract.sell_spot) 
+                                    : op.exitPrice;
+                                const sellTime = contract.sell_time 
+                                    ? new Date(contract.sell_time * 1000).toISOString() 
+                                    : new Date().toISOString();
                                 
-                                addTradeAnnotation({
-                                    contractId: String(newOperation.id),
-                                    entryTime: purchaseTime,
-                                    entryPrice: newOperation.entryPrice!,
-                                    direction: newOperation.direction,
-                                    status: 'pending',
-                                    stake: newOperation.stake,
-                                    symbol: newOperation.asset,
-                                    expirationTime: newOperation.expirationTime,
-                                    contractType: (contract.contract_type || '').startsWith('MULT') ? 'multiplier' : 'option'
+                                updatedLog[existingOpIndex] = { ...op, status: newStatus, result: contract.profit, exitPrice: exitPrice, exitTimestamp: sellTime };
+                                
+                                updateTradeAnnotation(String(contract.contract_id), { 
+                                    status: newStatus, 
+                                    profit: contract.profit, 
+                                    exitPrice, 
+                                    exitTime: contract.sell_time 
                                 });
-                    
-                                return [newOperation, ...prevLog];
+                                
+                                setToastQueue(prev => [...prev, {
+                                    title: `Posição Fechada (${op.asset})`,
+                                    description: `Resultado: ${contract.currency} ${contract.profit.toFixed(2)}`,
+                                    variant: newStatus === 'won' ? 'default' : 'destructive',
+                                }]);
+
+                                if (wsRef.current?.readyState === WebSocket.OPEN) {
+                                    wsRef.current.send(JSON.stringify({"balance": 1}));
+                                }
+                                return updatedLog;
+                            } else if (op.contractType?.startsWith('MULT') && contract.profit !== op.result) {
+                                updatedLog[existingOpIndex] = { ...op, result: contract.profit };
+                                return updatedLog;
                             }
-                            
-                            return prevLog;
+                        }
+                        return prevLog;
+                    
+                    } else if (!isSold) {
+                        // ADD NEW EXTERNALLY OPENED OPERATION
+                        const direction = (contract.contract_type || '').includes('CALL') ? 'rise' : 'fall';
+                        const purchaseTime = contract.purchase_time || Math.floor(Date.now() / 1000);
+                        const durationInSeconds = contract.date_expiry ? (contract.date_expiry - purchaseTime) : 0;
+                        const durationUnit: DurationUnit = 's'; // Safe default
+
+                        const newOperation: Operation = {
+                            id: contract.contract_id,
+                            asset: contract.symbol,
+                            direction: direction,
+                            stake: contract.buy_price || 0,
+                            status: 'pending',
+                            result: contract.profit,
+                            timestamp: new Date(purchaseTime * 1000).toISOString(),
+                            initiator: 'Manual',
+                            entryPrice: parseFloat(contract.entry_spot_display_value || contract.entry_tick_display_value || '0'),
+                            isSellable: contract.is_sellable === 1,
+                            expirationTime: contract.date_expiry ? contract.date_expiry * 1000 : undefined,
+                            duration: durationInSeconds,
+                            durationUnit: durationUnit,
+                            multiplier: contract.multiplier,
+                            contractType: contract.contract_type,
+                        };
+                        
+                        addTradeAnnotation({
+                            contractId: String(newOperation.id),
+                            entryTime: purchaseTime,
+                            entryPrice: newOperation.entryPrice!,
+                            direction: newOperation.direction,
+                            status: 'pending',
+                            stake: newOperation.stake,
+                            symbol: newOperation.asset,
+                            expirationTime: newOperation.expirationTime,
+                            contractType: (contract.contract_type || '').startsWith('MULT') ? 'multiplier' : 'option'
                         });
-                        break;
-                  case 'tick':
-                      const tick = response.tick;
-                      if (tick?.symbol === activeSymbol) {
-                          const newTick = { epoch: tick.epoch, price: tick.quote };
-                          if (chartTypeRef.current === 'Area') {
-                             setChartData(prev => addDataPoint(prev, newTick));
-                          }
-                          setPriceTicks(prev => {
-                              const newTicks = [...prev, newTick];
-                               if (newTicks.length > MAX_DATA_POINTS) {
-                                  return newTicks.slice(1);
-                              }
-                              return newTicks;
-                          });
-                          setDataVersion(v => v + 1);
-                      }
-                      break;
-                  
-                  case 'ohlc':
-                  case 'candles':
-                      const candleData = response.ohlc || (response.candles && response.candles[0]);
-                      if (candleData && candleData.symbol === activeSymbol) {
-                          const newCandle: CandleData = {
-                              epoch: candleData.open_time || candleData.epoch,
-                              open: parseFloat(candleData.open),
-                              high: parseFloat(candleData.high),
-                              low: parseFloat(candleData.low),
-                              close: parseFloat(candleData.close),
-                              volume: candleData.tick_count || 1,
-                          };
-                          if (chartTypeRef.current === 'Candle') {
-                            setChartData(prev => addDataPoint(prev, newCandle));
-                          }
-                          
-                          const newTick = { epoch: newCandle.epoch, price: newCandle.close };
-                           setPriceTicks(prev => {
-                              const newTicks = [...prev, newTick];
-                               if (newTicks.length > MAX_DATA_POINTS) {
-                                  return newTicks.slice(1);
-                              }
-                              return newTicks;
-                          });
-  
-                          setDataVersion(v => v + 1);
-                      }
-                      break;
-              }
-          } catch (parseError) {
-              console.error('[Deriv WS] Failed to parse message:', parseError);
-          }
-      };
-  
-      ws.onopen = async () => {
-          try {
-              await makeRequest({ authorize: activeToken });
-              setIsConnected(true);
-              setIsConnecting(false);
-              setConnectionError(null);
-              
-              ws.send(JSON.stringify({ "proposal_open_contract": 1, "subscribe": 1 }));
-              ws.send(JSON.stringify({ "balance": 1, "subscribe": 1 }));
-              
-              const assetsRes: any = await makeRequest({ active_symbols: 'full', product_type: 'basic' });
-              
-              const groupedAssets: { [key: string]: Asset[] } = {};
-              assetsRes.active_symbols.forEach((symbol: any) => {
-                  const marketKey = (symbol.market === 'synthetic_index' && symbol.submarket === 'basket_index') ? 'basket_index' : symbol.market;
-                  const groupName = marketNameMapping[marketKey] || 'Outros';
-                  if (!groupedAssets[groupName]) groupedAssets[groupName] = [];
-                  groupedAssets[groupName].push({
-                      value: symbol.symbol,
-                      label: symbol.display_name,
-                      marketIsOpen: symbol.exchange_is_open === 1,
-                      submarket: symbol.submarket,
-                      market: marketKey,
-                      minDuration: symbol.min_contract_duration ?? '5t', 
-                  });
-              });
-              
-              setAssetGroups(Object.keys(groupedAssets)
-                  .map(label => ({ label, options: groupedAssets[label].sort((a, b) => a.label.localeCompare(b.label)) }))
-                  .sort((a, b) => a.label.localeCompare(b.label)));
-              setIsAssetsLoading(false);
+            
+                        return [newOperation, ...prevLog];
+                    }
+                    
+                    return prevLog;
+                });
+                break;
+            case 'tick':
+                if (response.tick?.symbol === activeSymbol) {
+                    const tick = response.tick;
+                    const newTick = { epoch: tick.epoch, price: tick.quote };
+                    if (chartTypeRef.current === 'Area') {
+                       setChartData(prev => addDataPoint(prev, newTick));
+                    }
+                    setPriceTicks(prev => {
+                        const newTicks = [...prev, newTick];
+                         if (newTicks.length > MAX_DATA_POINTS) {
+                            return newTicks.slice(1);
+                        }
+                        return newTicks;
+                    });
+                    setDataVersion(v => v + 1);
+                }
+                break;
+            
+            case 'ohlc':
+            case 'candles':
+                const candleData = response.ohlc || (response.candles && response.candles[0]);
+                
+                if (candleData && candleData.symbol === activeSymbol) {
+                    const newCandle: CandleData = {
+                        epoch: candleData.open_time || candleData.epoch,
+                        open: parseFloat(candleData.open),
+                        high: parseFloat(candleData.high),
+                        low: parseFloat(candleData.low),
+                        close: parseFloat(candleData.close),
+                        volume: candleData.tick_count || 1,
+                    };
+
+                    const isForUI = response.subscription?.id === activeSubscriptionIdRef.current;
+                    const isForBot = response.subscription?.id === botSubscriptionIdRef.current;
+
+                    if (isForUI && chartTypeRef.current === 'Candle') {
+                        setChartData(prev => addDataPoint(prev, newCandle));
+                    }
+                    if (isForBot) {
+                        setBotCandleData(prev => addDataPoint(prev, newCandle) as CandleData[]);
+                    }
+                    
+                    setPriceTicks(prev => {
+                        const newTicks = [...prev, { epoch: newCandle.epoch, price: newCandle.close }];
+                        if (newTicks.length > MAX_DATA_POINTS) {
+                            return newTicks.slice(newTicks.length - MAX_DATA_POINTS);
+                        }
+                        return newTicks;
+                    });
+                    setDataVersion(v => v + 1);
+                }
+                break;
+        }
+    } catch (parseError) {
+        console.error('[Deriv WS] Parse error:', parseError);
+    }
+};
+    
+        ws.onopen = async () => {
+    try {
+        await makeRequest({ authorize: activeToken });
+        setIsConnected(true);
+        setIsConnecting(false);
+        setConnectionError(null);
+        
+        ws.send(JSON.stringify({ "proposal_open_contract": 1, "subscribe": 1 }));
+        ws.send(JSON.stringify({ "balance": 1, "subscribe": 1 }));
+        
+        const assetsRes: any = await makeRequest({ active_symbols: 'full', product_type: 'basic' });
+        
+        const groupedAssets: { [key: string]: Asset[] } = {};
+        assetsRes.active_symbols.forEach((symbol: any) => {
+            const marketKey = (symbol.market === 'synthetic_index' && symbol.submarket === 'basket_index') ? 'basket_index' : symbol.market;
+            const groupName = marketNameMapping[marketKey] || 'Outros';
+            if (!groupedAssets[groupName]) groupedAssets[groupName] = [];
+            groupedAssets[groupName].push({
+                value: symbol.symbol,
+                label: symbol.display_name,
+                marketIsOpen: symbol.exchange_is_open === 1,
+                submarket: symbol.submarket,
+                market: marketKey,
+                minDuration: symbol.min_contract_duration ?? '5t', 
+            });
+        });
+        
+        setAssetGroups(Object.keys(groupedAssets)
+            .map(label => ({ 
+                label, 
+                options: groupedAssets[label].sort((a, b) => a.label.localeCompare(b.label)) 
+            }))
+            .sort((a, b) => a.label.localeCompare(b.label)));
+        setIsAssetsLoading(false);
+
+    } catch (error: any) {
+        let errorMessage = error instanceof Error ? error.message : 'Erro desconhecido ao conectar';
+        setConnectionError(`Falha na autorização: ${errorMessage}`);
+        setIsConnected(false);
+        setIsConnecting(false);
+        setIsAssetsLoading(false);
+        setAccountBalance({ balance: null, currency: null, loading: false });
+        if (ws.readyState === WebSocket.OPEN) ws.close();
+    }
+};
       
-          } catch (error: any) {
-              let errorMessage = error instanceof Error ? error.message : 'Erro desconhecido ao conectar';
-              setConnectionError(`Falha na autorização: ${errorMessage}`);
-              setIsConnected(false);
-              setIsConnecting(false);
-              setIsAssetsLoading(false);
-              setAccountBalance({ balance: null, currency: null, loading: false });
-              if (ws.readyState === WebSocket.OPEN) ws.close();
-          }
-      };
+        ws.onclose = (event) => {
+  if (!wsRef.current) return;
+  
+  if (pingIntervalRef.current) {
+      clearInterval(pingIntervalRef.current);
+      pingIntervalRef.current = null;
+  }
+  
+  promisesRef.current.forEach((p) => {
+    if (p && typeof p.reject === 'function') {
+      p.reject(new Error("WebSocket connection closed."))
+    }
+  });
+  promisesRef.current.clear();
+
+  if (!event.wasClean) {
+    console.warn(`[WS] Fechado inesperadamente. Código: ${event.code}`);
+    setConnectionError(`Conexão perdida. Reconectando...`);
     
-      ws.onclose = (event) => {
-          if (!wsRef.current) return;
-          
-          const { wasClean, code, reason } = event;
-          
-          if (promisesRef.current) {
-              promisesRef.current.forEach((p) => p.reject(new Error("WebSocket connection closed.")));
-              promisesRef.current.clear();
-          }
-          
-          if (!wasClean) {
-              setConnectionError(`A conexão foi encerrada inesperadamente. Código: ${code}. Razão: ${reason || 'N/A'}.`);
-          }
-          setIsConnected(false);
-          setIsConnecting(false);
-          setAccountBalance({ balance: null, currency: null, loading: false });
-          wsRef.current = null;
-      };
-    
-      ws.onerror = () => {
-        // A lógica de erro é centralizada no onclose para obter detalhes específicos.
-      };
+    if (reconnectTimeoutRef.current) {
+        clearTimeout(reconnectTimeoutRef.current);
+    }
+    reconnectTimeoutRef.current = setTimeout(() => {
+        console.log('[Auto-Reconnect] Tentando reconectar...');
+        setTriggerReconnect(c => c + 1);
+    }, 3000);
+  }
+  
+  setIsConnected(false);
+  setIsConnecting(false);
+  setAccountBalance({ balance: null, currency: null, loading: false });
+  wsRef.current = null;
+};
+      
+        ws.onerror = () => {
+          // O evento onclose é mais fiável para obter o motivo do erro.
+          // Este manipulador está aqui para prevenir que um erro não tratado feche a aplicação.
+        };
     };
 
     connect();
   
     return () => {
       if (wsRef.current) {
-          wsRef.current.onclose = null;
-          wsRef.current.close();
+        wsRef.current.onclose = null;
+        wsRef.current.close();
+      }
+      if (pingIntervalRef.current) {
+          clearInterval(pingIntervalRef.current);
+      }
+      if (reconnectTimeoutRef.current) {
+          clearTimeout(reconnectTimeoutRef.current);
       }
     };
   }, [activeToken, isLoading, makeRequest, updateTradeAnnotation, addTradeAnnotation, toast, triggerReconnect, setAndPersistOperationsLog, setToastQueue]);
 
+  
   const subscribeToMarketData = useCallback(async (symbol: string) => {
     if (wsRef.current?.readyState !== WebSocket.OPEN) return;
 
