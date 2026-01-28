@@ -77,7 +77,7 @@ const financialChatbotInsightsFlow = ai.defineFlow(
     // A CORREÇÃO: O segundo argumento para a chamada de prompt estava incorreto.
     // O contexto (`userId`) é passado para a execução do fluxo, e as ferramentas o acessam de lá.
     // A chamada do prompt em si não precisa passar o contexto novamente.
-    const { output } = await prompt(promptData);
+    const { output } = await prompt(promptData, { context: { userId } });
 
     if (!output) {
       throw new Error("A IA não conseguiu gerar uma resposta.");

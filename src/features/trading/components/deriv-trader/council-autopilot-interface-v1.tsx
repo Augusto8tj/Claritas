@@ -21,7 +21,7 @@ import type { RobotStrategy, DurationUnit } from '@/lib/types';
 import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
 import type { useRobotCouncilV1 } from "@/features/trading/hooks/use-robot-council-v1";
-import type { Indicators } from '@/services/indicator-service-v1';
+import type { Indicators } from '@/services/indicator-service';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -65,7 +65,7 @@ const voteIcons: { [key: string]: React.ReactNode } = {
     HOLD: <HelpCircle className="h-4 w-4 text-yellow-500" />,
 }
 
-const durationUnitLabels: Record<DurationUnit, string> = {
+const durationUnitLabels: Record<string, string> = {
   t: "Ticks",
   s: "Segundos",
   m: "Minutos",
@@ -215,8 +215,8 @@ export const CouncilAutopilotInterfaceV1: React.FC<CouncilAutopilotInterfaceV1Pr
                 if (!lastChannel) return <p>Canais: <strong>...</strong></p>;
                 return <p>Canais: <strong>{formatValue(lastChannel.lower)} / {formatValue(lastChannel.upper)}</strong></p>;
             case 'CHANDELIER_EXIT':
-                 if (!indicators.chandelierExit) return <p>Saída: <strong>...</strong></p>;
-                 return <p>Saída Chandelier: <strong>{formatValue(indicators.chandelierExit)}</strong></p>;
+                 if (!indicators.chandelier) return <p>Saída: <strong>...</strong></p>;
+                 return <p>Saída Chandelier: <strong>{formatValue(indicators.chandelier.exitLong)}</strong></p>;
             case 'ICHIMOKU_CLOUD':
                 if (!indicators.ichimoku) return <p>Nuvem: <strong>...</strong></p>;
                 return <p>Nuvem A/B: <strong>{formatValue(indicators.ichimoku.spanA)} / {formatValue(indicators.ichimoku.spanB)}</strong></p>;
@@ -465,7 +465,7 @@ export const CouncilAutopilotInterfaceV1: React.FC<CouncilAutopilotInterfaceV1Pr
                                                     {vote !== 'HOLD' && optimalDuration && optimalDurationUnit && durationUnitLabels[optimalDurationUnit] && (
                                                         <Badge variant="outline" className="flex items-center gap-1">
                                                             <Clock className="h-3 w-3"/>
-                                                            {optimalDuration} {durationUnitLabels[optimalDurationUnit].slice(0, -1)}
+                                                            {optimalDuration} {durationUnitLabels[optimalDurationUnit]?.slice(0, -1)}
                                                         </Badge>
                                                     )}
                                                 </div>

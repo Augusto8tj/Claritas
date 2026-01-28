@@ -845,32 +845,6 @@ export function MarketChart({
     ctx.fillRect(brushMaxX - handleWidth / 2, height / 2 - 15, handleWidth, 30)
   }, [rawData, colors, brushWindow])
 
-  const panOffsetRef = React.useRef(0);
-  const zoomLevelRef = React.useRef(1);
-
-  React.useEffect(() => {
-    panOffsetRef.current = 0;
-    zoomLevelRef.current = 1;
-  }, [activeSymbol, timePeriod, chartType]);
-
-
-  React.useEffect(() => {
-    const handleResize = () => {
-      requestAnimationFrame(drawMainChart)
-      requestAnimationFrame(drawBrushChart)
-    }
-    window.addEventListener('resize', handleResize)
-
-    const mainChartAF = requestAnimationFrame(drawMainChart)
-    const brushChartAF = requestAnimationFrame(drawBrushChart)
-
-    return () => {
-      cancelAnimationFrame(mainChartAF)
-      cancelAnimationFrame(brushChartAF)
-      window.removeEventListener('resize', handleResize)
-    }
-  }, [rawData, visibleIndicators, drawMainChart, drawBrushChart, mousePosition])
-
   const throttleTimeoutRef = React.useRef<NodeJS.Timeout>();
 
   const handleBrushMouseDown = useCallback((e: React.MouseEvent) => {
@@ -1120,7 +1094,6 @@ export function MarketChart({
 
       <div
         className="w-full flex-1 relative"
-        onMouseMove={handleChartMouseMove}
         onMouseLeave={handleChartMouseLeave}
       >
         <TradeLegend 
@@ -1145,6 +1118,7 @@ export function MarketChart({
         <canvas
           ref={mainCanvasRef}
           className="w-full h-full"
+          onMouseMove={handleChartMouseMove}
         />
       </div>
       <div className="w-full h-[60px] mt-2">

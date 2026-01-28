@@ -242,11 +242,11 @@ export function useStrategyEvolutionV3(initialStrategies: RobotStrategy[], asset
         const worstIndex = currentStrategies.findIndex(s => (s as RobotStrategy).id === worst.id);
         if (worstIndex === -1) return;
 
-        const regimeTrades = worst.tradeHistory.reduce((acc, trade) => {
+        const regimeTrades = (worst.tradeHistory || []).reduce((acc, trade) => {
           const regime = trade.regime || 'ranging';
-          if (!acc[regime]) acc[regime] = { wins: 0, losses: 0 };
-          if (trade.profit > 0) acc[regime].wins++;
-          else acc[regime].losses++;
+          if (!acc[regime as MarketRegime]) acc[regime as MarketRegime] = { wins: 0, losses: 0 };
+          if (trade.profit > 0) acc[regime as MarketRegime].wins++;
+          else acc[regime as MarketRegime].losses++;
           return acc;
         }, {} as Record<MarketRegime, { wins: number; losses: number }>);
 

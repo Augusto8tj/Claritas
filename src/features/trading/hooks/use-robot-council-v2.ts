@@ -84,6 +84,10 @@ export interface CouncilState {
         maxDrawdown: number;
         dailyPnL: number;
     };
+    supervisionStatus: {
+        status: 'inactive' | 'approved' | 'veto';
+        message: string;
+    };
     bayesianVotes: Record<string, BayesianVote>;
     dashboardData: DashboardData | null;
     effectiveThreshold: number;
@@ -327,7 +331,7 @@ export function useRobotCouncilV2(
     tradeCounts,
     resetEvolutionHistory,
     deleteSingleEvolution,
-  } = useStrategyEvolution(initialStrategiesForMode);
+  } = useStrategyEvolution(initialStrategiesForMode, activeSymbol || '');
   
   const executionIdRef = useRef(0);
   const processedRealTradesRef = useRef<Set<number>>(new Set());
@@ -347,6 +351,7 @@ export function useRobotCouncilV2(
     microstructure: null,
     consensusDecision: { direction: 'HOLD', probability: 0.5, stake: 0 },
     portfolioStats: { totalExposure: 0, maxExposure: 0, currentDrawdown: 0, maxDrawdown: 0, dailyPnL: 0 },
+    supervisionStatus: { status: 'inactive', message: 'Aguardando...' },
     bayesianVotes: {},
     dashboardData: null,
     effectiveThreshold: 0,
@@ -405,6 +410,7 @@ export function useRobotCouncilV2(
           monteCarloScore: 0, lastUpdated: Date.now(), tradeHistory: []
         };
     });
+    console.log(`[Arena Reset] ${initialPerformance.length} robôs inicializados com tradeHistory vazio`);
     robotPerformanceRef.current = initialPerformance;
     setRobotPerformance(initialPerformance);
     virtualTradesRef.current = [];
@@ -412,7 +418,7 @@ export function useRobotCouncilV2(
   }, [strategyCouncil]);
 
   useEffect(() => {
-    if (!user || isAuthLoading) return;
+    if (!user || isAuthLoading || !assetSymbol) return;
     loadRobotPerformance(user.uid, 'v2').then((stored) => {
         if (stored && stored.length > 0) {
             robotPerformanceRef.current = stored as EnhancedRobotPerformance[];
@@ -421,7 +427,7 @@ export function useRobotCouncilV2(
             resetArenaPerformance();
         }
     }).catch(console.error);
-  }, [user, isAuthLoading, resetArenaPerformance]);
+  }, [user, isAuthLoading, resetArenaPerformance, assetSymbol]);
 
   const fetchStrategyCouncil = useCallback(async () => {
     if (!activeSymbol) {
@@ -445,7 +451,7 @@ export function useRobotCouncilV2(
   const dissolveCouncil = useCallback(() => {
     setIsCouncilAutopilotOn(false);
     setSessionStartTime(null);
-    toast({ title: '⏸️ Sistema Pausado', description: 'Mesa Operacional suspensa.' });
+    toast({ title: '⏸️ Sistema V2.5 Pausado', description: 'Mesa Operacional suspensa.' });
   }, [toast]);
   
 
@@ -917,7 +923,6 @@ export function useRobotCouncilV2(
     dissolveCouncil,
     isFetchingCouncil,
     strategyCouncil,
-    robotPerformance,
     evolutionHistory,
     isEvolving,
     evolutionProgress,
@@ -951,7 +956,6 @@ export function useRobotCouncilV2(
     setStopLossThreshold,
     resetArenaPerformance,
     tradeDecisionLog,
-    supervisionStatus: { status: 'approved', message: 'Sistema Operacional v2.5' },
     evolveTrigger,
     resetEvolutionHistory,
     deleteSingleEvolution,

@@ -24,6 +24,7 @@ const chartConfig = {
   Lazer: { label: "Lazer", color: "hsl(var(--chart-4))" },
   Compras: { label: "Compras", color: "hsl(var(--chart-5))" },
   Outros: { label: "Outros", color: "hsl(var(--muted))" },
+  Contas: { label: "Contas", color: "hsl(var(--chart-3))" }
 };
 
 type ChartConfigKey = keyof typeof chartConfig;

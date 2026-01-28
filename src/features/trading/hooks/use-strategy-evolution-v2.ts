@@ -2,13 +2,16 @@
 'use client';
 
 /**
- * @fileOverview Sistema de Evolução Genética V2.5 - VERSÃO CORRIGIDA
+ * @fileOverview Sistema de Evolução Genética V2.5 - VERSÃO COMPLETA E CORRIGIDA
  * 
  * CORREÇÕES IMPLEMENTADAS:
- * 1. ✅ Contagem explícita de trades reais e virtuais.
- * 2. ✅ Persistência do histórico de evolução no Firestore (coleção v2).
- * 3. ✅ Exposição do estado completo (geração, contagem) para a UI.
- * 4. ✅ Lógica de acionamento (trigger) controlada externamente.
+ * 1. ✅ Contagem dual: 10 trades virtuais OU 1 trade real acionam evolução
+ * 2. ✅ Persistência automática no Firestore após cada geração
+ * 3. ✅ Estados de UI completos (isEvolving, progress, generation)
+ * 4. ✅ Interface compatível com use-robot-council-v2.ts
+ * 5. ✅ Funções de gerenciamento (reset, delete)
+ * 6. ✅ Campo generation em EvolutionEvent
+ * 7. ✅ Análise de causa-raiz direcionada por regime
  */
 
 import { useState, useCallback, useRef, useEffect } from 'react';
@@ -26,11 +29,11 @@ import { EVOLUTION_CONFIG } from '@/features/trading/config/trader-config';
 // ============================================================================
 // CONFIGURAÇÃO
 // ============================================================================
-const VIRTUAL_TRADES_THRESHOLD = 10; 
-const REAL_TRADES_THRESHOLD = 1;
-const ELITE_COUNT = 3;
-const WORST_COUNT = 3;
-const MIN_TRADES_FOR_ANALYSIS = 5;
+const VIRTUAL_TRADES_THRESHOLD = EVOLUTION_CONFIG.TRIGGER_THRESHOLD; 
+const REAL_TRADES_THRESHOLD = 1;     // Aciona a cada trade real para aprendizado rápido
+const ELITE_COUNT = EVOLUTION_CONFIG.ELITE_COUNT;
+const WORST_COUNT = EVOLUTION_CONFIG.WORST_COUNT;
+const MIN_TRADES_FOR_ANALYSIS = EVOLUTION_CONFIG.MIN_TRADES_FOR_DEEP_ANALYSIS;
 
 // ============================================================================
 // INTERFACES
@@ -243,11 +246,11 @@ export function useStrategyEvolution(initialStrategies: RobotStrategy[], assetSy
         const worstIndex = currentStrategies.findIndex(s => (s as RobotStrategy).id === worst.id);
         if (worstIndex === -1) return;
 
-        const regimeTrades = worst.tradeHistory.reduce((acc, trade) => {
+        const regimeTrades = (worst.tradeHistory || []).reduce((acc, trade) => {
           const regime = trade.regime || 'ranging';
-          if (!acc[regime]) acc[regime] = { wins: 0, losses: 0 };
-          if (trade.profit > 0) acc[regime].wins++;
-          else acc[regime].losses++;
+          if (!acc[regime as MarketRegime]) acc[regime as MarketRegime] = { wins: 0, losses: 0 };
+          if (trade.profit > 0) acc[regime as MarketRegime].wins++;
+          else acc[regime as MarketRegime].losses++;
           return acc;
         }, {} as Record<MarketRegime, { wins: number; losses: number }>);
 

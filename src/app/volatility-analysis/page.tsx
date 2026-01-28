@@ -718,7 +718,7 @@ const ProjectionExpertsPanel = ({ experts }: { experts: { name: string; vote: 'R
                 return (
                     <div key={name} className="flex justify-between items-center bg-background p-2 rounded-md border text-xs">
                         <span className="font-semibold w-12">{name}</span>
-                        <div className="flex items-center gap-2 w-24">
+                        <div className="flex items-center gap-2 flex-1 mx-4">
                             <Progress value={effectiveAccuracy} className="h-1.5 flex-1" indicatorClassName={getProgressColor(effectiveAccuracy)} />
                             <span className="font-mono w-10 text-right">{effectiveAccuracy.toFixed(0)}%</span>
                         </div>
@@ -729,6 +729,7 @@ const ProjectionExpertsPanel = ({ experts }: { experts: { name: string; vote: 'R
                         )}>
                             {effectiveDirection === 'RISE' && <TrendingUp size={12}/>}
                             {effectiveDirection === 'FALL' && <TrendingDown size={12}/>}
+                            {effectiveDirection === 'HOLD' && <HelpCircle size={12}/>}
                             {effectiveDirection}
                         </span>
                     </div>

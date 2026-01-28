@@ -3,10 +3,10 @@
 
 import { useEffect, useState, useMemo } from 'react';
 import { useAuth } from '@/features/auth/hooks/use-auth';
-import { getTradeDecisionLogs } from '@/services/financial-data-service';
+import { getTradeDecisionLogs, getPredictiveTradeLogs } from '@/services/financial-data-service';
 import { getTradeDecisionLogsV3 } from '@/services/financial-data-service-v3';
-import type { TradeDecisionLog } from '@/lib/types';
-import { Filter, Trash2, Loader2, Bot, AlertCircle, List, UploadCloud } from 'lucide-react';
+import type { TradeDecisionLog, PredictiveTradeLog } from '@/lib/types';
+import { Filter, Trash2, Loader2, Bot, AlertCircle, List, UploadCloud, BrainCircuit } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from '@/components/ui/button';
 import { DateRangePicker } from '@/components/ui/date-picker-with-range';
@@ -32,12 +32,16 @@ import { db } from '@/lib/firebase';
 import { errorEmitter, FirestorePermissionError } from '@/firebase';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import PredictiveLogViewer from '@/components/deriv-trader/PredictiveLogViewer';
 
 
 export default function AuditLogPage() {
   const { user } = useAuth();
   const { toast } = useToast();
-  const [logs, setLogs] = useState<TradeDecisionLog[]>([]);
+  const [logsV1, setLogsV1] = useState<TradeDecisionLog[]>([]);
+  const [logsV2, setLogsV2] = useState<TradeDecisionLog[]>([]);
+  const [logsV3, setLogsV3] = useState<TradeDecisionLog[]>([]);
+  const [predictiveLogs, setPredictiveLogs] = useState<PredictiveTradeLog[]>([]);
   const [loading, setLoading] = useState(true);
   const [isDeletingAll, setIsDeletingAll] = useState(false);
   const [deletingLogId, setDeletingLogId] = useState<string | null>(null);
@@ -48,14 +52,13 @@ export default function AuditLogPage() {
   const [legacyLogs, setLegacyLogs] = useState<{ id: string }[]>([]);
   const [isFetchingLegacy, setIsFetchingLegacy] = useState(false);
 
-
   // Filtros
   const [dateRange, setDateRange] = useState<DateRange | undefined>(undefined);
   const [assetFilter, setAssetFilter] = useState('');
   const [resultFilter, setResultFilter] = useState('all');
   
   // Abas de Versão
-  const [activeTab, setActiveTab] = useState<'v1' | 'v2' | 'v3'>('v2');
+  const [activeTab, setActiveTab] = useState<'v1' | 'v2' | 'v3' | 'predictive'>('v2');
 
   useEffect(() => {
     if (!user) {
@@ -65,16 +68,22 @@ export default function AuditLogPage() {
 
     const fetchLogs = async () => {
       setLoading(true);
-      setLogs([]); // Limpa os logs ao trocar de aba
+      
       try {
-        let fetchedLogs: TradeDecisionLog[];
-        if (activeTab === 'v3') {
-            fetchedLogs = await getTradeDecisionLogsV3(user.uid);
+        if (activeTab === 'predictive') {
+            const fetched = await getPredictiveTradeLogs(user.uid);
+            setPredictiveLogs(fetched.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()));
+        } else if (activeTab === 'v3') {
+            const fetched = await getTradeDecisionLogsV3(user.uid);
+            setLogsV3(fetched.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()));
         } else {
-            fetchedLogs = await getTradeDecisionLogs(user.uid, activeTab);
+            const [v1, v2] = await Promise.all([
+                getTradeDecisionLogs(user.uid, 'v1'),
+                getTradeDecisionLogs(user.uid, 'v2')
+            ]);
+            setLogsV1(v1.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()));
+            setLogsV2(v2.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()));
         }
-        fetchedLogs.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-        setLogs(fetchedLogs);
       } catch (error) {
         console.error("Failed to fetch trade decision logs:", error);
         toast({ title: "Erro ao Carregar Logs", description: "Não foi possível buscar os dados de auditoria.", variant: "destructive" });
@@ -87,7 +96,13 @@ export default function AuditLogPage() {
   }, [user, activeTab, toast]);
 
   const filteredLogs = useMemo(() => {
-    return logs.filter(log => {
+    let logsToFilter: (TradeDecisionLog | PredictiveTradeLog)[] = [];
+    if(activeTab === 'predictive') logsToFilter = predictiveLogs;
+    if(activeTab === 'v1') logsToFilter = logsV1;
+    if(activeTab === 'v2') logsToFilter = logsV2;
+    if(activeTab === 'v3') logsToFilter = logsV3;
+
+    return logsToFilter.filter(log => {
       const logDate = new Date(log.timestamp);
       
       const dateMatch = !dateRange || (
@@ -99,12 +114,15 @@ export default function AuditLogPage() {
       
       return dateMatch && assetMatch && resultMatch;
     });
-  }, [logs, dateRange, assetFilter, resultFilter]);
+  }, [logsV1, logsV2, logsV3, predictiveLogs, activeTab, dateRange, assetFilter, resultFilter]);
 
   const handleDeleteAll = async () => {
     if (!user) return;
     setIsDeletingAll(true);
-    const collectionName = `decision_logs_${activeTab}`;
+    let collectionName = `decision_logs_${activeTab}`;
+    if (activeTab === 'predictive') {
+        collectionName = `predictive_logs_v1`;
+    }
     const logCollectionRef = collection(db, 'users', user.uid, collectionName);
 
     try {
@@ -115,7 +133,11 @@ export default function AuditLogPage() {
         }
         
         toast({ title: "Histórico Limpo!", description: `Todos os registos da versão ${activeTab.toUpperCase()} foram apagados.` });
-        setLogs([]);
+        if(activeTab === 'v1') setLogsV1([]);
+        if(activeTab === 'v2') setLogsV2([]);
+        if(activeTab === 'v3') setLogsV3([]);
+        if(activeTab === 'predictive') setPredictiveLogs([]);
+
     } catch (error: any) {
         console.error(`Falha ao apagar logs de auditoria (versão ${activeTab}):`, error);
         toast({ title: "Erro", description: error.message || "Ocorreu um erro ao tentar apagar os registos.", variant: "destructive" });
@@ -131,13 +153,19 @@ export default function AuditLogPage() {
   const handleDeleteSingle = async (logId: string) => {
     if (!user) return;
     setDeletingLogId(logId);
-    const collectionName = `decision_logs_${activeTab}`;
+    let collectionName = `decision_logs_${activeTab}`;
+     if (activeTab === 'predictive') {
+        collectionName = `predictive_logs_v1`;
+    }
     const logDocRef = doc(db, 'users', user.uid, collectionName, logId);
 
     try {
         await deleteDoc(logDocRef);
         toast({ title: "Registo Apagado", description: "O log de auditoria foi removido." });
-        setLogs(prev => prev.filter(log => log.id !== logId));
+        if(activeTab === 'v1') setLogsV1(prev => prev.filter(log => log.id !== logId));
+        if(activeTab === 'v2') setLogsV2(prev => prev.filter(log => log.id !== logId));
+        if(activeTab === 'v3') setLogsV3(prev => prev.filter(log => log.id !== logId));
+        if(activeTab === 'predictive') setPredictiveLogs(prev => prev.filter(log => log.id !== logId));
     } catch (error: any) {
         console.error(`Falha ao apagar o log de auditoria ${logId} (versão ${activeTab}):`, error);
         toast({ title: "Erro", description: error.message || "Ocorreu um erro ao tentar apagar o registo.", variant: "destructive" });
@@ -220,11 +248,12 @@ export default function AuditLogPage() {
         Consulte e filtre o histórico de decisões de cada versão do Cérebro Quantitativo.
       </p>
 
-      <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as 'v1' | 'v2' | 'v3')} className="space-y-4">
-        <TabsList className="grid w-full grid-cols-3">
+      <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as any)} className="space-y-4">
+        <TabsList className="grid w-full grid-cols-4">
           <TabsTrigger value="v1">Trader V1</TabsTrigger>
           <TabsTrigger value="v2">Trader V2.5</TabsTrigger>
           <TabsTrigger value="v3">Trader V3 (IA Lab)</TabsTrigger>
+          <TabsTrigger value="predictive" className="flex items-center gap-2"><BrainCircuit className="h-4 w-4" />Preditivo</TabsTrigger>
         </TabsList>
       
         <Card>
@@ -285,11 +314,21 @@ export default function AuditLogPage() {
                 <Loader2 className="h-8 w-8 animate-spin" />
              </div>
          ) : (
-            <TradingDecisionLogViewer 
-                logs={filteredLogs} 
-                onDeleteLog={handleDeleteSingle} 
-                deletingLogId={deletingLogId} 
-            />
+             <>
+                {activeTab !== 'predictive' ? (
+                     <TradingDecisionLogViewer 
+                        logs={filteredLogs as TradeDecisionLog[]} 
+                        onDeleteLog={handleDeleteSingle} 
+                        deletingLogId={deletingLogId} 
+                    />
+                ) : (
+                    <PredictiveLogViewer
+                        logs={filteredLogs as PredictiveTradeLog[]}
+                        onDeleteLog={handleDeleteSingle}
+                        deletingLogId={deletingLogId}
+                    />
+                )}
+             </>
          )}
       </Tabs>
       <Card className="border-destructive mt-6">
@@ -363,3 +402,4 @@ export default function AuditLogPage() {
 }
 
     
+```

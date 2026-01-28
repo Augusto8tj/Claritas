@@ -1,7 +1,7 @@
 // /src/app/deriv-trader-v3/page.tsx
 'use client';
 
-import React from "react";
+import React, { useMemo } from "react";
 import { useForm, FormProvider } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import DerivTraderInterfaceV3 from "@/features/trading/components/deriv-trader/deriv-trader-interface-v3";
@@ -25,6 +25,7 @@ import { CouncilAutopilotInterfaceV3 } from "@/features/trading/components/deriv
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { ApiStatusIndicatorV3 } from "@/features/trading/components/deriv-trader/ApiStatusIndicatorV3";
 import { IndicatorPanel } from "@/features/trading/components/deriv-trader/indicator-panel";
+import type { CandleData } from '@/lib/types';
 
 const Header = () => {
     const { 
@@ -88,7 +89,8 @@ const IsolatedMarketChart = () => {
         chartType, setChartType, timePeriod, setTimePeriod, tradeAnnotations
     } = useDerivApiV3();
     
-    const { indicators: councilIndicators } = useRobotCouncilV3(activeSymbol, [], chartData, 0);
+    const candleData = useMemo(() => chartData.filter((d): d is CandleData => 'close' in d), [chartData]);
+    const { indicators: councilIndicators } = useRobotCouncilV3(activeSymbol, [], candleData, 0);
 
     return (
         <>
@@ -122,7 +124,8 @@ const IsolatedMarketChart = () => {
 
 const DerivTraderV3Core = () => {
     const { activeSymbol, priceTicks, dataVersion, operationsLog, sellContract, chartData } = useDerivApiV3();
-    const robotCouncil = useRobotCouncilV3(activeSymbol, priceTicks, chartData, dataVersion);
+    const candleData = useMemo(() => chartData.filter((d): d is CandleData => 'close' in d), [chartData]);
+    const robotCouncil = useRobotCouncilV3(activeSymbol, priceTicks, candleData, dataVersion);
 
     return (
         <div className="space-y-6 mt-6">
@@ -138,12 +141,12 @@ const DerivTraderV3Core = () => {
                         <TabsTrigger value="evolucao"><Dna className="w-4 h-4" /></TabsTrigger>
                         <TabsTrigger value="debug"><BrainCircuit className="w-4 h-4" /></TabsTrigger>
                     </TabsList>
-                    <TabsContent value="arena" className="mt-4"><TradingDeskV2 councilState={robotCouncil} /></TabsContent>
+                    <TabsContent value="arena" className="mt-4"><TradingDeskV2 councilState={robotCouncil as any} /></TabsContent>
                     <TabsContent value="auditoria" className="mt-4 space-y-4">
                         <OperationsLogV3 operations={operationsLog} sellContract={sellContract} />
                         <TradingDecisionLogViewer logs={robotCouncil.tradeDecisionLog} showFilters={false} />
                     </TabsContent>
-                    <TabsContent value="evolucao" className="mt-4"><EvolutionLabV3 {...robotCouncil} /></TabsContent>
+                    <TabsContent value="evolucao" className="mt-4"><EvolutionLabV3 {...robotCouncil} history={robotCouncil.evolutionHistory} /></TabsContent>
                     <TabsContent value="debug" className="mt-4"><DebugCouncilViewV3 councilState={robotCouncil} isCouncilAutopilotOn={robotCouncil.isCouncilAutopilotOn} /></TabsContent>
                 </Tabs>
             </div>
@@ -166,13 +169,13 @@ const DerivTraderV3Core = () => {
                             <TabsTrigger value="debug"><BrainCircuit className="mr-2 h-4 w-4"/>Debug Avançado</TabsTrigger>
                         </TabsList>
                         <TabsContent value="arena" className="mt-4">
-                            <TradingDeskV2 councilState={robotCouncil} />
+                            <TradingDeskV2 councilState={robotCouncil as any} />
                         </TabsContent>
                         <TabsContent value="auditoria" className="mt-4 space-y-4">
                             <OperationsLogV3 operations={operationsLog} sellContract={sellContract} />
                             <TradingDecisionLogViewer logs={robotCouncil.tradeDecisionLog} showFilters={false} />
                         </TabsContent>
-                        <TabsContent value="evolucao" className="mt-4"><EvolutionLabV3 {...robotCouncil} /></TabsContent>
+                        <TabsContent value="evolucao" className="mt-4"><EvolutionLabV3 {...robotCouncil} history={robotCouncil.evolutionHistory} /></TabsContent>
                         <TabsContent value="debug" className="mt-4">
                             <DebugCouncilViewV3 councilState={robotCouncil} isCouncilAutopilotOn={robotCouncil.isCouncilAutopilotOn} />
                         </TabsContent>

@@ -1,7 +1,7 @@
 // /src/app/deriv-trader-v2/page.tsx
 'use client';
 
-import React from "react";
+import React, { useMemo } from "react";
 import { useForm, FormProvider } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import DerivTraderInterfaceV2 from "@/features/trading/components/deriv-trader/deriv-trader-interface-v2";
@@ -25,6 +25,8 @@ import { CouncilAutopilotInterfaceV2 } from "@/features/trading/components/deriv
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { ApiStatusIndicatorV2 } from "@/features/trading/components/deriv-trader/ApiStatusIndicatorV2";
 import { IndicatorPanel } from "@/features/trading/components/deriv-trader/indicator-panel";
+import type { CandleData } from '@/lib/types';
+
 
 const Header = () => {
     const { 
@@ -88,8 +90,10 @@ const IsolatedMarketChart = () => {
         chartType, setChartType, timePeriod, setTimePeriod, tradeAnnotations
     } = useDerivApiV2();
     
+    const candleData = useMemo(() => chartData.filter((d): d is CandleData => 'close' in d), [chartData]);
+    
     // Otimização: Apenas obtemos os indicadores, sem recalcular toda a lógica do conselho
-    const { indicators: councilIndicators } = useRobotCouncilV2(activeSymbol, [], chartData, 0);
+    const { indicators: councilIndicators } = useRobotCouncilV2(activeSymbol, [], candleData, 0);
 
     return (
         <>
@@ -123,7 +127,8 @@ const IsolatedMarketChart = () => {
 
 const MainContent = () => {
     const { activeSymbol, priceTicks, dataVersion, operationsLog, sellContract, chartData, clearActiveContracts } = useDerivApiV2();
-    const robotCouncil = useRobotCouncilV2(activeSymbol, priceTicks, chartData, dataVersion);
+    const candleData = useMemo(() => chartData.filter((d): d is CandleData => 'close' in d), [chartData]);
+    const robotCouncil = useRobotCouncilV2(activeSymbol, priceTicks, candleData, dataVersion);
     
     return (
         <div className="mt-6">
@@ -149,7 +154,18 @@ const MainContent = () => {
                     <TabsContent value="logs" className="mt-4 space-y-4">
                         <OperationsLogV2 operations={operationsLog} sellContract={sellContract} priceTicks={priceTicks} clearActiveContracts={clearActiveContracts} />
                     </TabsContent>
-                    <TabsContent value="evolucao" className="mt-4"><EvolutionLabV2 {...robotCouncil} /></TabsContent>
+                    <TabsContent value="evolucao" className="mt-4">
+                        <EvolutionLabV2 
+                            evolutionHistory={robotCouncil.evolutionHistory}
+                            resetEvolutionHistory={robotCouncil.resetEvolutionHistory}
+                            deleteSingleEvolution={robotCouncil.deleteSingleEvolution}
+                            currentGeneration={robotCouncil.currentGeneration}
+                            tradesUntilEvolution={robotCouncil.tradesUntilEvolution}
+                            tradeCounts={robotCouncil.tradeCounts}
+                            isEvolving={robotCouncil.isEvolving}
+                            evolutionProgress={robotCouncil.evolutionProgress}
+                        />
+                    </TabsContent>
                     <TabsContent value="debug" className="mt-4">
                         <DebugCouncilViewV2 councilState={robotCouncil} isCouncilAutopilotOn={robotCouncil.isCouncilAutopilotOn} />
                     </TabsContent>
@@ -185,7 +201,18 @@ const MainContent = () => {
                         <TabsContent value="logs" className="mt-4 space-y-4">
                             <OperationsLogV2 operations={operationsLog} sellContract={sellContract} priceTicks={priceTicks} clearActiveContracts={clearActiveContracts} />
                         </TabsContent>
-                        <TabsContent value="evolucao" className="mt-4"><EvolutionLabV2 {...robotCouncil} /></TabsContent>
+                        <TabsContent value="evolucao" className="mt-4">
+                            <EvolutionLabV2 
+                                evolutionHistory={robotCouncil.evolutionHistory}
+                                resetEvolutionHistory={robotCouncil.resetEvolutionHistory}
+                                deleteSingleEvolution={robotCouncil.deleteSingleEvolution}
+                                currentGeneration={robotCouncil.currentGeneration}
+                                tradesUntilEvolution={robotCouncil.tradesUntilEvolution}
+                                tradeCounts={robotCouncil.tradeCounts}
+                                isEvolving={robotCouncil.isEvolving}
+                                evolutionProgress={robotCouncil.evolutionProgress}
+                            />
+                        </TabsContent>
                         <TabsContent value="debug" className="mt-4">
                             <DebugCouncilViewV2 councilState={robotCouncil} isCouncilAutopilotOn={robotCouncil.isCouncilAutopilotOn} />
                         </TabsContent>

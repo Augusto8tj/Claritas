@@ -371,19 +371,19 @@ export async function clearEvolutionHistory(userId: string, version: Version, as
     await deleteDoc(docRef);
 }
 
-export async function deleteEvolutionEvent(userId: string, eventTimestamp: string, version: Version): Promise<void> {
-    if (!userId) return;
+export async function deleteEvolutionEvent(userId: string, eventTimestamp: string, version: Version, assetSymbol: string): Promise<void> {
+    if (!userId || !assetSymbol) return;
     
-    // Esta função precisaria do assetSymbol para ser totalmente funcional
-    // Por agora, ela não será usada no V1, mas está aqui para referência.
-    // Em uma implementação real, o assetSymbol seria passado para a função.
-    
-    // const currentHistory = await loadEvolutionHistory(userId, version, assetSymbol);
-    // const newHistory = currentHistory.filter(event => event.timestamp.toISOString() !== eventTimestamp);
-    
-    // if (newHistory.length < currentHistory.length) {
-    //     await saveEvolutionHistory(userId, newHistory, version, assetSymbol);
-    // }
+    try {
+        const currentHistory = await loadEvolutionHistory(userId, version, assetSymbol);
+        const newHistory = currentHistory.filter(event => event.timestamp.toISOString() !== eventTimestamp);
+        
+        if (newHistory.length < currentHistory.length) {
+            await saveEvolutionHistory(userId, newHistory, version, assetSymbol);
+        }
+    } catch (error) {
+        console.error(`Falha ao deletar evento de evolução ${version}:`, error);
+    }
 }
 
 
@@ -411,4 +411,28 @@ export async function saveAssetProfileV1(userId: string, profile: AssetProfileV1
   const sanitizedProfile = sanitizeForFirestore(profile);
   // Non-blocking write
   setDocumentNonBlocking(docRef, sanitizedProfile, { merge: true });
+}
+
+
+// --- Predictive Trade Log (v1) ---
+
+export async function savePredictiveTradeLog(userId: string, log: any) {
+  if (!userId) return;
+  const logCollectionRef = collection(db, 'users', userId, 'predictive_logs_v1');
+  const logDocRef = doc(logCollectionRef, log.id);
+  const sanitizedLog = sanitizeForFirestore(log);
+  setDocumentNonBlocking(logDocRef, sanitizedLog, { merge: true });
+}
+
+export async function getPredictiveTradeLogs(userId: string): Promise<any[]> {
+    if (!userId) return [];
+    const logCollectionRef = collection(db, `users/${userId}/predictive_logs_v1`);
+    const q = query(logCollectionRef, orderBy('timestamp', 'desc'));
+    try {
+        const snapshot = await getDocs(q);
+        return snapshot.docs.map(d => d.data());
+    } catch (error) {
+        console.error(`[Service Error] getPredictiveTradeLogs for user ${userId} failed:`, error);
+        return [];
+    }
 }

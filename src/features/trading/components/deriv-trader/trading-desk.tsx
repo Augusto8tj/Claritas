@@ -93,7 +93,7 @@ function renderStrategyParams(robot: RobotStrategy): string {
         case 'MOVING_AVERAGE_CROSS':
             return `Cruzamento ${robot.shortPeriod}/${robot.longPeriod}`;
         case 'BOLLINGER_BANDS':
-            return `Período: ${robot.period}, Desvio: ${robot.stdDev}`;
+            return `Período: ${robot.period}, Desvio Padrão: ${robot.stdDev}`;
         case 'MACD_CROSS':
             return `${robot.fastPeriod}/${robot.slowPeriod}/${robot.signalPeriod}`;
         case 'PRICE_ACTION_PATTERN':
@@ -108,7 +108,7 @@ function renderStrategyParams(robot: RobotStrategy): string {
         case 'PARABOLIC_SAR':
             return `AF: ${robot.acceleration}, MAX: ${robot.maxAcceleration}`;
         case 'CHANDELIER_EXIT':
-            return `Mult. ATR: ${robot.chandelierMultiplier}`;
+            return `Mult. ATR: ${robot.multiplier}`;
         case 'TRIX':
         case 'ROC':
         case 'KAMA':

@@ -131,7 +131,7 @@ export type RobotStrategy = z.infer<typeof RobotStrategySchema>;
 
 export const TradeHistoryEventSchema = z.object({
   profit: z.number(),
-  regime: z.any().optional(), // Tornar opcional para compatibilidade
+  regime: z.string().optional(), // Tornar opcional para compatibilidade
   timestamp: z.number(),
 });
 export type TradeHistoryEvent = z.infer<typeof TradeHistoryEventSchema>;
@@ -289,8 +289,34 @@ export const TradeDecisionLogSchema = z.object({
   pnl: z.number(),
   processed: z.boolean().optional(),
 });
-
 export type TradeDecisionLog = z.infer<typeof TradeDecisionLogSchema>;
+
+export const AssertivenessSnapshotEntrySchema = z.object({
+  horizon: z.string(),
+  accuracy: z.number(),
+  vote: z.enum(['RISE', 'FALL', 'HOLD']),
+});
+export type AssertivenessSnapshotEntry = z.infer<typeof AssertivenessSnapshotEntrySchema>;
+
+export const PredictiveTradeLogSchema = z.object({
+  id: z.string(),
+  contractId: z.number(),
+  timestamp: z.string(),
+  asset: z.string(),
+  tradeParams: z.object({
+    direction: z.enum(['RISE', 'FALL', 'HOLD']),
+    stake: z.number(),
+    duration: z.number(),
+    durationUnit: z.enum(['t', 's', 'm', 'h', 'd']),
+  }),
+  context: z.object({
+    triggerReason: z.string(),
+    assertivenessSnapshot: z.array(AssertivenessSnapshotEntrySchema),
+  }),
+  result: z.enum(['pending', 'won', 'lost']),
+  pnl: z.number(),
+});
+export type PredictiveTradeLog = z.infer<typeof PredictiveTradeLogSchema>;
 
 export const RobotPerformanceSchema = z.object({
     id: z.string(),
@@ -306,7 +332,6 @@ export const RobotPerformanceSchema = z.object({
     tradeHistory: z.array(TradeHistoryEventSchema).optional(),
     status: z.enum(['Probation', 'Certified']).default('Probation').optional(),
 });
-
 export type RobotPerformance = z.infer<typeof RobotPerformanceSchema>;
 
 export const AssetProfileV1Schema = z.object({
@@ -332,11 +357,12 @@ export interface TradeResult {
   entryPrice?: number;
 }
 
-export type DurationUnit = z.infer<typeof baseRiseFallSchema.shape.duration_unit>;
+const DurationUnitSchema = z.enum(['t', 's', 'm', 'h', 'd']);
+export type DurationUnit = z.infer<typeof DurationUnitSchema>;
 
 export const baseRiseFallSchema = z.object({
   stake: z.coerce.number().min(0.35, "O valor mínimo é $0.35."),
   duration: z.coerce.number().min(1, "A duração deve ser de pelo menos 1."),
-  duration_unit: z.enum(['t', 's', 'm', 'h', 'd']),
+  duration_unit: DurationUnitSchema,
   allowEquals: z.boolean().default(false),
 });
