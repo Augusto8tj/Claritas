@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from "react";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -11,7 +12,9 @@ import {
 } from "@/components/ui/alert-dialog";
 import type { PredictiveTradeLog } from '@/lib/types';
 import { cn } from '@/lib/utils';
-import { Archive, BrainCircuit, CheckCircle, HelpCircle, Loader2, Target, Trash2, TrendingDown, TrendingUp, XCircle } from 'lucide-react';
+import { Archive, BrainCircuit, CheckCircle, HelpCircle, Loader2, Target, Trash2, TrendingDown, TrendingUp, XCircle, FilePieChart, ChevronsUpDown } from 'lucide-react';
+import { useToast } from "@/hooks/use-toast";
+
 
 interface PredictiveLogViewerProps {
     logs: PredictiveTradeLog[];
@@ -31,16 +34,98 @@ export default function PredictiveLogViewer({
   onDeleteLog,
   deletingLogId,
 }: PredictiveLogViewerProps) {
+  const [openItems, setOpenItems] = useState<string[]>([]);
+  const { toast } = useToast();
+
+  const handleCsvExport = () => {
+    if (logs.length === 0) {
+      toast({ title: "Nenhum Dado", description: "Não há logs preditivos para exportar.", variant: "destructive" });
+      return;
+    }
+
+    const horizons = ['3t', '6t', '10t', '20s', '30s', '40s'];
+    const snapshotHeaders = horizons.flatMap(h => [`acc_${h}`, `vote_${h}`]);
+    const headers = [
+        "ID", "ContractID", "Timestamp", "Asset", "Direction", "Stake", "Duration", "DurationUnit", 
+        "Result", "PnL", "TriggerReason", ...snapshotHeaders,
+    ];
+
+    const rows = logs.map(log => {
+      const snapshotMap = new Map(log.context.assertivenessSnapshot.map(s => [s.horizon, s]));
+      const snapshotData = horizons.flatMap(h => {
+        const snapshot = snapshotMap.get(h);
+        return [
+          snapshot ? snapshot.accuracy.toFixed(2) : 'N/A',
+          snapshot ? snapshot.vote : 'N/A'
+        ];
+      });
+
+      return [
+        log.id,
+        log.contractId,
+        log.timestamp,
+        log.asset,
+        log.tradeParams.direction,
+        log.tradeParams.stake.toFixed(2),
+        log.tradeParams.duration,
+        log.tradeParams.durationUnit,
+        log.result,
+        log.pnl?.toFixed(2) || '0.00',
+        `"${log.context.triggerReason.replace(/"/g, '""')}"`, // Escape quotes
+        ...snapshotData
+      ].join(',');
+    }).join('\n');
+
+    const csvContent = `${headers.join(',')}\n${rows}`;
+    const blob = new Blob([`\uFEFF${csvContent}`], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute("download", "relatorio_auditoria_preditiva.csv");
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+
+    toast({
+        title: "Relatório Gerado",
+        description: "O download do ficheiro CSV foi iniciado."
+    });
+  };
+  
+  const toggleAll = () => {
+    if (openItems.length === logs.length) {
+      setOpenItems([]); // Collapse all
+    } else {
+      setOpenItems(logs.map((_, index) => `item-${index}`)); // Expand all
+    }
+  };
+
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="font-headline flex items-center gap-2">
-            <BrainCircuit className="h-5 w-5 text-primary" />
-            Auditoria Preditiva ({logs.length} Registos)
-        </CardTitle>
-        <CardDescription>
-            Análise detalhada de cada decisão tomada pelo piloto automático preditivo.
-        </CardDescription>
+        <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-4">
+            <div className="flex-1">
+                <CardTitle className="font-headline flex items-center gap-2">
+                    <BrainCircuit className="h-5 w-5 text-primary" />
+                    Auditoria Preditiva ({logs.length} Registos)
+                </CardTitle>
+                <CardDescription>
+                    Análise detalhada de cada decisão tomada pelo piloto automático preditivo.
+                </CardDescription>
+            </div>
+             {logs.length > 0 && (
+                <div className="flex items-center gap-2">
+                    <Button variant="outline" size="sm" onClick={toggleAll}>
+                        <ChevronsUpDown className="mr-2 h-4 w-4" />
+                        {openItems.length === logs.length ? 'Recolher Tudo' : 'Expandir Tudo'}
+                    </Button>
+                    <Button variant="outline" size="sm" onClick={handleCsvExport}>
+                        <FilePieChart className="mr-2 h-4 w-4" />
+                        Gerar Relatório CSV
+                    </Button>
+                </div>
+            )}
+        </div>
       </CardHeader>
       <CardContent>
         {logs.length === 0 ? (
@@ -50,7 +135,7 @@ export default function PredictiveLogViewer({
             <p className="text-xs">Aguardando operações para ver os logs de auditoria.</p>
           </div>
         ) : (
-            <Accordion type="single" collapsible className="w-full" defaultValue="item-0">
+            <Accordion type="multiple" value={openItems} onValueChange={setOpenItems} className="w-full">
               {logs.map((log, index) => {
                 return (
                 <AccordionItem value={`item-${index}`} key={log.id}>
