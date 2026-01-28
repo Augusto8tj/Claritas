@@ -5,7 +5,7 @@ import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { useForm, FormProvider } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ScatterChart, Scatter } from 'recharts';
-import { Calculator, TrendingUp, Activity, BarChart3, Bot, FlaskConical, Target, Info, HelpCircle, Brain, ChevronRight, Archive, Swords, TrendingDown } from 'lucide-react';
+import { Calculator, TrendingUp, Activity, BarChart3, Bot, FlaskConical, Target, Info, HelpCircle, Brain, ChevronRight, Archive, Swords, TrendingDown, CheckCircle, XCircle } from 'lucide-react';
 import { DerivApiProviderV2, useDerivApiV2 } from "@/features/trading/hooks/use-deriv-api-v2";
 import { AssetSelectorV2 } from "@/features/trading/components/deriv-trader/asset-selector-v2";
 import { ApiStatusIndicatorV2 } from "@/features/trading/components/deriv-trader/ApiStatusIndicatorV2";
@@ -43,19 +43,6 @@ const normalQuantile = (p: number): number => {
 
 const isCandle = (d: ChartData): d is CandleData => d != null && 'close' in d;
 
-interface Consensus {
-  decision: 'RISE' | 'FALL' | 'HOLD';
-  confidence: number;
-  certaintyScore: number;
-  votes: { name: string; vote: 'RISE' | 'FALL' | 'HOLD'; accuracy: number }[];
-}
-
-interface StochasticLabProps {
-  realData: ChartData[];
-  activeSymbol: string | null;
-  onConsensusUpdate: (consensus: Consensus) => void;
-}
-
 const calculateRollingAccuracy = (history: boolean[]) => {
   const hits = history.filter(h => h).length;
   const total = history.length;
@@ -69,6 +56,19 @@ const getProgressColor = (percentage: number) => {
   if (percentage < 40) return 'bg-red-500';
   return 'bg-gray-400';
 };
+
+interface StrongestSignal {
+    horizon: string;
+    direction: 'RISE' | 'FALL' | 'HOLD';
+    certaintyScore: number;
+    accuracy: number;
+}
+
+interface StochasticLabProps {
+  realData: ChartData[];
+  activeSymbol: string | null;
+  onConsensusUpdate: (consensus: StrongestSignal) => void;
+}
 
 function StochasticLab({ realData, activeSymbol, onConsensusUpdate }: StochasticLabProps) {
   const [activeTab, setActiveTab] = useState('prediction');
@@ -136,7 +136,6 @@ function StochasticLab({ realData, activeSymbol, onConsensusUpdate }: Stochastic
       if(prices[i-1] > 0) logReturns.push(Math.log(prices[i] / prices[i - 1]));
     }
     
-    // --- Cálculo do RSI ---
     const calculateRsiSeries = (prices: number[], period: number) => {
         if (prices.length < period + 1) return Array(prices.length).fill(null);
         const results: (number | null)[] = Array(period).fill(null);
@@ -164,7 +163,6 @@ function StochasticLab({ realData, activeSymbol, onConsensusUpdate }: Stochastic
     const rsiSeries = calculateRsiSeries(prices, 14);
     const lastRsi = rsiSeries[rsiSeries.length - 1];
     if (lastRsi !== null) setRsi(lastRsi);
-    // --- Fim do RSI ---
 
     const volData: any[] = [];
     const annualizationFactor = Math.sqrt(31536000);
@@ -251,8 +249,7 @@ function StochasticLab({ realData, activeSymbol, onConsensusUpdate }: Stochastic
         const path = [{ time: lastTime, price: lastPriceValue }];
         for (let i = 1; i <= steps; i++) {
           const Z = normalRandom();
-          // CORREÇÃO: Removido o termo de convexidade para uma projeção mais intuitiva da tendência.
-          const drift_future = meanLastReturn;
+          const drift_future = meanLastReturn - 0.5 * lastSigma * lastSigma;
           const diffusion_future = lastSigma * Z;
           currentSimPrice = currentSimPrice * Math.exp(drift_future + diffusion_future);
 
@@ -279,7 +276,6 @@ function StochasticLab({ realData, activeSymbol, onConsensusUpdate }: Stochastic
           pendingPredictionsRef: React.MutableRefObject<{ startTimeIndex: number; startPrice: number; predictedEndPrice: number }[]>,
           setAccuracyHistory: React.Dispatch<React.SetStateAction<boolean[]>>,
       ) => {
-          const newFuturePath = projectPath(horizonTicks);
           const currentTimeIndex = prices.length - 1;
           let newHistory: boolean[] = [];
 
@@ -300,18 +296,6 @@ function StochasticLab({ realData, activeSymbol, onConsensusUpdate }: Stochastic
           if (newHistory.length > 0) {
               setAccuracyHistory(prev => [...prev.slice(-accuracyWindow + newHistory.length), ...newHistory]);
           }
-
-          if (newFuturePath.length === horizonTicks + 1) {
-              const newPredictionTimeIndex = newFuturePath[0].time;
-              const alreadyPending = pendingPredictionsRef.current.some(p => p.startTimeIndex === newPredictionTimeIndex);
-              if (!alreadyPending) {
-                  pendingPredictionsRef.current.push({
-                      startTimeIndex: newPredictionTimeIndex,
-                      startPrice: newFuturePath[0].price,
-                      predictedEndPrice: newFuturePath[horizonTicks].price,
-                  });
-              }
-          }
       };
 
       const horizons = [
@@ -326,13 +310,30 @@ function StochasticLab({ realData, activeSymbol, onConsensusUpdate }: Stochastic
       horizons.forEach(h => {
           processPredictionHorizon(h.ticks, h.window, prices, h.ref, h.setAccuracyHistory);
       });
+      
+      const paths = horizons.map(h => projectPath(h.ticks));
 
-      setFuturePath3t(projectPath(3).map(p => ({ time: p.time, predicted_3t_ahead: p.price })));
-      setFuturePath6t(projectPath(6).map(p => ({ time: p.time, predicted_6t_ahead: p.price })));
-      setFuturePath10s(projectPath(10).map(p => ({ time: p.time, predicted_10s_ahead: p.price })));
-      setFuturePath20s(projectPath(20).map(p => ({ time: p.time, predicted_20s_ahead: p.price })));
-      setFuturePath30s(projectPath(30).map(p => ({ time: p.time, predicted_30s_ahead: p.price })));
-      setFuturePath40s(projectPath(40).map(p => ({ time: p.time, predicted_40s_ahead: p.price })));
+      horizons.forEach((h, index) => {
+          const newFuturePath = paths[index];
+          if (newFuturePath.length === h.ticks + 1) {
+              const newPredictionTimeIndex = newFuturePath[0].time;
+              const alreadyPending = h.ref.current.some(p => p.startTimeIndex === newPredictionTimeIndex);
+              if (!alreadyPending) {
+                  h.ref.current.push({
+                      startTimeIndex: newPredictionTimeIndex,
+                      startPrice: newFuturePath[0].price,
+                      predictedEndPrice: newFuturePath[h.ticks].price,
+                  });
+              }
+          }
+      });
+      
+      setFuturePath3t(paths[0].map(p => ({ time: p.time, predicted_3t_ahead: p.price })));
+      setFuturePath6t(paths[1].map(p => ({ time: p.time, predicted_6t_ahead: p.price })));
+      setFuturePath10s(paths[2].map(p => ({ time: p.time, predicted_10s_ahead: p.price })));
+      setFuturePath20s(paths[3].map(p => ({ time: p.time, predicted_20s_ahead: p.price })));
+      setFuturePath30s(paths[4].map(p => ({ time: p.time, predicted_30s_ahead: p.price })));
+      setFuturePath40s(paths[5].map(p => ({ time: p.time, predicted_40s_ahead: p.price })));
     }
     
     setPredictionData(newPredictionData.slice(-200));
@@ -346,7 +347,7 @@ function StochasticLab({ realData, activeSymbol, onConsensusUpdate }: Stochastic
   const accuracy30s = useMemo(() => calculateRollingAccuracy(predictionAccuracyHistory30s), [predictionAccuracyHistory30s]);
   const accuracy40s = useMemo(() => calculateRollingAccuracy(predictionAccuracyHistory40s), [predictionAccuracyHistory40s]);
   
-  const projectionConsensus = useMemo((): Consensus => {
+  const strongestSignal = useMemo((): StrongestSignal => {
     const projections = [
       { name: '3t', path: futurePath3t, accuracy: accuracy3t.percentage },
       { name: '6t', path: futurePath6t, accuracy: accuracy6t.percentage },
@@ -356,53 +357,27 @@ function StochasticLab({ realData, activeSymbol, onConsensusUpdate }: Stochastic
       { name: '40s', path: futurePath40s, accuracy: accuracy40s.percentage },
     ];
     
-    // 1. Calculate a base score from a weighted average of projection votes.
-    let weightedVoteSum = 0;
-    let totalAccuracyWeight = 0;
-    
+    let bestSignal: StrongestSignal = { horizon: 'N/A', direction: 'HOLD', certaintyScore: 0, accuracy: 50 };
+    let maxCertainty = 0;
+
     projections.forEach(p => {
         if (p.path.length > 1) {
-            const voteDirection = p.path[p.path.length - 1].price > p.path[0].price ? 1 : -1; // +1 for RISE, -1 for FALL
-            const accuracyWeight = Math.abs(p.accuracy - 50); // Weight is how far from 50% it is. 0 for 50%, 50 for 0% or 100%.
+            const certainty = Math.abs(p.accuracy - 50) * 2;
             
-            weightedVoteSum += voteDirection * accuracyWeight;
-            totalAccuracyWeight += accuracyWeight;
+            if (certainty > maxCertainty) {
+                maxCertainty = certainty;
+                const direction = p.path[p.path.length - 1].price > p.path[0].price ? 'RISE' : 'FALL';
+                bestSignal = {
+                    horizon: p.name,
+                    direction,
+                    certaintyScore: p.accuracy > 50 ? certainty : -certainty,
+                    accuracy: p.accuracy,
+                };
+            }
         }
     });
 
-    let certaintyScore = 0;
-    if (totalAccuracyWeight > 0) {
-        // Normalize to -100 to 100 range.
-        certaintyScore = (weightedVoteSum / totalAccuracyWeight) * 100;
-    }
-
-    // 2. Influence the score with RSI and Drift.
-    if (rsi !== null) {
-        const rsiInfluence = (50 - rsi) / 2; // e.g., RSI=30 -> +10. RSI=70 -> -10.
-        certaintyScore += rsiInfluence;
-    }
-    
-    if (driftCorrectionForDisplay.drift !== 0 && lastPrice) {
-        const driftInfluence = -(driftCorrectionForDisplay.drift / lastPrice) * 5000;
-        certaintyScore += driftInfluence;
-    }
-    
-    const finalCertainty = Math.max(-100, Math.min(100, certaintyScore));
-
-    const DECISION_THRESHOLD = 5;
-    let decision: 'RISE' | 'FALL' | 'HOLD' = 'HOLD';
-    if (finalCertainty > DECISION_THRESHOLD) decision = 'RISE';
-    else if (finalCertainty < -DECISION_THRESHOLD) decision = 'FALL';
-    
-    const confidence = Math.abs(finalCertainty);
-
-    const votes = projections.map(p => ({
-        name: p.name,
-        vote: p.path.length > 1 ? (p.path[p.path.length - 1].price > p.path[0].price ? 'RISE' : 'FALL') : 'HOLD',
-        accuracy: p.accuracy
-    }));
-
-    return { decision, confidence, certaintyScore: finalCertainty, votes };
+    return bestSignal;
   }, [
     futurePath3t, accuracy3t,
     futurePath6t, accuracy6t,
@@ -410,14 +385,21 @@ function StochasticLab({ realData, activeSymbol, onConsensusUpdate }: Stochastic
     futurePath20s, accuracy20s,
     futurePath30s, accuracy30s,
     futurePath40s, accuracy40s,
-    rsi,
-    driftCorrectionForDisplay.drift,
-    lastPrice
   ]);
+  
+  const projectionExperts = useMemo(() => ([
+      { name: '3t', vote: futurePath3t.length > 1 ? (futurePath3t[futurePath3t.length - 1].price > futurePath3t[0].price ? 'RISE' : 'FALL') : 'HOLD', accuracy: accuracy3t.percentage },
+      { name: '6t', vote: futurePath6t.length > 1 ? (futurePath6t[futurePath6t.length - 1].price > futurePath6t[0].price ? 'RISE' : 'FALL') : 'HOLD', accuracy: accuracy6t.percentage },
+      { name: '10s', vote: futurePath10s.length > 1 ? (futurePath10s[futurePath10s.length - 1].price > futurePath10s[0].price ? 'RISE' : 'FALL') : 'HOLD', accuracy: accuracy10s.percentage },
+      { name: '20s', vote: futurePath20s.length > 1 ? (futurePath20s[futurePath20s.length - 1].price > futurePath20s[0].price ? 'RISE' : 'FALL') : 'HOLD', accuracy: accuracy20s.percentage },
+      { name: '30s', vote: futurePath30s.length > 1 ? (futurePath30s[futurePath30s.length - 1].price > futurePath30s[0].price ? 'RISE' : 'FALL') : 'HOLD', accuracy: accuracy30s.percentage },
+      { name: '40s', vote: futurePath40s.length > 1 ? (futurePath40s[futurePath40s.length - 1].price > futurePath40s[0].price ? 'RISE' : 'FALL') : 'HOLD', accuracy: accuracy40s.percentage },
+  ]), [futurePath3t, accuracy3t, futurePath6t, accuracy6t, futurePath10s, accuracy10s, futurePath20s, accuracy20s, futurePath30s, accuracy30s, futurePath40s, accuracy40s]);
+
 
   useEffect(() => {
-    onConsensusUpdate(projectionConsensus);
-  }, [projectionConsensus, onConsensusUpdate]);
+    onConsensusUpdate(strongestSignal);
+  }, [strongestSignal, onConsensusUpdate]);
 
   const chartDisplayData = useMemo(() => {
     const combined = [...predictionData.filter(p => p && (p.real || p.predicted_1_tick))];
@@ -485,45 +467,10 @@ function StochasticLab({ realData, activeSymbol, onConsensusUpdate }: Stochastic
                         <div className="min-h-0">
                             {activeTab === 'prediction' && (
                               <div>
-                                <Collapsible defaultOpen>
-                                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-                                      <div className="p-4 bg-slate-50 rounded border col-span-1 md:col-span-2">
-                                          <CollapsibleTrigger className="w-full flex justify-between items-center cursor-pointer group">
-                                            <h3 className="text-lg font-semibold flex items-center gap-2"><Brain className="h-5 w-5 text-indigo-500"/>Consenso das Projeções</h3>
-                                            <ChevronRight className="h-4 w-4 text-muted-foreground transition-transform group-data-[state=open]:rotate-90"/>
-                                          </CollapsibleTrigger>
-                                          <CollapsibleContent>
-                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-4">
-                                                <div className={cn("p-4 rounded-lg flex flex-col items-center justify-center text-white",
-                                                    projectionConsensus.decision === 'RISE' && 'bg-green-600',
-                                                    projectionConsensus.decision === 'FALL' && 'bg-red-600',
-                                                    projectionConsensus.decision === 'HOLD' && 'bg-gray-500',
-                                                )}>
-                                                    <span className="text-sm font-medium opacity-80">Decisão Final</span>
-                                                    <span className="text-3xl font-bold">{projectionConsensus.decision}</span>
-                                                    <span className="text-xs font-mono opacity-90">Certeza: {projectionConsensus.certaintyScore.toFixed(1)}%</span>
-                                                </div>
-                                                <div className="space-y-2">
-                                                    {projectionConsensus.votes.map(({ name, vote, accuracy }) => (
-                                                        <div key={name} className="flex justify-between items-center bg-background p-2 rounded-md border text-xs">
-                                                            <span className="font-semibold w-12">{name}</span>
-                                                            <div className="flex items-center gap-2 w-24">
-                                                                <Progress value={accuracy} className="h-1.5 flex-1" indicatorClassName={getProgressColor(accuracy)} />
-                                                                <span className="font-mono w-10 text-right">{accuracy.toFixed(0)}%</span>
-                                                            </div>
-                                                            <span className={cn("font-bold w-10 text-right", 
-                                                                vote === 'RISE' && 'text-green-500', 
-                                                                vote === 'FALL' && 'text-red-500',
-                                                                vote === 'HOLD' && 'text-gray-400'
-                                                            )}>{vote}</span>
-                                                        </div>
-                                                    ))}
-                                                </div>
-                                            </div>
-                                          </CollapsibleContent>
-                                      </div>
-                                  </div>
-                                </Collapsible>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                                     <StrongestSignalCard signal={strongestSignal} />
+                                     <ProjectionExpertsPanel experts={projectionExperts} />
+                                </div>
                                 <h3 className="text-lg font-semibold mb-2">Previsão (1-Tick) & Projeções Futuras</h3>
                                 <ResponsiveContainer width="100%" height={350}>
                                   <LineChart data={chartDisplayData}>
@@ -570,13 +517,6 @@ function StochasticLab({ realData, activeSymbol, onConsensusUpdate }: Stochastic
                                         </TooltipProvider>
                                         <p className="text-lg font-bold font-mono">{driftCorrectionForDisplay.drift.toFixed(6)}</p>
                                     </div>
-                                    {/* Métricas de Assertividade... */}
-                                    <div className="p-3 bg-slate-50 rounded border"><p className="text-xs text-muted-foreground flex items-center gap-1.5"><Target className="h-4 w-4"/>Assertividade (3t)</p><div className="flex items-center gap-2"><Progress value={accuracy3t.percentage} className="h-2 w-full flex-1" indicatorClassName={getProgressColor(accuracy3t.percentage)} /><span className="font-mono font-semibold w-16 text-right">{accuracy3t.percentage.toFixed(1)}%</span></div></div>
-                                    <div className="p-3 bg-slate-50 rounded border"><p className="text-xs text-muted-foreground flex items-center gap-1.5"><Target className="h-4 w-4"/>Assertividade (6t)</p><div className="flex items-center gap-2"><Progress value={accuracy6t.percentage} className="h-2 w-full flex-1" indicatorClassName={getProgressColor(accuracy6t.percentage)} /><span className="font-mono font-semibold w-16 text-right">{accuracy6t.percentage.toFixed(1)}%</span></div></div>
-                                     <div className="p-3 bg-slate-50 rounded border"><p className="text-xs text-muted-foreground flex items-center gap-1.5"><Target className="h-4 w-4"/>Assertividade (10s)</p><div className="flex items-center gap-2"><Progress value={accuracy10s.percentage} className="h-2 w-full flex-1" indicatorClassName={getProgressColor(accuracy10s.percentage)} /><span className="font-mono font-semibold w-16 text-right">{accuracy10s.percentage.toFixed(1)}%</span></div></div>
-                                     <div className="p-3 bg-slate-50 rounded border"><p className="text-xs text-muted-foreground flex items-center gap-1.5"><Target className="h-4 w-4"/>Assertividade (20s)</p><div className="flex items-center gap-2"><Progress value={accuracy20s.percentage} className="h-2 w-full flex-1" indicatorClassName={getProgressColor(accuracy20s.percentage)} /><span className="font-mono font-semibold w-16 text-right">{accuracy20s.percentage.toFixed(1)}%</span></div></div>
-                                     <div className="p-3 bg-slate-50 rounded border"><p className="text-xs text-muted-foreground flex items-center gap-1.5"><Target className="h-4 w-4"/>Assertividade (30s)</p><div className="flex items-center gap-2"><Progress value={accuracy30s.percentage} className="h-2 w-full flex-1" indicatorClassName={getProgressColor(accuracy30s.percentage)} /><span className="font-mono font-semibold w-16 text-right">{accuracy30s.percentage.toFixed(1)}%</span></div></div>
-                                     <div className="p-3 bg-slate-50 rounded border col-span-2 lg:col-span-1"><p className="text-xs text-muted-foreground flex items-center gap-1.5"><Target className="h-4 w-4"/>Assertividade (40s)</p><div className="flex items-center gap-2"><Progress value={accuracy40s.percentage} className="h-2 w-full flex-1" indicatorClassName={getProgressColor(accuracy40s.percentage)} /><span className="font-mono font-semibold w-16 text-right">{accuracy40s.percentage.toFixed(1)}%</span></div></div>
                                 </div>
                               </div>
                             )}
@@ -594,6 +534,60 @@ function StochasticLab({ realData, activeSymbol, onConsensusUpdate }: Stochastic
   );
 };
 
+const StrongestSignalCard = ({ signal }: { signal: StrongestSignal }) => {
+    const isHold = signal.direction === 'HOLD' || signal.certaintyScore === 0;
+
+    return (
+        <Card className={cn("p-4 flex flex-col justify-center", 
+            isHold ? 'bg-slate-50' : signal.direction === 'RISE' ? 'bg-green-50' : 'bg-red-50'
+        )}>
+            <CardTitle className="text-sm font-semibold text-muted-foreground mb-2">Sinal Preditivo Mais Forte</CardTitle>
+            {isHold ? (
+                <div className="text-center text-muted-foreground">
+                    <HelpCircle className="mx-auto h-8 w-8 opacity-50 mb-2"/>
+                    <p className="font-bold text-lg">NEUTRO</p>
+                    <p className="text-xs">Nenhum especialista com alta certeza.</p>
+                </div>
+            ) : (
+                <div className="text-center">
+                    {signal.direction === 'RISE' ? <TrendingUp className="mx-auto h-8 w-8 text-green-500 mb-2" /> : <TrendingDown className="mx-auto h-8 w-8 text-red-500 mb-2" />}
+                    <p className={cn("font-bold text-lg", signal.direction === 'RISE' ? 'text-green-600' : 'text-red-600')}>
+                        {signal.direction} para {signal.horizon}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                        Assertividade do Especialista: <span className="font-bold">{signal.accuracy.toFixed(1)}%</span>
+                    </p>
+                </div>
+            )}
+        </Card>
+    );
+};
+
+const ProjectionExpertsPanel = ({ experts }: { experts: { name: string; vote: 'RISE' | 'FALL' | 'HOLD'; accuracy: number }[] }) => (
+    <Card className="p-4">
+        <CardTitle className="text-sm font-semibold text-muted-foreground mb-3">Painel dos Especialistas</CardTitle>
+        <div className="space-y-2">
+            {experts.map(({ name, vote, accuracy }) => (
+                <div key={name} className="flex justify-between items-center bg-background p-2 rounded-md border text-xs">
+                    <span className="font-semibold w-12">{name}</span>
+                    <div className="flex items-center gap-2 w-24">
+                        <Progress value={accuracy} className="h-1.5 flex-1" indicatorClassName={getProgressColor(accuracy)} />
+                        <span className="font-mono w-10 text-right">{accuracy.toFixed(0)}%</span>
+                    </div>
+                    <span className={cn("font-bold w-10 text-right flex items-center justify-end gap-1", 
+                        vote === 'RISE' && 'text-green-500', 
+                        vote === 'FALL' && 'text-red-500',
+                        vote === 'HOLD' && 'text-gray-400'
+                    )}>
+                        {vote === 'RISE' && <TrendingUp size={12}/>}
+                        {vote === 'FALL' && <TrendingDown size={12}/>}
+                        {vote}
+                    </span>
+                </div>
+            ))}
+        </div>
+    </Card>
+);
 
 function Header() {
     const { activeSymbol, setActiveSymbol, assetGroups, isAssetsLoading } = useDerivApiV2();
@@ -620,11 +614,11 @@ function PageContent() {
         },
     });
 
-    const [consensus, setConsensus] = useState<Consensus>({
-      decision: 'HOLD',
+    const [strongestSignal, setStrongestSignal] = useState<StrongestSignal>({
+      horizon: 'N/A',
+      direction: 'HOLD',
       certaintyScore: 0,
-      confidence: 0,
-      votes: [],
+      accuracy: 50,
     });
 
     return (
@@ -632,10 +626,10 @@ function PageContent() {
             <div className="flex-1 space-y-4 p-4 sm:p-8 pt-6">
                 <Header />
                 <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
-                    <StochasticLab realData={chartData} activeSymbol={activeSymbol} onConsensusUpdate={setConsensus} />
+                    <StochasticLab realData={chartData} activeSymbol={activeSymbol} onConsensusUpdate={setStrongestSignal} />
                     <div className="lg:col-span-2 space-y-6">
-                        <VolatilityTraderInterface symbol={activeSymbol || ''} consensus={consensus} />
-                        <OperationsLogV2 operations={operationsLog} sellContract={sellContract} priceTicks={priceTicks} clearActiveContracts={clearActiveContracts} />
+                        <VolatilityTraderInterface symbol={activeSymbol || ''} consensus={strongestSignal} />
+                        <OperationsLogV2 operations={operationsLog} sellContract={sellContract} priceTicks={priceTicks} clearActiveContracts={clearActiveContracts}/>
                     </div>
                 </div>
             </div>
