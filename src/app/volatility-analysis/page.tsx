@@ -43,6 +43,13 @@ const normalQuantile = (p: number): number => {
 
 const isCandle = (d: ChartData): d is CandleData => d != null && 'close' in d;
 
+const getProgressColor = (percentage: number) => {
+    if (percentage > 75) return 'bg-green-500';
+    if (percentage > 60) return 'bg-blue-500';
+    if (percentage < 40) return 'bg-red-500';
+    return 'bg-gray-400';
+};
+
 interface StrongestSignal {
     horizon: string;
     direction: 'RISE' | 'FALL' | 'HOLD';
@@ -63,13 +70,6 @@ function StochasticLab({ realData, activeSymbol, onConsensusUpdate }: Stochastic
     const total = history.length;
     const percentage = total > 0 ? (hits / total) * 100 : 0;
     return { hits, total, percentage };
-  };
-
-  const getProgressColor = (percentage: number) => {
-    if (percentage > 75) return 'bg-green-500';
-    if (percentage > 60) return 'bg-blue-500';
-    if (percentage < 40) return 'bg-red-500';
-    return 'bg-gray-400';
   };
 
   const [activeTab, setActiveTab] = useState('prediction');
@@ -263,13 +263,6 @@ function StochasticLab({ realData, activeSymbol, onConsensusUpdate }: Stochastic
         return path;
       };
       
-      const ACCURACY_WINDOW_3T = 6;
-      const ACCURACY_WINDOW_6T = 6;
-      const ACCURACY_WINDOW_10S = 10;
-      const ACCURACY_WINDOW_20S = 10;
-      const ACCURACY_WINDOW_30S = 10;
-      const ACCURACY_WINDOW_40S = 10;
-
       const processPredictionHorizon = (
           horizonTicks: number,
           accuracyWindow: number,
@@ -300,16 +293,16 @@ function StochasticLab({ realData, activeSymbol, onConsensusUpdate }: Stochastic
       };
 
       const horizons = [
-          { ticks: 3, window: ACCURACY_WINDOW_3T, ref: pendingPredictions3tRef, setAccuracyHistory: setPredictionAccuracyHistory3t },
-          { ticks: 6, window: ACCURACY_WINDOW_6T, ref: pendingPredictions6tRef, setAccuracyHistory: setPredictionAccuracyHistory6t },
-          { ticks: 10, window: ACCURACY_WINDOW_10S, ref: pendingPredictions10sRef, setAccuracyHistory: setPredictionAccuracyHistory10s }, 
-          { ticks: 20, window: ACCURACY_WINDOW_20S, ref: pendingPredictions20sRef, setAccuracyHistory: setPredictionAccuracyHistory20s }, 
-          { ticks: 30, window: ACCURACY_WINDOW_30S, ref: pendingPredictions30sRef, setAccuracyHistory: setPredictionAccuracyHistory30s },
-          { ticks: 40, window: ACCURACY_WINDOW_40S, ref: pendingPredictions40sRef, setAccuracyHistory: setPredictionAccuracyHistory40s }, 
+          { name: '3t', ticks: 3, window: 6, ref: pendingPredictions3tRef, setHistory: setPredictionAccuracyHistory3t },
+          { name: '6t', ticks: 6, window: 6, ref: pendingPredictions6tRef, setHistory: setPredictionAccuracyHistory6t },
+          { name: '10s', ticks: 10, window: 10, ref: pendingPredictions10sRef, setHistory: setPredictionAccuracyHistory10s }, 
+          { name: '20s', ticks: 20, window: 10, ref: pendingPredictions20sRef, setHistory: setPredictionAccuracyHistory20s }, 
+          { name: '30s', ticks: 30, window: 10, ref: pendingPredictions30sRef, setHistory: setPredictionAccuracyHistory30s },
+          { name: '40s', ticks: 40, window: 10, ref: pendingPredictions40sRef, setHistory: setPredictionAccuracyHistory40s }, 
       ];
       
       horizons.forEach(h => {
-          processPredictionHorizon(h.ticks, h.window, prices, h.ref, h.setAccuracyHistory);
+          processPredictionHorizon(h.ticks, h.window, prices, h.ref, h.setHistory);
       });
       
       const paths = horizons.map(h => projectPath(h.ticks));
