@@ -19,7 +19,6 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { volatilityTraderSchema, type VolatilityTraderFormValues } from "@/features/trading/components/deriv-trader/volatility-trader-interface.types";
 import VolatilityTraderInterface from "@/features/trading/components/deriv-trader/volatility-trader-interface";
 import { OperationsLogV2 } from "@/features/trading/components/deriv-trader/operations-log-v2";
-import { getConsensusGradientStyle } from '@/features/trading/components/deriv-trader/utils/get-consensus-gradient-style';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 
 
@@ -134,23 +133,22 @@ interface StochasticLabProps {
   onConsensusUpdate: (consensus: any) => void; // Tipo genérico por enquanto
 }
 
-function StochasticLab({ realData, activeSymbol, onConsensusUpdate }: StochasticLabProps) {
-    
-  const calculateRollingAccuracy = (history: boolean[]) => {
-    const hits = history.filter(h => h).length;
-    const total = history.length;
-    const percentage = total > 0 ? (hits / total) * 100 : 0;
-    return { hits, total, percentage };
-  };
-  
-  const getProgressColor = (percentage: number) => {
+const getProgressColor = (percentage: number) => {
     if (percentage > 75) return 'bg-green-500';
     if (percentage > 60) return 'bg-blue-500';
     if (percentage < 40) return 'bg-red-500';
     return 'bg-gray-400';
 };
 
+const calculateRollingAccuracy = (history: boolean[]) => {
+    const hits = history.filter(h => h).length;
+    const total = history.length;
+    const percentage = total > 0 ? (hits / total) * 100 : 0;
+    return { hits, total, percentage };
+};
 
+
+function StochasticLab({ realData, activeSymbol, onConsensusUpdate }: StochasticLabProps) {
   const [activeTab, setActiveTab] = useState('prediction');
   const [priceData, setPriceData] = useState<any[]>([]);
   const [lastPrice, setLastPrice] = useState<number | null>(null);
@@ -342,12 +340,12 @@ function StochasticLab({ realData, activeSymbol, onConsensusUpdate }: Stochastic
       };
 
       const horizons = [
-          { name: '3t', ticks: 3, window: 6 },
-          { name: '6t', ticks: 6, window: 6 },
-          { name: '10s', ticks: 10, window: 10 }, 
-          { name: '20s', ticks: 20, window: 10 }, 
-          { name: '30s', ticks: 30, window: 10 },
-          { name: '40s', ticks: 40, window: 10 }, 
+          { name: '3t', ticks: 3, window: 6, ref: pendingPredictions3tRef, setHistory: setPredictionAccuracyHistory3t },
+          { name: '6t', ticks: 6, window: 6, ref: pendingPredictions6tRef, setHistory: setPredictionAccuracyHistory6t },
+          { name: '10s', ticks: 10, window: 10, ref: pendingPredictions10sRef, setHistory: setPredictionAccuracyHistory10s }, 
+          { name: '20s', ticks: 20, window: 10, ref: pendingPredictions20sRef, setHistory: setPredictionAccuracyHistory20s }, 
+          { name: '30s', ticks: 30, window: 10, ref: pendingPredictions30sRef, setHistory: setPredictionAccuracyHistory30s },
+          { name: '40s', ticks: 40, window: 10, ref: pendingPredictions40sRef, setHistory: setPredictionAccuracyHistory40s }, 
       ];
       
       horizons.forEach(h => {
@@ -381,7 +379,7 @@ function StochasticLab({ realData, activeSymbol, onConsensusUpdate }: Stochastic
     
     setPredictionData(newPredictionData.slice(-200));
 
-  }, [realData, driftCorrectionForDisplay]);
+  }, [realData]);
 
   const accuracy3t = useMemo(() => calculateRollingAccuracy(predictionAccuracyHistory3t), [predictionAccuracyHistory3t]);
   const accuracy6t = useMemo(() => calculateRollingAccuracy(predictionAccuracyHistory6t), [predictionAccuracyHistory6t]);
@@ -653,13 +651,16 @@ function PageContent() {
         resolver: zodResolver(volatilityTraderSchema),
         defaultValues: {
             stake: 1.0,
-            duration: 15,
+            duration: 5,
         },
     });
 
+    // FIX: Initialize confirmedSignal state to match the shape expected by VolatilityTraderInterface
     const [confirmedSignal, setConfirmedSignal] = useState<any>({
-      signal: 'HOLD',
-      confidenceScore: 0,
+      direction: 'HOLD',
+      certaintyScore: 0,
+      horizon: 'N/A',
+      accuracy: 50,
     });
 
     return (
