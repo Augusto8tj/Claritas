@@ -120,33 +120,27 @@ export default function PredictiveLogViewer({
                 </CardDescription>
             </div>
              {logs.length > 0 && (
-                <div className="flex flex-col sm:flex-row items-stretch gap-2">
+                <div className="flex items-center gap-2">
                     <TooltipProvider>
                         <Tooltip>
                             <TooltipTrigger asChild>
-                                <Button variant="outline" size="icon" onClick={toggleAll} className="sm:hidden">
-                                <ChevronsUpDown className="h-4 w-4" />
+                                <Button variant="outline" size="sm" onClick={toggleAll} className="flex items-center">
+                                    <ChevronsUpDown className="h-4 w-4 md:mr-2" />
+                                    <span className="hidden md:inline">{openItems.length === logs.length ? 'Recolher' : 'Expandir'}</span>
                                 </Button>
                             </TooltipTrigger>
-                            <TooltipContent><p>{openItems.length === logs.length ? 'Recolher Tudo' : 'Expandir Tudo'}</p></TooltipContent>
+                            <TooltipContent side="bottom" className="md:hidden"><p>{openItems.length === logs.length ? 'Recolher Tudo' : 'Expandir Tudo'}</p></TooltipContent>
                         </Tooltip>
-                        <Button variant="outline" size="sm" onClick={toggleAll} className="w-full sm:w-auto hidden md:flex items-center">
-                            <ChevronsUpDown className="mr-2 h-4 w-4" />
-                            {openItems.length === logs.length ? 'Recolher Tudo' : 'Expandir Tudo'}
-                        </Button>
-
+                        
                         <Tooltip>
                             <TooltipTrigger asChild>
-                                <Button variant="outline" size="icon" onClick={handleCsvExport} className="sm:hidden">
-                                    <FilePieChart className="h-4 w-4" />
+                                <Button variant="outline" size="sm" onClick={handleCsvExport} className="flex items-center">
+                                    <FilePieChart className="h-4 w-4 md:mr-2" />
+                                    <span className="hidden md:inline">Gerar CSV</span>
                                 </Button>
                             </TooltipTrigger>
-                            <TooltipContent><p>Gerar Relatório CSV</p></TooltipContent>
+                            <TooltipContent side="bottom" className="md:hidden"><p>Gerar Relatório CSV</p></TooltipContent>
                         </Tooltip>
-                        <Button variant="outline" size="sm" onClick={handleCsvExport} className="w-full sm:w-auto hidden md:flex items-center">
-                            <FilePieChart className="mr-2 h-4 w-4" />
-                            Gerar Relatório CSV
-                        </Button>
                     </TooltipProvider>
                 </div>
             )}

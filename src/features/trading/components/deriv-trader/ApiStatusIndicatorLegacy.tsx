@@ -32,8 +32,9 @@ export function ApiStatusIndicatorLegacy() {
   }, [reconnect, checkIa]);
 
   useEffect(() => {
-    runAllChecks();
-  }, []);
+    // Apenas verifica a IA no mount, não força reconexão da Deriv para evitar loops
+    checkIa();
+  }, [checkIa]);
 
   const derivStatus: Status = isConnecting ? 'loading' : isConnected ? 'success' : 'error';
 
