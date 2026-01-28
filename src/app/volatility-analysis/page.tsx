@@ -58,19 +58,6 @@ const getProgressColor = (percentage: number) => {
 
 const isCandle = (d: ChartData): d is CandleData => d != null && 'close' in d;
 
-interface ConfirmationSystem {
-  gbmSignal: 'RISE' | 'FALL';
-  rsiSignal: 'RISE' | 'FALL' | 'NEUTRAL';
-  momentumSignal: 'RISE' | 'FALL' | 'NEUTRAL';
-}
-
-interface ConfirmedSignal {
-  signal: 'RISE' | 'FALL' | 'NEUTRAL';
-  confidenceScore: number;
-  reason: string;
-}
-
-
 interface StrongestSignal {
     horizon: string;
     direction: 'RISE' | 'FALL' | 'HOLD';
@@ -141,21 +128,23 @@ function StochasticLab({ realData, operationsLog, activeSymbol, onConsensusUpdat
   
   const [driftCorrectionForDisplay, setDriftCorrectionForDisplay] = useState({drift: 0, mae: 0, rmse: 0});
 
-  const [predictionAccuracyHistory3t, setPredictionAccuracyHistory3t] = useState<boolean[]>([]);
-  const [predictionAccuracyHistory6t, setPredictionAccuracyHistory6t] = useState<boolean[]>([]);
-  const [predictionAccuracyHistory10t, setPredictionAccuracyHistory10t] = useState<boolean[]>([]);
-  const [predictionAccuracyHistory20s, setPredictionAccuracyHistory20s] = useState<boolean[]>([]);
-  const [predictionAccuracyHistory30s, setPredictionAccuracyHistory30s] = useState<boolean[]>([]);
-  const [predictionAccuracyHistory40s, setPredictionAccuracyHistory40s] = useState<boolean[]>([]);
-
   const predictionErrorsRef = useRef<number[]>([]);
-  const pendingPredictions3tRef = useRef<{ startTimeIndex: number; startPrice: number; predictedEndPrice: number }[]>([]);
-  const pendingPredictions6tRef = useRef<{ startTimeIndex: number; startPrice: number; predictedEndPrice: number }[]>([]);
-  const pendingPredictions10tRef = useRef<{ startTimeIndex: number; startPrice: number; predictedEndPrice: number }[]>([]);
-  const pendingPredictions20sRef = useRef<{ startTimeIndex: number; startPrice: number; predictedEndPrice: number }[]>([]);
-  const pendingPredictions30sRef = useRef<{ startTimeIndex: number; startPrice: number; predictedEndPrice: number }[]>([]);
-  const pendingPredictions40sRef = useRef<{ startTimeIndex: number; startPrice: number; predictedEndPrice: number }[]>([]);
-
+  const accuracyHistoryRefs = {
+    '3t': useRef<boolean[]>([]),
+    '6t': useRef<boolean[]>([]),
+    '10t': useRef<boolean[]>([]),
+    '20s': useRef<boolean[]>([]),
+    '30s': useRef<boolean[]>([]),
+    '40s': useRef<boolean[]>([]),
+  };
+  const pendingPredictionsRefs = {
+    '3t': useRef<{ startTimeIndex: number; startPrice: number; predictedEndPrice: number }[]>([]),
+    '6t': useRef<{ startTimeIndex: number; startPrice: number; predictedEndPrice: number }[]>([]),
+    '10t': useRef<{ startTimeIndex: number; startPrice: number; predictedEndPrice: number }[]>([]),
+    '20s': useRef<{ startTimeIndex: number; startPrice: number; predictedEndPrice: number }[]>([]),
+    '30s': useRef<{ startTimeIndex: number; startPrice: number; predictedEndPrice: number }[]>([]),
+    '40s': useRef<{ startTimeIndex: number; startPrice: number; predictedEndPrice: number }[]>([]),
+  };
 
   const normalRandom = (): number => {
     let u1 = 0;
@@ -282,27 +271,26 @@ function StochasticLab({ realData, operationsLog, activeSymbol, onConsensusUpdat
       };
       
       const horizons = [
-          { name: '3t', ticks: 3, window: 6, ref: pendingPredictions3tRef, setHistory: setPredictionAccuracyHistory3t },
-          { name: '6t', ticks: 6, window: 6, ref: pendingPredictions6tRef, setHistory: setPredictionAccuracyHistory6t },
-          { name: '10t', ticks: 10, window: 10, ref: pendingPredictions10tRef, setHistory: setPredictionAccuracyHistory10t },
-          { name: '20s', ticks: 20, window: 10, ref: pendingPredictions20sRef, setHistory: setPredictionAccuracyHistory20s },
-          { name: '30s', ticks: 30, window: 10, ref: pendingPredictions30sRef, setHistory: setPredictionAccuracyHistory30s },
-          { name: '40s', ticks: 40, window: 10, ref: pendingPredictions40sRef, setHistory: setPredictionAccuracyHistory40s },
+          { name: '3t', ticks: 3, window: 6 },
+          { name: '6t', ticks: 6, window: 6 },
+          { name: '10t', ticks: 10, window: 10 },
+          { name: '20s', ticks: 20, window: 10 },
+          { name: '30s', ticks: 30, window: 10 },
+          { name: '40s', ticks: 40, window: 10 },
       ];
       
-      const processPredictionHorizon = (
-          horizonTicks: number,
-          accuracyWindow: number,
-          prices: number[],
-          pendingPredictionsRef: React.MutableRefObject<{ startTimeIndex: number; startPrice: number; predictedEndPrice: number }[]>,
-          setAccuracyHistory: React.Dispatch<React.SetStateAction<boolean[]>>,
-      ) => {
-          const currentTimeIndex = prices.length - 1;
+      const newAssertiveness: Record<string, { accuracy: number, vote: 'RISE' | 'FALL' | 'HOLD' }> = {};
+
+      horizons.forEach(h => {
+          const { name, ticks, window } = h;
+          const pendingRef = pendingPredictionsRefs[name as keyof typeof pendingPredictionsRefs];
+          const historyRef = accuracyHistoryRefs[name as keyof typeof accuracyHistoryRefs];
+          
           let newHistory: boolean[] = [];
 
-          const updatedPending = pendingPredictionsRef.current.filter((pred) => {
-              if (currentTimeIndex >= pred.startTimeIndex + horizonTicks) {
-                  const actualEndPrice = prices[pred.startTimeIndex + horizonTicks];
+          const updatedPending = pendingRef.current.filter((pred) => {
+              if (prices.length - 1 >= pred.startTimeIndex + ticks) {
+                  const actualEndPrice = prices[pred.startTimeIndex + ticks];
                   if (actualEndPrice === undefined) return true;
                   const predictedDirection = pred.predictedEndPrice > pred.startPrice;
                   const actualDirection = actualEndPrice > pred.startPrice;
@@ -312,184 +300,158 @@ function StochasticLab({ realData, operationsLog, activeSymbol, onConsensusUpdat
               return true;
           });
           
-          pendingPredictionsRef.current = updatedPending;
+          pendingRef.current = updatedPending;
           
           if (newHistory.length > 0) {
-              setAccuracyHistory(prev => [...prev.slice(-accuracyWindow + newHistory.length), ...newHistory]);
+              historyRef.current = [...historyRef.current.slice(-window + newHistory.length), ...newHistory];
           }
-      };
-      
-      horizons.forEach(h => {
-          processPredictionHorizon(h.ticks, h.window, prices, h.ref, h.setHistory);
-      });
-      
-      const paths = horizons.map(h => projectPath(h.ticks));
 
-      horizons.forEach((h, index) => {
-          const newFuturePath = paths[index];
-          if (newFuturePath.length === h.ticks + 1) {
-              const newPredictionTimeIndex = newFuturePath[0].time;
-              const alreadyPending = h.ref.current.some(p => p.startTimeIndex === newPredictionTimeIndex);
-              if (!alreadyPending) {
-                  h.ref.current.push({
-                      startTimeIndex: newPredictionTimeIndex,
-                      startPrice: newFuturePath[0].price,
-                      predictedEndPrice: newFuturePath[h.ticks].price,
-                  });
+          const futurePath = projectPath(ticks);
+          if (futurePath.length === ticks + 1) {
+              pendingRef.current.push({
+                  startTimeIndex: lastTime,
+                  startPrice: futurePath[0].price,
+                  predictedEndPrice: futurePath[ticks].price,
+              });
+          }
+
+          const { percentage } = calculateRollingAccuracy(historyRef.current);
+          const vote: 'RISE' | 'FALL' | 'HOLD' = futurePath.length > 1 ? (futurePath[futurePath.length-1].price > futurePath[0].price ? 'RISE' : 'FALL') : 'HOLD';
+          newAssertiveness[name] = { accuracy: percentage, vote };
+
+          if(name === '3t') setFuturePath3t(futurePath.map(p => ({ time: p.time, predicted_3t_ahead: p.price })));
+          if(name === '6t') setFuturePath6t(futurePath.map(p => ({ time: p.time, predicted_6t_ahead: p.price })));
+          if(name === '10t') setFuturePath10t(futurePath.map(p => ({ time: p.time, predicted_10t_ahead: p.price })));
+          if(name === '20s') setFuturePath20s(futurePath.map(p => ({ time: p.time, predicted_20s_ahead: p.price })));
+          if(name === '30s') setFuturePath30s(futurePath.map(p => ({ time: p.time, predicted_30s_ahead: p.price })));
+          if(name === '40s') setFuturePath40s(futurePath.map(p => ({ time: p.time, predicted_40s_ahead: p.price })));
+      });
+
+      let strongestSignal: StrongestSignal = { horizon: 'N/A', direction: 'HOLD', certaintyScore: 0, accuracy: 50 };
+      let maxCertainty = 0;
+
+      Object.entries(newAssertiveness).forEach(([horizon, data]) => {
+          if (data.vote !== 'HOLD') {
+              const certainty = Math.abs(data.accuracy - 50) * 2;
+              if (certainty > maxCertainty) {
+                  maxCertainty = certainty;
+                  const direction: 'RISE' | 'FALL' = data.accuracy > 50 ? data.vote : (data.vote === 'RISE' ? 'FALL' : 'RISE');
+                  strongestSignal = { horizon, direction, certaintyScore: certainty, accuracy: data.accuracy };
               }
           }
       });
+      onConsensusUpdate(strongestSignal);
+
+      if (!isAutopilotOn || cooldownRef.current || !activeSymbol || !executeTrade || !user) return;
+      const activeAutopilotTrade = operationsLog.find(op => op.initiator === 'Piloto' && op.status === 'pending');
+      if (activeAutopilotTrade) {
+          setAutopilotStatus(`Gerindo posição #${activeAutopilotTrade.id}`);
+          return;
+      }
       
-      setFuturePath3t(paths[0].map(p => ({ time: p.time, predicted_3t_ahead: p.price })));
-      setFuturePath6t(paths[1].map(p => ({ time: p.time, predicted_6t_ahead: p.price })));
-      setFuturePath10t(paths[2].map(p => ({ time: p.time, predicted_10t_ahead: p.price })));
-      setFuturePath20s(paths[3].map(p => ({ time: p.time, predicted_20s_ahead: p.price })));
-      setFuturePath30s(paths[4].map(p => ({ time: p.time, predicted_30s_ahead: p.price })));
-      setFuturePath40s(paths[5].map(p => ({ time: p.time, predicted_40s_ahead: p.price })));
+      let tradeExecuted = false;
+      for (let i = 1; i < horizons.length; i++) {
+          const currentHorizonName = horizons[i].name;
+          const prevHorizonName = horizons[i-1].name;
+          const currentExpert = newAssertiveness[currentHorizonName];
+          const prevExpert = newAssertiveness[prevHorizonName];
+
+          const currentVote = currentExpert.accuracy > 50 ? currentExpert.vote : (currentExpert.vote === 'RISE' ? 'FALL' : 'RISE');
+          const prevVote = prevExpert.accuracy > 50 ? prevExpert.vote : (prevExpert.vote === 'RISE' ? 'FALL' : 'RISE');
+
+          const currentEffectiveAccuracy = Math.max(currentExpert.accuracy, 100 - currentExpert.accuracy);
+          const prevEffectiveAccuracy = Math.max(prevExpert.accuracy, 100 - prevExpert.accuracy);
+
+          if (currentEffectiveAccuracy > 70 && prevEffectiveAccuracy > 70 && currentVote === prevVote && currentVote !== 'HOLD') {
+              const statusMessage = `Sinal ${currentVote} confirmado por ${prevHorizonName} (${prevEffectiveAccuracy.toFixed(0)}%) e ${currentHorizonName} (${currentEffectiveAccuracy.toFixed(0)}%). Executando...`;
+              setAutopilotStatus(statusMessage);
+              
+              const expertName = currentHorizonName;
+              const durationMatch = expertName.match(/(\d+)([st])/);
+              
+              if (!durationMatch) {
+                  console.error("Could not parse duration from horizon name:", expertName);
+                  continue;
+              }
+              const duration = parseInt(durationMatch[1], 10);
+              const durationUnit: DurationUnit = durationMatch[2] as DurationUnit;
+              
+              const tradeParams = {
+                  direction: currentVote,
+                  stake: 1.0, 
+                  duration,
+                  durationUnit,
+              };
+
+              const logId = `pred_log_${Date.now()}`;
+              const pendingLog: PredictiveTradeLog = {
+                id: logId,
+                contractId: 0,
+                timestamp: new Date().toISOString(),
+                asset: activeSymbol,
+                tradeParams: tradeParams,
+                context: {
+                  triggerReason: statusMessage,
+                  assertivenessSnapshot: Object.entries(newAssertiveness).map(([horizon, data]) => ({
+                      horizon,
+                      accuracy: data.accuracy,
+                      vote: data.vote,
+                  })),
+                },
+                result: 'pending',
+                pnl: 0,
+              };
+
+              executeTrade(
+                  currentVote === 'RISE' ? 'CALL' : 'PUT',
+                  tradeParams.stake,
+                  activeSymbol,
+                  currentVote.toLowerCase() as 'rise' | 'fall',
+                  tradeParams.duration,
+                  tradeParams.durationUnit,
+                  'Piloto'
+              ).then(tradeResult => {
+                   if (tradeResult.success && tradeResult.contractId) {
+                       const finalLog = { ...pendingLog, contractId: tradeResult.contractId };
+                       savePredictiveTradeLog(user.uid, finalLog);
+                       toast({ title: '🤖 Piloto Automático: Posição Aberta!', description: statusMessage });
+                   } else {
+                       toast({ title: '❌ Falha do Piloto', description: tradeResult.message, variant: 'destructive' });
+                   }
+              });
+
+              cooldownRef.current = true;
+              setTimeout(() => {
+                  cooldownRef.current = false;
+                  setAutopilotStatus('Monitorando...');
+              }, 60000); 
+
+              tradeExecuted = true;
+              break;
+          }
+      }
+
+      if (!tradeExecuted) {
+          setAutopilotStatus('Monitorando...');
+      }
     }
-    
     setPredictionData(newPredictionData.slice(-200));
 
+  }, [realData, isAutopilotOn, operationsLog, activeSymbol, executeTrade, user, toast, setAutopilotStatus, onConsensusUpdate]);
+
+  const [accuracy3t, accuracy6t, accuracy10t, accuracy20s, accuracy30s, accuracy40s] = useMemo(() => {
+    return [
+      calculateRollingAccuracy(accuracyHistoryRefs['3t'].current),
+      calculateRollingAccuracy(accuracyHistoryRefs['6t'].current),
+      calculateRollingAccuracy(accuracyHistoryRefs['10t'].current),
+      calculateRollingAccuracy(accuracyHistoryRefs['20s'].current),
+      calculateRollingAccuracy(accuracyHistoryRefs['30s'].current),
+      calculateRollingAccuracy(accuracyHistoryRefs['40s'].current),
+    ];
   }, [realData]);
-
-  const accuracy3t = useMemo(() => calculateRollingAccuracy(predictionAccuracyHistory3t), [predictionAccuracyHistory3t]);
-  const accuracy6t = useMemo(() => calculateRollingAccuracy(predictionAccuracyHistory6t), [predictionAccuracyHistory6t]);
-  const accuracy10t = useMemo(() => calculateRollingAccuracy(predictionAccuracyHistory10t), [predictionAccuracyHistory10t]);
-  const accuracy20s = useMemo(() => calculateRollingAccuracy(predictionAccuracyHistory20s), [predictionAccuracyHistory20s]);
-  const accuracy30s = useMemo(() => calculateRollingAccuracy(predictionAccuracyHistory30s), [predictionAccuracyHistory30s]);
-  const accuracy40s = useMemo(() => calculateRollingAccuracy(predictionAccuracyHistory40s), [predictionAccuracyHistory40s]);
-  
-   const projectionExperts = useMemo(() => ([
-      { name: '3t', vote: futurePath3t.length > 1 ? (futurePath3t[futurePath3t.length - 1].price > futurePath3t[0].price ? 'RISE' : 'FALL') : 'HOLD', accuracy: accuracy3t.percentage },
-      { name: '6t', vote: futurePath6t.length > 1 ? (futurePath6t[futurePath6t.length - 1].price > futurePath6t[0].price ? 'RISE' : 'FALL') : 'HOLD', accuracy: accuracy6t.percentage },
-      { name: '10t', vote: futurePath10t.length > 1 ? (futurePath10t[futurePath10t.length - 1].price > futurePath10t[0].price ? 'RISE' : 'FALL') : 'HOLD', accuracy: accuracy10t.percentage },
-      { name: '20s', vote: futurePath20s.length > 1 ? (futurePath20s[futurePath20s.length - 1].price > futurePath20s[0].price ? 'RISE' : 'FALL') : 'HOLD', accuracy: accuracy20s.percentage },
-      { name: '30s', vote: futurePath30s.length > 1 ? (futurePath30s[futurePath30s.length - 1].price > futurePath30s[0].price ? 'RISE' : 'FALL') : 'HOLD', accuracy: accuracy30s.percentage },
-      { name: '40s', vote: futurePath40s.length > 1 ? (futurePath40s[futurePath40s.length - 1].price > futurePath40s[0].price ? 'RISE' : 'FALL') : 'HOLD', accuracy: accuracy40s.percentage },
-  ]), [futurePath3t, accuracy3t, futurePath6t, accuracy6t, futurePath10t, accuracy10t, futurePath20s, accuracy20s, futurePath30s, accuracy30s, futurePath40s]);
-
-  const strongestSignal = useMemo((): StrongestSignal => {
-    let bestSignal: StrongestSignal = { horizon: 'N/A', direction: 'HOLD', certaintyScore: 0, accuracy: 50 };
-    let maxCertainty = 0;
-
-    projectionExperts.forEach(p => {
-        if (p.vote !== 'HOLD') {
-            const certainty = Math.abs(p.accuracy - 50) * 2;
-            
-            if (certainty > maxCertainty) {
-                maxCertainty = certainty;
-                const direction: 'RISE' | 'FALL' = p.accuracy > 50 ? p.vote : (p.vote === 'RISE' ? 'FALL' : 'RISE');
-                bestSignal = {
-                    horizon: p.name,
-                    direction: direction,
-                    certaintyScore: certainty,
-                    accuracy: p.accuracy,
-                };
-            }
-        }
-    });
-    return bestSignal;
-  }, [projectionExperts]);
-
-  // --- PILOTO AUTOMÁTICO ---
-  useEffect(() => {
-    if (!isAutopilotOn || cooldownRef.current || !activeSymbol || !executeTrade || !user) return;
-
-    const activeAutopilotTrade = operationsLog.find(op => op.initiator === 'Piloto' && op.status === 'pending');
-    if (activeAutopilotTrade) {
-        setAutopilotStatus(`Gerindo posição #${activeAutopilotTrade.id}`);
-        return;
-    }
-    
-    let tradeExecuted = false;
-    for (let i = 1; i < projectionExperts.length; i++) {
-        const currentExpert = projectionExperts[i];
-        const prevExpert = projectionExperts[i-1];
-        
-        const currentVote = currentExpert.accuracy > 50 ? currentExpert.vote : (currentExpert.vote === 'RISE' ? 'FALL' : 'RISE');
-        const prevVote = prevExpert.accuracy > 50 ? prevExpert.vote : (prevExpert.vote === 'RISE' ? 'FALL' : 'RISE');
-
-        const currentEffectiveAccuracy = Math.max(currentExpert.accuracy, 100 - currentExpert.accuracy);
-        const prevEffectiveAccuracy = Math.max(prevExpert.accuracy, 100 - prevExpert.accuracy);
-
-        if (currentEffectiveAccuracy > 70 && prevEffectiveAccuracy > 70 && currentVote === prevVote && currentVote !== 'HOLD') {
-            const statusMessage = `Sinal ${currentVote} confirmado por ${prevExpert.name} (${prevEffectiveAccuracy.toFixed(0)}%) e ${currentExpert.name} (${currentEffectiveAccuracy.toFixed(0)}%). Executando...`;
-            setAutopilotStatus(statusMessage);
-            
-            const expertName = currentExpert.name;
-            const [durationStr] = expertName.split(/[st]/);
-            const duration = parseInt(durationStr, 10);
-            const durationUnit: DurationUnit = expertName.endsWith('t') ? 't' : 's';
-            
-            const tradeParams = {
-                direction: currentVote,
-                stake: 1.0, 
-                duration,
-                durationUnit,
-            };
-
-            const logId = `pred_log_${Date.now()}`;
-            const pendingLog: PredictiveTradeLog = {
-              id: logId,
-              contractId: 0, // Placeholder
-              timestamp: new Date().toISOString(),
-              asset: activeSymbol,
-              tradeParams: tradeParams,
-              context: {
-                triggerReason: statusMessage,
-                assertivenessSnapshot: projectionExperts.map(p => ({
-                    horizon: p.name,
-                    accuracy: p.accuracy,
-                    vote: p.vote,
-                }))
-              },
-              result: 'pending',
-              pnl: 0,
-            };
-
-            executeTrade(
-                currentVote === 'RISE' ? 'CALL' : 'PUT',
-                tradeParams.stake,
-                activeSymbol,
-                currentVote.toLowerCase() as 'rise' | 'fall',
-                tradeParams.duration,
-                tradeParams.durationUnit,
-                'Piloto'
-            ).then(tradeResult => {
-                 if (tradeResult.success && tradeResult.contractId) {
-                     const finalLog = { ...pendingLog, contractId: tradeResult.contractId };
-                     savePredictiveTradeLog(user.uid, finalLog);
-                     toast({ title: '🤖 Piloto Automático: Posição Aberta!', description: statusMessage });
-                 } else {
-                     toast({ title: '❌ Falha do Piloto', description: tradeResult.message, variant: 'destructive' });
-                 }
-            });
-
-            cooldownRef.current = true;
-            setTimeout(() => {
-                cooldownRef.current = false;
-                setAutopilotStatus('Monitorando...');
-            }, 60000); 
-
-            tradeExecuted = true;
-            break;
-        }
-    }
-
-    if (!tradeExecuted) {
-        setAutopilotStatus('Monitorando...');
-    }
-
-  }, [projectionExperts, isAutopilotOn, operationsLog, activeSymbol, executeTrade, setAutopilotStatus, toast, user]);
-  
-
-  useEffect(() => {
-    onConsensusUpdate(strongestSignal);
-  }, [strongestSignal, onConsensusUpdate]);
 
   const chartDisplayData = useMemo(() => {
     const combined = [...predictionData.filter(p => p && (p.real || p.predicted_1_tick))];
-    
     const mergePath = (path: any[]) => {
         path.forEach(point => {
           const existingPointIndex = combined.findIndex(p => p.time === point.time);
@@ -553,10 +515,6 @@ function StochasticLab({ realData, operationsLog, activeSymbol, onConsensusUpdat
                         <div className="min-h-0">
                             {activeTab === 'prediction' && (
                               <div>
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-                                     <StrongestSignalCard signal={strongestSignal} />
-                                     <ProjectionExpertsPanel experts={projectionExperts} />
-                                </div>
                                 <h3 className="text-lg font-semibold mb-2">Previsão (1-Tick) & Projeções Futuras</h3>
                                 <ResponsiveContainer width="100%" height={350}>
                                   <LineChart data={chartDisplayData}>
@@ -853,14 +811,42 @@ function PageContent() {
     useEffect(() => {
         if (!user) return;
         
-        const fetchLogs = async () => {
-            const logs = await getPredictiveTradeLogs(user.uid);
+        getPredictiveTradeLogs(user.uid).then(logs => {
             const sortedLogs = logs.sort((a,b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
             setPredictiveLogs(sortedLogs);
-        };
-        fetchLogs();
-    }, [user, operationsLog]); // Refetch when operationsLog changes (new trade made)
+        });
+    }, [user, operationsLog]);
 
+
+    useEffect(() => {
+        if (!user || !operationsLog.length || !predictiveLogs.length) return;
+
+        const newlyClosedOps = operationsLog.filter(
+            op => op.status !== 'pending' && predictiveLogs.some(pl => pl.contractId === op.id && pl.result === 'pending')
+        );
+
+        if (newlyClosedOps.length > 0) {
+            let logsWereUpdated = false;
+            const updatedPredictiveLogs = predictiveLogs.map(pl => {
+                const correspondingOp = newlyClosedOps.find(op => op.id === pl.contractId);
+                if (correspondingOp) {
+                    logsWereUpdated = true;
+                    const updatedLog = {
+                        ...pl,
+                        result: correspondingOp.status,
+                        pnl: correspondingOp.result || -correspondingOp.stake,
+                    };
+                    savePredictiveTradeLog(user.uid, updatedLog);
+                    return updatedLog;
+                }
+                return pl;
+            });
+
+            if (logsWereUpdated) {
+                setPredictiveLogs(updatedPredictiveLogs.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()));
+            }
+        }
+    }, [operationsLog, predictiveLogs, user]);
 
     const handleSyncDuration = () => {
         const horizon = confirmedSignal.horizon;
@@ -873,11 +859,9 @@ function PageContent() {
         if (horizon.endsWith('s')) {
           duration = parseInt(horizon.replace('s', ''), 10);
         } else if (horizon.endsWith('t')) {
-          // Aproximação: 1 tick ~ 2 segundos.
           duration = parseInt(horizon.replace('t', ''), 10) * 2;
         }
         
-        // Mínimo de 15 segundos
         const finalDuration = Math.max(15, duration);
         form.setValue('duration', finalDuration);
 
