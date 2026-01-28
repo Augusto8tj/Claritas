@@ -23,7 +23,6 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { useToast } from '@/hooks/use-toast';
-import { getConsensusGradientStyle } from '@/features/trading/components/deriv-trader/utils/get-consensus-gradient-style';
 import { useAuth } from '@/features/auth/hooks/use-auth';
 import { getPredictiveTradeLogs, savePredictiveTradeLog } from '@/services/financial-data-service';
 import PredictiveLogViewer from '@/components/deriv-trader/PredictiveLogViewer';
@@ -73,6 +72,8 @@ interface StochasticLabProps {
   isAutopilotOn: boolean;
   setAutopilotStatus: (status: string) => void;
   executeTrade: ReturnType<typeof useDerivApiV2>['executeTrade'];
+  predictiveLogs: PredictiveTradeLog[];
+  setPredictiveLogs: React.Dispatch<React.SetStateAction<PredictiveTradeLog[]>>;
 }
 
 const calculateRollingAccuracy = (history: boolean[]) => {
@@ -106,7 +107,7 @@ const AccuracyCard = ({ horizon, accuracyData }: { horizon: string; accuracyData
 };
 
 
-function StochasticLab({ realData, operationsLog, activeSymbol, onConsensusUpdate, isAutopilotOn, setAutopilotStatus, executeTrade }: StochasticLabProps) {
+function StochasticLab({ realData, operationsLog, activeSymbol, onConsensusUpdate, isAutopilotOn, setAutopilotStatus, executeTrade, predictiveLogs, setPredictiveLogs }: StochasticLabProps) {
   const { user } = useAuth();
   const { toast } = useToast();
   const cooldownRef = useRef(false);
@@ -130,12 +131,8 @@ function StochasticLab({ realData, operationsLog, activeSymbol, onConsensusUpdat
 
   const predictionErrorsRef = useRef<number[]>([]);
   const accuracyHistoryRefs = {
-    '3t': useRef<boolean[]>([]),
-    '6t': useRef<boolean[]>([]),
-    '10t': useRef<boolean[]>([]),
-    '20s': useRef<boolean[]>([]),
-    '30s': useRef<boolean[]>([]),
-    '40s': useRef<boolean[]>([]),
+    '3t': useRef<boolean[]>([]), '6t': useRef<boolean[]>([]), '10t': useRef<boolean[]>([]),
+    '20s': useRef<boolean[]>([]), '30s': useRef<boolean[]>([]), '40s': useRef<boolean[]>([]),
   };
   const pendingPredictionsRefs = {
     '3t': useRef<{ startTimeIndex: number; startPrice: number; predictedEndPrice: number }[]>([]),
@@ -145,6 +142,8 @@ function StochasticLab({ realData, operationsLog, activeSymbol, onConsensusUpdat
     '30s': useRef<{ startTimeIndex: number; startPrice: number; predictedEndPrice: number }[]>([]),
     '40s': useRef<{ startTimeIndex: number; startPrice: number; predictedEndPrice: number }[]>([]),
   };
+  const pendingLogRef = useRef<Omit<PredictiveTradeLog, 'contractId'> | null>(null);
+
 
   const normalRandom = (): number => {
     let u1 = 0;
@@ -342,7 +341,11 @@ function StochasticLab({ realData, operationsLog, activeSymbol, onConsensusUpdat
       });
       onConsensusUpdate(strongestSignal);
 
-      if (!isAutopilotOn || cooldownRef.current || !activeSymbol || !executeTrade || !user) return;
+      if (!isAutopilotOn || cooldownRef.current || !activeSymbol || !executeTrade || !user) {
+        if (!isAutopilotOn) setAutopilotStatus('Pausado');
+        return;
+      }
+      
       const activeAutopilotTrade = operationsLog.find(op => op.initiator === 'Piloto' && op.status === 'pending');
       if (activeAutopilotTrade) {
           setAutopilotStatus(`Gerindo posição #${activeAutopilotTrade.id}`);
@@ -367,7 +370,6 @@ function StochasticLab({ realData, operationsLog, activeSymbol, onConsensusUpdat
               setAutopilotStatus(statusMessage);
               
               const expertName = currentHorizonName;
-              // CORREÇÃO: Usar regex para ser mais robusto
               const durationMatch = expertName.match(/(\d+)([st])/);
               
               if (!durationMatch) {
@@ -375,7 +377,7 @@ function StochasticLab({ realData, operationsLog, activeSymbol, onConsensusUpdat
                   continue;
               }
               const duration = parseInt(durationMatch[1], 10);
-              const durationUnit: DurationUnit = durationMatch[2] as DurationUnit;
+              const durationUnit: DurationUnit = durationMatch[2] === 't' ? 't' : 's';
               
               const tradeParams = {
                   direction: currentVote,
@@ -384,15 +386,14 @@ function StochasticLab({ realData, operationsLog, activeSymbol, onConsensusUpdat
                   durationUnit,
               };
 
-              // CORREÇÃO: Captura o snapshot do estado ATUAL para o log
+              const logId = `pred_log_${Date.now()}`;
               const assertivenessSnapshot = Object.entries(newAssertiveness).map(([horizon, data]) => ({
                   horizon,
                   accuracy: data.accuracy,
                   vote: data.vote,
               }));
 
-              const logId = `pred_log_${Date.now()}`;
-              const pendingLog: Omit<PredictiveTradeLog, 'contractId'> = {
+              const newPendingLog: Omit<PredictiveTradeLog, 'contractId'> = {
                 id: logId,
                 timestamp: new Date().toISOString(),
                 asset: activeSymbol,
@@ -405,6 +406,10 @@ function StochasticLab({ realData, operationsLog, activeSymbol, onConsensusUpdat
                 pnl: 0,
               };
 
+              // Store the pending log in the ref
+              pendingLogRef.current = newPendingLog;
+              
+              // Execute the trade without chaining .then() for logging
               executeTrade(
                   currentVote === 'RISE' ? 'CALL' : 'PUT',
                   tradeParams.stake,
@@ -413,15 +418,7 @@ function StochasticLab({ realData, operationsLog, activeSymbol, onConsensusUpdat
                   tradeParams.duration,
                   tradeParams.durationUnit,
                   'Piloto'
-              ).then(tradeResult => {
-                   if (tradeResult.success && tradeResult.contractId) {
-                       const finalLog: PredictiveTradeLog = { ...pendingLog, contractId: tradeResult.contractId };
-                       savePredictiveTradeLog(user.uid, finalLog);
-                       toast({ title: '🤖 Piloto Automático: Posição Aberta!', description: statusMessage });
-                   } else {
-                       toast({ title: '❌ Falha do Piloto', description: tradeResult.message, variant: 'destructive' });
-                   }
-              });
+              );
 
               cooldownRef.current = true;
               setTimeout(() => {
@@ -441,6 +438,39 @@ function StochasticLab({ realData, operationsLog, activeSymbol, onConsensusUpdat
     setPredictionData(newPredictionData.slice(-200));
 
   }, [realData, isAutopilotOn, operationsLog, activeSymbol, executeTrade, user, toast, setAutopilotStatus, onConsensusUpdate]);
+
+  useEffect(() => {
+    if (!pendingLogRef.current || !user || !operationsLog.length) {
+        return;
+    }
+  
+    // Find a new pilot operation that doesn't have a corresponding log yet
+    const newPilotOperation = operationsLog
+        .filter(op => op.initiator === 'Piloto' && op.status === 'pending')
+        .find(op => !predictiveLogs.some(log => log.contractId === op.id));
+  
+    if (newPilotOperation && newPilotOperation.id) {
+        const finalLog: PredictiveTradeLog = {
+            ...pendingLogRef.current,
+            contractId: newPilotOperation.id,
+        };
+  
+        // Non-blocking save
+        savePredictiveTradeLog(user.uid, finalLog);
+  
+        // Update local state immediately
+        setPredictiveLogs(prev => [finalLog, ...prev].sort((a,b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()));
+  
+        toast({
+            title: '🤖 Piloto Automático: Posição Aberta!',
+            description: finalLog.context.triggerReason,
+        });
+  
+        // Clear the ref to prevent re-saving
+        pendingLogRef.current = null;
+    }
+  }, [operationsLog, user, toast, predictiveLogs, setPredictiveLogs]);
+
 
   const accuracy3t = useMemo(() => calculateRollingAccuracy(accuracyHistoryRefs['3t'].current), [realData]);
   const accuracy6t = useMemo(() => calculateRollingAccuracy(accuracyHistoryRefs['6t'].current), [realData]);
@@ -883,6 +913,8 @@ function PageContent() {
                         setAutopilotStatus={setAutopilotStatus}
                         executeTrade={executeTrade}
                         operationsLog={operationsLog}
+                        predictiveLogs={predictiveLogs}
+                        setPredictiveLogs={setPredictiveLogs}
                     />
                     <div className="lg:col-span-2 space-y-6">
                         <VolatilityTraderInterface 
