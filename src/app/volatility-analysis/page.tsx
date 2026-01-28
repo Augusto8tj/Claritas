@@ -286,12 +286,12 @@ function StochasticLab({ realData, operationsLog, activeSymbol, onConsensusUpdat
       };
 
       const horizons = [
-          { name: '3t', ticks: 3, window: 6 },
-          { name: '6t', ticks: 6, window: 6 },
-          { name: '10s', ticks: 10, window: 10 }, 
-          { name: '20s', ticks: 20, window: 10 }, 
-          { name: '30s', ticks: 30, window: 10 },
-          { name: '40s', ticks: 40, window: 10 }, 
+          { name: '3t', ticks: 3, window: 6, ref: pendingPredictions3tRef, setHistory: setPredictionAccuracyHistory3t },
+          { name: '6t', ticks: 6, window: 6, ref: pendingPredictions6tRef, setHistory: setPredictionAccuracyHistory6t },
+          { name: '10s', ticks: 10, window: 10, ref: pendingPredictions10sRef, setHistory: setPredictionAccuracyHistory10s },
+          { name: '20s', ticks: 20, window: 10, ref: pendingPredictions20sRef, setHistory: setPredictionAccuracyHistory20s },
+          { name: '30s', ticks: 30, window: 10, ref: pendingPredictions30sRef, setHistory: setPredictionAccuracyHistory30s },
+          { name: '40s', ticks: 40, window: 10, ref: pendingPredictions40sRef, setHistory: setPredictionAccuracyHistory40s },
       ];
       
       horizons.forEach(h => {
@@ -721,3 +721,5 @@ export default function VolatilityAnalysisPage() {
         </DerivApiProviderV2>
     );
 }
+
+```
