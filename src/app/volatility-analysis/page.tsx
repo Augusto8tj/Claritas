@@ -5,7 +5,7 @@ import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { useForm, FormProvider } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ScatterChart, Scatter } from 'recharts';
-import { Calculator, TrendingUp, Activity, BarChart3, Bot, FlaskConical, Target, Info, HelpCircle, Brain, ChevronRight, Archive, Swords, TrendingDown, CheckCircle, XCircle } from 'lucide-react';
+import { TrendingUp, TrendingDown, HelpCircle, Bot, FlaskConical, Target, Info, Brain, Zap, Send, Loader2, ShieldCheck, GitBranch, BarChart, Activity, AlertTriangle } from 'lucide-react';
 import { DerivApiProviderV2, useDerivApiV2 } from "@/features/trading/hooks/use-deriv-api-v2";
 import { AssetSelectorV2 } from "@/features/trading/components/deriv-trader/asset-selector-v2";
 import { ApiStatusIndicatorV2 } from "@/features/trading/components/deriv-trader/ApiStatusIndicatorV2";
@@ -19,6 +19,8 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { volatilityTraderSchema, type VolatilityTraderFormValues } from "@/features/trading/components/deriv-trader/volatility-trader-interface.types";
 import VolatilityTraderInterface from "@/features/trading/components/deriv-trader/volatility-trader-interface";
 import { OperationsLogV2 } from "@/features/trading/components/deriv-trader/operations-log-v2";
+import { getConsensusGradientStyle } from '@/features/trading/components/deriv-trader/utils/get-consensus-gradient-style';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 
 
 // Aproximação da função quantil normal inversa
@@ -43,12 +45,81 @@ const normalQuantile = (p: number): number => {
 
 const isCandle = (d: ChartData): d is CandleData => d != null && 'close' in d;
 
-const getProgressColor = (percentage: number) => {
-    if (percentage > 75) return 'bg-green-500';
-    if (percentage > 60) return 'bg-blue-500';
-    if (percentage < 40) return 'bg-red-500';
-    return 'bg-gray-400';
+interface ConfirmationSystem {
+  gbmSignal: 'RISE' | 'FALL';
+  rsiSignal: 'RISE' | 'FALL' | 'NEUTRAL';
+  momentumSignal: 'RISE' | 'FALL' | 'NEUTRAL';
+}
+
+interface ConfirmedSignal {
+  signal: 'RISE' | 'FALL' | 'NEUTRAL';
+  confidenceScore: number;
+}
+
+// --- NOVAS FUNÇÕES DE ANÁLISE ---
+
+const calculateRSI = (prices: number[], period: number = 14): number => {
+  if (prices.length < period + 1) return 50;
+  const changes = prices.slice(1).map((p, i) => p - prices[i]);
+  let gains = 0, losses = 0;
+  
+  for (let i = 0; i < period; i++) {
+    const change = changes[changes.length - period + i];
+    if (change > 0) gains += change;
+    else losses -= change;
+  }
+  
+  let avgGain = gains / period;
+  let avgLoss = losses / period;
+
+  for (let i = changes.length - period + 1; i < changes.length; i++) {
+    const change = changes[i];
+    avgGain = (avgGain * (period - 1) + (change > 0 ? change : 0)) / period;
+    avgLoss = (avgLoss * (period - 1) + (change < 0 ? -change : 0)) / period;
+  }
+
+  if (avgLoss === 0) return 100;
+  const rs = avgGain / avgLoss;
+  return 100 - (100 / (1 + rs));
 };
+
+const calculateMomentumScore = (prices: number[]): number => {
+    if (prices.length < 10) return 0;
+    const last = prices[prices.length - 1];
+    const past = prices[prices.length - 10];
+    return last - past;
+};
+
+const calculateEntropy = (prices: number[]): number => {
+  if (prices.length < 10) return 0;
+  const returns = prices.slice(1).map((p, i) => Math.abs(Math.log(p / (prices[i] === 0 ? 1 : prices[i]))));
+  const sum = returns.reduce((a, b) => a + b, 0);
+  if (sum === 0) return 0;
+  const probs = returns.map(r => r / sum);
+  return -probs.reduce((h, p) => h + (p > 0 ? p * Math.log2(p) : 0), 0);
+};
+
+const getConfirmedSignal = (confirmations: ConfirmationSystem): ConfirmedSignal => {
+    let score = 0;
+    if (confirmations.gbmSignal === 'RISE') score += 2;
+    else score -= 2;
+
+    if (confirmations.rsiSignal === 'RISE') score += 1.5;
+    else if (confirmations.rsiSignal === 'FALL') score -= 1.5;
+
+    if (confirmations.momentumSignal === 'RISE') score += 1;
+    else if (confirmations.momentumSignal === 'FALL') score -= 1;
+    
+    // Converte o score para uma escala de -100 a 100
+    const confidenceScore = (score / 4.5) * 100;
+
+    let signal: 'RISE' | 'FALL' | 'NEUTRAL' = 'NEUTRAL';
+    if (confidenceScore > 20) signal = 'RISE';
+    else if (confidenceScore < -20) signal = 'FALL';
+    
+    return { signal, confidenceScore };
+};
+
 
 interface StrongestSignal {
     horizon: string;
@@ -60,7 +131,7 @@ interface StrongestSignal {
 interface StochasticLabProps {
   realData: ChartData[];
   activeSymbol: string | null;
-  onConsensusUpdate: (consensus: StrongestSignal) => void;
+  onConsensusUpdate: (consensus: any) => void; // Tipo genérico por enquanto
 }
 
 function StochasticLab({ realData, activeSymbol, onConsensusUpdate }: StochasticLabProps) {
@@ -71,17 +142,23 @@ function StochasticLab({ realData, activeSymbol, onConsensusUpdate }: Stochastic
     const percentage = total > 0 ? (hits / total) * 100 : 0;
     return { hits, total, percentage };
   };
+  
+  const getProgressColor = (percentage: number) => {
+    if (percentage > 75) return 'bg-green-500';
+    if (percentage > 60) return 'bg-blue-500';
+    if (percentage < 40) return 'bg-red-500';
+    return 'bg-gray-400';
+};
+
 
   const [activeTab, setActiveTab] = useState('prediction');
   const [priceData, setPriceData] = useState<any[]>([]);
   const [lastPrice, setLastPrice] = useState<number | null>(null);
-  const [rsi, setRsi] = useState<number | null>(null);
   const [returns, setReturns] = useState<any[]>([]);
   const [volatilityData, setVolatilityData] = useState<any[]>([]);
   const [qqData, setQQData] = useState<any[]>([]);
   const [stats, setStats] = useState<any>({});
   
-  // --- States para Previsão ---
   const [predictionData, setPredictionData] = useState<any[]>([]);
   const [futurePath3t, setFuturePath3t] = useState<any[]>([]);
   const [futurePath6t, setFuturePath6t] = useState<any[]>([]);
@@ -93,7 +170,6 @@ function StochasticLab({ realData, activeSymbol, onConsensusUpdate }: Stochastic
   const driftCorrectionRef = useRef(0);
   const [driftCorrectionForDisplay, setDriftCorrectionForDisplay] = useState({drift: 0, mae: 0, rmse: 0});
 
-  // --- Estados para Assertividade da Projeção ---
   const [predictionAccuracyHistory3t, setPredictionAccuracyHistory3t] = useState<boolean[]>([]);
   const [predictionAccuracyHistory6t, setPredictionAccuracyHistory6t] = useState<boolean[]>([]);
   const [predictionAccuracyHistory10s, setPredictionAccuracyHistory10s] = useState<boolean[]>([]);
@@ -117,14 +193,11 @@ function StochasticLab({ realData, activeSymbol, onConsensusUpdate }: Stochastic
     return Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
   };
 
-
   useEffect(() => {
     const VOL_WINDOW = 50;
     const ERROR_MEMORY = 50;
     
     if (realData.length < VOL_WINDOW) {
-      setPriceData([]); setReturns([]); setVolatilityData([]); setQQData([]); setStats({}); 
-      setPredictionData([]); setFuturePath3t([]); setFuturePath6t([]); setFuturePath10s([]); setFuturePath20s([]); setFuturePath30s([]); setFuturePath40s([]);
       return;
     }
     
@@ -137,34 +210,6 @@ function StochasticLab({ realData, activeSymbol, onConsensusUpdate }: Stochastic
       if(prices[i-1] > 0) logReturns.push(Math.log(prices[i] / prices[i - 1]));
     }
     
-    const calculateRsiSeries = (prices: number[], period: number) => {
-        if (prices.length < period + 1) return Array(prices.length).fill(null);
-        const results: (number | null)[] = Array(period).fill(null);
-        
-        let gains = 0; let losses = 0;
-        for (let i = 1; i <= period; i++) {
-            const change = prices[i] - prices[i - 1];
-            if (change > 0) gains += change; else losses -= change;
-        }
-        let avgGain = gains / period; let avgLoss = losses / period;
-
-        results.push(100 - (100 / (1 + (avgGain / (avgLoss || 1e-9)))));
-        
-        for (let i = period + 1; i < prices.length; i++) {
-            const change = prices[i] - prices[i - 1];
-            const gain = change > 0 ? change : 0;
-            const loss = change < 0 ? -change : 0;
-            avgGain = (avgGain * (period - 1) + gain) / period;
-            avgLoss = (avgLoss * (period - 1) + loss) / period;
-            const rs = avgGain / (avgLoss || 1e-9);
-            results.push(100 - (100 / (1 + rs)));
-        }
-        return results;
-    };
-    const rsiSeries = calculateRsiSeries(prices, 14);
-    const lastRsi = rsiSeries[rsiSeries.length - 1];
-    if (lastRsi !== null) setRsi(lastRsi);
-
     const volData: any[] = [];
     const annualizationFactor = Math.sqrt(31536000);
     for (let i = VOL_WINDOW; i < logReturns.length; i++) {
@@ -202,9 +247,9 @@ function StochasticLab({ realData, activeSymbol, onConsensusUpdate }: Stochastic
         const S_prev = prices[i-1];
         const S_real = prices[i];
         
-        const pastLogReturns = logReturns.slice(i - VOL_WINDOW, i);
-        const meanPastReturn = pastLogReturns.reduce((a, b) => a + b, 0) / VOL_WINDOW;
-        const variance = pastLogReturns.reduce((s, r) => s + Math.pow(r - meanPastReturn, 2), 0) / (VOL_WINDOW - 1);
+        const pastLogReturns = logReturns.slice(Math.max(0, i - VOL_WINDOW), i);
+        const meanPastReturn = pastLogReturns.reduce((a, b) => a + b, 0) / pastLogReturns.length;
+        const variance = pastLogReturns.reduce((s, r) => s + Math.pow(r - meanPastReturn, 2), 0) / (pastLogReturns.length - 1);
         const sigma = Math.sqrt(variance);
 
         const Z = normalRandom();
@@ -231,9 +276,12 @@ function StochasticLab({ realData, activeSymbol, onConsensusUpdate }: Stochastic
         const newDrift = errors.reduce((a,e) => a + e, 0) / errors.length;
         
         driftCorrectionRef.current = newDrift;
-        if (newDrift !== driftCorrectionForDisplay.drift || newMAE !== driftCorrectionForDisplay.mae) {
-             setDriftCorrectionForDisplay({ drift: newDrift, mae: newMAE, rmse: newRMSE });
-        }
+        setDriftCorrectionForDisplay(prev => {
+            if (prev.drift !== newDrift || prev.mae !== newMAE) {
+                return { drift: newDrift, mae: newMAE, rmse: newRMSE };
+            }
+            return prev;
+        });
     }
 
     if (prices.length > VOL_WINDOW) {
@@ -250,7 +298,8 @@ function StochasticLab({ realData, activeSymbol, onConsensusUpdate }: Stochastic
         const path = [{ time: lastTime, price: lastPriceValue }];
         for (let i = 1; i <= steps; i++) {
           const Z = normalRandom();
-          const drift_future = meanLastReturn;
+          // FIX: Removido o viés negativo `- 0.5 * lastSigma * lastSigma;`
+          const drift_future = meanLastReturn; 
           const diffusion_future = lastSigma * Z;
           currentSimPrice = currentSimPrice * Math.exp(drift_future + diffusion_future);
 
@@ -293,12 +342,12 @@ function StochasticLab({ realData, activeSymbol, onConsensusUpdate }: Stochastic
       };
 
       const horizons = [
-          { name: '3t', ticks: 3, window: 6, ref: pendingPredictions3tRef, setHistory: setPredictionAccuracyHistory3t },
-          { name: '6t', ticks: 6, window: 6, ref: pendingPredictions6tRef, setHistory: setPredictionAccuracyHistory6t },
-          { name: '10s', ticks: 10, window: 10, ref: pendingPredictions10sRef, setHistory: setPredictionAccuracyHistory10s }, 
-          { name: '20s', ticks: 20, window: 10, ref: pendingPredictions20sRef, setHistory: setPredictionAccuracyHistory20s }, 
-          { name: '30s', ticks: 30, window: 10, ref: pendingPredictions30sRef, setHistory: setPredictionAccuracyHistory30s },
-          { name: '40s', ticks: 40, window: 10, ref: pendingPredictions40sRef, setHistory: setPredictionAccuracyHistory40s }, 
+          { name: '3t', ticks: 3, window: 6 },
+          { name: '6t', ticks: 6, window: 6 },
+          { name: '10s', ticks: 10, window: 10 }, 
+          { name: '20s', ticks: 20, window: 10 }, 
+          { name: '30s', ticks: 30, window: 10 },
+          { name: '40s', ticks: 40, window: 10 }, 
       ];
       
       horizons.forEach(h => {
@@ -332,7 +381,7 @@ function StochasticLab({ realData, activeSymbol, onConsensusUpdate }: Stochastic
     
     setPredictionData(newPredictionData.slice(-200));
 
-  }, [realData]);
+  }, [realData, driftCorrectionForDisplay]);
 
   const accuracy3t = useMemo(() => calculateRollingAccuracy(predictionAccuracyHistory3t), [predictionAccuracyHistory3t]);
   const accuracy6t = useMemo(() => calculateRollingAccuracy(predictionAccuracyHistory6t), [predictionAccuracyHistory6t]);
@@ -440,8 +489,8 @@ function StochasticLab({ realData, activeSymbol, onConsensusUpdate }: Stochastic
                       {[
                         { id: 'prediction', icon: TrendingUp, label: 'Previsão & Projeção' },
                         { id: 'returns', icon: Activity, label: 'Retornos' },
-                        { id: 'volatility', icon: BarChart3, label: 'Volatilidade' },
-                        { id: 'qq', icon: Calculator, label: 'Q-Q Plot' }
+                        { id: 'volatility', icon: BarChart, label: 'Volatilidade' },
+                        { id: 'qq', icon: GitBranch, label: 'Q-Q Plot' }
                       ].map(tab => (
                         <button key={tab.id} onClick={() => setActiveTab(tab.id)}
                           className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-sm transition-colors ${ activeTab === tab.id ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:bg-muted/80' }`}
@@ -514,13 +563,13 @@ function StochasticLab({ realData, activeSymbol, onConsensusUpdate }: Stochastic
                                 </div>
                               </div>
                             )}
-                            {activeTab === 'returns' && ( /* ... JSX inalterado */ <div>...</div> )}
-                            {activeTab === 'volatility' && ( /* ... JSX inalterado */ <div>...</div> )}
-                            {activeTab === 'qq' && ( /* ... JSX inalterado */ <div>...</div> )}
+                            {activeTab === 'returns' && ( <div>...</div> )}
+                            {activeTab === 'volatility' && ( <div>...</div> )}
+                            {activeTab === 'qq' && ( <div>...</div> )}
                         </div>
                     )}
                     
-                     {stats.observations > 0 && ( /* ... JSX inalterado */ <div>...</div> )}
+                     {stats.observations > 0 && ( <div>...</div> )}
                 </div>
           </ScrollArea>
         </CardContent>
@@ -608,11 +657,9 @@ function PageContent() {
         },
     });
 
-    const [strongestSignal, setStrongestSignal] = useState<StrongestSignal>({
-      horizon: 'N/A',
-      direction: 'HOLD',
-      certaintyScore: 0,
-      accuracy: 50,
+    const [confirmedSignal, setConfirmedSignal] = useState<any>({
+      signal: 'HOLD',
+      confidenceScore: 0,
     });
 
     return (
@@ -620,9 +667,9 @@ function PageContent() {
             <div className="flex-1 space-y-4 p-4 sm:p-8 pt-6">
                 <Header />
                 <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
-                    <StochasticLab realData={chartData} activeSymbol={activeSymbol} onConsensusUpdate={setStrongestSignal} />
+                    <StochasticLab realData={chartData} activeSymbol={activeSymbol} onConsensusUpdate={setConfirmedSignal} />
                     <div className="lg:col-span-2 space-y-6">
-                        <VolatilityTraderInterface symbol={activeSymbol || ''} consensus={strongestSignal} />
+                        <VolatilityTraderInterface symbol={activeSymbol || ''} consensus={confirmedSignal} />
                         <OperationsLogV2 operations={operationsLog} sellContract={sellContract} priceTicks={priceTicks} clearActiveContracts={clearActiveContracts}/>
                     </div>
                 </div>
