@@ -92,6 +92,29 @@ const calculateRollingAccuracy = (history: boolean[]) => {
     return { hits, total, percentage };
 };
 
+const AccuracyCard = ({ horizon, accuracyData }: { horizon: string; accuracyData: { hits: number; total: number; percentage: number }}) => {
+    const isWinning = accuracyData.percentage > 55;
+    const isLosing = accuracyData.percentage < 45;
+    const isNeutral = !isWinning && !isLosing;
+
+    return (
+        <div className="p-3 bg-background rounded-lg border text-center">
+            <p className="text-sm font-semibold text-muted-foreground">{horizon}</p>
+            <p className={cn(
+                "text-3xl font-bold font-mono",
+                isWinning && "text-green-600",
+                isLosing && "text-destructive",
+                isNeutral && "text-foreground"
+            )}>
+                {accuracyData.percentage.toFixed(1)}%
+            </p>
+            <p className="text-[10px] text-muted-foreground">
+                ({accuracyData.hits}/{accuracyData.total} acertos)
+            </p>
+        </div>
+    );
+};
+
 
 function StochasticLab({ realData, operationsLog, activeSymbol, onConsensusUpdate, isAutopilotOn, setAutopilotStatus, executeTrade }: StochasticLabProps) {
   const { toast } = useToast();
@@ -351,7 +374,7 @@ function StochasticLab({ realData, operationsLog, activeSymbol, onConsensusUpdat
             
             if (certainty > maxCertainty) {
                 maxCertainty = certainty;
-                const direction: 'RISE' | 'FALL' | 'HOLD' = p.accuracy > 50 ? p.vote : (p.vote === 'RISE' ? 'FALL' : 'RISE');
+                const direction = p.accuracy > 50 ? p.vote : (p.vote === 'RISE' ? 'FALL' : 'RISE');
                 bestSignal = {
                     horizon: p.name,
                     direction: direction,
@@ -627,6 +650,26 @@ function StochasticLab({ realData, operationsLog, activeSymbol, onConsensusUpdat
                             </CardContent>
                         </Card>
                      )}
+                     
+                    <Card className="mt-6">
+                        <CardHeader>
+                            <CardTitle className="font-headline text-lg flex items-center gap-2">
+                                <ShieldCheck className="h-5 w-5 text-blue-500" />
+                                Assertividade das Projeções (Taxa de Acerto Direcional)
+                            </CardTitle>
+                            <CardDescription>
+                                Performance histórica de cada especialista temporal em prever a direção correta do preço.
+                            </CardDescription>
+                        </CardHeader>
+                        <CardContent className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                            <AccuracyCard horizon="3 Ticks" accuracyData={accuracy3t} />
+                            <AccuracyCard horizon="6 Ticks" accuracyData={accuracy6t} />
+                            <AccuracyCard horizon="10 Segundos" accuracyData={accuracy10s} />
+                            <AccuracyCard horizon="20 Segundos" accuracyData={accuracy20s} />
+                            <AccuracyCard horizon="30 Segundos" accuracyData={accuracy30s} />
+                            <AccuracyCard horizon="40 Segundos" accuracyData={accuracy40s} />
+                        </CardContent>
+                    </Card>
                 </div>
           </ScrollArea>
         </CardContent>
