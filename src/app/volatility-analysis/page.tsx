@@ -143,6 +143,8 @@ function StochasticLab({ realData, operationsLog, activeSymbol, onConsensusUpdat
     '40s': useRef<{ startTimeIndex: number; startPrice: number; predictedEndPrice: number }[]>([]),
   };
   const pendingLogRef = useRef<Omit<PredictiveTradeLog, 'contractId'> | null>(null);
+  // NOVO: Ref para armazenar o sinal pendente de confirmação
+  const pendingSignalRef = useRef<{ signal: 'RISE' | 'FALL', triggeredBy: [string, string], epoch: number } | null>(null);
 
 
   const normalRandom = (): number => {
@@ -346,13 +348,79 @@ function StochasticLab({ realData, operationsLog, activeSymbol, onConsensusUpdat
         return;
       }
       
+      const currentTick = realData[realData.length-1];
+      
+      // --- LÓGICA DE CONFIRMAÇÃO ---
+      if (pendingSignalRef.current && currentTick.epoch > pendingSignalRef.current.epoch) {
+          const pending = pendingSignalRef.current;
+          pendingSignalRef.current = null; // Limpa imediatamente para evitar re-execução
+          
+          let confirmed = false;
+          for (let i = 1; i < horizons.length; i++) {
+              const currentHorizonName = horizons[i].name;
+              const prevHorizonName = horizons[i-1].name;
+              const currentExpert = newAssertiveness[currentHorizonName];
+              const prevExpert = newAssertiveness[prevHorizonName];
+              const currentVote = currentExpert.accuracy > 50 ? currentExpert.vote : (currentExpert.vote === 'RISE' ? 'FALL' : 'RISE');
+              const currentEffectiveAccuracy = Math.max(currentExpert.accuracy, 100 - currentExpert.accuracy);
+              const prevEffectiveAccuracy = Math.max(prevExpert.accuracy, 100 - prevExpert.accuracy);
+
+              if (currentHorizonName === pending.triggeredBy[1] && prevHorizonName === pending.triggeredBy[0] &&
+                  currentEffectiveAccuracy > 70 && prevEffectiveAccuracy > 70 &&
+                  currentVote === pending.signal) {
+                  confirmed = true;
+                  break;
+              }
+          }
+
+          if (confirmed) {
+              const statusMessage = `Sinal ${pending.signal} confirmado por ${pending.triggeredBy.join(' & ')}. Executando...`;
+              setAutopilotStatus(statusMessage);
+              
+              const expertName = pending.triggeredBy[1];
+              const durationMatch = expertName.match(/(\d+)([st])/);
+              
+              if(durationMatch) {
+                  const duration = parseInt(durationMatch[1], 10);
+                  const durationUnit: DurationUnit = durationMatch[2] === 't' ? 't' : 's';
+                  const tradeParams = { direction: pending.signal, stake: 1.0, duration, durationUnit };
+                  
+                  // **Snapshot no momento da confirmação**
+                  const assertivenessSnapshot = Object.entries(newAssertiveness).map(([horizon, data]) => ({ horizon, accuracy: data.accuracy, vote: data.vote }));
+                  
+                  const newPendingLog: Omit<PredictiveTradeLog, 'contractId'> = {
+                    id: `pred_log_${Date.now()}`,
+                    timestamp: new Date().toISOString(),
+                    asset: activeSymbol,
+                    tradeParams: tradeParams,
+                    context: { triggerReason: statusMessage, assertivenessSnapshot: assertivenessSnapshot },
+                    result: 'pending', pnl: 0,
+                  };
+                  pendingLogRef.current = newPendingLog;
+                  
+                  executeTrade(pending.signal === 'RISE' ? 'CALL' : 'PUT', tradeParams.stake, activeSymbol, pending.signal.toLowerCase() as 'rise' | 'fall', tradeParams.duration, tradeParams.durationUnit, 'Piloto');
+                  
+                  cooldownRef.current = true;
+                  setTimeout(() => {
+                      cooldownRef.current = false;
+                      setAutopilotStatus('Monitorando...');
+                  }, 60000);
+              }
+          } else {
+              setAutopilotStatus(`Sinal ${pending.signal} Abortado. Condição não persistiu.`);
+              toast({ title: '🤖 Piloto: Operação Abortada', description: `O sinal para ${pending.signal} não foi confirmado no tick seguinte.`, variant: 'destructive' });
+          }
+          return;
+      }
+      // --- FIM DA LÓGICA DE CONFIRMAÇÃO ---
+      
       const activeAutopilotTrade = operationsLog.find(op => op.initiator === 'Piloto' && op.status === 'pending');
-      if (activeAutopilotTrade) {
-          setAutopilotStatus(`Gerindo posição #${activeAutopilotTrade.id}`);
+      if (activeAutopilotTrade || pendingSignalRef.current) {
+          if (activeAutopilotTrade) setAutopilotStatus(`Gerindo posição #${activeAutopilotTrade.id}`);
           return;
       }
       
-      let tradeExecuted = false;
+      // --- LÓGICA DE DETECÇÃO DE SINAL ---
       for (let i = 1; i < horizons.length; i++) {
           const currentHorizonName = horizons[i].name;
           const prevHorizonName = horizons[i-1].name;
@@ -366,72 +434,20 @@ function StochasticLab({ realData, operationsLog, activeSymbol, onConsensusUpdat
           const prevEffectiveAccuracy = Math.max(prevExpert.accuracy, 100 - prevExpert.accuracy);
 
           if (currentEffectiveAccuracy > 70 && prevEffectiveAccuracy > 70 && currentVote === prevVote && currentVote !== 'HOLD') {
-              const statusMessage = `Sinal ${currentVote} confirmado por ${prevHorizonName} (${prevEffectiveAccuracy.toFixed(0)}%) e ${currentHorizonName} (${currentEffectiveAccuracy.toFixed(0)}%). Executando...`;
+              const statusMessage = `Sinal ${currentVote} detectado por ${prevHorizonName} (${prevEffectiveAccuracy.toFixed(0)}%) e ${currentHorizonName} (${currentEffectiveAccuracy.toFixed(0)}%). Aguardando confirmação...`;
               setAutopilotStatus(statusMessage);
               
-              const expertName = currentHorizonName;
-              const durationMatch = expertName.match(/(\d+)([st])/);
-              
-              if (!durationMatch) {
-                  console.error("Could not parse duration from horizon name:", expertName);
-                  continue;
-              }
-              const duration = parseInt(durationMatch[1], 10);
-              const durationUnit: DurationUnit = durationMatch[2] === 't' ? 't' : 's';
-              
-              const tradeParams = {
-                  direction: currentVote,
-                  stake: 1.0, 
-                  duration,
-                  durationUnit,
+              pendingSignalRef.current = {
+                  signal: currentVote,
+                  triggeredBy: [prevHorizonName, currentHorizonName],
+                  epoch: currentTick.epoch
               };
-
-              const logId = `pred_log_${Date.now()}`;
-              const assertivenessSnapshot = Object.entries(newAssertiveness).map(([horizon, data]) => ({
-                  horizon,
-                  accuracy: data.accuracy,
-                  vote: data.vote,
-              }));
-
-              const newPendingLog: Omit<PredictiveTradeLog, 'contractId'> = {
-                id: logId,
-                timestamp: new Date().toISOString(),
-                asset: activeSymbol,
-                tradeParams: tradeParams,
-                context: {
-                  triggerReason: statusMessage,
-                  assertivenessSnapshot: assertivenessSnapshot,
-                },
-                result: 'pending',
-                pnl: 0,
-              };
-
-              // Store the pending log in the ref
-              pendingLogRef.current = newPendingLog;
               
-              // Execute the trade without chaining .then() for logging
-              executeTrade(
-                  currentVote === 'RISE' ? 'CALL' : 'PUT',
-                  tradeParams.stake,
-                  activeSymbol,
-                  currentVote.toLowerCase() as 'rise' | 'fall',
-                  tradeParams.duration,
-                  tradeParams.durationUnit,
-                  'Piloto'
-              );
-
-              cooldownRef.current = true;
-              setTimeout(() => {
-                  cooldownRef.current = false;
-                  setAutopilotStatus('Monitorando...');
-              }, 60000); 
-
-              tradeExecuted = true;
-              break;
+              break; 
           }
       }
 
-      if (!tradeExecuted) {
+      if (!pendingSignalRef.current) {
           setAutopilotStatus('Monitorando...');
       }
     }
@@ -444,7 +460,6 @@ function StochasticLab({ realData, operationsLog, activeSymbol, onConsensusUpdat
         return;
     }
   
-    // Find a new pilot operation that doesn't have a corresponding log yet
     const newPilotOperation = operationsLog
         .filter(op => op.initiator === 'Piloto' && op.status === 'pending')
         .find(op => !predictiveLogs.some(log => log.contractId === op.id));
@@ -455,10 +470,8 @@ function StochasticLab({ realData, operationsLog, activeSymbol, onConsensusUpdat
             contractId: newPilotOperation.id,
         };
   
-        // Non-blocking save
         savePredictiveTradeLog(user.uid, finalLog);
   
-        // Update local state immediately
         setPredictiveLogs(prev => [finalLog, ...prev].sort((a,b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()));
   
         toast({
@@ -466,7 +479,6 @@ function StochasticLab({ realData, operationsLog, activeSymbol, onConsensusUpdat
             description: finalLog.context.triggerReason,
         });
   
-        // Clear the ref to prevent re-saving
         pendingLogRef.current = null;
     }
   }, [operationsLog, user, toast, predictiveLogs, setPredictiveLogs]);
