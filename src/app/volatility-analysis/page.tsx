@@ -367,6 +367,7 @@ function StochasticLab({ realData, operationsLog, activeSymbol, onConsensusUpdat
               setAutopilotStatus(statusMessage);
               
               const expertName = currentHorizonName;
+              // CORREÇÃO: Usar regex para ser mais robusto
               const durationMatch = expertName.match(/(\d+)([st])/);
               
               if (!durationMatch) {
@@ -383,20 +384,22 @@ function StochasticLab({ realData, operationsLog, activeSymbol, onConsensusUpdat
                   durationUnit,
               };
 
+              // CORREÇÃO: Captura o snapshot do estado ATUAL para o log
+              const assertivenessSnapshot = Object.entries(newAssertiveness).map(([horizon, data]) => ({
+                  horizon,
+                  accuracy: data.accuracy,
+                  vote: data.vote,
+              }));
+
               const logId = `pred_log_${Date.now()}`;
-              const pendingLog: PredictiveTradeLog = {
+              const pendingLog: Omit<PredictiveTradeLog, 'contractId'> = {
                 id: logId,
-                contractId: 0,
                 timestamp: new Date().toISOString(),
                 asset: activeSymbol,
                 tradeParams: tradeParams,
                 context: {
                   triggerReason: statusMessage,
-                  assertivenessSnapshot: Object.entries(newAssertiveness).map(([horizon, data]) => ({
-                      horizon,
-                      accuracy: data.accuracy,
-                      vote: data.vote,
-                  })),
+                  assertivenessSnapshot: assertivenessSnapshot,
                 },
                 result: 'pending',
                 pnl: 0,
@@ -412,7 +415,7 @@ function StochasticLab({ realData, operationsLog, activeSymbol, onConsensusUpdat
                   'Piloto'
               ).then(tradeResult => {
                    if (tradeResult.success && tradeResult.contractId) {
-                       const finalLog = { ...pendingLog, contractId: tradeResult.contractId };
+                       const finalLog: PredictiveTradeLog = { ...pendingLog, contractId: tradeResult.contractId };
                        savePredictiveTradeLog(user.uid, finalLog);
                        toast({ title: '🤖 Piloto Automático: Posição Aberta!', description: statusMessage });
                    } else {
@@ -439,16 +442,12 @@ function StochasticLab({ realData, operationsLog, activeSymbol, onConsensusUpdat
 
   }, [realData, isAutopilotOn, operationsLog, activeSymbol, executeTrade, user, toast, setAutopilotStatus, onConsensusUpdate]);
 
-  const [accuracy3t, accuracy6t, accuracy10t, accuracy20s, accuracy30s, accuracy40s] = useMemo(() => {
-    return [
-      calculateRollingAccuracy(accuracyHistoryRefs['3t'].current),
-      calculateRollingAccuracy(accuracyHistoryRefs['6t'].current),
-      calculateRollingAccuracy(accuracyHistoryRefs['10t'].current),
-      calculateRollingAccuracy(accuracyHistoryRefs['20s'].current),
-      calculateRollingAccuracy(accuracyHistoryRefs['30s'].current),
-      calculateRollingAccuracy(accuracyHistoryRefs['40s'].current),
-    ];
-  }, [realData]);
+  const accuracy3t = useMemo(() => calculateRollingAccuracy(accuracyHistoryRefs['3t'].current), [realData]);
+  const accuracy6t = useMemo(() => calculateRollingAccuracy(accuracyHistoryRefs['6t'].current), [realData]);
+  const accuracy10t = useMemo(() => calculateRollingAccuracy(accuracyHistoryRefs['10t'].current), [realData]);
+  const accuracy20s = useMemo(() => calculateRollingAccuracy(accuracyHistoryRefs['20s'].current), [realData]);
+  const accuracy30s = useMemo(() => calculateRollingAccuracy(accuracyHistoryRefs['30s'].current), [realData]);
+  const accuracy40s = useMemo(() => calculateRollingAccuracy(accuracyHistoryRefs['40s'].current), [realData]);
 
   const chartDisplayData = useMemo(() => {
     const combined = [...predictionData.filter(p => p && (p.real || p.predicted_1_tick))];
@@ -815,7 +814,7 @@ function PageContent() {
             const sortedLogs = logs.sort((a,b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
             setPredictiveLogs(sortedLogs);
         });
-    }, [user, operationsLog]);
+    }, [user]);
 
 
     useEffect(() => {
