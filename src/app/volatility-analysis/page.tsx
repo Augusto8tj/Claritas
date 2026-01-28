@@ -665,7 +665,7 @@ function PageContent() {
         resolver: zodResolver(volatilityTraderSchema),
         defaultValues: {
             stake: 1.0,
-            duration: 15, // Defaulting to minimum
+            duration: 5,
         },
     });
 
@@ -720,5 +720,3 @@ export default function VolatilityAnalysisPage() {
         </DerivApiProviderV2>
     );
 }
-
-```
