@@ -43,20 +43,6 @@ const normalQuantile = (p: number): number => {
 
 const isCandle = (d: ChartData): d is CandleData => d != null && 'close' in d;
 
-const calculateRollingAccuracy = (history: boolean[]) => {
-  const hits = history.filter(h => h).length;
-  const total = history.length;
-  const percentage = total > 0 ? (hits / total) * 100 : 0;
-  return { hits, total, percentage };
-};
-
-const getProgressColor = (percentage: number) => {
-  if (percentage > 75) return 'bg-green-500';
-  if (percentage > 60) return 'bg-blue-500';
-  if (percentage < 40) return 'bg-red-500';
-  return 'bg-gray-400';
-};
-
 interface StrongestSignal {
     horizon: string;
     direction: 'RISE' | 'FALL' | 'HOLD';
@@ -71,6 +57,21 @@ interface StochasticLabProps {
 }
 
 function StochasticLab({ realData, activeSymbol, onConsensusUpdate }: StochasticLabProps) {
+    
+  const calculateRollingAccuracy = (history: boolean[]) => {
+    const hits = history.filter(h => h).length;
+    const total = history.length;
+    const percentage = total > 0 ? (hits / total) * 100 : 0;
+    return { hits, total, percentage };
+  };
+
+  const getProgressColor = (percentage: number) => {
+    if (percentage > 75) return 'bg-green-500';
+    if (percentage > 60) return 'bg-blue-500';
+    if (percentage < 40) return 'bg-red-500';
+    return 'bg-gray-400';
+  };
+
   const [activeTab, setActiveTab] = useState('prediction');
   const [priceData, setPriceData] = useState<any[]>([]);
   const [lastPrice, setLastPrice] = useState<number | null>(null);
@@ -249,7 +250,7 @@ function StochasticLab({ realData, activeSymbol, onConsensusUpdate }: Stochastic
         const path = [{ time: lastTime, price: lastPriceValue }];
         for (let i = 1; i <= steps; i++) {
           const Z = normalRandom();
-          const drift_future = meanLastReturn - 0.5 * lastSigma * lastSigma;
+          const drift_future = meanLastReturn;
           const diffusion_future = lastSigma * Z;
           currentSimPrice = currentSimPrice * Math.exp(drift_future + diffusion_future);
 
