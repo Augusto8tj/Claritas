@@ -29,7 +29,11 @@ export function FirstTransactionGuide() {
 
         async function checkTransactions() {
             try {
-                const transactions = await getTransactions(user!.uid);
+                if (!user) { // Adicionando uma verificação explícita de nulidade
+                    if(isMounted) setHasTransactions(false);
+                    return;
+                };
+                const transactions = await getTransactions(user.uid);
                 if (isMounted) {
                     setHasTransactions(transactions.length > 0);
                 }

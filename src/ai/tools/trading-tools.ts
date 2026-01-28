@@ -60,7 +60,8 @@ export const getAssetAnalysisTool = ai.defineTool(
     }),
     outputSchema: AssetAnalysisOutputSchema,
   },
-  async ({ symbol }, { userId }) => { // Correctly access userId from context
+  async ({ symbol }, options) => {
+    const userId = options?.context?.userId;
     if (!userId) throw new Error("ID do usuário é necessário para obter dados da API Deriv.");
     
     const analysisData = await getDerivApiDataForAnalysis(userId, symbol);
@@ -96,7 +97,8 @@ export const analyzeOperationsTool = ai.defineTool(
     }),
     outputSchema: OperationAnalysisOutputSchema,
   },
-  async ({ symbol }, { userId }) => { // Correctly access userId from context
+  async ({ symbol }, options) => {
+    const userId = options?.context?.userId;
     if (!userId) throw new Error("ID do usuário é necessário para obter o histórico de operações.");
 
     const apiData = await getDerivApiDataForAnalysis(userId, symbol || '');

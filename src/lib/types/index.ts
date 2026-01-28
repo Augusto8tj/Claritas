@@ -1,6 +1,6 @@
 // /src/lib/types/index.ts
 import { z } from 'zod';
-import type { RobotStrategy as RobotStrategyT, RobotVote as RobotVoteT, RobotPerformance as RobotPerformanceT, EnhancedRobotPerformance as EnhancedRobotPerformanceType, MarketRegime as MarketRegimeType, MicrostructureFeatures as MicrostructureFeaturesType, BayesianVote as BayesianVoteType, TradeDecisionLog as TradeDecisionLogType, AssetProfileV1 as AssetProfileV1Type, CouncilVotes as CouncilVotesT, VirtualTradeLog as VirtualTradeLogT, TradeHistoryEvent as TradeHistoryEventT } from './trading.types';
+import type { RobotStrategy as RobotStrategyT, RobotVote as RobotVoteT, RobotPerformance as RobotPerformanceT, EnhancedRobotPerformance as EnhancedRobotPerformanceType, MarketRegime as MarketRegimeType, MicrostructureFeatures as MicrostructureFeaturesType, BayesianVote as BayesianVoteType, TradeDecisionLog as TradeDecisionLogType, AssetProfileV1 as AssetProfileV1Type, CouncilVotes as CouncilVotesT, VirtualTradeLog as VirtualTradeLogT, TradeHistoryEvent as TradeHistoryEventT, TradeResult as TradeResultT } from './trading.types';
 import { OperationSchema } from './trading.types';
 import type { AssetAnalysisInput as AssetAnalysisInputT, AssetAnalysisOutput as AssetAnalysisOutputT } from '@/ai/flows/asset-analysis.types';
 import { IndicatorsSchema } from './trading.types';
@@ -129,6 +129,7 @@ export type AssetProfileV1 = AssetProfileV1Type;
 export type CouncilVotes = CouncilVotesT;
 export type VirtualTradeLog = VirtualTradeLogT;
 export type TradeHistoryEvent = TradeHistoryEventT;
+export type TradeResult = TradeResultT;
 
 
 // =================================================================
@@ -180,12 +181,35 @@ export type OperationAnalysisOutput = z.infer<typeof OperationAnalysisOutputSche
 
 
 // From deriv-trader-interface.types.ts
-export const riseFallSchema = z.object({
+export const baseRiseFallSchema = z.object({
   stake: z.coerce.number().min(0.35, "O valor mínimo é $0.35."),
   duration: z.coerce.number().min(1, "A duração deve ser de pelo menos 1."),
   duration_unit: z.enum(['t', 's', 'm', 'h', 'd']),
   allowEquals: z.boolean().default(false),
 });
+export const riseFallSchema = baseRiseFallSchema.refine(
+  (data) => {
+    if (data.duration_unit === 's') {
+      return data.duration >= 15;
+    }
+    return true;
+  },
+  {
+    message: "A duração para segundos deve ser de no mínimo 15.",
+    path: ["duration"],
+  }
+).refine(
+  (data) => {
+    if (data.duration_unit === 't') {
+      return data.duration <= 10;
+    }
+    return true;
+  },
+  {
+    message: "A duração para ticks deve ser de no máximo 10.",
+    path: ["duration"],
+  }
+);
 
 export type RiseFallFormValues = z.infer<typeof riseFallSchema>;
 

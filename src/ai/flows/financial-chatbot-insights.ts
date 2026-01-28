@@ -70,10 +70,14 @@ const financialChatbotInsightsFlow = ai.defineFlow(
     outputSchema: financialChatbotInsightsOutputSchema,
   },
   async (input) => {
+    // O userId é separado e o restante do input é passado para o prompt.
+    // O Genkit disponibiliza o userId para as ferramentas através do contexto do fluxo.
     const { userId, ...promptData } = input;
 
-    // A CORREÇÃO: Passar o userId para o contexto de execução do prompt.
-    const { output } = await prompt(promptData, { data: { userId } });
+    // A CORREÇÃO: O segundo argumento para a chamada de prompt estava incorreto.
+    // O contexto (`userId`) é passado para a execução do fluxo, e as ferramentas o acessam de lá.
+    // A chamada do prompt em si não precisa passar o contexto novamente.
+    const { output } = await prompt(promptData);
 
     if (!output) {
       throw new Error("A IA não conseguiu gerar uma resposta.");

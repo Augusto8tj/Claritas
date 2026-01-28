@@ -4,7 +4,7 @@
 // ESTE ARQUIVO É UMA CÓPIA DEDICADA PARA O SISTEMA V2.5
 
 import { createContext, useContext, useState, useEffect, type ReactNode, useCallback, useRef, useMemo } from 'react';
-import type { TradeResult } from '@/services/deriv-api-service';
+import type { TradeResult } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
 import type { Operation, OperationInitiator, DurationUnit, ChartType, TimePeriod, ChartData, CandleData, TradeAnnotation, TickData, DurationLimits, Asset } from '@/lib/types';
 import { FirebaseErrorListener } from '@/components/firebase-error-listener';
@@ -62,6 +62,7 @@ interface DerivApiContextTypeV2 {
   activeSymbol: string | null;
   setActiveSymbol: (symbol: string | null) => void;
   chartData: ChartData[];
+  botCandleData: CandleData[];
   priceTicks: TickData[]; 
   isChartLoading: boolean;
   chartError: string | null;
@@ -172,6 +173,7 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
   const [tradeAnnotations, setTradeAnnotations] = useState<TradeAnnotation[]>([]);
   const [dataVersion, setDataVersion] = useState(0); 
   const [durationLimits, setDurationLimits] = useState<DurationLimits | null>(null);
+  const [botCandleData, setBotCandleData] = useState<CandleData[]>([]);
 
   const wsRef = useRef<WebSocket | null>(null);
   const [isConnected, setIsConnected] = useState(false);
@@ -180,27 +182,27 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
   const promisesRef = useRef<Map<string, PromiseCallbacks>>(new Map());
   const [triggerReconnect, setTriggerReconnect] = useState(0);
 
-  const setAndPersistOperationsLog = useCallback((updater: React.SetStateAction<Operation[]>) => {
-    setOperationsLog(prevLog => {
-        const newLogWithPotentialDuplicates = typeof updater === 'function' ? updater(prevLog) : updater;
-        
-        // GARANTIA DE INTEGRIDADE: Evita chaves duplicadas no React.
-        const uniqueOpsMap = new Map<number, Operation>();
-        for(const op of newLogWithPotentialDuplicates) {
-            if(op && op.id) {
-                uniqueOpsMap.set(op.id, op);
+    const setAndPersistOperationsLog = useCallback((updater: React.SetStateAction<Operation[]>) => {
+        setOperationsLog(prevLog => {
+            const newLogWithPotentialDuplicates = typeof updater === 'function' ? updater(prevLog) : updater;
+            
+            // GARANTIA DE INTEGRIDADE: Evita chaves duplicadas no React.
+            const uniqueOpsMap = new Map<number, Operation>();
+            for(const op of newLogWithPotentialDuplicates) {
+                if(op && op.id) {
+                    uniqueOpsMap.set(op.id, op);
+                }
             }
-        }
-        const newLog = Array.from(uniqueOpsMap.values());
-        
-        try {
-            localStorage.setItem(DERIV_V2_LOG_KEY, JSON.stringify(newLog));
-        } catch (error) {
-            console.error("Failed to save V2 operations log to localStorage:", error);
-        }
-        return newLog;
-    });
-  }, []);
+            const newLog = Array.from(uniqueOpsMap.values());
+            
+            try {
+                localStorage.setItem(DERIV_V2_LOG_KEY, JSON.stringify(newLog));
+            } catch (error) {
+                console.error("Failed to save V2 operations log to localStorage:", error);
+            }
+            return newLog;
+        });
+    }, []);
   
   useEffect(() => {
     chartTypeRef.current = chartType;
@@ -242,6 +244,7 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
       ));
   }, []);
 
+  // Client-side timer to check for expired contracts
   useEffect(() => {
     const interval = setInterval(() => {
       const now = Date.now();
@@ -250,6 +253,7 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
         if (op.status === 'pending' && op.expirationTime && now > op.expirationTime) {
           hasChanges = true;
           updateTradeAnnotation(String(op.id), { status: 'lost', profit: -op.stake });
+          // CORREÇÃO: Adicionar o exitTimestamp na expiração por timer
           return { ...op, status: 'lost' as const, result: -op.stake, exitTimestamp: new Date().toISOString() };
         }
         return op;
@@ -258,7 +262,7 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
       if (hasChanges) {
         setAndPersistOperationsLog(updatedOps);
       }
-    }, 2000);
+    }, 2000); // Check every 2 seconds
 
     return () => clearInterval(interval);
   }, [operationsLog, updateTradeAnnotation, setAndPersistOperationsLog]);
@@ -433,7 +437,7 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
             success: true,
             message: `Ordem do tipo "${contractType}" para ${symbol} no valor de ${sanitizedStake} USD executada com sucesso.`,
             contractId: buyResult.contract_id,
-            entryPrice: entryPrice,
+            entryPrice,
           };
         } catch (error) {
            console.error("[Deriv Hook] Erro durante a negociação:", error);
@@ -814,10 +818,8 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
             };
         }
         
-        const subResponse: any = await makeRequest(subRequest);
-        if (subResponse.subscription?.id) {
-            activeSubscriptionIdRef.current = subResponse.subscription.id;
-        }
+        makeRequest(subRequest, true);
+        console.log(`[Market Data] Subscription request sent for ${symbol} (${chartType}).`);
 
     } catch (error: any) {
         console.error(`[Market Data] Error for ${symbol}:`, error);
@@ -916,6 +918,7 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
     activeSymbol,
     setActiveSymbol,
     chartData,
+    botCandleData,
     priceTicks,
     isChartLoading,
     chartError,

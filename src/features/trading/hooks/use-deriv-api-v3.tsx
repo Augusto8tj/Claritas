@@ -4,7 +4,7 @@
 // ESTE ARQUIVO É UMA CÓPIA DEDICADA PARA O SISTEMA V3.0 (IA Lab)
 
 import { createContext, useContext, useState, useEffect, type ReactNode, useCallback, useRef, useMemo } from 'react';
-import type { TradeResult } from '@/services/deriv-api-service';
+import type { TradeResult } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
 import type { Operation, OperationInitiator, DurationUnit, ChartType, TimePeriod, ChartData, CandleData, TradeAnnotation, TickData, DurationLimits, Asset } from '@/lib/types';
 import { FirebaseErrorListener } from '@/components/firebase-error-listener';
@@ -435,7 +435,7 @@ export const DerivApiProviderV3 = ({ children }: { children: ReactNode }) => {
             success: true,
             message: `Ordem do tipo "${contractType}" para ${symbol} no valor de ${sanitizedStake} USD executada com sucesso.`,
             contractId: buyResult.contract_id,
-            entryPrice: entryPrice,
+            entryPrice,
           };
         } catch (error) {
            console.error("[Deriv Hook] Erro durante a negociação:", error);

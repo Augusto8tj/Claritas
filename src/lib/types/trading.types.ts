@@ -131,7 +131,7 @@ export type RobotStrategy = z.infer<typeof RobotStrategySchema>;
 
 export const TradeHistoryEventSchema = z.object({
   profit: z.number(),
-  regime: z.any(),
+  regime: z.any().optional(), // Tornar opcional para compatibilidade
   timestamp: z.number(),
 });
 export type TradeHistoryEvent = z.infer<typeof TradeHistoryEventSchema>;

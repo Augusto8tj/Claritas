@@ -129,7 +129,7 @@ const mutateStrategy = (
 // ============================================================================
 // HOOK PRINCIPAL
 // ============================================================================
-export function useStrategyEvolutionV3(initialStrategies: RobotStrategy[]) {
+export function useStrategyEvolutionV3(initialStrategies: RobotStrategy[], assetSymbol: string) {
   const { toast } = useToast();
   const { user } = useAuth();
 
@@ -144,9 +144,9 @@ export function useStrategyEvolutionV3(initialStrategies: RobotStrategy[]) {
   const tradeCountsRef = useRef<TradeCounts>({ virtual: 0, real: 0, total: 0 });
 
   useEffect(() => {
-    if (!user) return;
+    if (!user || !assetSymbol) return;
     
-    loadEvolutionHistory(user.uid, 'v3')
+    loadEvolutionHistory(user.uid, 'v3', assetSymbol)
       .then(history => {
         if (history.length > 0) {
           setEvolutionHistory(history);
@@ -154,9 +154,9 @@ export function useStrategyEvolutionV3(initialStrategies: RobotStrategy[]) {
         }
       })
       .catch(err => {
-        console.error('❌ [Evolution] Erro ao carregar histórico V3:', err);
+        console.error('❌ [Evolution V3] Erro ao carregar histórico:', err);
       });
-  }, [user]);
+  }, [user, assetSymbol]);
 
   const tradesUntilEvolution = VIRTUAL_TRADES_THRESHOLD - tradeCounts.virtual;
 
@@ -243,7 +243,7 @@ export function useStrategyEvolutionV3(initialStrategies: RobotStrategy[]) {
         if (worstIndex === -1) return;
 
         const regimeTrades = worst.tradeHistory.reduce((acc, trade) => {
-          const regime = trade.regime || 'ranging';
+          const regime = trade.regime as MarketRegime || 'ranging';
           if (!acc[regime]) acc[regime] = { wins: 0, losses: 0 };
           if (trade.profit > 0) acc[regime].wins++;
           else acc[regime].losses++;
@@ -302,11 +302,11 @@ export function useStrategyEvolutionV3(initialStrategies: RobotStrategy[]) {
         setEvolutionHistory(prevHistory => {
             const updatedHistory = [newEvent, ...prevHistory];
             if (user) {
-              saveEvolutionHistory(user.uid, updatedHistory, 'v3').catch(error => {
+              saveEvolutionHistory(user.uid, updatedHistory, 'v3', assetSymbol).catch(error => {
                   console.error("❌ [EvolutionV3] Falha ao gravar histórico:", error);
                   toast({
                       title: "⚠️ Erro de Persistência",
-                      description: "A evolução ocorreu mas não foi salva no banco de dados.",
+                      description: "A evolução V3 ocorreu mas não foi salva no banco de dados.",
                       variant: "destructive",
                   });
               });
@@ -336,32 +336,32 @@ export function useStrategyEvolutionV3(initialStrategies: RobotStrategy[]) {
         setEvolutionProgress(0);
       }, 1000);
     }
-  }, [evolvedStrategies, evolutionHistory, currentGeneration, user, toast]);
+  }, [evolvedStrategies, evolutionHistory, currentGeneration, user, toast, assetSymbol]);
 
   const resetEvolutionHistory = useCallback(async () => {
-    if (!user) return;
+    if (!user || !assetSymbol) return;
     try {
-      await clearEvolutionHistory(user.uid, 'v3');
+      await clearEvolutionHistory(user.uid, 'v3', assetSymbol);
       setEvolutionHistory([]);
       setCurrentGeneration(0);
       tradeCountsRef.current = { virtual: 0, real: 0, total: 0 };
       setTradeCounts({ virtual: 0, real: 0, total: 0 });
-      toast({ title: '🗑️ Histórico Resetado' });
+      toast({ title: '🗑️ Histórico V3 Resetado' });
     } catch (error) {
-      toast({ title: '❌ Erro ao Resetar', variant: 'destructive' });
+      toast({ title: '❌ Erro ao Resetar V3', variant: 'destructive' });
     }
-  }, [user, toast]);
+  }, [user, toast, assetSymbol]);
 
   const deleteSingleEvolution = useCallback(async (eventTimestamp: string) => {
-    if (!user) return;
+    if (!user || !assetSymbol) return;
     try {
       await deleteEvolutionEvent(user.uid, eventTimestamp, 'v3');
       setEvolutionHistory(prev => prev.filter(e => e.timestamp.toISOString() !== eventTimestamp));
-      toast({ title: '🗑️ Geração Removida' });
+      toast({ title: '🗑️ Geração V3 Removida' });
     } catch (error) {
-      toast({ title: '❌ Erro ao Deletar', variant: 'destructive' });
+      toast({ title: '❌ Erro ao Deletar V3', variant: 'destructive' });
     }
-  }, [user, toast]);
+  }, [user, toast, assetSymbol]);
 
   return {
     evolvedStrategies,

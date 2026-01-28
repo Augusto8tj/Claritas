@@ -31,7 +31,7 @@ import { cn } from '@/lib/utils';
 import { Progress } from '@/components/ui/progress';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
-import type { CouncilVotes } from '@/features/trading/hooks/use-robot-council';
+import type { CouncilVotes } from '@/features/trading/hooks/use-robot-council-v1';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Separator } from '@/components/ui/separator';
@@ -158,13 +158,12 @@ export function TradingDesk({
     const topPerformers = sortedPerformance.slice(0, 3);
 
     const resetPerformance = () => {
-        localStorage.removeItem('robotPerformance');
+        localStorage.removeItem('robotPerformance_v1');
         toast({
             title: 'Desempenho Resetado',
             description:
                 'O histórico da Arena foi limpo. A interface irá atualizar em breve.',
         });
-        // A atualização será refletida no próximo ciclo do `useRobotCouncil`
         window.location.reload();
     };
 
@@ -272,7 +271,7 @@ export function TradingDesk({
                     size="sm"
                     className="w-full sm:w-auto"
                 >
-                    está funcionando corretamente?
+                    Resetar Desempenho da Arena
                 </Button>
             </CardHeader>
             <CardContent>

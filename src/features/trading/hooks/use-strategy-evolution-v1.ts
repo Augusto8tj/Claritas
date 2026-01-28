@@ -225,7 +225,7 @@ export function useStrategyEvolutionV1(assetSymbol: string | null) {
             setEvolutionHistory(prev => {
                 const newHistory = [newEvent, ...prev];
                 if(user && assetSymbol) {
-                    saveEvolutionHistory(user.uid, newHistory, 'v1', assetSymbol);
+                    saveEvolutionHistory(user.uid, newHistory as any, 'v1', assetSymbol);
                 }
                 return newHistory;
             });

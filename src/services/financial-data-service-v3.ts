@@ -101,9 +101,9 @@ export async function getTradeDecisionLogsV3(userId: string): Promise<TradeDecis
 
 // --- Evolution History V3 ---
 
-export async function saveEvolutionHistoryV3(userId: string, history: EvolutionEvent[]): Promise<void> {
-    if (!userId || !history) return;
-    const docRef = doc(db, 'users', userId, 'evolution_v3', 'history');
+export async function saveEvolutionHistoryV3(userId: string, history: EvolutionEvent[], assetSymbol: string): Promise<void> {
+    if (!userId || !history || !assetSymbol) return;
+    const docRef = doc(db, 'users', userId, 'evolution_v3', assetSymbol);
     const historyForFirestore = history.map(event => ({
         ...event,
         timestamp: event.timestamp.toISOString(),
@@ -122,9 +122,9 @@ export async function saveEvolutionHistoryV3(userId: string, history: EvolutionE
     }
 }
 
-export async function loadEvolutionHistoryV3(userId: string): Promise<EvolutionEvent[]> {
-    if (!userId) return [];
-    const docRef = doc(db, 'users', userId, 'evolution_v3', 'history');
+export async function loadEvolutionHistoryV3(userId: string, assetSymbol: string): Promise<EvolutionEvent[]> {
+    if (!userId || !assetSymbol) return [];
+    const docRef = doc(db, 'users', userId, 'evolution_v3', assetSymbol);
     try {
         const docSnap = await getDoc(docRef);
         if (docSnap.exists()) {
@@ -147,9 +147,9 @@ export async function loadEvolutionHistoryV3(userId: string): Promise<EvolutionE
     }
 }
 
-export async function clearEvolutionHistoryV3(userId: string): Promise<void> {
-    if (!userId) return;
-    const docRef = doc(db, 'users', userId, 'evolution_v3', 'history');
+export async function clearEvolutionHistoryV3(userId: string, assetSymbol: string): Promise<void> {
+    if (!userId || !assetSymbol) return;
+    const docRef = doc(db, 'users', userId, 'evolution_v3', assetSymbol);
     try {
         await deleteDoc(docRef);
     } catch (error) {
@@ -161,13 +161,13 @@ export async function clearEvolutionHistoryV3(userId: string): Promise<void> {
     }
 }
 
-export async function deleteEvolutionEventV3(userId: string, eventTimestamp: string): Promise<void> {
-    if (!userId) return;
+export async function deleteEvolutionEventV3(userId: string, eventTimestamp: string, assetSymbol: string): Promise<void> {
+    if (!userId || !assetSymbol) return;
     try {
-        const currentHistory = await loadEvolutionHistoryV3(userId);
+        const currentHistory = await loadEvolutionHistoryV3(userId, assetSymbol);
         const newHistory = currentHistory.filter(event => event.timestamp.toISOString() !== eventTimestamp);
         if (newHistory.length < currentHistory.length) {
-            await saveEvolutionHistoryV3(userId, newHistory);
+            await saveEvolutionHistoryV3(userId, newHistory, assetSymbol);
         }
     } catch (error) {
         // Error is already handled by loadEvolutionHistoryV3, we just need to avoid crashing.

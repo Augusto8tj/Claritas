@@ -125,7 +125,7 @@ const mutateStrategy = (
 // ============================================================================
 // HOOK PRINCIPAL
 // ============================================================================
-export function useStrategyEvolution(initialStrategies: RobotStrategy[]) {
+export function useStrategyEvolution(initialStrategies: RobotStrategy[], assetSymbol: string) {
   const { toast } = useToast();
   const { user } = useAuth();
 
@@ -145,9 +145,9 @@ export function useStrategyEvolution(initialStrategies: RobotStrategy[]) {
   }, [initialStrategies]);
 
   useEffect(() => {
-    if (!user) return;
+    if (!user || !assetSymbol) return;
     
-    loadEvolutionHistoryV2(user.uid)
+    loadEvolutionHistoryV2(user.uid, 'v2', assetSymbol)
       .then(history => {
         if (history.length > 0) {
           setEvolutionHistory(history);
@@ -157,7 +157,7 @@ export function useStrategyEvolution(initialStrategies: RobotStrategy[]) {
       .catch(err => {
         console.error('❌ [Evolution V2] Erro ao carregar histórico:', err);
       });
-  }, [user]);
+  }, [user, assetSymbol]);
 
   const tradesUntilEvolution = VIRTUAL_TRADES_THRESHOLD - tradeCounts.virtual;
 
@@ -244,7 +244,7 @@ export function useStrategyEvolution(initialStrategies: RobotStrategy[]) {
         if (worstIndex === -1) return;
 
         const regimeTrades = worst.tradeHistory.reduce((acc, trade) => {
-          const regime = trade.regime || 'ranging';
+          const regime = trade.regime as MarketRegime || 'ranging';
           if (!acc[regime]) acc[regime] = { wins: 0, losses: 0 };
           if (trade.profit > 0) acc[regime].wins++;
           else acc[regime].losses++;
@@ -303,7 +303,7 @@ export function useStrategyEvolution(initialStrategies: RobotStrategy[]) {
         setEvolutionHistory(prevHistory => {
             const updatedHistory = [newEvent, ...prevHistory];
             if (user) {
-              saveEvolutionHistoryV2(user.uid, updatedHistory).catch(error => {
+              saveEvolutionHistoryV2(user.uid, updatedHistory, 'v2', assetSymbol).catch(error => {
                   console.error("❌ [EvolutionV2] Falha ao gravar histórico:", error);
                   toast({
                       title: "⚠️ Erro de Persistência",
@@ -337,12 +337,12 @@ export function useStrategyEvolution(initialStrategies: RobotStrategy[]) {
         setEvolutionProgress(0);
       }, 1000);
     }
-  }, [evolvedStrategies, evolutionHistory, currentGeneration, user, toast]);
+  }, [evolvedStrategies, evolutionHistory, currentGeneration, user, toast, assetSymbol]);
 
   const resetEvolutionHistory = useCallback(async () => {
-    if (!user) return;
+    if (!user || !assetSymbol) return;
     try {
-      await clearEvolutionHistoryV2(user.uid);
+      await clearEvolutionHistoryV2(user.uid, 'v2', assetSymbol);
       setEvolutionHistory([]);
       setCurrentGeneration(0);
       tradeCountsRef.current = { virtual: 0, real: 0, total: 0 };
@@ -351,18 +351,18 @@ export function useStrategyEvolution(initialStrategies: RobotStrategy[]) {
     } catch (error) {
       toast({ title: '❌ Erro ao Resetar V2', variant: 'destructive' });
     }
-  }, [user, toast]);
+  }, [user, toast, assetSymbol]);
 
   const deleteSingleEvolution = useCallback(async (eventTimestamp: string) => {
-    if (!user) return;
+    if (!user || !assetSymbol) return;
     try {
-      await deleteEvolutionEventV2(user.uid, eventTimestamp);
+      await deleteEvolutionEventV2(user.uid, eventTimestamp, 'v2', assetSymbol);
       setEvolutionHistory(prev => prev.filter(e => e.timestamp.toISOString() !== eventTimestamp));
       toast({ title: '🗑️ Geração V2 Removida' });
     } catch (error) {
       toast({ title: '❌ Erro ao Deletar V2', variant: 'destructive' });
     }
-  }, [user, toast]);
+  }, [user, toast, assetSymbol]);
 
   return {
     evolvedStrategies,

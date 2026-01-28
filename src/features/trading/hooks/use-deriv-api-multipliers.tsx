@@ -1,11 +1,10 @@
-
 // /src/features/trading/hooks/use-deriv-api-multipliers.tsx
 'use client';
 
 // ESTE ARQUIVO É UMA CÓPIA DEDICADA PARA O SISTEMA DE MULTIPLIERS
 
 import { createContext, useContext, useState, useEffect, type ReactNode, useCallback, useRef } from 'react';
-import type { TradeResult } from '@/services/deriv-api-service';
+import type { TradeResult } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
 import type { Operation, OperationInitiator, DurationUnit, ChartType, TimePeriod, ChartData, CandleData, TradeAnnotation, TickData, DurationLimits, Asset } from '@/lib/types';
 import { FirebaseErrorListener } from '@/components/FirebaseErrorListener';
@@ -174,6 +173,7 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
   const activeSubscriptionIdRef = useRef<string | null>(null);
   const botSubscriptionIdRef = useRef<string | null>(null);
   const [dataVersion, setDataVersion] = useState(0); 
+
   const [durationLimits, setDurationLimits] = useState<DurationLimits | null>(null);
   const [multiplierOptions, setMultiplierOptions] = useState<number[]>([50, 100, 200, 500]);
   
@@ -513,7 +513,6 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
         success: true,
         message: `Ordem executada para ${symbol}.`,
         contractId: contractId,
-        entryPrice,
       };
     } catch (error) {
        console.error("[Deriv Hook] Erro durante a negociação de Multiplicadores:", error);
@@ -1167,4 +1166,3 @@ export function useDerivApiMultipliers() {
   }
   return context;
 }
-
