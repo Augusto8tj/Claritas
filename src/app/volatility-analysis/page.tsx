@@ -26,6 +26,7 @@ import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/features/auth/hooks/use-auth';
 import { getPredictiveTradeLogs, savePredictiveTradeLog } from '@/services/financial-data-service';
 import PredictiveLogViewer from '@/components/deriv-trader/PredictiveLogViewer';
+import { evaluateTriggerConditions } from '@/features/trading/services/predictive-logic';
 
 
 // Aproximação da função quantil normal inversa
@@ -143,9 +144,7 @@ function StochasticLab({ realData, operationsLog, activeSymbol, onConsensusUpdat
     '40s': useRef<{ startTimeIndex: number; startPrice: number; predictedEndPrice: number }[]>([]),
   };
   const pendingLogRef = useRef<Omit<PredictiveTradeLog, 'contractId'> | null>(null);
-  // NOVO: Ref para armazenar o sinal pendente de confirmação
   const pendingSignalRef = useRef<{ signal: 'RISE' | 'FALL', triggeredBy: [string, string], epoch: number } | null>(null);
-
 
   const normalRandom = (): number => {
     let u1 = 0;
@@ -153,310 +152,308 @@ function StochasticLab({ realData, operationsLog, activeSymbol, onConsensusUpdat
     const u2 = Math.random();
     return Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
   };
+  
+  const executeTradeAction = useCallback(async (
+    initiator: 'Piloto' | 'Manual',
+    signal: 'RISE' | 'FALL',
+    triggeredBy: [string, string] | null
+  ) => {
+      if (!activeSymbol || !triggeredBy) return;
+
+      const expertName = triggeredBy[1];
+      const durationMatch = expertName.match(/(\d+)([st])/);
+      if (!durationMatch) return;
+      
+      const duration = parseInt(durationMatch[1], 10);
+      const durationUnit: DurationUnit = durationMatch[2] === 't' ? 't' : 's';
+      
+      await executeTrade(
+          signal === 'RISE' ? 'CALL' : 'PUT',
+          1.0, 
+          activeSymbol,
+          signal.toLowerCase() as 'rise' | 'fall',
+          duration,
+          durationUnit,
+          initiator
+      );
+  }, [activeSymbol, executeTrade]);
+
 
   useEffect(() => {
-    const VOL_WINDOW = 50;
-    const ERROR_MEMORY = 50;
-    
-    if (realData.length < VOL_WINDOW) {
-      return;
-    }
-    
-    const prices = realData.map(d => isCandle(d) ? d.close : d.price);
-    if(prices.length > 0) setLastPrice(prices[prices.length - 1]);
-    setPriceData(realData.map((d, i) => ({ time: i, price: isCandle(d) ? d.close : d.price })));
-
-    const logReturns: number[] = [];
-    for (let i = 1; i < prices.length; i++) {
-      if(prices[i-1] > 0) logReturns.push(Math.log(prices[i] / prices[i - 1]));
-    }
-    
-    const volData: any[] = [];
-    const annualizationFactor = Math.sqrt(31536000);
-    for (let i = VOL_WINDOW; i < logReturns.length; i++) {
-      const window = logReturns.slice(i - VOL_WINDOW, i);
-      const mean = window.reduce((a, b) => a + b, 0) / window.length;
-      const variance = window.reduce((sum, r) => sum + Math.pow(r - mean, 2), 0) / (window.length - 1);
-      const realizedVol = Math.sqrt(variance) * annualizationFactor * 100;
-      volData.push({ time: i, realizedVol: parseFloat(realizedVol.toFixed(4)), targetVol: 10 });
-    }
-
-    if (logReturns.length > 1) {
-      const mean = logReturns.reduce((a, b) => a + b, 0) / logReturns.length;
-      const variance = logReturns.reduce((sum, r) => sum + Math.pow(r - mean, 2), 0) / (logReturns.length - 1);
-      const stdDev = Math.sqrt(variance);
-      const skewness = logReturns.reduce((sum, r) => sum + Math.pow((r - mean) / stdDev, 3), 0) / logReturns.length;
-      const kurtosis = logReturns.reduce((sum, r) => sum + Math.pow((r - mean) / stdDev, 4), 0) / logReturns.length - 3;
-      const returnHistogram = logReturns.map((r, i) => ({ 'return': parseFloat((r * 100).toFixed(4)), index: i }));
-      const sortedReturns = [...logReturns].sort((a, b) => a - b);
-      const qqPlotData = sortedReturns.map((r, i) => {
-        const p = (i + 0.5) / sortedReturns.length;
-        const theoreticalQuantile = normalQuantile(p) * stdDev + mean;
-        return { theoretical: parseFloat((theoreticalQuantile * 100).toFixed(4)), empirical: parseFloat((r * 100).toFixed(4)) };
-      });
-      setReturns(returnHistogram); setQQData(qqPlotData);
-      setStats({
-        mean: (mean * 100).toFixed(6), stdDev: (stdDev * 100).toFixed(6), annualizedVol: (stdDev * annualizationFactor * 100).toFixed(4),
-        skewness: skewness.toFixed(4), kurtosis: kurtosis.toFixed(4), observations: logReturns.length
-      });
-    }
-    setVolatilityData(volData);
-
-    const newPredictionData: any[] = [];
-    
-    for (let i = VOL_WINDOW; i < prices.length; i++) {
-        const S_prev = prices[i-1];
-        const S_real = prices[i];
+    const executeLogic = () => {
+        const VOL_WINDOW = 50;
+        const ERROR_MEMORY = 50;
         
-        const pastLogReturns = logReturns.slice(Math.max(0, i - VOL_WINDOW), i);
-        const meanPastReturn = pastLogReturns.reduce((a, b) => a + b, 0) / pastLogReturns.length;
-        const variance = pastLogReturns.reduce((s, r) => s + Math.pow(r - meanPastReturn, 2), 0) / (pastLogReturns.length - 1);
-        const sigma = Math.sqrt(variance);
-
-        const Z = normalRandom();
-        const drift = meanPastReturn;
-        const diffusion = sigma * Math.sqrt(1) * Z;
-        const S_predicted_1_tick = S_prev * Math.exp(drift + diffusion);
-        
-        if (Number.isFinite(S_real) && Number.isFinite(S_predicted_1_tick)) {
-            newPredictionData.push({ time: i, real: S_real, predicted_1_tick: S_predicted_1_tick });
-            const error = S_real - S_predicted_1_tick;
-            predictionErrorsRef.current.push(error);
-            if(predictionErrorsRef.current.length > ERROR_MEMORY) {
-              predictionErrorsRef.current.shift();
-            }
+        if (realData.length < VOL_WINDOW) {
+          return;
         }
-    }
-    
-    if (predictionErrorsRef.current.length > 0) {
-        const errors = predictionErrorsRef.current;
-        const sumSquaredErrors = errors.reduce((a, e) => a + e * e, 0);
-        const sumAbsErrors = errors.reduce((a, e) => a + Math.abs(e), 0);
-        const newMAE = sumAbsErrors / errors.length;
-        const newRMSE = Math.sqrt(sumSquaredErrors / errors.length);
-        const newDrift = errors.reduce((a,e) => a + e, 0) / errors.length;
         
-        setDriftCorrectionForDisplay(prev => {
-            if (prev.drift !== newDrift || prev.mae !== newMAE) {
-                return { drift: newDrift, mae: newMAE, rmse: newRMSE };
-            }
-            return prev;
-        });
-    }
+        const currentTick = realData[realData.length-1];
+        if (!currentTick) return;
 
-    if (prices.length > VOL_WINDOW) {
-      const lastPriceValue = prices[prices.length - 1];
-      const lastLogReturns = logReturns.slice(-VOL_WINDOW);
-      const meanLastReturn = lastLogReturns.reduce((a, b) => a + b, 0) / VOL_WINDOW;
-      const lastVariance = lastLogReturns.reduce((s, r) => s + Math.pow(r - meanLastReturn, 2), 0) / (VOL_WINDOW - 1);
-      const lastSigma = Math.sqrt(lastVariance);
-      const lastTime = prices.length - 1;
+        const prices = realData.map(d => isCandle(d) ? d.close : d.price);
+        if(prices.length > 0) setLastPrice(prices[prices.length - 1]);
+        setPriceData(realData.map((d, i) => ({ time: i, price: isCandle(d) ? d.close : d.price })));
 
-      const projectPath = (steps: number) => {
-        if (lastPriceValue === null) return [];
-        let currentSimPrice = lastPriceValue;
-        const path = [{ time: lastTime, price: lastPriceValue }];
-        for (let i = 1; i <= steps; i++) {
-          const Z = normalRandom();
-          const drift_future = meanLastReturn;
-          const diffusion_future = lastSigma * Z;
-          currentSimPrice = currentSimPrice * Math.exp(drift_future + diffusion_future);
-
-          if (Number.isFinite(currentSimPrice)) {
-            path.push({ time: lastTime + i, price: currentSimPrice });
-          } else {
-            path.push({ time: lastTime + i, price: path[path.length - 1].price });
-          }
+        const logReturns: number[] = [];
+        for (let i = 1; i < prices.length; i++) {
+          if(prices[i-1] > 0) logReturns.push(Math.log(prices[i] / prices[i - 1]));
         }
-        return path;
-      };
-      
-      const horizons = [
-          { name: '3t', ticks: 3, window: 6 },
-          { name: '6t', ticks: 6, window: 6 },
-          { name: '10t', ticks: 10, window: 10 },
-          { name: '20s', ticks: 20, window: 10 },
-          { name: '30s', ticks: 30, window: 10 },
-          { name: '40s', ticks: 40, window: 10 },
-      ];
-      
-      const newAssertiveness: Record<string, { accuracy: number, vote: 'RISE' | 'FALL' | 'HOLD' }> = {};
+        
+        const volData: any[] = [];
+        const annualizationFactor = Math.sqrt(31536000);
+        for (let i = VOL_WINDOW; i < logReturns.length; i++) {
+          const window = logReturns.slice(i - VOL_WINDOW, i);
+          const mean = window.reduce((a, b) => a + b, 0) / window.length;
+          const variance = window.reduce((sum, r) => sum + Math.pow(r - mean, 2), 0) / (window.length - 1);
+          const realizedVol = Math.sqrt(variance) * annualizationFactor * 100;
+          volData.push({ time: i, realizedVol: parseFloat(realizedVol.toFixed(4)), targetVol: 10 });
+        }
 
-      horizons.forEach(h => {
-          const { name, ticks, window } = h;
-          const pendingRef = pendingPredictionsRefs[name as keyof typeof pendingPredictionsRefs];
-          const historyRef = accuracyHistoryRefs[name as keyof typeof accuracyHistoryRefs];
-          
-          let newHistory: boolean[] = [];
-
-          const updatedPending = pendingRef.current.filter((pred) => {
-              if (prices.length - 1 >= pred.startTimeIndex + ticks) {
-                  const actualEndPrice = prices[pred.startTimeIndex + ticks];
-                  if (actualEndPrice === undefined) return true;
-                  const predictedDirection = pred.predictedEndPrice > pred.startPrice;
-                  const actualDirection = actualEndPrice > pred.startPrice;
-                  newHistory.push(predictedDirection === actualDirection);
-                  return false;
-              }
-              return true;
+        if (logReturns.length > 1) {
+          const mean = logReturns.reduce((a, b) => a + b, 0) / logReturns.length;
+          const variance = logReturns.reduce((sum, r) => sum + Math.pow(r - mean, 2), 0) / (logReturns.length - 1);
+          const stdDev = Math.sqrt(variance);
+          const skewness = logReturns.reduce((sum, r) => sum + Math.pow((r - mean) / stdDev, 3), 0) / logReturns.length;
+          const kurtosis = logReturns.reduce((sum, r) => sum + Math.pow((r - mean) / stdDev, 4), 0) / logReturns.length - 3;
+          const returnHistogram = logReturns.map((r, i) => ({ 'return': parseFloat((r * 100).toFixed(4)), index: i }));
+          const sortedReturns = [...logReturns].sort((a, b) => a - b);
+          const qqPlotData = sortedReturns.map((r, i) => {
+            const p = (i + 0.5) / sortedReturns.length;
+            const theoreticalQuantile = normalQuantile(p) * stdDev + mean;
+            return { theoretical: parseFloat((theoreticalQuantile * 100).toFixed(4)), empirical: parseFloat((r * 100).toFixed(4)) };
           });
-          
-          pendingRef.current = updatedPending;
-          
-          if (newHistory.length > 0) {
-              historyRef.current = [...historyRef.current.slice(-window + newHistory.length), ...newHistory];
-          }
+          setReturns(returnHistogram); setQQData(qqPlotData);
+          setStats({
+            mean: (mean * 100).toFixed(6), stdDev: (stdDev * 100).toFixed(6), annualizedVol: (stdDev * annualizationFactor * 100).toFixed(4),
+            skewness: skewness.toFixed(4), kurtosis: kurtosis.toFixed(4), observations: logReturns.length
+          });
+        }
+        setVolatilityData(volData);
 
-          const futurePath = projectPath(ticks);
-          if (futurePath.length === ticks + 1) {
-              pendingRef.current.push({
-                  startTimeIndex: lastTime,
-                  startPrice: futurePath[0].price,
-                  predictedEndPrice: futurePath[ticks].price,
+        const newPredictionData: any[] = [];
+        
+        for (let i = VOL_WINDOW; i < prices.length; i++) {
+            const S_prev = prices[i-1];
+            const S_real = prices[i];
+            
+            const pastLogReturns = logReturns.slice(Math.max(0, i - VOL_WINDOW), i);
+            const meanPastReturn = pastLogReturns.reduce((a, b) => a + b, 0) / pastLogReturns.length;
+            const variance = pastLogReturns.reduce((s, r) => s + Math.pow(r - meanPastReturn, 2), 0) / (pastLogReturns.length - 1);
+            const sigma = Math.sqrt(variance);
+
+            const Z = normalRandom();
+            const drift = meanPastReturn;
+            const diffusion = sigma * Math.sqrt(1) * Z;
+            const S_predicted_1_tick = S_prev * Math.exp(drift + diffusion);
+            
+            if (Number.isFinite(S_real) && Number.isFinite(S_predicted_1_tick)) {
+                newPredictionData.push({ time: i, real: S_real, predicted_1_tick: S_predicted_1_tick });
+                const error = S_real - S_predicted_1_tick;
+                predictionErrorsRef.current.push(error);
+                if(predictionErrorsRef.current.length > ERROR_MEMORY) {
+                  predictionErrorsRef.current.shift();
+                }
+            }
+        }
+        
+        if (predictionErrorsRef.current.length > 0) {
+            const errors = predictionErrorsRef.current;
+            const sumSquaredErrors = errors.reduce((a, e) => a + e * e, 0);
+            const sumAbsErrors = errors.reduce((a, e) => a + Math.abs(e), 0);
+            const newMAE = sumAbsErrors / errors.length;
+            const newRMSE = Math.sqrt(sumSquaredErrors / errors.length);
+            const newDrift = errors.reduce((a,e) => a + e, 0) / errors.length;
+            
+            setDriftCorrectionForDisplay(prev => {
+                if (prev.drift !== newDrift || prev.mae !== newMAE) {
+                    return { drift: newDrift, mae: newMAE, rmse: newRMSE };
+                }
+                return prev;
+            });
+        }
+
+        if (prices.length > VOL_WINDOW) {
+          const lastPriceValue = prices[prices.length - 1];
+          const lastLogReturns = logReturns.slice(-VOL_WINDOW);
+          const meanLastReturn = lastLogReturns.reduce((a, b) => a + b, 0) / VOL_WINDOW;
+          const lastVariance = lastLogReturns.reduce((s, r) => s + Math.pow(r - meanLastReturn, 2), 0) / (VOL_WINDOW - 1);
+          const lastSigma = Math.sqrt(lastVariance);
+          const lastTime = prices.length - 1;
+
+          const projectPath = (steps: number) => {
+            if (lastPriceValue === null) return [];
+            let currentSimPrice = lastPriceValue;
+            const path = [{ time: lastTime, price: lastPriceValue }];
+            for (let i = 1; i <= steps; i++) {
+              const Z = normalRandom();
+              const drift_future = meanLastReturn;
+              const diffusion_future = lastSigma * Z;
+              currentSimPrice = currentSimPrice * Math.exp(drift_future + diffusion_future);
+
+              if (Number.isFinite(currentSimPrice)) {
+                path.push({ time: lastTime + i, price: currentSimPrice });
+              } else {
+                path.push({ time: lastTime + i, price: path[path.length - 1].price });
+              }
+            }
+            return path;
+          };
+          
+          const horizons = [
+              { name: '3t', ticks: 3, window: 6 },
+              { name: '6t', ticks: 6, window: 6 },
+              { name: '10t', ticks: 10, window: 10 },
+              { name: '20s', ticks: 20, window: 10 },
+              { name: '30s', ticks: 30, window: 10 },
+              { name: '40s', ticks: 40, window: 10 },
+          ];
+          
+          const newAssertiveness: Record<string, { accuracy: number, vote: 'RISE' | 'FALL' | 'HOLD' }> = {};
+
+          horizons.forEach(h => {
+              const { name, ticks, window } = h;
+              const pendingRef = pendingPredictionsRefs[name as keyof typeof pendingPredictionsRefs];
+              const historyRef = accuracyHistoryRefs[name as keyof typeof accuracyHistoryRefs];
+              
+              let newHistory: boolean[] = [];
+
+              const updatedPending = pendingRef.current.filter((pred) => {
+                  if (prices.length - 1 >= pred.startTimeIndex + ticks) {
+                      const actualEndPrice = prices[pred.startTimeIndex + ticks];
+                      if (actualEndPrice === undefined) return true;
+                      const predictedDirection = pred.predictedEndPrice > pred.startPrice;
+                      const actualDirection = actualEndPrice > pred.startPrice;
+                      newHistory.push(predictedDirection === actualDirection);
+                      return false;
+                  }
+                  return true;
               });
-          }
-
-          const { percentage } = calculateRollingAccuracy(historyRef.current);
-          const vote: 'RISE' | 'FALL' | 'HOLD' = futurePath.length > 1 ? (futurePath[futurePath.length-1].price > futurePath[0].price ? 'RISE' : 'FALL') : 'HOLD';
-          newAssertiveness[name] = { accuracy: percentage, vote };
-
-          if(name === '3t') setFuturePath3t(futurePath.map(p => ({ time: p.time, predicted_3t_ahead: p.price })));
-          if(name === '6t') setFuturePath6t(futurePath.map(p => ({ time: p.time, predicted_6t_ahead: p.price })));
-          if(name === '10t') setFuturePath10t(futurePath.map(p => ({ time: p.time, predicted_10t_ahead: p.price })));
-          if(name === '20s') setFuturePath20s(futurePath.map(p => ({ time: p.time, predicted_20s_ahead: p.price })));
-          if(name === '30s') setFuturePath30s(futurePath.map(p => ({ time: p.time, predicted_30s_ahead: p.price })));
-          if(name === '40s') setFuturePath40s(futurePath.map(p => ({ time: p.time, predicted_40s_ahead: p.price })));
-      });
-
-      let strongestSignal: StrongestSignal = { horizon: 'N/A', direction: 'HOLD', certaintyScore: 0, accuracy: 50 };
-      let maxCertainty = 0;
-
-      Object.entries(newAssertiveness).forEach(([horizon, data]) => {
-          if (data.vote !== 'HOLD') {
-              const certainty = Math.abs(data.accuracy - 50) * 2;
-              if (certainty > maxCertainty) {
-                  maxCertainty = certainty;
-                  const direction: 'RISE' | 'FALL' = data.accuracy > 50 ? data.vote : (data.vote === 'RISE' ? 'FALL' : 'RISE');
-                  strongestSignal = { horizon, direction, certaintyScore: certainty, accuracy: data.accuracy };
+              
+              pendingRef.current = updatedPending;
+              
+              if (newHistory.length > 0) {
+                  historyRef.current = [...historyRef.current.slice(-window + newHistory.length), ...newHistory];
               }
-          }
-      });
-      onConsensusUpdate(strongestSignal);
 
-      if (!isAutopilotOn || cooldownRef.current || !activeSymbol || !executeTrade || !user) {
-        if (!isAutopilotOn) setAutopilotStatus('Pausado');
-        return;
-      }
-      
-      const currentTick = realData[realData.length-1];
-      
-      // --- LÓGICA DE CONFIRMAÇÃO ---
-      if (pendingSignalRef.current && currentTick.epoch > pendingSignalRef.current.epoch) {
-          const pending = pendingSignalRef.current;
-          pendingSignalRef.current = null; // Limpa imediatamente para evitar re-execução
+              const futurePath = projectPath(ticks);
+              if (futurePath.length === ticks + 1) {
+                  pendingRef.current.push({
+                      startTimeIndex: lastTime,
+                      startPrice: futurePath[0].price,
+                      predictedEndPrice: futurePath[ticks].price,
+                  });
+              }
+
+              const { percentage } = calculateRollingAccuracy(historyRef.current);
+              const vote: 'RISE' | 'FALL' | 'HOLD' = futurePath.length > 1 ? (futurePath[futurePath.length-1].price > futurePath[0].price ? 'RISE' : 'FALL') : 'HOLD';
+              newAssertiveness[name] = { accuracy: percentage, vote };
+
+              if(name === '3t') setFuturePath3t(futurePath.map(p => ({ time: p.time, predicted_3t_ahead: p.price })));
+              if(name === '6t') setFuturePath6t(futurePath.map(p => ({ time: p.time, predicted_6t_ahead: p.price })));
+              if(name === '10t') setFuturePath10t(futurePath.map(p => ({ time: p.time, predicted_10t_ahead: p.price })));
+              if(name === '20s') setFuturePath20s(futurePath.map(p => ({ time: p.time, predicted_20s_ahead: p.price })));
+              if(name === '30s') setFuturePath30s(futurePath.map(p => ({ time: p.time, predicted_30s_ahead: p.price })));
+              if(name === '40s') setFuturePath40s(futurePath.map(p => ({ time: p.time, predicted_40s_ahead: p.price })));
+          });
+
+          let strongestSignal: StrongestSignal = { horizon: 'N/A', direction: 'HOLD', certaintyScore: 0, accuracy: 50 };
+          let maxCertainty = 0;
+
+          Object.entries(newAssertiveness).forEach(([horizon, data]) => {
+              if (data.vote !== 'HOLD') {
+                  const certainty = Math.abs(data.accuracy - 50) * 2;
+                  if (certainty > maxCertainty) {
+                      maxCertainty = certainty;
+                      const direction: 'RISE' | 'FALL' = data.accuracy > 50 ? data.vote : (data.vote === 'RISE' ? 'FALL' : 'RISE');
+                      strongestSignal = { horizon, direction, certaintyScore: certainty, accuracy: data.accuracy };
+                  }
+              }
+          });
+          onConsensusUpdate(strongestSignal);
+
+          if (!isAutopilotOn || cooldownRef.current || !activeSymbol || !executeTradeAction || !user) {
+            if (!isAutopilotOn) setAutopilotStatus('Pausado');
+            return;
+          }
           
-          let confirmed = false;
-          for (let i = 1; i < horizons.length; i++) {
-              const currentHorizonName = horizons[i].name;
-              const prevHorizonName = horizons[i-1].name;
-              const currentExpert = newAssertiveness[currentHorizonName];
-              const prevExpert = newAssertiveness[prevHorizonName];
-              const currentVote = currentExpert.accuracy > 50 ? currentExpert.vote : (currentExpert.vote === 'RISE' ? 'FALL' : 'RISE');
-              const currentEffectiveAccuracy = Math.max(currentExpert.accuracy, 100 - currentExpert.accuracy);
-              const prevEffectiveAccuracy = Math.max(prevExpert.accuracy, 100 - prevExpert.accuracy);
+          if (pendingSignalRef.current && currentTick.epoch > pendingSignalRef.current.epoch) {
+              const pending = pendingSignalRef.current;
+              pendingSignalRef.current = null;
+              
+              const { newTriggerSignal, newTriggerReason, newTriggeredBy } = evaluateTriggerConditions(newAssertiveness, horizons);
 
-              if (currentHorizonName === pending.triggeredBy[1] && prevHorizonName === pending.triggeredBy[0] &&
-                  currentEffectiveAccuracy > 70 && prevEffectiveAccuracy > 70 &&
-                  currentVote === pending.signal) {
-                  confirmed = true;
-                  break;
+              if (newTriggerSignal === pending.signal && newTriggeredBy && pending.triggeredBy.every((val, i) => val === newTriggeredBy[i])) {
+                  const confirmedReason = newTriggerReason;
+                  setAutopilotStatus(confirmedReason);
+                  
+                  const expertName = newTriggeredBy[1];
+                  const durationMatch = expertName.match(/(\d+)([st])/);
+                  
+                  if(durationMatch) {
+                      const duration = parseInt(durationMatch[1], 10);
+                      const durationUnit: DurationUnit = durationMatch[2] === 't' ? 't' : 's';
+                      const tradeParams = { direction: newTriggerSignal, stake: 1.0, duration, durationUnit };
+                      
+                      const assertivenessSnapshot = Object.entries(newAssertiveness).map(([horizon, data]) => ({ horizon, accuracy: data.accuracy, vote: data.vote }));
+                      
+                      const newPendingLog: Omit<PredictiveTradeLog, 'contractId'> = {
+                        id: `pred_log_${Date.now()}`,
+                        timestamp: new Date().toISOString(),
+                        asset: activeSymbol,
+                        tradeParams: tradeParams,
+                        context: {
+                            triggerReason: confirmedReason,
+                            assertivenessSnapshot: assertivenessSnapshot,
+                        },
+                        result: 'pending', pnl: 0,
+                      };
+                      pendingLogRef.current = newPendingLog;
+                      
+                      executeTradeAction('Piloto', newTriggerSignal, newTriggeredBy);
+                      
+                      isCoolingDownRef.current = true;
+                      setTimeout(() => {
+                          isCoolingDownRef.current = false;
+                          setAutopilotStatus('Monitorando...');
+                      }, 60000);
+                  }
+              } else {
+                  setAutopilotStatus(`Sinal ${pending.signal} Abortado. Condição não persistiu.`);
+                  toast({ title: '🤖 Piloto: Operação Abortada', description: `O sinal para ${pending.signal} não foi confirmado no tick seguinte.`, variant: 'destructive' });
               }
+              return;
           }
-
-          if (confirmed) {
-              const statusMessage = `Sinal ${pending.signal} confirmado por ${pending.triggeredBy.join(' & ')}. Executando...`;
-              setAutopilotStatus(statusMessage);
-              
-              const expertName = pending.triggeredBy[1];
-              const durationMatch = expertName.match(/(\d+)([st])/);
-              
-              if(durationMatch) {
-                  const duration = parseInt(durationMatch[1], 10);
-                  const durationUnit: DurationUnit = durationMatch[2] === 't' ? 't' : 's';
-                  const tradeParams = { direction: pending.signal, stake: 1.0, duration, durationUnit };
-                  
-                  // **Snapshot no momento da confirmação**
-                  const assertivenessSnapshot = Object.entries(newAssertiveness).map(([horizon, data]) => ({ horizon, accuracy: data.accuracy, vote: data.vote }));
-                  
-                  const newPendingLog: Omit<PredictiveTradeLog, 'contractId'> = {
-                    id: `pred_log_${Date.now()}`,
-                    timestamp: new Date().toISOString(),
-                    asset: activeSymbol,
-                    tradeParams: tradeParams,
-                    context: { triggerReason: statusMessage, assertivenessSnapshot: assertivenessSnapshot },
-                    result: 'pending', pnl: 0,
-                  };
-                  pendingLogRef.current = newPendingLog;
-                  
-                  executeTrade(pending.signal === 'RISE' ? 'CALL' : 'PUT', tradeParams.stake, activeSymbol, pending.signal.toLowerCase() as 'rise' | 'fall', tradeParams.duration, tradeParams.durationUnit, 'Piloto');
-                  
-                  cooldownRef.current = true;
-                  setTimeout(() => {
-                      cooldownRef.current = false;
-                      setAutopilotStatus('Monitorando...');
-                  }, 60000);
-              }
-          } else {
-              setAutopilotStatus(`Sinal ${pending.signal} Abortado. Condição não persistiu.`);
-              toast({ title: '🤖 Piloto: Operação Abortada', description: `O sinal para ${pending.signal} não foi confirmado no tick seguinte.`, variant: 'destructive' });
+          
+          const activeAutopilotTrade = operationsLog.find(op => op.initiator === 'Piloto' && op.status === 'pending');
+          if (activeAutopilotTrade || isCoolingDownRef.current || pendingSignalRef.current) {
+              if (activeAutopilotTrade) setAutopilotStatus(`Gerindo posição #${activeAutopilotTrade.id}`);
+              return;
           }
-          return;
-      }
-      // --- FIM DA LÓGICA DE CONFIRMAÇÃO ---
-      
-      const activeAutopilotTrade = operationsLog.find(op => op.initiator === 'Piloto' && op.status === 'pending');
-      if (activeAutopilotTrade || pendingSignalRef.current) {
-          if (activeAutopilotTrade) setAutopilotStatus(`Gerindo posição #${activeAutopilotTrade.id}`);
-          return;
-      }
-      
-      // --- LÓGICA DE DETECÇÃO DE SINAL ---
-      for (let i = 1; i < horizons.length; i++) {
-          const currentHorizonName = horizons[i].name;
-          const prevHorizonName = horizons[i-1].name;
-          const currentExpert = newAssertiveness[currentHorizonName];
-          const prevExpert = newAssertiveness[prevHorizonName];
-
-          const currentVote = currentExpert.accuracy > 50 ? currentExpert.vote : (currentExpert.vote === 'RISE' ? 'FALL' : 'RISE');
-          const prevVote = prevExpert.accuracy > 50 ? prevExpert.vote : (prevExpert.vote === 'RISE' ? 'FALL' : 'RISE');
-
-          const currentEffectiveAccuracy = Math.max(currentExpert.accuracy, 100 - currentExpert.accuracy);
-          const prevEffectiveAccuracy = Math.max(prevExpert.accuracy, 100 - prevExpert.accuracy);
-
-          if (currentEffectiveAccuracy > 70 && prevEffectiveAccuracy > 70 && currentVote === prevVote && currentVote !== 'HOLD') {
-              const statusMessage = `Sinal ${currentVote} detectado por ${prevHorizonName} (${prevEffectiveAccuracy.toFixed(0)}%) e ${currentHorizonName} (${currentEffectiveAccuracy.toFixed(0)}%). Aguardando confirmação...`;
-              setAutopilotStatus(statusMessage);
-              
+          
+          const { newTriggerSignal, newTriggerReason, newTriggeredBy } = evaluateTriggerConditions(newAssertiveness, horizons);
+          
+          if (newTriggerSignal !== 'HOLD' && newTriggeredBy) {
+              setAutopilotStatus(newTriggerReason.replace("Executando...", "Aguardando confirmação..."));
               pendingSignalRef.current = {
-                  signal: currentVote,
-                  triggeredBy: [prevHorizonName, currentHorizonName],
+                  signal: newTriggerSignal,
+                  triggeredBy: newTriggeredBy,
                   epoch: currentTick.epoch
               };
-              
-              break; 
+          } else {
+              setAutopilotStatus('Monitorando...');
           }
-      }
+        }
+        setPredictionData(newPredictionData.slice(-200));
+    };
 
-      if (!pendingSignalRef.current) {
-          setAutopilotStatus('Monitorando...');
-      }
-    }
-    setPredictionData(newPredictionData.slice(-200));
+    const intervalId = setInterval(executeLogic, 1000);
+    return () => clearInterval(intervalId);
+  }, [realData, isAutopilotOn, operationsLog, activeSymbol, executeTradeAction, user, toast, setAutopilotStatus, onConsensusUpdate]);
 
-  }, [realData, isAutopilotOn, operationsLog, activeSymbol, executeTrade, user, toast, setAutopilotStatus, onConsensusUpdate]);
 
   useEffect(() => {
-    if (!pendingLogRef.current || !user || !operationsLog.length) {
+    if (!user || !operationsLog.length) {
         return;
     }
   
@@ -464,7 +461,7 @@ function StochasticLab({ realData, operationsLog, activeSymbol, onConsensusUpdat
         .filter(op => op.initiator === 'Piloto' && op.status === 'pending')
         .find(op => !predictiveLogs.some(log => log.contractId === op.id));
   
-    if (newPilotOperation && newPilotOperation.id) {
+    if (newPilotOperation && newPilotOperation.id && pendingLogRef.current) {
         const finalLog: PredictiveTradeLog = {
             ...pendingLogRef.current,
             contractId: newPilotOperation.id,
