@@ -1,6 +1,6 @@
 // /src/lib/types/index.ts
 import { z } from 'zod';
-import type { RobotStrategy as RobotStrategyT, RobotVote as RobotVoteT, RobotPerformance as RobotPerformanceT, EnhancedRobotPerformance as EnhancedRobotPerformanceType, MarketRegime as MarketRegimeType, MicrostructureFeatures as MicrostructureFeaturesType, BayesianVote as BayesianVoteType, TradeDecisionLog as TradeDecisionLogType, AssetProfileV1 as AssetProfileV1Type } from './trading.types';
+import type { RobotStrategy as RobotStrategyT, RobotVote as RobotVoteT, RobotPerformance as RobotPerformanceT, EnhancedRobotPerformance as EnhancedRobotPerformanceType, MarketRegime as MarketRegimeType, MicrostructureFeatures as MicrostructureFeaturesType, BayesianVote as BayesianVoteType, TradeDecisionLog as TradeDecisionLogType, AssetProfileV1 as AssetProfileV1Type, CouncilVotes as CouncilVotesT, VirtualTradeLog as VirtualTradeLogT, TradeHistoryEvent as TradeHistoryEventT } from './trading.types';
 import { OperationSchema } from './trading.types';
 import type { AssetAnalysisInput as AssetAnalysisInputT, AssetAnalysisOutput as AssetAnalysisOutputT } from '@/ai/flows/asset-analysis.types';
 import { IndicatorsSchema } from './trading.types';
@@ -82,7 +82,7 @@ export interface TradeAnnotation {
   profit?: number;
   symbol: string;
   expirationTime?: number;
-  contractType?: 'option' | 'multiplier';
+  contractType?: 'option' | 'multiplier' | 'accumulator';
 }
 
 export type OperationStatus = 'pending' | 'won' | 'lost';
@@ -126,6 +126,9 @@ export type MicrostructureFeatures = MicrostructureFeaturesType;
 export type BayesianVote = BayesianVoteType;
 export type TradeDecisionLog = TradeDecisionLogType;
 export type AssetProfileV1 = AssetProfileV1Type;
+export type CouncilVotes = CouncilVotesT;
+export type VirtualTradeLog = VirtualTradeLogT;
+export type TradeHistoryEvent = TradeHistoryEventT;
 
 
 // =================================================================

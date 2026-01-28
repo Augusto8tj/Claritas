@@ -142,8 +142,8 @@ function optimizeGrowthRate(
   return Math.max(0.01, Math.min(0.05, optimized));
 }
 
-function analyzeMicrostructure(ticks: TickData[]): MicrostructureSignal {
-  if (ticks.length < 20) return { isSafe: true, tickVelocityAnomaly: false, priceJumpDetected: false, safetyScore: 50 };
+function analyzeMicrostructure(ticks: TickData[]): MicrostructureSignal & { reason: string } {
+  if (ticks.length < 20) return { isSafe: true, tickVelocityAnomaly: false, priceJumpDetected: false, safetyScore: 50, reason: "Dados insuficientes" };
   
   const recentTicks = ticks.slice(-20);
   const prices = recentTicks.map(t => t.price);
@@ -167,14 +167,22 @@ function analyzeMicrostructure(ticks: TickData[]): MicrostructureSignal {
   const tickVelocityAnomaly = stdInterval > meanInterval * 0.5;
   
   let safetyScore = 100;
-  if (priceJumpDetected) safetyScore -= 40;
-  if (tickVelocityAnomaly) safetyScore -= 30;
+  let reasons: string[] = [];
+  if (priceJumpDetected) {
+    safetyScore -= 40;
+    reasons.push("Pico de Preço");
+  }
+  if (tickVelocityAnomaly) {
+    safetyScore -= 30;
+    reasons.push("Velocidade Anômala");
+  }
   
   return {
     isSafe: safetyScore > 50,
     tickVelocityAnomaly,
     priceJumpDetected,
-    safetyScore
+    safetyScore,
+    reason: reasons.length > 0 ? reasons.join(', ') : "Seguro"
   };
 }
 
@@ -262,6 +270,7 @@ export function useAccumulatorsCouncil() {
   const [entryConditions, setEntryConditions] = useState({
     survivalProb: false,
     microstructure: false,
+    microstructureReason: ""
   });
   const [calculatedStake, setCalculatedStake] = useState(1.0);
   const [optimizedGrowthRate, setOptimizedGrowthRate] = useState(0.03);
@@ -359,7 +368,7 @@ export function useAccumulatorsCouncil() {
         survivalProbability: currentSurvivalProb,
         actualDuration: calculateTimeToLoss(lastOp),
         predictedDuration: riskManager.adaptiveDuration,
-        result: 'loss',
+        result: 'lost',
         exitReason: reason
       });
 
@@ -380,7 +389,7 @@ export function useAccumulatorsCouncil() {
           survivalProbability: currentSurvivalProb,
           actualDuration: calculateTimeToLoss(lastOp),
           predictedDuration: riskManager.adaptiveDuration,
-          result: 'win',
+          result: 'won',
           exitReason: sellReason || 'take_profit'
       });
        if(riskManager.mode === 'Cautious') {
@@ -494,7 +503,7 @@ export function useAccumulatorsCouncil() {
 
         const survivalProbMet = currentSurvivalProb >= riskManager.survivalProbabilityThreshold;
         const microstructureSignal = analyzeMicrostructure(priceTicks);
-        setEntryConditions({ survivalProb: survivalProbMet, microstructure: microstructureSignal.isSafe });
+        setEntryConditions({ survivalProb: survivalProbMet, microstructure: microstructureSignal.isSafe, microstructureReason: microstructureSignal.reason });
         
         const canEnter = survivalProbMet && microstructureSignal.isSafe;
 

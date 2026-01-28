@@ -29,7 +29,7 @@ export function FirstTransactionGuide() {
 
         async function checkTransactions() {
             try {
-                const transactions = await getTransactions(user.uid);
+                const transactions = await getTransactions(user!.uid);
                 if (isMounted) {
                     setHasTransactions(transactions.length > 0);
                 }

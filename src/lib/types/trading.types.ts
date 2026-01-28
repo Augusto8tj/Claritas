@@ -128,12 +128,13 @@ export const RobotStrategySchema = z.object({
 });
 export type RobotStrategy = z.infer<typeof RobotStrategySchema>;
 
-// MODIFICADO: Histórico de trades agora guarda o regime.
+
 export const TradeHistoryEventSchema = z.object({
   profit: z.number(),
-  regime: z.any(), // Para acomodar o objeto complexo MarketRegimeV2
+  regime: z.any(),
   timestamp: z.number(),
 });
+export type TradeHistoryEvent = z.infer<typeof TradeHistoryEventSchema>;
 
 export const BayesianVoteSchema = z.object({
     vote: z.enum(['RISE', 'FALL', 'HOLD']),
@@ -169,7 +170,7 @@ export interface EnhancedRobotPerformance {
   effectiveRegimes: MarketRegime[];
   monteCarloScore: number;
   lastUpdated: number;
-  tradeHistory: { profit: number; regime: any; timestamp: number }[];
+  tradeHistory: TradeHistoryEvent[];
   status?: 'Probation' | 'Certified';
 }
 
@@ -205,6 +206,7 @@ export const IndicatorsSchema = z.object({
   }).nullable(),
   kama: z.number().nullable(),
   bbw: z.number().nullable(), // Bollinger Bandwidth
+  bbwSeries: z.array(z.number().nullable()),
   stochRSI: z.number().nullable(),
   zScore: z.number().nullable(),
   ao: z.number().nullable(),
@@ -322,3 +324,10 @@ export const AssetProfileV1Schema = z.object({
   notes: z.string().optional(),
 });
 export type AssetProfileV1 = z.infer<typeof AssetProfileV1Schema>;
+
+export interface TradeResult {
+  success: boolean;
+  message: string;
+  contractId?: number;
+  entryPrice?: number;
+}

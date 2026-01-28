@@ -1,12 +1,14 @@
 // src/features/trading/components/deriv-trader/deriv-trader-interface-v2.types.ts
 import { z } from 'zod';
 
-export const riseFallSchema = z.object({
+const baseRiseFallSchema = z.object({
   stake: z.coerce.number().min(0.35, "O valor mínimo é $0.35."),
   duration: z.coerce.number().min(1, "A duração deve ser de pelo menos 1."),
   duration_unit: z.enum(['t', 's', 'm', 'h', 'd']),
   allowEquals: z.boolean().default(false),
-}).refine(
+});
+
+export const riseFallSchema = baseRiseFallSchema.refine(
   (data) => {
     if (data.duration_unit === 's') {
       return data.duration >= 15;
@@ -32,4 +34,4 @@ export const riseFallSchema = z.object({
 
 
 export type RiseFallFormValues = z.infer<typeof riseFallSchema>;
-export type DurationUnit = z.infer<typeof riseFallSchema.shape.duration_unit>;
+export type DurationUnit = z.infer<typeof baseRiseFallSchema.shape.duration_unit>;
