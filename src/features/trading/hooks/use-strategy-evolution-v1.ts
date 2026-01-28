@@ -7,6 +7,7 @@ import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/features/auth/hooks/use-auth';
 import { saveEvolutionHistory, loadEvolutionHistory, clearEvolutionHistory } from '@/services/financial-data-service';
 import { initialCouncilStrategies } from '@/services/council-strategies';
+import type { EvolutionEvent as EvolutionEventV2 } from './use-strategy-evolution-v2'; // Import the richer type
 
 // ============================================================================
 // PARÂMETROS DA EVOLUÇÃO
@@ -16,19 +17,21 @@ const ELITE_COUNT = 5;
 const WORST_COUNT = 5;
 const MIN_TRADES_FOR_ANALYSIS = 5;
 
+// Corrected EvolutionEvent to be compatible with V2
 export interface EvolutionEvent {
     timestamp: Date;
     elitePerformers: Pick<RobotPerformance, 'id' | 'strategyType' | 'totalProfit' | 'wins' | 'losses'>[];
     mutations: {
-        replacedBotId: string;
-        replacedBotType: string;
-        parentBotId: string;
-        parentBotType: string;
+        robotId: string;
+        robotType: string;
+        parentId: string;
+        parentType: string;
         diagnosis: string;
         prescription: string;
         mutatedGenes: string[];
     }[];
 }
+
 
 // ============================================================================
 // FUNÇÕES DE MUTAÇÃO INTELIGENTE
@@ -138,7 +141,23 @@ export function useStrategyEvolutionV1(assetSymbol: string | null) {
         
         loadEvolutionHistory(user.uid, 'v1', assetSymbol).then(history => {
             if (history && history.length > 0) {
-                setEvolutionHistory(history as EvolutionEvent[]);
+                // The loaded history is of type V2, we cast it to V1.
+                // This might cause issues if V1 components expect different properties.
+                // For now, we assume a compatible structure for display.
+                const compatibleHistory = history.map(h => ({
+                    timestamp: h.timestamp,
+                    elitePerformers: h.elitePerformers,
+                    mutations: h.mutations.map(m => ({
+                        replacedBotId: m.robotId,
+                        replacedBotType: m.robotType,
+                        parentBotId: m.parentId,
+                        parentBotType: m.parentType,
+                        diagnosis: m.diagnosis,
+                        prescription: m.prescription,
+                        mutatedGenes: m.mutatedGenes,
+                    }))
+                }))
+                setEvolutionHistory(compatibleHistory as EvolutionEvent[]);
             } else {
                 setEvolutionHistory([]);
             }
@@ -206,10 +225,10 @@ export function useStrategyEvolutionV1(assetSymbol: string | null) {
                   strategiesChanged = true;
 
                   newEvent.mutations.push({
-                      replacedBotId: worst.id,
-                      replacedBotType: worst.strategyType,
-                      parentBotId: eliteParent.id,
-                      parentBotType: eliteParent.strategyType,
+                      robotId: worst.id,
+                      robotType: worst.strategyType,
+                      parentId: eliteParent.id,
+                      parentType: eliteParent.strategyType,
                       diagnosis: failureAnalysis.weaknessPattern,
                       prescription: Object.keys(failureAnalysis.suggestedFix).length > 0 ? 'Correção Direcionada' : 'Mutação Aleatória',
                       mutatedGenes: mutatedGenes,
@@ -225,7 +244,8 @@ export function useStrategyEvolutionV1(assetSymbol: string | null) {
             setEvolutionHistory(prev => {
                 const newHistory = [newEvent, ...prev];
                 if(user && assetSymbol) {
-                    saveEvolutionHistory(user.uid, newHistory as any, 'v1', assetSymbol);
+                    const historyV2Format = newHistory.map(h => ({ ...h, generation: 0, trigger: 'virtual', tradeCount: EVOLUTION_TRIGGER_THRESHOLD, populationStats: { avgSharpe: 0, avgWinRate: 0, totalProfit: 0, bestRegimes: [] } } as EvolutionEventV2));
+                    saveEvolutionHistory(user.uid, historyV2Format, 'v1', assetSymbol);
                 }
                 return newHistory;
             });

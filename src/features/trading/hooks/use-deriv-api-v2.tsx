@@ -44,7 +44,7 @@ export type ApiHistoricalData = {
     volume?: number;
 };
 
-interface DerivApiContextTypeV2 {
+export interface DerivApiContextTypeV2 {
   ws: WebSocket | null;
   isConnected: boolean;
   isConnecting: boolean;
@@ -437,7 +437,7 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
             success: true,
             message: `Ordem do tipo "${contractType}" para ${symbol} no valor de ${sanitizedStake} USD executada com sucesso.`,
             contractId: buyResult.contract_id,
-            entryPrice,
+            entryPrice: entryPrice,
           };
         } catch (error) {
            console.error("[Deriv Hook] Erro durante a negociação:", error);
