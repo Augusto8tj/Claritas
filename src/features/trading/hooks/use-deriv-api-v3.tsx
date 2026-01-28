@@ -162,7 +162,7 @@ export const DerivApiProviderV3 = ({ children }: { children: ReactNode }) => {
 
   const [activeSymbol, setActiveSymbol] = useState<string | null>('1HZ100V');
   const [chartData, setChartData] = useState<ChartData[]>([]);
-  const [priceTicks, setPriceTicks] = useState<TickData[]>([]);
+  const [priceTicks, setPriceTicks] = useState<TickData[]>([]); 
   const [isChartLoading, setIsChartLoading] = useState(true);
   const [chartError, setChartError] = useState<string | null>(null);
   const [chartType, setChartType] = useState<ChartType>('Candle');
@@ -179,6 +179,9 @@ export const DerivApiProviderV3 = ({ children }: { children: ReactNode }) => {
   const [connectionError, setConnectionError] = useState<string | null>(null);
   const promisesRef = useRef<Map<string, PromiseCallbacks>>(new Map());
   const [triggerReconnect, setTriggerReconnect] = useState(0);
+  const [lastPingTime, setLastPingTime] = useState<number>(Date.now());
+  const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const pingIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
     const setAndPersistOperationsLog = useCallback((updater: React.SetStateAction<Operation[]>) => {
         setOperationsLog(prevLog => {
@@ -477,13 +480,26 @@ export const DerivApiProviderV3 = ({ children }: { children: ReactNode }) => {
     }
   }, [isConnected, makeRequest, operationsLog]);
 
+  const startConnectionMonitor = useCallback(() => {
+    if (pingIntervalRef.current) clearInterval(pingIntervalRef.current);
+    pingIntervalRef.current = setInterval(() => {
+        if (wsRef.current?.readyState === WebSocket.OPEN) {
+            try {
+                wsRef.current.send(JSON.stringify({ ping: 1 }));
+            } catch (error) {
+                console.warn('[Ping] Failed:', error);
+            }
+        }
+    }, 30000);
+  }, []);
 
   useEffect(() => {
     if (!activeToken || isLoading) {
       if (wsRef.current) wsRef.current.close();
+      if (pingIntervalRef.current) clearInterval(pingIntervalRef.current);
       return;
     }
-  
+    
     const connect = () => {
       setIsConnecting(true);
       setAccountBalance({ balance: null, currency: null, loading: true });
@@ -501,8 +517,14 @@ export const DerivApiProviderV3 = ({ children }: { children: ReactNode }) => {
       ws.onmessage = (event) => {
           try {
               const response = JSON.parse(event.data);
+              
+              if (response.msg_type === 'ping' || response.pong) {
+                  setLastPingTime(Date.now());
+                  return;
+              }
+              
               const reqId = response.req_id;
-    
+              
               if (reqId && promisesRef.current.has(String(reqId))) {
                   const promise = promisesRef.current.get(String(reqId));
                   if (promise) {
@@ -675,9 +697,12 @@ export const DerivApiProviderV3 = ({ children }: { children: ReactNode }) => {
               setIsConnected(true);
               setIsConnecting(false);
               setConnectionError(null);
+              setLastPingTime(Date.now());
               
               ws.send(JSON.stringify({ "proposal_open_contract": 1, "subscribe": 1 }));
               ws.send(JSON.stringify({ "balance": 1, "subscribe": 1 }));
+              
+              startConnectionMonitor();
               
               const assetsRes: any = await makeRequest({ active_symbols: 'full', product_type: 'basic' });
               
@@ -715,16 +740,31 @@ export const DerivApiProviderV3 = ({ children }: { children: ReactNode }) => {
       ws.onclose = (event) => {
           if (!wsRef.current) return;
           
-          const { wasClean, code, reason } = event;
-          
-          if (promisesRef.current) {
-              promisesRef.current.forEach((p) => p.reject(new Error("WebSocket connection closed.")));
-              promisesRef.current.clear();
+          if (pingIntervalRef.current) {
+              clearInterval(pingIntervalRef.current);
+              pingIntervalRef.current = null;
           }
           
-          if (!wasClean) {
-              setConnectionError(`A conexão foi encerrada inesperadamente. Código: ${code}. Razão: ${reason || 'N/A'}.`);
+          promisesRef.current.forEach((p) => {
+            if (p && typeof p.reject === 'function') {
+              p.reject(new Error("WebSocket connection closed."))
+            }
+          });
+          promisesRef.current.clear();
+          
+          if (!event.wasClean) {
+              console.warn(`[WS] Fechado inesperadamente. Código: ${event.code}`);
+              setConnectionError(`Conexão perdida. Reconectando...`);
+              
+              if (reconnectTimeoutRef.current) {
+                  clearTimeout(reconnectTimeoutRef.current);
+              }
+              reconnectTimeoutRef.current = setTimeout(() => {
+                  console.log('[Auto-Reconnect] Tentando reconectar...');
+                  setTriggerReconnect(c => c + 1);
+              }, 3000);
           }
+          
           setIsConnected(false);
           setIsConnecting(false);
           setAccountBalance({ balance: null, currency: null, loading: false });
@@ -732,7 +772,7 @@ export const DerivApiProviderV3 = ({ children }: { children: ReactNode }) => {
       };
     
       ws.onerror = () => {
-        // A lógica de erro é centralizada no onclose para obter detalhes específicos.
+        // O evento onclose é mais fiável para obter o motivo do erro.
       };
     };
 
@@ -740,11 +780,17 @@ export const DerivApiProviderV3 = ({ children }: { children: ReactNode }) => {
   
     return () => {
       if (wsRef.current) {
-          wsRef.current.onclose = null;
-          wsRef.current.close();
+        wsRef.current.onclose = null;
+        wsRef.current.close();
+      }
+      if (pingIntervalRef.current) {
+          clearInterval(pingIntervalRef.current);
+      }
+      if (reconnectTimeoutRef.current) {
+          clearTimeout(reconnectTimeoutRef.current);
       }
     };
-  }, [activeToken, isLoading, makeRequest, updateTradeAnnotation, addTradeAnnotation, toast, triggerReconnect, setAndPersistOperationsLog, setToastQueue]);
+  }, [activeToken, isLoading, makeRequest, updateTradeAnnotation, addTradeAnnotation, toast, triggerReconnect, setAndPersistOperationsLog, setToastQueue, startConnectionMonitor]);
 
   const subscribeToMarketData = useCallback(async (symbol: string) => {
     if (wsRef.current?.readyState !== WebSocket.OPEN) return;
@@ -753,7 +799,7 @@ export const DerivApiProviderV3 = ({ children }: { children: ReactNode }) => {
         try { 
             await makeRequest({ forget: activeSubscriptionIdRef.current }, true); 
         } catch (e) { 
-            // Ignore if forget fails, we will subscribe to the new one anyway.
+            // Ignore if forget fails
         }
         activeSubscriptionIdRef.current = null;
     }
@@ -816,7 +862,6 @@ export const DerivApiProviderV3 = ({ children }: { children: ReactNode }) => {
         }
         
         makeRequest(subRequest, true);
-        console.log(`[Market Data] Subscription request sent for ${symbol} (${chartType}).`);
 
     } catch (error: any) {
         console.error(`[Market Data] Error for ${symbol}:`, error);
@@ -891,7 +936,7 @@ export const DerivApiProviderV3 = ({ children }: { children: ReactNode }) => {
 }, [isConnected, connectionError]);
 
   const clearActiveContracts = () => {
-    setOperationsLog([]);
+    setAndPersistOperationsLog([]);
     setTradeAnnotations([]);
   };
 
@@ -915,6 +960,8 @@ export const DerivApiProviderV3 = ({ children }: { children: ReactNode }) => {
     activeSymbol,
     setActiveSymbol,
     chartData,
+    // V3 doesn't need a separate botCandleData, so we can simplify
+    botCandleData: chartData.filter(isCandle),
     priceTicks,
     isChartLoading,
     chartError,
