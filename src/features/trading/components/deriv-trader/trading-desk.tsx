@@ -10,7 +10,7 @@ import {
     TableHeader,
     TableRow,
 } from '@/components/ui/table';
-import type { RobotStrategy, RobotPerformance } from '@/lib/types';
+import type { RobotStrategy, RobotPerformance, CouncilVotes } from '@/lib/types';
 import {
     BrainCircuit,
     Activity,
@@ -31,7 +31,6 @@ import { cn } from '@/lib/utils';
 import { Progress } from '@/components/ui/progress';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
-import type { CouncilVotes } from '@/features/trading/hooks/use-robot-council-v1';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Separator } from '@/components/ui/separator';

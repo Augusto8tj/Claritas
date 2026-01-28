@@ -5,7 +5,7 @@ import { createContext, useContext, useState, useEffect, type ReactNode, useCall
 import type { TradeResult } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
 import type { Operation, OperationInitiator, DurationUnit, ChartType, TimePeriod, ChartData, CandleData, TradeAnnotation, TickData, DurationLimits, Asset } from '@/lib/types';
-import { FirebaseErrorListener } from '@/components/FirebaseErrorListener';
+import { FirebaseErrorListener } from '@/components/firebase-error-listener';
 
 
 const DERIV_DEMO_TOKEN_KEY = 'derivDemoApiToken';
@@ -176,7 +176,7 @@ export const DerivApiProviderV1 = ({ children }: { children: ReactNode }) => {
   const promisesRef = useRef<Map<string, PromiseCallbacks>>(new Map());
   const [triggerReconnect, setTriggerReconnect] = useState(0);
 
-  const setAndPersistOperationsLog = useCallback((updater: React.SetStateAction<Operation[]>) => {
+    const setAndPersistOperationsLog = useCallback((updater: React.SetStateAction<Operation[]>) => {
     setOperationsLog(prevLog => {
         const newLogWithPotentialDuplicates = typeof updater === 'function' ? updater(prevLog) : updater;
         

@@ -9,7 +9,6 @@ import { addGoal, getFinancialSummary, getBudgetData } from '@/services/financia
 import { addTransaction as addTransactionAction } from '@/app/actions/transaction-actions';
 import { z } from 'zod';
 import { revalidatePath } from 'next/cache';
-import type { ToolFnOptions, ToolRunOptions } from 'genkit';
 
 const userIdSchema = z.string().describe("The unique identifier of the user.");
 
