@@ -1,4 +1,4 @@
-// /src/app/volatility-analysis/page.tsx
+// src/app/volatility-analysis/page.tsx
 'use client';
 
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
@@ -19,7 +19,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { volatilityTraderSchema, type VolatilityTraderFormValues } from "@/features/trading/components/deriv-trader/volatility-trader-interface.types";
 import VolatilityTraderInterface from "@/features/trading/components/deriv-trader/volatility-trader-interface";
 import { OperationsLogV2 } from "@/features/trading/components/deriv-trader/operations-log-v2";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { useToast } from '@/hooks/use-toast';
@@ -515,6 +515,10 @@ function StochasticLab({
     }
   }, [projectionExperts, isAutopilotOn, operationsLog, activeSymbol, executeTrade, setAutopilotStatus, toast, executeTradeAction, realData, evaluateTriggerConditions, pendingSignal]);
 
+  useEffect(() => {
+    onConsensusUpdate(strongestSignal);
+  }, [strongestSignal, onConsensusUpdate]);
+
   const allAccuracy = useMemo(() => [
       { name: '3t', ...accuracy3t },
       { name: '6t', ...accuracy6t },
@@ -959,4 +963,3 @@ export default function VolatilityAnalysisPage() {
         </DerivApiProviderV2>
     );
 }
-```
