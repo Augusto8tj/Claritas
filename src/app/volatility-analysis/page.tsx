@@ -1,3 +1,4 @@
+
 // src/app/volatility-analysis/page.tsx
 'use client';
 
@@ -19,7 +20,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { volatilityTraderSchema, type VolatilityTraderFormValues } from "@/features/trading/components/deriv-trader/volatility-trader-interface.types";
 import VolatilityTraderInterface from "@/features/trading/components/deriv-trader/volatility-trader-interface";
 import { OperationsLogV2 } from "@/features/trading/components/deriv-trader/operations-log-v2";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert';
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { useToast } from '@/hooks/use-toast';
@@ -170,10 +171,10 @@ function StochasticLab({
     deletingPredictiveLogId,
 }: StochasticLabProps) {
   const { toast } = useToast();
-  const { user } = useAuth();
+  const { user, loading: isAuthLoading } = useAuth();
   const cooldownRef = useRef(false);
-  
-  const [pendingSignal, setPendingSignal] = useState<{ signal: 'RISE' | 'FALL'; triggeredBy: [string, string]; epoch: number; } | null>(null);
+  const pendingSignalRef = useRef<{ signal: 'RISE' | 'FALL'; triggeredBy: [string, string]; epoch: number; } | null>(null);
+  const { durationLimits } = useDerivApiV2();
   
   const [activeTab, setActiveTab] = useState('prediction');
   const [priceData, setPriceData] = useState<any[]>([]);
@@ -444,8 +445,8 @@ function StochasticLab({
   }, [projectionExperts]);
 
   const executeTradeAction = useCallback(async (initiator: OperationInitiator, signalOverride: 'RISE' | 'FALL', triggeredBy: [string, string], reason: string) => {
-    if (!activeSymbol || !executeTrade) {
-        toast({ title: "Erro de Configuração", description: "O piloto automático não pôde executar.", variant: "destructive"});
+    if (!activeSymbol || !executeTrade || !user || !durationLimits) {
+        toast({ title: "Erro de Configuração", description: "O piloto automático não pôde executar. Verifique a conexão e o ativo selecionado.", variant: "destructive"});
         return;
     }
 
@@ -453,13 +454,31 @@ function StochasticLab({
 
     try {
         const longerHorizon = triggeredBy[1]; 
-        let duration = 15;
-        let durationUnit: 's' | 't' = 's';
+        let duration: number;
+        let durationUnit: 's' | 't';
         
         const durationMatch = longerHorizon.match(/(\d+)([st])/);
         if (durationMatch) {
-            duration = Math.max(15, parseInt(durationMatch[1], 10)); // Garante mínimo de 15s
-            durationUnit = 's'; // Assume segundos
+            const suggestedDuration = parseInt(durationMatch[1], 10);
+            const suggestedUnit = durationMatch[2] as 's' | 't';
+            
+            const limits = durationLimits[suggestedUnit];
+            
+            if (limits && limits.min > 0) { // Se a unidade é suportada
+                duration = Math.max(limits.min, Math.min(suggestedDuration, limits.max));
+                durationUnit = suggestedUnit;
+            } else if (suggestedUnit === 's' && durationLimits.t && durationLimits.t.min > 0) { // Fallback para ticks se segundos não for suportado
+                 duration = durationLimits.t.min;
+                 durationUnit = 't';
+            } else { // Fallback para 15 segundos se nada for suportado
+                duration = 15;
+                durationUnit = 's';
+            }
+
+        } else {
+            // Fallback padrão se o formato do horizonte for inesperado
+            duration = 15;
+            durationUnit = 's';
         }
 
         const result = await executeTrade(
@@ -503,11 +522,11 @@ function StochasticLab({
         console.error("Master Autopilot Execution Error:", error);
         toast({ title: `❌ Erro na Execução ${initiator}`, description: error instanceof Error ? error.message : String(error), variant: "destructive" });
     }
-  }, [activeSymbol, executeTrade, toast, user, projectionExperts]);
+  }, [activeSymbol, executeTrade, toast, user, durationLimits, projectionExperts]);
 
   // --- PILOTO AUTOMÁTICO REVISADO ---
     const runAutopilotCycle = useCallback(() => {
-        if (!isAutopilotOn || cooldownRef.current || !activeSymbol || !executeTrade) {
+        if (!isAutopilotOn || cooldownRef.current || !activeSymbol || !executeTrade || isAuthLoading) {
             if(isAutopilotOn) setAutopilotStatus('Aguardando Conexão...');
             return;
         }
@@ -518,13 +537,12 @@ function StochasticLab({
             return;
         }
 
-        const currentTick = priceTicks[priceTicks.length - 1];
+        const currentTick = realData[realData.length - 1];
         if (!currentTick) return;
 
         const assertiveness = Object.fromEntries(projectionExperts.map(p => [p.name, { accuracy: p.accuracy, vote: p.vote }]));
-        const horizons = projectionExperts.map(p => ({ name: p.name, ticks: 0, window: 0 })); // Simplified for the call
+        const horizons = projectionExperts.map(p => ({ name: p.name, ticks: 0, window: 0 }));
 
-        // Verifica sinal pendente
         if (pendingSignalRef.current && pendingSignalRef.current.epoch < currentTick.epoch) {
             const pending = pendingSignalRef.current;
             pendingSignalRef.current = null;
@@ -545,7 +563,6 @@ function StochasticLab({
             return;
         }
 
-        // Verifica novo sinal
         const { newTriggerSignal, newTriggerReason, newTriggeredBy } = evaluateTriggerConditions(assertiveness, horizons);
         if (newTriggerSignal !== 'HOLD' && newTriggeredBy) {
             pendingSignalRef.current = { signal: newTriggerSignal, triggeredBy: newTriggeredBy, epoch: currentTick.epoch };
@@ -556,7 +573,7 @@ function StochasticLab({
                 setAutopilotStatus('Monitorando...');
             }
         }
-    }, [isAutopilotOn, activeSymbol, executeTrade, operationsLog, priceTicks, projectionExperts, toast, setAutopilotStatus, executeTradeAction]);
+    }, [isAutopilotOn, activeSymbol, executeTrade, operationsLog, realData, projectionExperts, toast, setAutopilotStatus, executeTradeAction, isAuthLoading]);
 
     useEffect(() => {
         if (!isAutopilotOn) {
@@ -968,5 +985,3 @@ export default function VolatilityAnalysisPage() {
         </DerivApiProviderV2>
     );
 }
-
-```
