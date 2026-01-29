@@ -145,6 +145,7 @@ export const DerivApiProviderAccumulators = ({ children }: { children: ReactNode
   const [chartType, setChartType] = useState<ChartType>('Area');
   const chartTypeRef = useRef(chartType);
   const [timePeriod, setTimePeriod] = useState<TimePeriod>('1m');
+  const timePeriodRef = useRef(timePeriod);
   const [dataVersion, setDataVersion] = useState(0); 
   const activeSubscriptionIdRef = useRef<string | null>(null);
   const tickSubscriptionIdRef = useRef<string | null>(null);
@@ -158,9 +159,8 @@ export const DerivApiProviderAccumulators = ({ children }: { children: ReactNode
   const [connectionError, setConnectionError] = useState<string | null>(null);
   const promisesRef = useRef<Map<string, PromiseCallbacks>>(new Map());
   const [triggerReconnect, setTriggerReconnect] = useState(0);
-  const [lastPingTime, setLastPingTime] = useState<number>(Date.now());
-  const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const pingIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   
     const setAndPersistOperationsLog = useCallback((updater: React.SetStateAction<Operation[]>) => {
         setOperationsLog(prevLog => {
@@ -191,6 +191,11 @@ export const DerivApiProviderAccumulators = ({ children }: { children: ReactNode
   useEffect(() => {
     chartTypeRef.current = chartType;
   }, [chartType]);
+  
+  useEffect(() => {
+    timePeriodRef.current = timePeriod;
+  }, [timePeriod]);
+
 
   useEffect(() => {
     try {
@@ -459,6 +464,9 @@ export const DerivApiProviderAccumulators = ({ children }: { children: ReactNode
     setPriceTicks([]);
     
     try {
+        const currentChartType = chartTypeRef.current;
+        const currentTimePeriod = timePeriodRef.current;
+
         const botHistory = await getHistoricalData(symbol, 'candles', 1000, '1m') as CandleData[];
         setBotCandleData(botHistory);
         const botSubRequest = { ticks_history: symbol, style: 'candles', granularity: 60, subscribe: 1, end: "latest", count: 1, adjust_start_time: 1 };
@@ -473,9 +481,9 @@ export const DerivApiProviderAccumulators = ({ children }: { children: ReactNode
             tickSubscriptionIdRef.current = tickSubResponse.subscription.id;
         }
         
-        const isUICandle = chartType === 'Candle';
-        const isUI1mCandle = isUICandle && timePeriod === '1m';
-        const isUIArea = chartType === 'Area';
+        const isUICandle = currentChartType === 'Candle';
+        const isUI1mCandle = isUICandle && currentTimePeriod === '1m';
+        const isUIArea = currentChartType === 'Area';
         
         if (isUI1mCandle) {
             setChartData(botHistory);
@@ -484,9 +492,9 @@ export const DerivApiProviderAccumulators = ({ children }: { children: ReactNode
             setChartData(tickHistory as TickData[]);
             setPriceTicks(tickHistory as TickData[]);
         } else if (isUICandle) {
-            const uiHistory = await getHistoricalData(symbol, 'candles', 1000, timePeriod);
+            const uiHistory = await getHistoricalData(symbol, 'candles', 1000, currentTimePeriod);
             setChartData(uiHistory as CandleData[]);
-            const uiSubRequest = { ticks_history: symbol, style: 'candles', granularity: getGranularityForTimePeriod(timePeriod), subscribe: 1, end: "latest", count: 1, adjust_start_time: 1 };
+            const uiSubRequest = { ticks_history: symbol, style: 'candles', granularity: getGranularityForTimePeriod(currentTimePeriod), subscribe: 1, end: "latest", count: 1, adjust_start_time: 1 };
             const uiSubResponse: any = await makeRequest(uiSubRequest);
             if (uiSubResponse.subscription?.id) {
                 activeSubscriptionIdRef.current = uiSubResponse.subscription.id;
@@ -498,7 +506,7 @@ export const DerivApiProviderAccumulators = ({ children }: { children: ReactNode
     } finally {
         setIsChartLoading(false);
     }
-  }, [getHistoricalData, makeRequest, chartType, timePeriod]);
+  }, [getHistoricalData, makeRequest]);
   
   const startConnectionMonitor = useCallback(() => {
     if (pingIntervalRef.current) clearInterval(pingIntervalRef.current);
@@ -516,6 +524,7 @@ export const DerivApiProviderAccumulators = ({ children }: { children: ReactNode
   useEffect(() => {
     if (!activeToken || isLoading) {
       if (wsRef.current) wsRef.current.close();
+      if (pingIntervalRef.current) clearInterval(pingIntervalRef.current);
       return;
     }
     const connect = () => {
@@ -528,7 +537,7 @@ export const DerivApiProviderAccumulators = ({ children }: { children: ReactNode
         ws.onmessage = (event) => {
             try {
                 const response = JSON.parse(event.data);
-                setLastPingTime(Date.now());
+                
                 if (response.msg_type === 'ping' || response.pong) return;
                 const reqId = response.req_id;
                 if (reqId && promisesRef.current.has(String(reqId))) {
@@ -638,7 +647,7 @@ export const DerivApiProviderAccumulators = ({ children }: { children: ReactNode
                     
                              if(response.subscription?.id === botSubscriptionIdRef.current) {
                                 setBotCandleData(prev => addDataPoint(prev, newCandle) as CandleData[]);
-                                if (chartTypeRef.current === 'Candle' && timePeriod === '1m') {
+                                if (chartTypeRef.current === 'Candle' && timePeriodRef.current === '1m') {
                                     setChartData(prev => addDataPoint(prev, newCandle));
                                 }
                              }
@@ -660,9 +669,10 @@ export const DerivApiProviderAccumulators = ({ children }: { children: ReactNode
                 setIsConnected(true);
                 setIsConnecting(false);
                 setConnectionError(null);
-                setLastPingTime(Date.now());
+                
                 ws.send(JSON.stringify({ "proposal_open_contract": 1, "subscribe": 1 }));
                 ws.send(JSON.stringify({ "balance": 1, "subscribe": 1 }));
+                
                 startConnectionMonitor();
                 const assetsRes: any = await makeRequest({ active_symbols: 'full', product_type: 'basic' });
                 const filteredSymbols = assetsRes.active_symbols.filter((symbol: any) => symbol.market === 'synthetic_index' && symbol.allow_accumulator_contracts === 1);
@@ -676,7 +686,6 @@ export const DerivApiProviderAccumulators = ({ children }: { children: ReactNode
                     .map(label => ({ label, options: groupedAssets[label].sort((a, b) => a.label.localeCompare(b.label)) }))
                     .sort((a, b) => a.label.localeCompare(b.label)));
                 setIsAssetsLoading(false);
-                if (activeSymbol) await subscribeToStreams(activeSymbol);
             } catch (error: any) {
                 const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
                 setConnectionError(`Falha na autorização: ${errorMessage}`);
@@ -706,13 +715,13 @@ export const DerivApiProviderAccumulators = ({ children }: { children: ReactNode
       if (pingIntervalRef.current) clearInterval(pingIntervalRef.current);
       if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
     };
-  }, [activeToken, isLoading, makeRequest, toast, triggerReconnect, setToastQueue, startConnectionMonitor, addTradeAnnotation, updateTradeAnnotation, setAndPersistOperationsLog, subscribeToStreams]);
+  }, [activeToken, isLoading, makeRequest, toast, triggerReconnect, setToastQueue, startConnectionMonitor, addTradeAnnotation, updateTradeAnnotation, setAndPersistOperationsLog]);
 
   useEffect(() => {
     if (isConnected && activeSymbol) {
         subscribeToStreams(activeSymbol);
     }
-  }, [isConnected, activeSymbol, timePeriod, chartType, subscribeToStreams]);
+  }, [isConnected, activeSymbol, subscribeToStreams]);
   
   const setAccountType = useCallback((type: AccountType) => {
     try {

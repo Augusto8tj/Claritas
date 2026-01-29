@@ -165,6 +165,7 @@ export const DerivApiProviderV1 = ({ children }: { children: ReactNode }) => {
   const [chartType, setChartType] = useState<ChartType>('Area');
   const chartTypeRef = useRef(chartType);
   const [timePeriod, setTimePeriod] = useState<TimePeriod>('5m');
+  const timePeriodRef = useRef(timePeriod);
   const activeSubscriptionIdRef = useRef<string | null>(null);
   const [tradeAnnotations, setTradeAnnotations] = useState<TradeAnnotation[]>([]);
   const [durationLimits, setDurationLimits] = useState<DurationLimits | null>(null);
@@ -201,6 +202,10 @@ export const DerivApiProviderV1 = ({ children }: { children: ReactNode }) => {
   useEffect(() => {
     chartTypeRef.current = chartType;
   }, [chartType]);
+  
+  useEffect(() => {
+    timePeriodRef.current = timePeriod;
+  }, [timePeriod]);
 
   useEffect(() => {
     try {
@@ -386,8 +391,8 @@ const subscribeToMarketData = useCallback(async (symbol: string) => {
         }
         setDurationLimits(newLimits);
 
-        const historyStyle = chartType === 'Candle' ? 'candles' : 'ticks';
-        const history = await getHistoricalData(symbol, historyStyle, 1000, timePeriod);
+        const historyStyle = chartTypeRef.current === 'Candle' ? 'candles' : 'ticks';
+        const history = await getHistoricalData(symbol, historyStyle, 1000, timePeriodRef.current);
         setChartData(history as ChartData[]);
         if (historyStyle === 'ticks') {
             setPriceTicks(history as TickData[]);
@@ -395,11 +400,11 @@ const subscribeToMarketData = useCallback(async (symbol: string) => {
 
         let subRequest: any;
         
-        if (chartType === 'Candle') {
+        if (chartTypeRef.current === 'Candle') {
             subRequest = { 
                 ticks_history: symbol, 
                 style: 'candles', 
-                granularity: getGranularityForTimePeriod(timePeriod), 
+                granularity: getGranularityForTimePeriod(timePeriodRef.current), 
                 subscribe: 1,
                 end: "latest",
                 count: 1,
@@ -416,7 +421,7 @@ const subscribeToMarketData = useCallback(async (symbol: string) => {
         
         if (subResponse.subscription?.id) {
             activeSubscriptionIdRef.current = subResponse.subscription.id;
-            console.log(`[Market Data] Subscribed to ${symbol} (${chartType}) - ID: ${subResponse.subscription.id}`);
+            console.log(`[Market Data] Subscribed to ${symbol} (${chartTypeRef.current}) - ID: ${subResponse.subscription.id}`);
         }
 
     } catch (error: any) {
@@ -425,7 +430,7 @@ const subscribeToMarketData = useCallback(async (symbol: string) => {
     } finally {
         setIsChartLoading(false);
     }
-}, [getHistoricalData, makeRequest, chartType, timePeriod]);
+}, [getHistoricalData, makeRequest]);
 
 
 const executeTrade = useCallback(async (
@@ -548,6 +553,21 @@ const executeTrade = useCallback(async (
     }
   }, [isConnected, makeRequest, operationsLog]);
 
+  const pingIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  const startConnectionMonitor = useCallback(() => {
+    if (pingIntervalRef.current) clearInterval(pingIntervalRef.current);
+    pingIntervalRef.current = setInterval(() => {
+        if (wsRef.current?.readyState === WebSocket.OPEN) {
+            try {
+                wsRef.current.send(JSON.stringify({ ping: 1 }));
+            } catch (error) {
+                console.warn('[Ping] Failed:', error);
+            }
+        }
+    }, 30000);
+  }, []);
 
   useEffect(() => {
     if (!activeToken || isLoading) {
@@ -818,14 +838,30 @@ const executeTrade = useCallback(async (
           if (!wsRef.current) return;
           const { wasClean, code, reason } = event;
           
-          if (promisesRef.current) {
-              promisesRef.current.forEach((p) => p.reject(new Error("WebSocket connection closed.")));
-              promisesRef.current.clear();
+          if (pingIntervalRef.current) {
+              clearInterval(pingIntervalRef.current);
+              pingIntervalRef.current = null;
           }
+          
+          promisesRef.current.forEach((p) => {
+            if (p && typeof p.reject === 'function') {
+              p.reject(new Error("WebSocket connection closed."))
+            }
+          });
+          promisesRef.current.clear();
 
           if (!wasClean) {
             setConnectionError(`A conexão foi encerrada inesperadamente. Código: ${code}. Razão: ${reason || 'N/A'}.`);
+            
+            if (reconnectTimeoutRef.current) {
+                clearTimeout(reconnectTimeoutRef.current);
+            }
+            reconnectTimeoutRef.current = setTimeout(() => {
+                console.log('[Auto-Reconnect] Tentando reconectar...');
+                setTriggerReconnect(c => c + 1);
+            }, 3000);
           }
+          
           setIsConnected(false);
           setIsConnecting(false);
           setAccountBalance({ balance: null, currency: null, loading: false });
@@ -846,6 +882,12 @@ const executeTrade = useCallback(async (
         wsRef.current.onclose = null;
         wsRef.current.close();
       }
+      if (pingIntervalRef.current) {
+          clearInterval(pingIntervalRef.current);
+      }
+      if (reconnectTimeoutRef.current) {
+          clearTimeout(reconnectTimeoutRef.current);
+      }
     };
   }, [activeToken, isLoading, makeRequest, toast, triggerReconnect, updateTradeAnnotation, addTradeAnnotation, setAndPersistOperationsLog, setToastQueue]);
 
@@ -864,7 +906,7 @@ const executeTrade = useCallback(async (
             activeSubscriptionIdRef.current = null;
         }
     };
-  }, [isConnected, chartType, timePeriod, activeSymbol, subscribeToMarketData]);
+  }, [isConnected, activeSymbol, subscribeToMarketData]);
 
   const setAccountType = useCallback((type: AccountType) => {
     try {

@@ -168,6 +168,7 @@ export const DerivApiProviderV3 = ({ children }: { children: ReactNode }) => {
   const [chartType, setChartType] = useState<ChartType>('Candle');
   const chartTypeRef = useRef(chartType);
   const [timePeriod, setTimePeriod] = useState<TimePeriod>('1m');
+  const timePeriodRef = useRef(timePeriod);
   const activeSubscriptionIdRef = useRef<string | null>(null);
   const [tradeAnnotations, setTradeAnnotations] = useState<TradeAnnotation[]>([]);
   const [dataVersion, setDataVersion] = useState(0); 
@@ -179,9 +180,8 @@ export const DerivApiProviderV3 = ({ children }: { children: ReactNode }) => {
   const [connectionError, setConnectionError] = useState<string | null>(null);
   const promisesRef = useRef<Map<string, PromiseCallbacks>>(new Map());
   const [triggerReconnect, setTriggerReconnect] = useState(0);
-  const [lastPingTime, setLastPingTime] = useState<number>(Date.now());
-  const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const pingIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
     const setAndPersistOperationsLog = useCallback((updater: React.SetStateAction<Operation[]>) => {
         setOperationsLog(prevLog => {
@@ -207,6 +207,11 @@ export const DerivApiProviderV3 = ({ children }: { children: ReactNode }) => {
   useEffect(() => {
     chartTypeRef.current = chartType;
   }, [chartType]);
+  
+  useEffect(() => {
+    timePeriodRef.current = timePeriod;
+  }, [timePeriod]);
+
 
   useEffect(() => {
     try {
@@ -479,11 +484,9 @@ export const DerivApiProviderV3 = ({ children }: { children: ReactNode }) => {
         return { success: false, message };
     }
   }, [isConnected, makeRequest, operationsLog]);
-
+  
   const startConnectionMonitor = useCallback(() => {
-    if (pingIntervalRef.current) {
-        clearInterval(pingIntervalRef.current);
-    }
+    if (pingIntervalRef.current) clearInterval(pingIntervalRef.current);
     pingIntervalRef.current = setInterval(() => {
         if (wsRef.current?.readyState === WebSocket.OPEN) {
             try {
@@ -494,7 +497,88 @@ export const DerivApiProviderV3 = ({ children }: { children: ReactNode }) => {
         }
     }, 30000);
   }, []);
-  
+
+  const subscribeToMarketData = useCallback(async (symbol: string) => {
+    if (wsRef.current?.readyState !== WebSocket.OPEN) return;
+
+    if (activeSubscriptionIdRef.current) {
+        try { 
+            await makeRequest({ forget: activeSubscriptionIdRef.current }, true); 
+        } catch (e) { 
+            // Ignore if forget fails
+        }
+        activeSubscriptionIdRef.current = null;
+    }
+
+    setIsChartLoading(true);
+    setChartError(null);
+    setChartData([]);
+    setPriceTicks([]); 
+
+    try {
+        const currentChartType = chartTypeRef.current;
+        const currentTimePeriod = timePeriodRef.current;
+        const contractsRes: any = await makeRequest({ contracts_for: symbol });
+        const tradingPeriod = contractsRes.contracts_for?.trading_period;
+        const riseFallPeriod = tradingPeriod?.rise_fall;
+
+        const newLimits: DurationLimits = { t: {min:0, max:0}, s: {min:0, max:0}, m: {min:0, max:0}, h: {min:0, max:0}, d: {min:0, max:0} };
+        
+        if (riseFallPeriod) {
+            Object.keys(riseFallPeriod).forEach(unit => {
+                const typedUnit = unit as keyof typeof riseFallPeriod;
+                const durationData = riseFallPeriod[typedUnit];
+                if(durationData && newLimits[typedUnit as DurationUnit]) {
+                   newLimits[typedUnit as DurationUnit] = { min: durationData.min, max: durationData.max };
+                }
+            });
+        }
+        setDurationLimits(newLimits);
+
+        const historyStyle = currentChartType === 'Candle' ? 'candles' : 'ticks';
+        const history = await getHistoricalData(symbol, historyStyle, 1000, currentTimePeriod);
+        
+        const chartHistory = history.map(h => {
+            if(historyStyle === 'candles' && h.open) {
+                return { epoch: h.epoch, open: h.open, high: h.high, low: h.low, close: h.close, volume: h.volume } as CandleData;
+            }
+            return { epoch: h.epoch, price: h.price } as TickData;
+        });
+
+        setChartData(chartHistory as ChartData[]);
+        if (historyStyle === 'ticks') {
+            setPriceTicks(history as TickData[]);
+        }
+        setDataVersion(v => v + 1);
+
+        let subRequest: any;
+        if (currentChartType === 'Candle') {
+            subRequest = { 
+                ticks_history: symbol, 
+                style: 'candles', 
+                granularity: getGranularityForTimePeriod(currentTimePeriod), 
+                subscribe: 1,
+                end: "latest",
+                count: 1,
+                adjust_start_time: 1
+            };
+        } else {
+            subRequest = { 
+                ticks: symbol, 
+                subscribe: 1 
+            };
+        }
+        
+        makeRequest(subRequest, true);
+
+    } catch (error: any) {
+        console.error(`[Market Data] Error for ${symbol}:`, error);
+        setChartError(error.message || 'Falha ao carregar dados do mercado.');
+    } finally {
+        setIsChartLoading(false);
+    }
+  }, [getHistoricalData, makeRequest]);
+
   useEffect(() => {
     if (!activeToken || isLoading) {
       if (wsRef.current) wsRef.current.close();
@@ -520,13 +604,8 @@ export const DerivApiProviderV3 = ({ children }: { children: ReactNode }) => {
           try {
               const response = JSON.parse(event.data);
               
-              if (response.msg_type === 'ping' || response.pong) {
-                  setLastPingTime(Date.now());
-                  return;
-              }
-              
               const reqId = response.req_id;
-              
+  
               if (reqId && promisesRef.current.has(String(reqId))) {
                   const promise = promisesRef.current.get(String(reqId));
                   if (promise) {
@@ -699,12 +778,9 @@ export const DerivApiProviderV3 = ({ children }: { children: ReactNode }) => {
               setIsConnected(true);
               setIsConnecting(false);
               setConnectionError(null);
-              setLastPingTime(Date.now());
               
               ws.send(JSON.stringify({ "proposal_open_contract": 1, "subscribe": 1 }));
               ws.send(JSON.stringify({ "balance": 1, "subscribe": 1 }));
-              
-              startConnectionMonitor();
               
               const assetsRes: any = await makeRequest({ active_symbols: 'full', product_type: 'basic' });
               
@@ -793,85 +869,6 @@ export const DerivApiProviderV3 = ({ children }: { children: ReactNode }) => {
       }
     };
   }, [activeToken, isLoading, makeRequest, updateTradeAnnotation, addTradeAnnotation, toast, triggerReconnect, setAndPersistOperationsLog, setToastQueue, startConnectionMonitor]);
-
-  const subscribeToMarketData = useCallback(async (symbol: string) => {
-    if (wsRef.current?.readyState !== WebSocket.OPEN) return;
-
-    if (activeSubscriptionIdRef.current) {
-        try { 
-            await makeRequest({ forget: activeSubscriptionIdRef.current }, true); 
-        } catch (e) { 
-            // Ignore if forget fails
-        }
-        activeSubscriptionIdRef.current = null;
-    }
-
-    setIsChartLoading(true);
-    setChartError(null);
-    setChartData([]);
-    setPriceTicks([]); 
-
-    try {
-        const contractsRes: any = await makeRequest({ contracts_for: symbol });
-        const tradingPeriod = contractsRes.contracts_for?.trading_period;
-        const riseFallPeriod = tradingPeriod?.rise_fall;
-
-        const newLimits: DurationLimits = { t: {min:0, max:0}, s: {min:0, max:0}, m: {min:0, max:0}, h: {min:0, max:0}, d: {min:0, max:0} };
-        
-        if (riseFallPeriod) {
-            Object.keys(riseFallPeriod).forEach(unit => {
-                const typedUnit = unit as keyof typeof riseFallPeriod;
-                const durationData = riseFallPeriod[typedUnit];
-                if(durationData && newLimits[typedUnit as DurationUnit]) {
-                   newLimits[typedUnit as DurationUnit] = { min: durationData.min, max: durationData.max };
-                }
-            });
-        }
-        setDurationLimits(newLimits);
-
-        const historyStyle = chartType === 'Candle' ? 'candles' : 'ticks';
-        const history = await getHistoricalData(symbol, historyStyle, 1000, timePeriod);
-        
-        const chartHistory = history.map(h => {
-            if(historyStyle === 'candles' && h.open) {
-                return { epoch: h.epoch, open: h.open, high: h.high, low: h.low, close: h.close, volume: h.volume } as CandleData;
-            }
-            return { epoch: h.epoch, price: h.price } as TickData;
-        });
-
-        setChartData(chartHistory as ChartData[]);
-        if (historyStyle === 'ticks') {
-            setPriceTicks(history as TickData[]);
-        }
-        setDataVersion(v => v + 1);
-
-        let subRequest: any;
-        if (chartType === 'Candle') {
-            subRequest = { 
-                ticks_history: symbol, 
-                style: 'candles', 
-                granularity: getGranularityForTimePeriod(timePeriod), 
-                subscribe: 1,
-                end: "latest",
-                count: 1,
-                adjust_start_time: 1
-            };
-        } else {
-            subRequest = { 
-                ticks: symbol, 
-                subscribe: 1 
-            };
-        }
-        
-        makeRequest(subRequest, true);
-
-    } catch (error: any) {
-        console.error(`[Market Data] Error for ${symbol}:`, error);
-        setChartError(error.message || 'Falha ao carregar dados do mercado.');
-    } finally {
-        setIsChartLoading(false);
-    }
-  }, [getHistoricalData, makeRequest, chartType, timePeriod]);
   
   useEffect(() => {
     if (isConnected && activeSymbol) {

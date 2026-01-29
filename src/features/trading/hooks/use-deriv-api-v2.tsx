@@ -170,6 +170,7 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
   const [chartType, setChartType] = useState<ChartType>('Area');
   const chartTypeRef = useRef(chartType);
   const [timePeriod, setTimePeriod] = useState<TimePeriod>('1m');
+  const timePeriodRef = useRef(timePeriod);
   const activeSubscriptionIdRef = useRef<string | null>(null);
   const botSubscriptionIdRef = useRef<string | null>(null);
   const [tradeAnnotations, setTradeAnnotations] = useState<TradeAnnotation[]>([]);
@@ -182,9 +183,8 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
   const [connectionError, setConnectionError] = useState<string | null>(null);
   const promisesRef = useRef<Map<string, PromiseCallbacks>>(new Map());
   const [triggerReconnect, setTriggerReconnect] = useState(0);
-  const [lastPingTime, setLastPingTime] = useState<number>(Date.now());
-  const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const pingIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
     const setAndPersistOperationsLog = useCallback((updater: React.SetStateAction<Operation[]>) => {
         setOperationsLog(prevLog => {
@@ -211,6 +211,10 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
   useEffect(() => {
     chartTypeRef.current = chartType;
   }, [chartType]);
+
+  useEffect(() => {
+    timePeriodRef.current = timePeriod;
+  }, [timePeriod]);
 
   useEffect(() => {
     try {
@@ -484,9 +488,7 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
   }, [isConnected, makeRequest, operationsLog]);
 
   const startConnectionMonitor = useCallback(() => {
-    if (pingIntervalRef.current) {
-        clearInterval(pingIntervalRef.current);
-    }
+    if (pingIntervalRef.current) clearInterval(pingIntervalRef.current);
     pingIntervalRef.current = setInterval(() => {
         if (wsRef.current?.readyState === WebSocket.OPEN) {
             try {
@@ -498,6 +500,106 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
     }, 30000);
   }, []);
   
+  const subscribeToStreams = useCallback(async (symbol: string) => {
+    if (wsRef.current?.readyState !== WebSocket.OPEN) return;
+
+    if (activeSubscriptionIdRef.current) {
+        try { await makeRequest({ forget: activeSubscriptionIdRef.current }, true); } catch (e) { /* silent */ }
+    }
+    if (botSubscriptionIdRef.current) {
+        try { await makeRequest({ forget: botSubscriptionIdRef.current }, true); } catch (e) { /* silent */ }
+    }
+
+    activeSubscriptionIdRef.current = null;
+    botSubscriptionIdRef.current = null;
+
+    setIsChartLoading(true);
+    setChartError(null);
+    setChartData([]);
+    setPriceTicks([]);
+    setBotCandleData([]);
+    
+    try {
+        const currentChartType = chartTypeRef.current;
+        const currentTimePeriod = timePeriodRef.current;
+
+        const contractsRes: any = await makeRequest({ contracts_for: symbol });
+        const tradingPeriod = contractsRes.contracts_for?.trading_period;
+        const riseFallPeriod = tradingPeriod?.rise_fall;
+
+        const newLimits: DurationLimits = { t: {min:0, max:0}, s: {min:0, max:0}, m: {min:0, max:0}, h: {min:0, max:0}, d: {min:0, max:0} };
+        
+        if (riseFallPeriod) {
+            Object.keys(riseFallPeriod).forEach(unit => {
+                const typedUnit = unit as keyof typeof riseFallPeriod;
+                const durationData = riseFallPeriod[typedUnit];
+                if(durationData && newLimits[typedUnit as DurationUnit]) {
+                   newLimits[typedUnit as DurationUnit] = { min: durationData.min, max: durationData.max };
+                }
+            });
+        }
+        setDurationLimits(newLimits);
+
+        const botHistory = await getHistoricalData(symbol, 'candles', 1000, '1m');
+        setBotCandleData(botHistory as CandleData[]);
+        
+        const historyStyle = currentChartType === 'Candle' ? 'candles' : 'ticks';
+        const uiHistory = await getHistoricalData(symbol, historyStyle, 1000, currentTimePeriod);
+        
+        const chartHistory = uiHistory.map(h => {
+            if(historyStyle === 'candles' && h.open) {
+                return { epoch: h.epoch, open: h.open, high: h.high, low: h.low, close: h.close, volume: h.volume } as CandleData;
+            }
+            return { epoch: h.epoch, price: h.price } as TickData;
+        });
+
+        setChartData(chartHistory as ChartData[]);
+        if (historyStyle === 'ticks') {
+            setPriceTicks(uiHistory as TickData[]);
+        }
+        setDataVersion(v => v + 1);
+
+        let uiSubRequest: any;
+        if (currentChartType === 'Candle') {
+            uiSubRequest = { 
+                ticks_history: symbol, 
+                style: 'candles', 
+                granularity: getGranularityForTimePeriod(currentTimePeriod), 
+                subscribe: 1,
+                end: "latest",
+                count: 1,
+                adjust_start_time: 1
+            };
+        } else {
+            uiSubRequest = { 
+                ticks: symbol, 
+                subscribe: 1 
+            };
+        }
+        const uiSubResponse: any = await makeRequest(uiSubRequest);
+        if(uiSubResponse.subscription?.id) activeSubscriptionIdRef.current = uiSubResponse.subscription.id;
+        
+        const botSubRequest = { 
+            ticks_history: symbol, 
+            style: 'candles', 
+            granularity: 60,
+            subscribe: 1, 
+            end: "latest", 
+            count: 1, 
+            adjust_start_time: 1 
+        };
+        const botSubResponse: any = await makeRequest(botSubRequest);
+        if(botSubResponse.subscription?.id) botSubscriptionIdRef.current = botSubResponse.subscription.id;
+
+
+    } catch (error: any) {
+        console.error(`[Market Data] Error for ${symbol}:`, error);
+        setChartError(error.message || 'Falha ao carregar dados do mercado.');
+    } finally {
+        setIsChartLoading(false);
+    }
+  }, [getHistoricalData, makeRequest]);
+
   useEffect(() => {
     if (!activeToken || isLoading) {
       if (wsRef.current) wsRef.current.close();
@@ -523,7 +625,6 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
                 const response = JSON.parse(event.data);
                 
                 if (response.msg_type === 'ping' || response.pong) {
-                    setLastPingTime(Date.now());
                     return;
                 }
                 
@@ -548,7 +649,7 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
                         response.error.code !== 'SellNotAvailable' && 
                         response.error.code !== 'ContractSellNotAvailable'
                      ) {
-                      console.error('[Deriv WS] Error:', response.error.message);
+                      console.error(`[Deriv WS] Unsolicited Error:`, response.error.message);
                     }
                      return; 
                 }
@@ -715,12 +816,9 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
                 setIsConnected(true);
                 setIsConnecting(false);
                 setConnectionError(null);
-                setLastPingTime(Date.now());
                 
                 ws.send(JSON.stringify({ "proposal_open_contract": 1, "subscribe": 1 }));
                 ws.send(JSON.stringify({ "balance": 1, "subscribe": 1 }));
-                
-                startConnectionMonitor();
                 
                 const assetsRes: any = await makeRequest({ active_symbols: 'full', product_type: 'basic' });
                 
@@ -794,7 +892,6 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
       
         ws.onerror = () => {
           // O evento onclose é mais fiável para obter o motivo do erro.
-          // Este manipulador está aqui para prevenir que um erro não tratado feche a aplicação.
         };
     };
 
@@ -813,114 +910,6 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
       }
     };
   }, [activeToken, isLoading, makeRequest, updateTradeAnnotation, addTradeAnnotation, toast, triggerReconnect, setAndPersistOperationsLog, setToastQueue, startConnectionMonitor]);
-
-  const subscribeToStreams = useCallback(async (symbol: string) => {
-    if (wsRef.current?.readyState !== WebSocket.OPEN) return;
-
-    if (activeSubscriptionIdRef.current) {
-        try { 
-            await makeRequest({ forget: activeSubscriptionIdRef.current }, true); 
-        } catch (e) {
-             // Ignore if forget fails, we will subscribe to the new one anyway.
-        }
-        activeSubscriptionIdRef.current = null;
-    }
-    if (botSubscriptionIdRef.current) {
-        try {
-            await makeRequest({ forget: botSubscriptionIdRef.current }, true);
-        } catch (e) {
-            // Ignore
-        }
-        botSubscriptionIdRef.current = null;
-    }
-
-    setIsChartLoading(true);
-    setChartError(null);
-    setChartData([]);
-    setPriceTicks([]);
-    setBotCandleData([]); 
-
-    try {
-        const contractsRes: any = await makeRequest({ contracts_for: symbol });
-        const tradingPeriod = contractsRes.contracts_for?.trading_period;
-        const riseFallPeriod = tradingPeriod?.rise_fall;
-
-        const newLimits: DurationLimits = { t: {min:0, max:0}, s: {min:0, max:0}, m: {min:0, max:0}, h: {min:0, max:0}, d: {min:0, max:0} };
-        
-        if (riseFallPeriod) {
-            Object.keys(riseFallPeriod).forEach(unit => {
-                const typedUnit = unit as keyof typeof riseFallPeriod;
-                const durationData = riseFallPeriod[typedUnit];
-                if(durationData && newLimits[typedUnit as DurationUnit]) {
-                   newLimits[typedUnit as DurationUnit] = { min: durationData.min, max: durationData.max };
-                }
-            });
-        }
-        setDurationLimits(newLimits);
-
-        // Fetch data for the bot (always 1-minute candles)
-        const botHistory = await getHistoricalData(symbol, 'candles', 1000, '1m');
-        setBotCandleData(botHistory as CandleData[]);
-        
-        // Fetch data for the UI
-        const historyStyle = chartType === 'Candle' ? 'candles' : 'ticks';
-        const uiHistory = await getHistoricalData(symbol, historyStyle, 1000, timePeriod);
-        
-        const chartHistory = uiHistory.map(h => {
-            if(historyStyle === 'candles' && h.open) {
-                return { epoch: h.epoch, open: h.open, high: h.high, low: h.low, close: h.close, volume: h.volume } as CandleData;
-            }
-            return { epoch: h.epoch, price: h.price } as TickData;
-        });
-
-        setChartData(chartHistory as ChartData[]);
-        if (historyStyle === 'ticks') {
-            setPriceTicks(uiHistory as TickData[]);
-        }
-        setDataVersion(v => v + 1);
-
-        // Subscribe to UI stream
-        let uiSubRequest: any;
-        if (chartType === 'Candle') {
-            uiSubRequest = { 
-                ticks_history: symbol, 
-                style: 'candles', 
-                granularity: getGranularityForTimePeriod(timePeriod), 
-                subscribe: 1,
-                end: "latest",
-                count: 1,
-                adjust_start_time: 1
-            };
-        } else {
-            uiSubRequest = { 
-                ticks: symbol, 
-                subscribe: 1 
-            };
-        }
-        const uiSubResponse: any = await makeRequest(uiSubRequest);
-        if(uiSubResponse.subscription?.id) activeSubscriptionIdRef.current = uiSubResponse.subscription.id;
-        
-        // Subscribe to bot stream
-        const botSubRequest = { 
-            ticks_history: symbol, 
-            style: 'candles', 
-            granularity: 60,
-            subscribe: 1, 
-            end: "latest", 
-            count: 1, 
-            adjust_start_time: 1 
-        };
-        const botSubResponse: any = await makeRequest(botSubRequest);
-        if(botSubResponse.subscription?.id) botSubscriptionIdRef.current = botSubResponse.subscription.id;
-
-
-    } catch (error: any) {
-        console.error(`[Market Data] Error for ${symbol}:`, error);
-        setChartError(error.message || 'Falha ao carregar dados do mercado.');
-    } finally {
-        setIsChartLoading(false);
-    }
-  }, [getHistoricalData, makeRequest, chartType, timePeriod]);
   
   useEffect(() => {
     if (isConnected && activeSymbol) {

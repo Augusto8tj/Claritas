@@ -7,7 +7,7 @@ import { createContext, useContext, useState, useEffect, type ReactNode, useCall
 import type { TradeResult } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
 import type { Operation, OperationInitiator, DurationUnit, ChartType, TimePeriod, ChartData, CandleData, TradeAnnotation, TickData, DurationLimits, Asset } from '@/lib/types';
-import { FirebaseErrorListener } from '@/components/FirebaseErrorListener';
+import { FirebaseErrorListener } from '@/components/firebase-error-listener';
 
 
 const DERIV_DEMO_TOKEN_KEY = 'derivDemoApiToken';
@@ -170,6 +170,7 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
   const [chartType, setChartType] = useState<ChartType>('Area');
   const chartTypeRef = useRef(chartType);
   const [timePeriod, setTimePeriod] = useState<TimePeriod>('5m');
+  const timePeriodRef = useRef(timePeriod);
   const activeSubscriptionIdRef = useRef<string | null>(null);
   const botSubscriptionIdRef = useRef<string | null>(null);
   const [dataVersion, setDataVersion] = useState(0); 
@@ -183,9 +184,8 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
   const [connectionError, setConnectionError] = useState<string | null>(null);
   const promisesRef = useRef<Map<string, PromiseCallbacks>>(new Map());
   const [triggerReconnect, setTriggerReconnect] = useState(0);
-  const [lastPingTime, setLastPingTime] = useState<number>(Date.now());
-  const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const pingIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   
     const setAndPersistOperationsLog = useCallback((updater: React.SetStateAction<Operation[]>) => {
         setOperationsLog(prevLog => {
@@ -225,6 +225,11 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
   useEffect(() => {
     chartTypeRef.current = chartType;
   }, [chartType]);
+  
+  useEffect(() => {
+    timePeriodRef.current = timePeriod;
+  }, [timePeriod]);
+
 
   useEffect(() => {
     try {
@@ -571,8 +576,10 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
     setPriceTicks([]); 
 
     try {
-        const historyStyle = chartType === 'Candle' ? 'candles' : 'ticks';
-        const history = await getHistoricalData(symbol, historyStyle, 1000, timePeriod);
+        const currentChartType = chartTypeRef.current;
+        const currentTimePeriod = timePeriodRef.current;
+        const historyStyle = currentChartType === 'Candle' ? 'candles' : 'ticks';
+        const history = await getHistoricalData(symbol, historyStyle, 1000, currentTimePeriod);
         setChartData(history as ChartData[]);
         if (historyStyle === 'ticks') {
             setPriceTicks(history as TickData[]);
@@ -580,8 +587,8 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
         setDataVersion(v => v + 1);
 
         let subRequest: any;
-        if (chartType === 'Candle') {
-            subRequest = { ticks_history: symbol, style: 'candles', granularity: getGranularityForTimePeriod(timePeriod), subscribe: 1, end: "latest", count: 1, adjust_start_time: 1 };
+        if (currentChartType === 'Candle') {
+            subRequest = { ticks_history: symbol, style: 'candles', granularity: getGranularityForTimePeriod(currentTimePeriod), subscribe: 1, end: "latest", count: 1, adjust_start_time: 1 };
         } else {
             subRequest = { ticks: symbol, subscribe: 1 };
         }
@@ -594,7 +601,7 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
     } finally {
         setIsChartLoading(false);
     }
-  }, [getHistoricalData, makeRequest, chartType, timePeriod]);
+  }, [getHistoricalData, makeRequest]);
 
   const subscribeToBotData = useCallback(async (symbol: string) => {
     if (wsRef.current?.readyState !== WebSocket.OPEN) return;
@@ -641,7 +648,6 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
       if (wsRef.current?.readyState === WebSocket.OPEN) {
           try {
               wsRef.current.send(JSON.stringify({ ping: 1 }));
-              setLastPingTime(Date.now());
           } catch (error) {
               console.warn('[Ping] Failed:', error);
           }
@@ -650,20 +656,20 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
 }, []);
   
   const renewSubscriptions = useCallback(async () => {
-  if (!isConnected || !activeSymbol) return;
-  
-  console.log('[Subscriptions] Renewing...');
-  
-  try {
-      await Promise.all([
-          subscribeToMarketData(activeSymbol),
-          subscribeToBotData(activeSymbol)
-      ]);
-      console.log('[Subscriptions] Renewed successfully');
-  } catch (error) {
-      console.error('[Subscriptions] Renewal failed:', error);
-  }
-}, [isConnected, activeSymbol, subscribeToMarketData, subscribeToBotData]);
+    if (!isConnected || !activeSymbol) return;
+    
+    console.log('[Subscriptions] Renewing...');
+    
+    try {
+        await Promise.all([
+            subscribeToMarketData(activeSymbol),
+            subscribeToBotData(activeSymbol)
+        ]);
+        console.log('[Subscriptions] Renewed successfully');
+    } catch (error) {
+        console.error('[Subscriptions] Renewal failed:', error);
+    }
+  }, [isConnected, activeSymbol, subscribeToMarketData, subscribeToBotData]);
 
 
   useEffect(() => {
@@ -689,8 +695,6 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
         ws.onmessage = (event) => {
     try {
         const response = JSON.parse(event.data);
-        
-        setLastPingTime(Date.now());
         
         if (response.msg_type === 'ping' || response.pong) {
             return;
@@ -915,7 +919,6 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
         setIsConnected(true);
         setIsConnecting(false);
         setConnectionError(null);
-        setLastPingTime(Date.now());
         
         ws.send(JSON.stringify({ "proposal_open_contract": 1, "subscribe": 1 }));
         ws.send(JSON.stringify({ "balance": 1, "subscribe": 1 }));
@@ -998,7 +1001,7 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
 };
       
         ws.onerror = () => {
-          // Silencioso - onclose tratará o erro
+          // O evento onclose é mais fiável para obter o motivo do erro.
         };
     };
 
@@ -1021,11 +1024,7 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
   
   useEffect(() => {
   if (isConnected && activeSymbol && !isConnecting) {
-      const timer = setTimeout(() => {
-          renewSubscriptions();
-      }, 1000);
-      
-      return () => clearTimeout(timer);
+      renewSubscriptions();
   }
 }, [isConnected, isConnecting, activeSymbol, renewSubscriptions]);
 
