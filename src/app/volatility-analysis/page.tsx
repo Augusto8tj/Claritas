@@ -19,7 +19,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { volatilityTraderSchema, type VolatilityTraderFormValues } from "@/features/trading/components/deriv-trader/volatility-trader-interface.types";
 import VolatilityTraderInterface from "@/features/trading/components/deriv-trader/volatility-trader-interface";
 import { OperationsLogV2 } from "@/features/trading/components/deriv-trader/operations-log-v2";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { useToast } from '@/hooks/use-toast';
@@ -78,7 +78,7 @@ interface StochasticLabProps {
   executeTrade: ReturnType<typeof useDerivApiV2>['executeTrade'];
   predictiveLogs: PredictiveTradeLog[];
   onDeletePredictiveLog: (logId: string) => void;
-  deletingLogId: string | null;
+  deletingPredictiveLogId: string | null;
 }
 
 const calculateRollingAccuracy = (history: boolean[]) => {
@@ -88,6 +88,73 @@ const calculateRollingAccuracy = (history: boolean[]) => {
     return { hits, total, percentage };
 };
 
+const StatItem = ({ label, value }: { label: string; value: string | number }) => (
+    <div className="flex flex-col p-2 border-l-2 pl-3">
+        <span className="text-xs text-muted-foreground">{label}</span>
+        <span className="font-bold font-mono">{value}</span>
+    </div>
+);
+
+const StrongestSignalCard = ({ signal }: { signal: StrongestSignal }) => {
+    const isHold = signal.direction === 'HOLD' || signal.certaintyScore === 0;
+    const displayAccuracy = signal.accuracy > 50 ? signal.accuracy : 100 - signal.accuracy;
+
+    return (
+        <Card className={cn("p-4 flex flex-col justify-center", 
+            isHold ? 'bg-slate-50' : signal.direction === 'RISE' ? 'bg-green-50' : 'bg-red-50'
+        )}>
+            <CardTitle className="text-sm font-semibold text-muted-foreground mb-2">Sinal Preditivo Mais Forte</CardTitle>
+            {isHold ? (
+                <div className="text-center text-muted-foreground">
+                    <HelpCircle className="mx-auto h-8 w-8 opacity-50 mb-2"/>
+                    <p className="font-bold text-lg">NEUTRO</p>
+                    <p className="text-xs">Nenhum especialista com alta certeza.</p>
+                </div>
+            ) : (
+                <div className="text-center">
+                    {signal.direction === 'RISE' ? <TrendingUp className="mx-auto h-8 w-8 text-green-500 mb-2" /> : <TrendingDown className="mx-auto h-8 w-8 text-red-500 mb-2" />}
+                    <p className={cn("font-bold text-lg", signal.direction === 'RISE' ? 'text-green-600' : 'text-red-600')}>
+                        {signal.direction} para {signal.horizon}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                        Assertividade do Especialista: <span className="font-bold">{displayAccuracy.toFixed(1)}%</span>
+                    </p>
+                </div>
+            )}
+        </Card>
+    );
+};
+
+const ProjectionExpertsPanel = ({ experts }: { experts: { name: string; vote: 'RISE' | 'FALL' | 'HOLD'; accuracy: number }[] }) => (
+    <Card className="p-4">
+        <CardTitle className="text-sm font-semibold text-muted-foreground mb-3">Assertividade das Projeções</CardTitle>
+        <div className="space-y-2">
+            {experts.map(({ name, vote, accuracy }) => {
+                const effectiveDirection = accuracy > 50 ? vote : (vote === 'RISE' ? 'FALL' : (vote === 'FALL' ? 'RISE' : 'HOLD'));
+                const effectiveAccuracy = accuracy > 50 ? accuracy : 100 - accuracy;
+                
+                return (
+                    <div key={name} className="flex justify-between items-center bg-background p-2 rounded-md border text-xs">
+                        <span className="font-semibold w-12">{name}</span>
+                        <div className="flex items-center gap-2 w-24">
+                            <Progress value={effectiveAccuracy} className="h-1.5 flex-1" indicatorClassName={getProgressColor(effectiveAccuracy)} />
+                            <span className="font-mono w-10 text-right">{effectiveAccuracy.toFixed(0)}%</span>
+                        </div>
+                        <span className={cn("font-bold w-10 text-right flex items-center justify-end gap-1", 
+                            effectiveDirection === 'RISE' && 'text-green-500', 
+                            effectiveDirection === 'FALL' && 'text-red-500',
+                            effectiveDirection === 'HOLD' && 'text-gray-400'
+                        )}>
+                            {effectiveDirection === 'RISE' && <TrendingUp size={12}/>}
+                            {effectiveDirection === 'FALL' && <TrendingDown size={12}/>}
+                            {effectiveDirection}
+                        </span>
+                    </div>
+                );
+            })}
+        </div>
+    </Card>
+);
 
 function StochasticLab({ 
     realData, 
@@ -99,13 +166,12 @@ function StochasticLab({
     executeTrade,
     predictiveLogs,
     onDeletePredictiveLog,
-    deletingLogId
+    deletingPredictiveLogId
 }: StochasticLabProps) {
   const { toast } = useToast();
   const { user } = useAuth();
   const cooldownRef = useRef(false);
   
-  const pendingLogRef = useRef<Omit<PredictiveTradeLog, 'id' | 'contractId' | 'result' | 'pnl'> | null>(null);
   const [pendingSignal, setPendingSignal] = useState<{ signal: 'RISE' | 'FALL'; triggeredBy: [string, string]; epoch: number; } | null>(null);
   
   const [activeTab, setActiveTab] = useState('prediction');
@@ -375,7 +441,6 @@ function StochasticLab({
     return bestSignal;
   }, [projectionExperts]);
 
-  // --- PILOTO AUTOMÁTICO COM CONFIRMAÇÃO ---
   const executeTradeAction = useCallback(async (initiator: OperationInitiator, signalOverride: 'RISE' | 'FALL', triggeredBy: [string, string], reason: string) => {
     if (!activeSymbol || !executeTrade) {
         toast({ title: "Erro de Configuração", description: "O piloto automático não pôde executar.", variant: "destructive"});
@@ -412,8 +477,7 @@ function StochasticLab({
                 vote: p.vote,
             }));
             
-            const logToSave: PredictiveTradeLog = {
-                id: `pred_log_${Date.now()}`,
+            const logToSave: Omit<PredictiveTradeLog, 'id'> = {
                 contractId: result.contractId,
                 timestamp: new Date().toISOString(),
                 asset: activeSymbol,
@@ -618,7 +682,7 @@ function StochasticLab({
                                 </ResponsiveContainer>
                               </div>
                             )}
-                            {activeTab === 'returns' && ( 
+                             {activeTab === 'returns' && ( 
                               <div>
                                 <h3 className="text-lg font-semibold mb-2">Distribuição de Retornos (Logarítmicos)</h3>
                                 <ResponsiveContainer width="100%" height={350}>
@@ -679,7 +743,7 @@ function StochasticLab({
                            </CardContent>
                        </Card>
                      )}
-                    <Card className="mt-6">
+                     <Card className="mt-6">
                         <CardHeader>
                             <CardTitle>Painel de Assertividade dos Especialistas</CardTitle>
                         </CardHeader>
@@ -697,7 +761,7 @@ function StochasticLab({
                         <PredictiveLogViewer
                             logs={predictiveLogs}
                             onDeleteLog={onDeletePredictiveLog}
-                            deletingLogId={deletingLogId}
+                            deletingLogId={deletingPredictiveLogId}
                         />
                     </div>
                 </div>
@@ -706,74 +770,6 @@ function StochasticLab({
     </Card>
   );
 };
-
-const StatItem = ({ label, value }: { label: string; value: string | number }) => (
-    <div className="flex flex-col p-2 border-l-2 pl-3">
-        <span className="text-xs text-muted-foreground">{label}</span>
-        <span className="font-bold font-mono">{value}</span>
-    </div>
-);
-
-const StrongestSignalCard = ({ signal }: { signal: StrongestSignal }) => {
-    const isHold = signal.direction === 'HOLD' || signal.certaintyScore === 0;
-    const displayAccuracy = signal.accuracy > 50 ? signal.accuracy : 100 - signal.accuracy;
-
-    return (
-        <Card className={cn("p-4 flex flex-col justify-center", 
-            isHold ? 'bg-slate-50' : signal.direction === 'RISE' ? 'bg-green-50' : 'bg-red-50'
-        )}>
-            <CardTitle className="text-sm font-semibold text-muted-foreground mb-2">Sinal Preditivo Mais Forte</CardTitle>
-            {isHold ? (
-                <div className="text-center text-muted-foreground">
-                    <HelpCircle className="mx-auto h-8 w-8 opacity-50 mb-2"/>
-                    <p className="font-bold text-lg">NEUTRO</p>
-                    <p className="text-xs">Nenhum especialista com alta certeza.</p>
-                </div>
-            ) : (
-                <div className="text-center">
-                    {signal.direction === 'RISE' ? <TrendingUp className="mx-auto h-8 w-8 text-green-500 mb-2" /> : <TrendingDown className="mx-auto h-8 w-8 text-red-500 mb-2" />}
-                    <p className={cn("font-bold text-lg", signal.direction === 'RISE' ? 'text-green-600' : 'text-red-600')}>
-                        {signal.direction} para {signal.horizon}
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                        Assertividade do Especialista: <span className="font-bold">{displayAccuracy.toFixed(1)}%</span>
-                    </p>
-                </div>
-            )}
-        </Card>
-    );
-};
-
-const ProjectionExpertsPanel = ({ experts }: { experts: { name: string; vote: 'RISE' | 'FALL' | 'HOLD'; accuracy: number }[] }) => (
-    <Card className="p-4">
-        <CardTitle className="text-sm font-semibold text-muted-foreground mb-3">Assertividade das Projeções</CardTitle>
-        <div className="space-y-2">
-            {experts.map(({ name, vote, accuracy }) => {
-                const effectiveDirection = accuracy > 50 ? vote : (vote === 'RISE' ? 'FALL' : (vote === 'FALL' ? 'RISE' : 'HOLD'));
-                const effectiveAccuracy = accuracy > 50 ? accuracy : 100 - accuracy;
-                
-                return (
-                    <div key={name} className="flex justify-between items-center bg-background p-2 rounded-md border text-xs">
-                        <span className="font-semibold w-12">{name}</span>
-                        <div className="flex items-center gap-2 w-24">
-                            <Progress value={effectiveAccuracy} className="h-1.5 flex-1" indicatorClassName={getProgressColor(effectiveAccuracy)} />
-                            <span className="font-mono w-10 text-right">{effectiveAccuracy.toFixed(0)}%</span>
-                        </div>
-                        <span className={cn("font-bold w-10 text-right flex items-center justify-end gap-1", 
-                            effectiveDirection === 'RISE' && 'text-green-500', 
-                            effectiveDirection === 'FALL' && 'text-red-500',
-                            effectiveDirection === 'HOLD' && 'text-gray-400'
-                        )}>
-                            {effectiveDirection === 'RISE' && <TrendingUp size={12}/>}
-                            {effectiveDirection === 'FALL' && <TrendingDown size={12}/>}
-                            {effectiveDirection}
-                        </span>
-                    </div>
-                );
-            })}
-        </div>
-    </Card>
-);
 
 function VolatilityAutopilotInterface({ isAutopilotOn, toggleAutopilot, autopilotStatus }: { isAutopilotOn: boolean, toggleAutopilot: (checked: boolean) => void, autopilotStatus: string }) {
     return (
@@ -833,7 +829,7 @@ function PageContent() {
     const { toast } = useToast();
     const [predictiveLogs, setPredictiveLogs] = useState<PredictiveTradeLog[]>([]);
     const [isLogsLoading, setIsLogsLoading] = useState(true);
-    const [deletingLogId, setDeletingLogId] = useState<string | null>(null);
+    const [deletingPredictiveLogId, setDeletingPredictiveLogId] = useState<string | null>(null);
 
     const form = useForm<VolatilityTraderFormValues>({
         resolver: zodResolver(volatilityTraderSchema),
@@ -865,7 +861,7 @@ function PageContent() {
 
     const handleDeletePredictiveLog = async (logId: string) => {
         if (!user) return;
-        setDeletingLogId(logId);
+        setDeletingPredictiveLogId(logId);
         try {
             const docRef = doc(db, `users/${user.uid}/predictive_logs_v1`, logId);
             await deleteDoc(docRef);
@@ -879,7 +875,7 @@ function PageContent() {
                 path: `users/${user.uid}/predictive_logs_v1/${logId}`
             }));
         } finally {
-            setDeletingLogId(null);
+            setDeletingPredictiveLogId(null);
         }
     };
 
@@ -935,7 +931,7 @@ function PageContent() {
                         operationsLog={operationsLog}
                         predictiveLogs={predictiveLogs}
                         onDeletePredictiveLog={handleDeletePredictiveLog}
-                        deletingLogId={deletingLogId}
+                        deletingPredictiveLogId={deletingPredictiveLogId}
                     />
                     <div className="lg:col-span-2 space-y-6">
                         <VolatilityTraderInterface 
