@@ -2,7 +2,7 @@
 'use client';
 
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import { useForm, FormProvider } from "react-hook-form";
+import { useForm, FormProvider, useFormContext } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ScatterChart, Scatter } from 'recharts';
 import { TrendingUp, TrendingDown, HelpCircle, Bot, FlaskConical, Target, Info, Brain, Zap, Send, Loader2, ShieldCheck, GitBranch, BarChart, Activity, AlertTriangle, Power, ChevronsUpDown, Settings } from 'lucide-react';
@@ -18,7 +18,7 @@ import { cn } from "@/lib/utils";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { volatilityTraderSchema, type VolatilityTraderFormValues } from "@/features/trading/components/deriv-trader/volatility-trader-interface.types";
 import VolatilityTraderInterface from "@/features/trading/components/deriv-trader/volatility-trader-interface";
-import { OperationsLogV2 } from "@/features/trading/components/deriv-trader/operations-log-v2";
+import { OperationsLogV2 } from "@/components/deriv-trader/operations-log-v2";
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
@@ -290,7 +290,7 @@ function StochasticLab({
     onDeletePredictiveLog,
     deletingPredictiveLogId,
 }: StochasticLabProps) {
-  const { user } = useAuth();
+  const { user, loading } = useAuth();
   const [activeTab, setActiveTab] = useState('prediction');
   
   const [priceData, setPriceData] = useState<any[]>([]);
@@ -326,7 +326,7 @@ function StochasticLab({
 
   // Load models from Firestore on mount
   useEffect(() => {
-    if(!user) return;
+    if(!user || loading) return;
     loadPredictiveModels(user.uid).then(models => {
         if(models) {
             const loadedBayesianModels: Record<string, BayesianModel> = {};
@@ -336,7 +336,7 @@ function StochasticLab({
             setBayesianModels(loadedBayesianModels);
         }
     });
-  }, [user]);
+  }, [user, loading]);
 
   useEffect(() => {
     const VOL_WINDOW = 50;
@@ -372,7 +372,6 @@ function StochasticLab({
             
             for (let i = 1; i <= h.ticks; i++) {
                 const recentLogReturns = logReturns.slice(-h.window);
-                const meanRecentReturn = recentLogReturns.reduce((a, b) => a + b, 0) / h.window;
                 const lastSigma = calculateStdDev(recentLogReturns);
 
                 // Weighted Mean
