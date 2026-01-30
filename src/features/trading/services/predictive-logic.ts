@@ -49,10 +49,10 @@ export function evaluateTriggerConditions(
     const currentExpert = newAssertiveness[currentHorizonName];
     const prevExpert = newAssertiveness[prevHorizonName];
 
+    // CORREÇÃO: Esta função agora apenas determina a direção efetiva,
+    // sem aplicar um threshold hardcoded.
     const getEffectiveVote = (expert: AssertivenessData) => {
         if (!expert) return 'HOLD';
-        const effectiveAccuracy = Math.max(expert.accuracy, 100 - expert.accuracy);
-        if (effectiveAccuracy < 55) return 'HOLD';
         
         return expert.accuracy > 50 
             ? expert.vote 
@@ -68,19 +68,18 @@ export function evaluateTriggerConditions(
     const currentThreshold = thresholds[currentHorizonName] || 80;
     const prevThreshold = thresholds[prevHorizonName] || 80;
 
+    // A verificação de threshold (limiar) acontece aqui, usando os valores dinâmicos da UI.
     if (currentEffectiveAccuracy >= currentThreshold && prevEffectiveAccuracy >= prevThreshold) {
       if (currentVote === prevVote && currentVote !== 'HOLD') {
         
-        // --- NOVA LÓGICA DE FILTRO PROPORCIONAL ---
         const highFrequencyHorizons = ['3t', '6t', '10s'];
         const isHighFrequencySignal = highFrequencyHorizons.includes(currentHorizonName);
 
-        // Apenas aplica o filtro de tendência macro para sinais que NÃO são de alta frequência.
         if (!isHighFrequencySignal) {
             if (contractType === 'Rise/Fall' || contractType === 'Multipliers') {
                 if ((currentVote === 'RISE' && macroTrend !== 'UP') || (currentVote === 'FALL' && macroTrend !== 'DOWN')) {
                     newTriggerReason = `Sinal ${currentVote} bloqueado. Desalinhado com a tendência macro (${macroTrend}).`;
-                    continue; // Pula para o próximo par de horizontes
+                    continue; 
                 }
             }
         }
