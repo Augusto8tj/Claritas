@@ -81,8 +81,12 @@ export function useMasterAutopilot() {
   const [riskManager, setRiskManager] = useState<RiskManagerStatus>({
     mode: 'Normal',
     thresholds: {
-      '3t': 80, '6t': 80, '10s': 80,
-      '20s': 80, '30s': 80, '40s': 80,
+      '3t': 65,
+      '6t': 65,
+      '10s': 60,
+      '20s': 62,
+      '30s': 58,
+      '40s': 60,
     },
     lastAdjustmentReason: 'N/A'
   });
@@ -239,27 +243,26 @@ export function useMasterAutopilot() {
     const calculatedIndicators = calculateAllIndicators(botCandleData, getCouncilStrategies(), '1m', {duration: 15, unit: 's'});
     const microFeatures = extractMicrostructureFeatures(priceTicks, botCandleData);
     
-    // CORREÇÃO: Usar a tendência macro atual para detectar o regime, para consistência.
-    const macroTrendForRegime = macroTrend; 
-    const detectedRegimeResult = detectMarketRegimeService(botCandleData, calculatedIndicators, macroTrendForRegime);
-    
-    // CORREÇÃO: Lógica de deteção de tendência com ZONA NEUTRA
+    // SOLUÇÃO: A tendência é calculada DENTRO do ciclo para garantir que o valor mais recente seja usado.
+    let detectedTrend: TrendDirection = 'NONE';
     if (calculatedIndicators && calculatedIndicators.ma.long) {
         const ema100 = calculatedIndicators.ma.long;
         // Zona neutra de 0.05% em torno da EMA para evitar oscilações constantes
         const deadZone = ema100 * 0.0005; 
         
-        let detectedTrend: TrendDirection = 'NONE';
         if (lastPrice > ema100 + deadZone) {
             detectedTrend = 'UP';
         } else if (lastPrice < ema100 - deadZone) {
             detectedTrend = 'DOWN';
         }
-
-        if (macroTrend !== detectedTrend) {
-            setMacroTrend(detectedTrend);
-        }
     }
+
+    // O estado é atualizado para a UI, mas a lógica subsequente usará `detectedTrend`.
+    if (macroTrend !== detectedTrend) {
+        setMacroTrend(detectedTrend);
+    }
+    
+    const detectedRegimeResult = detectMarketRegimeService(botCandleData, calculatedIndicators, detectedTrend);
     
     const projectPath = (steps: number) => {
         let currentSimPrice = lastPrice; const path = [];
@@ -293,7 +296,7 @@ export function useMasterAutopilot() {
           return true;
       });
       if (newHistory.length > 0) historyRef.current = [...historyRef.current.slice(-hConfig.window + newHistory.length), ...newHistory];
-      if (newFuturePath.length === hConfig.ticks) pendingRef.current.push({startTimeIndex: prices.length - 1, startPrice: lastPrice, predictedEndPrice: newFuturePath[hConfig.ticks - 1].price});
+      if (newFuturePath.length === hConfig.ticks) pendingRef.current.push({startTimeIndex: prices.length - 1, startPrice: lastPrice, predictedEndPrice: newFuturePath[newFuturePath.length - 1].price});
       
       const { length: total } = historyRef.current;
       const hits = historyRef.current.filter(h => h).length;
@@ -305,13 +308,14 @@ export function useMasterAutopilot() {
 
     const manualSignal = evaluateManualTrigger(newAssertiveness);
     
+    // A função de avaliação agora recebe a tendência detectada NESTE ciclo.
     const { newTriggerSignal, newTriggerReason, newTriggeredBy } = evaluateTriggerConditions(
         newAssertiveness, 
         horizons.map(name => ({name, ticks: 0, window: 0})), 
         riskManager.thresholds,
         contractType,
         detectedRegimeResult.regime,
-        macroTrend
+        detectedTrend
     );
     
     setMasterState({
@@ -324,7 +328,10 @@ export function useMasterAutopilot() {
         currentRegime: detectedRegimeResult
     });
 
-  }, [botCandleData, contractType, evaluateManualTrigger, isAutopilotOn, macroTrend, priceTicks, riskManager, setMasterState, horizons]);
+  }, [
+    priceTicks, masterState.isReady, botCandleData, evaluateManualTrigger, 
+    horizons, riskManager.thresholds, contractType, setMacroTrend, macroTrend
+  ]);
 
   useEffect(() => {
     const intervalId = setInterval(runAutopilotCycle, 1000);
@@ -337,7 +344,7 @@ export function useMasterAutopilot() {
     if (isAutopilotOn && masterState.trigger.signal !== 'HOLD' && !cooldownRef.current && !openMasterTrade) {
       cooldownRef.current = true;
       executeTradeAction('Piloto', masterState.trigger.signal, masterState.trigger.triggeredBy);
-      setTimeout(() => { cooldownRef.current = false; }, 60000);
+      setTimeout(() => { cooldownRef.current = false; }, 20000);
     }
   }, [isAutopilotOn, masterState.trigger, operationsLog, executeTradeAction]);
 
