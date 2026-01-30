@@ -186,6 +186,7 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
   const pingIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const allowAutoReconnectRef = useRef(true);
+  const reconnectInProgressRef = useRef(false);
 
     const setAndPersistOperationsLog = useCallback((updater: React.SetStateAction<Operation[]>) => {
         setOperationsLog(prevLog => {
@@ -816,6 +817,9 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
     
         ws.onopen = async () => {
             try {
+                reconnectInProgressRef.current = false;
+                if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
+
                 await makeRequest({ authorize: activeToken });
                 setIsConnected(true);
                 setIsConnecting(false);
@@ -850,6 +854,9 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
                 setIsAssetsLoading(false);
         
             } catch (error: any) {
+                reconnectInProgressRef.current = false;
+                if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
+                
                 let errorMessage = error instanceof Error ? error.message : 'Erro desconhecido ao conectar';
                 setConnectionError(`Falha na autorização: ${errorMessage}`);
                 setIsConnected(false);
@@ -862,7 +869,7 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
         };
       
         ws.onclose = (event) => {
-          if (!wsRef.current) return;
+          if (!wsRef.current || reconnectInProgressRef.current) return;
           
           if (pingIntervalRef.current) {
               clearInterval(pingIntervalRef.current);
@@ -877,14 +884,15 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
           promisesRef.current.clear();
     
           if (!event.wasClean && allowAutoReconnectRef.current) {
-            console.warn(`[WS] Fechado inesperadamente. Código: ${event.code}`);
+            reconnectInProgressRef.current = true;
+            console.warn(`[WS] Fechado inesperadamente. Código: ${event.code}. Tentando reconectar...`);
             setConnectionError(`Conexão perdida. Reconectando...`);
             
             if (reconnectTimeoutRef.current) {
                 clearTimeout(reconnectTimeoutRef.current);
             }
             reconnectTimeoutRef.current = setTimeout(() => {
-                console.log('[Auto-Reconnect] Tentando reconectar...');
+                reconnectInProgressRef.current = false;
                 setTriggerReconnect(c => c + 1);
             }, 3000);
           } else if (!event.wasClean && !allowAutoReconnectRef.current) {
@@ -905,9 +913,11 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
     connect();
   
     return () => {
+      allowAutoReconnectRef.current = false;
       if (wsRef.current) {
         wsRef.current.onclose = null;
         wsRef.current.close();
+        wsRef.current = null;
       }
       if (pingIntervalRef.current) {
           clearInterval(pingIntervalRef.current);
@@ -915,21 +925,23 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
       if (reconnectTimeoutRef.current) {
           clearTimeout(reconnectTimeoutRef.current);
       }
+      reconnectInProgressRef.current = false;
     };
-  }, [activeToken, isLoading, makeRequest, updateTradeAnnotation, addTradeAnnotation, toast, triggerReconnect, setAndPersistOperationsLog, setToastQueue, startConnectionMonitor]);
+  }, [activeToken, isLoading, triggerReconnect]);
+
   
   useEffect(() => {
-    if (isConnected && activeSymbol) {
+    if (isConnected && activeSymbol && !isConnecting) {
         subscribeToStreams(activeSymbol);
     }
-  }, [isConnected, activeSymbol, timePeriod, chartType, subscribeToStreams]);
+  }, [isConnected, isConnecting, activeSymbol, timePeriod, chartType, subscribeToStreams]);
 
   const setAccountType = useCallback((type: AccountType) => {
     try {
         localStorage.setItem(DERIV_ACCOUNT_TYPE_KEY, type);
         setAccountTypeState(type);
         allowAutoReconnectRef.current = true;
-        setTriggerReconnect(c => c + 1);
+        setTriggerReconnect(c => c + 1); // Trigger a full reconnect
     } catch (error) {
         console.error("Failed to save account type to localStorage:", error);
     }
