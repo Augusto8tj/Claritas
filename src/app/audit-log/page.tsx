@@ -46,12 +46,6 @@ export default function AuditLogPage() {
   const [isDeletingAll, setIsDeletingAll] = useState(false);
   const [deletingLogId, setDeletingLogId] = useState<string | null>(null);
   
-  // States for legacy cleanup
-  const [isDeletingLegacy, setIsDeletingLegacy] = useState(false);
-  const [legacyDeletionMessage, setLegacyDeletionMessage] = useState<string | null>(null);
-  const [legacyLogs, setLegacyLogs] = useState<{ id: string }[]>([]);
-  const [isFetchingLegacy, setIsFetchingLegacy] = useState(false);
-
   // Filtros
   const [dateRange, setDateRange] = useState<DateRange | undefined>(undefined);
   const [assetFilter, setAssetFilter] = useState('');
@@ -177,64 +171,6 @@ export default function AuditLogPage() {
         setDeletingLogId(null);
     }
   };
-  
-  const fetchLegacyLogs = async () => {
-    if (!user) {
-        toast({ title: "Não autenticado", description: "Por favor, faça login para executar esta ação.", variant: "destructive" });
-        return;
-    };
-    setIsFetchingLegacy(true);
-    setLegacyLogs([]);
-    setLegacyDeletionMessage(null);
-    const logCollectionRef = collection(db, 'decision_logs');
-
-    try {
-        const q = query(logCollectionRef, limit(10));
-        const snapshot = await getDocs(q);
-        
-        if (snapshot.empty) {
-            setLegacyDeletionMessage("Nenhum documento legado encontrado para carregar.");
-            toast({ title: "Coleção Vazia", description: "A coleção 'decision_logs' legada não contém mais documentos." });
-        } else {
-            const logsToDisplay = snapshot.docs.map(doc => ({ id: doc.id }));
-            setLegacyLogs(logsToDisplay);
-            toast({ title: "Lote Carregado", description: `${logsToDisplay.length} logs legados estão prontos para serem apagados.` });
-        }
-    } catch (error: any) {
-        console.error(`Falha ao carregar logs de auditoria legados:`, error);
-        const errorMessage = error.message || "Ocorreu um erro ao tentar carregar os registos. Verifique as regras de segurança e o console do navegador.";
-        setLegacyDeletionMessage(`Falha ao carregar: ${errorMessage}`);
-        toast({ title: "Erro ao Carregar", description: errorMessage, variant: "destructive" });
-    } finally {
-        setIsFetchingLegacy(false);
-    }
-  };
-
-  const handleDeleteLegacy = async () => {
-    if (!user || legacyLogs.length === 0) {
-        toast({ title: "Nenhum log para apagar", description: "Por favor, carregue um lote de logs primeiro.", variant: "destructive" });
-        return;
-    };
-    setIsDeletingLegacy(true);
-    setLegacyDeletionMessage(`A apagar ${legacyLogs.length} registos...`);
-    
-    try {
-        const deletePromises = legacyLogs.map(log => deleteDoc(doc(db, 'decision_logs', log.id)));
-        await Promise.all(deletePromises);
-        
-        const message = `${legacyLogs.length} registos legados foram apagados com sucesso.`;
-        setLegacyDeletionMessage(message);
-        toast({ title: "Lote Apagado!", description: message });
-        setLegacyLogs([]);
-    } catch (error: any) {
-        console.error(`Falha ao apagar logs de auditoria legados:`, error);
-        const errorMessage = error.message || "Ocorreu um erro ao tentar apagar os registos.";
-        setLegacyDeletionMessage(`Falha: ${errorMessage}`);
-        toast({ title: "Erro ao Apagar", description: errorMessage, variant: "destructive" });
-    } finally {
-        setIsDeletingLegacy(false);
-    }
-  };
 
 
   return (
@@ -331,72 +267,6 @@ export default function AuditLogPage() {
              </>
          )}
       </Tabs>
-      <Card className="border-destructive mt-6">
-        <CardHeader>
-            <CardTitle className="font-headline text-destructive flex items-center gap-2">
-                <Trash2 /> Ação de Limpeza Legada
-            </CardTitle>
-            <CardDescription>
-                Use estas ferramentas para visualizar e apagar a coleção obsoleta 'decision_logs' em lotes.
-            </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-            
-            <Button onClick={fetchLegacyLogs} disabled={isFetchingLegacy || isDeletingLegacy} className="w-full">
-                {isFetchingLegacy ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : <UploadCloud className="mr-2 h-4 w-4" />}
-                {isFetchingLegacy ? "A carregar..." : "Carregar Lote de 10 Logs Legados"}
-            </Button>
-            
-            {legacyLogs.length > 0 && (
-                <div className="p-4 border rounded-md bg-muted/50 space-y-2">
-                    <h4 className="font-semibold text-sm flex items-center gap-2">
-                        <List className="h-4 w-4" />
-                        Lote Pronto para Exclusão:
-                    </h4>
-                    <ScrollArea className="h-32">
-                        <ul className="text-xs font-mono space-y-1 text-muted-foreground pr-4">
-                            {legacyLogs.map(log => <li key={log.id} className="truncate">{log.id}</li>)}
-                        </ul>
-                    </ScrollArea>
-                </div>
-            )}
-            
-            <AlertDialog>
-                <AlertDialogTrigger asChild>
-                    <Button variant="destructive" className="w-full" disabled={legacyLogs.length === 0 || isDeletingLegacy}>
-                        <Trash2 className="mr-2 h-4 w-4" />
-                        Apagar Lote de {legacyLogs.length > 0 ? legacyLogs.length : ''} Logs
-                    </Button>
-                </AlertDialogTrigger>
-                <AlertDialogContent>
-                    <AlertDialogHeader>
-                        <AlertDialogTitle>Tem a certeza absoluta?</AlertDialogTitle>
-                        <AlertDialogDescription>
-                            Esta ação tentará apagar {legacyLogs.length} documentos da coleção obsoleta 'decision_logs'. 
-                            Esta operação é irreversível.
-                        </AlertDialogDescription>
-                    </AlertDialogHeader>
-                    <AlertDialogFooter>
-                        <AlertDialogCancel>Cancelar</AlertDialogCancel>
-                        <AlertDialogAction onClick={handleDeleteLegacy} disabled={isDeletingLegacy} className="bg-destructive hover:bg-destructive/90">
-                        {isDeletingLegacy ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : null}
-                        Apagar Lote
-                        </AlertDialogAction>
-                    </AlertDialogFooter>
-                </AlertDialogContent>
-            </AlertDialog>
-            
-            {legacyDeletionMessage && (
-              <Alert variant={legacyDeletionMessage.startsWith('Falha') ? 'destructive' : 'default'}>
-                <AlertCircle className="h-4 w-4" />
-                <AlertTitle>Status da Operação</AlertTitle>
-                <AlertDescription>
-                  {legacyDeletionMessage}
-                </AlertDescription>
-              </Alert>
-            )}
-        </CardContent>
-      </Card>
     </div>
   );
 }
