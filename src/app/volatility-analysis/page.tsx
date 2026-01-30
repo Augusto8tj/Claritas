@@ -178,9 +178,9 @@ function StochasticLab({
   const { toast } = useToast();
   const { user, loading: isAuthLoading } = useAuth();
   const { durationLimits } = useDerivApiV2();
+  const [activeTab, setActiveTab] = useState('prediction');
   
   const cooldownRef = useRef(false);
-  const pendingSignalRef = useRef<{ signal: 'RISE' | 'FALL'; triggeredBy: [string, string]; epoch: number; } | null>(null);
   
   const [priceData, setPriceData] = useState<any[]>([]);
   const [lastPrice, setLastPrice] = useState<number | null>(null);
@@ -419,12 +419,12 @@ function StochasticLab({
   const accuracy40s = useMemo(() => calculateRollingAccuracy(predictionAccuracyHistory40s), [predictionAccuracyHistory40s]);
   
    const projectionExperts = useMemo(() => ([
-      { name: '3t', vote: futurePath3t.length > 1 ? (futurePath3t[futurePath3t.length - 1].price > futurePath3t[0].price ? 'RISE' : 'FALL') : 'HOLD', accuracy: accuracy3t.percentage },
-      { name: '6t', vote: futurePath6t.length > 1 ? (futurePath6t[futurePath6t.length - 1].price > futurePath6t[0].price ? 'RISE' : 'FALL') : 'HOLD', accuracy: accuracy6t.percentage },
-      { name: '10s', vote: futurePath10s.length > 1 ? (futurePath10s[futurePath10s.length - 1].price > futurePath10s[0].price ? 'RISE' : 'FALL') : 'HOLD', accuracy: accuracy10s.percentage },
-      { name: '20s', vote: futurePath20s.length > 1 ? (futurePath20s[futurePath20s.length - 1].price > futurePath20s[0].price ? 'RISE' : 'FALL') : 'HOLD', accuracy: accuracy20s.percentage },
-      { name: '30s', vote: futurePath30s.length > 1 ? (futurePath30s[futurePath30s.length - 1].price > futurePath30s[0].price ? 'RISE' : 'FALL') : 'HOLD', accuracy: accuracy30s.percentage },
-      { name: '40s', vote: futurePath40s.length > 1 ? (futurePath40s[futurePath40s.length - 1].price > futurePath40s[0].price ? 'RISE' : 'FALL') : 'HOLD', accuracy: accuracy40s.percentage },
+      { name: '3t', vote: futurePath3t.length > 1 ? (futurePath3t[futurePath3t.length - 1].predicted_3t_ahead > futurePath3t[0].predicted_3t_ahead ? 'RISE' : 'FALL') : 'HOLD', accuracy: accuracy3t.percentage },
+      { name: '6t', vote: futurePath6t.length > 1 ? (futurePath6t[futurePath6t.length - 1].predicted_6t_ahead > futurePath6t[0].predicted_6t_ahead ? 'RISE' : 'FALL') : 'HOLD', accuracy: accuracy6t.percentage },
+      { name: '10s', vote: futurePath10s.length > 1 ? (futurePath10s[futurePath10s.length - 1].predicted_10s_ahead > futurePath10s[0].predicted_10s_ahead ? 'RISE' : 'FALL') : 'HOLD', accuracy: accuracy10s.percentage },
+      { name: '20s', vote: futurePath20s.length > 1 ? (futurePath20s[futurePath20s.length - 1].predicted_20s_ahead > futurePath20s[0].predicted_20s_ahead ? 'RISE' : 'FALL') : 'HOLD', accuracy: accuracy20s.percentage },
+      { name: '30s', vote: futurePath30s.length > 1 ? (futurePath30s[futurePath30s.length - 1].predicted_30s_ahead > futurePath30s[0].predicted_30s_ahead ? 'RISE' : 'FALL') : 'HOLD', accuracy: accuracy30s.percentage },
+      { name: '40s', vote: futurePath40s.length > 1 ? (futurePath40s[futurePath40s.length - 1].predicted_40s_ahead > futurePath40s[0].predicted_40s_ahead ? 'RISE' : 'FALL') : 'HOLD', accuracy: accuracy40s.percentage },
   ]), [futurePath3t, accuracy3t, futurePath6t, accuracy6t, futurePath10s, accuracy10s, futurePath20s, accuracy20s, futurePath30s, accuracy30s, futurePath40s, accuracy40s]);
 
   const strongestSignal = useMemo((): StrongestSignal => {
@@ -455,36 +455,36 @@ function StochasticLab({
         return;
     }
 
-    toast({ title: `🤖 Master Autopilot: Ordem ${initiator} ${signalOverride}!`, description: `Executando em ${activeSymbol}`});
-
-    try {
-        const longerHorizon = triggeredBy[1]; 
-        let duration: number;
-        let durationUnit: 's' | 't';
+    const longerHorizon = triggeredBy[1]; 
+    let duration: number;
+    let durationUnit: 's' | 't';
+    
+    const durationMatch = longerHorizon.match(/(\d+)([st])/);
+    if (durationMatch) {
+        const suggestedDuration = parseInt(durationMatch[1], 10);
+        const suggestedUnit = durationMatch[2] as 's' | 't';
         
-        const durationMatch = longerHorizon.match(/(\d+)([st])/);
-        if (durationMatch) {
-            const suggestedDuration = parseInt(durationMatch[1], 10);
-            const suggestedUnit = durationMatch[2] as 's' | 't';
-            
-            const limits = durationLimits[suggestedUnit];
-            
-            if (limits && limits.min > 0) {
-                duration = Math.max(limits.min, Math.min(suggestedDuration, limits.max));
-                durationUnit = suggestedUnit;
-            } else if (suggestedUnit === 's' && durationLimits.t && durationLimits.t.min > 0) {
-                 duration = durationLimits.t.min;
-                 durationUnit = 't';
-            } else {
-                duration = 15;
-                durationUnit = 's';
-            }
-
+        const limits = durationLimits[suggestedUnit];
+        
+        if (limits && limits.min > 0) {
+            duration = Math.max(limits.min, Math.min(suggestedDuration, limits.max));
+            durationUnit = suggestedUnit;
+        } else if (suggestedUnit === 's' && durationLimits.t && durationLimits.t.min > 0) {
+             duration = durationLimits.t.min;
+             durationUnit = 't';
         } else {
             duration = 15;
             durationUnit = 's';
         }
 
+    } else {
+        duration = 15;
+        durationUnit = 's';
+    }
+
+    toast({ title: `🤖 Master Autopilot: Ordem ${initiator} ${signalOverride}!`, description: `Executando ${duration}${durationUnit} em ${activeSymbol}`});
+
+    try {
         const result = await executeTrade(
             signalOverride === 'RISE' ? 'CALL' : 'PUT',
             1.0, 
@@ -519,7 +519,8 @@ function StochasticLab({
                 result: 'pending',
                 pnl: 0,
             };
-            await savePredictiveTradeLog(user.uid, logToSave);
+            const logDocRef = doc(collection(db, `users/${user.uid}/predictive_logs_v1`));
+            await savePredictiveTradeLog(user.uid, {...logToSave, id: logDocRef.id});
         }
 
     } catch (error) {
@@ -540,49 +541,22 @@ function StochasticLab({
             return;
         }
 
-        const currentTick = realData[realData.length - 1];
-        if (!currentTick) return;
-
         const assertiveness = Object.fromEntries(projectionExperts.map(p => [p.name, { accuracy: p.accuracy, vote: p.vote }]));
-        
-        if (pendingSignalRef.current && pendingSignalRef.current.epoch < currentTick.epoch) {
-            const pending = pendingSignalRef.current;
-            pendingSignalRef.current = null;
-            
-            const { newTriggerSignal } = evaluateTriggerConditions(assertiveness, horizons);
-            
-            if (newTriggerSignal === pending.signal) {
-                toast({ title: `✅ Sinal ${pending.signal} Confirmado!`, description: `Executando ordem...` });
-                cooldownRef.current = true;
-                executeTradeAction('Piloto', newTriggerSignal, pending.triggeredBy, `Confirmado por ${pending.triggeredBy.join(' & ')}`).finally(() => {
-                    setTimeout(() => { cooldownRef.current = false; }, 60000);
-                });
-                setAutopilotStatus(`Executando Ordem ${newTriggerSignal}`);
-            } else {
-                toast({ title: `❌ Sinal ${pending.signal} Abortado`, description: `Condição não se manteve.`, variant: "destructive" });
-                setAutopilotStatus('Monitorando...');
-            }
-            return;
-        }
-
         const { newTriggerSignal, newTriggerReason, newTriggeredBy } = evaluateTriggerConditions(assertiveness, horizons);
+        
         if (newTriggerSignal !== 'HOLD' && newTriggeredBy) {
-            pendingSignalRef.current = { signal: newTriggerSignal, triggeredBy: newTriggeredBy, epoch: currentTick.epoch };
-            toast({ title: '⏳ Sinal Detectado!', description: newTriggerReason });
+            cooldownRef.current = true;
             setAutopilotStatus(newTriggerReason);
+            executeTradeAction('Piloto', newTriggerSignal, newTriggeredBy, newTriggerReason).finally(() => {
+                setTimeout(() => { cooldownRef.current = false; }, 60000); // 60s cooldown
+            });
         } else {
-            if (!pendingSignalRef.current) {
-                setAutopilotStatus('Monitorando...');
-            }
+             setAutopilotStatus('Monitorando...');
         }
-    }, [isAutopilotOn, activeSymbol, executeTrade, operationsLog, realData, projectionExperts, toast, setAutopilotStatus, executeTradeAction, isAuthLoading, horizons]);
+    }, [isAutopilotOn, activeSymbol, executeTrade, operationsLog, isAuthLoading, setAutopilotStatus, executeTradeAction, projectionExperts, horizons]);
 
     useEffect(() => {
-        if (!isAutopilotOn) {
-            if (pendingSignalRef.current) pendingSignalRef.current = null;
-            return;
-        }
-
+        if (!isAutopilotOn) return;
         const intervalId = setInterval(runAutopilotCycle, 2000);
         return () => clearInterval(intervalId);
     }, [isAutopilotOn, runAutopilotCycle]);
@@ -780,7 +754,7 @@ function StochasticLab({
   );
 };
 
-function VolatilityAutopilotInterface({ isAutopilotOn, toggleAutopilot, autopilotStatus }: { isAutopilotOn: boolean, toggleAutopilot: (checked: boolean) => void, autopilotStatus: string }) {
+const VolatilityAutopilotInterface = ({ isAutopilotOn, toggleAutopilot, autopilotStatus }: { isAutopilotOn: boolean, toggleAutopilot: (checked: boolean) => void, autopilotStatus: string }) => {
     return (
         <Card>
             <CardHeader>
@@ -817,7 +791,7 @@ function VolatilityAutopilotInterface({ isAutopilotOn, toggleAutopilot, autopilo
     );
 }
 
-function Header() {
+const Header = () => {
     const { activeSymbol, setActiveSymbol, assetGroups, isAssetsLoading } = useDerivApiV2();
     return (
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -832,7 +806,7 @@ function Header() {
     );
 };
 
-function PageContent() {
+const PageContent = () => {
     const { chartData, activeSymbol, operationsLog, sellContract, priceTicks, clearActiveContracts, executeTrade, dataVersion, durationLimits } = useDerivApiV2();
     const { user } = useAuth();
     const { toast } = useToast();
