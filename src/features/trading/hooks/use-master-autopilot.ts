@@ -6,9 +6,11 @@ import { useDerivApiV2 } from './use-deriv-api-v2';
 import { useToast } from '@/hooks/use-toast';
 import { calculateAllIndicators, type Indicators } from '@/services/indicator-service';
 import { getCouncilStrategies } from '@/services/council-strategies';
-import type { DurationUnit, Operation, OperationInitiator, MarketRegime, CandleData } from '@/lib/types';
+import type { DurationUnit, Operation, OperationInitiator, MarketRegime, CandleData, PredictiveTradeLog } from '@/lib/types';
 import { extractMicrostructureFeatures, type MicrostructureFeatures, detectMarketRegime as detectMarketRegimeService } from '@/services/advanced-trading-services';
 import { evaluateTriggerConditions } from '../services/predictive-logic';
+import { useAuth } from '@/features/auth/hooks/use-auth';
+import { savePredictiveTradeLog } from '@/services/financial-data-service';
 
 
 type ContractType = 'Accumulators' | 'Rise/Fall' | 'Multipliers';
@@ -42,6 +44,7 @@ export interface MasterAutopilotState {
         regime: MarketRegime;
         confidence: number;
     };
+    assertiveness: Record<string, AssertivenessData>;
 }
 
 export function useMasterAutopilot() {
@@ -54,6 +57,7 @@ export function useMasterAutopilot() {
     executeTrade: executeRiseFallTrade 
   } = useDerivApiV2();
   
+  const { user } = useAuth();
   const { toast } = useToast();
 
   const [isAutopilotOn, setIsAutopilotOn] = useState(false);
@@ -78,6 +82,7 @@ export function useMasterAutopilot() {
     indicators: null,
     microstructure: null,
     currentRegime: { regime: 'ranging', confidence: 0 },
+    assertiveness: {},
   });
   
   const cooldownRef = useRef(false);
@@ -100,96 +105,6 @@ export function useMasterAutopilot() {
     }
   }, [toast]);
   
-  const executeTradeAction = useCallback(async (initiator: OperationInitiator, signalOverride: Signal, triggeredBy: [string, string] | null) => {
-      const currentContractType = contractType;
-      const signalToUse = signalOverride;
-      
-      if (signalToUse === 'HOLD' || !activeSymbol || !triggeredBy) {
-          toast({ title: "Nenhum sinal válido", description: "O gatilho preditivo não detectou uma oportunidade.", variant: "destructive"});
-          return;
-      }
-
-      toast({ title: `🤖 Master Autopilot: Ordem ${initiator} ${signalToUse}!`, description: `Executando ${currentContractType} em ${activeSymbol}`});
-
-      try {
-          if (currentContractType === 'Rise/Fall') {
-              const longerHorizon = triggeredBy[1]; 
-              const durationMatch = longerHorizon.match(/(\d+)([st])/);
-              
-              let duration: number;
-              let durationUnit: 's' | 't';
-
-              if (durationMatch) {
-                  duration = parseInt(durationMatch[1], 10);
-                  durationUnit = durationMatch[2] as 's' | 't';
-              } else {
-                  duration = 15;
-                  durationUnit = 's';
-              }
-               await executeRiseFallTrade(
-                  signalToUse === 'RISE' ? 'CALL' : 'PUT',
-                  1.0, 
-                  activeSymbol,
-                  signalToUse.toLowerCase() as 'rise' | 'fall',
-                  duration,
-                  durationUnit,
-                  initiator
-              );
-          } else {
-              toast({ title: "Funcionalidade Limitada", description: `A execução para ${currentContractType} ainda não está operacional.`, variant: "default"});
-          }
-      } catch (error) {
-          console.error("Master Autopilot Execution Error:", error);
-          toast({ title: `❌ Erro na Execução ${initiator}`, description: error instanceof Error ? error.message : String(error), variant: "destructive" });
-      }
-  }, [activeSymbol, executeRiseFallTrade, toast, contractType]);
-  
-  const evaluateManualTrigger = useCallback((assertiveness: Record<string, AssertivenessData>): {signal: Signal, reason: string} => {
-    const getEffectiveVote = (expert: AssertivenessData | undefined): 'RISE' | 'FALL' | 'HOLD' => {
-        if (!expert) return 'HOLD';
-        return expert.accuracy > 50 
-            ? expert.vote 
-            : (expert.vote === 'RISE' ? 'FALL' : (expert.vote === 'FALL' ? 'RISE' : 'HOLD'));
-    };
-    
-    const votes = { RISE: 0, FALL: 0 };
-    Object.values(assertiveness).forEach(expert => {
-        const effectiveVote = getEffectiveVote(expert);
-        if (effectiveVote !== 'HOLD') {
-            votes[effectiveVote]++;
-        }
-    });
-
-    if (votes.RISE >= 4) return { signal: 'RISE', reason: `${votes.RISE}/6 Modelos concordam com Alta.` };
-    if (votes.FALL >= 4) return { signal: 'FALL', reason: `${votes.FALL}/6 Modelos concordam com Baixa.` };
-    return { signal: 'HOLD', reason: 'Aguardando consenso dos modelos.' };
-  }, []);
-
-  const executeManualTrigger = useCallback(async () => {
-    const { signal } = masterState.manualTrigger;
-    await executeTradeAction('Manual', signal, ['manual', 'manual']);
-  }, [executeTradeAction, masterState.manualTrigger]);
-  
-  const setGlobalAssertivenessThreshold = useCallback((value: number) => {
-      setRiskManager(prev => {
-          const newThresholds: Record<string, number> = {};
-          Object.keys(prev.thresholds).forEach(key => {
-              newThresholds[key] = value;
-          });
-          return {...prev, thresholds: newThresholds};
-      });
-  }, []);
-
-  const setIndividualThreshold = useCallback((horizon: string, value: number) => {
-    setRiskManager(prev => ({
-        ...prev,
-        thresholds: {
-            ...prev.thresholds,
-            [horizon]: value,
-        }
-    }));
-  }, []);
-
   const dependenciesRef = useRef({
     isAutopilotOn,
     contractType,
@@ -202,7 +117,7 @@ export function useMasterAutopilot() {
     riskManager,
     horizons,
     masterState,
-    evaluateManualTrigger,
+    user,
   });
 
   useEffect(() => {
@@ -218,15 +133,91 @@ export function useMasterAutopilot() {
       riskManager,
       horizons,
       masterState,
-      evaluateManualTrigger,
+      user,
     };
   });
+  
+  const executeTradeAction = useCallback(async (initiator: OperationInitiator, signalOverride: Signal, triggeredBy: [string, string] | null) => {
+      const { contractType, activeSymbol, masterState, user } = dependenciesRef.current;
+      const signalToUse = signalOverride;
+      
+      if (signalToUse === 'HOLD' || !activeSymbol || !triggeredBy) {
+          toast({ title: "Nenhum sinal válido", description: "O gatilho preditivo não detectou uma oportunidade.", variant: "destructive"});
+          return;
+      }
 
+      toast({ title: `🤖 Master Autopilot: Ordem ${initiator} ${signalToUse}!`, description: `Executando ${contractType} em ${activeSymbol}`});
+
+      try {
+          if (contractType === 'Rise/Fall') {
+              const longerHorizon = triggeredBy[1]; 
+              const durationMatch = longerHorizon.match(/(\d+)([st])/);
+              
+              let duration: number;
+              let durationUnit: 's' | 't';
+
+              if (durationMatch) {
+                  duration = parseInt(durationMatch[1], 10);
+                  durationUnit = durationMatch[2] as 's' | 't';
+              } else {
+                  duration = 15;
+                  durationUnit = 's';
+              }
+
+              const tradeResult = await executeRiseFallTrade(
+                  signalToUse === 'RISE' ? 'CALL' : 'PUT',
+                  1.0, 
+                  activeSymbol,
+                  signalToUse.toLowerCase() as 'rise' | 'fall',
+                  duration,
+                  durationUnit,
+                  initiator
+              );
+
+              if (tradeResult.success && tradeResult.contractId && user) {
+                  const logId = `pred_log_${tradeResult.contractId}`;
+                  const logContext = {
+                      triggerReason: masterState.trigger.reason,
+                      assertivenessSnapshot: Object.entries(masterState.assertiveness).map(([horizon, data]) => ({
+                          horizon,
+                          accuracy: data.accuracy,
+                          vote: data.vote,
+                      })),
+                  };
+
+                  const tradeLog: PredictiveTradeLog = {
+                      id: logId,
+                      contractId: tradeResult.contractId,
+                      timestamp: new Date().toISOString(),
+                      asset: activeSymbol,
+                      tradeParams: {
+                          direction: signalToUse,
+                          stake: 1.0,
+                          duration: duration,
+                          durationUnit: durationUnit,
+                      },
+                      context: logContext,
+                      result: 'pending',
+                      pnl: 0,
+                  };
+                  
+                  savePredictiveTradeLog(user.uid, tradeLog);
+              }
+
+          } else {
+              toast({ title: "Funcionalidade Limitada", description: `A execução para ${contractType} ainda não está operacional.`, variant: "default"});
+          }
+      } catch (error) {
+          console.error("Master Autopilot Execution Error:", error);
+          toast({ title: `❌ Erro na Execução ${initiator}`, description: error instanceof Error ? error.message : String(error), variant: "destructive" });
+      }
+  }, [executeRiseFallTrade, toast]);
+  
   const runAutopilotCycle = useCallback((newAssertiveness: Record<string, AssertivenessData>) => {
     const { 
         priceTicks, botCandleData, masterState, riskManager, contractType, 
         isNeighborConfirmationEnabled, isMacroTrendCheckEnabled, highFrequencyThreshold, 
-        isAutopilotOn, operationsLog, horizons, evaluateManualTrigger
+        isAutopilotOn, operationsLog, horizons
     } = dependenciesRef.current;
     
     if (priceTicks.length < 50) {
@@ -243,7 +234,18 @@ export function useMasterAutopilot() {
     const microFeatures = extractMicrostructureFeatures(priceTicks, botCandleData);
     const detectedRegimeResult = detectMarketRegimeService(botCandleData, calculatedIndicators, 'NONE');
     
-    const manualSignal = evaluateManualTrigger(newAssertiveness);
+    const manualSignal = evaluateTriggerConditions(
+        newAssertiveness,
+        horizons.map(h => ({ name: h.name, ticks: h.ticks, window: h.window })),
+        Object.fromEntries(Object.keys(riskManager.thresholds).map(k => [k, 55])), // Lower threshold for manual
+        contractType,
+        detectedRegimeResult.regime,
+        lastPrice,
+        botCandleData,
+        false, // Don't require neighbors for manual
+        true,
+        highFrequencyThreshold
+    );
     
     const { newTriggerSignal, newTriggerReason, newTriggeredBy } = evaluateTriggerConditions(
         newAssertiveness,
@@ -275,10 +277,44 @@ export function useMasterAutopilot() {
         ...prev,
         isReady: true,
         trigger: { signal: newTriggerSignal, reason: newTriggerReason, triggeredBy: newTriggeredBy },
-        manualTrigger: manualSignal,
+        manualTrigger: { signal: manualSignal.newTriggerSignal, reason: manualSignal.newTriggerReason },
         indicators: calculatedIndicators,
         microstructure: microFeatures,
         currentRegime: detectedRegimeResult,
+        assertiveness: newAssertiveness
+    }));
+  }, []);
+
+  const executeManualTrigger = useCallback(async () => {
+    const { signal } = masterState.manualTrigger;
+    // Manual trigger shouldn't depend on complex `triggeredBy` logic
+    // For simplicity, we can pass a placeholder or the strongest single model
+    const assertivenessArray = Object.entries(masterState.assertiveness);
+    const strongest = assertivenessArray.length > 0 ? assertivenessArray.reduce((a, b) => {
+        const accA = Math.max(a[1].accuracy, 100 - a[1].accuracy);
+        const accB = Math.max(b[1].accuracy, 100 - b[1].accuracy);
+        return accA > accB ? a : b;
+    })[0] : 'manual';
+    await executeTradeAction('Manual', signal, [strongest, strongest]);
+  }, [executeTradeAction, masterState.manualTrigger, masterState.assertiveness]);
+  
+  const setGlobalAssertivenessThreshold = useCallback((value: number) => {
+      setRiskManager(prev => {
+          const newThresholds: Record<string, number> = {};
+          Object.keys(prev.thresholds).forEach(key => {
+              newThresholds[key] = value;
+          });
+          return {...prev, thresholds: newThresholds};
+      });
+  }, []);
+
+  const setIndividualThreshold = useCallback((horizon: string, value: number) => {
+    setRiskManager(prev => ({
+        ...prev,
+        thresholds: {
+            ...prev.thresholds,
+            [horizon]: value,
+        }
     }));
   }, []);
 
@@ -339,6 +375,7 @@ export function useMasterAutopilot() {
     isMacroTrendCheckEnabled,
     setIsMacroTrendCheckEnabled,
     highFrequencyThreshold,
-    setHighFrequencyThreshold
+    setHighFrequencyThreshold,
+    macroTrend: 'NONE' // This needs proper implementation
   };
 }
