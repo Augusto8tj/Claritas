@@ -19,7 +19,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { volatilityTraderSchema, type VolatilityTraderFormValues } from "@/features/trading/components/deriv-trader/volatility-trader-interface.types";
 import VolatilityTraderInterface from "@/features/trading/components/deriv-trader/volatility-trader-interface";
 import { OperationsLogV2 } from "@/features/trading/components/deriv-trader/operations-log-v2";
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { useToast } from '@/hooks/use-toast';
@@ -56,9 +56,10 @@ const normalQuantile = (p: number): number => {
 };
 
 const getProgressColor = (percentage: number) => {
-    if (percentage > 75) return 'bg-green-500';
-    if (percentage > 60) return 'bg-blue-500';
-    if (percentage < 40) return 'bg-red-500';
+    const effectivePercentage = Math.max(percentage, 100 - percentage);
+    if (effectivePercentage > 75) return 'bg-green-500';
+    if (effectivePercentage > 60) return 'bg-blue-500';
+    if (effectivePercentage < 55) return 'bg-red-500';
     return 'bg-gray-400';
 };
 
@@ -109,7 +110,7 @@ const StatItem = ({ label, value }: { label: string; value: string | number }) =
 
 const StrongestSignalCard = ({ signal }: { signal: StrongestSignal }) => {
     const isHold = signal.direction === 'HOLD' || signal.certaintyScore === 0;
-    const displayAccuracy = signal.accuracy > 50 ? signal.accuracy : 100 - signal.accuracy;
+    const displayAccuracy = Math.max(signal.accuracy, 100 - signal.accuracy);
 
     return (
         <Card className={cn("p-4 flex flex-col justify-center", 
@@ -129,7 +130,7 @@ const StrongestSignalCard = ({ signal }: { signal: StrongestSignal }) => {
                         {signal.direction} para {signal.horizon}
                     </p>
                     <p className="text-xs text-muted-foreground">
-                        Assertividade do Especialista: <span className="font-bold">{displayAccuracy.toFixed(1)}%</span>
+                        Assertividade Efetiva: <span className="font-bold">{displayAccuracy.toFixed(1)}%</span>
                     </p>
                 </div>
             )}
@@ -142,14 +143,14 @@ const ProjectionExpertsPanel = ({ experts }: { experts: { name: string; vote: 'R
         <CardTitle className="text-sm font-semibold text-muted-foreground mb-3">Assertividade das Projeções</CardTitle>
         <div className="space-y-2">
             {experts.map(({ name, vote, accuracy }) => {
-                const effectiveDirection = accuracy > 50 ? vote : (vote === 'RISE' ? 'FALL' : (vote === 'FALL' ? 'RISE' : 'HOLD'));
-                const effectiveAccuracy = accuracy > 50 ? accuracy : 100 - accuracy;
+                const effectiveDirection = getEffectiveVote({ accuracy, vote });
+                const effectiveAccuracy = Math.max(accuracy, 100 - accuracy);
                 
                 return (
                     <div key={name} className="flex justify-between items-center bg-background p-2 rounded-md border text-xs">
                         <span className="font-semibold w-12">{name}</span>
                         <div className="flex items-center gap-2 w-24">
-                            <Progress value={effectiveAccuracy} className="h-1.5 flex-1" indicatorClassName={getProgressColor(effectiveAccuracy)} />
+                            <Progress value={effectiveAccuracy} className="h-1.5 flex-1" indicatorClassName={getProgressColor(accuracy)} />
                             <span className="font-mono w-10 text-right">{effectiveAccuracy.toFixed(0)}%</span>
                         </div>
                         <span className={cn("font-bold w-10 text-right flex items-center justify-end gap-1", 
@@ -182,7 +183,7 @@ function StochasticLab({
     thresholds,
     isNeighborConfirmationEnabled,
     isMacroTrendCheckEnabled,
-    highFrequencyThreshold, // NOVO
+    highFrequencyThreshold,
 }: StochasticLabProps) {
   const { toast } = useToast();
   const { user, loading: isAuthLoading } = useAuth();
@@ -493,8 +494,8 @@ function StochasticLab({
                 maxCertainty = certainty;
                 bestSignal = {
                     horizon: p.name,
-                    direction: p.accuracy > 50 ? p.vote : (p.vote === 'RISE' ? 'FALL' : 'RISE'),
-                    certaintyScore: certainty,
+                    direction: getEffectiveVote(p),
+                    certaintyScore: p.accuracy > 50 ? certainty : -certainty,
                     accuracy: p.accuracy,
                 };
             }
@@ -609,15 +610,14 @@ function StochasticLab({
       projectionExperts.map(p => [p.name, { accuracy: p.accuracy, vote: p.vote }])
     );
     
-    // Simulação do macro trend para a lógica de decisão
-    const macroTrend: 'UP' | 'DOWN' | 'NONE' = 'NONE'; // Deve ser substituído por uma lógica real
+    const macroTrend: 'UP' | 'DOWN' | 'NONE' = 'NONE';
     
     const { newTriggerSignal, newTriggerReason, newTriggeredBy } = evaluateTriggerConditions(
         assertiveness,
-        horizons,
+        horizons.map(h => ({ name: h.name, ticks: h.ticks, window: h.window })),
         thresholds, 
         'Rise/Fall',
-        'ranging', // Simulação do regime
+        'ranging', 
         macroTrend,
         isNeighborConfirmationEnabled,
         isMacroTrendCheckEnabled,
@@ -650,15 +650,6 @@ function StochasticLab({
     onConsensusUpdate({strongestSignal, projectionExperts});
   }, [strongestSignal, onConsensusUpdate, projectionExperts]);
 
-  const allAccuracy = useMemo(() => [
-      { name: '3t', ...accuracy3t },
-      { name: '6t', ...accuracy6t },
-      { name: '10s', ...accuracy10s },
-      { name: '20s', ...accuracy20s },
-      { name: '30s', ...accuracy30s },
-      { name: '40s', ...accuracy40s },
-  ], [accuracy3t, accuracy6t, accuracy10s, accuracy20s, accuracy30s, accuracy40s]);
-  
   const chartDisplayData = useMemo(() => {
     const combined = [...predictionData.filter(p => p && (p.real || p.predicted_1_tick))];
     
@@ -810,20 +801,6 @@ function StochasticLab({
                            </CardContent>
                        </Card>
                      )}
-                     <Card className="mt-6">
-                        <CardHeader>
-                            <CardTitle>Painel de Assertividade dos Especialistas</CardTitle>
-                        </CardHeader>
-                        <CardContent className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-                            {allAccuracy.map(acc => (
-                                <div key={acc.name} className="p-3 border rounded-lg text-center">
-                                    <p className="font-bold text-sm text-muted-foreground">{acc.name.toUpperCase()}</p>
-                                    <p className={cn("text-2xl font-bold", getProgressColor(acc.percentage).replace('bg-', 'text-'))}>{acc.percentage.toFixed(1)}%</p>
-                                    <p className="text-xs text-muted-foreground">({acc.hits}/{acc.total})</p>
-                                </div>
-                            ))}
-                        </CardContent>
-                    </Card>
                     <div className="p-1 mt-6">
                         <PredictiveLogViewer
                             logs={predictiveLogs}
@@ -943,6 +920,13 @@ const Header = () => {
     );
 };
 
+const getEffectiveVote = (expert: AssertivenessData | undefined): 'RISE' | 'FALL' | 'HOLD' => {
+    if (!expert) return 'HOLD';
+    return expert.accuracy > 50 
+        ? expert.vote 
+        : (expert.vote === 'RISE' ? 'FALL' : (expert.vote === 'FALL' ? 'RISE' : 'HOLD'));
+};
+
 const PageContent = () => {
     const { chartData, activeSymbol, operationsLog, sellContract, priceTicks, clearActiveContracts, executeTrade, dataVersion, durationLimits } = useDerivApiV2();
     const { user } = useAuth();
@@ -959,13 +943,13 @@ const PageContent = () => {
         },
     });
 
-    const [globalAssertivenessThreshold, setGlobalAssertivenessThreshold] = useState(62);
+    const [globalAssertivenessThreshold, setGlobalAssertivenessThreshold] = useState(55);
     const [individualThresholds, setIndividualThresholds] = useState<Record<string, number>>({
         '3t': 65, '6t': 65, '10s': 60, '20s': 62, '30s': 58, '40s': 60,
     });
     const [isNeighborConfirmationEnabled, setIsNeighborConfirmationEnabled] = useState(true);
     const [isMacroTrendCheckEnabled, setIsMacroTrendCheckEnabled] = useState(true);
-    const [highFrequencyThreshold, setHighFrequencyThreshold] = useState(10); // NOVO
+    const [highFrequencyThreshold, setHighFrequencyThreshold] = useState(10); 
 
 
     const handleGlobalThresholdChange = (value: number) => {
