@@ -165,6 +165,7 @@ function StochasticLab({
     onDeletePredictiveLog,
     deletingPredictiveLogId,
 }: StochasticLabProps) {
+  const { user, loading: isUserLoading } = useAuth();
   const [activeTab, setActiveTab] = useState('prediction');
   
   const [priceData, setPriceData] = useState<any[]>([]);
@@ -191,7 +192,6 @@ function StochasticLab({
   const [predictionAccuracyHistory30s, setPredictionAccuracyHistory30s] = useState<boolean[]>([]);
   const [predictionAccuracyHistory40s, setPredictionAccuracyHistory40s] = useState<boolean[]>([]);
   
-  const { user, loading: isUserLoading } = useAuth(); // CORREÇÃO: Hook movido para o topo do componente
 
   const predictionErrorsRef = useRef<number[]>([]);
   const pendingPredictions3tRef = useRef<{ startTimeIndex: number; startPrice: number; predictedEndPrice: number }[]>([]);
@@ -768,6 +768,7 @@ const PageContent = () => {
     const [consensusData, setConsensusData] = useState<any>(null);
     
     const autopilot = useMasterAutopilot();
+    const { isAutopilotOn, runAutopilotCycle } = autopilot;
     
     const form = useForm<VolatilityTraderFormValues>({
         resolver: zodResolver(volatilityTraderSchema),
@@ -779,13 +780,13 @@ const PageContent = () => {
 
     const handleConsensusUpdate = useCallback((data: any) => {
         setConsensusData(data);
-        if (autopilot.isAutopilotOn && data?.projectionExperts) {
+        if (isAutopilotOn && data?.projectionExperts) {
             const assertiveness: Record<string, AssertivenessData> = Object.fromEntries(
                 data.projectionExperts.map((p: any) => [p.name, { accuracy: p.accuracy, vote: p.vote }])
             );
-            autopilot.runAutopilotCycle(assertiveness);
+            runAutopilotCycle(assertiveness);
         }
-    }, [autopilot]);
+    }, [isAutopilotOn, runAutopilotCycle]);
 
 
     useEffect(() => {
