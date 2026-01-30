@@ -190,6 +190,8 @@ function StochasticLab({
   const [predictionAccuracyHistory20s, setPredictionAccuracyHistory20s] = useState<boolean[]>([]);
   const [predictionAccuracyHistory30s, setPredictionAccuracyHistory30s] = useState<boolean[]>([]);
   const [predictionAccuracyHistory40s, setPredictionAccuracyHistory40s] = useState<boolean[]>([]);
+  
+  const { user, loading: isUserLoading } = useAuth(); // CORREÇÃO: Hook movido para o topo do componente
 
   const predictionErrorsRef = useRef<number[]>([]);
   const pendingPredictions3tRef = useRef<{ startTimeIndex: number; startPrice: number; predictedEndPrice: number }[]>([]);
@@ -409,8 +411,7 @@ function StochasticLab({
   }, [realData, horizons]);
 
   useEffect(() => {
-    const { user, loading } = useAuth();
-    if (!user || loading || !predictiveLogs) {
+    if (!user || isUserLoading || !predictiveLogs) {
       return;
     }
     
@@ -442,7 +443,7 @@ function StochasticLab({
         savePredictiveTradeLog(user.uid, log);
       }
     }
-  }, [realData, predictiveLogs]);
+  }, [realData, predictiveLogs, user, isUserLoading]);
 
 
   const accuracy3t = useMemo(() => calculateRollingAccuracy(predictionAccuracyHistory3t), [predictionAccuracyHistory3t]);
