@@ -104,8 +104,10 @@ export function useMasterAutopilot() {
   
   const [macroTrend, setMacroTrend] = useState<TrendDirection>('NONE');
   const cooldownRef = useRef(false);
+  
   const [isNeighborConfirmationEnabled, setIsNeighborConfirmationEnabled] = useState(true);
   const [isMacroTrendCheckEnabled, setIsMacroTrendCheckEnabled] = useState(true);
+  const [highFrequencyThreshold, setHighFrequencyThreshold] = useState(10);
   
   const activeApi = v2Api;
   
@@ -158,30 +160,27 @@ export function useMasterAutopilot() {
           if (currentContractType === 'Rise/Fall') {
               const longerHorizon = triggeredBy[1]; 
               const durationMatch = longerHorizon.match(/(\d+)([st])/);
+              
+              let duration: number;
+              let durationUnit: 's' | 't';
+
               if (durationMatch) {
-                  const duration = parseInt(durationMatch[1], 10);
-                  const durationUnit = durationMatch[2] as 's' | 't';
-                  await executeRiseFallTrade(
-                      signalToUse === 'RISE' ? 'CALL' : 'PUT',
-                      1.0, // Stake fixo por enquanto para o piloto
-                      activeSymbol,
-                      signalToUse.toLowerCase() as 'rise' | 'fall',
-                      duration,
-                      durationUnit,
-                      initiator
-                  );
+                  duration = parseInt(durationMatch[1], 10);
+                  durationUnit = durationMatch[2] as 's' | 't';
               } else {
-                  // Fallback para duração padrão caso a análise falhe
-                   await executeRiseFallTrade(
-                      signalToUse === 'RISE' ? 'CALL' : 'PUT',
-                      1.0, 
-                      activeSymbol,
-                      signalToUse.toLowerCase() as 'rise' | 'fall',
-                      15,
-                      's',
-                      initiator
-                  );
+                  // Fallback para duração padrão se a análise falhar (ex: 'manual')
+                  duration = 15;
+                  durationUnit = 's';
               }
+               await executeRiseFallTrade(
+                  signalToUse === 'RISE' ? 'CALL' : 'PUT',
+                  1.0, // Stake fixo por enquanto para o piloto
+                  activeSymbol,
+                  signalToUse.toLowerCase() as 'rise' | 'fall',
+                  duration,
+                  durationUnit,
+                  initiator
+              );
           } else {
               toast({ title: "Funcionalidade Limitada", description: `A execução para ${currentContractType} ainda não está operacional neste modo unificado.`, variant: "default"});
           }
@@ -319,9 +318,10 @@ export function useMasterAutopilot() {
         riskManager.thresholds,
         contractType,
         detectedRegimeResult.regime,
-        detectedTrend,
+        detectedTrend, // Passa a tendência calculada neste ciclo
         isNeighborConfirmationEnabled,
         isMacroTrendCheckEnabled,
+        highFrequencyThreshold,
     );
     
     setMasterState({
@@ -336,7 +336,7 @@ export function useMasterAutopilot() {
 
   }, [
     priceTicks, masterState.isReady, botCandleData, evaluateManualTrigger, 
-    horizons, riskManager.thresholds, contractType, isNeighborConfirmationEnabled, isMacroTrendCheckEnabled
+    horizons, riskManager.thresholds, contractType, isNeighborConfirmationEnabled, isMacroTrendCheckEnabled, highFrequencyThreshold
   ]);
 
   useEffect(() => {
@@ -405,5 +405,7 @@ export function useMasterAutopilot() {
     setIsNeighborConfirmationEnabled,
     isMacroTrendCheckEnabled,
     setIsMacroTrendCheckEnabled,
+    highFrequencyThreshold,
+    setHighFrequencyThreshold
   };
 }

@@ -43,6 +43,7 @@ export function evaluateTriggerConditions(
   macroTrend: 'UP' | 'DOWN' | 'NONE',
   isNeighborConfirmationEnabled: boolean,
   isMacroTrendCheckEnabled: boolean,
+  highFrequencyThresholdSeconds: number, // NOVO
 ) {
   let newTriggerSignal: 'RISE' | 'FALL' | 'HOLD' = 'HOLD';
   let newTriggerReason = 'Nenhuma condição de gatilho atendida.';
@@ -73,8 +74,16 @@ export function evaluateTriggerConditions(
 
         if (currentEffectiveAccuracy >= currentThreshold && prevEffectiveAccuracy >= prevThreshold) {
             if (currentVote === prevVote && currentVote !== 'HOLD') {
-                const highFrequencyHorizons = ['3t', '6t', '10s'];
-                const isHighFrequencySignal = highFrequencyHorizons.includes(currentHorizonName);
+                
+                // --- LÓGICA DE ALTA FREQUÊNCIA ---
+                const horizonDurationMatch = currentHorizonName.match(/(\d+)([st])/);
+                let horizonSeconds = Infinity;
+                if (horizonDurationMatch) {
+                    const value = parseInt(horizonDurationMatch[1], 10);
+                    const unit = horizonDurationMatch[2];
+                    horizonSeconds = unit === 't' ? value * 2 : value; 
+                }
+                const isHighFrequencySignal = horizonSeconds <= highFrequencyThresholdSeconds;
                 
                 if (isMacroTrendCheckEnabled && !isHighFrequencySignal) {
                     if ((currentVote === 'RISE' && macroTrend !== 'UP') || (currentVote === 'FALL' && macroTrend !== 'DOWN')) {
@@ -97,7 +106,6 @@ export function evaluateTriggerConditions(
   } else {
     // LÓGICA DE ESPECIALISTA ÚNICO MAIS FORTE
     newTriggerReason = 'Nenhum especialista único atingiu o limiar de assertividade.';
-    let bestSignal: 'RISE' | 'FALL' | 'HOLD' = 'HOLD';
     let bestAccuracy = 0;
     let bestHorizon: string | null = null;
     let strongestVote: 'RISE' | 'FALL' | 'HOLD' = 'HOLD';
@@ -117,8 +125,14 @@ export function evaluateTriggerConditions(
     }
 
     if (strongestVote !== 'HOLD' && bestHorizon) {
-        const highFrequencyHorizons = ['3t', '6t', '10s'];
-        const isHighFrequencySignal = highFrequencyHorizons.includes(bestHorizon);
+        const horizonDurationMatch = bestHorizon.match(/(\d+)([st])/);
+        let horizonSeconds = Infinity;
+        if(horizonDurationMatch) {
+            const value = parseInt(horizonDurationMatch[1], 10);
+            const unit = horizonDurationMatch[2];
+            horizonSeconds = unit === 't' ? value * 2 : value;
+        }
+        const isHighFrequencySignal = horizonSeconds <= highFrequencyThresholdSeconds;
 
         if (isMacroTrendCheckEnabled && !isHighFrequencySignal) {
             if ((strongestVote === 'RISE' && macroTrend !== 'UP') || (strongestVote === 'FALL' && macroTrend !== 'DOWN')) {

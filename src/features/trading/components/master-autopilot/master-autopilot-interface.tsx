@@ -250,18 +250,35 @@ export function MasterAutopilotInterface() {
               <CardContent className="space-y-6">
 
                 <div className="flex items-center justify-between rounded-lg border p-3 shadow-sm">
-                    <Label htmlFor="neighbor-confirmation-switch" className="flex flex-col space-y-1">
+                    <Label htmlFor="neighbor-confirmation-switch" className="flex flex-col space-y-1 flex-1 pr-4">
                         <span>Confirmação de Vizinhos</span>
                         <span className="font-normal text-xs text-muted-foreground">Exigir que dois especialistas vizinhos concordem.</span>
                     </Label>
                     <Switch id="neighbor-confirmation-switch" checked={autopilot.isNeighborConfirmationEnabled} onCheckedChange={autopilot.setIsNeighborConfirmationEnabled} disabled={autopilot.isAutopilotOn}/>
                 </div>
                  <div className="flex items-center justify-between rounded-lg border p-3 shadow-sm">
-                    <Label htmlFor="macro-trend-switch" className="flex flex-col space-y-1">
+                    <Label htmlFor="macro-trend-switch" className="flex flex-col space-y-1 flex-1 pr-4">
                         <span>Verificação de Tendência Macro</span>
-                         <span className="font-normal text-xs text-muted-foreground">Alinhar trades direcionais com a EMA de 100 períodos.</span>
+                         <span className="font-normal text-xs text-muted-foreground">Alinhar trades com a EMA 100. (Ignorado para sinais HF)</span>
                     </Label>
                     <Switch id="macro-trend-switch" checked={autopilot.isMacroTrendCheckEnabled} onCheckedChange={autopilot.setIsMacroTrendCheckEnabled} disabled={autopilot.isAutopilotOn}/>
+                </div>
+                
+                 <Separator/>
+
+                 <div className="space-y-2">
+                    <Label htmlFor="hf-threshold-slider">Limiar de Alta Frequência (HF)</Label>
+                    <div className="flex items-center gap-4">
+                        <Slider
+                            id="hf-threshold-slider"
+                            min={5} max={60} step={5}
+                            value={[autopilot.highFrequencyThreshold]}
+                            onValueChange={(value) => autopilot.setHighFrequencyThreshold(value[0])}
+                            disabled={autopilot.isAutopilotOn}
+                        />
+                        <span className="font-mono text-primary font-bold">{autopilot.highFrequencyThreshold}s</span>
+                    </div>
+                    <p className="text-xs text-muted-foreground pt-1">Sinais com duração igual ou inferior a este valor ignorarão o filtro de tendência macro.</p>
                 </div>
 
                 <Separator/>

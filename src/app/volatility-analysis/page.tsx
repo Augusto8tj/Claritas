@@ -85,6 +85,7 @@ interface StochasticLabProps {
   thresholds: Record<string, number>;
   isNeighborConfirmationEnabled: boolean;
   isMacroTrendCheckEnabled: boolean;
+  highFrequencyThreshold: number; // NOVO
 }
 
 const calculateRollingAccuracy = (history: boolean[]) => {
@@ -181,10 +182,11 @@ function StochasticLab({
     thresholds,
     isNeighborConfirmationEnabled,
     isMacroTrendCheckEnabled,
+    highFrequencyThreshold, // NOVO
 }: StochasticLabProps) {
   const { toast } = useToast();
   const { user, loading: isAuthLoading } = useAuth();
-  const { durationLimits } = useDerivApiV2();
+  const { durationLimits, botCandleData } = useDerivApiV2();
   const [activeTab, setActiveTab] = useState('prediction');
   
   const cooldownRef = useRef(false);
@@ -422,18 +424,16 @@ function StochasticLab({
   const processedLogsRef = useRef(new Set<number>());
 
   useEffect(() => {
-    if (!user || operationsLog.length === 0 || predictiveLogs.length === 0 || isAuthLoading) {
+    if (!user || operationsLog.length === 0 || isAuthLoading) {
       return;
     }
-
+    
     const logsToUpdate: PredictiveTradeLog[] = [];
+    const openPilotTrades = operationsLog.filter(op => op.initiator === 'Piloto' && op.status === 'pending');
+    const closedPilotTrades = operationsLog.filter(op => op.initiator === 'Piloto' && op.status !== 'pending');
 
-    for (const op of operationsLog) {
-      if (
-        op.initiator === 'Piloto' &&
-        op.status !== 'pending' &&
-        !processedLogsRef.current.has(op.id)
-      ) {
+    for (const op of closedPilotTrades) {
+      if (!processedLogsRef.current.has(op.id)) {
         const predictiveLogToUpdate = predictiveLogs.find(
           (pLog) => pLog.contractId === op.id
         );
@@ -595,8 +595,6 @@ function StochasticLab({
       if (isAuthLoading) blockReasons.push('Autenticando');
       if (openMasterTrade) blockReasons.push(`Trade #${openMasterTrade.id} ativo`);
       
-      console.log('🔒 Piloto bloqueado:', blockReasons.join(' | '));
-      
       if (isAutopilotOn) {
         setAutopilotStatus(
           openMasterTrade 
@@ -611,74 +609,35 @@ function StochasticLab({
       projectionExperts.map(p => [p.name, { accuracy: p.accuracy, vote: p.vote }])
     );
     
-    console.log('📊 Assertividades:', 
-      Object.entries(assertiveness)
-        .map(([h, data]) => `${h}: ${data.accuracy.toFixed(1)}% (${data.vote})`)
-        .join(', ')
-    );
-    
-    console.log('🎯 Thresholds:', 
-      Object.entries(thresholds)
-        .map(([h, t]) => `${h}: ${t}%`)
-        .join(', ')
-    );
-    
-    const passing = Object.entries(assertiveness)
-      .filter(([h, data]) => Math.max(data.accuracy, 100-data.accuracy) >= thresholds[h])
-      .map(([h]) => h);
-    console.log('✅ Passam no threshold:', passing.length > 0 ? passing.join(', ') : 'NENHUM');
+    // Simulação do macro trend para a lógica de decisão
+    const macroTrend: 'UP' | 'DOWN' | 'NONE' = 'NONE'; // Deve ser substituído por uma lógica real
     
     const { newTriggerSignal, newTriggerReason, newTriggeredBy } = evaluateTriggerConditions(
         assertiveness,
         horizons,
         thresholds, 
         'Rise/Fall',
-        'ranging', 
-        'NONE',
+        'ranging', // Simulação do regime
+        macroTrend,
         isNeighborConfirmationEnabled,
         isMacroTrendCheckEnabled,
+        highFrequencyThreshold
     );
-    
-    console.log('🚦 Resultado avaliação:', {
-      signal: newTriggerSignal,
-      triggeredBy: newTriggeredBy,
-      reason: newTriggerReason
-    });
     
     setAutopilotStatus(newTriggerReason);
     
     if (newTriggerSignal !== 'HOLD' && newTriggeredBy) {
-      console.log('✅ EXECUTANDO TRADE!', {
-        direction: newTriggerSignal,
-        experts: newTriggeredBy,
-        reason: newTriggerReason
-      });
       
       executeTradeAction('Piloto', newTriggerSignal, newTriggeredBy, newTriggerReason);
       cooldownRef.current = true;
       setTimeout(() => { 
         cooldownRef.current = false;
-        console.log('⏰ Cooldown finalizado - Pronto para novo trade');
       }, 20000); // 20 segundos
-    } else {
-      const reason = newTriggerSignal === 'HOLD' 
-        ? 'Sinal HOLD (sem confirmação dupla)' 
-        : 'Sem triggeredBy';
-      console.log('❌ Trade não executado:', reason);
     }
   }, [
-      isAutopilotOn, 
-      activeSymbol, 
-      executeTrade, 
-      operationsLog, 
-      isAuthLoading, 
-      setAutopilotStatus, 
-      executeTradeAction, 
-      projectionExperts, 
-      horizons,
-      thresholds,
-      isNeighborConfirmationEnabled,
-      isMacroTrendCheckEnabled,
+      isAutopilotOn, activeSymbol, executeTrade, operationsLog, isAuthLoading, 
+      setAutopilotStatus, executeTradeAction, projectionExperts, horizons, thresholds,
+      isNeighborConfirmationEnabled, isMacroTrendCheckEnabled, highFrequencyThreshold
   ]);
 
   useEffect(() => {
@@ -1002,15 +961,11 @@ const PageContent = () => {
 
     const [globalAssertivenessThreshold, setGlobalAssertivenessThreshold] = useState(62);
     const [individualThresholds, setIndividualThresholds] = useState<Record<string, number>>({
-        '3t': 65,
-        '6t': 65,
-        '10s': 60,
-        '20s': 62,
-        '30s': 58,
-        '40s': 60,
+        '3t': 65, '6t': 65, '10s': 60, '20s': 62, '30s': 58, '40s': 60,
     });
     const [isNeighborConfirmationEnabled, setIsNeighborConfirmationEnabled] = useState(true);
     const [isMacroTrendCheckEnabled, setIsMacroTrendCheckEnabled] = useState(true);
+    const [highFrequencyThreshold, setHighFrequencyThreshold] = useState(10); // NOVO
 
 
     const handleGlobalThresholdChange = (value: number) => {
@@ -1148,6 +1103,7 @@ const PageContent = () => {
                         thresholds={individualThresholds}
                         isNeighborConfirmationEnabled={isNeighborConfirmationEnabled}
                         isMacroTrendCheckEnabled={isMacroTrendCheckEnabled}
+                        highFrequencyThreshold={highFrequencyThreshold}
                     />
                     <div className="lg:col-span-2 space-y-6">
                         <VolatilityTraderInterface 
@@ -1189,8 +1145,26 @@ const PageContent = () => {
                                                 </Label>
                                                 <Switch id="macro-trend-switch" checked={isMacroTrendCheckEnabled} onCheckedChange={setIsMacroTrendCheckEnabled} disabled={isAutopilotOn}/>
                                             </div>
+                                            
+                                            <Separator/>
+
+                                            <div className="space-y-2">
+                                                <Label htmlFor="hf-threshold-slider">Limiar de Alta Frequência (HF)</Label>
+                                                <div className="flex items-center gap-4">
+                                                    <Slider
+                                                        id="hf-threshold-slider"
+                                                        min={5} max={60} step={5}
+                                                        value={[highFrequencyThreshold]}
+                                                        onValueChange={(value) => setHighFrequencyThreshold(value[0])}
+                                                        disabled={isAutopilotOn}
+                                                    />
+                                                    <span className="font-mono text-primary font-bold">{highFrequencyThreshold}s</span>
+                                                </div>
+                                                <p className="text-xs text-muted-foreground pt-1">Sinais com duração igual ou inferior a este valor ignorarão o filtro de tendência macro.</p>
+                                            </div>
 
                                             <Separator/>
+
                                             <div className="space-y-2">
                                                 <Label htmlFor="global-assertiveness-threshold">Limiar de Assertividade Global (%)</Label>
                                                 <div className="flex items-center gap-4">
