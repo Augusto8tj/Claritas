@@ -19,7 +19,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { volatilityTraderSchema, type VolatilityTraderFormValues } from "@/features/trading/components/deriv-trader/volatility-trader-interface.types";
 import VolatilityTraderInterface from "@/features/trading/components/deriv-trader/volatility-trader-interface";
 import { OperationsLogV2 } from "@/features/trading/components/deriv-trader/operations-log-v2";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert';
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { useToast } from '@/hooks/use-toast';
@@ -184,7 +184,6 @@ function StochasticLab({
   const [activeTab, setActiveTab] = useState('prediction');
   
   const cooldownRef = useRef(false);
-  const pendingSignalRef = useRef<{ signal: 'RISE' | 'FALL'; triggeredBy: [string, string]; timestamp: number } | null>(null);
   
   const [priceData, setPriceData] = useState<any[]>([]);
   const [lastPrice, setLastPrice] = useState<number | null>(null);
@@ -533,67 +532,52 @@ function StochasticLab({
     }
   }, [activeSymbol, executeTrade, toast, user, durationLimits, projectionExperts]);
 
-    const runAutopilotCycle = useCallback(() => {
-        const openMasterTrade = operationsLog.find(op => op.initiator === 'Piloto' && op.status === 'pending');
-
-        if (!isAutopilotOn || cooldownRef.current || !activeSymbol || !executeTrade || isAuthLoading || openMasterTrade) {
-            if (isAutopilotOn) {
-                setAutopilotStatus(openMasterTrade ? `Gerindo #${openMasterTrade.id}` : 'Aguardando...');
-            }
-            return;
-        }
-
-        const assertiveness = Object.fromEntries(projectionExperts.map(p => [p.name, { accuracy: p.accuracy, vote: p.vote }]));
-        
-        // CORREÇÃO: Passar o estado correto para a função
-        const { newTriggerSignal, newTriggerReason, newTriggeredBy } = evaluateTriggerConditions(
-            assertiveness,
-            horizons,
-            thresholds, // <- PASSANDO O NOVO ESTADO
-            'Rise/Fall',
-            'ranging', // Regime hardcoded para simplificar, pois não temos análise de regime aqui.
-            'NONE' // Tendência macro hardcoded para simplificar.
-        );
-        
-        if (pendingSignalRef.current) {
-            const timeSinceSignal = Date.now() - pendingSignalRef.current.timestamp;
-            if (timeSinceSignal > 2000) {
-                if (newTriggerSignal === pendingSignalRef.current.signal) {
-                    setAutopilotStatus(`Sinal ${newTriggerSignal} confirmado. Executando...`);
-                    executeTradeAction('Piloto', newTriggerSignal, newTriggeredBy || pendingSignalRef.current.triggeredBy);
-                    cooldownRef.current = true;
-                    setTimeout(() => { cooldownRef.current = false; }, 60000);
-                } else {
-                    setAutopilotStatus(`Sinal ${pendingSignalRef.current.signal} não confirmado. A monitorizar...`);
-                }
-                pendingSignalRef.current = null;
-            } else {
-                setAutopilotStatus(`Sinal ${pendingSignalRef.current.signal} detectado. A confirmar em ${((2000 - timeSinceSignal) / 1000).toFixed(1)}s...`);
-            }
-        } else if (newTriggerSignal !== 'HOLD' && newTriggeredBy) {
-            setAutopilotStatus(`Sinal ${newTriggerSignal} detectado. A confirmar...`);
-            pendingSignalRef.current = { signal: newTriggerSignal, triggeredBy: newTriggeredBy, timestamp: Date.now() };
-        } else {
-            setAutopilotStatus('A monitorizar...');
-        }
-    }, [
-        isAutopilotOn, 
-        activeSymbol, 
-        executeTrade, 
-        operationsLog, 
-        isAuthLoading, 
-        setAutopilotStatus, 
-        executeTradeAction, 
-        projectionExperts, 
+  const runAutopilotCycle = useCallback(() => {
+    const openMasterTrade = operationsLog.find(op => op.initiator === 'Piloto' && op.status === 'pending');
+    
+    if (!isAutopilotOn || cooldownRef.current || !activeSymbol || !executeTrade || isAuthLoading || openMasterTrade) {
+      if (isAutopilotOn) {
+        setAutopilotStatus(openMasterTrade ? `Gerindo #${openMasterTrade.id}` : 'Aguardando...');
+      }
+      return;
+    }
+    
+    const assertiveness = Object.fromEntries(projectionExperts.map(p => [p.name, { accuracy: p.accuracy, vote: p.vote }]));
+    
+    const { newTriggerSignal, newTriggerReason, newTriggeredBy } = evaluateTriggerConditions(
+        assertiveness,
         horizons,
-        thresholds // Adicionando a nova dependência
-    ]);
+        thresholds, 
+        'Rise/Fall',
+        'ranging', 
+        'NONE' 
+    );
+    
+    setAutopilotStatus(newTriggerReason);
+    
+    if (newTriggerSignal !== 'HOLD' && newTriggeredBy) {
+      executeTradeAction('Piloto', newTriggerSignal, newTriggeredBy, newTriggerReason);
+      cooldownRef.current = true;
+      setTimeout(() => { cooldownRef.current = false; }, 60000); // Cooldown de 60 segundos
+    }
+  }, [
+      isAutopilotOn, 
+      activeSymbol, 
+      executeTrade, 
+      operationsLog, 
+      isAuthLoading, 
+      setAutopilotStatus, 
+      executeTradeAction, 
+      projectionExperts, 
+      horizons,
+      thresholds
+  ]);
 
-    useEffect(() => {
-        if (!isAutopilotOn) return;
-        const intervalId = setInterval(runAutopilotCycle, 1000); 
-        return () => clearInterval(intervalId);
-    }, [isAutopilotOn, runAutopilotCycle]);
+  useEffect(() => {
+    if (!isAutopilotOn) return;
+    const intervalId = setInterval(runAutopilotCycle, 2000); 
+    return () => clearInterval(intervalId);
+  }, [isAutopilotOn, runAutopilotCycle]);
   
   useEffect(() => {
     onConsensusUpdate(strongestSignal);
@@ -785,7 +769,7 @@ function StochasticLab({
         </CardContent>
     </Card>
   );
-};
+}
 
 const VolatilityAutopilotInterface = ({ 
     isAutopilotOn, 
