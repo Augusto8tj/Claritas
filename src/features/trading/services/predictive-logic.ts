@@ -43,7 +43,6 @@ export function evaluateTriggerConditions(
     return { newTriggerSignal, newTriggerReason, newTriggeredBy };
   }
 
-
   for (let i = 1; i < horizons.length; i++) {
     const currentHorizonName = horizons[i].name;
     const prevHorizonName = horizons[i-1].name;
@@ -52,6 +51,9 @@ export function evaluateTriggerConditions(
 
     const getEffectiveVote = (expert: AssertivenessData) => {
         if (!expert) return 'HOLD';
+        const effectiveAccuracy = Math.max(expert.accuracy, 100 - expert.accuracy);
+        if (effectiveAccuracy < 55) return 'HOLD';
+        
         return expert.accuracy > 50 
             ? expert.vote 
             : (expert.vote === 'RISE' ? 'FALL' : (expert.vote === 'FALL' ? 'RISE' : 'HOLD'));
@@ -69,17 +71,28 @@ export function evaluateTriggerConditions(
     if (currentEffectiveAccuracy >= currentThreshold && prevEffectiveAccuracy >= prevThreshold) {
       if (currentVote === prevVote && currentVote !== 'HOLD') {
         
-        // Confirmação de Tendência Macro para contratos direcionais
-        if (contractType === 'Rise/Fall' || contractType === 'Multipliers') {
-            if ((currentVote === 'RISE' && macroTrend !== 'UP') || (currentVote === 'FALL' && macroTrend !== 'DOWN')) {
-                newTriggerReason = `Sinal ${currentVote} bloqueado. desalinhado com a tendência macro (${macroTrend}).`;
-                continue; // Pula para o próximo par de horizontes
+        // --- NOVA LÓGICA DE FILTRO PROPORCIONAL ---
+        const highFrequencyHorizons = ['3t', '6t', '10s'];
+        const isHighFrequencySignal = highFrequencyHorizons.includes(currentHorizonName);
+
+        // Apenas aplica o filtro de tendência macro para sinais que NÃO são de alta frequência.
+        if (!isHighFrequencySignal) {
+            if (contractType === 'Rise/Fall' || contractType === 'Multipliers') {
+                if ((currentVote === 'RISE' && macroTrend !== 'UP') || (currentVote === 'FALL' && macroTrend !== 'DOWN')) {
+                    newTriggerReason = `Sinal ${currentVote} bloqueado. Desalinhado com a tendência macro (${macroTrend}).`;
+                    continue; // Pula para o próximo par de horizontes
+                }
             }
         }
         
         newTriggerSignal = currentVote;
         newTriggeredBy = [prevHorizonName, currentHorizonName];
-        newTriggerReason = `Sinal ${currentVote} confirmado por ${prevHorizonName} (${prevEffectiveAccuracy.toFixed(0)}% >= ${prevThreshold}%) e ${currentHorizonName} (${currentEffectiveAccuracy.toFixed(0)}% >= ${currentThreshold}%). Executando...`;
+        newTriggerReason = `Sinal ${currentVote} (${isHighFrequencySignal ? 'HF' : 'Padrão'}) confirmado por ${prevHorizonName} e ${currentHorizonName}.`;
+        
+        if (isHighFrequencySignal) {
+            newTriggerReason += ' Filtro macro ignorado.';
+        }
+        
         break; 
       }
     }
