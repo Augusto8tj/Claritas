@@ -238,11 +238,27 @@ export function useMasterAutopilot() {
     const lastSigma = Math.sqrt(lastVariance);
     const calculatedIndicators = calculateAllIndicators(botCandleData, getCouncilStrategies(), '1m', {duration: 15, unit: 's'});
     const microFeatures = extractMicrostructureFeatures(priceTicks, botCandleData);
-    const detectedRegimeResult = detectMarketRegimeService(botCandleData, calculatedIndicators, macroTrend);
     
+    // CORREÇÃO: Usar a tendência macro atual para detectar o regime, para consistência.
+    const macroTrendForRegime = macroTrend; 
+    const detectedRegimeResult = detectMarketRegimeService(botCandleData, calculatedIndicators, macroTrendForRegime);
+    
+    // CORREÇÃO: Lógica de deteção de tendência com ZONA NEUTRA
     if (calculatedIndicators && calculatedIndicators.ma.long) {
-        const detectedTrend: TrendDirection = lastPrice > calculatedIndicators.ma.long ? 'UP' : 'DOWN';
-        if (macroTrend !== detectedTrend) setMacroTrend(detectedTrend);
+        const ema100 = calculatedIndicators.ma.long;
+        // Zona neutra de 0.05% em torno da EMA para evitar oscilações constantes
+        const deadZone = ema100 * 0.0005; 
+        
+        let detectedTrend: TrendDirection = 'NONE';
+        if (lastPrice > ema100 + deadZone) {
+            detectedTrend = 'UP';
+        } else if (lastPrice < ema100 - deadZone) {
+            detectedTrend = 'DOWN';
+        }
+
+        if (macroTrend !== detectedTrend) {
+            setMacroTrend(detectedTrend);
+        }
     }
     
     const projectPath = (steps: number) => {
