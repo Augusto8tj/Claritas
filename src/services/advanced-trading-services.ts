@@ -129,6 +129,10 @@ export const detectMarketRegime = (
   transitionMatrix?: number[][]
 ): RegimeDetectionResult => {
   
+  // FIX: Sanitize the incoming prevRegime to prevent invalid keys.
+  const validRegimes: MarketRegime[] = ['trending_bull', 'trending_bear', 'ranging', 'high_volatility', 'breakout'];
+  const safePrevRegime = validRegimes.includes(prevRegime) ? prevRegime : 'ranging';
+
   const REGIME_LOOKBACK = 50;
   const ADX_TREND_THRESHOLD = 25;
   const ADX_WEAK_THRESHOLD = 20;
@@ -249,7 +253,7 @@ export const detectMarketRegime = (
   // ────────────────────────────────────────────────────────────────
   // 5. INÉRCIA DE REGIME (Regimes tendem a persistir)
   // ────────────────────────────────────────────────────────────────
-  scores[prevRegime] += 0.25;
+  scores[safePrevRegime] += 0.25;
 
   // ────────────────────────────────────────────────────────────────
   // 6. NORMALIZAÇÃO E SELEÇÃO
@@ -272,7 +276,7 @@ export const detectMarketRegime = (
   // Atualiza matriz de transição
   const updatedTransitionMatrix = updateTransitionMatrix(
     transitionMatrix || initializeTransitionMatrix(),
-    prevRegime,
+    safePrevRegime,
     detectedRegime
   );
 
@@ -312,6 +316,12 @@ const updateTransitionMatrix = (
 
   const from = regimeIndex[fromRegime];
   const to = regimeIndex[toRegime];
+
+  // Safeguard against undefined indices
+  if (from === undefined || to === undefined) {
+    console.error(`[Matrix Update] Invalid regime transition from '${fromRegime}' to '${toRegime}'. Skipping matrix update.`);
+    return matrix; // Return original matrix without changes
+  }
 
   // Copia matriz
   const newMatrix = matrix.map(row => [...row]);
