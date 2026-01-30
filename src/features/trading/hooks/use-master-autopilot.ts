@@ -11,6 +11,7 @@ import { extractMicrostructureFeatures, type MicrostructureFeatures, detectMarke
 import { evaluateTriggerConditions } from '../services/predictive-logic';
 import { useAuth } from '@/features/auth/hooks/use-auth';
 import { savePredictiveTradeLog } from '@/services/financial-data-service';
+import type { User } from 'firebase/auth';
 
 
 type ContractType = 'Accumulators' | 'Rise/Fall' | 'Multipliers';
@@ -155,7 +156,6 @@ export function useMasterAutopilot() {
     riskManager,
     horizons,
     masterState,
-    user,
     activeSymbol,
   });
 
@@ -172,13 +172,12 @@ export function useMasterAutopilot() {
       riskManager,
       horizons,
       masterState,
-      user,
       activeSymbol,
     };
   });
   
-  const executeTradeAction = useCallback(async (initiator: OperationInitiator, signalOverride: Signal, triggeredBy: [string, string] | null) => {
-      const { contractType, activeSymbol, masterState, user } = dependenciesRef.current;
+  const executeTradeAction = useCallback(async (initiator: OperationInitiator, signalOverride: Signal, triggeredBy: [string, string] | null, userForLog: User | null) => {
+      const { contractType, activeSymbol, masterState } = dependenciesRef.current;
       const signalToUse = signalOverride;
       
       if (signalToUse === 'HOLD' || !activeSymbol || !triggeredBy) {
@@ -214,7 +213,7 @@ export function useMasterAutopilot() {
                   initiator
               );
 
-              if (tradeResult.success && tradeResult.contractId && user) {
+              if (tradeResult.success && tradeResult.contractId && userForLog) {
                   const logId = `pred_log_${tradeResult.contractId}`;
                   const logContext = {
                       triggerReason: masterState.trigger.reason,
@@ -241,7 +240,7 @@ export function useMasterAutopilot() {
                       pnl: 0,
                   };
                   
-                  savePredictiveTradeLog(user.uid, tradeLog);
+                  savePredictiveTradeLog(userForLog.uid, tradeLog);
               }
 
           } else {
@@ -335,8 +334,8 @@ export function useMasterAutopilot() {
         const accB = Math.max(b[1].accuracy, 100 - b[1].accuracy);
         return accA > accB ? a : b;
     })[0] : 'manual';
-    await executeTradeAction('Manual', signal, [strongest, strongest]);
-  }, [executeTradeAction, masterState.manualTrigger, masterState.assertiveness]);
+    await executeTradeAction('Manual', signal, [strongest, strongest], user);
+  }, [executeTradeAction, masterState.manualTrigger, masterState.assertiveness, user]);
   
   const setGlobalAssertivenessThreshold = useCallback((value: number) => {
       setRiskManager(prev => {
@@ -363,10 +362,10 @@ export function useMasterAutopilot() {
     
     if (isAutopilotOn && masterState.trigger.signal !== 'HOLD' && !cooldownRef.current && !openMasterTrade) {
       cooldownRef.current = true;
-      executeTradeAction('Piloto', masterState.trigger.signal, masterState.trigger.triggeredBy);
+      executeTradeAction('Piloto', masterState.trigger.signal, masterState.trigger.triggeredBy, user);
       setTimeout(() => { cooldownRef.current = false; }, 20000);
     }
-  }, [isAutopilotOn, masterState.trigger, operationsLog, executeTradeAction]);
+  }, [isAutopilotOn, masterState.trigger, operationsLog, executeTradeAction, user]);
 
   useEffect(() => {
     const lastFinishedTrade = operationsLog.find(op => op.status !== 'pending' && op.initiator === 'Piloto' && !processedTradesRef.current.has(op.id));
