@@ -1,3 +1,4 @@
+
 // src/features/trading/hooks/use-master-autopilot.ts
 'use client';
 
@@ -8,6 +9,7 @@ import { calculateAllIndicators, type Indicators } from '@/services/indicator-se
 import { getCouncilStrategies } from '@/services/council-strategies';
 import type { DurationUnit, Operation, OperationInitiator, MarketRegime } from '@/lib/types';
 import { extractMicrostructureFeatures, type MicrostructureFeatures, detectMarketRegime as detectMarketRegimeService } from '@/services/advanced-trading-services';
+import { evaluateTriggerConditions } from '../services/predictive-logic';
 
 
 // --- LÓGICA COPIADA DO StochasticLab ---
@@ -22,7 +24,7 @@ type ContractType = 'Accumulators' | 'Rise/Fall' | 'Multipliers';
 type Signal = 'RISE' | 'FALL' | 'HOLD';
 type TrendDirection = 'UP' | 'DOWN' | 'NONE';
 
-interface AssertivenessData {
+export interface AssertivenessData {
     accuracy: number;
     vote: Signal;
 }
@@ -84,7 +86,7 @@ export function useMasterAutopilot() {
   });
   const processedTradesRef = useRef<Set<number>>(new Set());
   
-  const masterStateRef = useRef<MasterAutopilotState>({
+  const [masterState, setMasterState] = useState<MasterAutopilotState>({
     isReady: false,
     assertiveness: {},
     trigger: { signal: 'HOLD', reason: 'Piloto desativado ou dados insuficientes.', triggeredBy: null },
@@ -93,8 +95,6 @@ export function useMasterAutopilot() {
     microstructure: null,
     currentRegime: { regime: 'ranging', confidence: 0 },
   });
-
-  const [masterState, setMasterState] = useState<MasterAutopilotState>(masterStateRef.current);
   
   const [macroTrend, setMacroTrend] = useState<TrendDirection>('NONE');
   
@@ -112,19 +112,6 @@ export function useMasterAutopilot() {
   } = activeApi;
 
   const { executeTrade: executeRiseFallTrade } = v2Api;
-
-  const priceTicksRef = useRef(priceTicks);
-  priceTicksRef.current = priceTicks;
-  const botCandleDataRef = useRef(botCandleData);
-  botCandleDataRef.current = botCandleData;
-  const operationsLogRef = useRef(operationsLog);
-  operationsLogRef.current = operationsLog;
-  const riskManagerRef = useRef(riskManager);
-  riskManagerRef.current = riskManager;
-  const macroTrendRef = useRef(macroTrend);
-  macroTrendRef.current = macroTrend;
-  const contractTypeRef = useRef(contractType);
-  contractTypeRef.current = contractType;
 
   const accuracyHistoryRefs = {
     '3t': useRef<boolean[]>([]), '6t': useRef<boolean[]>([]), '10s': useRef<boolean[]>([]),
@@ -144,14 +131,12 @@ export function useMasterAutopilot() {
     toast({ title: `Master Autopilot ${checked ? 'Ativado' : 'Desativado'}` });
     if (!checked) {
         pendingSignalRef.current = null;
-        masterStateRef.current = {...masterStateRef.current, trigger: { signal: 'HOLD', reason: 'Piloto desativado.', triggeredBy: null }};
-        setMasterState(masterStateRef.current);
+        setMasterState(prev => ({...prev, trigger: { signal: 'HOLD', reason: 'Piloto desativado.', triggeredBy: null }}));
     }
   }, [toast]);
   
   const executeTradeAction = useCallback(async (initiator: OperationInitiator, signalOverride: Signal, triggeredBy: [string, string] | null) => {
-      const state = masterStateRef.current;
-      const currentContractType = contractTypeRef.current;
+      const currentContractType = contractType;
       
       const signalToUse = signalOverride;
       
@@ -186,210 +171,157 @@ export function useMasterAutopilot() {
           console.error("Master Autopilot Execution Error:", error);
           toast({ title: `❌ Erro na Execução ${initiator}`, description: error instanceof Error ? error.message : String(error), variant: "destructive" });
       }
-  }, [activeSymbol, executeRiseFallTrade, toast]);
+  }, [activeSymbol, executeRiseFallTrade, toast, contractType]);
   
   const executeManualTrigger = useCallback(async () => {
-    const { signal } = masterStateRef.current.manualTrigger;
+    const { signal } = masterState.manualTrigger;
     await executeTradeAction('Manual', signal, ['manual', 'manual']);
-  }, [executeTradeAction]);
+  }, [executeTradeAction, masterState.manualTrigger]);
   
   const setAssertivenessThreshold = useCallback((value: number) => {
       setRiskManager(prev => ({...prev, assertivenessThreshold: value}));
   }, []);
-
-  const evaluateTriggerConditions = useCallback((
-      newAssertiveness: Record<string, AssertivenessData>,
-      currentRiskManager: RiskManagerStatus,
-      currentContractType: ContractType,
-      detectedRegime: MarketRegime,
-      currentMacroTrend: TrendDirection,
-      horizons: { name: string; ticks: number; window: number }[]
-  ): { newTriggerSignal: Signal, newTriggerReason: string, newTriggeredBy: [string, string] | null } => {
-        let newTriggerSignal: Signal = 'HOLD';
-        let newTriggerReason = `Nenhuma confirmação dupla de assertividade (> ${currentRiskManager.assertivenessThreshold}%).`;
-        let newTriggeredBy: [string, string] | null = null;
-        
-        for (let i = 1; i < horizons.length; i++) {
-            const currentHorizon = horizons[i].name;
-            const prevHorizon = horizons[i-1].name;
-            if (newAssertiveness[currentHorizon].accuracy > currentRiskManager.assertivenessThreshold && newAssertiveness[prevHorizon].accuracy > currentRiskManager.assertivenessThreshold) {
-                if (newAssertiveness[currentHorizon].vote === newAssertiveness[prevHorizon].vote && newAssertiveness[currentHorizon].vote !== 'HOLD') {
-                    const signalCandidate = newAssertiveness[currentHorizon].vote;
-                    const regimeIsCompatible = isRegimeCompatible(currentContractType, detectedRegime);
-
-                    if (!regimeIsCompatible) {
-                        newTriggerReason = `Sinal ${signalCandidate} ignorado. Contrato ${currentContractType} incompatível com o regime ${detectedRegime}.`;
-                        continue;
-                    }
-                    
-                    if (currentContractType === 'Rise/Fall') {
-                        if ((signalCandidate === 'RISE' && currentMacroTrend === 'UP') || (signalCandidate === 'FALL' && currentMacroTrend === 'DOWN')) {
-                           newTriggerSignal = signalCandidate;
-                           newTriggeredBy = [prevHorizon, currentHorizon];
-                           newTriggerReason = `Gatilho ${newTriggerSignal} confirmado por assertividade e alinhamento com a tendência macro.`;
-                           break;
-                        } else {
-                           newTriggerReason = `Sinal ${signalCandidate} ignorado. Contra a tendência macro (${currentMacroTrend}).`;
-                        }
-                    } else { // Accumulators
-                        newTriggerSignal = 'RISE'; // Placeholder para estabilidade
-                        newTriggeredBy = [prevHorizon, currentHorizon];
-                        newTriggerReason = `Gatilho de estabilidade detectado por assertividade em ${prevHorizon} e ${currentHorizon}.`;
-                        break;
-                    }
-                }
-            }
+  
+  const evaluateManualTrigger = useCallback((assertiveness: Record<string, AssertivenessData>): {signal: Signal, reason: string} => {
+    const votes = { RISE: 0, FALL: 0 };
+    Object.values(assertiveness).forEach(expert => {
+        const effectiveVote = expert.accuracy > 50 ? expert.vote : (expert.vote === 'RISE' ? 'FALL' : 'RISE');
+        if (effectiveVote !== 'HOLD') {
+            votes[effectiveVote]++;
         }
-        return { newTriggerSignal, newTriggerReason, newTriggeredBy };
+    });
+
+    if (votes.RISE >= 4) return { signal: 'RISE', reason: `${votes.RISE}/6 Modelos concordam com Alta.` };
+    if (votes.FALL >= 4) return { signal: 'FALL', reason: `${votes.FALL}/6 Modelos concordam com Baixa.` };
+    return { signal: 'HOLD', reason: 'Aguardando consenso dos modelos.' };
   }, []);
 
-  useEffect(() => {
-    const executeLogic = () => {
-        if (priceTicksRef.current.length < 50 || !isAutopilotOn) {
-          if(!masterStateRef.current.isReady || masterStateRef.current.trigger.signal !== 'HOLD') {
-            masterStateRef.current = ({
-              ...masterStateRef.current,
-              isReady: false,
-              trigger: { signal: 'HOLD', reason: isAutopilotOn ? 'Aguardando dados suficientes...' : 'Piloto desativado.', triggeredBy: null }
-            });
-            setMasterState(masterStateRef.current);
-          }
-          return;
+  const runAutopilotCycle = useCallback(() => {
+    if (priceTicks.length < 50 || !isAutopilotOn) {
+      if (masterState.isReady) {
+        setMasterState(prev => ({...prev, isReady: false, trigger: { signal: 'HOLD', reason: 'Aguardando dados...', triggeredBy: null }}));
+      }
+      return;
+    }
+
+    const currentTick = priceTicks[priceTicks.length - 1];
+    if(!currentTick) return;
+
+    const prices = priceTicks.map(d => d.price);
+    const VOL_WINDOW = 50;
+    const lastPrice = prices[prices.length - 1];
+    const logReturns: number[] = [];
+    for (let i = Math.max(1, prices.length - VOL_WINDOW); i < prices.length; i++) {
+        if(prices[i-1] > 0) logReturns.push(Math.log(prices[i] / prices[i - 1]));
+    }
+    if(logReturns.length === 0) return;
+    const meanLastReturn = logReturns.reduce((a, b) => a + b, 0) / logReturns.length;
+    const lastVariance = logReturns.reduce((s, r) => s + Math.pow(r - meanLastReturn, 2), 0) / (logReturns.length - 1);
+    const lastSigma = Math.sqrt(lastVariance);
+    const calculatedIndicators = calculateAllIndicators(botCandleData, getCouncilStrategies(), '1m', {duration: 15, unit: 's'});
+    const microFeatures = extractMicrostructureFeatures(priceTicks, botCandleData);
+    const detectedRegimeResult = detectMarketRegimeService(botCandleData, calculatedIndicators, macroTrend);
+    
+    if (calculatedIndicators && calculatedIndicators.ma.long) {
+        const detectedTrend: TrendDirection = lastPrice > calculatedIndicators.ma.long ? 'UP' : 'DOWN';
+        if (macroTrend !== detectedTrend) setMacroTrend(detectedTrend);
+    }
+    
+    const projectPath = (steps: number) => {
+        let currentSimPrice = lastPrice; const path = [];
+        for (let i = 1; i <= steps; i++) {
+            currentSimPrice *= Math.exp(meanLastReturn + lastSigma * normalRandom());
+            path.push({ time: prices.length - 1 + i, price: currentSimPrice });
         }
-
-        const currentTick = priceTicksRef.current[priceTicksRef.current.length-1];
-        if(!currentTick) return;
-
-        if (executionRef.current.isExecuting) return;
-        executionRef.current.isExecuting = true;
-
-        // ... (cálculos de log-returns e indicadores) ...
-        const prices = priceTicksRef.current.map(d => d.price);
-        const VOL_WINDOW = 50;
-        const lastPrice = prices[prices.length - 1];
-        const logReturns: number[] = [];
-        for (let i = Math.max(1, prices.length - VOL_WINDOW); i < prices.length; i++) {
-            if(prices[i-1] > 0) logReturns.push(Math.log(prices[i] / prices[i - 1]));
-        }
-        if(logReturns.length === 0) {
-            executionRef.current.isExecuting = false;
-            return;
-        }
-        const meanLastReturn = logReturns.reduce((a, b) => a + b, 0) / logReturns.length;
-        const lastVariance = logReturns.reduce((s, r) => s + Math.pow(r - meanLastReturn, 2), 0) / (logReturns.length - 1);
-        const lastSigma = Math.sqrt(lastVariance);
-        const calculatedIndicators = calculateAllIndicators(botCandleDataRef.current, getCouncilStrategies(), '1m', {duration: 15, unit: 's'});
-        const microFeatures = extractMicrostructureFeatures(priceTicksRef.current, botCandleDataRef.current);
-        const detectedRegimeResult = detectMarketRegimeService(botCandleDataRef.current, calculatedIndicators, macroTrendRef.current);
-        
-        if (calculatedIndicators && calculatedIndicators.ma.long) {
-            const detectedTrend: TrendDirection = lastPrice > calculatedIndicators.ma.long ? 'UP' : 'DOWN';
-            if (macroTrendRef.current !== detectedTrend) setMacroTrend(detectedTrend);
-        }
-        
-        const projectPath = (steps: number) => {
-            let currentSimPrice = lastPrice; const path = [];
-            for (let i = 1; i <= steps; i++) {
-                currentSimPrice *= Math.exp(meanLastReturn + lastSigma * normalRandom());
-                path.push({ time: prices.length - 1 + i, price: currentSimPrice });
-            }
-            return path;
-        };
-
-        const horizons = [
-            { name: '3t', ticks: 3, window: 6 }, { name: '6t', ticks: 6, window: 6 },
-            { name: '10s', ticks: 10, window: 10 }, { name: '20s', ticks: 20, window: 10 },
-            { name: '30s', ticks: 30, window: 10 }, { name: '40s', ticks: 40, window: 10 },
-        ];
-        
-        const newAssertiveness: Record<string, AssertivenessData> = {};
-        horizons.forEach(h => {
-            const { name, ticks, window } = h;
-            const pendingRef = pendingPredictionsRefs[name as keyof typeof pendingPredictionsRefs];
-            const historyRef = accuracyHistoryRefs[name as keyof typeof accuracyHistoryRefs];
-            const newFuturePath = projectPath(ticks);
-            const currentTimeIndex = prices.length - 1; let newHistory: boolean[] = [];
-            pendingRef.current = pendingRef.current.filter(pred => {
-                if (currentTimeIndex >= pred.startTimeIndex + ticks) {
-                    const actualEndPrice = prices[pred.startTimeIndex + ticks];
-                    if(actualEndPrice !== undefined) newHistory.push((pred.predictedEndPrice > pred.startPrice) === (actualEndPrice > pred.startPrice));
-                    return false;
-                }
-                return true;
-            });
-            if (newHistory.length > 0) historyRef.current = [...historyRef.current.slice(-window + newHistory.length), ...newHistory];
-            if (newFuturePath.length === ticks) pendingRef.current.push({startTimeIndex: prices.length - 1, startPrice: lastPrice, predictedEndPrice: newFuturePath[ticks - 1].price});
-            const { length: total } = historyRef.current;
-            const hits = historyRef.current.filter(h => h).length;
-            newAssertiveness[name] = { accuracy: total > 0 ? (hits / total) * 100 : 0, vote: newFuturePath.length > 0 ? (newFuturePath[newFuturePath.length - 1].price > lastPrice ? 'RISE' : 'FALL') : 'HOLD' };
-        });
-
-        // 1. VERIFICAÇÃO DE SINAL PENDENTE (PASSO DE CONFIRMAÇÃO)
-        if (pendingSignalRef.current && pendingSignalRef.current.epoch < currentTick.epoch) {
-            const pending = pendingSignalRef.current;
-            pendingSignalRef.current = null; // Limpa imediatamente
-            
-            const { newTriggerSignal } = evaluateTriggerConditions(newAssertiveness, riskManagerRef.current, contractTypeRef.current, detectedRegimeResult.regime, macroTrendRef.current, horizons);
-
-            if (newTriggerSignal === pending.signal) {
-                toast({ title: `✅ Sinal ${pending.signal} Confirmado!`, description: `Executando ordem...`, variant: 'default' });
-                isCoolingDownRef.current = true;
-                executeTradeAction('Piloto', newTriggerSignal, pending.triggeredBy).finally(() => {
-                    setTimeout(() => { isCoolingDownRef.current = false; }, 60000);
-                });
-                masterStateRef.current = { ...masterStateRef.current, trigger: { signal: newTriggerSignal, reason: `Executando Ordem Confirmada (${pending.triggeredBy.join(' & ')})`, triggeredBy: pending.triggeredBy } };
-            } else {
-                toast({ title: `❌ Sinal ${pending.signal} Abortado`, description: `A condição não se manteve no tick seguinte.`, variant: "destructive" });
-                masterStateRef.current = { ...masterStateRef.current, trigger: { signal: 'HOLD', reason: 'Monitorando...', triggeredBy: null }};
-            }
-
-            setMasterState(masterStateRef.current);
-            executionRef.current.isExecuting = false;
-            return;
-        }
-        
-        const openMasterTrade = operationsLogRef.current.find(op => op.initiator === 'Piloto' && op.status === 'pending');
-        if (openMasterTrade || isCoolingDownRef.current || pendingSignalRef.current) {
-            let reason = 'Monitorando...';
-            if (openMasterTrade) reason = `Gerindo posição #${openMasterTrade.id}.`;
-            if (isCoolingDownRef.current) reason = 'Em cooldown pós-trade.';
-            if (pendingSignalRef.current) reason = `Aguardando confirmação para ${pendingSignalRef.current.signal}...`;
-            masterStateRef.current = {...masterStateRef.current, trigger: { ...masterStateRef.current.trigger, reason }};
-            setMasterState(masterStateRef.current);
-            executionRef.current.isExecuting = false;
-            return;
-        }
-
-        // 2. DETECÇÃO DE NOVO SINAL
-        const { newTriggerSignal, newTriggerReason, newTriggeredBy } = evaluateTriggerConditions(newAssertiveness, riskManagerRef.current, contractTypeRef.current, detectedRegimeResult.regime, macroTrendRef.current, horizons);
-
-        if (newTriggerSignal !== 'HOLD') {
-            pendingSignalRef.current = { signal: newTriggerSignal, triggeredBy: newTriggeredBy!, epoch: currentTick.epoch };
-            const reason = `Sinal ${newTriggerSignal} detectado (${newTriggeredBy?.join(' & ')}). Aguardando confirmação...`;
-            toast({ title: "⏳ Sinal Detectado!", description: reason });
-            masterStateRef.current = { ...masterStateRef.current, trigger: { signal: 'HOLD', reason: reason, triggeredBy: newTriggeredBy }};
-        } else {
-            masterStateRef.current = { ...masterStateRef.current, trigger: { signal: 'HOLD', reason: newTriggerReason, triggeredBy: null }};
-        }
-
-        // 3. ATUALIZAÇÃO GERAL DO ESTADO
-        masterStateRef.current = {
-            ...masterStateRef.current,
-            isReady: true,
-            assertiveness: newAssertiveness,
-            indicators: calculatedIndicators,
-            microstructure: microFeatures,
-            currentRegime: { regime: detectedRegimeResult.regime, confidence: detectedRegimeResult.confidence }
-        };
-        setMasterState(masterStateRef.current);
-
-        executionRef.current.isExecuting = false;
+        return path;
     };
 
-    const intervalId = setInterval(executeLogic, 2000);
-    return () => clearInterval(intervalId);
+    const newAssertiveness: Record<string, AssertivenessData> = {};
+    const horizons = Object.keys(accuracyHistoryRefs);
 
-  }, [isAutopilotOn, isConnected, executeTradeAction, toast, dailyBalance, evaluateTriggerConditions]);
+    horizons.forEach(name => {
+      const hConfig = {
+          '3t': { ticks: 3, window: 6 }, '6t': { ticks: 6, window: 6 }, '10s': { ticks: 10, window: 10 },
+          '20s': { ticks: 20, window: 10 }, '30s': { ticks: 30, window: 10 }, '40s': { ticks: 40, window: 10 },
+      }[name]!;
+      
+      const pendingRef = pendingPredictionsRefs[name as keyof typeof pendingPredictionsRefs];
+      const historyRef = accuracyHistoryRefs[name as keyof typeof accuracyHistoryRefs];
+      
+      const newFuturePath = projectPath(hConfig.ticks);
+      const currentTimeIndex = prices.length - 1; 
+      let newHistory: boolean[] = [];
+      pendingRef.current = pendingRef.current.filter(pred => {
+          if (currentTimeIndex >= pred.startTimeIndex + hConfig.ticks) {
+              const actualEndPrice = prices[pred.startTimeIndex + hConfig.ticks];
+              if(actualEndPrice !== undefined) newHistory.push((pred.predictedEndPrice > pred.startPrice) === (actualEndPrice > pred.startPrice));
+              return false;
+          }
+          return true;
+      });
+      if (newHistory.length > 0) historyRef.current = [...historyRef.current.slice(-hConfig.window + newHistory.length), ...newHistory];
+      if (newFuturePath.length === hConfig.ticks) pendingRef.current.push({startTimeIndex: prices.length - 1, startPrice: lastPrice, predictedEndPrice: newFuturePath[hConfig.ticks - 1].price});
+      
+      const { length: total } = historyRef.current;
+      const hits = historyRef.current.filter(h => h).length;
+      newAssertiveness[name] = { 
+          accuracy: total > 0 ? (hits / total) * 100 : 0, 
+          vote: newFuturePath.length > 0 ? (newFuturePath[newFuturePath.length - 1].price > lastPrice ? 'RISE' : 'FALL') : 'HOLD' 
+      };
+    });
+
+    const manualSignal = evaluateManualTrigger(newAssertiveness);
+    const { newTriggerSignal, newTriggerReason, newTriggeredBy } = evaluateTriggerConditions(newAssertiveness, horizons.map(name => ({name, ticks: 0, window: 0})), riskManager, contractType, detectedRegimeResult.regime, macroTrend);
+    
+    setMasterState({
+        isReady: true,
+        assertiveness: newAssertiveness,
+        trigger: { signal: newTriggerSignal, reason: newTriggerReason, triggeredBy: newTriggeredBy },
+        manualTrigger: manualSignal,
+        indicators: calculatedIndicators,
+        microstructure: microFeatures,
+        currentRegime: detectedRegimeResult
+    });
+
+  }, [botCandleData, contractType, evaluateManualTrigger, isAutopilotOn, macroTrend, priceTicks, riskManager, setMasterState]);
+
+  useEffect(() => {
+    const intervalId = setInterval(runAutopilotCycle, 1000);
+    return () => clearInterval(intervalId);
+  }, [runAutopilotCycle]);
+
+   useEffect(() => {
+    const openMasterTrade = operationsLog.find(op => op.initiator === 'Piloto' && op.status === 'pending');
+    
+    if (isAutopilotOn && masterState.trigger.signal !== 'HOLD' && !isCoolingDownRef.current && !openMasterTrade) {
+      isCoolingDownRef.current = true;
+      executeTradeAction('Piloto', masterState.trigger.signal, masterState.trigger.triggeredBy);
+      setTimeout(() => { isCoolingDownRef.current = false; }, 30000);
+    }
+  }, [isAutopilotOn, masterState.trigger, operationsLog, executeTradeAction]);
+
+  useEffect(() => {
+    const lastFinishedTrade = operationsLog.find(op => op.status !== 'pending' && op.initiator === 'Piloto' && !processedTradesRef.current.has(op.id));
+    if (lastFinishedTrade) {
+        processedTradesRef.current.add(lastFinishedTrade.id);
+        const isWin = lastFinishedTrade.result !== undefined && lastFinishedTrade.result >= 0;
+        setRiskManager(prev => {
+            if (isWin) {
+                return { 
+                    mode: 'Normal', 
+                    assertivenessThreshold: Math.max(70, prev.assertivenessThreshold - 5),
+                    lastAdjustmentReason: 'Vitória: Aumentando confiança.'
+                };
+            } else {
+                return {
+                    mode: 'Cautious',
+                    assertivenessThreshold: Math.min(95, prev.assertivenessThreshold + 10),
+                    lastAdjustmentReason: 'Derrota: Aumentando cautela.'
+                };
+            }
+        });
+    }
+  }, [operationsLog]);
     
   return {
     isAutopilotOn,

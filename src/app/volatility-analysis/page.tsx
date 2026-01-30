@@ -14,7 +14,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { ScrollArea } from '@/components/ui/scroll-area';
 import type { ChartData, CandleData, Operation, PredictiveTradeLog, OperationInitiator } from '@/lib/types';
 import { Progress } from "@/components/ui/progress";
-import { TooltipProvider, Tooltip as ShadTooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { TooltipProvider, Tooltip as ShadTooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from '@/lib/utils';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { volatilityTraderSchema, type VolatilityTraderFormValues } from "@/features/trading/components/deriv-trader/volatility-trader-interface.types";
@@ -89,6 +89,11 @@ const calculateRollingAccuracy = (history: boolean[]) => {
     const percentage = total > 0 ? (hits / total) * 100 : 0;
     return { hits, total, percentage };
 };
+
+interface AssertivenessData {
+    accuracy: number;
+    vote: 'RISE' | 'FALL' | 'HOLD';
+}
 
 const StatItem = ({ label, value }: { label: string; value: string | number }) => (
     <div className="flex flex-col p-2 border-l-2 pl-3">
@@ -172,11 +177,11 @@ function StochasticLab({
 }: StochasticLabProps) {
   const { toast } = useToast();
   const { user, loading: isAuthLoading } = useAuth();
-  const cooldownRef = useRef(false);
-  const pendingSignalRef = useRef<{ signal: 'RISE' | 'FALL'; triggeredBy: [string, string]; epoch: number; } | null>(null);
   const { durationLimits } = useDerivApiV2();
   
-  const [activeTab, setActiveTab] = useState('prediction');
+  const cooldownRef = useRef(false);
+  const pendingSignalRef = useRef<{ signal: 'RISE' | 'FALL'; triggeredBy: [string, string]; epoch: number; } | null>(null);
+  
   const [priceData, setPriceData] = useState<any[]>([]);
   const [lastPrice, setLastPrice] = useState<number | null>(null);
   const [returns, setReturns] = useState<any[]>([]);
@@ -201,7 +206,6 @@ function StochasticLab({
   const [predictionAccuracyHistory30s, setPredictionAccuracyHistory30s] = useState<boolean[]>([]);
   const [predictionAccuracyHistory40s, setPredictionAccuracyHistory40s] = useState<boolean[]>([]);
 
-
   const predictionErrorsRef = useRef<number[]>([]);
   const pendingPredictions3tRef = useRef<{ startTimeIndex: number; startPrice: number; predictedEndPrice: number }[]>([]);
   const pendingPredictions6tRef = useRef<{ startTimeIndex: number; startPrice: number; predictedEndPrice: number }[]>([]);
@@ -210,13 +214,21 @@ function StochasticLab({
   const pendingPredictions30sRef = useRef<{ startTimeIndex: number; startPrice: number; predictedEndPrice: number }[]>([]);
   const pendingPredictions40sRef = useRef<{ startTimeIndex: number; startPrice: number; predictedEndPrice: number }[]>([]);
 
-
   const normalRandom = (): number => {
     let u1 = 0;
     while (u1 === 0) { u1 = Math.random(); }
     const u2 = Math.random();
     return Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
   };
+  
+  const horizons = useMemo(() => [
+      { name: '3t', ticks: 3, window: 6, ref: pendingPredictions3tRef },
+      { name: '6t', ticks: 6, window: 6, ref: pendingPredictions6tRef },
+      { name: '10s', ticks: 10, window: 10, ref: pendingPredictions10sRef },
+      { name: '20s', ticks: 20, window: 10, ref: pendingPredictions20sRef },
+      { name: '30s', ticks: 30, window: 10, ref: pendingPredictions30sRef },
+      { name: '40s', ticks: 40, window: 10, ref: pendingPredictions40sRef },
+  ], []);
 
   useEffect(() => {
     const VOL_WINDOW = 50;
@@ -335,15 +347,8 @@ function StochasticLab({
         return path;
       };
       
-      const horizons = [
-          { name: '3t', ticks: 3, window: 6, ref: pendingPredictions3tRef, setHistory: setPredictionAccuracyHistory3t },
-          { name: '6t', ticks: 6, window: 6, ref: pendingPredictions6tRef, setHistory: setPredictionAccuracyHistory6t },
-          { name: '10s', ticks: 10, window: 10, ref: pendingPredictions10sRef, setHistory: setPredictionAccuracyHistory10s },
-          { name: '20s', ticks: 20, window: 10, ref: pendingPredictions20sRef, setHistory: setPredictionAccuracyHistory20s },
-          { name: '30s', ticks: 30, window: 10, ref: pendingPredictions30sRef, setHistory: setPredictionAccuracyHistory30s },
-          { name: '40s', ticks: 40, window: 10, ref: pendingPredictions40sRef, setHistory: setPredictionAccuracyHistory40s },
-      ];
-      
+      const setHistoryFns = [setPredictionAccuracyHistory3t, setPredictionAccuracyHistory6t, setPredictionAccuracyHistory10s, setPredictionAccuracyHistory20s, setPredictionAccuracyHistory30s, setPredictionAccuracyHistory40s];
+
       const processPredictionHorizon = (
           horizonTicks: number,
           accuracyWindow: number,
@@ -373,8 +378,8 @@ function StochasticLab({
           }
       };
       
-      horizons.forEach(h => {
-          processPredictionHorizon(h.ticks, h.window, prices, h.ref, h.setHistory);
+      horizons.forEach((h, i) => {
+          processPredictionHorizon(h.ticks, h.window, prices, h.ref, setHistoryFns[i]);
       });
       
       const paths = horizons.map(h => projectPath(h.ticks));
@@ -404,7 +409,7 @@ function StochasticLab({
     
     setPredictionData(newPredictionData.slice(-200));
 
-  }, [realData]);
+  }, [realData, horizons]);
 
   const accuracy3t = useMemo(() => calculateRollingAccuracy(predictionAccuracyHistory3t), [predictionAccuracyHistory3t]);
   const accuracy6t = useMemo(() => calculateRollingAccuracy(predictionAccuracyHistory6t), [predictionAccuracyHistory6t]);
@@ -464,19 +469,18 @@ function StochasticLab({
             
             const limits = durationLimits[suggestedUnit];
             
-            if (limits && limits.min > 0) { // Se a unidade é suportada
+            if (limits && limits.min > 0) {
                 duration = Math.max(limits.min, Math.min(suggestedDuration, limits.max));
                 durationUnit = suggestedUnit;
-            } else if (suggestedUnit === 's' && durationLimits.t && durationLimits.t.min > 0) { // Fallback para ticks se segundos não for suportado
+            } else if (suggestedUnit === 's' && durationLimits.t && durationLimits.t.min > 0) {
                  duration = durationLimits.t.min;
                  durationUnit = 't';
-            } else { // Fallback para 15 segundos se nada for suportado
+            } else {
                 duration = 15;
                 durationUnit = 's';
             }
 
         } else {
-            // Fallback padrão se o formato do horizonte for inesperado
             duration = 15;
             durationUnit = 's';
         }
@@ -524,10 +528,9 @@ function StochasticLab({
     }
   }, [activeSymbol, executeTrade, toast, user, durationLimits, projectionExperts]);
 
-  // --- PILOTO AUTOMÁTICO REVISADO ---
     const runAutopilotCycle = useCallback(() => {
         if (!isAutopilotOn || cooldownRef.current || !activeSymbol || !executeTrade || isAuthLoading) {
-            if(isAutopilotOn) setAutopilotStatus('Aguardando Conexão...');
+            if (isAutopilotOn) setAutopilotStatus('Aguardando Conexão...');
             return;
         }
         
@@ -541,8 +544,7 @@ function StochasticLab({
         if (!currentTick) return;
 
         const assertiveness = Object.fromEntries(projectionExperts.map(p => [p.name, { accuracy: p.accuracy, vote: p.vote }]));
-        const horizons = projectionExperts.map(p => ({ name: p.name, ticks: 0, window: 0 }));
-
+        
         if (pendingSignalRef.current && pendingSignalRef.current.epoch < currentTick.epoch) {
             const pending = pendingSignalRef.current;
             pendingSignalRef.current = null;
@@ -573,7 +575,7 @@ function StochasticLab({
                 setAutopilotStatus('Monitorando...');
             }
         }
-    }, [isAutopilotOn, activeSymbol, executeTrade, operationsLog, realData, projectionExperts, toast, setAutopilotStatus, executeTradeAction, isAuthLoading]);
+    }, [isAutopilotOn, activeSymbol, executeTrade, operationsLog, realData, projectionExperts, toast, setAutopilotStatus, executeTradeAction, isAuthLoading, horizons]);
 
     useEffect(() => {
         if (!isAutopilotOn) {
@@ -831,7 +833,7 @@ function Header() {
 };
 
 function PageContent() {
-    const { chartData, activeSymbol, operationsLog, sellContract, priceTicks, clearActiveContracts, executeTrade, dataVersion } = useDerivApiV2();
+    const { chartData, activeSymbol, operationsLog, sellContract, priceTicks, clearActiveContracts, executeTrade, dataVersion, durationLimits } = useDerivApiV2();
     const { user } = useAuth();
     const { toast } = useToast();
     const [predictiveLogs, setPredictiveLogs] = useState<PredictiveTradeLog[]>([]);
@@ -901,7 +903,7 @@ function PageContent() {
     };
 
     const handleSyncDuration = () => {
-        const { duration, durationUnit } = getOptimalDuration(confirmedSignal.horizon, { s: { min: 15, max: 300 }}); // Usando limites de exemplo
+        const { duration, durationUnit } = getOptimalDuration(confirmedSignal.horizon, durationLimits);
         if (!duration) {
           toast({ variant: 'destructive', title: 'Nenhum Sinal Forte', description: 'Aguarde um sinal preditivo forte para sincronizar.' });
           return;
@@ -916,7 +918,7 @@ function PageContent() {
     };
     
     const getOptimalDuration = (horizon: string, durationLimits: any) => {
-        if (!horizon || horizon === 'N/A') {
+        if (!horizon || horizon === 'N/A' || !durationLimits) {
             return { duration: 15, durationUnit: 's' };
         }
 
