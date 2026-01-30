@@ -417,12 +417,7 @@ const subscribeToMarketData = useCallback(async (symbol: string) => {
             };
         }
         
-        const subResponse: any = await makeRequest(subRequest);
-        
-        if (subResponse.subscription?.id) {
-            activeSubscriptionIdRef.current = subResponse.subscription.id;
-            console.log(`[Market Data] Subscribed to ${symbol} (${chartTypeRef.current}) - ID: ${subResponse.subscription.id}`);
-        }
+        makeRequest(subRequest, true);
 
     } catch (error: any) {
         console.error(`[Market Data] Error for ${symbol}:`, error);
@@ -430,7 +425,7 @@ const subscribeToMarketData = useCallback(async (symbol: string) => {
     } finally {
         setIsChartLoading(false);
     }
-}, [getHistoricalData, makeRequest]);
+  }, [getHistoricalData, makeRequest]);
 
 
 const executeTrade = useCallback(async (
@@ -552,7 +547,7 @@ const executeTrade = useCallback(async (
         return { success: false, message };
     }
   }, [isConnected, makeRequest, operationsLog]);
-
+  
   const pingIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -830,6 +825,7 @@ const executeTrade = useCallback(async (
                 setIsConnected(false);
                 setIsConnecting(false);
                 setIsAssetsLoading(false);
+                setAccountBalance({ balance: null, currency: null, loading: false });
                 if (ws.readyState === WebSocket.OPEN) ws.close();
             }
         };
@@ -851,7 +847,8 @@ const executeTrade = useCallback(async (
           promisesRef.current.clear();
 
           if (!wasClean) {
-            setConnectionError(`A conexão foi encerrada inesperadamente. Código: ${code}. Razão: ${reason || 'N/A'}.`);
+            console.warn(`[WS] Fechado inesperadamente. Código: ${code}. Razão: ${reason || 'N/A'}.`);
+            setConnectionError(`Conexão perdida. Reconectando...`);
             
             if (reconnectTimeoutRef.current) {
                 clearTimeout(reconnectTimeoutRef.current);
@@ -918,7 +915,7 @@ const executeTrade = useCallback(async (
     }
   }, []);
 
-  const setTokens = (tokens: { demo?: string; real?: string }) => {
+  const setTokens = useCallback((tokens: { demo?: string; real?: string }) => {
     try {
       if (tokens.demo) {
         localStorage.setItem(DERIV_DEMO_TOKEN_KEY, tokens.demo);
@@ -931,9 +928,9 @@ const executeTrade = useCallback(async (
     } catch (error) {
       console.error("Failed to save token to localStorage:", error);
     }
-  };
+  }, []);
 
-  const disconnect = (type: AccountType) => {
+  const disconnect = useCallback((type: AccountType) => {
     try {
       if (type === 'demo') {
         localStorage.removeItem(DERIV_DEMO_TOKEN_KEY);
@@ -945,7 +942,7 @@ const executeTrade = useCallback(async (
     } catch (error) {
         console.error("Failed to remove token from localStorage:", error);
     }
-  };
+  }, []);
   
   const isConnectedRef = useRef(isConnected);
   isConnectedRef.current = isConnected;
@@ -972,12 +969,12 @@ const executeTrade = useCallback(async (
     });
   }, []);
 
-  const clearActiveContracts = () => {
+  const clearActiveContracts = useCallback(() => {
     setAndPersistOperationsLog([]);
     setTradeAnnotations([]);
-  };
+  }, [setAndPersistOperationsLog]);
 
-  const contextValue: DerivApiContextTypeV1 = {
+  const contextValue: DerivApiContextTypeV1 = useMemo(() => ({
     ws: wsRef.current,
     isConnected,
     isConnecting,
@@ -1010,7 +1007,13 @@ const executeTrade = useCallback(async (
     tradeAnnotations,
     durationLimits,
     getHistoricalData
-  };
+  }), [
+    isConnected, isConnecting, connectionError, demoToken, realToken, activeToken, accountType, 
+    setAccountType, setTokens, disconnect, reconnect, accountBalance, operationsLog, assetGroups, 
+    isAssetsLoading, activeSymbol, setActiveSymbol, chartData, priceTicks, isChartLoading, 
+    chartError, chartType, setChartType, timePeriod, setTimePeriod, executeTrade, sellContract, 
+    clearActiveContracts, tradeAnnotations, durationLimits, getHistoricalData
+  ]);
 
   return (
     <DerivApiContextV1.Provider value={contextValue}>

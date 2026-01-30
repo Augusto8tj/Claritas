@@ -143,7 +143,7 @@ const createMicrostructureModel = (prices: number[]): MicrostructureModel => {
 };
 
 const createARIMAModel = (prices: number[], horizon: number) => {
-    const returns = prices.slice(1).map((p, i) => Math.log(p / prices[i+1]));
+    const returns = prices.slice(1).map((p, i) => Math.log(p / prices[i]));
     if(returns.length < 3) return prices[prices.length - 1];
 
     const ar1 = calculateLag1Autocorr(returns);
@@ -353,7 +353,7 @@ function StochasticLab({
     const prices = realData.map(d => isCandle(d) ? d.close : d.price);
     const logReturns: number[] = [];
     for (let i = 1; i < prices.length; i++) {
-      if(prices[i-1] > 0) logReturns.push(Math.log(prices[i] / prices[i - 1]));
+      if(prices[i-1] > 0) logReturns.push(Math.log(prices[i] / prices[i]));
     }
     
     const lastPriceValue = prices[prices.length - 1];
@@ -452,6 +452,16 @@ function StochasticLab({
             startPrice: lastPriceValue,
             predictedEndPrice: finalForecastPrice,
         });
+
+        // FIX: Create linear projection for non-GBM models
+        if (h.ticks <= 20) {
+            const path = [
+                { time: prices.length - 1, price: lastPriceValue },
+                { time: prices.length - 1 + h.ticks, price: finalForecastPrice }
+            ];
+             newFuturePaths[`predicted_${h.name}_ahead`] = path.map(p => ({ ...p, [`predicted_${h.name}_ahead`]: p.price }));
+        }
+
     });
 
     setFuturePaths(newFuturePaths);
@@ -525,6 +535,15 @@ function StochasticLab({
     return combined.slice(-200);
   }, [realData, futurePaths]);
 
+  const projectionColors: { [key: string]: string } = {
+    '3t': '#8884d8',
+    '6t': '#82ca9d',
+    '10s': '#ffc658',
+    '20s': '#ff8042',
+    '30s': '#f44336',
+    '40s': '#00bcd4',
+  };
+
   return (
     <Card className="h-full flex flex-col col-span-1 lg:col-span-3">
         <CardHeader>
@@ -575,9 +594,13 @@ function StochasticLab({
                                     <Tooltip />
                                     <Legend />
                                     <Line type="monotone" dataKey="real" stroke="#2563eb" strokeWidth={2.5} dot={false} name="Preço Real" />
-                                    {Object.keys(futurePaths).map(key => (
-                                        <Line key={key} type="monotone" dataKey={key} stroke="#a16207" strokeWidth={2} strokeDasharray="8 4" dot={false} name={`Projeção (${key.split('_')[1]})`} />
-                                    ))}
+                                    {Object.keys(futurePaths).map(key => {
+                                        const horizonName = key.split('_')[1];
+                                        const color = projectionColors[horizonName as keyof typeof projectionColors] || '#a16207';
+                                        return (
+                                          <Line key={key} type="monotone" dataKey={key} stroke={color} strokeWidth={2} strokeDasharray="5 5" dot={false} name={`Projeção (${horizonName})`} />
+                                        )
+                                    })}
                                   </LineChart>
                                 </ResponsiveContainer>
                               </div>
@@ -767,15 +790,24 @@ const PageContent = () => {
     const autopilot = useMasterAutopilot();
     const { isAutopilotOn, runAutopilotCycle } = autopilot;
     
-    const handleConsensusUpdate = useCallback((data: any) => {
+    const onConsensusUpdate = useCallback((data: any) => {
         setConsensusData(data);
+    }, []);
+    
+    const stableOnConsensusUpdate = useRef(onConsensusUpdate);
+    useEffect(() => {
+        stableOnConsensusUpdate.current = onConsensusUpdate;
+    }, [onConsensusUpdate]);
+    
+    const onConsensusUpdateRef = useRef((data: any) => {
+        stableOnConsensusUpdate.current(data);
         if (isAutopilotOn && data?.projectionExperts) {
             const assertiveness: Record<string, AssertivenessData> = Object.fromEntries(
                 data.projectionExperts.map((p: any) => [p.name, { accuracy: p.accuracy, vote: p.vote }])
             );
             runAutopilotCycle(assertiveness);
         }
-    }, [isAutopilotOn, runAutopilotCycle]);
+    });
 
     useEffect(() => {
         if (!user) {
@@ -852,7 +884,7 @@ const PageContent = () => {
                     <StochasticLab 
                         realData={chartData} 
                         operationsLog={operationsLog}
-                        onConsensusUpdate={handleConsensusUpdate}
+                        onConsensusUpdate={onConsensusUpdateRef.current}
                         predictiveLogs={predictiveLogs}
                         onDeletePredictiveLog={handleDeletePredictiveLog}
                         deletingPredictiveLogId={deletingPredictiveLogId}

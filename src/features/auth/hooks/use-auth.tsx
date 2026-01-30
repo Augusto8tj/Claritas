@@ -7,6 +7,8 @@ import {
   useState,
   useEffect,
   type ReactNode,
+  useMemo,
+  useCallback,
 } from "react";
 import type { User } from "firebase/auth";
 import { Loader2 } from "lucide-react";
@@ -35,11 +37,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setLoading(isUserLoading);
   }, [firebaseUser, isUserLoading]);
 
-  const updateUser = (updatedUser: User | null) => {
+  const updateUser = useCallback((updatedUser: User | null) => {
     setUser(updatedUser);
-  };
+  }, []);
   
-  const value = { user, loading, updateUser };
+  const value = useMemo(() => ({ user, loading, updateUser }), [user, loading, updateUser]);
 
   if (loading) {
      return (

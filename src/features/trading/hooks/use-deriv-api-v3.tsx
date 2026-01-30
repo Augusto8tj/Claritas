@@ -180,8 +180,6 @@ export const DerivApiProviderV3 = ({ children }: { children: ReactNode }) => {
   const [connectionError, setConnectionError] = useState<string | null>(null);
   const promisesRef = useRef<Map<string, PromiseCallbacks>>(new Map());
   const [triggerReconnect, setTriggerReconnect] = useState(0);
-  const pingIntervalRef = useRef<NodeJS.Timeout | null>(null);
-  const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
     const setAndPersistOperationsLog = useCallback((updater: React.SetStateAction<Operation[]>) => {
         setOperationsLog(prevLog => {
@@ -485,6 +483,9 @@ export const DerivApiProviderV3 = ({ children }: { children: ReactNode }) => {
     }
   }, [isConnected, makeRequest, operationsLog]);
   
+  const pingIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
   const startConnectionMonitor = useCallback(() => {
     if (pingIntervalRef.current) clearInterval(pingIntervalRef.current);
     pingIntervalRef.current = setInterval(() => {
@@ -497,8 +498,8 @@ export const DerivApiProviderV3 = ({ children }: { children: ReactNode }) => {
         }
     }, 30000);
   }, []);
-
-  const subscribeToMarketData = useCallback(async (symbol: string) => {
+  
+  const subscribeToStreams = useCallback(async (symbol: string) => {
     if (wsRef.current?.readyState !== WebSocket.OPEN) return;
 
     if (activeSubscriptionIdRef.current) {
@@ -513,11 +514,12 @@ export const DerivApiProviderV3 = ({ children }: { children: ReactNode }) => {
     setIsChartLoading(true);
     setChartError(null);
     setChartData([]);
-    setPriceTicks([]); 
-
+    setPriceTicks([]);
+    
     try {
         const currentChartType = chartTypeRef.current;
         const currentTimePeriod = timePeriodRef.current;
+
         const contractsRes: any = await makeRequest({ contracts_for: symbol });
         const tradingPeriod = contractsRes.contracts_for?.trading_period;
         const riseFallPeriod = tradingPeriod?.rise_fall;
@@ -534,7 +536,7 @@ export const DerivApiProviderV3 = ({ children }: { children: ReactNode }) => {
             });
         }
         setDurationLimits(newLimits);
-
+        
         const historyStyle = currentChartType === 'Candle' ? 'candles' : 'ticks';
         const history = await getHistoricalData(symbol, historyStyle, 1000, currentTimePeriod);
         
@@ -578,7 +580,7 @@ export const DerivApiProviderV3 = ({ children }: { children: ReactNode }) => {
         setIsChartLoading(false);
     }
   }, [getHistoricalData, makeRequest]);
-
+  
   useEffect(() => {
     if (!activeToken || isLoading) {
       if (wsRef.current) wsRef.current.close();
@@ -587,52 +589,52 @@ export const DerivApiProviderV3 = ({ children }: { children: ReactNode }) => {
     }
     
     const connect = () => {
-      setIsConnecting(true);
-      setAccountBalance({ balance: null, currency: null, loading: true });
-      setConnectionError(null);
-      setIsAssetsLoading(true);
-    
-      if (wsRef.current) {
-          wsRef.current.close();
-          wsRef.current = null;
-      }
-  
-      const ws = new WebSocket(`wss://ws.derivws.com/websockets/v3?app_id=${DERIV_APP_ID}`);
-      wsRef.current = ws;
+        setIsConnecting(true);
+        setConnectionError(null);
+        setIsAssetsLoading(true);
       
-      ws.onmessage = (event) => {
-          try {
-              const response = JSON.parse(event.data);
-              
-              const reqId = response.req_id;
-  
-              if (reqId && promisesRef.current.has(String(reqId))) {
-                  const promise = promisesRef.current.get(String(reqId));
-                  if (promise) {
-                    if (response.error) {
-                        const errorMessage = response.error.message || `Unknown API error. Code: ${response.error.code || 'N/A'}`;
-                        promise.reject(new Error(`${errorMessage}`));
-                    } else {
-                        queueMicrotask(() => promise.resolve(response));
+        if (wsRef.current) {
+            wsRef.current.close();
+            wsRef.current = null;
+        }
+    
+        const ws = new WebSocket(`wss://ws.derivws.com/websockets/v3?app_id=${DERIV_APP_ID}`);
+        wsRef.current = ws;
+        
+        ws.onmessage = (event) => {
+            try {
+                const response = JSON.parse(event.data);
+                
+                const reqId = response.req_id;
+    
+                if (reqId && promisesRef.current.has(String(reqId))) {
+                    const promise = promisesRef.current.get(String(reqId));
+                    if (promise) {
+                        if (response.error) {
+                            const errorMessage = response.error.message || `Unknown API error. Code: ${response.error.code || 'N/A'}`;
+                            promise.reject(new Error(`${errorMessage}`));
+                        } else {
+                            queueMicrotask(() => promise.resolve(response));
+                        }
+                        promisesRef.current.delete(String(reqId));
                     }
-                    promisesRef.current.delete(String(reqId));
-                  }
-              }
-              
-              if (response.error && response.error.message) {
-                   if (
-                      response.error.code !== 'AlreadySubscribed' && 
-                      response.error.code !== 'SellNotAvailable' &&
-                      response.error.code !== 'ContractSellNotAvailable'
-                   ) {
-                    console.error('[Deriv WS] Error:', response.error.message);
-                  }
-              }
-  
-              switch (response.msg_type) {
-                  case 'balance':
-                      setAccountBalance({ balance: response.balance.balance, currency: response.balance.currency, loading: false });
-                      break;
+                    return; 
+                }
+    
+                if (response.error && response.error.message) {
+                     if (
+                        response.error.code !== 'AlreadySubscribed' && 
+                        response.error.code !== 'SellNotAvailable' &&
+                        response.error.code !== 'ContractSellNotAvailable'
+                     ) {
+                      console.error('[Deriv WS] Error:', response.error.message);
+                    }
+                }
+    
+                switch (response.msg_type) {
+                    case 'balance':
+                        setAccountBalance({ balance: response.balance.balance, currency: response.balance.currency, loading: false });
+                        break;
                    case 'proposal_open_contract':
                         const contract = response.proposal_open_contract;
                         if (!contract) return;
@@ -868,13 +870,24 @@ export const DerivApiProviderV3 = ({ children }: { children: ReactNode }) => {
           clearTimeout(reconnectTimeoutRef.current);
       }
     };
-  }, [activeToken, isLoading, makeRequest, updateTradeAnnotation, addTradeAnnotation, toast, triggerReconnect, setAndPersistOperationsLog, setToastQueue, startConnectionMonitor]);
+  }, [activeToken, isLoading, makeRequest, updateTradeAnnotation, addTradeAnnotation, toast, triggerReconnect, setAndPersistOperationsLog, setToastQueue]);
+
   
   useEffect(() => {
     if (isConnected && activeSymbol) {
-        subscribeToMarketData(activeSymbol);
+        subscribeToStreams(activeSymbol);
     }
-  }, [isConnected, activeSymbol, timePeriod, chartType, subscribeToMarketData]);
+    return () => {
+        if (activeSubscriptionIdRef.current && wsRef.current?.readyState === WebSocket.OPEN) {
+            try {
+                wsRef.current.send(JSON.stringify({ forget: activeSubscriptionIdRef.current }));
+            } catch (e) {
+                console.warn('[Deriv WS] Could not unsubscribe on cleanup:', e);
+            }
+            activeSubscriptionIdRef.current = null;
+        }
+    };
+  }, [isConnected, activeSymbol, timePeriod, chartType, subscribeToStreams]);
 
   const setAccountType = useCallback((type: AccountType) => {
     try {
@@ -886,7 +899,7 @@ export const DerivApiProviderV3 = ({ children }: { children: ReactNode }) => {
     }
   }, []);
 
-  const setTokens = (tokens: { demo?: string; real?: string }) => {
+  const setTokens = useCallback((tokens: { demo?: string; real?: string }) => {
     try {
       if (tokens.demo) {
         localStorage.setItem(DERIV_DEMO_TOKEN_KEY, tokens.demo);
@@ -899,9 +912,9 @@ export const DerivApiProviderV3 = ({ children }: { children: ReactNode }) => {
     } catch (error) {
       console.error("Failed to save token to localStorage:", error);
     }
-  };
+  }, []);
 
-  const disconnect = (type: AccountType) => {
+  const disconnect = useCallback((type: AccountType) => {
     try {
       if (type === 'demo') {
         localStorage.removeItem(DERIV_DEMO_TOKEN_KEY);
@@ -913,7 +926,7 @@ export const DerivApiProviderV3 = ({ children }: { children: ReactNode }) => {
     } catch (error) {
         console.error("Failed to remove token from localStorage:", error);
     }
-  };
+  }, []);
   
   const isConnectedRef = useRef(isConnected);
   isConnectedRef.current = isConnected;
@@ -940,12 +953,12 @@ export const DerivApiProviderV3 = ({ children }: { children: ReactNode }) => {
     });
   }, []);
 
-  const clearActiveContracts = () => {
+  const clearActiveContracts = useCallback(() => {
     setAndPersistOperationsLog([]);
     setTradeAnnotations([]);
-  };
+  }, [setAndPersistOperationsLog]);
 
-  const contextValue: DerivApiContextTypeV3 = {
+  const contextValue: DerivApiContextTypeV3 = useMemo(() => ({
     ws: wsRef.current,
     isConnected,
     isConnecting,
@@ -970,7 +983,6 @@ export const DerivApiProviderV3 = ({ children }: { children: ReactNode }) => {
     chartError,
     chartType,
     setChartType,
-    timePeriod,
     setTimePeriod,
     dataVersion,
     executeTrade,
@@ -978,8 +990,14 @@ export const DerivApiProviderV3 = ({ children }: { children: ReactNode }) => {
     getHistoricalData,
     clearActiveContracts,
     tradeAnnotations,
-    durationLimits
-  };
+    durationLimits,
+  }), [
+    isConnected, isConnecting, connectionError, demoToken, realToken, activeToken, accountType, 
+    setAccountType, setTokens, disconnect, reconnect, accountBalance, operationsLog, assetGroups, 
+    isAssetsLoading, activeSymbol, setActiveSymbol, chartData, priceTicks, isChartLoading, 
+    chartError, chartType, setChartType, timePeriod, dataVersion, executeTrade, sellContract, 
+    getHistoricalData, clearActiveContracts, tradeAnnotations, durationLimits
+  ]);
 
   return (
     <DerivApiContextV3.Provider value={contextValue}>

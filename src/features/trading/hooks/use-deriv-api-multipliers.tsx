@@ -3,7 +3,7 @@
 
 // ESTE ARQUIVO É UMA CÓPIA DEDICADA PARA O SISTEMA DE MULTIPLIERS
 
-import { createContext, useContext, useState, useEffect, type ReactNode, useCallback, useRef } from 'react';
+import { createContext, useContext, useState, useEffect, type ReactNode, useCallback, useRef, useMemo } from 'react';
 import type { TradeResult } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
 import type { Operation, OperationInitiator, DurationUnit, ChartType, TimePeriod, ChartData, CandleData, TradeAnnotation, TickData, DurationLimits, Asset } from '@/lib/types';
@@ -184,8 +184,6 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
   const [connectionError, setConnectionError] = useState<string | null>(null);
   const promisesRef = useRef<Map<string, PromiseCallbacks>>(new Map());
   const [triggerReconnect, setTriggerReconnect] = useState(0);
-  const pingIntervalRef = useRef<NodeJS.Timeout | null>(null);
-  const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   
     const setAndPersistOperationsLog = useCallback((updater: React.SetStateAction<Operation[]>) => {
         setOperationsLog(prevLog => {
@@ -640,6 +638,8 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
   }, [getHistoricalData, makeRequest]);
 
   const startConnectionMonitor = useCallback(() => {
+  const pingIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  
   if (pingIntervalRef.current) {
       clearInterval(pingIntervalRef.current);
   }
@@ -675,7 +675,6 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
   useEffect(() => {
     if (!activeToken || isLoading) {
       if (wsRef.current) wsRef.current.close();
-      if (pingIntervalRef.current) clearInterval(pingIntervalRef.current);
       return;
     }
     
@@ -967,7 +966,11 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
 };
       
         ws.onclose = (event) => {
+  const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  
   if (!wsRef.current) return;
+  
+  const pingIntervalRef = useRef<NodeJS.Timeout | null>(null);
   
   if (pingIntervalRef.current) {
       clearInterval(pingIntervalRef.current);
@@ -1012,9 +1015,11 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
         wsRef.current.onclose = null;
         wsRef.current.close();
       }
+      const pingIntervalRef = useRef<NodeJS.Timeout | null>(null);
       if (pingIntervalRef.current) {
           clearInterval(pingIntervalRef.current);
       }
+      const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
       if (reconnectTimeoutRef.current) {
           clearTimeout(reconnectTimeoutRef.current);
       }
@@ -1039,7 +1044,7 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
     }
   }, []);
 
-  const setTokens = (tokens: { demo?: string; real?: string }) => {
+  const setTokens = useCallback((tokens: { demo?: string; real?: string }) => {
     try {
       if (tokens.demo) {
         localStorage.setItem(DERIV_DEMO_TOKEN_KEY, tokens.demo);
@@ -1052,9 +1057,9 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
     } catch (error) {
       console.error("Failed to save token to localStorage:", error);
     }
-  };
+  }, []);
 
-  const disconnect = (type: AccountType) => {
+  const disconnect = useCallback((type: AccountType) => {
     try {
       if (type === 'demo') {
         localStorage.removeItem(DERIV_DEMO_TOKEN_KEY);
@@ -1066,7 +1071,7 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
     } catch (error) {
         console.error("Failed to remove token from localStorage:", error);
     }
-  };
+  }, []);
   
   const isConnectedRef = useRef(isConnected);
   isConnectedRef.current = isConnected;
@@ -1094,12 +1099,12 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
   }, []);
 
 
-  const clearActiveContracts = () => {
+  const clearActiveContracts = useCallback(() => {
     setAndPersistOperationsLog([]);
     setTradeAnnotations([]);
-  };
+  }, [setAndPersistOperationsLog]);
 
-  const contextValue: DerivApiContextType = {
+  const contextValue: DerivApiContextType = useMemo(() => ({
     ws: wsRef.current,
     isConnected,
     isConnecting,
@@ -1136,7 +1141,14 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
     durationLimits,
     multiplierOptions,
     getHistoricalData
-  };
+  }), [
+      isConnected, isConnecting, connectionError, demoToken, realToken, activeToken, accountType, 
+      setAccountType, setTokens, disconnect, reconnect, accountBalance, operationsLog, assetGroups, 
+      isAssetsLoading, activeSymbol, setActiveSymbol, chartData, botCandleData, priceTicks, 
+      isChartLoading, chartError, chartType, timePeriod, setTimePeriod, dataVersion, executeTrade, 
+      sellContract, updateContract, clearActiveContracts, tradeAnnotations, durationLimits, 
+      multiplierOptions, getHistoricalData
+  ]);
 
   return (
     <DerivApiMultipliersContext.Provider value={contextValue}>

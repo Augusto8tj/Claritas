@@ -1,7 +1,7 @@
 // /src/features/trading/hooks/use-deriv-api-accumulators.tsx
 'use client';
 
-import { createContext, useContext, useState, useEffect, type ReactNode, useCallback, useRef } from 'react';
+import { createContext, useContext, useState, useEffect, type ReactNode, useCallback, useRef, useMemo } from 'react';
 import type { TradeResult } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
 import type { Operation, OperationInitiator, DurationUnit, ChartType, TimePeriod, ChartData, CandleData, TradeAnnotation, TickData, DurationLimits, Asset } from '@/lib/types';
@@ -139,7 +139,6 @@ export const DerivApiProviderAccumulators = ({ children }: { children: ReactNode
   const [activeSymbol, setActiveSymbol] = useState<string | null>('1HZ10V');
   const [chartData, setChartData] = useState<ChartData[]>([]);
   const [botCandleData, setBotCandleData] = useState<CandleData[]>([]);
-  const [priceTicks, setPriceTicks] = useState<TickData[]>([]);
   const [isChartLoading, setIsChartLoading] = useState(true);
   const [chartError, setChartError] = useState<string | null>(null);
   const [chartType, setChartType] = useState<ChartType>('Area');
@@ -733,23 +732,23 @@ export const DerivApiProviderAccumulators = ({ children }: { children: ReactNode
     }
   }, []);
 
-  const setTokens = (tokens: { demo?: string; real?: string }) => {
+  const setTokens = useCallback((tokens: { demo?: string; real?: string }) => {
     try {
       if (tokens.demo) { localStorage.setItem(DERIV_DEMO_TOKEN_KEY, tokens.demo); setDemoToken(tokens.demo); }
       if (tokens.real) { localStorage.setItem(DERIV_REAL_TOKEN_KEY, tokens.real); setRealToken(tokens.real); }
     } catch (error) {
       console.error("Failed to save token:", error);
     }
-  };
+  }, []);
 
-  const disconnect = (type: AccountType) => {
+  const disconnect = useCallback((type: AccountType) => {
     try {
       if (type === 'demo') { localStorage.removeItem(DERIV_DEMO_TOKEN_KEY); setDemoToken(null); } 
       else { localStorage.removeItem(DERIV_REAL_TOKEN_KEY); setRealToken(null); }
     } catch (error) {
         console.error("Failed to remove token:", error);
     }
-  };
+  }, []);
   
   const isConnectedRef = useRef(isConnected);
   isConnectedRef.current = isConnected;
@@ -776,18 +775,24 @@ export const DerivApiProviderAccumulators = ({ children }: { children: ReactNode
     });
   }, []);
 
-  const clearActiveContracts = () => {
+  const clearActiveContracts = useCallback(() => {
     setAndPersistOperationsLog([]);
     setTradeAnnotations([]);
-  };
+  }, [setAndPersistOperationsLog]);
 
-  const contextValue: DerivApiAccumulatorsContextType = {
+  const contextValue: DerivApiAccumulatorsContextType = useMemo(() => ({
     ws: wsRef.current, isConnected, isConnecting, connectionError, demoToken, realToken, activeToken,
-    accountType, setAccountType, setTokens, disconnect, reconnect, accountBalance, operationsLog,
-    assetGroups, isAssetsLoading, activeSymbol, setActiveSymbol, chartData, botCandleData, isChartLoading,
-    chartError, chartType, setChartType, timePeriod, setTimePeriod, executeTrade, sellContract,
-    getHistoricalData, clearActiveContracts, dataVersion, tradeAnnotations, priceTicks
-  };
+    accountType, accountBalance, operationsLog, assetGroups, isAssetsLoading, activeSymbol, 
+    setActiveSymbol, chartData, botCandleData, isChartLoading, chartError, chartType, setChartType, 
+    timePeriod, setTimePeriod, dataVersion, tradeAnnotations, priceTicks, setAccountType, setTokens,
+    disconnect, reconnect, executeTrade, sellContract, getHistoricalData, clearActiveContracts
+  }), [
+    isConnected, isConnecting, connectionError, demoToken, realToken, activeToken, accountType, 
+    accountBalance, operationsLog, assetGroups, isAssetsLoading, activeSymbol, setActiveSymbol, 
+    chartData, botCandleData, isChartLoading, chartError, chartType, timePeriod, dataVersion, 
+    tradeAnnotations, priceTicks, setAccountType, setTokens, disconnect, reconnect, executeTrade, 
+    sellContract, getHistoricalData, clearActiveContracts
+  ]);
 
   return (
     <DerivApiAccumulatorsContext.Provider value={contextValue}>

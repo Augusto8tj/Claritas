@@ -482,8 +482,8 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
     const contract = operationsLog.find(op => op.id === contractId);
     if (contract && contract.expirationTime) {
       const remainingTime = contract.expirationTime - Date.now();
-      if (remainingTime < 15000) { 
-        return { success: false, message: `O contrato ${contractId} está no período de bloqueio final e não pode ser vendido.` };
+      if (remainingTime < 1000) { 
+        return { success: false, message: `O contrato #${contractId} está no período de bloqueio final e não pode ser vendido.` };
       }
     }
 
@@ -558,7 +558,7 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
             });
         }
         setDurationLimits(newLimits);
-
+        
         const botHistory = await getHistoricalData(symbol, 'candles', 1000, '1m');
         setBotCandleData(botHistory as CandleData[]);
         
@@ -695,6 +695,7 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
                             const isSold = contract.is_sold === 1;
                             
                             if (existingOpIndex !== -1) {
+                                // UPDATE EXISTING OPERATION
                                 const updatedLog = [...prevLog];
                                 const op = updatedLog[existingOpIndex];
                                 
@@ -1035,12 +1036,12 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
     });
   }, []);
 
-  const clearActiveContracts = () => {
+  const clearActiveContracts = useCallback(() => {
     setAndPersistOperationsLog([]);
     setTradeAnnotations([]);
-  };
+  }, [setAndPersistOperationsLog]);
 
-  const contextValue: DerivApiContextTypeV2 = {
+  const contextValue: DerivApiContextTypeV2 = useMemo(() => ({
     ws: wsRef.current,
     isConnected,
     isConnecting,
@@ -1049,33 +1050,40 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
     realToken,
     activeToken,
     accountType,
-    setAccountType,
-    setTokens,
-    disconnect,
-    reconnect,
     accountBalance,
     operationsLog,
     assetGroups,
     isAssetsLoading,
     activeSymbol,
-    setActiveSymbol,
     chartData,
     botCandleData,
     priceTicks,
     isChartLoading,
     chartError,
     chartType,
-    setChartType,
     timePeriod,
-    setTimePeriod,
     dataVersion,
+    tradeAnnotations,
+    durationLimits,
+    reconnect,
+    setAccountType,
+    setTokens,
+    disconnect,
+    setActiveSymbol,
+    setChartType,
+    setTimePeriod,
     executeTrade,
     sellContract,
     getHistoricalData,
-    clearActiveContracts,
-    tradeAnnotations,
-    durationLimits
-  };
+    clearActiveContracts
+  }), [
+    isConnected, isConnecting, connectionError, demoToken, realToken, activeToken, accountType, 
+    accountBalance, operationsLog, assetGroups, isAssetsLoading, activeSymbol, chartData, 
+    botCandleData, priceTicks, isChartLoading, chartError, chartType, timePeriod, dataVersion, 
+    tradeAnnotations, durationLimits, reconnect, setAccountType, setTokens, disconnect, 
+    setActiveSymbol, setChartType, setTimePeriod, executeTrade, sellContract, getHistoricalData, 
+    clearActiveContracts
+  ]);
 
   return (
     <DerivApiContextV2.Provider value={contextValue}>
