@@ -131,9 +131,9 @@ export function useMasterAutopilot() {
   const [highFrequencyThreshold, setHighFrequencyThreshold] = useState(10);
   
   const horizons = useMemo(() => [
-      { name: '3t', ticks: 3, window: 6 }, { name: '6t', ticks: 6, window: 6 },
-      { name: '10s', ticks: 10, window: 10 }, { name: '20s', ticks: 20, window: 10 },
-      { name: '30s', ticks: 30, window: 10 }, { name: '40s', ticks: 40, window: 10 },
+      { name: '3t', ticks: 3, window: 50 }, { name: '6t', ticks: 6, window: 50 },
+      { name: '10s', ticks: 10, window: 100 }, { name: '20s', ticks: 20, window: 100 },
+      { name: '30s', ticks: 30, window: 150 }, { name: '40s', ticks: 40, window: 150 },
   ], []);
 
   const toggleAutopilot = useCallback((checked: boolean) => {
@@ -145,41 +145,26 @@ export function useMasterAutopilot() {
   }, [toast]);
   
   const dependenciesRef = useRef({
-    isAutopilotOn,
     contractType,
-    isNeighborConfirmationEnabled,
-    isMacroTrendCheckEnabled,
-    highFrequencyThreshold,
-    priceTicks,
-    botCandleData,
-    operationsLog,
-    riskManager,
-    horizons,
-    masterState,
     activeSymbol,
-    user
+    masterState,
   });
 
   useEffect(() => {
     dependenciesRef.current = {
-      isAutopilotOn,
       contractType,
-      isNeighborConfirmationEnabled,
-      isMacroTrendCheckEnabled,
-      highFrequencyThreshold,
-      priceTicks,
-      botCandleData,
-      operationsLog,
-      riskManager,
-      horizons,
-      masterState,
       activeSymbol,
-      user
+      masterState,
     };
   });
   
-  const executeTradeAction = useCallback(async (initiator: OperationInitiator, signalOverride: Signal, triggeredBy: [string, string] | null) => {
-      const { contractType, activeSymbol, masterState, user } = dependenciesRef.current;
+  const executeTradeAction = useCallback(async (
+    initiator: OperationInitiator, 
+    signalOverride: Signal, 
+    triggeredBy: [string, string] | null,
+    currentUser: User | null
+  ) => {
+      const { contractType, activeSymbol, masterState } = dependenciesRef.current;
       const signalToUse = signalOverride;
       
       if (signalToUse === 'HOLD' || !activeSymbol || !triggeredBy) {
@@ -215,7 +200,7 @@ export function useMasterAutopilot() {
                   initiator
               );
 
-              if (tradeResult.success && tradeResult.contractId && user) {
+              if (tradeResult.success && tradeResult.contractId && currentUser) {
                   const logId = `pred_log_${tradeResult.contractId}`;
                   const logContext = {
                       triggerReason: masterState.trigger.reason,
@@ -242,7 +227,7 @@ export function useMasterAutopilot() {
                       pnl: 0,
                   };
                   
-                  savePredictiveTradeLog(user.uid, tradeLog);
+                  savePredictiveTradeLog(currentUser.uid, tradeLog);
               }
 
           } else {
@@ -255,53 +240,51 @@ export function useMasterAutopilot() {
   }, [executeRiseFallTrade, toast]);
   
   const runAutopilotCycle = useCallback((newAssertiveness: Record<string, AssertivenessData>) => {
-    const deps = dependenciesRef.current;
-    
-    if (deps.priceTicks.length < 50) {
-        if (deps.masterState.isReady) {
+    if (priceTicks.length < 50) {
+        if (masterState.isReady) {
             setMasterState(prev => ({...prev, isReady: false, trigger: { signal: 'HOLD', reason: 'Aguardando dados...', triggeredBy: null }}));
         }
         return;
     }
-    const currentTick = deps.priceTicks[deps.priceTicks.length - 1];
+    const currentTick = priceTicks[priceTicks.length - 1];
     if(!currentTick) return;
     
     const lastPrice = currentTick.price;
-    const calculatedIndicators = calculateAllIndicators(deps.botCandleData, getCouncilStrategies(), '1m', {duration: 15, unit: 's'});
-    const microFeatures = extractMicrostructureFeatures(deps.priceTicks, deps.botCandleData);
-    const detectedRegimeResult = detectMarketRegimeService(deps.botCandleData, calculatedIndicators, 'NONE');
+    const calculatedIndicators = calculateAllIndicators(botCandleData, getCouncilStrategies(), '1m', {duration: 15, unit: 's'});
+    const microFeatures = extractMicrostructureFeatures(priceTicks, botCandleData);
+    const detectedRegimeResult = detectMarketRegimeService(botCandleData, calculatedIndicators, 'NONE');
     
     const adaptiveThresholds = calculateDynamicThresholds(
         detectedRegimeResult.regime,
         calculatedIndicators,
-        deps.riskManager.thresholds
+        riskManager.thresholds
     );
     
     const manualSignal = evaluateTriggerConditions(
         newAssertiveness,
-        deps.horizons.map(h => ({ name: h.name, ticks: h.ticks, window: h.window })),
-        Object.fromEntries(Object.keys(deps.riskManager.thresholds).map(k => [k, 55])), // Lower threshold for manual
-        deps.contractType,
+        horizons.map(h => ({ name: h.name, ticks: h.ticks, window: h.window })),
+        Object.fromEntries(Object.keys(riskManager.thresholds).map(k => [k, 55])), // Lower threshold for manual
+        contractType,
         detectedRegimeResult.regime,
         lastPrice,
-        deps.botCandleData,
+        botCandleData,
         false, // Don't require neighbors for manual
         true,
-        deps.highFrequencyThreshold,
+        highFrequencyThreshold,
         calculatedIndicators
     );
     
     const { newTriggerSignal, newTriggerReason, newTriggeredBy } = evaluateTriggerConditions(
         newAssertiveness,
-        deps.horizons.map(h => ({ name: h.name, ticks: h.ticks, window: h.window })),
+        horizons.map(h => ({ name: h.name, ticks: h.ticks, window: h.window })),
         adaptiveThresholds,
-        deps.contractType,
+        contractType,
         detectedRegimeResult.regime,
         lastPrice,
-        deps.botCandleData,
-        deps.isNeighborConfirmationEnabled,
-        deps.isMacroTrendCheckEnabled,
-        deps.highFrequencyThreshold,
+        botCandleData,
+        isNeighborConfirmationEnabled,
+        isMacroTrendCheckEnabled,
+        highFrequencyThreshold,
         calculatedIndicators
     );
 
@@ -315,7 +298,10 @@ export function useMasterAutopilot() {
         currentRegime: detectedRegimeResult,
         assertiveness: newAssertiveness
     }));
-  }, []);
+  }, [
+      priceTicks, botCandleData, riskManager.thresholds, contractType, 
+      isNeighborConfirmationEnabled, isMacroTrendCheckEnabled, highFrequencyThreshold, horizons, masterState.isReady
+  ]);
 
   const executeManualTrigger = useCallback(async () => {
     const { signal } = masterState.manualTrigger;
@@ -325,8 +311,8 @@ export function useMasterAutopilot() {
         const accB = Math.max(b[1].accuracy, 100 - b[1].accuracy);
         return accA > accB ? a : b;
     })[0] : 'manual';
-    await executeTradeAction('Manual', signal, [strongest, strongest]);
-  }, [executeTradeAction, masterState.manualTrigger, masterState.assertiveness]);
+    await executeTradeAction('Manual', signal, [strongest, strongest], user);
+  }, [executeTradeAction, masterState.manualTrigger, masterState.assertiveness, user]);
   
   const setGlobalAssertivenessThreshold = useCallback((value: number) => {
       setRiskManager(prev => {
@@ -353,10 +339,10 @@ export function useMasterAutopilot() {
     
     if (isAutopilotOn && masterState.trigger.signal !== 'HOLD' && !cooldownRef.current && !openMasterTrade) {
       cooldownRef.current = true;
-      executeTradeAction('Piloto', masterState.trigger.signal, masterState.trigger.triggeredBy);
+      executeTradeAction('Piloto', masterState.trigger.signal, masterState.trigger.triggeredBy, user);
       setTimeout(() => { cooldownRef.current = false; }, 20000);
     }
-  }, [isAutopilotOn, masterState.trigger, operationsLog, executeTradeAction]);
+  }, [isAutopilotOn, masterState.trigger, operationsLog, executeTradeAction, user]);
 
   useEffect(() => {
     const lastFinishedTrade = operationsLog.find(op => op.status !== 'pending' && op.initiator === 'Piloto' && !processedTradesRef.current.has(op.id));

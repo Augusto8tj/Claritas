@@ -188,6 +188,9 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
   const allowAutoReconnectRef = useRef(true);
   const reconnectInProgressRef = useRef(false);
 
+  // NOVO: Ref para rastrear contratos recém-criados e evitar race conditions
+  const recentlyCreatedContractsRef = useRef<Set<number>>(new Set());
+
     const setAndPersistOperationsLog = useCallback((updater: React.SetStateAction<Operation[]>) => {
         setOperationsLog(prevLog => {
             const newLogWithPotentialDuplicates = typeof updater === 'function' ? updater(prevLog) : updater;
@@ -403,6 +406,17 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
           const buyResponse: any = await makeRequest({ "buy": proposal.id, "price": proposal.ask_price });
           const buyResult = buyResponse.buy;
           
+          const contractId = buyResult.contract_id;
+          if (!contractId) {
+            throw new Error("Falha na compra do contrato, ID não retornado.");
+          }
+          
+          // NOVO: Adiciona o ID ao cache de contratos recém-criados
+          recentlyCreatedContractsRef.current.add(contractId);
+          setTimeout(() => {
+              recentlyCreatedContractsRef.current.delete(contractId);
+          }, 5000); // Limpa após 5 segundos
+
           const latestTick = priceTicks.length > 0 ? priceTicks[priceTicks.length - 1].price : 0;
           const entryPrice = buyResult.entry_tick_display_value 
             ? parseFloat(buyResult.entry_tick_display_value) 
@@ -601,7 +615,7 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
         setIsChartLoading(false);
     }
   }, [getHistoricalData, makeRequest]);
-
+  
   useEffect(() => {
     if (!activeToken || isLoading) {
       if (wsRef.current) wsRef.current.close();
@@ -667,8 +681,10 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
                         break;
                     case 'proposal_open_contract':
                         const contract = response.proposal_open_contract;
-                        if (!contract || (contract.contract_type || '').startsWith('MULT')) {
-                            return;
+                        if (!contract) return;
+
+                        if ((contract.contract_type || '').startsWith('MULT')) {
+                          return;
                         }
 
                         setAndPersistOperationsLog(prevLog => {
@@ -715,6 +731,11 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
                                 return prevLog;
                             
                             } else if (!isSold) {
+                                // NOVO: Lidar com condição de corrida
+                                if (recentlyCreatedContractsRef.current.has(contract.contract_id)) {
+                                    return prevLog;
+                                }
+
                                 // ADD NEW EXTERNALLY OPENED OPERATION
                                 const direction = (contract.contract_type || '').includes('CALL') ? 'rise' : 'fall';
                                 const purchaseTime = contract.purchase_time || Math.floor(Date.now() / 1000);
