@@ -19,7 +19,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { volatilityTraderSchema, type VolatilityTraderFormValues } from "@/features/trading/components/deriv-trader/volatility-trader-interface.types";
 import VolatilityTraderInterface from "@/features/trading/components/deriv-trader/volatility-trader-interface";
 import { OperationsLogV2 } from "@/features/trading/components/deriv-trader/operations-log-v2";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { useToast } from '@/hooks/use-toast';
@@ -419,6 +419,52 @@ function StochasticLab({
 
   }, [realData, horizons]);
 
+  const processedLogsRef = useRef(new Set<number>());
+
+  useEffect(() => {
+    if (!user || operationsLog.length === 0 || predictiveLogs.length === 0 || isAuthLoading) {
+      return;
+    }
+
+    const logsToUpdate: PredictiveTradeLog[] = [];
+
+    for (const op of operationsLog) {
+      if (
+        op.initiator === 'Piloto' &&
+        op.status !== 'pending' &&
+        !processedLogsRef.current.has(op.id)
+      ) {
+        const predictiveLogToUpdate = predictiveLogs.find(
+          (pLog) => pLog.contractId === op.id
+        );
+
+        if (predictiveLogToUpdate) {
+          console.log(`[Log Finalizer] Finalizando log preditivo para o contrato #${op.id}. Resultado: ${op.status}, PnL: ${op.result}`);
+          
+          const updatedLogData: PredictiveTradeLog = {
+            ...predictiveLogToUpdate,
+            result: op.status,
+            pnl: op.result ?? (op.status === 'lost' ? -op.stake : 0),
+          };
+
+          logsToUpdate.push(updatedLogData);
+          processedLogsRef.current.add(op.id);
+        }
+      }
+    }
+    
+    if (logsToUpdate.length > 0) {
+      for (const log of logsToUpdate) {
+        savePredictiveTradeLog(user.uid, log);
+      }
+       toast({
+        title: "Auditoria Preditiva Atualizada",
+        description: `${logsToUpdate.length} registro(s) de trade foram finalizados.`,
+      });
+    }
+  }, [operationsLog, predictiveLogs, user, isAuthLoading, toast]);
+
+
   const accuracy3t = useMemo(() => calculateRollingAccuracy(predictionAccuracyHistory3t), [predictionAccuracyHistory3t]);
   const accuracy6t = useMemo(() => calculateRollingAccuracy(predictionAccuracyHistory6t), [predictionAccuracyHistory6t]);
   const accuracy10s = useMemo(() => calculateRollingAccuracy(predictionAccuracyHistory10s), [predictionAccuracyHistory10s]);
@@ -540,7 +586,6 @@ function StochasticLab({
   const runAutopilotCycle = useCallback(() => {
     const openMasterTrade = operationsLog.find(op => op.initiator === 'Piloto' && op.status === 'pending');
     
-    // ✅ LOGGING DETALHADO DE BLOQUEIOS
     if (!isAutopilotOn || cooldownRef.current || !activeSymbol || !executeTrade || isAuthLoading || openMasterTrade) {
       const blockReasons = [];
       if (!isAutopilotOn) blockReasons.push('Piloto OFF');
@@ -566,21 +611,18 @@ function StochasticLab({
       projectionExperts.map(p => [p.name, { accuracy: p.accuracy, vote: p.vote }])
     );
     
-    // ✅ LOG DAS ASSERTIVIDADES ATUAIS
     console.log('📊 Assertividades:', 
       Object.entries(assertiveness)
         .map(([h, data]) => `${h}: ${data.accuracy.toFixed(1)}% (${data.vote})`)
         .join(', ')
     );
     
-    // ✅ LOG DOS THRESHOLDS ATIVOS
     console.log('🎯 Thresholds:', 
       Object.entries(thresholds)
         .map(([h, t]) => `${h}: ${t}%`)
         .join(', ')
     );
     
-    // ✅ LOG DE QUAIS HORIZONTES PASSAM
     const passing = Object.entries(assertiveness)
       .filter(([h, data]) => Math.max(data.accuracy, 100-data.accuracy) >= thresholds[h])
       .map(([h]) => h);
@@ -597,7 +639,6 @@ function StochasticLab({
         isMacroTrendCheckEnabled,
     );
     
-    // ✅ LOG DO RESULTADO DA AVALIAÇÃO
     console.log('🚦 Resultado avaliação:', {
       signal: newTriggerSignal,
       triggeredBy: newTriggeredBy,
