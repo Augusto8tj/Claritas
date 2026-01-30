@@ -8,6 +8,8 @@ import type { TradeResult } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
 import type { Operation, OperationInitiator, DurationUnit, ChartType, TimePeriod, ChartData, CandleData, TradeAnnotation, TickData, DurationLimits, Asset } from '@/lib/types';
 import { FirebaseErrorListener } from '@/components/firebase-error-listener';
+import { useAuth } from '@/features/auth/hooks/use-auth';
+import { savePredictiveTradeLog } from '@/services/financial-data-service';
 
 
 const DERIV_DEMO_TOKEN_KEY = 'derivDemoApiToken';
@@ -158,6 +160,7 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
   const [assetGroups, setAssetGroups] = useState<AssetGroup[]>([]);
   const [isAssetsLoading, setIsAssetsLoading] = useState(true);
   const { toast } = useToast();
+  const { user } = useAuth();
   
   const [toastQueue, setToastQueue] = useState<any[]>([]);
 
@@ -692,7 +695,6 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
                             const isSold = contract.is_sold === 1;
                             
                             if (existingOpIndex !== -1) {
-                                // UPDATE EXISTING OPERATION
                                 const updatedLog = [...prevLog];
                                 const op = updatedLog[existingOpIndex];
                                 
@@ -704,6 +706,16 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
                                         
                                         updatedLog[existingOpIndex] = { ...op, status: newStatus, result: contract.profit, exitPrice: exitPrice, exitTimestamp: sellTime };
                                         
+                                        if (op.initiator === 'Piloto' && user) {
+                                            const logId = `pred_log_${contract.contract_id}`;
+                                            const predictiveLogUpdate = {
+                                                id: logId,
+                                                result: newStatus,
+                                                pnl: contract.profit,
+                                            };
+                                            savePredictiveTradeLog(user.uid, predictiveLogUpdate);
+                                        }
+
                                         updateTradeAnnotation(String(contract.contract_id), { 
                                             status: newStatus, 
                                             profit: contract.profit, 
@@ -731,16 +743,14 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
                                 return prevLog;
                             
                             } else if (!isSold) {
-                                // NOVO: Lidar com condição de corrida
                                 if (recentlyCreatedContractsRef.current.has(contract.contract_id)) {
                                     return prevLog;
                                 }
 
-                                // ADD NEW EXTERNALLY OPENED OPERATION
                                 const direction = (contract.contract_type || '').includes('CALL') ? 'rise' : 'fall';
                                 const purchaseTime = contract.purchase_time || Math.floor(Date.now() / 1000);
                                 const durationInSeconds = contract.date_expiry ? (contract.date_expiry - purchaseTime) : 0;
-                                const durationUnit: DurationUnit = 's'; // Safe default
+                                const durationUnit: DurationUnit = 's';
     
                                 const newOperation: Operation = {
                                     id: contract.contract_id,
