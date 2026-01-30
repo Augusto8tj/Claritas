@@ -1,4 +1,3 @@
-
 // src/features/trading/hooks/use-master-autopilot.ts
 'use client';
 
@@ -98,7 +97,7 @@ export function useMasterAutopilot() {
   
   const [macroTrend, setMacroTrend] = useState<TrendDirection>('NONE');
   
-  const isCoolingDownRef = useRef(false);
+  const cooldownRef = useRef(false);
   const pendingSignalRef = useRef<{ signal: Signal; triggeredBy: [string, string]; epoch: number; } | null>(null);
   
   const activeApi = v2Api;
