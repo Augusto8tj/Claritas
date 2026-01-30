@@ -144,6 +144,27 @@ export function useMasterAutopilot() {
       }
   }, [activeSymbol, executeRiseFallTrade, toast, contractType]);
   
+  const evaluateManualTrigger = useCallback((assertiveness: Record<string, AssertivenessData>): {signal: Signal, reason: string} => {
+    const getEffectiveVote = (expert: AssertivenessData | undefined): 'RISE' | 'FALL' | 'HOLD' => {
+        if (!expert) return 'HOLD';
+        return expert.accuracy > 50 
+            ? expert.vote 
+            : (expert.vote === 'RISE' ? 'FALL' : (expert.vote === 'FALL' ? 'RISE' : 'HOLD'));
+    };
+    
+    const votes = { RISE: 0, FALL: 0 };
+    Object.values(assertiveness).forEach(expert => {
+        const effectiveVote = getEffectiveVote(expert);
+        if (effectiveVote !== 'HOLD') {
+            votes[effectiveVote]++;
+        }
+    });
+
+    if (votes.RISE >= 4) return { signal: 'RISE', reason: `${votes.RISE}/6 Modelos concordam com Alta.` };
+    if (votes.FALL >= 4) return { signal: 'FALL', reason: `${votes.FALL}/6 Modelos concordam com Baixa.` };
+    return { signal: 'HOLD', reason: 'Aguardando consenso dos modelos.' };
+  }, []);
+
   const executeManualTrigger = useCallback(async () => {
     const { signal } = masterState.manualTrigger;
     await executeTradeAction('Manual', signal, ['manual', 'manual']);
@@ -169,26 +190,50 @@ export function useMasterAutopilot() {
     }));
   }, []);
 
-  const evaluateManualTrigger = useCallback((assertiveness: Record<string, AssertivenessData>): {signal: Signal, reason: string} => {
-    const votes = { RISE: 0, FALL: 0 };
-    Object.values(assertiveness).forEach(expert => {
-        const effectiveVote = expert.accuracy > 50 ? expert.vote : (expert.vote === 'RISE' ? 'FALL' : 'RISE');
-        if (effectiveVote !== 'HOLD') {
-            votes[effectiveVote]++;
-        }
-    });
+  const dependenciesRef = useRef({
+    isAutopilotOn,
+    contractType,
+    isNeighborConfirmationEnabled,
+    isMacroTrendCheckEnabled,
+    highFrequencyThreshold,
+    priceTicks,
+    botCandleData,
+    operationsLog,
+    riskManager,
+    horizons,
+    masterState,
+    evaluateManualTrigger,
+  });
 
-    if (votes.RISE >= 4) return { signal: 'RISE', reason: `${votes.RISE}/6 Modelos concordam com Alta.` };
-    if (votes.FALL >= 4) return { signal: 'FALL', reason: `${votes.FALL}/6 Modelos concordam com Baixa.` };
-    return { signal: 'HOLD', reason: 'Aguardando consenso dos modelos.' };
-  }, []);
+  useEffect(() => {
+    dependenciesRef.current = {
+      isAutopilotOn,
+      contractType,
+      isNeighborConfirmationEnabled,
+      isMacroTrendCheckEnabled,
+      highFrequencyThreshold,
+      priceTicks,
+      botCandleData,
+      operationsLog,
+      riskManager,
+      horizons,
+      masterState,
+      evaluateManualTrigger,
+    };
+  });
 
   const runAutopilotCycle = useCallback((newAssertiveness: Record<string, AssertivenessData>) => {
+    const { 
+        priceTicks, botCandleData, masterState, riskManager, contractType, 
+        isNeighborConfirmationEnabled, isMacroTrendCheckEnabled, highFrequencyThreshold, 
+        isAutopilotOn, operationsLog, horizons, evaluateManualTrigger
+    } = dependenciesRef.current;
+    
     if (priceTicks.length < 50) {
-      if (masterState.isReady) {
-        setMasterState(prev => ({...prev, isReady: false, trigger: { signal: 'HOLD', reason: 'Aguardando dados...', triggeredBy: null }}));
-      }
-      return;
+        if (masterState.isReady) {
+            setMasterState(prev => ({...prev, isReady: false, trigger: { signal: 'HOLD', reason: 'Aguardando dados...', triggeredBy: null }}));
+        }
+        return;
     }
     const currentTick = priceTicks[priceTicks.length - 1];
     if(!currentTick) return;
@@ -235,12 +280,7 @@ export function useMasterAutopilot() {
         microstructure: microFeatures,
         currentRegime: detectedRegimeResult,
     }));
-    
-  }, [
-    priceTicks, botCandleData, masterState.isReady, evaluateManualTrigger, horizons, 
-    riskManager.thresholds, contractType, isNeighborConfirmationEnabled, isMacroTrendCheckEnabled,
-    highFrequencyThreshold, isAutopilotOn, operationsLog
-  ]);
+  }, []);
 
   useEffect(() => {
     const openMasterTrade = operationsLog.find(op => op.initiator === 'Piloto' && op.status === 'pending');
