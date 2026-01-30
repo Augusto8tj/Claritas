@@ -220,7 +220,7 @@ const StatItem = ({ label, value }: { label: string; value: string | number }) =
     </div>
 );
 
-const StrongestSignalCard = ({ signal }: { signal: StrongestSignal }) => {
+const StrongestSignalCard = ({ signal, ensembleWeights }: { signal: StrongestSignal, ensembleWeights: Record<string, {w1: number, w2: number, w3: number}> }) => {
     const isHold = signal.direction === 'HOLD' || signal.certaintyScore === 0;
     const displayAccuracy = Math.max(signal.accuracy, 100 - signal.accuracy);
 
@@ -246,6 +246,24 @@ const StrongestSignalCard = ({ signal }: { signal: StrongestSignal }) => {
                     </p>
                 </div>
             )}
+             <Card className="mt-4 p-4">
+                <CardTitle className="text-sm mb-2">Performance dos Modelos (Ensemble)</CardTitle>
+                <div className="space-y-1 text-xs">
+                    {Object.entries(ensembleWeights).map(([horizon, w]) => (
+                        <div key={horizon} className="flex justify-between">
+                            <span className="font-mono">{horizon}:</span>
+                            <span>
+                                M1: {(w.w1 * 100).toFixed(0)}% | 
+                                M2: {(w.w2 * 100).toFixed(0)}% | 
+                                M3: {(w.w3 * 100).toFixed(0)}%
+                            </span>
+                        </div>
+                    ))}
+                </div>
+                <p className="text-xs text-muted-foreground mt-2">
+                    M1=Specialist, M2=LinearReg, M3=Null
+                </p>
+            </Card>
         </Card>
     );
 };
@@ -312,8 +330,10 @@ function StochasticLab({
   
   const [bayesianModels, setBayesianModels] = useState<Record<string, BayesianModel>>({});
   
-  const pendingPredictionsRef = useRef<Record<string, { startTimeIndex: number; startPrice: number; predictedEndPrice: number }[]>>({});
+  const pendingPredictionsRef = useRef<Record<string, { startTimeIndex: number; startPrice: number; predictedEndPrice: number; model1Price: number; model2Price: number; model3Price: number; }[]>>({});
   const lastSaveRef = useRef<number>(0);
+  const [ensembleWeights, setEnsembleWeights] = useState<Record<string, {w1: number, w2: number, w3: number}>>({});
+  const modelErrorsRef = useRef<Record<string, {m1: number[], m2: number[], m3: number[]}>>({});
 
   const normalRandom = (): number => {
     let u1 = 0;
@@ -323,13 +343,32 @@ function StochasticLab({
   };
   
   const horizons = useMemo(() => [
-      { name: '3t', ticks: 3, window: 20 },
-      { name: '6t', ticks: 6, window: 20 },
-      { name: '10s', ticks: 10, window: 30 },
-      { name: '20s', ticks: 20, window: 30 },
-      { name: '30s', ticks: 30, window: 50 },
-      { name: '40s', ticks: 40, window: 50 },
+      { name: '3t', ticks: 3, window: 50 },
+      { name: '6t', ticks: 6, window: 50 },
+      { name: '10s', ticks: 10, window: 100 },
+      { name: '20s', ticks: 20, window: 100 },
+      { name: '30s', ticks: 30, window: 150 },
+      { name: '40s', ticks: 40, window: 150 },
   ], []);
+
+  // Inicialização de modelos Bayesianos com prior informativo
+    useEffect(() => {
+        if (Object.keys(bayesianModels).length === 0) {
+            const initialModels: Record<string, BayesianModel> = {};
+            horizons.forEach(h => {
+                const estimatedAccuracy = h.ticks <= 6 ? 0.60 : h.ticks <= 20 ? 0.55 : 0.52;
+                const pseudoTrials = 10;
+                
+                initialModels[h.name] = {
+                    priorBelief: estimatedAccuracy,
+                    successCount: Math.floor(estimatedAccuracy * pseudoTrials),
+                    failureCount: Math.floor((1 - estimatedAccuracy) * pseudoTrials),
+                    recentPerformance: Array(5).fill(Math.random() < estimatedAccuracy ? 1 : 0)
+                };
+            });
+            setBayesianModels(initialModels);
+        }
+    }, [horizons, bayesianModels]);
 
   // Load models from Firestore on mount
   useEffect(() => {
@@ -353,13 +392,14 @@ function StochasticLab({
     const prices = realData.map(d => isCandle(d) ? d.close : d.price);
     const logReturns: number[] = [];
     for (let i = 1; i < prices.length; i++) {
-      if(prices[i-1] > 0) logReturns.push(Math.log(prices[i] / prices[i]));
+      if(prices[i-1] > 0) logReturns.push(Math.log(prices[i] / prices[i-1]));
     }
     
     const lastPriceValue = prices[prices.length - 1];
 
     const newFuturePaths: Record<string, any[]> = {};
     const newAccuracies = { ...accuracies };
+    const newEnsembleWeights: Record<string, {w1: number, w2: number, w3: number}> = {};
 
     horizons.forEach(h => {
         if (prices.length <= h.window) return;
@@ -380,12 +420,7 @@ function StochasticLab({
             for (let i = 1; i <= h.ticks; i++) {
                 const recentLogReturns = logReturns.slice(-h.window);
                 const lastSigma = calculateStdDev(recentLogReturns);
-
-                // Weighted Mean
-                const weights = recentLogReturns.map((_, i) => Math.exp(i / recentLogReturns.length));
-                const sumWeights = weights.reduce((a, b) => a + b, 0);
-                const weightedMean = recentLogReturns.reduce((sum, r, i) => sum + r * weights[i], 0) / sumWeights;
-
+                const weightedMean = recentLogReturns.reduce((sum, r, i) => sum + r * Math.exp(i / recentLogReturns.length), 0) / recentLogReturns.length;
                 const recentTrend = recentLogReturns.slice(-5).reduce((a, b) => a + b, 0) / 5;
                 const trendStrength = lastSigma > 0 ? Math.abs(recentTrend / lastSigma) : 0;
                 const driftAdjustment = trendStrength > 0.5 ? recentTrend * 0.3 : 0;
@@ -418,9 +453,6 @@ function StochasticLab({
         // Model 3: Null Model (last price)
         model3_price = prices[prices.length-1];
 
-        // Ensemble with static weights for now
-        const finalForecastPrice = model1_price * 0.6 + model2_price * 0.3 + model3_price * 0.1;
-        
         // --- BAYESIAN UPDATE LOGIC ---
         const currentTimeIndex = prices.length - 1;
         if (!pendingPredictionsRef.current[h.name]) pendingPredictionsRef.current[h.name] = [];
@@ -440,17 +472,50 @@ function StochasticLab({
                 newAccuracies[h.name] = currentConfidence;
                 setBayesianModels(prev => ({ ...prev, [h.name]: updatedModel }));
 
+                // Track errors for ensemble
+                 if (!modelErrorsRef.current[h.name]) {
+                    modelErrorsRef.current[h.name] = { m1: [], m2: [], m3: [] };
+                }
+                modelErrorsRef.current[h.name].m1.push(Math.abs(actualEndPrice - pred.model1Price));
+                modelErrorsRef.current[h.name].m2.push(Math.abs(actualEndPrice - pred.model2Price));
+                modelErrorsRef.current[h.name].m3.push(Math.abs(actualEndPrice - pred.model3Price));
+                
+                if (modelErrorsRef.current[h.name].m1.length > 50) {
+                    modelErrorsRef.current[h.name].m1.shift();
+                    modelErrorsRef.current[h.name].m2.shift();
+                    modelErrorsRef.current[h.name].m3.shift();
+                }
+
             } else {
                 stillPending.push(pred);
             }
         });
         pendingPredictionsRef.current[h.name] = stillPending;
         
+        let weights = { w1: 0.6, w2: 0.3, w3: 0.1 }; // Default
+        const errors = modelErrorsRef.current[h.name];
+        if (errors && errors.m1.length > 10) {
+            const avgError1 = errors.m1.reduce((a, b) => a + b, 0) / errors.m1.length;
+            const avgError2 = errors.m2.reduce((a, b) => a + b, 0) / errors.m2.length;
+            const avgError3 = errors.m3.reduce((a, b) => a + b, 0) / errors.m3.length;
+            const invErr1 = 1 / (avgError1 + 0.0001);
+            const invErr2 = 1 / (avgError2 + 0.0001);
+            const invErr3 = 1 / (avgError3 + 0.0001);
+            const sumInv = invErr1 + invErr2 + invErr3;
+            weights = { w1: invErr1 / sumInv, w2: invErr2 / sumInv, w3: invErr3 / sumInv };
+        }
+        newEnsembleWeights[h.name] = weights;
+
+        const finalForecastPrice = model1_price * weights.w1 + model2_price * weights.w2 + model3_price * weights.w3;
+
         // Add new prediction to pending
         pendingPredictionsRef.current[h.name].push({
             startTimeIndex: currentTimeIndex,
             startPrice: lastPriceValue,
             predictedEndPrice: finalForecastPrice,
+            model1Price: model1_price,
+            model2Price: model2_price,
+            model3Price: model3_price,
         });
 
         // FIX: Create linear projection for non-GBM models
@@ -466,6 +531,7 @@ function StochasticLab({
 
     setFuturePaths(newFuturePaths);
     setAccuracies(newAccuracies);
+    setEnsembleWeights(newEnsembleWeights);
     
     // Save updated models to Firestore periodically
     if(user && Date.now() - lastSaveRef.current > 30000) {
@@ -474,14 +540,14 @@ function StochasticLab({
             modelsToSave[key] = {
                 horizon: key,
                 bayesianModel: bayesianModels[key],
-                modelWeights: { w1: 0.6, w2: 0.3, w3: 0.1 }, // Static for now
+                modelWeights: { w1: 0.6, w2: 0.3, w3: 0.1 },
                 lastUpdate: new Date().toISOString()
             };
         });
         savePredictiveModels(user.uid, modelsToSave);
         lastSaveRef.current = Date.now();
     }
-  }, [realData, horizons, user]);
+  }, [realData, horizons, user, bayesianModels]);
 
   const projectionExperts = useMemo(() => {
     return horizons.map(h => {
@@ -582,7 +648,7 @@ function StochasticLab({
                             {activeTab === 'prediction' && (
                               <div>
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-                                     <StrongestSignalCard signal={strongestSignal} />
+                                     <StrongestSignalCard signal={strongestSignal} ensembleWeights={ensembleWeights} />
                                      <ProjectionExpertsPanel experts={projectionExperts} />
                                 </div>
                                 <h3 className="text-lg font-semibold mb-2">Projeções Futuras (Ensemble)</h3>
@@ -991,9 +1057,12 @@ const PageContent = () => {
 }
 
 export default function VolatilityAnalysisPage() {
+    const onConsensusUpdateRef = useRef((data: any) => {});
+    const formMethods = useForm({ resolver: zodResolver(volatilityTraderSchema), defaultValues: { stake: 1.0, duration: 15 }});
+    
     return (
         <DerivApiProvider>
-             <FormProvider {...useForm({ resolver: zodResolver(volatilityTraderSchema), defaultValues: { stake: 1.0, duration: 15 }})}>
+             <FormProvider {...formMethods}>
                 <PageContent />
             </FormProvider>
         </DerivApiProvider>

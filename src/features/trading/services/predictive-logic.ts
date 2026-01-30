@@ -73,7 +73,7 @@ export function evaluateTriggerConditions(
   let newTriggeredBy: [string, string] | null = null;
 
   const atrPercent = indicators?.atr ? (indicators.atr / currentPrice) * 100 : 0;
-  if (atrPercent < 0.01) {
+  if (atrPercent < 0.01) { // ATR < 0.01% = mercado parado
     return {
         newTriggerSignal: 'HOLD',
         newTriggerReason: 'Mercado estagnado (ATR < 0.01%). Esperando volatilidade.',
