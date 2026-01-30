@@ -1,4 +1,3 @@
-
 // src/app/volatility-analysis/page.tsx
 'use client';
 
@@ -6,7 +5,7 @@ import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { useForm, FormProvider } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ScatterChart, Scatter } from 'recharts';
-import { TrendingUp, TrendingDown, HelpCircle, Bot, FlaskConical, Target, Info, Brain, Zap, Send, Loader2, ShieldCheck, GitBranch, BarChart, Activity, AlertTriangle, Power, ChevronsUpDown } from 'lucide-react';
+import { TrendingUp, TrendingDown, HelpCircle, Bot, FlaskConical, Target, Info, Brain, Zap, Send, Loader2, ShieldCheck, GitBranch, BarChart, Activity, AlertTriangle, Power, ChevronsUpDown, Settings } from 'lucide-react';
 import { DerivApiProviderV2, useDerivApiV2 } from "@/features/trading/hooks/use-deriv-api-v2";
 import { AssetSelectorV2 } from "@/features/trading/components/deriv-trader/asset-selector-v2";
 import { ApiStatusIndicatorV2 } from "@/features/trading/components/deriv-trader/ApiStatusIndicatorV2";
@@ -20,7 +19,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { volatilityTraderSchema, type VolatilityTraderFormValues } from "@/features/trading/components/deriv-trader/volatility-trader-interface.types";
 import VolatilityTraderInterface from "@/features/trading/components/deriv-trader/volatility-trader-interface";
 import { OperationsLogV2 } from "@/features/trading/components/deriv-trader/operations-log-v2";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { useToast } from '@/hooks/use-toast';
@@ -32,7 +31,9 @@ import { db } from '@/lib/firebase';
 import { doc, deleteDoc } from 'firebase/firestore';
 import { errorEmitter, FirestorePermissionError } from '@/firebase';
 import { evaluateTriggerConditions } from '@/features/trading/services/predictive-logic';
-
+import { Button } from '@/components/ui/button';
+import { Slider } from '@/components/ui/slider';
+import { Separator } from '@/components/ui/separator';
 
 // Aproximação da função quantil normal inversa
 const normalQuantile = (p: number): number => {
@@ -81,6 +82,7 @@ interface StochasticLabProps {
   predictiveLogs: PredictiveTradeLog[];
   onDeletePredictiveLog: (logId: string) => void;
   deletingPredictiveLogId: string | null;
+  thresholds: Record<string, number>;
 }
 
 const calculateRollingAccuracy = (history: boolean[]) => {
@@ -174,6 +176,7 @@ function StochasticLab({
     predictiveLogs,
     onDeletePredictiveLog,
     deletingPredictiveLogId,
+    thresholds,
 }: StochasticLabProps) {
   const { toast } = useToast();
   const { user, loading: isAuthLoading } = useAuth();
@@ -181,6 +184,7 @@ function StochasticLab({
   const [activeTab, setActiveTab] = useState('prediction');
   
   const cooldownRef = useRef(false);
+  const pendingSignalRef = useRef<{ signal: 'RISE' | 'FALL'; triggeredBy: [string, string]; timestamp: number } | null>(null);
   
   const [priceData, setPriceData] = useState<any[]>([]);
   const [lastPrice, setLastPrice] = useState<number | null>(null);
@@ -530,38 +534,67 @@ function StochasticLab({
   }, [activeSymbol, executeTrade, toast, user, durationLimits, projectionExperts]);
 
     const runAutopilotCycle = useCallback(() => {
-        if (!isAutopilotOn || cooldownRef.current || !activeSymbol || !executeTrade || isAuthLoading) {
-            if (isAutopilotOn) setAutopilotStatus('Aguardando Conexão...');
-            return;
-        }
-        
-        const activePilotTrade = operationsLog.find(op => op.initiator === 'Piloto' && op.status === 'pending');
-        if (activePilotTrade) {
-            setAutopilotStatus(`Gerindo #${activePilotTrade.id}`);
+        const openMasterTrade = operationsLog.find(op => op.initiator === 'Piloto' && op.status === 'pending');
+
+        if (!isAutopilotOn || cooldownRef.current || !activeSymbol || !executeTrade || isAuthLoading || openMasterTrade) {
+            if (isAutopilotOn) {
+                setAutopilotStatus(openMasterTrade ? `Gerindo #${openMasterTrade.id}` : 'Aguardando...');
+            }
             return;
         }
 
         const assertiveness = Object.fromEntries(projectionExperts.map(p => [p.name, { accuracy: p.accuracy, vote: p.vote }]));
-        const { newTriggerSignal, newTriggerReason, newTriggeredBy } = evaluateTriggerConditions(assertiveness, horizons);
         
-        if (newTriggerSignal !== 'HOLD' && newTriggeredBy) {
-            cooldownRef.current = true;
-            setAutopilotStatus(newTriggerReason);
-            executeTradeAction('Piloto', newTriggerSignal, newTriggeredBy, newTriggerReason).finally(() => {
-                setTimeout(() => { cooldownRef.current = false; }, 60000); // 60s cooldown
-            });
+        // CORREÇÃO: Passar o estado correto para a função
+        const { newTriggerSignal, newTriggerReason, newTriggeredBy } = evaluateTriggerConditions(
+            assertiveness,
+            horizons,
+            thresholds, // <- PASSANDO O NOVO ESTADO
+            'Rise/Fall',
+            'ranging', // Regime hardcoded para simplificar, pois não temos análise de regime aqui.
+            'NONE' // Tendência macro hardcoded para simplificar.
+        );
+        
+        if (pendingSignalRef.current) {
+            const timeSinceSignal = Date.now() - pendingSignalRef.current.timestamp;
+            if (timeSinceSignal > 2000) {
+                if (newTriggerSignal === pendingSignalRef.current.signal) {
+                    setAutopilotStatus(`Sinal ${newTriggerSignal} confirmado. Executando...`);
+                    executeTradeAction('Piloto', newTriggerSignal, newTriggeredBy || pendingSignalRef.current.triggeredBy);
+                    cooldownRef.current = true;
+                    setTimeout(() => { cooldownRef.current = false; }, 60000);
+                } else {
+                    setAutopilotStatus(`Sinal ${pendingSignalRef.current.signal} não confirmado. A monitorizar...`);
+                }
+                pendingSignalRef.current = null;
+            } else {
+                setAutopilotStatus(`Sinal ${pendingSignalRef.current.signal} detectado. A confirmar em ${((2000 - timeSinceSignal) / 1000).toFixed(1)}s...`);
+            }
+        } else if (newTriggerSignal !== 'HOLD' && newTriggeredBy) {
+            setAutopilotStatus(`Sinal ${newTriggerSignal} detectado. A confirmar...`);
+            pendingSignalRef.current = { signal: newTriggerSignal, triggeredBy: newTriggeredBy, timestamp: Date.now() };
         } else {
-             setAutopilotStatus('Monitorando...');
+            setAutopilotStatus('A monitorizar...');
         }
-    }, [isAutopilotOn, activeSymbol, executeTrade, operationsLog, isAuthLoading, setAutopilotStatus, executeTradeAction, projectionExperts, horizons]);
+    }, [
+        isAutopilotOn, 
+        activeSymbol, 
+        executeTrade, 
+        operationsLog, 
+        isAuthLoading, 
+        setAutopilotStatus, 
+        executeTradeAction, 
+        projectionExperts, 
+        horizons,
+        thresholds // Adicionando a nova dependência
+    ]);
 
     useEffect(() => {
         if (!isAutopilotOn) return;
-        const intervalId = setInterval(runAutopilotCycle, 2000);
+        const intervalId = setInterval(runAutopilotCycle, 1000); 
         return () => clearInterval(intervalId);
     }, [isAutopilotOn, runAutopilotCycle]);
   
-
   useEffect(() => {
     onConsensusUpdate(strongestSignal);
   }, [strongestSignal, onConsensusUpdate]);
@@ -754,7 +787,17 @@ function StochasticLab({
   );
 };
 
-const VolatilityAutopilotInterface = ({ isAutopilotOn, toggleAutopilot, autopilotStatus }: { isAutopilotOn: boolean, toggleAutopilot: (checked: boolean) => void, autopilotStatus: string }) => {
+const VolatilityAutopilotInterface = ({ 
+    isAutopilotOn, 
+    toggleAutopilot, 
+    autopilotStatus,
+    children
+}: { 
+    isAutopilotOn: boolean, 
+    toggleAutopilot: (checked: boolean) => void, 
+    autopilotStatus: string,
+    children?: React.ReactNode 
+}) => {
     return (
         <Card>
             <CardHeader>
@@ -786,6 +829,7 @@ const VolatilityAutopilotInterface = ({ isAutopilotOn, toggleAutopilot, autopilo
                         {autopilotStatus}
                     </AlertDescription>
                 </Alert>
+                {children}
             </CardContent>
         </Card>
     );
@@ -821,6 +865,25 @@ const PageContent = () => {
             duration: 15,
         },
     });
+
+    // Estado para os sliders de calibração
+    const [globalAssertivenessThreshold, setGlobalAssertivenessThreshold] = useState(70);
+    const [individualThresholds, setIndividualThresholds] = useState<Record<string, number>>({
+        '3t': 80, '6t': 80, '10s': 75, '20s': 75, '30s': 70, '40s': 70,
+    });
+
+    const handleGlobalThresholdChange = (value: number) => {
+        setGlobalAssertivenessThreshold(value);
+        const newThresholds: Record<string, number> = {};
+        Object.keys(individualThresholds).forEach(key => {
+            newThresholds[key] = value;
+        });
+        setIndividualThresholds(newThresholds);
+    };
+
+    const handleIndividualThresholdChange = (horizon: string, value: number) => {
+        setIndividualThresholds(prev => ({ ...prev, [horizon]: value }));
+    };
 
     useEffect(() => {
         if (!user) {
@@ -934,6 +997,7 @@ const PageContent = () => {
                         predictiveLogs={predictiveLogs}
                         onDeletePredictiveLog={handleDeletePredictiveLog}
                         deletingPredictiveLogId={deletingPredictiveLogId}
+                        thresholds={individualThresholds}
                     />
                     <div className="lg:col-span-2 space-y-6">
                         <VolatilityTraderInterface 
@@ -945,7 +1009,59 @@ const PageContent = () => {
                             isAutopilotOn={isAutopilotOn} 
                             toggleAutopilot={toggleAutopilot}
                             autopilotStatus={autopilotStatus}
-                        />
+                        >
+                            <Collapsible className="pt-4">
+                                <CollapsibleTrigger asChild>
+                                    <Button variant="outline" className="w-full">
+                                        <Settings className="h-4 w-4 mr-2"/>
+                                        Configurações Avançadas do Piloto
+                                    </Button>
+                                </CollapsibleTrigger>
+                                <CollapsibleContent className="pt-4 space-y-6">
+                                    <Card>
+                                        <CardHeader>
+                                            <CardTitle className="text-base font-headline">Calibração de Risco</CardTitle>
+                                        </CardHeader>
+                                        <CardContent className="space-y-6">
+                                            {/* Global Slider */}
+                                            <div className="space-y-2">
+                                                <Label htmlFor="global-assertiveness-threshold">Limiar de Assertividade Global (%)</Label>
+                                                <div className="flex items-center gap-4">
+                                                    <Slider
+                                                        id="global-assertiveness-threshold"
+                                                        min={65} max={95} step={5}
+                                                        value={[globalAssertivenessThreshold]}
+                                                        onValueChange={(value) => handleGlobalThresholdChange(value[0])}
+                                                        disabled={isAutopilotOn}
+                                                    />
+                                                    <span className="font-mono text-primary font-bold">{globalAssertivenessThreshold}%</span>
+                                                </div>
+                                            </div>
+                                            <Separator/>
+                                            {/* Individual Sliders */}
+                                            <div className="space-y-4">
+                                                <Label>Calibração Individual por Horizonte</Label>
+                                                {Object.keys(individualThresholds).map(horizon => (
+                                                    <div key={horizon} className="space-y-2">
+                                                        <div className="flex justify-between items-center">
+                                                            <Label htmlFor={`threshold-${horizon}`} className="text-sm text-muted-foreground">{`Analista ${horizon}`}</Label>
+                                                            <span className="font-mono text-primary font-bold">{individualThresholds[horizon]}%</span>
+                                                        </div>
+                                                        <Slider
+                                                            id={`threshold-${horizon}`}
+                                                            min={65} max={95} step={1}
+                                                            value={[individualThresholds[horizon]]}
+                                                            onValueChange={(value) => handleIndividualThresholdChange(horizon, value[0])}
+                                                            disabled={isAutopilotOn}
+                                                        />
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </CardContent>
+                                    </Card>
+                                </CollapsibleContent>
+                            </Collapsible>
+                        </VolatilityAutopilotInterface>
                         <OperationsLogV2 operations={operationsLog} sellContract={sellContract} priceTicks={priceTicks} clearActiveContracts={clearActiveContracts}/>
                     </div>
                 </div>
