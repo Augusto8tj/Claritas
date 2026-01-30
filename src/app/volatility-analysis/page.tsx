@@ -885,11 +885,12 @@ const VolatilityAutopilotInterface = ({
                     <AlertDescription>
                         <div className="grid grid-cols-2 md:grid-cols-3 gap-2 mt-2 text-xs">
                             {Object.keys(thresholds).map((horizon) => {
-                                // Buscar accuracy do horizonte
                                 const expert = projectionExperts?.find(p => p.name === horizon);
                                 const accuracy = expert?.accuracy || 0;
                                 const threshold = thresholds[horizon];
-                                const passes = Math.max(accuracy, 100 - accuracy) >= threshold;
+                                // CORREÇÃO: A lógica deve usar "assertividade efetiva" (o quão longe de 50% está, para cima ou para baixo)
+                                const effectiveAccuracy = Math.max(accuracy, 100 - accuracy);
+                                const passes = effectiveAccuracy >= threshold;
                                 
                                 return (
                                     <div key={horizon} className={cn(
@@ -900,7 +901,8 @@ const VolatilityAutopilotInterface = ({
                                     )}>
                                         <div className="font-mono font-bold text-sm">{horizon}</div>
                                         <div className="font-mono text-xs">
-                                            {accuracy.toFixed(1)}% / {threshold}%
+                                            {/* MOSTRAR ASSERTIVIDADE EFETIVA para clareza */}
+                                            {effectiveAccuracy.toFixed(1)}% / {threshold}%
                                         </div>
                                         <div className="text-xs font-bold">
                                             {passes ? '✅ PASSA' : '❌ BLOQUEIA'}
@@ -910,7 +912,7 @@ const VolatilityAutopilotInterface = ({
                             })}
                         </div>
                         <p className="text-xs text-muted-foreground mt-3 border-t pt-2">
-                            💡 <strong>Verde</strong> = Assertividade Efetiva ≥ Threshold | 
+                            💡 <strong>Verde</strong> = Assertividade Efetiva ≥ Limiar | 
                             <strong className="text-red-600"> Vermelho</strong> = Bloqueado
                         </p>
                     </AlertDescription>
@@ -953,13 +955,14 @@ const PageContent = () => {
 
     const [globalAssertivenessThreshold, setGlobalAssertivenessThreshold] = useState(62);
     const [individualThresholds, setIndividualThresholds] = useState<Record<string, number>>({
-        '3t': 65,
-        '6t': 65,
-        '10s': 60,
-        '20s': 62,
-        '30s': 58,
-        '40s': 60,
+        '3t': 65,  // Baseado em 70% de win rate real observado
+        '6t': 65,  // Seu melhor horizonte (70% real)
+        '10s': 60, // Evitar, mas permitir se melhorar (37.5% → 60%+)
+        '20s': 62, // Baseado em 67% de win rate real
+        '30s': 58, // Margem para melhoria (54% → 58%+)
+        '40s': 60, // Baseado em 64% de win rate real
     });
+
 
     const handleGlobalThresholdChange = (value: number) => {
         setGlobalAssertivenessThreshold(value);

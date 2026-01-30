@@ -66,7 +66,7 @@ export function evaluateTriggerConditions(
     const currentThreshold = thresholds[currentHorizonName] || 80;
     const prevThreshold = thresholds[prevHorizonName] || 80;
 
-    if (currentEffectiveAccuracy > currentThreshold && prevEffectiveAccuracy > prevThreshold) {
+    if (currentEffectiveAccuracy >= currentThreshold && prevEffectiveAccuracy >= prevThreshold) {
       if (currentVote === prevVote && currentVote !== 'HOLD') {
         
         // Confirmação de Tendência Macro para contratos direcionais
@@ -79,7 +79,7 @@ export function evaluateTriggerConditions(
         
         newTriggerSignal = currentVote;
         newTriggeredBy = [prevHorizonName, currentHorizonName];
-        newTriggerReason = `Sinal ${currentVote} confirmado por ${prevHorizonName} (${prevEffectiveAccuracy.toFixed(0)}% > ${prevThreshold}%) e ${currentHorizonName} (${currentEffectiveAccuracy.toFixed(0)}% > ${currentThreshold}%). Executando...`;
+        newTriggerReason = `Sinal ${currentVote} confirmado por ${prevHorizonName} (${prevEffectiveAccuracy.toFixed(0)}% >= ${prevThreshold}%) e ${currentHorizonName} (${currentEffectiveAccuracy.toFixed(0)}% >= ${currentThreshold}%). Executando...`;
         break; 
       }
     }
