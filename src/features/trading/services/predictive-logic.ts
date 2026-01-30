@@ -3,6 +3,8 @@
 
 import type { AssertivenessData } from '../hooks/use-master-autopilot';
 import type { MarketRegime, CandleData } from '@/lib/types';
+import type { Indicators } from '@/services/indicator-service';
+
 
 function isRegimeCompatible(contract: string, regime: MarketRegime): boolean {
     switch(contract) {
@@ -64,10 +66,20 @@ export function evaluateTriggerConditions(
   isNeighborConfirmationEnabled: boolean,
   isMacroTrendCheckEnabled: boolean,
   highFrequencyThresholdSeconds: number,
+  indicators: Indicators | null
 ) {
   let newTriggerSignal: 'RISE' | 'FALL' | 'HOLD' = 'HOLD';
   let newTriggerReason = 'Nenhuma condição de gatilho atendida.';
   let newTriggeredBy: [string, string] | null = null;
+
+  const atrPercent = indicators?.atr ? (indicators.atr / currentPrice) * 100 : 0;
+  if (atrPercent < 0.01) {
+    return {
+        newTriggerSignal: 'HOLD',
+        newTriggerReason: 'Mercado estagnado (ATR < 0.01%). Esperando volatilidade.',
+        newTriggeredBy: null
+    };
+  }
   
   if (!isRegimeCompatible(contractType, currentRegime)) {
     newTriggerReason = `Contrato (${contractType}) incompatível com regime atual (${currentRegime}).`;
@@ -104,7 +116,7 @@ export function evaluateTriggerConditions(
                   const dynamicEMA = calculateDynamicEMA(botCandleData, dynamicPeriod);
                   
                   if (dynamicEMA === null) {
-                    newTriggerReason = `EMA(${dynamicPeriod}) indisponível.`;
+                    newTriggerReason = `Sinal ${currentVote} bloqueado: EMA(${dynamicPeriod}) indisponível.`;
                     continue;
                   }
                   
@@ -116,7 +128,7 @@ export function evaluateTriggerConditions(
                   if ((currentVote === 'RISE' && dynamicTrend !== 'UP') ||
                       (currentVote === 'FALL' && dynamicTrend !== 'DOWN')) {
                     newTriggerReason = `Sinal ${currentVote} bloqueado: preço ${currentPrice.toFixed(4)} vs EMA(${dynamicPeriod})=${dynamicEMA.toFixed(4)} (${dynamicTrend})`;
-                    continue;
+                    continue; // Pula para a próxima iteração do loop
                   }
                 }
                 

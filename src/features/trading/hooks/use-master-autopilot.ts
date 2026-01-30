@@ -107,8 +107,8 @@ export function useMasterAutopilot() {
   const [riskManager, setRiskManager] = useState<RiskManagerStatus>({
     mode: 'Normal',
     thresholds: {
-      '3t': 80, '6t': 80, '10s': 80,
-      '20s': 80, '30s': 80, '40s': 80,
+      '3t': 65, '6t': 68, '10s': 62,
+      '20s': 60, '30s': 58, '40s': 55,
     },
     lastAdjustmentReason: 'N/A'
   });
@@ -157,6 +157,7 @@ export function useMasterAutopilot() {
     horizons,
     masterState,
     activeSymbol,
+    user
   });
 
   useEffect(() => {
@@ -173,11 +174,12 @@ export function useMasterAutopilot() {
       horizons,
       masterState,
       activeSymbol,
+      user
     };
   });
   
-  const executeTradeAction = useCallback(async (initiator: OperationInitiator, signalOverride: Signal, triggeredBy: [string, string] | null, userForLog: User | null) => {
-      const { contractType, activeSymbol, masterState } = dependenciesRef.current;
+  const executeTradeAction = useCallback(async (initiator: OperationInitiator, signalOverride: Signal, triggeredBy: [string, string] | null) => {
+      const { contractType, activeSymbol, masterState, user } = dependenciesRef.current;
       const signalToUse = signalOverride;
       
       if (signalToUse === 'HOLD' || !activeSymbol || !triggeredBy) {
@@ -213,7 +215,7 @@ export function useMasterAutopilot() {
                   initiator
               );
 
-              if (tradeResult.success && tradeResult.contractId && userForLog) {
+              if (tradeResult.success && tradeResult.contractId && user) {
                   const logId = `pred_log_${tradeResult.contractId}`;
                   const logContext = {
                       triggerReason: masterState.trigger.reason,
@@ -240,7 +242,7 @@ export function useMasterAutopilot() {
                       pnl: 0,
                   };
                   
-                  savePredictiveTradeLog(userForLog.uid, tradeLog);
+                  savePredictiveTradeLog(user.uid, tradeLog);
               }
 
           } else {
@@ -285,7 +287,8 @@ export function useMasterAutopilot() {
         deps.botCandleData,
         false, // Don't require neighbors for manual
         true,
-        deps.highFrequencyThreshold
+        deps.highFrequencyThreshold,
+        calculatedIndicators
     );
     
     const { newTriggerSignal, newTriggerReason, newTriggeredBy } = evaluateTriggerConditions(
@@ -298,21 +301,9 @@ export function useMasterAutopilot() {
         deps.botCandleData,
         deps.isNeighborConfirmationEnabled,
         deps.isMacroTrendCheckEnabled,
-        deps.highFrequencyThreshold
+        deps.highFrequencyThreshold,
+        calculatedIndicators
     );
-
-    console.log('[AUTOPILOT DEBUG]', {
-      timestamp: new Date().toISOString(),
-      isAutopilotOn: deps.isAutopilotOn,
-      openTrades: deps.operationsLog.filter(op => op.status === 'pending').length,
-      triggerSignal: newTriggerSignal,
-      triggerReason: newTriggerReason,
-      assertiveness: Object.entries(newAssertiveness).map(([k, v]) => ({
-        horizon: k,
-        accuracy: v.accuracy.toFixed(1),
-        vote: v.vote
-      }))
-    });
 
     setMasterState(prev => ({
         ...prev,
@@ -334,8 +325,8 @@ export function useMasterAutopilot() {
         const accB = Math.max(b[1].accuracy, 100 - b[1].accuracy);
         return accA > accB ? a : b;
     })[0] : 'manual';
-    await executeTradeAction('Manual', signal, [strongest, strongest], user);
-  }, [executeTradeAction, masterState.manualTrigger, masterState.assertiveness, user]);
+    await executeTradeAction('Manual', signal, [strongest, strongest]);
+  }, [executeTradeAction, masterState.manualTrigger, masterState.assertiveness]);
   
   const setGlobalAssertivenessThreshold = useCallback((value: number) => {
       setRiskManager(prev => {
@@ -362,10 +353,10 @@ export function useMasterAutopilot() {
     
     if (isAutopilotOn && masterState.trigger.signal !== 'HOLD' && !cooldownRef.current && !openMasterTrade) {
       cooldownRef.current = true;
-      executeTradeAction('Piloto', masterState.trigger.signal, masterState.trigger.triggeredBy, user);
+      executeTradeAction('Piloto', masterState.trigger.signal, masterState.trigger.triggeredBy);
       setTimeout(() => { cooldownRef.current = false; }, 20000);
     }
-  }, [isAutopilotOn, masterState.trigger, operationsLog, executeTradeAction, user]);
+  }, [isAutopilotOn, masterState.trigger, operationsLog, executeTradeAction]);
 
   useEffect(() => {
     const lastFinishedTrade = operationsLog.find(op => op.status !== 'pending' && op.initiator === 'Piloto' && !processedTradesRef.current.has(op.id));

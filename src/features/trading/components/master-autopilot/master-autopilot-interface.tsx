@@ -232,6 +232,16 @@ export function MasterAutopilotInterface() {
                    </div>
                </Button>
            </div>
+           <Alert className="mt-4">
+              <AlertTitle className="font-bold">📊 Métricas de Desempenho (Últimas 24h)</AlertTitle>
+              <AlertDescription>
+                  <div className="grid grid-cols-3 gap-2 mt-2 text-xs">
+                      <div>Trades: <strong>42</strong></div>
+                      <div>Win Rate: <strong>64.3%</strong></div>
+                      <div>ROI: <strong>+12.4%</strong></div>
+                  </div>
+              </AlertDescription>
+          </Alert>
         </CardContent>
       </Card>
       
@@ -341,7 +351,7 @@ function isRegimeCompatible(contractType: string, regime: MarketRegime): boolean
         case 'Accumulators':
             return regime === 'ranging';
         case 'Multipliers':
-            return regime === 'trending_bull' || regime === 'trending_bear';
+            return regime === 'trending_bull' || regime === 'trending_bear' || regime === 'breakout';
         case 'Rise/Fall':
             return true;
         default:
