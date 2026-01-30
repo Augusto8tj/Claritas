@@ -4,7 +4,13 @@ Este documento detalha a arquitetura e o funcionamento da página **Análise de 
 
 ---
 
-## 1. Filosofia de Design: O Comitê de Especialistas Temporais
+## 1. Objetivo: De Reativo para Preditivo
+
+O objetivo desta página é transcender a análise técnica tradicional, que é reativa por natureza (baseada em dados passados). O nosso objetivo é construir e validar um **motor preditivo** que tenta antecipar os movimentos de preço em múltiplos horizontes de tempo, e um piloto automático que opera com base nestas previsões, criando um verdadeiro laboratório de estratégias quantitativas.
+
+---
+
+## 2. Filosofia de Design: O Comitê de Especialistas Temporais
 
 A página não é apenas um gráfico; é um **comitê de seis especialistas em IA**, cada um focado num horizonte de tempo diferente (3-ticks, 6-ticks, 10-segundos, etc.). O sistema opera sob os seguintes princípios:
 
@@ -18,36 +24,59 @@ A página não é apenas um gráfico; é um **comitê de seis especialistas em I
 
 ---
 
-## 2. Componentes da Interface e Suas Funções
+## 3. Arquitetura e Ficheiros Atuantes
 
-A página é dividida em painéis que mostram as diferentes camadas da análise do cientista de IA.
+A página opera como um ecossistema próprio. Aqui estão os ficheiros-chave:
 
-### 2.1. Painel Principal: Consenso das Projeções
+### 3.1. Camada de Interface e Orquestração
 
-Este é o "C-Suite" do comitê, onde a decisão final é tomada.
+*   **`src/app/volatility-analysis/page.tsx`**: O ficheiro central da página.
+    *   **Responsabilidade:** Orquestra todos os componentes, hooks e serviços.
+    *   **Contém o `StochasticLab`:** Este componente interno é o **"Cientista de IA"**. Ele executa os modelos GBM para os 6 horizontes de tempo, calcula as projeções, avalia a assertividade de cada um e expõe estes dados para o resto do sistema.
 
-*   **Decisão Final:** O veredito do consenso ponderado (`RISE`/`FALL`/`HOLD`).
-*   **Confiança:** A força da maioria. Uma confiança de 100% indica que todos os especialistas, ponderados pela sua assertividade, concordaram na mesma direção.
-*   **Votos Individuais:** Para cada horizonte (3t, 6t, 10s, etc.), exibe a sua taxa de acerto histórica (`Assertividade`) e o seu voto atual. Isto permite uma auditoria rápida de "quem" está a influenciar a decisão.
+### 3.2. Camada Cognitiva (O Cérebro de Decisão)
 
-### 2.2. Gráfico de Projeção
+*   **`src/features/trading/hooks/use-master-autopilot.ts`**: Este é o **"Comandante Tático"** do piloto automático.
+    *   **Responsabilidade:** Consome as previsões geradas pelo `StochasticLab`. É aqui que a magia do "funil de decisão" acontece. Ele aplica todos os filtros de risco e de contexto para decidir se uma ordem deve ser executada.
+*   **`src/features/trading/services/predictive-logic.ts`**: A "Constituição" do piloto automático.
+    *   **Responsabilidade:** Contém a função pura `evaluateTriggerConditions`. Esta função recebe o estado atual do sistema (assertividade, seus controlos, etc.) e retorna uma decisão (`RISE`, `FALL`, `HOLD`) e a justificação, sem executar nenhuma ação. Isto torna a lógica de decisão testável e isolada.
+*   **`src/services/indicator-service.ts`**: O "Laboratório de Análise Técnica".
+    *   **Responsabilidade:** Usado pelo `use-master-autopilot.ts` para calcular a **EMA dinâmica**, que é usada para o filtro de tendência macro proporcional.
 
-O gráfico principal visualiza o trabalho do comitê:
-*   **Linha Azul (Preço Real):** O movimento real do mercado.
-*   **Linhas Tracejadas Coloridas:** Cada cor representa o caminho futuro projetado por um dos especialistas temporais. Permite ver visualmente se as projeções estão otimistas, pessimistas ou divergentes.
+### 3.3. Camada de Dados e Comunicação
 
-### 2.3. Painel de Métricas de Erro e Assertividade
+*   **`src/features/trading/hooks/use-deriv-api-v2.tsx`**: A nossa ponte única com a corretora.
+    *   **Responsabilidade:** Fornece os dados de mercado em tempo real (`priceTicks`, `botCandleData`) que alimentam tanto o `StochasticLab` quanto o `indicator-service`. É também por aqui que a ordem de `executeTrade` é efetivamente enviada.
+*   **`src/services/financial-data-service.ts`**: A camada de persistência.
+    *   **Responsabilidade:** Contém as funções `savePredictiveTradeLog` e `getPredictiveTradeLogs`, que guardam e carregam o histórico de decisões do piloto automático de/para o Firestore.
 
-Esta é a seção de "Controlo de Qualidade" e "Recursos Humanos" do comitê.
+### 3.4. Componentes de UI
 
-*   **MAE (Erro Médio Absoluto) e RMSE:** Medem o erro médio das previsões de 1-tick. O RMSE penaliza erros grandes, ajudando a detetar picos de imprecisão.
-*   **Fator de Correção (Drift):** Mostra o ajuste que o modelo está a aplicar em si mesmo para se tornar mais preciso.
-*   **Cards de Assertividade:** Seis placares individuais que mostram a performance de cada especialista temporal. O objetivo é que cada um se mantenha consistentemente acima de 50%. Uma taxa de acerto baixa (ex: 30%) é tão informativa quanto uma alta, pois indica um padrão de erro consistente.
+*   **`src/components/deriv-trader/PredictiveLogViewer.tsx`**: O componente visual que exibe de forma clara o histórico de auditoria guardado no Firestore.
+*   **`src/features/trading/components/deriv-trader/volatility-trader-interface.tsx`**: O painel de negociação manual, que permite que o operador interaja com o sistema.
 
-### 2.4. Abas de Análise Estatística
+---
 
-*   **Retornos:** Um gráfico de dispersão que mostra a variação de preço a cada tick. Útil para "sentir" a volatilidade instantânea.
-*   **Volatilidade:** Um gráfico de linha que mostra a volatilidade realizada ao longo do tempo.
-*   **Q-Q Plot:** Um gráfico técnico que valida se a distribuição dos retornos do ativo se assemelha a uma distribuição Normal, o que é uma premissa fundamental do modelo GBM. Pontos próximos da linha diagonal vermelha confirmam a validade do modelo.
+## 4. O Funil de Decisão do Piloto Automático
 
-Em suma, a página de Análise de Volatilidade é um sistema preditivo completo que não apenas tenta prever o futuro, mas também mede, exibe e reage à sua própria precisão em tempo real.
+Para que uma ordem automática seja executada, ela precisa passar por uma série de filtros rigorosos, em sequência:
+
+1.  **Filtro 0: Verificações Operacionais**
+    *   Piloto está LIGADO? O sistema está conectado? Não há trades do piloto pendentes?
+
+2.  **Filtro 1: Compatibilidade Tática**
+    *   O tipo de contrato selecionado (ex: `Rise/Fall`) é adequado para o regime de mercado atual (ex: `trending_bull`)?
+
+3.  **Filtro 2: Consenso Preditivo**
+    *   Este é o seu controlo **"Confirmação de Vizinhos"**. Se estiver LIGADO, o sistema procura por dois especialistas temporais vizinhos que concordem na mesma direção. Se DESLIGADO, procura pelo único especialista mais forte.
+
+4.  **Filtro 3: Limiar de Assertividade**
+    *   O(s) especialista(s) que passaram no filtro anterior têm uma **Assertividade Efetiva** maior ou igual (`>=`) ao limiar que você definiu nos sliders?
+
+5.  **Filtro 4: Alinhamento de Tendência Macro (Dinâmico e Proporcional)**
+    *   Este é o seu controlo **"Verificação de Tendência Macro"**. Se estiver LIGADO, o sistema executa a lógica mais avançada:
+        *   Identifica se o sinal é de **Alta Frequência** (baseado no seu slider "Limiar de HF"). Se for, **ignora o resto deste filtro**.
+        *   Se for um sinal padrão, calcula uma **EMA dinâmica** com um período igual ao do especialista mais longo que confirmou o sinal.
+        *   Verifica se a direção do sinal (`RISE`/`FALL`) está alinhada com a posição do preço em relação a esta EMA dinâmica.
+
+**Execução:** Apenas se uma oportunidade sobreviver a **todos** estes filtros, a função `executeTradeAction` é chamada e a ordem é enviada para a corretora com uma duração que corresponde ao horizonte de tempo do especialista que a validou.
