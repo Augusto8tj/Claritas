@@ -9,7 +9,7 @@ import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
 import { Button } from '@/components/ui/button';
-import { Crosshair, Target, Bot, Power, BarChart, TrendingUp, TrendingDown, ShieldQuestion, Brain, BarChart3, Scale, Zap, ChevronsUpDown, Send, Loader2, ShieldCheck, HelpCircle, GitBranch } from 'lucide-react';
+import { Crosshair, Target, Bot, Power, BarChart, TrendingUp, TrendingDown, ShieldQuestion, Brain, BarChart3, Scale, Zap, ChevronsUpDown, Send, Loader2, ShieldCheck, HelpCircle, GitBranch, Settings } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
 import { Progress } from '@/components/ui/progress';
@@ -19,6 +19,7 @@ import type { Indicators } from '@/services/indicator-service';
 import type { MicrostructureFeatures, MarketRegime } from '@/lib/types';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Slider } from '@/components/ui/slider';
+import { Separator } from '@/components/ui/separator';
 
 
 const getProgressColor = (percentage: number) => {
@@ -121,7 +122,7 @@ function MasterAutopilotDashboard({ state, riskManager, macroTrend, contractType
                         </CardHeader>
                         <CardContent className="space-y-3">
                             <div className="flex justify-between items-center text-sm"><span className="text-muted-foreground">Modo:</span><Badge variant={riskManager.mode === 'Cautious' ? 'destructive' : 'secondary'}>{riskManager.mode}</Badge></div>
-                            <div className="flex justify-between items-center text-sm"><span className="text-muted-foreground">Limiar Atual:</span><span className="font-bold text-primary">{riskManager.assertivenessThreshold}%</span></div>
+                            <div className="flex justify-between items-center text-sm"><span className="text-muted-foreground">Limiar Global:</span><span className="font-bold text-primary">{Object.values(riskManager.thresholds)[0]}%</span></div>
                         </CardContent>
                     </Card>
                 </div>
@@ -173,6 +174,8 @@ export function MasterAutopilotInterface() {
       await autopilot.executeManualTrigger();
       setIsExecutingManual(false);
   }
+
+  const globalThresholdValue = Object.values(autopilot.riskManager.thresholds)[0] || 80;
 
   return (
     <div className="space-y-6">
@@ -233,37 +236,54 @@ export function MasterAutopilotInterface() {
       </Card>
       
       <Collapsible>
-            <CollapsibleTrigger asChild>
-                <Button variant="outline" className="w-full">
-                    <ChevronsUpDown className="h-4 w-4 mr-2"/>
-                    Configurações Avançadas do Piloto
-                </Button>
-            </CollapsibleTrigger>
-            <CollapsibleContent className="pt-4">
-               <Card>
-                  <CardHeader>
-                    <CardTitle className="text-base font-headline">Ajuste de Risco do Piloto Automático</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="space-y-2">
-                        <Label htmlFor="assertiveness-threshold">Limiar de Assertividade (%)</Label>
-                        <div className="flex items-center gap-4">
+        <CollapsibleTrigger asChild>
+            <Button variant="outline" className="w-full">
+                <Settings className="h-4 w-4 mr-2"/>
+                Configurações Avançadas do Piloto
+            </Button>
+        </CollapsibleTrigger>
+        <CollapsibleContent className="pt-4">
+           <Card>
+              <CardHeader>
+                <CardTitle className="text-base font-headline">Ajuste de Risco do Piloto Automático</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                <div className="space-y-2">
+                    <Label htmlFor="global-assertiveness-threshold">Limiar de Assertividade Global (%)</Label>
+                    <div className="flex items-center gap-4">
+                        <Slider
+                            id="global-assertiveness-threshold"
+                            min={65} max={95} step={5}
+                            value={[globalThresholdValue]}
+                            onValueChange={(value) => autopilot.setGlobalAssertivenessThreshold(value[0])}
+                            disabled={autopilot.isAutopilotOn}
+                        />
+                        <span className="font-mono text-primary font-bold">{globalThresholdValue}%</span>
+                    </div>
+                    <p className="text-xs text-muted-foreground">Ajusta o limiar para todos os analistas de uma só vez.</p>
+                </div>
+                <Separator />
+                <div className="space-y-4">
+                    <Label>Calibração Individual por Horizonte</Label>
+                    {Object.keys(autopilot.riskManager.thresholds).map(horizon => (
+                        <div key={horizon} className="space-y-2">
+                            <div className="flex justify-between items-center">
+                                <Label htmlFor={`threshold-${horizon}`} className="text-sm text-muted-foreground">{`Analista ${horizon}`}</Label>
+                                <span className="font-mono text-primary font-bold">{autopilot.riskManager.thresholds[horizon]}%</span>
+                            </div>
                             <Slider
-                                id="assertiveness-threshold"
-                                min={65}
-                                max={95}
-                                step={5}
-                                value={[autopilot.riskManager.assertivenessThreshold]}
-                                onValueChange={(value) => autopilot.setAssertivenessThreshold(value[0])}
+                                id={`threshold-${horizon}`}
+                                min={65} max={95} step={1}
+                                value={[autopilot.riskManager.thresholds[horizon] || 80]}
+                                onValueChange={(value) => autopilot.setIndividualThreshold(horizon, value[0])}
                                 disabled={autopilot.isAutopilotOn}
                             />
-                            <span className="font-mono text-primary font-bold">{autopilot.riskManager.assertivenessThreshold}%</span>
                         </div>
-                        <p className="text-xs text-muted-foreground">Define o quão 'confiante' o piloto deve estar para executar uma ordem. Valores mais altos = menos trades, mas teoricamente mais seguros.</p>
-                    </div>
-                  </CardContent>
-               </Card>
-            </CollapsibleContent>
+                    ))}
+                </div>
+              </CardContent>
+           </Card>
+        </CollapsibleContent>
       </Collapsible>
       
       <Collapsible open={isDashboardOpen} onOpenChange={setIsDashboardOpen}>
