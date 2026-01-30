@@ -245,15 +245,33 @@ export function MasterAutopilotInterface() {
         <CollapsibleContent className="pt-4">
            <Card>
               <CardHeader>
-                <CardTitle className="text-base font-headline">Ajuste de Risco do Piloto Automático</CardTitle>
+                <CardTitle className="text-base font-headline">Ajuste de Risco e Lógica</CardTitle>
               </CardHeader>
               <CardContent className="space-y-6">
+
+                <div className="flex items-center justify-between rounded-lg border p-3 shadow-sm">
+                    <Label htmlFor="neighbor-confirmation-switch" className="flex flex-col space-y-1">
+                        <span>Confirmação de Vizinhos</span>
+                        <span className="font-normal text-xs text-muted-foreground">Exigir que dois especialistas vizinhos concordem.</span>
+                    </Label>
+                    <Switch id="neighbor-confirmation-switch" checked={autopilot.isNeighborConfirmationEnabled} onCheckedChange={autopilot.setIsNeighborConfirmationEnabled} disabled={autopilot.isAutopilotOn}/>
+                </div>
+                 <div className="flex items-center justify-between rounded-lg border p-3 shadow-sm">
+                    <Label htmlFor="macro-trend-switch" className="flex flex-col space-y-1">
+                        <span>Verificação de Tendência Macro</span>
+                         <span className="font-normal text-xs text-muted-foreground">Alinhar trades direcionais com a EMA de 100 períodos.</span>
+                    </Label>
+                    <Switch id="macro-trend-switch" checked={autopilot.isMacroTrendCheckEnabled} onCheckedChange={autopilot.setIsMacroTrendCheckEnabled} disabled={autopilot.isAutopilotOn}/>
+                </div>
+
+                <Separator/>
+
                 <div className="space-y-2">
                     <Label htmlFor="global-assertiveness-threshold">Limiar de Assertividade Global (%)</Label>
                     <div className="flex items-center gap-4">
                         <Slider
                             id="global-assertiveness-threshold"
-                            min={65} max={95} step={5}
+                            min={55} max={100} step={5}
                             value={[globalThresholdValue]}
                             onValueChange={(value) => autopilot.setGlobalAssertivenessThreshold(value[0])}
                             disabled={autopilot.isAutopilotOn}
@@ -262,7 +280,7 @@ export function MasterAutopilotInterface() {
                     </div>
                     <p className="text-xs text-muted-foreground">Ajusta o limiar para todos os analistas de uma só vez.</p>
                 </div>
-                <Separator />
+                <Separator/>
                 <div className="space-y-4">
                     <Label>Calibração Individual por Horizonte</Label>
                     {Object.keys(autopilot.riskManager.thresholds).map(horizon => (
@@ -273,7 +291,7 @@ export function MasterAutopilotInterface() {
                             </div>
                             <Slider
                                 id={`threshold-${horizon}`}
-                                min={65} max={95} step={1}
+                                min={55} max={80} step={1}
                                 value={[autopilot.riskManager.thresholds[horizon] || 80]}
                                 onValueChange={(value) => autopilot.setIndividualThreshold(horizon, value[0])}
                                 disabled={autopilot.isAutopilotOn}

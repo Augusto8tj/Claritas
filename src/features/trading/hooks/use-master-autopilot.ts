@@ -103,8 +103,9 @@ export function useMasterAutopilot() {
   });
   
   const [macroTrend, setMacroTrend] = useState<TrendDirection>('NONE');
-  
   const cooldownRef = useRef(false);
+  const [isNeighborConfirmationEnabled, setIsNeighborConfirmationEnabled] = useState(true);
+  const [isMacroTrendCheckEnabled, setIsMacroTrendCheckEnabled] = useState(true);
   
   const activeApi = v2Api;
   
@@ -167,6 +168,17 @@ export function useMasterAutopilot() {
                       signalToUse.toLowerCase() as 'rise' | 'fall',
                       duration,
                       durationUnit,
+                      initiator
+                  );
+              } else {
+                  // Fallback para duração padrão caso a análise falhe
+                   await executeRiseFallTrade(
+                      signalToUse === 'RISE' ? 'CALL' : 'PUT',
+                      1.0, 
+                      activeSymbol,
+                      signalToUse.toLowerCase() as 'rise' | 'fall',
+                      15,
+                      's',
                       initiator
                   );
               }
@@ -243,24 +255,17 @@ export function useMasterAutopilot() {
     const calculatedIndicators = calculateAllIndicators(botCandleData, getCouncilStrategies(), '1m', {duration: 15, unit: 's'});
     const microFeatures = extractMicrostructureFeatures(priceTicks, botCandleData);
     
-    // SOLUÇÃO: A tendência é calculada DENTRO do ciclo para garantir que o valor mais recente seja usado.
     let detectedTrend: TrendDirection = 'NONE';
     if (calculatedIndicators && calculatedIndicators.ma.long) {
         const ema100 = calculatedIndicators.ma.long;
-        // Zona neutra de 0.05% em torno da EMA para evitar oscilações constantes
         const deadZone = ema100 * 0.0005; 
-        
         if (lastPrice > ema100 + deadZone) {
             detectedTrend = 'UP';
         } else if (lastPrice < ema100 - deadZone) {
             detectedTrend = 'DOWN';
         }
     }
-
-    // O estado é atualizado para a UI, mas a lógica subsequente usará `detectedTrend`.
-    if (macroTrend !== detectedTrend) {
-        setMacroTrend(detectedTrend);
-    }
+    setMacroTrend(detectedTrend);
     
     const detectedRegimeResult = detectMarketRegimeService(botCandleData, calculatedIndicators, detectedTrend);
     
@@ -308,14 +313,15 @@ export function useMasterAutopilot() {
 
     const manualSignal = evaluateManualTrigger(newAssertiveness);
     
-    // A função de avaliação agora recebe a tendência detectada NESTE ciclo.
     const { newTriggerSignal, newTriggerReason, newTriggeredBy } = evaluateTriggerConditions(
         newAssertiveness, 
         horizons.map(name => ({name, ticks: 0, window: 0})), 
         riskManager.thresholds,
         contractType,
         detectedRegimeResult.regime,
-        detectedTrend
+        detectedTrend,
+        isNeighborConfirmationEnabled,
+        isMacroTrendCheckEnabled,
     );
     
     setMasterState({
@@ -330,7 +336,7 @@ export function useMasterAutopilot() {
 
   }, [
     priceTicks, masterState.isReady, botCandleData, evaluateManualTrigger, 
-    horizons, riskManager.thresholds, contractType, setMacroTrend, macroTrend
+    horizons, riskManager.thresholds, contractType, isNeighborConfirmationEnabled, isMacroTrendCheckEnabled
   ]);
 
   useEffect(() => {
@@ -395,5 +401,9 @@ export function useMasterAutopilot() {
     botCandleData,
     operationsLog,
     isConnected,
+    isNeighborConfirmationEnabled,
+    setIsNeighborConfirmationEnabled,
+    isMacroTrendCheckEnabled,
+    setIsMacroTrendCheckEnabled,
   };
 }

@@ -18,6 +18,14 @@ function isRegimeCompatible(contract: string, regime: MarketRegime): boolean {
     }
 }
 
+const getEffectiveVote = (expert: AssertivenessData | undefined): 'RISE' | 'FALL' | 'HOLD' => {
+    if (!expert) return 'HOLD';
+    // Lógica pura de inversão, sem limiar.
+    return expert.accuracy > 50 
+        ? expert.vote 
+        : (expert.vote === 'RISE' ? 'FALL' : (expert.vote === 'FALL' ? 'RISE' : 'HOLD'));
+};
+
 /**
  * Re-evaluates trigger conditions based on the latest assertiveness data.
  * This function is designed to be pure and testable.
@@ -32,10 +40,12 @@ export function evaluateTriggerConditions(
   thresholds: Record<string, number>,
   contractType: string,
   currentRegime: MarketRegime,
-  macroTrend: 'UP' | 'DOWN' | 'NONE'
+  macroTrend: 'UP' | 'DOWN' | 'NONE',
+  isNeighborConfirmationEnabled: boolean,
+  isMacroTrendCheckEnabled: boolean,
 ) {
   let newTriggerSignal: 'RISE' | 'FALL' | 'HOLD' = 'HOLD';
-  let newTriggerReason = 'Nenhuma confirmação dupla de assertividade.';
+  let newTriggerReason = 'Nenhuma condição de gatilho atendida.';
   let newTriggeredBy: [string, string] | null = null;
   
   if (!isRegimeCompatible(contractType, currentRegime)) {
@@ -43,57 +53,86 @@ export function evaluateTriggerConditions(
     return { newTriggerSignal, newTriggerReason, newTriggeredBy };
   }
 
-  for (let i = 1; i < horizons.length; i++) {
-    const currentHorizonName = horizons[i].name;
-    const prevHorizonName = horizons[i-1].name;
-    const currentExpert = newAssertiveness[currentHorizonName];
-    const prevExpert = newAssertiveness[prevHorizonName];
+  if (isNeighborConfirmationEnabled) {
+    // LÓGICA DE CONFIRMAÇÃO DUPLA (VIZINHOS)
+    newTriggerReason = 'Nenhuma confirmação dupla de assertividade.';
+    for (let i = 1; i < horizons.length; i++) {
+        const currentHorizonName = horizons[i].name;
+        const prevHorizonName = horizons[i-1].name;
+        const currentExpert = newAssertiveness[currentHorizonName];
+        const prevExpert = newAssertiveness[prevHorizonName];
 
-    // CORREÇÃO: Esta função agora apenas determina a direção efetiva,
-    // sem aplicar um threshold hardcoded.
-    const getEffectiveVote = (expert: AssertivenessData) => {
-        if (!expert) return 'HOLD';
-        
-        return expert.accuracy > 50 
-            ? expert.vote 
-            : (expert.vote === 'RISE' ? 'FALL' : (expert.vote === 'FALL' ? 'RISE' : 'HOLD'));
-    };
+        const currentVote = getEffectiveVote(currentExpert);
+        const prevVote = getEffectiveVote(prevExpert);
 
-    const currentVote = getEffectiveVote(currentExpert);
-    const prevVote = getEffectiveVote(prevExpert);
+        const currentEffectiveAccuracy = currentExpert ? Math.max(currentExpert.accuracy, 100 - currentExpert.accuracy) : 0;
+        const prevEffectiveAccuracy = prevExpert ? Math.max(prevExpert.accuracy, 100 - prevExpert.accuracy) : 0;
 
-    const currentEffectiveAccuracy = currentExpert ? Math.max(currentExpert.accuracy, 100 - currentExpert.accuracy) : 0;
-    const prevEffectiveAccuracy = prevExpert ? Math.max(prevExpert.accuracy, 100 - prevExpert.accuracy) : 0;
+        const currentThreshold = thresholds[currentHorizonName] || 80;
+        const prevThreshold = thresholds[prevHorizonName] || 80;
 
-    const currentThreshold = thresholds[currentHorizonName] || 80;
-    const prevThreshold = thresholds[prevHorizonName] || 80;
-
-    // A verificação de threshold (limiar) acontece aqui, usando os valores dinâmicos da UI.
-    if (currentEffectiveAccuracy >= currentThreshold && prevEffectiveAccuracy >= prevThreshold) {
-      if (currentVote === prevVote && currentVote !== 'HOLD') {
-        
-        const highFrequencyHorizons = ['3t', '6t', '10s'];
-        const isHighFrequencySignal = highFrequencyHorizons.includes(currentHorizonName);
-
-        if (!isHighFrequencySignal) {
-            if (contractType === 'Rise/Fall' || contractType === 'Multipliers') {
-                if ((currentVote === 'RISE' && macroTrend !== 'UP') || (currentVote === 'FALL' && macroTrend !== 'DOWN')) {
-                    newTriggerReason = `Sinal ${currentVote} bloqueado. Desalinhado com a tendência macro (${macroTrend}).`;
-                    continue; 
+        if (currentEffectiveAccuracy >= currentThreshold && prevEffectiveAccuracy >= prevThreshold) {
+            if (currentVote === prevVote && currentVote !== 'HOLD') {
+                const highFrequencyHorizons = ['3t', '6t', '10s'];
+                const isHighFrequencySignal = highFrequencyHorizons.includes(currentHorizonName);
+                
+                if (isMacroTrendCheckEnabled && !isHighFrequencySignal) {
+                    if ((currentVote === 'RISE' && macroTrend !== 'UP') || (currentVote === 'FALL' && macroTrend !== 'DOWN')) {
+                        newTriggerReason = `Sinal ${currentVote} bloqueado. Desalinhado com a tendência macro (${macroTrend}).`;
+                        continue; 
+                    }
                 }
+                
+                newTriggerSignal = currentVote;
+                newTriggeredBy = [prevHorizonName, currentHorizonName];
+                newTriggerReason = `Sinal ${currentVote} (${isHighFrequencySignal ? 'HF' : 'Padrão'}) confirmado por ${prevHorizonName} (${prevEffectiveAccuracy.toFixed(0)}%) e ${currentHorizonName} (${currentEffectiveAccuracy.toFixed(0)}%).`;
+                
+                if (!isMacroTrendCheckEnabled && !isHighFrequencySignal) newTriggerReason += ' Filtro macro ignorado.';
+                if (isHighFrequencySignal) newTriggerReason += ' Sinal de alta frequência, filtro macro ignorado.';
+                
+                break;
             }
         }
-        
-        newTriggerSignal = currentVote;
-        newTriggeredBy = [prevHorizonName, currentHorizonName];
-        newTriggerReason = `Sinal ${currentVote} (${isHighFrequencySignal ? 'HF' : 'Padrão'}) confirmado por ${prevHorizonName} e ${currentHorizonName}.`;
-        
-        if (isHighFrequencySignal) {
-            newTriggerReason += ' Filtro macro ignorado.';
+    }
+  } else {
+    // LÓGICA DE ESPECIALISTA ÚNICO MAIS FORTE
+    newTriggerReason = 'Nenhum especialista único atingiu o limiar de assertividade.';
+    let bestSignal: 'RISE' | 'FALL' | 'HOLD' = 'HOLD';
+    let bestAccuracy = 0;
+    let bestHorizon: string | null = null;
+    let strongestVote: 'RISE' | 'FALL' | 'HOLD' = 'HOLD';
+
+    for (const horizonName of horizons.map(h => h.name)) {
+        const expert = newAssertiveness[horizonName];
+        if (!expert) continue;
+
+        const effectiveAccuracy = Math.max(expert.accuracy, 100 - expert.accuracy);
+        const threshold = thresholds[horizonName] || 80;
+
+        if (effectiveAccuracy >= threshold && effectiveAccuracy > bestAccuracy) {
+            bestAccuracy = effectiveAccuracy;
+            bestHorizon = horizonName;
+            strongestVote = getEffectiveVote(expert);
         }
-        
-        break; 
-      }
+    }
+
+    if (strongestVote !== 'HOLD' && bestHorizon) {
+        const highFrequencyHorizons = ['3t', '6t', '10s'];
+        const isHighFrequencySignal = highFrequencyHorizons.includes(bestHorizon);
+
+        if (isMacroTrendCheckEnabled && !isHighFrequencySignal) {
+            if ((strongestVote === 'RISE' && macroTrend !== 'UP') || (strongestVote === 'FALL' && macroTrend !== 'DOWN')) {
+                 newTriggerReason = `Sinal ${strongestVote} (${bestHorizon}) bloqueado. Desalinhado com a tendência macro (${macroTrend}).`;
+            } else {
+                newTriggerSignal = strongestVote;
+                newTriggeredBy = [bestHorizon, bestHorizon];
+                newTriggerReason = `Sinal ${strongestVote} confirmado por especialista único (${bestHorizon}) com ${bestAccuracy.toFixed(1)}% de assertividade.`;
+            }
+        } else {
+            newTriggerSignal = strongestVote;
+            newTriggeredBy = [bestHorizon, bestHorizon];
+            newTriggerReason = `Sinal ${strongestVote} (${isHighFrequencySignal ? 'HF' : 'Padrão'}) confirmado por especialista único (${bestHorizon}) com ${bestAccuracy.toFixed(1)}%.`;
+        }
     }
   }
 
