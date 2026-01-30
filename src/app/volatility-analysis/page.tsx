@@ -19,7 +19,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { volatilityTraderSchema, type VolatilityTraderFormValues } from "@/features/trading/components/deriv-trader/volatility-trader-interface.types";
 import VolatilityTraderInterface from "@/features/trading/components/deriv-trader/volatility-trader-interface";
 import { OperationsLogV2 } from "@/features/trading/components/deriv-trader/operations-log-v2";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { useToast } from '@/hooks/use-toast';
@@ -83,6 +83,8 @@ interface StochasticLabProps {
   onDeletePredictiveLog: (logId: string) => void;
   deletingPredictiveLogId: string | null;
   thresholds: Record<string, number>;
+  isNeighborConfirmationEnabled: boolean;
+  isMacroTrendCheckEnabled: boolean;
 }
 
 const calculateRollingAccuracy = (history: boolean[]) => {
@@ -177,6 +179,8 @@ function StochasticLab({
     onDeletePredictiveLog,
     deletingPredictiveLogId,
     thresholds,
+    isNeighborConfirmationEnabled,
+    isMacroTrendCheckEnabled,
 }: StochasticLabProps) {
   const { toast } = useToast();
   const { user, loading: isAuthLoading } = useAuth();
@@ -578,7 +582,7 @@ function StochasticLab({
     
     // ✅ LOG DE QUAIS HORIZONTES PASSAM
     const passing = Object.entries(assertiveness)
-      .filter(([h, data]) => Math.max(data.accuracy, 100 - data.accuracy) >= thresholds[h])
+      .filter(([h, data]) => Math.max(data.accuracy, 100-data.accuracy) >= thresholds[h])
       .map(([h]) => h);
     console.log('✅ Passam no threshold:', passing.length > 0 ? passing.join(', ') : 'NENHUM');
     
@@ -588,7 +592,9 @@ function StochasticLab({
         thresholds, 
         'Rise/Fall',
         'ranging', 
-        'NONE' 
+        'NONE',
+        isNeighborConfirmationEnabled,
+        isMacroTrendCheckEnabled,
     );
     
     // ✅ LOG DO RESULTADO DA AVALIAÇÃO
@@ -629,7 +635,9 @@ function StochasticLab({
       executeTradeAction, 
       projectionExperts, 
       horizons,
-      thresholds
+      thresholds,
+      isNeighborConfirmationEnabled,
+      isMacroTrendCheckEnabled,
   ]);
 
   useEffect(() => {
@@ -888,7 +896,6 @@ const VolatilityAutopilotInterface = ({
                                 const expert = projectionExperts?.find(p => p.name === horizon);
                                 const accuracy = expert?.accuracy || 0;
                                 const threshold = thresholds[horizon];
-                                // CORREÇÃO: A lógica deve usar "assertividade efetiva" (o quão longe de 50% está, para cima ou para baixo)
                                 const effectiveAccuracy = Math.max(accuracy, 100 - accuracy);
                                 const passes = effectiveAccuracy >= threshold;
                                 
@@ -901,7 +908,6 @@ const VolatilityAutopilotInterface = ({
                                     )}>
                                         <div className="font-mono font-bold text-sm">{horizon}</div>
                                         <div className="font-mono text-xs">
-                                            {/* MOSTRAR ASSERTIVIDADE EFETIVA para clareza */}
                                             {effectiveAccuracy.toFixed(1)}% / {threshold}%
                                         </div>
                                         <div className="text-xs font-bold">
@@ -955,13 +961,15 @@ const PageContent = () => {
 
     const [globalAssertivenessThreshold, setGlobalAssertivenessThreshold] = useState(62);
     const [individualThresholds, setIndividualThresholds] = useState<Record<string, number>>({
-        '3t': 65,  // Baseado em 70% de win rate real observado
-        '6t': 65,  // Seu melhor horizonte (70% real)
-        '10s': 60, // Evitar, mas permitir se melhorar (37.5% → 60%+)
-        '20s': 62, // Baseado em 67% de win rate real
-        '30s': 58, // Margem para melhoria (54% → 58%+)
-        '40s': 60, // Baseado em 64% de win rate real
+        '3t': 65,
+        '6t': 65,
+        '10s': 60,
+        '20s': 62,
+        '30s': 58,
+        '40s': 60,
     });
+    const [isNeighborConfirmationEnabled, setIsNeighborConfirmationEnabled] = useState(true);
+    const [isMacroTrendCheckEnabled, setIsMacroTrendCheckEnabled] = useState(true);
 
 
     const handleGlobalThresholdChange = (value: number) => {
@@ -1097,6 +1105,8 @@ const PageContent = () => {
                         onDeletePredictiveLog={handleDeletePredictiveLog}
                         deletingPredictiveLogId={deletingPredictiveLogId}
                         thresholds={individualThresholds}
+                        isNeighborConfirmationEnabled={isNeighborConfirmationEnabled}
+                        isMacroTrendCheckEnabled={isMacroTrendCheckEnabled}
                     />
                     <div className="lg:col-span-2 space-y-6">
                         <VolatilityTraderInterface 
@@ -1121,10 +1131,25 @@ const PageContent = () => {
                                 <CollapsibleContent className="pt-4 space-y-6">
                                     <Card>
                                         <CardHeader>
-                                            <CardTitle className="text-base font-headline">Calibração de Risco</CardTitle>
+                                            <CardTitle className="text-base font-headline">Calibração de Risco e Lógica</CardTitle>
                                         </CardHeader>
                                         <CardContent className="space-y-6">
-                                            {/* Global Slider */}
+                                            <div className="flex items-center justify-between rounded-lg border p-3 shadow-sm">
+                                                <Label htmlFor="neighbor-confirmation-switch" className="flex flex-col space-y-1 flex-1 pr-4">
+                                                    <span>Confirmação de Vizinhos</span>
+                                                    <span className="font-normal text-xs text-muted-foreground">Exigir que dois especialistas vizinhos concordem.</span>
+                                                </Label>
+                                                <Switch id="neighbor-confirmation-switch" checked={isNeighborConfirmationEnabled} onCheckedChange={setIsNeighborConfirmationEnabled} disabled={isAutopilotOn}/>
+                                            </div>
+                                            <div className="flex items-center justify-between rounded-lg border p-3 shadow-sm">
+                                                <Label htmlFor="macro-trend-switch" className="flex flex-col space-y-1 flex-1 pr-4">
+                                                    <span>Verificação de Tendência Macro</span>
+                                                    <span className="font-normal text-xs text-muted-foreground">Alinhar trades com a EMA 100. (Indisponível nesta página - Lógica ausente)</span>
+                                                </Label>
+                                                <Switch id="macro-trend-switch" checked={isMacroTrendCheckEnabled} onCheckedChange={setIsMacroTrendCheckEnabled} disabled={isAutopilotOn || true}/>
+                                            </div>
+
+                                            <Separator/>
                                             <div className="space-y-2">
                                                 <Label htmlFor="global-assertiveness-threshold">Limiar de Assertividade Global (%)</Label>
                                                 <div className="flex items-center gap-4">
@@ -1139,7 +1164,6 @@ const PageContent = () => {
                                                 </div>
                                             </div>
                                             <Separator/>
-                                            {/* Individual Sliders */}
                                             <div className="space-y-4">
                                                 <Label>Calibração Individual por Horizonte</Label>
                                                 {Object.keys(individualThresholds).map(horizon => (
