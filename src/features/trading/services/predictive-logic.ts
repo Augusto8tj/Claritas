@@ -2,7 +2,7 @@
 'use client';
 
 import type { AssertivenessData } from '../hooks/use-master-autopilot';
-import type { MarketRegime } from '@/lib/types';
+import type { MarketRegime, CandleData } from '@/lib/types';
 
 
 function isRegimeCompatible(contract: string, regime: MarketRegime): boolean {
@@ -20,30 +20,51 @@ function isRegimeCompatible(contract: string, regime: MarketRegime): boolean {
 
 const getEffectiveVote = (expert: AssertivenessData | undefined): 'RISE' | 'FALL' | 'HOLD' => {
     if (!expert) return 'HOLD';
-    // Lógica pura de inversão, sem limiar.
     return expert.accuracy > 50 
         ? expert.vote 
         : (expert.vote === 'RISE' ? 'FALL' : (expert.vote === 'FALL' ? 'RISE' : 'HOLD'));
 };
 
-/**
- * Re-evaluates trigger conditions based on the latest assertiveness data.
- * This function is designed to be pure and testable.
- * 
- * @param newAssertiveness - The most recent assertiveness data for all horizons.
- * @param horizons - The configuration for all temporal horizons.
- * @returns An object containing the detected signal, the reason, and the triggering horizons.
- */
+function calculateDynamicEMA(data: CandleData[], period: number): number | null {
+  if (data.length < period) return null;
+  const k = 2 / (period + 1);
+  const relevantData = data.slice(-(period * 2));
+  if (relevantData.length < period) return null;
+  
+  let sum = 0;
+  for (let i = 0; i < period; i++) {
+    if (relevantData[i]) {
+        sum += relevantData[i].close;
+    }
+  }
+  let ema = sum / period;
+  
+  for (let i = period; i < relevantData.length; i++) {
+    if (relevantData[i]) {
+        ema = (relevantData[i].close - ema) * k + ema;
+    }
+  }
+  return ema;
+}
+
+function calcularSegundos(horizonName: string): number {
+  const match = horizonName.match(/(\d+)([st])/);
+  if (!match) return Infinity;
+  const value = parseInt(match[1], 10);
+  return match[2] === 't' ? value * 2 : value;
+}
+
 export function evaluateTriggerConditions(
   newAssertiveness: Record<string, AssertivenessData>,
   horizons: { name: string; ticks: number; window: number }[],
   thresholds: Record<string, number>,
   contractType: string,
   currentRegime: MarketRegime,
-  macroTrend: 'UP' | 'DOWN' | 'NONE',
+  currentPrice: number,
+  botCandleData: CandleData[],
   isNeighborConfirmationEnabled: boolean,
   isMacroTrendCheckEnabled: boolean,
-  highFrequencyThresholdSeconds: number, // NOVO
+  highFrequencyThresholdSeconds: number,
 ) {
   let newTriggerSignal: 'RISE' | 'FALL' | 'HOLD' = 'HOLD';
   let newTriggerReason = 'Nenhuma condição de gatilho atendida.';
@@ -55,7 +76,6 @@ export function evaluateTriggerConditions(
   }
 
   if (isNeighborConfirmationEnabled) {
-    // LÓGICA DE CONFIRMAÇÃO DUPLA (VIZINHOS)
     newTriggerReason = 'Nenhuma confirmação dupla de assertividade.';
     for (let i = 1; i < horizons.length; i++) {
         const currentHorizonName = horizons[i].name;
@@ -75,30 +95,34 @@ export function evaluateTriggerConditions(
         if (currentEffectiveAccuracy >= currentThreshold && prevEffectiveAccuracy >= prevThreshold) {
             if (currentVote === prevVote && currentVote !== 'HOLD') {
                 
-                // --- LÓGICA DE ALTA FREQUÊNCIA ---
-                const horizonDurationMatch = currentHorizonName.match(/(\d+)([st])/);
-                let horizonSeconds = Infinity;
-                if (horizonDurationMatch) {
-                    const value = parseInt(horizonDurationMatch[1], 10);
-                    const unit = horizonDurationMatch[2];
-                    horizonSeconds = unit === 't' ? value * 2 : value; 
-                }
+                const horizonSeconds = calcularSegundos(currentHorizonName);
                 const isHighFrequencySignal = horizonSeconds <= highFrequencyThresholdSeconds;
                 
-                if (isMacroTrendCheckEnabled && !isHighFrequencySignal) {
-                    if ((currentVote === 'RISE' && macroTrend !== 'UP') || (currentVote === 'FALL' && macroTrend !== 'DOWN')) {
-                        newTriggerReason = `Sinal ${currentVote} bloqueado. Desalinhado com a tendência macro (${macroTrend}).`;
-                        continue; 
-                    }
+                if (!isHighFrequencySignal && isMacroTrendCheckEnabled) {
+                  const dynamicPeriod = Math.max(horizonSeconds / 2, 20);
+                  const dynamicEMA = calculateDynamicEMA(botCandleData, dynamicPeriod);
+                  
+                  if (dynamicEMA === null) {
+                    newTriggerReason = `EMA(${dynamicPeriod}) indisponível.`;
+                    continue;
+                  }
+                  
+                  const deadZone = dynamicEMA * 0.0005;
+                  let dynamicTrend: 'UP' | 'DOWN' | 'NONE' = 'NONE';
+                  if (currentPrice > dynamicEMA + deadZone) dynamicTrend = 'UP';
+                  else if (currentPrice < dynamicEMA - deadZone) dynamicTrend = 'DOWN';
+                  
+                  if ((currentVote === 'RISE' && dynamicTrend !== 'UP') ||
+                      (currentVote === 'FALL' && dynamicTrend !== 'DOWN')) {
+                    newTriggerReason = `Sinal ${currentVote} bloqueado: preço ${currentPrice.toFixed(4)} vs EMA(${dynamicPeriod})=${dynamicEMA.toFixed(4)} (${dynamicTrend})`;
+                    continue;
+                  }
                 }
                 
                 newTriggerSignal = currentVote;
                 newTriggeredBy = [prevHorizonName, currentHorizonName];
-                newTriggerReason = `Sinal ${currentVote} (${isHighFrequencySignal ? 'HF' : 'Padrão'}) confirmado por ${prevHorizonName} (${prevEffectiveAccuracy.toFixed(0)}%) e ${currentHorizonName} (${currentEffectiveAccuracy.toFixed(0)}%).`;
-                
-                if (!isMacroTrendCheckEnabled && !isHighFrequencySignal) newTriggerReason += ' Filtro macro ignorado.';
-                if (isHighFrequencySignal) newTriggerReason += ' Sinal de alta frequência, filtro macro ignorado.';
-                
+                newTriggerReason = `✅ ${currentVote} confirmado por ${prevHorizonName}+${currentHorizonName}`;
+                if (isHighFrequencySignal) newTriggerReason += ' [HF, macro ignorado]';
                 break;
             }
         }
@@ -125,27 +149,33 @@ export function evaluateTriggerConditions(
     }
 
     if (strongestVote !== 'HOLD' && bestHorizon) {
-        const horizonDurationMatch = bestHorizon.match(/(\d+)([st])/);
-        let horizonSeconds = Infinity;
-        if(horizonDurationMatch) {
-            const value = parseInt(horizonDurationMatch[1], 10);
-            const unit = horizonDurationMatch[2];
-            horizonSeconds = unit === 't' ? value * 2 : value;
-        }
+        const horizonSeconds = calcularSegundos(bestHorizon);
         const isHighFrequencySignal = horizonSeconds <= highFrequencyThresholdSeconds;
 
         if (isMacroTrendCheckEnabled && !isHighFrequencySignal) {
-            if ((strongestVote === 'RISE' && macroTrend !== 'UP') || (strongestVote === 'FALL' && macroTrend !== 'DOWN')) {
-                 newTriggerReason = `Sinal ${strongestVote} (${bestHorizon}) bloqueado. Desalinhado com a tendência macro (${macroTrend}).`;
+            const dynamicPeriod = Math.max(horizonSeconds / 2, 20);
+            const dynamicEMA = calculateDynamicEMA(botCandleData, dynamicPeriod);
+            
+            if (dynamicEMA === null) {
+                 newTriggerReason = `Sinal ${strongestVote} (${bestHorizon}) bloqueado. EMA(${dynamicPeriod}) indisponível.`;
             } else {
-                newTriggerSignal = strongestVote;
-                newTriggeredBy = [bestHorizon, bestHorizon];
-                newTriggerReason = `Sinal ${strongestVote} confirmado por especialista único (${bestHorizon}) com ${bestAccuracy.toFixed(1)}% de assertividade.`;
+                const deadZone = dynamicEMA * 0.0005;
+                let dynamicTrend: 'UP' | 'DOWN' | 'NONE' = 'NONE';
+                if (currentPrice > dynamicEMA + deadZone) dynamicTrend = 'UP';
+                else if (currentPrice < dynamicEMA - deadZone) dynamicTrend = 'DOWN';
+
+                if ((strongestVote === 'RISE' && dynamicTrend !== 'UP') || (strongestVote === 'FALL' && dynamicTrend !== 'DOWN')) {
+                     newTriggerReason = `Sinal ${strongestVote} (${bestHorizon}) bloqueado. Desalinhado com a tendência macro (${dynamicTrend}).`;
+                } else {
+                    newTriggerSignal = strongestVote;
+                    newTriggeredBy = [bestHorizon, bestHorizon];
+                    newTriggerReason = `✅ ${strongestVote} por especialista único (${bestHorizon}) com ${bestAccuracy.toFixed(1)}% de assertividade.`;
+                }
             }
         } else {
             newTriggerSignal = strongestVote;
             newTriggeredBy = [bestHorizon, bestHorizon];
-            newTriggerReason = `Sinal ${strongestVote} (${isHighFrequencySignal ? 'HF' : 'Padrão'}) confirmado por especialista único (${bestHorizon}) com ${bestAccuracy.toFixed(1)}%.`;
+            newTriggerReason = `✅ ${strongestVote} (${isHighFrequencySignal ? 'HF' : 'Padrão'}) por especialista único (${bestHorizon}) com ${bestAccuracy.toFixed(1)}%.`;
         }
     }
   }

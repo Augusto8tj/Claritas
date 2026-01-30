@@ -11,35 +11,8 @@ import { extractMicrostructureFeatures, type MicrostructureFeatures, detectMarke
 import { evaluateTriggerConditions } from '../services/predictive-logic';
 
 
-// --- LÓGICA COPIADA DO StochasticLab ---
-const normalRandom = (): number => {
-    let u1 = 0; while (u1 === 0) u1 = Math.random();
-    const u2 = Math.random();
-    return Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
-};
-
-const calculateDynamicEMA = (data: CandleData[], period: number): number | null => {
-    if (data.length < period) return null;
-    const k = 2 / (period + 1);
-    
-    // To be more accurate, we should use a slice of data to seed the EMA
-    const relevantData = data.slice(-(period * 2)); 
-    if (relevantData.length < period) return null;
-    
-    let sum = 0;
-    for (let i = 0; i < period; i++) sum += relevantData[i].close;
-    let ema = sum / period;
-    
-    for (let i = period; i < relevantData.length; i++) {
-        ema = (relevantData[i].close - ema) * k + ema;
-    }
-    return ema;
-};
-// --- FIM DA LÓGICA COPIADA ---
-
 type ContractType = 'Accumulators' | 'Rise/Fall' | 'Multipliers';
 type Signal = 'RISE' | 'FALL' | 'HOLD';
-type TrendDirection = 'UP' | 'DOWN' | 'NONE';
 
 export interface AssertivenessData {
     accuracy: number;
@@ -54,7 +27,6 @@ export interface RiskManagerStatus {
 
 export interface MasterAutopilotState {
     isReady: boolean;
-    assertiveness: Record<string, AssertivenessData>;
     trigger: {
         signal: Signal;
         reason: string;
@@ -66,28 +38,21 @@ export interface MasterAutopilotState {
     };
     indicators: Indicators | null;
     microstructure: MicrostructureFeatures | null;
-    currentRegime: { // NOVO
+    currentRegime: { 
         regime: MarketRegime;
         confidence: number;
     };
 }
 
-const isRegimeCompatible = (contract: ContractType, regime: MarketRegime): boolean => {
-    switch (contract) {
-        case 'Accumulators':
-            return regime === 'ranging';
-        case 'Multipliers':
-            return regime === 'trending_bull' || regime === 'trending_bear' || regime === 'breakout';
-        case 'Rise/Fall':
-            return true; // Rise/Fall is generally applicable for now
-        default:
-            return false;
-    }
-}
-
-
 export function useMasterAutopilot() {
-  const v2Api = useDerivApiV2();
+  const { 
+    activeSymbol, 
+    priceTicks, 
+    botCandleData, 
+    operationsLog, 
+    isConnected,
+    executeTrade: executeRiseFallTrade 
+  } = useDerivApiV2();
   
   const { toast } = useToast();
 
@@ -99,12 +64,8 @@ export function useMasterAutopilot() {
   const [riskManager, setRiskManager] = useState<RiskManagerStatus>({
     mode: 'Normal',
     thresholds: {
-      '3t': 65,
-      '6t': 65,
-      '10s': 60,
-      '20s': 62,
-      '30s': 58,
-      '40s': 60,
+      '3t': 80, '6t': 80, '10s': 80,
+      '20s': 80, '30s': 80, '40s': 80,
     },
     lastAdjustmentReason: 'N/A'
   });
@@ -112,7 +73,6 @@ export function useMasterAutopilot() {
   
   const [masterState, setMasterState] = useState<MasterAutopilotState>({
     isReady: false,
-    assertiveness: {},
     trigger: { signal: 'HOLD', reason: 'Piloto desativado ou dados insuficientes.', triggeredBy: null },
     manualTrigger: { signal: 'HOLD', reason: 'Aguardando consenso dos modelos.'},
     indicators: null,
@@ -126,32 +86,11 @@ export function useMasterAutopilot() {
   const [isMacroTrendCheckEnabled, setIsMacroTrendCheckEnabled] = useState(true);
   const [highFrequencyThreshold, setHighFrequencyThreshold] = useState(10);
   
-  const activeApi = v2Api;
-  
-  const { 
-    activeSymbol, 
-    priceTicks, 
-    botCandleData, 
-    operationsLog, 
-    isConnected,
-  } = activeApi;
-
-  const { executeTrade: executeRiseFallTrade } = v2Api;
-
-  const accuracyHistoryRefs = {
-    '3t': useRef<boolean[]>([]), '6t': useRef<boolean[]>([]), '10s': useRef<boolean[]>([]),
-    '20s': useRef<boolean[]>([]), '30s': useRef<boolean[]>([]), '40s': useRef<boolean[]>([]),
-  };
-  const pendingPredictionsRefs = {
-    '3t': useRef<{ startTimeIndex: number; startPrice: number; predictedEndPrice: number }[]>([]),
-    '6t': useRef<{ startTimeIndex: number; startPrice: number; predictedEndPrice: number }[]>([]),
-    '10s': useRef<{ startTimeIndex: number; startPrice: number; predictedEndPrice: number }[]>([]),
-    '20s': useRef<{ startTimeIndex: number; startPrice: number; predictedEndPrice: number }[]>([]),
-    '30s': useRef<{ startTimeIndex: number; startPrice: number; predictedEndPrice: number }[]>([]),
-    '40s': useRef<{ startTimeIndex: number; startPrice: number; predictedEndPrice: number }[]>([]),
-  };
-  const horizons = useMemo(() => Object.keys(accuracyHistoryRefs), [accuracyHistoryRefs]);
-
+  const horizons = useMemo(() => [
+      { name: '3t', ticks: 3, window: 6 }, { name: '6t', ticks: 6, window: 6 },
+      { name: '10s', ticks: 10, window: 10 }, { name: '20s', ticks: 20, window: 10 },
+      { name: '30s', ticks: 30, window: 10 }, { name: '40s', ticks: 40, window: 10 },
+  ], []);
 
   const toggleAutopilot = useCallback((checked: boolean) => {
     setIsAutopilotOn(checked);
@@ -163,7 +102,6 @@ export function useMasterAutopilot() {
   
   const executeTradeAction = useCallback(async (initiator: OperationInitiator, signalOverride: Signal, triggeredBy: [string, string] | null) => {
       const currentContractType = contractType;
-      
       const signalToUse = signalOverride;
       
       if (signalToUse === 'HOLD' || !activeSymbol || !triggeredBy) {
@@ -185,13 +123,12 @@ export function useMasterAutopilot() {
                   duration = parseInt(durationMatch[1], 10);
                   durationUnit = durationMatch[2] as 's' | 't';
               } else {
-                  // Fallback para duração padrão se a análise falhar (ex: 'manual')
                   duration = 15;
                   durationUnit = 's';
               }
                await executeRiseFallTrade(
                   signalToUse === 'RISE' ? 'CALL' : 'PUT',
-                  1.0, // Stake fixo por enquanto para o piloto
+                  1.0, 
                   activeSymbol,
                   signalToUse.toLowerCase() as 'rise' | 'fall',
                   duration,
@@ -199,7 +136,7 @@ export function useMasterAutopilot() {
                   initiator
               );
           } else {
-              toast({ title: "Funcionalidade Limitada", description: `A execução para ${currentContractType} ainda não está operacional neste modo unificado.`, variant: "default"});
+              toast({ title: "Funcionalidade Limitada", description: `A execução para ${currentContractType} ainda não está operacional.`, variant: "default"});
           }
       } catch (error) {
           console.error("Master Autopilot Execution Error:", error);
@@ -246,137 +183,53 @@ export function useMasterAutopilot() {
     return { signal: 'HOLD', reason: 'Aguardando consenso dos modelos.' };
   }, []);
 
-  const runAutopilotCycle = useCallback(() => {
+  const runAutopilotCycle = useCallback((newAssertiveness: Record<string, AssertivenessData>) => {
     if (priceTicks.length < 50) {
       if (masterState.isReady) {
         setMasterState(prev => ({...prev, isReady: false, trigger: { signal: 'HOLD', reason: 'Aguardando dados...', triggeredBy: null }}));
       }
       return;
     }
-
     const currentTick = priceTicks[priceTicks.length - 1];
     if(!currentTick) return;
-
-    const prices = priceTicks.map(d => d.price);
-    const VOL_WINDOW = 50;
-    const lastPrice = prices[prices.length - 1];
-    const logReturns: number[] = [];
-    for (let i = Math.max(1, prices.length - VOL_WINDOW); i < prices.length; i++) {
-        if(prices[i-1] > 0) logReturns.push(Math.log(prices[i] / prices[i - 1]));
-    }
-    if(logReturns.length === 0) return;
-    const meanLastReturn = logReturns.reduce((a, b) => a + b, 0) / logReturns.length;
-    const lastVariance = logReturns.reduce((s, r) => s + Math.pow(r - meanLastReturn, 2), 0) / (logReturns.length - 1);
-    const lastSigma = Math.sqrt(lastVariance);
+    
+    const lastPrice = currentTick.price;
     const calculatedIndicators = calculateAllIndicators(botCandleData, getCouncilStrategies(), '1m', {duration: 15, unit: 's'});
     const microFeatures = extractMicrostructureFeatures(priceTicks, botCandleData);
+    const detectedRegimeResult = detectMarketRegimeService(botCandleData, calculatedIndicators, 'NONE');
     
-    const detectedRegimeResult = detectMarketRegimeService(botCandleData, calculatedIndicators, 'NONE'); // Passa 'NONE' inicialmente
-    
-    const projectPath = (steps: number) => {
-        let currentSimPrice = lastPrice; const path = [];
-        for (let i = 1; i <= steps; i++) {
-            currentSimPrice *= Math.exp(meanLastReturn + lastSigma * normalRandom());
-            path.push({ time: prices.length - 1 + i, price: currentSimPrice });
-        }
-        return path;
-    };
-
-    const newAssertiveness: Record<string, AssertivenessData> = {};
-    
-    horizons.forEach(name => {
-      const hConfig = {
-          '3t': { ticks: 3, window: 6 }, '6t': { ticks: 6, window: 6 }, '10s': { ticks: 10, window: 10 },
-          '20s': { ticks: 20, window: 10 }, '30s': { ticks: 30, window: 10 }, '40s': { ticks: 40, window: 10 },
-      }[name]!;
-      
-      const pendingRef = pendingPredictionsRefs[name as keyof typeof pendingPredictionsRefs];
-      const historyRef = accuracyHistoryRefs[name as keyof typeof accuracyHistoryRefs];
-      
-      const newFuturePath = projectPath(hConfig.ticks);
-      const currentTimeIndex = prices.length - 1; 
-      let newHistory: boolean[] = [];
-      pendingRef.current = pendingRef.current.filter(pred => {
-          if (currentTimeIndex >= pred.startTimeIndex + hConfig.ticks) {
-              const actualEndPrice = prices[pred.startTimeIndex + hConfig.ticks];
-              if(actualEndPrice !== undefined) newHistory.push((pred.predictedEndPrice > pred.startPrice) === (actualEndPrice > pred.startPrice));
-              return false;
-          }
-          return true;
-      });
-      if (newHistory.length > 0) historyRef.current = [...historyRef.current.slice(-hConfig.window + newHistory.length), ...newHistory];
-      if (newFuturePath.length === hConfig.ticks) pendingRef.current.push({startTimeIndex: prices.length - 1, startPrice: lastPrice, predictedEndPrice: newFuturePath[newFuturePath.length - 1].price});
-      
-      const { length: total } = historyRef.current;
-      const hits = historyRef.current.filter(h => h).length;
-      newAssertiveness[name] = { 
-          accuracy: total > 0 ? (hits / total) * 100 : 0, 
-          vote: newFuturePath.length > 0 ? (newFuturePath[newFuturePath.length - 1].price > lastPrice ? 'RISE' : 'FALL') : 'HOLD' 
-      };
-    });
-
     const manualSignal = evaluateManualTrigger(newAssertiveness);
     
-    // --- LÓGICA DE DECISÃO DINÂMICA ---
-    const { 
-      newTriggerSignal: potentialSignal, 
-      newTriggerReason: potentialReason, 
-      newTriggeredBy: potentialTriggeredBy 
-    } = evaluateTriggerConditions(
+    const { newTriggerSignal, newTriggerReason, newTriggeredBy } = evaluateTriggerConditions(
         newAssertiveness,
-        horizons.map(name => ({name, ticks: 0, window: 0})),
+        horizons.map(h => ({ name: h.name, ticks: h.ticks, window: h.window })),
         riskManager.thresholds,
         contractType,
         detectedRegimeResult.regime,
-        'NONE', // Passa NONE para que a lógica interna não bloqueie
+        lastPrice,
+        botCandleData,
         isNeighborConfirmationEnabled,
-        false, // Desativa o filtro de macro aqui para obter o sinal bruto
+        isMacroTrendCheckEnabled,
         highFrequencyThreshold
     );
 
-    let finalSignal: Signal = 'HOLD';
-    let finalReason = potentialReason;
-    let finalTriggeredBy: [string, string] | null = null;
-    
-    if (potentialSignal !== 'HOLD' && potentialTriggeredBy) {
-        const longestHorizonStr = potentialTriggeredBy[1];
-        const durationMatch = longestHorizonStr.match(/(\d+)/);
-        const dynamicPeriod = durationMatch ? parseInt(durationMatch[1], 10) : 100;
-
-        const dynamicEmaValue = calculateDynamicEMA(botCandleData, dynamicPeriod);
-        
-        let dynamicMacroTrend: TrendDirection = 'NONE';
-        if (dynamicEmaValue) {
-            const deadZone = dynamicEmaValue * 0.0005;
-            if (lastPrice > dynamicEmaValue + deadZone) dynamicMacroTrend = 'UP';
-            else if (lastPrice < dynamicEmaValue - deadZone) dynamicMacroTrend = 'DOWN';
-        }
-        
-        const isHighFrequencySignal = dynamicPeriod <= highFrequencyThreshold;
-
-        if (isMacroTrendCheckEnabled && !isHighFrequencySignal) {
-            if ((potentialSignal === 'RISE' && dynamicMacroTrend === 'UP') ||
-                (potentialSignal === 'FALL' && dynamicMacroTrend === 'DOWN')) {
-                finalSignal = potentialSignal;
-                finalReason = potentialReason + ` (Validado com EMA(${dynamicPeriod}) dinâmica: ${dynamicMacroTrend})`;
-                finalTriggeredBy = potentialTriggeredBy;
-            } else {
-                finalReason = `Sinal ${potentialSignal} bloqueado. Desalinhado com EMA(${dynamicPeriod}) dinâmica (${dynamicMacroTrend}).`;
-            }
-        } else {
-            finalSignal = potentialSignal;
-            finalReason = potentialReason;
-            if (isHighFrequencySignal) finalReason += ' (Filtro macro ignorado: sinal HF)';
-            if (!isMacroTrendCheckEnabled) finalReason += ' (Filtro macro ignorado: configuração)';
-            finalTriggeredBy = potentialTriggeredBy;
-        }
-    }
+    console.log('[AUTOPILOT DEBUG]', {
+      timestamp: new Date().toISOString(),
+      isAutopilotOn,
+      openTrades: operationsLog.filter(op => op.status === 'pending').length,
+      triggerSignal: newTriggerSignal,
+      triggerReason: newTriggerReason,
+      assertiveness: Object.entries(newAssertiveness).map(([k, v]) => ({
+        horizon: k,
+        accuracy: v.accuracy.toFixed(1),
+        vote: v.vote
+      }))
+    });
 
     setMasterState(prev => ({
         ...prev,
         isReady: true,
-        assertiveness: newAssertiveness,
-        trigger: { signal: finalSignal, reason: finalReason, triggeredBy: finalTriggeredBy },
+        trigger: { signal: newTriggerSignal, reason: newTriggerReason, triggeredBy: newTriggeredBy },
         manualTrigger: manualSignal,
         indicators: calculatedIndicators,
         microstructure: microFeatures,
@@ -384,24 +237,12 @@ export function useMasterAutopilot() {
     }));
     
   }, [
-    priceTicks, 
-    botCandleData, 
-    masterState.isReady, 
-    evaluateManualTrigger, 
-    horizons, 
-    riskManager.thresholds, 
-    contractType, 
-    isNeighborConfirmationEnabled, 
-    isMacroTrendCheckEnabled,
-    highFrequencyThreshold
+    priceTicks, botCandleData, masterState.isReady, evaluateManualTrigger, horizons, 
+    riskManager.thresholds, contractType, isNeighborConfirmationEnabled, isMacroTrendCheckEnabled,
+    highFrequencyThreshold, isAutopilotOn, operationsLog
   ]);
 
   useEffect(() => {
-    const intervalId = setInterval(runAutopilotCycle, 1000);
-    return () => clearInterval(intervalId);
-  }, [runAutopilotCycle]);
-
-   useEffect(() => {
     const openMasterTrade = operationsLog.find(op => op.initiator === 'Piloto' && op.status === 'pending');
     
     if (isAutopilotOn && masterState.trigger.signal !== 'HOLD' && !cooldownRef.current && !openMasterTrade) {
@@ -451,13 +292,8 @@ export function useMasterAutopilot() {
     riskManager,
     setGlobalAssertivenessThreshold,
     setIndividualThreshold,
-    macroTrend: 'NONE', // Temporariamente desativado
+    runAutopilotCycle,
     executeManualTrigger,
-    activeSymbol,
-    priceTicks,
-    botCandleData,
-    operationsLog,
-    isConnected,
     isNeighborConfirmationEnabled,
     setIsNeighborConfirmationEnabled,
     isMacroTrendCheckEnabled,

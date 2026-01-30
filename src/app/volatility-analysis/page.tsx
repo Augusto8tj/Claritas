@@ -7,8 +7,8 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ScatterChart, Scatter } from 'recharts';
 import { TrendingUp, TrendingDown, HelpCircle, Bot, FlaskConical, Target, Info, Brain, Zap, Send, Loader2, ShieldCheck, GitBranch, BarChart, Activity, AlertTriangle, Power, ChevronsUpDown, Settings } from 'lucide-react';
 import { DerivApiProviderV2, useDerivApiV2 } from "@/features/trading/hooks/use-deriv-api-v2";
-import { AssetSelectorV2 } from "@/features/trading/components/deriv-trader/asset-selector-v2";
-import { ApiStatusIndicatorV2 } from "@/features/trading/components/deriv-trader/ApiStatusIndicatorV2";
+import { AssetSelectorV2 as AssetSelector } from "@/features/trading/components/deriv-trader/asset-selector-v2";
+import { ApiStatusIndicatorV2 as ApiStatusIndicator } from "@/features/trading/components/deriv-trader/ApiStatusIndicatorV2";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { ScrollArea } from '@/components/ui/scroll-area';
 import type { ChartData, CandleData, Operation, PredictiveTradeLog, OperationInitiator } from '@/lib/types';
@@ -30,10 +30,11 @@ import { useAuth } from '@/features/auth/hooks/use-auth';
 import { db } from '@/lib/firebase';
 import { doc, deleteDoc, collection } from 'firebase/firestore';
 import { errorEmitter, FirestorePermissionError } from '@/firebase';
-import { evaluateTriggerConditions } from '@/features/trading/services/predictive-logic';
 import { Button } from '@/components/ui/button';
 import { Slider } from '@/components/ui/slider';
 import { Separator } from '@/components/ui/separator';
+import { useMasterAutopilot } from '@/features/trading/hooks/use-master-autopilot';
+import type { AssertivenessData } from '@/features/trading/hooks/use-master-autopilot';
 
 // Aproximação da função quantil normal inversa
 const normalQuantile = (p: number): number => {
@@ -74,19 +75,10 @@ interface StrongestSignal {
 
 interface StochasticLabProps {
   realData: ChartData[];
-  operationsLog: Operation[];
-  activeSymbol: string | null;
   onConsensusUpdate: (consensus: any) => void;
-  isAutopilotOn: boolean;
-  setAutopilotStatus: (status: string) => void;
-  executeTrade: ReturnType<typeof useDerivApiV2>['executeTrade'];
   predictiveLogs: PredictiveTradeLog[];
   onDeletePredictiveLog: (logId: string) => void;
   deletingPredictiveLogId: string | null;
-  thresholds: Record<string, number>;
-  isNeighborConfirmationEnabled: boolean;
-  isMacroTrendCheckEnabled: boolean;
-  highFrequencyThreshold: number; // NOVO
 }
 
 const calculateRollingAccuracy = (history: boolean[]) => {
@@ -96,10 +88,6 @@ const calculateRollingAccuracy = (history: boolean[]) => {
     return { hits, total, percentage };
 };
 
-interface AssertivenessData {
-    accuracy: number;
-    vote: 'RISE' | 'FALL' | 'HOLD';
-}
 
 const StatItem = ({ label, value }: { label: string; value: string | number }) => (
     <div className="flex flex-col p-2 border-l-2 pl-3">
@@ -160,6 +148,7 @@ const ProjectionExpertsPanel = ({ experts }: { experts: { name: string; vote: 'R
                         )}>
                             {effectiveDirection === 'RISE' && <TrendingUp size={12}/>}
                             {effectiveDirection === 'FALL' && <TrendingDown size={12}/>}
+                            {effectiveDirection === 'HOLD' && <HelpCircle size={12}/>}
                             {effectiveDirection}
                         </span>
                     </div>
@@ -171,26 +160,12 @@ const ProjectionExpertsPanel = ({ experts }: { experts: { name: string; vote: 'R
 
 function StochasticLab({ 
     realData, 
-    operationsLog, 
-    activeSymbol, 
     onConsensusUpdate, 
-    isAutopilotOn, 
-    setAutopilotStatus, 
-    executeTrade,
     predictiveLogs,
     onDeletePredictiveLog,
     deletingPredictiveLogId,
-    thresholds,
-    isNeighborConfirmationEnabled,
-    isMacroTrendCheckEnabled,
-    highFrequencyThreshold,
 }: StochasticLabProps) {
-  const { toast } = useToast();
-  const { user, loading: isAuthLoading } = useAuth();
-  const { durationLimits, botCandleData } = useDerivApiV2();
   const [activeTab, setActiveTab] = useState('prediction');
-  
-  const cooldownRef = useRef(false);
   
   const [priceData, setPriceData] = useState<any[]>([]);
   const [lastPrice, setLastPrice] = useState<number | null>(null);
@@ -223,6 +198,7 @@ function StochasticLab({
   const pendingPredictions20sRef = useRef<{ startTimeIndex: number; startPrice: number; predictedEndPrice: number }[]>([]);
   const pendingPredictions30sRef = useRef<{ startTimeIndex: number; startPrice: number; predictedEndPrice: number }[]>([]);
   const pendingPredictions40sRef = useRef<{ startTimeIndex: number; startPrice: number; predictedEndPrice: number }[]>([]);
+  const processedLogsRef = useRef(new Set<number>());
 
   const normalRandom = (): number => {
     let u1 = 0;
@@ -344,8 +320,18 @@ function StochasticLab({
         const path = [{ time: lastTime, price: lastPriceValue }];
         for (let i = 1; i <= steps; i++) {
           const Z = normalRandom();
-          const drift_future = meanLastReturn;
+          
+          const weights = lastLogReturns.map((_, i) => Math.exp(i / lastLogReturns.length));
+          const sumWeights = weights.reduce((a, b) => a + b, 0);
+          const weightedMean = lastLogReturns.reduce((sum, r, i) => sum + r * weights[i], 0) / sumWeights;
+
+          const recentTrend = lastLogReturns.slice(-5).reduce((a, b) => a + b, 0) / 5;
+          const trendStrength = lastSigma > 0 ? Math.abs(recentTrend / lastSigma) : 0;
+          const driftAdjustment = trendStrength > 0.5 ? recentTrend * 0.3 : 0;
+          
+          const drift_future = weightedMean + driftAdjustment;
           const diffusion_future = lastSigma * Z;
+
           currentSimPrice = currentSimPrice * Math.exp(drift_future + diffusion_future);
 
           if (Number.isFinite(currentSimPrice)) {
@@ -422,16 +408,14 @@ function StochasticLab({
 
   }, [realData, horizons]);
 
-  const processedLogsRef = useRef(new Set<number>());
-
   useEffect(() => {
-    if (!user || operationsLog.length === 0 || isAuthLoading) {
+    const { user, loading } = useAuth();
+    if (!user || loading || !predictiveLogs) {
       return;
     }
     
     const logsToUpdate: PredictiveTradeLog[] = [];
-    const openPilotTrades = operationsLog.filter(op => op.initiator === 'Piloto' && op.status === 'pending');
-    const closedPilotTrades = operationsLog.filter(op => op.initiator === 'Piloto' && op.status !== 'pending');
+    const closedPilotTrades = realData.filter(op => (op as any).initiator === 'Piloto' && (op as any).status !== 'pending') as Operation[];
 
     for (const op of closedPilotTrades) {
       if (!processedLogsRef.current.has(op.id)) {
@@ -440,7 +424,6 @@ function StochasticLab({
         );
 
         if (predictiveLogToUpdate) {
-          console.log(`[Log Finalizer] Finalizando log preditivo para o contrato #${op.id}. Resultado: ${op.status}, PnL: ${op.result}`);
           
           const updatedLogData: PredictiveTradeLog = {
             ...predictiveLogToUpdate,
@@ -458,12 +441,8 @@ function StochasticLab({
       for (const log of logsToUpdate) {
         savePredictiveTradeLog(user.uid, log);
       }
-       toast({
-        title: "Auditoria Preditiva Atualizada",
-        description: `${logsToUpdate.length} registro(s) de trade foram finalizados.`,
-      });
     }
-  }, [operationsLog, predictiveLogs, user, isAuthLoading, toast]);
+  }, [realData, predictiveLogs]);
 
 
   const accuracy3t = useMemo(() => calculateRollingAccuracy(predictionAccuracyHistory3t), [predictionAccuracyHistory3t]);
@@ -503,148 +482,6 @@ function StochasticLab({
     });
     return bestSignal;
   }, [projectionExperts]);
-
-  const executeTradeAction = useCallback(async (initiator: OperationInitiator, signalOverride: 'RISE' | 'FALL', triggeredBy: [string, string], reason: string) => {
-    if (!activeSymbol || !executeTrade || !user || !durationLimits) {
-        toast({ title: "Erro de Configuração", description: "O piloto automático não pôde executar. Verifique a conexão e o ativo selecionado.", variant: "destructive"});
-        return;
-    }
-
-    const longerHorizon = triggeredBy[1]; 
-    let duration: number;
-    let durationUnit: 's' | 't';
-    
-    const durationMatch = longerHorizon.match(/(\d+)([st])/);
-    if (durationMatch) {
-        const suggestedDuration = parseInt(durationMatch[1], 10);
-        const suggestedUnit = durationMatch[2] as 's' | 't';
-        
-        const limits = durationLimits[suggestedUnit];
-        
-        if (limits && limits.min > 0) {
-            duration = Math.max(limits.min, Math.min(suggestedDuration, limits.max));
-            durationUnit = suggestedUnit;
-        } else if (suggestedUnit === 's' && durationLimits.t && durationLimits.t.min > 0) {
-             duration = durationLimits.t.min;
-             durationUnit = 't';
-        } else {
-            duration = 15;
-            durationUnit = 's';
-        }
-
-    } else {
-        duration = 15;
-        durationUnit = 's';
-    }
-
-    toast({ title: `🤖 Master Autopilot: Ordem ${initiator} ${signalOverride}!`, description: `Executando ${duration}${durationUnit} em ${activeSymbol}`});
-
-    try {
-        const result = await executeTrade(
-            signalOverride === 'RISE' ? 'CALL' : 'PUT',
-            1.0, 
-            activeSymbol,
-            signalOverride.toLowerCase() as 'rise' | 'fall',
-            duration,
-            durationUnit,
-            initiator
-        );
-
-        if (result.success && result.contractId && user) {
-            const assertivenessSnapshot = projectionExperts.map(p => ({
-                horizon: p.name,
-                accuracy: p.accuracy,
-                vote: p.vote,
-            }));
-            
-            const logToSave: Omit<PredictiveTradeLog, 'id'> = {
-                contractId: result.contractId,
-                timestamp: new Date().toISOString(),
-                asset: activeSymbol,
-                tradeParams: {
-                    direction: signalOverride,
-                    stake: 1.0, 
-                    duration,
-                    durationUnit
-                },
-                context: {
-                    triggerReason: reason,
-                    assertivenessSnapshot: assertivenessSnapshot,
-                },
-                result: 'pending',
-                pnl: 0,
-            };
-            const logDocRef = doc(collection(db, `users/${user.uid}/predictive_logs_v1`));
-            await savePredictiveTradeLog(user.uid, {...logToSave, id: logDocRef.id});
-        }
-
-    } catch (error) {
-        console.error("Master Autopilot Execution Error:", error);
-        toast({ title: `❌ Erro na Execução ${initiator}`, description: error instanceof Error ? error.message : String(error), variant: "destructive" });
-    }
-  }, [activeSymbol, executeTrade, toast, user, durationLimits, projectionExperts]);
-
-  const runAutopilotCycle = useCallback(() => {
-    const openMasterTrade = operationsLog.find(op => op.initiator === 'Piloto' && op.status === 'pending');
-    
-    if (!isAutopilotOn || cooldownRef.current || !activeSymbol || !executeTrade || isAuthLoading || openMasterTrade) {
-      const blockReasons = [];
-      if (!isAutopilotOn) blockReasons.push('Piloto OFF');
-      if (cooldownRef.current) blockReasons.push('Cooldown ativo');
-      if (!activeSymbol) blockReasons.push('Sem ativo');
-      if (!executeTrade) blockReasons.push('executeTrade N/A');
-      if (isAuthLoading) blockReasons.push('Autenticando');
-      if (openMasterTrade) blockReasons.push(`Trade #${openMasterTrade.id} ativo`);
-      
-      if (isAutopilotOn) {
-        setAutopilotStatus(
-          openMasterTrade 
-            ? `Gerindo #${openMasterTrade.id}` 
-            : `Bloqueado: ${blockReasons[0]}`
-        );
-      }
-      return;
-    }
-    
-    const assertiveness = Object.fromEntries(
-      projectionExperts.map(p => [p.name, { accuracy: p.accuracy, vote: p.vote }])
-    );
-    
-    const macroTrend: 'UP' | 'DOWN' | 'NONE' = 'NONE';
-    
-    const { newTriggerSignal, newTriggerReason, newTriggeredBy } = evaluateTriggerConditions(
-        assertiveness,
-        horizons.map(h => ({ name: h.name, ticks: h.ticks, window: h.window })),
-        thresholds, 
-        'Rise/Fall',
-        'ranging', 
-        macroTrend,
-        isNeighborConfirmationEnabled,
-        isMacroTrendCheckEnabled,
-        highFrequencyThreshold
-    );
-    
-    setAutopilotStatus(newTriggerReason);
-    
-    if (newTriggerSignal !== 'HOLD' && newTriggeredBy) {
-      
-      executeTradeAction('Piloto', newTriggerSignal, newTriggeredBy, newTriggerReason);
-      cooldownRef.current = true;
-      setTimeout(() => { 
-        cooldownRef.current = false;
-      }, 20000); // 20 segundos
-    }
-  }, [
-      isAutopilotOn, activeSymbol, executeTrade, operationsLog, isAuthLoading, 
-      setAutopilotStatus, executeTradeAction, projectionExperts, horizons, thresholds,
-      isNeighborConfirmationEnabled, isMacroTrendCheckEnabled, highFrequencyThreshold
-  ]);
-
-  useEffect(() => {
-    if (!isAutopilotOn) return;
-    const intervalId = setInterval(runAutopilotCycle, 2000); 
-    return () => clearInterval(intervalId);
-  }, [isAutopilotOn, runAutopilotCycle]);
   
   useEffect(() => {
     onConsensusUpdate({strongestSignal, projectionExperts});
@@ -684,7 +521,7 @@ function StochasticLab({
         <CardHeader>
             <CardTitle className="font-headline flex items-center gap-2">
                 <FlaskConical className="h-5 w-5 text-purple-600" />
-                Laboratório Preditivo (Cientista de IA) - {activeSymbol}
+                Laboratório Preditivo (Cientista de IA)
             </CardTitle>
             <CardDescription>O cientista usa GBM para projetar o futuro e medir a própria assertividade.</CardDescription>
         </CardHeader>
@@ -816,19 +653,13 @@ function StochasticLab({
 }
 
 const VolatilityAutopilotInterface = ({ 
-    isAutopilotOn, 
-    toggleAutopilot, 
-    autopilotStatus,
+    autopilot,
     children,
     projectionExperts,
-    thresholds,
 }: { 
-    isAutopilotOn: boolean, 
-    toggleAutopilot: (checked: boolean) => void, 
-    autopilotStatus: string,
+    autopilot: ReturnType<typeof useMasterAutopilot>;
     children?: React.ReactNode,
     projectionExperts: {name: string, accuracy: number}[],
-    thresholds: Record<string, number>,
 }) => {
     return (
         <Card>
@@ -846,19 +677,18 @@ const VolatilityAutopilotInterface = ({
                     <Label htmlFor="autopilot-switch" className="font-semibold">Ativar Piloto</Label>
                     <Switch
                         id="autopilot-switch"
-                        checked={isAutopilotOn}
-                        onCheckedChange={toggleAutopilot}
+                        checked={autopilot.isAutopilotOn}
+                        onCheckedChange={autopilot.toggleAutopilot}
                     />
                 </div>
                  <Alert className={cn(
                      "text-sm",
-                     autopilotStatus === 'Pausado' && "bg-muted/50",
-                     autopilotStatus.startsWith('Gerindo') && "bg-blue-500/10 border-blue-500/50 text-blue-700",
-                     autopilotStatus.startsWith('Sinal') && "bg-green-500/10 border-green-500/50 text-green-700",
+                     autopilot.masterState.trigger.signal === 'HOLD' && "bg-muted/50",
+                     autopilot.masterState.trigger.signal !== 'HOLD' && "bg-green-500/10 border-green-500/50 text-green-700",
                  )}>
                     <AlertTitle className="font-semibold">Status do Piloto</AlertTitle>
                     <AlertDescription>
-                        {autopilotStatus}
+                        {autopilot.masterState.trigger.reason}
                     </AlertDescription>
                 </Alert>
                 {children}
@@ -869,10 +699,10 @@ const VolatilityAutopilotInterface = ({
                     </AlertTitle>
                     <AlertDescription>
                         <div className="grid grid-cols-2 md:grid-cols-3 gap-2 mt-2 text-xs">
-                            {Object.keys(thresholds).map((horizon) => {
+                            {Object.keys(autopilot.riskManager.thresholds).map((horizon) => {
                                 const expert = projectionExperts?.find(p => p.name === horizon);
                                 const accuracy = expert?.accuracy || 0;
-                                const threshold = thresholds[horizon];
+                                const threshold = autopilot.riskManager.thresholds[horizon];
                                 const effectiveAccuracy = Math.max(accuracy, 100 - accuracy);
                                 const passes = effectiveAccuracy >= threshold;
                                 
@@ -906,15 +736,15 @@ const VolatilityAutopilotInterface = ({
 }
 
 const Header = () => {
-    const { activeSymbol, setActiveSymbol, assetGroups, isAssetsLoading } = useDerivApiV2();
+    const { activeSymbol, setActiveSymbol, assetGroups, isAssetsLoading } = useDerivApi();
     return (
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
             <h1 className="text-3xl font-bold tracking-tight font-headline shrink-0 text-center md:text-left"> Análise de Volatilidade </h1>
             <div className="flex-1 grid grid-cols-1 md:grid-cols-2 gap-4 items-center">
                 <div className="flex justify-center">
-                    <AssetSelectorV2 selectedAsset={activeSymbol || ""} onAssetChange={(asset) => setActiveSymbol(asset)} assetGroups={assetGroups} isAssetsLoading={isAssetsLoading} />
+                    <AssetSelector selectedAsset={activeSymbol || ""} onAssetChange={(asset) => setActiveSymbol(asset)} assetGroups={assetGroups} isAssetsLoading={isAssetsLoading} />
                 </div>
-                <div className="flex justify-center"> <ApiStatusIndicatorV2 /> </div>
+                <div className="flex justify-center"> <ApiStatusIndicator /> </div>
             </div>
         </div>
     );
@@ -928,13 +758,16 @@ const getEffectiveVote = (expert: AssertivenessData | undefined): 'RISE' | 'FALL
 };
 
 const PageContent = () => {
-    const { chartData, activeSymbol, operationsLog, sellContract, priceTicks, clearActiveContracts, executeTrade, dataVersion, durationLimits } = useDerivApiV2();
+    const { chartData, activeSymbol, operationsLog, sellContract, clearActiveContracts, durationLimits } = useDerivApi();
     const { user } = useAuth();
     const { toast } = useToast();
     const [predictiveLogs, setPredictiveLogs] = useState<PredictiveTradeLog[]>([]);
     const [isLogsLoading, setIsLogsLoading] = useState(true);
     const [deletingPredictiveLogId, setDeletingPredictiveLogId] = useState<string | null>(null);
-
+    const [consensusData, setConsensusData] = useState<any>(null);
+    
+    const autopilot = useMasterAutopilot();
+    
     const form = useForm<VolatilityTraderFormValues>({
         resolver: zodResolver(volatilityTraderSchema),
         defaultValues: {
@@ -943,27 +776,16 @@ const PageContent = () => {
         },
     });
 
-    const [globalAssertivenessThreshold, setGlobalAssertivenessThreshold] = useState(55);
-    const [individualThresholds, setIndividualThresholds] = useState<Record<string, number>>({
-        '3t': 65, '6t': 65, '10s': 60, '20s': 62, '30s': 58, '40s': 60,
-    });
-    const [isNeighborConfirmationEnabled, setIsNeighborConfirmationEnabled] = useState(true);
-    const [isMacroTrendCheckEnabled, setIsMacroTrendCheckEnabled] = useState(true);
-    const [highFrequencyThreshold, setHighFrequencyThreshold] = useState(10); 
+    const handleConsensusUpdate = useCallback((data: any) => {
+        setConsensusData(data);
+        if (autopilot.isAutopilotOn && data?.projectionExperts) {
+            const assertiveness: Record<string, AssertivenessData> = Object.fromEntries(
+                data.projectionExperts.map((p: any) => [p.name, { accuracy: p.accuracy, vote: p.vote }])
+            );
+            autopilot.runAutopilotCycle(assertiveness);
+        }
+    }, [autopilot]);
 
-
-    const handleGlobalThresholdChange = (value: number) => {
-        setGlobalAssertivenessThreshold(value);
-        const newThresholds: Record<string, number> = {};
-        Object.keys(individualThresholds).forEach(key => {
-            newThresholds[key] = value;
-        });
-        setIndividualThresholds(newThresholds);
-    };
-
-    const handleIndividualThresholdChange = (horizon: string, value: number) => {
-        setIndividualThresholds(prev => ({ ...prev, [horizon]: value }));
-    };
 
     useEffect(() => {
         if (!user) {
@@ -1005,68 +827,34 @@ const PageContent = () => {
         }
     };
 
-    const [consensusData, setConsensusData] = useState<any>({
-        strongestSignal: {
-            direction: 'HOLD',
-            certaintyScore: 0,
-            horizon: 'N/A',
-            accuracy: 50,
-        },
-        projectionExperts: [],
-    });
-    
-    const [isAutopilotOn, setIsAutopilotOn] = useState(false);
-    const [autopilotStatus, setAutopilotStatus] = useState('Pausado');
-    const toggleAutopilot = (checked: boolean) => {
-        setIsAutopilotOn(checked);
-        setAutopilotStatus(checked ? 'Monitorando...' : 'Pausado');
-    };
-
-    const handleConsensusUpdate = useCallback((data: any) => {
-        setConsensusData(data);
-    }, []);
-
     const handleSyncDuration = () => {
-        const { duration, durationUnit } = getOptimalDuration(consensusData.strongestSignal.horizon, durationLimits);
-        if (!duration) {
+        const { direction, horizon } = consensusData?.strongestSignal || {};
+        if (!horizon || horizon === 'N/A' || !durationLimits) {
           toast({ variant: 'destructive', title: 'Nenhum Sinal Forte', description: 'Aguarde um sinal preditivo forte para sincronizar.' });
           return;
         }
 
+        const durationMatch = horizon.match(/(\d+)([st])/);
+        let duration: number = 15;
+        let durationUnit: 's' | 't' = 's';
+        if (durationMatch) {
+            const suggestedDuration = parseInt(durationMatch[1], 10);
+            const suggestedUnit = durationMatch[2] as 's' | 't';
+            const limits = durationLimits[suggestedUnit];
+            if (limits && limits.min > 0) {
+                duration = Math.max(limits.min, Math.min(suggestedDuration, limits.max));
+                durationUnit = suggestedUnit;
+            }
+        }
+        
         form.setValue('duration', duration);
 
         toast({
           title: 'Duração Sincronizada!',
-          description: `Duração definida para ${duration}${durationUnit}, com base no sinal de ${consensusData.strongestSignal.horizon}.`,
+          description: `Duração definida para ${duration}${durationUnit}, com base no sinal de ${horizon}.`,
         });
     };
     
-    const getOptimalDuration = (horizon: string, durationLimits: any) => {
-        if (!horizon || horizon === 'N/A' || !durationLimits) {
-            return { duration: 15, durationUnit: 's' };
-        }
-
-        let duration = 15;
-        let durationUnit: 's' | 't' = 's';
-        const durationValue = parseInt(horizon.replace(/[st]/, ''), 10);
-        
-        if (horizon.endsWith('t')) {
-            const limits = durationLimits?.t;
-            if (limits) {
-                duration = Math.max(limits.min, Math.min(durationValue, limits.max));
-                durationUnit = 't';
-            } else {
-                 duration = Math.max(15, durationValue * 2);
-                 durationUnit = 's';
-            }
-        } else if (horizon.endsWith('s')) {
-            const limits = durationLimits?.s;
-            duration = limits ? Math.max(limits.min, Math.min(durationValue, limits.max)) : durationValue;
-            durationUnit = 's';
-        }
-
-        return { duration, durationUnit };
-    };
 
     return (
         <FormProvider {...form}>
@@ -1075,32 +863,20 @@ const PageContent = () => {
                 <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
                     <StochasticLab 
                         realData={chartData} 
-                        activeSymbol={activeSymbol} 
                         onConsensusUpdate={handleConsensusUpdate}
-                        isAutopilotOn={isAutopilotOn}
-                        setAutopilotStatus={setAutopilotStatus}
-                        executeTrade={executeTrade}
-                        operationsLog={operationsLog}
                         predictiveLogs={predictiveLogs}
                         onDeletePredictiveLog={handleDeletePredictiveLog}
                         deletingPredictiveLogId={deletingPredictiveLogId}
-                        thresholds={individualThresholds}
-                        isNeighborConfirmationEnabled={isNeighborConfirmationEnabled}
-                        isMacroTrendCheckEnabled={isMacroTrendCheckEnabled}
-                        highFrequencyThreshold={highFrequencyThreshold}
                     />
                     <div className="lg:col-span-2 space-y-6">
                         <VolatilityTraderInterface 
                           symbol={activeSymbol || ''} 
-                          consensus={consensusData.strongestSignal}
+                          consensus={consensusData?.strongestSignal}
                           onSyncDuration={handleSyncDuration}
                         />
                         <VolatilityAutopilotInterface 
-                            isAutopilotOn={isAutopilotOn} 
-                            toggleAutopilot={toggleAutopilot}
-                            autopilotStatus={autopilotStatus}
-                            projectionExperts={consensusData.projectionExperts}
-                            thresholds={individualThresholds}
+                            autopilot={autopilot}
+                            projectionExperts={consensusData?.projectionExperts || []}
                         >
                             <Collapsible className="pt-4">
                                 <CollapsibleTrigger asChild>
@@ -1120,14 +896,14 @@ const PageContent = () => {
                                                     <span>Confirmação de Vizinhos</span>
                                                     <span className="font-normal text-xs text-muted-foreground">Exigir que dois especialistas vizinhos concordem.</span>
                                                 </Label>
-                                                <Switch id="neighbor-confirmation-switch" checked={isNeighborConfirmationEnabled} onCheckedChange={setIsNeighborConfirmationEnabled} disabled={isAutopilotOn}/>
+                                                <Switch id="neighbor-confirmation-switch" checked={autopilot.isNeighborConfirmationEnabled} onCheckedChange={autopilot.setIsNeighborConfirmationEnabled} disabled={autopilot.isAutopilotOn}/>
                                             </div>
                                             <div className="flex items-center justify-between rounded-lg border p-3 shadow-sm">
                                                 <Label htmlFor="macro-trend-switch" className="flex flex-col space-y-1 flex-1 pr-4">
                                                     <span>Verificação de Tendência Macro</span>
-                                                    <span className="font-normal text-xs text-muted-foreground">Alinhar trades com a EMA 100. (Ignorado para sinais HF)</span>
+                                                    <span className="font-normal text-xs text-muted-foreground">Alinhar trades com a EMA dinâmica. (Ignorado para sinais HF)</span>
                                                 </Label>
-                                                <Switch id="macro-trend-switch" checked={isMacroTrendCheckEnabled} onCheckedChange={setIsMacroTrendCheckEnabled} disabled={isAutopilotOn}/>
+                                                <Switch id="macro-trend-switch" checked={autopilot.isMacroTrendCheckEnabled} onCheckedChange={autopilot.setIsMacroTrendCheckEnabled} disabled={autopilot.isAutopilotOn}/>
                                             </div>
                                             
                                             <Separator/>
@@ -1138,11 +914,11 @@ const PageContent = () => {
                                                     <Slider
                                                         id="hf-threshold-slider"
                                                         min={5} max={60} step={5}
-                                                        value={[highFrequencyThreshold]}
-                                                        onValueChange={(value) => setHighFrequencyThreshold(value[0])}
-                                                        disabled={isAutopilotOn}
+                                                        value={[autopilot.highFrequencyThreshold]}
+                                                        onValueChange={(value) => autopilot.setHighFrequencyThreshold(value[0])}
+                                                        disabled={autopilot.isAutopilotOn}
                                                     />
-                                                    <span className="font-mono text-primary font-bold">{highFrequencyThreshold}s</span>
+                                                    <span className="font-mono text-primary font-bold">{autopilot.highFrequencyThreshold}s</span>
                                                 </div>
                                                 <p className="text-xs text-muted-foreground pt-1">Sinais com duração igual ou inferior a este valor ignorarão o filtro de tendência macro.</p>
                                             </div>
@@ -1155,28 +931,28 @@ const PageContent = () => {
                                                     <Slider
                                                         id="global-assertiveness-threshold"
                                                         min={55} max={100} step={5}
-                                                        value={[globalAssertivenessThreshold]}
-                                                        onValueChange={(value) => handleGlobalThresholdChange(value[0])}
-                                                        disabled={isAutopilotOn}
+                                                        value={[Object.values(autopilot.riskManager.thresholds)[0] || 80]}
+                                                        onValueChange={(value) => autopilot.setGlobalAssertivenessThreshold(value[0])}
+                                                        disabled={autopilot.isAutopilotOn}
                                                     />
-                                                    <span className="font-mono text-primary font-bold">{globalAssertivenessThreshold}%</span>
+                                                    <span className="font-mono text-primary font-bold">{Object.values(autopilot.riskManager.thresholds)[0] || 80}%</span>
                                                 </div>
                                             </div>
                                             <Separator/>
                                             <div className="space-y-4">
                                                 <Label>Calibração Individual por Horizonte</Label>
-                                                {Object.keys(individualThresholds).map(horizon => (
+                                                {Object.keys(autopilot.riskManager.thresholds).map(horizon => (
                                                     <div key={horizon} className="space-y-2">
                                                         <div className="flex justify-between items-center">
                                                             <Label htmlFor={`threshold-${horizon}`} className="text-sm text-muted-foreground">{`Analista ${horizon}`}</Label>
-                                                            <span className="font-mono text-primary font-bold">{individualThresholds[horizon]}%</span>
+                                                            <span className="font-mono text-primary font-bold">{autopilot.riskManager.thresholds[horizon]}%</span>
                                                         </div>
                                                         <Slider
                                                             id={`threshold-${horizon}`}
                                                             min={55} max={80} step={1}
-                                                            value={[individualThresholds[horizon]]}
-                                                            onValueChange={(value) => handleIndividualThresholdChange(horizon, value[0])}
-                                                            disabled={isAutopilotOn}
+                                                            value={[autopilot.riskManager.thresholds[horizon] || 80]}
+                                                            onValueChange={(value) => autopilot.setIndividualThreshold(horizon, value[0])}
+                                                            disabled={autopilot.isAutopilotOn}
                                                         />
                                                     </div>
                                                 ))}
@@ -1186,7 +962,7 @@ const PageContent = () => {
                                 </CollapsibleContent>
                             </Collapsible>
                         </VolatilityAutopilotInterface>
-                        <OperationsLogV2 operations={operationsLog} sellContract={sellContract} priceTicks={priceTicks} clearActiveContracts={clearActiveContracts}/>
+                        <OperationsLogV2 operations={operationsLog} sellContract={sellContract} priceTicks={[]} clearActiveContracts={clearActiveContracts}/>
                     </div>
                 </div>
             </div>
@@ -1196,8 +972,8 @@ const PageContent = () => {
 
 export default function VolatilityAnalysisPage() {
     return (
-        <DerivApiProviderV2>
+        <DerivApiProvider>
             <PageContent />
-        </DerivApiProviderV2>
+        </DerivApiProvider>
     );
 }
