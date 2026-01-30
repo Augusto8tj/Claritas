@@ -4,7 +4,6 @@
 import type { AssertivenessData } from '../hooks/use-master-autopilot';
 import type { MarketRegime, CandleData } from '@/lib/types';
 
-
 function isRegimeCompatible(contract: string, regime: MarketRegime): boolean {
     switch(contract) {
         case 'Accumulators':
@@ -83,11 +82,13 @@ export function evaluateTriggerConditions(
         const currentExpert = newAssertiveness[currentHorizonName];
         const prevExpert = newAssertiveness[prevHorizonName];
 
+        if (!currentExpert || !prevExpert) continue;
+
         const currentVote = getEffectiveVote(currentExpert);
         const prevVote = getEffectiveVote(prevExpert);
 
-        const currentEffectiveAccuracy = currentExpert ? Math.max(currentExpert.accuracy, 100 - currentExpert.accuracy) : 0;
-        const prevEffectiveAccuracy = prevExpert ? Math.max(prevExpert.accuracy, 100 - prevExpert.accuracy) : 0;
+        const currentEffectiveAccuracy = Math.max(currentExpert.accuracy, 100 - currentExpert.accuracy);
+        const prevEffectiveAccuracy = Math.max(prevExpert.accuracy, 100 - prevExpert.accuracy);
 
         const currentThreshold = thresholds[currentHorizonName] || 80;
         const prevThreshold = thresholds[prevHorizonName] || 80;
@@ -99,7 +100,7 @@ export function evaluateTriggerConditions(
                 const isHighFrequencySignal = horizonSeconds <= highFrequencyThresholdSeconds;
                 
                 if (!isHighFrequencySignal && isMacroTrendCheckEnabled) {
-                  const dynamicPeriod = Math.max(horizonSeconds / 2, 20);
+                  const dynamicPeriod = Math.max(Math.floor(horizonSeconds / 2), 20);
                   const dynamicEMA = calculateDynamicEMA(botCandleData, dynamicPeriod);
                   
                   if (dynamicEMA === null) {
@@ -153,7 +154,7 @@ export function evaluateTriggerConditions(
         const isHighFrequencySignal = horizonSeconds <= highFrequencyThresholdSeconds;
 
         if (isMacroTrendCheckEnabled && !isHighFrequencySignal) {
-            const dynamicPeriod = Math.max(horizonSeconds / 2, 20);
+            const dynamicPeriod = Math.max(Math.floor(horizonSeconds / 2), 20);
             const dynamicEMA = calculateDynamicEMA(botCandleData, dynamicPeriod);
             
             if (dynamicEMA === null) {

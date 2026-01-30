@@ -8,6 +8,7 @@ import { getChatbotInsightsResponse } from '@/app/actions';
 import { EvolutionEvent } from '@/features/trading/hooks/use-strategy-evolution-v2';
 import { sanitizeForFirestore } from './utils/sanitize-for-firestore';
 import { errorEmitter, FirestorePermissionError } from '@/firebase';
+import { BayesianModel } from '@/features/trading/services/bayesian-confidence';
 
 
 // --- Transactions ---
@@ -436,3 +437,48 @@ export async function getPredictiveTradeLogs(userId: string): Promise<any[]> {
         return [];
     }
 }
+
+// --- Predictive Models Persistence ---
+
+export interface PersistentModelState {
+  horizon: string;
+  bayesianModel: BayesianModel;
+  modelWeights: { w1: number; w2: number; w3: number };
+  lastUpdate: string;
+}
+
+export async function savePredictiveModels(userId: string, models: Record<string, PersistentModelState>): Promise<void> {
+  if (!userId) return;
+  const docRef = doc(db, 'users', userId, 'predictive_models', 'all_horizons');
+  const sanitizedData = sanitizeForFirestore({ ...models });
+  try {
+    await setDoc(docRef, sanitizedData, { merge: true });
+  } catch (error) {
+    errorEmitter.emit('permission-error', new FirestorePermissionError({
+      path: docRef.path,
+      operation: 'write',
+      requestResourceData: sanitizedData,
+    }));
+    console.error("Falha ao salvar modelos preditivos:", error);
+  }
+};
+
+export async function loadPredictiveModels(userId: string): Promise<Record<string, PersistentModelState> | null> {
+  if (!userId) return null;
+  const docRef = doc(db, 'users', userId, 'predictive_models', 'all_horizons');
+  try {
+    const docSnap = await getDoc(docRef);
+    if (docSnap.exists()) {
+      return docSnap.data() as Record<string, PersistentModelState>;
+    }
+    return null;
+  } catch (error) {
+    const permissionError = new FirestorePermissionError({
+      path: docRef.path,
+      operation: 'get',
+    });
+    errorEmitter.emit('permission-error', permissionError);
+    console.error(`[Service Error] loadPredictiveModels for user ${userId} failed:`, error);
+    throw permissionError;
+  }
+};

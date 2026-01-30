@@ -25,16 +25,146 @@ import { Switch } from '@/components/ui/switch';
 import { useToast } from '@/hooks/use-toast';
 import { getConsensusGradientStyle } from '@/features/trading/components/deriv-trader/utils/get-consensus-gradient-style';
 import PredictiveLogViewer from '@/components/deriv-trader/PredictiveLogViewer';
-import { getPredictiveTradeLogs, savePredictiveTradeLog } from '@/services/financial-data-service';
+import { getPredictiveTradeLogs, savePredictiveTradeLog, savePredictiveModels, loadPredictiveModels, PersistentModelState } from '@/services/financial-data-service';
 import { useAuth } from '@/features/auth/hooks/use-auth';
 import { db } from '@/lib/firebase';
-import { doc, deleteDoc, collection } from 'firebase/firestore';
+import { doc, deleteDoc } from 'firebase/firestore';
 import { errorEmitter, FirestorePermissionError } from '@/firebase';
 import { Button } from '@/components/ui/button';
 import { Slider } from '@/components/ui/slider';
 import { Separator } from '@/components/ui/separator';
 import { useMasterAutopilot } from '@/features/trading/hooks/use-master-autopilot';
 import type { AssertivenessData } from '@/features/trading/hooks/use-master-autopilot';
+import { BayesianModel, updateBayesianConfidence } from '@/features/trading/services/bayesian-confidence';
+
+// ========================================================
+// HELPER FUNCTIONS (ADVANCED MODELS)
+// ========================================================
+const calculateEMA = (prices: number[], period: number): number[] => {
+    if (prices.length < period) return Array(prices.length).fill(prices[0] || 0);
+    let result: number[] = [];
+    const k = 2 / (period + 1);
+    let ema = prices.slice(0, period).reduce((a, b) => a + b, 0) / period;
+    for(let i=0; i<period-1; i++) result.push(ema);
+    result.push(ema);
+    for (let i = period; i < prices.length; i++) {
+        ema = (prices[i] - ema) * k + ema;
+        result.push(ema);
+    }
+    return result;
+};
+
+const calculateStdDev = (data: number[]): number => {
+    if (data.length < 2) return 0;
+    const mean = data.reduce((a, b) => a + b, 0) / data.length;
+    return Math.sqrt(data.map(p => Math.pow(p - mean, 2)).reduce((a, b) => a + b, 0) / data.length);
+};
+
+const calculateLag1Autocorr = (data: number[]): number => {
+  if (data.length < 2) return 0;
+  const mean = data.reduce((a, b) => a + b, 0) / data.length;
+  let numerator = 0;
+  let denominator = 0;
+  for (let i = 1; i < data.length; i++) {
+    numerator += (data[i] - mean) * (data[i - 1] - mean);
+  }
+  for (let i = 0; i < data.length; i++) {
+    denominator += Math.pow(data[i] - mean, 2);
+  }
+  return denominator > 0 ? numerator / denominator : 0;
+};
+
+const calculateLag2Autocorr = (data: number[]): number => {
+    if (data.length < 3) return 0;
+    const mean = data.reduce((a, b) => a + b, 0) / data.length;
+    let numerator = 0;
+    let denominator = 0;
+    for (let i = 2; i < data.length; i++) {
+        numerator += (data[i] - mean) * (data[i - 2] - mean);
+    }
+    for (let i = 0; i < data.length; i++) {
+        denominator += Math.pow(data[i] - mean, 2);
+    }
+    return denominator > 0 ? numerator / denominator : 0;
+};
+
+const calculateLinearRegression = (prices: number[]): number => {
+    const n = prices.length;
+    if (n < 2) return 0;
+    let sumX = 0, sumY = 0, sumXY = 0, sumX2 = 0;
+    for (let i = 0; i < n; i++) {
+        sumX += i;
+        sumY += prices[i];
+        sumXY += i * prices[i];
+        sumX2 += i * i;
+    }
+    const denominator = n * sumX2 - sumX * sumX;
+    if (denominator === 0) return 0;
+    return (n * sumXY - sumX * sumY) / denominator;
+};
+
+
+// ========================================================
+// PREDICTIVE MODELS
+// ========================================================
+interface MicrostructureModel {
+  predictNextTick: () => {
+    expectedPrice: number;
+    confidence: number;
+    direction: 'RISE' | 'FALL';
+  };
+}
+
+const createMicrostructureModel = (prices: number[]): MicrostructureModel => {
+  const lag1Correlation = calculateLag1Autocorr(prices.slice(-20));
+  
+  const ema5 = calculateEMA(prices.slice(-10), 5);
+  const isOverbought = prices[prices.length - 1] > ema5[ema5.length-1];
+  
+  const lastChange = prices[prices.length - 1] - prices[prices.length - 2];
+  const returns = prices.slice(-10).map((p, i, arr) => i > 0 ? p - arr[i-1] : 0);
+  const avgChange = calculateStdDev(returns);
+  
+  const zScore = avgChange > 0 ? lastChange / avgChange : 0;
+  
+  const expectedReversion = zScore > 1.5 ? -lastChange * 0.6 : 
+                            zScore < -1.5 ? -lastChange * 0.6 : 
+                            lastChange * lag1Correlation;
+  
+  const expectedPrice = prices[prices.length - 1] + expectedReversion;
+  
+  return {
+    predictNextTick: () => ({
+      expectedPrice,
+      confidence: Math.min(Math.abs(zScore) / 2, 0.95),
+      direction: expectedReversion > 0 ? 'RISE' : 'FALL'
+    })
+  };
+};
+
+const createARIMAModel = (prices: number[], horizon: number) => {
+    const returns = prices.slice(1).map((p, i) => Math.log(p / prices[i+1]));
+    if(returns.length < 3) return prices[prices.length - 1];
+
+    const ar1 = calculateLag1Autocorr(returns);
+    const ar2 = calculateLag2Autocorr(returns);
+
+    const sma = calculateEMA(prices, 10);
+    const errors = prices.slice(-10).map((p, i) => p - sma[sma.length - 10 + i]);
+    const maError = errors.reduce((a, b) => a + b, 0) / errors.length;
+    
+    const lastReturn = returns[returns.length - 1];
+    const prevReturn = returns[returns.length - 2];
+    
+    const forecastReturn = ar1 * lastReturn + ar2 * prevReturn + 0.3 * maError;
+    
+    const ema5 = calculateEMA(prices, 5);
+    const ema10 = calculateEMA(prices, 10);
+    const momentumBoost = ema5[ema5.length-1] > ema10[ema10.length-1] ? 1.2 : 0.8;
+    
+    return prices[prices.length - 1] * Math.exp(forecastReturn * momentumBoost);
+};
+
 
 // Aproximação da função quantil normal inversa
 const normalQuantile = (p: number): number => {
@@ -75,18 +205,12 @@ interface StrongestSignal {
 
 interface StochasticLabProps {
   realData: ChartData[];
+  operationsLog: Operation[];
   onConsensusUpdate: (consensus: any) => void;
   predictiveLogs: PredictiveTradeLog[];
   onDeletePredictiveLog: (logId: string) => void;
   deletingPredictiveLogId: string | null;
 }
-
-const calculateRollingAccuracy = (history: boolean[]) => {
-    const hits = history.filter(h => h).length;
-    const total = history.length;
-    const percentage = total > 0 ? (hits / total) * 100 : 0;
-    return { hits, total, percentage };
-};
 
 
 const StatItem = ({ label, value }: { label: string; value: string | number }) => (
@@ -118,7 +242,7 @@ const StrongestSignalCard = ({ signal }: { signal: StrongestSignal }) => {
                         {signal.direction} para {signal.horizon}
                     </p>
                     <p className="text-xs text-muted-foreground">
-                        Assertividade Efetiva: <span className="font-bold">{displayAccuracy.toFixed(1)}%</span>
+                        Confiança Bayesiana: <span className="font-bold">{displayAccuracy.toFixed(1)}%</span>
                     </p>
                 </div>
             )}
@@ -128,7 +252,7 @@ const StrongestSignalCard = ({ signal }: { signal: StrongestSignal }) => {
 
 const ProjectionExpertsPanel = ({ experts }: { experts: { name: string; vote: 'RISE' | 'FALL' | 'HOLD'; accuracy: number }[] }) => (
     <Card className="p-4">
-        <CardTitle className="text-sm font-semibold text-muted-foreground mb-3">Assertividade das Projeções</CardTitle>
+        <CardTitle className="text-sm font-semibold text-muted-foreground mb-3">Confiança dos Especialistas (Bayesiana)</CardTitle>
         <div className="space-y-2">
             {experts.map(({ name, vote, accuracy }) => {
                 const effectiveDirection = getEffectiveVote({ accuracy, vote });
@@ -160,12 +284,13 @@ const ProjectionExpertsPanel = ({ experts }: { experts: { name: string; vote: 'R
 
 function StochasticLab({ 
     realData, 
+    operationsLog,
     onConsensusUpdate, 
     predictiveLogs,
     onDeletePredictiveLog,
     deletingPredictiveLogId,
 }: StochasticLabProps) {
-  const { user, loading: isUserLoading } = useAuth();
+  const { user } = useAuth();
   const [activeTab, setActiveTab] = useState('prediction');
   
   const [priceData, setPriceData] = useState<any[]>([]);
@@ -175,32 +300,13 @@ function StochasticLab({
   const [qqData, setQQData] = useState<any[]>([]);
   const [stats, setStats] = useState<any>({});
   
-  const [predictionData, setPredictionData] = useState<any[]>([]);
-  const [futurePath3t, setFuturePath3t] = useState<any[]>([]);
-  const [futurePath6t, setFuturePath6t] = useState<any[]>([]);
-  const [futurePath10s, setFuturePath10s] = useState<any[]>([]);
-  const [futurePath20s, setFuturePath20s] = useState<any[]>([]);
-  const [futurePath30s, setFuturePath30s] = useState<any[]>([]);
-  const [futurePath40s, setFuturePath40s] = useState<any[]>([]);
+  const [futurePaths, setFuturePaths] = useState<Record<string, any[]>>({});
+  const [accuracies, setAccuracies] = useState<Record<string, number>>({});
   
-  const [driftCorrectionForDisplay, setDriftCorrectionForDisplay] = useState({drift: 0, mae: 0, rmse: 0});
-
-  const [predictionAccuracyHistory3t, setPredictionAccuracyHistory3t] = useState<boolean[]>([]);
-  const [predictionAccuracyHistory6t, setPredictionAccuracyHistory6t] = useState<boolean[]>([]);
-  const [predictionAccuracyHistory10s, setPredictionAccuracyHistory10s] = useState<boolean[]>([]);
-  const [predictionAccuracyHistory20s, setPredictionAccuracyHistory20s] = useState<boolean[]>([]);
-  const [predictionAccuracyHistory30s, setPredictionAccuracyHistory30s] = useState<boolean[]>([]);
-  const [predictionAccuracyHistory40s, setPredictionAccuracyHistory40s] = useState<boolean[]>([]);
+  const [bayesianModels, setBayesianModels] = useState<Record<string, BayesianModel>>({});
   
-
-  const predictionErrorsRef = useRef<number[]>([]);
-  const pendingPredictions3tRef = useRef<{ startTimeIndex: number; startPrice: number; predictedEndPrice: number }[]>([]);
-  const pendingPredictions6tRef = useRef<{ startTimeIndex: number; startPrice: number; predictedEndPrice: number }[]>([]);
-  const pendingPredictions10sRef = useRef<{ startTimeIndex: number; startPrice: number; predictedEndPrice: number }[]>([]);
-  const pendingPredictions20sRef = useRef<{ startTimeIndex: number; startPrice: number; predictedEndPrice: number }[]>([]);
-  const pendingPredictions30sRef = useRef<{ startTimeIndex: number; startPrice: number; predictedEndPrice: number }[]>([]);
-  const pendingPredictions40sRef = useRef<{ startTimeIndex: number; startPrice: number; predictedEndPrice: number }[]>([]);
-  const processedLogsRef = useRef(new Set<number>());
+  const pendingPredictionsRef = useRef<Record<string, { startTimeIndex: number; startPrice: number; predictedEndPrice: number }[]>>({});
+  const lastSaveRef = useRef<number>(0);
 
   const normalRandom = (): number => {
     let u1 = 0;
@@ -210,257 +316,165 @@ function StochasticLab({
   };
   
   const horizons = useMemo(() => [
-      { name: '3t', ticks: 3, window: 6 },
-      { name: '6t', ticks: 6, window: 6 },
-      { name: '10s', ticks: 10, window: 10 },
-      { name: '20s', ticks: 20, window: 10 },
-      { name: '30s', ticks: 30, window: 10 },
-      { name: '40s', ticks: 40, window: 10 },
+      { name: '3t', ticks: 3, window: 20 },
+      { name: '6t', ticks: 6, window: 20 },
+      { name: '10s', ticks: 10, window: 30 },
+      { name: '20s', ticks: 20, window: 30 },
+      { name: '30s', ticks: 30, window: 50 },
+      { name: '40s', ticks: 40, window: 50 },
   ], []);
+
+  // Load models from Firestore on mount
+  useEffect(() => {
+    if(!user) return;
+    loadPredictiveModels(user.uid).then(models => {
+        if(models) {
+            const loadedBayesianModels: Record<string, BayesianModel> = {};
+            Object.keys(models).forEach(key => {
+                loadedBayesianModels[key] = models[key].bayesianModel;
+            });
+            setBayesianModels(loadedBayesianModels);
+        }
+    });
+  }, [user]);
 
   useEffect(() => {
     const VOL_WINDOW = 50;
-    const ERROR_MEMORY = 50;
     
-    if (realData.length < VOL_WINDOW) {
-      return;
-    }
+    if (realData.length < VOL_WINDOW) return;
     
     const prices = realData.map(d => isCandle(d) ? d.close : d.price);
-    if(prices.length > 0) setLastPrice(prices[prices.length - 1]);
-    setPriceData(realData.map((d, i) => ({ time: i, price: isCandle(d) ? d.close : d.price })));
-
     const logReturns: number[] = [];
     for (let i = 1; i < prices.length; i++) {
       if(prices[i-1] > 0) logReturns.push(Math.log(prices[i] / prices[i - 1]));
     }
     
-    const volData: any[] = [];
-    const annualizationFactor = Math.sqrt(31536000);
-    for (let i = VOL_WINDOW; i < logReturns.length; i++) {
-      const window = logReturns.slice(i - VOL_WINDOW, i);
-      const mean = window.reduce((a, b) => a + b, 0) / window.length;
-      const variance = window.reduce((sum, r) => sum + Math.pow(r - mean, 2), 0) / (window.length - 1);
-      const realizedVol = Math.sqrt(variance) * annualizationFactor * 100;
-      volData.push({ time: i, realizedVol: parseFloat(realizedVol.toFixed(4)), targetVol: 10 });
-    }
+    const lastPriceValue = prices[prices.length - 1];
 
-    if (logReturns.length > 1) {
-      const mean = logReturns.reduce((a, b) => a + b, 0) / logReturns.length;
-      const variance = logReturns.reduce((sum, r) => sum + Math.pow(r - mean, 2), 0) / (logReturns.length - 1);
-      const stdDev = Math.sqrt(variance);
-      const skewness = logReturns.reduce((sum, r) => sum + Math.pow((r - mean) / stdDev, 3), 0) / logReturns.length;
-      const kurtosis = logReturns.reduce((sum, r) => sum + Math.pow((r - mean) / stdDev, 4), 0) / logReturns.length - 3;
-      const returnHistogram = logReturns.map((r, i) => ({ 'return': parseFloat((r * 100).toFixed(4)), index: i }));
-      const sortedReturns = [...logReturns].sort((a, b) => a - b);
-      const qqPlotData = sortedReturns.map((r, i) => {
-        const p = (i + 0.5) / sortedReturns.length;
-        const theoreticalQuantile = normalQuantile(p) * stdDev + mean;
-        return { theoretical: parseFloat((theoreticalQuantile * 100).toFixed(4)), empirical: parseFloat((r * 100).toFixed(4)) };
-      });
-      setReturns(returnHistogram); setQQData(qqPlotData);
-      setStats({
-        mean: (mean * 100).toFixed(6), stdDev: (stdDev * 100).toFixed(6), annualizedVol: (stdDev * annualizationFactor * 100).toFixed(4),
-        skewness: skewness.toFixed(4), kurtosis: kurtosis.toFixed(4), observations: logReturns.length
-      });
-    }
-    setVolatilityData(volData);
+    const newFuturePaths: Record<string, any[]> = {};
+    const newAccuracies = { ...accuracies };
 
-    const newPredictionData: any[] = [];
-    
-    for (let i = VOL_WINDOW; i < prices.length; i++) {
-        const S_prev = prices[i-1];
-        const S_real = prices[i];
-        
-        const pastLogReturns = logReturns.slice(Math.max(0, i - VOL_WINDOW), i);
-        const meanPastReturn = pastLogReturns.reduce((a, b) => a + b, 0) / pastLogReturns.length;
-        const variance = pastLogReturns.reduce((s, r) => s + Math.pow(r - meanPastReturn, 2), 0) / (pastLogReturns.length - 1);
-        const sigma = Math.sqrt(variance);
+    horizons.forEach(h => {
+        if (prices.length <= h.window) return;
 
-        const Z = normalRandom();
-        const drift = meanPastReturn;
-        const diffusion = sigma * Math.sqrt(1) * Z;
-        const S_predicted_1_tick = S_prev * Math.exp(drift + diffusion);
-        
-        if (Number.isFinite(S_real) && Number.isFinite(S_predicted_1_tick)) {
-            newPredictionData.push({ time: i, real: S_real, predicted_1_tick: S_predicted_1_tick });
-            const error = S_real - S_predicted_1_tick;
-            predictionErrorsRef.current.push(error);
-            if(predictionErrorsRef.current.length > ERROR_MEMORY) {
-              predictionErrorsRef.current.shift();
+        // Ensemble Prediction
+        let model1_price, model2_price, model3_price;
+
+        // Model 1: Specialized
+        if (h.ticks <= 6) { // Microstructure Model
+            const model = createMicrostructureModel(prices);
+            model1_price = model.predictNextTick().expectedPrice;
+        } else if (h.ticks <= 20) { // ARIMA Model
+            model1_price = createARIMAModel(prices, h.ticks);
+        } else { // Improved GBM Model
+            let path = [{ time: prices.length - 1, price: lastPriceValue }];
+            let currentPrice = lastPriceValue;
+            
+            for (let i = 1; i <= h.ticks; i++) {
+                const recentLogReturns = logReturns.slice(-h.window);
+                const meanRecentReturn = recentLogReturns.reduce((a, b) => a + b, 0) / h.window;
+                const lastSigma = calculateStdDev(recentLogReturns);
+
+                // Weighted Mean
+                const weights = recentLogReturns.map((_, i) => Math.exp(i / recentLogReturns.length));
+                const sumWeights = weights.reduce((a, b) => a + b, 0);
+                const weightedMean = recentLogReturns.reduce((sum, r, i) => sum + r * weights[i], 0) / sumWeights;
+
+                const recentTrend = recentLogReturns.slice(-5).reduce((a, b) => a + b, 0) / 5;
+                const trendStrength = lastSigma > 0 ? Math.abs(recentTrend / lastSigma) : 0;
+                const driftAdjustment = trendStrength > 0.5 ? recentTrend * 0.3 : 0;
+                
+                let regimeAdjustedDrift = weightedMean + driftAdjustment;
+                
+                const recentVol = calculateStdDev(logReturns.slice(-10));
+                const historicVol = calculateStdDev(logReturns.slice(-50));
+                if (recentVol > historicVol * 1.3) regimeAdjustedDrift *= 0.7;
+                else if (recentVol < historicVol * 0.7) regimeAdjustedDrift *= 1.2;
+
+                const recentHigh = Math.max(...prices.slice(-20));
+                const recentLow = Math.min(...prices.slice(-20));
+                if (currentPrice > recentHigh * 0.998) regimeAdjustedDrift *= 0.5;
+                if (currentPrice < recentLow * 1.002) regimeAdjustedDrift *= 0.5;
+
+                const drift_future = regimeAdjustedDrift;
+                const diffusion = lastSigma * normalRandom();
+                currentPrice *= Math.exp(drift_future + diffusion);
+                path.push({ time: prices.length - 1 + i, price: currentPrice });
             }
+            model1_price = path[path.length - 1].price;
+            newFuturePaths[`predicted_${h.name}_ahead`] = path.map(p => ({ ...p, [`predicted_${h.name}_ahead`]: p.price }));
         }
-    }
-    
-    if (predictionErrorsRef.current.length > 0) {
-        const errors = predictionErrorsRef.current;
-        const sumSquaredErrors = errors.reduce((a, e) => a + e * e, 0);
-        const sumAbsErrors = errors.reduce((a, e) => a + Math.abs(e), 0);
-        const newMAE = sumAbsErrors / errors.length;
-        const newRMSE = Math.sqrt(sumSquaredErrors / errors.length);
-        const newDrift = errors.reduce((a,e) => a + e, 0) / errors.length;
+
+        // Model 2: Linear Regression
+        const linearTrend = calculateLinearRegression(prices.slice(-10));
+        model2_price = prices[prices.length - 1] + linearTrend * h.ticks;
+
+        // Model 3: Null Model (last price)
+        model3_price = prices[prices.length-1];
+
+        // Ensemble with static weights for now
+        const finalForecastPrice = model1_price * 0.6 + model2_price * 0.3 + model3_price * 0.1;
         
-        setDriftCorrectionForDisplay(prev => {
-            if (prev.drift !== newDrift || prev.mae !== newMAE) {
-                return { drift: newDrift, mae: newMAE, rmse: newRMSE };
+        // --- BAYESIAN UPDATE LOGIC ---
+        const currentTimeIndex = prices.length - 1;
+        if (!pendingPredictionsRef.current[h.name]) pendingPredictionsRef.current[h.name] = [];
+
+        // Check finished predictions
+        const stillPending: any[] = [];
+        pendingPredictionsRef.current[h.name].forEach(pred => {
+            if (currentTimeIndex >= pred.startTimeIndex + h.ticks) {
+                const actualEndPrice = prices[pred.startTimeIndex + h.ticks];
+                const predictedDirection = pred.predictedEndPrice > pred.startPrice;
+                const actualDirection = actualEndPrice > pred.startPrice;
+                const wasCorrect = predictedDirection === actualDirection;
+
+                const modelState = bayesianModels[h.name] || { priorBelief: 0.5, successCount: 0, failureCount: 0, recentPerformance: [] };
+                const { updatedModel, currentConfidence } = updateBayesianConfidence(modelState, wasCorrect);
+                
+                newAccuracies[h.name] = currentConfidence;
+                setBayesianModels(prev => ({ ...prev, [h.name]: updatedModel }));
+
+            } else {
+                stillPending.push(pred);
             }
-            return prev;
         });
-    }
+        pendingPredictionsRef.current[h.name] = stillPending;
+        
+        // Add new prediction to pending
+        pendingPredictionsRef.current[h.name].push({
+            startTimeIndex: currentTimeIndex,
+            startPrice: lastPriceValue,
+            predictedEndPrice: finalForecastPrice,
+        });
+    });
 
-    if (prices.length > VOL_WINDOW) {
-      const lastPriceValue = prices[prices.length - 1];
-      const lastLogReturns = logReturns.slice(-VOL_WINDOW);
-      const meanLastReturn = lastLogReturns.reduce((a, b) => a + b, 0) / VOL_WINDOW;
-      const lastVariance = lastLogReturns.reduce((s, r) => s + Math.pow(r - meanLastReturn, 2), 0) / (VOL_WINDOW - 1);
-      const lastSigma = Math.sqrt(lastVariance);
-      const lastTime = prices.length - 1;
-
-      const projectPath = (steps: number) => {
-        if (lastPriceValue === null) return [];
-        let currentSimPrice = lastPriceValue;
-        const path = [{ time: lastTime, price: lastPriceValue }];
-        for (let i = 1; i <= steps; i++) {
-          const Z = normalRandom();
-          
-          const weights = lastLogReturns.map((_, i) => Math.exp(i / lastLogReturns.length));
-          const sumWeights = weights.reduce((a, b) => a + b, 0);
-          const weightedMean = lastLogReturns.reduce((sum, r, i) => sum + r * weights[i], 0) / sumWeights;
-
-          const recentTrend = lastLogReturns.slice(-5).reduce((a, b) => a + b, 0) / 5;
-          const trendStrength = lastSigma > 0 ? Math.abs(recentTrend / lastSigma) : 0;
-          const driftAdjustment = trendStrength > 0.5 ? recentTrend * 0.3 : 0;
-          
-          const drift_future = weightedMean + driftAdjustment;
-          const diffusion_future = lastSigma * Z;
-
-          currentSimPrice = currentSimPrice * Math.exp(drift_future + diffusion_future);
-
-          if (Number.isFinite(currentSimPrice)) {
-            path.push({ time: lastTime + i, price: currentSimPrice });
-          } else {
-            path.push({ time: lastTime + i, price: path[path.length - 1].price });
-          }
-        }
-        return path;
-      };
-      
-      const setHistoryFns = [setPredictionAccuracyHistory3t, setPredictionAccuracyHistory6t, setPredictionAccuracyHistory10s, setPredictionAccuracyHistory20s, setPredictionAccuracyHistory30s, setPredictionAccuracyHistory40s];
-      const pendingRefs = [pendingPredictions3tRef, pendingPredictions6tRef, pendingPredictions10sRef, pendingPredictions20sRef, pendingPredictions30sRef, pendingPredictions40sRef];
-
-      const processPredictionHorizon = (
-          horizonTicks: number,
-          accuracyWindow: number,
-          prices: number[],
-          pendingPredictionsRef: React.MutableRefObject<{ startTimeIndex: number; startPrice: number; predictedEndPrice: number }[]>,
-          setAccuracyHistory: React.Dispatch<React.SetStateAction<boolean[]>>,
-      ) => {
-          const currentTimeIndex = prices.length - 1;
-          let newHistory: boolean[] = [];
-
-          const updatedPending = pendingPredictionsRef.current.filter((pred) => {
-              if (currentTimeIndex >= pred.startTimeIndex + horizonTicks) {
-                  const actualEndPrice = prices[pred.startTimeIndex + horizonTicks];
-                  if (actualEndPrice === undefined) return true;
-                  const predictedDirection = pred.predictedEndPrice > pred.startPrice;
-                  const actualDirection = actualEndPrice > pred.startPrice;
-                  newHistory.push(predictedDirection === actualDirection);
-                  return false;
-              }
-              return true;
-          });
-          
-          pendingPredictionsRef.current = updatedPending;
-          
-          if (newHistory.length > 0) {
-              setAccuracyHistory(prev => [...prev.slice(-accuracyWindow + newHistory.length), ...newHistory]);
-          }
-      };
-      
-      horizons.forEach((h, i) => {
-          processPredictionHorizon(h.ticks, h.window, prices, pendingRefs[i], setHistoryFns[i]);
-      });
-      
-      const paths = horizons.map(h => projectPath(h.ticks));
-
-      horizons.forEach((h, index) => {
-          const newFuturePath = paths[index];
-          if (newFuturePath.length === h.ticks + 1) {
-              const newPredictionTimeIndex = newFuturePath[0].time;
-              const alreadyPending = pendingRefs[index].current.some(p => p.startTimeIndex === newPredictionTimeIndex);
-              if (!alreadyPending) {
-                  pendingRefs[index].current.push({
-                      startTimeIndex: newPredictionTimeIndex,
-                      startPrice: newFuturePath[0].price,
-                      predictedEndPrice: newFuturePath[h.ticks].price,
-                  });
-              }
-          }
-      });
-      
-      setFuturePath3t(paths[0].map(p => ({ time: p.time, predicted_3t_ahead: p.price })));
-      setFuturePath6t(paths[1].map(p => ({ time: p.time, predicted_6t_ahead: p.price })));
-      setFuturePath10s(paths[2].map(p => ({ time: p.time, predicted_10s_ahead: p.price })));
-      setFuturePath20s(paths[3].map(p => ({ time: p.time, predicted_20s_ahead: p.price })));
-      setFuturePath30s(paths[4].map(p => ({ time: p.time, predicted_30s_ahead: p.price })));
-      setFuturePath40s(paths[5].map(p => ({ time: p.time, predicted_40s_ahead: p.price })));
-    }
+    setFuturePaths(newFuturePaths);
+    setAccuracies(newAccuracies);
     
-    setPredictionData(newPredictionData.slice(-200));
-
-  }, [realData, horizons]);
-
-  useEffect(() => {
-    if (!user || isUserLoading || !predictiveLogs) {
-      return;
+    // Save updated models to Firestore periodically
+    if(user && Date.now() - lastSaveRef.current > 30000) {
+        const modelsToSave: Record<string, PersistentModelState> = {};
+        Object.keys(bayesianModels).forEach(key => {
+            modelsToSave[key] = {
+                horizon: key,
+                bayesianModel: bayesianModels[key],
+                modelWeights: { w1: 0.6, w2: 0.3, w3: 0.1 }, // Static for now
+                lastUpdate: new Date().toISOString()
+            };
+        });
+        savePredictiveModels(user.uid, modelsToSave);
+        lastSaveRef.current = Date.now();
     }
-    
-    const logsToUpdate: PredictiveTradeLog[] = [];
-    const closedPilotTrades = realData.filter(op => (op as any).initiator === 'Piloto' && (op as any).status !== 'pending') as Operation[];
+  }, [realData, horizons, user]);
 
-    for (const op of closedPilotTrades) {
-      if (!processedLogsRef.current.has(op.id)) {
-        const predictiveLogToUpdate = predictiveLogs.find(
-          (pLog) => pLog.contractId === op.id
-        );
-
-        if (predictiveLogToUpdate) {
-          
-          const updatedLogData: PredictiveTradeLog = {
-            ...predictiveLogToUpdate,
-            result: op.status,
-            pnl: op.result ?? (op.status === 'lost' ? -op.stake : 0),
-          };
-
-          logsToUpdate.push(updatedLogData);
-          processedLogsRef.current.add(op.id);
-        }
-      }
-    }
-    
-    if (logsToUpdate.length > 0) {
-      for (const log of logsToUpdate) {
-        savePredictiveTradeLog(user.uid, log);
-      }
-    }
-  }, [realData, predictiveLogs, user, isUserLoading]);
-
-
-  const accuracy3t = useMemo(() => calculateRollingAccuracy(predictionAccuracyHistory3t), [predictionAccuracyHistory3t]);
-  const accuracy6t = useMemo(() => calculateRollingAccuracy(predictionAccuracyHistory6t), [predictionAccuracyHistory6t]);
-  const accuracy10s = useMemo(() => calculateRollingAccuracy(predictionAccuracyHistory10s), [predictionAccuracyHistory10s]);
-  const accuracy20s = useMemo(() => calculateRollingAccuracy(predictionAccuracyHistory20s), [predictionAccuracyHistory20s]);
-  const accuracy30s = useMemo(() => calculateRollingAccuracy(predictionAccuracyHistory30s), [predictionAccuracyHistory30s]);
-  const accuracy40s = useMemo(() => calculateRollingAccuracy(predictionAccuracyHistory40s), [predictionAccuracyHistory40s]);
-  
-   const projectionExperts = useMemo(() => ([
-      { name: '3t', vote: futurePath3t.length > 1 ? (futurePath3t[futurePath3t.length - 1].predicted_3t_ahead > futurePath3t[0].predicted_3t_ahead ? 'RISE' : 'FALL') : 'HOLD', accuracy: accuracy3t.percentage },
-      { name: '6t', vote: futurePath6t.length > 1 ? (futurePath6t[futurePath6t.length - 1].predicted_6t_ahead > futurePath6t[0].predicted_6t_ahead ? 'RISE' : 'FALL') : 'HOLD', accuracy: accuracy6t.percentage },
-      { name: '10s', vote: futurePath10s.length > 1 ? (futurePath10s[futurePath10s.length - 1].predicted_10s_ahead > futurePath10s[0].predicted_10s_ahead ? 'RISE' : 'FALL') : 'HOLD', accuracy: accuracy10s.percentage },
-      { name: '20s', vote: futurePath20s.length > 1 ? (futurePath20s[futurePath20s.length - 1].predicted_20s_ahead > futurePath20s[0].predicted_20s_ahead ? 'RISE' : 'FALL') : 'HOLD', accuracy: accuracy20s.percentage },
-      { name: '30s', vote: futurePath30s.length > 1 ? (futurePath30s[futurePath30s.length - 1].predicted_30s_ahead > futurePath30s[0].predicted_30s_ahead ? 'RISE' : 'FALL') : 'HOLD', accuracy: accuracy30s.percentage },
-      { name: '40s', vote: futurePath40s.length > 1 ? (futurePath40s[futurePath40s.length - 1].predicted_40s_ahead > futurePath40s[0].predicted_40s_ahead ? 'RISE' : 'FALL') : 'HOLD', accuracy: accuracy40s.percentage },
-  ]), [futurePath3t, accuracy3t, futurePath6t, accuracy6t, futurePath10s, accuracy10s, futurePath20s, accuracy20s, futurePath30s, accuracy30s, futurePath40s, accuracy40s]);
+  const projectionExperts = useMemo(() => {
+    return horizons.map(h => {
+      const path = futurePaths[`predicted_${h.name}_ahead`] || [];
+      const accuracy = accuracies[h.name] || 50;
+      const vote = path.length > 1 ? (path[path.length - 1][`predicted_${h.name}_ahead`] > path[0][`predicted_${h.name}_ahead`] ? 'RISE' : 'FALL') : 'HOLD';
+      return { name: h.name, vote, accuracy };
+    });
+  }, [futurePaths, accuracies, horizons]);
 
   const strongestSignal = useMemo((): StrongestSignal => {
     let bestSignal: StrongestSignal = { horizon: 'N/A', direction: 'HOLD', certaintyScore: 0, accuracy: 50 };
@@ -469,7 +483,6 @@ function StochasticLab({
     projectionExperts.forEach(p => {
         if (p.vote !== 'HOLD') {
             const certainty = Math.abs(p.accuracy - 50) * 2;
-            
             if (certainty > maxCertainty) {
                 maxCertainty = certainty;
                 bestSignal = {
@@ -489,9 +502,11 @@ function StochasticLab({
   }, [strongestSignal, onConsensusUpdate, projectionExperts]);
 
   const chartDisplayData = useMemo(() => {
-    const combined = [...predictionData.filter(p => p && (p.real || p.predicted_1_tick))];
+    if (realData.length === 0) return [];
+    const predictionData = realData.map((d, i) => ({ time: i, real: isCandle(d) ? d.close : d.price }));
+    const combined = [...predictionData];
     
-    const mergePath = (path: any[]) => {
+    Object.values(futurePaths).forEach(path => {
         path.forEach(point => {
           const existingPointIndex = combined.findIndex(p => p.time === point.time);
           if (existingPointIndex !== -1) {
@@ -500,22 +515,9 @@ function StochasticLab({
             combined.push(point);
           }
         });
-    };
-
-    mergePath(futurePath3t); mergePath(futurePath6t); mergePath(futurePath10s);
-    mergePath(futurePath20s); mergePath(futurePath30s); mergePath(futurePath40s);
-
-    return combined;
-  }, [predictionData, futurePath3t, futurePath6t, futurePath10s, futurePath20s, futurePath30s, futurePath40s]);
-
-  const lineData = useMemo(() => {
-    if (qqData.length === 0) return [];
-    const allValues = [...qqData.map(d => d.theoretical), ...qqData.map(d => d.empirical)].filter(v => Number.isFinite(v));
-    if (allValues.length === 0) return [{ theoretical: 0, empirical: 0}, { theoretical: 0, empirical: 0}];
-    const minVal = Math.min(...allValues);
-    const maxVal = Math.max(...allValues);
-    return [{ theoretical: minVal, empirical: minVal }, { theoretical: maxVal, empirical: maxVal }];
-  }, [qqData]);
+    });
+    return combined.slice(-200);
+  }, [realData, futurePaths]);
 
   return (
     <Card className="h-full flex flex-col col-span-1 lg:col-span-3">
@@ -524,7 +526,7 @@ function StochasticLab({
                 <FlaskConical className="h-5 w-5 text-purple-600" />
                 Laboratório Preditivo (Cientista de IA)
             </CardTitle>
-            <CardDescription>O cientista usa GBM para projetar o futuro e medir a própria assertividade.</CardDescription>
+            <CardDescription>O cientista usa um ensemble de modelos para projetar o futuro e medir a própria confiança.</CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col min-h-0">
           <ScrollArea className="flex-1">
@@ -544,7 +546,7 @@ function StochasticLab({
                       ))}
                     </div>
                     
-                    {priceData.length === 0 ? (
+                    {realData.length === 0 ? (
                         <div className="flex flex-col items-center justify-center h-64 text-muted-foreground">
                             <Bot className="w-12 h-12 mb-4 opacity-30" />
                             <p className="font-semibold">Aguardando dados suficientes do mercado...</p>
@@ -558,7 +560,7 @@ function StochasticLab({
                                      <StrongestSignalCard signal={strongestSignal} />
                                      <ProjectionExpertsPanel experts={projectionExperts} />
                                 </div>
-                                <h3 className="text-lg font-semibold mb-2">Previsão (1-Tick) & Projeções Futuras</h3>
+                                <h3 className="text-lg font-semibold mb-2">Projeções Futuras (Ensemble)</h3>
                                 <ResponsiveContainer width="100%" height={350}>
                                   <LineChart data={chartDisplayData}>
                                     <CartesianGrid strokeDasharray="3 3" />
@@ -567,13 +569,9 @@ function StochasticLab({
                                     <Tooltip />
                                     <Legend />
                                     <Line type="monotone" dataKey="real" stroke="#2563eb" strokeWidth={2.5} dot={false} name="Preço Real" />
-                                    <Line type="monotone" dataKey="predicted_1_tick" stroke="#f59e0b" strokeWidth={1.5} strokeDasharray="3 3" dot={false} name="Previsão (1-Tick)" />
-                                    <Line type="monotone" dataKey="predicted_3t_ahead" stroke="#a16207" strokeWidth={2} strokeDasharray="8 4" dot={false} name="Projeção (3 Ticks)" />
-                                    <Line type="monotone" dataKey="predicted_6t_ahead" stroke="#ef4444" strokeWidth={2} strokeDasharray="8 4" dot={false} name="Projeção (6 Ticks)" />
-                                    <Line type="monotone" dataKey="predicted_10s_ahead" stroke="#8b5cf6" strokeWidth={2} strokeDasharray="8 4" dot={false} name="Projeção (10s)" />
-                                    <Line type="monotone" dataKey="predicted_20s_ahead" stroke="#3b82f6" strokeWidth={2} strokeDasharray="8 4" dot={false} name="Projeção (20s)" />
-                                    <Line type="monotone" dataKey="predicted_30s_ahead" stroke="#f472b6" strokeWidth={2} strokeDasharray="8 4" dot={false} name="Projeção (30s)" />
-                                    <Line type="monotone" dataKey="predicted_40s_ahead" stroke="#10b981" strokeWidth={2} strokeDasharray="8 4" dot={false} name="Projeção (40s)" />
+                                    {Object.keys(futurePaths).map(key => (
+                                        <Line key={key} type="monotone" dataKey={key} stroke="#a16207" strokeWidth={2} strokeDasharray="8 4" dot={false} name={`Projeção (${key.split('_')[1]})`} />
+                                    ))}
                                   </LineChart>
                                 </ResponsiveContainer>
                               </div>
@@ -618,7 +616,6 @@ function StochasticLab({
                                         <YAxis type="number" dataKey="empirical" name="Quantis Empíricos" />
                                         <Tooltip cursor={{ strokeDasharray: '3 3' }} />
                                         <Scatter name="Retornos" data={qqData} fill="#8884d8" shape="circle" />
-                                        <Line dataKey="empirical" data={lineData} stroke="#ff0000" strokeWidth={2} dot={false} name="Linha de Normalidade"/>
                                       </ScatterChart>
                                     </ResponsiveContainer>
                                 </div>
@@ -696,7 +693,7 @@ const VolatilityAutopilotInterface = ({
                 <Alert className="mt-4 bg-blue-50 border-blue-200">
                     <AlertTitle className="text-blue-900 font-semibold flex items-center gap-2">
                         <Settings className="h-4 w-4"/>
-                        Assertividade vs Thresholds
+                        Confiança vs Thresholds
                     </AlertTitle>
                     <AlertDescription>
                         <div className="grid grid-cols-2 md:grid-cols-3 gap-2 mt-2 text-xs">
@@ -726,7 +723,7 @@ const VolatilityAutopilotInterface = ({
                             })}
                         </div>
                         <p className="text-xs text-muted-foreground mt-3 border-t pt-2">
-                            💡 <strong>Verde</strong> = Assertividade Efetiva ≥ Limiar | 
+                            💡 <strong>Verde</strong> = Confiança Efetiva ≥ Limiar | 
                             <strong className="text-red-600"> Vermelho</strong> = Bloqueado
                         </p>
                     </AlertDescription>
@@ -770,14 +767,6 @@ const PageContent = () => {
     const autopilot = useMasterAutopilot();
     const { isAutopilotOn, runAutopilotCycle } = autopilot;
     
-    const form = useForm<VolatilityTraderFormValues>({
-        resolver: zodResolver(volatilityTraderSchema),
-        defaultValues: {
-            stake: 1.0,
-            duration: 15,
-        },
-    });
-
     const handleConsensusUpdate = useCallback((data: any) => {
         setConsensusData(data);
         if (isAutopilotOn && data?.projectionExperts) {
@@ -787,7 +776,6 @@ const PageContent = () => {
             runAutopilotCycle(assertiveness);
         }
     }, [isAutopilotOn, runAutopilotCycle]);
-
 
     useEffect(() => {
         if (!user) {
@@ -838,14 +826,12 @@ const PageContent = () => {
 
         const durationMatch = horizon.match(/(\d+)([st])/);
         let duration: number = 15;
-        let durationUnit: 's' | 't' = 's';
+        
         if (durationMatch) {
             const suggestedDuration = parseInt(durationMatch[1], 10);
-            const suggestedUnit = durationMatch[2] as 's' | 't';
-            const limits = durationLimits[suggestedUnit];
+            const limits = durationLimits['s'];
             if (limits && limits.min > 0) {
                 duration = Math.max(limits.min, Math.min(suggestedDuration, limits.max));
-                durationUnit = suggestedUnit;
             }
         }
         
@@ -853,18 +839,19 @@ const PageContent = () => {
 
         toast({
           title: 'Duração Sincronizada!',
-          description: `Duração definida para ${duration}${durationUnit}, com base no sinal de ${horizon}.`,
+          description: `Duração definida para ${duration}s, com base no sinal de ${horizon}.`,
         });
     };
     
+    const form = useFormContext<VolatilityTraderFormValues>();
 
     return (
-        <FormProvider {...form}>
             <div className="flex-1 space-y-4 p-4 sm:p-8 pt-6">
                 <Header />
                 <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
                     <StochasticLab 
                         realData={chartData} 
+                        operationsLog={operationsLog}
                         onConsensusUpdate={handleConsensusUpdate}
                         predictiveLogs={predictiveLogs}
                         onDeletePredictiveLog={handleDeletePredictiveLog}
@@ -928,11 +915,11 @@ const PageContent = () => {
                                             <Separator/>
 
                                             <div className="space-y-2">
-                                                <Label htmlFor="global-assertiveness-threshold">Limiar de Assertividade Global (%)</Label>
+                                                <Label htmlFor="global-assertiveness-threshold">Limiar de Confiança Global (%)</Label>
                                                 <div className="flex items-center gap-4">
                                                     <Slider
                                                         id="global-assertiveness-threshold"
-                                                        min={55} max={100} step={5}
+                                                        min={55} max={95} step={5}
                                                         value={[Object.values(autopilot.riskManager.thresholds)[0] || 80]}
                                                         onValueChange={(value) => autopilot.setGlobalAssertivenessThreshold(value[0])}
                                                         disabled={autopilot.isAutopilotOn}
@@ -951,7 +938,7 @@ const PageContent = () => {
                                                         </div>
                                                         <Slider
                                                             id={`threshold-${horizon}`}
-                                                            min={55} max={80} step={1}
+                                                            min={50} max={95} step={1}
                                                             value={[autopilot.riskManager.thresholds[horizon] || 80]}
                                                             onValueChange={(value) => autopilot.setIndividualThreshold(horizon, value[0])}
                                                             disabled={autopilot.isAutopilotOn}
@@ -968,14 +955,15 @@ const PageContent = () => {
                     </div>
                 </div>
             </div>
-        </FormProvider>
     );
 }
 
 export default function VolatilityAnalysisPage() {
     return (
         <DerivApiProvider>
-            <PageContent />
+             <FormProvider {...useForm({ resolver: zodResolver(volatilityTraderSchema), defaultValues: { stake: 1.0, duration: 15 }})}>
+                <PageContent />
+            </FormProvider>
         </DerivApiProvider>
     );
 }

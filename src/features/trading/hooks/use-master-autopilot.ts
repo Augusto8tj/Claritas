@@ -47,6 +47,44 @@ export interface MasterAutopilotState {
     assertiveness: Record<string, AssertivenessData>;
 }
 
+const calculateDynamicThresholds = (
+  regime: MarketRegime,
+  indicators: Indicators | null,
+  baseThresholds: Record<string, number>
+): Record<string, number> => {
+  
+  const dynamicThresholds = { ...baseThresholds };
+  
+  if (regime === 'trending_bull' || regime === 'trending_bear') {
+    if (indicators?.adx && indicators.adx > 30) {
+      Object.keys(dynamicThresholds).forEach(key => {
+        dynamicThresholds[key] = Math.max(55, dynamicThresholds[key] - 10);
+      });
+    }
+  }
+  
+  if (regime === 'ranging') {
+    Object.keys(dynamicThresholds).forEach(key => {
+      if (key.endsWith('s') && parseInt(key) > 20) {
+        dynamicThresholds[key] = Math.min(90, dynamicThresholds[key] + 5);
+      }
+    });
+  }
+  
+  if (indicators?.atr && indicators.sma[indicators.sma.length-1] && indicators.atr > 1.5 * (indicators.sma[indicators.sma.length - 1] || 1) * 0.01) {
+    dynamicThresholds['30s'] = 95;
+    dynamicThresholds['40s'] = 95;
+  }
+  
+  if (indicators?.bbw && indicators.bbw < 2) {
+    dynamicThresholds['10s'] = Math.max(50, dynamicThresholds['10s'] - 15);
+    dynamicThresholds['20s'] = Math.max(50, dynamicThresholds['20s'] - 15);
+  }
+  
+  return dynamicThresholds;
+};
+
+
 export function useMasterAutopilot() {
   const { 
     activeSymbol, 
@@ -118,6 +156,7 @@ export function useMasterAutopilot() {
     horizons,
     masterState,
     user,
+    activeSymbol,
   });
 
   useEffect(() => {
@@ -134,6 +173,7 @@ export function useMasterAutopilot() {
       horizons,
       masterState,
       user,
+      activeSymbol,
     };
   });
   
@@ -214,56 +254,58 @@ export function useMasterAutopilot() {
   }, [executeRiseFallTrade, toast]);
   
   const runAutopilotCycle = useCallback((newAssertiveness: Record<string, AssertivenessData>) => {
-    const { 
-        priceTicks, botCandleData, masterState, riskManager, contractType, 
-        isNeighborConfirmationEnabled, isMacroTrendCheckEnabled, highFrequencyThreshold, 
-        isAutopilotOn, operationsLog, horizons
-    } = dependenciesRef.current;
+    const deps = dependenciesRef.current;
     
-    if (priceTicks.length < 50) {
-        if (masterState.isReady) {
+    if (deps.priceTicks.length < 50) {
+        if (deps.masterState.isReady) {
             setMasterState(prev => ({...prev, isReady: false, trigger: { signal: 'HOLD', reason: 'Aguardando dados...', triggeredBy: null }}));
         }
         return;
     }
-    const currentTick = priceTicks[priceTicks.length - 1];
+    const currentTick = deps.priceTicks[deps.priceTicks.length - 1];
     if(!currentTick) return;
     
     const lastPrice = currentTick.price;
-    const calculatedIndicators = calculateAllIndicators(botCandleData, getCouncilStrategies(), '1m', {duration: 15, unit: 's'});
-    const microFeatures = extractMicrostructureFeatures(priceTicks, botCandleData);
-    const detectedRegimeResult = detectMarketRegimeService(botCandleData, calculatedIndicators, 'NONE');
+    const calculatedIndicators = calculateAllIndicators(deps.botCandleData, getCouncilStrategies(), '1m', {duration: 15, unit: 's'});
+    const microFeatures = extractMicrostructureFeatures(deps.priceTicks, deps.botCandleData);
+    const detectedRegimeResult = detectMarketRegimeService(deps.botCandleData, calculatedIndicators, 'NONE');
+    
+    const adaptiveThresholds = calculateDynamicThresholds(
+        detectedRegimeResult.regime,
+        calculatedIndicators,
+        deps.riskManager.thresholds
+    );
     
     const manualSignal = evaluateTriggerConditions(
         newAssertiveness,
-        horizons.map(h => ({ name: h.name, ticks: h.ticks, window: h.window })),
-        Object.fromEntries(Object.keys(riskManager.thresholds).map(k => [k, 55])), // Lower threshold for manual
-        contractType,
+        deps.horizons.map(h => ({ name: h.name, ticks: h.ticks, window: h.window })),
+        Object.fromEntries(Object.keys(deps.riskManager.thresholds).map(k => [k, 55])), // Lower threshold for manual
+        deps.contractType,
         detectedRegimeResult.regime,
         lastPrice,
-        botCandleData,
+        deps.botCandleData,
         false, // Don't require neighbors for manual
         true,
-        highFrequencyThreshold
+        deps.highFrequencyThreshold
     );
     
     const { newTriggerSignal, newTriggerReason, newTriggeredBy } = evaluateTriggerConditions(
         newAssertiveness,
-        horizons.map(h => ({ name: h.name, ticks: h.ticks, window: h.window })),
-        riskManager.thresholds,
-        contractType,
+        deps.horizons.map(h => ({ name: h.name, ticks: h.ticks, window: h.window })),
+        adaptiveThresholds,
+        deps.contractType,
         detectedRegimeResult.regime,
         lastPrice,
-        botCandleData,
-        isNeighborConfirmationEnabled,
-        isMacroTrendCheckEnabled,
-        highFrequencyThreshold
+        deps.botCandleData,
+        deps.isNeighborConfirmationEnabled,
+        deps.isMacroTrendCheckEnabled,
+        deps.highFrequencyThreshold
     );
 
     console.log('[AUTOPILOT DEBUG]', {
       timestamp: new Date().toISOString(),
-      isAutopilotOn,
-      openTrades: operationsLog.filter(op => op.status === 'pending').length,
+      isAutopilotOn: deps.isAutopilotOn,
+      openTrades: deps.operationsLog.filter(op => op.status === 'pending').length,
       triggerSignal: newTriggerSignal,
       triggerReason: newTriggerReason,
       assertiveness: Object.entries(newAssertiveness).map(([k, v]) => ({
@@ -287,8 +329,6 @@ export function useMasterAutopilot() {
 
   const executeManualTrigger = useCallback(async () => {
     const { signal } = masterState.manualTrigger;
-    // Manual trigger shouldn't depend on complex `triggeredBy` logic
-    // For simplicity, we can pass a placeholder or the strongest single model
     const assertivenessArray = Object.entries(masterState.assertiveness);
     const strongest = assertivenessArray.length > 0 ? assertivenessArray.reduce((a, b) => {
         const accA = Math.max(a[1].accuracy, 100 - a[1].accuracy);
