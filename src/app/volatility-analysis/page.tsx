@@ -19,7 +19,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { volatilityTraderSchema, type VolatilityTraderFormValues } from "@/features/trading/components/deriv-trader/volatility-trader-interface.types";
 import VolatilityTraderInterface from "@/features/trading/components/deriv-trader/volatility-trader-interface";
 import { OperationsLogV2 } from "@/features/trading/components/deriv-trader/operations-log-v2";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert';
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { useToast } from '@/hooks/use-toast';
@@ -1144,9 +1144,9 @@ const PageContent = () => {
                                             <div className="flex items-center justify-between rounded-lg border p-3 shadow-sm">
                                                 <Label htmlFor="macro-trend-switch" className="flex flex-col space-y-1 flex-1 pr-4">
                                                     <span>Verificação de Tendência Macro</span>
-                                                    <span className="font-normal text-xs text-muted-foreground">Alinhar trades com a EMA 100. (Indisponível nesta página - Lógica ausente)</span>
+                                                    <span className="font-normal text-xs text-muted-foreground">Alinhar trades com a EMA 100. (Ignorado para sinais HF)</span>
                                                 </Label>
-                                                <Switch id="macro-trend-switch" checked={isMacroTrendCheckEnabled} onCheckedChange={setIsMacroTrendCheckEnabled} disabled={isAutopilotOn || true}/>
+                                                <Switch id="macro-trend-switch" checked={isMacroTrendCheckEnabled} onCheckedChange={setIsMacroTrendCheckEnabled} disabled={isAutopilotOn}/>
                                             </div>
 
                                             <Separator/>
