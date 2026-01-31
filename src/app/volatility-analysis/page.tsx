@@ -1,3 +1,4 @@
+
 // src/app/volatility-analysis/page.tsx
 'use client';
 
@@ -116,28 +117,23 @@ interface MicrostructureModel {
 }
 
 const createMicrostructureModel = (prices: number[]): MicrostructureModel => {
-  const lag1Correlation = calculateLag1Autocorr(prices.slice(-20));
+  const ema3 = calculateEMA(prices, 3);
+  const lastEma = ema3[ema3.length - 1];
+  const prevEma = ema3[ema3.length - 2];
   
-  const ema5 = calculateEMA(prices.slice(-10), 5);
-  const isOverbought = prices[prices.length - 1] > ema5[ema5.length-1];
+  const momentum = (lastEma - prevEma) * 0.8;
   
-  const lastChange = prices[prices.length - 1] - prices[prices.length - 2];
-  const returns = prices.slice(-10).map((p, i, arr) => i > 0 ? p - arr[i-1] : 0);
-  const avgChange = calculateStdDev(returns);
+  const lastPrice = prices[prices.length - 1];
+  const meanReversion = (lastEma - lastPrice) * 0.2;
   
-  const zScore = avgChange > 0 ? lastChange / avgChange : 0;
-  
-  const expectedReversion = zScore > 1.5 ? -lastChange * 0.6 : 
-                            zScore < -1.5 ? -lastChange * 0.6 : 
-                            lastChange * lag1Correlation;
-  
-  const expectedPrice = prices[prices.length - 1] + expectedReversion;
+  const expectedChange = momentum + meanReversion;
+  const expectedPrice = lastPrice + expectedChange;
   
   return {
     predictNextTick: () => ({
       expectedPrice,
-      confidence: Math.min(Math.abs(zScore) / 2, 0.95),
-      direction: expectedReversion > 0 ? 'RISE' : 'FALL'
+      confidence: Math.min(Math.abs(expectedChange / lastPrice) * 10000, 95),
+      direction: expectedChange > 0 ? 'RISE' : 'FALL'
     })
   };
 };
@@ -147,22 +143,13 @@ const createARIMAModel = (prices: number[], horizon: number) => {
     if (returns.length < 10) return prices[prices.length - 1];
 
     const ar1 = calculateLag1Autocorr(returns);
-    const ar2 = calculateLag2Autocorr(returns);
-
-    const returnsEma = calculateEMA(returns, 10);
-    const errors = returns.slice(-10).map((r, i) => r - (returnsEma[returnsEma.length - 10 + i] || 0));
-    const maError = errors.reduce((a, b) => a + b, 0) / errors.length;
+    const drift = returns.reduce((a,b) => a+b, 0) / returns.length;
     
     const lastReturn = returns[returns.length - 1] || 0;
-    const prevReturn = returns[returns.length - 2] || 0;
     
-    const forecastReturn = ar1 * lastReturn + ar2 * prevReturn + 0.3 * maError; 
+    const forecastReturn = drift + ar1 * (lastReturn - drift);
     
-    const ema5 = calculateEMA(prices, 5);
-    const ema10 = calculateEMA(prices, 10);
-    const momentumBoost = (ema5[ema5.length-1] > ema10[ema10.length-1]) ? 1.2 : 0.8;
-    
-    return prices[prices.length - 1] * Math.exp(forecastReturn * momentumBoost);
+    return prices[prices.length - 1] * Math.exp(forecastReturn);
 };
 
 
@@ -349,22 +336,22 @@ function StochasticLab({
       { name: '6t', ticks: 6, window: 50 },
       { name: '10t', ticks: 10, window: 100 },
       { name: '20s', ticks: 20, window: 100 },
-      { name: '30s', ticks: 30, window: 150 },
-      { name: '40s', ticks: 40, window: 150 },
+      { name: '30s', ticks: 30, window: 75 },
+      { name: '40s', ticks: 40, window: 75 },
   ], []);
 
   useEffect(() => {
     if (Object.keys(bayesianModels).length === 0) {
         const initialModels: Record<string, BayesianModel> = {};
         horizons.forEach(h => {
-            const estimatedAccuracy = h.ticks <= 6 ? 0.60 : h.ticks <= 20 ? 0.55 : 0.52;
+            const estimatedAccuracy = h.ticks <= 10 ? 0.60 : h.ticks <= 20 ? 0.55 : 0.52;
             const pseudoTrials = 10;
             
             initialModels[h.name] = {
                 priorBelief: estimatedAccuracy,
                 successCount: Math.floor(estimatedAccuracy * pseudoTrials),
                 failureCount: Math.floor((1 - estimatedAccuracy) * pseudoTrials),
-                recentPerformance: Array(5).fill(Math.random() < estimatedAccuracy ? 1 : 0)
+                recentPerformance: Array(10).fill(Math.random() < estimatedAccuracy ? 1 : 0)
             };
         });
         setBayesianModels(initialModels);
@@ -415,36 +402,23 @@ function StochasticLab({
         } else if (h.ticks <= 20) { // ARIMA Model
             model1_price = createARIMAModel(prices, h.ticks);
         } else { // Improved GBM Model
-            let path = [{ time: prices.length - 1, price: lastPriceValue }];
-            let currentPrice = lastPriceValue;
+            const recentLogReturns = logReturns.slice(-h.window);
+            const drift = recentLogReturns.reduce((sum, r) => sum + r, 0) / recentLogReturns.length;
+            const volatility = calculateStdDev(recentLogReturns);
+
+            let regimeAdjustedDrift = drift;
             
-            for (let i = 1; i <= h.ticks; i++) {
-                const recentLogReturns = logReturns.slice(-h.window);
-                const lastSigma = calculateStdDev(recentLogReturns);
-                const weightedMean = recentLogReturns.reduce((sum, r, i) => sum + r * Math.exp(i / recentLogReturns.length), 0) / recentLogReturns.length;
-                const recentTrend = recentLogReturns.slice(-5).reduce((a, b) => a + b, 0) / 5;
-                const trendStrength = lastSigma > 0 ? Math.abs(recentTrend / lastSigma) : 0;
-                const driftAdjustment = trendStrength > 0.5 ? recentTrend * 0.3 : 0;
-                
-                let regimeAdjustedDrift = weightedMean + driftAdjustment;
-                
-                const recentVol = calculateStdDev(logReturns.slice(-10));
-                const historicVol = calculateStdDev(logReturns.slice(-50));
-                if (recentVol > historicVol * 1.3) regimeAdjustedDrift *= 0.7;
-                else if (recentVol < historicVol * 0.7) regimeAdjustedDrift *= 1.2;
-
-                const recentHigh = Math.max(...prices.slice(-20));
-                const recentLow = Math.min(...prices.slice(-20));
-                if (currentPrice > recentHigh * 0.998) regimeAdjustedDrift *= 0.5;
-                if (currentPrice < recentLow * 1.002) regimeAdjustedDrift *= 0.5;
-
-                const drift_future = regimeAdjustedDrift;
-                const diffusion = lastSigma * normalRandom();
-                currentPrice *= Math.exp(drift_future + diffusion);
-                path.push({ time: prices.length - 1 + i, price: currentPrice });
+            const recentVol = calculateStdDev(logReturns.slice(-10));
+            const historicVol = calculateStdDev(logReturns.slice(-50));
+            if (recentVol > historicVol * 1.3) {
+                regimeAdjustedDrift *= 0.4;
+            } else if (recentVol < historicVol * 0.7) {
+                regimeAdjustedDrift *= 1.4;
             }
-            model1_price = path[path.length - 1].price;
-            newFuturePaths[`predicted_${h.name}_ahead`] = path.map(p => ({ ...p, [`predicted_${h.name}_ahead`]: p.price }));
+
+            const diffusion = volatility * normalRandom();
+            const forecastReturn = regimeAdjustedDrift + diffusion;
+            model1_price = lastPriceValue * Math.exp(forecastReturn);
         }
 
         // Model 2: Linear Regression
@@ -505,6 +479,14 @@ function StochasticLab({
         newEnsembleWeights[h.name] = weights;
 
         const finalForecastPrice = model1_price * weights.w1 + model2_price * weights.w2 + model3_price * weights.w3;
+        
+        if (!newFuturePaths[`predicted_${h.name}_ahead`]) {
+            const path = [
+                { time: prices.length - 1, price: lastPriceValue },
+                { time: prices.length - 1 + h.ticks, price: finalForecastPrice }
+            ];
+             newFuturePaths[`predicted_${h.name}_ahead`] = path.map(p => ({ ...p, [`predicted_${h.name}_ahead`]: p.price }));
+        }
 
         // Add new prediction to pending (with individual model prices)
         pendingPredictionsRef.current[h.name].push({
@@ -515,22 +497,6 @@ function StochasticLab({
             model2Price: model2_price,
             model3Price: model3_price,
         });
-        
-        if (!newFuturePaths[`predicted_${h.name}_ahead`]) {
-            const path = [
-                { time: prices.length - 1, price: lastPriceValue },
-                { time: prices.length - 1 + h.ticks, price: finalForecastPrice }
-            ];
-             newFuturePaths[`predicted_${h.name}_ahead`] = path.map(p => ({ ...p, [`predicted_${h.name}_ahead`]: p.price }));
-        } else {
-             const gbmPath = newFuturePaths[`predicted_${h.name}_ahead`];
-             const lastGbmPrice = gbmPath[gbmPath.length - 1][`predicted_${h.name}_ahead`];
-             const scaleFactor = lastGbmPrice === lastPriceValue ? 1 : (finalForecastPrice - lastPriceValue) / (lastGbmPrice - lastPriceValue);
-             newFuturePaths[`predicted_${h.name}_ahead`] = gbmPath.map(p => ({
-                 ...p,
-                 [`predicted_${h.name}_ahead`]: lastPriceValue + (p.price - lastPriceValue) * scaleFactor
-             }));
-        }
     });
 
     setFuturePaths(newFuturePaths);
@@ -566,6 +532,11 @@ function StochasticLab({
     let maxCertainty = 0;
 
     projectionExperts.forEach(p => {
+        const weights = ensembleWeights[p.name];
+        if (weights && weights.w3 > 0.45) {
+            return; // Null model is dominating, ignore this signal.
+        }
+
         if (p.vote !== 'HOLD') {
             const certainty = Math.abs(p.accuracy - 50) * 2;
             if (certainty > maxCertainty) {
@@ -580,7 +551,7 @@ function StochasticLab({
         }
     });
     return bestSignal;
-  }, [projectionExperts]);
+  }, [projectionExperts, ensembleWeights]);
   
   const onConsensusUpdateRef = useRef(onConsensusUpdate);
   useEffect(() => {
@@ -588,8 +559,8 @@ function StochasticLab({
   }, [onConsensusUpdate]);
 
   useEffect(() => {
-    onConsensusUpdateRef.current({strongestSignal, projectionExperts});
-  }, [strongestSignal, projectionExperts]);
+    onConsensusUpdateRef.current({strongestSignal, projectionExperts, ensembleWeights});
+  }, [strongestSignal, projectionExperts, ensembleWeights]);
 
   const chartDisplayData = useMemo(() => {
     if (realData.length === 0) return [];

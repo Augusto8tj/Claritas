@@ -1,3 +1,4 @@
+
 // src/features/trading/services/predictive-logic.ts
 'use client';
 
@@ -109,6 +110,13 @@ export function evaluateTriggerConditions(
             if (currentVote === prevVote && currentVote !== 'HOLD') {
                 
                 const horizonSeconds = calcularSegundos(currentHorizonName);
+
+                // AÇÃO CORRETIVA #1: Bloquear trades longos em mercado lateral.
+                if (currentRegime === 'ranging' && horizonSeconds > 20) {
+                    newTriggerReason = `Sinal ${currentVote} (${currentHorizonName}) bloqueado: horizonte longo em mercado lateral.`;
+                    continue;
+                }
+
                 const isHighFrequencySignal = horizonSeconds <= highFrequencyThresholdSeconds;
                 
                 if (!isHighFrequencySignal && isMacroTrendCheckEnabled) {
@@ -120,10 +128,9 @@ export function evaluateTriggerConditions(
                     continue;
                   }
                   
-                  const deadZone = dynamicEMA * 0.0005;
                   let dynamicTrend: 'UP' | 'DOWN' | 'NONE' = 'NONE';
-                  if (currentPrice > dynamicEMA + deadZone) dynamicTrend = 'UP';
-                  else if (currentPrice < dynamicEMA - deadZone) dynamicTrend = 'DOWN';
+                  if (currentPrice > dynamicEMA) dynamicTrend = 'UP';
+                  else if (currentPrice < dynamicEMA) dynamicTrend = 'DOWN';
                   
                   if ((currentVote === 'RISE' && dynamicTrend === 'DOWN') || (currentVote === 'FALL' && dynamicTrend === 'UP')) {
                     newTriggerReason = `Sinal ${currentVote} bloqueado por tendência macro contrária (${dynamicTrend})`;
@@ -163,18 +170,20 @@ export function evaluateTriggerConditions(
     if (strongestVote !== 'HOLD' && bestHorizon) {
         const horizonSeconds = calcularSegundos(bestHorizon);
         const isHighFrequencySignal = horizonSeconds <= highFrequencyThresholdSeconds;
-
-        if (isMacroTrendCheckEnabled && !isHighFrequencySignal) {
+        
+        // AÇÃO CORRETIVA #1: Bloquear trades longos em mercado lateral.
+        if (currentRegime === 'ranging' && horizonSeconds > 20) {
+            newTriggerReason = `Sinal ${strongestVote} (${bestHorizon}) bloqueado: horizonte longo em mercado lateral.`;
+        } else if (isMacroTrendCheckEnabled && !isHighFrequencySignal) {
             const dynamicPeriod = Math.max(Math.round(horizonSeconds), 10);
             const dynamicEMA = calculateDynamicEMA(botCandleData, dynamicPeriod);
             
             if (dynamicEMA === null) {
                  newTriggerReason = `Sinal ${strongestVote} (${bestHorizon}) bloqueado. EMA(${dynamicPeriod}) indisponível.`;
             } else {
-                const deadZone = dynamicEMA * 0.0005;
                 let dynamicTrend: 'UP' | 'DOWN' | 'NONE' = 'NONE';
-                if (currentPrice > dynamicEMA + deadZone) dynamicTrend = 'UP';
-                else if (currentPrice < dynamicEMA - deadZone) dynamicTrend = 'DOWN';
+                if (currentPrice > dynamicEMA) dynamicTrend = 'UP';
+                else if (currentPrice < dynamicEMA) dynamicTrend = 'DOWN';
 
                 if ((strongestVote === 'RISE' && dynamicTrend === 'DOWN') || (strongestVote === 'FALL' && dynamicTrend === 'UP')) {
                      newTriggerReason = `Sinal ${strongestVote} (${bestHorizon}) bloqueado por tendência macro contrária (${dynamicTrend}).`;
