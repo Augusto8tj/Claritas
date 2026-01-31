@@ -132,7 +132,7 @@ export function useMasterAutopilot() {
   
   const horizons = useMemo(() => [
       { name: '3t', ticks: 3, window: 50 }, { name: '6t', ticks: 6, window: 50 },
-      { name: '10s', ticks: 10, window: 100 }, { name: '20s', ticks: 20, window: 100 },
+      { name: '10t', ticks: 10, window: 100 }, { name: '20s', ticks: 20, window: 100 },
       { name: '30s', ticks: 30, window: 150 }, { name: '40s', ticks: 40, window: 150 },
   ], []);
 
