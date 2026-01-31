@@ -125,9 +125,9 @@ export function evaluateTriggerConditions(
                   if (currentPrice > dynamicEMA + deadZone) dynamicTrend = 'UP';
                   else if (currentPrice < dynamicEMA - deadZone) dynamicTrend = 'DOWN';
                   
-                  if ((currentVote === 'RISE' && dynamicTrend !== 'UP') ||
-                      (currentVote === 'FALL' && dynamicTrend !== 'DOWN')) {
-                    newTriggerReason = `Sinal ${currentVote} bloqueado: preço ${currentPrice.toFixed(4)} vs EMA(${dynamicPeriod})=${dynamicEMA.toFixed(4)} (${dynamicTrend})`;
+                  if ((currentVote === 'RISE' && dynamicTrend === 'DOWN') ||
+                      (currentVote === 'FALL' && dynamicTrend === 'UP')) {
+                    newTriggerReason = `Sinal ${currentVote} bloqueado por tendência macro contrária (${dynamicTrend})`;
                     continue; // Pula para a próxima iteração do loop
                   }
                 }
@@ -177,8 +177,8 @@ export function evaluateTriggerConditions(
                 if (currentPrice > dynamicEMA + deadZone) dynamicTrend = 'UP';
                 else if (currentPrice < dynamicEMA - deadZone) dynamicTrend = 'DOWN';
 
-                if ((strongestVote === 'RISE' && dynamicTrend !== 'UP') || (strongestVote === 'FALL' && dynamicTrend !== 'DOWN')) {
-                     newTriggerReason = `Sinal ${strongestVote} (${bestHorizon}) bloqueado. Desalinhado com a tendência macro (${dynamicTrend}).`;
+                if ((strongestVote === 'RISE' && dynamicTrend === 'DOWN') || (strongestVote === 'FALL' && dynamicTrend === 'UP')) {
+                     newTriggerReason = `Sinal ${strongestVote} (${bestHorizon}) bloqueado por tendência macro contrária (${dynamicTrend}).`;
                 } else {
                     newTriggerSignal = strongestVote;
                     newTriggeredBy = [bestHorizon, bestHorizon];
