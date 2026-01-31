@@ -144,27 +144,12 @@ export function useMasterAutopilot() {
     }
   }, [toast]);
   
-  const dependenciesRef = useRef({
-    contractType,
-    activeSymbol,
-    masterState,
-  });
-
-  useEffect(() => {
-    dependenciesRef.current = {
-      contractType,
-      activeSymbol,
-      masterState,
-    };
-  });
-  
   const executeTradeAction = useCallback(async (
     initiator: OperationInitiator, 
     signalOverride: Signal, 
     triggeredBy: [string, string] | null,
     currentUser: User | null
   ) => {
-      const { contractType, activeSymbol, masterState } = dependenciesRef.current;
       const signalToUse = signalOverride;
       
       if (signalToUse === 'HOLD' || !activeSymbol || !triggeredBy) {
@@ -237,7 +222,7 @@ export function useMasterAutopilot() {
           console.error("Master Autopilot Execution Error:", error);
           toast({ title: `❌ Erro na Execução ${initiator}`, description: error instanceof Error ? error.message : String(error), variant: "destructive" });
       }
-  }, [executeRiseFallTrade, toast]);
+  }, [executeRiseFallTrade, toast, contractType, activeSymbol, masterState]);
   
   const runAutopilotCycle = useCallback((newAssertiveness: Record<string, AssertivenessData>) => {
     if (priceTicks.length < 50) {
