@@ -4,9 +4,13 @@ import type {Config} from 'tailwindcss';
 export default {
   darkMode: ['class'],
   content: [
-    './src/components/**/*.{js,ts,jsx,tsx,mdx}',
-    './src/features/**/*.{js,ts,jsx,tsx,mdx}',
     './src/app/**/*.{js,ts,jsx,tsx,mdx}',
+    './src/components/**/*.{js,ts,jsx,tsx,mdx}',
+    './src/features/auth/**/*.{js,ts,jsx,tsx,mdx}',
+    './src/features/financials/**/*.{js,ts,jsx,tsx,mdx}',
+    './src/features/status/**/*.{js,ts,jsx,tsx,mdx}',
+    './src/features/theme/**/*.{js,ts,jsx,tsx,mdx}',
+    './src/features/trading/**/*.{js,ts,jsx,tsx,mdx}',
   ],
   theme: {
     extend: {

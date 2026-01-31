@@ -519,12 +519,12 @@ function StochasticLab({
         });
 
         // FIX: Create linear projection for non-GBM models
-        if (h.ticks <= 20) {
+        if (!newFuturePaths[`predicted_${h.name}_ahead`]) {
             const path = [
                 { time: prices.length - 1, price: lastPriceValue },
                 { time: prices.length - 1 + h.ticks, price: finalForecastPrice }
             ];
-             newFuturePaths[`predicted_${h.name}_ahead`] = path.map(p => ({ ...p, [`predicted_${h.name}_ahead`]: p.price }));
+            newFuturePaths[`predicted_${h.name}_ahead`] = path.map(p => ({ ...p, [`predicted_${h.name}_ahead`]: p.price }));
         }
 
     });
@@ -851,30 +851,26 @@ const PageContent = () => {
     const [predictiveLogs, setPredictiveLogs] = useState<PredictiveTradeLog[]>([]);
     const [isLogsLoading, setIsLogsLoading] = useState(true);
     const [deletingPredictiveLogId, setDeletingPredictiveLogId] = useState<string | null>(null);
-    const [consensusData, setConsensusData] = useState<any>(null);
     
+    const onConsensusUpdateRef = useRef((data: any) => {});
     const autopilot = useMasterAutopilot();
     const { isAutopilotOn, runAutopilotCycle } = autopilot;
     
+    const [consensusData, setConsensusData] = useState<any>(null);
     const onConsensusUpdate = useCallback((data: any) => {
         setConsensusData(data);
-    }, []);
-    
-    const stableOnConsensusUpdate = useRef(onConsensusUpdate);
-    useEffect(() => {
-        stableOnConsensusUpdate.current = onConsensusUpdate;
-    }, [onConsensusUpdate]);
-    
-    const onConsensusUpdateRef = useRef((data: any) => {
-        stableOnConsensusUpdate.current(data);
         if (isAutopilotOn && data?.projectionExperts) {
             const assertiveness: Record<string, AssertivenessData> = Object.fromEntries(
                 data.projectionExperts.map((p: any) => [p.name, { accuracy: p.accuracy, vote: p.vote }])
             );
             runAutopilotCycle(assertiveness);
         }
-    });
+    }, [isAutopilotOn, runAutopilotCycle]);
 
+    useEffect(() => {
+        onConsensusUpdateRef.current = onConsensusUpdate;
+    }, [onConsensusUpdate]);
+    
     useEffect(() => {
         if (!user) {
             setIsLogsLoading(false);
@@ -1057,7 +1053,7 @@ const PageContent = () => {
 }
 
 export default function VolatilityAnalysisPage() {
-    const onConsensusUpdateRef = useRef((data: any) => {});
+    
     const formMethods = useForm({ resolver: zodResolver(volatilityTraderSchema), defaultValues: { stake: 1.0, duration: 15 }});
     
     return (
