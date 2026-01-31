@@ -125,8 +125,7 @@ export function evaluateTriggerConditions(
                   if (currentPrice > dynamicEMA + deadZone) dynamicTrend = 'UP';
                   else if (currentPrice < dynamicEMA - deadZone) dynamicTrend = 'DOWN';
                   
-                  if ((currentVote === 'RISE' && dynamicTrend === 'DOWN') ||
-                      (currentVote === 'FALL' && dynamicTrend === 'UP')) {
+                  if ((currentVote === 'RISE' && dynamicTrend === 'DOWN') || (currentVote === 'FALL' && dynamicTrend === 'UP')) {
                     newTriggerReason = `Sinal ${currentVote} bloqueado por tendência macro contrária (${dynamicTrend})`;
                     continue; // Pula para a próxima iteração do loop
                   }

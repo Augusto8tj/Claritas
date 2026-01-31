@@ -222,7 +222,7 @@ export function useMasterAutopilot() {
           console.error("Master Autopilot Execution Error:", error);
           toast({ title: `❌ Erro na Execução ${initiator}`, description: error instanceof Error ? error.message : String(error), variant: "destructive" });
       }
-  }, [executeRiseFallTrade, toast, contractType, activeSymbol, masterState]);
+  }, [executeRiseFallTrade, contractType, activeSymbol, masterState, user]);
   
   const runAutopilotCycle = useCallback((newAssertiveness: Record<string, AssertivenessData>) => {
     if (priceTicks.length < 50) {
