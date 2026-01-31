@@ -112,7 +112,7 @@ export function evaluateTriggerConditions(
                 const isHighFrequencySignal = horizonSeconds <= highFrequencyThresholdSeconds;
                 
                 if (!isHighFrequencySignal && isMacroTrendCheckEnabled) {
-                  const dynamicPeriod = Math.max(Math.floor(horizonSeconds / 2), 20);
+                  const dynamicPeriod = Math.max(Math.round(horizonSeconds), 10);
                   const dynamicEMA = calculateDynamicEMA(botCandleData, dynamicPeriod);
                   
                   if (dynamicEMA === null) {
@@ -166,7 +166,7 @@ export function evaluateTriggerConditions(
         const isHighFrequencySignal = horizonSeconds <= highFrequencyThresholdSeconds;
 
         if (isMacroTrendCheckEnabled && !isHighFrequencySignal) {
-            const dynamicPeriod = Math.max(Math.floor(horizonSeconds / 2), 20);
+            const dynamicPeriod = Math.max(Math.round(horizonSeconds), 10);
             const dynamicEMA = calculateDynamicEMA(botCandleData, dynamicPeriod);
             
             if (dynamicEMA === null) {
