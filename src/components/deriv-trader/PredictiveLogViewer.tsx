@@ -49,7 +49,7 @@ export default function PredictiveLogViewer({
       return;
     }
 
-    const horizons = ['3t', '6t', '10s', '20s', '30s', '40s'];
+    const horizons = ['3t', '6t', '10t', '20s', '30s', '40s'];
     const snapshotHeaders = horizons.flatMap(h => [`acc_${h}`, `vote_${h}`]);
     const headers = [
         "ID", "ContractID", "Timestamp", "Asset", "Direction", "Stake", "Duration", "DurationUnit", 
