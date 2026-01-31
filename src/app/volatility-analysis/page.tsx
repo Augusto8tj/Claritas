@@ -246,7 +246,7 @@ const StrongestSignalCard = ({ signal, ensembleWeights }: { signal: StrongestSig
                     </p>
                 </div>
             )}
-             <Card className="mt-4 p-4">
+            <Card className="mt-4 p-4">
                 <CardTitle className="text-sm mb-2">Performance dos Modelos (Ensemble)</CardTitle>
                 <div className="space-y-1 text-xs">
                     {Object.entries(ensembleWeights).map(([horizon, w]) => (
@@ -453,29 +453,27 @@ function StochasticLab({
         // Model 3: Null Model (last price)
         model3_price = prices[prices.length-1];
 
-        // --- BAYESIAN UPDATE LOGIC ---
+        // --- BAYESIAN UPDATE & ERROR TRACKING ---
         const currentTimeIndex = prices.length - 1;
         if (!pendingPredictionsRef.current[h.name]) pendingPredictionsRef.current[h.name] = [];
+        if (!modelErrorsRef.current[h.name]) modelErrorsRef.current[h.name] = { m1: [], m2: [], m3: [] };
 
         // Check finished predictions
         const stillPending: any[] = [];
         pendingPredictionsRef.current[h.name].forEach(pred => {
             if (currentTimeIndex >= pred.startTimeIndex + h.ticks) {
                 const actualEndPrice = prices[pred.startTimeIndex + h.ticks];
+                
+                // Bayesian Update
                 const predictedDirection = pred.predictedEndPrice > pred.startPrice;
                 const actualDirection = actualEndPrice > pred.startPrice;
                 const wasCorrect = predictedDirection === actualDirection;
-
                 const modelState = bayesianModels[h.name] || { priorBelief: 0.5, successCount: 0, failureCount: 0, recentPerformance: [] };
                 const { updatedModel, currentConfidence } = updateBayesianConfidence(modelState, wasCorrect);
-                
                 newAccuracies[h.name] = currentConfidence;
                 setBayesianModels(prev => ({ ...prev, [h.name]: updatedModel }));
 
                 // Track errors for ensemble
-                 if (!modelErrorsRef.current[h.name]) {
-                    modelErrorsRef.current[h.name] = { m1: [], m2: [], m3: [] };
-                }
                 modelErrorsRef.current[h.name].m1.push(Math.abs(actualEndPrice - pred.model1Price));
                 modelErrorsRef.current[h.name].m2.push(Math.abs(actualEndPrice - pred.model2Price));
                 modelErrorsRef.current[h.name].m3.push(Math.abs(actualEndPrice - pred.model3Price));
@@ -485,7 +483,6 @@ function StochasticLab({
                     modelErrorsRef.current[h.name].m2.shift();
                     modelErrorsRef.current[h.name].m3.shift();
                 }
-
             } else {
                 stillPending.push(pred);
             }
@@ -518,15 +515,13 @@ function StochasticLab({
             model3Price: model3_price,
         });
         
-        // CORREÇÃO: Garante que todos os horizontes tenham uma projeção visual
         if (!newFuturePaths[`predicted_${h.name}_ahead`]) {
             const path = [
                 { time: prices.length - 1, price: lastPriceValue },
                 { time: prices.length - 1 + h.ticks, price: finalForecastPrice }
             ];
-            newFuturePaths[`predicted_${h.name}_ahead`] = path.map(p => ({ ...p, [`predicted_${h.name}_ahead`]: p.price }));
+             newFuturePaths[`predicted_${h.name}_ahead`] = path.map(p => ({ ...p, [`predicted_${h.name}_ahead`]: p.price }));
         } else {
-             // NOVO: Escala a projeção GBM para corresponder à previsão final do ensemble
              const gbmPath = newFuturePaths[`predicted_${h.name}_ahead`];
              const lastGbmPrice = gbmPath[gbmPath.length - 1][`predicted_${h.name}_ahead`];
              const scaleFactor = lastPriceValue === lastGbmPrice ? 1 : (finalForecastPrice - lastPriceValue) / (lastGbmPrice - lastPriceValue);
@@ -1079,3 +1074,4 @@ export default function VolatilityAnalysisPage() {
         </DerivApiProvider>
     );
 }
+
