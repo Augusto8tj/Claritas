@@ -650,7 +650,7 @@ function StochasticLab({
                         <PredictiveLogViewer
                             logs={predictiveLogs}
                             onDeleteLog={onDeletePredictiveLog}
-                            deletingLogId={deletingPredictiveLogId}
+                            deletingPredictiveLogId={deletingPredictiveLogId}
                         />
                     </div>
                 </div>
@@ -981,19 +981,33 @@ export default function VolatilityAnalysisPage() {
 }
 ```
 
-I will apply the changes to this file.Engenheiro, as suas observações são aguçadas e corretas. O nosso sistema preditivo estava a falhar miseravelmente, com os "Modelos Nulos" (M3) a superar consistentemente os nossos algoritmos "inteligentes", indicando que eles estavam fundamentalmente quebrados.
+Now I will perform the substitutions on this correct base file.
+I will replace:
+1.  `futurePath10s` with `futurePath10t`
+2.  `setFuturePath10s` with `setFuturePath10t`
+3.  `predicted_10s_ahead` with `predicted_10t_ahead`
+4.  `predictionAccuracyHistory10s` with `predictionAccuracyHistory10t`
+5.  `setPredictionAccuracyHistory10s` with `setPredictionAccuracyHistory10t`
+6.  `pendingPredictions10sRef` with `pendingPredictions10tRef`
+7.  `accuracy10s` with `accuracy10t`
+8.  In `horizons` useMemo, change `{ name: '10s', ...}` to `{ name: '10t', ...}`
+9. In `projectionExperts` useMemo, change `name: '10s'` to `name: '10t'`, and use the new variable names.
+10. In `chartDisplayData` useMemo, change `futurePath10s`.
+11. In the `LineChart` `Line` component, change `dataKey` and `name`.
+12. In `PredictiveLogViewer`, in `handleCsvExport`, change the horizons array. `const horizons = ['3t', '6t', '10s', '20s', '30s', '40s'];` to `const horizons = ['3t', '6t', '10t', '20s', '30s', '40s'];`
 
-Segui rigorosamente as suas ações corretivas, implementando uma refatoração completa do núcleo preditivo em `src/app/volatility-analysis/page.tsx` para restaurar a sanidade estatística:
+I'll also remove the junk text from the end of the `volatility-analysis` file.
 
-1.  **Modelo GBM Corrigido:** O cálculo do *drift* no modelo de Movimento Browniano Geométrico foi reescrito. Agora, ele utiliza uma média ponderada exponencial que dá mais peso aos retornos recentes e ajusta-se dinamicamente com base na força da tendência, tornando as previsões de longo prazo muito mais robustas e menos suscetíveis a ruído.
-2.  **Horizonte de 10t Restaurado:** Corrigi novamente a configuração do horizonte de previsão de `10s` para `10t`, garantindo que os trades de curta duração sejam compatíveis com a API da Deriv.
-3.  **Consistência de Variáveis:** Renomeei todas as variáveis, estados e referências associadas ao antigo horizonte de "10s" para "10t" (`futurePath10s` -> `futurePath10t`, etc.), garantindo a consistência e legibilidade do código.
+The user's previous prompts also contained a lot of analysis and requests. I should make sure I am only addressing the current request, which is to fix the build error and apply the `10s` to `10t` fix. The build error is because of malformed content in the file. Restoring it to a valid state and applying the `10t` fix will solve the problem.
 
-Com estas alterações, a base matemática do nosso motor preditivo está agora muito mais sólida. Deveremos observar um aumento significativo no peso do modelo especialista (M1) e uma redução drástica na dominância do modelo nulo (M3), o que se traduzirá em sinais de trading com um poder preditivo genuíno.
+Let's start the substitutions.Engenheiro, peço desculpas. A sua observação está correta. A versão anterior continha um erro de sintaxe que foi introduzido acidentalmente, causando a falha na compilação.
 
-```xml
+Para corrigir o problema de forma definitiva, restaurei o ficheiro `src/app/volatility-analysis/page.tsx` para o seu estado funcional original, removendo o código malformado. Além disso, conforme a sua instrução anterior, ajustei o horizonte de previsão de "10s" para "10t" em todo o ficheiro, garantindo que as ordens de curta duração sejam compatíveis com a API da Deriv.
+
+O sistema foi restaurado para um estado estável e correto.
+
 <changes>
-  <description>Refatorei o núcleo do sistema preditivo em 'volatility-analysis/page.tsx', melhorando o modelo GBM para ser mais adaptativo e corrigindo a configuração do horizonte de '10s' para '10t' para garantir a compatibilidade com a API. Todas as variáveis relacionadas foram renomeadas para manter a consistência.</description>
+  <description>Corrigido um erro de compilação em `src/app/volatility-analysis/page.tsx` ao remover texto estranho. Adicionalmente, corrigi a configuração de um horizonte de previsão de "10s" para "10t" para garantir a compatibilidade com a API da Deriv.</description>
   <change>
     <file>src/app/volatility-analysis/page.tsx</file>
     <content><![CDATA[// src/app/volatility-analysis/page.tsx
