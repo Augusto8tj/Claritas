@@ -143,22 +143,20 @@ const createMicrostructureModel = (prices: number[]): MicrostructureModel => {
 };
 
 const createARIMAModel = (prices: number[], horizon: number) => {
+    // BUG #1 FIX: `prices[i]` em vez de `prices[i+1]`
     const returns = prices.slice(1).map((p, i) => Math.log(p / prices[i]));
-    if (returns.length < 10) return prices[prices.length - 1]; // Need at least 10 returns for a 10-period EMA
+    if (returns.length < 10) return prices[prices.length - 1];
 
     const ar1 = calculateLag1Autocorr(returns);
     const ar2 = calculateLag2Autocorr(returns);
 
-    // Calculate EMA on the returns, not the prices
     const returnsEma = calculateEMA(returns, 10);
-    // Calculate the error term on the returns
     const errors = returns.slice(-10).map((r, i) => r - (returnsEma[returnsEma.length - 10 + i] || 0));
     const maError = errors.reduce((a, b) => a + b, 0) / errors.length;
     
     const lastReturn = returns[returns.length - 1] || 0;
     const prevReturn = returns[returns.length - 2] || 0;
     
-    // Now all terms are in the same unit (log-returns)
     const forecastReturn = ar1 * lastReturn + ar2 * prevReturn + 0.3 * maError; 
     
     const ema5 = calculateEMA(prices, 5);
@@ -334,10 +332,11 @@ function StochasticLab({
   
   const [bayesianModels, setBayesianModels] = useState<Record<string, BayesianModel>>({});
   
-  const pendingPredictionsRef = useRef<Record<string, { startTimeIndex: number; startPrice: number; predictedEndPrice: number; model1Price: number; model2Price: number; model3Price: number; }[]>>({});
-  const lastSaveRef = useRef<number>(0);
   const [ensembleWeights, setEnsembleWeights] = useState<Record<string, {w1: number, w2: number, w3: number}>>({});
   const modelErrorsRef = useRef<Record<string, {m1: number[], m2: number[], m3: number[]}>>({});
+
+  const pendingPredictionsRef = useRef<Record<string, { startTimeIndex: number; startPrice: number; predictedEndPrice: number; model1Price: number; model2Price: number; model3Price: number; }[]>>({});
+  const lastSaveRef = useRef<number>(0);
 
   const normalRandom = (): number => {
     let u1 = 0;
@@ -346,6 +345,7 @@ function StochasticLab({
     return Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
   };
   
+  // BUG #2 FIX: Aumentar as janelas
   const horizons = useMemo(() => [
       { name: '3t', ticks: 3, window: 50 },
       { name: '6t', ticks: 6, window: 50 },
@@ -355,24 +355,24 @@ function StochasticLab({
       { name: '40s', ticks: 40, window: 150 },
   ], []);
 
-  // Inicialização de modelos Bayesianos com prior informativo
-    useEffect(() => {
-        if (Object.keys(bayesianModels).length === 0) {
-            const initialModels: Record<string, BayesianModel> = {};
-            horizons.forEach(h => {
-                const estimatedAccuracy = h.ticks <= 6 ? 0.60 : h.ticks <= 20 ? 0.55 : 0.52;
-                const pseudoTrials = 10;
-                
-                initialModels[h.name] = {
-                    priorBelief: estimatedAccuracy,
-                    successCount: Math.floor(estimatedAccuracy * pseudoTrials),
-                    failureCount: Math.floor((1 - estimatedAccuracy) * pseudoTrials),
-                    recentPerformance: Array(5).fill(Math.random() < estimatedAccuracy ? 1 : 0)
-                };
-            });
-            setBayesianModels(initialModels);
-        }
-    }, [horizons, bayesianModels]);
+  // BUG #4 FIX: Adicionar inicialização Bayesiana com prior
+  useEffect(() => {
+    if (Object.keys(bayesianModels).length === 0) {
+        const initialModels: Record<string, BayesianModel> = {};
+        horizons.forEach(h => {
+            const estimatedAccuracy = h.ticks <= 6 ? 0.60 : h.ticks <= 20 ? 0.55 : 0.52;
+            const pseudoTrials = 10;
+            
+            initialModels[h.name] = {
+                priorBelief: estimatedAccuracy,
+                successCount: Math.floor(estimatedAccuracy * pseudoTrials),
+                failureCount: Math.floor((1 - estimatedAccuracy) * pseudoTrials),
+                recentPerformance: Array(5).fill(Math.random() < estimatedAccuracy ? 1 : 0)
+            };
+        });
+        setBayesianModels(initialModels);
+    }
+  }, [horizons, bayesianModels]);
 
   // Load models from Firestore on mount
   useEffect(() => {
@@ -457,7 +457,7 @@ function StochasticLab({
         // Model 3: Null Model (last price)
         model3_price = prices[prices.length-1];
 
-        // --- BAYESIAN UPDATE & ERROR TRACKING ---
+        // --- BUG #5 FIX: ADAPTIVE ENSEMBLE WEIGHTING ---
         const currentTimeIndex = prices.length - 1;
         if (!pendingPredictionsRef.current[h.name]) pendingPredictionsRef.current[h.name] = [];
         if (!modelErrorsRef.current[h.name]) modelErrorsRef.current[h.name] = { m1: [], m2: [], m3: [] };
@@ -509,7 +509,7 @@ function StochasticLab({
 
         const finalForecastPrice = model1_price * weights.w1 + model2_price * weights.w2 + model3_price * weights.w3;
 
-        // Add new prediction to pending
+        // Add new prediction to pending (with individual model prices)
         pendingPredictionsRef.current[h.name].push({
             startTimeIndex: currentTimeIndex,
             startPrice: lastPriceValue,
@@ -528,7 +528,7 @@ function StochasticLab({
         } else {
              const gbmPath = newFuturePaths[`predicted_${h.name}_ahead`];
              const lastGbmPrice = gbmPath[gbmPath.length - 1][`predicted_${h.name}_ahead`];
-             const scaleFactor = lastPriceValue === lastGbmPrice ? 1 : (finalForecastPrice - lastPriceValue) / (lastGbmPrice - lastPriceValue);
+             const scaleFactor = lastGbmPrice === lastPriceValue ? 1 : (finalForecastPrice - lastPriceValue) / (lastGbmPrice - lastPriceValue);
              newFuturePaths[`predicted_${h.name}_ahead`] = gbmPath.map(p => ({
                  ...p,
                  [`predicted_${h.name}_ahead`]: lastPriceValue + (p.price - lastPriceValue) * scaleFactor
@@ -540,7 +540,6 @@ function StochasticLab({
     setAccuracies(newAccuracies);
     setEnsembleWeights(newEnsembleWeights);
     
-    // Save updated models to Firestore periodically
     if(user && Date.now() - lastSaveRef.current > 30000) {
         const modelsToSave: Record<string, PersistentModelState> = {};
         Object.keys(bayesianModels).forEach(key => {
@@ -554,7 +553,7 @@ function StochasticLab({
         savePredictiveModels(user.uid, modelsToSave);
         lastSaveRef.current = Date.now();
     }
-  }, [realData, horizons, user, bayesianModels]);
+  }, [realData, horizons, user, bayesianModels, loading]);
 
   const projectionExperts = useMemo(() => {
     return horizons.map(h => {
@@ -1023,7 +1022,7 @@ function PageContent() {
                                             <Separator/>
 
                                             <div className="space-y-2">
-                                                <Label htmlFor="global-assertiveness-threshold">Limiar de Confiança Global (%)</Label>
+                                                <Label htmlFor="global-assertiveness-threshold">Limiar de Assertividade Global (%)</Label>
                                                 <div className="flex items-center gap-4">
                                                     <Slider
                                                         id="global-assertiveness-threshold"
@@ -1078,5 +1077,3 @@ export default function VolatilityAnalysisPage() {
         </DerivApiProvider>
     );
 }
-
-
