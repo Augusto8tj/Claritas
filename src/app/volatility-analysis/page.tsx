@@ -144,26 +144,30 @@ const createMicrostructureModel = (prices: number[]): MicrostructureModel => {
 
 const createARIMAModel = (prices: number[], horizon: number) => {
     const returns = prices.slice(1).map((p, i) => Math.log(p / prices[i]));
-    if(returns.length < 3) return prices[prices.length - 1];
+    if (returns.length < 10) return prices[prices.length - 1]; // Need at least 10 returns for a 10-period EMA
 
     const ar1 = calculateLag1Autocorr(returns);
     const ar2 = calculateLag2Autocorr(returns);
 
-    const sma = calculateEMA(prices, 10);
-    const errors = prices.slice(-10).map((p, i) => p - sma[sma.length - 10 + i]);
+    // Calculate EMA on the returns, not the prices
+    const returnsEma = calculateEMA(returns, 10);
+    // Calculate the error term on the returns
+    const errors = returns.slice(-10).map((r, i) => r - (returnsEma[returnsEma.length - 10 + i] || 0));
     const maError = errors.reduce((a, b) => a + b, 0) / errors.length;
     
-    const lastReturn = returns[returns.length - 1];
-    const prevReturn = returns[returns.length - 2];
+    const lastReturn = returns[returns.length - 1] || 0;
+    const prevReturn = returns[returns.length - 2] || 0;
     
-    const forecastReturn = ar1 * lastReturn + ar2 * prevReturn + 0.3 * maError;
+    // Now all terms are in the same unit (log-returns)
+    const forecastReturn = ar1 * lastReturn + ar2 * prevReturn + 0.3 * maError; 
     
     const ema5 = calculateEMA(prices, 5);
     const ema10 = calculateEMA(prices, 10);
-    const momentumBoost = ema5[ema5.length-1] > ema10[ema10.length-1] ? 1.2 : 0.8;
+    const momentumBoost = (ema5[ema5.length-1] > ema10[ema10.length-1]) ? 1.2 : 0.8;
     
     return prices[prices.length - 1] * Math.exp(forecastReturn * momentumBoost);
 };
+
 
 
 // Aproximação da função quantil normal inversa
@@ -1074,4 +1078,5 @@ export default function VolatilityAnalysisPage() {
         </DerivApiProvider>
     );
 }
+
 
