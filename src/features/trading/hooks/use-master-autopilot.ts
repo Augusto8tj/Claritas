@@ -148,7 +148,9 @@ export function useMasterAutopilot() {
     initiator: OperationInitiator, 
     signalOverride: Signal, 
     triggeredBy: [string, string] | null,
-    currentUser: User | null
+    currentUser: User | null,
+    triggerReason: string,
+    assertiveness: Record<string, AssertivenessData>
   ) => {
       const signalToUse = signalOverride;
       
@@ -188,8 +190,8 @@ export function useMasterAutopilot() {
               if (tradeResult.success && tradeResult.contractId && currentUser) {
                   const logId = `pred_log_${tradeResult.contractId}`;
                   const logContext = {
-                      triggerReason: masterState.trigger.reason,
-                      assertivenessSnapshot: Object.entries(masterState.assertiveness).map(([horizon, data]) => ({
+                      triggerReason: triggerReason,
+                      assertivenessSnapshot: Object.entries(assertiveness).map(([horizon, data]) => ({
                           horizon,
                           accuracy: data.accuracy,
                           vote: data.vote,
@@ -222,13 +224,16 @@ export function useMasterAutopilot() {
           console.error("Master Autopilot Execution Error:", error);
           toast({ title: `❌ Erro na Execução ${initiator}`, description: error instanceof Error ? error.message : String(error), variant: "destructive" });
       }
-  }, [contractType, activeSymbol, masterState, user, executeRiseFallTrade, toast]);
+  }, [contractType, activeSymbol, user, executeRiseFallTrade, toast]);
   
   const runAutopilotCycle = useCallback((newAssertiveness: Record<string, AssertivenessData>) => {
     if (priceTicks.length < 50) {
-        if (masterState.isReady) {
-            setMasterState(prev => ({...prev, isReady: false, trigger: { signal: 'HOLD', reason: 'Aguardando dados...', triggeredBy: null }}));
-        }
+        setMasterState(prev => {
+            if (prev.isReady) {
+                return {...prev, isReady: false, trigger: { signal: 'HOLD', reason: 'Aguardando dados...', triggeredBy: null }};
+            }
+            return prev;
+        });
         return;
     }
     const currentTick = priceTicks[priceTicks.length - 1];
@@ -285,7 +290,7 @@ export function useMasterAutopilot() {
     const openMasterTrade = operationsLog.find(op => op.initiator === 'Piloto' && op.status === 'pending');
     if (isAutopilotOn && newTriggerSignal !== 'HOLD' && !cooldownRef.current && !openMasterTrade) {
       cooldownRef.current = true;
-      executeTradeAction('Piloto', newTriggerSignal, newTriggeredBy, user);
+      executeTradeAction('Piloto', newTriggerSignal, newTriggeredBy, user, newTriggerReason, newAssertiveness);
       setTimeout(() => { cooldownRef.current = false; }, 20000);
     }
     
@@ -303,21 +308,23 @@ export function useMasterAutopilot() {
     });
 
   }, [
-      priceTicks, botCandleData, riskManager.thresholds, contractType, 
-      isNeighborConfirmationEnabled, isMacroTrendCheckEnabled, highFrequencyThreshold, horizons, masterState.isReady, 
-      operationsLog, isAutopilotOn, executeTradeAction, user
+    priceTicks, botCandleData, riskManager.thresholds, contractType, isNeighborConfirmationEnabled, 
+    isMacroTrendCheckEnabled, highFrequencyThreshold, horizons, user, executeTradeAction, 
+    operationsLog, toast, isAutopilotOn
   ]);
 
   const executeManualTrigger = useCallback(async () => {
-    const { signal } = masterState.manualTrigger;
-    const assertivenessArray = Object.entries(masterState.assertiveness);
+    const { signal, reason } = masterState.manualTrigger;
+    const { assertiveness } = masterState;
+    const assertivenessArray = Object.entries(assertiveness);
     const strongest = assertivenessArray.length > 0 ? assertivenessArray.reduce((a, b) => {
         const accA = Math.max(a[1].accuracy, 100 - a[1].accuracy);
         const accB = Math.max(b[1].accuracy, 100 - b[1].accuracy);
         return accA > accB ? a : b;
     })[0] : 'manual';
-    await executeTradeAction('Manual', signal, [strongest, strongest], user);
-  }, [executeTradeAction, masterState.manualTrigger, masterState.assertiveness, user]);
+    
+    await executeTradeAction('Manual', signal, [strongest, strongest], user, reason, assertiveness);
+  }, [executeTradeAction, masterState, user]);
   
   const setGlobalAssertivenessThreshold = useCallback((value: number) => {
       setRiskManager(prev => {
