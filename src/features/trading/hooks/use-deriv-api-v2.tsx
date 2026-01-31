@@ -640,212 +640,212 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
         wsRef.current = ws;
         
         ws.onmessage = (event) => {
-            try {
-                const response = JSON.parse(event.data);
-                
-                if (response.msg_type === 'ping' || response.pong) {
-                    return;
-                }
-                
-                const reqId = response.req_id;
+    try {
+        const response = JSON.parse(event.data);
+        
+        if (response.msg_type === 'ping' || response.pong) {
+            return;
+        }
+        
+        const reqId = response.req_id;
     
-                if (reqId && promisesRef.current.has(String(reqId))) {
-                    const promise = promisesRef.current.get(String(reqId));
-                    if (promise) {
-                        if (response.error) {
-                            const errorMessage = response.error.message || `Unknown API error. Code: ${response.error.code || 'N/A'}`;
-                            promise.reject(new Error(`${errorMessage}`));
-                        } else {
-                            promise.resolve(response);
-                        }
-                        promisesRef.current.delete(String(reqId));
-                    }
-                    return; 
+        if (reqId && promisesRef.current.has(String(reqId))) {
+            const promise = promisesRef.current.get(String(reqId));
+            if (promise) {
+                if (response.error) {
+                    const errorMessage = response.error.message || `Unknown API error. Code: ${response.error.code || 'N/A'}`;
+                    promise.reject(new Error(`${errorMessage}`));
+                } else {
+                    promise.resolve(response);
                 }
+                promisesRef.current.delete(String(reqId));
+            }
+            return; 
+        }
     
-                if (response.error && response.error.message) {
-                     if (
-                        response.error.code !== 'AlreadySubscribed' && 
-                        response.error.code !== 'SellNotAvailable' && 
-                        response.error.code !== 'ContractSellNotAvailable'
-                     ) {
-                      console.error(`[Deriv WS] Unsolicited Error:`, response.error.message);
-                    }
-                     return; 
+        if (response.error && response.error.message) {
+             if (
+                response.error.code !== 'AlreadySubscribed' && 
+                response.error.code !== 'SellNotAvailable' && 
+                response.error.code !== 'ContractSellNotAvailable'
+             ) {
+              console.error(`[Deriv WS] Unsolicited Error:`, response.error.message);
+            }
+             return; 
+        }
+    
+        switch (response.msg_type) {
+            case 'balance':
+                setAccountBalance({ 
+                    balance: response.balance.balance, 
+                    currency: response.balance.currency, 
+                    loading: false 
+                });
+                break;
+            case 'proposal_open_contract':
+                const contract = response.proposal_open_contract;
+                if (!contract) return;
+
+                if ((contract.contract_type || '').startsWith('MULT')) {
+                  return;
                 }
-    
-                switch (response.msg_type) {
-                    case 'balance':
-                        setAccountBalance({ 
-                            balance: response.balance.balance, 
-                            currency: response.balance.currency, 
-                            loading: false 
-                        });
-                        break;
-                    case 'proposal_open_contract':
-                        const contract = response.proposal_open_contract;
-                        if (!contract) return;
 
-                        if ((contract.contract_type || '').startsWith('MULT')) {
-                          return;
-                        }
-
-                        setAndPersistOperationsLog(prevLog => {
-                            const existingOpIndex = prevLog.findIndex(op => op.id === contract.contract_id);
-                            const isSold = contract.is_sold === 1;
-                            
-                            if (existingOpIndex !== -1) {
-                                // UPDATE EXISTING OPERATION
-                                const updatedLog = [...prevLog];
-                                const op = updatedLog[existingOpIndex];
-                                
-                                if (op.status === 'pending') {
-                                    if (isSold) {
-                                        const newStatus = contract.profit >= 0 ? 'won' : 'lost';
-                                        const exitPrice = contract.exit_tick_display_value ? parseFloat(contract.exit_tick_display_value) : contract.sell_spot ? parseFloat(contract.sell_spot) : op.exitPrice;
-                                        const sellTime = contract.sell_time ? new Date(contract.sell_time * 1000).toISOString() : new Date().toISOString();
-                                        
-                                        updatedLog[existingOpIndex] = { ...op, status: newStatus, result: contract.profit, exitPrice: exitPrice, exitTimestamp: sellTime };
-                                        
-                                        if (op.initiator === 'Piloto' && user) {
-                                            const logId = `pred_log_${contract.contract_id}`;
-                                            const predictiveLogUpdate = {
-                                                id: logId,
-                                                result: newStatus,
-                                                pnl: contract.profit,
-                                            };
-                                            savePredictiveTradeLog(user.uid, predictiveLogUpdate);
-                                        }
-
-                                        updateTradeAnnotation(String(contract.contract_id), { 
-                                            status: newStatus, 
-                                            profit: contract.profit, 
-                                            exitPrice, 
-                                            exitTime: contract.sell_time 
-                                        });
-                                        
-                                        const toastMessage = {
-                                            title: `Posição Fechada (${op.asset})`,
-                                            description: `Resultado: ${contract.currency} ${contract.profit.toFixed(2)}`,
-                                            variant: newStatus === 'won' ? 'default' : 'destructive',
-                                        };
-                                        
-                                        setToastQueue(prev => [...prev, toastMessage]);
+                setAndPersistOperationsLog(prevLog => {
+                    const existingOpIndex = prevLog.findIndex(op => op.id === contract.contract_id);
+                    const isSold = contract.is_sold === 1;
                     
-                                        if (wsRef.current?.readyState === WebSocket.OPEN) {
-                                            wsRef.current.send(JSON.stringify({"balance": 1}));
-                                        }
-                                        return updatedLog;
-                                    } else if (op.contractType?.startsWith('MULT') && contract.profit !== op.result) {
-                                        updatedLog[existingOpIndex] = { ...op, result: contract.profit };
-                                        return updatedLog;
-                                    }
-                                }
-                                return prevLog;
-                            
-                            } else if (!isSold) {
-                                if (recentlyCreatedContractsRef.current.has(contract.contract_id)) {
-                                    return prevLog;
+                    if (existingOpIndex !== -1) {
+                        // UPDATE EXISTING OPERATION
+                        const updatedLog = [...prevLog];
+                        const op = updatedLog[existingOpIndex];
+                        
+                        if (op.status === 'pending') {
+                            if (isSold) {
+                                const newStatus = contract.profit >= 0 ? 'won' : 'lost';
+                                const exitPrice = contract.exit_tick_display_value ? parseFloat(contract.exit_tick_display_value) : contract.sell_spot ? parseFloat(contract.sell_spot) : op.exitPrice;
+                                const sellTime = contract.sell_time ? new Date(contract.sell_time * 1000).toISOString() : new Date().toISOString();
+                                
+                                updatedLog[existingOpIndex] = { ...op, status: newStatus, result: contract.profit, exitPrice: exitPrice, exitTimestamp: sellTime };
+                                
+                                if (op.initiator === 'Piloto' && user) {
+                                    const logId = `pred_log_${contract.contract_id}`;
+                                    const predictiveLogUpdate = {
+                                        id: logId,
+                                        result: newStatus,
+                                        pnl: contract.profit,
+                                    };
+                                    savePredictiveTradeLog(user.uid, predictiveLogUpdate);
                                 }
 
-                                const direction = (contract.contract_type || '').includes('CALL') ? 'rise' : 'fall';
-                                const purchaseTime = contract.purchase_time || Math.floor(Date.now() / 1000);
-                                const durationInSeconds = contract.date_expiry ? (contract.date_expiry - purchaseTime) : 0;
-                                const durationUnit: DurationUnit = 's';
-    
-                                const newOperation: Operation = {
-                                    id: contract.contract_id,
-                                    asset: contract.symbol,
-                                    direction: direction,
-                                    stake: contract.buy_price || 0,
-                                    status: 'pending',
-                                    result: contract.profit,
-                                    timestamp: new Date(purchaseTime * 1000).toISOString(),
-                                    initiator: 'Manual',
-                                    entryPrice: parseFloat(contract.entry_spot_display_value || contract.entry_tick_display_value || '0'),
-                                    isSellable: contract.is_sellable === 1,
-                                    expirationTime: contract.date_expiry ? contract.date_expiry * 1000 : undefined,
-                                    duration: durationInSeconds,
-                                    durationUnit: durationUnit,
-                                    multiplier: contract.multiplier,
-                                    contractType: contract.contract_type,
+                                updateTradeAnnotation(String(contract.contract_id), { 
+                                    status: newStatus, 
+                                    profit: contract.profit, 
+                                    exitPrice, 
+                                    exitTime: contract.sell_time 
+                                });
+                                
+                                const toastMessage = {
+                                    title: `Posição Fechada (${op.asset})`,
+                                    description: `Resultado: ${contract.currency} ${contract.profit.toFixed(2)}`,
+                                    variant: newStatus === 'won' ? 'default' : 'destructive',
                                 };
                                 
-                                addTradeAnnotation({
-                                    contractId: String(newOperation.id),
-                                    entryTime: purchaseTime,
-                                    entryPrice: newOperation.entryPrice!,
-                                    direction: newOperation.direction,
-                                    status: 'pending',
-                                    stake: newOperation.stake,
-                                    symbol: newOperation.asset,
-                                    expirationTime: newOperation.expirationTime,
-                                    contractType: (contract.contract_type || '').startsWith('MULT') ? 'multiplier' : 'option'
-                                });
-                    
-                                return [newOperation, ...prevLog];
+                                setToastQueue(prev => [...prev, toastMessage]);
+            
+                                if (wsRef.current?.readyState === WebSocket.OPEN) {
+                                    wsRef.current.send(JSON.stringify({"balance": 1}));
+                                }
+                                return updatedLog;
+                            } else if (op.contractType?.startsWith('MULT') && contract.profit !== op.result) {
+                                updatedLog[existingOpIndex] = { ...op, result: contract.profit };
+                                return updatedLog;
                             }
-                            
+                        }
+                        return prevLog;
+            
+                    } else if (!isSold) {
+                        if (recentlyCreatedContractsRef.current.has(contract.contract_id)) {
                             return prevLog;
-                        });
-                        break;
-                    case 'tick':
-                        if (response.tick?.symbol === activeSymbol) {
-                            const tick = response.tick;
-                            const newTick = { epoch: tick.epoch, price: tick.quote };
-                            if (chartTypeRef.current === 'Area') {
-                               setChartData(prev => addDataPoint(prev, newTick));
-                            }
-                            setPriceTicks(prev => {
-                                const newTicks = [...prev, newTick];
-                                 if (newTicks.length > MAX_DATA_POINTS) {
-                                    return newTicks.slice(1);
-                                }
-                                return newTicks;
-                            });
-                            setDataVersion(v => v + 1);
                         }
-                        break;
-                    
-                    case 'ohlc':
-                    case 'candles':
-                        const candleData = response.ohlc || (response.candles && response.candles[0]);
+
+                        const direction = (contract.contract_type || '').includes('CALL') ? 'rise' : 'fall';
+                        const purchaseTime = contract.purchase_time || Math.floor(Date.now() / 1000);
+                        const durationInSeconds = contract.date_expiry ? (contract.date_expiry - purchaseTime) : 0;
+                        const durationUnit: DurationUnit = 's';
+    
+                        const newOperation: Operation = {
+                            id: contract.contract_id,
+                            asset: contract.symbol,
+                            direction: direction,
+                            stake: contract.buy_price || 0,
+                            status: 'pending',
+                            result: contract.profit,
+                            timestamp: new Date(purchaseTime * 1000).toISOString(),
+                            initiator: 'Manual',
+                            entryPrice: parseFloat(contract.entry_spot_display_value || contract.entry_tick_display_value || '0'),
+                            isSellable: contract.is_sellable === 1,
+                            expirationTime: contract.date_expiry ? contract.date_expiry * 1000 : undefined,
+                            duration: durationInSeconds,
+                            durationUnit: durationUnit,
+                            multiplier: contract.multiplier,
+                            contractType: contract.contract_type,
+                        };
                         
-                        if (candleData && candleData.symbol === activeSymbol) {
-                            const newCandle: CandleData = {
-                                epoch: candleData.open_time || candleData.epoch,
-                                open: parseFloat(candleData.open),
-                                high: parseFloat(candleData.high),
-                                low: parseFloat(candleData.low),
-                                close: parseFloat(candleData.close),
-                                volume: candleData.tick_count || 1,
-                            };
-    
-                            const isForUI = response.subscription?.id === activeSubscriptionIdRef.current;
-                            const isForBot = response.subscription?.id === botSubscriptionIdRef.current;
-    
-                            if (isForUI && chartTypeRef.current === 'Candle') {
-                                setChartData(prev => addDataPoint(prev, newCandle));
-                            }
-                            if (isForBot) {
-                                setBotCandleData(prev => addDataPoint(prev, newCandle) as CandleData[]);
-                            }
-                            
-                            setPriceTicks(prev => {
-                                const newTicks = [...prev, { epoch: newCandle.epoch, price: newCandle.close }];
-                                if (newTicks.length > MAX_DATA_POINTS) {
-                                    return newTicks.slice(newTicks.length - MAX_DATA_POINTS);
-                                }
-                                return newTicks;
-                            });
-                            setDataVersion(v => v + 1);
+                        addTradeAnnotation({
+                            contractId: String(newOperation.id),
+                            entryTime: purchaseTime,
+                            entryPrice: newOperation.entryPrice!,
+                            direction: newOperation.direction,
+                            status: 'pending',
+                            stake: newOperation.stake,
+                            symbol: newOperation.asset,
+                            expirationTime: newOperation.expirationTime,
+                            contractType: (contract.contract_type || '').startsWith('MULT') ? 'multiplier' : 'option'
+                        });
+            
+                        return [newOperation, ...prevLog];
+                    }
+                    
+                    return prevLog;
+                });
+                break;
+            case 'tick':
+                if (response.tick?.symbol === activeSymbol) {
+                    const tick = response.tick;
+                    const newTick = { epoch: tick.epoch, price: tick.quote };
+                    if (chartTypeRef.current === 'Area') {
+                       setChartData(prev => addDataPoint(prev, newTick));
+                    }
+                    setPriceTicks(prev => {
+                        const newTicks = [...prev, newTick];
+                         if (newTicks.length > MAX_DATA_POINTS) {
+                            return newTicks.slice(1);
                         }
-                        break;
+                        return newTicks;
+                    });
+                    setDataVersion(v => v + 1);
                 }
-            } catch (parseError) {
-                console.error('[Deriv WS] Parse error:', parseError);
-            }
-        };
+                break;
+            
+            case 'ohlc':
+            case 'candles':
+                const candleData = response.ohlc || (response.candles && response.candles[0]);
+                
+                if (candleData && candleData.symbol === activeSymbol) {
+                    const newCandle: CandleData = {
+                        epoch: candleData.open_time || candleData.epoch,
+                        open: parseFloat(candleData.open),
+                        high: parseFloat(candleData.high),
+                        low: parseFloat(candleData.low),
+                        close: parseFloat(candleData.close),
+                        volume: candleData.tick_count || 1,
+                    };
+
+                    const isForUI = response.subscription?.id === activeSubscriptionIdRef.current;
+                    const isForBot = response.subscription?.id === botSubscriptionIdRef.current;
+
+                    if (isForUI && chartTypeRef.current === 'Candle') {
+                        setChartData(prev => addDataPoint(prev, newCandle));
+                    }
+                    if (isForBot) {
+                        setBotCandleData(prev => addDataPoint(prev, newCandle) as CandleData[]);
+                    }
+                    
+                    setPriceTicks(prev => {
+                        const newTicks = [...prev, { epoch: newCandle.epoch, price: newCandle.close }];
+                        if (newTicks.length > MAX_DATA_POINTS) {
+                            return newTicks.slice(newTicks.length - MAX_DATA_POINTS);
+                        }
+                        return newTicks;
+                    });
+                    setDataVersion(v => v + 1);
+                }
+                break;
+        }
+    } catch (parseError) {
+        console.error('[Deriv WS] Parse error:', parseError);
+    }
+};
     
         ws.onopen = async () => {
             try {
@@ -959,7 +959,7 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
       }
       reconnectInProgressRef.current = false;
     };
-  }, [activeToken, isLoading, triggerReconnect]);
+  }, [activeToken, isLoading, triggerReconnect, user]);
 
   
   useEffect(() => {
@@ -1050,39 +1050,37 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
     realToken,
     activeToken,
     accountType,
+    setAccountType,
+    setTokens,
+    disconnect,
+    reconnect,
     accountBalance,
     operationsLog,
     assetGroups,
     isAssetsLoading,
     activeSymbol,
+    setActiveSymbol,
     chartData,
     botCandleData,
     priceTicks,
     isChartLoading,
     chartError,
     chartType,
-    timePeriod,
-    dataVersion,
-    tradeAnnotations,
-    durationLimits,
-    reconnect,
-    setAccountType,
-    setTokens,
-    disconnect,
-    setActiveSymbol,
     setChartType,
     setTimePeriod,
+    dataVersion,
     executeTrade,
     sellContract,
     getHistoricalData,
-    clearActiveContracts
+    clearActiveContracts,
+    tradeAnnotations,
+    durationLimits,
   }), [
-    isConnected, isConnecting, connectionError, demoToken, realToken, activeToken, accountType, 
-    accountBalance, operationsLog, assetGroups, isAssetsLoading, activeSymbol, chartData, 
-    botCandleData, priceTicks, isChartLoading, chartError, chartType, timePeriod, dataVersion, 
-    tradeAnnotations, durationLimits, reconnect, setAccountType, setTokens, disconnect, 
-    setActiveSymbol, setChartType, setTimePeriod, executeTrade, sellContract, getHistoricalData, 
-    clearActiveContracts
+      isConnected, isConnecting, connectionError, demoToken, realToken, activeToken, accountType, 
+      setAccountType, setTokens, disconnect, reconnect, accountBalance, operationsLog, assetGroups, 
+      isAssetsLoading, activeSymbol, setActiveSymbol, chartData, botCandleData, priceTicks, 
+      isChartLoading, chartError, chartType, timePeriod, setTimePeriod, dataVersion, executeTrade, 
+      sellContract, getHistoricalData, clearActiveContracts, tradeAnnotations, durationLimits
   ]);
 
   return (

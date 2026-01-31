@@ -517,16 +517,24 @@ function StochasticLab({
             model2Price: model2_price,
             model3Price: model3_price,
         });
-
-        // FIX: Create linear projection for non-GBM models
+        
+        // CORREÇÃO: Garante que todos os horizontes tenham uma projeção visual
         if (!newFuturePaths[`predicted_${h.name}_ahead`]) {
             const path = [
                 { time: prices.length - 1, price: lastPriceValue },
                 { time: prices.length - 1 + h.ticks, price: finalForecastPrice }
             ];
             newFuturePaths[`predicted_${h.name}_ahead`] = path.map(p => ({ ...p, [`predicted_${h.name}_ahead`]: p.price }));
+        } else {
+             // NOVO: Escala a projeção GBM para corresponder à previsão final do ensemble
+             const gbmPath = newFuturePaths[`predicted_${h.name}_ahead`];
+             const lastGbmPrice = gbmPath[gbmPath.length - 1][`predicted_${h.name}_ahead`];
+             const scaleFactor = lastPriceValue === lastGbmPrice ? 1 : (finalForecastPrice - lastPriceValue) / (lastGbmPrice - lastPriceValue);
+             newFuturePaths[`predicted_${h.name}_ahead`] = gbmPath.map(p => ({
+                 ...p,
+                 [`predicted_${h.name}_ahead`]: lastPriceValue + (p.price - lastPriceValue) * scaleFactor
+             }));
         }
-
     });
 
     setFuturePaths(newFuturePaths);
@@ -579,9 +587,14 @@ function StochasticLab({
     return bestSignal;
   }, [projectionExperts]);
   
+  const onConsensusUpdateRef = useRef(onConsensusUpdate);
   useEffect(() => {
-    onConsensusUpdate({strongestSignal, projectionExperts});
-  }, [strongestSignal, onConsensusUpdate, projectionExperts]);
+    onConsensusUpdateRef.current = onConsensusUpdate;
+  }, [onConsensusUpdate]);
+
+  useEffect(() => {
+    onConsensusUpdateRef.current({strongestSignal, projectionExperts});
+  }, [strongestSignal, projectionExperts]);
 
   const chartDisplayData = useMemo(() => {
     if (realData.length === 0) return [];
@@ -844,7 +857,7 @@ const Header = () => {
 };
 
 
-const PageContent = () => {
+function PageContent() {
     const { chartData, activeSymbol, operationsLog, sellContract, clearActiveContracts, durationLimits } = useDerivApi();
     const { user } = useAuth();
     const { toast } = useToast();
@@ -852,12 +865,14 @@ const PageContent = () => {
     const [isLogsLoading, setIsLogsLoading] = useState(true);
     const [deletingPredictiveLogId, setDeletingPredictiveLogId] = useState<string | null>(null);
     
-    const onConsensusUpdateRef = useRef((data: any) => {});
     const autopilot = useMasterAutopilot();
     const { isAutopilotOn, runAutopilotCycle } = autopilot;
     
     const [consensusData, setConsensusData] = useState<any>(null);
-    const onConsensusUpdate = useCallback((data: any) => {
+
+    const onConsensusUpdateRef = useRef(onConsensusUpdate);
+
+    function onConsensusUpdate(data: any) {
         setConsensusData(data);
         if (isAutopilotOn && data?.projectionExperts) {
             const assertiveness: Record<string, AssertivenessData> = Object.fromEntries(
@@ -865,11 +880,11 @@ const PageContent = () => {
             );
             runAutopilotCycle(assertiveness);
         }
-    }, [isAutopilotOn, runAutopilotCycle]);
-
+    }
+    
     useEffect(() => {
         onConsensusUpdateRef.current = onConsensusUpdate;
-    }, [onConsensusUpdate]);
+    }, [isAutopilotOn, runAutopilotCycle]);
     
     useEffect(() => {
         if (!user) {
