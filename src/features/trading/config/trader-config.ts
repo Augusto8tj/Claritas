@@ -48,7 +48,7 @@ export const ARENA_CONFIG = {
 
 export const EVOLUTION_CONFIG = {
   // Número de trades totais (reais + virtuais) para acionar um ciclo de evolução
-  TRIGGER_THRESHOLD: 2,
+  TRIGGER_THRESHOLD: 10,
   
   // Quantos dos melhores robôs são considerados "elite" para reprodução
   ELITE_COUNT: 3,
@@ -57,7 +57,7 @@ export const EVOLUTION_CONFIG = {
   WORST_COUNT: 3,
   
   // Número mínimo de trades para que um robô seja elegível para análise de evolução
-  MIN_TRADES_FOR_DEEP_ANALYSIS: 1,
+  MIN_TRADES_FOR_DEEP_ANALYSIS: 5,
   
   // Força da mutação direcionada (ex: 0.1 = 10% de ajuste)
   DIRECTED_MUTATION_STRENGTH: 0.15,
