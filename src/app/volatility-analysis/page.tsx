@@ -143,7 +143,6 @@ const createMicrostructureModel = (prices: number[]): MicrostructureModel => {
 };
 
 const createARIMAModel = (prices: number[], horizon: number) => {
-    // BUG #1 FIX: `prices[i]` em vez de `prices[i+1]`
     const returns = prices.slice(1).map((p, i) => Math.log(p / prices[i]));
     if (returns.length < 10) return prices[prices.length - 1];
 
@@ -345,17 +344,15 @@ function StochasticLab({
     return Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
   };
   
-  // BUG #2 FIX: Aumentar as janelas
   const horizons = useMemo(() => [
       { name: '3t', ticks: 3, window: 50 },
       { name: '6t', ticks: 6, window: 50 },
-      { name: '10s', ticks: 10, window: 100 },
+      { name: '10t', ticks: 10, window: 100 },
       { name: '20s', ticks: 20, window: 100 },
       { name: '30s', ticks: 30, window: 150 },
       { name: '40s', ticks: 40, window: 150 },
   ], []);
 
-  // BUG #4 FIX: Adicionar inicialização Bayesiana com prior
   useEffect(() => {
     if (Object.keys(bayesianModels).length === 0) {
         const initialModels: Record<string, BayesianModel> = {};
@@ -615,7 +612,7 @@ function StochasticLab({
   const projectionColors: { [key: string]: string } = {
     '3t': '#8884d8',
     '6t': '#82ca9d',
-    '10s': '#ffc658',
+    '10t': '#ffc658',
     '20s': '#ff8042',
     '30s': '#f44336',
     '40s': '#00bcd4',
