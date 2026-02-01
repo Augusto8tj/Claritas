@@ -661,7 +661,7 @@ function StochasticLab({
                                     <Tooltip />
                                     <Legend />
                                     <Line type="monotone" dataKey="real" stroke="hsl(var(--chart-1))" strokeWidth={2.5} dot={false} name="Preço Real" />
-                                    <Line type="monotone" dataKey="predicted_1t_ahead" stroke="hsl(var(--chart-2))" strokeWidth={1.5} dot={false} name="Projeção (1 Tick)" />
+                                    <Line type="monotone" dataKey="predicted_1_tick" stroke="hsl(var(--chart-2))" strokeWidth={1.5} dot={false} name="Projeção (1 Tick)" />
                                     <Line type="monotone" dataKey="predicted_3t_ahead" stroke="hsl(var(--chart-3))" strokeWidth={2} strokeDasharray="8 4" dot={false} name="Projeção (3 Ticks)" />
                                     <Line type="monotone" dataKey="predicted_6t_ahead" stroke="hsl(var(--chart-4))" strokeWidth={2} strokeDasharray="8 4" dot={false} name="Projeção (6 Ticks)" />
                                     <Line type="monotone" dataKey="predicted_10t_ahead" stroke="hsl(var(--chart-5))" strokeWidth={2} strokeDasharray="8 4" dot={false} name="Projeção (10t)" />
