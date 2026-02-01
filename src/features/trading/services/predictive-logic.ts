@@ -64,12 +64,13 @@ export function evaluateTriggerConditions(
   currentPrice: number,
   botCandleData: CandleData[],
   isNeighborConfirmationEnabled: boolean,
+  isTripleConfirmationEnabled: boolean,
   isMacroTrendCheckEnabled: boolean,
   highFrequencyThresholdSeconds: number,
 ) {
   let newTriggerSignal: 'RISE' | 'FALL' | 'HOLD' = 'HOLD';
   let newTriggerReason = 'Nenhuma condição de gatilho atendida.';
-  let newTriggeredBy: [string, string] | null = null;
+  let newTriggeredBy: string[] | null = null;
   
   if (!isRegimeCompatible(contractType, currentRegime)) {
     newTriggerReason = `Contrato (${contractType}) incompatível com regime atual (${currentRegime}).`;
@@ -77,46 +78,53 @@ export function evaluateTriggerConditions(
   }
   
   if (isNeighborConfirmationEnabled) {
-    newTriggerReason = 'Nenhuma confirmação dupla de assertividade.';
-    for (let i = 1; i < horizons.length; i++) {
-      const currentHorizonName = horizons[i].name;
-      const prevHorizonName = horizons[i-1].name;
-      
-      const currentExpert = newAssertiveness[currentHorizonName];
-      const prevExpert = newAssertiveness[prevHorizonName];
+    newTriggerReason = isTripleConfirmationEnabled 
+      ? 'Nenhuma confirmação tripla de assertividade.' 
+      : 'Nenhuma confirmação dupla de assertividade.';
 
+    const loopStart = 1;
+    const loopEnd = isTripleConfirmationEnabled ? horizons.length - 1 : horizons.length;
+
+    for (let i = loopStart; i < loopEnd; i++) {
+      const prevExpert = newAssertiveness[horizons[i-1].name];
+      const currentExpert = newAssertiveness[horizons[i].name];
       if (!currentExpert || !prevExpert) continue;
-      
-      const currentEffectiveVote = getEffectiveVote(currentExpert);
-      const prevEffectiveVote = getEffectiveVote(prevExpert);
 
-      if (currentEffectiveVote !== 'HOLD' && currentEffectiveVote === prevEffectiveVote) {
+      const prevEffectiveVote = getEffectiveVote(prevExpert);
+      const currentEffectiveVote = getEffectiveVote(currentExpert);
+
+      let agreement = (currentEffectiveVote !== 'HOLD' && currentEffectiveVote === prevEffectiveVote);
+      let partners = [horizons[i - 1].name, horizons[i].name];
+
+      if (isTripleConfirmationEnabled) {
+        const nextExpert = newAssertiveness[horizons[i+1].name];
+        if (!nextExpert) continue;
+        const nextEffectiveVote = getEffectiveVote(nextExpert);
+        agreement = agreement && currentEffectiveVote === nextEffectiveVote;
+        if(agreement) partners.push(horizons[i+1].name);
+      }
         
-        const currentEffectiveAccuracy = Math.max(currentExpert.accuracy, 100 - currentExpert.accuracy);
-        const prevEffectiveAccuracy = Math.max(prevExpert.accuracy, 100 - prevExpert.accuracy);
-        const currentThreshold = thresholds[currentHorizonName] || 80;
-        const prevThreshold = thresholds[prevHorizonName] || 80;
-        
-        const bothPassThreshold = currentEffectiveAccuracy >= currentThreshold && prevEffectiveAccuracy >= prevThreshold;
-        
-        if (!bothPassThreshold) {
-          newTriggerReason = `Acordo de ${currentEffectiveVote} entre ${prevHorizonName} e ${currentHorizonName}, mas limiares não atingidos.`;
+      if (agreement) {
+        const allPassThreshold = partners.every(partnerName => {
+            const expert = newAssertiveness[partnerName];
+            const effectiveAccuracy = Math.max(expert.accuracy, 100 - expert.accuracy);
+            const threshold = thresholds[partnerName] || 80;
+            return effectiveAccuracy >= threshold;
+        });
+
+        if (!allPassThreshold) {
+          newTriggerReason = `Acordo de ${currentEffectiveVote} entre ${partners.join(', ')}, mas limiares não atingidos.`;
           continue;
         }
         
         const agreedVote = currentEffectiveVote;
         
-        // 1. PRIMEIRO: Verificar se é HF
-        const shorterHorizonSeconds = Math.min(calcularSegundos(currentHorizonName), calcularSegundos(prevHorizonName));
+        const shorterHorizonSeconds = Math.min(...partners.map(p => calcularSegundos(p)));
         const isHighFrequencySignal = shorterHorizonSeconds <= highFrequencyThresholdSeconds;
         
-        // 2. SE não for HF E filtro macro estiver ligado, ENTÃO validar com EMA
         if (!isHighFrequencySignal && isMacroTrendCheckEnabled) {
-          const longerHorizonSeconds = Math.max(calcularSegundos(currentHorizonName), calcularSegundos(prevHorizonName));
-          
-          // AJUSTE CONFORME SOLICITADO PELO UTILIZADOR
+          const longerHorizonSeconds = Math.max(...partners.map(p => calcularSegundos(p)));
           const dynamicPeriod = Math.max(5, longerHorizonSeconds);
-          
           const dynamicEMA = calculateDynamicEMA(botCandleData, dynamicPeriod);
           
           if (dynamicEMA === null) {
@@ -129,24 +137,21 @@ export function evaluateTriggerConditions(
           if (currentPrice > dynamicEMA + deadZone) dynamicTrend = 'UP';
           else if (currentPrice < dynamicEMA - deadZone) dynamicTrend = 'DOWN';
           
-          // Validação estrita
-          if ((agreedVote === 'RISE' && dynamicTrend !== 'UP') ||
-              (agreedVote === 'FALL' && dynamicTrend !== 'DOWN')) {
+          if ((agreedVote === 'RISE' && dynamicTrend !== 'UP') || (agreedVote === 'FALL' && dynamicTrend !== 'DOWN')) {
             newTriggerReason = `Sinal ${agreedVote} bloqueado: preço ${currentPrice.toFixed(4)} vs EMA(${dynamicPeriod})=${dynamicEMA.toFixed(4)} (${dynamicTrend})`;
             continue;
           }
         }
         
-        // 3. Se passou, aprovar
         newTriggerSignal = agreedVote;
-        newTriggeredBy = [prevHorizonName, currentHorizonName];
-        newTriggerReason = `✅ ${agreedVote} confirmado por ${prevHorizonName}+${currentHorizonName}`;
+        newTriggeredBy = partners;
+        newTriggerReason = `✅ ${agreedVote} confirmado por ${partners.join(' + ')}`;
         if (isHighFrequencySignal) newTriggerReason += ' [HF, macro ignorado]';
         break;
       }
     }
   } else {
-    // Lógica para especialista único (pode ser adicionada aqui se necessário)
+    // Logic for single expert (can be added here if needed)
   }
   
   return { newTriggerSignal, newTriggerReason, newTriggeredBy };

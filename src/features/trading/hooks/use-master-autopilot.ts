@@ -33,7 +33,7 @@ export interface MasterAutopilotState {
     trigger: {
         signal: Signal;
         reason: string;
-        triggeredBy: [string, string] | null;
+        triggeredBy: string[] | null;
     };
     manualTrigger: { 
         signal: Signal;
@@ -64,9 +64,10 @@ const calculateDynamicThresholds = (
     }
   }
   
+  // CORREÇÃO: Em ranging, os modelos mais longos são mais confiáveis, então o limiar deve ser MENOR, não maior.
   if (regime === 'ranging') {
     Object.keys(dynamicThresholds).forEach(key => {
-      if (key.endsWith('s') && parseInt(key) > 20) {
+      if (key.endsWith('s') && parseInt(key) >= 30) {
         dynamicThresholds[key] = Math.max(55, dynamicThresholds[key] - 5); 
       }
     });
@@ -108,13 +109,13 @@ export function useMasterAutopilot() {
   const [riskManager, setRiskManager] = useState<RiskManagerStatus>({
     mode: 'Normal',
     thresholds: {
-      '1t': 65, '3t': 65, '6t': 68, '10t': 62,
-      '15s': 58, '20s': 60, '30s': 58, '40s': 55, '50s': 55,
+      '1t': 75, '3t': 75, '6t': 78, '10t': 72,
+      '15s': 68, '20s': 70, '30s': 68, '40s': 65, '50s': 65,
     },
     lastAdjustmentReason: 'N/A'
   });
   
-  const tradesInFlightRef = useRef<Map<number, { triggeredBy: [string, string] | null }>>(new Map());
+  const tradesInFlightRef = useRef<Map<number, { triggeredBy: string[] | null }>>(new Map());
   const processedTradesRef = useRef<Set<number>>(new Set());
 
   const [masterState, setMasterState] = useState<MasterAutopilotState>({
@@ -133,6 +134,7 @@ export function useMasterAutopilot() {
   const cooldownRef = useRef(false);
   
   const [isNeighborConfirmationEnabled, setIsNeighborConfirmationEnabled] = useState(true);
+  const [isTripleConfirmationEnabled, setIsTripleConfirmationEnabled] = useState(false);
   const [isMacroTrendCheckEnabled, setIsMacroTrendCheckEnabled] = useState(true);
   const [highFrequencyThreshold, setHighFrequencyThreshold] = useState(10);
   
@@ -159,14 +161,14 @@ export function useMasterAutopilot() {
   const executeTradeAction = useCallback(async (
         initiator: OperationInitiator, 
         signalOverride: Signal, 
-        triggeredBy: [string, string] | null,
+        triggeredBy: string[] | null,
         currentUser: User | null,
         triggerReason: string,
         currentAssertiveness: Record<string, AssertivenessData>
     ) => {
         const signalToUse = signalOverride;
         
-        if (signalToUse === 'HOLD' || !activeSymbol || !triggeredBy) {
+        if (signalToUse === 'HOLD' || !activeSymbol || !triggeredBy || triggeredBy.length === 0) {
             if(initiator === 'Manual') {
                  toast({ title: "Nenhum sinal válido", description: "O gatilho preditivo não detectou uma oportunidade.", variant: "destructive"});
             }
@@ -177,7 +179,7 @@ export function useMasterAutopilot() {
 
         try {
             if (contractType === 'Rise/Fall') {
-                const longerHorizon = triggeredBy[1]; 
+                const longerHorizon = triggeredBy[triggeredBy.length - 1]; 
                 const durationMatch = longerHorizon.match(/(\d+)([st])/);
                 
                 let duration: number;
@@ -275,6 +277,7 @@ export function useMasterAutopilot() {
             lastPrice,
             botCandleData,
             isNeighborConfirmationEnabled,
+            isTripleConfirmationEnabled,
             isMacroTrendCheckEnabled,
             highFrequencyThreshold,
         );
@@ -287,6 +290,7 @@ export function useMasterAutopilot() {
             detectedRegimeResult.regime,
             lastPrice,
             botCandleData,
+            false,
             false,
             true,
             highFrequencyThreshold,
@@ -304,7 +308,7 @@ export function useMasterAutopilot() {
     });
   }, [
     priceTicks, botCandleData, horizons, contractType, 
-    riskManager.thresholds, isNeighborConfirmationEnabled, isMacroTrendCheckEnabled, 
+    riskManager.thresholds, isNeighborConfirmationEnabled, isTripleConfirmationEnabled, isMacroTrendCheckEnabled, 
     highFrequencyThreshold
   ]);
 
@@ -330,7 +334,7 @@ export function useMasterAutopilot() {
         return accA > accB ? a : b;
     }) : ['manual', assertiveness['manual']];
     
-    await executeTradeAction('Manual', manualTrigger.signal, [strongest[0], strongest[0]], user, manualTrigger.reason, assertiveness);
+    await executeTradeAction('Manual', manualTrigger.signal, [strongest[0]], user, manualTrigger.reason, assertiveness);
   }, [executeTradeAction, masterState, user]);
   
   const setGlobalAssertivenessThreshold = useCallback((value: number) => {
@@ -421,6 +425,8 @@ export function useMasterAutopilot() {
     executeManualTrigger,
     isNeighborConfirmationEnabled,
     setIsNeighborConfirmationEnabled,
+    isTripleConfirmationEnabled,
+    setIsTripleConfirmationEnabled,
     isMacroTrendCheckEnabled,
     setIsMacroTrendCheckEnabled,
     highFrequencyThreshold,
@@ -428,5 +434,3 @@ export function useMasterAutopilot() {
     macroTrend: 'NONE'
   };
 }
-
-    

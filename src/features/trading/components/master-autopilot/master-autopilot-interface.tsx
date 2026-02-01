@@ -255,7 +255,7 @@ export function MasterAutopilotInterface() {
         <CollapsibleContent className="pt-4">
            <Card>
               <CardHeader>
-                <CardTitle className="text-base font-headline">Ajuste de Risco e Lógica</CardTitle>
+                <CardTitle className="text-base font-headline">Calibração de Risco e Lógica</CardTitle>
               </CardHeader>
               <CardContent className="space-y-6">
 
@@ -267,9 +267,16 @@ export function MasterAutopilotInterface() {
                     <Switch id="neighbor-confirmation-switch" checked={autopilot.isNeighborConfirmationEnabled} onCheckedChange={autopilot.setIsNeighborConfirmationEnabled} disabled={autopilot.isAutopilotOn}/>
                 </div>
                  <div className="flex items-center justify-between rounded-lg border p-3 shadow-sm">
+                    <Label htmlFor="triple-confirmation-switch" className="flex flex-col space-y-1 flex-1 pr-4">
+                        <span>Confirmação Tripla (Vizinhos + Sequencial)</span>
+                        <span className="font-normal text-xs text-muted-foreground">Exigir que três especialistas vizinhos (anterior, atual, próximo) concordem.</span>
+                    </Label>
+                    <Switch id="triple-confirmation-switch" checked={autopilot.isTripleConfirmationEnabled} onCheckedChange={autopilot.setIsTripleConfirmationEnabled} disabled={autopilot.isAutopilotOn}/>
+                </div>
+                 <div className="flex items-center justify-between rounded-lg border p-3 shadow-sm">
                     <Label htmlFor="macro-trend-switch" className="flex flex-col space-y-1 flex-1 pr-4">
                         <span>Verificação de Tendência Macro</span>
-                         <span className="font-normal text-xs text-muted-foreground">Alinhar trades com a EMA 100. (Ignorado para sinais HF)</span>
+                         <span className="font-normal text-xs text-muted-foreground">Alinhar trades com a EMA dinâmica. (Ignorado para sinais HF)</span>
                     </Label>
                     <Switch id="macro-trend-switch" checked={autopilot.isMacroTrendCheckEnabled} onCheckedChange={autopilot.setIsMacroTrendCheckEnabled} disabled={autopilot.isAutopilotOn}/>
                 </div>
