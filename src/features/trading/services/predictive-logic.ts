@@ -59,8 +59,8 @@ export function evaluateTriggerConditions(
   thresholds: Record<string, number>,
   contractType: string,
   currentRegime: MarketRegime,
-  currentPrice: number, // NOVO
-  botCandleData: CandleData[], // NOVO
+  currentPrice: number,
+  botCandleData: CandleData[],
   isNeighborConfirmationEnabled: boolean,
   isMacroTrendCheckEnabled: boolean,
   highFrequencyThresholdSeconds: number,
@@ -84,35 +84,33 @@ export function evaluateTriggerConditions(
 
       if (!currentExpert || !prevExpert) continue;
       
-      // PASSO 1: Determinar a direção "correta" (efetiva) de cada especialista.
       const currentEffectiveVote = getEffectiveVote(currentExpert);
       const prevEffectiveVote = getEffectiveVote(prevExpert);
 
-      // PASSO 2: Verificar se a direção é a mesma e não é 'HOLD'.
-      // Esta é a "confirmação de direção". Não precisa ser "exata" no voto bruto, mas sim na direção efetiva.
       if (currentEffectiveVote !== 'HOLD' && currentEffectiveVote === prevEffectiveVote) {
         
-        // PASSO 3: Se a direção foi confirmada, agora verificamos a assertividade individual.
         const currentEffectiveAccuracy = Math.max(currentExpert.accuracy, 100 - currentExpert.accuracy);
         const prevEffectiveAccuracy = Math.max(prevExpert.accuracy, 100 - prevExpert.accuracy);
         const currentThreshold = thresholds[currentHorizonName] || 80;
         const prevThreshold = thresholds[prevHorizonName] || 80;
         
-        // Condição 2: Ambos os especialistas devem atender aos seus limiares de assertividade individuais.
         const bothPassThreshold = currentEffectiveAccuracy >= currentThreshold && prevEffectiveAccuracy >= prevThreshold;
         
         if (!bothPassThreshold) {
           newTriggerReason = `Acordo de ${currentEffectiveVote} entre ${prevHorizonName} e ${currentHorizonName}, mas limiares não atingidos.`;
-          continue; // Pula para o próximo par de vizinhos
+          continue;
         }
         
-        // PASSO 4: Se tudo até aqui passou, validamos com a tendência macro (se aplicável).
         const agreedVote = currentEffectiveVote;
-        const horizonSeconds = calcularSegundos(currentHorizonName);
-        const isHighFrequencySignal = horizonSeconds <= highFrequencyThresholdSeconds;
+        
+        // CORREÇÃO: A lógica de HF deve considerar o horizonte MAIS CURTO do par.
+        const shorterHorizonSeconds = Math.min(calcularSegundos(currentHorizonName), calcularSegundos(prevHorizonName));
+        const isHighFrequencySignal = shorterHorizonSeconds <= highFrequencyThresholdSeconds;
         
         if (!isHighFrequencySignal && isMacroTrendCheckEnabled) {
-          const dynamicPeriod = Math.max(Math.round(horizonSeconds / 2), 20);
+          // A EMA dinâmica deve usar o período do horizonte mais LONGO para uma visão macro mais estável.
+          const longerHorizonSeconds = Math.max(calcularSegundos(currentHorizonName), calcularSegundos(prevHorizonName));
+          const dynamicPeriod = Math.max(Math.round(longerHorizonSeconds / 2), 20);
           const dynamicEMA = calculateDynamicEMA(botCandleData, dynamicPeriod);
           
           if (dynamicEMA === null) {
@@ -132,12 +130,11 @@ export function evaluateTriggerConditions(
           }
         }
         
-        // Se todos os filtros passaram, temos um sinal válido!
         newTriggerSignal = agreedVote;
         newTriggeredBy = [prevHorizonName, currentHorizonName];
         newTriggerReason = `✅ ${agreedVote} confirmado por ${prevHorizonName}+${currentHorizonName}`;
         if (isHighFrequencySignal) newTriggerReason += ' [HF, macro ignorado]';
-        break; // Encontramos um sinal válido, saímos do loop.
+        break;
       }
     }
   }
