@@ -113,7 +113,8 @@ export function useMasterAutopilot() {
     lastAdjustmentReason: 'N/A'
   });
   const processedTradesRef = useRef<Set<number>>(new Set());
-  
+  const tradesInFlightRef = useRef<Map<number, { triggeredBy: [string, string] | null }>>(new Map());
+
   const [masterState, setMasterState] = useState<MasterAutopilotState>({
     isReady: false,
     trigger: { signal: 'HOLD', reason: 'Piloto desativado ou dados insuficientes.', triggeredBy: null },
@@ -133,7 +134,7 @@ export function useMasterAutopilot() {
   const horizons = useMemo(() => [
       { name: '3t', ticks: 3, window: 50 }, { name: '6t', ticks: 6, window: 50 },
       { name: '10t', ticks: 10, window: 100 }, { name: '20s', ticks: 20, window: 100 },
-      { name: '30s', ticks: 30, window: 150 }, { name: '40s', ticks: 40, window: 150 },
+      { name: '30s', ticks: 30, window: 75 }, { name: '40s', ticks: 40, window: 75 },
   ], []);
 
   const toggleAutopilot = useCallback((checked: boolean) => {
@@ -188,6 +189,8 @@ export function useMasterAutopilot() {
               );
 
               if (tradeResult.success && tradeResult.contractId && currentUser) {
+                  tradesInFlightRef.current.set(tradeResult.contractId, { triggeredBy });
+
                   const logId = `pred_log_${tradeResult.contractId}`;
                   const logContext = {
                       triggerReason: triggerReason,
@@ -226,7 +229,7 @@ export function useMasterAutopilot() {
       }
   }, [contractType, activeSymbol, user, executeRiseFallTrade, toast]);
   
-  const runAutopilotCycle = useCallback((newAssertiveness: Record<string, AssertivenessData>) => {
+  const runAutopilotCycle = useCallback(() => {
     if (priceTicks.length < 50) {
         setMasterState(prev => {
             if (prev.isReady) {
@@ -249,23 +252,10 @@ export function useMasterAutopilot() {
         calculatedIndicators,
         riskManager.thresholds
     );
-    
-    const manualSignal = evaluateTriggerConditions(
-        newAssertiveness,
-        horizons.map(h => ({ name: h.name, ticks: h.ticks, window: h.window })),
-        Object.fromEntries(Object.keys(riskManager.thresholds).map(k => [k, 55])),
-        contractType,
-        detectedRegimeResult.regime,
-        lastPrice,
-        botCandleData,
-        false, 
-        true,
-        highFrequencyThreshold,
-    );
-    
+
     const { newTriggerSignal, newTriggerReason, newTriggeredBy } = evaluateTriggerConditions(
-        newAssertiveness,
-        horizons.map(h => ({ name: h.name, ticks: h.ticks, window: h.window })),
+        masterState.assertiveness,
+        horizons,
         adaptiveThresholds,
         contractType,
         detectedRegimeResult.regime,
@@ -273,6 +263,19 @@ export function useMasterAutopilot() {
         botCandleData,
         isNeighborConfirmationEnabled,
         isMacroTrendCheckEnabled,
+        highFrequencyThreshold,
+    );
+    
+    const manualSignal = evaluateTriggerConditions(
+        masterState.assertiveness,
+        horizons,
+        Object.fromEntries(Object.keys(riskManager.thresholds).map(k => [k, 55])),
+        contractType,
+        detectedRegimeResult.regime,
+        lastPrice,
+        botCandleData,
+        false, 
+        true,
         highFrequencyThreshold,
     );
 
@@ -284,13 +287,12 @@ export function useMasterAutopilot() {
         indicators: calculatedIndicators,
         microstructure: microFeatures,
         currentRegime: detectedRegimeResult,
-        assertiveness: newAssertiveness
     }));
 
     const openMasterTrade = operationsLog.find(op => op.initiator === 'Piloto' && op.status === 'pending');
     if (isAutopilotOn && newTriggerSignal !== 'HOLD' && !cooldownRef.current && !openMasterTrade) {
       cooldownRef.current = true;
-      executeTradeAction('Piloto', newTriggerSignal, newTriggeredBy, user, newTriggerReason, newAssertiveness);
+      executeTradeAction('Piloto', newTriggerSignal, newTriggeredBy, user, newTriggerReason, masterState.assertiveness);
       setTimeout(() => { cooldownRef.current = false; }, 20000);
     }
     
@@ -300,7 +302,7 @@ export function useMasterAutopilot() {
       openTrades: operationsLog.filter(op => op.status === 'pending').length,
       triggerSignal: newTriggerSignal,
       triggerReason: newTriggerReason,
-      assertiveness: Object.entries(newAssertiveness).map(([k, v]) => ({
+      assertiveness: Object.entries(masterState.assertiveness).map(([k, v]) => ({
         horizon: k,
         accuracy: v.accuracy.toFixed(1),
         vote: v.vote
@@ -310,7 +312,7 @@ export function useMasterAutopilot() {
   }, [
     priceTicks, botCandleData, riskManager.thresholds, contractType, isNeighborConfirmationEnabled, 
     isMacroTrendCheckEnabled, highFrequencyThreshold, horizons, user, executeTradeAction, 
-    operationsLog, toast, isAutopilotOn
+    operationsLog, toast, isAutopilotOn, masterState.assertiveness
   ]);
 
   const executeManualTrigger = useCallback(async () => {
@@ -346,32 +348,59 @@ export function useMasterAutopilot() {
     }));
   }, []);
 
-  useEffect(() => {
-    const lastFinishedTrade = operationsLog.find(op => op.status !== 'pending' && op.initiator === 'Piloto' && !processedTradesRef.current.has(op.id));
-    if (lastFinishedTrade) {
-        processedTradesRef.current.add(lastFinishedTrade.id);
-        const isWin = lastFinishedTrade.result !== undefined && lastFinishedTrade.result >= 0;
-        setRiskManager(prev => {
-            if (isWin) {
-                return { 
-                    ...prev,
-                    mode: 'Normal', 
-                    lastAdjustmentReason: 'Vitória: Aumentando confiança.'
-                };
-            } else {
+    useEffect(() => {
+        const lastFinishedTrade = operationsLog.find(op => op.status !== 'pending' && op.initiator === 'Piloto' && !processedTradesRef.current.has(op.id));
+        if (lastFinishedTrade) {
+            processedTradesRef.current.add(lastFinishedTrade.id);
+            const isWin = lastFinishedTrade.result !== undefined && lastFinishedTrade.result >= 0;
+            
+            const tradeContext = tradesInFlightRef.current.get(lastFinishedTrade.id);
+            
+            setRiskManager(prev => {
                 const newThresholds = { ...prev.thresholds };
-                Object.keys(newThresholds).forEach(key => {
-                    newThresholds[key] = Math.min(95, newThresholds[key] + 5);
-                });
+                let adjustmentReason: string;
+
+                if (tradeContext && tradeContext.triggeredBy) {
+                    const horizons = tradeContext.triggeredBy;
+                    adjustmentReason = `Ajuste para ${horizons.join(' & ')}: ${isWin ? 'Recompensa (reduzindo limiar)' : 'Penalidade (aumentando limiar)'}.`;
+                    
+                    horizons.forEach(horizon => {
+                        if (newThresholds[horizon]) {
+                            if (isWin) {
+                                // REWARD: Decrease threshold, making it easier to trigger
+                                newThresholds[horizon] = Math.max(55, newThresholds[horizon] - 2); 
+                            } else {
+                                // PENALTY: Increase threshold, making it harder
+                                newThresholds[horizon] = Math.min(95, newThresholds[horizon] + 5); 
+                            }
+                        }
+                    });
+                     // Cleanup the ref for the processed trade
+                    tradesInFlightRef.current.delete(lastFinishedTrade.id);
+
+                } else {
+                    adjustmentReason = `Ajuste Global (Contexto não encontrado): ${isWin ? 'Relaxando limiares.' : 'Aumentando cautela.'}.`;
+                    // Fallback to global adjustment
+                    if (!isWin) {
+                        Object.keys(newThresholds).forEach(key => {
+                            newThresholds[key] = Math.min(95, newThresholds[key] + 5);
+                        });
+                    } else {
+                        // Optional: slightly reduce all thresholds on a win without context
+                         Object.keys(newThresholds).forEach(key => {
+                            newThresholds[key] = Math.max(55, newThresholds[key] - 1);
+                        });
+                    }
+                }
+
                 return {
-                    mode: 'Cautious',
+                    mode: isWin ? 'Normal' : 'Cautious',
                     thresholds: newThresholds,
-                    lastAdjustmentReason: 'Derrota: Aumentando cautela.'
+                    lastAdjustmentReason: adjustmentReason,
                 };
-            }
-        });
-    }
-  }, [operationsLog]);
+            });
+        }
+    }, [operationsLog]);
     
   return {
     isAutopilotOn,
@@ -383,6 +412,7 @@ export function useMasterAutopilot() {
     dailyTarget,
     setDailyTarget,
     masterState,
+    setMasterState,
     riskManager,
     setGlobalAssertivenessThreshold,
     setIndividualThreshold,
