@@ -1,4 +1,3 @@
-
 // src/features/trading/services/predictive-logic.ts
 'use client';
 
@@ -60,11 +59,11 @@ export function evaluateTriggerConditions(
   thresholds: Record<string, number>,
   contractType: string,
   currentRegime: MarketRegime,
-  currentPrice: number,
-  botCandleData: CandleData[],
+  currentPrice: number, // NOVO
+  botCandleData: CandleData[], // NOVO
   isNeighborConfirmationEnabled: boolean,
   isMacroTrendCheckEnabled: boolean,
-  highFrequencyThresholdSeconds: number
+  highFrequencyThresholdSeconds: number,
 ) {
   let newTriggerSignal: 'RISE' | 'FALL' | 'HOLD' = 'HOLD';
   let newTriggerReason = 'Nenhuma condição de gatilho atendida.';
@@ -74,67 +73,74 @@ export function evaluateTriggerConditions(
     newTriggerReason = `Contrato (${contractType}) incompatível com regime atual (${currentRegime}).`;
     return { newTriggerSignal, newTriggerReason, newTriggeredBy };
   }
-
+  
   if (isNeighborConfirmationEnabled) {
     newTriggerReason = 'Nenhuma confirmação dupla de assertividade.';
     for (let i = 1; i < horizons.length; i++) {
-        const currentHorizonName = horizons[i].name;
-        const prevHorizonName = horizons[i-1].name;
-        const currentExpert = newAssertiveness[currentHorizonName];
-        const prevExpert = newAssertiveness[prevHorizonName];
+      const currentHorizonName = horizons[i].name;
+      const prevHorizonName = horizons[i-1].name;
+      const currentExpert = newAssertiveness[currentHorizonName];
+      const prevExpert = newAssertiveness[prevHorizonName];
 
-        if (!currentExpert || !prevExpert) continue;
+      if (!currentExpert || !prevExpert) continue;
+      
+      // PASSO 1: Determinar a direção "correta" (efetiva) de cada especialista.
+      const currentEffectiveVote = getEffectiveVote(currentExpert);
+      const prevEffectiveVote = getEffectiveVote(prevExpert);
 
-        const currentVote = getEffectiveVote(currentExpert);
-        const prevVote = getEffectiveVote(prevExpert);
-
+      // PASSO 2: Verificar se a direção é a mesma e não é 'HOLD'.
+      // Esta é a "confirmação de direção". Não precisa ser "exata" no voto bruto, mas sim na direção efetiva.
+      if (currentEffectiveVote !== 'HOLD' && currentEffectiveVote === prevEffectiveVote) {
+        
+        // PASSO 3: Se a direção foi confirmada, agora verificamos a assertividade individual.
         const currentEffectiveAccuracy = Math.max(currentExpert.accuracy, 100 - currentExpert.accuracy);
         const prevEffectiveAccuracy = Math.max(prevExpert.accuracy, 100 - prevExpert.accuracy);
-
         const currentThreshold = thresholds[currentHorizonName] || 80;
         const prevThreshold = thresholds[prevHorizonName] || 80;
-
-        if (currentEffectiveAccuracy >= currentThreshold && prevEffectiveAccuracy >= prevThreshold) {
-            if (currentVote === prevVote && currentVote !== 'HOLD') {
-                const horizonSeconds = calcularSegundos(currentHorizonName);
-                const isHighFrequencySignal = horizonSeconds <= highFrequencyThresholdSeconds;
-
-                if (currentRegime === 'ranging' && horizonSeconds > 20) {
-                    newTriggerReason = `Sinal ${currentVote} (${currentHorizonName}) bloqueado: horizonte longo em mercado lateral.`;
-                    continue;
-                }
-
-                if (!isHighFrequencySignal && isMacroTrendCheckEnabled) {
-                  const dynamicPeriod = Math.max(Math.round(horizonSeconds / 2), 20);
-                  const dynamicEMA = calculateDynamicEMA(botCandleData, dynamicPeriod);
-                  
-                  if (dynamicEMA === null) {
-                    newTriggerReason = `EMA(${dynamicPeriod}) indisponível.`;
-                    continue;
-                  }
-                  
-                  let dynamicTrend: 'UP' | 'DOWN' | 'NONE' = 'NONE';
-                  const deadZone = dynamicEMA * 0.0005;
-                  if (currentPrice > dynamicEMA + deadZone) dynamicTrend = 'UP';
-                  else if (currentPrice < dynamicEMA - deadZone) dynamicTrend = 'DOWN';
-                  
-                  if ((currentVote === 'RISE' && dynamicTrend === 'DOWN') || (currentVote === 'FALL' && dynamicTrend === 'UP')) {
-                    newTriggerReason = `Sinal ${currentVote} bloqueado: preço ${currentPrice.toFixed(4)} vs EMA(${dynamicPeriod})=${dynamicEMA.toFixed(4)} (${dynamicTrend})`;
-                    continue;
-                  }
-                }
-                
-                newTriggerSignal = currentVote;
-                newTriggeredBy = [prevHorizonName, currentHorizonName];
-                newTriggerReason = `✅ ${currentVote} confirmado por ${prevHorizonName}+${currentHorizonName}`;
-                if (isHighFrequencySignal) newTriggerReason += ' [HF, macro ignorado]';
-                break;
-            }
+        
+        // Condição 2: Ambos os especialistas devem atender aos seus limiares de assertividade individuais.
+        const bothPassThreshold = currentEffectiveAccuracy >= currentThreshold && prevEffectiveAccuracy >= prevThreshold;
+        
+        if (!bothPassThreshold) {
+          newTriggerReason = `Acordo de ${currentEffectiveVote} entre ${prevHorizonName} e ${currentHorizonName}, mas limiares não atingidos.`;
+          continue; // Pula para o próximo par de vizinhos
         }
+        
+        // PASSO 4: Se tudo até aqui passou, validamos com a tendência macro (se aplicável).
+        const agreedVote = currentEffectiveVote;
+        const horizonSeconds = calcularSegundos(currentHorizonName);
+        const isHighFrequencySignal = horizonSeconds <= highFrequencyThresholdSeconds;
+        
+        if (!isHighFrequencySignal && isMacroTrendCheckEnabled) {
+          const dynamicPeriod = Math.max(Math.round(horizonSeconds / 2), 20);
+          const dynamicEMA = calculateDynamicEMA(botCandleData, dynamicPeriod);
+          
+          if (dynamicEMA === null) {
+            newTriggerReason = `EMA(${dynamicPeriod}) indisponível.`;
+            continue;
+          }
+          
+          const deadZone = dynamicEMA * 0.0005;
+          let dynamicTrend: 'UP' | 'DOWN' | 'NONE' = 'NONE';
+          if (currentPrice > dynamicEMA + deadZone) dynamicTrend = 'UP';
+          else if (currentPrice < dynamicEMA - deadZone) dynamicTrend = 'DOWN';
+          
+          if ((agreedVote === 'RISE' && dynamicTrend !== 'UP') ||
+              (agreedVote === 'FALL' && dynamicTrend !== 'DOWN')) {
+            newTriggerReason = `Sinal ${agreedVote} bloqueado: preço ${currentPrice.toFixed(4)} vs EMA(${dynamicPeriod})=${dynamicEMA.toFixed(4)} (${dynamicTrend})`;
+            continue;
+          }
+        }
+        
+        // Se todos os filtros passaram, temos um sinal válido!
+        newTriggerSignal = agreedVote;
+        newTriggeredBy = [prevHorizonName, currentHorizonName];
+        newTriggerReason = `✅ ${agreedVote} confirmado por ${prevHorizonName}+${currentHorizonName}`;
+        if (isHighFrequencySignal) newTriggerReason += ' [HF, macro ignorado]';
+        break; // Encontramos um sinal válido, saímos do loop.
+      }
     }
-  } else {
-    // Lógica para especialista único mais forte...
   }
-
+  
   return { newTriggerSignal, newTriggerReason, newTriggeredBy };
 }
