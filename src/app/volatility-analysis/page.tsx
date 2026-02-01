@@ -621,7 +621,7 @@ function StochasticLab({
                                     <Tooltip />
                                     <Legend />
                                     <Line type="monotone" dataKey="real" stroke="hsl(var(--chart-1))" strokeWidth={2.5} dot={false} name="Preço Real" />
-                                    <Line type="monotone" dataKey="predicted_1t_ahead" stroke="hsl(var(--chart-2))" strokeWidth={2} strokeDasharray="8 4" dot={false} name="Projeção (1 Tick)" />
+                                    <Line type="monotone" dataKey="predicted_1_tick" stroke="hsl(var(--chart-2))" strokeWidth={1.5} dot={false} name="Previsão (1 Tick)" />
                                     <Line type="monotone" dataKey="predicted_3t_ahead" stroke="hsl(var(--chart-3))" strokeWidth={2} strokeDasharray="8 4" dot={false} name="Projeção (3 Ticks)" />
                                     <Line type="monotone" dataKey="predicted_6t_ahead" stroke="hsl(var(--chart-4))" strokeWidth={2} strokeDasharray="8 4" dot={false} name="Projeção (6 Ticks)" />
                                     <Line type="monotone" dataKey="predicted_10t_ahead" stroke="hsl(var(--chart-5))" strokeWidth={2} strokeDasharray="8 4" dot={false} name="Projeção (10t)" />
@@ -850,6 +850,13 @@ const PageContent = () => {
                                                     <span className="font-normal text-xs text-muted-foreground">Exigir que dois especialistas vizinhos concordem.</span>
                                                 </Label>
                                                 <Switch id="neighbor-confirmation-switch" checked={autopilot.isNeighborConfirmationEnabled} onCheckedChange={autopilot.setIsNeighborConfirmationEnabled} disabled={autopilot.isAutopilotOn}/>
+                                            </div>
+                                             <div className="flex items-center justify-between rounded-lg border p-3 shadow-sm">
+                                                <Label htmlFor="triple-confirmation-switch" className="flex flex-col space-y-1 flex-1 pr-4">
+                                                    <span>Confirmação Tripla (Vizinhos + Sequencial)</span>
+                                                    <span className="font-normal text-xs text-muted-foreground">Exigir que três especialistas vizinhos (anterior, atual, próximo) concordem.</span>
+                                                </Label>
+                                                <Switch id="triple-confirmation-switch" checked={autopilot.isTripleConfirmationEnabled} onCheckedChange={autopilot.setIsTripleConfirmationEnabled} disabled={autopilot.isAutopilotOn}/>
                                             </div>
                                             <div className="flex items-center justify-between rounded-lg border p-3 shadow-sm">
                                                 <Label htmlFor="macro-trend-switch" className="flex flex-col space-y-1 flex-1 pr-4">
