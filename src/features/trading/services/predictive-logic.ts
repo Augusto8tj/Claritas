@@ -49,15 +49,15 @@ function calculateDynamicEMA(data: CandleData[], period: number): number | null 
 
 function calcularSegundos(horizonName: string): number {
   const match = horizonName.match(/(\d+)([st])/);
-  if (!match) return Infinity;
+  if (!match) return Infinity; // Should not happen with valid names
   const value = parseInt(match[1], 10);
-  return match[2] === 't' ? value * 2 : value;
+  return match[2] === 't' ? value * 2 : value; // Approximation: 1 tick = 2 seconds
 }
 
 
 export function evaluateTriggerConditions(
   newAssertiveness: Record<string, AssertivenessData>,
-  horizons: { name: string; ticks: number; window: number }[],
+  horizons: { name: string; type: 'tick' | 'second'; window: number }[],
   thresholds: Record<string, number>,
   contractType: string,
   currentRegime: MarketRegime,
@@ -97,6 +97,7 @@ export function evaluateTriggerConditions(
       let partners = [horizons[i - 1].name, horizons[i].name];
 
       if (isTripleConfirmationEnabled) {
+        if (i + 1 >= horizons.length) continue; // Boundary check
         const nextExpert = newAssertiveness[horizons[i+1].name];
         if (!nextExpert) continue;
         const nextEffectiveVote = getEffectiveVote(nextExpert);
@@ -137,8 +138,9 @@ export function evaluateTriggerConditions(
           if (currentPrice > dynamicEMA + deadZone) dynamicTrend = 'UP';
           else if (currentPrice < dynamicEMA - deadZone) dynamicTrend = 'DOWN';
           
-          if ((agreedVote === 'RISE' && dynamicTrend !== 'UP') || (agreedVote === 'FALL' && dynamicTrend !== 'DOWN')) {
-            newTriggerReason = `Sinal ${agreedVote} bloqueado: preço ${currentPrice.toFixed(4)} vs EMA(${dynamicPeriod})=${dynamicEMA.toFixed(4)} (${dynamicTrend})`;
+          // CORREÇÃO: Apenas bloquear se a tendência for EXPLICITAMENTE oposta. Permitir em tendência NEUTRA.
+          if ((agreedVote === 'RISE' && dynamicTrend === 'DOWN') || (agreedVote === 'FALL' && dynamicTrend === 'UP')) {
+            newTriggerReason = `Sinal ${agreedVote} bloqueado por tendência macro oposta: Preço ${currentPrice.toFixed(4)} vs EMA(${dynamicPeriod}) ${dynamicEMA.toFixed(4)} (${dynamicTrend})`;
             continue;
           }
         }
@@ -146,13 +148,63 @@ export function evaluateTriggerConditions(
         newTriggerSignal = agreedVote;
         newTriggeredBy = partners;
         newTriggerReason = `✅ ${agreedVote} confirmado por ${partners.join(' + ')}`;
-        if (isHighFrequencySignal) newTriggerReason += ' [HF, macro ignorado]';
-        break;
+        if (isHighFrequencySignal && isMacroTrendCheckEnabled) newTriggerReason += ' [HF, macro ignorado]';
+        break; // Primeira condição de gatilho encontrada é suficiente
       }
     }
   } else {
-    // Logic for single expert (can be added here if needed)
+    // This logic branch handles when neighbor confirmation is off.
+    // It should find the single best expert.
+    newTriggerReason = 'Confirmação de vizinhos está desativada.';
+    
+    let bestSignal: 'RISE' | 'FALL' | 'HOLD' = 'HOLD';
+    let bestAccuracy = 0;
+    let bestHorizon: string | null = null;
+    
+    for (const horizon of horizons) {
+        const expert = newAssertiveness[horizon.name];
+        if(!expert) continue;
+        
+        const effectiveAccuracy = Math.max(expert.accuracy, 100 - expert.accuracy);
+        const threshold = thresholds[horizon.name] || 80;
+
+        if (effectiveAccuracy >= threshold && effectiveAccuracy > bestAccuracy) {
+            bestAccuracy = effectiveAccuracy;
+            bestSignal = getEffectiveVote(expert);
+            bestHorizon = horizon.name;
+        }
+    }
+
+    if (bestHorizon && bestSignal !== 'HOLD') {
+        newTriggerSignal = bestSignal;
+        newTriggeredBy = [bestHorizon];
+        newTriggerReason = `✅ ${bestSignal} confirmado pelo especialista mais forte: ${bestHorizon} (${bestAccuracy.toFixed(1)}%)`;
+    }
   }
   
   return { newTriggerSignal, newTriggerReason, newTriggeredBy };
+}
+
+export function evaluateManualTrigger(
+  newAssertiveness: Record<string, AssertivenessData>
+): { manualTriggerSignal: 'RISE' | 'FALL' | 'HOLD', manualTriggerReason: string } {
+    const manualSignalVotes = Object.values(newAssertiveness).map(getEffectiveVote);
+    const riseCount = manualSignalVotes.filter(v => v === 'RISE').length;
+    const fallCount = manualSignalVotes.filter(v => v === 'FALL').length;
+    const totalVotes = riseCount + fallCount;
+    
+    let manualTriggerSignal: 'RISE' | 'FALL' | 'HOLD' = 'HOLD';
+    let manualTriggerReason = 'Aguardando consenso majoritário.';
+
+    if (totalVotes > 0) {
+        if (riseCount / totalVotes > 0.6) {
+            manualTriggerSignal = 'RISE';
+            manualTriggerReason = `Consenso de Alta (${riseCount}/${totalVotes})`;
+        } else if (fallCount / totalVotes > 0.6) {
+            manualTriggerSignal = 'FALL';
+            manualTriggerReason = `Consenso de Queda (${fallCount}/${totalVotes})`;
+        }
+    }
+
+    return { manualTriggerSignal, manualTriggerReason };
 }

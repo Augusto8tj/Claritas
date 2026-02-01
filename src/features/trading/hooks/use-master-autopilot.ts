@@ -8,7 +8,7 @@ import { calculateAllIndicators, type Indicators } from '@/services/indicator-se
 import { getCouncilStrategies } from '@/services/council-strategies';
 import type { DurationUnit, Operation, OperationInitiator, MarketRegime, CandleData, PredictiveTradeLog } from '@/lib/types';
 import { extractMicrostructureFeatures, type MicrostructureFeatures, detectMarketRegime as detectMarketRegimeService } from '@/services/advanced-trading-services';
-import { evaluateTriggerConditions } from '../services/predictive-logic';
+import { evaluateTriggerConditions, evaluateManualTrigger } from '../services/predictive-logic';
 import { useAuth } from '@/features/auth/hooks/use-auth';
 import { savePredictiveTradeLog } from '@/services/financial-data-service';
 import type { User } from 'firebase/auth';
@@ -73,7 +73,7 @@ const calculateDynamicThresholds = (
     });
   }
   
-  if (indicators?.atr && indicators.sma[indicators.sma.length-1] && indicators.atr > 1.5 * (indicators.sma[indicators.sma.length - 1] || 1) * 0.01) {
+  if (indicators?.atr && indicators.sma && indicators.sma.length > 0 && indicators.sma[indicators.sma.length - 1] !== null && indicators.atr > 1.5 * (indicators.sma[indicators.sma.length - 1] || 1) * 0.01) {
     dynamicThresholds['30s'] = Math.min(95, dynamicThresholds['30s'] + 10);
     dynamicThresholds['40s'] = Math.min(95, dynamicThresholds['40s'] + 10);
     dynamicThresholds['50s'] = Math.min(95, dynamicThresholds['50s'] + 10);
@@ -139,15 +139,15 @@ export function useMasterAutopilot() {
   const [highFrequencyThreshold, setHighFrequencyThreshold] = useState(10);
   
   const horizons = useMemo(() => [
-      { name: '1t', ticks: 1, type: 'tick', window: 6 },
-      { name: '3t', ticks: 3, type: 'tick', window: 6 },
-      { name: '6t', ticks: 6, type: 'tick', window: 6 },
-      { name: '10t', ticks: 10, type: 'tick', window: 10 },
-      { name: '15s', ticks: 15, type: 'second', window: 10 },
-      { name: '20s', ticks: 20, type: 'second', window: 10 },
-      { name: '30s', ticks: 30, type: 'second', window: 75 },
-      { name: '40s', ticks: 40, type: 'second', window: 75 },
-      { name: '50s', ticks: 50, type: 'second', window: 75 },
+      { name: '1t', type: 'tick', window: 6 },
+      { name: '3t', type: 'tick', window: 6 },
+      { name: '6t', type: 'tick', window: 6 },
+      { name: '10t', type: 'tick', window: 10 },
+      { name: '15s', type: 'second', window: 10 },
+      { name: '20s', type: 'second', window: 10 },
+      { name: '30s', type: 'second', window: 75 },
+      { name: '40s', type: 'second', window: 75 },
+      { name: '50s', type: 'second', window: 75 },
   ], []);
 
   const toggleAutopilot = useCallback((checked: boolean) => {
@@ -252,6 +252,7 @@ export function useMasterAutopilot() {
             ...prevState,
             isReady: false,
             trigger: { signal: 'HOLD', reason: 'Aguardando dados...', triggeredBy: null },
+            manualTrigger: { signal: 'HOLD', reason: 'Dados insuficientes.'},
           });
         }
         const currentTick = priceTicks[priceTicks.length - 1];
@@ -267,7 +268,7 @@ export function useMasterAutopilot() {
             calculatedIndicators,
             riskManager.thresholds
         );
-
+        
         const { newTriggerSignal, newTriggerReason, newTriggeredBy } = evaluateTriggerConditions(
             newAssertiveness,
             horizons,
@@ -282,24 +283,12 @@ export function useMasterAutopilot() {
             highFrequencyThreshold,
         );
         
-        const manualSignal = evaluateTriggerConditions(
-            newAssertiveness,
-            horizons,
-            Object.fromEntries(Object.keys(riskManager.thresholds).map(k => [k, 55])),
-            contractType,
-            detectedRegimeResult.regime,
-            lastPrice,
-            botCandleData,
-            false,
-            false,
-            true,
-            highFrequencyThreshold,
-        );
+        const { manualTriggerSignal, manualTriggerReason } = evaluateManualTrigger(newAssertiveness);
         
         return {
             isReady: true,
             trigger: { signal: newTriggerSignal, reason: newTriggerReason, triggeredBy: newTriggeredBy },
-            manualTrigger: { signal: manualSignal.newTriggerSignal, reason: manualSignal.newTriggerReason },
+            manualTrigger: { signal: manualTriggerSignal, reason: manualTriggerReason },
             indicators: calculatedIndicators,
             microstructure: microFeatures,
             currentRegime: detectedRegimeResult,
