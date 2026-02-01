@@ -12,13 +12,13 @@ O objetivo desta página é transcender a análise técnica tradicional, que é 
 
 ## 2. Filosofia de Design: O Comitê de Especialistas Temporais
 
-A página não é apenas um gráfico; é um **comitê de seis especialistas em IA**, cada um focado num horizonte de tempo diferente (3-ticks, 6-ticks, 10-segundos, etc.). O sistema opera sob os seguintes princípios:
+A página não é apenas um gráfico; é um **comitê de nove especialistas em IA**, cada um focado num horizonte de tempo diferente: `1t`, `3t`, `6t`, `10t` (ticks), e `15s`, `20s`, `30s`, `40s`, `50s` (segundos). O sistema opera sob os seguintes princípios:
 
-1.  **Previsão Multi-Horizonte:** Em vez de uma única previsão, o sistema gera seis projeções de preço distintas. Isto permite-nos ver se a previsão de curto prazo concorda ou diverge da de longo prazo.
+1.  **Previsão Multi-Horizonte:** Em vez de uma única previsão, o sistema gera nove projeções de preço distintas. Isto permite-nos ver se a previsão de curto prazo concorda ou diverge da de longo prazo.
 2.  **Modelo Preditivo (Movimento Browniano Geométrico - GBM):** O coração de cada especialista é o GBM, um modelo padrão em finanças quantitativas. Ele projeta o futuro com base em duas forças:
     *   **Drift (Tendência):** A média dos retornos recentes. Se o ativo tem subido, a tendência da projeção é de alta.
     *   **Difusão (Volatilidade):** A aleatoriedade do movimento, baseada no desvio padrão dos retornos recentes.
-3.  **Meritocracia Preditiva (Auto-Avaliação):** O sistema não confia cegamente nas suas próprias previsões. Ele rastreia constantemente o **índice de assertividade** (a taxa de acerto direcional) de cada um dos seus seis especialistas. Projeções que se provam mais confiáveis ganham mais "peso" na decisão final.
+3.  **Meritocracia Preditiva (Auto-Avaliação):** O sistema não confia cegamente nas suas próprias previsões. Ele rastreia constantemente o **índice de assertividade** (a taxa de acerto direcional) de cada um dos seus nove especialistas. Projeções que se provam mais confiáveis ganham mais "peso" na decisão final.
 4.  **Consenso Ponderado para Decisão:** A decisão final (`RISE` ou `FALL`) não é uma média simples. É o resultado de uma **eleição ponderada**. O voto de cada especialista temporal é ponderado pela sua assertividade histórica. Um especialista com 80% de acerto tem um voto muito mais forte do que um com 55%.
 5.  **Auto-Correção de Erro (Drift Adaptativo):** O sistema mede constantemente o seu erro de previsão de curtíssimo prazo (MAE e RMSE) e calcula um "fator de correção" (drift) para ajustar e refinar as suas futuras projeções, num ciclo de aprendizagem contínua.
 
@@ -32,7 +32,7 @@ A página opera como um ecossistema próprio. Aqui estão os ficheiros-chave:
 
 *   **`src/app/volatility-analysis/page.tsx`**: O ficheiro central da página.
     *   **Responsabilidade:** Orquestra todos os componentes, hooks e serviços.
-    *   **Contém o `StochasticLab`:** Este componente interno é o **"Cientista de IA"**. Ele executa os modelos GBM para os 6 horizontes de tempo, calcula as projeções, avalia a assertividade de cada um e expõe estes dados para o resto do sistema.
+    *   **Contém o `StochasticLab`:** Este componente interno é o **"Cientista de IA"**. Ele executa os modelos GBM para os nove horizontes de tempo, calcula as projeções, avalia a assertividade de cada um e expõe estes dados para o resto do sistema.
 
 ### 3.2. Camada Cognitiva (O Cérebro de Decisão)
 

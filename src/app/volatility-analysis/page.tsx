@@ -171,7 +171,7 @@ const ProjectionExpertsPanel = ({ experts }: { experts: { name: string; vote: 'R
  * em múltiplos horizontes de tempo para prever o comportamento do preço.
  * 
  * Filosofia: Comitê de Especialistas Temporais
- * 1.  Previsão Multi-Horizonte: Gera seis projeções de preço distintas para diferentes prazos.
+ * 1.  Previsão Multi-Horizonte: Gera nove projeções de preço distintas para diferentes prazos.
  * 2.  Modelo Preditivo (GBM): Projeta o futuro com base na tendência (drift) e volatilidade (diffusion).
  * 3.  Meritocracia Preditiva: Avalia constantemente a "Assertividade" (taxa de acerto) de cada especialista.
  */
@@ -342,9 +342,17 @@ function StochasticLab({
       const lastTime = prices.length - 1;
 
       /**
-       * Projeta um caminho futuro do preço usando GBM.
-       * @param steps Número de passos à frente para projetar.
-       * @param type Domínio do tempo ('tick' ou 'second').
+       * Projeta um caminho futuro do preço usando o modelo de Movimento Browniano Geométrico (GBM).
+       * Este modelo é o padrão da indústria para simular o movimento de preços de ativos financeiros.
+       * 
+       * A fórmula básica é: S(t+Δt) = S(t) × exp((μ - σ²/2)Δt + σ√Δt × Z)
+       * Onde:
+       *  - μ (drift): A tendência média dos retornos recentes.
+       *  - σ (diffusion/volatility): O desvio padrão dos retornos, representando a aleatoriedade.
+       *  - Z: Uma variável aleatória normal padrão.
+       * 
+       * @param steps Número de passos (ticks ou segundos) à frente para projetar.
+       * @param type O domínio do tempo ('tick' ou 'second'), que influencia a janela de análise.
        * @returns Array de pontos de preço projetados.
        */
       const projectPath = (steps: number, type: 'tick' | 'second') => {
@@ -362,17 +370,14 @@ function StochasticLab({
         for (let i = 1; i <= steps; i++) {
           const Z = normalRandom();
           
-          // Média ponderada exponencialmente para dar mais peso aos retornos recentes.
           const weights = lastLogReturns.map((_, idx) => Math.exp(idx / lastLogReturns.length));
           const sumWeights = weights.reduce((a, b) => a + b, 0);
           const weightedMean = lastLogReturns.reduce((sum, r, idx) => sum + r * weights[idx], 0) / sumWeights;
 
-          // Ajusta o drift com base na tendência de curtíssimo prazo.
           const recentTrend = lastLogReturns.slice(-5).reduce((a, b) => a + b, 0) / 5;
           const trendStrength = lastSigma > 0 ? Math.abs(recentTrend / lastSigma) : 0;
           const driftAdjustment = trendStrength > 0.5 ? recentTrend * (type === 'tick' ? 0.1 : 0.3) : 0;
           
-          // Equação do Movimento Browniano Geométrico (GBM)
           const drift_future = weightedMean + driftAdjustment;
           const diffusion_future = lastSigma * Z;
 
@@ -400,6 +405,13 @@ function StochasticLab({
 
       /**
        * Processa uma previsão pendente para calcular a assertividade.
+       * Este é o núcleo da "Meritocracia Preditiva".
+       * 1. Guarda a previsão direcional (preço final > preço inicial).
+       * 2. Após o tempo do horizonte ter passado, obtém o preço real.
+       * 3. Compara a direção prevista com a direção real.
+       * 4. Adiciona 'true' (acerto) ou 'false' (erro) ao histórico do especialista.
+       * A assertividade é a percentagem de 'true' neste histórico.
+       * 
        * @param horizonTicks Número de ticks/segundos da previsão.
        * @param accuracyWindow Janela de histórico para a média móvel da assertividade.
        * @param prices Array de preços reais.
@@ -416,17 +428,15 @@ function StochasticLab({
           const currentTimeIndex = prices.length - 1;
           let newHistory: boolean[] = [];
 
-          // Filtra previsões que já "amadureceram".
           const updatedPending = pendingPredictionsRef.current.filter((pred) => {
               if (currentTimeIndex >= pred.startTimeIndex + horizonTicks) {
                   const actualEndPrice = prices[pred.startTimeIndex + horizonTicks];
-                  if (actualEndPrice === undefined) return true; // Mantém se o dado futuro ainda não chegou
+                  if (actualEndPrice === undefined) return true;
                   
-                  // Compara a direção prevista com a real.
                   const predictedDirection = pred.predictedEndPrice > pred.startPrice;
                   const actualDirection = actualEndPrice > pred.startPrice;
-                  newHistory.push(predictedDirection === actualDirection); // true = acerto, false = erro
-                  return false; // Remove a previsão da lista de pendentes.
+                  newHistory.push(predictedDirection === actualDirection);
+                  return false;
               }
               return true;
           });
@@ -450,7 +460,6 @@ function StochasticLab({
               const newPredictionTimeIndex = newFuturePath[0].time;
               const alreadyPending = pendingRefs[index].current.some(p => p.startTimeIndex === newPredictionTimeIndex);
               if (!alreadyPending) {
-                  // Guarda a previsão para ser verificada no futuro.
                   pendingRefs[index].current.push({
                       startTimeIndex: newPredictionTimeIndex,
                       startPrice: newFuturePath[0].price,
