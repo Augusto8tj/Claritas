@@ -183,6 +183,7 @@ function StochasticLab({
   const [stats, setStats] = useState<any>({});
   
   const [predictionData, setPredictionData] = useState<any[]>([]);
+  const [futurePath1t, setFuturePath1t] = useState<any[]>([]);
   const [futurePath3t, setFuturePath3t] = useState<any[]>([]);
   const [futurePath6t, setFuturePath6t] = useState<any[]>([]);
   const [futurePath10t, setFuturePath10t] = useState<any[]>([]);
@@ -192,6 +193,7 @@ function StochasticLab({
   
   const [driftCorrectionForDisplay, setDriftCorrectionForDisplay] = useState({drift: 0, mae: 0, rmse: 0});
 
+  const [predictionAccuracyHistory1t, setPredictionAccuracyHistory1t] = useState<boolean[]>([]);
   const [predictionAccuracyHistory3t, setPredictionAccuracyHistory3t] = useState<boolean[]>([]);
   const [predictionAccuracyHistory6t, setPredictionAccuracyHistory6t] = useState<boolean[]>([]);
   const [predictionAccuracyHistory10t, setPredictionAccuracyHistory10t] = useState<boolean[]>([]);
@@ -201,6 +203,7 @@ function StochasticLab({
   
 
   const predictionErrorsRef = useRef<number[]>([]);
+  const pendingPredictions1tRef = useRef<{ startTimeIndex: number; startPrice: number; predictedEndPrice: number }[]>([]);
   const pendingPredictions3tRef = useRef<{ startTimeIndex: number; startPrice: number; predictedEndPrice: number }[]>([]);
   const pendingPredictions6tRef = useRef<{ startTimeIndex: number; startPrice: number; predictedEndPrice: number }[]>([]);
   const pendingPredictions10tRef = useRef<{ startTimeIndex: number; startPrice: number; predictedEndPrice: number }[]>([]);
@@ -217,6 +220,7 @@ function StochasticLab({
   };
   
   const horizons = useMemo(() => [
+      { name: '1t', ticks: 1, window: 6 },
       { name: '3t', ticks: 3, window: 6 },
       { name: '6t', ticks: 6, window: 6 },
       { name: '10t', ticks: 10, window: 10 },
@@ -352,8 +356,8 @@ function StochasticLab({
         return path;
       };
       
-      const setHistoryFns = [setPredictionAccuracyHistory3t, setPredictionAccuracyHistory6t, setPredictionAccuracyHistory10t, setPredictionAccuracyHistory20s, setPredictionAccuracyHistory30s, setPredictionAccuracyHistory40s];
-      const pendingRefs = [pendingPredictions3tRef, pendingPredictions6tRef, pendingPredictions10tRef, pendingPredictions20sRef, pendingPredictions30sRef, pendingPredictions40sRef];
+      const setHistoryFns = [setPredictionAccuracyHistory1t, setPredictionAccuracyHistory3t, setPredictionAccuracyHistory6t, setPredictionAccuracyHistory10t, setPredictionAccuracyHistory20s, setPredictionAccuracyHistory30s, setPredictionAccuracyHistory40s];
+      const pendingRefs = [pendingPredictions1tRef, pendingPredictions3tRef, pendingPredictions6tRef, pendingPredictions10tRef, pendingPredictions20sRef, pendingPredictions30sRef, pendingPredictions40sRef];
 
       const processPredictionHorizon = (
           horizonTicks: number,
@@ -405,12 +409,13 @@ function StochasticLab({
           }
       });
       
-      setFuturePath3t(paths[0].map(p => ({ time: p.time, predicted_3t_ahead: p.price })));
-      setFuturePath6t(paths[1].map(p => ({ time: p.time, predicted_6t_ahead: p.price })));
-      setFuturePath10t(paths[2].map(p => ({ time: p.time, predicted_10t_ahead: p.price })));
-      setFuturePath20s(paths[3].map(p => ({ time: p.time, predicted_20s_ahead: p.price })));
-      setFuturePath30s(paths[4].map(p => ({ time: p.time, predicted_30s_ahead: p.price })));
-      setFuturePath40s(paths[5].map(p => ({ time: p.time, predicted_40s_ahead: p.price })));
+      setFuturePath1t(paths[0].map(p => ({ time: p.time, predicted_1t_ahead: p.price })));
+      setFuturePath3t(paths[1].map(p => ({ time: p.time, predicted_3t_ahead: p.price })));
+      setFuturePath6t(paths[2].map(p => ({ time: p.time, predicted_6t_ahead: p.price })));
+      setFuturePath10t(paths[3].map(p => ({ time: p.time, predicted_10t_ahead: p.price })));
+      setFuturePath20s(paths[4].map(p => ({ time: p.time, predicted_20s_ahead: p.price })));
+      setFuturePath30s(paths[5].map(p => ({ time: p.time, predicted_30s_ahead: p.price })));
+      setFuturePath40s(paths[6].map(p => ({ time: p.time, predicted_40s_ahead: p.price })));
     }
     
     setPredictionData(newPredictionData.slice(-200));
@@ -453,6 +458,7 @@ function StochasticLab({
   }, [realData, predictiveLogs, user, isUserLoading]);
 
 
+  const accuracy1t = useMemo(() => calculateRollingAccuracy(predictionAccuracyHistory1t), [predictionAccuracyHistory1t]);
   const accuracy3t = useMemo(() => calculateRollingAccuracy(predictionAccuracyHistory3t), [predictionAccuracyHistory3t]);
   const accuracy6t = useMemo(() => calculateRollingAccuracy(predictionAccuracyHistory6t), [predictionAccuracyHistory6t]);
   const accuracy10t = useMemo(() => calculateRollingAccuracy(predictionAccuracyHistory10t), [predictionAccuracyHistory10t]);
@@ -461,13 +467,14 @@ function StochasticLab({
   const accuracy40s = useMemo(() => calculateRollingAccuracy(predictionAccuracyHistory40s), [predictionAccuracyHistory40s]);
   
    const projectionExperts = useMemo(() => ([
+      { name: '1t', vote: futurePath1t.length > 1 ? (futurePath1t[futurePath1t.length - 1].predicted_1t_ahead > futurePath1t[0].predicted_1t_ahead ? 'RISE' : 'FALL') : 'HOLD', accuracy: accuracy1t.percentage },
       { name: '3t', vote: futurePath3t.length > 1 ? (futurePath3t[futurePath3t.length - 1].predicted_3t_ahead > futurePath3t[0].predicted_3t_ahead ? 'RISE' : 'FALL') : 'HOLD', accuracy: accuracy3t.percentage },
       { name: '6t', vote: futurePath6t.length > 1 ? (futurePath6t[futurePath6t.length - 1].predicted_6t_ahead > futurePath6t[0].predicted_6t_ahead ? 'RISE' : 'FALL') : 'HOLD', accuracy: accuracy6t.percentage },
       { name: '10t', vote: futurePath10t.length > 1 ? (futurePath10t[futurePath10t.length - 1].predicted_10t_ahead > futurePath10t[0].predicted_10t_ahead ? 'RISE' : 'FALL') : 'HOLD', accuracy: accuracy10t.percentage },
       { name: '20s', vote: futurePath20s.length > 1 ? (futurePath20s[futurePath20s.length - 1].predicted_20s_ahead > futurePath20s[0].predicted_20s_ahead ? 'RISE' : 'FALL') : 'HOLD', accuracy: accuracy20s.percentage },
       { name: '30s', vote: futurePath30s.length > 1 ? (futurePath30s[futurePath30s.length - 1].predicted_30s_ahead > futurePath30s[0].predicted_30s_ahead ? 'RISE' : 'FALL') : 'HOLD', accuracy: accuracy30s.percentage },
       { name: '40s', vote: futurePath40s.length > 1 ? (futurePath40s[futurePath40s.length - 1].predicted_40s_ahead > futurePath40s[0].predicted_40s_ahead ? 'RISE' : 'FALL') : 'HOLD', accuracy: accuracy40s.percentage },
-  ]), [futurePath3t, accuracy3t, futurePath6t, accuracy6t, futurePath10t, accuracy10t, futurePath20s, accuracy20s, futurePath30s, accuracy30s, futurePath40s, accuracy40s]);
+  ]), [futurePath1t, accuracy1t, futurePath3t, accuracy3t, futurePath6t, accuracy6t, futurePath10t, accuracy10t, futurePath20s, accuracy20s, futurePath30s, accuracy30s, futurePath40s, accuracy40s]);
 
   const strongestSignal = useMemo((): StrongestSignal => {
     let bestSignal: StrongestSignal = { horizon: 'N/A', direction: 'HOLD', certaintyScore: 0, accuracy: 50 };
@@ -509,11 +516,16 @@ function StochasticLab({
         });
     };
 
-    mergePath(futurePath3t); mergePath(futurePath6t); mergePath(futurePath10t);
-    mergePath(futurePath20s); mergePath(futurePath30s); mergePath(futurePath40s);
+    mergePath(futurePath1t);
+    mergePath(futurePath3t); 
+    mergePath(futurePath6t); 
+    mergePath(futurePath10t);
+    mergePath(futurePath20s); 
+    mergePath(futurePath30s); 
+    mergePath(futurePath40s);
 
     return combined;
-  }, [predictionData, futurePath3t, futurePath6t, futurePath10t, futurePath20s, futurePath30s, futurePath40s]);
+  }, [predictionData, futurePath1t, futurePath3t, futurePath6t, futurePath10t, futurePath20s, futurePath30s, futurePath40s]);
 
   const lineData = useMemo(() => {
     if (qqData.length === 0) return [];
@@ -575,6 +587,7 @@ function StochasticLab({
                                     <Legend />
                                     <Line type="monotone" dataKey="real" stroke="#2563eb" strokeWidth={2.5} dot={false} name="Preço Real" />
                                     <Line type="monotone" dataKey="predicted_1_tick" stroke="#f59e0b" strokeWidth={1.5} strokeDasharray="3 3" dot={false} name="Previsão (1-Tick)" />
+                                    <Line type="monotone" dataKey="predicted_1t_ahead" stroke="#fbbf24" strokeWidth={2} strokeDasharray="8 4" dot={false} name="Projeção (1 Tick)" />
                                     <Line type="monotone" dataKey="predicted_3t_ahead" stroke="#a16207" strokeWidth={2} strokeDasharray="8 4" dot={false} name="Projeção (3 Ticks)" />
                                     <Line type="monotone" dataKey="predicted_6t_ahead" stroke="#ef4444" strokeWidth={2} strokeDasharray="8 4" dot={false} name="Projeção (6 Ticks)" />
                                     <Line type="monotone" dataKey="predicted_10t_ahead" stroke="#8b5cf6" strokeWidth={2} strokeDasharray="8 4" dot={false} name="Projeção (10t)" />
@@ -768,7 +781,6 @@ const PageContent = () => {
     const [consensusData, setConsensusData] = useState<any>(null);
     
     const autopilot = useMasterAutopilot();
-    const { isAutopilotOn, runAutopilotCycle } = autopilot;
     
     const form = useForm<VolatilityTraderFormValues>({
         resolver: zodResolver(volatilityTraderSchema),
@@ -780,13 +792,13 @@ const PageContent = () => {
 
     const handleConsensusUpdate = useCallback((data: any) => {
         setConsensusData(data);
-        if (isAutopilotOn && data?.projectionExperts) {
+        if (autopilot.isAutopilotOn && data?.projectionExperts) {
             const assertiveness: Record<string, AssertivenessData> = Object.fromEntries(
                 data.projectionExperts.map((p: any) => [p.name, { accuracy: p.accuracy, vote: p.vote }])
             );
-            runAutopilotCycle(assertiveness);
+            autopilot.runAutopilotCycle(assertiveness);
         }
-    }, [isAutopilotOn, runAutopilotCycle]);
+    }, [autopilot.isAutopilotOn, autopilot.runAutopilotCycle]);
 
 
     useEffect(() => {

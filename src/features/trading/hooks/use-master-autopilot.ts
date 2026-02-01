@@ -107,7 +107,7 @@ export function useMasterAutopilot() {
   const [riskManager, setRiskManager] = useState<RiskManagerStatus>({
     mode: 'Normal',
     thresholds: {
-      '3t': 65, '6t': 68, '10t': 62,
+      '1t': 65, '3t': 65, '6t': 68, '10t': 62,
       '20s': 60, '30s': 58, '40s': 55,
     },
     lastAdjustmentReason: 'N/A'
@@ -121,7 +121,10 @@ export function useMasterAutopilot() {
     manualTrigger: { signal: 'HOLD', reason: 'Aguardando consenso dos modelos.'},
     indicators: null,
     microstructure: null,
-    currentRegime: { regime: 'ranging', confidence: 0 },
+    currentRegime: { 
+        regime: 'ranging', 
+        confidence: 0 
+    },
     assertiveness: {},
   });
   
@@ -132,9 +135,13 @@ export function useMasterAutopilot() {
   const [highFrequencyThreshold, setHighFrequencyThreshold] = useState(10);
   
   const horizons = useMemo(() => [
-      { name: '3t', ticks: 3, window: 50 }, { name: '6t', ticks: 6, window: 50 },
-      { name: '10t', ticks: 10, window: 100 }, { name: '20s', ticks: 20, window: 100 },
-      { name: '30s', ticks: 30, window: 75 }, { name: '40s', ticks: 40, window: 75 },
+      { name: '1t', ticks: 1, window: 6 },
+      { name: '3t', ticks: 3, window: 6 },
+      { name: '6t', ticks: 6, window: 6 },
+      { name: '10t', ticks: 10, window: 10 },
+      { name: '20s', ticks: 20, window: 10 },
+      { name: '30s', ticks: 30, window: 75 },
+      { name: '40s', ticks: 40, window: 75 },
   ], []);
 
   const toggleAutopilot = useCallback((checked: boolean) => {
@@ -151,7 +158,7 @@ export function useMasterAutopilot() {
     triggeredBy: [string, string] | null,
     currentUser: User | null,
     triggerReason: string,
-    assertiveness: Record<string, AssertivenessData>
+    currentAssertiveness: Record<string, AssertivenessData>
   ) => {
       const signalToUse = signalOverride;
       
@@ -194,7 +201,7 @@ export function useMasterAutopilot() {
                   const logId = `pred_log_${tradeResult.contractId}`;
                   const logContext = {
                       triggerReason: triggerReason,
-                      assertivenessSnapshot: Object.entries(assertiveness).map(([horizon, data]) => ({
+                      assertivenessSnapshot: Object.entries(currentAssertiveness).map(([horizon, data]) => ({
                           horizon,
                           accuracy: data.accuracy,
                           vote: data.vote,
@@ -227,7 +234,7 @@ export function useMasterAutopilot() {
           console.error("Master Autopilot Execution Error:", error);
           toast({ title: `❌ Erro na Execução ${initiator}`, description: error instanceof Error ? error.message : String(error), variant: "destructive" });
       }
-  }, [contractType, activeSymbol, user, executeRiseFallTrade, toast]);
+  }, [contractType, activeSymbol, executeRiseFallTrade, toast]);
   
   const runAutopilotCycle = useCallback((newAssertiveness: Record<string, AssertivenessData>) => {
     if (priceTicks.length < 50) {
@@ -278,18 +285,17 @@ export function useMasterAutopilot() {
         highFrequencyThreshold,
     );
     
-    const newState = {
-      isReady: true,
-      trigger: { signal: newTriggerSignal, reason: newTriggerReason, triggeredBy: newTriggeredBy },
-      manualTrigger: { signal: manualSignal.newTriggerSignal, reason: manualSignal.newTriggerReason },
-      indicators: calculatedIndicators,
-      microstructure: microFeatures,
-      currentRegime: detectedRegimeResult,
-      assertiveness: newAssertiveness,
-    };
+    setMasterState(prev => ({
+        ...prev,
+        isReady: true,
+        trigger: { signal: newTriggerSignal, reason: newTriggerReason, triggeredBy: newTriggeredBy },
+        manualTrigger: { signal: manualSignal.newTriggerSignal, reason: manualSignal.newTriggerReason },
+        indicators: calculatedIndicators,
+        microstructure: microFeatures,
+        currentRegime: detectedRegimeResult,
+        assertiveness: newAssertiveness,
+    }));
     
-    setMasterState(prev => ({...prev, ...newState}));
-
     const openMasterTrade = operationsLog.find(op => op.initiator === 'Piloto' && op.status === 'pending');
     if (isAutopilotOn && newTriggerSignal !== 'HOLD' && !cooldownRef.current && !openMasterTrade) {
       cooldownRef.current = true;
@@ -303,16 +309,17 @@ export function useMasterAutopilot() {
   ]);
 
   const executeManualTrigger = useCallback(async () => {
-    const { signal, reason } = masterState.manualTrigger;
-    const { assertiveness } = masterState;
+    const { manualTrigger, assertiveness } = masterState;
+    if (manualTrigger.signal === 'HOLD') return;
+
     const assertivenessArray = Object.entries(assertiveness);
     const strongest = assertivenessArray.length > 0 ? assertivenessArray.reduce((a, b) => {
         const accA = Math.max(a[1].accuracy, 100 - a[1].accuracy);
         const accB = Math.max(b[1].accuracy, 100 - b[1].accuracy);
         return accA > accB ? a : b;
-    })[0] : 'manual';
+    }) : ['manual', assertiveness['manual']];
     
-    await executeTradeAction('Manual', signal, [strongest, strongest], user, reason, assertiveness);
+    await executeTradeAction('Manual', manualTrigger.signal, [strongest[0], strongest[0]], user, manualTrigger.reason, assertiveness);
   }, [executeTradeAction, masterState, user]);
   
   const setGlobalAssertivenessThreshold = useCallback((value: number) => {
@@ -354,26 +361,21 @@ export function useMasterAutopilot() {
                     horizons.forEach(horizon => {
                         if (newThresholds[horizon]) {
                             if (isWin) {
-                                // REWARD: Decrease threshold, making it easier to trigger
                                 newThresholds[horizon] = Math.max(55, newThresholds[horizon] - 2); 
                             } else {
-                                // PENALTY: Increase threshold, making it harder
                                 newThresholds[horizon] = Math.min(95, newThresholds[horizon] + 5); 
                             }
                         }
                     });
-                     // Cleanup the ref for the processed trade
                     tradesInFlightRef.current.delete(lastFinishedTrade.id);
 
                 } else {
                     adjustmentReason = `Ajuste Global (Contexto não encontrado): ${isWin ? 'Relaxando limiares.' : 'Aumentando cautela.'}.`;
-                    // Fallback to global adjustment
                     if (!isWin) {
                         Object.keys(newThresholds).forEach(key => {
                             newThresholds[key] = Math.min(95, newThresholds[key] + 5);
                         });
                     } else {
-                        // Optional: slightly reduce all thresholds on a win without context
                          Object.keys(newThresholds).forEach(key => {
                             newThresholds[key] = Math.max(55, newThresholds[key] - 1);
                         });
