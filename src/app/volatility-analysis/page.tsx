@@ -187,9 +187,11 @@ function StochasticLab({
   const [futurePath3t, setFuturePath3t] = useState<any[]>([]);
   const [futurePath6t, setFuturePath6t] = useState<any[]>([]);
   const [futurePath10t, setFuturePath10t] = useState<any[]>([]);
+  const [futurePath15s, setFuturePath15s] = useState<any[]>([]);
   const [futurePath20s, setFuturePath20s] = useState<any[]>([]);
   const [futurePath30s, setFuturePath30s] = useState<any[]>([]);
   const [futurePath40s, setFuturePath40s] = useState<any[]>([]);
+  const [futurePath50s, setFuturePath50s] = useState<any[]>([]);
   
   const [driftCorrectionForDisplay, setDriftCorrectionForDisplay] = useState({drift: 0, mae: 0, rmse: 0});
 
@@ -197,9 +199,11 @@ function StochasticLab({
   const [predictionAccuracyHistory3t, setPredictionAccuracyHistory3t] = useState<boolean[]>([]);
   const [predictionAccuracyHistory6t, setPredictionAccuracyHistory6t] = useState<boolean[]>([]);
   const [predictionAccuracyHistory10t, setPredictionAccuracyHistory10t] = useState<boolean[]>([]);
+  const [predictionAccuracyHistory15s, setPredictionAccuracyHistory15s] = useState<boolean[]>([]);
   const [predictionAccuracyHistory20s, setPredictionAccuracyHistory20s] = useState<boolean[]>([]);
   const [predictionAccuracyHistory30s, setPredictionAccuracyHistory30s] = useState<boolean[]>([]);
   const [predictionAccuracyHistory40s, setPredictionAccuracyHistory40s] = useState<boolean[]>([]);
+  const [predictionAccuracyHistory50s, setPredictionAccuracyHistory50s] = useState<boolean[]>([]);
   
 
   const predictionErrorsRef = useRef<number[]>([]);
@@ -207,9 +211,11 @@ function StochasticLab({
   const pendingPredictions3tRef = useRef<{ startTimeIndex: number; startPrice: number; predictedEndPrice: number }[]>([]);
   const pendingPredictions6tRef = useRef<{ startTimeIndex: number; startPrice: number; predictedEndPrice: number }[]>([]);
   const pendingPredictions10tRef = useRef<{ startTimeIndex: number; startPrice: number; predictedEndPrice: number }[]>([]);
+  const pendingPredictions15sRef = useRef<{ startTimeIndex: number; startPrice: number; predictedEndPrice: number }[]>([]);
   const pendingPredictions20sRef = useRef<{ startTimeIndex: number; startPrice: number; predictedEndPrice: number }[]>([]);
   const pendingPredictions30sRef = useRef<{ startTimeIndex: number; startPrice: number; predictedEndPrice: number }[]>([]);
   const pendingPredictions40sRef = useRef<{ startTimeIndex: number; startPrice: number; predictedEndPrice: number }[]>([]);
+  const pendingPredictions50sRef = useRef<{ startTimeIndex: number; startPrice: number; predictedEndPrice: number }[]>([]);
   const processedLogsRef = useRef(new Set<number>());
 
   const normalRandom = (): number => {
@@ -220,13 +226,15 @@ function StochasticLab({
   };
   
   const horizons = useMemo(() => [
-      { name: '1t', ticks: 1, window: 6 },
-      { name: '3t', ticks: 3, window: 6 },
-      { name: '6t', ticks: 6, window: 6 },
-      { name: '10t', ticks: 10, window: 10 },
-      { name: '20s', ticks: 20, window: 10 },
-      { name: '30s', ticks: 30, window: 75 },
-      { name: '40s', ticks: 40, window: 75 },
+      { name: '1t', ticks: 1, type: 'tick', window: 6 },
+      { name: '3t', ticks: 3, type: 'tick', window: 6 },
+      { name: '6t', ticks: 6, type: 'tick', window: 6 },
+      { name: '10t', ticks: 10, type: 'tick', window: 10 },
+      { name: '15s', ticks: 15, type: 'second', window: 10 },
+      { name: '20s', ticks: 20, type: 'second', window: 10 },
+      { name: '30s', ticks: 30, type: 'second', window: 75 },
+      { name: '40s', ticks: 40, type: 'second', window: 75 },
+      { name: '50s', ticks: 50, type: 'second', window: 75 },
   ], []);
 
   useEffect(() => {
@@ -321,26 +329,30 @@ function StochasticLab({
 
     if (prices.length > VOL_WINDOW) {
       const lastPriceValue = prices[prices.length - 1];
-      const lastLogReturns = logReturns.slice(-VOL_WINDOW);
-      const meanLastReturn = lastLogReturns.reduce((a, b) => a + b, 0) / VOL_WINDOW;
-      const lastVariance = lastLogReturns.reduce((s, r) => s + Math.pow(r - meanLastReturn, 2), 0) / (VOL_WINDOW - 1);
-      const lastSigma = Math.sqrt(lastVariance);
       const lastTime = prices.length - 1;
 
-      const projectPath = (steps: number) => {
-        if (lastPriceValue === null) return [];
+      const projectPath = (steps: number, type: 'tick' | 'second') => {
+        const windowSize = type === 'tick' ? 20 : 50;
+        if (logReturns.length < windowSize || lastPriceValue === null) return [];
+
+        const lastLogReturns = logReturns.slice(-windowSize);
+        const meanLastReturn = lastLogReturns.reduce((a, b) => a + b, 0) / windowSize;
+        const lastVariance = lastLogReturns.reduce((s, r) => s + Math.pow(r - meanLastReturn, 2), 0) / (windowSize - 1);
+        const lastSigma = Math.sqrt(lastVariance);
+
         let currentSimPrice = lastPriceValue;
         const path = [{ time: lastTime, price: lastPriceValue }];
+        
         for (let i = 1; i <= steps; i++) {
           const Z = normalRandom();
           
-          const weights = lastLogReturns.map((_, i) => Math.exp(i / lastLogReturns.length));
+          const weights = lastLogReturns.map((_, idx) => Math.exp(idx / lastLogReturns.length));
           const sumWeights = weights.reduce((a, b) => a + b, 0);
-          const weightedMean = lastLogReturns.reduce((sum, r, i) => sum + r * weights[i], 0) / sumWeights;
+          const weightedMean = lastLogReturns.reduce((sum, r, idx) => sum + r * weights[idx], 0) / sumWeights;
 
           const recentTrend = lastLogReturns.slice(-5).reduce((a, b) => a + b, 0) / 5;
           const trendStrength = lastSigma > 0 ? Math.abs(recentTrend / lastSigma) : 0;
-          const driftAdjustment = trendStrength > 0.5 ? recentTrend * 0.3 : 0;
+          const driftAdjustment = trendStrength > 0.5 ? recentTrend * (type === 'tick' ? 0.1 : 0.3) : 0;
           
           const drift_future = weightedMean + driftAdjustment;
           const diffusion_future = lastSigma * Z;
@@ -356,8 +368,16 @@ function StochasticLab({
         return path;
       };
       
-      const setHistoryFns = [setPredictionAccuracyHistory1t, setPredictionAccuracyHistory3t, setPredictionAccuracyHistory6t, setPredictionAccuracyHistory10t, setPredictionAccuracyHistory20s, setPredictionAccuracyHistory30s, setPredictionAccuracyHistory40s];
-      const pendingRefs = [pendingPredictions1tRef, pendingPredictions3tRef, pendingPredictions6tRef, pendingPredictions10tRef, pendingPredictions20sRef, pendingPredictions30sRef, pendingPredictions40sRef];
+      const setHistoryFns = [
+        setPredictionAccuracyHistory1t, setPredictionAccuracyHistory3t, setPredictionAccuracyHistory6t, 
+        setPredictionAccuracyHistory10t, setPredictionAccuracyHistory15s, setPredictionAccuracyHistory20s, 
+        setPredictionAccuracyHistory30s, setPredictionAccuracyHistory40s, setPredictionAccuracyHistory50s
+      ];
+      const pendingRefs = [
+        pendingPredictions1tRef, pendingPredictions3tRef, pendingPredictions6tRef, 
+        pendingPredictions10tRef, pendingPredictions15sRef, pendingPredictions20sRef, 
+        pendingPredictions30sRef, pendingPredictions40sRef, pendingPredictions50sRef
+      ];
 
       const processPredictionHorizon = (
           horizonTicks: number,
@@ -392,7 +412,7 @@ function StochasticLab({
           processPredictionHorizon(h.ticks, h.window, prices, pendingRefs[i], setHistoryFns[i]);
       });
       
-      const paths = horizons.map(h => projectPath(h.ticks));
+      const paths = horizons.map(h => projectPath(h.ticks, h.type));
 
       horizons.forEach((h, index) => {
           const newFuturePath = paths[index];
@@ -413,9 +433,11 @@ function StochasticLab({
       setFuturePath3t(paths[1].map(p => ({ time: p.time, predicted_3t_ahead: p.price })));
       setFuturePath6t(paths[2].map(p => ({ time: p.time, predicted_6t_ahead: p.price })));
       setFuturePath10t(paths[3].map(p => ({ time: p.time, predicted_10t_ahead: p.price })));
-      setFuturePath20s(paths[4].map(p => ({ time: p.time, predicted_20s_ahead: p.price })));
-      setFuturePath30s(paths[5].map(p => ({ time: p.time, predicted_30s_ahead: p.price })));
-      setFuturePath40s(paths[6].map(p => ({ time: p.time, predicted_40s_ahead: p.price })));
+      setFuturePath15s(paths[4].map(p => ({ time: p.time, predicted_15s_ahead: p.price })));
+      setFuturePath20s(paths[5].map(p => ({ time: p.time, predicted_20s_ahead: p.price })));
+      setFuturePath30s(paths[6].map(p => ({ time: p.time, predicted_30s_ahead: p.price })));
+      setFuturePath40s(paths[7].map(p => ({ time: p.time, predicted_40s_ahead: p.price })));
+      setFuturePath50s(paths[8].map(p => ({ time: p.time, predicted_50s_ahead: p.price })));
     }
     
     setPredictionData(newPredictionData.slice(-200));
@@ -462,19 +484,27 @@ function StochasticLab({
   const accuracy3t = useMemo(() => calculateRollingAccuracy(predictionAccuracyHistory3t), [predictionAccuracyHistory3t]);
   const accuracy6t = useMemo(() => calculateRollingAccuracy(predictionAccuracyHistory6t), [predictionAccuracyHistory6t]);
   const accuracy10t = useMemo(() => calculateRollingAccuracy(predictionAccuracyHistory10t), [predictionAccuracyHistory10t]);
+  const accuracy15s = useMemo(() => calculateRollingAccuracy(predictionAccuracyHistory15s), [predictionAccuracyHistory15s]);
   const accuracy20s = useMemo(() => calculateRollingAccuracy(predictionAccuracyHistory20s), [predictionAccuracyHistory20s]);
   const accuracy30s = useMemo(() => calculateRollingAccuracy(predictionAccuracyHistory30s), [predictionAccuracyHistory30s]);
   const accuracy40s = useMemo(() => calculateRollingAccuracy(predictionAccuracyHistory40s), [predictionAccuracyHistory40s]);
+  const accuracy50s = useMemo(() => calculateRollingAccuracy(predictionAccuracyHistory50s), [predictionAccuracyHistory50s]);
   
    const projectionExperts = useMemo(() => ([
       { name: '1t', vote: futurePath1t.length > 1 ? (futurePath1t[futurePath1t.length - 1].predicted_1t_ahead > futurePath1t[0].predicted_1t_ahead ? 'RISE' : 'FALL') : 'HOLD', accuracy: accuracy1t.percentage },
       { name: '3t', vote: futurePath3t.length > 1 ? (futurePath3t[futurePath3t.length - 1].predicted_3t_ahead > futurePath3t[0].predicted_3t_ahead ? 'RISE' : 'FALL') : 'HOLD', accuracy: accuracy3t.percentage },
       { name: '6t', vote: futurePath6t.length > 1 ? (futurePath6t[futurePath6t.length - 1].predicted_6t_ahead > futurePath6t[0].predicted_6t_ahead ? 'RISE' : 'FALL') : 'HOLD', accuracy: accuracy6t.percentage },
       { name: '10t', vote: futurePath10t.length > 1 ? (futurePath10t[futurePath10t.length - 1].predicted_10t_ahead > futurePath10t[0].predicted_10t_ahead ? 'RISE' : 'FALL') : 'HOLD', accuracy: accuracy10t.percentage },
+      { name: '15s', vote: futurePath15s.length > 1 ? (futurePath15s[futurePath15s.length - 1].predicted_15s_ahead > futurePath15s[0].predicted_15s_ahead ? 'RISE' : 'FALL') : 'HOLD', accuracy: accuracy15s.percentage },
       { name: '20s', vote: futurePath20s.length > 1 ? (futurePath20s[futurePath20s.length - 1].predicted_20s_ahead > futurePath20s[0].predicted_20s_ahead ? 'RISE' : 'FALL') : 'HOLD', accuracy: accuracy20s.percentage },
       { name: '30s', vote: futurePath30s.length > 1 ? (futurePath30s[futurePath30s.length - 1].predicted_30s_ahead > futurePath30s[0].predicted_30s_ahead ? 'RISE' : 'FALL') : 'HOLD', accuracy: accuracy30s.percentage },
       { name: '40s', vote: futurePath40s.length > 1 ? (futurePath40s[futurePath40s.length - 1].predicted_40s_ahead > futurePath40s[0].predicted_40s_ahead ? 'RISE' : 'FALL') : 'HOLD', accuracy: accuracy40s.percentage },
-  ]), [futurePath1t, accuracy1t, futurePath3t, accuracy3t, futurePath6t, accuracy6t, futurePath10t, accuracy10t, futurePath20s, accuracy20s, futurePath30s, accuracy30s, futurePath40s, accuracy40s]);
+      { name: '50s', vote: futurePath50s.length > 1 ? (futurePath50s[futurePath50s.length - 1].predicted_50s_ahead > futurePath50s[0].predicted_50s_ahead ? 'RISE' : 'FALL') : 'HOLD', accuracy: accuracy50s.percentage },
+  ]), [
+      futurePath1t, accuracy1t, futurePath3t, accuracy3t, futurePath6t, accuracy6t, futurePath10t, accuracy10t,
+      futurePath15s, accuracy15s, futurePath20s, accuracy20s, futurePath30s, accuracy30s, 
+      futurePath40s, accuracy40s, futurePath50s, accuracy50s
+  ]);
 
   const strongestSignal = useMemo((): StrongestSignal => {
     let bestSignal: StrongestSignal = { horizon: 'N/A', direction: 'HOLD', certaintyScore: 0, accuracy: 50 };
@@ -520,12 +550,17 @@ function StochasticLab({
     mergePath(futurePath3t); 
     mergePath(futurePath6t); 
     mergePath(futurePath10t);
+    mergePath(futurePath15s);
     mergePath(futurePath20s); 
     mergePath(futurePath30s); 
     mergePath(futurePath40s);
+    mergePath(futurePath50s);
 
     return combined;
-  }, [predictionData, futurePath1t, futurePath3t, futurePath6t, futurePath10t, futurePath20s, futurePath30s, futurePath40s]);
+  }, [
+      predictionData, futurePath1t, futurePath3t, futurePath6t, futurePath10t, 
+      futurePath15s, futurePath20s, futurePath30s, futurePath40s, futurePath50s
+  ]);
 
   const lineData = useMemo(() => {
     if (qqData.length === 0) return [];
@@ -585,15 +620,16 @@ function StochasticLab({
                                     <YAxis domain={['dataMin - 0.5', 'dataMax + 0.5']} label={{ value: 'Preço', angle: -90, position: 'insideLeft' }} />
                                     <Tooltip />
                                     <Legend />
-                                    <Line type="monotone" dataKey="real" stroke="#2563eb" strokeWidth={2.5} dot={false} name="Preço Real" />
-                                    <Line type="monotone" dataKey="predicted_1_tick" stroke="#f59e0b" strokeWidth={1.5} strokeDasharray="3 3" dot={false} name="Previsão (1-Tick)" />
-                                    <Line type="monotone" dataKey="predicted_1t_ahead" stroke="#fbbf24" strokeWidth={2} strokeDasharray="8 4" dot={false} name="Projeção (1 Tick)" />
-                                    <Line type="monotone" dataKey="predicted_3t_ahead" stroke="#a16207" strokeWidth={2} strokeDasharray="8 4" dot={false} name="Projeção (3 Ticks)" />
-                                    <Line type="monotone" dataKey="predicted_6t_ahead" stroke="#ef4444" strokeWidth={2} strokeDasharray="8 4" dot={false} name="Projeção (6 Ticks)" />
-                                    <Line type="monotone" dataKey="predicted_10t_ahead" stroke="#8b5cf6" strokeWidth={2} strokeDasharray="8 4" dot={false} name="Projeção (10t)" />
-                                    <Line type="monotone" dataKey="predicted_20s_ahead" stroke="#3b82f6" strokeWidth={2} strokeDasharray="8 4" dot={false} name="Projeção (20s)" />
-                                    <Line type="monotone" dataKey="predicted_30s_ahead" stroke="#f472b6" strokeWidth={2} strokeDasharray="8 4" dot={false} name="Projeção (30s)" />
-                                    <Line type="monotone" dataKey="predicted_40s_ahead" stroke="#10b981" strokeWidth={2} strokeDasharray="8 4" dot={false} name="Projeção (40s)" />
+                                    <Line type="monotone" dataKey="real" stroke="hsl(var(--chart-1))" strokeWidth={2.5} dot={false} name="Preço Real" />
+                                    <Line type="monotone" dataKey="predicted_1t_ahead" stroke="hsl(var(--chart-2))" strokeWidth={2} strokeDasharray="8 4" dot={false} name="Projeção (1 Tick)" />
+                                    <Line type="monotone" dataKey="predicted_3t_ahead" stroke="hsl(var(--chart-3))" strokeWidth={2} strokeDasharray="8 4" dot={false} name="Projeção (3 Ticks)" />
+                                    <Line type="monotone" dataKey="predicted_6t_ahead" stroke="hsl(var(--chart-4))" strokeWidth={2} strokeDasharray="8 4" dot={false} name="Projeção (6 Ticks)" />
+                                    <Line type="monotone" dataKey="predicted_10t_ahead" stroke="hsl(var(--chart-5))" strokeWidth={2} strokeDasharray="8 4" dot={false} name="Projeção (10t)" />
+                                    <Line type="monotone" dataKey="predicted_15s_ahead" stroke="hsl(var(--chart-6))" strokeWidth={2} strokeDasharray="8 4" dot={false} name="Projeção (15s)" />
+                                    <Line type="monotone" dataKey="predicted_20s_ahead" stroke="hsl(var(--chart-7))" strokeWidth={2} strokeDasharray="8 4" dot={false} name="Projeção (20s)" />
+                                    <Line type="monotone" dataKey="predicted_30s_ahead" stroke="hsl(var(--chart-8))" strokeWidth={2} strokeDasharray="8 4" dot={false} name="Projeção (30s)" />
+                                    <Line type="monotone" dataKey="predicted_40s_ahead" stroke="hsl(var(--chart-9))" strokeWidth={2} strokeDasharray="8 4" dot={false} name="Projeção (40s)" />
+                                    <Line type="monotone" dataKey="predicted_50s_ahead" stroke="hsl(var(--chart-10))" strokeWidth={2} strokeDasharray="8 4" dot={false} name="Projeção (50s)" />
                                   </LineChart>
                                 </ResponsiveContainer>
                               </div>
@@ -673,104 +709,6 @@ function StochasticLab({
   );
 }
 
-const VolatilityAutopilotInterface = ({ 
-    autopilot,
-    children,
-    projectionExperts,
-}: { 
-    autopilot: ReturnType<typeof useMasterAutopilot>;
-    children?: React.ReactNode,
-    projectionExperts: {name: string, accuracy: number}[],
-}) => {
-    return (
-        <Card>
-            <CardHeader>
-                <CardTitle className="font-headline flex items-center gap-2">
-                    <Bot className="h-5 w-5 text-primary" />
-                    Piloto Automático Preditivo
-                </CardTitle>
-                <CardDescription>
-                    Executa trades automaticamente com base na confirmação dupla de especialistas.
-                </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-                <div className="flex items-center justify-between rounded-lg border p-4">
-                    <Label htmlFor="autopilot-switch" className="font-semibold">Ativar Piloto</Label>
-                    <Switch
-                        id="autopilot-switch"
-                        checked={autopilot.isAutopilotOn}
-                        onCheckedChange={autopilot.toggleAutopilot}
-                    />
-                </div>
-                 <Alert className={cn(
-                     "text-sm",
-                     autopilot.masterState.trigger.signal === 'HOLD' && "bg-muted/50",
-                     autopilot.masterState.trigger.signal !== 'HOLD' && "bg-green-500/10 border-green-500/50 text-green-700",
-                 )}>
-                    <AlertTitle className="font-semibold">Status do Piloto</AlertTitle>
-                    <AlertDescription>
-                        {autopilot.masterState.trigger.reason}
-                    </AlertDescription>
-                </Alert>
-                {children}
-                <Alert className="mt-4 bg-blue-50 border-blue-200">
-                    <AlertTitle className="text-blue-900 font-semibold flex items-center gap-2">
-                        <Settings className="h-4 w-4"/>
-                        Assertividade vs Thresholds
-                    </AlertTitle>
-                    <AlertDescription>
-                        <div className="grid grid-cols-2 md:grid-cols-3 gap-2 mt-2 text-xs">
-                            {Object.keys(autopilot.riskManager.thresholds).map((horizon) => {
-                                const expert = projectionExperts?.find(p => p.name === horizon);
-                                const accuracy = expert?.accuracy || 0;
-                                const threshold = autopilot.riskManager.thresholds[horizon];
-                                const effectiveAccuracy = Math.max(accuracy, 100 - accuracy);
-                                const passes = effectiveAccuracy >= threshold;
-                                
-                                return (
-                                    <div key={horizon} className={cn(
-                                        "flex flex-col p-2 rounded border",
-                                        passes 
-                                            ? "bg-green-100 border-green-300 text-green-900" 
-                                            : "bg-red-100 border-red-300 text-red-900"
-                                    )}>
-                                        <div className="font-mono font-bold text-sm">{horizon}</div>
-                                        <div className="font-mono text-xs">
-                                            {effectiveAccuracy.toFixed(1)}% / {threshold}%
-                                        </div>
-                                        <div className="text-xs font-bold">
-                                            {passes ? '✅ PASSA' : '❌ BLOQUEIA'}
-                                        </div>
-                                    </div>
-                                );
-                            })}
-                        </div>
-                        <p className="text-xs text-muted-foreground mt-3 border-t pt-2">
-                            💡 <strong>Verde</strong> = Assertividade Efetiva ≥ Limiar | 
-                            <strong className="text-red-600"> Vermelho</strong> = Bloqueado
-                        </p>
-                    </AlertDescription>
-                </Alert>
-            </CardContent>
-        </Card>
-    );
-}
-
-const Header = () => {
-    const { activeSymbol, setActiveSymbol, assetGroups, isAssetsLoading } = useDerivApi();
-    return (
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-            <h1 className="text-3xl font-bold tracking-tight font-headline shrink-0 text-center md:text-left"> Análise de Volatilidade </h1>
-            <div className="flex-1 grid grid-cols-1 md:grid-cols-2 gap-4 items-center">
-                <div className="flex justify-center">
-                    <AssetSelector selectedAsset={activeSymbol || ""} onAssetChange={(asset) => setActiveSymbol(asset)} assetGroups={assetGroups} isAssetsLoading={isAssetsLoading} />
-                </div>
-                <div className="flex justify-center"> <ApiStatusIndicator /> </div>
-            </div>
-        </div>
-    );
-};
-
 const PageContent = () => {
     const { chartData, activeSymbol, operationsLog, sellContract, clearActiveContracts, durationLimits } = useDerivApi();
     const { user } = useAuth();
@@ -781,6 +719,7 @@ const PageContent = () => {
     const [consensusData, setConsensusData] = useState<any>(null);
     
     const autopilot = useMasterAutopilot();
+    const { isAutopilotOn, runAutopilotCycle } = autopilot;
     
     const form = useForm<VolatilityTraderFormValues>({
         resolver: zodResolver(volatilityTraderSchema),
@@ -792,13 +731,13 @@ const PageContent = () => {
 
     const handleConsensusUpdate = useCallback((data: any) => {
         setConsensusData(data);
-        if (autopilot.isAutopilotOn && data?.projectionExperts) {
+        if (isAutopilotOn && data?.projectionExperts) {
             const assertiveness: Record<string, AssertivenessData> = Object.fromEntries(
                 data.projectionExperts.map((p: any) => [p.name, { accuracy: p.accuracy, vote: p.vote }])
             );
-            autopilot.runAutopilotCycle(assertiveness);
+            runAutopilotCycle(assertiveness);
         }
-    }, [autopilot.isAutopilotOn, autopilot.runAutopilotCycle]);
+    }, [isAutopilotOn, runAutopilotCycle]);
 
 
     useEffect(() => {
@@ -991,3 +930,101 @@ export default function VolatilityAnalysisPage() {
         </DerivApiProvider>
     );
 }
+
+const VolatilityAutopilotInterface = ({ 
+    autopilot,
+    children,
+    projectionExperts,
+}: { 
+    autopilot: ReturnType<typeof useMasterAutopilot>;
+    children?: React.ReactNode,
+    projectionExperts: {name: string, accuracy: number}[],
+}) => {
+    return (
+        <Card>
+            <CardHeader>
+                <CardTitle className="font-headline flex items-center gap-2">
+                    <Bot className="h-5 w-5 text-primary" />
+                    Piloto Automático Preditivo
+                </CardTitle>
+                <CardDescription>
+                    Executa trades automaticamente com base na confirmação dupla de especialistas.
+                </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+                <div className="flex items-center justify-between rounded-lg border p-4">
+                    <Label htmlFor="autopilot-switch" className="font-semibold">Ativar Piloto</Label>
+                    <Switch
+                        id="autopilot-switch"
+                        checked={autopilot.isAutopilotOn}
+                        onCheckedChange={autopilot.toggleAutopilot}
+                    />
+                </div>
+                 <Alert className={cn(
+                     "text-sm",
+                     autopilot.masterState.trigger.signal === 'HOLD' && "bg-muted/50",
+                     autopilot.masterState.trigger.signal !== 'HOLD' && "bg-green-500/10 border-green-500/50 text-green-700",
+                 )}>
+                    <AlertTitle className="font-semibold">Status do Piloto</AlertTitle>
+                    <AlertDescription>
+                        {autopilot.masterState.trigger.reason}
+                    </AlertDescription>
+                </Alert>
+                {children}
+                <Alert className="mt-4 bg-blue-50 border-blue-200">
+                    <AlertTitle className="text-blue-900 font-semibold flex items-center gap-2">
+                        <Settings className="h-4 w-4"/>
+                        Assertividade vs Thresholds
+                    </AlertTitle>
+                    <AlertDescription>
+                        <div className="grid grid-cols-2 md:grid-cols-3 gap-2 mt-2 text-xs">
+                            {Object.keys(autopilot.riskManager.thresholds).map((horizon) => {
+                                const expert = projectionExperts?.find(p => p.name === horizon);
+                                const accuracy = expert?.accuracy || 0;
+                                const threshold = autopilot.riskManager.thresholds[horizon];
+                                const effectiveAccuracy = Math.max(accuracy, 100 - accuracy);
+                                const passes = effectiveAccuracy >= threshold;
+                                
+                                return (
+                                    <div key={horizon} className={cn(
+                                        "flex flex-col p-2 rounded border",
+                                        passes 
+                                            ? "bg-green-100 border-green-300 text-green-900" 
+                                            : "bg-red-100 border-red-300 text-red-900"
+                                    )}>
+                                        <div className="font-mono font-bold text-sm">{horizon}</div>
+                                        <div className="font-mono text-xs">
+                                            {effectiveAccuracy.toFixed(1)}% / {threshold}%
+                                        </div>
+                                        <div className="text-xs font-bold">
+                                            {passes ? '✅ PASSA' : '❌ BLOQUEIA'}
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                        <p className="text-xs text-muted-foreground mt-3 border-t pt-2">
+                            💡 <strong>Verde</strong> = Assertividade Efetiva ≥ Limiar | 
+                            <strong className="text-red-600"> Vermelho</strong> = Bloqueado
+                        </p>
+                    </AlertDescription>
+                </Alert>
+            </CardContent>
+        </Card>
+    );
+}
+
+const Header = () => {
+    const { activeSymbol, setActiveSymbol, assetGroups, isAssetsLoading } = useDerivApi();
+    return (
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <h1 className="text-3xl font-bold tracking-tight font-headline shrink-0 text-center md:text-left"> Análise de Volatilidade </h1>
+            <div className="flex-1 grid grid-cols-1 md:grid-cols-2 gap-4 items-center">
+                <div className="flex justify-center">
+                    <AssetSelector selectedAsset={activeSymbol || ""} onAssetChange={(asset) => setActiveSymbol(asset)} assetGroups={assetGroups} isAssetsLoading={isAssetsLoading} />
+                </div>
+                <div className="flex justify-center"> <ApiStatusIndicator /> </div>
+            </div>
+        </div>
+    );
+};

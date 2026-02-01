@@ -108,7 +108,7 @@ export function useMasterAutopilot() {
     mode: 'Normal',
     thresholds: {
       '1t': 65, '3t': 65, '6t': 68, '10t': 62,
-      '20s': 60, '30s': 58, '40s': 55,
+      '15s': 58, '20s': 60, '30s': 58, '40s': 55, '50s': 55,
     },
     lastAdjustmentReason: 'N/A'
   });
@@ -135,13 +135,15 @@ export function useMasterAutopilot() {
   const [highFrequencyThreshold, setHighFrequencyThreshold] = useState(10);
   
   const horizons = useMemo(() => [
-      { name: '1t', ticks: 1, window: 6 },
-      { name: '3t', ticks: 3, window: 6 },
-      { name: '6t', ticks: 6, window: 6 },
-      { name: '10t', ticks: 10, window: 10 },
-      { name: '20s', ticks: 20, window: 10 },
-      { name: '30s', ticks: 30, window: 75 },
-      { name: '40s', ticks: 40, window: 75 },
+      { name: '1t', ticks: 1, type: 'tick', window: 6 },
+      { name: '3t', ticks: 3, type: 'tick', window: 6 },
+      { name: '6t', ticks: 6, type: 'tick', window: 6 },
+      { name: '10t', ticks: 10, type: 'tick', window: 10 },
+      { name: '15s', ticks: 15, type: 'second', window: 10 },
+      { name: '20s', ticks: 20, type: 'second', window: 10 },
+      { name: '30s', ticks: 30, type: 'second', window: 75 },
+      { name: '40s', ticks: 40, type: 'second', window: 75 },
+      { name: '50s', ticks: 50, type: 'second', window: 75 },
   ], []);
 
   const toggleAutopilot = useCallback((checked: boolean) => {
@@ -152,89 +154,89 @@ export function useMasterAutopilot() {
     }
   }, [toast]);
   
-  const executeTradeAction = useCallback(async (
-    initiator: OperationInitiator, 
-    signalOverride: Signal, 
-    triggeredBy: [string, string] | null,
-    currentUser: User | null,
-    triggerReason: string,
-    currentAssertiveness: Record<string, AssertivenessData>
-  ) => {
-      const signalToUse = signalOverride;
-      
-      if (signalToUse === 'HOLD' || !activeSymbol || !triggeredBy) {
-          toast({ title: "Nenhum sinal válido", description: "O gatilho preditivo não detectou uma oportunidade.", variant: "destructive"});
-          return;
-      }
+    const executeTradeAction = useCallback(async (
+        initiator: OperationInitiator, 
+        signalOverride: Signal, 
+        triggeredBy: [string, string] | null,
+        currentUser: User | null,
+        triggerReason: string,
+        currentAssertiveness: Record<string, AssertivenessData>
+    ) => {
+        const signalToUse = signalOverride;
+        
+        if (signalToUse === 'HOLD' || !activeSymbol || !triggeredBy) {
+            toast({ title: "Nenhum sinal válido", description: "O gatilho preditivo não detectou uma oportunidade.", variant: "destructive"});
+            return;
+        }
 
-      toast({ title: `🤖 Master Autopilot: Ordem ${initiator} ${signalToUse}!`, description: `Executando ${contractType} em ${activeSymbol}`});
+        toast({ title: `🤖 Master Autopilot: Ordem ${initiator} ${signalToUse}!`, description: `Executando ${contractType} em ${activeSymbol}`});
 
-      try {
-          if (contractType === 'Rise/Fall') {
-              const longerHorizon = triggeredBy[1]; 
-              const durationMatch = longerHorizon.match(/(\d+)([st])/);
-              
-              let duration: number;
-              let durationUnit: 's' | 't';
+        try {
+            if (contractType === 'Rise/Fall') {
+                const longerHorizon = triggeredBy[1]; 
+                const durationMatch = longerHorizon.match(/(\d+)([st])/);
+                
+                let duration: number;
+                let durationUnit: 's' | 't';
 
-              if (durationMatch) {
-                  duration = parseInt(durationMatch[1], 10);
-                  durationUnit = durationMatch[2] as 's' | 't';
-              } else {
-                  duration = 15;
-                  durationUnit = 's';
-              }
+                if (durationMatch) {
+                    duration = parseInt(durationMatch[1], 10);
+                    durationUnit = durationMatch[2] as 's' | 't';
+                } else {
+                    duration = 15;
+                    durationUnit = 's';
+                }
 
-              const tradeResult = await executeRiseFallTrade(
-                  signalToUse === 'RISE' ? 'CALL' : 'PUT',
-                  1.0, 
-                  activeSymbol,
-                  signalToUse.toLowerCase() as 'rise' | 'fall',
-                  duration,
-                  durationUnit,
-                  initiator
-              );
+                const tradeResult = await executeRiseFallTrade(
+                    signalToUse === 'RISE' ? 'CALL' : 'PUT',
+                    1.0, 
+                    activeSymbol,
+                    signalToUse.toLowerCase() as 'rise' | 'fall',
+                    duration,
+                    durationUnit,
+                    initiator
+                );
 
-              if (tradeResult.success && tradeResult.contractId && currentUser) {
-                  tradesInFlightRef.current.set(tradeResult.contractId, { triggeredBy });
+                if (tradeResult.success && tradeResult.contractId && currentUser) {
+                    tradesInFlightRef.current.set(tradeResult.contractId, { triggeredBy });
 
-                  const logId = `pred_log_${tradeResult.contractId}`;
-                  const logContext = {
-                      triggerReason: triggerReason,
-                      assertivenessSnapshot: Object.entries(currentAssertiveness).map(([horizon, data]) => ({
-                          horizon,
-                          accuracy: data.accuracy,
-                          vote: data.vote,
-                      })),
-                  };
+                    const logId = `pred_log_${tradeResult.contractId}`;
+                    const logContext = {
+                        triggerReason: triggerReason,
+                        assertivenessSnapshot: Object.entries(currentAssertiveness).map(([horizon, data]) => ({
+                            horizon,
+                            accuracy: data.accuracy,
+                            vote: data.vote,
+                        })),
+                    };
 
-                  const tradeLog: PredictiveTradeLog = {
-                      id: logId,
-                      contractId: tradeResult.contractId,
-                      timestamp: new Date().toISOString(),
-                      asset: activeSymbol,
-                      tradeParams: {
-                          direction: signalToUse,
-                          stake: 1.0,
-                          duration: duration,
-                          durationUnit: durationUnit,
-                      },
-                      context: logContext,
-                      result: 'pending',
-                      pnl: 0,
-                  };
-                  
-                  savePredictiveTradeLog(currentUser.uid, tradeLog);
-              }
+                    const tradeLog: PredictiveTradeLog = {
+                        id: logId,
+                        contractId: tradeResult.contractId,
+                        timestamp: new Date().toISOString(),
+                        asset: activeSymbol,
+                        tradeParams: {
+                            direction: signalToUse,
+                            stake: 1.0,
+                            duration: duration,
+                            durationUnit: durationUnit,
+                        },
+                        context: logContext,
+                        result: 'pending',
+                        pnl: 0,
+                    };
+                    
+                    savePredictiveTradeLog(currentUser.uid, tradeLog);
+                }
 
-          } else {
-              toast({ title: "Funcionalidade Limitada", description: `A execução para ${contractType} ainda não está operacional.`, variant: "default"});
-          }
-      } catch (error) {
-          console.error("Master Autopilot Execution Error:", error);
-          toast({ title: `❌ Erro na Execução ${initiator}`, description: error instanceof Error ? error.message : String(error), variant: "destructive" });
-      }
-  }, [contractType, activeSymbol, executeRiseFallTrade, toast]);
+            } else {
+                toast({ title: "Funcionalidade Limitada", description: `A execução para ${contractType} ainda não está operacional.`, variant: "default"});
+            }
+        } catch (error) {
+            console.error("Master Autopilot Execution Error:", error);
+            toast({ title: `❌ Erro na Execução ${initiator}`, description: error instanceof Error ? error.message : String(error), variant: "destructive" });
+        }
+    }, [contractType, activeSymbol, executeRiseFallTrade, toast]);
   
   const runAutopilotCycle = useCallback((newAssertiveness: Record<string, AssertivenessData>) => {
     if (priceTicks.length < 50) {
@@ -285,8 +287,7 @@ export function useMasterAutopilot() {
         highFrequencyThreshold,
     );
     
-    setMasterState(prev => ({
-        ...prev,
+    setMasterState({
         isReady: true,
         trigger: { signal: newTriggerSignal, reason: newTriggerReason, triggeredBy: newTriggeredBy },
         manualTrigger: { signal: manualSignal.newTriggerSignal, reason: manualSignal.newTriggerReason },
@@ -294,7 +295,7 @@ export function useMasterAutopilot() {
         microstructure: microFeatures,
         currentRegime: detectedRegimeResult,
         assertiveness: newAssertiveness,
-    }));
+    });
     
     const openMasterTrade = operationsLog.find(op => op.initiator === 'Piloto' && op.status === 'pending');
     if (isAutopilotOn && newTriggerSignal !== 'HOLD' && !cooldownRef.current && !openMasterTrade) {
