@@ -4,6 +4,15 @@ Este documento regista a jornada de desenvolvimento e as principais funcionalida
 
 ---
 
+### v5.1.0 - Otimização e Foco: Descontinuação da Central de Comando
+
+**Mudanças Estratégicas:**
+- **Descontinuação da Página "Master Autopilot":** A página `/master-autopilot` e sua interface complexa foram removidas. O sistema estava a consumir recursos excessivos e a sua funcionalidade foi consolidada.
+- **Foco na "Análise de Volatilidade":** Toda a lógica do piloto automático preditivo, anteriormente partilhada, está agora concentrada e otimizada exclusivamente para a página `/volatility-analysis`.
+- **Navegação Simplificada:** O link para a "Central de Comando" foi removido do menu principal, simplificando a navegação e focando nos ecossistemas de trading mais estáveis e performáticos.
+
+---
+
 ### v5.0.0 - O Comandante Tático: Master Autopilot V5 (Regime-Aware)
 
 **Funcionalidades Principais:**

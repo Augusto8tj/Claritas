@@ -84,11 +84,6 @@ const navItems = [
     label: "Portfólio",
   },
   {
-    href: "/master-autopilot",
-    icon: Crosshair,
-    label: "Master Autopilot",
-  },
-  {
     href: "/backtesting",
     icon: TestTube,
     label: "Backtesting",
