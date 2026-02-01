@@ -19,6 +19,7 @@ function isRegimeCompatible(contract: string, regime: MarketRegime): boolean {
 
 const getEffectiveVote = (expert: AssertivenessData | undefined): 'RISE' | 'FALL' | 'HOLD' => {
     if (!expert) return 'HOLD';
+    // Se a precisão é < 50%, o modelo está ativamente errado, então invertemos o voto.
     return expert.accuracy > 50 
         ? expert.vote 
         : (expert.vote === 'RISE' ? 'FALL' : (expert.vote === 'FALL' ? 'RISE' : 'HOLD'));
@@ -53,6 +54,7 @@ function calcularSegundos(horizonName: string): number {
   return match[2] === 't' ? value * 2 : value;
 }
 
+
 export function evaluateTriggerConditions(
   newAssertiveness: Record<string, AssertivenessData>,
   horizons: { name: string; ticks: number; window: number }[],
@@ -79,6 +81,7 @@ export function evaluateTriggerConditions(
     for (let i = 1; i < horizons.length; i++) {
       const currentHorizonName = horizons[i].name;
       const prevHorizonName = horizons[i-1].name;
+      
       const currentExpert = newAssertiveness[currentHorizonName];
       const prevExpert = newAssertiveness[prevHorizonName];
 
@@ -103,18 +106,21 @@ export function evaluateTriggerConditions(
         
         const agreedVote = currentEffectiveVote;
         
-        // CORREÇÃO: A lógica de HF deve considerar o horizonte MAIS CURTO do par.
+        // 1. PRIMEIRO: Verificar se é HF
         const shorterHorizonSeconds = Math.min(calcularSegundos(currentHorizonName), calcularSegundos(prevHorizonName));
         const isHighFrequencySignal = shorterHorizonSeconds <= highFrequencyThresholdSeconds;
         
+        // 2. SE não for HF E filtro macro estiver ligado, ENTÃO validar com EMA
         if (!isHighFrequencySignal && isMacroTrendCheckEnabled) {
-          // A EMA dinâmica deve usar o período do horizonte mais LONGO para uma visão macro mais estável.
           const longerHorizonSeconds = Math.max(calcularSegundos(currentHorizonName), calcularSegundos(prevHorizonName));
-          const dynamicPeriod = Math.max(Math.round(longerHorizonSeconds / 2), 20);
+          
+          // AJUSTE CONFORME SOLICITADO PELO UTILIZADOR
+          const dynamicPeriod = Math.max(5, longerHorizonSeconds);
+          
           const dynamicEMA = calculateDynamicEMA(botCandleData, dynamicPeriod);
           
           if (dynamicEMA === null) {
-            newTriggerReason = `EMA(${dynamicPeriod}) indisponível.`;
+            newTriggerReason = `EMA(${dynamicPeriod}) indisponível (dados insuficientes).`;
             continue;
           }
           
@@ -123,6 +129,7 @@ export function evaluateTriggerConditions(
           if (currentPrice > dynamicEMA + deadZone) dynamicTrend = 'UP';
           else if (currentPrice < dynamicEMA - deadZone) dynamicTrend = 'DOWN';
           
+          // Validação estrita
           if ((agreedVote === 'RISE' && dynamicTrend !== 'UP') ||
               (agreedVote === 'FALL' && dynamicTrend !== 'DOWN')) {
             newTriggerReason = `Sinal ${agreedVote} bloqueado: preço ${currentPrice.toFixed(4)} vs EMA(${dynamicPeriod})=${dynamicEMA.toFixed(4)} (${dynamicTrend})`;
@@ -130,6 +137,7 @@ export function evaluateTriggerConditions(
           }
         }
         
+        // 3. Se passou, aprovar
         newTriggerSignal = agreedVote;
         newTriggeredBy = [prevHorizonName, currentHorizonName];
         newTriggerReason = `✅ ${agreedVote} confirmado por ${prevHorizonName}+${currentHorizonName}`;
@@ -137,6 +145,8 @@ export function evaluateTriggerConditions(
         break;
       }
     }
+  } else {
+    // Lógica para especialista único (pode ser adicionada aqui se necessário)
   }
   
   return { newTriggerSignal, newTriggerReason, newTriggeredBy };
