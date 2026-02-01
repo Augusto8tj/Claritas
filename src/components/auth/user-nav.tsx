@@ -1,4 +1,4 @@
-// /src/features/auth/components/user-nav.tsx
+// /src/components/auth/user-nav.tsx
 "use client";
 
 import Link from "next/link";

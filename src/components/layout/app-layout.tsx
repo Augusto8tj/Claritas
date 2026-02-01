@@ -46,7 +46,7 @@ import {
 } from "@/components/ui/sidebar";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Logo } from "@/components/icons";
-import { UserNav } from "@/features/auth/components/user-nav";
+import { UserNav } from "@/components/auth/user-nav";
 import { useAuth } from "@/features/auth/hooks/use-auth";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useSidebar } from "@/components/ui/sidebar";

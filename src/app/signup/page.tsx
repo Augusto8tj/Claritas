@@ -1,5 +1,5 @@
 // /src/app/signup/page.tsx
-import { SignupForm } from "@/features/auth/components/signup-form";
+import { SignupForm } from "@/components/auth/signup-form";
 import { Logo } from "@/components/icons";
 
 export default function SignupPage() {

@@ -12,7 +12,7 @@ import {
 } from "react";
 import type { User } from "firebase/auth";
 import { Loader2 } from "lucide-react";
-import { AuthGuard } from "@/features/auth/components/auth-guard";
+import { AuthGuard } from "@/components/auth/auth-guard";
 import { useUser as useFirebaseUser } from "@/firebase";
 
 type AuthContextType = {
