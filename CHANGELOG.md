@@ -4,6 +4,19 @@ Este documento regista a jornada de desenvolvimento e as principais funcionalida
 
 ---
 
+### v5.0.0 - O Comandante Tático: Master Autopilot V5 (Regime-Aware)
+
+**Funcionalidades Principais:**
+- **Implementação do Master Autopilot V5:** O sistema de comando foi promovido para se tornar um **comandante tático, consciente do regime de mercado**.
+- **Análise Tática de Regime:** O piloto agora classifica o mercado em 5 regimes (`trending_bull`, `ranging`, etc.) e valida se o contrato selecionado pelo operador é compatível com o cenário atual antes de operar.
+- **Laboratório Preditivo (`/volatility-analysis`):** Criação de um ambiente de análise quantitativa avançado para dissecar e prever o comportamento de ativos.
+- **Comitê de Especialistas Temporais:** O laboratório utiliza um comitê de especialistas de IA, cada um focado num horizonte de tempo (1t, 3t, 10s, etc.), que usam o modelo **Movimento Browniano Geométrico (GBM)** para gerar projeções.
+- **Meritocracia Preditiva:** O sistema mede constantemente a **Assertividade** (taxa de acerto) de cada especialista e usa essa métrica para ponderar as suas decisões, criando um ciclo de aprendizagem e auto-avaliação.
+- **Gestão de Risco Granular e Adaptativa:** A penalidade ou recompensa após um trade é agora aplicada **individualmente** aos especialistas que participaram na decisão, tornando o sistema mais justo e rápido a adaptar-se.
+- **Confirmação Tripla:** Foi adicionada uma configuração experimental que exige o consenso de três especialistas vizinhos (anterior, atual e próximo) para aumentar a robustez dos sinais de entrada.
+
+---
+
 ### v4.0.0 (IA Lab) - O Mestre da Volatilidade: Deriv Accumulators
 
 **Funcionalidades Principais:**
@@ -114,14 +127,14 @@ Este documento regista a jornada de desenvolvimento e as principais funcionalida
 ### v0.3.0 - O Conselho de 22 Analistas de IA
 
 **Funcionalidades Principais:**
-- **Criação do `strategy-council-flow`:** Desenvolvimento do fluxo de IA mestre, responsável por gerar um conselho de 22 robôs analistas, cada um com uma estratégia e parâmetros específicos.
+- **Criação do \`strategy-council-flow\`:** Desenvolvimento do fluxo de IA mestre, responsável por gerar um conselho de 22 robôs analistas, cada um com uma estratégia e parâmetros específicos.
 - **Calibração Dinâmica:** O conselho passou a ser "consciente do tempo". A IA ajusta os parâmetros de todos os analistas com base no horizonte de tempo selecionado (de Ticks a Diário).
-- **Motor de Cálculo Abrangente:** Criação do `DerivFinanceLib.ts` e `indicator-service.ts`, um motor robusto para calcular todos os 22 indicadores técnicos necessários para alimentar o conselho.
-- **Lógica de Votação:** Implementação da lógica base para que cada analista possa emitir um voto de `RISE`, `FALL`, ou `HOLD`.
+- **Motor de Cálculo Abrangente:** Criação do \`DerivFinanceLib.ts\` e \`indicator-service.ts\`, um motor robusto para calcular todos os 22 indicadores técnicos necessários para alimentar o conselho.
+- **Lógica de Votação:** Implementação da lógica base para que cada analista possa emitir um voto de \`RISE\`, \`FALL\`, ou \`HOLD\`.
 
 **Correções Críticas:**
 - Resolvido um bug onde os robôs perdiam o acesso aos dados do motor de cálculo ("perda de visão").
-- Corrigido um erro de `module not found` que impedia a construção do conselho.
+- Corrigido um erro de \`module not found\` que impedia a construção do conselho.
 
 ---
 
@@ -131,7 +144,7 @@ Este documento regista a jornada de desenvolvimento e as principais funcionalida
 - **Integração com a API da Deriv:** Estabelecimento da conexão WebSocket para receber dados de mercado em tempo real e executar operações.
 - **Gráfico de Trading Avançado:** Implementação de um gráfico renderizado em SVG, estável, responsivo, com suporte para múltiplos tipos (Linha/Velas), indicadores sobrepostos e ferramentas de zoom.
 - **Copiloto de Trade:** Primeira versão do assistente de IA para negociação, capaz de analisar o desempenho e sugerir operações.
-- **Estrutura de Hooks:** Criação do `useDerivApi` para centralizar a comunicação com a API e do `useRobotCouncil` como o "cérebro" da operação.
+- **Estrutura de Hooks:** Criação do \`useDerivApi\` para centralizar a comunicação com a API e do \`useRobotCouncil\` como o "cérebro" da operação.
 
 ---
 

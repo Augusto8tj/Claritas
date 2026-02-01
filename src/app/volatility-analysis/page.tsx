@@ -165,6 +165,16 @@ const ProjectionExpertsPanel = ({ experts }: { experts: { name: string; vote: 'R
     </Card>
 );
 
+/**
+ * @fileOverview O `StochasticLab` é o coração do motor preditivo da aplicação.
+ * Opera como um "Cientista de IA" que executa modelos de Movimento Browniano Geométrico (GBM)
+ * em múltiplos horizontes de tempo para prever o comportamento do preço.
+ * 
+ * Filosofia: Comitê de Especialistas Temporais
+ * 1.  Previsão Multi-Horizonte: Gera seis projeções de preço distintas para diferentes prazos.
+ * 2.  Modelo Preditivo (GBM): Projeta o futuro com base na tendência (drift) e volatilidade (diffusion).
+ * 3.  Meritocracia Preditiva: Avalia constantemente a "Assertividade" (taxa de acerto) de cada especialista.
+ */
 function StochasticLab({ 
     realData, 
     onConsensusUpdate, 
@@ -331,6 +341,12 @@ function StochasticLab({
       const lastPriceValue = prices[prices.length - 1];
       const lastTime = prices.length - 1;
 
+      /**
+       * Projeta um caminho futuro do preço usando GBM.
+       * @param steps Número de passos à frente para projetar.
+       * @param type Domínio do tempo ('tick' ou 'second').
+       * @returns Array de pontos de preço projetados.
+       */
       const projectPath = (steps: number, type: 'tick' | 'second') => {
         const windowSize = type === 'tick' ? 20 : 50;
         if (logReturns.length < windowSize || lastPriceValue === null) return [];
@@ -346,14 +362,17 @@ function StochasticLab({
         for (let i = 1; i <= steps; i++) {
           const Z = normalRandom();
           
+          // Média ponderada exponencialmente para dar mais peso aos retornos recentes.
           const weights = lastLogReturns.map((_, idx) => Math.exp(idx / lastLogReturns.length));
           const sumWeights = weights.reduce((a, b) => a + b, 0);
           const weightedMean = lastLogReturns.reduce((sum, r, idx) => sum + r * weights[idx], 0) / sumWeights;
 
+          // Ajusta o drift com base na tendência de curtíssimo prazo.
           const recentTrend = lastLogReturns.slice(-5).reduce((a, b) => a + b, 0) / 5;
           const trendStrength = lastSigma > 0 ? Math.abs(recentTrend / lastSigma) : 0;
           const driftAdjustment = trendStrength > 0.5 ? recentTrend * (type === 'tick' ? 0.1 : 0.3) : 0;
           
+          // Equação do Movimento Browniano Geométrico (GBM)
           const drift_future = weightedMean + driftAdjustment;
           const diffusion_future = lastSigma * Z;
 
@@ -379,6 +398,14 @@ function StochasticLab({
         pendingPredictions30sRef, pendingPredictions40sRef, pendingPredictions50sRef
       ];
 
+      /**
+       * Processa uma previsão pendente para calcular a assertividade.
+       * @param horizonTicks Número de ticks/segundos da previsão.
+       * @param accuracyWindow Janela de histórico para a média móvel da assertividade.
+       * @param prices Array de preços reais.
+       * @param pendingPredictionsRef Ref para as previsões pendentes deste horizonte.
+       * @param setAccuracyHistory Função para atualizar o estado do histórico de assertividade.
+       */
       const processPredictionHorizon = (
           horizonTicks: number,
           accuracyWindow: number,
@@ -389,14 +416,17 @@ function StochasticLab({
           const currentTimeIndex = prices.length - 1;
           let newHistory: boolean[] = [];
 
+          // Filtra previsões que já "amadureceram".
           const updatedPending = pendingPredictionsRef.current.filter((pred) => {
               if (currentTimeIndex >= pred.startTimeIndex + horizonTicks) {
                   const actualEndPrice = prices[pred.startTimeIndex + horizonTicks];
-                  if (actualEndPrice === undefined) return true;
+                  if (actualEndPrice === undefined) return true; // Mantém se o dado futuro ainda não chegou
+                  
+                  // Compara a direção prevista com a real.
                   const predictedDirection = pred.predictedEndPrice > pred.startPrice;
                   const actualDirection = actualEndPrice > pred.startPrice;
-                  newHistory.push(predictedDirection === actualDirection);
-                  return false;
+                  newHistory.push(predictedDirection === actualDirection); // true = acerto, false = erro
+                  return false; // Remove a previsão da lista de pendentes.
               }
               return true;
           });
@@ -420,6 +450,7 @@ function StochasticLab({
               const newPredictionTimeIndex = newFuturePath[0].time;
               const alreadyPending = pendingRefs[index].current.some(p => p.startTimeIndex === newPredictionTimeIndex);
               if (!alreadyPending) {
+                  // Guarda a previsão para ser verificada no futuro.
                   pendingRefs[index].current.push({
                       startTimeIndex: newPredictionTimeIndex,
                       startPrice: newFuturePath[0].price,
@@ -621,7 +652,7 @@ function StochasticLab({
                                     <Tooltip />
                                     <Legend />
                                     <Line type="monotone" dataKey="real" stroke="hsl(var(--chart-1))" strokeWidth={2.5} dot={false} name="Preço Real" />
-                                    <Line type="monotone" dataKey="predicted_1_tick" stroke="hsl(var(--chart-2))" strokeWidth={1.5} dot={false} name="Previsão (1 Tick)" />
+                                    <Line type="monotone" dataKey="predicted_1t_ahead" stroke="hsl(var(--chart-2))" strokeWidth={1.5} dot={false} name="Projeção (1 Tick)" />
                                     <Line type="monotone" dataKey="predicted_3t_ahead" stroke="hsl(var(--chart-3))" strokeWidth={2} strokeDasharray="8 4" dot={false} name="Projeção (3 Ticks)" />
                                     <Line type="monotone" dataKey="predicted_6t_ahead" stroke="hsl(var(--chart-4))" strokeWidth={2} strokeDasharray="8 4" dot={false} name="Projeção (6 Ticks)" />
                                     <Line type="monotone" dataKey="predicted_10t_ahead" stroke="hsl(var(--chart-5))" strokeWidth={2} strokeDasharray="8 4" dot={false} name="Projeção (10t)" />
