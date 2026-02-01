@@ -66,8 +66,6 @@ const calculateDynamicThresholds = (
   
   if (regime === 'ranging') {
     Object.keys(dynamicThresholds).forEach(key => {
-      // CORREÇÃO: Reduz o limiar para especialistas de longo prazo em mercados laterais,
-      // tornando-os mais sensíveis, em vez de penalizá-los.
       if (key.endsWith('s') && parseInt(key) > 20) {
         dynamicThresholds[key] = Math.max(55, dynamicThresholds[key] - 5); 
       }
@@ -115,8 +113,9 @@ export function useMasterAutopilot() {
     },
     lastAdjustmentReason: 'N/A'
   });
-  const processedTradesRef = useRef<Set<number>>(new Set());
+  
   const tradesInFlightRef = useRef<Map<number, { triggeredBy: [string, string] | null }>>(new Map());
+  const processedTradesRef = useRef<Set<number>>(new Set());
 
   const [masterState, setMasterState] = useState<MasterAutopilotState>({
     isReady: false,
@@ -354,55 +353,55 @@ export function useMasterAutopilot() {
     }));
   }, []);
 
-    useEffect(() => {
-        const lastFinishedTrade = operationsLog.find(op => op.status !== 'pending' && op.initiator === 'Piloto' && !processedTradesRef.current.has(op.id));
-        if (lastFinishedTrade) {
-            processedTradesRef.current.add(lastFinishedTrade.id);
-            const isWin = lastFinishedTrade.result !== undefined && lastFinishedTrade.result >= 0;
-            
-            const tradeContext = tradesInFlightRef.current.get(lastFinishedTrade.id);
-            
-            setRiskManager(prev => {
-                const newThresholds = { ...prev.thresholds };
-                let adjustmentReason: string;
+  useEffect(() => {
+    const lastFinishedTrade = operationsLog.find(op => op.status !== 'pending' && op.initiator === 'Piloto' && !processedTradesRef.current.has(op.id));
+    if (lastFinishedTrade) {
+        processedTradesRef.current.add(lastFinishedTrade.id);
+        const isWin = lastFinishedTrade.result !== undefined && lastFinishedTrade.result >= 0;
+        
+        const tradeContext = tradesInFlightRef.current.get(lastFinishedTrade.id);
+        
+        setRiskManager(prev => {
+            const newThresholds = { ...prev.thresholds };
+            let adjustmentReason: string;
 
-                if (tradeContext && tradeContext.triggeredBy) {
-                    const horizonsToAdjust = tradeContext.triggeredBy;
-                    adjustmentReason = `Ajuste para ${horizonsToAdjust.join(' & ')}: ${isWin ? 'Recompensa (reduzindo limiar)' : 'Penalidade (aumentando limiar)'}.`;
-                    
-                    horizonsToAdjust.forEach(horizon => {
-                        if (newThresholds[horizon]) {
-                            if (isWin) {
-                                newThresholds[horizon] = Math.max(55, newThresholds[horizon] - 2); 
-                            } else {
-                                newThresholds[horizon] = Math.min(95, newThresholds[horizon] + 5); 
-                            }
+            if (tradeContext && tradeContext.triggeredBy) {
+                const horizonsToAdjust = tradeContext.triggeredBy;
+                adjustmentReason = `Ajuste para ${horizonsToAdjust.join(' & ')}: ${isWin ? 'Recompensa (reduzindo limiar)' : 'Penalidade (aumentando limiar)'}.`;
+                
+                horizonsToAdjust.forEach(horizon => {
+                    if (newThresholds[horizon]) {
+                        if (isWin) {
+                            newThresholds[horizon] = Math.max(55, newThresholds[horizon] - 2); 
+                        } else {
+                            newThresholds[horizon] = Math.min(95, newThresholds[horizon] + 5); 
                         }
-                    });
-                    tradesInFlightRef.current.delete(lastFinishedTrade.id);
-
-                } else {
-                    adjustmentReason = `Ajuste Global (Contexto de trade não encontrado): ${isWin ? 'Relaxando limiares.' : 'Aumentando cautela.'}.`;
-                    console.warn(`[RiskManager] Contexto não encontrado para o trade ${lastFinishedTrade.id}. Aplicando ajuste global.`);
-                    if (!isWin) {
-                        Object.keys(newThresholds).forEach(key => {
-                            newThresholds[key] = Math.min(95, newThresholds[key] + 5);
-                        });
-                    } else {
-                         Object.keys(newThresholds).forEach(key => {
-                            newThresholds[key] = Math.max(55, newThresholds[key] - 1);
-                        });
                     }
-                }
+                });
+                tradesInFlightRef.current.delete(lastFinishedTrade.id);
 
-                return {
-                    mode: isWin ? 'Normal' : 'Cautious',
-                    thresholds: newThresholds,
-                    lastAdjustmentReason: adjustmentReason,
-                };
-            });
-        }
-    }, [operationsLog]);
+            } else {
+                adjustmentReason = `Ajuste Global (Contexto de trade não encontrado): ${isWin ? 'Relaxando limiares.' : 'Aumentando cautela.'}.`;
+                console.warn(`[RiskManager] Contexto não encontrado para o trade ${lastFinishedTrade.id}. Aplicando ajuste global.`);
+                if (!isWin) {
+                    Object.keys(newThresholds).forEach(key => {
+                        newThresholds[key] = Math.min(95, newThresholds[key] + 5);
+                    });
+                } else {
+                     Object.keys(newThresholds).forEach(key => {
+                        newThresholds[key] = Math.max(55, newThresholds[key] - 1);
+                    });
+                }
+            }
+
+            return {
+                mode: isWin ? 'Normal' : 'Cautious',
+                thresholds: newThresholds,
+                lastAdjustmentReason: adjustmentReason,
+            };
+        });
+    }
+  }, [operationsLog]);
     
   return {
     isAutopilotOn,
@@ -429,3 +428,5 @@ export function useMasterAutopilot() {
     macroTrend: 'NONE'
   };
 }
+
+    
