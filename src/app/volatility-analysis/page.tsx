@@ -581,7 +581,7 @@ function StochasticLab({
     });
 
     return combined;
-  }, [priceData, realData]);
+  }, [priceData]);
 
   return (
     <Card className="h-full flex flex-col col-span-1 lg:col-span-3">
@@ -657,7 +657,7 @@ function VolatilityProjectionChart({ chartData, horizons, className }: {
                     <LineChart data={chartData}>
                         <CartesianGrid strokeDasharray="3 3" />
                         <XAxis dataKey="time" label={{ value: 'Tempo (ticks)', position: 'insideBottom', offset: -5 }} />
-                        <YAxis tickCount={6} domain={['auto', 'auto']} label={{ value: 'Preço', angle: -90, position: 'insideLeft' }} tickFormatter={(value) => typeof value === 'number' ? value.toFixed(4) : value}/>
+                        <YAxis tickCount={8} domain={['dataMin - 1', 'dataMax + 1']} allowDataOverflow={true} label={{ value: 'Preço', angle: -90, position: 'insideLeft' }} tickFormatter={(value) => typeof value === 'number' ? value.toFixed(4) : value}/>
                         <Tooltip />
                         <Legend />
                         <Line type="monotone" dataKey="price" stroke="hsl(var(--chart-1))" strokeWidth={2.5} dot={false} name="Preço Real" />
