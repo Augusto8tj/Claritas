@@ -8,7 +8,7 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Responsi
 import { TrendingUp, TrendingDown, HelpCircle, Bot, FlaskConical, Target, Info, Brain, Zap, Send, Loader2, ShieldCheck, GitBranch, BarChart, Activity, AlertTriangle, Power, ChevronsUpDown, Settings } from 'lucide-react';
 import { DerivApiProviderV2 as DerivApiProvider, useDerivApiV2 as useDerivApi } from "@/features/trading/hooks/use-deriv-api-v2";
 import { AssetSelectorV2 as AssetSelector } from "@/components/deriv-trader/asset-selector-v2";
-import { ApiStatusIndicatorV2 as ApiStatusIndicator } from "@/components/deriv-trader/ApiStatusIndicatorV2";
+import { ApiStatusIndicatorV2 as ApiStatusIndicator } from "@/features/trading/components/deriv-trader/ApiStatusIndicatorV2";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { ScrollArea } from '@/components/ui/scroll-area';
 import type { ChartData, CandleData, Operation, PredictiveTradeLog, OperationInitiator } from '@/lib/types';
@@ -237,15 +237,15 @@ function StochasticLab({
   };
   
   const horizons = useMemo(() => [
-      { name: '1t', ticks: 1, type: 'tick' },
-      { name: '3t', ticks: 3, type: 'tick' },
-      { name: '6t', ticks: 6, type: 'tick' },
-      { name: '10t', ticks: 10, type: 'tick' },
-      { name: '15s', ticks: 15, type: 'second' },
-      { name: '20s', ticks: 20, type: 'second' },
-      { name: '30s', ticks: 30, type: 'second' },
-      { name: '40s', ticks: 40, type: 'second' },
-      { name: '50s', ticks: 50, type: 'second' },
+      { name: '1t', ticks: 1, type: 'tick', window: 6 },
+      { name: '3t', ticks: 3, type: 'tick', window: 6 },
+      { name: '6t', ticks: 6, type: 'tick', window: 6 },
+      { name: '10t', ticks: 10, type: 'tick', window: 10 },
+      { name: '15s', ticks: 15, type: 'second', window: 10 },
+      { name: '20s', ticks: 20, type: 'second', window: 10 },
+      { name: '30s', ticks: 30, type: 'second', window: 75 },
+      { name: '40s', ticks: 40, type: 'second', window: 75 },
+      { name: '50s', ticks: 50, type: 'second', window: 75 },
   ], []);
 
   useEffect(() => {
