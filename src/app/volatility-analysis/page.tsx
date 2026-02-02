@@ -35,6 +35,8 @@ import { Slider } from '@/components/ui/slider';
 import { Separator } from '@/components/ui/separator';
 import { useMasterAutopilot } from '@/features/trading/hooks/use-master-autopilot';
 import type { AssertivenessData } from '@/features/trading/hooks/use-master-autopilot';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+
 
 // Aproximação da função quantil normal inversa
 const normalQuantile = (p: number): number => {
@@ -474,7 +476,41 @@ function StochasticLab({
                            <CardContent className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
                                 <StatItem label="Vol. Anualizada" value={stats.annualizedVol + '%'} />
                                 <StatItem label="Assimetria (Skewness)" value={stats.skewness} />
-                                <StatItem label="Curtose (Kurtosis)" value={... 
+                                <StatItem label="Curtose (Kurtosis)" value={stats.kurtosis} />
+                           </CardContent>
+                       </Card>
+                     )}
+                    
+                     <Tabs value={activeTab} onValueChange={setActiveTab} className="mt-4">
+                        <TabsList className="grid grid-cols-1">
+                            <TabsTrigger value="audit">Auditoria Preditiva ({predictiveLogs.length} Registos)</TabsTrigger>
+                        </TabsList>
+                        <TabsContent value="audit" className="mt-4">
+                          <PredictiveLogViewer logs={predictiveLogs} onDeleteLog={onDeletePredictiveLog} deletingLogId={deletingPredictiveLogId} />
+                        </TabsContent>
+                     </Tabs>
+                </div>
+            </ScrollArea>
+        </CardContent>
+    </Card>
+  );
+}
+
+
+function PageContent() {
+  const { 
+    activeSymbol, setActiveSymbol, assetGroups, isAssetsLoading, 
+    chartData, operationsLog, sellContract, clearActiveContracts,
+    priceTicks, durationLimits,
+  } = useDerivApi();
+  const { toast } = useToast();
+  const [consensusData, setConsensusData] = useState<any>(null);
+  const [predictiveLogs, setPredictiveLogs] = useState<PredictiveTradeLog[]>([]);
+  const [isLogsLoading, setIsLogsLoading] = useState(true);
+  const [deletingPredictiveLogId, setDeletingPredictiveLogId] = useState<string | null>(null);
+  const { user } = useAuth();
+  
+  const autopilot = useMasterAutopilot();
   const { isAutopilotOn, runAutopilotCycle } = autopilot;
   
   const form = useForm<VolatilityTraderFormValues>({
