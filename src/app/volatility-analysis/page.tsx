@@ -601,7 +601,7 @@ function StochasticLab({
                                     <Tooltip />
                                     <Legend />
                                     <Line type="monotone" dataKey="real" stroke="hsl(var(--chart-1))" strokeWidth={3} dot={false} name="Preço Real" />
-                                    <Line type="monotone" dataKey="predicted_1_tick" stroke="hsl(var(--chart-2))" strokeWidth={2} dot={false} name="Projeção Histórica (1T)" />
+                                    <Line type="monotone" dataKey="predicted_1t_ahead" stroke="hsl(var(--chart-2))" strokeWidth={2} dot={false} name="Projeção Histórica (1T)" />
                                     <Line type="monotone" dataKey="predicted_3t_ahead" stroke="hsl(var(--chart-3))" strokeWidth={1.5} strokeDasharray="5 5" dot={false} name="Projeção (3t)" />
                                     <Line type="monotone" dataKey="predicted_6t_ahead" stroke="hsl(var(--chart-4))" strokeWidth={1.5} strokeDasharray="5 5" dot={false} name="Projeção (6t)" />
                                     <Line type="monotone" dataKey="predicted_10t_ahead" stroke="hsl(var(--chart-5))" strokeWidth={1.5} strokeDasharray="5 5" dot={false} name="Projeção (10t)" />
@@ -690,7 +690,7 @@ function StochasticLab({
 }
 
 const PageContent = () => {
-    const { chartData, activeSymbol, operationsLog, sellContract, clearActiveContracts, durationLimits } = useDerivApi();
+    const { chartData, activeSymbol, operationsLog, sellContract, clearActiveContracts, durationLimits, priceTicks } = useDerivApi();
     const { user } = useAuth();
     const { toast } = useToast();
     const [predictiveLogs, setPredictiveLogs] = useState<PredictiveTradeLog[]>([]);
@@ -909,7 +909,12 @@ const PageContent = () => {
                                 </CollapsibleContent>
                             </Collapsible>
                         </VolatilityAutopilotInterface>
-                        <OperationsLogV2 operations={operationsLog} sellContract={sellContract} priceTicks={[]} clearActiveContracts={clearActiveContracts}/>
+                        <OperationsLogV2 
+                          operations={operationsLog} 
+                          sellContract={sellContract} 
+                          priceTicks={priceTicks} 
+                          clearActiveContracts={clearActiveContracts}
+                        />
                     </div>
                 </div>
             </div>
@@ -1022,5 +1027,3 @@ const Header = () => {
         </div>
     );
 };
-
-
