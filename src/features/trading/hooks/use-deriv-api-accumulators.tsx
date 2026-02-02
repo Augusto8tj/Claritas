@@ -139,6 +139,7 @@ export const DerivApiProviderAccumulators = ({ children }: { children: ReactNode
   const [activeSymbol, setActiveSymbol] = useState<string | null>('1HZ10V');
   const [chartData, setChartData] = useState<ChartData[]>([]);
   const [botCandleData, setBotCandleData] = useState<CandleData[]>([]);
+  const [priceTicks, setPriceTicks] = useState<TickData[]>([]); // CORREÇÃO: Variável de estado adicionada
   const [isChartLoading, setIsChartLoading] = useState(true);
   const [chartError, setChartError] = useState<string | null>(null);
   const [chartType, setChartType] = useState<ChartType>('Area');
@@ -460,7 +461,7 @@ export const DerivApiProviderAccumulators = ({ children }: { children: ReactNode
     setChartError(null);
     setChartData([]);
     setBotCandleData([]);
-    setPriceTicks([]);
+    setPriceTicks([]); // CORREÇÃO: Resetar priceTicks
     
     try {
         const currentChartType = chartTypeRef.current;
@@ -489,7 +490,7 @@ export const DerivApiProviderAccumulators = ({ children }: { children: ReactNode
         } else if (isUIArea) {
             const tickHistory = await getHistoricalData(symbol, 'ticks', 1000);
             setChartData(tickHistory as TickData[]);
-            setPriceTicks(tickHistory as TickData[]);
+            setPriceTicks(tickHistory as TickData[]); // CORREÇÃO: Popular a partir do histórico
         } else if (isUICandle) {
             const uiHistory = await getHistoricalData(symbol, 'candles', 1000, currentTimePeriod);
             setChartData(uiHistory as CandleData[]);
@@ -618,7 +619,7 @@ export const DerivApiProviderAccumulators = ({ children }: { children: ReactNode
                     case 'tick':
                         if (response.subscription?.id === tickSubscriptionIdRef.current) {
                             const newTick = { epoch: response.tick.epoch, price: response.tick.quote };
-                            setPriceTicks(prev => {
+                            setPriceTicks(prev => { // CORREÇÃO: Atualizar o estado de ticks
                                 const newTicks = [...prev, newTick];
                                 if (newTicks.length > MAX_DATA_POINTS) return newTicks.slice(1);
                                 return newTicks;
@@ -653,6 +654,14 @@ export const DerivApiProviderAccumulators = ({ children }: { children: ReactNode
                              else if (response.subscription?.id === activeSubscriptionIdRef.current) {
                                 setChartData(prev => addDataPoint(prev, newCandle));
                              }
+                             
+                             // CORREÇÃO: Atualizar ticks a partir da vela
+                             setPriceTicks(prev => {
+                                const newTickFromCandle = { epoch: newCandle.epoch, price: newCandle.close };
+                                const newTicks = [...prev, newTickFromCandle];
+                                if (newTicks.length > MAX_DATA_POINTS) return newTicks.slice(1);
+                                return newTicks;
+                             });
                     
                              setDataVersion(v => v + 1);
                         }
