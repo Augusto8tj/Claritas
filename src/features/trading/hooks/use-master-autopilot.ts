@@ -141,6 +141,7 @@ export function useMasterAutopilot() {
   const tradesInFlightRef = useRef<Map<number, { triggeredBy: string[] | null }>>(new Map());
   const processedTradesRef = useRef<Set<number>>(new Set());
   const tradeStatsRef = useRef({ totalTrades: 0, wins: 0 });
+  const horizonCooldownsRef = useRef<Map<string, number>>(new Map());
 
   const [masterState, setMasterState] = useState<MasterAutopilotState>({
     isReady: false,
@@ -353,11 +354,28 @@ export function useMasterAutopilot() {
     const { trigger, assertiveness } = masterState;
     const openMasterTrade = operationsLog.find(op => op.initiator === 'Piloto' && op.status === 'pending');
     
-    if (isAutopilotOn && trigger.signal !== 'HOLD' && !cooldownRef.current.active && (!openMasterTrade || allowMultiplePositions)) {
+    // NOVO: Verifica se algum dos especialistas que disparou o gatilho está em cooldown.
+    const now = Date.now();
+    const isAnyTriggeringHorizonOnCooldown = trigger.triggeredBy?.some(horizon => {
+        const cooldownEnd = horizonCooldownsRef.current.get(horizon);
+        return cooldownEnd && now < cooldownEnd;
+    });
+
+    if (isAutopilotOn && trigger.signal !== 'HOLD' && !isAnyTriggeringHorizonOnCooldown && !cooldownRef.current.active && (!openMasterTrade || allowMultiplePositions)) {
       
       executeTradeAction('Piloto', trigger.signal, trigger.triggeredBy, user, trigger.reason, assertiveness)
         .then(({ duration, unit }) => {
-            // A lógica de cooldown agora é acionada quando o trade termina
+            if (duration > 0 && trigger.triggeredBy) {
+                // Após executar o trade, aplica um cooldown específico aos horizontes que o dispararam.
+                const tradeDurationMs = (unit === 's' ? duration : duration * 2) * 1000;
+                // O cooldown é 1.5x a duração do trade, com um mínimo de 10 segundos.
+                const horizonCooldownMs = Math.max(tradeDurationMs * 1.5, 10000); 
+                const cooldownEnd = Date.now() + horizonCooldownMs;
+
+                trigger.triggeredBy.forEach(horizon => {
+                    horizonCooldownsRef.current.set(horizon, cooldownEnd);
+                });
+            }
         });
     }
   }, [masterState, isAutopilotOn, operationsLog, user, executeTradeAction, allowMultiplePositions]);
