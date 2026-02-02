@@ -434,7 +434,7 @@ export async function getPredictiveTradeLogs(userId: string): Promise<any[]> {
         return snapshot.docs.map(d => d.data());
     } catch (error) {
         console.error(`[Service Error] getPredictiveTradeLogs for user ${userId} failed:`, error);
-        return [];
+        throw error;
     }
 }
 

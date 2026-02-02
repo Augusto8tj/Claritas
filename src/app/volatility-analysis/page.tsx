@@ -691,9 +691,13 @@ function PageContent() {
       try {
         const fetched = await getPredictiveTradeLogs(user.uid);
         setPredictiveLogs(fetched.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()));
-      } catch (error) {
+      } catch (error: any) {
         console.error("Failed to fetch predictive logs:", error);
         toast({ title: "Erro ao Carregar Logs", description: "Não foi possível buscar os dados de auditoria preditiva.", variant: "destructive" });
+        errorEmitter.emit('permission-error', new FirestorePermissionError({
+            path: `users/${user.uid}/predictive_logs_v1`,
+            operation: 'list'
+        }));
       } finally {
         setIsLogsLoading(false);
       }
