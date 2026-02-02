@@ -68,19 +68,57 @@ const detectNoiseRegime = (experts: Record<string, AssertivenessData>): boolean 
 };
 
 const calculateOptimalStake = (winRate: number, dailyBalance: number, payout: number = 0.95): number => {
-    if (winRate < 51.5) return 1.0; 
-    const p = winRate / 100;
-    const q = 1 - p;
-    const b = payout;
-
-    const kellyFraction = (p * b - q) / b;
-    if (kellyFraction <= 0) return 1.0;
-
-    const quarterKelly = kellyFraction / 4;
-    const calculatedStake = dailyBalance * quarterKelly;
-
-    return Math.max(1.0, Math.min(calculatedStake, dailyBalance * 0.05));
+    return 1.00;
 };
+
+function calculateDynamicThresholds(
+  regime: MarketRegime,
+  indicators: Indicators | null,
+  baseThresholds: Record<string, number>
+): Record<string, number> {
+  const newThresholds = { ...baseThresholds };
+  if (!indicators || !indicators.atr || !indicators.ma?.long) {
+    return newThresholds;
+  }
+
+  // Normalized ATR as a simple volatility measure
+  const volatility = indicators.atr / indicators.ma.long;
+
+  Object.keys(newThresholds).forEach(horizon => {
+    let adjustment = 0;
+
+    // Adjust based on volatility: higher volatility requires a higher (stricter) threshold.
+    if (volatility > 0.015) {
+      adjustment += 2;
+    } else if (volatility < 0.005) {
+      adjustment -= 2;
+    }
+
+    // Adjust based on market regime
+    switch (regime) {
+      case 'trending_bull':
+      case 'trending_bear':
+        // In clear trends, we can be slightly less strict.
+        adjustment -= 1;
+        break;
+      case 'ranging':
+        // In ranging markets, be more cautious.
+        adjustment += 1;
+        break;
+      case 'high_volatility':
+      case 'breakout':
+        // Be significantly more cautious during high volatility or breakouts.
+        adjustment += 3;
+        break;
+    }
+
+    // Apply adjustments and clamp the threshold within a reasonable range.
+    const newThreshold = (baseThresholds[horizon] || 55) + adjustment;
+    newThresholds[horizon] = Math.max(51, Math.min(75, newThreshold));
+  });
+
+  return newThresholds;
+}
 
 
 export function useMasterAutopilot() {
@@ -478,3 +516,5 @@ export function useMasterAutopilot() {
     macroTrend: 'NONE'
   };
 }
+
+    
