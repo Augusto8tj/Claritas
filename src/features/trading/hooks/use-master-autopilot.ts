@@ -152,6 +152,7 @@ export function useMasterAutopilot() {
   const processedTradesRef = useRef<Set<number>>(new Set());
   const tradeStatsRef = useRef({ totalTrades: 0, wins: 0 });
   const horizonCooldownsRef = useRef<Map<string, number>>(new Map());
+  const executionLockRef = useRef(false);
 
   const [masterState, setMasterState] = useState<MasterAutopilotState>({
     isReady: false,
@@ -371,6 +372,13 @@ export function useMasterAutopilot() {
 
     if (isAutopilotOn && trigger.signal !== 'HOLD' && !isAnyTriggeringHorizonOnCooldown && !cooldownRef.current.active && (!openMasterTrade || allowMultiplePositions)) {
       
+      // Verifica a trava
+      if (executionLockRef.current) {
+        return;
+      }
+      // Ativa a trava
+      executionLockRef.current = true;
+      
       executeTradeAction('Piloto', trigger.signal, trigger.triggeredBy, user, trigger.reason, assertiveness)
         .then(({ duration, unit }) => {
             if (duration > 0 && trigger.triggeredBy) {
@@ -382,6 +390,12 @@ export function useMasterAutopilot() {
                     horizonCooldownsRef.current.set(horizon, cooldownEnd);
                 });
             }
+        })
+        .finally(() => {
+            // Liberta a trava após um curto atraso para permitir a atualização do estado
+            setTimeout(() => {
+                executionLockRef.current = false;
+            }, 2000); // Atraso de 2 segundos
         });
     }
   }, [masterState, isAutopilotOn, operationsLog, user, executeTradeAction, allowMultiplePositions]);
@@ -516,5 +530,3 @@ export function useMasterAutopilot() {
     macroTrend: 'NONE'
   };
 }
-
-    
