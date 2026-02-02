@@ -7,8 +7,8 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ScatterChart, Scatter } from 'recharts';
 import { TrendingUp, TrendingDown, HelpCircle, Bot, FlaskConical, Target, Info, Brain, Zap, Send, Loader2, ShieldCheck, GitBranch, BarChart, Activity, AlertTriangle, Power, ChevronsUpDown, Settings } from 'lucide-react';
 import { DerivApiProviderV2 as DerivApiProvider, useDerivApiV2 as useDerivApi } from "@/features/trading/hooks/use-deriv-api-v2";
-import { AssetSelectorV2 as AssetSelector } from "@/features/trading/components/deriv-trader/asset-selector-v2";
-import { ApiStatusIndicatorV2 as ApiStatusIndicator } from "@/features/trading/components/deriv-trader/ApiStatusIndicatorV2";
+import { AssetSelectorV2 as AssetSelector } from "@/components/deriv-trader/asset-selector-v2";
+import { ApiStatusIndicatorV2 as ApiStatusIndicator } from "@/components/deriv-trader/ApiStatusIndicatorV2";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { ScrollArea } from '@/components/ui/scroll-area';
 import type { ChartData, CandleData, Operation, PredictiveTradeLog, OperationInitiator } from '@/lib/types';
@@ -16,14 +16,14 @@ import { Progress } from "@/components/ui/progress";
 import { TooltipProvider, Tooltip as ShadTooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { volatilityTraderSchema, type VolatilityTraderFormValues } from "@/features/trading/components/deriv-trader/volatility-trader-interface.types";
-import VolatilityTraderInterface from "@/features/trading/components/deriv-trader/volatility-trader-interface";
-import { OperationsLogV2 } from "@/features/trading/components/deriv-trader/operations-log-v2";
+import { volatilityTraderSchema, type VolatilityTraderFormValues } from "@/components/deriv-trader/volatility-trader-interface.types";
+import VolatilityTraderInterface from "@/components/deriv-trader/volatility-trader-interface";
+import { OperationsLogV2 } from "@/components/deriv-trader/operations-log-v2";
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { useToast } from '@/hooks/use-toast';
-import { getConsensusGradientStyle } from '@/features/trading/components/deriv-trader/utils/get-consensus-gradient-style';
+import { getConsensusGradientStyle } from '@/components/deriv-trader/utils/get-consensus-gradient-style';
 import PredictiveLogViewer from '@/components/deriv-trader/PredictiveLogViewer';
 import { getPredictiveTradeLogs, savePredictiveTradeLog } from '@/services/financial-data-service';
 import { useAuth } from '@/features/auth/hooks/use-auth';
@@ -203,7 +203,10 @@ function StochasticLab({
   const [futurePath40s, setFuturePath40s] = useState<any[]>([]);
   const [futurePath50s, setFuturePath50s] = useState<any[]>([]);
   
-  const [driftCorrectionForDisplay, setDriftCorrectionForDisplay] = useState({drift: 0, mae: 0, rmse: 0});
+  // PARÂMETROS DO MODELO GBM PARA 1HZ10V
+  const ACCURACY_MEMORY = 10;
+  const GBM_SIGMA = 0.10; // Volatilidade anualizada
+  const GBM_DRIFT_TERM = - (GBM_SIGMA * GBM_SIGMA) / 2; // Termo de drift para um martingale: -σ²/2
 
   const [predictionAccuracyHistory1t, setPredictionAccuracyHistory1t] = useState<boolean[]>([]);
   const [predictionAccuracyHistory3t, setPredictionAccuracyHistory3t] = useState<boolean[]>([]);
@@ -215,8 +218,6 @@ function StochasticLab({
   const [predictionAccuracyHistory40s, setPredictionAccuracyHistory40s] = useState<boolean[]>([]);
   const [predictionAccuracyHistory50s, setPredictionAccuracyHistory50s] = useState<boolean[]>([]);
   
-
-  const predictionErrorsRef = useRef<number[]>([]);
   const pendingPredictions1tRef = useRef<{ startTimeIndex: number; startPrice: number; predictedEndPrice: number }[]>([]);
   const pendingPredictions3tRef = useRef<{ startTimeIndex: number; startPrice: number; predictedEndPrice: number }[]>([]);
   const pendingPredictions6tRef = useRef<{ startTimeIndex: number; startPrice: number; predictedEndPrice: number }[]>([]);
@@ -236,20 +237,19 @@ function StochasticLab({
   };
   
   const horizons = useMemo(() => [
-      { name: '1t', ticks: 1, type: 'tick', window: 6 },
-      { name: '3t', ticks: 3, type: 'tick', window: 6 },
-      { name: '6t', ticks: 6, type: 'tick', window: 6 },
-      { name: '10t', ticks: 10, type: 'tick', window: 10 },
-      { name: '15s', ticks: 15, type: 'second', window: 10 },
-      { name: '20s', ticks: 20, type: 'second', window: 10 },
-      { name: '30s', ticks: 30, type: 'second', window: 75 },
-      { name: '40s', ticks: 40, type: 'second', window: 75 },
-      { name: '50s', ticks: 50, type: 'second', window: 75 },
+      { name: '1t', ticks: 1, type: 'tick' },
+      { name: '3t', ticks: 3, type: 'tick' },
+      { name: '6t', ticks: 6, type: 'tick' },
+      { name: '10t', ticks: 10, type: 'tick' },
+      { name: '15s', ticks: 15, type: 'second' },
+      { name: '20s', ticks: 20, type: 'second' },
+      { name: '30s', ticks: 30, type: 'second' },
+      { name: '40s', ticks: 40, type: 'second' },
+      { name: '50s', ticks: 50, type: 'second' },
   ], []);
 
   useEffect(() => {
     const VOL_WINDOW = 50;
-    const ERROR_MEMORY = 50;
     
     if (realData.length < VOL_WINDOW) {
       return;
@@ -296,45 +296,17 @@ function StochasticLab({
     setVolatilityData(volData);
 
     const newPredictionData: any[] = [];
-    
     for (let i = VOL_WINDOW; i < prices.length; i++) {
         const S_prev = prices[i-1];
         const S_real = prices[i];
         
-        const pastLogReturns = logReturns.slice(Math.max(0, i - VOL_WINDOW), i);
-        const meanPastReturn = pastLogReturns.reduce((a, b) => a + b, 0) / pastLogReturns.length;
-        const variance = pastLogReturns.reduce((s, r) => s + Math.pow(r - meanPastReturn, 2), 0) / (pastLogReturns.length - 1);
-        const sigma = Math.sqrt(variance);
-
+        // Simula uma previsão histórica usando o modelo matemático fixo
         const Z = normalRandom();
-        const drift = meanPastReturn;
-        const diffusion = sigma * Math.sqrt(1) * Z;
-        const S_predicted_1_tick = S_prev * Math.exp(drift + diffusion);
+        const S_predicted_1_tick = S_prev * Math.exp(GBM_DRIFT_TERM + GBM_SIGMA * Z);
         
         if (Number.isFinite(S_real) && Number.isFinite(S_predicted_1_tick)) {
             newPredictionData.push({ time: i, real: S_real, predicted_1_tick: S_predicted_1_tick });
-            const error = S_real - S_predicted_1_tick;
-            predictionErrorsRef.current.push(error);
-            if(predictionErrorsRef.current.length > ERROR_MEMORY) {
-              predictionErrorsRef.current.shift();
-            }
         }
-    }
-    
-    if (predictionErrorsRef.current.length > 0) {
-        const errors = predictionErrorsRef.current;
-        const sumSquaredErrors = errors.reduce((a, e) => a + e * e, 0);
-        const sumAbsErrors = errors.reduce((a, e) => a + Math.abs(e), 0);
-        const newMAE = sumAbsErrors / errors.length;
-        const newRMSE = Math.sqrt(sumSquaredErrors / errors.length);
-        const newDrift = errors.reduce((a,e) => a + e, 0) / errors.length;
-        
-        setDriftCorrectionForDisplay(prev => {
-            if (prev.drift !== newDrift || prev.mae !== newMAE) {
-                return { drift: newDrift, mae: newMAE, rmse: newRMSE };
-            }
-            return prev;
-        });
     }
 
     if (prices.length > VOL_WINDOW) {
@@ -342,50 +314,30 @@ function StochasticLab({
       const lastTime = prices.length - 1;
 
       /**
-       * Projeta um caminho futuro do preço usando o modelo de Movimento Browniano Geométrico (GBM).
-       * Este modelo é o padrão da indústria para simular o movimento de preços de ativos financeiros.
-       * 
-       * A fórmula básica é: S(t+Δt) = S(t) × exp((μ - σ²/2)Δt + σ√Δt × Z)
-       * Onde:
-       *  - μ (drift): A tendência média dos retornos recentes.
-       *  - σ (diffusion/volatility): O desvio padrão dos retornos, representando a aleatoriedade.
-       *  - Z: Uma variável aleatória normal padrão.
+       * Projeta um caminho futuro do preço usando o modelo de Movimento Browniano Geométrico (GBM)
+       * com parâmetros FÍXOS para o ativo 1HZ10V (martingale puro).
+       * S(t+1) = S(t) × exp(-σ²/2 + σ × Z)
        * 
        * @param steps Número de passos (ticks ou segundos) à frente para projetar.
-       * @param type O domínio do tempo ('tick' ou 'second'), que influencia a janela de análise.
        * @returns Array de pontos de preço projetados.
        */
-      const projectPath = (steps: number, type: 'tick' | 'second') => {
-        const windowSize = type === 'tick' ? 20 : 50;
-        if (logReturns.length < windowSize || lastPriceValue === null) return [];
-
-        const lastLogReturns = logReturns.slice(-windowSize);
-        const meanLastReturn = lastLogReturns.reduce((a, b) => a + b, 0) / windowSize;
-        const lastVariance = lastLogReturns.reduce((s, r) => s + Math.pow(r - meanLastReturn, 2), 0) / (windowSize - 1);
-        const lastSigma = Math.sqrt(lastVariance);
+      const projectPath = (steps: number) => {
+        if (lastPriceValue === null) return [];
 
         let currentSimPrice = lastPriceValue;
         const path = [{ time: lastTime, price: lastPriceValue }];
         
         for (let i = 1; i <= steps; i++) {
-          const Z = normalRandom();
+          const Z = normalRandom(); // Z ~ N(0,1)
           
-          const weights = lastLogReturns.map((_, idx) => Math.exp(idx / lastLogReturns.length));
-          const sumWeights = weights.reduce((a, b) => a + b, 0);
-          const weightedMean = lastLogReturns.reduce((sum, r, idx) => sum + r * weights[idx], 0) / sumWeights;
-
-          const recentTrend = lastLogReturns.slice(-5).reduce((a, b) => a + b, 0) / 5;
-          const trendStrength = lastSigma > 0 ? Math.abs(recentTrend / lastSigma) : 0;
-          const driftAdjustment = trendStrength > 0.5 ? recentTrend * (type === 'tick' ? 0.1 : 0.3) : 0;
+          const exponent = GBM_DRIFT_TERM + GBM_SIGMA * Z;
           
-          const drift_future = weightedMean + driftAdjustment;
-          const diffusion_future = lastSigma * Z;
-
-          currentSimPrice = currentSimPrice * Math.exp(drift_future + diffusion_future);
+          currentSimPrice = currentSimPrice * Math.exp(exponent);
 
           if (Number.isFinite(currentSimPrice)) {
             path.push({ time: lastTime + i, price: currentSimPrice });
           } else {
+            // Failsafe em caso de cálculo inválido
             path.push({ time: lastTime + i, price: path[path.length - 1].price });
           }
         }
@@ -405,22 +357,10 @@ function StochasticLab({
 
       /**
        * Processa uma previsão pendente para calcular a assertividade.
-       * Este é o núcleo da "Meritocracia Preditiva".
-       * 1. Guarda a previsão direcional (preço final > preço inicial).
-       * 2. Após o tempo do horizonte ter passado, obtém o preço real.
-       * 3. Compara a direção prevista com a direção real.
-       * 4. Adiciona 'true' (acerto) ou 'false' (erro) ao histórico do especialista.
-       * A assertividade é a percentagem de 'true' neste histórico.
-       * 
-       * @param horizonTicks Número de ticks/segundos da previsão.
-       * @param accuracyWindow Janela de histórico para a média móvel da assertividade.
-       * @param prices Array de preços reais.
-       * @param pendingPredictionsRef Ref para as previsões pendentes deste horizonte.
-       * @param setAccuracyHistory Função para atualizar o estado do histórico de assertividade.
+       * Este é o núcleo da "Meritocracia Preditiva". Usa uma janela uniforme.
        */
       const processPredictionHorizon = (
           horizonTicks: number,
-          accuracyWindow: number,
           prices: number[],
           pendingPredictionsRef: React.MutableRefObject<{ startTimeIndex: number; startPrice: number; predictedEndPrice: number }[]>,
           setAccuracyHistory: React.Dispatch<React.SetStateAction<boolean[]>>,
@@ -444,15 +384,15 @@ function StochasticLab({
           pendingPredictionsRef.current = updatedPending;
           
           if (newHistory.length > 0) {
-              setAccuracyHistory(prev => [...prev.slice(-accuracyWindow + newHistory.length), ...newHistory]);
+              setAccuracyHistory(prev => [...prev.slice(-ACCURACY_MEMORY + newHistory.length), ...newHistory]);
           }
       };
       
       horizons.forEach((h, i) => {
-          processPredictionHorizon(h.ticks, h.window, prices, pendingRefs[i], setHistoryFns[i]);
+          processPredictionHorizon(h.ticks, prices, pendingRefs[i], setHistoryFns[i]);
       });
       
-      const paths = horizons.map(h => projectPath(h.ticks, h.type));
+      const paths = horizons.map(h => projectPath(h.ticks));
 
       horizons.forEach((h, index) => {
           const newFuturePath = paths[index];

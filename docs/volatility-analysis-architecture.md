@@ -15,12 +15,19 @@ O objetivo desta página é transcender a análise técnica tradicional, que é 
 A página não é apenas um gráfico; é um **comitê de nove especialistas em IA**, cada um focado num horizonte de tempo diferente: `1t`, `3t`, `6t`, `10t` (ticks), e `15s`, `20s`, `30s`, `40s`, `50s` (segundos). O sistema opera sob os seguintes princípios:
 
 1.  **Previsão Multi-Horizonte:** Em vez de uma única previsão, o sistema gera nove projeções de preço distintas. Isto permite-nos ver se a previsão de curto prazo concorda ou diverge da de longo prazo.
-2.  **Modelo Preditivo (Movimento Browniano Geométrico - GBM):** O coração de cada especialista é o GBM, um modelo padrão em finanças quantitativas. Ele projeta o futuro com base em duas forças:
-    *   **Drift (Tendência):** A média dos retornos recentes. Se o ativo tem subido, a tendência da projeção é de alta.
-    *   **Difusão (Volatilidade):** A aleatoriedade do movimento, baseada no desvio padrão dos retornos recentes.
-3.  **Meritocracia Preditiva (Auto-Avaliação):** O sistema não confia cegamente nas suas próprias previsões. Ele rastreia constantemente o **índice de assertividade** (a taxa de acerto direcional) de cada um dos seus nove especialistas. Projeções que se provam mais confiáveis ganham mais "peso" na decisão final.
+
+2.  **Modelo Preditivo (Movimento Browniano Geométrico - GBM):** O coração de cada especialista é o GBM, um modelo padrão em finanças quantitativas para modelar o preço de ativos. Para o ativo `1HZ10V`, usamos um modelo preciso com parâmetros fixos, pois o seu comportamento matemático é conhecido:
+    *   **Drift (μ):** `0`. O ativo não tem uma tendência de longo prazo (é um martingale).
+    *   **Volatilidade (σ):** `0.10` (10% anualizada).
+    *   **Fórmula Discreta:** Cada passo da projeção `S(t+1)` é calculado a partir do preço anterior `S(t)` usando a fórmula:
+        `S(t+1) = S(t) × exp(-σ²/2 + σ × Z)`
+        Onde `Z` é uma variável aleatória normal padrão. Esta única fórmula, aplicada repetidamente, gera os caminhos futuros possíveis para cada um dos nove especialistas.
+
+3.  **Meritocracia Preditiva (Auto-Avaliação):** O sistema não confia cegamente nas suas próprias previsões. Ele rastreia constantemente o **índice de assertividade** (a taxa de acerto direcional) de cada um dos seus nove especialistas, com base nos seus **últimos 10 resultados**. Projeções que se provam mais confiáveis ganham mais "peso" na decisão final.
+
 4.  **Consenso Ponderado para Decisão:** A decisão final (`RISE` ou `FALL`) não é uma média simples. É o resultado de uma **eleição ponderada**. O voto de cada especialista temporal é ponderado pela sua assertividade histórica. Um especialista com 80% de acerto tem um voto muito mais forte do que um com 55%.
-5.  **Auto-Correção de Erro (Drift Adaptativo):** O sistema mede constantemente o seu erro de previsão de curtíssimo prazo (MAE e RMSE) e calcula um "fator de correção" (drift) para ajustar e refinar as suas futuras projeções, num ciclo de aprendizagem contínua.
+
+5.  **Auto-Correção de Risco (Gestor Adaptativo):** O piloto automático ajusta os seus próprios limiares de risco. Após uma perda, ele aumenta a exigência de assertividade para os especialistas envolvidos. Após uma vitória, ele relaxa gradualmente, criando um ciclo de aprendizagem e auto-preservação.
 
 ---
 
@@ -53,7 +60,7 @@ A página opera como um ecossistema próprio. Aqui estão os ficheiros-chave:
 ### 3.4. Componentes de UI
 
 *   **`src/components/deriv-trader/PredictiveLogViewer.tsx`**: O componente visual que exibe de forma clara o histórico de auditoria guardado no Firestore.
-*   **`src/features/trading/components/deriv-trader/volatility-trader-interface.tsx`**: O painel de negociação manual, que permite que o operador interaja com o sistema.
+*   **`src/components/deriv-trader/volatility-trader-interface.tsx`**: O painel de negociação manual, que permite que o operador interaja com o sistema.
 
 ---
 
