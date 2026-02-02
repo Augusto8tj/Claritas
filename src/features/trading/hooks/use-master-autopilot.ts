@@ -68,20 +68,7 @@ const detectNoiseRegime = (experts: Record<string, AssertivenessData>): boolean 
 };
 
 const calculateOptimalStake = (winRate: number, dailyBalance: number, payout: number = 0.95): number => {
-  const p = winRate / 100;
-  if (p < 0.515) return 1.0;
-
-  const q = 1 - p;
-  const b = payout;
-  
-  const kellyFraction = (p * b - q) / b;
-  if (kellyFraction <= 0) return 1.0;
-  
-  const fractionalKelly = kellyFraction / 4; // Quarter Kelly
-  const stake = dailyBalance * fractionalKelly;
-  
-  // Limitar entre $1.00 e 5% da banca diária
-  return Math.max(1.0, Math.min(stake, dailyBalance * 0.05));
+  return 1.0;
 };
 
 
