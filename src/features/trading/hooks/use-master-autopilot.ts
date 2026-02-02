@@ -137,6 +137,7 @@ export function useMasterAutopilot() {
   const [isTripleConfirmationEnabled, setIsTripleConfirmationEnabled] = useState(false);
   const [isMacroTrendCheckEnabled, setIsMacroTrendCheckEnabled] = useState(true);
   const [highFrequencyThreshold, setHighFrequencyThreshold] = useState(10);
+  const [allowMultiplePositions, setAllowMultiplePositions] = useState(false);
   
   const horizons = useMemo(() => [
       { name: '1t', type: 'tick', window: 6 },
@@ -305,12 +306,12 @@ export function useMasterAutopilot() {
     const { trigger, assertiveness } = masterState;
     const openMasterTrade = operationsLog.find(op => op.initiator === 'Piloto' && op.status === 'pending');
     
-    if (isAutopilotOn && trigger.signal !== 'HOLD' && !cooldownRef.current && !openMasterTrade) {
+    if (isAutopilotOn && trigger.signal !== 'HOLD' && !cooldownRef.current && (!openMasterTrade || allowMultiplePositions)) {
       cooldownRef.current = true;
       executeTradeAction('Piloto', trigger.signal, trigger.triggeredBy, user, trigger.reason, assertiveness);
       setTimeout(() => { cooldownRef.current = false; }, 20000); // 20 segundos de cooldown
     }
-  }, [masterState, isAutopilotOn, operationsLog, user, executeTradeAction]);
+  }, [masterState, isAutopilotOn, operationsLog, user, executeTradeAction, allowMultiplePositions]);
 
   const executeManualTrigger = useCallback(async () => {
     const { manualTrigger, assertiveness } = masterState;
@@ -420,6 +421,8 @@ export function useMasterAutopilot() {
     setIsMacroTrendCheckEnabled,
     highFrequencyThreshold,
     setHighFrequencyThreshold,
+    allowMultiplePositions,
+    setAllowMultiplePositions,
     macroTrend: 'NONE'
   };
 }

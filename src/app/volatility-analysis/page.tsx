@@ -845,6 +845,13 @@ const PageContent = () => {
                                                 </Label>
                                                 <Switch id="macro-trend-switch" checked={autopilot.isMacroTrendCheckEnabled} onCheckedChange={autopilot.setIsMacroTrendCheckEnabled} disabled={autopilot.isAutopilotOn}/>
                                             </div>
+                                             <div className="flex items-center justify-between rounded-lg border p-3 shadow-sm">
+                                                <Label htmlFor="multiple-positions-switch" className="flex flex-col space-y-1 flex-1 pr-4">
+                                                    <span>Permitir Múltiplas Posições</span>
+                                                    <span className="font-normal text-xs text-muted-foreground">Se ativado, o piloto pode abrir novas ordens mesmo com outras já em andamento.</span>
+                                                </Label>
+                                                <Switch id="multiple-positions-switch" checked={autopilot.allowMultiplePositions} onCheckedChange={autopilot.setAllowMultiplePositions} disabled={autopilot.isAutopilotOn}/>
+                                            </div>
                                             
                                             <Separator/>
 
@@ -1015,3 +1022,4 @@ const Header = () => {
         </div>
     );
 };
+
