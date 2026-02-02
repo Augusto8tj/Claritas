@@ -288,7 +288,11 @@ const calculateTechnicalVote = (
           else setVote('FALL', 40, 'Pressão Vendedora');
       }
       
-      // Keep a fallback for generic RSI-like behavior
+      else if (robot.strategyType === 'STOCH_RSI' && isValid(stochRSI)) {
+          if (stochRSI < 0.2) setVote('RISE', 70, 'StochRSI Sobrevenda');
+          else if (stochRSI > 0.8) setVote('FALL', 70, 'StochRSI Sobrecompra');
+      }
+      
       else if (isValid(rsi)) {
           if (rsi < 45) setVote('RISE', 35, 'Zona de Compra (Genérico)');
           else if (rsi > 55) setVote('FALL', 35, 'Zona de Venda (Genérico)');
@@ -802,6 +806,12 @@ export function useRobotCouncilV2(
         
         setVirtualTradeCount(virtualTradesRef.current.length);
 
+        const openCouncilTrade = operationsLog.find(op => op.initiator === 'Conselho' && op.status === 'pending');
+        if (openCouncilTrade) {
+            councilExecutionRef.current.isExecuting = false;
+            return;
+        }
+
         if (consensusReached && consensusDirection !== 'HOLD' && user && consensusProbability > 0.52) {
              if (kellyStake > 0) {
                  
@@ -906,7 +916,7 @@ export function useRobotCouncilV2(
 
   }, [
     isCouncilAutopilotOn, isConnected, activeSymbol, validCandles, priceTicks, 
-    strategyCouncil, timePeriod, confidenceFactor, isMeritocracyOn, consensusSensitivity, dailyBalance, sessionStartTime, user, durationRange, executeTrade, evolveTrigger, durationLimits, sellContract, toast, tradeDecisionLog, isDynamicExitOn, memoizedIndicators
+    strategyCouncil, timePeriod, confidenceFactor, isMeritocracyOn, consensusSensitivity, dailyBalance, sessionStartTime, user, durationRange, executeTrade, evolveTrigger, durationLimits, sellContract, toast, tradeDecisionLog, isDynamicExitOn, memoizedIndicators, operationsLog
   ]);
 
   useEffect(() => {
@@ -970,5 +980,3 @@ function markLogAsProcessed(logs: TradeDecisionLog[], contractId: number): Trade
         log.contractId === contractId ? { ...log, processed: true } : log
     );
 }
-
-    
