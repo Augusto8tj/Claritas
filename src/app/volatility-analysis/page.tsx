@@ -567,36 +567,10 @@ function StochasticLab({
   }, [strongestSignal, onConsensusUpdate, projectionExperts]);
 
   const chartDisplayData = useMemo(() => {
-    const dataSlice = priceData.slice(-200); 
-    const combined = [...dataSlice];
-    
-    Object.values(futurePathsRef.current).forEach(path => {
-        path.forEach(point => {
-          const existingPointIndex = combined.findIndex(p => p.time === point.time);
-          if (existingPointIndex !== -1) {
-            combined[existingPointIndex] = { ...combined[existingPointIndex], ...point };
-          } else {
-            combined.push(point);
-          }
-        });
-    });
-
-    return combined.map(point => {
-        const projectionKeys = Object.keys(point).filter(k => k.startsWith('predicted_'));
-        const prices = projectionKeys.map(k => point[k]).filter(p => p !== null && p !== undefined) as number[];
-        
-        if (prices.length < 2) {
-            return { ...point, median: null };
-        }
-
-        prices.sort((a,b) => a-b);
-        
-        return {
-            ...point,
-            median: prices[Math.floor(prices.length / 2)],
-        };
-    });
+    // Show last 100 data points for a "sliding window" effect
+    return priceData.slice(-100); 
   }, [priceData]);
+
 
   return (
     <Card className="h-full flex flex-col col-span-1 lg:col-span-3">
@@ -620,30 +594,22 @@ function StochasticLab({
                     />
                     
                      <Card className="mt-6">
-                        <CardHeader><CardTitle>Estatísticas Descritivas dos Retornos</CardTitle></CardHeader>
+                        <CardHeader>
+                            <CardTitle>Estatísticas Descritivas dos Retornos</CardTitle>
+                        </CardHeader>
                         <CardContent className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
-                            {!stats.annualizedVol ? (
-                                <>
-                                    <div className="flex flex-col p-2 border-l-2 pl-3 space-y-1">
-                                        <Skeleton className="h-4 w-20" />
-                                        <Skeleton className="h-6 w-16" />
-                                    </div>
-                                    <div className="flex flex-col p-2 border-l-2 pl-3 space-y-1">
-                                        <Skeleton className="h-4 w-24" />
-                                        <Skeleton className="h-6 w-12" />
-                                    </div>
-                                    <div className="flex flex-col p-2 border-l-2 pl-3 space-y-1">
-                                        <Skeleton className="h-4 w-20" />
-                                        <Skeleton className="h-6 w-14" />
-                                    </div>
-                                </>
-                            ) : (
-                                <>
-                                    <StatItem label="Vol. Anualizada" value={stats.annualizedVol + '%'} />
-                                    <StatItem label="Assimetria (Skewness)" value={stats.skewness} />
-                                    <StatItem label="Curtose (Kurtosis)" value={stats.kurtosis} />
-                                </>
-                            )}
+                            <div className="flex flex-col p-2 border-l-2 pl-3 space-y-1">
+                                <Skeleton className="h-4 w-20" />
+                                <Skeleton className="h-6 w-16" />
+                            </div>
+                            <div className="flex flex-col p-2 border-l-2 pl-3 space-y-1">
+                                <Skeleton className="h-4 w-24" />
+                                <Skeleton className="h-6 w-12" />
+                            </div>
+                            <div className="flex flex-col p-2 border-l-2 pl-3 space-y-1">
+                                <Skeleton className="h-4 w-20" />
+                                <Skeleton className="h-6 w-14" />
+                            </div>
                         </CardContent>
                     </Card>
                     
@@ -666,126 +632,74 @@ function VolatilityProjectionChart({ chartData, className }: {
   chartData: any[];
   className?: string;
 }) {
-  const yDomain = useMemo(() => {
-    if (!chartData || chartData.length === 0) return ['auto', 'auto'];
-    
-    let min = Infinity;
-    let max = -Infinity;
-
-    chartData.forEach(d => {
-        const values = Object.values(d).filter(v => typeof v === 'number') as number[];
-        values.forEach(v => {
-            min = Math.min(min, v);
-            max = Math.max(max, v);
-        });
-    });
-    
-    if (min === Infinity) return ['auto', 'auto'];
-
-    const padding = (max - min) * 0.05 || 0.5; // 5% padding or a fixed value
-    return [min - padding, max + padding];
-  }, [chartData]);
-  
   if (!chartData || chartData.length === 0) {
       return (
           <div className={cn("flex flex-col items-center justify-center h-64 text-muted-foreground", className)}>
-              <Bot className="w-12 h-12 mb-4 opacity-30" />
-              <p className="font-semibold">Aguardando dados suficientes do mercado...</p>
-              <p className="text-sm">É necessário um histórico mínimo para a análise estocástica.</p>
+              <Loader2 className="w-12 h-12 mb-4 opacity-30 animate-spin" />
+              <p className="font-semibold">A carregar dados do mercado...</p>
           </div>
       )
   }
 
-  const lastRealPoint = [...chartData].reverse().find(d => d.price !== undefined);
+  const lastRealPoint = chartData.length > 0 ? chartData[chartData.length - 1] : null;
 
   return (
     <Card className={cn("h-[460px]", className)}>
       <CardHeader>
-        <CardTitle>Projeção vs. Realidade</CardTitle>
+        <CardTitle>Preço em Tempo Real (Janela Deslizante)</CardTitle>
         <CardDescription>
-          Comparação entre o preço real do ativo e a projeção mediana da IA.
+          Gráfico de linha simples mostrando os últimos pontos de preço.
         </CardDescription>
       </CardHeader>
 
       <CardContent>
         <ResponsiveContainer width="100%" height={360}>
-          <LineChart data={chartData}>
-            <CartesianGrid strokeDasharray="3 3" opacity={0.4} />
-
-            <XAxis dataKey="time" tick={{ fontSize: 10 }} />
+          <LineChart data={chartData} margin={{ top: 5, right: 30, left: 0, bottom: 5 }}>
+            <CartesianGrid strokeDasharray="3 3" opacity={0.2} />
+            <XAxis dataKey="time" hide={true} />
             <YAxis
-              domain={yDomain as [number, number]}
+              domain={['dataMin - 0.2', 'dataMax + 0.2']}
               tickFormatter={(v) => typeof v === 'number' ? v.toFixed(4) : v}
-              tick={{ fontSize: 10 }}
-              width={80}
-              allowDataOverflow={true}
+              orientation="right"
+              axisLine={false}
+              tickLine={false}
             />
-
-            <Tooltip 
+            <Tooltip
                 contentStyle={{
                     backgroundColor: 'hsl(var(--background))',
                     borderColor: 'hsl(var(--border))',
+                    borderRadius: 'var(--radius)',
                 }}
+                labelFormatter={() => ''}
+                formatter={(value: any) => [value.toFixed(4), 'Preço']}
             />
             
-            {/* PREÇO REAL */}
             <Line
               type="monotone"
               dataKey="price"
-              stroke="hsl(var(--foreground))"
+              stroke="hsl(var(--primary))"
               strokeWidth={2}
               dot={false}
-              name="Preço Real"
+              name="Preço"
               isAnimationActive={false}
             />
 
-            {/* PROJEÇÃO MEDIANA */}
-            <Line
-                type="monotone"
-                dataKey="median"
-                stroke="hsl(var(--primary))"
-                strokeWidth={2}
-                strokeDasharray="5 5"
-                dot={false}
-                name="Projeção Mediana"
-                isAnimationActive={false}
-            />
-
-             {/* MARCADOR DO PONTO ATUAL */}
             {lastRealPoint && (
               <Scatter
                 data={[lastRealPoint]}
-                fill="hsl(var(--foreground))"
+                fill="hsl(var(--primary))"
                 shape="circle"
                 name="Preço Atual"
                 isAnimationActive={false}
               />
             )}
-
           </LineChart>
         </ResponsiveContainer>
-        
-        <div className="flex gap-4 mt-4 text-xs justify-center items-center">
-          <LegendItem color="hsl(var(--foreground))" label="Preço Real" type="solid" />
-          <LegendItem color="hsl(var(--primary))" label="Projeção Mediana" type="dashed" />
-        </div>
       </CardContent>
     </Card>
   );
 }
 
-const LegendItem = ({ color, label, type = 'solid' }: { color: string; label: string; type?: 'solid' | 'dashed' | 'area'; }) => {
-    return (
-        <div className="flex items-center gap-1.5">
-            {type === 'area' ? (
-                <div className="w-3 h-3 rounded-sm" style={{ backgroundColor: color }} />
-            ) : (
-                <div className="w-4 h-px" style={{ borderTop: `2px ${type} ${color}` }} />
-            )}
-            <span>{label}</span>
-        </div>
-    );
-};
 
 function PageContent() {
   const { 
