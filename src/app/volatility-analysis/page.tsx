@@ -19,7 +19,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { volatilityTraderSchema, type VolatilityTraderFormValues } from "@/features/trading/components/deriv-trader/volatility-trader-interface.types";
 import VolatilityTraderInterface from "@/features/trading/components/deriv-trader/volatility-trader-interface";
 import { OperationsLogV2 } from "@/features/trading/components/deriv-trader/operations-log-v2";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { useToast } from '@/hooks/use-toast';
@@ -174,7 +174,7 @@ const ProjectionExpertsPanel = ({ experts, adaptiveDrifts }: { experts: ExpertPr
                         <div key={name} className="flex justify-between items-center bg-background p-2 rounded-md border text-xs">
                             <span className="font-semibold w-12">{name}</span>
                             <div className="flex items-center gap-2 w-32">
-                                <Progress value={wilson.lower * 100} className="h-1.5 flex-1" indicatorClassName={getProgressColor(rawWinRate)} />
+                                <Progress value={rawWinRate} className="h-1.5 flex-1" indicatorClassName={getProgressColor(rawWinRate)} />
                                 <span className="font-mono w-24 text-right">
                                     {rawWinRate.toFixed(0)}%
                                     <span className="text-muted-foreground ml-1">({hits}/{total})</span>
