@@ -4,7 +4,7 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useForm, FormProvider, useFormContext } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Area } from 'recharts';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Area, ReferenceArea, Scatter } from 'recharts';
 import { TrendingUp, TrendingDown, HelpCircle, Bot, FlaskConical, Target, Info, Brain, Zap, Send, Loader2, ShieldCheck, GitBranch, BarChart, Activity, AlertTriangle, Power, ChevronsUpDown, Settings, Sigma, Shield, X, Check, Skull, PlayCircle, PauseCircle } from 'lucide-react';
 import { DerivApiProviderV2 as DerivApiProvider, useDerivApiV2 as useDerivApi } from "@/features/trading/hooks/use-deriv-api-v2";
 import { AssetSelectorV2 as AssetSelector } from "@/features/trading/components/deriv-trader/asset-selector-v2";
@@ -36,6 +36,7 @@ import { Separator } from '@/components/ui/separator';
 import { useMasterAutopilot } from '@/features/trading/hooks/use-master-autopilot';
 import type { AssertivenessData } from '@/features/trading/hooks/use-master-autopilot';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Skeleton } from '@/components/ui/skeleton';
 
 
 /**
@@ -580,7 +581,21 @@ function StochasticLab({
         });
     });
 
-    return combined;
+    return combined.map(point => {
+        const projectionKeys = Object.keys(point).filter(k => k.startsWith('predicted_'));
+        const prices = projectionKeys.map(k => point[k]).filter(p => p !== null && p !== undefined) as number[];
+        
+        if (prices.length < 2) {
+            return { ...point, median: null };
+        }
+
+        prices.sort((a,b) => a-b);
+        
+        return {
+            ...point,
+            median: prices[Math.floor(prices.length / 2)],
+        };
+    });
   }, [priceData]);
 
   return (
@@ -600,20 +615,37 @@ function StochasticLab({
                          <ProjectionExpertsPanel experts={projectionExperts} adaptiveDrifts={adaptiveDriftRef.current} className="md:col-span-3" />
                     </div>
                     
-                    <VolatilityFanChart 
+                    <VolatilityProjectionChart 
                         chartData={chartDisplayData}
                     />
                     
-                     {stats.annualizedVol && (
-                       <Card className="mt-6">
-                           <CardHeader><CardTitle>Estatísticas Descritivas dos Retornos</CardTitle></CardHeader>
-                           <CardContent className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
-                               <StatItem label="Vol. Anualizada" value={stats.annualizedVol + '%'} />
-                               <StatItem label="Assimetria (Skewness)" value={stats.skewness} />
-                               <StatItem label="Curtose (Kurtosis)" value={stats.kurtosis} />
-                           </CardContent>
-                       </Card>
-                     )}
+                     <Card className="mt-6">
+                        <CardHeader><CardTitle>Estatísticas Descritivas dos Retornos</CardTitle></CardHeader>
+                        <CardContent className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
+                            {!stats.annualizedVol ? (
+                                <>
+                                    <div className="flex flex-col p-2 border-l-2 pl-3 space-y-1">
+                                        <Skeleton className="h-4 w-20" />
+                                        <Skeleton className="h-6 w-16" />
+                                    </div>
+                                    <div className="flex flex-col p-2 border-l-2 pl-3 space-y-1">
+                                        <Skeleton className="h-4 w-24" />
+                                        <Skeleton className="h-6 w-12" />
+                                    </div>
+                                    <div className="flex flex-col p-2 border-l-2 pl-3 space-y-1">
+                                        <Skeleton className="h-4 w-20" />
+                                        <Skeleton className="h-6 w-14" />
+                                    </div>
+                                </>
+                            ) : (
+                                <>
+                                    <StatItem label="Vol. Anualizada" value={stats.annualizedVol + '%'} />
+                                    <StatItem label="Assimetria (Skewness)" value={stats.skewness} />
+                                    <StatItem label="Curtose (Kurtosis)" value={stats.kurtosis} />
+                                </>
+                            )}
+                        </CardContent>
+                    </Card>
                     
                      <Tabs value={activeTab} onValueChange={setActiveTab} className="mt-4">
                         <TabsList className="grid grid-cols-1">
@@ -630,37 +662,31 @@ function StochasticLab({
   );
 }
 
-function VolatilityFanChart({ chartData, className }: { 
+function VolatilityProjectionChart({ chartData, className }: { 
   chartData: any[];
   className?: string;
 }) {
-  const fanData = useMemo(() => {
-    return chartData.map(point => {
-        // Find all projection keys in the current data point
-        const projectionKeys = Object.keys(point).filter(k => k.startsWith('predicted_'));
-        // Get all corresponding price values
-        const prices = projectionKeys.map(k => point[k]).filter(p => p !== null && p !== undefined) as number[];
-        
-        if (prices.length < 2) {
-            // Not enough data for bands, return original point
-            return { ...point, median: null, p80_low: null, p80_high: null, p50_low: null, p50_high: null };
-        }
+  const yDomain = useMemo(() => {
+    if (!chartData || chartData.length === 0) return ['auto', 'auto'];
+    
+    let min = Infinity;
+    let max = -Infinity;
 
-        prices.sort((a,b) => a-b);
-
-        // Calculate percentiles for the uncertainty bands
-        return {
-            ...point,
-            median: prices[Math.floor(prices.length / 2)],
-            p80_low: prices[Math.floor(prices.length * 0.1)],
-            p80_high: prices[Math.floor(prices.length * 0.9)],
-            p50_low: prices[Math.floor(prices.length * 0.25)],
-            p50_high: prices[Math.floor(prices.length * 0.75)],
-        };
+    chartData.forEach(d => {
+        const values = Object.values(d).filter(v => typeof v === 'number') as number[];
+        values.forEach(v => {
+            min = Math.min(min, v);
+            max = Math.max(max, v);
+        });
     });
+    
+    if (min === Infinity) return ['auto', 'auto'];
+
+    const padding = (max - min) * 0.05 || 0.5; // 5% padding or a fixed value
+    return [min - padding, max + padding];
   }, [chartData]);
   
-  if (!fanData || fanData.length === 0) {
+  if (!chartData || chartData.length === 0) {
       return (
           <div className={cn("flex flex-col items-center justify-center h-64 text-muted-foreground", className)}>
               <Bot className="w-12 h-12 mb-4 opacity-30" />
@@ -670,26 +696,29 @@ function VolatilityFanChart({ chartData, className }: {
       )
   }
 
+  const lastRealPoint = [...chartData].reverse().find(d => d.price !== undefined);
+
   return (
     <Card className={cn("h-[460px]", className)}>
       <CardHeader>
-        <CardTitle>Cone de Incerteza Preditivo</CardTitle>
+        <CardTitle>Projeção vs. Realidade</CardTitle>
         <CardDescription>
-          Preço real e projeções de probabilidade (50% e 80% de confiança).
+          Comparação entre o preço real do ativo e a projeção mediana da IA.
         </CardDescription>
       </CardHeader>
 
       <CardContent>
         <ResponsiveContainer width="100%" height={360}>
-          <LineChart data={fanData}>
+          <LineChart data={chartData}>
             <CartesianGrid strokeDasharray="3 3" opacity={0.4} />
 
             <XAxis dataKey="time" tick={{ fontSize: 10 }} />
             <YAxis
-              domain={['dataMin - 1', 'dataMax + 1']}
+              domain={yDomain as [number, number]}
               tickFormatter={(v) => typeof v === 'number' ? v.toFixed(4) : v}
               tick={{ fontSize: 10 }}
               width={80}
+              allowDataOverflow={true}
             />
 
             <Tooltip 
@@ -697,26 +726,6 @@ function VolatilityFanChart({ chartData, className }: {
                     backgroundColor: 'hsl(var(--background))',
                     borderColor: 'hsl(var(--border))',
                 }}
-            />
-
-            {/* BANDA 80% */}
-            <Area 
-                type="monotone"
-                dataKey={(d) => [d.p80_low, d.p80_high]}
-                stroke="transparent"
-                fill="hsl(var(--primary) / 0.1)"
-                isAnimationActive={false}
-                name="Intervalo 80%"
-            />
-
-            {/* BANDA 50% */}
-            <Area 
-                type="monotone"
-                dataKey={(d) => [d.p50_low, d.p50_high]}
-                stroke="transparent"
-                fill="hsl(var(--primary) / 0.2)"
-                isAnimationActive={false}
-                name="Intervalo 50%"
             />
             
             {/* PREÇO REAL */}
@@ -736,20 +745,29 @@ function VolatilityFanChart({ chartData, className }: {
                 dataKey="median"
                 stroke="hsl(var(--primary))"
                 strokeWidth={2}
-                strokeDasharray="3 3"
+                strokeDasharray="5 5"
                 dot={false}
                 name="Projeção Mediana"
                 isAnimationActive={false}
             />
+
+             {/* MARCADOR DO PONTO ATUAL */}
+            {lastRealPoint && (
+              <Scatter
+                data={[lastRealPoint]}
+                fill="hsl(var(--foreground))"
+                shape="circle"
+                name="Preço Atual"
+                isAnimationActive={false}
+              />
+            )}
 
           </LineChart>
         </ResponsiveContainer>
         
         <div className="flex gap-4 mt-4 text-xs justify-center items-center">
           <LegendItem color="hsl(var(--foreground))" label="Preço Real" type="solid" />
-          <LegendItem color="hsl(var(--primary))" label="Mediana" type="dashed" />
-          <LegendItem color="hsl(var(--primary) / 0.2)" label="50% Conf." type="area" />
-          <LegendItem color="hsl(var(--primary) / 0.1)" label="80% Conf." type="area" />
+          <LegendItem color="hsl(var(--primary))" label="Projeção Mediana" type="dashed" />
         </div>
       </CardContent>
     </Card>
@@ -866,7 +884,7 @@ function PageContent() {
 
     toast({
       title: 'Duração Sincronizada!',
-      description: `Duração definida para ${duration}${durationUnit}, com base no sinal de ${horizon}.`,
+      description: `Duração definida para ${duration}${durationUnit === 's' ? ' segundos' : ' ticks'}, com base no sinal de ${horizon}.`,
     });
   };
   
