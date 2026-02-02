@@ -603,8 +603,6 @@ function StochasticLab({
                     <VolatilityProjectionChart 
                         chartData={chartDisplayData} 
                         horizons={horizons} 
-                        futurePathsRef={futurePathsRef} 
-                        priceData={priceData} 
                     />
                     
                      {stats.annualizedVol && (
@@ -633,32 +631,12 @@ function StochasticLab({
   );
 }
 
-function VolatilityProjectionChart({ chartData, horizons, futurePathsRef, priceData, className }: { 
+function VolatilityProjectionChart({ chartData, horizons, className }: { 
     chartData: any[];
     horizons: any[];
-    futurePathsRef: React.RefObject<Record<string, any[]>>;
-    priceData: any[];
     className?: string;
 }) {
-
-    const chartDisplayData = useMemo(() => {
-        const dataSlice = priceData.slice(-200); 
-        const combined = [...dataSlice];
-        
-        Object.values(futurePathsRef.current || {}).forEach(path => {
-            path.forEach(point => {
-              const existingPointIndex = combined.findIndex(p => p.time === point.time);
-              if (existingPointIndex !== -1) {
-                combined[existingPointIndex] = { ...combined[existingPointIndex], ...point };
-              } else {
-                combined.push(point);
-              }
-            });
-        });
-        return combined;
-    }, [priceData, futurePathsRef]);
-
-    if (priceData.length === 0) {
+    if (!chartData || chartData.length === 0) {
         return (
             <div className={cn("flex flex-col items-center justify-center h-64 text-muted-foreground", className)}>
                 <Bot className="w-12 h-12 mb-4 opacity-30" />
