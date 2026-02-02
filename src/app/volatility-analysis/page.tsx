@@ -153,14 +153,14 @@ const ProjectionExpertsPanel = ({ experts, adaptiveDrifts }: { experts: { name: 
                         <span className="font-semibold w-12">{name}</span>
                         <div className="flex items-center gap-2 w-32">
                             <Progress value={effectiveAccuracy} className="h-1.5 flex-1" indicatorClassName={getProgressColor(accuracy)} />
-                            <span className="font-mono w-20 text-right">
-                                {effectiveAccuracy.toFixed(0)}%
+                            <span className="font-mono w-24 text-right">
+                                {accuracy.toFixed(0)}%
                                 <span className="text-muted-foreground ml-1">({hits}/{total})</span>
                             </span>
                         </div>
                         <div className="flex items-center gap-1.5 w-16 justify-end">
                              <TooltipProvider>
-                                <Tooltip>
+                                <ShadTooltip>
                                     <TooltipTrigger>
                                         <div className="flex items-center gap-1.5">
                                             <Sigma size={12} className={driftColor}/>
@@ -170,7 +170,7 @@ const ProjectionExpertsPanel = ({ experts, adaptiveDrifts }: { experts: { name: 
                                     <TooltipContent>
                                         <p>Fator de Correção de Drift</p>
                                     </TooltipContent>
-                                </Tooltip>
+                                </ShadTooltip>
                             </TooltipProvider>
                         </div>
                         <span className={cn("font-bold w-10 text-right flex items-center justify-end gap-1", 
@@ -478,10 +478,11 @@ function StochasticLab({
                                             type="monotone" 
                                             dataKey={`predicted_${h.name}_ahead`}
                                             stroke={`hsl(var(--chart-${index + 2}))`}
-                                            strokeWidth={2}
+                                            strokeWidth={h.type === 'tick' ? 2 : 1.5}
                                             dot={false} 
                                             name={`Proj. ${h.name}`}
                                             strokeDasharray={h.type === 'second' ? "3 8" : "5 5"}
+                                            strokeOpacity={h.type === 'second' ? 0.8 : 1}
                                         />
                                     ))}
                                 </LineChart>
