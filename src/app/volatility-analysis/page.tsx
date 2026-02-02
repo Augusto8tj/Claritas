@@ -18,7 +18,7 @@ import { cn } from "@/lib/utils";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { volatilityTraderSchema, type VolatilityTraderFormValues } from "@/features/trading/components/deriv-trader/volatility-trader-interface.types";
 import VolatilityTraderInterface from "@/features/trading/components/deriv-trader/volatility-trader-interface";
-import { OperationsLogV2 } from "@/components/deriv-trader/operations-log-v2";
+import { OperationsLogV2 } from "@/features/trading/components/deriv-trader/operations-log-v2";
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
@@ -67,7 +67,6 @@ const wilsonScoreInterval = (successes: number, trials: number): { lower: number
 
 
 const getProgressColor = (percentage: number) => {
-    // Agora baseamos a cor na assertividade REAL, não na efetiva
     if (percentage > 55) return 'bg-green-500';
     if (percentage > 50) return 'bg-blue-500';
     if (percentage < 45) return 'bg-red-500';
