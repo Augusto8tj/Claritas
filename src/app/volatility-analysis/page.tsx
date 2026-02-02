@@ -5,7 +5,7 @@ import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { useForm, FormProvider } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ScatterChart, Scatter } from 'recharts';
-import { TrendingUp, TrendingDown, HelpCircle, Bot, FlaskConical, Target, Info, Brain, Zap, Send, Loader2, ShieldCheck, GitBranch, BarChart, Activity, AlertTriangle, Power, ChevronsUpDown, Settings, Sigma } from 'lucide-react';
+import { TrendingUp, TrendingDown, HelpCircle, Bot, FlaskConical, Target, Info, Brain, Zap, Send, Loader2, ShieldCheck, GitBranch, BarChart, Activity, AlertTriangle, Power, ChevronsUpDown, Settings, Sigma, Shield, X, Check } from 'lucide-react';
 import { DerivApiProviderV2 as DerivApiProvider, useDerivApiV2 as useDerivApi } from "@/features/trading/hooks/use-deriv-api-v2";
 import { AssetSelectorV2 as AssetSelector } from "@/features/trading/components/deriv-trader/asset-selector-v2";
 import { ApiStatusIndicatorV2 as ApiStatusIndicator } from "@/features/trading/components/deriv-trader/ApiStatusIndicatorV2";
@@ -67,10 +67,11 @@ const wilsonScoreInterval = (successes: number, trials: number): { lower: number
 
 
 const getProgressColor = (percentage: number) => {
-    const effectivePercentage = Math.max(percentage, 100 - percentage);
-    if (effectivePercentage > 75) return 'bg-green-500';
-    if (effectivePercentage > 60) return 'bg-blue-500';
-    if (effectivePercentage < 55) return 'bg-red-500';
+    // Agora baseamos a cor na assertividade REAL, não na efetiva
+    if (percentage > 75) return 'bg-green-500';
+    if (percentage > 60) return 'bg-blue-500';
+    if (percentage > 55) return 'bg-teal-500';
+    if (percentage < 45) return 'bg-red-500';
     return 'bg-gray-400';
 };
 
@@ -83,6 +84,7 @@ interface ExpertProjection {
     rawWinRate: number;
     hits: number;
     total: number;
+    status: 'active' | 'suspended';
 }
 
 interface StrongestSignal {
@@ -141,19 +143,16 @@ const StrongestSignalCard = ({ signal }: { signal: StrongestSignal }) => {
 const ProjectionExpertsPanel = ({ experts, adaptiveDrifts }: { experts: ExpertProjection[], adaptiveDrifts: Record<string, number> }) => {
     
     const getEffectiveVote = (expert: ExpertProjection | undefined): 'RISE' | 'FALL' | 'HOLD' => {
-        if (!expert || expert.vote === 'HOLD') return 'HOLD';
+        if (!expert || expert.vote === 'HOLD' || expert.status === 'suspended') return 'HOLD';
         
-        // Se temos confiança que a taxa de acerto é > 50%, confiamos no voto.
         if (expert.wilson.lower > 0.5) {
             return expert.vote;
         }
         
-        // Se temos confiança que a taxa de acerto é < 50%, invertemos o voto.
         if (expert.wilson.upper < 0.5) {
             return expert.vote === 'RISE' ? 'FALL' : (expert.vote === 'FALL' ? 'RISE' : 'HOLD');
         }
 
-        // Caso contrário, a incerteza é muito alta. Não operamos.
         return 'HOLD';
     };
 
@@ -165,14 +164,17 @@ const ProjectionExpertsPanel = ({ experts, adaptiveDrifts }: { experts: ExpertPr
             </CardTitle>
             <div className="space-y-2">
                 {experts.map((expert) => {
-                    const { name, vote, wilson, rawWinRate, hits, total } = expert;
+                    const { name, wilson, rawWinRate, hits, total, status } = expert;
                     const effectiveDirection = getEffectiveVote(expert);
                     const drift = adaptiveDrifts[name] || 0;
                     const driftColor = drift > 0.00001 ? 'text-green-500' : drift < -0.00001 ? 'text-red-500' : 'text-gray-400';
                     
                     return (
                         <div key={name} className="flex justify-between items-center bg-background p-2 rounded-md border text-xs">
-                            <span className="font-semibold w-12">{name}</span>
+                           <div className="w-16 flex items-center gap-2">
+                             <span className={cn("font-semibold", status === 'suspended' && 'text-muted-foreground line-through')}>{name}</span>
+                             {status === 'suspended' && <X className="h-3 w-3 text-destructive" />}
+                           </div>
                             <div className="flex items-center gap-2 w-32">
                                 <Progress value={rawWinRate} className="h-1.5 flex-1" indicatorClassName={getProgressColor(rawWinRate)} />
                                 <span className="font-mono w-24 text-right">
@@ -214,6 +216,8 @@ const ProjectionExpertsPanel = ({ experts, adaptiveDrifts }: { experts: ExpertPr
 };
 
 const ASSERTIVENESS_HISTORY_LIMIT = 1000;
+const CONSECUTIVE_LOSS_LIMIT = 5;
+const CONSECUTIVE_WIN_REACTIVATION = 3;
 
 /**
  * @fileOverview O `StochasticLab` é o coração do motor preditivo da aplicação.
@@ -249,11 +253,12 @@ function StochasticLab({
   
   // --- ESTADO DO CONTROLADOR NEURO-ADAPTATIVO ---
   const ADAPTIVE_DRIFT_LEARNING_RATE = 0.1;
+  const DRIFT_DECAY_FACTOR = 0.95; // NOVO: Fator de decaimento do Drift
   const ERROR_HISTORY_LENGTH = 20;
   const adaptiveDriftRef = useRef<Record<string, number>>({});
   const predictionErrorHistoryRef = useRef<Record<string, number[]>>({});
 
-  const [assertivenessStats, setAssertivenessStats] = useState<Record<string, { wins: number; total: number }>>({});
+  const [assertivenessStats, setAssertivenessStats] = useState<Record<string, { wins: number; total: number; consecutiveLosses: number; consecutiveWins: number; status: 'active' | 'suspended' }>>({});
   const assertivenessHistoryRef = useRef<Record<string, boolean[]>>({});
   const pendingPredictionsRef = useRef<Record<string, { startTimeIndex: number; startPrice: number; predictedEndPrice: number }[]>>({});
   const processedLogsRef = useRef(new Set<number>());
@@ -279,14 +284,14 @@ function StochasticLab({
 
   useEffect(() => {
     // Inicialização dos estados dinâmicos para cada horizonte
-    const initialStats: Record<string, { wins: number, total: number }> = {};
+    const initialStats: Record<string, { wins: number; total: number; consecutiveLosses: number; consecutiveWins: number; status: 'active' | 'suspended'; }> = {};
     const initialPending: Record<string, any[]> = {};
     const initialDrift: Record<string, number> = {};
     const initialErrorHistory: Record<string, number[]> = {};
     const initialAssertivenessHistory: Record<string, boolean[]> = {};
 
     horizons.forEach(h => {
-        initialStats[h.name] = { wins: 0, total: 0 };
+        initialStats[h.name] = { wins: 0, total: 0, consecutiveLosses: 0, consecutiveWins: 0, status: 'active' };
         initialPending[h.name] = [];
         initialDrift[h.name] = 0;
         initialErrorHistory[h.name] = [];
@@ -344,6 +349,7 @@ function StochasticLab({
       };
 
       const newFuturePaths: Record<string, any[]> = {};
+      const newAssertivenessData: Record<string, { lastResult: boolean }> = {};
       const horizonsToUpdateStats = new Set<string>();
       
       horizons.forEach(h => {
@@ -364,20 +370,24 @@ function StochasticLab({
                       if (errorHistory.length > ERROR_HISTORY_LENGTH) errorHistory.shift();
                       predictionErrorHistoryRef.current[h.name] = errorHistory;
                       
-                      // 3. Calcula o novo drift adaptativo
+                      // 3. Calcula o novo drift adaptativo com decaimento
                       const averageError = errorHistory.reduce((a, b) => a + b, 0) / errorHistory.length;
-                      adaptiveDriftRef.current[h.name] = ADAPTIVE_DRIFT_LEARNING_RATE * averageError;
+                      const currentDrift = adaptiveDriftRef.current[h.name] || 0;
+                      adaptiveDriftRef.current[h.name] = (currentDrift * DRIFT_DECAY_FACTOR) + (ADAPTIVE_DRIFT_LEARNING_RATE * averageError);
 
                       // 4. Atualiza a assertividade
                       const predictedDirection = pred.predictedEndPrice > pred.startPrice;
                       const actualDirection = actualEndPrice > pred.startPrice;
-                      
+                      const isWin = predictedDirection === actualDirection;
+
                       const assertivenessHistory = assertivenessHistoryRef.current[h.name] || [];
-                      assertivenessHistory.push(predictedDirection === actualDirection);
+                      assertivenessHistory.push(isWin);
                       while (assertivenessHistory.length > ASSERTIVENESS_HISTORY_LIMIT) {
                           assertivenessHistory.shift();
                       }
                       assertivenessHistoryRef.current[h.name] = assertivenessHistory;
+                      
+                      newAssertivenessData[h.name] = { lastResult: isWin };
                       horizonsToUpdateStats.add(h.name);
                   }
               } else {
@@ -402,19 +412,40 @@ function StochasticLab({
       });
       futurePathsRef.current = newFuturePaths;
       
-      if (horizonsToUpdateStats.size > 0) {
-        setAssertivenessStats(prev => {
-            const newStats = { ...prev };
-            horizonsToUpdateStats.forEach(horizonName => {
-                const history = assertivenessHistoryRef.current[horizonName] || [];
-                newStats[horizonName] = {
-                    wins: history.filter(v => v).length,
-                    total: history.length,
-                };
+        if (horizonsToUpdateStats.size > 0) {
+            setAssertivenessStats(prev => {
+                const newStats = { ...prev };
+                horizonsToUpdateStats.forEach(horizonName => {
+                    const history = assertivenessHistoryRef.current[horizonName] || [];
+                    const { lastResult } = newAssertivenessData[horizonName];
+                    const currentExpertStats = (prev[horizonName] || { wins: 0, total: 0, consecutiveLosses: 0, consecutiveWins: 0, status: 'active' });
+                    let { consecutiveLosses, consecutiveWins, status } = currentExpertStats;
+
+                    if (lastResult === true) { // isWin
+                        consecutiveWins++;
+                        consecutiveLosses = 0;
+                        if (status === 'suspended' && consecutiveWins >= CONSECUTIVE_WIN_REACTIVATION) {
+                            status = 'active';
+                        }
+                    } else { // isLoss
+                        consecutiveLosses++;
+                        consecutiveWins = 0;
+                        if (status === 'active' && consecutiveLosses >= CONSECUTIVE_LOSS_LIMIT) {
+                            status = 'suspended';
+                        }
+                    }
+
+                    newStats[horizonName] = {
+                        wins: history.filter(v => v).length,
+                        total: history.length,
+                        consecutiveLosses,
+                        consecutiveWins,
+                        status
+                    };
+                });
+                return newStats;
             });
-            return newStats;
-        });
-      }
+        }
     }
   }, [realData, horizons]);
 
@@ -423,8 +454,8 @@ function StochasticLab({
         const path = futurePathsRef.current[h.name] || [];
         const vote = path.length > 1 ? (path[path.length - 1].price > path[0].price ? 'RISE' : 'FALL') : 'HOLD';
         
-        const stats = assertivenessStats[h.name] || { wins: 0, total: 0 };
-        const { wins, total } = stats;
+        const stats = assertivenessStats[h.name] || { wins: 0, total: 0, status: 'active' };
+        const { wins, total, status } = stats;
         
         const rawWinRate = total > 0 ? (wins / total) * 100 : 0;
         const wilson = wilsonScoreInterval(wins, total);
@@ -435,20 +466,21 @@ function StochasticLab({
             wilson, 
             rawWinRate,
             hits: wins, 
-            total 
+            total,
+            status,
         };
     });
   }, [horizons, assertivenessStats, realData]);
 
   const getEffectiveVote = useCallback((expert: ExpertProjection | undefined): 'RISE' | 'FALL' | 'HOLD' => {
-      if (!expert || expert.vote === 'HOLD') return 'HOLD';
+      if (!expert || expert.vote === 'HOLD' || expert.status === 'suspended') return 'HOLD';
       
       if (expert.wilson.lower > 0.5) {
           return expert.vote;
       }
       
       if (expert.wilson.upper < 0.5) {
-          return expert.vote === 'RISE' ? 'FALL' : 'FALL' ? 'RISE' : 'HOLD';
+          return expert.vote === 'RISE' ? 'FALL' : (expert.vote === 'FALL' ? 'RISE' : 'HOLD');
       }
 
       return 'HOLD';
@@ -470,7 +502,7 @@ function StochasticLab({
                 bestSignal = {
                     horizon: p.name,
                     direction: effectiveVote,
-                    certaintyScore: (p.wilson.lower > 0.5 ? p.wilson.lower - 0.5 : p.wilson.upper - 0.5) * 200,
+                    certaintyScore: (p.wilson.lower > 0.5 ? p.wilson.lower - 0.5 : 0.5 - p.wilson.upper) * 200,
                     rawWinRate: p.rawWinRate,
                 };
             }

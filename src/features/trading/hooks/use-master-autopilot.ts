@@ -109,8 +109,8 @@ export function useMasterAutopilot() {
   const [riskManager, setRiskManager] = useState<RiskManagerStatus>({
     mode: 'Normal',
     thresholds: {
-      '1t': 75, '3t': 75, '6t': 78, '10t': 72,
-      '15s': 68, '20s': 70, '30s': 68, '40s': 65, '50s': 65,
+      '1t': 52, '3t': 52, '6t': 52, '10t': 53,
+      '15s': 53, '20s': 53, '30s': 54, '40s': 54, '50s': 54,
     },
     lastAdjustmentReason: 'N/A'
   });
@@ -131,7 +131,7 @@ export function useMasterAutopilot() {
     assertiveness: {},
   });
   
-  const cooldownRef = useRef(false);
+  const cooldownRef = useRef<{active: boolean, timeoutId?: NodeJS.Timeout}>({ active: false });
   
   const [isNeighborConfirmationEnabled, setIsNeighborConfirmationEnabled] = useState(true);
   const [isTripleConfirmationEnabled, setIsTripleConfirmationEnabled] = useState(false);
@@ -173,7 +173,7 @@ export function useMasterAutopilot() {
             if(initiator === 'Manual') {
                  toast({ title: "Nenhum sinal válido", description: "O gatilho preditivo não detectou uma oportunidade.", variant: "destructive"});
             }
-            return;
+            return { duration: 0, unit: 's'};
         }
 
         console.log(`[AUTOPILOT EXECUTE] Sinal: ${signalToUse}, Razão: ${triggerReason}`);
@@ -237,12 +237,16 @@ export function useMasterAutopilot() {
                     savePredictiveTradeLog(currentUser.uid, tradeLog);
                 }
 
+                return { duration, unit: durationUnit };
+
             } else {
                 toast({ title: "Funcionalidade Limitada", description: `A execução para ${contractType} ainda não está operacional.`, variant: "default"});
+                return { duration: 0, unit: 's'};
             }
         } catch (error) {
             console.error("Master Autopilot Execution Error:", error);
             toast({ title: `❌ Erro na Execução ${initiator}`, description: error instanceof Error ? error.message : String(error), variant: "destructive" });
+            return { duration: 0, unit: 's'};
         }
     }, [contractType, activeSymbol, executeRiseFallTrade, toast]);
   
@@ -306,10 +310,21 @@ export function useMasterAutopilot() {
     const { trigger, assertiveness } = masterState;
     const openMasterTrade = operationsLog.find(op => op.initiator === 'Piloto' && op.status === 'pending');
     
-    if (isAutopilotOn && trigger.signal !== 'HOLD' && !cooldownRef.current && (!openMasterTrade || allowMultiplePositions)) {
-      cooldownRef.current = true;
-      executeTradeAction('Piloto', trigger.signal, trigger.triggeredBy, user, trigger.reason, assertiveness);
-      setTimeout(() => { cooldownRef.current = false; }, 20000); // 20 segundos de cooldown
+    if (isAutopilotOn && trigger.signal !== 'HOLD' && !cooldownRef.current.active && (!openMasterTrade || allowMultiplePositions)) {
+      cooldownRef.current.active = true;
+      executeTradeAction('Piloto', trigger.signal, trigger.triggeredBy, user, trigger.reason, assertiveness)
+        .then(({ duration, unit }) => {
+            const durationInSeconds = unit === 's' ? duration : duration * 2;
+            const cooldownTime = Math.max(durationInSeconds * 2 * 1000, 15000); // Mínimo 15 segundos
+            
+            if (cooldownRef.current.timeoutId) {
+                clearTimeout(cooldownRef.current.timeoutId);
+            }
+            
+            cooldownRef.current.timeoutId = setTimeout(() => { 
+                cooldownRef.current.active = false;
+            }, cooldownTime);
+        });
     }
   }, [masterState, isAutopilotOn, operationsLog, user, executeTradeAction, allowMultiplePositions]);
 
