@@ -138,7 +138,7 @@ const getEffectiveVote = (expert: AssertivenessData | undefined): 'RISE' | 'FALL
 const ProjectionExpertsPanel = ({ experts, adaptiveDrifts }: { experts: { name: string; vote: 'RISE' | 'FALL' | 'HOLD'; accuracy: number; hits: number; total: number; }[], adaptiveDrifts: Record<string, number> }) => (
     <Card className="p-4">
         <CardTitle className="text-sm font-semibold text-muted-foreground mb-3 flex items-center justify-between">
-            <span>Assertividade &amp; Calibração</span>
+            <span>Assertividade & Calibração</span>
             <span className="font-mono text-xs">Acertos / Total</span>
         </CardTitle>
         <div className="space-y-2">
@@ -222,7 +222,7 @@ function StochasticLab({
   const futurePathsRef = useRef<Record<string, { time: number; price: number }[]>>({});
 
   // --- PARÂMETROS DO MODELO GBM PARA 1HZ10V ---
-  const ACCURACY_MEMORY = 10;
+  const ACCURACY_MEMORY = 20;
   const GBM_SIGMA = 0.10;
   const GBM_DRIFT_TERM = - (GBM_SIGMA * GBM_SIGMA) / 2;
   
@@ -463,7 +463,7 @@ function StochasticLab({
                         </div>
                     ) : (
                         <div className="min-h-0">
-                             <h3 className="text-lg font-semibold mb-2">Preço Real &amp; Projeções Estocásticas</h3>
+                             <h3 className="text-lg font-semibold mb-2">Preço Real & Projeções Estocásticas</h3>
                              <ResponsiveContainer width="100%" height={350}>
                                 <LineChart data={chartDisplayData}>
                                     <CartesianGrid strokeDasharray="3 3" />
@@ -858,4 +858,3 @@ const Header = () => {
     </div>
   );
 };
-
