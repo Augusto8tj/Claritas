@@ -653,8 +653,29 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
             const promise = promisesRef.current.get(String(reqId));
             if (promise) {
                 if (response.error) {
-                    const errorMessage = response.error.message || `Unknown API error. Code: ${response.error.code || 'N/A'}`;
-                    promise.reject(new Error(`${errorMessage}`));
+                    const errorCode = response.error.code;
+                    const errorMessage = response.error.message;
+
+                    // Lógica de tratamento de erro robusta
+                    if (errorCode === 'AlreadySubscribed') {
+                        console.warn(`[Deriv WS] Already subscribed (req_id: ${reqId}). Resolving...`);
+                        promise.resolve(response);
+                    } else if (errorCode === 'ContractSellNotAvailable') {
+                        console.warn(`[Deriv WS] Contract sell not available (req_id: ${reqId}). Message: ${errorMessage}. Resolving as controlled failure.`);
+                        
+                        const contractId = response.echo_req?.sell;
+                        if (contractId) {
+                            setAndPersistOperationsLog(prevLog => prevLog.map(op =>
+                                op.id === contractId && op.status === 'pending'
+                                    ? { ...op, status: 'lost', result: -op.stake, exitTimestamp: new Date().toISOString() }
+                                    : op
+                            ));
+                        }
+                        
+                        promise.resolve({ error: { message: errorMessage } });
+                    } else {
+                        promise.reject(new Error(errorMessage || `Unknown API error. Code: ${errorCode || 'N/A'}`));
+                    }
                 } else {
                     promise.resolve(response);
                 }
@@ -937,7 +958,7 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
           wsRef.current = null;
         };
       
-        ws.onerror = () => {
+        ws.onerror = (error) => {
           // O evento onclose é mais fiável para obter o motivo do erro.
         };
     };
