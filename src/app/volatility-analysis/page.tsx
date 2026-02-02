@@ -4,7 +4,7 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useForm, FormProvider, useFormContext } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ScatterChart, Scatter } from 'recharts';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Scatter } from 'recharts';
 import { TrendingUp, TrendingDown, HelpCircle, Bot, FlaskConical, Target, Info, Brain, Zap, Send, Loader2, ShieldCheck, GitBranch, BarChart, Activity, AlertTriangle, Power, ChevronsUpDown, Settings, Sigma, Shield, X, Check, Skull, PlayCircle, PauseCircle } from 'lucide-react';
 import { DerivApiProviderV2 as DerivApiProvider, useDerivApiV2 as useDerivApi } from "@/features/trading/hooks/use-deriv-api-v2";
 import { AssetSelectorV2 as AssetSelector } from "@/features/trading/components/deriv-trader/asset-selector-v2";
@@ -632,53 +632,111 @@ function StochasticLab({
 }
 
 function VolatilityProjectionChart({ chartData, horizons, className }: { 
-    chartData: any[];
-    horizons: any[];
-    className?: string;
+  chartData: any[];
+  horizons: any[];
+  className?: string;
 }) {
-    if (!chartData || chartData.length === 0) {
-        return (
-            <div className={cn("flex flex-col items-center justify-center h-64 text-muted-foreground", className)}>
-                <Bot className="w-12 h-12 mb-4 opacity-30" />
-                <p className="font-semibold">Aguardando dados suficientes do mercado...</p>
-                <p className="text-sm">É necessário um histórico mínimo para a análise estatística.</p>
-            </div>
-        )
-    }
+  if (!chartData || chartData.length === 0) {
+      return (
+          <div className={cn("flex flex-col items-center justify-center h-64 text-muted-foreground", className)}>
+              <Bot className="w-12 h-12 mb-4 opacity-30" />
+              <p className="font-semibold">Aguardando dados suficientes do mercado...</p>
+              <p className="text-sm">É necessário um histórico mínimo para a análise estatística.</p>
+          </div>
+      )
+  }
 
-    return (
-        <Card className={cn("h-[450px]", className)}>
-            <CardHeader>
-                <CardTitle className="font-headline">Projeções Estocásticas</CardTitle>
-                <CardDescription>Preço real e as 9 projeções de horizonte de tempo do comitê de IA.</CardDescription>
-            </CardHeader>
-            <CardContent>
-                <ResponsiveContainer width="100%" height={350}>
-                    <LineChart data={chartData}>
-                        <CartesianGrid strokeDasharray="3 3" />
-                        <XAxis dataKey="time" label={{ value: 'Tempo (ticks)', position: 'insideBottom', offset: -5 }} />
-                        <YAxis tickCount={8} domain={['dataMin - 1', 'dataMax + 1']} allowDataOverflow={true} label={{ value: 'Preço', angle: -90, position: 'insideLeft' }} tickFormatter={(value) => typeof value === 'number' ? value.toFixed(4) : value}/>
-                        <Tooltip />
-                        <Legend />
-                        <Line type="monotone" dataKey="price" stroke="hsl(var(--chart-1))" strokeWidth={2.5} dot={false} name="Preço Real" />
-                        {horizons.map((h, index) => (
-                            <Line 
-                                key={h.name}
-                                type="monotone" 
-                                dataKey={`predicted_${h.name}_ahead`}
-                                stroke={`hsl(var(--chart-${index + 2}))`}
-                                strokeWidth={2}
-                                dot={false} 
-                                name={`Proj. ${h.name}`}
-                                strokeDasharray={h.type === 'second' ? "3 8" : "5 5"}
-                            />
-                        ))}
-                    </LineChart>
-                </ResponsiveContainer>
-            </CardContent>
-        </Card>
-    )
+  const lastRealPoint = [...chartData].reverse().find(d => d.price !== undefined);
+
+  const horizonStyle = (h: any) => {
+    if (h.ticks <= 6) return { stroke: '#22c55e', opacity: 0.35 };   // curto prazo
+    if (h.ticks <= 20) return { stroke: '#3b82f6', opacity: 0.25 };  // médio
+    return { stroke: '#a855f7', opacity: 0.18 };                     // longo
+  };
+
+  return (
+    <Card className={cn("h-[460px]", className)}>
+      <CardHeader>
+        <CardTitle>Projeções Estocásticas</CardTitle>
+        <CardDescription>
+          Preço real + projeções probabilísticas por horizonte
+        </CardDescription>
+      </CardHeader>
+
+      <CardContent>
+        <ResponsiveContainer width="100%" height={360}>
+          <LineChart data={chartData}>
+            <CartesianGrid strokeDasharray="3 3" opacity={0.4} />
+
+            <XAxis dataKey="time" />
+            <YAxis
+              domain={['dataMin - 0.5', 'dataMax + 0.5']}
+              tickFormatter={(v) => typeof v === 'number' ? v.toFixed(4) : v}
+            />
+
+            <Tooltip />
+
+            {/* PREÇO REAL */}
+            <Line
+              type="monotone"
+              dataKey="price"
+              stroke="#0f172a"
+              strokeWidth={3}
+              dot={false}
+              name="Preço Real"
+            />
+
+            {/* MARCADOR DO PONTO ATUAL */}
+            {lastRealPoint && (
+              <Scatter
+                data={[lastRealPoint]}
+                fill="#0f172a"
+                shape="circle"
+                name="Preço Atual"
+              />
+            )}
+
+            {/* PROJEÇÕES */}
+            {horizons.map(h => {
+              const style = horizonStyle(h);
+              return (
+                <Line
+                  key={h.name}
+                  type="monotone"
+                  dataKey={`predicted_${h.name}_ahead`}
+                  stroke={style.stroke}
+                  strokeWidth={1.5}
+                  dot={false}
+                  strokeOpacity={style.opacity}
+                  strokeDasharray="4 6"
+                  isAnimationActive={false}
+                />
+              );
+            })}
+          </LineChart>
+        </ResponsiveContainer>
+
+        {/* LEGENDA CUSTOM */}
+        <div className="flex gap-4 mt-4 text-xs justify-center">
+          <LegendItem color="#0f172a" label="Preço Real" />
+          <LegendItem color="#22c55e" label="Curto Prazo" />
+          <LegendItem color="#3b82f6" label="Médio Prazo" />
+          <LegendItem color="#a855f7" label="Longo Prazo" />
+        </div>
+      </CardContent>
+    </Card>
+  );
 }
+
+const LegendItem = ({ color, label }: { color: string; label: string }) => (
+  <div className="flex items-center gap-1.5">
+    <span
+      className="w-3 h-0.5 rounded"
+      style={{ backgroundColor: color }}
+    />
+    <span>{label}</span>
+  </div>
+);
 
 function PageContent() {
   const { 
