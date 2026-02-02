@@ -108,13 +108,14 @@ const StatItem = ({ label, value }: { label: string; value: string | number }) =
     </div>
 );
 
-const StrongestSignalCard = ({ signal }: { signal: StrongestSignal }) => {
+const StrongestSignalCard = ({ signal, className }: { signal: StrongestSignal, className?: string }) => {
     const isHold = signal.direction === 'HOLD' || signal.certaintyScore === 0;
     const displayAccuracy = Math.max(signal.rawWinRate, 100 - signal.rawWinRate);
 
     return (
         <Card className={cn("p-4 flex flex-col justify-center", 
-            isHold ? 'bg-slate-50' : signal.direction === 'RISE' ? 'bg-green-50' : 'bg-red-50'
+            isHold ? 'bg-slate-50' : signal.direction === 'RISE' ? 'bg-green-50' : 'bg-red-50',
+            className
         )}>
             <CardTitle className="text-sm font-semibold text-muted-foreground mb-2">Sinal Preditivo Mais Forte</CardTitle>
             {isHold ? (
@@ -138,19 +139,23 @@ const StrongestSignalCard = ({ signal }: { signal: StrongestSignal }) => {
     );
 };
 
-const ProjectionExpertsPanel = ({ experts, adaptiveDrifts }: { experts: ExpertProjection[], adaptiveDrifts: Record<string, number> }) => {
+const ProjectionExpertsPanel = ({ experts, adaptiveDrifts, className }: { experts: ExpertProjection[], adaptiveDrifts: Record<string, number>, className?: string }) => {
     
     const getEffectiveVote = (expert: ExpertProjection | undefined): 'RISE' | 'FALL' | 'HOLD' => {
         if (!expert || expert.vote === 'HOLD' || expert.status !== 'active') return 'HOLD';
         
+        // A certeza estatística é o nosso critério de confiança
         if (expert.wilson.lower > 0.5) {
             return expert.vote;
         }
         
         if (expert.wilson.upper < 0.5) {
+            // Se o limite superior da confiança é < 50%, o modelo está consistentemente errado.
+            // Logo, o sinal invertido é a nossa melhor aposta.
             return expert.vote === 'RISE' ? 'FALL' : (expert.vote === 'FALL' ? 'RISE' : 'HOLD');
         }
 
+        // Se o intervalo de confiança contém 50%, o resultado é estatisticamente ambíguo.
         return 'HOLD';
     };
 
@@ -164,7 +169,7 @@ const ProjectionExpertsPanel = ({ experts, adaptiveDrifts }: { experts: ExpertPr
     }
 
     return (
-        <Card className="p-4">
+        <Card className={cn("p-4", className)}>
             <CardTitle className="text-sm font-semibold text-muted-foreground mb-3 flex items-center justify-between">
                 <span>Assertividade & Calibração</span>
                 <span className="font-mono text-xs">Acertos / Total</span>
@@ -175,6 +180,7 @@ const ProjectionExpertsPanel = ({ experts, adaptiveDrifts }: { experts: ExpertPr
                     const effectiveDirection = getEffectiveVote(expert);
                     const drift = adaptiveDrifts[name] || 0;
                     const driftColor = drift > 0.00001 ? 'text-green-500' : drift < -0.00001 ? 'text-red-500' : 'text-gray-400';
+                    const displayWinRate = rawWinRate; // Mostra a taxa de acerto real
                     
                     return (
                         <div key={name} className="flex justify-between items-center bg-background p-2 rounded-md border text-xs">
@@ -183,9 +189,9 @@ const ProjectionExpertsPanel = ({ experts, adaptiveDrifts }: { experts: ExpertPr
                              {getStatusIcon(status)}
                            </div>
                             <div className="flex items-center gap-2 w-32">
-                                <Progress value={rawWinRate} className="h-1.5 flex-1" indicatorClassName={getProgressColor(rawWinRate)} />
+                                <Progress value={displayWinRate} className="h-1.5 flex-1" indicatorClassName={getProgressColor(displayWinRate)} />
                                 <span className="font-mono w-24 text-right">
-                                    {rawWinRate.toFixed(0)}%
+                                    {displayWinRate.toFixed(0)}%
                                     <span className="text-muted-foreground ml-1">({hits}/{total})</span>
                                 </span>
                             </div>
@@ -574,9 +580,9 @@ function StochasticLab({
         <CardContent className="flex flex-col min-h-0">
           <ScrollArea className="flex-1">
                 <div className="p-1 space-y-6">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                         <StrongestSignalCard signal={strongestSignal} />
-                         <ProjectionExpertsPanel experts={projectionExperts} adaptiveDrifts={adaptiveDriftRef.current} />
+                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                         <StrongestSignalCard signal={strongestSignal} className="md:col-span-1" />
+                         <ProjectionExpertsPanel experts={projectionExperts} adaptiveDrifts={adaptiveDriftRef.current} className="md:col-span-3" />
                     </div>
                     
                     {priceData.length === 0 ? (
