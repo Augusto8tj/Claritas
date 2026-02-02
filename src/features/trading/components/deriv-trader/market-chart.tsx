@@ -959,10 +959,10 @@ export function MarketChart({
 
 
   return (
-    <div
-      className="w-full rounded-xl p-4 relative flex flex-col aspect-video min-h-[400px]"
-      style={{ backgroundColor: colors.bg }}
-      ref={containerRef}
+    <div 
+        className="w-full rounded-xl p-4 relative flex flex-col aspect-video min-h-[400px]"
+        style={{ backgroundColor: colors.bg }}
+        ref={containerRef}
     >
       <div className="flex flex-wrap items-center justify-between gap-y-2 mb-2">
         <div className="flex items-center gap-3">
@@ -1055,7 +1055,7 @@ export function MarketChart({
                 className="h-9 w-[70px] text-xs flex items-center gap-1"
               >
                 <Clock size={14} />
-                {timePeriod.toUpperCase()}
+                {timePeriod ? timePeriod.toUpperCase() : '...'}
               </Button>
             </PopoverTrigger>
             <PopoverContent className="w-auto p-1">
