@@ -19,7 +19,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { volatilityTraderSchema, type VolatilityTraderFormValues } from "@/features/trading/components/deriv-trader/volatility-trader-interface.types";
 import VolatilityTraderInterface from "@/features/trading/components/deriv-trader/volatility-trader-interface";
 import { OperationsLogV2 } from "@/features/trading/components/deriv-trader/operations-log-v2";
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { useToast } from '@/hooks/use-toast';
@@ -213,6 +213,8 @@ const ProjectionExpertsPanel = ({ experts, adaptiveDrifts }: { experts: ExpertPr
     );
 };
 
+const ASSERTIVENESS_HISTORY_LIMIT = 1000;
+
 /**
  * @fileOverview O `StochasticLab` é o coração do motor preditivo da aplicação.
  * Opera como um "Cientista de IA" que executa modelos de Movimento Browniano Geométrico (GBM)
@@ -252,6 +254,7 @@ function StochasticLab({
   const predictionErrorHistoryRef = useRef<Record<string, number[]>>({});
 
   const [assertivenessStats, setAssertivenessStats] = useState<Record<string, { wins: number; total: number }>>({});
+  const assertivenessHistoryRef = useRef<Record<string, boolean[]>>({});
   const pendingPredictionsRef = useRef<Record<string, { startTimeIndex: number; startPrice: number; predictedEndPrice: number }[]>>({});
   const processedLogsRef = useRef(new Set<number>());
 
@@ -280,17 +283,20 @@ function StochasticLab({
     const initialPending: Record<string, any[]> = {};
     const initialDrift: Record<string, number> = {};
     const initialErrorHistory: Record<string, number[]> = {};
+    const initialAssertivenessHistory: Record<string, boolean[]> = {};
 
     horizons.forEach(h => {
         initialStats[h.name] = { wins: 0, total: 0 };
         initialPending[h.name] = [];
         initialDrift[h.name] = 0;
         initialErrorHistory[h.name] = [];
+        initialAssertivenessHistory[h.name] = [];
     });
     setAssertivenessStats(initialStats);
     pendingPredictionsRef.current = initialPending;
     adaptiveDriftRef.current = initialDrift;
     predictionErrorHistoryRef.current = initialErrorHistory;
+    assertivenessHistoryRef.current = initialAssertivenessHistory;
   }, [horizons]);
 
   useEffect(() => {
@@ -326,7 +332,6 @@ function StochasticLab({
         let currentSimPrice = lastPriceValue;
         const path = [{ time: lastTime, price: lastPriceValue }];
         
-        // Aplica o Drift Adaptativo específico para este horizonte
         const driftCorrection = adaptiveDriftRef.current[horizonName] || 0;
         
         for (let i = 1; i <= steps; i++) {
@@ -339,13 +344,12 @@ function StochasticLab({
       };
 
       const newFuturePaths: Record<string, any[]> = {};
+      const horizonsToUpdateStats = new Set<string>();
       
       horizons.forEach(h => {
-          // --- AUTO-CALIBRAÇÃO DE DRIFT ---
           const currentTimeIndex = prices.length - 1;
           const predictionsToProcess = pendingPredictionsRef.current[h.name] || [];
           const updatedPending = [];
-          const newHistoryEntries: boolean[] = [];
 
           for (const pred of predictionsToProcess) {
               if (currentTimeIndex >= pred.startTimeIndex + h.ticks) {
@@ -367,27 +371,21 @@ function StochasticLab({
                       // 4. Atualiza a assertividade
                       const predictedDirection = pred.predictedEndPrice > pred.startPrice;
                       const actualDirection = actualEndPrice > pred.startPrice;
-                      newHistoryEntries.push(predictedDirection === actualDirection);
+                      
+                      const assertivenessHistory = assertivenessHistoryRef.current[h.name] || [];
+                      assertivenessHistory.push(predictedDirection === actualDirection);
+                      while (assertivenessHistory.length > ASSERTIVENESS_HISTORY_LIMIT) {
+                          assertivenessHistory.shift();
+                      }
+                      assertivenessHistoryRef.current[h.name] = assertivenessHistory;
+                      horizonsToUpdateStats.add(h.name);
                   }
               } else {
                   updatedPending.push(pred);
               }
           }
           pendingPredictionsRef.current[h.name] = updatedPending;
-          
-          if (newHistoryEntries.length > 0) {
-            const winsToAdd = newHistoryEntries.filter(v => v).length;
-            const trialsToAdd = newHistoryEntries.length;
-            setAssertivenessStats(prev => ({
-                ...prev,
-                [h.name]: {
-                    wins: (prev[h.name]?.wins || 0) + winsToAdd,
-                    total: (prev[h.name]?.total || 0) + trialsToAdd,
-                }
-            }));
-          }
 
-          // --- GERA NOVA PROJEÇÃO ---
           const newPath = projectPath(h.ticks, h.name);
           newFuturePaths[h.name] = newPath.map(p => ({ time: p.time, [`predicted_${h.name}_ahead`]: p.price }));
 
@@ -403,6 +401,20 @@ function StochasticLab({
           }
       });
       futurePathsRef.current = newFuturePaths;
+      
+      if (horizonsToUpdateStats.size > 0) {
+        setAssertivenessStats(prev => {
+            const newStats = { ...prev };
+            horizonsToUpdateStats.forEach(horizonName => {
+                const history = assertivenessHistoryRef.current[horizonName] || [];
+                newStats[horizonName] = {
+                    wins: history.filter(v => v).length,
+                    total: history.length,
+                };
+            });
+            return newStats;
+        });
+      }
     }
   }, [realData, horizons]);
 
@@ -431,23 +443,20 @@ function StochasticLab({
   const getEffectiveVote = useCallback((expert: ExpertProjection | undefined): 'RISE' | 'FALL' | 'HOLD' => {
       if (!expert || expert.vote === 'HOLD') return 'HOLD';
       
-      // Se estamos confiantes de que a taxa de acerto é > 50%, confiamos no voto.
       if (expert.wilson.lower > 0.5) {
           return expert.vote;
       }
       
-      // Se estamos confiantes de que a taxa de acerto é < 50%, invertemos o voto.
       if (expert.wilson.upper < 0.5) {
           return expert.vote === 'RISE' ? 'FALL' : 'FALL' ? 'RISE' : 'HOLD';
       }
 
-      // Caso contrário, a incerteza é muito alta. Não operamos.
       return 'HOLD';
   }, []);
 
   const strongestSignal = useMemo((): StrongestSignal => {
     let bestSignal: StrongestSignal = { horizon: 'N/A', direction: 'HOLD', certaintyScore: 0, rawWinRate: 50 };
-    let maxConfidence = 0; // Max distance from 0.5
+    let maxConfidence = 0; 
 
     projectionExperts.forEach(p => {
         const effectiveVote = getEffectiveVote(p);
@@ -461,7 +470,7 @@ function StochasticLab({
                 bestSignal = {
                     horizon: p.name,
                     direction: effectiveVote,
-                    certaintyScore: (p.wilson.lower - 0.5) * 200, // Score from -100 to 100
+                    certaintyScore: (p.wilson.lower > 0.5 ? p.wilson.lower - 0.5 : p.wilson.upper - 0.5) * 200,
                     rawWinRate: p.rawWinRate,
                 };
             }
@@ -475,7 +484,7 @@ function StochasticLab({
   }, [strongestSignal, onConsensusUpdate, projectionExperts]);
 
   const chartDisplayData = useMemo(() => {
-    const dataSlice = priceData.slice(-200); // Only display recent real data
+    const dataSlice = priceData.slice(-200); 
     const combined = [...dataSlice];
     
     Object.values(futurePathsRef.current).forEach(path => {
@@ -532,7 +541,7 @@ function StochasticLab({
                                             type="monotone" 
                                             dataKey={`predicted_${h.name}_ahead`}
                                             stroke={`hsl(var(--chart-${index + 2}))`}
-                                            strokeWidth={h.type === 'tick' ? 2 : 1.5}
+                                            strokeWidth={2}
                                             dot={false} 
                                             name={`Proj. ${h.name}`}
                                             strokeDasharray={h.type === 'second' ? "3 8" : "5 5"}
@@ -598,7 +607,7 @@ function PageContent() {
     setConsensusData(data);
     if (isAutopilotOn && data?.projectionExperts) {
       const assertiveness: Record<string, AssertivenessData> = Object.fromEntries(
-        data.projectionExperts.map((p: any) => [p.name, { accuracy: p.accuracy, vote: p.vote }])
+        data.projectionExperts.map((p: any) => [p.name, { accuracy: p.rawWinRate, vote: p.vote }])
       );
       runAutopilotCycle(assertiveness);
     }
