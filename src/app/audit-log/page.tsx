@@ -78,9 +78,20 @@ export default function AuditLogPage() {
             setLogsV1(v1.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()));
             setLogsV2(v2.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()));
         }
-      } catch (error) {
+      } catch (error: any) {
         console.error("Failed to fetch trade decision logs:", error);
-        toast({ title: "Erro ao Carregar Logs", description: "Não foi possível buscar os dados de auditoria.", variant: "destructive" });
+        toast({ title: "Erro ao Carregar Logs", description: error.message || "Não foi possível buscar os dados de auditoria.", variant: "destructive" });
+
+        // Emite um erro contextualizado para a depuração de regras de segurança
+        let collectionName = `decision_logs_${activeTab}`;
+        if (activeTab === 'predictive') {
+            collectionName = 'predictive_logs_v1';
+        }
+        
+        errorEmitter.emit('permission-error', new FirestorePermissionError({
+            operation: 'list',
+            path: `users/${user.uid}/${collectionName}`
+        }));
       } finally {
         setLoading(false);
       }
