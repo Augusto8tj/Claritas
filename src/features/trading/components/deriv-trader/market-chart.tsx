@@ -1132,7 +1132,7 @@ export function MarketChart({
           onMouseMove={handleChartMouseMove}
         />
       </div>
-      <div className="w-full h-[60px] mt-2">
+      <div className="w-full h-10 mt-2">
         <canvas
           ref={brushCanvasRef}
           className="w-full h-full"
