@@ -4,7 +4,7 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useForm, FormProvider, useFormContext } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Scatter } from 'recharts';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Area } from 'recharts';
 import { TrendingUp, TrendingDown, HelpCircle, Bot, FlaskConical, Target, Info, Brain, Zap, Send, Loader2, ShieldCheck, GitBranch, BarChart, Activity, AlertTriangle, Power, ChevronsUpDown, Settings, Sigma, Shield, X, Check, Skull, PlayCircle, PauseCircle } from 'lucide-react';
 import { DerivApiProviderV2 as DerivApiProvider, useDerivApiV2 as useDerivApi } from "@/features/trading/hooks/use-deriv-api-v2";
 import { AssetSelectorV2 as AssetSelector } from "@/features/trading/components/deriv-trader/asset-selector-v2";
@@ -600,9 +600,8 @@ function StochasticLab({
                          <ProjectionExpertsPanel experts={projectionExperts} adaptiveDrifts={adaptiveDriftRef.current} className="md:col-span-3" />
                     </div>
                     
-                    <VolatilityProjectionChart 
-                        chartData={chartDisplayData} 
-                        horizons={horizons} 
+                    <VolatilityFanChart 
+                        chartData={chartDisplayData}
                     />
                     
                      {stats.annualizedVol && (
@@ -631,112 +630,144 @@ function StochasticLab({
   );
 }
 
-function VolatilityProjectionChart({ chartData, horizons, className }: { 
+function VolatilityFanChart({ chartData, className }: { 
   chartData: any[];
-  horizons: any[];
   className?: string;
 }) {
-  if (!chartData || chartData.length === 0) {
+  const fanData = useMemo(() => {
+    return chartData.map(point => {
+        // Find all projection keys in the current data point
+        const projectionKeys = Object.keys(point).filter(k => k.startsWith('predicted_'));
+        // Get all corresponding price values
+        const prices = projectionKeys.map(k => point[k]).filter(p => p !== null && p !== undefined) as number[];
+        
+        if (prices.length < 2) {
+            // Not enough data for bands, return original point
+            return { ...point, median: null, p80_low: null, p80_high: null, p50_low: null, p50_high: null };
+        }
+
+        prices.sort((a,b) => a-b);
+
+        // Calculate percentiles for the uncertainty bands
+        return {
+            ...point,
+            median: prices[Math.floor(prices.length / 2)],
+            p80_low: prices[Math.floor(prices.length * 0.1)],
+            p80_high: prices[Math.floor(prices.length * 0.9)],
+            p50_low: prices[Math.floor(prices.length * 0.25)],
+            p50_high: prices[Math.floor(prices.length * 0.75)],
+        };
+    });
+  }, [chartData]);
+  
+  if (!fanData || fanData.length === 0) {
       return (
           <div className={cn("flex flex-col items-center justify-center h-64 text-muted-foreground", className)}>
               <Bot className="w-12 h-12 mb-4 opacity-30" />
               <p className="font-semibold">Aguardando dados suficientes do mercado...</p>
-              <p className="text-sm">É necessário um histórico mínimo para a análise estatística.</p>
+              <p className="text-sm">É necessário um histórico mínimo para a análise estocástica.</p>
           </div>
       )
   }
 
-  const lastRealPoint = [...chartData].reverse().find(d => d.price !== undefined);
-
-  const horizonStyle = (h: any) => {
-    if (h.ticks <= 6) return { stroke: '#22c55e', opacity: 0.35 };   // curto prazo
-    if (h.ticks <= 20) return { stroke: '#3b82f6', opacity: 0.25 };  // médio
-    return { stroke: '#a855f7', opacity: 0.18 };                     // longo
-  };
-
   return (
     <Card className={cn("h-[460px]", className)}>
       <CardHeader>
-        <CardTitle>Projeções Estocásticas</CardTitle>
+        <CardTitle>Cone de Incerteza Preditivo</CardTitle>
         <CardDescription>
-          Preço real + projeções probabilísticas por horizonte
+          Preço real e projeções de probabilidade (50% e 80% de confiança).
         </CardDescription>
       </CardHeader>
 
       <CardContent>
         <ResponsiveContainer width="100%" height={360}>
-          <LineChart data={chartData}>
+          <LineChart data={fanData}>
             <CartesianGrid strokeDasharray="3 3" opacity={0.4} />
 
-            <XAxis dataKey="time" />
+            <XAxis dataKey="time" tick={{ fontSize: 10 }} />
             <YAxis
-              domain={['dataMin - 0.5', 'dataMax + 0.5']}
+              domain={['dataMin - 1', 'dataMax + 1']}
               tickFormatter={(v) => typeof v === 'number' ? v.toFixed(4) : v}
+              tick={{ fontSize: 10 }}
+              width={80}
             />
 
-            <Tooltip />
+            <Tooltip 
+                contentStyle={{
+                    backgroundColor: 'hsl(var(--background))',
+                    borderColor: 'hsl(var(--border))',
+                }}
+            />
 
+            {/* BANDA 80% */}
+            <Area 
+                type="monotone"
+                dataKey={(d) => [d.p80_low, d.p80_high]}
+                stroke="transparent"
+                fill="hsl(var(--primary) / 0.1)"
+                isAnimationActive={false}
+                name="Intervalo 80%"
+            />
+
+            {/* BANDA 50% */}
+            <Area 
+                type="monotone"
+                dataKey={(d) => [d.p50_low, d.p50_high]}
+                stroke="transparent"
+                fill="hsl(var(--primary) / 0.2)"
+                isAnimationActive={false}
+                name="Intervalo 50%"
+            />
+            
             {/* PREÇO REAL */}
             <Line
               type="monotone"
               dataKey="price"
-              stroke="#0f172a"
-              strokeWidth={3}
+              stroke="hsl(var(--foreground))"
+              strokeWidth={2}
               dot={false}
               name="Preço Real"
+              isAnimationActive={false}
             />
 
-            {/* MARCADOR DO PONTO ATUAL */}
-            {lastRealPoint && (
-              <Scatter
-                data={[lastRealPoint]}
-                fill="#0f172a"
-                shape="circle"
-                name="Preço Atual"
-              />
-            )}
+            {/* PROJEÇÃO MEDIANA */}
+            <Line
+                type="monotone"
+                dataKey="median"
+                stroke="hsl(var(--primary))"
+                strokeWidth={2}
+                strokeDasharray="3 3"
+                dot={false}
+                name="Projeção Mediana"
+                isAnimationActive={false}
+            />
 
-            {/* PROJEÇÕES */}
-            {horizons.map(h => {
-              const style = horizonStyle(h);
-              return (
-                <Line
-                  key={h.name}
-                  type="monotone"
-                  dataKey={`predicted_${h.name}_ahead`}
-                  stroke={style.stroke}
-                  strokeWidth={1.5}
-                  dot={false}
-                  strokeOpacity={style.opacity}
-                  strokeDasharray="4 6"
-                  isAnimationActive={false}
-                />
-              );
-            })}
           </LineChart>
         </ResponsiveContainer>
-
-        {/* LEGENDA CUSTOM */}
-        <div className="flex gap-4 mt-4 text-xs justify-center">
-          <LegendItem color="#0f172a" label="Preço Real" />
-          <LegendItem color="#22c55e" label="Curto Prazo" />
-          <LegendItem color="#3b82f6" label="Médio Prazo" />
-          <LegendItem color="#a855f7" label="Longo Prazo" />
+        
+        <div className="flex gap-4 mt-4 text-xs justify-center items-center">
+          <LegendItem color="hsl(var(--foreground))" label="Preço Real" type="solid" />
+          <LegendItem color="hsl(var(--primary))" label="Mediana" type="dashed" />
+          <LegendItem color="hsl(var(--primary) / 0.2)" label="50% Conf." type="area" />
+          <LegendItem color="hsl(var(--primary) / 0.1)" label="80% Conf." type="area" />
         </div>
       </CardContent>
     </Card>
   );
 }
 
-const LegendItem = ({ color, label }: { color: string; label: string }) => (
-  <div className="flex items-center gap-1.5">
-    <span
-      className="w-3 h-0.5 rounded"
-      style={{ backgroundColor: color }}
-    />
-    <span>{label}</span>
-  </div>
-);
+const LegendItem = ({ color, label, type = 'solid' }: { color: string; label: string; type?: 'solid' | 'dashed' | 'area'; }) => {
+    return (
+        <div className="flex items-center gap-1.5">
+            {type === 'area' ? (
+                <div className="w-3 h-3 rounded-sm" style={{ backgroundColor: color }} />
+            ) : (
+                <div className="w-4 h-px" style={{ borderTop: `2px ${type} ${color}` }} />
+            )}
+            <span>{label}</span>
+        </div>
+    );
+};
 
 function PageContent() {
   const { 
@@ -1010,12 +1041,16 @@ const VolatilityAutopilotInterface = ({
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
-        <div className="flex items-center justify-between rounded-lg border p-4">
-          <Label htmlFor="autopilot-switch" className="font-semibold">Ativar Piloto</Label>
+        <div className="flex items-center justify-between rounded-lg border p-4 bg-muted/50">
+          <Label htmlFor="autopilot-switch" className="font-semibold text-base flex items-center gap-2">
+            <Power className={cn("h-5 w-5 transition-colors", autopilot.isAutopilotOn ? "text-green-500" : "text-muted-foreground")} />
+            Status do Piloto
+          </Label>
           <Switch
             id="autopilot-switch"
             checked={autopilot.isAutopilotOn}
             onCheckedChange={autopilot.toggleAutopilot}
+            className="data-[state=checked]:bg-green-600"
           />
         </div>
          <Alert className={cn(
