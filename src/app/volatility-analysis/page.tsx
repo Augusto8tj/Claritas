@@ -5,7 +5,7 @@ import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { useForm, FormProvider } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ScatterChart, Scatter } from 'recharts';
-import { TrendingUp, TrendingDown, HelpCircle, Bot, FlaskConical, Target, Info, Brain, Zap, Send, Loader2, ShieldCheck, GitBranch, BarChart, Activity, AlertTriangle, Power, ChevronsUpDown, Settings, Sigma, Shield, X, Check } from 'lucide-react';
+import { TrendingUp, TrendingDown, HelpCircle, Bot, FlaskConical, Target, Info, Brain, Zap, Send, Loader2, ShieldCheck, GitBranch, BarChart, Activity, AlertTriangle, Power, ChevronsUpDown, Settings, Sigma, Shield, X, Check, Skull, PlayCircle, PauseCircle } from 'lucide-react';
 import { DerivApiProviderV2 as DerivApiProvider, useDerivApiV2 as useDerivApi } from "@/features/trading/hooks/use-deriv-api-v2";
 import { AssetSelectorV2 as AssetSelector } from "@/features/trading/components/deriv-trader/asset-selector-v2";
 import { ApiStatusIndicatorV2 as ApiStatusIndicator } from "@/features/trading/components/deriv-trader/ApiStatusIndicatorV2";
@@ -18,7 +18,7 @@ import { cn } from "@/lib/utils";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { volatilityTraderSchema, type VolatilityTraderFormValues } from "@/features/trading/components/deriv-trader/volatility-trader-interface.types";
 import VolatilityTraderInterface from "@/features/trading/components/deriv-trader/volatility-trader-interface";
-import { OperationsLogV2 } from "@/features/trading/components/deriv-trader/operations-log-v2";
+import { OperationsLogV2 } from "@/components/deriv-trader/operations-log-v2";
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
@@ -68,9 +68,8 @@ const wilsonScoreInterval = (successes: number, trials: number): { lower: number
 
 const getProgressColor = (percentage: number) => {
     // Agora baseamos a cor na assertividade REAL, não na efetiva
-    if (percentage > 75) return 'bg-green-500';
-    if (percentage > 60) return 'bg-blue-500';
-    if (percentage > 55) return 'bg-teal-500';
+    if (percentage > 55) return 'bg-green-500';
+    if (percentage > 50) return 'bg-blue-500';
     if (percentage < 45) return 'bg-red-500';
     return 'bg-gray-400';
 };
@@ -84,7 +83,7 @@ interface ExpertProjection {
     rawWinRate: number;
     hits: number;
     total: number;
-    status: 'active' | 'suspended';
+    status: 'active' | 'suspended' | 'permanently_disabled';
 }
 
 interface StrongestSignal {
@@ -143,7 +142,7 @@ const StrongestSignalCard = ({ signal }: { signal: StrongestSignal }) => {
 const ProjectionExpertsPanel = ({ experts, adaptiveDrifts }: { experts: ExpertProjection[], adaptiveDrifts: Record<string, number> }) => {
     
     const getEffectiveVote = (expert: ExpertProjection | undefined): 'RISE' | 'FALL' | 'HOLD' => {
-        if (!expert || expert.vote === 'HOLD' || expert.status === 'suspended') return 'HOLD';
+        if (!expert || expert.vote === 'HOLD' || expert.status !== 'active') return 'HOLD';
         
         if (expert.wilson.lower > 0.5) {
             return expert.vote;
@@ -155,6 +154,15 @@ const ProjectionExpertsPanel = ({ experts, adaptiveDrifts }: { experts: ExpertPr
 
         return 'HOLD';
     };
+
+    const getStatusIcon = (status: ExpertProjection['status']) => {
+        switch(status) {
+            case 'active': return <PlayCircle size={12} className="text-green-500" />;
+            case 'suspended': return <PauseCircle size={12} className="text-orange-500" />;
+            case 'permanently_disabled': return <Skull size={12} className="text-destructive" />;
+            default: return null;
+        }
+    }
 
     return (
         <Card className="p-4">
@@ -172,8 +180,8 @@ const ProjectionExpertsPanel = ({ experts, adaptiveDrifts }: { experts: ExpertPr
                     return (
                         <div key={name} className="flex justify-between items-center bg-background p-2 rounded-md border text-xs">
                            <div className="w-16 flex items-center gap-2">
-                             <span className={cn("font-semibold", status === 'suspended' && 'text-muted-foreground line-through')}>{name}</span>
-                             {status === 'suspended' && <X className="h-3 w-3 text-destructive" />}
+                             <span className={cn("font-semibold", status !== 'active' && 'text-muted-foreground line-through')}>{name}</span>
+                             {getStatusIcon(status)}
                            </div>
                             <div className="flex items-center gap-2 w-32">
                                 <Progress value={rawWinRate} className="h-1.5 flex-1" indicatorClassName={getProgressColor(rawWinRate)} />
@@ -218,6 +226,7 @@ const ProjectionExpertsPanel = ({ experts, adaptiveDrifts }: { experts: ExpertPr
 const ASSERTIVENESS_HISTORY_LIMIT = 1000;
 const CONSECUTIVE_LOSS_LIMIT = 5;
 const CONSECUTIVE_WIN_REACTIVATION = 3;
+const MAX_SUSPENSIONS_ALLOWED = 3;
 
 /**
  * @fileOverview O `StochasticLab` é o coração do motor preditivo da aplicação.
@@ -253,12 +262,17 @@ function StochasticLab({
   
   // --- ESTADO DO CONTROLADOR NEURO-ADAPTATIVO ---
   const ADAPTIVE_DRIFT_LEARNING_RATE = 0.1;
-  const DRIFT_DECAY_FACTOR = 0.95; // NOVO: Fator de decaimento do Drift
+  const getDecayFactor = (horizonName: string) => {
+    if (horizonName.endsWith('t') && parseInt(horizonName.replace('t', '')) <= 10) {
+      return 0.90; // Horizontes ultra-curtos esquecem mais rápido
+    }
+    return 0.95; // Horizontes longos mantêm memória
+  };
   const ERROR_HISTORY_LENGTH = 20;
   const adaptiveDriftRef = useRef<Record<string, number>>({});
   const predictionErrorHistoryRef = useRef<Record<string, number[]>>({});
 
-  const [assertivenessStats, setAssertivenessStats] = useState<Record<string, { wins: number; total: number; consecutiveLosses: number; consecutiveWins: number; status: 'active' | 'suspended' }>>({});
+  const [assertivenessStats, setAssertivenessStats] = useState<Record<string, { wins: number; total: number; consecutiveLosses: number; consecutiveWins: number; status: 'active' | 'suspended' | 'permanently_disabled'; totalSuspensions: number }>>({});
   const assertivenessHistoryRef = useRef<Record<string, boolean[]>>({});
   const pendingPredictionsRef = useRef<Record<string, { startTimeIndex: number; startPrice: number; predictedEndPrice: number }[]>>({});
   const processedLogsRef = useRef(new Set<number>());
@@ -284,14 +298,14 @@ function StochasticLab({
 
   useEffect(() => {
     // Inicialização dos estados dinâmicos para cada horizonte
-    const initialStats: Record<string, { wins: number; total: number; consecutiveLosses: number; consecutiveWins: number; status: 'active' | 'suspended'; }> = {};
+    const initialStats: Record<string, { wins: number; total: number; consecutiveLosses: number; consecutiveWins: number; status: 'active' | 'suspended' | 'permanently_disabled'; totalSuspensions: number; }> = {};
     const initialPending: Record<string, any[]> = {};
     const initialDrift: Record<string, number> = {};
     const initialErrorHistory: Record<string, number[]> = {};
     const initialAssertivenessHistory: Record<string, boolean[]> = {};
 
     horizons.forEach(h => {
-        initialStats[h.name] = { wins: 0, total: 0, consecutiveLosses: 0, consecutiveWins: 0, status: 'active' };
+        initialStats[h.name] = { wins: 0, total: 0, consecutiveLosses: 0, consecutiveWins: 0, status: 'active', totalSuspensions: 0 };
         initialPending[h.name] = [];
         initialDrift[h.name] = 0;
         initialErrorHistory[h.name] = [];
@@ -373,7 +387,8 @@ function StochasticLab({
                       // 3. Calcula o novo drift adaptativo com decaimento
                       const averageError = errorHistory.reduce((a, b) => a + b, 0) / errorHistory.length;
                       const currentDrift = adaptiveDriftRef.current[h.name] || 0;
-                      adaptiveDriftRef.current[h.name] = (currentDrift * DRIFT_DECAY_FACTOR) + (ADAPTIVE_DRIFT_LEARNING_RATE * averageError);
+                      const decayFactor = getDecayFactor(h.name);
+                      adaptiveDriftRef.current[h.name] = (currentDrift * decayFactor) + (ADAPTIVE_DRIFT_LEARNING_RATE * averageError);
 
                       // 4. Atualiza a assertividade
                       const predictedDirection = pred.predictedEndPrice > pred.startPrice;
@@ -418,14 +433,24 @@ function StochasticLab({
                 horizonsToUpdateStats.forEach(horizonName => {
                     const history = assertivenessHistoryRef.current[horizonName] || [];
                     const { lastResult } = newAssertivenessData[horizonName];
-                    const currentExpertStats = (prev[horizonName] || { wins: 0, total: 0, consecutiveLosses: 0, consecutiveWins: 0, status: 'active' });
-                    let { consecutiveLosses, consecutiveWins, status } = currentExpertStats;
+                    const currentExpertStats = (prev[horizonName] || { wins: 0, total: 0, consecutiveLosses: 0, consecutiveWins: 0, status: 'active', totalSuspensions: 0 });
+                    let { consecutiveLosses, consecutiveWins, status, totalSuspensions } = currentExpertStats;
+                    
+                    if (status === 'permanently_disabled') {
+                        newStats[horizonName] = currentExpertStats;
+                        return;
+                    }
 
                     if (lastResult === true) { // isWin
                         consecutiveWins++;
                         consecutiveLosses = 0;
                         if (status === 'suspended' && consecutiveWins >= CONSECUTIVE_WIN_REACTIVATION) {
-                            status = 'active';
+                            if (totalSuspensions < MAX_SUSPENSIONS_ALLOWED) {
+                                status = 'active';
+                                totalSuspensions++; // Increment on re-activation
+                            } else {
+                                status = 'permanently_disabled';
+                            }
                         }
                     } else { // isLoss
                         consecutiveLosses++;
@@ -440,7 +465,8 @@ function StochasticLab({
                         total: history.length,
                         consecutiveLosses,
                         consecutiveWins,
-                        status
+                        status,
+                        totalSuspensions,
                     };
                 });
                 return newStats;
@@ -454,7 +480,7 @@ function StochasticLab({
         const path = futurePathsRef.current[h.name] || [];
         const vote = path.length > 1 ? (path[path.length - 1].price > path[0].price ? 'RISE' : 'FALL') : 'HOLD';
         
-        const stats = assertivenessStats[h.name] || { wins: 0, total: 0, status: 'active' };
+        const stats = assertivenessStats[h.name] || { wins: 0, total: 0, status: 'active', consecutiveLosses: 0, consecutiveWins: 0, totalSuspensions: 0 };
         const { wins, total, status } = stats;
         
         const rawWinRate = total > 0 ? (wins / total) * 100 : 0;
@@ -473,16 +499,20 @@ function StochasticLab({
   }, [horizons, assertivenessStats, realData]);
 
   const getEffectiveVote = useCallback((expert: ExpertProjection | undefined): 'RISE' | 'FALL' | 'HOLD' => {
-      if (!expert || expert.vote === 'HOLD' || expert.status === 'suspended') return 'HOLD';
+      if (!expert || expert.vote === 'HOLD' || expert.status !== 'active') return 'HOLD';
       
+      // A certeza estatística é o nosso critério de confiança
       if (expert.wilson.lower > 0.5) {
           return expert.vote;
       }
       
       if (expert.wilson.upper < 0.5) {
+          // Se o limite superior da confiança é < 50%, o modelo está consistentemente errado.
+          // Logo, o sinal invertido é a nossa melhor aposta.
           return expert.vote === 'RISE' ? 'FALL' : (expert.vote === 'FALL' ? 'RISE' : 'HOLD');
       }
 
+      // Se o intervalo de confiança contém 50%, o resultado é estatisticamente ambíguo.
       return 'HOLD';
   }, []);
 
@@ -538,7 +568,7 @@ function StochasticLab({
         <CardHeader>
             <CardTitle className="font-headline flex items-center gap-2">
                 <FlaskConical className="h-5 w-5 text-purple-600" />
-                Laboratório Preditivo (Cérebro Adaptativo V2)
+                Laboratório Preditivo (Cérebro Adaptativo V2.1)
             </CardTitle>
             <CardDescription>O cientista usa GBM auto-calibrável e certeza estatística (Wilson Score) para projetar o futuro.</CardDescription>
         </CardHeader>
@@ -803,12 +833,12 @@ function PageContent() {
                         <div className="flex items-center gap-4">
                           <Slider
                             id="global-assertiveness-threshold"
-                            min={55} max={100} step={5}
-                            value={[Object.values(autopilot.riskManager.thresholds)[0] || 80]}
+                            min={51} max={70} step={1}
+                            value={[Object.values(autopilot.riskManager.thresholds)[0] || 52]}
                             onValueChange={(value) => autopilot.setGlobalAssertivenessThreshold(value[0])}
                             disabled={autopilot.isAutopilotOn}
                           />
-                          <span className="font-mono text-primary font-bold">{Object.values(autopilot.riskManager.thresholds)[0] || 80}%</span>
+                          <span className="font-mono text-primary font-bold">{Object.values(autopilot.riskManager.thresholds)[0] || 52}%</span>
                         </div>
                       </div>
                       <Separator/>
@@ -822,8 +852,8 @@ function PageContent() {
                             </div>
                             <Slider
                               id={`threshold-${horizon}`}
-                              min={55} max={80} step={1}
-                              value={[autopilot.riskManager.thresholds[horizon] || 80]}
+                              min={51} max={70} step={1}
+                              value={[autopilot.riskManager.thresholds[horizon] || 52]}
                               onValueChange={(value) => autopilot.setIndividualThreshold(horizon, value[0])}
                               disabled={autopilot.isAutopilotOn}
                             />

@@ -48,6 +48,43 @@ export interface MasterAutopilotState {
     assertiveness: Record<string, AssertivenessData>;
 }
 
+const getAdaptiveCooldown = (duration: number, unit: string, isLastTradeWin: boolean) => {
+  const baseSeconds = unit === 's' ? duration : duration * 2;
+  const multiplier = isLastTradeWin ? 1.5 : 3.0; // Pausa maior após perda
+  return Math.max(baseSeconds * multiplier * 1000, 15000);
+};
+
+const detectNoiseRegime = (experts: Record<string, AssertivenessData>): boolean => {
+  const activeExperts = Object.values(experts);
+  if (activeExperts.length < 5) return false;
+  
+  const avgWinRate = activeExperts.reduce((sum, e) => sum + e.accuracy, 0) / activeExperts.length;
+  const winRateVariance = activeExperts.reduce((sum, e) => 
+    sum + Math.pow(e.accuracy - avgWinRate, 2), 0
+  ) / activeExperts.length;
+
+  // Se a maioria dos modelos está em ~50% ± 3%, é ruído puro
+  return avgWinRate > 48 && avgWinRate < 52 && winRateVariance < 10;
+};
+
+const calculateOptimalStake = (winRate: number, dailyBalance: number, payout: number = 0.95): number => {
+  const p = winRate / 100;
+  if (p < 0.515) return 1.0;
+
+  const q = 1 - p;
+  const b = payout;
+  
+  const kellyFraction = (p * b - q) / b;
+  if (kellyFraction <= 0) return 1.0;
+  
+  const fractionalKelly = kellyFraction / 4; // Quarter Kelly
+  const stake = dailyBalance * fractionalKelly;
+  
+  // Limitar entre $1.00 e 5% da banca diária
+  return Math.max(1.0, Math.min(stake, dailyBalance * 0.05));
+};
+
+
 const calculateDynamicThresholds = (
   regime: MarketRegime,
   indicators: Indicators | null,
@@ -59,29 +96,28 @@ const calculateDynamicThresholds = (
   if (regime === 'trending_bull' || regime === 'trending_bear') {
     if (indicators?.adx && indicators.adx > 30) {
       Object.keys(dynamicThresholds).forEach(key => {
-        dynamicThresholds[key] = Math.max(55, dynamicThresholds[key] - 10);
+        dynamicThresholds[key] = Math.max(51, dynamicThresholds[key] - 5);
       });
     }
   }
   
-  // CORREÇÃO: Em ranging, os modelos mais longos são mais confiáveis, então o limiar deve ser MENOR, não maior.
   if (regime === 'ranging') {
     Object.keys(dynamicThresholds).forEach(key => {
       if (key.endsWith('s') && parseInt(key) >= 30) {
-        dynamicThresholds[key] = Math.max(55, dynamicThresholds[key] - 5); 
+        dynamicThresholds[key] = Math.max(51, dynamicThresholds[key] - 3); 
       }
     });
   }
   
-  if (indicators?.atr && indicators.sma && indicators.sma.length > 0 && indicators.sma[indicators.sma.length - 1] !== null && indicators.atr > 1.5 * (indicators.sma[indicators.sma.length - 1] || 1) * 0.01) {
+  if (indicators?.atr && indicators?.ma?.long && indicators.atr > 1.5 * indicators.ma.long * 0.01) {
     dynamicThresholds['30s'] = Math.min(95, dynamicThresholds['30s'] + 10);
     dynamicThresholds['40s'] = Math.min(95, dynamicThresholds['40s'] + 10);
     dynamicThresholds['50s'] = Math.min(95, dynamicThresholds['50s'] + 10);
   }
   
   if (indicators?.bbw && indicators.bbw < 2) {
-    dynamicThresholds['10t'] = Math.max(50, dynamicThresholds['10t'] - 15);
-    dynamicThresholds['20s'] = Math.max(50, dynamicThresholds['20s'] - 15);
+    dynamicThresholds['10t'] = Math.max(50, dynamicThresholds['10t'] - 10);
+    dynamicThresholds['20s'] = Math.max(50, dynamicThresholds['20s'] - 10);
   }
   
   return dynamicThresholds;
@@ -117,6 +153,7 @@ export function useMasterAutopilot() {
   
   const tradesInFlightRef = useRef<Map<number, { triggeredBy: string[] | null }>>(new Map());
   const processedTradesRef = useRef<Set<number>>(new Set());
+  const tradeStatsRef = useRef({ totalTrades: 0, wins: 0 });
 
   const [masterState, setMasterState] = useState<MasterAutopilotState>({
     isReady: false,
@@ -193,10 +230,15 @@ export function useMasterAutopilot() {
                     duration = 15;
                     durationUnit = 's';
                 }
+                
+                const triggerWinRates = triggeredBy.map(h => currentAssertiveness[h] ? Math.max(currentAssertiveness[h].accuracy, 100 - currentAssertiveness[h].accuracy) : 0);
+                const maxWinRate = Math.max(...triggerWinRates);
+                const optimalStake = calculateOptimalStake(maxWinRate, dailyBalance);
+
 
                 const tradeResult = await executeRiseFallTrade(
                     signalToUse === 'RISE' ? 'CALL' : 'PUT',
-                    1.0, 
+                    optimalStake, 
                     activeSymbol,
                     signalToUse.toLowerCase() as 'rise' | 'fall',
                     duration,
@@ -206,7 +248,7 @@ export function useMasterAutopilot() {
 
                 if (tradeResult.success && tradeResult.contractId && currentUser) {
                     tradesInFlightRef.current.set(tradeResult.contractId, { triggeredBy });
-                    toast({ title: `🤖 Master Autopilot: Ordem ${initiator} ${signalToUse}!`, description: `Executando ${contractType} em ${activeSymbol}`});
+                    toast({ title: `🤖 Master Autopilot: Ordem ${initiator} ${signalToUse}!`, description: `Stake: $${optimalStake.toFixed(2)}. Duração: ${duration}${durationUnit}.`});
 
                     const logId = `pred_log_${tradeResult.contractId}`;
                     const logContext = {
@@ -225,7 +267,7 @@ export function useMasterAutopilot() {
                         asset: activeSymbol,
                         tradeParams: {
                             direction: signalToUse,
-                            stake: 1.0,
+                            stake: optimalStake,
                             duration: duration,
                             durationUnit: durationUnit,
                         },
@@ -248,7 +290,7 @@ export function useMasterAutopilot() {
             toast({ title: `❌ Erro na Execução ${initiator}`, description: error instanceof Error ? error.message : String(error), variant: "destructive" });
             return { duration: 0, unit: 's'};
         }
-    }, [contractType, activeSymbol, executeRiseFallTrade, toast]);
+    }, [contractType, activeSymbol, executeRiseFallTrade, toast, dailyBalance]);
   
   const runAutopilotCycle = useCallback((newAssertiveness: Record<string, AssertivenessData>) => {
     setMasterState(prevState => {
@@ -260,6 +302,20 @@ export function useMasterAutopilot() {
             manualTrigger: { signal: 'HOLD', reason: 'Dados insuficientes.'},
           });
         }
+        
+        const isNoise = detectNoiseRegime(newAssertiveness);
+        if (isNoise) {
+            return {
+                ...prevState,
+                isReady: true,
+                trigger: {
+                    signal: 'HOLD',
+                    reason: '🌀 Regime de ruído detectado. Modelos em ~50%. Pausando.',
+                    triggeredBy: null,
+                },
+            };
+        }
+        
         const currentTick = priceTicks[priceTicks.length - 1];
         if (!currentTick) return prevState;
 
@@ -311,19 +367,10 @@ export function useMasterAutopilot() {
     const openMasterTrade = operationsLog.find(op => op.initiator === 'Piloto' && op.status === 'pending');
     
     if (isAutopilotOn && trigger.signal !== 'HOLD' && !cooldownRef.current.active && (!openMasterTrade || allowMultiplePositions)) {
-      cooldownRef.current.active = true;
+      
       executeTradeAction('Piloto', trigger.signal, trigger.triggeredBy, user, trigger.reason, assertiveness)
         .then(({ duration, unit }) => {
-            const durationInSeconds = unit === 's' ? duration : duration * 2;
-            const cooldownTime = Math.max(durationInSeconds * 2 * 1000, 15000); // Mínimo 15 segundos
-            
-            if (cooldownRef.current.timeoutId) {
-                clearTimeout(cooldownRef.current.timeoutId);
-            }
-            
-            cooldownRef.current.timeoutId = setTimeout(() => { 
-                cooldownRef.current.active = false;
-            }, cooldownTime);
+            // A lógica de cooldown agora é acionada quando o trade termina
         });
     }
   }, [masterState, isAutopilotOn, operationsLog, user, executeTradeAction, allowMultiplePositions]);
@@ -370,35 +417,52 @@ export function useMasterAutopilot() {
         
         const tradeContext = tradesInFlightRef.current.get(lastFinishedTrade.id);
         
+        tradeStatsRef.current.totalTrades++;
+        if (isWin) tradeStatsRef.current.wins++;
+
+        const { totalTrades } = tradeStatsRef.current;
+        const globalWinRate = totalTrades > 0 ? (tradeStatsRef.current.wins / totalTrades) * 100 : 0;
+        
+        if (totalTrades > 200 && globalWinRate < 51) {
+            toast({
+                variant: 'destructive',
+                title: '⚠️ ALERTA: Sistema Abaixo do Breakeven',
+                description: `Taxa de acerto global ${globalWinRate.toFixed(1)}% após ${totalTrades} trades. Considere pausar.`,
+                duration: 120000
+            });
+        }
+
+        cooldownRef.current.active = true;
+        const cooldownTime = getAdaptiveCooldown(lastFinishedTrade.duration, lastFinishedTrade.durationUnit, isWin);
+        if (cooldownRef.current.timeoutId) clearTimeout(cooldownRef.current.timeoutId);
+        cooldownRef.current.timeoutId = setTimeout(() => {
+            cooldownRef.current.active = false;
+        }, cooldownTime);
+
         setRiskManager(prev => {
             const newThresholds = { ...prev.thresholds };
             let adjustmentReason: string;
 
             if (tradeContext && tradeContext.triggeredBy) {
                 const horizonsToAdjust = tradeContext.triggeredBy;
-                adjustmentReason = `Ajuste para ${horizonsToAdjust.join(' & ')}: ${isWin ? 'Recompensa (reduzindo limiar)' : 'Penalidade (aumentando limiar)'}.`;
+                adjustmentReason = `Ajuste para ${horizonsToAdjust.join(' & ')}: ${isWin ? 'Recompensa' : 'Penalidade'}.`;
                 
                 horizonsToAdjust.forEach(horizon => {
                     if (newThresholds[horizon]) {
                         if (isWin) {
-                            newThresholds[horizon] = Math.max(55, newThresholds[horizon] - 2); 
+                            newThresholds[horizon] = Math.max(51, newThresholds[horizon] - 1); 
                         } else {
-                            newThresholds[horizon] = Math.min(95, newThresholds[horizon] + 5); 
+                            newThresholds[horizon] = Math.min(70, newThresholds[horizon] + 2); 
                         }
                     }
                 });
                 tradesInFlightRef.current.delete(lastFinishedTrade.id);
 
             } else {
-                adjustmentReason = `Ajuste Global (Contexto de trade não encontrado): ${isWin ? 'Relaxando limiares.' : 'Aumentando cautela.'}.`;
-                console.warn(`[RiskManager] Contexto não encontrado para o trade ${lastFinishedTrade.id}. Aplicando ajuste global.`);
+                adjustmentReason = `Ajuste Global: ${isWin ? 'Relaxando.' : 'Aumentando cautela.'}.`;
                 if (!isWin) {
                     Object.keys(newThresholds).forEach(key => {
-                        newThresholds[key] = Math.min(95, newThresholds[key] + 5);
-                    });
-                } else {
-                     Object.keys(newThresholds).forEach(key => {
-                        newThresholds[key] = Math.max(55, newThresholds[key] - 1);
+                        newThresholds[key] = Math.min(70, newThresholds[key] + 1);
                     });
                 }
             }
@@ -410,7 +474,7 @@ export function useMasterAutopilot() {
             };
         });
     }
-  }, [operationsLog]);
+  }, [operationsLog, toast]);
     
   return {
     isAutopilotOn,
