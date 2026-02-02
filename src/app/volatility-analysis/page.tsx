@@ -38,25 +38,33 @@ import type { AssertivenessData } from '@/features/trading/hooks/use-master-auto
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 
-// Aproximação da função quantil normal inversa
-const normalQuantile = (p: number): number => {
-  const a1 = -39.69683028665376; const a2 = 220.9460984245205; const a3 = -275.9285104469687; const a4 = 138.357751867269; const a5 = -30.66479806614716; const a6 = 2.506628277459239;
-  const b1 = -54.47609879822406; const b2 = 161.5858368580409; const b3 = -155.6989798598866; const b4 = 66.80131188771972; const b5 = -13.28068155288572;
-  const c1 = -0.007784894002430293; const c2 = -0.3223964580411365; const c3 = -2.400758277161838; const c4 = -2.549732539343734; const c5 = 4.374664141464968; const c6 = 2.938163982698783;
-  const d1 = 0.007784695709041462; const d2 = 0.3224671290700398; const d3 = 2.445134137142996; const d4 = 3.754408661907416;
-  const pLow = 0.02425; const pHigh = 1 - pLow;
-  if (p < pLow) {
-    const q = Math.sqrt(-2 * Math.log(p));
-    return (((((c1*q+c2)*q+c3)*q+c4)*q+c5)*q+c6) / ((((d1*q+d2)*q+d3)*q+d4)*q+1);
-  } else if (p <= pHigh) {
-    const q = p - 0.5;
-    const r = q * q;
-    return (((((a1*r+a2)*r+a3)*r+a4)*r+a5)*r+a6)*q / (((((b1*r+b2)*r+b3)*r+b4)*r+b5)*r+1);
-  } else {
-    const q = Math.sqrt(-2 * Math.log(1-p));
-    return -(((((c1*q+c2)*q+c3)*q+c4)*q+c5)*q+c6) / ((((d1*q+d2)*q+d3)*q+d4)*q+1);
+/**
+ * Wilson Score Interval for a binomial proportion.
+ * Provides a confidence interval for the "true" success rate.
+ * The lower bound is a conservative estimate, useful for decision making.
+ * @param {number} successes - Number of successful trials (wins).
+ * @param {number} trials - Total number of trials.
+ * @returns {object} An object containing the lower and upper bounds of the confidence interval (0-1).
+ */
+const wilsonScoreInterval = (successes: number, trials: number): { lower: number; upper: number } => {
+  if (trials === 0) {
+    return { lower: 0, upper: 1 }; // Max uncertainty
   }
+  // z-score for a 90% confidence interval. A good balance between confidence and responsiveness.
+  const z = 1.645; 
+  const p_hat = successes / trials;
+  const n = trials;
+  
+  const center_adjustment = (z * z) / (2 * n);
+  const margin = z * Math.sqrt((p_hat * (1 - p_hat)) / n + (z * z) / (4 * n * n));
+  const denominator = 1 + (2 * center_adjustment);
+  
+  const lower = Math.max(0, (p_hat + center_adjustment - margin) / denominator);
+  const upper = Math.min(1, (p_hat + center_adjustment + margin) / denominator);
+  
+  return { lower, upper };
 };
+
 
 const getProgressColor = (percentage: number) => {
     const effectivePercentage = Math.max(percentage, 100 - percentage);
@@ -68,12 +76,22 @@ const getProgressColor = (percentage: number) => {
 
 const isCandle = (d: ChartData): d is CandleData => d != null && 'close' in d;
 
+interface ExpertProjection {
+    name: string;
+    vote: 'RISE' | 'FALL' | 'HOLD';
+    wilson: { lower: number; upper: number };
+    rawWinRate: number;
+    hits: number;
+    total: number;
+}
+
 interface StrongestSignal {
     horizon: string;
     direction: 'RISE' | 'FALL' | 'HOLD';
     certaintyScore: number;
-    accuracy: number;
+    rawWinRate: number;
 }
+
 
 interface StochasticLabProps {
   realData: ChartData[];
@@ -82,14 +100,6 @@ interface StochasticLabProps {
   onDeletePredictiveLog: (logId: string) => void;
   deletingPredictiveLogId: string | null;
 }
-
-const calculateRollingAccuracy = (history: boolean[]) => {
-    const hits = history.filter(h => h).length;
-    const total = history.length;
-    const percentage = total > 0 ? (hits / total) * 100 : 0;
-    return { hits, total, percentage };
-};
-
 
 const StatItem = ({ label, value }: { label: string; value: string | number }) => (
     <div className="flex flex-col p-2 border-l-2 pl-3">
@@ -100,7 +110,7 @@ const StatItem = ({ label, value }: { label: string; value: string | number }) =
 
 const StrongestSignalCard = ({ signal }: { signal: StrongestSignal }) => {
     const isHold = signal.direction === 'HOLD' || signal.certaintyScore === 0;
-    const displayAccuracy = Math.max(signal.accuracy, 100 - signal.accuracy);
+    const displayAccuracy = Math.max(signal.rawWinRate, 100 - signal.rawWinRate);
 
     return (
         <Card className={cn("p-4 flex flex-col justify-center", 
@@ -111,7 +121,7 @@ const StrongestSignalCard = ({ signal }: { signal: StrongestSignal }) => {
                 <div className="text-center text-muted-foreground">
                     <HelpCircle className="mx-auto h-8 w-8 opacity-50 mb-2"/>
                     <p className="font-bold text-lg">NEUTRO</p>
-                    <p className="text-xs">Nenhum especialista com alta certeza.</p>
+                    <p className="text-xs">Nenhum especialista com certeza estatística.</p>
                 </div>
             ) : (
                 <div className="text-center">
@@ -128,67 +138,80 @@ const StrongestSignalCard = ({ signal }: { signal: StrongestSignal }) => {
     );
 };
 
-const getEffectiveVote = (expert: AssertivenessData | undefined): 'RISE' | 'FALL' | 'HOLD' => {
-    if (!expert) return 'HOLD';
-    return expert.accuracy > 50 
-        ? expert.vote 
-        : (expert.vote === 'RISE' ? 'FALL' : (expert.vote === 'FALL' ? 'RISE' : 'HOLD'));
-};
+const ProjectionExpertsPanel = ({ experts, adaptiveDrifts }: { experts: ExpertProjection[], adaptiveDrifts: Record<string, number> }) => {
+    
+    const getEffectiveVote = (expert: ExpertProjection | undefined): 'RISE' | 'FALL' | 'HOLD' => {
+        if (!expert || expert.vote === 'HOLD') return 'HOLD';
+        
+        // Se temos confiança que a taxa de acerto é > 50%, confiamos no voto.
+        if (expert.wilson.lower > 0.5) {
+            return expert.vote;
+        }
+        
+        // Se temos confiança que a taxa de acerto é < 50%, invertemos o voto.
+        if (expert.wilson.upper < 0.5) {
+            return expert.vote === 'RISE' ? 'FALL' : (expert.vote === 'FALL' ? 'RISE' : 'HOLD');
+        }
 
-const ProjectionExpertsPanel = ({ experts, adaptiveDrifts }: { experts: { name: string; vote: 'RISE' | 'FALL' | 'HOLD'; accuracy: number; hits: number; total: number; }[], adaptiveDrifts: Record<string, number> }) => (
-    <Card className="p-4">
-        <CardTitle className="text-sm font-semibold text-muted-foreground mb-3 flex items-center justify-between">
-            <span>Assertividade & Calibração</span>
-            <span className="font-mono text-xs">Acertos / Total</span>
-        </CardTitle>
-        <div className="space-y-2">
-            {experts.map(({ name, vote, accuracy, hits, total }) => {
-                const effectiveDirection = getEffectiveVote({ accuracy, vote });
-                const effectiveAccuracy = Math.max(accuracy, 100 - accuracy);
-                const drift = adaptiveDrifts[name] || 0;
-                const driftColor = drift > 0.00001 ? 'text-green-500' : drift < -0.00001 ? 'text-red-500' : 'text-gray-400';
-                
-                return (
-                    <div key={name} className="flex justify-between items-center bg-background p-2 rounded-md border text-xs">
-                        <span className="font-semibold w-12">{name}</span>
-                        <div className="flex items-center gap-2 w-32">
-                            <Progress value={effectiveAccuracy} className="h-1.5 flex-1" indicatorClassName={getProgressColor(accuracy)} />
-                            <span className="font-mono w-24 text-right">
-                                {accuracy.toFixed(0)}%
-                                <span className="text-muted-foreground ml-1">({hits}/{total})</span>
+        // Caso contrário, a incerteza é muito alta. Não operamos.
+        return 'HOLD';
+    };
+
+    return (
+        <Card className="p-4">
+            <CardTitle className="text-sm font-semibold text-muted-foreground mb-3 flex items-center justify-between">
+                <span>Assertividade & Calibração</span>
+                <span className="font-mono text-xs">Acertos / Total</span>
+            </CardTitle>
+            <div className="space-y-2">
+                {experts.map((expert) => {
+                    const { name, vote, wilson, rawWinRate, hits, total } = expert;
+                    const effectiveDirection = getEffectiveVote(expert);
+                    const drift = adaptiveDrifts[name] || 0;
+                    const driftColor = drift > 0.00001 ? 'text-green-500' : drift < -0.00001 ? 'text-red-500' : 'text-gray-400';
+                    
+                    return (
+                        <div key={name} className="flex justify-between items-center bg-background p-2 rounded-md border text-xs">
+                            <span className="font-semibold w-12">{name}</span>
+                            <div className="flex items-center gap-2 w-32">
+                                <Progress value={wilson.lower * 100} className="h-1.5 flex-1" indicatorClassName={getProgressColor(rawWinRate)} />
+                                <span className="font-mono w-24 text-right">
+                                    {rawWinRate.toFixed(0)}%
+                                    <span className="text-muted-foreground ml-1">({hits}/{total})</span>
+                                </span>
+                            </div>
+                            <div className="flex items-center gap-1.5 w-16 justify-end">
+                                <TooltipProvider>
+                                    <ShadTooltip>
+                                        <TooltipTrigger>
+                                            <div className="flex items-center gap-1.5">
+                                                <Sigma size={12} className={driftColor}/>
+                                                <span className={cn("font-mono font-bold text-right", driftColor)}>{(drift * 10000).toFixed(1)}</span>
+                                            </div>
+                                        </TooltipTrigger>
+                                        <TooltipContent>
+                                            <p>Fator de Correção de Drift</p>
+                                        </TooltipContent>
+                                    </ShadTooltip>
+                                </TooltipProvider>
+                            </div>
+                            <span className={cn("font-bold w-10 text-right flex items-center justify-end gap-1", 
+                                effectiveDirection === 'RISE' && 'text-green-500', 
+                                effectiveDirection === 'FALL' && 'text-red-500',
+                                effectiveDirection === 'HOLD' && 'text-gray-400'
+                            )}>
+                                {effectiveDirection === 'RISE' && <TrendingUp size={12}/>}
+                                {effectiveDirection === 'FALL' && <TrendingDown size={12}/>}
+                                {effectiveDirection === 'HOLD' && <HelpCircle size={12}/>}
+                                {effectiveDirection}
                             </span>
                         </div>
-                        <div className="flex items-center gap-1.5 w-16 justify-end">
-                             <TooltipProvider>
-                                <ShadTooltip>
-                                    <TooltipTrigger>
-                                        <div className="flex items-center gap-1.5">
-                                            <Sigma size={12} className={driftColor}/>
-                                            <span className={cn("font-mono font-bold text-right", driftColor)}>{(drift * 10000).toFixed(1)}</span>
-                                        </div>
-                                    </TooltipTrigger>
-                                    <TooltipContent>
-                                        <p>Fator de Correção de Drift</p>
-                                    </TooltipContent>
-                                </ShadTooltip>
-                            </TooltipProvider>
-                        </div>
-                        <span className={cn("font-bold w-10 text-right flex items-center justify-end gap-1", 
-                            effectiveDirection === 'RISE' && 'text-green-500', 
-                            effectiveDirection === 'FALL' && 'text-red-500',
-                            effectiveDirection === 'HOLD' && 'text-gray-400'
-                        )}>
-                            {effectiveDirection === 'RISE' && <TrendingUp size={12}/>}
-                            {effectiveDirection === 'FALL' && <TrendingDown size={12}/>}
-                            {effectiveDirection === 'HOLD' && <HelpCircle size={12}/>}
-                            {effectiveDirection}
-                        </span>
-                    </div>
-                );
-            })}
-        </div>
-    </Card>
-);
+                    );
+                })}
+            </div>
+        </Card>
+    );
+};
 
 /**
  * @fileOverview O `StochasticLab` é o coração do motor preditivo da aplicação.
@@ -213,16 +236,12 @@ function StochasticLab({
   
   const [priceData, setPriceData] = useState<any[]>([]);
   const [lastPrice, setLastPrice] = useState<number | null>(null);
-  const [returns, setReturns] = useState<any[]>([]);
-  const [volatilityData, setVolatilityData] = useState<any[]>([]);
-  const [qqData, setQQData] = useState<any[]>([]);
   const [stats, setStats] = useState<any>({});
   
   const [predictionData, setPredictionData] = useState<any[]>([]);
   const futurePathsRef = useRef<Record<string, { time: number; price: number }[]>>({});
 
   // --- PARÂMETROS DO MODELO GBM PARA 1HZ10V ---
-  const ACCURACY_MEMORY = 20;
   const GBM_SIGMA = 0.10;
   const GBM_DRIFT_TERM = - (GBM_SIGMA * GBM_SIGMA) / 2;
   
@@ -232,7 +251,7 @@ function StochasticLab({
   const adaptiveDriftRef = useRef<Record<string, number>>({});
   const predictionErrorHistoryRef = useRef<Record<string, number[]>>({});
 
-  const [accuracyHistories, setAccuracyHistories] = useState<Record<string, boolean[]>>({});
+  const [assertivenessStats, setAssertivenessStats] = useState<Record<string, { wins: number; total: number }>>({});
   const pendingPredictionsRef = useRef<Record<string, { startTimeIndex: number; startPrice: number; predictedEndPrice: number }[]>>({});
   const processedLogsRef = useRef(new Set<number>());
 
@@ -257,18 +276,18 @@ function StochasticLab({
 
   useEffect(() => {
     // Inicialização dos estados dinâmicos para cada horizonte
-    const initialAccuracy: Record<string, boolean[]> = {};
+    const initialStats: Record<string, { wins: number, total: number }> = {};
     const initialPending: Record<string, any[]> = {};
     const initialDrift: Record<string, number> = {};
     const initialErrorHistory: Record<string, number[]> = {};
 
     horizons.forEach(h => {
-        initialAccuracy[h.name] = [];
+        initialStats[h.name] = { wins: 0, total: 0 };
         initialPending[h.name] = [];
         initialDrift[h.name] = 0;
         initialErrorHistory[h.name] = [];
     });
-    setAccuracyHistories(initialAccuracy);
+    setAssertivenessStats(initialStats);
     pendingPredictionsRef.current = initialPending;
     adaptiveDriftRef.current = initialDrift;
     predictionErrorHistoryRef.current = initialErrorHistory;
@@ -357,9 +376,14 @@ function StochasticLab({
           pendingPredictionsRef.current[h.name] = updatedPending;
           
           if (newHistoryEntries.length > 0) {
-            setAccuracyHistories(prev => ({
+            const winsToAdd = newHistoryEntries.filter(v => v).length;
+            const trialsToAdd = newHistoryEntries.length;
+            setAssertivenessStats(prev => ({
                 ...prev,
-                [h.name]: [...(prev[h.name] || []).slice(-ACCURACY_MEMORY + newHistoryEntries.length), ...newHistoryEntries]
+                [h.name]: {
+                    wins: (prev[h.name]?.wins || 0) + winsToAdd,
+                    total: (prev[h.name]?.total || 0) + trialsToAdd,
+                }
             }));
           }
 
@@ -382,39 +406,69 @@ function StochasticLab({
     }
   }, [realData, horizons]);
 
-  const projectionExperts = useMemo(() => {
+  const projectionExperts: ExpertProjection[] = useMemo(() => {
     return horizons.map(h => {
         const path = futurePathsRef.current[h.name] || [];
         const vote = path.length > 1 ? (path[path.length - 1].price > path[0].price ? 'RISE' : 'FALL') : 'HOLD';
-        const accuracyData = accuracyHistories[h.name] || [];
-        const hits = accuracyData.filter(v => v).length;
-        const total = accuracyData.length;
-        const accuracy = total > 0 ? (hits / total) * 100 : 50;
-        return { name: h.name, vote, accuracy, hits, total };
+        
+        const stats = assertivenessStats[h.name] || { wins: 0, total: 0 };
+        const { wins, total } = stats;
+        
+        const rawWinRate = total > 0 ? (wins / total) * 100 : 0;
+        const wilson = wilsonScoreInterval(wins, total);
+
+        return { 
+            name: h.name, 
+            vote, 
+            wilson, 
+            rawWinRate,
+            hits: wins, 
+            total 
+        };
     });
-  }, [horizons, accuracyHistories, realData]); // realData dependency forces re-calc on new data
+  }, [horizons, assertivenessStats, realData]);
+
+  const getEffectiveVote = useCallback((expert: ExpertProjection | undefined): 'RISE' | 'FALL' | 'HOLD' => {
+      if (!expert || expert.vote === 'HOLD') return 'HOLD';
+      
+      // Se estamos confiantes de que a taxa de acerto é > 50%, confiamos no voto.
+      if (expert.wilson.lower > 0.5) {
+          return expert.vote;
+      }
+      
+      // Se estamos confiantes de que a taxa de acerto é < 50%, invertemos o voto.
+      if (expert.wilson.upper < 0.5) {
+          return expert.vote === 'RISE' ? 'FALL' : 'FALL' ? 'RISE' : 'HOLD';
+      }
+
+      // Caso contrário, a incerteza é muito alta. Não operamos.
+      return 'HOLD';
+  }, []);
 
   const strongestSignal = useMemo((): StrongestSignal => {
-    let bestSignal: StrongestSignal = { horizon: 'N/A', direction: 'HOLD', certaintyScore: 0, accuracy: 50 };
-    let maxCertainty = 0;
+    let bestSignal: StrongestSignal = { horizon: 'N/A', direction: 'HOLD', certaintyScore: 0, rawWinRate: 50 };
+    let maxConfidence = 0; // Max distance from 0.5
 
     projectionExperts.forEach(p => {
-        if (p.vote !== 'HOLD') {
-            const certainty = Math.abs(p.accuracy - 50) * 2;
+        const effectiveVote = getEffectiveVote(p);
+        if (effectiveVote !== 'HOLD') {
+            const confidence = p.wilson.lower > 0.5 
+                ? p.wilson.lower - 0.5 
+                : 0.5 - p.wilson.upper;
             
-            if (certainty > maxCertainty) {
-                maxCertainty = certainty;
+            if (confidence > maxConfidence) {
+                maxConfidence = confidence;
                 bestSignal = {
                     horizon: p.name,
-                    direction: getEffectiveVote(p),
-                    certaintyScore: p.accuracy > 50 ? certainty : -certainty,
-                    accuracy: p.accuracy,
+                    direction: effectiveVote,
+                    certaintyScore: (p.wilson.lower - 0.5) * 200, // Score from -100 to 100
+                    rawWinRate: p.rawWinRate,
                 };
             }
         }
     });
     return bestSignal;
-  }, [projectionExperts]);
+  }, [projectionExperts, getEffectiveVote]);
   
   useEffect(() => {
     onConsensusUpdate({strongestSignal, projectionExperts});
@@ -436,16 +490,16 @@ function StochasticLab({
     });
 
     return combined;
-  }, [priceData, realData]); // realData forces update when new futurePaths are calculated
+  }, [priceData, realData]);
 
   return (
     <Card className="h-full flex flex-col col-span-1 lg:col-span-3">
         <CardHeader>
             <CardTitle className="font-headline flex items-center gap-2">
                 <FlaskConical className="h-5 w-5 text-purple-600" />
-                Laboratório Preditivo (Cérebro Adaptativo)
+                Laboratório Preditivo (Cérebro Adaptativo V2)
             </CardTitle>
-            <CardDescription>O cientista usa GBM auto-calibrável para projetar o futuro e medir a própria assertividade.</CardDescription>
+            <CardDescription>O cientista usa GBM auto-calibrável e certeza estatística (Wilson Score) para projetar o futuro.</CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col min-h-0">
           <ScrollArea className="flex-1">
@@ -482,7 +536,6 @@ function StochasticLab({
                                             dot={false} 
                                             name={`Proj. ${h.name}`}
                                             strokeDasharray={h.type === 'second' ? "3 8" : "5 5"}
-                                            strokeOpacity={h.type === 'second' ? 0.8 : 1}
                                         />
                                     ))}
                                 </LineChart>
@@ -769,7 +822,7 @@ const VolatilityAutopilotInterface = ({
 }: { 
   autopilot: ReturnType<typeof useMasterAutopilot>;
   children?: React.ReactNode,
-  projectionExperts: {name: string, accuracy: number}[],
+  projectionExperts: ExpertProjection[],
 }) => {
   return (
     <Card>
@@ -811,7 +864,7 @@ const VolatilityAutopilotInterface = ({
             <div className="grid grid-cols-2 md:grid-cols-3 gap-2 mt-2 text-xs">
               {Object.keys(autopilot.riskManager.thresholds).map((horizon) => {
                 const expert = projectionExperts?.find(p => p.name === horizon);
-                const accuracy = expert?.accuracy || 0;
+                const accuracy = expert?.rawWinRate || 0;
                 const threshold = autopilot.riskManager.thresholds[horizon];
                 const effectiveAccuracy = Math.max(accuracy, 100 - accuracy);
                 const passes = effectiveAccuracy >= threshold;
