@@ -185,6 +185,11 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
   const promisesRef = useRef<Map<string, PromiseCallbacks>>(new Map());
   const [triggerReconnect, setTriggerReconnect] = useState(0);
   
+  const pingIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const reconnectInProgressRef = useRef(false);
+  const allowAutoReconnectRef = useRef(true);
+  
     const setAndPersistOperationsLog = useCallback((updater: React.SetStateAction<Operation[]>) => {
         setOperationsLog(prevLog => {
             const newLogWithPotentialDuplicates = typeof updater === 'function' ? updater(prevLog) : updater;
@@ -638,22 +643,20 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
   }, [getHistoricalData, makeRequest]);
 
   const startConnectionMonitor = useCallback(() => {
-  const pingIntervalRef = useRef<NodeJS.Timeout | null>(null);
-  
-  if (pingIntervalRef.current) {
-      clearInterval(pingIntervalRef.current);
-  }
-  
-  pingIntervalRef.current = setInterval(() => {
-      if (wsRef.current?.readyState === WebSocket.OPEN) {
-          try {
-              wsRef.current.send(JSON.stringify({ ping: 1 }));
-          } catch (error) {
-              console.warn('[Ping] Failed:', error);
-          }
-      }
-  }, 30000);
-}, []);
+    if (pingIntervalRef.current) {
+        clearInterval(pingIntervalRef.current);
+    }
+    
+    pingIntervalRef.current = setInterval(() => {
+        if (wsRef.current?.readyState === WebSocket.OPEN) {
+            try {
+                wsRef.current.send(JSON.stringify({ ping: 1 }));
+            } catch (error) {
+                console.warn('[Ping] Failed:', error);
+            }
+        }
+    }, 30000);
+  }, []);
   
   const renewSubscriptions = useCallback(async () => {
     if (!isConnected || !activeSymbol) return;
@@ -956,54 +959,54 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
         setIsAssetsLoading(false);
 
     } catch (error: any) {
-        const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+        const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido ao conectar';
         setConnectionError(`Falha na autorização: ${errorMessage}`);
         setIsConnected(false);
         setIsConnecting(false);
         setIsAssetsLoading(false);
+        setAccountBalance({ balance: null, currency: null, loading: false });
         if (ws.readyState === WebSocket.OPEN) ws.close();
     }
 };
       
         ws.onclose = (event) => {
-  const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  
-  if (!wsRef.current) return;
-  
-  const pingIntervalRef = useRef<NodeJS.Timeout | null>(null);
-  
-  if (pingIntervalRef.current) {
-      clearInterval(pingIntervalRef.current);
-      pingIntervalRef.current = null;
-  }
-  
-  promisesRef.current.forEach((p) => {
-    if (p && typeof p.reject === 'function') {
-      p.reject(new Error("WebSocket connection closed."))
-    }
-  });
-  promisesRef.current.clear();
+          if (!wsRef.current || reconnectInProgressRef.current) return;
+          
+          if (pingIntervalRef.current) {
+              clearInterval(pingIntervalRef.current);
+              pingIntervalRef.current = null;
+          }
+          
+          promisesRef.current.forEach((p) => {
+            if (p && typeof p.reject === 'function') {
+              p.reject(new Error("WebSocket connection closed."))
+            }
+          });
+          promisesRef.current.clear();
 
-  if (!event.wasClean) {
-    console.warn(`[WS] Fechado inesperadamente. Código: ${event.code}`);
-    setConnectionError(`Conexão perdida. Reconectando...`);
-    
-    if (reconnectTimeoutRef.current) {
-        clearTimeout(reconnectTimeoutRef.current);
-    }
-    reconnectTimeoutRef.current = setTimeout(() => {
-        console.log('[Auto-Reconnect] Tentando reconectar...');
-        setTriggerReconnect(c => c + 1);
-    }, 3000);
-  }
-  
-  setIsConnected(false);
-  setIsConnecting(false);
-  setAccountBalance({ balance: null, currency: null, loading: false });
-  wsRef.current = null;
-};
+          if (!event.wasClean && allowAutoReconnectRef.current) {
+            reconnectInProgressRef.current = true;
+            console.warn(`[WS] Fechado inesperadamente. Código: ${event.code}. Tentando reconectar...`);
+            setConnectionError(`Conexão perdida. Reconectando...`);
+            
+            if (reconnectTimeoutRef.current) {
+                clearTimeout(reconnectTimeoutRef.current);
+            }
+            reconnectTimeoutRef.current = setTimeout(() => {
+                reconnectInProgressRef.current = false;
+                setTriggerReconnect(c => c + 1);
+            }, 3000);
+          } else if (!event.wasClean && !allowAutoReconnectRef.current) {
+             console.error(`[WS] Conexão falhou permanentemente (provavelmente token inválido). Auto-reconexão desativada.`);
+          }
+          
+          setIsConnected(false);
+          setIsConnecting(false);
+          setAccountBalance({ balance: null, currency: null, loading: false });
+          wsRef.current = null;
+        };
       
-        ws.onerror = () => {
+        ws.onerror = (error) => {
           // O evento onclose é mais fiável para obter o motivo do erro.
         };
     };
@@ -1011,20 +1014,21 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
     connect();
   
     return () => {
+      allowAutoReconnectRef.current = false;
       if (wsRef.current) {
         wsRef.current.onclose = null;
         wsRef.current.close();
+        wsRef.current = null;
       }
-      const pingIntervalRef = useRef<NodeJS.Timeout | null>(null);
       if (pingIntervalRef.current) {
           clearInterval(pingIntervalRef.current);
       }
-      const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
       if (reconnectTimeoutRef.current) {
           clearTimeout(reconnectTimeoutRef.current);
       }
+      reconnectInProgressRef.current = false;
     };
-  }, [activeToken, isLoading, makeRequest, toast, triggerReconnect, updateTradeAnnotation, addTradeAnnotation, setAndPersistOperationsLog, setToastQueue, updateContract, startConnectionMonitor]);
+  }, [activeToken, isLoading, triggerReconnect]);
 
   
   useEffect(() => {
