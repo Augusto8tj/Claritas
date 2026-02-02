@@ -356,8 +356,12 @@ function StochasticLab({
         let currentSimPrice = lastPriceValue;
         const path = [{ time: lastTime, price: lastPriceValue }];
         
-        const driftCorrection = adaptiveDriftRef.current[horizonName] || 0;
+        let driftCorrection = adaptiveDriftRef.current[horizonName] || 0;
         
+        // CORREÇÃO: Limita o drift adaptativo para evitar instabilidade numérica
+        const DRIFT_LIMIT = 0.5;
+        driftCorrection = Math.max(-DRIFT_LIMIT, Math.min(DRIFT_LIMIT, driftCorrection));
+
         for (let i = 1; i <= steps; i++) {
           const Z = normalRandom();
           const exponent = (GBM_DRIFT_TERM + driftCorrection) + GBM_SIGMA * Z;
@@ -635,7 +639,7 @@ function StochasticLab({
                             <TabsTrigger value="audit">Auditoria Preditiva ({predictiveLogs.length} Registos)</TabsTrigger>
                         </TabsList>
                         <TabsContent value="audit" className="mt-4">
-                          <PredictiveLogViewer logs={predictiveLogs} onDeleteLog={onDeletePredictiveLog} deletingLogId={deletingPredictiveLogId} />
+                          <PredictiveLogViewer logs={predictiveLogs} onDeleteLog={onDeletePredictiveLog} deletingPredictiveLogId={deletingPredictiveLogId} />
                         </TabsContent>
                      </Tabs>
                 </div>
