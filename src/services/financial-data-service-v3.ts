@@ -10,7 +10,6 @@ import { collection, doc, getDoc, setDoc, deleteDoc, query, orderBy, getDocs } f
 import type { EnhancedRobotPerformance, TradeDecisionLog } from '@/lib/types';
 import type { EvolutionEvent } from '@/features/trading/hooks/use-strategy-evolution-v3';
 import { sanitizeForFirestore } from './utils/sanitize-for-firestore';
-import { errorEmitter, FirestorePermissionError } from '@/firebase';
 
 
 // --- Trading Robot Performance V3 ---
@@ -25,12 +24,8 @@ export async function saveRobotPerformanceV3(userId: string, performance: Enhanc
     try {
         await setDoc(docRef, sanitizedData, { merge: true });
     } catch (error) {
-        errorEmitter.emit('permission-error', new FirestorePermissionError({
-            path: docRef.path,
-            operation: 'write',
-            requestResourceData: sanitizedData,
-        }));
         console.error("Falha ao salvar desempenho V3:", error);
+        throw error;
     }
 };
 
@@ -50,13 +45,8 @@ export async function loadRobotPerformanceV3(userId: string): Promise<EnhancedRo
         }
         return null;
     } catch (error) {
-        const permissionError = new FirestorePermissionError({
-            path: docRef.path,
-            operation: 'get',
-        });
-        errorEmitter.emit('permission-error', permissionError);
         console.error(`[Service Error V3] loadRobotPerformance for user ${userId} failed:`, error);
-        throw permissionError;
+        throw error;
     }
 };
 
@@ -70,12 +60,8 @@ export async function saveTradeDecisionV3(userId: string, log: TradeDecisionLog)
     try {
         await setDoc(logDocRef, sanitizedLog, { merge: true });
     } catch (error) {
-        errorEmitter.emit('permission-error', new FirestorePermissionError({
-            path: logDocRef.path,
-            operation: 'write',
-            requestResourceData: sanitizedLog,
-        }));
          console.error("Falha ao salvar log de decisão V3:", error);
+         throw error;
     }
 }
 
@@ -89,13 +75,8 @@ export async function getTradeDecisionLogsV3(userId: string): Promise<TradeDecis
         const snapshot = await getDocs(q);
         return snapshot.docs.map(d => d.data() as TradeDecisionLog);
     } catch (error) {
-        const permissionError = new FirestorePermissionError({
-            path: logCollectionRef.path,
-            operation: 'list',
-        });
-        errorEmitter.emit('permission-error', permissionError);
         console.error(`[Service Error V3] getTradeDecisionLogsV3 for user ${userId} failed:`, error);
-        throw permissionError;
+        throw error;
     }
 }
 
@@ -113,12 +94,8 @@ export async function saveEvolutionHistoryV3(userId: string, history: EvolutionE
     try {
         await setDoc(docRef, sanitizedHistory, { merge: true });
     } catch (error) {
-        errorEmitter.emit('permission-error', new FirestorePermissionError({
-            path: docRef.path,
-            operation: 'write',
-            requestResourceData: sanitizedHistory,
-        }));
         console.error("❌ [saveEvolutionHistoryV3] Erro ao gravar no Firestore:", error);
+        throw error;
     }
 }
 
@@ -137,13 +114,8 @@ export async function loadEvolutionHistoryV3(userId: string, assetSymbol: string
         }
         return [];
     } catch (error) {
-        const permissionError = new FirestorePermissionError({
-            path: docRef.path,
-            operation: 'get',
-        });
-        errorEmitter.emit('permission-error', permissionError);
         console.error(`[Service Error V3] loadEvolutionHistory for user ${userId} failed:`, error);
-        throw permissionError;
+        throw error;
     }
 }
 
@@ -153,11 +125,8 @@ export async function clearEvolutionHistoryV3(userId: string, assetSymbol: strin
     try {
         await deleteDoc(docRef);
     } catch (error) {
-        errorEmitter.emit('permission-error', new FirestorePermissionError({
-            path: docRef.path,
-            operation: 'delete',
-        }));
         console.error("Falha ao limpar histórico de evolução V3:", error);
+        throw error;
     }
 }
 
@@ -172,5 +141,6 @@ export async function deleteEvolutionEventV3(userId: string, eventTimestamp: str
     } catch (error) {
         // Error is already handled by loadEvolutionHistoryV3, we just need to avoid crashing.
         console.error("Falha ao deletar evento de evolução V3:", error);
+        throw error;
     }
 }
