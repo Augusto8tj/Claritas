@@ -513,7 +513,7 @@ function StochasticLab({
   }, [strongestSignal, onConsensusUpdate, projectionExperts]);
 
   const chartDisplayData = useMemo(() => {
-    const combined = [...predictionData.filter(p => p && (p.real || p.predicted_1_tick))];
+    const combined = [...predictionData];
     
     const mergePath = (path: any[]) => {
         path.forEach(point => {
@@ -597,19 +597,22 @@ function StochasticLab({
                                   <LineChart data={chartDisplayData}>
                                     <CartesianGrid strokeDasharray="3 3" />
                                     <XAxis dataKey="time" label={{ value: 'Tempo (ticks)', position: 'insideBottom', offset: -5 }} />
-                                    <YAxis domain={['dataMin - 0.5', 'dataMax + 0.5']} label={{ value: 'Preço', angle: -90, position: 'insideLeft' }} />
+                                    <YAxis 
+                                      tickFormatter={(value) => value.toFixed(4)}
+                                      label={{ value: 'Preço', angle: -90, position: 'insideLeft' }} 
+                                    />
                                     <Tooltip />
                                     <Legend />
                                     <Line type="monotone" dataKey="real" stroke="hsl(var(--chart-1))" strokeWidth={3} dot={false} name="Preço Real" />
-                                    <Line type="monotone" dataKey="predicted_1t_ahead" stroke="hsl(var(--chart-2))" strokeWidth={2} dot={false} name="Projeção Histórica (1T)" />
+                                    <Line type="monotone" dataKey="predicted_1t_ahead" stroke="hsl(var(--chart-2))" strokeWidth={1} dot={false} name="Projeção Histórica (1T)" />
                                     <Line type="monotone" dataKey="predicted_3t_ahead" stroke="hsl(var(--chart-3))" strokeWidth={1.5} strokeDasharray="5 5" dot={false} name="Projeção (3t)" />
                                     <Line type="monotone" dataKey="predicted_6t_ahead" stroke="hsl(var(--chart-4))" strokeWidth={1.5} strokeDasharray="5 5" dot={false} name="Projeção (6t)" />
                                     <Line type="monotone" dataKey="predicted_10t_ahead" stroke="hsl(var(--chart-5))" strokeWidth={1.5} strokeDasharray="5 5" dot={false} name="Projeção (10t)" />
-                                    <Line type="monotone" dataKey="predicted_15s_ahead" stroke="hsl(var(--chart-6))" strokeWidth={1.5} strokeDasharray="2 6" strokeOpacity={0.8} dot={false} name="Projeção (15s)" />
-                                    <Line type="monotone" dataKey="predicted_20s_ahead" stroke="hsl(var(--chart-7))" strokeWidth={1.5} strokeDasharray="2 6" strokeOpacity={0.8} dot={false} name="Projeção (20s)" />
-                                    <Line type="monotone" dataKey="predicted_30s_ahead" stroke="hsl(var(--chart-8))" strokeWidth={1.5} strokeDasharray="2 6" strokeOpacity={0.8} dot={false} name="Projeção (30s)" />
-                                    <Line type="monotone" dataKey="predicted_40s_ahead" stroke="hsl(var(--chart-9))" strokeWidth={1.5} strokeDasharray="2 6" strokeOpacity={0.8} dot={false} name="Projeção (40s)" />
-                                    <Line type="monotone" dataKey="predicted_50s_ahead" stroke="hsl(var(--chart-10))" strokeWidth={1.5} strokeDasharray="2 6" strokeOpacity={0.8} dot={false} name="Projeção (50s)" />
+                                    <Line type="monotone" dataKey="predicted_15s_ahead" stroke="hsl(var(--chart-6))" strokeWidth={1} strokeDasharray="2 6" strokeOpacity={0.8} dot={false} name="Projeção (15s)" />
+                                    <Line type="monotone" dataKey="predicted_20s_ahead" stroke="hsl(var(--chart-7))" strokeWidth={1} strokeDasharray="2 6" strokeOpacity={0.8} dot={false} name="Projeção (20s)" />
+                                    <Line type="monotone" dataKey="predicted_30s_ahead" stroke="hsl(var(--chart-8))" strokeWidth={1} strokeDasharray="2 6" strokeOpacity={0.8} dot={false} name="Projeção (30s)" />
+                                    <Line type="monotone" dataKey="predicted_40s_ahead" stroke="hsl(var(--chart-9))" strokeWidth={1} strokeDasharray="2 6" strokeOpacity={0.8} dot={false} name="Projeção (40s)" />
+                                    <Line type="monotone" dataKey="predicted_50s_ahead" stroke="hsl(var(--chart-10))" strokeWidth={1} strokeDasharray="2 6" strokeOpacity={0.8} dot={false} name="Projeção (50s)" />
                                   </LineChart>
                                 </ResponsiveContainer>
                               </div>

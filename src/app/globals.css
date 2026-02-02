@@ -28,17 +28,19 @@ body {
     --border: 0 0% 89.8%;
     --input: 0 0% 89.8%;
     --ring: 236 65% 30%;
-    --chart-1: 236 65% 30%;
-    --chart-2: 16 100% 63%;
-    --chart-3: 197 37% 24%;
-    --chart-4: 43 74% 66%;
-    --chart-5: 27 87% 67%;
-    --chart-6: 210 80% 45%;
-    --chart-7: 180 70% 50%;
-    --chart-8: 190 60% 40%;
-    --chart-9: 200 75% 55%;
-    --chart-10: 220 85% 65%;
     --radius: 0.5rem;
+    
+    /* High-Contrast Chart Colors */
+    --chart-1: 220 85% 55%; /* Strong Blue */
+    --chart-2: 0 85% 55%;   /* Red */
+    --chart-3: 30 85% 55%;  /* Orange */
+    --chart-4: 50 85% 50%;  /* Yellow */
+    --chart-5: 80 85% 55%;  /* Lime Green */
+    --chart-6: 140 85% 45%; /* Green */
+    --chart-7: 170 85% 45%; /* Teal */
+    --chart-8: 260 85% 65%; /* Purple */
+    --chart-9: 300 85% 65%; /* Magenta */
+    --chart-10: 330 85% 65%;/* Pink */
   }
   .dark {
     --background: 240 10% 3.9%;
@@ -60,16 +62,18 @@ body {
     --border: 240 3.7% 15.9%;
     --input: 240 3.7% 15.9%;
     --ring: 236 65% 50%;
-    --chart-1: 236 65% 50%;
-    --chart-2: 16 100% 63%;
-    --chart-3: 197 37% 24%;
-    --chart-4: 43 74% 66%;
-    --chart-5: 27 87% 67%;
-    --chart-6: 210 80% 45%;
-    --chart-7: 180 70% 50%;
-    --chart-8: 190 60% 40%;
-    --chart-9: 200 75% 55%;
-    --chart-10: 220 85% 65%;
+
+    /* High-Contrast Chart Colors */
+    --chart-1: 220 85% 60%; /* Strong Blue */
+    --chart-2: 0 85% 60%;   /* Red */
+    --chart-3: 30 85% 60%;  /* Orange */
+    --chart-4: 50 85% 55%;  /* Yellow */
+    --chart-5: 80 85% 60%;  /* Lime Green */
+    --chart-6: 140 85% 50%; /* Green */
+    --chart-7: 170 85% 50%; /* Teal */
+    --chart-8: 260 85% 70%; /* Purple */
+    --chart-9: 300 85% 70%; /* Magenta */
+    --chart-10: 330 85% 70%;/* Pink */
   }
 
   .theme-ocean {
@@ -92,16 +96,18 @@ body {
     --border: 215 30% 85%;
     --input: 215 30% 85%;
     --ring: 210 80% 45%;
-    --chart-1: 210 80% 45%;
-    --chart-2: 180 70% 50%;
-    --chart-3: 190 60% 40%;
-    --chart-4: 200 75% 55%;
-    --chart-5: 220 85% 65%;
-    --chart-6: 230 90% 70%;
-    --chart-7: 170 65% 45%;
-    --chart-8: 240 70% 60%;
-    --chart-9: 160 80% 50%;
-    --chart-10: 250 85% 75%;
+
+    /* High-Contrast Chart Colors */
+    --chart-1: 220 85% 55%; /* Strong Blue */
+    --chart-2: 0 85% 55%;   /* Red */
+    --chart-3: 30 85% 55%;  /* Orange */
+    --chart-4: 50 85% 50%;  /* Yellow */
+    --chart-5: 80 85% 55%;  /* Lime Green */
+    --chart-6: 140 85% 45%; /* Green */
+    --chart-7: 170 85% 45%; /* Teal */
+    --chart-8: 260 85% 65%; /* Purple */
+    --chart-9: 300 85% 65%; /* Magenta */
+    --chart-10: 330 85% 65%;/* Pink */
   }
 
   .theme-desert {
@@ -124,16 +130,18 @@ body {
     --border: 35 30% 85%;
     --input: 35 30% 85%;
     --ring: 30 80% 50%;
-    --chart-1: 30 80% 50%;
-    --chart-2: 50 90% 60%;
-    --chart-3: 20 70% 45%;
-    --chart-4: 40 75% 55%;
-    --chart-5: 15 85% 65%;
-    --chart-6: 35 80% 60%;
-    --chart-7: 25 75% 50%;
-    --chart-8: 45 85% 65%;
-    --chart-9: 10 70% 55%;
-    --chart-10: 55 95% 70%;
+    
+    /* High-Contrast Chart Colors */
+    --chart-1: 220 85% 55%; /* Strong Blue */
+    --chart-2: 0 85% 55%;   /* Red */
+    --chart-3: 30 85% 55%;  /* Orange */
+    --chart-4: 50 85% 50%;  /* Yellow */
+    --chart-5: 80 85% 55%;  /* Lime Green */
+    --chart-6: 140 85% 45%; /* Green */
+    --chart-7: 170 85% 45%; /* Teal */
+    --chart-8: 260 85% 65%; /* Purple */
+    --chart-9: 300 85% 65%; /* Magenta */
+    --chart-10: 330 85% 65%;/* Pink */
   }
   
   .theme-forest {
@@ -156,16 +164,18 @@ body {
     --border: 115 15% 88%;
     --input: 115 15% 88%;
     --ring: 120 60% 30%;
-    --chart-1: 120 60% 30%;
-    --chart-2: 100 50% 45%;
-    --chart-3: 130 40% 35%;
-    --chart-4: 90 55% 50%;
-    --chart-5: 110 65% 55%;
-    --chart-6: 140 50% 40%;
-    --chart-7: 80 60% 45%;
-    --chart-8: 150 55% 50%;
-    --chart-9: 95 45% 40%;
-    --chart-10: 160 60% 55%;
+
+    /* High-Contrast Chart Colors */
+    --chart-1: 220 85% 55%; /* Strong Blue */
+    --chart-2: 0 85% 55%;   /* Red */
+    --chart-3: 30 85% 55%;  /* Orange */
+    --chart-4: 50 85% 50%;  /* Yellow */
+    --chart-5: 80 85% 55%;  /* Lime Green */
+    --chart-6: 140 85% 45%; /* Green */
+    --chart-7: 170 85% 45%; /* Teal */
+    --chart-8: 260 85% 65%; /* Purple */
+    --chart-9: 300 85% 65%; /* Magenta */
+    --chart-10: 330 85% 65%;/* Pink */
   }
 }
 
