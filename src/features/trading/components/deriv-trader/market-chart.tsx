@@ -1,7 +1,7 @@
 // src/components/deriv-trader/market-chart.tsx
 'use client'
 
-import React, { useCallback } from 'react'
+import React, { useCallback, useEffect } from 'react'
 import {
   Settings,
   Loader2,
@@ -844,6 +844,17 @@ export function MarketChart({
     ctx.fillRect(brushMinX - handleWidth / 2, height / 2 - 15, handleWidth, 30)
     ctx.fillRect(brushMaxX - handleWidth / 2, height / 2 - 15, handleWidth, 30)
   }, [rawData, colors, brushWindow])
+
+  useEffect(() => {
+    const handleResize = () => {
+      drawMainChart()
+      drawBrushChart()
+    }
+    window.addEventListener('resize', handleResize)
+    drawMainChart()
+    drawBrushChart()
+    return () => window.removeEventListener('resize', handleResize)
+  }, [drawMainChart, drawBrushChart])
 
   const throttleTimeoutRef = React.useRef<NodeJS.Timeout>();
 
