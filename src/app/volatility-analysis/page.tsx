@@ -2,7 +2,7 @@
 'use client';
 
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import { useForm, FormProvider } from "react-hook-form";
+import { useForm, FormProvider, useFormContext } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ScatterChart, Scatter } from 'recharts';
 import { TrendingUp, TrendingDown, HelpCircle, Bot, FlaskConical, Target, Info, Brain, Zap, Send, Loader2, ShieldCheck, GitBranch, BarChart, Activity, AlertTriangle, Power, ChevronsUpDown, Settings, Sigma, Shield, X, Check, Skull, PlayCircle, PauseCircle } from 'lucide-react';
@@ -249,6 +249,7 @@ const ASSERTIVENESS_HISTORY_LIMIT = 1000;
 const CONSECUTIVE_LOSS_LIMIT = 5;
 const CONSECUTIVE_WIN_REACTIVATION = 3;
 const MAX_SUSPENSIONS_ALLOWED = 3;
+const DRIFT_LIMIT = 0.1;
 
 /**
  * @fileOverview O `StochasticLab` é o coração do motor preditivo da aplicação.
@@ -284,14 +285,14 @@ function StochasticLab({
   
   // --- ESTADO DO CONTROLADOR NEURO-ADAPTATIVO ---
   const ADAPTIVE_DRIFT_LEARNING_RATE = 0.1;
-  const getDecayFactor = (horizonName: string) => {
+  const getDecayFactor = (horizonName: string): number => {
     if (horizonName.endsWith('t') && parseInt(horizonName.replace('t', '')) <= 10) {
       return 0.90; // Horizontes ultra-curtos esquecem mais rápido
     }
     return 0.95; // Horizontes longos mantêm memória
   };
   const ERROR_HISTORY_LENGTH = 20;
-  const DRIFT_LIMIT = 0.1;
+
   const adaptiveDriftRef = useRef<Record<string, number>>({});
   const predictionErrorHistoryRef = useRef<Record<string, number[]>>({});
 
@@ -599,31 +600,12 @@ function StochasticLab({
                          <ProjectionExpertsPanel experts={projectionExperts} adaptiveDrifts={adaptiveDriftRef.current} className="md:col-span-3" />
                     </div>
                     
-                    <div className="min-h-0">
-                         <h3 className="text-lg font-semibold mb-2">Preço Real & Projeções Estocásticas</h3>
-                         <ResponsiveContainer width="100%" height={350}>
-                            <LineChart data={chartDisplayData}>
-                                <CartesianGrid strokeDasharray="3 3" />
-                                <XAxis dataKey="time" label={{ value: 'Tempo (ticks)', position: 'insideBottom', offset: -5 }} />
-                                <YAxis tickCount={6} domain={['auto', 'auto']} label={{ value: 'Preço', angle: -90, position: 'insideLeft' }} tickFormatter={(value) => typeof value === 'number' ? value.toFixed(4) : value}/>
-                                <Tooltip />
-                                <Legend />
-                                <Line type="monotone" dataKey="price" stroke="hsl(var(--chart-1))" strokeWidth={2.5} dot={false} name="Preço Real" />
-                                {horizons.map((h, index) => (
-                                    <Line 
-                                        key={h.name}
-                                        type="monotone" 
-                                        dataKey={`predicted_${h.name}_ahead`}
-                                        stroke={`hsl(var(--chart-${index + 2}))`}
-                                        strokeWidth={2}
-                                        dot={false} 
-                                        name={`Proj. ${h.name}`}
-                                        strokeDasharray={h.type === 'second' ? "3 8" : "5 5"}
-                                    />
-                                ))}
-                            </LineChart>
-                        </ResponsiveContainer>
-                    </div>
+                    <VolatilityProjectionChart 
+                        chartData={chartDisplayData} 
+                        horizons={horizons} 
+                        futurePathsRef={futurePathsRef} 
+                        priceData={priceData} 
+                    />
                     
                      {stats.annualizedVol && (
                        <Card className="mt-6">
@@ -674,7 +656,7 @@ function VolatilityProjectionChart({ chartData, horizons, futurePathsRef, priceD
             });
         });
         return combined;
-    }, [priceData, futurePathsRef.current]);
+    }, [priceData, futurePathsRef]);
 
     if (priceData.length === 0) {
         return (
@@ -694,7 +676,7 @@ function VolatilityProjectionChart({ chartData, horizons, futurePathsRef, priceD
             </CardHeader>
             <CardContent>
                 <ResponsiveContainer width="100%" height={350}>
-                    <LineChart data={chartDisplayData}>
+                    <LineChart data={chartData}>
                         <CartesianGrid strokeDasharray="3 3" />
                         <XAxis dataKey="time" label={{ value: 'Tempo (ticks)', position: 'insideBottom', offset: -5 }} />
                         <YAxis tickCount={6} domain={['auto', 'auto']} label={{ value: 'Preço', angle: -90, position: 'insideLeft' }} tickFormatter={(value) => typeof value === 'number' ? value.toFixed(4) : value}/>
