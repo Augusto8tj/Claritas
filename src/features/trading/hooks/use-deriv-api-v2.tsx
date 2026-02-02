@@ -219,7 +219,7 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
   useEffect(() => {
     chartTypeRef.current = chartType;
   }, [chartType]);
-
+  
   useEffect(() => {
     timePeriodRef.current = timePeriod;
   }, [timePeriod]);
@@ -297,7 +297,7 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
     return new Promise((resolve, reject) => {
         const ws = wsRef.current;
         if (!ws || ws.readyState !== WebSocket.OPEN) {
-            return reject(new Error("WebSocket não está conectado."));
+            return resolve({ error: { message: "WebSocket não está conectado." } } as any);
         }
         
         const req_id = Date.now() + Math.floor(Math.random() * 1000000);
@@ -306,8 +306,9 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
         if (!noResponse) {
             const timeoutId = setTimeout(() => {
                 if (promisesRef.current.has(String(req_id))) {
+                    const promise = promisesRef.current.get(String(req_id));
+                    promise?.resolve({ error: { message: `O pedido à API expirou (60s) para req_id: ${req_id}. O token pode ser inválido ou a rede está lenta.` } });
                     promisesRef.current.delete(String(req_id));
-                    reject(new Error(`O pedido à API expirou (60s) para req_id: ${req_id}. O token pode ser inválido ou a rede está lenta.`));
                 }
             }, 60000); // Aumentado para 60 segundos
             
@@ -316,9 +317,9 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
                     clearTimeout(timeoutId);
                     resolve(value);
                 },
-                reject: (reason: any) => {
+                reject: (reason: any) => { // Manter reject para falhas internas, mas a API deve resolver
                     clearTimeout(timeoutId);
-                    reject(reason);
+                    resolve({ error: { message: reason?.message || 'Erro interno na Promise.' } } as any);
                 }
             });
         }
@@ -346,6 +347,7 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
         
         try {
             const response: any = await makeRequest(request);
+            if (response.error) throw new Error(response.error.message);
 
             if (response.history) {
                 return response.history.times.map((time: number, index: number) => ({
@@ -400,6 +402,7 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
               "duration_unit": durationUnit,
               "symbol": symbol,
           });
+          if (proposalResponse.error) throw new Error(proposalResponse.error.message);
 
           const proposal = proposalResponse.proposal;
           if (!proposal || !proposal.id) {
@@ -407,6 +410,8 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
           }
           
           const buyResponse: any = await makeRequest({ "buy": proposal.id, "price": proposal.ask_price });
+          if (buyResponse.error) throw new Error(buyResponse.error.message);
+
           const buyResult = buyResponse.buy;
           
           const contractId = buyResult.contract_id;
@@ -414,11 +419,10 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
             throw new Error("Falha na compra do contrato, ID não retornado.");
           }
           
-          // NOVO: Adiciona o ID ao cache de contratos recém-criados
           recentlyCreatedContractsRef.current.add(contractId);
           setTimeout(() => {
               recentlyCreatedContractsRef.current.delete(contractId);
-          }, 5000); // Limpa após 5 segundos
+          }, 5000);
 
           const latestTick = priceTicks.length > 0 ? priceTicks[priceTicks.length - 1].price : 0;
           const entryPrice = buyResult.entry_tick_display_value 
@@ -475,23 +479,23 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
       }, [isConnected, makeRequest, addTradeAnnotation, priceTicks, setAndPersistOperationsLog]);
 
   const sellContract = useCallback(async (contractId: number): Promise<TradeResult> => {
-    if (!wsRef.current || !isConnected) {
-        return { success: false, message: "A conexão com a API da Deriv não está ativa." };
-    }
-
-    const contract = operationsLog.find(op => op.id === contractId);
-    if (contract && contract.expirationTime) {
-      const remainingTime = contract.expirationTime - Date.now();
-      if (remainingTime < 1000) { 
-        return { success: false, message: `O contrato #${contractId} está no período de bloqueio final e não pode ser vendido.` };
-      }
-    }
-
     try {
+        const contract = operationsLog.find(op => op.id === contractId);
+        if (contract && contract.expirationTime) {
+            const remainingTime = contract.expirationTime - Date.now();
+            if (remainingTime < 1000) { 
+                throw new Error(`O contrato #${contractId} está no período de bloqueio final.`);
+            }
+        }
+        
         const sellResponse: any = await makeRequest({ 
             "sell": contractId,
             "price": 0, 
         });
+
+        if (sellResponse.error) {
+            throw new Error(sellResponse.error.message);
+        }
 
         const sellResult = sellResponse.sell;
         if (sellResult) {
@@ -520,29 +524,31 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
   }, []);
   
   const subscribeToStreams = useCallback(async (symbol: string) => {
-    if (wsRef.current?.readyState !== WebSocket.OPEN) return;
-
-    if (activeSubscriptionIdRef.current) {
-        try { await makeRequest({ forget: activeSubscriptionIdRef.current }, true); } catch (e) { /* silent */ }
-    }
-    if (botSubscriptionIdRef.current) {
-        try { await makeRequest({ forget: botSubscriptionIdRef.current }, true); } catch (e) { /* silent */ }
-    }
-
-    activeSubscriptionIdRef.current = null;
-    botSubscriptionIdRef.current = null;
-
-    setIsChartLoading(true);
-    setChartError(null);
-    setChartData([]);
-    setPriceTicks([]);
-    setBotCandleData([]);
-    
     try {
+        if (wsRef.current?.readyState !== WebSocket.OPEN) return;
+
+        if (activeSubscriptionIdRef.current) {
+            try { await makeRequest({ forget: activeSubscriptionIdRef.current }, true); } catch (e) { /* silent */ }
+        }
+        if (botSubscriptionIdRef.current) {
+            try { await makeRequest({ forget: botSubscriptionIdRef.current }, true); } catch (e) { /* silent */ }
+        }
+
+        activeSubscriptionIdRef.current = null;
+        botSubscriptionIdRef.current = null;
+
+        setIsChartLoading(true);
+        setChartError(null);
+        setChartData([]);
+        setPriceTicks([]);
+        setBotCandleData([]);
+        
         const currentChartType = chartTypeRef.current;
         const currentTimePeriod = timePeriodRef.current;
-
+        
         const contractsRes: any = await makeRequest({ contracts_for: symbol });
+        if (contractsRes.error) throw new Error(contractsRes.error.message);
+
         const tradingPeriod = contractsRes.contracts_for?.trading_period;
         const riseFallPeriod = tradingPeriod?.rise_fall;
 
@@ -596,6 +602,7 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
             };
         }
         const uiSubResponse: any = await makeRequest(uiSubRequest);
+        if(uiSubResponse.error) throw new Error(`UI Sub: ${uiSubResponse.error.message}`);
         if(uiSubResponse.subscription?.id) activeSubscriptionIdRef.current = uiSubResponse.subscription.id;
         
         const botSubRequest = { 
@@ -608,9 +615,8 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
             adjust_start_time: 1 
         };
         const botSubResponse: any = await makeRequest(botSubRequest);
+        if(botSubResponse.error) throw new Error(`Bot Sub: ${botSubResponse.error.message}`);
         if(botSubResponse.subscription?.id) botSubscriptionIdRef.current = botSubResponse.subscription.id;
-
-
     } catch (error: any) {
         console.error(`[Market Data] Error for ${symbol}:`, error);
         setChartError(error.message || 'Falha ao carregar dados do mercado.');
@@ -640,240 +646,204 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
         wsRef.current = ws;
         
         ws.onmessage = (event) => {
-    try {
-        const response = JSON.parse(event.data);
-        
-        if (response.msg_type === 'ping' || response.pong) {
-            return;
-        }
-        
-        const reqId = response.req_id;
-    
-        if (reqId && promisesRef.current.has(String(reqId))) {
-            const promise = promisesRef.current.get(String(reqId));
-            if (promise) {
-                if (response.error) {
-                    const errorCode = response.error.code;
-                    const errorMessage = response.error.message;
-
-                    // Lógica de tratamento de erro robusta
-                    if (errorCode === 'AlreadySubscribed') {
-                        console.warn(`[Deriv WS] Already subscribed (req_id: ${reqId}). Resolving...`);
-                        promise.resolve(response);
-                    } else if (errorCode === 'ContractSellNotAvailable') {
-                        console.warn(`[Deriv WS] Contract sell not available (req_id: ${reqId}). Message: ${errorMessage}. Resolving as controlled failure.`);
-                        
-                        const contractId = response.echo_req?.sell;
-                        if (contractId) {
-                            setAndPersistOperationsLog(prevLog => prevLog.map(op =>
-                                op.id === contractId && op.status === 'pending'
-                                    ? { ...op, status: 'lost', result: -op.stake, exitTimestamp: new Date().toISOString() }
-                                    : op
-                            ));
-                        }
-                        
-                        promise.resolve({ error: { message: errorMessage } });
-                    } else {
-                        promise.reject(new Error(errorMessage || `Unknown API error. Code: ${errorCode || 'N/A'}`));
+            try {
+                const response = JSON.parse(event.data);
+                
+                if (response.msg_type === 'ping' || response.pong) return;
+                
+                const reqId = response.req_id;
+                if (reqId && promisesRef.current.has(String(reqId))) {
+                    const promise = promisesRef.current.get(String(reqId));
+                    if (promise) {
+                        promise.resolve(response); // Resolve com a resposta completa (incluindo erros)
+                        promisesRef.current.delete(String(reqId));
                     }
-                } else {
-                    promise.resolve(response);
+                    return; 
                 }
-                promisesRef.current.delete(String(reqId));
-            }
-            return; 
-        }
     
-        if (response.error && response.error.message) {
-             if (
-                response.error.code !== 'AlreadySubscribed' && 
-                response.error.code !== 'SellNotAvailable' && 
-                response.error.code !== 'ContractSellNotAvailable'
-             ) {
-              console.error(`[Deriv WS] Unsolicited Error:`, response.error.message);
-            }
-             return; 
-        }
-    
-        switch (response.msg_type) {
-            case 'balance':
-                setAccountBalance({ 
-                    balance: response.balance.balance, 
-                    currency: response.balance.currency, 
-                    loading: false 
-                });
-                break;
-            case 'proposal_open_contract':
-                const contract = response.proposal_open_contract;
-                if (!contract) return;
-
-                if ((contract.contract_type || '').startsWith('MULT')) {
-                  return;
+                if (response.error && response.error.message) {
+                     if (response.error.code !== 'AlreadySubscribed' && response.error.code !== 'SellNotAvailable' && response.error.code !== 'ContractSellNotAvailable') {
+                      console.error(`[Deriv WS] Unsolicited Error:`, response.error.message);
+                    }
+                     return; 
                 }
+    
+                switch (response.msg_type) {
+                    case 'balance':
+                        setAccountBalance({ balance: response.balance.balance, currency: response.balance.currency, loading: false });
+                        break;
+                   case 'proposal_open_contract':
+                        const contract = response.proposal_open_contract;
+                        if (!contract) return;
 
-                setAndPersistOperationsLog(prevLog => {
-                    const existingOpIndex = prevLog.findIndex(op => op.id === contract.contract_id);
-                    const isSold = contract.is_sold === 1;
+                        if ((contract.contract_type || '').startsWith('MULT')) {
+                          return;
+                        }
                     
-                    if (existingOpIndex !== -1) {
-                        // UPDATE EXISTING OPERATION
-                        const updatedLog = [...prevLog];
-                        const op = updatedLog[existingOpIndex];
-                        
-                        if (op.status === 'pending') {
-                            if (isSold) {
-                                const newStatus = contract.profit >= 0 ? 'won' : 'lost';
-                                const exitPrice = contract.exit_tick_display_value ? parseFloat(contract.exit_tick_display_value) : contract.sell_spot ? parseFloat(contract.sell_spot) : op.exitPrice;
-                                const sellTime = contract.sell_time ? new Date(contract.sell_time * 1000).toISOString() : new Date().toISOString();
-                                
-                                updatedLog[existingOpIndex] = { ...op, status: newStatus, result: contract.profit, exitPrice: exitPrice, exitTimestamp: sellTime };
-                                
-                                if (op.initiator === 'Piloto' && user) {
-                                    const logId = `pred_log_${contract.contract_id}`;
-                                    const predictiveLogUpdate = {
-                                        id: logId,
-                                        result: newStatus,
-                                        pnl: contract.profit,
-                                    };
-                                    savePredictiveTradeLog(user.uid, predictiveLogUpdate);
+                        setAndPersistOperationsLog(prevLog => {
+                            const existingOpIndex = prevLog.findIndex(op => op.id === contract.contract_id);
+                            const isSold = contract.is_sold === 1;
+                    
+                            if (existingOpIndex !== -1) {
+                                const updatedLog = [...prevLog];
+                                const op = updatedLog[existingOpIndex];
+                    
+                                if (op.status === 'pending') {
+                                    if (isSold) {
+                                        const newStatus = contract.profit >= 0 ? 'won' : 'lost';
+                                        const exitPrice = contract.exit_tick_display_value ? parseFloat(contract.exit_tick_display_value) : contract.sell_spot ? parseFloat(contract.sell_spot) : op.exitPrice;
+                                        const sellTime = contract.sell_time ? new Date(contract.sell_time * 1000).toISOString() : new Date().toISOString();
+                                        
+                                        updatedLog[existingOpIndex] = { ...op, status: newStatus, result: contract.profit, exitPrice: exitPrice, exitTimestamp: sellTime };
+                                        
+                                        if (op.initiator === 'Piloto' && user) {
+                                            const logId = `pred_log_${contract.contract_id}`;
+                                            const predictiveLogUpdate = {
+                                                id: logId,
+                                                result: newStatus,
+                                                pnl: contract.profit,
+                                            };
+                                            savePredictiveTradeLog(user.uid, predictiveLogUpdate);
+                                        }
+
+                                        updateTradeAnnotation(String(contract.contract_id), { 
+                                            status: newStatus, 
+                                            profit: contract.profit, 
+                                            exitPrice, 
+                                            exitTime: contract.sell_time 
+                                        });
+                                        
+                                        const toastMessage = {
+                                            title: `Posição Fechada (${op.asset})`,
+                                            description: `Resultado: ${contract.currency} ${contract.profit.toFixed(2)}`,
+                                            variant: newStatus === 'won' ? 'default' : 'destructive',
+                                        };
+                                        
+                                        setToastQueue(prev => [...prev, toastMessage]);
+                    
+                                        if (wsRef.current?.readyState === WebSocket.OPEN) {
+                                            wsRef.current.send(JSON.stringify({"balance": 1}));
+                                        }
+                                        return updatedLog;
+                                    } else if (op.contractType?.startsWith('MULT') && contract.profit !== op.result) {
+                                        updatedLog[existingOpIndex] = { ...op, result: contract.profit };
+                                        return updatedLog;
+                                    }
+                                }
+                                return prevLog;
+                    
+                            } else if (!isSold) {
+                                if (recentlyCreatedContractsRef.current.has(contract.contract_id)) {
+                                    return prevLog;
                                 }
 
-                                updateTradeAnnotation(String(contract.contract_id), { 
-                                    status: newStatus, 
-                                    profit: contract.profit, 
-                                    exitPrice, 
-                                    exitTime: contract.sell_time 
-                                });
-                                
-                                const toastMessage = {
-                                    title: `Posição Fechada (${op.asset})`,
-                                    description: `Resultado: ${contract.currency} ${contract.profit.toFixed(2)}`,
-                                    variant: newStatus === 'won' ? 'default' : 'destructive',
+                                const direction = (contract.contract_type || '').includes('CALL') ? 'rise' : 'fall';
+                                const purchaseTime = contract.purchase_time || Math.floor(Date.now() / 1000);
+                                const durationInSeconds = contract.date_expiry ? (contract.date_expiry - purchaseTime) : 0;
+                                const durationUnit: DurationUnit = 's';
+    
+                                const newOperation: Operation = {
+                                    id: contract.contract_id,
+                                    asset: contract.symbol,
+                                    direction: direction,
+                                    stake: contract.buy_price || 0,
+                                    status: 'pending',
+                                    result: contract.profit,
+                                    timestamp: new Date(purchaseTime * 1000).toISOString(),
+                                    initiator: 'Manual',
+                                    entryPrice: parseFloat(contract.entry_spot_display_value || contract.entry_tick_display_value || '0'),
+                                    isSellable: contract.is_sellable === 1,
+                                    expirationTime: contract.date_expiry ? contract.date_expiry * 1000 : undefined,
+                                    duration: durationInSeconds,
+                                    durationUnit: durationUnit,
+                                    multiplier: contract.multiplier,
+                                    contractType: contract.contract_type,
                                 };
                                 
-                                setToastQueue(prev => [...prev, toastMessage]);
-            
-                                if (wsRef.current?.readyState === WebSocket.OPEN) {
-                                    wsRef.current.send(JSON.stringify({"balance": 1}));
-                                }
-                                return updatedLog;
-                            } else if (op.contractType?.startsWith('MULT') && contract.profit !== op.result) {
-                                updatedLog[existingOpIndex] = { ...op, result: contract.profit };
-                                return updatedLog;
+                                addTradeAnnotation({
+                                    contractId: String(newOperation.id),
+                                    entryTime: purchaseTime,
+                                    entryPrice: newOperation.entryPrice!,
+                                    direction: newOperation.direction,
+                                    status: 'pending',
+                                    stake: newOperation.stake,
+                                    symbol: newOperation.asset,
+                                    expirationTime: newOperation.expirationTime,
+                                    contractType: (contract.contract_type || '').startsWith('MULT') ? 'multiplier' : 'option'
+                                });
+                    
+                                return [newOperation, ...prevLog];
                             }
-                        }
-                        return prevLog;
-            
-                    } else if (!isSold) {
-                        if (recentlyCreatedContractsRef.current.has(contract.contract_id)) {
+                            
                             return prevLog;
-                        }
-
-                        const direction = (contract.contract_type || '').includes('CALL') ? 'rise' : 'fall';
-                        const purchaseTime = contract.purchase_time || Math.floor(Date.now() / 1000);
-                        const durationInSeconds = contract.date_expiry ? (contract.date_expiry - purchaseTime) : 0;
-                        const durationUnit: DurationUnit = 's';
-    
-                        const newOperation: Operation = {
-                            id: contract.contract_id,
-                            asset: contract.symbol,
-                            direction: direction,
-                            stake: contract.buy_price || 0,
-                            status: 'pending',
-                            result: contract.profit,
-                            timestamp: new Date(purchaseTime * 1000).toISOString(),
-                            initiator: 'Manual',
-                            entryPrice: parseFloat(contract.entry_spot_display_value || contract.entry_tick_display_value || '0'),
-                            isSellable: contract.is_sellable === 1,
-                            expirationTime: contract.date_expiry ? contract.date_expiry * 1000 : undefined,
-                            duration: durationInSeconds,
-                            durationUnit: durationUnit,
-                            multiplier: contract.multiplier,
-                            contractType: contract.contract_type,
-                        };
-                        
-                        addTradeAnnotation({
-                            contractId: String(newOperation.id),
-                            entryTime: purchaseTime,
-                            entryPrice: newOperation.entryPrice!,
-                            direction: newOperation.direction,
-                            status: 'pending',
-                            stake: newOperation.stake,
-                            symbol: newOperation.asset,
-                            expirationTime: newOperation.expirationTime,
-                            contractType: (contract.contract_type || '').startsWith('MULT') ? 'multiplier' : 'option'
                         });
-            
-                        return [newOperation, ...prevLog];
-                    }
-                    
-                    return prevLog;
-                });
-                break;
-            case 'tick':
-                if (response.tick?.symbol === activeSymbol) {
-                    const tick = response.tick;
-                    const newTick = { epoch: tick.epoch, price: tick.quote };
-                    if (chartTypeRef.current === 'Area') {
-                       setChartData(prev => addDataPoint(prev, newTick));
-                    }
-                    setPriceTicks(prev => {
-                        const newTicks = [...prev, newTick];
-                         if (newTicks.length > MAX_DATA_POINTS) {
-                            return newTicks.slice(1);
+                        break;
+                    case 'tick':
+                        if (response.tick?.symbol === activeSymbol) {
+                            const tick = response.tick;
+                            const newTick = { epoch: tick.epoch, price: tick.quote };
+                            if (chartTypeRef.current === 'Area') {
+                               setChartData(prev => addDataPoint(prev, newTick));
+                            }
+                            setPriceTicks(prev => {
+                                const newTicks = [...prev, newTick];
+                                 if (newTicks.length > MAX_DATA_POINTS) {
+                                    return newTicks.slice(1);
+                                }
+                                return newTicks;
+                            });
+                            setDataVersion(v => v + 1);
                         }
-                        return newTicks;
-                    });
-                    setDataVersion(v => v + 1);
-                }
-                break;
-            
-            case 'ohlc':
-            case 'candles':
-                const candleData = response.ohlc || (response.candles && response.candles[0]);
-                
-                if (candleData && candleData.symbol === activeSymbol) {
-                    const newCandle: CandleData = {
-                        epoch: candleData.open_time || candleData.epoch,
-                        open: parseFloat(candleData.open),
-                        high: parseFloat(candleData.high),
-                        low: parseFloat(candleData.low),
-                        close: parseFloat(candleData.close),
-                        volume: candleData.tick_count || 1,
-                    };
-
-                    const isForUI = response.subscription?.id === activeSubscriptionIdRef.current;
-                    const isForBot = response.subscription?.id === botSubscriptionIdRef.current;
-
-                    if (isForUI && chartTypeRef.current === 'Candle') {
-                        setChartData(prev => addDataPoint(prev, newCandle));
-                    }
-                    if (isForBot) {
-                        setBotCandleData(prev => addDataPoint(prev, newCandle) as CandleData[]);
-                    }
+                        break;
                     
-                    setPriceTicks(prev => {
-                        const newTicks = [...prev, { epoch: newCandle.epoch, price: newCandle.close }];
-                        if (newTicks.length > MAX_DATA_POINTS) {
-                            return newTicks.slice(newTicks.length - MAX_DATA_POINTS);
+                    case 'ohlc':
+                    case 'candles':
+                        const candleData = response.ohlc || (response.candles && response.candles[0]);
+                        
+                        if (candleData && candleData.symbol === activeSymbol) {
+                            const newCandle: CandleData = {
+                                epoch: candleData.open_time || candleData.epoch,
+                                open: parseFloat(candleData.open),
+                                high: parseFloat(candleData.high),
+                                low: parseFloat(candleData.low),
+                                close: parseFloat(candleData.close),
+                                volume: candleData.tick_count || 1,
+                            };
+
+                            const isForUI = response.subscription?.id === activeSubscriptionIdRef.current;
+                            const isForBot = response.subscription?.id === botSubscriptionIdRef.current;
+
+                            if (isForUI && chartTypeRef.current === 'Candle') {
+                                setChartData(prev => addDataPoint(prev, newCandle));
+                            }
+                            if (isForBot) {
+                                setBotCandleData(prev => addDataPoint(prev, newCandle) as CandleData[]);
+                            }
+                            
+                            setPriceTicks(prev => {
+                                const newTicks = [...prev, { epoch: newCandle.epoch, price: newCandle.close }];
+                                if (newTicks.length > MAX_DATA_POINTS) {
+                                    return newTicks.slice(newTicks.length - MAX_DATA_POINTS);
+                                }
+                                return newTicks;
+                            });
+                            setDataVersion(v => v + 1);
                         }
-                        return newTicks;
-                    });
-                    setDataVersion(v => v + 1);
+                        break;
                 }
-                break;
-        }
-    } catch (parseError) {
-        console.error('[Deriv WS] Parse error:', parseError);
-    }
-};
+            } catch (parseError) {
+                console.error('[Deriv WS] Parse error:', parseError);
+            }
+        };
     
         ws.onopen = async () => {
             try {
                 reconnectInProgressRef.current = false;
                 if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
 
-                await makeRequest({ authorize: activeToken });
+                const authResponse: any = await makeRequest({ authorize: activeToken });
+                if (authResponse.error) throw new Error(authResponse.error.message);
+
                 setIsConnected(true);
                 setIsConnecting(false);
                 setConnectionError(null);
@@ -882,6 +852,7 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
                 ws.send(JSON.stringify({ "balance": 1, "subscribe": 1 }));
                 
                 const assetsRes: any = await makeRequest({ active_symbols: 'full', product_type: 'basic' });
+                if (assetsRes.error) throw new Error(assetsRes.error.message);
                 
                 const groupedAssets: { [key: string]: Asset[] } = {};
                 assetsRes.active_symbols.forEach((symbol: any) => {
@@ -1100,7 +1071,7 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
       isConnected, isConnecting, connectionError, demoToken, realToken, activeToken, accountType, 
       setAccountType, setTokens, disconnect, reconnect, accountBalance, operationsLog, assetGroups, 
       isAssetsLoading, activeSymbol, setActiveSymbol, chartData, botCandleData, priceTicks, 
-      isChartLoading, chartError, chartType, timePeriod, setTimePeriod, dataVersion, executeTrade, 
+      isChartLoading, chartError, chartType, timePeriod, dataVersion, executeTrade, 
       sellContract, getHistoricalData, clearActiveContracts, tradeAnnotations, durationLimits
   ]);
 
