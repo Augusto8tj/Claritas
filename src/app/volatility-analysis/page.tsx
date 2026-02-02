@@ -135,11 +135,14 @@ const getEffectiveVote = (expert: AssertivenessData | undefined): 'RISE' | 'FALL
         : (expert.vote === 'RISE' ? 'FALL' : (expert.vote === 'FALL' ? 'RISE' : 'HOLD'));
 };
 
-const ProjectionExpertsPanel = ({ experts, adaptiveDrifts }: { experts: { name: string; vote: 'RISE' | 'FALL' | 'HOLD'; accuracy: number }[], adaptiveDrifts: Record<string, number> }) => (
+const ProjectionExpertsPanel = ({ experts, adaptiveDrifts }: { experts: { name: string; vote: 'RISE' | 'FALL' | 'HOLD'; accuracy: number; hits: number; total: number; }[], adaptiveDrifts: Record<string, number> }) => (
     <Card className="p-4">
-        <CardTitle className="text-sm font-semibold text-muted-foreground mb-3">Assertividade & Calibração</CardTitle>
+        <CardTitle className="text-sm font-semibold text-muted-foreground mb-3 flex items-center justify-between">
+            <span>Assertividade &amp; Calibração</span>
+            <span className="font-mono text-xs">Acertos / Total</span>
+        </CardTitle>
         <div className="space-y-2">
-            {experts.map(({ name, vote, accuracy }) => {
+            {experts.map(({ name, vote, accuracy, hits, total }) => {
                 const effectiveDirection = getEffectiveVote({ accuracy, vote });
                 const effectiveAccuracy = Math.max(accuracy, 100 - accuracy);
                 const drift = adaptiveDrifts[name] || 0;
@@ -148,13 +151,27 @@ const ProjectionExpertsPanel = ({ experts, adaptiveDrifts }: { experts: { name: 
                 return (
                     <div key={name} className="flex justify-between items-center bg-background p-2 rounded-md border text-xs">
                         <span className="font-semibold w-12">{name}</span>
-                        <div className="flex items-center gap-2 w-24">
+                        <div className="flex items-center gap-2 w-32">
                             <Progress value={effectiveAccuracy} className="h-1.5 flex-1" indicatorClassName={getProgressColor(accuracy)} />
-                            <span className="font-mono w-10 text-right">{effectiveAccuracy.toFixed(0)}%</span>
+                            <span className="font-mono w-20 text-right">
+                                {effectiveAccuracy.toFixed(0)}%
+                                <span className="text-muted-foreground ml-1">({hits}/{total})</span>
+                            </span>
                         </div>
                         <div className="flex items-center gap-1.5 w-16 justify-end">
-                            <Sigma size={12} className={driftColor}/>
-                            <span className={cn("font-mono font-bold text-right", driftColor)}>{(drift * 10000).toFixed(1)}</span>
+                             <TooltipProvider>
+                                <Tooltip>
+                                    <TooltipTrigger>
+                                        <div className="flex items-center gap-1.5">
+                                            <Sigma size={12} className={driftColor}/>
+                                            <span className={cn("font-mono font-bold text-right", driftColor)}>{(drift * 10000).toFixed(1)}</span>
+                                        </div>
+                                    </TooltipTrigger>
+                                    <TooltipContent>
+                                        <p>Fator de Correção de Drift</p>
+                                    </TooltipContent>
+                                </Tooltip>
+                            </TooltipProvider>
                         </div>
                         <span className={cn("font-bold w-10 text-right flex items-center justify-end gap-1", 
                             effectiveDirection === 'RISE' && 'text-green-500', 
@@ -370,8 +387,10 @@ function StochasticLab({
         const path = futurePathsRef.current[h.name] || [];
         const vote = path.length > 1 ? (path[path.length - 1].price > path[0].price ? 'RISE' : 'FALL') : 'HOLD';
         const accuracyData = accuracyHistories[h.name] || [];
-        const accuracy = accuracyData.length > 0 ? (accuracyData.filter(v => v).length / accuracyData.length) * 100 : 50;
-        return { name: h.name, vote, accuracy };
+        const hits = accuracyData.filter(v => v).length;
+        const total = accuracyData.length;
+        const accuracy = total > 0 ? (hits / total) * 100 : 50;
+        return { name: h.name, vote, accuracy, hits, total };
     });
   }, [horizons, accuracyHistories, realData]); // realData dependency forces re-calc on new data
 
@@ -444,28 +463,28 @@ function StochasticLab({
                         </div>
                     ) : (
                         <div className="min-h-0">
-                            <h3 className="text-lg font-semibold mb-2">Preço Real & Projeções Estocásticas</h3>
-                            <ResponsiveContainer width="100%" height={350}>
-                              <LineChart data={chartDisplayData}>
-                                <CartesianGrid strokeDasharray="3 3" />
-                                <XAxis dataKey="time" label={{ value: 'Tempo (ticks)', position: 'insideBottom', offset: -5 }} />
-                                <YAxis tickCount={6} domain={['auto', 'auto']} label={{ value: 'Preço', angle: -90, position: 'insideLeft' }} tickFormatter={(value) => typeof value === 'number' ? value.toFixed(4) : value}/>
-                                <Tooltip />
-                                <Legend />
-                                <Line type="monotone" dataKey="price" stroke="hsl(var(--chart-1))" strokeWidth={2.5} dot={false} name="Preço Real" />
-                                {Object.keys(futurePathsRef.current).map((key, index) => (
-                                    <Line 
-                                        key={key}
-                                        type="monotone" 
-                                        dataKey={`predicted_${key}_ahead`}
-                                        stroke={`hsl(var(--chart-${index + 2}))`}
-                                        strokeWidth={key.endsWith('s') ? 1.5 : 2}
-                                        dot={false} 
-                                        name={`Proj. ${key}`}
-                                        strokeDasharray={key.endsWith('s') ? "3 8" : "5 5"}
-                                    />
-                                ))}
-                              </LineChart>
+                             <h3 className="text-lg font-semibold mb-2">Preço Real &amp; Projeções Estocásticas</h3>
+                             <ResponsiveContainer width="100%" height={350}>
+                                <LineChart data={chartDisplayData}>
+                                    <CartesianGrid strokeDasharray="3 3" />
+                                    <XAxis dataKey="time" label={{ value: 'Tempo (ticks)', position: 'insideBottom', offset: -5 }} />
+                                    <YAxis tickCount={6} domain={['auto', 'auto']} label={{ value: 'Preço', angle: -90, position: 'insideLeft' }} tickFormatter={(value) => typeof value === 'number' ? value.toFixed(4) : value}/>
+                                    <Tooltip />
+                                    <Legend />
+                                    <Line type="monotone" dataKey="price" stroke="hsl(var(--chart-1))" strokeWidth={2.5} dot={false} name="Preço Real" />
+                                    {horizons.map((h, index) => (
+                                        <Line 
+                                            key={h.name}
+                                            type="monotone" 
+                                            dataKey={`predicted_${h.name}_ahead`}
+                                            stroke={`hsl(var(--chart-${index + 2}))`}
+                                            strokeWidth={2}
+                                            dot={false} 
+                                            name={`Proj. ${h.name}`}
+                                            strokeDasharray={h.type === 'second' ? "3 8" : "5 5"}
+                                        />
+                                    ))}
+                                </LineChart>
                             </ResponsiveContainer>
                         </div>
                     )}
@@ -474,9 +493,9 @@ function StochasticLab({
                        <Card className="mt-6">
                            <CardHeader><CardTitle>Estatísticas Descritivas dos Retornos</CardTitle></CardHeader>
                            <CardContent className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
-                                <StatItem label="Vol. Anualizada" value={stats.annualizedVol + '%'} />
-                                <StatItem label="Assimetria (Skewness)" value={stats.skewness} />
-                                <StatItem label="Curtose (Kurtosis)" value={stats.kurtosis} />
+                               <StatItem label="Vol. Anualizada" value={stats.annualizedVol + '%'} />
+                               <StatItem label="Assimetria (Skewness)" value={stats.skewness} />
+                               <StatItem label="Curtose (Kurtosis)" value={stats.kurtosis} />
                            </CardContent>
                        </Card>
                      )}
@@ -839,3 +858,4 @@ const Header = () => {
     </div>
   );
 };
+
