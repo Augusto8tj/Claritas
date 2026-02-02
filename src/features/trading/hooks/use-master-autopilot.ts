@@ -68,46 +68,18 @@ const detectNoiseRegime = (experts: Record<string, AssertivenessData>): boolean 
 };
 
 const calculateOptimalStake = (winRate: number, dailyBalance: number, payout: number = 0.95): number => {
-  return 1.0;
-};
+    if (winRate < 51.5) return 1.0; 
+    const p = winRate / 100;
+    const q = 1 - p;
+    const b = payout;
 
+    const kellyFraction = (p * b - q) / b;
+    if (kellyFraction <= 0) return 1.0;
 
-const calculateDynamicThresholds = (
-  regime: MarketRegime,
-  indicators: Indicators | null,
-  baseThresholds: Record<string, number>
-): Record<string, number> => {
-  
-  const dynamicThresholds = { ...baseThresholds };
-  
-  if (regime === 'trending_bull' || regime === 'trending_bear') {
-    if (indicators?.adx && indicators.adx > 30) {
-      Object.keys(dynamicThresholds).forEach(key => {
-        dynamicThresholds[key] = Math.max(51, dynamicThresholds[key] - 5);
-      });
-    }
-  }
-  
-  if (regime === 'ranging') {
-    Object.keys(dynamicThresholds).forEach(key => {
-      if (key.endsWith('s') && parseInt(key) >= 30) {
-        dynamicThresholds[key] = Math.max(51, dynamicThresholds[key] - 3); 
-      }
-    });
-  }
-  
-  if (indicators?.atr && indicators?.ma?.long && indicators.atr > 1.5 * indicators.ma.long * 0.01) {
-    dynamicThresholds['30s'] = Math.min(95, dynamicThresholds['30s'] + 10);
-    dynamicThresholds['40s'] = Math.min(95, dynamicThresholds['40s'] + 10);
-    dynamicThresholds['50s'] = Math.min(95, dynamicThresholds['50s'] + 10);
-  }
-  
-  if (indicators?.bbw && indicators.bbw < 2) {
-    dynamicThresholds['10t'] = Math.max(50, dynamicThresholds['10t'] - 10);
-    dynamicThresholds['20s'] = Math.max(50, dynamicThresholds['20s'] - 10);
-  }
-  
-  return dynamicThresholds;
+    const quarterKelly = kellyFraction / 4;
+    const calculatedStake = dailyBalance * quarterKelly;
+
+    return Math.max(1.0, Math.min(calculatedStake, dailyBalance * 0.05));
 };
 
 
@@ -223,7 +195,6 @@ export function useMasterAutopilot() {
                 const maxWinRate = Math.max(...triggerWinRates);
                 const optimalStake = calculateOptimalStake(maxWinRate, dailyBalance);
 
-
                 const tradeResult = await executeRiseFallTrade(
                     signalToUse === 'RISE' ? 'CALL' : 'PUT',
                     optimalStake, 
@@ -298,7 +269,7 @@ export function useMasterAutopilot() {
                 isReady: true,
                 trigger: {
                     signal: 'HOLD',
-                    reason: '🌀 Regime de ruído detectado. Modelos em ~50%. Pausando.',
+                    reason: '🌀 Regime de ruído detectado. Pausando.',
                     triggeredBy: null,
                 },
             };
@@ -354,7 +325,6 @@ export function useMasterAutopilot() {
     const { trigger, assertiveness } = masterState;
     const openMasterTrade = operationsLog.find(op => op.initiator === 'Piloto' && op.status === 'pending');
     
-    // NOVO: Verifica se algum dos especialistas que disparou o gatilho está em cooldown.
     const now = Date.now();
     const isAnyTriggeringHorizonOnCooldown = trigger.triggeredBy?.some(horizon => {
         const cooldownEnd = horizonCooldownsRef.current.get(horizon);
@@ -366,9 +336,7 @@ export function useMasterAutopilot() {
       executeTradeAction('Piloto', trigger.signal, trigger.triggeredBy, user, trigger.reason, assertiveness)
         .then(({ duration, unit }) => {
             if (duration > 0 && trigger.triggeredBy) {
-                // Após executar o trade, aplica um cooldown específico aos horizontes que o dispararam.
                 const tradeDurationMs = (unit === 's' ? duration : duration * 2) * 1000;
-                // O cooldown é 1.5x a duração do trade, com um mínimo de 10 segundos.
                 const horizonCooldownMs = Math.max(tradeDurationMs * 1.5, 10000); 
                 const cooldownEnd = Date.now() + horizonCooldownMs;
 
@@ -425,8 +393,8 @@ export function useMasterAutopilot() {
         tradeStatsRef.current.totalTrades++;
         if (isWin) tradeStatsRef.current.wins++;
 
-        const { totalTrades } = tradeStatsRef.current;
-        const globalWinRate = totalTrades > 0 ? (tradeStatsRef.current.wins / totalTrades) * 100 : 0;
+        const { totalTrades, wins } = tradeStatsRef.current;
+        const globalWinRate = totalTrades > 0 ? (wins / totalTrades) * 100 : 0;
         
         if (totalTrades > 200 && globalWinRate < 51) {
             toast({

@@ -83,7 +83,10 @@ interface ExpertProjection {
     hits: number;
     total: number;
     status: 'active' | 'suspended' | 'permanently_disabled';
+    consecutiveLosses: number;
+    totalSuspensions: number;
 }
+
 
 interface StrongestSignal {
     horizon: string;
@@ -144,18 +147,14 @@ const ProjectionExpertsPanel = ({ experts, adaptiveDrifts, className }: { expert
     const getEffectiveVote = (expert: ExpertProjection | undefined): 'RISE' | 'FALL' | 'HOLD' => {
         if (!expert || expert.vote === 'HOLD' || expert.status !== 'active') return 'HOLD';
         
-        // A certeza estatística é o nosso critério de confiança
         if (expert.wilson.lower > 0.5) {
             return expert.vote;
         }
         
         if (expert.wilson.upper < 0.5) {
-            // Se o limite superior da confiança é < 50%, o modelo está consistentemente errado.
-            // Logo, o sinal invertido é a nossa melhor aposta.
             return expert.vote === 'RISE' ? 'FALL' : (expert.vote === 'FALL' ? 'RISE' : 'HOLD');
         }
 
-        // Se o intervalo de confiança contém 50%, o resultado é estatisticamente ambíguo.
         return 'HOLD';
     };
 
@@ -165,6 +164,15 @@ const ProjectionExpertsPanel = ({ experts, adaptiveDrifts, className }: { expert
             case 'suspended': return <PauseCircle size={12} className="text-orange-500" />;
             case 'permanently_disabled': return <Skull size={12} className="text-destructive" />;
             default: return null;
+        }
+    }
+    
+    const getStatusTooltip = (expert: ExpertProjection) => {
+        switch(expert.status) {
+            case 'active': return 'Operacional';
+            case 'suspended': return `Suspenso após ${expert.consecutiveLosses} perdas`;
+            case 'permanently_disabled': return `Desabilitado após ${expert.totalSuspensions} suspensões`;
+            default: return 'Status desconhecido';
         }
     }
 
@@ -180,13 +188,22 @@ const ProjectionExpertsPanel = ({ experts, adaptiveDrifts, className }: { expert
                     const effectiveDirection = getEffectiveVote(expert);
                     const drift = adaptiveDrifts[name] || 0;
                     const driftColor = drift > 0.00001 ? 'text-green-500' : drift < -0.00001 ? 'text-red-500' : 'text-gray-400';
-                    const displayWinRate = rawWinRate; // Mostra a taxa de acerto real
+                    const displayWinRate = rawWinRate;
                     
                     return (
                         <div key={name} className="flex justify-between items-center bg-background p-2 rounded-md border text-xs">
                            <div className="w-16 flex items-center gap-2">
                              <span className={cn("font-semibold", status !== 'active' && 'text-muted-foreground line-through')}>{name}</span>
-                             {getStatusIcon(status)}
+                             <TooltipProvider>
+                                <ShadTooltip>
+                                    <TooltipTrigger asChild>
+                                        <div>{getStatusIcon(status)}</div>
+                                    </TooltipTrigger>
+                                    <TooltipContent>
+                                        <p>{getStatusTooltip(expert)}</p>
+                                    </TooltipContent>
+                                </ShadTooltip>
+                             </TooltipProvider>
                            </div>
                             <div className="flex items-center gap-2 w-32">
                                 <Progress value={displayWinRate} className="h-1.5 flex-1" indicatorClassName={getProgressColor(displayWinRate)} />
@@ -274,6 +291,7 @@ function StochasticLab({
     return 0.95; // Horizontes longos mantêm memória
   };
   const ERROR_HISTORY_LENGTH = 20;
+  const DRIFT_LIMIT = 0.1;
   const adaptiveDriftRef = useRef<Record<string, number>>({});
   const predictionErrorHistoryRef = useRef<Record<string, number[]>>({});
 
@@ -358,8 +376,6 @@ function StochasticLab({
         
         let driftCorrection = adaptiveDriftRef.current[horizonName] || 0;
         
-        // CORREÇÃO: Limita o drift adaptativo para evitar instabilidade numérica
-        const DRIFT_LIMIT = 0.5;
         driftCorrection = Math.max(-DRIFT_LIMIT, Math.min(DRIFT_LIMIT, driftCorrection));
 
         for (let i = 1; i <= steps; i++) {
@@ -384,22 +400,18 @@ function StochasticLab({
               if (currentTimeIndex >= pred.startTimeIndex + h.ticks) {
                   const actualEndPrice = prices[pred.startTimeIndex + h.ticks];
                   if (actualEndPrice !== undefined) {
-                      // 1. Calcula o erro da previsão
                       const predictionError = actualEndPrice - pred.predictedEndPrice;
                       
-                      // 2. Atualiza o histórico de erros
                       const errorHistory = predictionErrorHistoryRef.current[h.name] || [];
                       errorHistory.push(predictionError);
                       if (errorHistory.length > ERROR_HISTORY_LENGTH) errorHistory.shift();
                       predictionErrorHistoryRef.current[h.name] = errorHistory;
                       
-                      // 3. Calcula o novo drift adaptativo com decaimento
                       const averageError = errorHistory.reduce((a, b) => a + b, 0) / errorHistory.length;
                       const currentDrift = adaptiveDriftRef.current[h.name] || 0;
                       const decayFactor = getDecayFactor(h.name);
                       adaptiveDriftRef.current[h.name] = (currentDrift * decayFactor) + (ADAPTIVE_DRIFT_LEARNING_RATE * averageError);
 
-                      // 4. Atualiza a assertividade
                       const predictedDirection = pred.predictedEndPrice > pred.startPrice;
                       const actualDirection = actualEndPrice > pred.startPrice;
                       const isWin = predictedDirection === actualDirection;
@@ -490,7 +502,7 @@ function StochasticLab({
         const vote = path.length > 1 ? (path[path.length - 1].price > path[0].price ? 'RISE' : 'FALL') : 'HOLD';
         
         const stats = assertivenessStats[h.name] || { wins: 0, total: 0, status: 'active', consecutiveLosses: 0, consecutiveWins: 0, totalSuspensions: 0 };
-        const { wins, total, status } = stats;
+        const { wins, total, status, consecutiveLosses, totalSuspensions } = stats;
         
         const rawWinRate = total > 0 ? (wins / total) * 100 : 0;
         const wilson = wilsonScoreInterval(wins, total);
@@ -503,6 +515,8 @@ function StochasticLab({
             hits: wins, 
             total,
             status,
+            consecutiveLosses,
+            totalSuspensions,
         };
     });
   }, [horizons, assertivenessStats, realData]);
@@ -510,18 +524,14 @@ function StochasticLab({
   const getEffectiveVote = useCallback((expert: ExpertProjection | undefined): 'RISE' | 'FALL' | 'HOLD' => {
       if (!expert || expert.vote === 'HOLD' || expert.status !== 'active') return 'HOLD';
       
-      // A certeza estatística é o nosso critério de confiança
       if (expert.wilson.lower > 0.5) {
           return expert.vote;
       }
       
       if (expert.wilson.upper < 0.5) {
-          // Se o limite superior da confiança é < 50%, o modelo está consistentemente errado.
-          // Logo, o sinal invertido é a nossa melhor aposta.
           return expert.vote === 'RISE' ? 'FALL' : (expert.vote === 'FALL' ? 'RISE' : 'HOLD');
       }
 
-      // Se o intervalo de confiança contém 50%, o resultado é estatisticamente ambíguo.
       return 'HOLD';
   }, []);
 
@@ -577,9 +587,9 @@ function StochasticLab({
         <CardHeader>
             <CardTitle className="font-headline flex items-center gap-2">
                 <FlaskConical className="h-5 w-5 text-purple-600" />
-                Laboratório Preditivo (Cérebro Adaptativo V2.1)
+                Laboratório Preditivo (Cérebro Cético V2.1)
             </CardTitle>
-            <CardDescription>O cientista usa GBM auto-calibrável e certeza estatística (Wilson Score) para projetar o futuro.</CardDescription>
+            <CardDescription>O cientista usa GBM auto-calibrável, Wilson Score e gestão de risco por modelo para projetar o futuro.</CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col min-h-0">
           <ScrollArea className="flex-1">
@@ -589,39 +599,31 @@ function StochasticLab({
                          <ProjectionExpertsPanel experts={projectionExperts} adaptiveDrifts={adaptiveDriftRef.current} className="md:col-span-3" />
                     </div>
                     
-                    {priceData.length === 0 ? (
-                        <div className="flex flex-col items-center justify-center h-64 text-muted-foreground">
-                            <Bot className="w-12 h-12 mb-4 opacity-30" />
-                            <p className="font-semibold">Aguardando dados suficientes do mercado...</p>
-                            <p className="text-sm">É necessário um histórico mínimo para a análise estatística.</p>
-                        </div>
-                    ) : (
-                        <div className="min-h-0">
-                             <h3 className="text-lg font-semibold mb-2">Preço Real & Projeções Estocásticas</h3>
-                             <ResponsiveContainer width="100%" height={350}>
-                                <LineChart data={chartDisplayData}>
-                                    <CartesianGrid strokeDasharray="3 3" />
-                                    <XAxis dataKey="time" label={{ value: 'Tempo (ticks)', position: 'insideBottom', offset: -5 }} />
-                                    <YAxis tickCount={6} domain={['auto', 'auto']} label={{ value: 'Preço', angle: -90, position: 'insideLeft' }} tickFormatter={(value) => typeof value === 'number' ? value.toFixed(4) : value}/>
-                                    <Tooltip />
-                                    <Legend />
-                                    <Line type="monotone" dataKey="price" stroke="hsl(var(--chart-1))" strokeWidth={2.5} dot={false} name="Preço Real" />
-                                    {horizons.map((h, index) => (
-                                        <Line 
-                                            key={h.name}
-                                            type="monotone" 
-                                            dataKey={`predicted_${h.name}_ahead`}
-                                            stroke={`hsl(var(--chart-${index + 2}))`}
-                                            strokeWidth={2}
-                                            dot={false} 
-                                            name={`Proj. ${h.name}`}
-                                            strokeDasharray={h.type === 'second' ? "3 8" : "5 5"}
-                                        />
-                                    ))}
-                                </LineChart>
-                            </ResponsiveContainer>
-                        </div>
-                    )}
+                    <div className="min-h-0">
+                         <h3 className="text-lg font-semibold mb-2">Preço Real & Projeções Estocásticas</h3>
+                         <ResponsiveContainer width="100%" height={350}>
+                            <LineChart data={chartDisplayData}>
+                                <CartesianGrid strokeDasharray="3 3" />
+                                <XAxis dataKey="time" label={{ value: 'Tempo (ticks)', position: 'insideBottom', offset: -5 }} />
+                                <YAxis tickCount={6} domain={['auto', 'auto']} label={{ value: 'Preço', angle: -90, position: 'insideLeft' }} tickFormatter={(value) => typeof value === 'number' ? value.toFixed(4) : value}/>
+                                <Tooltip />
+                                <Legend />
+                                <Line type="monotone" dataKey="price" stroke="hsl(var(--chart-1))" strokeWidth={2.5} dot={false} name="Preço Real" />
+                                {horizons.map((h, index) => (
+                                    <Line 
+                                        key={h.name}
+                                        type="monotone" 
+                                        dataKey={`predicted_${h.name}_ahead`}
+                                        stroke={`hsl(var(--chart-${index + 2}))`}
+                                        strokeWidth={2}
+                                        dot={false} 
+                                        name={`Proj. ${h.name}`}
+                                        strokeDasharray={h.type === 'second' ? "3 8" : "5 5"}
+                                    />
+                                ))}
+                            </LineChart>
+                        </ResponsiveContainer>
+                    </div>
                     
                      {stats.annualizedVol && (
                        <Card className="mt-6">
@@ -649,6 +651,74 @@ function StochasticLab({
   );
 }
 
+function VolatilityProjectionChart({ chartData, horizons, futurePathsRef, priceData, className }: { 
+    chartData: any[];
+    horizons: any[];
+    futurePathsRef: React.RefObject<Record<string, any[]>>;
+    priceData: any[];
+    className?: string;
+}) {
+
+    const chartDisplayData = useMemo(() => {
+        const dataSlice = priceData.slice(-200); 
+        const combined = [...dataSlice];
+        
+        Object.values(futurePathsRef.current || {}).forEach(path => {
+            path.forEach(point => {
+              const existingPointIndex = combined.findIndex(p => p.time === point.time);
+              if (existingPointIndex !== -1) {
+                combined[existingPointIndex] = { ...combined[existingPointIndex], ...point };
+              } else {
+                combined.push(point);
+              }
+            });
+        });
+        return combined;
+    }, [priceData, futurePathsRef.current]);
+
+    if (priceData.length === 0) {
+        return (
+            <div className={cn("flex flex-col items-center justify-center h-64 text-muted-foreground", className)}>
+                <Bot className="w-12 h-12 mb-4 opacity-30" />
+                <p className="font-semibold">Aguardando dados suficientes do mercado...</p>
+                <p className="text-sm">É necessário um histórico mínimo para a análise estatística.</p>
+            </div>
+        )
+    }
+
+    return (
+        <Card className={cn("h-[450px]", className)}>
+            <CardHeader>
+                <CardTitle className="font-headline">Projeções Estocásticas</CardTitle>
+                <CardDescription>Preço real e as 9 projeções de horizonte de tempo do comitê de IA.</CardDescription>
+            </CardHeader>
+            <CardContent>
+                <ResponsiveContainer width="100%" height={350}>
+                    <LineChart data={chartDisplayData}>
+                        <CartesianGrid strokeDasharray="3 3" />
+                        <XAxis dataKey="time" label={{ value: 'Tempo (ticks)', position: 'insideBottom', offset: -5 }} />
+                        <YAxis tickCount={6} domain={['auto', 'auto']} label={{ value: 'Preço', angle: -90, position: 'insideLeft' }} tickFormatter={(value) => typeof value === 'number' ? value.toFixed(4) : value}/>
+                        <Tooltip />
+                        <Legend />
+                        <Line type="monotone" dataKey="price" stroke="hsl(var(--chart-1))" strokeWidth={2.5} dot={false} name="Preço Real" />
+                        {horizons.map((h, index) => (
+                            <Line 
+                                key={h.name}
+                                type="monotone" 
+                                dataKey={`predicted_${h.name}_ahead`}
+                                stroke={`hsl(var(--chart-${index + 2}))`}
+                                strokeWidth={2}
+                                dot={false} 
+                                name={`Proj. ${h.name}`}
+                                strokeDasharray={h.type === 'second' ? "3 8" : "5 5"}
+                            />
+                        ))}
+                    </LineChart>
+                </ResponsiveContainer>
+            </CardContent>
+        </Card>
+    )
+}
 
 function PageContent() {
   const { 
@@ -666,13 +736,7 @@ function PageContent() {
   const autopilot = useMasterAutopilot();
   const { isAutopilotOn, runAutopilotCycle } = autopilot;
   
-  const form = useForm<VolatilityTraderFormValues>({
-    resolver: zodResolver(volatilityTraderSchema),
-    defaultValues: {
-      stake: 1.0,
-      duration: 15,
-    },
-  });
+  const form = useFormContext<VolatilityTraderFormValues>();
 
   const handleConsensusUpdate = useCallback((data: any) => {
     setConsensusData(data);
@@ -697,11 +761,11 @@ function PageContent() {
         setPredictiveLogs(fetched.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()));
       } catch (error: any) {
         console.error("Failed to fetch predictive logs:", error);
-        toast({ title: "Erro ao Carregar Logs", description: "Não foi possível buscar os dados de auditoria preditiva.", variant: "destructive" });
-        errorEmitter.emit('permission-error', new FirestorePermissionError({
-            path: `users/${user.uid}/predictive_logs_v1`,
-            operation: 'list'
-        }));
+        if (error instanceof FirestorePermissionError) {
+           errorEmitter.emit('permission-error', error);
+        } else {
+             toast({ title: "Erro ao Carregar Logs", description: "Não foi possível buscar os dados de auditoria preditiva.", variant: "destructive" });
+        }
       } finally {
         setIsLogsLoading(false);
       }
@@ -759,142 +823,150 @@ function PageContent() {
   
 
   return (
-    <FormProvider {...form}>
-      <div className="flex-1 space-y-4 p-4 sm:p-8 pt-6">
-        <Header />
-        <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
-          <StochasticLab 
-            realData={chartData} 
-            onConsensusUpdate={handleConsensusUpdate}
-            predictiveLogs={predictiveLogs}
-            onDeletePredictiveLog={handleDeletePredictiveLog}
-            deletingPredictiveLogId={deletingPredictiveLogId}
+    <div className="flex-1 space-y-4 p-4 sm:p-8 pt-6">
+      <Header />
+      <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
+        <StochasticLab 
+          realData={chartData} 
+          onConsensusUpdate={handleConsensusUpdate}
+          predictiveLogs={predictiveLogs}
+          onDeletePredictiveLog={handleDeletePredictiveLog}
+          deletingPredictiveLogId={deletingPredictiveLogId}
+        />
+        <div className="lg:col-span-2 space-y-6">
+          <VolatilityTraderInterface 
+            symbol={activeSymbol || ''} 
+            consensus={consensusData?.strongestSignal}
+            onSyncDuration={handleSyncDuration}
           />
-          <div className="lg:col-span-2 space-y-6">
-            <VolatilityTraderInterface 
-              symbol={activeSymbol || ''} 
-              consensus={consensusData?.strongestSignal}
-              onSyncDuration={handleSyncDuration}
-            />
-            <VolatilityAutopilotInterface 
-              autopilot={autopilot}
-              projectionExperts={consensusData?.projectionExperts || []}
-            >
-              <Collapsible className="pt-4">
-                <CollapsibleTrigger asChild>
-                  <Button variant="outline" className="w-full">
-                    <Settings className="h-4 w-4 mr-2"/>
-                    Configurações Avançadas do Piloto
-                  </Button>
-                </CollapsibleTrigger>
-                <CollapsibleContent className="pt-4 space-y-6">
-                  <Card>
-                    <CardHeader>
-                      <CardTitle className="text-base font-headline">Calibração de Risco e Lógica</CardTitle>
-                    </CardHeader>
-                    <CardContent className="space-y-6">
-                      <div className="flex items-center justify-between rounded-lg border p-3 shadow-sm">
-                        <Label htmlFor="neighbor-confirmation-switch" className="flex flex-col space-y-1 flex-1 pr-4">
-                          <span>Confirmação de Vizinhos</span>
-                          <span className="font-normal text-xs text-muted-foreground">Exigir que dois especialistas vizinhos concordem.</span>
-                        </Label>
-                        <Switch id="neighbor-confirmation-switch" checked={autopilot.isNeighborConfirmationEnabled} onCheckedChange={autopilot.setIsNeighborConfirmationEnabled} disabled={autopilot.isAutopilotOn}/>
-                      </div>
-                      <div className="flex items-center justify-between rounded-lg border p-3 shadow-sm">
-                        <Label htmlFor="triple-confirmation-switch" className="flex flex-col space-y-1 flex-1 pr-4">
-                          <span>Confirmação Tripla (Vizinhos + Sequencial)</span>
-                          <span className="font-normal text-xs text-muted-foreground">Exigir que três especialistas vizinhos (anterior, atual, próximo) concordem.</span>
-                        </Label>
-                        <Switch id="triple-confirmation-switch" checked={autopilot.isTripleConfirmationEnabled} onCheckedChange={autopilot.setIsTripleConfirmationEnabled} disabled={autopilot.isAutopilotOn}/>
-                      </div>
-                      <div className="flex items-center justify-between rounded-lg border p-3 shadow-sm">
-                        <Label htmlFor="macro-trend-switch" className="flex flex-col space-y-1 flex-1 pr-4">
-                          <span>Verificação de Tendência Macro</span>
-                          <span className="font-normal text-xs text-muted-foreground">Alinhar trades com a EMA dinâmica. (Ignorado para sinais HF)</span>
-                        </Label>
-                        <Switch id="macro-trend-switch" checked={autopilot.isMacroTrendCheckEnabled} onCheckedChange={autopilot.setIsMacroTrendCheckEnabled} disabled={autopilot.isAutopilotOn}/>
-                      </div>
-                      <div className="flex items-center justify-between rounded-lg border p-3 shadow-sm">
-                        <Label htmlFor="multiple-positions-switch" className="flex flex-col space-y-1 flex-1 pr-4">
-                            <span>Permitir Múltiplas Posições</span>
-                            <span className="font-normal text-xs text-muted-foreground">Se ativado, o piloto pode abrir novas ordens mesmo com outras já em andamento.</span>
-                        </Label>
-                        <Switch id="multiple-positions-switch" checked={autopilot.allowMultiplePositions} onCheckedChange={autopilot.setAllowMultiplePositions} disabled={autopilot.isAutopilotOn}/>
-                      </div>
-                      
-                      <Separator/>
+          <VolatilityAutopilotInterface 
+            autopilot={autopilot}
+            projectionExperts={consensusData?.projectionExperts || []}
+          >
+            <Collapsible className="pt-4">
+              <CollapsibleTrigger asChild>
+                <Button variant="outline" className="w-full">
+                  <Settings className="h-4 w-4 mr-2"/>
+                  Configurações Avançadas do Piloto
+                </Button>
+              </CollapsibleTrigger>
+              <CollapsibleContent className="pt-4 space-y-6">
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-base font-headline">Calibração de Risco e Lógica</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-6">
+                    <div className="flex items-center justify-between rounded-lg border p-3 shadow-sm">
+                      <Label htmlFor="neighbor-confirmation-switch" className="flex flex-col space-y-1 flex-1 pr-4">
+                        <span>Confirmação de Vizinhos</span>
+                        <span className="font-normal text-xs text-muted-foreground">Exigir que dois especialistas vizinhos concordem.</span>
+                      </Label>
+                      <Switch id="neighbor-confirmation-switch" checked={autopilot.isNeighborConfirmationEnabled} onCheckedChange={autopilot.setIsNeighborConfirmationEnabled} disabled={autopilot.isAutopilotOn}/>
+                    </div>
+                    <div className="flex items-center justify-between rounded-lg border p-3 shadow-sm">
+                      <Label htmlFor="triple-confirmation-switch" className="flex flex-col space-y-1 flex-1 pr-4">
+                        <span>Confirmação Tripla (Vizinhos + Sequencial)</span>
+                        <span className="font-normal text-xs text-muted-foreground">Exigir que três especialistas vizinhos (anterior, atual, próximo) concordem.</span>
+                      </Label>
+                      <Switch id="triple-confirmation-switch" checked={autopilot.isTripleConfirmationEnabled} onCheckedChange={autopilot.setIsTripleConfirmationEnabled} disabled={autopilot.isAutopilotOn}/>
+                    </div>
+                    <div className="flex items-center justify-between rounded-lg border p-3 shadow-sm">
+                      <Label htmlFor="macro-trend-switch" className="flex flex-col space-y-1 flex-1 pr-4">
+                        <span>Verificação de Tendência Macro</span>
+                        <span className="font-normal text-xs text-muted-foreground">Alinhar trades com a EMA dinâmica. (Ignorado para sinais HF)</span>
+                      </Label>
+                      <Switch id="macro-trend-switch" checked={autopilot.isMacroTrendCheckEnabled} onCheckedChange={autopilot.setIsMacroTrendCheckEnabled} disabled={autopilot.isAutopilotOn}/>
+                    </div>
+                    <div className="flex items-center justify-between rounded-lg border p-3 shadow-sm">
+                      <Label htmlFor="multiple-positions-switch" className="flex flex-col space-y-1 flex-1 pr-4">
+                          <span>Permitir Múltiplas Posições</span>
+                          <span className="font-normal text-xs text-muted-foreground">Se ativado, o piloto pode abrir novas ordens mesmo com outras já em andamento.</span>
+                      </Label>
+                      <Switch id="multiple-positions-switch" checked={autopilot.allowMultiplePositions} onCheckedChange={autopilot.setAllowMultiplePositions} disabled={autopilot.isAutopilotOn}/>
+                    </div>
+                    
+                    <Separator/>
 
-                      <div className="space-y-2">
-                        <Label htmlFor="hf-threshold-slider">Limiar de Alta Frequência (HF)</Label>
-                        <div className="flex items-center gap-4">
-                          <Slider
-                            id="hf-threshold-slider"
-                            min={5} max={60} step={5}
-                            value={[autopilot.highFrequencyThreshold]}
-                            onValueChange={(value) => autopilot.setHighFrequencyThreshold(value[0])}
-                            disabled={autopilot.isAutopilotOn}
-                          />
-                          <span className="font-mono text-primary font-bold">{autopilot.highFrequencyThreshold}s</span>
-                        </div>
-                        <p className="text-xs text-muted-foreground pt-1">Sinais com duração igual ou inferior a este valor ignorarão o filtro de tendência macro.</p>
+                    <div className="space-y-2">
+                      <Label htmlFor="hf-threshold-slider">Limiar de Alta Frequência (HF)</Label>
+                      <div className="flex items-center gap-4">
+                        <Slider
+                          id="hf-threshold-slider"
+                          min={5} max={60} step={5}
+                          value={[autopilot.highFrequencyThreshold]}
+                          onValueChange={(value) => autopilot.setHighFrequencyThreshold(value[0])}
+                          disabled={autopilot.isAutopilotOn}
+                        />
+                        <span className="font-mono text-primary font-bold">{autopilot.highFrequencyThreshold}s</span>
                       </div>
+                      <p className="text-xs text-muted-foreground pt-1">Sinais com duração igual ou inferior a este valor ignorarão o filtro de tendência macro.</p>
+                    </div>
 
-                      <Separator/>
+                    <Separator/>
 
-                      <div className="space-y-2">
-                        <Label htmlFor="global-assertiveness-threshold">Limiar de Assertividade Global (%)</Label>
-                        <div className="flex items-center gap-4">
-                          <Slider
-                            id="global-assertiveness-threshold"
-                            min={51} max={70} step={1}
-                            value={[Object.values(autopilot.riskManager.thresholds)[0] || 52]}
-                            onValueChange={(value) => autopilot.setGlobalAssertivenessThreshold(value[0])}
-                            disabled={autopilot.isAutopilotOn}
-                          />
-                          <span className="font-mono text-primary font-bold">{Object.values(autopilot.riskManager.thresholds)[0] || 52}%</span>
-                        </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="global-assertiveness-threshold">Limiar de Assertividade Global (%)</Label>
+                      <div className="flex items-center gap-4">
+                        <Slider
+                          id="global-assertiveness-threshold"
+                          min={51} max={70} step={1}
+                          value={[Object.values(autopilot.riskManager.thresholds)[0] || 52]}
+                          onValueChange={(value) => autopilot.setGlobalAssertivenessThreshold(value[0])}
+                          disabled={autopilot.isAutopilotOn}
+                        />
+                        <span className="font-mono text-primary font-bold">{Object.values(autopilot.riskManager.thresholds)[0] || 52}%</span>
                       </div>
-                      <Separator/>
-                      <div className="space-y-4">
-                        <Label>Calibração Individual por Horizonte</Label>
-                        {Object.keys(autopilot.riskManager.thresholds).map(horizon => (
-                          <div key={horizon} className="space-y-2">
-                            <div className="flex justify-between items-center">
-                              <Label htmlFor={`threshold-${horizon}`} className="text-sm text-muted-foreground">{`Analista ${horizon}`}</Label>
-                              <span className="font-mono text-primary font-bold">{autopilot.riskManager.thresholds[horizon]}%</span>
-                            </div>
-                            <Slider
-                              id={`threshold-${horizon}`}
-                              min={51} max={70} step={1}
-                              value={[autopilot.riskManager.thresholds[horizon] || 52]}
-                              onValueChange={(value) => autopilot.setIndividualThreshold(horizon, value[0])}
-                              disabled={autopilot.isAutopilotOn}
-                            />
+                    </div>
+                    <Separator/>
+                    <div className="space-y-4">
+                      <Label>Calibração Individual por Horizonte</Label>
+                      {Object.keys(autopilot.riskManager.thresholds).map(horizon => (
+                        <div key={horizon} className="space-y-2">
+                          <div className="flex justify-between items-center">
+                            <Label htmlFor={`threshold-${horizon}`} className="text-sm text-muted-foreground">{`Analista ${horizon}`}</Label>
+                            <span className="font-mono text-primary font-bold">{autopilot.riskManager.thresholds[horizon]}%</span>
                           </div>
-                        ))}
-                      </div>
-                    </CardContent>
-                  </Card>
-                </CollapsibleContent>
-              </Collapsible>
-            </VolatilityAutopilotInterface>
-            <OperationsLogV2 
-              operations={operationsLog} 
-              sellContract={sellContract} 
-              priceTicks={priceTicks} 
-              clearActiveContracts={clearActiveContracts}
-            />
-          </div>
+                          <Slider
+                            id={`threshold-${horizon}`}
+                            min={51} max={70} step={1}
+                            value={[autopilot.riskManager.thresholds[horizon] || 52]}
+                            onValueChange={(value) => autopilot.setIndividualThreshold(horizon, value[0])}
+                            disabled={autopilot.isAutopilotOn}
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  </CardContent>
+                </Card>
+              </CollapsibleContent>
+            </Collapsible>
+          </VolatilityAutopilotInterface>
+          <OperationsLogV2 
+            operations={operationsLog} 
+            sellContract={sellContract} 
+            priceTicks={priceTicks} 
+            clearActiveContracts={clearActiveContracts}
+          />
         </div>
       </div>
-    </FormProvider>
+    </div>
   );
 }
 
 export default function VolatilityAnalysisPage() {
+    const form = useForm<VolatilityTraderFormValues>({
+        resolver: zodResolver(volatilityTraderSchema),
+        defaultValues: {
+            stake: 1.0,
+            duration: 15,
+        },
+    });
+
   return (
     <DerivApiProvider>
-      <PageContent />
+      <FormProvider {...form}>
+        <PageContent />
+      </FormProvider>
     </DerivApiProvider>
   );
 }
