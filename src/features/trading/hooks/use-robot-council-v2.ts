@@ -136,7 +136,7 @@ const durationToSeconds = (duration: number, unit: DurationUnit): number => {
     case 'm': return duration * 60;
     case 'h': return duration * 3600;
     case 'd': return duration * 86400;
-    default: return duration;
+    default: return duration * 2;
   }
 };
 
@@ -418,7 +418,8 @@ export function useRobotCouncilV2(
   }, [strategyCouncil]);
 
   useEffect(() => {
-    if (!user || isAuthLoading || !assetSymbol) return;
+    if (!user || isAuthLoading || !activeSymbol) return;
+    
     loadRobotPerformance(user.uid, 'v2').then((stored) => {
         if (stored && stored.length > 0) {
             robotPerformanceRef.current = stored as EnhancedRobotPerformance[];
@@ -427,7 +428,7 @@ export function useRobotCouncilV2(
             resetArenaPerformance();
         }
     }).catch(console.error);
-  }, [user, isAuthLoading, resetArenaPerformance, assetSymbol]);
+  }, [user, isAuthLoading, resetArenaPerformance, activeSymbol]);
 
   const fetchStrategyCouncil = useCallback(async () => {
     if (!activeSymbol) {
@@ -969,3 +970,5 @@ function markLogAsProcessed(logs: TradeDecisionLog[], contractId: number): Trade
         log.contractId === contractId ? { ...log, processed: true } : log
     );
 }
+
+    
