@@ -126,7 +126,7 @@ export function useDerivApiDigitsState() {
 
     const activeToken = accountType === 'demo' ? demoToken : realToken;
 
-    const makeRequest = useCallback(<T,>(request: object): Promise<T> => {
+    const makeRequest = useCallback((request: object): Promise<any> => {
         return new Promise((resolve, reject) => {
             const ws = wsRef.current;
             if (!ws || ws.readyState !== WebSocket.OPEN) {
@@ -407,13 +407,12 @@ export function useDerivApiDigitsState() {
 
 export function DerivApiProviderDigits({ children }: { children: React.ReactNode }) {
     const contextValue = useDerivApiDigitsState();
-    return React.createElement(
-        DerivApiContextDigits.Provider,
-        { value: contextValue },
-        React.createElement(React.Fragment, null,
-            React.createElement(FirebaseErrorListener),
-            children
-        )
+    
+    return (
+        <DerivApiContextDigits.Provider value={contextValue}>
+            <FirebaseErrorListener />
+            {children}
+        </DerivApiContextDigits.Provider>
     );
 }
 
