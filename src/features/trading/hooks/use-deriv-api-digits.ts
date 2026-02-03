@@ -73,7 +73,7 @@ const marketNameMapping: Record<string, string> = { 'synthetic_index': 'Índices
 
 export const DerivApiContextDigits = createContext<DerivApiContextTypeDigits | undefined>(undefined);
 
-export function useDerivApiDigitsState(): DerivApiContextTypeDigits {
+export function useDerivApiDigitsState() {
   const [demoToken, setDemoToken] = useState<string | null>(null);
   const [realToken, setRealToken] = useState<string | null>(null);
   const [accountType, setAccountTypeState] = useState<AccountType>('demo');
@@ -342,11 +342,16 @@ export function useDerivApiDigitsState(): DerivApiContextTypeDigits {
                     setConnectionError(`Conexão perdida. Reconectando...`);
                     if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
                     reconnectTimeoutRef.current = setTimeout(() => { reconnectInProgressRef.current = false; setTriggerReconnect(c => c + 1); }, 3000);
+                } else if (!event.wasClean && !allowAutoReconnectRef.current) {
+                    console.error(`[WS] Conexão falhou permanentemente (provavelmente token inválido). Auto-reconexão desativada.`);
+                    setConnectionError(`Authorization failed. Please check your API token.`);
                 }
                 setIsConnected(false); setIsConnecting(false);
                 setAccountBalance({ balance: null, currency: null, loading: false });
                 wsRef.current = null;
             };
+
+            ws.onerror = () => { /* Silencioso */ };
         };
         connect();
         return () => {
@@ -356,7 +361,7 @@ export function useDerivApiDigitsState(): DerivApiContextTypeDigits {
             if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
             reconnectInProgressRef.current = false;
         };
-    }, [activeToken, isLoading, triggerReconnect, makeRequest, setAndPersistOperationsLog, startConnectionMonitor, subscribeToTicks]);
+    }, [activeToken, isLoading, triggerReconnect]);
 
     useEffect(() => {
         if (isConnected && activeSymbol) subscribeToTicks(activeSymbol);
