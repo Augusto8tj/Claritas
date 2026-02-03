@@ -38,6 +38,7 @@ import type { AssertivenessData } from '@/features/trading/hooks/use-master-auto
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Skeleton } from '@/components/ui/skeleton';
 import { MarketChart } from "@/features/trading/components/deriv-trader/market-chart";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 
 
 /**
@@ -995,16 +996,56 @@ const VolatilityAutopilotInterface = ({
 }
 
 const Header = () => {
-  const { activeSymbol, setActiveSymbol, assetGroups, isAssetsLoading } = useDerivApi();
-  return (
-    <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-      <h1 className="text-3xl font-bold tracking-tight font-headline shrink-0 text-center md:text-left"> Análise de Volatilidade </h1>
-      <div className="flex-1 grid grid-cols-1 md:grid-cols-2 gap-4 items-center">
-        <div className="flex justify-center">
-          <AssetSelector selectedAsset={activeSymbol || ""} onAssetChange={(asset) => setActiveSymbol(asset)} assetGroups={assetGroups} isAssetsLoading={isAssetsLoading} />
+    const { 
+        activeSymbol, 
+        setActiveSymbol, 
+        assetGroups, 
+        isAssetsLoading, 
+        accountType, 
+        setAccountType, 
+        accountBalance,
+        isConnecting 
+    } = useDerivApi();
+    
+    return (
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <h1 className="text-3xl font-bold tracking-tight font-headline shrink-0 text-center md:text-left">
+                Análise de Volatilidade
+            </h1>
+            <div className="flex-1 grid grid-cols-1 md:grid-cols-3 gap-4 items-center">
+                <div className="flex justify-center">
+                    <AssetSelector
+                        selectedAsset={activeSymbol || ""} 
+                        onAssetChange={(asset) => setActiveSymbol(asset)} 
+                        assetGroups={assetGroups}
+                        isAssetsLoading={isAssetsLoading}
+                    />
+                </div>
+                <div className="flex justify-center">
+                    <ApiStatusIndicator />
+                </div>
+                <div className="flex items-center justify-center md:justify-end gap-4">
+                    <ToggleGroup type="single" value={accountType} onValueChange={(value: any) => value && setAccountType(value)} defaultValue="demo" aria-label="Tipo de Conta">
+                        <ToggleGroupItem value="demo" aria-label="Usar conta demo">Demo</ToggleGroupItem>
+                        <ToggleGroupItem value="real" aria-label="Usar conta real">Real</ToggleGroupItem>
+                    </ToggleGroup>
+                    <div className="text-right">
+                        {accountBalance.loading || isConnecting ? (
+                            <div className="space-y-1">
+                                <Skeleton className="h-4 w-16" />
+                                <Skeleton className="h-5 w-24" />
+                            </div>
+                        ) : accountBalance.balance !== null ? (
+                            <div>
+                                <p className="text-xs text-muted-foreground capitalize">Saldo ({accountType})</p>
+                                <p className="text-lg font-bold text-foreground leading-tight">
+                                    {new Intl.NumberFormat('en-US', { style: 'currency', currency: accountBalance.currency || 'USD' }).format(accountBalance.balance)}
+                                </p>
+                            </div>
+                        ) : null}
+                    </div>
+                </div>
+            </div>
         </div>
-        <div className="flex justify-center"> <ApiStatusIndicator /> </div>
-      </div>
-    </div>
-  );
+    );
 };
