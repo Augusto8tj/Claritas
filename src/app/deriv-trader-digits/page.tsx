@@ -7,7 +7,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import DerivTraderInterfaceDigits from "@/features/trading/components/deriv-trader/deriv-trader-interface-digits";
 import { AssetSelectorDigits } from "@/features/trading/components/deriv-trader/asset-selector-digits";
 import { Skeleton } from "@/components/ui/skeleton";
-import { DerivApiContextDigits, useDerivApiDigitsState, useDerivApiDigits } from "@/features/trading/hooks/use-deriv-api-digits";
+import { DerivApiProviderDigits, useDerivApiDigits } from "@/features/trading/hooks/use-deriv-api-digits";
 import { OperationsLogDigits } from "@/features/trading/components/deriv-trader/operations-log-digits";
 import { AIAnalysisInterfaceDigits } from "@/features/trading/components/deriv-trader/ai-analysis-interface-digits";
 import { digitSchema, type DigitFormValues } from "@/features/trading/components/deriv-trader/deriv-trader-interface-digits.types";
@@ -22,7 +22,6 @@ import { ApiStatusIndicatorDigits } from "@/features/trading/components/deriv-tr
 import { DigitStatsChart } from "@/features/trading/components/deriv-trader/digit-stats-chart";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { BrainCircuit } from 'lucide-react';
-import { FirebaseErrorListener } from '@/components/firebase-error-listener';
 
 
 function HeaderDigits() {
@@ -126,16 +125,6 @@ function DerivTraderPageContentDigits() {
             <DigitStatsChart priceTicks={priceTicks} />
             <MainContentDigits />
         </div>
-    );
-}
-
-const DerivApiProviderDigits = ({ children }: { children: React.ReactNode }) => {
-    const apiState = useDerivApiDigitsState();
-    return (
-        <DerivApiContextDigits.Provider value={apiState}>
-            <FirebaseErrorListener />
-            {children}
-        </DerivApiContextDigits.Provider>
     );
 }
 
