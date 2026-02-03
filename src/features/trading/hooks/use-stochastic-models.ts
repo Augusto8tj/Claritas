@@ -6,7 +6,7 @@ import type { ChartData, CandleData } from '@/lib/types';
 
 // --- TYPE DEFINITIONS ---
 
-interface ExpertProjection {
+export interface ExpertProjection {
     name: string;
     vote: 'RISE' | 'FALL' | 'HOLD';
     wilson: { lower: number; upper: number };
@@ -19,11 +19,17 @@ interface ExpertProjection {
     lastResult?: boolean;
 }
 
-interface StrongestSignal {
+export interface StrongestSignal {
     horizon: string;
     direction: 'RISE' | 'FALL' | 'HOLD';
     certaintyScore: number;
     rawWinRate: number;
+}
+
+export interface MarketStats {
+    annualizedVol: string;
+    skewness: string;
+    kurtosis: string;
 }
 
 // --- CONSTANTS ---
@@ -72,9 +78,10 @@ const getDecayFactor = (horizonName: string): number => {
 // --- THE HOOK ---
 export function useStochasticModels(realData: ChartData[]) {
     const [priceData, setPriceData] = useState<any[]>([]);
-    const [stats, setStats] = useState<any>({ annualizedVol: '0.0000', skewness: '0.0000', kurtosis: '0.0000' });
+    const [stats, setStats] = useState<MarketStats>({ annualizedVol: '0.0000', skewness: '0.0000', kurtosis: '0.0000' });
     const [assertivenessStats, setAssertivenessStats] = useState<Record<string, { wins: number; total: number; consecutiveLosses: number; consecutiveWins: number; status: 'active' | 'suspended' | 'permanently_disabled'; totalSuspensions: number; }>>({});
-    
+    const [expertVotes, setExpertVotes] = useState<Record<string, 'RISE' | 'FALL' | 'HOLD'>>({});
+
     const futurePathsRef = useRef<Record<string, { time: number; price: number }[]>>({});
     const adaptiveDriftRef = useRef<Record<string, number>>({});
     const predictionErrorHistoryRef = useRef<Record<string, number[]>>({});
@@ -99,6 +106,7 @@ export function useStochasticModels(realData: ChartData[]) {
         const initialDrift: Record<string, number> = {};
         const initialErrorHistory: Record<string, number[]> = {};
         const initialAssertivenessHistory: Record<string, boolean[]> = {};
+        const initialVotes: Record<string, 'RISE' | 'FALL' | 'HOLD'> = {};
 
         horizons.forEach(h => {
             initialStats[h.name] = { wins: 0, total: 0, consecutiveLosses: 0, consecutiveWins: 0, status: 'active', totalSuspensions: 0 };
@@ -106,8 +114,10 @@ export function useStochasticModels(realData: ChartData[]) {
             initialDrift[h.name] = 0;
             initialErrorHistory[h.name] = [];
             initialAssertivenessHistory[h.name] = [];
+            initialVotes[h.name] = 'HOLD';
         });
         setAssertivenessStats(initialStats);
+        setExpertVotes(initialVotes);
         pendingPredictionsRef.current = initialPending;
         adaptiveDriftRef.current = initialDrift;
         predictionErrorHistoryRef.current = initialErrorHistory;
@@ -164,7 +174,8 @@ export function useStochasticModels(realData: ChartData[]) {
           const newFuturePaths: Record<string, any[]> = {};
           const newAssertivenessData: Record<string, { lastResult: boolean }> = {};
           const horizonsToUpdateStats = new Set<string>();
-          
+          const newVotes: Record<string, 'RISE' | 'FALL' | 'HOLD'> = {};
+
           horizons.forEach(h => {
               const currentTimeIndex = prices.length - 1;
               const predictionsToProcess = pendingPredictionsRef.current[h.name] || [];
@@ -211,6 +222,8 @@ export function useStochasticModels(realData: ChartData[]) {
 
               const newPath = projectPath(h.ticks, h.name, h.type);
               newFuturePaths[h.name] = newPath;
+              
+              newVotes[h.name] = newPath.length > 1 ? (newPath[newPath.length - 1].price > newPath[0].price ? 'RISE' : 'FALL') : 'HOLD';
 
               if (newPath.length === h.ticks + 1) {
                   const newPredictionTimeIndex = newPath[0].time;
@@ -224,7 +237,8 @@ export function useStochasticModels(realData: ChartData[]) {
               }
           });
           futurePathsRef.current = newFuturePaths;
-          
+          setExpertVotes(newVotes);
+
             if (horizonsToUpdateStats.size > 0) {
                 setAssertivenessStats(prev => {
                     const newStats = { ...prev };
@@ -275,15 +289,11 @@ export function useStochasticModels(realData: ChartData[]) {
 
     const projectionExperts: ExpertProjection[] = useMemo(() => {
         return horizons.map(h => {
-            const path = futurePathsRef.current[h.name] || [];
-            const vote = path.length > 1 ? (path[path.length - 1].price > path[0].price ? 'RISE' : 'FALL') : 'HOLD';
-            
+            const vote = expertVotes[h.name] || 'HOLD';
             const stats = assertivenessStats[h.name] || { wins: 0, total: 0, status: 'active', consecutiveLosses: 0, consecutiveWins: 0, totalSuspensions: 0 };
             const { wins, total, status, consecutiveLosses, totalSuspensions } = stats;
-            
             const history = assertivenessHistoryRef.current[h.name] || [];
             const lastResult = history.length > 0 ? history[history.length - 1] : undefined;
-
             const rawWinRate = total > 0 ? (wins / total) * 100 : 0;
             const wilson = wilsonScoreInterval(wins, total);
 
@@ -300,7 +310,7 @@ export function useStochasticModels(realData: ChartData[]) {
                 lastResult,
             };
         });
-    }, [horizons, assertivenessStats, realData]);
+    }, [horizons, assertivenessStats, expertVotes]);
 
     const getEffectiveVote = useCallback((expert: ExpertProjection | undefined): 'RISE' | 'FALL' | 'HOLD' => {
       if (!expert || expert.vote === 'HOLD' || expert.status !== 'active') return 'HOLD';

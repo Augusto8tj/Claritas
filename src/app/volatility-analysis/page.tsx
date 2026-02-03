@@ -37,28 +37,13 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { MarketChart } from "@/features/trading/components/deriv-trader/market-chart";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Skeleton } from '@/components/ui/skeleton';
-import { useStochasticModels } from '@/features/trading/hooks/use-stochastic-models';
+import { useStochasticModels, type ExpertProjection, type StrongestSignal } from '@/features/trading/hooks/use-stochastic-models';
 
-// --- TYPE DEFINITIONS (kept from original) ---
+// --- TYPE DEFINITIONS ---
 
-interface ExpertProjection {
-    name: string;
-    vote: 'RISE' | 'FALL' | 'HOLD';
-    wilson: { lower: number; upper: number };
-    rawWinRate: number;
-    hits: number;
-    total: number;
-    status: 'active' | 'suspended' | 'permanently_disabled';
-    consecutiveLosses: number;
-    totalSuspensions: number;
-    lastResult?: boolean;
-}
-
-interface StrongestSignal {
-    horizon: string;
-    direction: 'RISE' | 'FALL' | 'HOLD';
-    certaintyScore: number;
-    rawWinRate: number;
+interface ConsensusData {
+    strongestSignal: StrongestSignal;
+    projectionExperts: ExpertProjection[];
 }
 
 
@@ -222,7 +207,7 @@ function StochasticLab({
     deletingPredictiveLogId,
 }: {
   realData: ChartData[];
-  onConsensusUpdate: (consensus: any) => void;
+  onConsensusUpdate: (consensus: ConsensusData) => void;
   predictiveLogs: PredictiveTradeLog[];
   onDeletePredictiveLog: (logId: string) => void;
   deletingPredictiveLogId: string | null;
@@ -259,9 +244,9 @@ function StochasticLab({
                             <CardTitle>Estatísticas Descritivas dos Retornos</CardTitle>
                         </CardHeader>
                         <CardContent className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
-                            <StatItem label="Volatilidade Anualizada" value={`${stats.annualizedVol || 0}%`} />
-                            <StatItem label="Assimetria (Skewness)" value={stats.skewness || 0} />
-                            <StatItem label="Curtose (Kurtosis)" value={stats.kurtosis || 0} />
+                            <StatItem label="Volatilidade Anualizada" value={`${stats.annualizedVol}%`} />
+                            <StatItem label="Assimetria (Skewness)" value={stats.skewness} />
+                            <StatItem label="Curtose (Kurtosis)" value={stats.kurtosis} />
                         </CardContent>
                     </Card>
                     
@@ -319,7 +304,7 @@ function PageContent() {
     priceTicks, durationLimits,
   } = useDerivApi();
   const { toast } = useToast();
-  const [consensusData, setConsensusData] = useState<any>(null);
+  const [consensusData, setConsensusData] = useState<ConsensusData | null>(null);
   const [predictiveLogs, setPredictiveLogs] = useState<PredictiveTradeLog[]>([]);
   const [isLogsLoading, setIsLogsLoading] = useState(true);
   const [deletingPredictiveLogId, setDeletingPredictiveLogId] = useState<string | null>(null);
@@ -330,7 +315,7 @@ function PageContent() {
   
   const form = useFormContext<VolatilityTraderFormValues>();
 
-  const handleConsensusUpdate = useCallback((data: any) => {
+  const handleConsensusUpdate = useCallback((data: ConsensusData) => {
     setConsensusData(data);
     if (isAutopilotOn && data?.projectionExperts) {
       const assertiveness: Record<string, AssertivenessData> = Object.fromEntries(
