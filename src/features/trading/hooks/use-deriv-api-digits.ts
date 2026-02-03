@@ -417,14 +417,16 @@ export function useDerivApiDigitsState() {
 }
 
 export function DerivApiProviderDigits({ children }: { children: React.ReactNode }) {
-  const contextValue = useDerivApiDigitsState();
+    const contextValue = useDerivApiDigitsState();
 
-  return (
-    <DerivApiContextDigits.Provider value={contextValue}>
-      <FirebaseErrorListener />
-      {children}
-    </DerivApiContextDigits.Provider>
-  );
+    return React.createElement(
+        DerivApiContextDigits.Provider,
+        { value: contextValue },
+        React.createElement(React.Fragment, null,
+            React.createElement(FirebaseErrorListener),
+            children
+        )
+    );
 }
 
 export function useDerivApiDigits() {
