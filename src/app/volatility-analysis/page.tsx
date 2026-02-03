@@ -278,7 +278,6 @@ function StochasticLab({
   const [lastPrice, setLastPrice] = useState<number | null>(null);
   const [stats, setStats] = useState<any>({ annualizedVol: '0.0000', skewness: '0.0000', kurtosis: '0.0000' });
   
-  const [predictionData, setPredictionData] = useState<any[]>([]);
   const futurePathsRef = useRef<Record<string, { time: number; price: number }[]>>({});
 
   // --- PARÂMETROS DO MODELO GBM PARA 1HZ10V ---
@@ -441,7 +440,7 @@ function StochasticLab({
           pendingPredictionsRef.current[h.name] = updatedPending;
 
           const newPath = projectPath(h.ticks, h.name);
-          newFuturePaths[h.name] = newPath.map(p => ({ time: p.time, [`predicted_${h.name}_ahead`]: p.price }));
+          newFuturePaths[h.name] = newPath;
 
           if (newPath.length === h.ticks + 1) {
               const newPredictionTimeIndex = newPath[0].time;
@@ -576,7 +575,7 @@ function StochasticLab({
     onConsensusUpdate({strongestSignal, projectionExperts});
   }, [strongestSignal, onConsensusUpdate, projectionExperts]);
 
-  const projectionData = useMemo(() => {
+  const medianProjection = useMemo(() => {
     if (priceData.length === 0 || !futurePathsRef.current) return [];
     
     const lastPoint = priceData[priceData.length - 1];
@@ -584,7 +583,7 @@ function StochasticLab({
     
     const lastTime = lastPoint.time;
     const projectionLength = horizons.reduce((max, h) => Math.max(max, h.ticks), 0);
-    const data = [];
+    const projectionData = [];
 
     for (let i = 0; i <= projectionLength; i++) {
         const pricesAtTimeStep = horizons
@@ -601,10 +600,10 @@ function StochasticLab({
             const q1 = pricesAtTimeStep[q1Index];
             const median = pricesAtTimeStep.length % 2 !== 0
                 ? pricesAtTimeStep[medianIndex]
-                : (pricesAtTimeStep[medianIndex - 1] + pricesAtTimeStep[medianIndex]) / 2;
+                : (pricesAtTimeStep[medianIndex - 1] + pricesAtTimeStep[mid]) / 2;
             const q3 = pricesAtTimeStep[q3Index];
 
-            data.push({
+            projectionData.push({
                 time: lastTime + i,
                 median,
                 q1,
@@ -612,15 +611,14 @@ function StochasticLab({
             });
         }
     }
-    return data;
-  }, [priceData, horizons]);
-
+    return projectionData;
+}, [priceData, horizons]);
 
   const combinedData = useMemo(() => {
     if (priceData.length === 0) return [];
     
     const displayData = priceData.slice(-70);
-    if (projectionData.length === 0) return displayData;
+    if (medianProjection.length === 0) return displayData;
     
     const lastRealTime = displayData[displayData.length - 1]?.time;
     if (lastRealTime === undefined) return displayData;
@@ -628,17 +626,20 @@ function StochasticLab({
     const dataMap = new Map<number, any>();
     displayData.forEach(d => dataMap.set(d.time, { ...d }));
 
-    projectionData.forEach((proj) => {
+    medianProjection.forEach((proj) => {
         const existing = dataMap.get(proj.time);
         if (existing) {
             Object.assign(existing, proj);
         } else {
-            dataMap.set(proj.time, { time: proj.time, ...proj });
+            if (proj.time > lastRealTime) {
+                dataMap.set(proj.time, { time: proj.time, ...proj });
+            }
         }
     });
     
     return Array.from(dataMap.values()).sort((a, b) => a.time - b.time);
-  }, [priceData, projectionData]);
+  }, [priceData, medianProjection]);
+
 
   return (
     <Card className="h-full flex flex-col col-span-1 lg:col-span-3">
@@ -700,7 +701,7 @@ function VolatilityProjectionChart({ chartData, className }: {
         )
     }
 
-    const lastRealPoint = chartData.slice().reverse().find(d => d.price !== undefined);
+    const lastRealPoint = [...chartData].reverse().find(d => d.price !== undefined);
 
     return (
         <Card className={cn("h-[500px]", className)}>
@@ -723,7 +724,7 @@ function VolatilityProjectionChart({ chartData, className }: {
                             hide={true}
                         />
                         <YAxis
-                            domain={['dataMin - 0.2', 'dataMax + 0.2']}
+                            domain={['auto', 'auto']}
                             tickFormatter={(v) => typeof v === 'number' ? v.toFixed(4) : ''}
                             orientation="right"
                             axisLine={false}
@@ -791,27 +792,20 @@ function VolatilityProjectionChart({ chartData, className }: {
                         />
 
                         {lastRealPoint && (
-                            <>
-                                <ReferenceLine 
-                                    x={lastRealPoint.time} 
-                                    stroke="hsl(var(--primary))" 
-                                    strokeWidth={1.5} 
-                                    strokeDasharray="2 4"
-                                    label={{
-                                        value: "AGORA",
-                                        position: "top",
-                                        fill: "hsl(var(--primary))",
-                                        fontSize: 10,
-                                        fontWeight: "bold",
-                                        offset: 10
-                                    }}
-                                />
-                                <Scatter
-                                    data={[{ time: lastRealPoint.time, price: lastRealPoint.price }]}
-                                    fill="hsl(var(--primary))"
-                                    shape="circle"
-                                />
-                            </>
+                            <ReferenceLine 
+                                x={lastRealPoint.time} 
+                                stroke="hsl(var(--primary))" 
+                                strokeWidth={1.5} 
+                                strokeDasharray="2 4"
+                                label={{
+                                    value: "AGORA",
+                                    position: "top",
+                                    fill: "hsl(var(--primary))",
+                                    fontSize: 10,
+                                    fontWeight: "bold",
+                                    offset: 10
+                                }}
+                            />
                         )}
                     </LineChart>
                 </ResponsiveContainer>
@@ -1187,3 +1181,4 @@ const Header = () => {
     </div>
   );
 };
+
