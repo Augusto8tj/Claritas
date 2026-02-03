@@ -2,13 +2,14 @@
 # Script para resolver o erro "non-fast-forward" do git push.
 
 # Passo 1: Baixar e integrar as alterações do repositório remoto.
-# Isto sincroniza o seu trabalho local com o que está no GitHub.
-echo "A executar 'git pull origin main' para sincronizar com o repositório remoto..."
-git pull origin main
+# A opção --rebase refaz os seus commits locais em cima das alterações remotas,
+# mantendo um histórico linear e resolvendo o problema de "branches divergentes".
+echo "A executar 'git pull origin main --rebase' para sincronizar com o repositório remoto..."
+git pull origin main --rebase
 
 # Verifica se o pull foi bem-sucedido antes de continuar.
 if [ $? -ne 0 ]; then
-  echo "O 'git pull' falhou. Por favor, resolva os conflitos de merge ou erros e tente novamente."
+  echo "O 'git pull --rebase' falhou. Por favor, resolva os conflitos de merge ou erros e tente novamente."
   exit 1
 fi
 
