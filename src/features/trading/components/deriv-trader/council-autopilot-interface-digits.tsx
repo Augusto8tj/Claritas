@@ -59,7 +59,7 @@ export const CouncilAutopilotInterfaceDigits: React.FC<CouncilAutopilotInterface
                     type="number"
                     value={dailyBalance}
                     onChange={(e) => setDailyBalance(Number(e.target.value))}
-                    placeholder="Ex: 100"
+                    placeholder="Ex: 10"
                     disabled={isCouncilAutopilotOn}
                 />
             </div>
@@ -70,7 +70,7 @@ export const CouncilAutopilotInterfaceDigits: React.FC<CouncilAutopilotInterface
                     type="number"
                     value={dailyTarget}
                     onChange={(e) => setDailyTarget(Number(e.target.value))}
-                    placeholder="Ex: 50"
+                    placeholder="Ex: 5"
                     disabled={isCouncilAutopilotOn}
                 />
             </div>
@@ -89,7 +89,7 @@ export const CouncilAutopilotInterfaceDigits: React.FC<CouncilAutopilotInterface
                 placeholder="Ex: 25"
                 disabled={isCouncilAutopilotOn}
             />
-            <p className="text-xs text-muted-foreground">O sistema operará se a probabilidade de um dígito for maior que este limiar.</p>
+            <p className="text-xs text-muted-foreground">O piloto irá operar 'Difere' se um dígito superar esta probabilidade.</p>
         </div>
 
         <Separator />
@@ -97,12 +97,12 @@ export const CouncilAutopilotInterfaceDigits: React.FC<CouncilAutopilotInterface
         {isCouncilAutopilotOn ? (
             <Button variant="destructive" className="w-full" onClick={dissolveCouncil} disabled={isFetchingCouncil}>
                 <PowerOff className="mr-2 h-4 w-4" />
-                Desativar Mesa
+                Desativar Piloto
             </Button>
         ) : (
              <Button className="w-full" onClick={fetchStrategyCouncil} disabled={isFetchingCouncil}>
                 {isFetchingCouncil ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Power className="mr-2 h-4 w-4" />}
-                {isFetchingCouncil ? 'Analisando...' : 'Ativar Mesa (Digits)'}
+                {isFetchingCouncil ? 'Analisando...' : 'Ativar Piloto (Digits)'}
             </Button>
         )}
       </CardContent>

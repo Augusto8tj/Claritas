@@ -8,18 +8,23 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Eye, TrendingDown, TrendingUp } from "lucide-react";
+import type { DigitStats } from "../../hooks/use-robot-council-digits";
 import { cn } from "@/lib/utils";
-import { TrendingUp, TrendingDown, HelpCircle, Eye } from "lucide-react";
-import type { useRobotCouncilDigits } from "../../hooks/use-robot-council-digits";
 
-interface AITradeSuggestionDigitsProps extends Partial<ReturnType<typeof useRobotCouncilDigits>> {}
+interface AITradeSuggestionDigitsProps {
+    digitStats: DigitStats[];
+    isAutopilotOn: boolean;
+}
 
 export function AITradeSuggestionDigits({ 
-    councilDecision, 
-    consensusSum,
+    digitStats, 
     isAutopilotOn,
 }: AITradeSuggestionDigitsProps) {
+
+    const sortedByProb = [...digitStats].sort((a, b) => b.probability - a.probability);
+    const mostProbable = sortedByProb[0];
+    const leastProbable = sortedByProb[sortedByProb.length - 1];
 
     if (!isAutopilotOn) {
         return (
@@ -47,16 +52,36 @@ export function AITradeSuggestionDigits({
       <CardHeader>
         <CardTitle className="font-headline flex items-center gap-2">
             <Eye className="h-5 w-5 text-primary" />
-            Probabilidade dos Dígitos
+            Análise Estatística da IA
         </CardTitle>
         <CardDescription>
-          Análise estatística em tempo real do último dígito.
+          Sugestões com base na frequência dos últimos dígitos.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
-        {/* A ser implementado: Gráfico de barras com as probabilidades de cada dígito */}
-         <div className="text-center text-muted-foreground p-4 border rounded-md bg-muted/50">
-            A lógica de análise de dígitos será implementada aqui.
+        <div className="grid grid-cols-2 gap-4">
+            <div className={cn(
+                "p-4 rounded-lg border text-center",
+                "bg-red-500/10 border-red-500/30 text-red-700"
+            )}>
+                <h4 className="font-bold flex items-center justify-center gap-2">
+                    <TrendingDown className="h-5 w-5" />
+                    Sugestão: DIFERE
+                </h4>
+                <p className="text-4xl font-bold mt-1">{mostProbable.digit}</p>
+                <p className="text-xs">Probabilidade de {mostProbable.probability.toFixed(1)}%</p>
+            </div>
+             <div className={cn(
+                "p-4 rounded-lg border text-center",
+                "bg-green-500/10 border-green-500/30 text-green-700"
+            )}>
+                <h4 className="font-bold flex items-center justify-center gap-2">
+                    <TrendingUp className="h-5 w-5" />
+                    Sugestão: COMBINA
+                </h4>
+                <p className="text-4xl font-bold mt-1">{leastProbable.digit}</p>
+                 <p className="text-xs">Probabilidade de {leastProbable.probability.toFixed(1)}%</p>
+            </div>
         </div>
       </CardContent>
     </Card>

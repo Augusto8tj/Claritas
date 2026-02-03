@@ -6,12 +6,8 @@ import { useForm, FormProvider } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import DerivTraderInterfaceDigits from "@/features/trading/components/deriv-trader/deriv-trader-interface-digits";
 import { AssetSelectorDigits } from "@/features/trading/components/deriv-trader/asset-selector-digits";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { MarketChart } from "@/features/trading/components/deriv-trader/market-chart";
-import { Button } from "@/components/ui/button";
-import { Trash2, Bot, NotepadText, LayoutGrid, Trophy, Dna, Swords, Archive, BrainCircuit, Brain, Briefcase } from "lucide-react";
-import { DerivApiProviderDigits, useDerivApiDigits } from "@/features/trading/hooks/use-deriv-api-digits";
 import { Skeleton } from "@/components/ui/skeleton";
+import { DerivApiProviderDigits, useDerivApiDigits } from "@/features/trading/hooks/use-deriv-api-digits";
 import { OperationsLogDigits } from "@/features/trading/components/deriv-trader/operations-log-digits";
 import { AIAnalysisInterfaceDigits } from "@/features/trading/components/deriv-trader/ai-analysis-interface-digits";
 import { digitSchema, type DigitFormValues } from "@/features/trading/components/deriv-trader/deriv-trader-interface-digits.types";
@@ -19,15 +15,11 @@ import { CouncilAutopilotInterfaceDigits } from "@/features/trading/components/d
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { useRobotCouncilDigits } from "@/features/trading/hooks/use-robot-council-digits";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { AITradeSuggestionDigits } from "@/features/trading/components/deriv-trader/ai-trade-suggestion-digits";
-import { IndicatorPanel } from "@/features/trading/components/deriv-trader/indicator-panel";
 import { TradingDeskDigits } from "@/features/trading/components/deriv-trader/trading-desk-digits";
-import { HallOfFameDigits } from "@/features/trading/components/deriv-trader/hall-of-fame-digits";
-import { ApiStatusIndicatorDigits } from "@/features/trading/components/deriv-trader/ApiStatusIndicatorDigits";
 import { EvolutionLabDigits } from "@/features/trading/components/deriv-trader/evolution-lab-digits";
-import TradingDecisionLogViewer from "@/components/deriv-trader/TradingDecisionLogViewer";
-import { AssetIntelligenceCard } from "@/features/trading/components/deriv-trader/asset-intelligence-card";
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { AITradeSuggestionDigits } from "@/features/trading/components/deriv-trader/ai-trade-suggestion-digits";
+import { ApiStatusIndicatorDigits } from "@/features/trading/components/deriv-trader/ApiStatusIndicatorDigits";
+import { DigitStatsChart } from "@/features/trading/components/deriv-trader/digit-stats-chart";
 
 
 function HeaderDigits() {
@@ -35,8 +27,6 @@ function HeaderDigits() {
         accountType, 
         setAccountType, 
         accountBalance, 
-        clearActiveContracts, 
-        operationsLog,
         isConnecting,
         isAssetsLoading,
         assetGroups,
@@ -81,95 +71,35 @@ function HeaderDigits() {
                             </div>
                         ) : null}
                     </div>
-                    {operationsLog.length > 0 && (
-                        <TooltipProvider>
-                            <Tooltip>
-                                <TooltipTrigger asChild>
-                                    <Button variant="outline" size="icon" className="h-8 w-8" onClick={clearActiveContracts}>
-                                        <Trash2 className="h-4 w-4" />
-                                        <span className="sr-only">Limpar negociações</span>
-                                    </Button>
-                                </TooltipTrigger>
-                                <TooltipContent>
-                                    <p>Limpar log de negociações</p>
-                                </TooltipContent>
-                            </Tooltip>
-                        </TooltipProvider>
-                    )}
                 </div>
             </div>
         </div>
     );
 };
 
-function IsolatedMarketChartDigits() {
-    const { 
-        activeSymbol, operationsLog, chartData, isChartLoading, chartError, 
-        chartType, setChartType, timePeriod, setTimePeriod, tradeAnnotations
-    } = useDerivApiDigits();
-    
-    const { indicators: councilIndicators } = useRobotCouncilDigits(activeSymbol, [], chartData, 0);
-
-    return (
-        <>
-            {councilIndicators && <IndicatorPanel indicators={councilIndicators} latestDataPoint={chartData[chartData.length -1]} />}
-            <Card>
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                    <div>
-                        <CardTitle className="font-headline text-lg">Gráfico ({activeSymbol})</CardTitle>
-                        <CardDescription className="text-xs">Desempenho em tempo real do ativo.</CardDescription>
-                    </div>
-                </CardHeader>
-                <CardContent>
-                    <MarketChart
-                        activeSymbol={activeSymbol || ''}
-                        chartData={chartData}
-                        isChartLoading={isChartLoading}
-                        chartError={chartError}
-                        chartType={chartType}
-                        setChartType={setChartType}
-                        timePeriod={timePeriod}
-                        setTimePeriod={setTimePeriod}
-                        operations={operationsLog}
-                        indicators={councilIndicators}
-                        tradeAnnotations={tradeAnnotations}
-                    />
-                </CardContent>
-            </Card>
-        </>
-    );
-};
 
 function MainContentDigits() {
-    const { activeSymbol, priceTicks, operationsLog, sellContract, chartData } = useDerivApiDigits();
-    const robotCouncil = useRobotCouncilDigits(activeSymbol, priceTicks, chartData, 0);
+    const { activeSymbol, priceTicks, operationsLog, sellContract } = useDerivApiDigits();
+    const robotCouncil = useRobotCouncilDigits(activeSymbol, priceTicks);
     
     return (
-        <div className="mt-6">
+        <div className="mt-6 space-y-6">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                <DerivTraderInterfaceDigits symbol={activeSymbol || ""} />
                <AITradeSuggestionDigits
-                    councilDecision={robotCouncil.consensusDecision}
-                    consensusSum={robotCouncil.consensusSum}
-                    consensusThreshold={robotCouncil.consensusThreshold}
-                    supervisionStatus={robotCouncil.supervisionStatus}
-                    activeCommittee={robotCouncil.activeCommittee}
+                    digitStats={robotCouncil.digitStats}
                     isAutopilotOn={robotCouncil.isCouncilAutopilotOn}
                 />
             </div>
             <CouncilAutopilotInterfaceDigits {...robotCouncil} />
             <Tabs defaultValue="logs" className="w-full mt-6">
-                 <TabsList className="grid w-full grid-cols-5">
-                    <TabsTrigger value="logs"><NotepadText className="w-4 h-4 mr-2"/>Registo</TabsTrigger>
-                    <TabsTrigger value="arena"><LayoutGrid className="w-4 h-4 mr-2"/>Arena</TabsTrigger>
-                    <TabsTrigger value="analise"><BrainCircuit className="w-4 h-4 mr-2"/>Análise IA</TabsTrigger>
-                    <TabsTrigger value="auditoria"><Archive className="w-4 h-4 mr-2"/>Auditoria</TabsTrigger>
-                    <TabsTrigger value="evolucao"><Dna className="w-4 h-4 mr-2"/>Evolução</TabsTrigger>
+                 <TabsList className="grid w-full grid-cols-3">
+                    <TabsTrigger value="logs">Registo</TabsTrigger>
+                    <TabsTrigger value="arena">Arena</TabsTrigger>
+                    <TabsTrigger value="evolucao">Evolução</TabsTrigger>
                 </TabsList>
                 <TabsContent value="logs" className="mt-4"><OperationsLogDigits operations={operationsLog} sellContract={sellContract} priceTicks={priceTicks} /></TabsContent>
                 <TabsContent value="arena" className="mt-4"><TradingDeskDigits {...robotCouncil} /></TabsContent>
-                <TabsContent value="analise" className="mt-4"><AIAnalysisInterfaceDigits symbol={activeSymbol} /></TabsContent>
-                <TabsContent value="auditoria" className="mt-4"><TradingDecisionLogViewer logs={robotCouncil.tradeDecisionLog || []} /></TabsContent>
                 <TabsContent value="evolucao" className="mt-4"><EvolutionLabDigits history={robotCouncil.evolutionHistory} activeSymbol={activeSymbol} /></TabsContent>
             </Tabs>
         </div>
@@ -178,10 +108,12 @@ function MainContentDigits() {
 
 
 function DerivTraderPageContentDigits() {
+    const { priceTicks } = useDerivApiDigits();
+
     return (
         <div className="flex-1 space-y-4 p-4 sm:p-8 pt-6">
             <HeaderDigits />
-            <IsolatedMarketChartDigits />
+            <DigitStatsChart priceTicks={priceTicks} />
             <MainContentDigits />
         </div>
     );
@@ -195,7 +127,6 @@ export default function DerivTraderDigitsPage() {
       duration: 5,
       duration_unit: "t",
       last_digit_prediction: 5,
-      contract_type: 'DIGITMATCH',
     },
   });
 

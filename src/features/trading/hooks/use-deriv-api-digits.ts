@@ -4,7 +4,7 @@
 import { createContext, useContext, useState, useEffect, type ReactNode, useCallback, useRef, useMemo } from 'react';
 import type { TradeResult } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
-import type { Operation, OperationInitiator, DurationUnit, ChartType, TimePeriod, ChartData, CandleData, TradeAnnotation, TickData, DurationLimits, Asset } from '@/lib/types';
+import type { Operation, OperationInitiator, DurationUnit, TickData, Asset } from '@/lib/types';
 import { FirebaseErrorListener } from '@/components/firebase-error-listener';
 
 const DERIV_DEMO_TOKEN_KEY = 'derivDemoApiToken';
@@ -34,11 +34,9 @@ export interface AssetGroup {
 export type ApiHistoricalData = {
     epoch: number;
     price: number;
-    open?: number;
-    high?: number;
-    low?: number;
-    close?: number;
 };
+
+type MakeRequestFn = <T>(request: object, noResponse?: boolean) => Promise<T>;
 
 interface DerivApiContextTypeDigits {
   ws: WebSocket | null;
@@ -53,19 +51,9 @@ interface DerivApiContextTypeDigits {
   operationsLog: Operation[];
   assetGroups: AssetGroup[];
   isAssetsLoading: boolean;
-  
-  // Data for consumers
   activeSymbol: string | null;
   setActiveSymbol: (symbol: string | null) => void;
-  chartData: ChartData[];
   priceTicks: TickData[]; 
-  isChartLoading: boolean;
-  chartError: string | null;
-  chartType: ChartType;
-  setChartType: (type: ChartType) => void;
-  timePeriod: TimePeriod;
-  setTimePeriod: (period: TimePeriod) => void;
-
   setAccountType: (type: AccountType) => void;
   setTokens: (tokens: { demo?: string; real?: string }) => void;
   disconnect: (type: AccountType) => void;
@@ -80,10 +68,6 @@ interface DerivApiContextTypeDigits {
     initiator: OperationInitiator,
   ) => Promise<TradeResult>;
   sellContract: (contractId: number) => Promise<TradeResult>;
-  getHistoricalData: (symbol: string, style: 'ticks' | 'candles', count: number, period?: TimePeriod) => Promise<ApiHistoricalData[]>;
-  clearActiveContracts: () => void;
-  tradeAnnotations: TradeAnnotation[];
-  durationLimits: DurationLimits | null;
 }
 
 const DerivApiContextDigits = createContext<DerivApiContextTypeDigits | undefined>(undefined);
@@ -92,53 +76,11 @@ const marketNameMapping: Record<string, string> = {
     'synthetic_index': 'Índices Sintéticos',
 };
 
-const getGranularityForTimePeriod = (timePeriod: TimePeriod): number => {
-    switch(timePeriod) {
-        case '1m': return 60;
-        case '2m': return 120;
-        case '3m': return 180;
-        case '5m': return 300;
-        case '10m': return 600;
-        case '15m': return 900;
-        case '30m': return 1800;
-        case '1h': return 3600;
-        case '8h': return 28800;
-        case '1d': return 86400;
-        default: return 60;
-    }
-}
-
-const MAX_DATA_POINTS = 5000;
-
-const addDataPoint = (prevData: ChartData[], newPoint: ChartData): ChartData[] => {
-    let data = [...prevData];
-    if (isCandle(newPoint) && data.length > 0 && data[data.length - 1].epoch === newPoint.epoch) {
-        data[data.length - 1] = newPoint;
-        return data;
-    }
-    data.push(newPoint);
-    if (data.length > MAX_DATA_POINTS) {
-        return data.slice(1);
-    }
-    return data;
-};
-
-const getDurationInSeconds = (duration: number, unit: DurationUnit): number => {
-    switch (unit) {
-        case 't': return duration * 2; 
-        case 's': return duration;
-        case 'm': return duration * 60;
-        case 'h': return duration * 3600;
-        case 'd': return duration * 86400;
-        default: return duration;
-    }
-};
-
-const isCandle = (d: ChartData): d is CandleData => d != null && 'close' in d;
+const MAX_TICKS = 1000;
 
 export const DerivApiProviderDigits = ({ children }: { children: ReactNode }) => {
-  const [demoToken, setDemoToken] = useState<string | null>('ljUGk6wbLSrtEDo');
-  const [realToken, setRealToken] = useState<string | null>('GU5MwbX1kwvSoyw');
+  const [demoToken, setDemoToken] = useState<string | null>(null);
+  const [realToken, setRealToken] = useState<string | null>(null);
   const [accountType, setAccountTypeState] = useState<AccountType>('demo');
   const [accountBalance, setAccountBalance] = useState<AccountBalance>({ balance: null, currency: null, loading: true });
   const [isLoading, setIsLoading] = useState(true);
@@ -147,20 +89,9 @@ export const DerivApiProviderDigits = ({ children }: { children: ReactNode }) =>
   const [isAssetsLoading, setIsAssetsLoading] = useState(true);
   const { toast } = useToast();
   
-  const [toastQueue, setToastQueue] = useState<any[]>([]);
-
   const [activeSymbol, setActiveSymbol] = useState<string | null>('R_100');
-  const [chartData, setChartData] = useState<ChartData[]>([]);
   const [priceTicks, setPriceTicks] = useState<TickData[]>([]); 
-  const [isChartLoading, setIsChartLoading] = useState(true);
-  const [chartError, setChartError] = useState<string | null>(null);
-  const [chartType, setChartType] = useState<ChartType>('Area');
-  const chartTypeRef = useRef(chartType);
-  const [timePeriod, setTimePeriod] = useState<TimePeriod>('5m');
-  const timePeriodRef = useRef(timePeriod);
   const activeSubscriptionIdRef = useRef<string | null>(null);
-  const [tradeAnnotations, setTradeAnnotations] = useState<TradeAnnotation[]>([]);
-  const [durationLimits, setDurationLimits] = useState<DurationLimits | null>(null);
   
   const wsRef = useRef<WebSocket | null>(null);
   const [isConnected, setIsConnected] = useState(false);
@@ -195,14 +126,6 @@ export const DerivApiProviderDigits = ({ children }: { children: ReactNode }) =>
   }, []);
 
   useEffect(() => {
-    chartTypeRef.current = chartType;
-  }, [chartType]);
-  
-  useEffect(() => {
-    timePeriodRef.current = timePeriod;
-  }, [timePeriod]);
-
-  useEffect(() => {
     try {
       const storedDemoToken = localStorage.getItem(DERIV_DEMO_TOKEN_KEY);
       const storedRealToken = localStorage.getItem(DERIV_REAL_TOKEN_KEY);
@@ -223,59 +146,14 @@ export const DerivApiProviderDigits = ({ children }: { children: ReactNode }) =>
     }
     setIsLoading(false);
   }, []);
-
-  const addTradeAnnotation = useCallback((annotation: Omit<TradeAnnotation, 'id'>) => {
-    const newAnnotation: TradeAnnotation = {
-      ...annotation,
-      id: `annotation-${annotation.contractId}`,
-    };
-    setTradeAnnotations(prev => [...prev, newAnnotation]);
-  }, []);
-
-  const updateTradeAnnotation = useCallback((contractId: string, updates: Partial<TradeAnnotation>) => {
-      setTradeAnnotations(prev => prev.map(ann => 
-        ann.contractId === contractId ? { ...ann, ...updates } : ann
-      ));
-  }, []);
-
-  // Client-side timer to check for expired contracts
-  useEffect(() => {
-    const interval = setInterval(() => {
-      const now = Date.now();
-      let hasChanges = false;
-      const updatedOps = operationsLog.map(op => {
-        if (op.status === 'pending' && op.expirationTime && now > op.expirationTime) {
-          hasChanges = true;
-          updateTradeAnnotation(String(op.id), { status: 'lost', profit: -op.stake });
-          // CORREÇÃO: Adicionar o exitTimestamp na expiração por timer
-          return { ...op, status: 'lost' as const, result: -op.stake, exitTimestamp: new Date().toISOString() };
-        }
-        return op;
-      });
-
-      if (hasChanges) {
-        setAndPersistOperationsLog(updatedOps);
-      }
-    }, 2000); // Check every 2 seconds
-
-    return () => clearInterval(interval);
-  }, [operationsLog, updateTradeAnnotation, setAndPersistOperationsLog]);
   
   const activeToken = accountType === 'demo' ? demoToken : realToken;
 
-  useEffect(() => {
-    if (toastQueue.length > 0) {
-      toastQueue.forEach(t => toast(t));
-      setToastQueue([]);
-    }
-  }, [toastQueue, toast]);
-
-
-  const makeRequest = useCallback((request: object, noResponse = false): Promise<any> => {
+  const makeRequest: MakeRequestFn = useCallback((request: object, noResponse = false) => {
     return new Promise((resolve, reject) => {
         const ws = wsRef.current;
         if (!ws || ws.readyState !== WebSocket.OPEN) {
-            return reject(new Error("WebSocket não está conectado. Verifique o token e a conexão."));
+            return reject(new Error("WebSocket não está conectado."));
         }
         
         const req_id = Date.now() + Math.floor(Math.random() * 1000000);
@@ -285,70 +163,19 @@ export const DerivApiProviderDigits = ({ children }: { children: ReactNode }) =>
             const timeoutId = setTimeout(() => {
                 if (promisesRef.current.has(String(req_id))) {
                     promisesRef.current.delete(String(req_id));
-                    reject(new Error(`O pedido à API expirou (60s) para req_id: ${req_id}. O token pode ser inválido ou a rede está lenta.`));
+                    reject(new Error(`O pedido à API expirou (60s).`));
                 }
-            }, 60000); // Aumentado para 60 segundos
+            }, 60000);
             
             promisesRef.current.set(String(req_id), {
-                resolve: (value: any) => {
-                    clearTimeout(timeoutId);
-                    resolve(value);
-                },
-                reject: (reason: any) => {
-                    clearTimeout(timeoutId);
-                    reject(reason);
-                }
+                resolve: (value: any) => { clearTimeout(timeoutId); resolve(value); },
+                reject: (reason: any) => { clearTimeout(timeoutId); reject(reason); }
             });
         }
-
         ws.send(JSON.stringify(payload));
-
-        if (noResponse) {
-            resolve({} as any);
-        }
+        if (noResponse) resolve({} as any);
     });
   }, []);
-
-const getHistoricalData = useCallback(async (symbol: string, style: 'ticks' | 'candles', count: number, period?: TimePeriod): Promise<ApiHistoricalData[]> => {
-    const request: any = {
-        ticks_history: symbol,
-        end: "latest",
-        count,
-        adjust_start_time: 1,
-        style: style,
-    };
-    
-    if (style === 'candles' && period) {
-        request.granularity = getGranularityForTimePeriod(period);
-    }
-    
-    try {
-        const response: any = await makeRequest(request);
-
-        if (response.history) {
-            return response.history.times.map((time: number, index: number) => ({
-                epoch: time,
-                price: response.history.prices[index],
-            }));
-        }
-      
-        if (response.candles) {
-            return response.candles.map((candle: any) => ({
-                epoch: candle.epoch,
-                open: candle.open,
-                high: candle.high,
-                low: candle.low,
-                close: candle.close,
-                price: candle.close,
-            }));
-        }
-        
-        return [];
-    } catch (error: any) {
-        console.error('[getHistoricalData] Error:', error);
-        throw error;
-    }
-}, [makeRequest]);
 
 const executeTrade = useCallback(async (
     contractType: 'DIGITMATCH' | 'DIGITDIFF',
@@ -360,9 +187,7 @@ const executeTrade = useCallback(async (
     initiator: OperationInitiator
   ): Promise<TradeResult> => {
       try {
-        if (!wsRef.current || !isConnected) {
-          throw new Error("A conexão com a API da Deriv não está ativa.");
-        }
+        if (!wsRef.current || !isConnected) throw new Error("A conexão com a API não está ativa.");
 
         const sanitizedStake = parseFloat(stake.toFixed(2));
         const sanitizedDuration = Math.round(duration);
@@ -380,91 +205,65 @@ const executeTrade = useCallback(async (
         });
 
         const proposal = proposalResponse.proposal;
-        if (!proposal || !proposal.id) {
-          throw new Error("Falha ao obter uma proposta de negociação da API.");
-        }
+        if (proposalResponse.error) throw new Error(proposalResponse.error.message);
+        if (!proposal || !proposal.id) throw new Error("Falha ao obter uma proposta de negociação.");
         
         const buyResponse: any = await makeRequest({ "buy": proposal.id, "price": proposal.ask_price });
+        if (buyResponse.error) throw new Error(buyResponse.error.message);
         const buyResult = buyResponse.buy;
         
-        const entryPrice = buyResult.entry_tick_display_value ? parseFloat(buyResult.entry_tick_display_value) : 0;
         const purchaseTimeMs = (buyResult.purchase_time || Math.floor(Date.now() / 1000)) * 1000;
         const expirationTimeMs = buyResult.expiry_time * 1000;
 
-        const newOperation: Operation = {
+        const newOperation: any = {
             id: buyResult.contract_id,
             asset: symbol,
-            direction: contractType === 'DIGITMATCH' ? 'rise' : 'fall',
+            direction: contractType === 'DIGITMATCH' ? 'rise' : 'fall', // Adaptação
             stake: sanitizedStake,
             status: 'pending',
             timestamp: new Date(purchaseTimeMs).toISOString(),
             duration: sanitizedDuration,
             durationUnit: durationUnit,
             initiator,
-            entryPrice: entryPrice,
+            entryPrice: buyResult.entry_tick_display_value ? parseFloat(buyResult.entry_tick_display_value) : 0,
             isSellable: false,
             expirationTime: expirationTimeMs,
             contractType: contractType,
+            last_digit_prediction: last_digit,
         };
         setAndPersistOperationsLog(prevLog => [newOperation, ...prevLog]);
-
-        return {
-          success: true,
-          message: `Ordem executada com sucesso.`,
-          contractId: buyResult.contract_id,
-          entryPrice,
-        };
+        return { success: true, message: `Ordem executada.`, contractId: buyResult.contract_id };
       } catch (error) {
-         console.error("[Deriv Hook - Digits] Erro durante a negociação:", error);
+         console.error("[Deriv Hook - Digits] Erro:", error);
          const message = error instanceof Error ? error.message : "Um erro desconhecido ocorreu.";
          return { success: false, message };
       }
   }, [isConnected, makeRequest, setAndPersistOperationsLog]);
 
   const sellContract = useCallback(async (contractId: number): Promise<TradeResult> => {
-    return { success: false, message: "Contratos de dígitos não podem ser vendidos antecipadamente." };
+    return { success: false, message: "Contratos de dígitos não podem ser vendidos." };
   }, []);
 
-  const subscribeToMarketData = useCallback(async (symbol: string) => {
+  const subscribeToTicks = useCallback(async (symbol: string) => {
     if (wsRef.current?.readyState !== WebSocket.OPEN) return;
 
     if (activeSubscriptionIdRef.current) {
         try { await makeRequest({ forget: activeSubscriptionIdRef.current }, true); } catch (e) { }
-        activeSubscriptionIdRef.current = null;
     }
-
-    setIsChartLoading(true);
-    setChartError(null);
-    setChartData([]);
     setPriceTicks([]); 
 
     try {
-        const contractsRes: any = await makeRequest({ contracts_for: symbol });
-        const tradingPeriod = contractsRes.contracts_for?.trading_period;
+        const history = await makeRequest({ ticks_history: symbol, end: "latest", count: MAX_TICKS, adjust_start_time: 1 });
+        if (history.error) throw new Error(history.error.message);
+        setPriceTicks(history.history.times.map((t: number, i: number) => ({ epoch: t, price: history.history.prices[i] })));
         
-        const newLimits: DurationLimits = { t: {min:0, max:0}, s: {min:0, max:0}, m: {min:0, max:0}, h: {min:0, max:0}, d: {min:0, max:0} };
-        
-        const digitPeriod = tradingPeriod?.digits?.['tick'];
-        if (digitPeriod) {
-            newLimits.t = { min: digitPeriod.min, max: digitPeriod.max };
-        }
-        setDurationLimits(newLimits);
-        
-        const history = await getHistoricalData(symbol, 'ticks', 1000);
-        setChartData(history as TickData[]);
-        setPriceTicks(history as TickData[]);
-        
-        const subRequest = { ticks: symbol, subscribe: 1 };
-        const subResponse: any = await makeRequest(subRequest);
+        const subResponse: any = await makeRequest({ ticks: symbol, subscribe: 1 });
+        if(subResponse.error) throw new Error(subResponse.error.message);
         if(subResponse.subscription?.id) activeSubscriptionIdRef.current = subResponse.subscription.id;
-
     } catch (error: any) {
         console.error(`[Market Data - Digits] Error for ${symbol}:`, error);
-        setChartError(error.message || 'Falha ao carregar dados do mercado.');
-    } finally {
-        setIsChartLoading(false);
     }
-  }, [getHistoricalData, makeRequest]);
+  }, [makeRequest]);
 
   const startConnectionMonitor = useCallback(() => {
     if (pingIntervalRef.current) clearInterval(pingIntervalRef.current);
@@ -499,21 +298,16 @@ const executeTrade = useCallback(async (
                 if (reqId && promisesRef.current.has(String(reqId))) {
                     const promise = promisesRef.current.get(String(reqId));
                     if (promise) {
-                        if (response.error) {
-                            promise.reject(new Error(response.error.message));
-                        } else {
-                            promise.resolve(response);
-                        }
+                        if (response.error) promise.reject(new Error(response.error.message));
+                        else promise.resolve(response);
                         promisesRef.current.delete(String(reqId));
                     }
                     return; 
                 }
     
                 if (response.error && response.error.message) {
-                     if (response.error.code !== 'AlreadySubscribed') {
-                      console.error(`[Deriv WS Digits] Error:`, response.error.message);
-                    }
-                     return; 
+                    if (response.error.code !== 'AlreadySubscribed') console.error(`[Deriv WS Digits] Error:`, response.error.message);
+                    return;
                 }
     
                 switch (response.msg_type) {
@@ -526,28 +320,13 @@ const executeTrade = useCallback(async (
                     
                         setAndPersistOperationsLog(prevLog => {
                             const existingOpIndex = prevLog.findIndex(op => op.id === contract.contract_id);
-                            const isSold = contract.is_sold === 1;
-                    
                             if (existingOpIndex !== -1 && prevLog[existingOpIndex]?.status === 'pending') {
                                 const updatedLog = [...prevLog];
                                 const op = updatedLog[existingOpIndex]!;
-                    
-                                if (isSold) {
-                                    const newStatus = contract.is_valid_to_sell === 1 && contract.profit > 0 ? 'won' : 'lost';
-                                    const exitPrice = contract.exit_tick_display_value ? parseFloat(contract.exit_tick_display_value) : op.exitPrice;
-                                    const exitTimestamp = contract.sell_time ? new Date(contract.sell_time * 1000).toISOString() : new Date().toISOString();
-                                    
-                                    updatedLog[existingOpIndex] = { ...op, status: newStatus, result: contract.profit, exitPrice, exitTimestamp };
-                                    
-                                    setToastQueue(prev => [...prev, {
-                                        title: `Posição Fechada (${op.asset})`,
-                                        description: `Resultado: ${contract.currency} ${contract.profit.toFixed(2)}`,
-                                        variant: newStatus === 'won' ? 'default' : 'destructive',
-                                    }]);
-                
-                                    if (wsRef.current?.readyState === WebSocket.OPEN) {
-                                        wsRef.current.send(JSON.stringify({"balance": 1}));
-                                    }
+                                if (contract.is_sold === 1) {
+                                    const newStatus = contract.status === 'won' ? 'won' : 'lost';
+                                    updatedLog[existingOpIndex] = { ...op, status: newStatus, result: contract.profit, exitPrice: parseFloat(contract.exit_tick_display_value), exitTimestamp: new Date(contract.sell_time * 1000).toISOString() };
+                                    if (wsRef.current?.readyState === WebSocket.OPEN) wsRef.current.send(JSON.stringify({"balance": 1}));
                                     return updatedLog;
                                 }
                             }
@@ -558,12 +337,7 @@ const executeTrade = useCallback(async (
                         if (response.subscription?.id === activeSubscriptionIdRef.current) {
                             const tick = response.tick;
                             const newTick = { epoch: tick.epoch, price: tick.quote };
-                            setChartData(prev => addDataPoint(prev, newTick));
-                            setPriceTicks(prev => {
-                                const newTicks = [...prev, newTick];
-                                 if (newTicks.length > MAX_DATA_POINTS) return newTicks.slice(1);
-                                return newTicks;
-                            });
+                            setPriceTicks(prev => [...prev, newTick].slice(-MAX_TICKS));
                         }
                         break;
                 }
@@ -600,30 +374,17 @@ const executeTrade = useCallback(async (
               filteredSymbols.forEach((symbol: any) => {
                   const groupName = marketNameMapping[symbol.market] || 'Outros';
                   if (!groupedAssets[groupName]) groupedAssets[groupName] = [];
-                  groupedAssets[groupName].push({
-                      value: symbol.symbol,
-                      label: symbol.display_name,
-                      marketIsOpen: symbol.exchange_is_open === 1,
-                      submarket: symbol.submarket,
-                      market: symbol.market,
-                      minDuration: '5t', // Digits contracts are typically in ticks
-                  });
+                  groupedAssets[groupName].push({ value: symbol.symbol, label: symbol.display_name, marketIsOpen: symbol.exchange_is_open === 1, submarket: symbol.submarket, market: symbol.market, minDuration: '5t' });
               });
               
-              setAssetGroups(Object.keys(groupedAssets)
-                  .map(label => ({ label, options: groupedAssets[label].sort((a, b) => a.label.localeCompare(b.label)) }))
-                  .sort((a, b) => a.label.localeCompare(b.label)));
+              setAssetGroups(Object.keys(groupedAssets).map(label => ({ label, options: groupedAssets[label] })));
               setIsAssetsLoading(false);
-      
           } catch (error: any) {
               reconnectInProgressRef.current = false;
               if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
-              
               let errorMessage = error instanceof Error ? error.message : 'Erro desconhecido ao conectar';
               setConnectionError(`Falha na autorização: ${errorMessage}`);
-              setIsConnected(false);
-              setIsConnecting(false);
-              setIsAssetsLoading(false);
+              setIsConnected(false); setIsConnecting(false); setIsAssetsLoading(false);
               setAccountBalance({ balance: null, currency: null, loading: false });
               allowAutoReconnectRef.current = false;
               if (ws.readyState === WebSocket.OPEN) ws.close();
@@ -633,24 +394,15 @@ const executeTrade = useCallback(async (
         ws.onclose = (event) => {
           if (!wsRef.current || reconnectInProgressRef.current) return;
           if (pingIntervalRef.current) clearInterval(pingIntervalRef.current);
-          
-          promisesRef.current.forEach((p) => p.reject(new Error("WebSocket connection closed.")));
+          promisesRef.current.forEach(p => p.reject(new Error("WebSocket fechado.")));
           promisesRef.current.clear();
-    
           if (!event.wasClean && allowAutoReconnectRef.current) {
             reconnectInProgressRef.current = true;
             setConnectionError(`Conexão perdida. Reconectando...`);
             if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
-            reconnectTimeoutRef.current = setTimeout(() => {
-                reconnectInProgressRef.current = false;
-                setTriggerReconnect(c => c + 1);
-            }, 3000);
-          } else if (!event.wasClean && !allowAutoReconnectRef.current) {
-             setConnectionError(`Authorization failed. Please check your API token.`);
+            reconnectTimeoutRef.current = setTimeout(() => { reconnectInProgressRef.current = false; setTriggerReconnect(c => c + 1); }, 3000);
           }
-          
-          setIsConnected(false);
-          setIsConnecting(false);
+          setIsConnected(false); setIsConnecting(false);
           setAccountBalance({ balance: null, currency: null, loading: false });
           wsRef.current = null;
         };
@@ -660,11 +412,7 @@ const executeTrade = useCallback(async (
   
     return () => {
       allowAutoReconnectRef.current = false;
-      if (wsRef.current) {
-        wsRef.current.onclose = null;
-        wsRef.current.close();
-        wsRef.current = null;
-      }
+      if (wsRef.current) { wsRef.current.onclose = null; wsRef.current.close(); }
       if (pingIntervalRef.current) clearInterval(pingIntervalRef.current);
       if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
       reconnectInProgressRef.current = false;
@@ -673,19 +421,12 @@ const executeTrade = useCallback(async (
 
   useEffect(() => {
     if (isConnected && activeSymbol) {
-        subscribeToMarketData(activeSymbol);
+        subscribeToTicks(activeSymbol);
     }
-  }, [isConnected, activeSymbol, subscribeToMarketData, timePeriod, chartType]);
+  }, [isConnected, activeSymbol, subscribeToTicks]);
 
   const setAccountType = useCallback((type: AccountType) => {
-    try {
-        localStorage.setItem(DERIV_ACCOUNT_TYPE_KEY, type);
-        setAccountTypeState(type);
-        allowAutoReconnectRef.current = true;
-        setTriggerReconnect(c => c + 1);
-    } catch (error) {
-        console.error("Failed to save account type:", error);
-    }
+    try { localStorage.setItem(DERIV_ACCOUNT_TYPE_KEY, type); setAccountTypeState(type); allowAutoReconnectRef.current = true; setTriggerReconnect(c => c + 1); } catch (e) {}
   }, []);
 
   const setTokens = useCallback((tokens: { demo?: string; real?: string }) => {
@@ -694,18 +435,14 @@ const executeTrade = useCallback(async (
       if (tokens.real) { localStorage.setItem(DERIV_REAL_TOKEN_KEY, tokens.real); setRealToken(tokens.real); }
       allowAutoReconnectRef.current = true;
       setTriggerReconnect(c => c + 1);
-    } catch (error) {
-      console.error("Failed to save token:", error);
-    }
+    } catch (e) {}
   }, []);
 
   const disconnect = useCallback((type: AccountType) => {
     try {
       if (type === 'demo') { localStorage.removeItem(DERIV_DEMO_TOKEN_KEY); setDemoToken(null); } 
       else { localStorage.removeItem(DERIV_REAL_TOKEN_KEY); setRealToken(null); }
-    } catch (error) {
-        console.error("Failed to remove token:", error);
-    }
+    } catch (e) {}
   }, []);
   
   const isConnectedRef = useRef(isConnected);
@@ -715,45 +452,29 @@ const executeTrade = useCallback(async (
   connectionErrorRef.current = connectionError;
 
   const reconnect = useCallback(async (): Promise<boolean> => {
-    allowAutoReconnectRef.current = true;
-    setTriggerReconnect(c => c + 1);
-    
+    allowAutoReconnectRef.current = true; setTriggerReconnect(c => c + 1);
     return new Promise(resolve => {
-        const checkStartTime = Date.now();
-        const checkInterval = setInterval(() => {
-            const isTimeout = Date.now() - checkStartTime > 10000;
-            if (isConnectedRef.current) {
-                clearInterval(checkInterval);
-                resolve(true);
-            } else if (connectionErrorRef.current || isTimeout) {
-                clearInterval(checkInterval);
-                resolve(false);
-            }
+        const start = Date.now();
+        const interval = setInterval(() => {
+            if (isConnectedRef.current) { clearInterval(interval); resolve(true); } 
+            else if (connectionErrorRef.current || Date.now() - start > 10000) { clearInterval(interval); resolve(false); }
         }, 200);
     });
   }, []);
 
-  const clearActiveContracts = useCallback(() => {
-    setAndPersistOperationsLog([]);
-    setTradeAnnotations([]);
-  }, [setAndPersistOperationsLog]);
-
-  const contextValue: DerivApiContextTypeDigits = useMemo(() => ({
+  const contextValue = useMemo(() => ({
     ws: wsRef.current, isConnected, isConnecting, connectionError, demoToken, realToken, activeToken,
     accountType, accountBalance, operationsLog, assetGroups, isAssetsLoading, activeSymbol, 
-    setActiveSymbol, chartData, priceTicks, isChartLoading, chartError, chartType, setChartType, 
-    timePeriod, setTimePeriod, setAccountType, setTokens, disconnect, reconnect, executeTrade, 
-    sellContract, getHistoricalData, clearActiveContracts, tradeAnnotations, durationLimits, dataVersion: 0
+    setActiveSymbol, priceTicks, setAccountType, setTokens,
+    disconnect, reconnect, executeTrade, sellContract,
   }), [
     isConnected, isConnecting, connectionError, demoToken, realToken, activeToken, accountType, 
-    accountBalance, operationsLog, assetGroups, isAssetsLoading, activeSymbol, chartData, priceTicks, 
-    isChartLoading, chartError, chartType, timePeriod, durationLimits,
-    setAccountType, setTokens, disconnect, reconnect, executeTrade, sellContract, 
-    getHistoricalData, clearActiveContracts, tradeAnnotations, setActiveSymbol, setChartType, setTimePeriod
+    accountBalance, operationsLog, assetGroups, isAssetsLoading, activeSymbol, setActiveSymbol, 
+    priceTicks, setAccountType, setTokens, disconnect, reconnect, executeTrade, sellContract
   ]);
 
   return (
-    <DerivApiContextDigits.Provider value={contextValue}>
+    <DerivApiContextDigits.Provider value={contextValue as DerivApiContextTypeDigits}>
       <FirebaseErrorListener />
       {children}
     </DerivApiContextDigits.Provider>
