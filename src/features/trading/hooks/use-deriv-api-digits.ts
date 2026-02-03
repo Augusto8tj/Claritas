@@ -87,7 +87,7 @@ export const DerivApiProviderDigits = ({ children }: { children: ReactNode }) =>
   const [isAssetsLoading, setIsAssetsLoading] = useState(true);
   const { toast } = useToast();
   
-  const [activeSymbol, setActiveSymbol] = useState<string | null>('R_100');
+  const [activeSymbol, setActiveSymbol] = useState<string | null>('1HZ10V');
   const [priceTicks, setPriceTicks] = useState<TickData[]>([]); 
   const activeSubscriptionIdRef = useRef<string | null>(null);
   

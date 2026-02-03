@@ -61,8 +61,15 @@ export function AssetSelectorDigits({ selectedAsset, onAssetChange, assetGroups,
    useEffect(() => {
     if (isAssetsLoading) return;
     const allAssets = assetGroups.flatMap(g => g.options);
-    if ((!selectedAsset || !allAssets.find(a => a.value === selectedAsset)) && allAssets.length > 0) {
+    const defaultAsset = allAssets.find(a => a.value === '1HZ10V');
+    
+    // If no asset is selected OR the selected asset isn't in the list anymore
+    if (!selectedAsset || !allAssets.some(a => a.value === selectedAsset)) {
+      if (defaultAsset) {
+        onAssetChange('1HZ10V');
+      } else if (allAssets.length > 0) {
         onAssetChange(allAssets[0].value);
+      }
     }
   }, [selectedAsset, assetGroups, isAssetsLoading, onAssetChange]);
 
