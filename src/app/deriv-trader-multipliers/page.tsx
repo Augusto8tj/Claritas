@@ -1,9 +1,8 @@
-
 // /src/app/deriv-trader-multipliers/page.tsx
 'use client';
 
 import React, { useEffect, useMemo } from "react";
-import { useForm, FormProvider } from "react-hook-form";
+import { useForm, FormProvider, useFormContext } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import DerivTraderInterfaceMultipliers from "@/features/trading/components/deriv-trader/deriv-trader-interface-multipliers";
 import { AssetSelectorMultipliers } from "@/features/trading/components/deriv-trader/asset-selector-multipliers";
@@ -138,19 +137,9 @@ const MultipliersTraderCore = ({ indicators }: { indicators: Indicators | null }
 };
 
 
-const PageContent = () => {
-    const form = useForm<MultipliersFormValues>({
-        resolver: zodResolver(multipliersSchema),
-        defaultValues: {
-            stake: 1.0,
-            multiplier: 50,
-            cancellation: 'none',
-            takeProfit: undefined,
-            stopLoss: undefined,
-        },
-    });
-
+function PageContent() {
     const { multiplierOptions, chartData, timePeriod, chartType } = useDerivApiMultipliers();
+    const form = useFormContext<MultipliersFormValues>();
 
     useEffect(() => {
         if (multiplierOptions && multiplierOptions.length > 0) {
@@ -175,20 +164,31 @@ const PageContent = () => {
     }, [chartData, timePeriod, chartType]);
 
     return (
-        <FormProvider {...form}>
-            <div className="flex-1 space-y-4 p-4 sm:p-8 pt-6">
-                <Header />
-                <IsolatedMarketChart indicators={uiIndicators} />
-                <MultipliersTraderCore indicators={uiIndicators} />
-            </div>
-        </FormProvider>
+        <div className="flex-1 space-y-4 p-4 sm:p-8 pt-6">
+            <Header />
+            <IsolatedMarketChart indicators={uiIndicators} />
+            <MultipliersTraderCore indicators={uiIndicators} />
+        </div>
     );
 };
 
 export default function DerivMultipliersPage() {
+    const form = useForm<MultipliersFormValues>({
+        resolver: zodResolver(multipliersSchema),
+        defaultValues: {
+            stake: 1.0,
+            multiplier: 50,
+            cancellation: 'none',
+            takeProfit: undefined,
+            stopLoss: undefined,
+        },
+    });
+
     return (
         <DerivApiProviderMultipliers>
-            <PageContent />
+            <FormProvider {...form}>
+                <PageContent />
+            </FormProvider>
         </DerivApiProviderMultipliers>
     );
 }
