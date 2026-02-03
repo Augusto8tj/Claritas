@@ -269,7 +269,7 @@ export const DerivApiProviderDigits = ({ children }: { children: ReactNode }) =>
   }, [toastQueue, toast]);
 
 
-  const makeRequest = useCallback(<T,>(request: object, noResponse = false): Promise<T> => {
+  const makeRequest = useCallback(<T>(request: object, noResponse = false): Promise<T> => {
     return new Promise((resolve, reject) => {
         const ws = wsRef.current;
         if (!ws || ws.readyState !== WebSocket.OPEN) {
@@ -741,11 +741,11 @@ const executeTrade = useCallback(async (
     accountType, accountBalance, operationsLog, assetGroups, isAssetsLoading, activeSymbol, 
     setActiveSymbol, chartData, priceTicks, isChartLoading, chartError, chartType, setChartType, 
     timePeriod, setTimePeriod, setAccountType, setTokens, disconnect, reconnect, executeTrade, 
-    sellContract, getHistoricalData, clearActiveContracts, tradeAnnotations, durationLimits, dataVersion
+    sellContract, getHistoricalData, clearActiveContracts, tradeAnnotations, durationLimits, dataVersion: 0
   }), [
     isConnected, isConnecting, connectionError, demoToken, realToken, activeToken, accountType, 
     accountBalance, operationsLog, assetGroups, isAssetsLoading, activeSymbol, chartData, priceTicks, 
-    isChartLoading, chartError, chartType, timePeriod, durationLimits, dataVersion,
+    isChartLoading, chartError, chartType, timePeriod, durationLimits,
     setAccountType, setTokens, disconnect, reconnect, executeTrade, sellContract, 
     getHistoricalData, clearActiveContracts, tradeAnnotations, setActiveSymbol, setChartType, setTimePeriod
   ]);
