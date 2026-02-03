@@ -136,6 +136,8 @@ const getDurationInSeconds = (duration: number, unit: DurationUnit): number => {
 
 const isCandle = (d: ChartData): d is CandleData => d != null && 'close' in d;
 
+type MakeRequestFn = <T>(request: object, noResponse?: boolean) => Promise<T>;
+
 export const DerivApiProviderDigits = ({ children }: { children: ReactNode }) => {
   const [demoToken, setDemoToken] = useState<string | null>('ljUGk6wbLSrtEDo');
   const [realToken, setRealToken] = useState<string | null>('GU5MwbX1kwvSoyw');
@@ -269,7 +271,7 @@ export const DerivApiProviderDigits = ({ children }: { children: ReactNode }) =>
   }, [toastQueue, toast]);
 
 
-  const makeRequest = useCallback(<T,>(request: object, noResponse = false): Promise<T> => {
+  const makeRequest: MakeRequestFn = useCallback((request, noResponse = false) => {
     return new Promise((resolve, reject) => {
         const ws = wsRef.current;
         if (!ws || ws.readyState !== WebSocket.OPEN) {
@@ -302,7 +304,7 @@ export const DerivApiProviderDigits = ({ children }: { children: ReactNode }) =>
         ws.send(JSON.stringify(payload));
 
         if (noResponse) {
-            resolve({} as T);
+            resolve({} as any);
         }
     });
   }, []);
