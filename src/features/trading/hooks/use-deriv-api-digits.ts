@@ -1,7 +1,7 @@
 // /src/features/trading/hooks/use-deriv-api-digits.ts
 'use client';
 
-import { createContext, useContext, useState, useEffect, useCallback, useRef, useMemo, type ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef, useMemo, type ReactNode } from 'react';
 import type { TradeResult } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
 import type { Operation, OperationInitiator, DurationUnit, TickData, Asset } from '@/lib/types';
@@ -412,12 +412,13 @@ export function useDerivApiDigitsState(): DerivApiContextTypeDigits {
 }
 
 export function DerivApiProviderDigits({ children }: { children: React.ReactNode }) {
-    const apiState = useDerivApiDigitsState();
-    return (
-        <DerivApiContextDigits.Provider value={apiState}>
-            <FirebaseErrorListener />
-            {children}
-        </DerivApiContextDigits.Provider>
+    const contextValue = useDerivApiDigitsState();
+
+    return React.createElement(
+        DerivApiContextDigits.Provider,
+        { value: contextValue as DerivApiContextTypeDigits },
+        React.createElement(FirebaseErrorListener),
+        children
     );
 }
 
