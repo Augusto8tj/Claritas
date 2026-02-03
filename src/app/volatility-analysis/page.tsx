@@ -18,7 +18,7 @@ import { cn } from "@/lib/utils";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { volatilityTraderSchema, type VolatilityTraderFormValues } from "@/features/trading/components/deriv-trader/volatility-trader-interface.types";
 import VolatilityTraderInterface from "@/features/trading/components/deriv-trader/volatility-trader-interface";
-import { OperationsLogV2 } from "@/features/trading/components/deriv-trader/operations-log-v2";
+import { OperationsLogV2 } from "@/components/deriv-trader/operations-log-v2";
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
@@ -412,7 +412,13 @@ function StochasticLab({
                       const averageError = errorHistory.reduce((a, b) => a + b, 0) / errorHistory.length;
                       const currentDrift = adaptiveDriftRef.current[h.name] || 0;
                       const decayFactor = getDecayFactor(h.name);
-                      adaptiveDriftRef.current[h.name] = (currentDrift * decayFactor) + (ADAPTIVE_DRIFT_LEARNING_RATE * averageError);
+                      
+                      let newDrift = (currentDrift * decayFactor) + (ADAPTIVE_DRIFT_LEARNING_RATE * averageError);
+                      
+                      // *** FIX: CLAMP THE DRIFT VALUE BEFORE STORING ***
+                      newDrift = Math.max(-DRIFT_LIMIT, Math.min(DRIFT_LIMIT, newDrift));
+                      
+                      adaptiveDriftRef.current[h.name] = newDrift;
 
                       const predictedDirection = pred.predictedEndPrice > pred.startPrice;
                       const actualDirection = actualEndPrice > pred.startPrice;
