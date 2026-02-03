@@ -136,6 +136,8 @@ const getDurationInSeconds = (duration: number, unit: DurationUnit): number => {
 
 const isCandle = (d: ChartData): d is CandleData => d != null && 'close' in d;
 
+type MakeRequestFn = <T>(request: object, noResponse?: boolean) => Promise<T>;
+
 export const DerivApiProviderDigits = ({ children }: { children: ReactNode }) => {
   const [demoToken, setDemoToken] = useState<string | null>('ljUGk6wbLSrtEDo');
   const [realToken, setRealToken] = useState<string | null>('GU5MwbX1kwvSoyw');
@@ -271,7 +273,7 @@ export const DerivApiProviderDigits = ({ children }: { children: ReactNode }) =>
   }, [toastQueue, toast]);
 
 
-  const makeRequest = useCallback(function makeRequest<T,>(request: object, noResponse = false): Promise<T> {
+  const makeRequest: MakeRequestFn = useCallback((request, noResponse = false) => {
     return new Promise((resolve, reject) => {
         const ws = wsRef.current;
         if (!ws || ws.readyState !== WebSocket.OPEN) {
@@ -287,7 +289,7 @@ export const DerivApiProviderDigits = ({ children }: { children: ReactNode }) =>
                     promisesRef.current.delete(String(req_id));
                     reject(new Error(`O pedido à API expirou (60s) para req_id: ${req_id}. O token pode ser inválido ou a rede está lenta.`));
                 }
-            }, 60000);
+            }, 60000); // Aumentado para 60 segundos
             
             promisesRef.current.set(String(req_id), {
                 resolve: (value: any) => {
@@ -304,7 +306,7 @@ export const DerivApiProviderDigits = ({ children }: { children: ReactNode }) =>
         ws.send(JSON.stringify(payload));
 
         if (noResponse) {
-            resolve({} as T);
+            resolve({} as any);
         }
     });
   }, []);
