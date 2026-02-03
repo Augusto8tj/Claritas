@@ -65,6 +65,7 @@ export interface DerivApiContextTypeDigits {
 
 export const DerivApiContextDigits = createContext<DerivApiContextTypeDigits | undefined>(undefined);
 
+// This is the main state logic hook
 export function useDerivApiDigitsState() {
   const [demoToken, setDemoToken] = useState<string | null>(null);
   const [realToken, setRealToken] = useState<string | null>(null);
@@ -332,7 +333,7 @@ export function useDerivApiDigitsState() {
                     if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
                     reconnectTimeoutRef.current = setTimeout(() => { reconnectInProgressRef.current = false; setTriggerReconnect(c => c + 1); }, 3000);
                 } else if (!event.wasClean && !allowAutoReconnectRef.current) {
-                    console.error(`[WS] Conexão falhou permanentemente (provavelmente token inválido). Auto-reconexão desativada.`);
+                    console.error(`[WS] Conexão falhou permanentemente. Auto-reconexão desativada.`);
                     setConnectionError(`Authorization failed. Please check your API token.`);
                 }
                 setIsConnected(false); setIsConnecting(false);
@@ -405,17 +406,18 @@ export function useDerivApiDigitsState() {
     return contextValue;
 }
 
+// This is the provider component that will wrap the app
 export function DerivApiProviderDigits({ children }: { children: React.ReactNode }) {
-  const contextValue = useDerivApiDigitsState();
-  
-  return (
-    <DerivApiContextDigits.Provider value={contextValue}>
-      <FirebaseErrorListener />
-      {children}
-    </DerivApiContextDigits.Provider>
-  );
+    const contextValue = useDerivApiDigitsState();
+    return (
+        <DerivApiContextDigits.Provider value={contextValue}>
+            <FirebaseErrorListener />
+            {children}
+        </DerivApiContextDigits.Provider>
+    );
 }
 
+// This is the consumer hook
 export function useDerivApiDigits() {
   const context = useContext(DerivApiContextDigits);
   if (context === undefined) {
