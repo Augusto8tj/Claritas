@@ -20,6 +20,7 @@ type Signal = 'RISE' | 'FALL' | 'HOLD';
 export interface AssertivenessData {
     accuracy: number;
     vote: Signal;
+    lastResult?: boolean;
 }
 
 export interface RiskManagerStatus {
@@ -291,6 +292,39 @@ export function useMasterAutopilot() {
     }, [contractType, activeSymbol, executeRiseFallTrade, toast, dailyBalance]);
   
   const runAutopilotCycle = useCallback((newAssertiveness: Record<string, AssertivenessData>) => {
+    // ---- NOVO: CALIBRAÇÃO POR VITÓRIA VIRTUAL ----
+    // Se o sistema está excessivamente cauteloso, as vitórias virtuais podem relaxá-lo.
+    if (riskManager.mode === 'Cautious') {
+        const virtualExperts = Object.values(newAssertiveness);
+        const virtualWins = virtualExperts.filter(e => e.lastResult === true).length;
+        
+        // Se mais da metade dos especialistas acertaram a última previsão, é um bom sinal.
+        if (virtualWins > virtualExperts.length / 2) {
+            setRiskManager(prev => {
+                const newThresholds = { ...prev.thresholds };
+                let adjustments = 0;
+                
+                // Reduz ligeiramente o limiar de todos os especialistas que acertaram.
+                Object.keys(newAssertiveness).forEach(horizon => {
+                    if (newAssertiveness[horizon].lastResult === true && newThresholds[horizon]) {
+                        newThresholds[horizon] = Math.max(51, newThresholds[horizon] - 0.5); // Redução gradual
+                        adjustments++;
+                    }
+                });
+
+                if (adjustments > 0) {
+                    return {
+                        ...prev,
+                        mode: 'Normal', // Volta ao modo Normal
+                        thresholds: newThresholds,
+                        lastAdjustmentReason: `Modo Normal restaurado por ${adjustments} vitórias virtuais.`
+                    };
+                }
+                return prev;
+            });
+        }
+    }
+    
     setMasterState(prevState => {
         if (priceTicks.length < 50) {
           return ({
@@ -356,7 +390,8 @@ export function useMasterAutopilot() {
     });
   }, [
     priceTicks, botCandleData, horizons, contractType, 
-    riskManager.thresholds, isNeighborConfirmationEnabled, isTripleConfirmationEnabled, isMacroTrendCheckEnabled, 
+    riskManager,
+    isNeighborConfirmationEnabled, isTripleConfirmationEnabled, isMacroTrendCheckEnabled, 
     highFrequencyThreshold
   ]);
 

@@ -86,6 +86,7 @@ interface ExpertProjection {
     status: 'active' | 'suspended' | 'permanently_disabled';
     consecutiveLosses: number;
     totalSuspensions: number;
+    lastResult?: boolean;
 }
 
 
@@ -297,7 +298,7 @@ function StochasticLab({
   const adaptiveDriftRef = useRef<Record<string, number>>({});
   const predictionErrorHistoryRef = useRef<Record<string, number[]>>({});
 
-  const [assertivenessStats, setAssertivenessStats] = useState<Record<string, { wins: number; total: number; consecutiveLosses: number; consecutiveWins: number; status: 'active' | 'suspended' | 'permanently_disabled'; totalSuspensions: number }>>({});
+  const [assertivenessStats, setAssertivenessStats] = useState<Record<string, { wins: number; total: number; consecutiveLosses: number; consecutiveWins: number; status: 'active' | 'suspended' | 'permanently_disabled'; totalSuspensions: number; }>>({});
   const assertivenessHistoryRef = useRef<Record<string, boolean[]>>({});
   const pendingPredictionsRef = useRef<Record<string, { startTimeIndex: number; startPrice: number; predictedEndPrice: number }[]>>({});
   const processedLogsRef = useRef(new Set<number>());
@@ -415,7 +416,6 @@ function StochasticLab({
                       
                       let newDrift = (currentDrift * decayFactor) + (ADAPTIVE_DRIFT_LEARNING_RATE * averageError);
                       
-                      // *** FIX: CLAMP THE DRIFT VALUE BEFORE STORING ***
                       newDrift = Math.max(-DRIFT_LIMIT, Math.min(DRIFT_LIMIT, newDrift));
                       
                       adaptiveDriftRef.current[h.name] = newDrift;
@@ -512,6 +512,9 @@ function StochasticLab({
         const stats = assertivenessStats[h.name] || { wins: 0, total: 0, status: 'active', consecutiveLosses: 0, consecutiveWins: 0, totalSuspensions: 0 };
         const { wins, total, status, consecutiveLosses, totalSuspensions } = stats;
         
+        const history = assertivenessHistoryRef.current[h.name] || [];
+        const lastResult = history.length > 0 ? history[history.length - 1] : undefined;
+
         const rawWinRate = total > 0 ? (wins / total) * 100 : 0;
         const wilson = wilsonScoreInterval(wins, total);
 
@@ -525,6 +528,7 @@ function StochasticLab({
             status,
             consecutiveLosses,
             totalSuspensions,
+            lastResult,
         };
     });
   }, [horizons, assertivenessStats, realData]);
@@ -798,7 +802,7 @@ function PageContent() {
     setConsensusData(data);
     if (isAutopilotOn && data?.projectionExperts) {
       const assertiveness: Record<string, AssertivenessData> = Object.fromEntries(
-        data.projectionExperts.map((p: any) => [p.name, { accuracy: p.rawWinRate, vote: p.vote }])
+        data.projectionExperts.map((p: any) => [p.name, { accuracy: p.rawWinRate, vote: p.vote, lastResult: p.lastResult }])
       );
       runAutopilotCycle(assertiveness);
     }
@@ -929,7 +933,7 @@ function PageContent() {
                     <div className="flex items-center justify-between rounded-lg border p-3 shadow-sm">
                       <Label htmlFor="macro-trend-switch" className="flex flex-col space-y-1 flex-1 pr-4">
                         <span>Verificação de Tendência Macro</span>
-                        <span className="font-normal text-xs text-muted-foreground">Alinhar trades com a EMA dinâmica. (Ignorado para sinais HF)</span>
+                        <span className="font-normal text-xs text-muted-foreground">(Ignorado para sinais HF)</span>
                       </Label>
                       <Switch id="macro-trend-switch" checked={autopilot.isMacroTrendCheckEnabled} onCheckedChange={autopilot.setIsMacroTrendCheckEnabled} disabled={autopilot.isAutopilotOn}/>
                     </div>
