@@ -612,7 +612,7 @@ function StochasticLab({
         }
     }
     return projectionData;
-}, [priceData, horizons]);
+  }, [priceData, horizons]);
 
   const combinedData = useMemo(() => {
     if (priceData.length === 0) return [];
@@ -639,7 +639,6 @@ function StochasticLab({
     
     return Array.from(dataMap.values()).sort((a, b) => a.time - b.time);
   }, [priceData, medianProjection]);
-
 
   return (
     <Card className="h-full flex flex-col col-span-1 lg:col-span-3">
@@ -710,14 +709,15 @@ function VolatilityProjectionChart({ chartData, className }: {
         return null;
     }, [chartData]);
 
+
     return (
         <Card className={cn("h-[500px]", className)}>
             <CardHeader>
-                <CardTitle className="flex items-center gap-2">
+                <CardTitle className="font-headline flex items-center gap-2">
                     <Target className="h-5 w-5 text-purple-600" />
                     Projeção Preditiva: Histórico vs. Consenso
                 </CardTitle>
-                <CardDescription className="flex items-center gap-2 text-xs">
+                 <CardDescription className="flex items-center gap-2 text-xs">
                     <Info className="h-3 w-3" />
                     Cone sombreado = margem de incerteza (25%-75%) | Linha tracejada = previsão mais provável
                 </CardDescription>
