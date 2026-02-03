@@ -1,11 +1,10 @@
 // src/app/volatility-analysis/page.tsx
 'use client';
 
-import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useForm, FormProvider, useFormContext } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine, Area, Scatter } from 'recharts';
-import { TrendingUp, TrendingDown, HelpCircle, Bot, FlaskConical, Target, Info, Brain, Zap, Send, Loader2, ShieldCheck, GitBranch, BarChart, Activity, AlertTriangle, Power, ChevronsUpDown, Settings, Sigma, Shield, X, Check, Skull, PlayCircle, PauseCircle } from 'lucide-react';
+import { TrendingUp, TrendingDown, HelpCircle, Bot, FlaskConical, Target, Info, Settings, Sigma, Power, PlayCircle, PauseCircle, Skull, ChevronsUpDown } from 'lucide-react';
 import { DerivApiProviderV2 as DerivApiProvider, useDerivApiV2 as useDerivApi } from "@/features/trading/hooks/use-deriv-api-v2";
 import { AssetSelectorV2 as AssetSelector } from "@/features/trading/components/deriv-trader/asset-selector-v2";
 import { ApiStatusIndicatorV2 as ApiStatusIndicator } from "@/features/trading/components/deriv-trader/ApiStatusIndicatorV2";
@@ -23,12 +22,11 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { useToast } from '@/hooks/use-toast';
-import { getConsensusGradientStyle } from '@/features/trading/components/deriv-trader/utils/get-consensus-gradient-style';
 import PredictiveLogViewer from '@/components/deriv-trader/PredictiveLogViewer';
 import { getPredictiveTradeLogs, savePredictiveTradeLog } from '@/services/financial-data-service';
 import { useAuth } from '@/features/auth/hooks/use-auth';
 import { db } from '@/lib/firebase';
-import { doc, deleteDoc, collection } from 'firebase/firestore';
+import { doc, deleteDoc } from 'firebase/firestore';
 import { errorEmitter, FirestorePermissionError } from '@/firebase';
 import { Button } from '@/components/ui/button';
 import { Slider } from '@/components/ui/slider';
@@ -36,47 +34,12 @@ import { Separator } from '@/components/ui/separator';
 import { useMasterAutopilot } from '@/features/trading/hooks/use-master-autopilot';
 import type { AssertivenessData } from '@/features/trading/hooks/use-master-autopilot';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Skeleton } from '@/components/ui/skeleton';
 import { MarketChart } from "@/features/trading/components/deriv-trader/market-chart";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { Skeleton } from '@/components/ui/skeleton';
+import { useStochasticModels } from '@/features/trading/hooks/use-stochastic-models';
 
-
-/**
- * Wilson Score Interval for a binomial proportion.
- * Provides a confidence interval for the "true" success rate.
- * The lower bound is a conservative estimate, useful for decision making.
- * @param {number} successes - Number of successful trials (wins).
- * @param {number} trials - Total number of trials.
- * @returns {object} An object containing the lower and upper bounds of the confidence interval (0-1).
- */
-const wilsonScoreInterval = (successes: number, trials: number): { lower: number; upper: number } => {
-  if (trials === 0) {
-    return { lower: 0, upper: 1 }; // Max uncertainty
-  }
-  // z-score for a 90% confidence interval. A good balance between confidence and responsiveness.
-  const z = 1.645; 
-  const p_hat = successes / trials;
-  const n = trials;
-  
-  const center_adjustment = (z * z) / (2 * n);
-  const margin = z * Math.sqrt((p_hat * (1 - p_hat)) / n + (z * z) / (4 * n * n));
-  const denominator = 1 + (2 * center_adjustment);
-  
-  const lower = Math.max(0, (p_hat + center_adjustment - margin) / denominator);
-  const upper = Math.min(1, (p_hat + center_adjustment + margin) / denominator);
-  
-  return { lower, upper };
-};
-
-
-const getProgressColor = (percentage: number) => {
-    if (percentage > 55) return 'bg-green-500';
-    if (percentage > 50) return 'bg-blue-500';
-    if (percentage < 45) return 'bg-red-500';
-    return 'bg-gray-400';
-};
-
-const isCandle = (d: ChartData): d is CandleData => d != null && 'close' in d;
+// --- TYPE DEFINITIONS (kept from original) ---
 
 interface ExpertProjection {
     name: string;
@@ -91,7 +54,6 @@ interface ExpertProjection {
     lastResult?: boolean;
 }
 
-
 interface StrongestSignal {
     horizon: string;
     direction: 'RISE' | 'FALL' | 'HOLD';
@@ -100,13 +62,14 @@ interface StrongestSignal {
 }
 
 
-interface StochasticLabProps {
-  realData: ChartData[];
-  onConsensusUpdate: (consensus: any) => void;
-  predictiveLogs: PredictiveTradeLog[];
-  onDeletePredictiveLog: (logId: string) => void;
-  deletingPredictiveLogId: string | null;
-}
+// --- UI COMPONENTS ---
+
+const getProgressColor = (percentage: number) => {
+    if (percentage > 55) return 'bg-green-500';
+    if (percentage > 50) return 'bg-blue-500';
+    if (percentage < 45) return 'bg-red-500';
+    return 'bg-gray-400';
+};
 
 const StatItem = ({ label, value }: { label: string; value: string | number }) => (
     <div className="flex flex-col p-2 border-l-2 pl-3">
@@ -249,332 +212,26 @@ const ProjectionExpertsPanel = ({ experts, adaptiveDrifts, className }: { expert
     );
 };
 
-const ASSERTIVENESS_HISTORY_LIMIT = 1000;
-const CONSECUTIVE_LOSS_LIMIT = 5;
-const CONSECUTIVE_WIN_REACTIVATION = 3;
-const MAX_SUSPENSIONS_ALLOWED = 3;
-const DRIFT_LIMIT = 0.1;
 
-/**
- * @fileOverview O `StochasticLab` é o coração do motor preditivo da aplicação.
- * Opera como um "Cientista de IA" que executa modelos de Movimento Browniano Geométrico (GBM)
- * em múltiplos horizontes de tempo para prever o comportamento do preço.
- * 
- * Filosofia: Comitê de Especialistas Temporais
- * 1.  Previsão Multi-Horizonte: Gera nove projeções de preço distintas para diferentes prazos.
- * 2.  Modelo Preditivo (GBM): Projeta o futuro com base na tendência (drift) e volatilidade (diffusion).
- * 3.  Meritocracia Preditiva: Avalia constantemente a "Assertividade" (taxa de acerto) de cada especialista.
- * 4.  Neuro-Adaptative Drift Controller: Ajusta o parâmetro 'drift' de cada modelo com base nos erros de previsão.
- */
+// REFACTORED `StochasticLab` component - UI ONLY
 function StochasticLab({ 
     realData, 
     onConsensusUpdate, 
     predictiveLogs,
     onDeletePredictiveLog,
     deletingPredictiveLogId,
-}: StochasticLabProps) {
-  const { user, loading: isUserLoading } = useAuth();
+}: {
+  realData: ChartData[];
+  onConsensusUpdate: (consensus: any) => void;
+  predictiveLogs: PredictiveTradeLog[];
+  onDeletePredictiveLog: (logId: string) => void;
+  deletingPredictiveLogId: string | null;
+}) {
+  const { user } = useAuth();
   const [activeTab, setActiveTab] = useState('prediction');
-  
-  const [priceData, setPriceData] = useState<any[]>([]);
-  const [lastPrice, setLastPrice] = useState<number | null>(null);
-  const [stats, setStats] = useState<any>({ annualizedVol: '0.0000', skewness: '0.0000', kurtosis: '0.0000' });
-  
-  const futurePathsRef = useRef<Record<string, { time: number; price: number }[]>>({});
 
-  // --- PARÂMETROS DO MODELO GBM PARA 1HZ10V ---
-  const GBM_SIGMA = 0.10;
-  const GBM_DRIFT_TERM = - (GBM_SIGMA * GBM_SIGMA) / 2;
-  
-  // --- ESTADO DO CONTROLADOR NEURO-ADAPTATIVO ---
-  const ADAPTIVE_DRIFT_LEARNING_RATE = 0.1;
-  const getDecayFactor = (horizonName: string): number => {
-    if (horizonName.endsWith('t') && parseInt(horizonName.replace('t', '')) <= 10) {
-      return 0.90; // Horizontes ultra-curtos esquecem mais rápido
-    }
-    return 0.95; // Horizontes longos mantêm memória
-  };
-  const ERROR_HISTORY_LENGTH = 20;
-
-  const adaptiveDriftRef = useRef<Record<string, number>>({});
-  const predictionErrorHistoryRef = useRef<Record<string, number[]>>({});
-
-  const [assertivenessStats, setAssertivenessStats] = useState<Record<string, { wins: number; total: number; consecutiveLosses: number; consecutiveWins: number; status: 'active' | 'suspended' | 'permanently_disabled'; totalSuspensions: number; }>>({});
-  const assertivenessHistoryRef = useRef<Record<string, boolean[]>>({});
-  const pendingPredictionsRef = useRef<Record<string, { startTimeIndex: number; startPrice: number; predictedEndPrice: number }[]>>({});
-  const processedLogsRef = useRef(new Set<number>());
-
-  const normalRandom = (): number => {
-    let u1 = 0;
-    while (u1 === 0) { u1 = Math.random(); }
-    const u2 = Math.random();
-    return Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
-  };
-  
-  const horizons = useMemo(() => [
-      { name: '1t', ticks: 1, type: 'tick', window: 6 },
-      { name: '3t', ticks: 3, type: 'tick', window: 6 },
-      { name: '6t', ticks: 6, type: 'tick', window: 6 },
-      { name: '10t', ticks: 10, type: 'tick', window: 10 },
-      { name: '15s', ticks: 15, type: 'second', window: 10 },
-      { name: '20s', ticks: 20, type: 'second', window: 10 },
-      { name: '30s', ticks: 30, type: 'second', window: 75 },
-      { name: '40s', ticks: 40, type: 'second', window: 75 },
-      { name: '50s', ticks: 50, type: 'second', window: 75 },
-  ], []);
-
-  useEffect(() => {
-    // Inicialização dos estados dinâmicos para cada horizonte
-    const initialStats: Record<string, { wins: number; total: number; consecutiveLosses: number; consecutiveWins: number; status: 'active' | 'suspended' | 'permanently_disabled'; totalSuspensions: number; }> = {};
-    const initialPending: Record<string, any[]> = {};
-    const initialDrift: Record<string, number> = {};
-    const initialErrorHistory: Record<string, number[]> = {};
-    const initialAssertivenessHistory: Record<string, boolean[]> = {};
-
-    horizons.forEach(h => {
-        initialStats[h.name] = { wins: 0, total: 0, consecutiveLosses: 0, consecutiveWins: 0, status: 'active', totalSuspensions: 0 };
-        initialPending[h.name] = [];
-        initialDrift[h.name] = 0;
-        initialErrorHistory[h.name] = [];
-        initialAssertivenessHistory[h.name] = [];
-    });
-    setAssertivenessStats(initialStats);
-    pendingPredictionsRef.current = initialPending;
-    adaptiveDriftRef.current = initialDrift;
-    predictionErrorHistoryRef.current = initialErrorHistory;
-    assertivenessHistoryRef.current = initialAssertivenessHistory;
-  }, [horizons]);
-
-  useEffect(() => {
-    const VOL_WINDOW = 50;
-    
-    if (realData.length < VOL_WINDOW) return;
-    
-    const prices = realData.map(d => isCandle(d) ? d.close : d.price);
-    if(prices.length > 0) setLastPrice(prices[prices.length - 1]);
-    setPriceData(realData.map((d, i) => ({ time: d.epoch, price: isCandle(d) ? d.close : d.price })));
-
-    const logReturns: number[] = [];
-    for (let i = 1; i < prices.length; i++) {
-      if(prices[i-1] > 0) logReturns.push(Math.log(prices[i] / prices[i - 1]));
-    }
-    
-    if (logReturns.length > 1) {
-      const mean = logReturns.reduce((a, b) => a + b, 0) / logReturns.length;
-      const variance = logReturns.reduce((sum, r) => sum + Math.pow(r - mean, 2), 0) / (logReturns.length - 1);
-      const stdDev = Math.sqrt(variance);
-      const skewness = logReturns.reduce((sum, r) => sum + Math.pow((r - mean) / stdDev, 3), 0) / logReturns.length;
-      const kurtosis = logReturns.reduce((sum, r) => sum + Math.pow((r - mean) / stdDev, 4), 0) / logReturns.length - 3;
-      const annualizedVol = stdDev * Math.sqrt(31536000) * 100;
-      setStats({ annualizedVol: annualizedVol.toFixed(4), skewness: skewness.toFixed(4), kurtosis: kurtosis.toFixed(4) });
-    }
-
-    if (prices.length > VOL_WINDOW) {
-      const lastPriceValue = prices[prices.length - 1];
-      const lastTime = realData[realData.length-1].epoch;
-
-      const projectPath = (steps: number, horizonName: string, horizonType: 'tick' | 'second') => {
-          if (lastPriceValue === null) return [];
-          let currentSimPrice = lastPriceValue;
-          const path = [{ time: lastTime, price: lastPriceValue }];
-          
-          let driftCorrection = adaptiveDriftRef.current[horizonName] || 0;
-          
-          driftCorrection = Math.max(-DRIFT_LIMIT, Math.min(DRIFT_LIMIT, driftCorrection));
-          
-          const timeStepInSeconds = horizonType === 'tick' ? 2 : 1;
-
-          for (let i = 1; i <= steps; i++) {
-            const Z = normalRandom();
-            const dt = timeStepInSeconds;
-            const exponent = ((GBM_DRIFT_TERM + driftCorrection) * dt) + (GBM_SIGMA * Z * Math.sqrt(dt));
-            currentSimPrice *= Math.exp(exponent);
-            path.push({ time: lastTime + (i * timeStepInSeconds), price: currentSimPrice });
-          }
-          return path;
-      };
-
-      const newFuturePaths: Record<string, any[]> = {};
-      const newAssertivenessData: Record<string, { lastResult: boolean }> = {};
-      const horizonsToUpdateStats = new Set<string>();
-      
-      horizons.forEach(h => {
-          const currentTimeIndex = prices.length - 1;
-          const predictionsToProcess = pendingPredictionsRef.current[h.name] || [];
-          const updatedPending = [];
-
-          for (const pred of predictionsToProcess) {
-              if (currentTimeIndex >= pred.startTimeIndex + h.ticks) {
-                  const actualEndPrice = prices[pred.startTimeIndex + h.ticks];
-                  if (actualEndPrice !== undefined) {
-                      const predictionError = actualEndPrice - pred.predictedEndPrice;
-                      
-                      const errorHistory = predictionErrorHistoryRef.current[h.name] || [];
-                      errorHistory.push(predictionError);
-                      if (errorHistory.length > ERROR_HISTORY_LENGTH) errorHistory.shift();
-                      predictionErrorHistoryRef.current[h.name] = errorHistory;
-                      
-                      const averageError = errorHistory.reduce((a, b) => a + b, 0) / errorHistory.length;
-                      const currentDrift = adaptiveDriftRef.current[h.name] || 0;
-                      const decayFactor = getDecayFactor(h.name);
-                      
-                      let newDrift = (currentDrift * decayFactor) + (ADAPTIVE_DRIFT_LEARNING_RATE * averageError);
-                      
-                      newDrift = Math.max(-DRIFT_LIMIT, Math.min(DRIFT_LIMIT, newDrift));
-                      
-                      adaptiveDriftRef.current[h.name] = newDrift;
-
-                      const predictedDirection = pred.predictedEndPrice > pred.startPrice;
-                      const actualDirection = actualEndPrice > pred.startPrice;
-                      const isWin = predictedDirection === actualDirection;
-
-                      const assertivenessHistory = assertivenessHistoryRef.current[h.name] || [];
-                      assertivenessHistory.push(isWin);
-                      while (assertivenessHistory.length > ASSERTIVENESS_HISTORY_LIMIT) {
-                          assertivenessHistory.shift();
-                      }
-                      assertivenessHistoryRef.current[h.name] = assertivenessHistory;
-                      
-                      newAssertivenessData[h.name] = { lastResult: isWin };
-                      horizonsToUpdateStats.add(h.name);
-                  }
-              } else {
-                  updatedPending.push(pred);
-              }
-          }
-          pendingPredictionsRef.current[h.name] = updatedPending;
-
-          const newPath = projectPath(h.ticks, h.name, h.type);
-          newFuturePaths[h.name] = newPath;
-
-          if (newPath.length === h.ticks + 1) {
-              const newPredictionTimeIndex = newPath[0].time;
-              if (!pendingPredictionsRef.current[h.name].some(p => p.startTimeIndex === newPredictionTimeIndex)) {
-                  pendingPredictionsRef.current[h.name].push({
-                      startTimeIndex: currentTimeIndex,
-                      startPrice: newPath[0].price,
-                      predictedEndPrice: newPath[h.ticks].price,
-                  });
-              }
-          }
-      });
-      futurePathsRef.current = newFuturePaths;
-      
-        if (horizonsToUpdateStats.size > 0) {
-            setAssertivenessStats(prev => {
-                const newStats = { ...prev };
-                horizonsToUpdateStats.forEach(horizonName => {
-                    const history = assertivenessHistoryRef.current[horizonName] || [];
-                    const { lastResult } = newAssertivenessData[horizonName];
-                    const currentExpertStats = (prev[horizonName] || { wins: 0, total: 0, consecutiveLosses: 0, consecutiveWins: 0, status: 'active', totalSuspensions: 0 });
-                    let { consecutiveLosses, consecutiveWins, status, totalSuspensions } = currentExpertStats;
-                    
-                    if (status === 'permanently_disabled') {
-                        newStats[horizonName] = currentExpertStats;
-                        return;
-                    }
-
-                    if (lastResult === true) { // isWin
-                        consecutiveWins++;
-                        consecutiveLosses = 0;
-                        if (status === 'suspended' && consecutiveWins >= CONSECUTIVE_WIN_REACTIVATION) {
-                            if (totalSuspensions < MAX_SUSPENSIONS_ALLOWED) {
-                                status = 'active';
-                                totalSuspensions++; // Increment on re-activation
-                            } else {
-                                status = 'permanently_disabled';
-                            }
-                        }
-                    } else { // isLoss
-                        consecutiveLosses++;
-                        consecutiveWins = 0;
-                        if (status === 'active' && consecutiveLosses >= CONSECUTIVE_LOSS_LIMIT) {
-                            status = 'suspended';
-                        }
-                    }
-
-                    newStats[horizonName] = {
-                        wins: history.filter(v => v).length,
-                        total: history.length,
-                        consecutiveLosses,
-                        consecutiveWins,
-                        status,
-                        totalSuspensions,
-                    };
-                });
-                return newStats;
-            });
-        }
-    }
-  }, [realData, horizons]);
-
-  const projectionExperts: ExpertProjection[] = useMemo(() => {
-    return horizons.map(h => {
-        const path = futurePathsRef.current[h.name] || [];
-        const vote = path.length > 1 ? (path[path.length - 1].price > path[0].price ? 'RISE' : 'FALL') : 'HOLD';
-        
-        const stats = assertivenessStats[h.name] || { wins: 0, total: 0, status: 'active', consecutiveLosses: 0, consecutiveWins: 0, totalSuspensions: 0 };
-        const { wins, total, status, consecutiveLosses, totalSuspensions } = stats;
-        
-        const history = assertivenessHistoryRef.current[h.name] || [];
-        const lastResult = history.length > 0 ? history[history.length - 1] : undefined;
-
-        const rawWinRate = total > 0 ? (wins / total) * 100 : 0;
-        const wilson = wilsonScoreInterval(wins, total);
-
-        return { 
-            name: h.name, 
-            vote, 
-            wilson, 
-            rawWinRate,
-            hits: wins, 
-            total,
-            status,
-            consecutiveLosses,
-            totalSuspensions,
-            lastResult,
-        };
-    });
-  }, [horizons, assertivenessStats, realData]);
-
-  const getEffectiveVote = useCallback((expert: ExpertProjection | undefined): 'RISE' | 'FALL' | 'HOLD' => {
-      if (!expert || expert.vote === 'HOLD' || expert.status !== 'active') return 'HOLD';
-      
-      if (expert.wilson.lower > 0.5) {
-          return expert.vote;
-      }
-      
-      if (expert.wilson.upper < 0.5) {
-          return expert.vote === 'RISE' ? 'FALL' : (expert.vote === 'FALL' ? 'RISE' : 'HOLD');
-      }
-
-      return 'HOLD';
-  }, []);
-
-  const strongestSignal = useMemo((): StrongestSignal => {
-    let bestSignal: StrongestSignal = { horizon: 'N/A', direction: 'HOLD', certaintyScore: 0, rawWinRate: 50 };
-    let maxConfidence = 0; 
-
-    projectionExperts.forEach(p => {
-        const effectiveVote = getEffectiveVote(p);
-        if (effectiveVote !== 'HOLD') {
-            const confidence = p.wilson.lower > 0.5 
-                ? p.wilson.lower - 0.5 
-                : 0.5 - p.wilson.upper;
-            
-            if (confidence > maxConfidence) {
-                maxConfidence = confidence;
-                bestSignal = {
-                    horizon: p.name,
-                    direction: effectiveVote,
-                    certaintyScore: (p.wilson.lower > 0.5 ? p.wilson.lower - 0.5 : 0.5 - p.wilson.upper) * 200,
-                    rawWinRate: p.rawWinRate,
-                };
-            }
-        }
-    });
-    return bestSignal;
-  }, [projectionExperts, getEffectiveVote]);
+  // Using the new hook to encapsulate all logic
+  const { projectionExperts, strongestSignal, stats, adaptiveDrifts } = useStochasticModels(realData);
   
   useEffect(() => {
     onConsensusUpdate({strongestSignal, projectionExperts});
@@ -594,7 +251,7 @@ function StochasticLab({
                 <div className="p-1 space-y-6">
                     <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                          <StrongestSignalCard signal={strongestSignal} className="md:col-span-1" />
-                         <ProjectionExpertsPanel experts={projectionExperts} adaptiveDrifts={adaptiveDriftRef.current} className="md:col-span-3" />
+                         <ProjectionExpertsPanel experts={projectionExperts} adaptiveDrifts={adaptiveDrifts} className="md:col-span-3" />
                     </div>
                     
                      <Card className="mt-6">
@@ -658,8 +315,7 @@ const IsolatedMarketChart = () => {
 
 function PageContent() {
   const { 
-    activeSymbol, setActiveSymbol, assetGroups, isAssetsLoading, 
-    chartData, operationsLog, sellContract, clearActiveContracts,
+    activeSymbol, chartData, operationsLog, sellContract, clearActiveContracts,
     priceTicks, durationLimits,
   } = useDerivApi();
   const { toast } = useToast();
@@ -749,11 +405,15 @@ function PageContent() {
       }
     }
     
+    // We only have 's' in this form, so we convert ticks
+    if (durationUnit === 't') {
+        duration = Math.max(15, duration * 2); 
+    }
     form.setValue('duration', duration);
 
     toast({
       title: 'Duração Sincronizada!',
-      description: `Duração definida para ${duration}${durationUnit === 's' ? ' segundos' : ' ticks'}, com base no sinal de ${horizon}.`,
+      description: `Duração definida para ${duration} segundos, com base no sinal de ${horizon}.`,
     });
   };
   
