@@ -518,3 +518,20 @@ export async function loadPredictiveModels(userId: string): Promise<Record<strin
     throw permissionError;
   }
 };
+
+// --- Backtesting ---
+
+export async function saveBacktestRun(userId: string, asset: string, run: any) {
+  if (!userId) throw new Error("User not authenticated.");
+  const collectionRef = collection(db, 'users', userId, 'backtests_v1', asset, 'runs');
+  await addDoc(collectionRef, run);
+}
+
+export async function getBacktestRuns(userId: string, asset: string, limitN: number = 10) {
+  if (!userId) throw new Error("User not authenticated.");
+  const collectionRef = collection(db, 'users', userId, 'backtests_v1', asset, 'runs');
+  const q = query(collectionRef, orderBy('timestamp', 'desc'), limit(limitN));
+  const snapshot = await getDocs(q);
+  return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+}
+

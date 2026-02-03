@@ -338,15 +338,12 @@ export const AssetProfileV1Schema = z.object({
   id: z.string(), // asset symbol will be the id
   assetSymbol: z.string(),
   lastAnalyzed: z.string(),
-  preferredRegime: z.enum(["TRENDING", "RANGING", "NEUTRAL"]).optional(),
-  optimalConsensusThreshold: z.number().optional(),
-  performanceSummary: z.object({
-    totalTrades: z.number(),
-    winRate: z.number(),
-    totalPnl: z.number(),
-    sharpeRatio: z.number(),
-  }).optional(),
   notes: z.string().optional(),
+  // Meta-learning fields
+  activeHorizons: z.array(z.string()).optional(),
+  horizonScores: z.record(z.number()).optional(),
+  computeBudgetK: z.number().optional(),
+  epsilon: z.number().optional(),
 });
 export type AssetProfileV1 = z.infer<typeof AssetProfileV1Schema>;
 
@@ -366,3 +363,4 @@ export const baseRiseFallSchema = z.object({
   duration_unit: DurationUnitSchema,
   allowEquals: z.boolean().default(false),
 });
+
