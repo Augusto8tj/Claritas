@@ -628,7 +628,6 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
   useEffect(() => {
     if (!activeToken || isLoading) {
       if (wsRef.current) wsRef.current.close();
-      if (pingIntervalRef.current) clearInterval(pingIntervalRef.current);
       return;
     }
     
@@ -662,7 +661,9 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
                 }
     
                 if (response.error && response.error.message) {
-                     if (response.error.code !== 'AlreadySubscribed' && response.error.code !== 'SellNotAvailable' && response.error.code !== 'ContractSellNotAvailable') {
+                     if (response.error.code !== 'AlreadySubscribed' && 
+                         response.error.code !== 'SellNotAvailable' && 
+                         response.error.code !== 'ContractSellNotAvailable') {
                       console.error(`[Deriv WS] Unsolicited Error:`, response.error.message);
                     }
                      return; 
@@ -851,6 +852,8 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
                 ws.send(JSON.stringify({ "proposal_open_contract": 1, "subscribe": 1 }));
                 ws.send(JSON.stringify({ "balance": 1, "subscribe": 1 }));
                 
+                startConnectionMonitor();
+                
                 const assetsRes: any = await makeRequest({ active_symbols: 'full', product_type: 'basic' });
                 if (assetsRes.error) throw new Error(assetsRes.error.message);
                 
@@ -921,6 +924,7 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
             }, 3000);
           } else if (!event.wasClean && !allowAutoReconnectRef.current) {
              console.error(`[WS] Conexão falhou permanentemente (provavelmente token inválido). Auto-reconexão desativada.`);
+             setConnectionError(`Authorization failed. Please check your API token.`);
           }
           
           setIsConnected(false);

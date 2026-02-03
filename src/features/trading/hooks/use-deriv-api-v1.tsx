@@ -176,6 +176,10 @@ export const DerivApiProviderV1 = ({ children }: { children: ReactNode }) => {
   const [connectionError, setConnectionError] = useState<string | null>(null);
   const promisesRef = useRef<Map<string, PromiseCallbacks>>(new Map());
   const [triggerReconnect, setTriggerReconnect] = useState(0);
+  const pingIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const allowAutoReconnectRef = useRef(true);
+  const reconnectInProgressRef = useRef(false);
 
     const setAndPersistOperationsLog = useCallback((updater: React.SetStateAction<Operation[]>) => {
     setOperationsLog(prevLog => {
@@ -569,7 +573,7 @@ const executeTrade = useCallback(async (
       if (wsRef.current) wsRef.current.close();
       return;
     }
-
+    
     const connect = () => {
         setIsConnecting(true);
         setConnectionError(null);
@@ -788,51 +792,62 @@ const executeTrade = useCallback(async (
         };
     
         ws.onopen = async () => {
-            try {
-                await makeRequest({ authorize: activeToken });
-                setIsConnected(true);
-                setIsConnecting(false);
-                setConnectionError(null);
-                
-                ws.send(JSON.stringify({ "proposal_open_contract": 1, "subscribe": 1 }));
-                ws.send(JSON.stringify({ "balance": 1, "subscribe": 1 }));
-                
-                const assetsRes: any = await makeRequest({ active_symbols: 'full', product_type: 'basic' });
-                
-                const groupedAssets: { [key: string]: Asset[] } = {};
-                assetsRes.active_symbols.forEach((symbol: any) => {
-                    const marketKey = (symbol.market === 'synthetic_index' && symbol.submarket === 'basket_index') ? 'basket_index' : symbol.market;
-                    const groupName = marketNameMapping[marketKey] || 'Outros';
-                    if (!groupedAssets[groupName]) groupedAssets[groupName] = [];
-                    groupedAssets[groupName].push({
-                        value: symbol.symbol,
-                        label: symbol.display_name,
-                        marketIsOpen: symbol.exchange_is_open === 1,
-                        submarket: symbol.submarket,
-                        market: marketKey,
-                        minDuration: symbol.min_contract_duration ?? '5t', 
-                    });
-                });
-                
-                setAssetGroups(Object.keys(groupedAssets)
-                    .map(label => ({ label, options: groupedAssets[label].sort((a, b) => a.label.localeCompare(b.label)) }))
-                    .sort((a, b) => a.label.localeCompare(b.label)));
-                setIsAssetsLoading(false);
-        
-            } catch (error: any) {
-                let errorMessage = error instanceof Error ? error.message : 'Erro desconhecido ao conectar';
-                setConnectionError(`Falha na autorização: ${errorMessage}`);
-                setIsConnected(false);
-                setIsConnecting(false);
-                setIsAssetsLoading(false);
-                setAccountBalance({ balance: null, currency: null, loading: false });
-                if (ws.readyState === WebSocket.OPEN) ws.close();
-            }
-        };
+          try {
+              reconnectInProgressRef.current = false;
+              if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
+
+              const authResponse: any = await makeRequest({ authorize: activeToken });
+              if (authResponse.error) throw new Error(authResponse.error.message);
+
+              setIsConnected(true);
+              setIsConnecting(false);
+              setConnectionError(null);
+              
+              ws.send(JSON.stringify({ "proposal_open_contract": 1, "subscribe": 1 }));
+              ws.send(JSON.stringify({ "balance": 1, "subscribe": 1 }));
+              
+              startConnectionMonitor();
+              
+              const assetsRes: any = await makeRequest({ active_symbols: 'full', product_type: 'basic' });
+              if (assetsRes.error) throw new Error(assetsRes.error.message);
+              
+              const groupedAssets: { [key: string]: Asset[] } = {};
+              assetsRes.active_symbols.forEach((symbol: any) => {
+                  const marketKey = (symbol.market === 'synthetic_index' && symbol.submarket === 'basket_index') ? 'basket_index' : symbol.market;
+                  const groupName = marketNameMapping[marketKey] || 'Outros';
+                  if (!groupedAssets[groupName]) groupedAssets[groupName] = [];
+                  groupedAssets[groupName].push({
+                      value: symbol.symbol,
+                      label: symbol.display_name,
+                      marketIsOpen: symbol.exchange_is_open === 1,
+                      submarket: symbol.submarket,
+                      market: marketKey,
+                      minDuration: symbol.min_contract_duration ?? '5t', 
+                  });
+              });
+              
+              setAssetGroups(Object.keys(groupedAssets)
+                  .map(label => ({ label, options: groupedAssets[label].sort((a, b) => a.label.localeCompare(b.label)) }))
+                  .sort((a, b) => a.label.localeCompare(b.label)));
+              setIsAssetsLoading(false);
       
+          } catch (error: any) {
+              reconnectInProgressRef.current = false;
+              if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
+              
+              let errorMessage = error instanceof Error ? error.message : 'Erro desconhecido ao conectar';
+              setConnectionError(`Falha na autorização: ${errorMessage}`);
+              setIsConnected(false);
+              setIsConnecting(false);
+              setIsAssetsLoading(false);
+              setAccountBalance({ balance: null, currency: null, loading: false });
+              allowAutoReconnectRef.current = false; // PREVENT RECONNECT LOOP
+              if (ws.readyState === WebSocket.OPEN) ws.close();
+          }
+      };
+    
         ws.onclose = (event) => {
-          if (!wsRef.current) return;
-          const { wasClean, code, reason } = event;
+          if (!wsRef.current || reconnectInProgressRef.current) return;
           
           if (pingIntervalRef.current) {
               clearInterval(pingIntervalRef.current);
@@ -846,17 +861,21 @@ const executeTrade = useCallback(async (
           });
           promisesRef.current.clear();
 
-          if (!wasClean) {
-            console.warn(`[WS] Fechado inesperadamente. Código: ${code}. Razão: ${reason || 'N/A'}.`);
+          if (!event.wasClean && allowAutoReconnectRef.current) {
+            reconnectInProgressRef.current = true;
+            console.warn(`[WS] Fechado inesperadamente. Código: ${event.code}. Tentando reconectar...`);
             setConnectionError(`Conexão perdida. Reconectando...`);
             
             if (reconnectTimeoutRef.current) {
                 clearTimeout(reconnectTimeoutRef.current);
             }
             reconnectTimeoutRef.current = setTimeout(() => {
-                console.log('[Auto-Reconnect] Tentando reconectar...');
+                reconnectInProgressRef.current = false;
                 setTriggerReconnect(c => c + 1);
             }, 3000);
+          } else if (!event.wasClean && !allowAutoReconnectRef.current) {
+             console.error(`[WS] Conexão falhou permanentemente (provavelmente token inválido). Auto-reconexão desativada.`);
+             setConnectionError(`Authorization failed. Please check your API token.`);
           }
           
           setIsConnected(false);
@@ -867,17 +886,17 @@ const executeTrade = useCallback(async (
       
         ws.onerror = (error) => {
           // O evento onclose é mais fiável para obter o motivo do erro.
-          // Este manipulador está aqui para prevenir que um erro não tratado feche a aplicação.
-          setAccountBalance({ balance: null, currency: null, loading: false });
         };
     };
 
     connect();
   
     return () => {
+      allowAutoReconnectRef.current = false;
       if (wsRef.current) {
         wsRef.current.onclose = null;
         wsRef.current.close();
+        wsRef.current = null;
       }
       if (pingIntervalRef.current) {
           clearInterval(pingIntervalRef.current);
@@ -885,8 +904,9 @@ const executeTrade = useCallback(async (
       if (reconnectTimeoutRef.current) {
           clearTimeout(reconnectTimeoutRef.current);
       }
+      reconnectInProgressRef.current = false;
     };
-  }, [activeToken, isLoading, makeRequest, toast, triggerReconnect, updateTradeAnnotation, addTradeAnnotation, setAndPersistOperationsLog, setToastQueue]);
+  }, [activeToken, isLoading, triggerReconnect, updateTradeAnnotation, addTradeAnnotation, toast, setAndPersistOperationsLog, setToastQueue, startConnectionMonitor, makeRequest]);
 
   
   useEffect(() => {
@@ -909,6 +929,7 @@ const executeTrade = useCallback(async (
     try {
         localStorage.setItem(DERIV_ACCOUNT_TYPE_KEY, type);
         setAccountTypeState(type);
+        allowAutoReconnectRef.current = true;
         setTriggerReconnect(c => c + 1); // Trigger a full reconnect
     } catch (error) {
         console.error("Failed to save account type to localStorage:", error);
@@ -925,6 +946,8 @@ const executeTrade = useCallback(async (
         localStorage.setItem(DERIV_REAL_TOKEN_KEY, tokens.real);
         setRealToken(tokens.real);
       }
+      allowAutoReconnectRef.current = true;
+      setTriggerReconnect(c => c + 1);
     } catch (error) {
       console.error("Failed to save token to localStorage:", error);
     }
@@ -951,6 +974,7 @@ const executeTrade = useCallback(async (
   connectionErrorRef.current = connectionError;
 
   const reconnect = useCallback(async (): Promise<boolean> => {
+    allowAutoReconnectRef.current = true;
     setTriggerReconnect(c => c + 1);
     
     return new Promise(resolve => {

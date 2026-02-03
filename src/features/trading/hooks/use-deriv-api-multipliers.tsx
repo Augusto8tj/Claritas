@@ -768,11 +768,11 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
 
                             if (trailingState.highestProfit > activationThreshold) {
                                 const rawNewStop = trailingState.highestProfit - trailingDistance;
-                                const newStopLoss = parseFloat(rawNewStop.toFixed(2));
-                                updatedOp.trailingStop = newStopLoss;
+                                const newStopLossAmount = parseFloat(rawNewStop.toFixed(2));
+                                updatedOp.trailingStop = newStopLossAmount;
 
-                                if (newStopLoss > (op.stopLoss || 0)) {
-                                    updateContract(op.id, undefined, newStopLoss);
+                                if (newStopLossAmount > (op.stopLoss || 0)) {
+                                    updateContract(op.id, undefined, newStopLossAmount);
                                 }
                             }
                         }
@@ -917,7 +917,10 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
     
         ws.onopen = async () => {
     try {
-        await makeRequest({ authorize: activeToken });
+        reconnectInProgressRef.current = false;
+        if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
+        const authResponse: any = await makeRequest({ authorize: activeToken });
+        if (authResponse.error) throw new Error(authResponse.error.message);
         setIsConnected(true);
         setIsConnecting(false);
         setConnectionError(null);
@@ -959,12 +962,15 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
         setIsAssetsLoading(false);
 
     } catch (error: any) {
-        const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido ao conectar';
+        reconnectInProgressRef.current = false;
+        if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
+        let errorMessage = error instanceof Error ? error.message : 'Erro desconhecido ao conectar';
         setConnectionError(`Falha na autorização: ${errorMessage}`);
         setIsConnected(false);
         setIsConnecting(false);
         setIsAssetsLoading(false);
         setAccountBalance({ balance: null, currency: null, loading: false });
+        allowAutoReconnectRef.current = false; // PREVENT RECONNECT LOOP
         if (ws.readyState === WebSocket.OPEN) ws.close();
     }
 };
@@ -998,6 +1004,7 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
             }, 3000);
           } else if (!event.wasClean && !allowAutoReconnectRef.current) {
              console.error(`[WS] Conexão falhou permanentemente (provavelmente token inválido). Auto-reconexão desativada.`);
+             setConnectionError(`Authorization failed. Please check your API token.`);
           }
           
           setIsConnected(false);
@@ -1042,6 +1049,7 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
     try {
         localStorage.setItem(DERIV_ACCOUNT_TYPE_KEY, type);
         setAccountTypeState(type);
+        allowAutoReconnectRef.current = true;
         setTriggerReconnect(c => c + 1); // Trigger a full reconnect
     } catch (error) {
         console.error("Failed to save account type to localStorage:", error);
@@ -1058,6 +1066,8 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
         localStorage.setItem(DERIV_REAL_TOKEN_KEY, tokens.real);
         setRealToken(tokens.real);
       }
+      allowAutoReconnectRef.current = true;
+      setTriggerReconnect(c => c + 1);
     } catch (error) {
       console.error("Failed to save token to localStorage:", error);
     }
@@ -1084,6 +1094,7 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
   connectionErrorRef.current = connectionError;
 
   const reconnect = useCallback(async (): Promise<boolean> => {
+    allowAutoReconnectRef.current = true;
     setTriggerReconnect(c => c + 1);
     
     return new Promise(resolve => {
@@ -1149,7 +1160,7 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
       isConnected, isConnecting, connectionError, demoToken, realToken, activeToken, accountType, 
       setAccountType, setTokens, disconnect, reconnect, accountBalance, operationsLog, assetGroups, 
       isAssetsLoading, activeSymbol, setActiveSymbol, chartData, botCandleData, priceTicks, 
-      isChartLoading, chartError, chartType, timePeriod, setTimePeriod, dataVersion, executeTrade, 
+      isChartLoading, chartError, chartType, timePeriod, dataVersion, executeTrade, 
       sellContract, updateContract, clearActiveContracts, tradeAnnotations, durationLimits, 
       multiplierOptions, getHistoricalData
   ]);

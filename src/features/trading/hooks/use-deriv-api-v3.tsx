@@ -180,6 +180,10 @@ export const DerivApiProviderV3 = ({ children }: { children: ReactNode }) => {
   const [connectionError, setConnectionError] = useState<string | null>(null);
   const promisesRef = useRef<Map<string, PromiseCallbacks>>(new Map());
   const [triggerReconnect, setTriggerReconnect] = useState(0);
+  const pingIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const allowAutoReconnectRef = useRef(true);
+  const reconnectInProgressRef = useRef(false);
 
     const setAndPersistOperationsLog = useCallback((updater: React.SetStateAction<Operation[]>) => {
         setOperationsLog(prevLog => {
@@ -604,7 +608,6 @@ export const DerivApiProviderV3 = ({ children }: { children: ReactNode }) => {
         ws.onmessage = (event) => {
             try {
                 const response = JSON.parse(event.data);
-                
                 const reqId = response.req_id;
     
                 if (reqId && promisesRef.current.has(String(reqId))) {
@@ -614,7 +617,7 @@ export const DerivApiProviderV3 = ({ children }: { children: ReactNode }) => {
                             const errorMessage = response.error.message || `Unknown API error. Code: ${response.error.code || 'N/A'}`;
                             promise.reject(new Error(`${errorMessage}`));
                         } else {
-                            queueMicrotask(() => promise.resolve(response));
+                            promise.resolve(response);
                         }
                         promisesRef.current.delete(String(reqId));
                     }
@@ -774,9 +777,14 @@ export const DerivApiProviderV3 = ({ children }: { children: ReactNode }) => {
           }
       };
   
-      ws.onopen = async () => {
+        ws.onopen = async () => {
           try {
-              await makeRequest({ authorize: activeToken });
+              reconnectInProgressRef.current = false;
+              if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
+
+              const authResponse: any = await makeRequest({ authorize: activeToken });
+              if (authResponse.error) throw new Error(authResponse.error.message);
+
               setIsConnected(true);
               setIsConnecting(false);
               setConnectionError(null);
@@ -784,7 +792,10 @@ export const DerivApiProviderV3 = ({ children }: { children: ReactNode }) => {
               ws.send(JSON.stringify({ "proposal_open_contract": 1, "subscribe": 1 }));
               ws.send(JSON.stringify({ "balance": 1, "subscribe": 1 }));
               
+              startConnectionMonitor();
+              
               const assetsRes: any = await makeRequest({ active_symbols: 'full', product_type: 'basic' });
+              if (assetsRes.error) throw new Error(assetsRes.error.message);
               
               const groupedAssets: { [key: string]: Asset[] } = {};
               assetsRes.active_symbols.forEach((symbol: any) => {
@@ -807,18 +818,22 @@ export const DerivApiProviderV3 = ({ children }: { children: ReactNode }) => {
               setIsAssetsLoading(false);
       
           } catch (error: any) {
+              reconnectInProgressRef.current = false;
+              if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
+              
               let errorMessage = error instanceof Error ? error.message : 'Erro desconhecido ao conectar';
               setConnectionError(`Falha na autorização: ${errorMessage}`);
               setIsConnected(false);
               setIsConnecting(false);
               setIsAssetsLoading(false);
               setAccountBalance({ balance: null, currency: null, loading: false });
+              allowAutoReconnectRef.current = false; // PREVENT RECONNECT LOOP
               if (ws.readyState === WebSocket.OPEN) ws.close();
           }
       };
     
-      ws.onclose = (event) => {
-          if (!wsRef.current) return;
+        ws.onclose = (event) => {
+          if (!wsRef.current || reconnectInProgressRef.current) return;
           
           if (pingIntervalRef.current) {
               clearInterval(pingIntervalRef.current);
@@ -831,37 +846,43 @@ export const DerivApiProviderV3 = ({ children }: { children: ReactNode }) => {
             }
           });
           promisesRef.current.clear();
-          
-          if (!event.wasClean) {
-              console.warn(`[WS] Fechado inesperadamente. Código: ${event.code}`);
-              setConnectionError(`Conexão perdida. Reconectando...`);
-              
-              if (reconnectTimeoutRef.current) {
-                  clearTimeout(reconnectTimeoutRef.current);
-              }
-              reconnectTimeoutRef.current = setTimeout(() => {
-                  console.log('[Auto-Reconnect] Tentando reconectar...');
-                  setTriggerReconnect(c => c + 1);
-              }, 3000);
+    
+          if (!event.wasClean && allowAutoReconnectRef.current) {
+            reconnectInProgressRef.current = true;
+            console.warn(`[WS] Fechado inesperadamente. Código: ${event.code}. Tentando reconectar...`);
+            setConnectionError(`Conexão perdida. Reconectando...`);
+            
+            if (reconnectTimeoutRef.current) {
+                clearTimeout(reconnectTimeoutRef.current);
+            }
+            reconnectTimeoutRef.current = setTimeout(() => {
+                reconnectInProgressRef.current = false;
+                setTriggerReconnect(c => c + 1);
+            }, 3000);
+          } else if (!event.wasClean && !allowAutoReconnectRef.current) {
+             console.error(`[WS] Conexão falhou permanentemente (provavelmente token inválido). Auto-reconexão desativada.`);
+             setConnectionError(`Authorization failed. Please check your API token.`);
           }
           
           setIsConnected(false);
           setIsConnecting(false);
           setAccountBalance({ balance: null, currency: null, loading: false });
           wsRef.current = null;
-      };
-    
-      ws.onerror = () => {
-        // O evento onclose é mais fiável para obter o motivo do erro.
-      };
+        };
+      
+        ws.onerror = (error) => {
+          // O evento onclose é mais fiável para obter o motivo do erro.
+        };
     };
 
     connect();
   
     return () => {
+      allowAutoReconnectRef.current = false;
       if (wsRef.current) {
         wsRef.current.onclose = null;
         wsRef.current.close();
+        wsRef.current = null;
       }
       if (pingIntervalRef.current) {
           clearInterval(pingIntervalRef.current);
@@ -869,8 +890,9 @@ export const DerivApiProviderV3 = ({ children }: { children: ReactNode }) => {
       if (reconnectTimeoutRef.current) {
           clearTimeout(reconnectTimeoutRef.current);
       }
+      reconnectInProgressRef.current = false;
     };
-  }, [activeToken, isLoading, makeRequest, updateTradeAnnotation, addTradeAnnotation, toast, triggerReconnect, setAndPersistOperationsLog, setToastQueue]);
+  }, [activeToken, isLoading, triggerReconnect]);
 
   
   useEffect(() => {
@@ -893,7 +915,8 @@ export const DerivApiProviderV3 = ({ children }: { children: ReactNode }) => {
     try {
         localStorage.setItem(DERIV_ACCOUNT_TYPE_KEY, type);
         setAccountTypeState(type);
-        setTriggerReconnect(c => c + 1);
+        allowAutoReconnectRef.current = true;
+        setTriggerReconnect(c => c + 1); // Trigger a full reconnect
     } catch (error) {
         console.error("Failed to save account type to localStorage:", error);
     }
@@ -909,6 +932,8 @@ export const DerivApiProviderV3 = ({ children }: { children: ReactNode }) => {
         localStorage.setItem(DERIV_REAL_TOKEN_KEY, tokens.real);
         setRealToken(tokens.real);
       }
+      allowAutoReconnectRef.current = true;
+      setTriggerReconnect(c => c + 1);
     } catch (error) {
       console.error("Failed to save token to localStorage:", error);
     }
@@ -935,6 +960,7 @@ export const DerivApiProviderV3 = ({ children }: { children: ReactNode }) => {
   connectionErrorRef.current = connectionError;
 
   const reconnect = useCallback(async (): Promise<boolean> => {
+    allowAutoReconnectRef.current = true;
     setTriggerReconnect(c => c + 1);
     
     return new Promise(resolve => {
@@ -992,11 +1018,11 @@ export const DerivApiProviderV3 = ({ children }: { children: ReactNode }) => {
     tradeAnnotations,
     durationLimits,
   }), [
-    isConnected, isConnecting, connectionError, demoToken, realToken, activeToken, accountType, 
-    setAccountType, setTokens, disconnect, reconnect, accountBalance, operationsLog, assetGroups, 
-    isAssetsLoading, activeSymbol, setActiveSymbol, chartData, priceTicks, isChartLoading, 
-    chartError, chartType, setChartType, timePeriod, dataVersion, executeTrade, sellContract, 
-    getHistoricalData, clearActiveContracts, tradeAnnotations, durationLimits
+      isConnected, isConnecting, connectionError, demoToken, realToken, activeToken, accountType, 
+      setAccountType, setTokens, disconnect, reconnect, accountBalance, operationsLog, assetGroups, 
+      isAssetsLoading, activeSymbol, setActiveSymbol, chartData, priceTicks, isChartLoading, 
+      chartError, chartType, setChartType, timePeriod, dataVersion, executeTrade, sellContract, 
+      getHistoricalData, clearActiveContracts, tradeAnnotations, durationLimits
   ]);
 
   return (
