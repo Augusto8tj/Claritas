@@ -625,7 +625,7 @@ function StochasticLab({
 
     const dataMap = new Map<number, any>();
     displayData.forEach(d => dataMap.set(d.time, { ...d }));
-
+    
     medianProjection.forEach((proj) => {
         const existing = dataMap.get(proj.time);
         if (existing) {
@@ -701,7 +701,14 @@ function VolatilityProjectionChart({ chartData, className }: {
         )
     }
 
-    const lastRealPoint = [...chartData].reverse().find(d => d.price !== undefined);
+    const lastRealPoint = useMemo(() => {
+        for (let i = chartData.length - 1; i >= 0; i--) {
+            if (chartData[i].price !== undefined) {
+                return chartData[i];
+            }
+        }
+        return null;
+    }, [chartData]);
 
     return (
         <Card className={cn("h-[500px]", className)}>
