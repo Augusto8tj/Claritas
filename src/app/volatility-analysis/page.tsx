@@ -600,7 +600,7 @@ function StochasticLab({
             const q1 = pricesAtTimeStep[q1Index];
             const median = pricesAtTimeStep.length % 2 !== 0
                 ? pricesAtTimeStep[medianIndex]
-                : (pricesAtTimeStep[medianIndex - 1] + pricesAtTimeStep[mid]) / 2;
+                : (pricesAtTimeStep[medianIndex - 1] + pricesAtTimeStep[medianIndex]) / 2;
             const q3 = pricesAtTimeStep[q3Index];
 
             projectionData.push({
@@ -1181,4 +1181,3 @@ const Header = () => {
     </div>
   );
 };
-
