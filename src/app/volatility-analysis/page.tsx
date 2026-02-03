@@ -33,13 +33,13 @@ import { Slider } from '@/components/ui/slider';
 import { Separator } from '@/components/ui/separator';
 import { useMasterAutopilot } from '@/features/trading/hooks/use-master-autopilot';
 import type { AssertivenessData } from '@/features/trading/hooks/use-master-autopilot';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { MarketChart } from "@/features/trading/components/deriv-trader/market-chart";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Skeleton } from '@/components/ui/skeleton';
 import { useStochasticModels, type ExpertProjection, type StrongestSignal, type MarketStats } from '@/features/trading/hooks/use-stochastic-models';
 import { runStochasticBacktest, type BacktestResult } from '@/features/trading/backtest/backtest-engine';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 
 
 // --- TYPE DEFINITIONS ---
@@ -277,8 +277,7 @@ function StochasticLab({
   const { user } = useAuth();
   const { toast } = useToast();
   const { getHistoricalData, chartData: realData } = useDerivApi();
-  const [activeTab, setActiveTab] = useState('audit');
-
+  
   const { projectionExperts, strongestSignal, stats, adaptiveDrifts } = useStochasticModels(realData);
   
   const [isBacktesting, setIsBacktesting] = useState(false);
@@ -445,46 +444,48 @@ function StochasticLab({
                         </CardContent>
                     </Card>
                     
-                     <Tabs value={activeTab} onValueChange={setActiveTab} className="mt-4">
-                        <TabsList className="grid grid-cols-2">
-                            <TabsTrigger value="audit">Auditoria Preditiva ({predictiveLogs.length} Registos)</TabsTrigger>
-                            <TabsTrigger value="backtest">Backtest do Modelo</TabsTrigger>
-                        </TabsList>
-                        <TabsContent value="audit" className="mt-4">
-                          <PredictiveLogViewer logs={predictiveLogs} onDeleteLog={onDeletePredictiveLog} deletingPredictiveLogId={deletingPredictiveLogId} />
-                        </TabsContent>
-                         <TabsContent value="backtest" className="mt-4">
-                          <Card>
-                            <CardHeader>
-                                <CardTitle className="flex items-center gap-2"><FilePieChart className="h-5 w-5"/>Motor de Backtesting</CardTitle>
-                                <CardDescription>Simule a performance do modelo em milhares de pontos de dados históricos para validar a sua viabilidade a longo prazo.</CardDescription>
-                            </CardHeader>
-                            <CardContent className="space-y-4">
-                                <div className="space-y-2">
-                                    <Label htmlFor="backtest-points">Pontos de Dados para Testar</Label>
-                                    <div className="flex items-center gap-4">
-                                        <Slider
-                                            id="backtest-points"
-                                            min={1000}
-                                            max={Math.min(50000, realData.length)}
-                                            step={1000}
-                                            value={[backtestPoints]}
-                                            onValueChange={(value) => setBacktestPoints(value[0])}
-                                            disabled={isBacktesting}
-                                        />
-                                        <span className="font-mono text-primary font-bold w-20 text-center">{backtestPoints}</span>
-                                    </div>
-                                </div>
-                                <Button className="w-full" onClick={handleRunBacktest} disabled={isBacktesting}>
-                                    {isBacktesting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <TestTube className="mr-2 h-4 w-4" />}
-                                    {isBacktesting ? 'A Simular...' : 'Rodar Backtest'}
-                                </Button>
-                                {isBacktesting && <p className="text-xs text-center text-muted-foreground">Isso pode levar alguns segundos e pode congelar a interface brevemente...</p>}
-                                <BacktestResultViewer result={backtestResult} />
-                            </CardContent>
-                          </Card>
-                        </TabsContent>
-                     </Tabs>
+                     <Accordion type="single" collapsible className="w-full mt-4" defaultValue="audit">
+                        <AccordionItem value="audit">
+                            <AccordionTrigger className="text-base font-semibold px-1">Auditoria Preditiva ({predictiveLogs.length} Registos)</AccordionTrigger>
+                            <AccordionContent className="pt-2">
+                               <PredictiveLogViewer logs={predictiveLogs} onDeleteLog={onDeletePredictiveLog} deletingPredictiveLogId={deletingPredictiveLogId} />
+                            </AccordionContent>
+                        </AccordionItem>
+                        <AccordionItem value="backtest">
+                             <AccordionTrigger className="text-base font-semibold px-1">Backtest do Modelo</AccordionTrigger>
+                             <AccordionContent className="pt-2">
+                                <Card>
+                                    <CardHeader>
+                                        <CardTitle className="flex items-center gap-2"><FilePieChart className="h-5 w-5"/>Motor de Backtesting</CardTitle>
+                                        <CardDescription>Simule a performance do modelo em milhares de pontos de dados históricos para validar a sua viabilidade a longo prazo.</CardDescription>
+                                    </CardHeader>
+                                    <CardContent className="space-y-4">
+                                        <div className="space-y-2">
+                                            <Label htmlFor="backtest-points">Pontos de Dados para Testar</Label>
+                                            <div className="flex items-center gap-4">
+                                                <Slider
+                                                    id="backtest-points"
+                                                    min={1000}
+                                                    max={Math.min(50000, realData.length)}
+                                                    step={1000}
+                                                    value={[backtestPoints]}
+                                                    onValueChange={(value) => setBacktestPoints(value[0])}
+                                                    disabled={isBacktesting}
+                                                />
+                                                <span className="font-mono text-primary font-bold w-20 text-center">{backtestPoints}</span>
+                                            </div>
+                                        </div>
+                                        <Button className="w-full" onClick={handleRunBacktest} disabled={isBacktesting}>
+                                            {isBacktesting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <TestTube className="mr-2 h-4 w-4" />}
+                                            {isBacktesting ? 'A Simular...' : 'Rodar Backtest'}
+                                        </Button>
+                                        {isBacktesting && <p className="text-xs text-center text-muted-foreground">Isso pode levar alguns segundos e pode congelar a interface brevemente...</p>}
+                                        <BacktestResultViewer result={backtestResult} />
+                                    </CardContent>
+                                </Card>
+                             </AccordionContent>
+                        </AccordionItem>
+                    </Accordion>
                 </div>
             </ScrollArea>
         </CardContent>
