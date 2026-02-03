@@ -269,7 +269,7 @@ export const DerivApiProviderDigits = ({ children }: { children: ReactNode }) =>
   }, [toastQueue, toast]);
 
 
-  const makeRequest = useCallback(<T extends {}>(request: object, noResponse = false): Promise<T> => {
+  const makeRequest = useCallback(<T,>(request: object, noResponse = false): Promise<T> => {
     return new Promise((resolve, reject) => {
         const ws = wsRef.current;
         if (!ws || ws.readyState !== WebSocket.OPEN) {
