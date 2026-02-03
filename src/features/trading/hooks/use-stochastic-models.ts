@@ -344,6 +344,19 @@ export function useStochasticModels(realData: ChartData[]) {
         return bestSignal;
     }, [projectionExperts, getEffectiveVote]);
 
+    useEffect(() => {
+        const interval = setInterval(() => {
+            const memoryUsage = Object.keys(assertivenessHistoryRef.current)
+                .reduce((sum, key) => sum + (assertivenessHistoryRef.current[key]?.length || 0), 0);
+            
+            if (memoryUsage > ASSERTIVENESS_HISTORY_LIMIT * horizons.length * 1.1) {
+                console.warn(`⚠️ [Stochastic Models] Memory leak detected: ${memoryUsage} items in history ref.`);
+            }
+        }, 60000); // Check every minute
+        
+        return () => clearInterval(interval);
+    }, [horizons]);
+
     return {
         projectionExperts,
         strongestSignal,
