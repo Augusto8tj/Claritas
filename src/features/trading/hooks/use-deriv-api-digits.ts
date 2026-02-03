@@ -36,8 +36,6 @@ export type ApiHistoricalData = {
     price: number;
 };
 
-type MakeRequestFn = <T>(request: object, noResponse?: boolean) => Promise<T>;
-
 interface DerivApiContextTypeDigits {
   ws: WebSocket | null;
   isConnected: boolean;
@@ -149,7 +147,7 @@ export const DerivApiProviderDigits = ({ children }: { children: ReactNode }) =>
   
   const activeToken = accountType === 'demo' ? demoToken : realToken;
 
-  const makeRequest: MakeRequestFn = useCallback((request: object, noResponse = false) => {
+  const makeRequest = useCallback((request: object, noResponse = false): Promise<any> => {
     return new Promise((resolve, reject) => {
         const ws = wsRef.current;
         if (!ws || ws.readyState !== WebSocket.OPEN) {
@@ -253,7 +251,7 @@ const executeTrade = useCallback(async (
     setPriceTicks([]); 
 
     try {
-        const history = await makeRequest({ ticks_history: symbol, end: "latest", count: MAX_TICKS, adjust_start_time: 1 });
+        const history: any = await makeRequest({ ticks_history: symbol, end: "latest", count: MAX_TICKS, adjust_start_time: 1 });
         if (history.error) throw new Error(history.error.message);
         setPriceTicks(history.history.times.map((t: number, i: number) => ({ epoch: t, price: history.history.prices[i] })));
         
