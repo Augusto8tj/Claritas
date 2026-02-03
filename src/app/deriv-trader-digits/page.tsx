@@ -7,7 +7,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import DerivTraderInterfaceDigits from "@/features/trading/components/deriv-trader/deriv-trader-interface-digits";
 import { AssetSelectorDigits } from "@/features/trading/components/deriv-trader/asset-selector-digits";
 import { Skeleton } from "@/components/ui/skeleton";
-import { DerivApiProviderDigits, useDerivApiDigits } from "@/features/trading/hooks/use-deriv-api-digits";
+import { DerivApiProviderDigits, useDerivApiDigits } from "@/features/trading/hooks/use-deriv-api-digits.tsx";
 import { OperationsLogDigits } from "@/features/trading/components/deriv-trader/operations-log-digits";
 import { AIAnalysisInterfaceDigits } from "@/features/trading/components/deriv-trader/ai-analysis-interface-digits";
 import { digitSchema, type DigitFormValues } from "@/features/trading/components/deriv-trader/deriv-trader-interface-digits.types";
@@ -95,7 +95,7 @@ function MainContentDigits() {
             </div>
             <CouncilAutopilotInterfaceDigits {...robotCouncil} />
             <Tabs defaultValue="logs" className="w-full mt-6">
-                 <TabsList className="grid w-full grid-cols-3">
+                 <TabsList className="grid grid-cols-3">
                     <TabsTrigger value="logs">Registo</TabsTrigger>
                     <TabsTrigger value="arena">Arena</TabsTrigger>
                     <TabsTrigger value="evolucao">Evolução</TabsTrigger>
