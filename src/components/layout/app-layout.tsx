@@ -104,6 +104,16 @@ const navItems = [
     label: "Deriv Multipliers",
   },
    {
+    href: "/deriv-trader", // Link direto para a V1
+    icon: CandlestickChart,
+    label: "Deriv Trader V1",
+  },
+  {
+    href: "/deriv-trader-digits",
+    icon: Crosshair,
+    label: "Deriv Digits",
+  },
+   {
     href: "/audit-log",
     icon: Archive,
     label: "Arquivo de Auditoria",
@@ -112,11 +122,6 @@ const navItems = [
     href: "/chat-insights",
     icon: Sparkles,
     label: "Chat Claritas",
-  },
-   {
-    href: "/deriv-trader", // Link direto para a V1
-    icon: CandlestickChart,
-    label: "Deriv Trader V1",
   },
   {
     href: "/status",
