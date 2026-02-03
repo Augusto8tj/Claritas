@@ -1,4 +1,4 @@
-// /src/features/trading/hooks/use-deriv-api-v3.tsx
+// src/features/trading/hooks/use-deriv-api-v3.tsx
 'use client';
 
 // ESTE ARQUIVO É UMA CÓPIA DEDICADA PARA O SISTEMA V3.0 (IA Lab)
@@ -487,9 +487,6 @@ export const DerivApiProviderV3 = ({ children }: { children: ReactNode }) => {
     }
   }, [isConnected, makeRequest, operationsLog]);
   
-  const pingIntervalRef = useRef<NodeJS.Timeout | null>(null);
-  const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-
   const startConnectionMonitor = useCallback(() => {
     if (pingIntervalRef.current) clearInterval(pingIntervalRef.current);
     pingIntervalRef.current = setInterval(() => {
@@ -588,7 +585,6 @@ export const DerivApiProviderV3 = ({ children }: { children: ReactNode }) => {
   useEffect(() => {
     if (!activeToken || isLoading) {
       if (wsRef.current) wsRef.current.close();
-      if (pingIntervalRef.current) clearInterval(pingIntervalRef.current);
       return;
     }
     
