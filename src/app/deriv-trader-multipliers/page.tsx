@@ -22,6 +22,7 @@ import { IndicatorPanel } from "@/features/trading/components/deriv-trader/indic
 import { calculateAllIndicators, type Indicators } from '@/services/indicator-service';
 import { initialCouncilStrategies } from '@/services/council-strategies';
 import type { CandleData, ChartData } from '@/lib/types';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 
 const Header = () => {
@@ -69,10 +70,19 @@ const Header = () => {
                         ) : null}
                     </div>
                     {operationsLog.length > 0 && (
-                        <Button variant="outline" size="icon" className="h-8 w-8" onClick={clearActiveContracts}>
-                            <Trash2 className="h-4 w-4" />
-                            <span className="sr-only">Limpar negociações</span>
-                        </Button>
+                        <TooltipProvider>
+                            <Tooltip>
+                                <TooltipTrigger asChild>
+                                    <Button variant="outline" size="icon" className="h-8 w-8" onClick={clearActiveContracts}>
+                                        <Trash2 className="h-4 w-4" />
+                                        <span className="sr-only">Limpar negociações</span>
+                                    </Button>
+                                </TooltipTrigger>
+                                <TooltipContent>
+                                    <p>Limpar log de negociações</p>
+                                </TooltipContent>
+                            </Tooltip>
+                        </TooltipProvider>
                     )}
                 </div>
             </div>
