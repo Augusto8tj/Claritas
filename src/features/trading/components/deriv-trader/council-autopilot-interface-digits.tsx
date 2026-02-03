@@ -47,7 +47,7 @@ export const CouncilAutopilotInterfaceDigits: React.FC<CouncilAutopilotInterface
             </Badge>
         </div>
         <CardDescription>
-          Controle a análise estatística e execução automática para contratos de dígitos.
+          Controle o piloto que opera com base na frequência estatística e probabilidade dos dígitos, ideal para Índices Sintéticos.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">

@@ -20,6 +20,8 @@ import { EvolutionLabDigits } from "@/features/trading/components/deriv-trader/e
 import { AITradeSuggestionDigits } from "@/features/trading/components/deriv-trader/ai-trade-suggestion-digits";
 import { ApiStatusIndicatorDigits } from "@/features/trading/components/deriv-trader/ApiStatusIndicatorDigits";
 import { DigitStatsChart } from "@/features/trading/components/deriv-trader/digit-stats-chart";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { BrainCircuit } from 'lucide-react';
 
 
 function HeaderDigits() {
@@ -113,6 +115,13 @@ function DerivTraderPageContentDigits() {
     return (
         <div className="flex-1 space-y-4 p-4 sm:p-8 pt-6">
             <HeaderDigits />
+             <Alert className="bg-primary/5 border-primary/10">
+                <BrainCircuit className="h-4 w-4 text-primary" />
+                <AlertTitle className="text-primary font-headline">Foco em Índices Sintéticos</AlertTitle>
+                <AlertDescription className="text-primary/90">
+                    Esta plataforma foca-se nos Índices de Volatilidade (Sintéticos) porque a sua geração algorítmica constante permite uma análise estatística mais pura e previsível, livre de ruídos de eventos económicos externos.
+                </AlertDescription>
+            </Alert>
             <DigitStatsChart priceTicks={priceTicks} />
             <MainContentDigits />
         </div>

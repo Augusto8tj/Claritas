@@ -33,7 +33,7 @@ export function AIAnalysisInterfaceDigits({ symbol }: AIAnalysisInterfaceDigitsP
     setIsAnalyzing(true);
     setAnalysisResult(null);
 
-    const query = `Analise a distribuição estatística dos últimos dígitos para o ativo ${symbol || 'atual'} e sugira o dígito mais provável e o menos provável.`;
+    const query = `Com base na geração algorítmica constante do ativo ${symbol || 'Volatility Index'}, analise a frequência dos últimos 1000 ticks. Identifique padrões de 'saturação' (dígitos que não saem há muito tempo) e sugira o dígito mais provável para um contrato 'Combina' (menos frequente) e o mais provável para um 'Difere' (mais frequente).`;
 
     const response = await getChatbotInsightsResponse({
         query,
