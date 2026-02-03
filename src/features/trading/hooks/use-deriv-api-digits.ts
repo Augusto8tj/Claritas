@@ -361,7 +361,7 @@ export function useDerivApiDigitsState() {
             if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
             reconnectInProgressRef.current = false;
         };
-    }, [activeToken, isLoading, triggerReconnect]);
+    }, [activeToken, isLoading, triggerReconnect, makeRequest, setAndPersistOperationsLog, startConnectionMonitor]);
 
     useEffect(() => {
         if (isConnected && activeSymbol) subscribeToTicks(activeSymbol);
@@ -416,9 +416,9 @@ export function useDerivApiDigitsState() {
     return contextValue;
 }
 
-export function DerivApiProviderDigits({ children }: { children: React.ReactNode }) {
+export function DerivApiProviderDigits({ children }: { children: ReactNode }) {
     const contextValue = useDerivApiDigitsState();
-
+    
     return React.createElement(
         DerivApiContextDigits.Provider,
         { value: contextValue as DerivApiContextTypeDigits },
