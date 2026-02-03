@@ -282,10 +282,8 @@ export function useMasterAutopilot() {
     }, [contractType, activeSymbol, executeRiseFallTrade, toast, dailyBalance]);
   
   const runAutopilotCycle = useCallback((
-    newAssertiveness: Record<string, AssertivenessData>,
-    currentActiveHorizons: string[],
+    newAssertiveness: Record<string, AssertivenessData>
   ) => {
-    // ... (mesma lógica de calibração do ciclo anterior) ...
     
     setMasterState(prevState => {
         if (priceTicks.length < 50) {
@@ -324,9 +322,11 @@ export function useMasterAutopilot() {
             riskManager.thresholds
         );
         
+        const currentActiveHorizons = Object.keys(newAssertiveness);
+        
         const { newTriggerSignal, newTriggerReason, newTriggeredBy } = evaluateTriggerConditions(
             newAssertiveness,
-            currentActiveHorizons.map(name => ({ name, type: name.endsWith('t') ? 'tick' : 'second', window: 10 })), // Adapta para a estrutura esperada
+            currentActiveHorizons.map(name => ({ name, type: name.endsWith('t') ? 'tick' : 'second', window: 10 })),
             adaptiveThresholds,
             contractType,
             detectedRegimeResult.regime,
@@ -369,11 +369,9 @@ export function useMasterAutopilot() {
 
     if (isAutopilotOn && trigger.signal !== 'HOLD' && !isAnyTriggeringHorizonOnCooldown && !cooldownRef.current.active && (!openMasterTrade || allowMultiplePositions)) {
       
-      // Verifica a trava
       if (executionLockRef.current) {
         return;
       }
-      // Ativa a trava
       executionLockRef.current = true;
       
       executeTradeAction('Piloto', trigger.signal, trigger.triggeredBy, user, trigger.reason, assertiveness)
@@ -389,10 +387,9 @@ export function useMasterAutopilot() {
             }
         })
         .finally(() => {
-            // Liberta a trava após um curto atraso para permitir a atualização do estado
             setTimeout(() => {
                 executionLockRef.current = false;
-            }, 2000); // Atraso de 2 segundos
+            }, 2000);
         });
     }
   }, [masterState, isAutopilotOn, operationsLog, user, executeTradeAction, allowMultiplePositions]);
@@ -530,3 +527,4 @@ export function useMasterAutopilot() {
   };
 }
 
+    
