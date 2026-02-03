@@ -4,7 +4,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useForm, FormProvider, useFormContext } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { TrendingUp, TrendingDown, HelpCircle, Bot, FlaskConical, Target, Info, Settings, Sigma, Power, PlayCircle, PauseCircle, Skull, ChevronsUpDown, Activity, BarChart, Brain } from 'lucide-react';
+import { TrendingUp, TrendingDown, HelpCircle, Bot, FlaskConical, Target, Info, Settings, Sigma, Power, PlayCircle, PauseCircle, Skull, ChevronsUpDown, Activity, BarChart, Brain, TestTube, FilePieChart, CheckCheck, Loader2 } from 'lucide-react';
 import { DerivApiProviderV2 as DerivApiProvider, useDerivApiV2 as useDerivApi } from "@/features/trading/hooks/use-deriv-api-v2";
 import { AssetSelectorV2 as AssetSelector } from "@/features/trading/components/deriv-trader/asset-selector-v2";
 import { ApiStatusIndicatorV2 as ApiStatusIndicator } from "@/features/trading/components/deriv-trader/ApiStatusIndicatorV2";
@@ -23,7 +23,7 @@ import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { useToast } from '@/hooks/use-toast';
 import PredictiveLogViewer from '@/components/deriv-trader/PredictiveLogViewer';
-import { getPredictiveTradeLogs, savePredictiveTradeLog, archiveOldLogs } from '@/services/financial-data-service';
+import { getPredictiveTradeLogs, savePredictiveTradeLog, archiveOldLogs, saveBacktestRun } from '@/services/financial-data-service';
 import { useAuth } from '@/features/auth/hooks/use-auth';
 import { db } from '@/lib/firebase';
 import { doc, deleteDoc } from 'firebase/firestore';
@@ -38,6 +38,9 @@ import { MarketChart } from "@/features/trading/components/deriv-trader/market-c
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Skeleton } from '@/components/ui/skeleton';
 import { useStochasticModels, type ExpertProjection, type StrongestSignal, type MarketStats } from '@/features/trading/hooks/use-stochastic-models';
+import { runStochasticBacktest, type BacktestResult } from '@/features/trading/backtest/backtest-engine';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+
 
 // --- TYPE DEFINITIONS ---
 
@@ -205,7 +208,64 @@ interface StochasticLabProps {
   onDeletePredictiveLog: (logId: string) => void;
   deletingPredictiveLogId: string | null;
   operationsLog: Operation[];
+  activeSymbol: string | null;
 }
+
+const BacktestResultViewer = ({ result }: { result: BacktestResult | null }) => {
+    if (!result) return null;
+    
+    const sortedHorizons = Object.entries(result.metricsByHorizon)
+        .sort(([, a], [, b]) => b.winRate - a.winRate);
+        
+    const overallWinRate = sortedHorizons.reduce((sum, [, h]) => sum + h.wins, 0) /
+                           sortedHorizons.reduce((sum, [, h]) => sum + h.total, 0) * 100;
+
+    return (
+        <div className="space-y-4 pt-4">
+            <div className="grid grid-cols-2 gap-4">
+                <Card className="p-4">
+                    <p className="text-xs text-muted-foreground">Total de Passos</p>
+                    <p className="text-2xl font-bold">{result.totalSteps}</p>
+                </Card>
+                <Card className="p-4">
+                    <p className="text-xs text-muted-foreground">Win Rate Geral</p>
+                    <p className={cn("text-2xl font-bold", overallWinRate > 51 ? 'text-green-600' : 'text-red-600')}>
+                        {overallWinRate.toFixed(2)}%
+                    </p>
+                </Card>
+            </div>
+            
+            <Card>
+                <CardHeader><CardTitle className="text-base">Performance por Horizonte</CardTitle></CardHeader>
+                <CardContent>
+                    <Table>
+                        <TableHeader>
+                            <TableRow>
+                                <TableHead>Horizonte</TableHead>
+                                <TableHead className="text-right">Win Rate</TableHead>
+                                <TableHead className="text-right">Trades</TableHead>
+                            </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                            {sortedHorizons.map(([horizon, metrics]) => (
+                                <TableRow key={horizon}>
+                                    <TableCell className="font-mono font-semibold">{horizon}</TableCell>
+                                    <TableCell className="text-right">
+                                        <div className="flex items-center justify-end gap-2">
+                                            <span>{metrics.winRate.toFixed(1)}%</span>
+                                            <Progress value={metrics.winRate} className="w-20 h-1.5" />
+                                        </div>
+                                    </TableCell>
+                                    <TableCell className="text-right font-mono">{metrics.total}</TableCell>
+                                </TableRow>
+                            ))}
+                        </TableBody>
+                    </Table>
+                </CardContent>
+            </Card>
+        </div>
+    );
+};
 
 function StochasticLab({ 
     realData, 
@@ -214,11 +274,62 @@ function StochasticLab({
     onDeletePredictiveLog,
     deletingPredictiveLogId,
     operationsLog,
+    activeSymbol,
 }: StochasticLabProps) {
   const { user } = useAuth();
-  const [activeTab, setActiveTab] = useState('prediction');
+  const { toast } = useToast();
+  const [activeTab, setActiveTab] = useState('audit');
 
   const { projectionExperts, strongestSignal, stats, adaptiveDrifts } = useStochasticModels(realData);
+  
+  const [isBacktesting, setIsBacktesting] = useState(false);
+  const [backtestPoints, setBacktestPoints] = useState(20000);
+  const [backtestResult, setBacktestResult] = useState<BacktestResult | null>(null);
+
+  const horizonsConfigForBacktest = useMemo(() => [
+    { name: '1t', ticks: 1, type: 'tick', window: 6 },
+    { name: '3t', ticks: 3, type: 'tick', window: 6 },
+    { name: '6t', ticks: 6, type: 'tick', window: 6 },
+    { name: '10t', ticks: 10, type: 'tick', window: 10 },
+    { name: '15s', ticks: 15, type: 'second', window: 10 },
+    { name: '20s', ticks: 20, type: 'second', window: 10 },
+    { name: '30s', ticks: 30, type: 'second', window: 75 },
+    { name: '40s', ticks: 40, type: 'second', window: 75 },
+    { name: '50s', ticks: 50, type: 'second', window: 75 },
+  ], []);
+
+  const handleRunBacktest = async () => {
+    if (!user) {
+        toast({ title: "Autenticação Necessária", variant: "destructive"});
+        return;
+    }
+    setIsBacktesting(true);
+    setBacktestResult(null);
+    
+    // Roda em um timeout para não bloquear a UI principal.
+    await new Promise(resolve => setTimeout(resolve, 50)); 
+
+    try {
+        const backtestData = realData.slice(-backtestPoints);
+        if (backtestData.length < 500) {
+            throw new Error("Dados insuficientes. Selecione pelo menos 500 pontos de dados para um backtest significativo.");
+        }
+        
+        const result = runStochasticBacktest(backtestData, {
+            horizons: horizonsConfigForBacktest
+        });
+        
+        await saveBacktestRun(user.uid, activeSymbol || 'unknown', { ...result, id: `run_${Date.now()}`, timestamp: new Date().toISOString() });
+
+        setBacktestResult(result);
+        toast({ title: "Backtest Concluído!", description: `Análise de ${backtestData.length} pontos de dados finalizada.` });
+    } catch (e: any) {
+        toast({ title: "Erro no Backtest", description: e.message, variant: "destructive" });
+        console.error("Backtest error:", e);
+    } finally {
+        setIsBacktesting(false);
+    }
+  };
   
   useEffect(() => {
     onConsensusUpdate({strongestSignal, projectionExperts});
@@ -336,11 +447,43 @@ function StochasticLab({
                     </Card>
                     
                      <Tabs value={activeTab} onValueChange={setActiveTab} className="mt-4">
-                        <TabsList className="grid grid-cols-1">
+                        <TabsList className="grid grid-cols-2">
                             <TabsTrigger value="audit">Auditoria Preditiva ({predictiveLogs.length} Registos)</TabsTrigger>
+                            <TabsTrigger value="backtest">Backtest do Modelo</TabsTrigger>
                         </TabsList>
                         <TabsContent value="audit" className="mt-4">
                           <PredictiveLogViewer logs={predictiveLogs} onDeleteLog={onDeletePredictiveLog} deletingPredictiveLogId={deletingPredictiveLogId} />
+                        </TabsContent>
+                         <TabsContent value="backtest" className="mt-4">
+                          <Card>
+                            <CardHeader>
+                                <CardTitle className="flex items-center gap-2"><FilePieChart className="h-5 w-5"/>Motor de Backtesting</CardTitle>
+                                <CardDescription>Simule a performance do modelo em milhares de pontos de dados históricos para validar a sua viabilidade a longo prazo.</CardDescription>
+                            </CardHeader>
+                            <CardContent className="space-y-4">
+                                <div className="space-y-2">
+                                    <Label htmlFor="backtest-points">Pontos de Dados para Testar</Label>
+                                    <div className="flex items-center gap-4">
+                                        <Slider
+                                            id="backtest-points"
+                                            min={1000}
+                                            max={Math.min(50000, realData.length)}
+                                            step={1000}
+                                            value={[backtestPoints]}
+                                            onValueChange={(value) => setBacktestPoints(value[0])}
+                                            disabled={isBacktesting}
+                                        />
+                                        <span className="font-mono text-primary font-bold w-20 text-center">{backtestPoints}</span>
+                                    </div>
+                                </div>
+                                <Button className="w-full" onClick={handleRunBacktest} disabled={isBacktesting}>
+                                    {isBacktesting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <TestTube className="mr-2 h-4 w-4" />}
+                                    {isBacktesting ? 'A Simular...' : 'Rodar Backtest'}
+                                </Button>
+                                {isBacktesting && <p className="text-xs text-center text-muted-foreground">Isso pode levar alguns segundos e pode congelar a interface brevemente...</p>}
+                                <BacktestResultViewer result={backtestResult} />
+                            </CardContent>
+                          </Card>
                         </TabsContent>
                      </Tabs>
                 </div>
@@ -403,10 +546,9 @@ function PageContent() {
   const handleConsensusUpdate = useCallback((data: ConsensusData) => {
     setConsensusData(data);
     if (isAutopilotOn && data?.projectionExperts) {
-      const assertiveness: Record<string, AssertivenessData> = Object.fromEntries(
-        data.projectionExperts.map((p: any) => [p.name, { accuracy: p.rawWinRate, vote: p.vote, lastResult: p.lastResult }])
-      );
-      runAutopilotCycle(assertiveness);
+      runAutopilotCycle(Object.fromEntries(
+          data.projectionExperts.map(p => [p.name, { accuracy: p.rawWinRate, vote: p.vote, lastResult: p.lastResult }])
+      ));
     }
   }, [isAutopilotOn, runAutopilotCycle]);
 
@@ -514,6 +656,7 @@ function PageContent() {
           onDeletePredictiveLog={handleDeletePredictiveLog}
           deletingPredictiveLogId={deletingPredictiveLogId}
           operationsLog={operationsLog}
+          activeSymbol={activeSymbol}
         />
         <div className="lg:col-span-2 space-y-6">
           <VolatilityTraderInterface 
@@ -699,7 +842,7 @@ const VolatilityAutopilotInterface = ({
         {children}
         <Alert className="mt-4 bg-blue-50 border-blue-200">
           <AlertTitle className="text-blue-900 font-semibold flex items-center gap-2">
-            <Settings className="h-4 w-4"/>
+            <CheckCheck className="h-4 w-4"/>
             Assertividade vs Thresholds
           </AlertTitle>
           <AlertDescription>
