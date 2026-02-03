@@ -4,7 +4,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useForm, FormProvider, useFormContext } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { TrendingUp, TrendingDown, HelpCircle, Bot, FlaskConical, Target, Info, Settings, Sigma, Power, PlayCircle, PauseCircle, Skull, ChevronsUpDown } from 'lucide-react';
+import { TrendingUp, TrendingDown, HelpCircle, Bot, FlaskConical, Target, Info, Settings, Sigma, Power, PlayCircle, PauseCircle, Skull, ChevronsUpDown, Activity, BarChart, Brain } from 'lucide-react';
 import { DerivApiProviderV2 as DerivApiProvider, useDerivApiV2 as useDerivApi } from "@/features/trading/hooks/use-deriv-api-v2";
 import { AssetSelectorV2 as AssetSelector } from "@/features/trading/components/deriv-trader/asset-selector-v2";
 import { ApiStatusIndicatorV2 as ApiStatusIndicator } from "@/features/trading/components/deriv-trader/ApiStatusIndicatorV2";
@@ -37,7 +37,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { MarketChart } from "@/features/trading/components/deriv-trader/market-chart";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Skeleton } from '@/components/ui/skeleton';
-import { useStochasticModels, type ExpertProjection, type StrongestSignal } from '@/features/trading/hooks/use-stochastic-models';
+import { useStochasticModels, type ExpertProjection, type StrongestSignal, type MarketStats } from '@/features/trading/hooks/use-stochastic-models';
 
 // --- TYPE DEFINITIONS ---
 
@@ -198,29 +198,64 @@ const ProjectionExpertsPanel = ({ experts, adaptiveDrifts, className }: { expert
 };
 
 
-// REFACTORED `StochasticLab` component - UI ONLY
+interface StochasticLabProps {
+  realData: ChartData[];
+  onConsensusUpdate: (consensus: ConsensusData) => void;
+  predictiveLogs: PredictiveTradeLog[];
+  onDeletePredictiveLog: (logId: string) => void;
+  deletingPredictiveLogId: string | null;
+  operationsLog: Operation[];
+}
+
 function StochasticLab({ 
     realData, 
     onConsensusUpdate, 
     predictiveLogs,
     onDeletePredictiveLog,
     deletingPredictiveLogId,
-}: {
-  realData: ChartData[];
-  onConsensusUpdate: (consensus: ConsensusData) => void;
-  predictiveLogs: PredictiveTradeLog[];
-  onDeletePredictiveLog: (logId: string) => void;
-  deletingPredictiveLogId: string | null;
-}) {
+    operationsLog,
+}: StochasticLabProps) {
   const { user } = useAuth();
   const [activeTab, setActiveTab] = useState('prediction');
 
-  // Using the new hook to encapsulate all logic
   const { projectionExperts, strongestSignal, stats, adaptiveDrifts } = useStochasticModels(realData);
   
   useEffect(() => {
     onConsensusUpdate({strongestSignal, projectionExperts});
   }, [strongestSignal, onConsensusUpdate, projectionExperts]);
+
+  const MetricCard = ({ label, value, icon, color }: { label: string; value: string | number; icon: React.ReactNode; color?: string }) => (
+      <div className="flex flex-col p-3 border rounded-lg bg-background shadow-sm">
+          <div className="flex items-center justify-between text-xs text-muted-foreground mb-1">
+              <span>{label}</span>
+              {icon}
+          </div>
+          <span className={cn("font-bold text-2xl", color)}>{value}</span>
+      </div>
+  );
+
+  const systemHealthStats = useMemo(() => {
+    const projectionExpertsList = projectionExperts || [];
+    const finishedTrades = operationsLog.filter(op => op.status !== 'pending');
+    const wins = finishedTrades.filter(op => op.result && op.result > 0).length;
+    const totalTrades = finishedTrades.length;
+    const winRate = totalTrades > 0 ? (wins / totalTrades) * 100 : 0;
+    
+    const totalPnL = finishedTrades.reduce((sum, op) => sum + (op.result || 0), 0);
+    
+    const activeExperts = projectionExpertsList.filter(e => e.status === 'active').length;
+    
+    return { 
+        totalTrades, 
+        winRate, 
+        totalPnL,
+        activeExperts,
+        totalExperts: projectionExpertsList.length,
+    };
+  }, [operationsLog, projectionExperts]);
+
+  const isSystemViable = systemHealthStats.totalTrades >= 200 && systemHealthStats.winRate > 51;
+
 
   return (
     <Card className="h-full flex flex-col col-span-1 lg:col-span-3">
@@ -229,7 +264,7 @@ function StochasticLab({
                 <FlaskConical className="h-5 w-5 text-purple-600" />
                 Laboratório Preditivo (Cérebro Cético V2.1)
             </CardTitle>
-            <CardDescription>O cientista usa GBM auto-calibrável, Wilson Score e gestão de risco por modelo para projetar o futuro.</CardDescription>
+            <CardDescription>O cientista usa GBM auto-calibrável, Confiança Bayesiana e gestão de risco por modelo para projetar o futuro.</CardDescription>
         </CardHeader>
         <CardContent className="flex-1 flex flex-col min-h-0">
           <ScrollArea className="flex-1">
@@ -241,12 +276,62 @@ function StochasticLab({
                     
                      <Card className="mt-6">
                         <CardHeader>
-                            <CardTitle>Estatísticas Descritivas dos Retornos</CardTitle>
+                            <CardTitle className="flex items-center gap-2">
+                                <Activity className="h-5 w-5" />
+                                Saúde e Estatísticas do Sistema
+                            </CardTitle>
+                            <CardDescription>Métricas de performance do piloto e do mercado.</CardDescription>
                         </CardHeader>
-                        <CardContent className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
-                            <StatItem label="Volatilidade Anualizada" value={`${stats.annualizedVol}%`} />
-                            <StatItem label="Assimetria (Skewness)" value={stats.skewness} />
-                            <StatItem label="Curtose (Kurtosis)" value={stats.kurtosis} />
+                        <CardContent className="space-y-4">
+                            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                                <MetricCard
+                                    label="Total de Trades"
+                                    value={systemHealthStats.totalTrades}
+                                    icon={<BarChart className="h-4 w-4 text-muted-foreground" />}
+                                />
+                                <MetricCard
+                                    label="Win Rate"
+                                    value={`${systemHealthStats.winRate.toFixed(1)}%`}
+                                    icon={<TrendingUp className="h-4 w-4 text-muted-foreground" />}
+                                    color={systemHealthStats.winRate > 52 ? 'text-green-600' : systemHealthStats.winRate < 48 ? 'text-red-600' : 'text-yellow-600'}
+                                />
+                                <MetricCard
+                                    label="Lucro/Prejuízo"
+                                    value={`${systemHealthStats.totalPnL < 0 ? '-' : ''}$${Math.abs(systemHealthStats.totalPnL).toFixed(2)}`}
+                                    icon={<Target className="h-4 w-4 text-muted-foreground" />}
+                                    color={systemHealthStats.totalPnL > 0 ? 'text-green-600' : systemHealthStats.totalPnL < 0 ? 'text-red-600' : 'text-foreground'}
+                                />
+                                <MetricCard
+                                    label="Especialistas Ativos"
+                                    value={`${systemHealthStats.activeExperts} / ${systemHealthStats.totalExperts}`}
+                                    icon={<Brain className="h-4 w-4 text-muted-foreground" />}
+                                />
+                            </div>
+                            
+                            {systemHealthStats.totalTrades >= 200 && (
+                                <Alert className={cn(
+                                    "col-span-full",
+                                    isSystemViable ? "bg-green-50 border-green-200 text-green-800" : "bg-red-50 border-red-200 text-red-800"
+                                )}>
+                                    <AlertTitle className="font-bold flex items-center gap-2">
+                                        {isSystemViable ? '✅ Sistema Viável' : '⚠️ Sistema Abaixo do Breakeven'}
+                                    </AlertTitle>
+                                    <AlertDescription>
+                                        {isSystemViable 
+                                            ? 'Taxa de acerto acima de 51% com dados estatisticamente significativos.'
+                                            : 'Taxa de acerto abaixo de 51%. Considere pausar operações e revisar parâmetros.'
+                                        }
+                                    </AlertDescription>
+                                </Alert>
+                            )}
+
+                            <Separator />
+                            
+                            <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm pt-2">
+                                <StatItem label="Volatilidade Anualizada" value={`${stats.annualizedVol}%`} />
+                                <StatItem label="Assimetria (Skewness)" value={stats.skewness} />
+                                <StatItem label="Curtose (Kurtosis)" value={stats.kurtosis} />
+                            </div>
                         </CardContent>
                     </Card>
                     
@@ -350,11 +435,9 @@ function PageContent() {
     fetchLogs();
   }, [user, toast]);
 
-    // ✅ PROBLEMA #9 CORRIGIDO: Executa a rotina de arquivamento de logs uma vez por sessão.
   useEffect(() => {
     if (!user) return;
     
-    // Para evitar executar a cada render, usamos sessionStorage.
     const hasArchivedThisSession = sessionStorage.getItem('log_archiver_run');
     if (!hasArchivedThisSession) {
         console.log("📦 Verificando logs antigos para arquivamento...");
@@ -407,7 +490,6 @@ function PageContent() {
       }
     }
     
-    // We only have 's' in this form, so we convert ticks
     if (durationUnit === 't') {
         duration = Math.max(15, duration * 2); 
     }
@@ -431,6 +513,7 @@ function PageContent() {
           predictiveLogs={predictiveLogs}
           onDeletePredictiveLog={handleDeletePredictiveLog}
           deletingPredictiveLogId={deletingPredictiveLogId}
+          operationsLog={operationsLog}
         />
         <div className="lg:col-span-2 space-y-6">
           <VolatilityTraderInterface 

@@ -9,7 +9,7 @@ import type { ChartData, CandleData } from '@/lib/types';
 export interface ExpertProjection {
     name: string;
     vote: 'RISE' | 'FALL' | 'HOLD';
-    wilson: { lower: number; upper: number }; // Kept name for compatibility
+    wilson: { lower: number; upper: number };
     rawWinRate: number;
     hits: number;
     total: number;
@@ -47,7 +47,6 @@ const DRIFT_EMA_ALPHA = 0.3; // Alpha for error EMA smoothing
 
 const isCandle = (d: ChartData): d is CandleData => d != null && 'close' in d;
 
-// ✅ PROBLEMA #8 CORRIGIDO: Substituído por Intervalo de Confiança Bayesiano
 const bayesianConfidenceInterval = (wins: number, total: number): { lower: number; upper: number; mean: number } => {
     // Prior: Beta(1, 1) = Uniforme (sem assumir nada, máxima incerteza inicial)
     const alpha = wins + 1;
@@ -55,12 +54,10 @@ const bayesianConfidenceInterval = (wins: number, total: number): { lower: numbe
     
     const mean = alpha / (alpha + beta);
     
-    // Para poucos dados, o intervalo é muito largo (incerteza alta), o que é o comportamento desejado.
     if (total < 20) {
         return { mean, lower: 0, upper: 1 };
     }
     
-    // Usando aproximação normal da distribuição Beta, que é razoável para n > 20
     const variance = (alpha * beta) / ((alpha + beta) ** 2 * (alpha + beta + 1));
     const stdDev = Math.sqrt(variance);
     const z = 1.645; // Para um intervalo de confiança de 90%
@@ -86,9 +83,7 @@ const getDecayFactor = (horizonName: string): number => {
     return 0.95;
 };
 
-// ✅ PROBLEMA #7 CORRIGIDO: Nova função para atualizar o drift de forma suave
 const updateDrift = (currentErrorEma: number, newError: number): number => {
-    // A nova EMA do erro é uma média ponderada do novo erro e da EMA anterior
     const newErrorEma = (newError * DRIFT_EMA_ALPHA) + (currentErrorEma * (1 - DRIFT_EMA_ALPHA));
     return newErrorEma;
 };
@@ -103,7 +98,6 @@ export function useStochasticModels(realData: ChartData[]) {
 
     const futurePathsRef = useRef<Record<string, { time: number; price: number }[]>>({});
     const adaptiveDriftRef = useRef<Record<string, number>>({});
-    // NOVO: Ref para armazenar a EMA do erro, substituindo o histórico de erros
     const errorEmaRef = useRef<Record<string, number>>({});
     const assertivenessHistoryRef = useRef<Record<string, boolean[]>>({});
     const pendingPredictionsRef = useRef<Record<string, { startTimeIndex: number; startPrice: number; predictedEndPrice: number }[]>>({});
@@ -144,7 +138,6 @@ export function useStochasticModels(realData: ChartData[]) {
         assertivenessHistoryRef.current = initialAssertivenessHistory;
     }, [horizons]);
 
-    // ✅ PROBLEMA #4 VALIDADO: Adicionada monitorização de memória
     useEffect(() => {
         const interval = setInterval(() => {
             const memoryUsage = Object.keys(assertivenessHistoryRef.current)
@@ -222,7 +215,6 @@ export function useStochasticModels(realData: ChartData[]) {
                       if (actualEndPrice !== undefined) {
                           const predictionError = actualEndPrice - pred.predictedEndPrice;
                           
-                          // ✅ PROBLEMA #7 CORRIGIDO: Usa EMA para suavizar o erro
                           const currentErrorEma = errorEmaRef.current[h.name] || 0;
                           const newErrorEma = updateDrift(currentErrorEma, predictionError);
                           errorEmaRef.current[h.name] = newErrorEma;
@@ -239,7 +231,6 @@ export function useStochasticModels(realData: ChartData[]) {
 
                           const assertivenessHistory = assertivenessHistoryRef.current[h.name] || [];
                           assertivenessHistory.push(isWin);
-                          // ✅ PROBLEMA #4 VALIDADO: Limita o histórico
                           while (assertivenessHistory.length > ASSERTIVENESS_HISTORY_LIMIT) {
                               assertivenessHistory.shift();
                           }
@@ -329,13 +320,12 @@ export function useStochasticModels(realData: ChartData[]) {
             const history = assertivenessHistoryRef.current[h.name] || [];
             const lastResult = history.length > 0 ? history[history.length - 1] : undefined;
             const rawWinRate = total > 0 ? (wins / total) * 100 : 0;
-            // ✅ PROBLEMA #8 CORRIGIDO: Usa a nova função bayesiana
             const bayesianCI = bayesianConfidenceInterval(wins, total);
 
             return { 
                 name: h.name, 
                 vote, 
-                wilson: { lower: bayesianCI.lower, upper: bayesianCI.upper }, // Mantém o nome da propriedade para compatibilidade
+                wilson: { lower: bayesianCI.lower, upper: bayesianCI.upper },
                 rawWinRate,
                 hits: wins, 
                 total,
@@ -347,7 +337,6 @@ export function useStochasticModels(realData: ChartData[]) {
         });
     }, [horizons, assertivenessStats, expertVotes]);
 
-    // ✅ PROBLEMA #3 CORRIGIDO: Memoization depende apenas de 'projectionExperts'
     const getEffectiveVote = useCallback((expert: ExpertProjection | undefined): 'RISE' | 'FALL' | 'HOLD' => {
       if (!expert || expert.vote === 'HOLD' || expert.status !== 'active') return 'HOLD';
       if (expert.wilson.lower > 0.5) return expert.vote;
