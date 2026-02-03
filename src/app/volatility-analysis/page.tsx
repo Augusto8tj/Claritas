@@ -371,22 +371,25 @@ function StochasticLab({
       const lastPriceValue = prices[prices.length - 1];
       const lastTime = realData[realData.length-1].epoch;
 
-      const projectPath = (steps: number, horizonName: string) => {
-        if (lastPriceValue === null) return [];
-        let currentSimPrice = lastPriceValue;
-        const path = [{ time: lastTime, price: lastPriceValue }];
-        
-        let driftCorrection = adaptiveDriftRef.current[horizonName] || 0;
-        
-        driftCorrection = Math.max(-DRIFT_LIMIT, Math.min(DRIFT_LIMIT, driftCorrection));
+      const projectPath = (steps: number, horizonName: string, horizonType: 'tick' | 'second') => {
+          if (lastPriceValue === null) return [];
+          let currentSimPrice = lastPriceValue;
+          const path = [{ time: lastTime, price: lastPriceValue }];
+          
+          let driftCorrection = adaptiveDriftRef.current[horizonName] || 0;
+          
+          driftCorrection = Math.max(-DRIFT_LIMIT, Math.min(DRIFT_LIMIT, driftCorrection));
+          
+          const timeStepInSeconds = horizonType === 'tick' ? 2 : 1;
 
-        for (let i = 1; i <= steps; i++) {
-          const Z = normalRandom();
-          const exponent = (GBM_DRIFT_TERM + driftCorrection) + GBM_SIGMA * Z;
-          currentSimPrice *= Math.exp(exponent);
-          path.push({ time: lastTime + i, price: currentSimPrice });
-        }
-        return path;
+          for (let i = 1; i <= steps; i++) {
+            const Z = normalRandom();
+            const dt = timeStepInSeconds;
+            const exponent = ((GBM_DRIFT_TERM + driftCorrection) * dt) + (GBM_SIGMA * Z * Math.sqrt(dt));
+            currentSimPrice *= Math.exp(exponent);
+            path.push({ time: lastTime + (i * timeStepInSeconds), price: currentSimPrice });
+          }
+          return path;
       };
 
       const newFuturePaths: Record<string, any[]> = {};
@@ -439,7 +442,7 @@ function StochasticLab({
           }
           pendingPredictionsRef.current[h.name] = updatedPending;
 
-          const newPath = projectPath(h.ticks, h.name);
+          const newPath = projectPath(h.ticks, h.name, h.type);
           newFuturePaths[h.name] = newPath;
 
           if (newPath.length === h.ticks + 1) {
@@ -582,12 +585,17 @@ function StochasticLab({
     if (!lastPoint) return [];
     
     const lastTime = lastPoint.time;
-    const projectionLength = horizons.reduce((max, h) => Math.max(max, h.ticks), 0);
+    const maxProjectionSeconds = horizons.reduce((max, h) => Math.max(max, h.ticks * (h.type === 'tick' ? 2 : 1)), 0);
     const projectionData = [];
 
-    for (let i = 0; i <= projectionLength; i++) {
+    for (let s = 1; s <= maxProjectionSeconds; s++) {
         const pricesAtTimeStep = horizons
-            .map(h => futurePathsRef.current?.[h.name]?.[i]?.price)
+            .map(h => {
+                const timeStepInSeconds = h.type === 'tick' ? 2 : 1;
+                const index = Math.round(s / timeStepInSeconds);
+                if (index > h.ticks) return undefined;
+                return futurePathsRef.current[h.name]?.[index]?.price;
+            })
             .filter((p): p is number => p !== undefined && !isNaN(p));
 
         if (pricesAtTimeStep.length > 0) {
@@ -604,7 +612,7 @@ function StochasticLab({
             const q3 = pricesAtTimeStep[q3Index];
 
             projectionData.push({
-                time: lastTime + i,
+                time: lastTime + s,
                 median,
                 q1,
                 q3,
@@ -612,32 +620,32 @@ function StochasticLab({
         }
     }
     return projectionData;
-  }, [priceData, horizons]);
+}, [priceData, horizons]);
 
   const combinedData = useMemo(() => {
-    if (priceData.length === 0) return [];
-    
-    const displayData = priceData.slice(-70);
-    if (medianProjection.length === 0) return displayData;
-    
-    const lastRealTime = displayData[displayData.length - 1]?.time;
-    if (lastRealTime === undefined) return displayData;
+      if (priceData.length === 0) return [];
+      
+      const displayData = priceData.slice(-70);
+      if (medianProjection.length === 0) return displayData;
+      
+      const lastRealTime = displayData[displayData.length - 1]?.time;
+      if (lastRealTime === undefined) return displayData;
 
-    const dataMap = new Map<number, any>();
-    displayData.forEach(d => dataMap.set(d.time, { ...d }));
-    
-    medianProjection.forEach((proj) => {
-        const existing = dataMap.get(proj.time);
-        if (existing) {
-            Object.assign(existing, proj);
-        } else {
-            if (proj.time > lastRealTime) {
-                dataMap.set(proj.time, { time: proj.time, ...proj });
-            }
-        }
-    });
-    
-    return Array.from(dataMap.values()).sort((a, b) => a.time - b.time);
+      const dataMap = new Map<number, any>();
+      displayData.forEach(d => dataMap.set(d.time, { ...d }));
+      
+      medianProjection.forEach((proj) => {
+          const existing = dataMap.get(proj.time);
+          if (existing) {
+              Object.assign(existing, proj);
+          } else {
+              if (proj.time > lastRealTime) {
+                  dataMap.set(proj.time, { time: proj.time, ...proj });
+              }
+          }
+      });
+      
+      return Array.from(dataMap.values()).sort((a, b) => a.time - b.time);
   }, [priceData, medianProjection]);
 
   return (
