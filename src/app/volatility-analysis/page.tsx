@@ -23,7 +23,7 @@ import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { useToast } from '@/hooks/use-toast';
 import PredictiveLogViewer from '@/components/deriv-trader/PredictiveLogViewer';
-import { getPredictiveTradeLogs, savePredictiveTradeLog } from '@/services/financial-data-service';
+import { getPredictiveTradeLogs, savePredictiveTradeLog, archiveOldLogs } from '@/services/financial-data-service';
 import { useAuth } from '@/features/auth/hooks/use-auth';
 import { db } from '@/lib/firebase';
 import { doc, deleteDoc } from 'firebase/firestore';
@@ -349,6 +349,23 @@ function PageContent() {
     };
     fetchLogs();
   }, [user, toast]);
+
+    // ✅ PROBLEMA #9 CORRIGIDO: Executa a rotina de arquivamento de logs uma vez por sessão.
+  useEffect(() => {
+    if (!user) return;
+    
+    // Para evitar executar a cada render, usamos sessionStorage.
+    const hasArchivedThisSession = sessionStorage.getItem('log_archiver_run');
+    if (!hasArchivedThisSession) {
+        console.log("📦 Verificando logs antigos para arquivamento...");
+        archiveOldLogs(user.uid).then(count => {
+            if (count > 0) {
+                console.log(`[Log Archiver] Sucesso! ${count} logs antigos foram arquivados.`);
+            }
+            sessionStorage.setItem('log_archiver_run', 'true');
+        });
+    }
+  }, [user]);
 
   const handleDeletePredictiveLog = async (logId: string) => {
     if (!user) return;

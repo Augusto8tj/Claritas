@@ -1,6 +1,6 @@
 // Service module for financial data operations.
 import { db } from '@/lib/firebase';
-import { collection, getDocs, doc, setDoc, query, where, orderBy, getDoc, addDoc, deleteDoc } from 'firebase/firestore';
+import { collection, getDocs, doc, setDoc, query, where, orderBy, getDoc, addDoc, deleteDoc, limit } from 'firebase/firestore';
 import type { Goal, BudgetCategory, Transaction, RobotPerformance, TradeDecisionLog, EnhancedRobotPerformance, AssetProfileV1 } from '@/lib/types';
 import { generateGoalImage } from '@/ai/flows/goal-image-generation';
 import { addDocumentNonBlocking, deleteDocumentNonBlocking, setDocumentNonBlocking, updateDocumentNonBlocking } from '@/firebase/non-blocking-updates';
@@ -437,6 +437,42 @@ export async function getPredictiveTradeLogs(userId: string): Promise<any[]> {
         throw error;
     }
 }
+
+export const archiveOldLogs = async (userId: string): Promise<number> => {
+    if (!userId) return 0;
+    
+    const cutoffDate = new Date();
+    cutoffDate.setMonth(cutoffDate.getMonth() - 3); // Arquivar logs com mais de 3 meses
+    
+    const logsRef = collection(db, `users/${userId}/predictive_logs_v1`);
+    const oldLogsQuery = query(
+        logsRef,
+        where('timestamp', '<', cutoffDate.toISOString()),
+        limit(100) // Processar em lotes de 100 para evitar sobrecarga
+    );
+    
+    try {
+        const snapshot = await getDocs(oldLogsQuery);
+        if (snapshot.empty) {
+            return 0; // Nenhum log antigo para arquivar
+        }
+    
+        const archivePromises = snapshot.docs.map(async (logDoc) => {
+            const archiveRef = doc(db, `users/${userId}/archived_logs_v1`, logDoc.id);
+            await setDoc(archiveRef, logDoc.data());
+            await deleteDoc(logDoc.ref);
+        });
+        
+        await Promise.all(archivePromises);
+        
+        console.log(`[Log Archiver] Successfully archived ${snapshot.size} old logs for user ${userId}.`);
+        return snapshot.size;
+    } catch (error) {
+        console.error(`[Log Archiver] Failed to archive logs for user ${userId}:`, error);
+        // Não lançar erro para não quebrar a aplicação, apenas logar.
+        return 0;
+    }
+};
 
 // --- Predictive Models Persistence ---
 
