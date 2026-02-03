@@ -294,7 +294,7 @@ export const DerivApiProviderV1 = ({ children }: { children: ReactNode }) => {
             const timeoutId = setTimeout(() => {
                 if (promisesRef.current.has(String(req_id))) {
                     promisesRef.current.delete(String(req_id));
-                    reject(new Error(`O pedido à API expirou (60s) para req_id: ${req_id}. O token pode ser inválido ou a rede está lenta.`));
+                    reject(new Error(`O pedido à API expirou (60s) para req_id: ${'${req_id}'}. O token pode ser inválido ou a rede está lenta.`));
                 }
             }, 60000); // Aumentado para 60 segundos
             
@@ -424,7 +424,7 @@ const subscribeToMarketData = useCallback(async (symbol: string) => {
         makeRequest(subRequest, true);
 
     } catch (error: any) {
-        console.error(`[Market Data] Error for ${symbol}:`, error);
+        console.error(`[Market Data] Error for ${'${symbol}'}:`, error);
         setChartError(error.message || 'Falha ao carregar dados do mercado.');
     } finally {
         setIsChartLoading(false);
@@ -512,7 +512,7 @@ const executeTrade = useCallback(async (
 
         return {
           success: true,
-          message: `Ordem do tipo "${contractType}" para ${symbol} no valor de ${sanitizedStake} USD executada com sucesso.`,
+          message: `Ordem do tipo "${contractType}" para ${'${symbol}'} no valor de ${'${sanitizedStake}'} USD executada com sucesso.`,
           contractId: buyResult.contract_id,
           entryPrice: entryPrice,
         };
@@ -551,9 +551,6 @@ const executeTrade = useCallback(async (
         return { success: false, message };
     }
   }, [isConnected, makeRequest, operationsLog]);
-  
-  const pingIntervalRef = useRef<NodeJS.Timeout | null>(null);
-  const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const startConnectionMonitor = useCallback(() => {
     if (pingIntervalRef.current) clearInterval(pingIntervalRef.current);
@@ -584,7 +581,7 @@ const executeTrade = useCallback(async (
             wsRef.current = null;
         }
     
-        const ws = new WebSocket(`wss://ws.derivws.com/websockets/v3?app_id=${DERIV_APP_ID}`);
+        const ws = new WebSocket(`wss://ws.derivws.com/websockets/v3?app_id=${'${DERIV_APP_ID}'}`);
         wsRef.current = ws;
         
         ws.onmessage = (event) => {
@@ -596,8 +593,8 @@ const executeTrade = useCallback(async (
                     const promise = promisesRef.current.get(String(reqId));
                     if (promise) {
                         if (response.error) {
-                            const errorMessage = response.error.message || `Unknown API error. Code: ${response.error.code || 'N/A'}`;
-                            promise.reject(new Error(`${errorMessage}`));
+                            const errorMessage = response.error.message || `Unknown API error. Code: ${'${response.error.code || \'N/A\'}'}`;
+                            promise.reject(new Error(`${'${errorMessage}'}`));
                         } else {
                             promise.resolve(response);
                         }
@@ -654,8 +651,8 @@ const executeTrade = useCallback(async (
                                         }
                                         
                                         const toastMessage = {
-                                            title: `Posição Fechada (${op.asset})`,
-                                            description: `Resultado: ${contract.currency} ${contract.profit.toFixed(2)}`,
+                                            title: `Posição Fechada (${'${op.asset}'})`,
+                                            description: `Resultado: ${'${contract.currency}'} ${'${contract.profit.toFixed(2)}'}`,
                                             variant: newStatus === 'won' ? 'default' : 'destructive',
                                         };
                                         
@@ -697,19 +694,17 @@ const executeTrade = useCallback(async (
                                     contractType: contract.contract_type,
                                 };
                                 
-                                if(typeof addTradeAnnotation === 'function') {
-                                    addTradeAnnotation({
-                                        contractId: String(newOperation.id),
-                                        entryTime: purchaseTime,
-                                        entryPrice: newOperation.entryPrice!,
-                                        direction: newOperation.direction,
-                                        status: 'pending',
-                                        stake: newOperation.stake,
-                                        symbol: newOperation.asset,
-                                        expirationTime: newOperation.expirationTime,
-                                        contractType: (contract.contract_type || '').startsWith('MULT') ? 'multiplier' : 'option'
-                                    });
-                                }
+                                addTradeAnnotation({
+                                    contractId: String(newOperation.id),
+                                    entryTime: purchaseTime,
+                                    entryPrice: newOperation.entryPrice!,
+                                    direction: newOperation.direction,
+                                    status: 'pending',
+                                    stake: newOperation.stake,
+                                    symbol: newOperation.asset,
+                                    expirationTime: newOperation.expirationTime,
+                                    contractType: (contract.contract_type || '').startsWith('MULT') ? 'multiplier' : 'option'
+                                });
                     
                                 return [newOperation, ...prevLog];
                             }
@@ -836,7 +831,7 @@ const executeTrade = useCallback(async (
               if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
               
               let errorMessage = error instanceof Error ? error.message : 'Erro desconhecido ao conectar';
-              setConnectionError(`Falha na autorização: ${errorMessage}`);
+              setConnectionError(`Falha na autorização: ${'${errorMessage}'}`);
               setIsConnected(false);
               setIsConnecting(false);
               setIsAssetsLoading(false);
@@ -863,7 +858,7 @@ const executeTrade = useCallback(async (
 
           if (!event.wasClean && allowAutoReconnectRef.current) {
             reconnectInProgressRef.current = true;
-            console.warn(`[WS] Fechado inesperadamente. Código: ${event.code}. Tentando reconectar...`);
+            console.warn(`[WS] Fechado inesperadamente. Código: ${'${event.code}'}. Tentando reconectar...`);
             setConnectionError(`Conexão perdida. Reconectando...`);
             
             if (reconnectTimeoutRef.current) {
