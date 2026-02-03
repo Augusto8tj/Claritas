@@ -136,8 +136,6 @@ const getDurationInSeconds = (duration: number, unit: DurationUnit): number => {
 
 const isCandle = (d: ChartData): d is CandleData => d != null && 'close' in d;
 
-type MakeRequestFn = <T>(request: object, noResponse?: boolean) => Promise<T>;
-
 export const DerivApiProviderDigits = ({ children }: { children: ReactNode }) => {
   const [demoToken, setDemoToken] = useState<string | null>('ljUGk6wbLSrtEDo');
   const [realToken, setRealToken] = useState<string | null>('GU5MwbX1kwvSoyw');
@@ -240,6 +238,7 @@ export const DerivApiProviderDigits = ({ children }: { children: ReactNode }) =>
       ));
   }, []);
 
+  // Client-side timer to check for expired contracts
   useEffect(() => {
     const interval = setInterval(() => {
       const now = Date.now();
@@ -248,6 +247,7 @@ export const DerivApiProviderDigits = ({ children }: { children: ReactNode }) =>
         if (op.status === 'pending' && op.expirationTime && now > op.expirationTime) {
           hasChanges = true;
           updateTradeAnnotation(String(op.id), { status: 'lost', profit: -op.stake });
+          // CORREÇÃO: Adicionar o exitTimestamp na expiração por timer
           return { ...op, status: 'lost' as const, result: -op.stake, exitTimestamp: new Date().toISOString() };
         }
         return op;
@@ -256,7 +256,7 @@ export const DerivApiProviderDigits = ({ children }: { children: ReactNode }) =>
       if (hasChanges) {
         setAndPersistOperationsLog(updatedOps);
       }
-    }, 2000);
+    }, 2000); // Check every 2 seconds
 
     return () => clearInterval(interval);
   }, [operationsLog, updateTradeAnnotation, setAndPersistOperationsLog]);
@@ -271,7 +271,7 @@ export const DerivApiProviderDigits = ({ children }: { children: ReactNode }) =>
   }, [toastQueue, toast]);
 
 
-  const makeRequest: MakeRequestFn = useCallback((request, noResponse = false) => {
+  const makeRequest = useCallback(function makeRequest<T,>(request: object, noResponse = false): Promise<T> {
     return new Promise((resolve, reject) => {
         const ws = wsRef.current;
         if (!ws || ws.readyState !== WebSocket.OPEN) {
@@ -304,7 +304,7 @@ export const DerivApiProviderDigits = ({ children }: { children: ReactNode }) =>
         ws.send(JSON.stringify(payload));
 
         if (noResponse) {
-            resolve({} as any);
+            resolve({} as T);
         }
     });
   }, []);
