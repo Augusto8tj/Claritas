@@ -1,10 +1,10 @@
-// src/app/volatility-analysis/page.tsx
+// /src/app/volatility-analysis/page.tsx
 'use client';
 
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useForm, FormProvider, useFormContext } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Area, ReferenceArea, Scatter } from 'recharts';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts';
 import { TrendingUp, TrendingDown, HelpCircle, Bot, FlaskConical, Target, Info, Brain, Zap, Send, Loader2, ShieldCheck, GitBranch, BarChart, Activity, AlertTriangle, Power, ChevronsUpDown, Settings, Sigma, Shield, X, Check, Skull, PlayCircle, PauseCircle } from 'lucide-react';
 import { DerivApiProviderV2 as DerivApiProvider, useDerivApiV2 as useDerivApi } from "@/features/trading/hooks/use-deriv-api-v2";
 import { AssetSelectorV2 as AssetSelector } from "@/features/trading/components/deriv-trader/asset-selector-v2";
@@ -18,7 +18,7 @@ import { cn } from "@/lib/utils";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { volatilityTraderSchema, type VolatilityTraderFormValues } from "@/features/trading/components/deriv-trader/volatility-trader-interface.types";
 import VolatilityTraderInterface from "@/features/trading/components/deriv-trader/volatility-trader-interface";
-import { OperationsLogV2 } from "@/components/deriv-trader/operations-log-v2";
+import { OperationsLogV2 } from "@/features/trading/components/deriv-trader/operations-log-v2";
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
@@ -572,11 +572,65 @@ function StochasticLab({
     onConsensusUpdate({strongestSignal, projectionExperts});
   }, [strongestSignal, onConsensusUpdate, projectionExperts]);
 
-  const chartDisplayData = useMemo(() => {
-    // Show last 100 data points for a "sliding window" effect
-    return priceData.slice(-100); 
-  }, [priceData]);
+  const medianProjection = useMemo(() => {
+    const projectionLength = horizons.reduce((max, h) => Math.max(max, h.ticks), 0);
+    const medianData = [];
 
+    const lastPoint = priceData[priceData.length-1];
+    if (!lastPoint) return [];
+
+    for (let i = 0; i <= projectionLength; i++) {
+        const pricesAtTimeStep = horizons
+            .map(h => futurePathsRef.current[h.name]?.[i]?.price)
+            .filter((p): p is number => p !== undefined);
+
+        if (pricesAtTimeStep.length > 0) {
+            pricesAtTimeStep.sort((a, b) => a - b);
+            const mid = Math.floor(pricesAtTimeStep.length / 2);
+            const medianPrice = pricesAtTimeStep.length % 2 !== 0
+                ? pricesAtTimeStep[mid]
+                : (pricesAtTimeStep[mid - 1] + pricesAtTimeStep[mid]) / 2;
+
+            medianData.push({
+                time: lastPoint.time + i,
+                median: medianPrice
+            });
+        }
+    }
+    return medianData;
+  }, [priceData, horizons]);
+
+  const combinedData = useMemo(() => {
+      const displayData = priceData.slice(-70);
+      if (medianProjection.length === 0) {
+          return displayData;
+      }
+      
+      const lastRealEpoch = displayData.length > 0 ? displayData[displayData.length - 1].time : 0;
+      
+      const projectionWithCorrectedTime = medianProjection.map(p => ({
+          ...p,
+          time: lastRealEpoch + (p.time - medianProjection[0].time)
+      }));
+
+      // Find the intersection point to merge
+      const intersectionIndex = displayData.findIndex(d => d.time === lastRealEpoch);
+      
+      if (intersectionIndex !== -1) {
+          const mergedData = [...displayData];
+          projectionWithCorrectedTime.forEach((projPoint, projIdx) => {
+              const targetIndex = intersectionIndex + projIdx;
+              if (targetIndex < mergedData.length) {
+                  mergedData[targetIndex] = { ...mergedData[targetIndex], median: projPoint.median };
+              } else {
+                  mergedData.push({ time: projPoint.time, median: projPoint.median });
+              }
+          });
+          return mergedData;
+      }
+
+      return [...displayData, ...projectionWithCorrectedTime];
+  }, [priceData, medianProjection]);
 
   return (
     <Card className="h-full flex flex-col col-span-1 lg:col-span-3">
@@ -587,7 +641,7 @@ function StochasticLab({
             </CardTitle>
             <CardDescription>O cientista usa GBM auto-calibrável, Wilson Score e gestão de risco por modelo para projetar o futuro.</CardDescription>
         </CardHeader>
-        <CardContent className="flex flex-col min-h-0">
+        <CardContent className="flex-1 flex flex-col min-h-0">
           <ScrollArea className="flex-1">
                 <div className="p-1 space-y-6">
                     <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
@@ -596,7 +650,7 @@ function StochasticLab({
                     </div>
                     
                     <VolatilityProjectionChart 
-                        chartData={chartDisplayData}
+                        chartData={combinedData}
                     />
                     
                      <Card className="mt-6">
@@ -604,18 +658,9 @@ function StochasticLab({
                             <CardTitle>Estatísticas Descritivas dos Retornos</CardTitle>
                         </CardHeader>
                         <CardContent className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
-                            <div className="flex flex-col p-2 border-l-2 pl-3 space-y-1">
-                                <Skeleton className="h-4 w-20" />
-                                <Skeleton className="h-6 w-16" />
-                            </div>
-                            <div className="flex flex-col p-2 border-l-2 pl-3 space-y-1">
-                                <Skeleton className="h-4 w-24" />
-                                <Skeleton className="h-6 w-12" />
-                            </div>
-                            <div className="flex flex-col p-2 border-l-2 pl-3 space-y-1">
-                                <Skeleton className="h-4 w-20" />
-                                <Skeleton className="h-6 w-14" />
-                            </div>
+                            <StatItem label="Volatilidade Anualizada" value={`${stats.annualizedVol || 0}%`} />
+                            <StatItem label="Assimetria (Skewness)" value={stats.skewness || 0} />
+                            <StatItem label="Curtose (Kurtosis)" value={stats.kurtosis || 0} />
                         </CardContent>
                     </Card>
                     
@@ -638,7 +683,8 @@ function VolatilityProjectionChart({ chartData, className }: {
   chartData: any[];
   className?: string;
 }) {
-  if (!chartData || chartData.length === 0) {
+
+    if (!chartData || chartData.length === 0) {
       return (
           <div className={cn("flex flex-col items-center justify-center h-64 text-muted-foreground", className)}>
               <Loader2 className="w-12 h-12 mb-4 opacity-30 animate-spin" />
@@ -647,28 +693,28 @@ function VolatilityProjectionChart({ chartData, className }: {
       )
   }
 
-  const lastRealPoint = chartData.length > 0 ? chartData[chartData.length - 1] : null;
+  const lastRealPoint = chartData[chartData.length - 1];
 
   return (
     <Card className={cn("h-[460px]", className)}>
       <CardHeader>
-        <CardTitle>Preço em Tempo Real (Janela Deslizante)</CardTitle>
+        <CardTitle>Preço Real vs. Projeção Mediana</CardTitle>
         <CardDescription>
-          Gráfico de linha simples mostrando os últimos pontos de preço.
+          A linha sólida é o preço real; a linha tracejada é o caminho mais provável previsto pela IA.
         </CardDescription>
       </CardHeader>
-
       <CardContent>
         <ResponsiveContainer width="100%" height={360}>
-          <LineChart data={chartData} margin={{ top: 5, right: 30, left: 0, bottom: 5 }}>
+          <LineChart data={chartData} margin={{ top: 5, right: 20, left: -10, bottom: 5 }}>
             <CartesianGrid strokeDasharray="3 3" opacity={0.2} />
             <XAxis dataKey="time" hide={true} />
             <YAxis
               domain={['dataMin - 0.2', 'dataMax + 0.2']}
-              tickFormatter={(v) => typeof v === 'number' ? v.toFixed(4) : v}
+              tickFormatter={(v) => typeof v === 'number' ? v.toFixed(4) : ''}
               orientation="right"
               axisLine={false}
               tickLine={false}
+              width={80}
             />
             <Tooltip
                 contentStyle={{
@@ -676,31 +722,54 @@ function VolatilityProjectionChart({ chartData, className }: {
                     borderColor: 'hsl(var(--border))',
                     borderRadius: 'var(--radius)',
                 }}
-                labelFormatter={() => ''}
-                formatter={(value: any) => [value.toFixed(4), 'Preço']}
+                labelFormatter={(label) => `Tick: ${label}`}
             />
             
+            {/* Preço Real */}
             <Line
               type="monotone"
               dataKey="price"
               stroke="hsl(var(--primary))"
-              strokeWidth={2}
+              strokeWidth={2.5}
               dot={false}
-              name="Preço"
+              name="Preço Real"
+              isAnimationActive={false}
+            />
+            
+            {/* Projeção Mediana */}
+            <Line
+              type="monotone"
+              dataKey="median"
+              stroke="hsl(var(--accent))"
+              strokeWidth={2}
+              strokeDasharray="5 5"
+              dot={false}
+              name="Projeção Mediana"
               isAnimationActive={false}
             />
 
+             {/* Marcador do Ponto Atual */}
             {lastRealPoint && (
-              <Scatter
-                data={[lastRealPoint]}
-                fill="hsl(var(--primary))"
-                shape="circle"
-                name="Preço Atual"
-                isAnimationActive={false}
-              />
+                <ReferenceLine 
+                    x={lastRealPoint.time} 
+                    stroke="hsl(var(--primary))" 
+                    strokeWidth={1} 
+                    strokeDasharray="2 4"
+                />
             )}
+            
           </LineChart>
         </ResponsiveContainer>
+         <div className="flex gap-4 mt-4 text-xs justify-center">
+          <div className="flex items-center gap-1.5">
+            <span className="w-4 h-0.5 rounded" style={{ backgroundColor: 'hsl(var(--primary))' }}/>
+            <span>Preço Real</span>
+          </div>
+          <div className="flex items-center gap-1.5">
+             <span className="w-4 border-t-2 border-dashed rounded" style={{ borderColor: 'hsl(var(--accent))' }}/>
+            <span>Projeção Mediana</span>
+          </div>
+        </div>
       </CardContent>
     </Card>
   );
