@@ -1,4 +1,4 @@
-// /src/app/volatility-analysis/page.tsx
+// src/app/volatility-analysis/page.tsx
 'use client';
 
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
@@ -37,6 +37,7 @@ import { useMasterAutopilot } from '@/features/trading/hooks/use-master-autopilo
 import type { AssertivenessData } from '@/features/trading/hooks/use-master-autopilot';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Skeleton } from '@/components/ui/skeleton';
+import { MarketChart } from "@/features/trading/components/deriv-trader/market-chart";
 
 
 /**
@@ -578,76 +579,6 @@ function StochasticLab({
     onConsensusUpdate({strongestSignal, projectionExperts});
   }, [strongestSignal, onConsensusUpdate, projectionExperts]);
 
-  const medianProjection = useMemo(() => {
-    if (priceData.length === 0 || !futurePathsRef.current) return [];
-    
-    const lastPoint = priceData[priceData.length - 1];
-    if (!lastPoint) return [];
-    
-    const lastTime = lastPoint.time;
-    const maxProjectionSeconds = horizons.reduce((max, h) => Math.max(max, h.ticks * (h.type === 'tick' ? 2 : 1)), 0);
-    const projectionData = [];
-
-    for (let s = 1; s <= maxProjectionSeconds; s++) {
-        const pricesAtTimeStep = horizons
-            .map(h => {
-                const timeStepInSeconds = h.type === 'tick' ? 2 : 1;
-                const index = Math.round(s / timeStepInSeconds);
-                if (index > h.ticks) return undefined;
-                return futurePathsRef.current[h.name]?.[index]?.price;
-            })
-            .filter((p): p is number => p !== undefined && !isNaN(p));
-
-        if (pricesAtTimeStep.length > 0) {
-            pricesAtTimeStep.sort((a, b) => a - b);
-            
-            const q1Index = Math.floor(pricesAtTimeStep.length * 0.25);
-            const medianIndex = Math.floor(pricesAtTimeStep.length / 2);
-            const q3Index = Math.floor(pricesAtTimeStep.length * 0.75);
-            
-            const q1 = pricesAtTimeStep[q1Index];
-            const median = pricesAtTimeStep.length % 2 !== 0
-                ? pricesAtTimeStep[medianIndex]
-                : (pricesAtTimeStep[medianIndex - 1] + pricesAtTimeStep[medianIndex]) / 2;
-            const q3 = pricesAtTimeStep[q3Index];
-
-            projectionData.push({
-                time: lastTime + s,
-                median,
-                q1,
-                q3,
-            });
-        }
-    }
-    return projectionData;
-}, [priceData, horizons]);
-
-  const combinedData = useMemo(() => {
-      if (priceData.length === 0) return [];
-      
-      const displayData = priceData.slice(-70);
-      if (medianProjection.length === 0) return displayData;
-      
-      const lastRealTime = displayData[displayData.length - 1]?.time;
-      if (lastRealTime === undefined) return displayData;
-
-      const dataMap = new Map<number, any>();
-      displayData.forEach(d => dataMap.set(d.time, { ...d }));
-      
-      medianProjection.forEach((proj) => {
-          const existing = dataMap.get(proj.time);
-          if (existing) {
-              Object.assign(existing, proj);
-          } else {
-              if (proj.time > lastRealTime) {
-                  dataMap.set(proj.time, { time: proj.time, ...proj });
-              }
-          }
-      });
-      
-      return Array.from(dataMap.values()).sort((a, b) => a.time - b.time);
-  }, [priceData, medianProjection]);
-
   return (
     <Card className="h-full flex flex-col col-span-1 lg:col-span-3">
         <CardHeader>
@@ -664,10 +595,6 @@ function StochasticLab({
                          <StrongestSignalCard signal={strongestSignal} className="md:col-span-1" />
                          <ProjectionExpertsPanel experts={projectionExperts} adaptiveDrifts={adaptiveDriftRef.current} className="md:col-span-3" />
                     </div>
-                    
-                    <VolatilityProjectionChart 
-                        chartData={combinedData}
-                    />
                     
                      <Card className="mt-6">
                         <CardHeader>
@@ -695,154 +622,38 @@ function StochasticLab({
   );
 }
 
-function VolatilityProjectionChart({ chartData, className }: { 
-  chartData: any[];
-  className?: string;
-}) {
-    if (!chartData || chartData.length === 0) {
-        return (
-            <div className={cn("flex flex-col items-center justify-center h-64 text-muted-foreground", className)}>
-                <Loader2 className="w-12 h-12 mb-4 opacity-30 animate-spin" />
-                <p className="font-semibold">A carregar dados do mercado...</p>
-            </div>
-        )
-    }
-
-    const lastRealPoint = useMemo(() => {
-        for (let i = chartData.length - 1; i >= 0; i--) {
-            if (chartData[i].price !== undefined) {
-                return chartData[i];
-            }
-        }
-        return null;
-    }, [chartData]);
-
+const IsolatedMarketChart = () => {
+    const { 
+        activeSymbol, operationsLog, chartData, isChartLoading, chartError, 
+        chartType, setChartType, timePeriod, setTimePeriod, tradeAnnotations
+    } = useDerivApi();
+    
+    const autopilot = useMasterAutopilot();
 
     return (
-        <Card className={cn("h-[500px]", className)}>
+        <Card>
             <CardHeader>
-                <CardTitle className="font-headline flex items-center gap-2">
-                    <Target className="h-5 w-5 text-purple-600" />
-                    Projeção Preditiva: Histórico vs. Consenso
-                </CardTitle>
-                 <CardDescription className="flex items-center gap-2 text-xs">
-                    <Info className="h-3 w-3" />
-                    Cone sombreado = margem de incerteza (25%-75%) | Linha tracejada = previsão mais provável
-                </CardDescription>
+                <CardTitle className="font-headline text-lg">Gráfico de Mercado ({activeSymbol})</CardTitle>
+                <CardDescription>Análise de preço em tempo real.</CardDescription>
             </CardHeader>
             <CardContent>
-                <ResponsiveContainer width="100%" height={380}>
-                    <LineChart data={chartData} margin={{ top: 10, right: 30, left: 0, bottom: 10 }}>
-                        <CartesianGrid strokeDasharray="3 3" opacity={0.2} />
-                        <XAxis 
-                            dataKey="time" 
-                            hide={true}
-                        />
-                        <YAxis
-                            domain={['auto', 'auto']}
-                            tickFormatter={(v) => typeof v === 'number' ? v.toFixed(4) : ''}
-                            orientation="right"
-                            axisLine={false}
-                            tickLine={false}
-                            width={80}
-                        />
-                        <Tooltip
-                            contentStyle={{
-                                backgroundColor: 'hsl(var(--background))',
-                                borderColor: 'hsl(var(--border))',
-                                borderRadius: 'var(--radius)',
-                                padding: '12px',
-                            }}
-                            labelFormatter={(label) => `Tick Epoch: ${label}`}
-                             formatter={(value: number, name: string) => {
-                                const formattedValue = `${Number(value).toFixed(4)}`;
-                                if (name === 'price') return [formattedValue, 'Preço Real'];
-                                if (name === 'median') return [formattedValue, 'Mediana (50%)'];
-                                if (name === 'q1') return [formattedValue, 'Cenário Pessimista (25%)'];
-                                if (name === 'q3') return [formattedValue, 'Cenário Otimista (75%)'];
-                                return [formattedValue, name];
-                            }}
-                        />
-                        
-                        <Area
-                            type="monotone"
-                            dataKey="q3"
-                            stackId="projection"
-                            stroke="none"
-                            fill="hsl(var(--accent))"
-                            fillOpacity={0.15}
-                            name="Limite Superior"
-                            isAnimationActive={false}
-                        />
-                        <Area
-                            type="monotone"
-                            dataKey="q1"
-                            stackId="projection"
-                            stroke="none"
-                            fill="hsl(var(--background))"
-                            fillOpacity={1.0}
-                            name="Limite Inferior"
-                            isAnimationActive={false}
-                        />
-                        
-                        <Line
-                            type="monotone"
-                            dataKey="price"
-                            stroke="hsl(var(--primary))"
-                            strokeWidth={2.5}
-                            dot={false}
-                            name="Preço Real"
-                            isAnimationActive={false}
-                        />
-                        
-                        <Line
-                            type="monotone"
-                            dataKey="median"
-                            stroke="hsl(var(--accent))"
-                            strokeWidth={2.5}
-                            strokeDasharray="5 5"
-                            dot={false}
-                            name="Projeção Mediana"
-                            isAnimationActive={false}
-                        />
-
-                        {lastRealPoint && (
-                            <ReferenceLine 
-                                x={lastRealPoint.time} 
-                                stroke="hsl(var(--primary))" 
-                                strokeWidth={1.5} 
-                                strokeDasharray="2 4"
-                                label={{
-                                    value: "AGORA",
-                                    position: "top",
-                                    fill: "hsl(var(--primary))",
-                                    fontSize: 10,
-                                    fontWeight: "bold",
-                                    offset: 10
-                                }}
-                            />
-                        )}
-                    </LineChart>
-                </ResponsiveContainer>
-                
-                <div className="flex flex-wrap gap-4 mt-4 text-xs justify-center">
-                    <div className="flex items-center gap-1.5">
-                        <div className="w-4 h-0.5 rounded bg-[hsl(var(--primary))]"/>
-                        <span>Preço Real</span>
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                        <div className="w-4 border-t-2 border-dashed border-[hsl(var(--accent))]"/>
-                        <span>Mediana (Mais Provável)</span>
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                        <div className="w-4 h-3 rounded bg-[hsl(var(--accent))] opacity-15"/>
-                        <span>Cone de Incerteza (Q1-Q3)</span>
-                    </div>
-                </div>
+                <MarketChart
+                    activeSymbol={activeSymbol || ''}
+                    chartData={chartData}
+                    isChartLoading={isChartLoading}
+                    chartError={chartError}
+                    chartType={chartType}
+                    setChartType={setChartType}
+                    timePeriod={timePeriod}
+                    setTimePeriod={setTimePeriod}
+                    operations={operationsLog}
+                    indicators={autopilot.masterState.indicators}
+                    tradeAnnotations={tradeAnnotations}
+                />
             </CardContent>
         </Card>
     );
-}
+};
 
 function PageContent() {
   const { 
@@ -949,6 +760,7 @@ function PageContent() {
   return (
     <div className="flex-1 space-y-4 p-4 sm:p-8 pt-6">
       <Header />
+      <IsolatedMarketChart />
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
         <StochasticLab 
           realData={chartData} 
@@ -1196,3 +1008,4 @@ const Header = () => {
     </div>
   );
 };
+```
