@@ -4,7 +4,7 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useForm, FormProvider, useFormContext } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine, Area, Scatter } from 'recharts';
 import { TrendingUp, TrendingDown, HelpCircle, Bot, FlaskConical, Target, Info, Brain, Zap, Send, Loader2, ShieldCheck, GitBranch, BarChart, Activity, AlertTriangle, Power, ChevronsUpDown, Settings, Sigma, Shield, X, Check, Skull, PlayCircle, PauseCircle } from 'lucide-react';
 import { DerivApiProviderV2 as DerivApiProvider, useDerivApiV2 as useDerivApi } from "@/features/trading/hooks/use-deriv-api-v2";
 import { AssetSelectorV2 as AssetSelector } from "@/features/trading/components/deriv-trader/asset-selector-v2";
@@ -276,7 +276,7 @@ function StochasticLab({
   
   const [priceData, setPriceData] = useState<any[]>([]);
   const [lastPrice, setLastPrice] = useState<number | null>(null);
-  const [stats, setStats] = useState<any>({});
+  const [stats, setStats] = useState<any>({ annualizedVol: '0.0000', skewness: '0.0000', kurtosis: '0.0000' });
   
   const [predictionData, setPredictionData] = useState<any[]>([]);
   const futurePathsRef = useRef<Record<string, { time: number; price: number }[]>>({});
@@ -351,7 +351,7 @@ function StochasticLab({
     
     const prices = realData.map(d => isCandle(d) ? d.close : d.price);
     if(prices.length > 0) setLastPrice(prices[prices.length - 1]);
-    setPriceData(realData.map((d, i) => ({ time: i, price: isCandle(d) ? d.close : d.price })));
+    setPriceData(realData.map((d, i) => ({ time: d.epoch, price: isCandle(d) ? d.close : d.price })));
 
     const logReturns: number[] = [];
     for (let i = 1; i < prices.length; i++) {
@@ -370,7 +370,7 @@ function StochasticLab({
 
     if (prices.length > VOL_WINDOW) {
       const lastPriceValue = prices[prices.length - 1];
-      const lastTime = prices.length - 1;
+      const lastTime = realData[realData.length-1].epoch;
 
       const projectPath = (steps: number, horizonName: string) => {
         if (lastPriceValue === null) return [];
@@ -447,7 +447,7 @@ function StochasticLab({
               const newPredictionTimeIndex = newPath[0].time;
               if (!pendingPredictionsRef.current[h.name].some(p => p.startTimeIndex === newPredictionTimeIndex)) {
                   pendingPredictionsRef.current[h.name].push({
-                      startTimeIndex: newPredictionTimeIndex,
+                      startTimeIndex: currentTimeIndex,
                       startPrice: newPath[0].price,
                       predictedEndPrice: newPath[h.ticks].price,
                   });
@@ -576,65 +576,69 @@ function StochasticLab({
     onConsensusUpdate({strongestSignal, projectionExperts});
   }, [strongestSignal, onConsensusUpdate, projectionExperts]);
 
-  const medianProjection = useMemo(() => {
-    const projectionLength = horizons.reduce((max, h) => Math.max(max, h.ticks), 0);
-    const medianData = [];
-
-    const lastPoint = priceData[priceData.length-1];
+  const projectionData = useMemo(() => {
+    if (priceData.length === 0 || !futurePathsRef.current) return [];
+    
+    const lastPoint = priceData[priceData.length - 1];
     if (!lastPoint) return [];
+    
+    const lastTime = lastPoint.time;
+    const projectionLength = horizons.reduce((max, h) => Math.max(max, h.ticks), 0);
+    const data = [];
 
     for (let i = 0; i <= projectionLength; i++) {
         const pricesAtTimeStep = horizons
-            .map(h => futurePathsRef.current[h.name]?.[i]?.price)
-            .filter((p): p is number => p !== undefined);
+            .map(h => futurePathsRef.current?.[h.name]?.[i]?.price)
+            .filter((p): p is number => p !== undefined && !isNaN(p));
 
         if (pricesAtTimeStep.length > 0) {
             pricesAtTimeStep.sort((a, b) => a - b);
-            const mid = Math.floor(pricesAtTimeStep.length / 2);
-            const medianPrice = pricesAtTimeStep.length % 2 !== 0
-                ? pricesAtTimeStep[mid]
-                : (pricesAtTimeStep[mid - 1] + pricesAtTimeStep[mid]) / 2;
+            
+            const q1Index = Math.floor(pricesAtTimeStep.length * 0.25);
+            const medianIndex = Math.floor(pricesAtTimeStep.length / 2);
+            const q3Index = Math.floor(pricesAtTimeStep.length * 0.75);
+            
+            const q1 = pricesAtTimeStep[q1Index];
+            const median = pricesAtTimeStep.length % 2 !== 0
+                ? pricesAtTimeStep[medianIndex]
+                : (pricesAtTimeStep[medianIndex - 1] + pricesAtTimeStep[medianIndex]) / 2;
+            const q3 = pricesAtTimeStep[q3Index];
 
-            medianData.push({
-                time: lastPoint.time + i,
-                median: medianPrice
+            data.push({
+                time: lastTime + i,
+                median,
+                q1,
+                q3,
             });
         }
     }
-    return medianData;
+    return data;
   }, [priceData, horizons]);
 
+
   const combinedData = useMemo(() => {
-      const displayData = priceData.slice(-70);
-      if (medianProjection.length === 0) {
-          return displayData;
-      }
-      
-      const lastRealEpoch = displayData.length > 0 ? displayData[displayData.length - 1].time : 0;
-      
-      const projectionWithCorrectedTime = medianProjection.map(p => ({
-          ...p,
-          time: lastRealEpoch + (p.time - medianProjection[0].time)
-      }));
+    if (priceData.length === 0) return [];
+    
+    const displayData = priceData.slice(-70);
+    if (projectionData.length === 0) return displayData;
+    
+    const lastRealTime = displayData[displayData.length - 1]?.time;
+    if (lastRealTime === undefined) return displayData;
 
-      // Find the intersection point to merge
-      const intersectionIndex = displayData.findIndex(d => d.time === lastRealEpoch);
-      
-      if (intersectionIndex !== -1) {
-          const mergedData = [...displayData];
-          projectionWithCorrectedTime.forEach((projPoint, projIdx) => {
-              const targetIndex = intersectionIndex + projIdx;
-              if (targetIndex < mergedData.length) {
-                  mergedData[targetIndex] = { ...mergedData[targetIndex], median: projPoint.median };
-              } else {
-                  mergedData.push({ time: projPoint.time, median: projPoint.median });
-              }
-          });
-          return mergedData;
-      }
+    const dataMap = new Map<number, any>();
+    displayData.forEach(d => dataMap.set(d.time, { ...d }));
 
-      return [...displayData, ...projectionWithCorrectedTime];
-  }, [priceData, medianProjection]);
+    projectionData.forEach((proj) => {
+        const existing = dataMap.get(proj.time);
+        if (existing) {
+            Object.assign(existing, proj);
+        } else {
+            dataMap.set(proj.time, { time: proj.time, ...proj });
+        }
+    });
+    
+    return Array.from(dataMap.values()).sort((a, b) => a.time - b.time);
+  }, [priceData, projectionData]);
 
   return (
     <Card className="h-full flex flex-col col-span-1 lg:col-span-3">
@@ -687,98 +691,149 @@ function VolatilityProjectionChart({ chartData, className }: {
   chartData: any[];
   className?: string;
 }) {
-
     if (!chartData || chartData.length === 0) {
-      return (
-          <div className={cn("flex flex-col items-center justify-center h-64 text-muted-foreground", className)}>
-              <Loader2 className="w-12 h-12 mb-4 opacity-30 animate-spin" />
-              <p className="font-semibold">A carregar dados do mercado...</p>
-          </div>
-      )
-  }
+        return (
+            <div className={cn("flex flex-col items-center justify-center h-64 text-muted-foreground", className)}>
+                <Loader2 className="w-12 h-12 mb-4 opacity-30 animate-spin" />
+                <p className="font-semibold">A carregar dados do mercado...</p>
+            </div>
+        )
+    }
 
-  const lastRealPoint = chartData[chartData.length - 1];
+    const lastRealPoint = chartData.slice().reverse().find(d => d.price !== undefined);
 
-  return (
-    <Card className={cn("h-[460px]", className)}>
-      <CardHeader>
-        <CardTitle>Preço Real vs. Projeção Mediana</CardTitle>
-        <CardDescription>
-          A linha sólida é o preço real; a linha tracejada é o caminho mais provável previsto pela IA.
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        <ResponsiveContainer width="100%" height={360}>
-          <LineChart data={chartData} margin={{ top: 5, right: 20, left: -10, bottom: 5 }}>
-            <CartesianGrid strokeDasharray="3 3" opacity={0.2} />
-            <XAxis dataKey="time" hide={true} />
-            <YAxis
-              domain={['dataMin - 0.2', 'dataMax + 0.2']}
-              tickFormatter={(v) => typeof v === 'number' ? v.toFixed(4) : ''}
-              orientation="right"
-              axisLine={false}
-              tickLine={false}
-              width={80}
-            />
-            <Tooltip
-                contentStyle={{
-                    backgroundColor: 'hsl(var(--background))',
-                    borderColor: 'hsl(var(--border))',
-                    borderRadius: 'var(--radius)',
-                }}
-                labelFormatter={(label) => `Tick: ${label}`}
-            />
-            
-            {/* Preço Real */}
-            <Line
-              type="monotone"
-              dataKey="price"
-              stroke="hsl(var(--primary))"
-              strokeWidth={2.5}
-              dot={false}
-              name="Preço Real"
-              isAnimationActive={false}
-            />
-            
-            {/* Projeção Mediana */}
-            <Line
-              type="monotone"
-              dataKey="median"
-              stroke="hsl(var(--accent))"
-              strokeWidth={2}
-              strokeDasharray="5 5"
-              dot={false}
-              name="Projeção Mediana"
-              isAnimationActive={false}
-            />
+    return (
+        <Card className={cn("h-[500px]", className)}>
+            <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                    <Target className="h-5 w-5 text-purple-600" />
+                    Projeção Preditiva: Histórico vs. Consenso
+                </CardTitle>
+                <CardDescription className="flex items-center gap-2 text-xs">
+                    <Info className="h-3 w-3" />
+                    Cone sombreado = margem de incerteza (25%-75%) | Linha tracejada = previsão mais provável
+                </CardDescription>
+            </CardHeader>
+            <CardContent>
+                <ResponsiveContainer width="100%" height={380}>
+                    <LineChart data={chartData} margin={{ top: 10, right: 30, left: 0, bottom: 10 }}>
+                        <CartesianGrid strokeDasharray="3 3" opacity={0.2} />
+                        <XAxis 
+                            dataKey="time" 
+                            hide={true}
+                        />
+                        <YAxis
+                            domain={['dataMin - 0.2', 'dataMax + 0.2']}
+                            tickFormatter={(v) => typeof v === 'number' ? v.toFixed(4) : ''}
+                            orientation="right"
+                            axisLine={false}
+                            tickLine={false}
+                            width={80}
+                        />
+                        <Tooltip
+                            contentStyle={{
+                                backgroundColor: 'hsl(var(--background))',
+                                borderColor: 'hsl(var(--border))',
+                                borderRadius: 'var(--radius)',
+                                padding: '12px',
+                            }}
+                            labelFormatter={(label) => `Tick Epoch: ${label}`}
+                             formatter={(value: number, name: string) => {
+                                const formattedValue = `${Number(value).toFixed(4)}`;
+                                if (name === 'price') return [formattedValue, 'Preço Real'];
+                                if (name === 'median') return [formattedValue, 'Mediana (50%)'];
+                                if (name === 'q1') return [formattedValue, 'Cenário Pessimista (25%)'];
+                                if (name === 'q3') return [formattedValue, 'Cenário Otimista (75%)'];
+                                return [formattedValue, name];
+                            }}
+                        />
+                        
+                        <Area
+                            type="monotone"
+                            dataKey="q3"
+                            stackId="projection"
+                            stroke="none"
+                            fill="hsl(var(--accent))"
+                            fillOpacity={0.15}
+                            name="Limite Superior"
+                            isAnimationActive={false}
+                        />
+                        <Area
+                            type="monotone"
+                            dataKey="q1"
+                            stackId="projection"
+                            stroke="none"
+                            fill="hsl(var(--background))"
+                            fillOpacity={1.0}
+                            name="Limite Inferior"
+                            isAnimationActive={false}
+                        />
+                        
+                        <Line
+                            type="monotone"
+                            dataKey="price"
+                            stroke="hsl(var(--primary))"
+                            strokeWidth={2.5}
+                            dot={false}
+                            name="Preço Real"
+                            isAnimationActive={false}
+                        />
+                        
+                        <Line
+                            type="monotone"
+                            dataKey="median"
+                            stroke="hsl(var(--accent))"
+                            strokeWidth={2.5}
+                            strokeDasharray="5 5"
+                            dot={false}
+                            name="Projeção Mediana"
+                            isAnimationActive={false}
+                        />
 
-             {/* Marcador do Ponto Atual */}
-            {lastRealPoint && (
-                <ReferenceLine 
-                    x={lastRealPoint.time} 
-                    stroke="hsl(var(--primary))" 
-                    strokeWidth={1} 
-                    strokeDasharray="2 4"
-                />
-            )}
-            
-          </LineChart>
-        </ResponsiveContainer>
-         <div className="flex gap-4 mt-4 text-xs justify-center">
-          <div className="flex items-center gap-1.5">
-            <span className="w-4 h-0.5 rounded" style={{ backgroundColor: 'hsl(var(--primary))' }}/>
-            <span>Preço Real</span>
-          </div>
-          <div className="flex items-center gap-1.5">
-             <span className="w-4 border-t-2 border-dashed rounded" style={{ borderColor: 'hsl(var(--accent))' }}/>
-            <span>Projeção Mediana</span>
-          </div>
-        </div>
-      </CardContent>
-    </Card>
-  );
+                        {lastRealPoint && (
+                            <>
+                                <ReferenceLine 
+                                    x={lastRealPoint.time} 
+                                    stroke="hsl(var(--primary))" 
+                                    strokeWidth={1.5} 
+                                    strokeDasharray="2 4"
+                                    label={{
+                                        value: "AGORA",
+                                        position: "top",
+                                        fill: "hsl(var(--primary))",
+                                        fontSize: 10,
+                                        fontWeight: "bold",
+                                        offset: 10
+                                    }}
+                                />
+                                <Scatter
+                                    data={[{ time: lastRealPoint.time, price: lastRealPoint.price }]}
+                                    fill="hsl(var(--primary))"
+                                    shape="circle"
+                                />
+                            </>
+                        )}
+                    </LineChart>
+                </ResponsiveContainer>
+                
+                <div className="flex flex-wrap gap-4 mt-4 text-xs justify-center">
+                    <div className="flex items-center gap-1.5">
+                        <div className="w-4 h-0.5 rounded bg-[hsl(var(--primary))]"/>
+                        <span>Preço Real</span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                        <div className="w-4 border-t-2 border-dashed border-[hsl(var(--accent))]"/>
+                        <span>Mediana (Mais Provável)</span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                        <div className="w-4 h-3 rounded bg-[hsl(var(--accent))] opacity-15"/>
+                        <span>Cone de Incerteza (Q1-Q3)</span>
+                    </div>
+                </div>
+            </CardContent>
+        </Card>
+    );
 }
-
 
 function PageContent() {
   const { 
