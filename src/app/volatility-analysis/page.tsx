@@ -202,7 +202,6 @@ const ProjectionExpertsPanel = ({ experts, adaptiveDrifts, className }: { expert
 
 
 interface StochasticLabProps {
-  realData: ChartData[];
   onConsensusUpdate: (consensus: ConsensusData) => void;
   predictiveLogs: PredictiveTradeLog[];
   onDeletePredictiveLog: (logId: string) => void;
@@ -268,7 +267,6 @@ const BacktestResultViewer = ({ result }: { result: BacktestResult | null }) => 
 };
 
 function StochasticLab({ 
-    realData, 
     onConsensusUpdate, 
     predictiveLogs,
     onDeletePredictiveLog,
@@ -278,6 +276,7 @@ function StochasticLab({
 }: StochasticLabProps) {
   const { user } = useAuth();
   const { toast } = useToast();
+  const { getHistoricalData, chartData: realData } = useDerivApi();
   const [activeTab, setActiveTab] = useState('audit');
 
   const { projectionExperts, strongestSignal, stats, adaptiveDrifts } = useStochasticModels(realData);
@@ -287,47 +286,47 @@ function StochasticLab({
   const [backtestResult, setBacktestResult] = useState<BacktestResult | null>(null);
 
   const horizonsConfigForBacktest = useMemo(() => [
-    { name: '1t', ticks: 1, type: 'tick', window: 6 },
-    { name: '3t', ticks: 3, type: 'tick', window: 6 },
-    { name: '6t', ticks: 6, type: 'tick', window: 6 },
-    { name: '10t', ticks: 10, type: 'tick', window: 10 },
-    { name: '15s', ticks: 15, type: 'second', window: 10 },
-    { name: '20s', ticks: 20, type: 'second', window: 10 },
-    { name: '30s', ticks: 30, type: 'second', window: 75 },
-    { name: '40s', ticks: 40, type: 'second', window: 75 },
-    { name: '50s', ticks: 50, type: 'second', window: 75 },
+    { name: '1t', ticks: 1 }, { name: '3t', ticks: 3 }, { name: '6t', ticks: 6 }, 
+    { name: '10t', ticks: 10 }, { name: '15s', ticks: 15 }, { name: '20s', ticks: 20 },
+    { name: '30s', ticks: 30 }, { name: '40s', ticks: 40 }, { name: '50s', ticks: 50 },
   ], []);
 
   const handleRunBacktest = async () => {
-    if (!user) {
-        toast({ title: "Autenticação Necessária", variant: "destructive"});
-        return;
+    if (!user || !activeSymbol) {
+      toast({ title: "Autenticação/Ativo Necessários", variant: "destructive" });
+      return;
     }
     setIsBacktesting(true);
     setBacktestResult(null);
-    
-    // Roda em um timeout para não bloquear a UI principal.
-    await new Promise(resolve => setTimeout(resolve, 50)); 
+
+    toast({ title: "Iniciando Backtest...", description: `A obter ${backtestPoints} pontos de dados históricos...` });
 
     try {
-        const backtestData = realData.slice(-backtestPoints);
-        if (backtestData.length < 500) {
-            throw new Error("Dados insuficientes. Selecione pelo menos 500 pontos de dados para um backtest significativo.");
-        }
-        
-        const result = runStochasticBacktest(backtestData, {
-            horizons: horizonsConfigForBacktest
-        });
-        
-        await saveBacktestRun(user.uid, activeSymbol || 'unknown', { ...result, id: `run_${Date.now()}`, timestamp: new Date().toISOString() });
+      // Fetch fresh, deep historical data instead of using session data
+      const historicalData = await getHistoricalData(activeSymbol, 'candles', backtestPoints, '1m');
 
-        setBacktestResult(result);
-        toast({ title: "Backtest Concluído!", description: `Análise de ${backtestData.length} pontos de dados finalizada.` });
+      if (historicalData.length < 500) {
+        throw new Error(`Dados insuficientes. Obtidos apenas ${historicalData.length} pontos de dados.`);
+      }
+
+      toast({ title: "Dados Obtidos!", description: "A processar simulação. Isto pode demorar alguns segundos." });
+
+      // Run in a timeout to allow the UI to update with the toast message
+      await new Promise(resolve => setTimeout(resolve, 50));
+      
+      const result = runStochasticBacktest(historicalData, {
+          horizons: horizonsConfigForBacktest
+      });
+      
+      await saveBacktestRun(user.uid, activeSymbol, { ...result, id: `run_${Date.now()}`, timestamp: new Date().toISOString() });
+
+      setBacktestResult(result);
+      toast({ title: "Backtest Concluído!", description: `Análise de ${historicalData.length} pontos de dados finalizada.` });
     } catch (e: any) {
-        toast({ title: "Erro no Backtest", description: e.message, variant: "destructive" });
-        console.error("Backtest error:", e);
+      toast({ title: "Erro no Backtest", description: e.message, variant: "destructive" });
+      console.error("Backtest error:", e);
     } finally {
-        setIsBacktesting(false);
+      setIsBacktesting(false);
     }
   };
   
@@ -650,7 +649,6 @@ function PageContent() {
       <IsolatedMarketChart />
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
         <StochasticLab 
-          realData={chartData} 
           onConsensusUpdate={handleConsensusUpdate}
           predictiveLogs={predictiveLogs}
           onDeletePredictiveLog={handleDeletePredictiveLog}
