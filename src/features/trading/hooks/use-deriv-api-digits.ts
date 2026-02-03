@@ -7,35 +7,30 @@ import { useToast } from '@/hooks/use-toast';
 import type { Operation, OperationInitiator, DurationUnit, TickData, Asset } from '@/lib/types';
 import { FirebaseErrorListener } from '@/components/firebase-error-listener';
 
+// --- CONSTANTS ---
 const DERIV_DEMO_TOKEN_KEY = 'derivDemoApiToken';
 const DERIV_REAL_TOKEN_KEY = 'derivRealApiToken';
 const DERIV_ACCOUNT_TYPE_KEY = 'derivAccountType';
 const DERIV_DIGITS_LOG_KEY = 'derivDigitsOperationsLog_v5';
 const DERIV_APP_ID = process.env.NEXT_PUBLIC_DERIV_APP_ID || "1089";
+const MAX_TICKS = 1000;
+const marketNameMapping: Record<string, string> = { 'synthetic_index': 'Índices Sintéticos' };
 
+// --- TYPES ---
 export type AccountType = 'demo' | 'real';
-
 export interface AccountBalance {
   balance: number | null;
   currency: string | null;
   loading: boolean;
 }
-
 export type PromiseCallbacks = { 
   resolve: (value: any) => void; 
   reject: (reason?: any) => void 
 };
-
 export interface AssetGroup {
   label: string;
   options: Asset[];
 }
-
-export type ApiHistoricalData = {
-    epoch: number;
-    price: number;
-};
-
 export interface DerivApiContextTypeDigits {
   ws: WebSocket | null;
   isConnected: boolean;
@@ -68,9 +63,6 @@ export interface DerivApiContextTypeDigits {
   sellContract: (contractId: number) => Promise<TradeResult>;
 }
 
-const MAX_TICKS = 1000;
-const marketNameMapping: Record<string, string> = { 'synthetic_index': 'Índices Sintéticos' };
-
 export const DerivApiContextDigits = createContext<DerivApiContextTypeDigits | undefined>(undefined);
 
 export function useDerivApiDigitsState() {
@@ -82,7 +74,6 @@ export function useDerivApiDigitsState() {
   const [operationsLog, setOperationsLog] = useState<Operation[]>([]);
   const [assetGroups, setAssetGroups] = useState<AssetGroup[]>([]);
   const [isAssetsLoading, setIsAssetsLoading] = useState(true);
-  const { toast } = useToast();
   
   const [activeSymbol, setActiveSymbol] = useState<string | null>('1HZ10V');
   const [priceTicks, setPriceTicks] = useState<TickData[]>([]); 
@@ -135,7 +126,7 @@ export function useDerivApiDigitsState() {
 
     const activeToken = accountType === 'demo' ? demoToken : realToken;
 
-    const makeRequest = useCallback((request: object, noResponse = false): Promise<any> => {
+    const makeRequest = useCallback(<T,>(request: object): Promise<T> => {
         return new Promise((resolve, reject) => {
             const ws = wsRef.current;
             if (!ws || ws.readyState !== WebSocket.OPEN) {
@@ -143,20 +134,17 @@ export function useDerivApiDigitsState() {
             }
             const req_id = Date.now() + Math.floor(Math.random() * 1000000);
             const payload = { ...request, req_id };
-            if (!noResponse) {
-                const timeoutId = setTimeout(() => {
-                    if (promisesRef.current.has(String(req_id))) {
-                        promisesRef.current.delete(String(req_id));
-                        reject(new Error(`O pedido à API expirou (60s).`));
-                    }
-                }, 60000);
-                promisesRef.current.set(String(req_id), {
-                    resolve: (value: any) => { clearTimeout(timeoutId); resolve(value); },
-                    reject: (reason: any) => { clearTimeout(timeoutId); reject(reason); }
-                });
-            }
+            const timeoutId = setTimeout(() => {
+                if (promisesRef.current.has(String(req_id))) {
+                    promisesRef.current.delete(String(req_id));
+                    reject(new Error(`O pedido à API expirou (60s).`));
+                }
+            }, 60000);
+            promisesRef.current.set(String(req_id), {
+                resolve: (value: any) => { clearTimeout(timeoutId); resolve(value); },
+                reject: (reason: any) => { clearTimeout(timeoutId); reject(reason); }
+            });
             ws.send(JSON.stringify(payload));
-            if (noResponse) resolve({} as any);
         });
     }, []);
 
@@ -209,18 +197,19 @@ export function useDerivApiDigitsState() {
     }, []);
 
     const subscribeToTicks = useCallback(async (symbol: string) => {
-        if (wsRef.current?.readyState !== WebSocket.OPEN) return;
+        if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
         if (activeSubscriptionIdRef.current) {
-            try { await makeRequest({ forget: activeSubscriptionIdRef.current }, true); } catch (e) { }
+            try { await makeRequest({ forget: activeSubscriptionIdRef.current }); } catch (e) { /* ignore */ }
         }
         setPriceTicks([]); 
         try {
             const history: any = await makeRequest({ ticks_history: symbol, end: "latest", count: MAX_TICKS, adjust_start_time: 1 });
             if (history.error) throw new Error(history.error.message);
-            setPriceTicks(history.history.times.map((t: number, i: number) => ({ epoch: t, price: history.history.prices[i] })));
+            const initialTicks = history.history.times.map((t: number, i: number) => ({ epoch: t, price: history.history.prices[i] }));
+            setPriceTicks(initialTicks);
             const subResponse: any = await makeRequest({ ticks: symbol, subscribe: 1 });
             if(subResponse.error) throw new Error(subResponse.error.message);
-            if(subResponse.subscription?.id) activeSubscriptionIdRef.current = subResponse.subscription.id;
+            activeSubscriptionIdRef.current = subResponse.subscription?.id || null;
         } catch (error: any) {
             console.error(`[Market Data - Digits] Error for ${symbol}:`, error);
         }
@@ -418,7 +407,6 @@ export function useDerivApiDigitsState() {
 
 export function DerivApiProviderDigits({ children }: { children: React.ReactNode }) {
     const contextValue = useDerivApiDigitsState();
-
     return React.createElement(
         DerivApiContextDigits.Provider,
         { value: contextValue },
