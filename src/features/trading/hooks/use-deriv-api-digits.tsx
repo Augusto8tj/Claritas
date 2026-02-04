@@ -113,8 +113,8 @@ const addDataPoint = (prevData: ChartData[], newPoint: ChartData): ChartData[] =
 // This is the main state logic hook
 export function useDerivApiDigitsState() {
   const { user } = useAuth();
-  const [demoToken, setDemoToken] = useState<string | null>(null);
-  const [realToken, setRealToken] = useState<string | null>(null);
+  const [demoToken, setDemoToken] = useState<string | null>('ljUGk6wbLSrtEDo');
+  const [realToken, setRealToken] = useState<string | null>('GU5MwbX1kwvSoyw');
   const [accountType, setAccountTypeState] = useState<AccountType>('demo');
   const [accountBalance, setAccountBalance] = useState<AccountBalance>({ balance: null, currency: null, loading: true });
   const [isLoading, setIsLoading] = useState(true);
@@ -454,7 +454,7 @@ export function useDerivApiDigitsState() {
 
     useEffect(() => {
         if (isConnected && activeSymbol && !isConnecting) subscribeToMarketData(activeSymbol);
-    }, [isConnected, activeSymbol, isConnecting, subscribeToMarketData, chartType, timePeriod]);
+    }, [isConnected, activeSymbol, isConnecting, chartType, timePeriod, subscribeToMarketData]);
 
     const setAccountType = useCallback((type: AccountType) => {
         try { localStorage.setItem(DERIV_ACCOUNT_TYPE_KEY, type); setAccountTypeState(type); allowAutoReconnectRef.current = true; setTriggerReconnect(c => c + 1); } catch (e) {}
