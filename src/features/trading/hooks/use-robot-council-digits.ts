@@ -43,6 +43,20 @@ const councilStrategies: CouncilStrategy[] = [
   { id: 'odd', type: 'DIGITODD', description: 'O resultado é Ímpar' },
 ];
 
+const getDecimalPlaces = (pipSize: number | undefined): number => {
+    if (pipSize === undefined || pipSize === null || pipSize <= 0) {
+        return 2; 
+    }
+    if (Math.floor(pipSize) === pipSize && pipSize >= 1) {
+        return 0;
+    }
+    const pipString = String(pipSize);
+    if (pipString.includes('.')) {
+        return pipString.split('.')[1].length;
+    }
+    return 0;
+};
+
 // ============================================================================
 // HOOK PRINCIPAL
 // ============================================================================
@@ -92,11 +106,12 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
     if (priceTicks.length < 100) {
       return Array.from({ length: 10 }, (_, i) => ({ digit: i, count: 0, probability: 10 }));
     }
+    const decimalPlaces = getDecimalPlaces(activeAsset?.pip);
     const counts = Array(10).fill(0);
     const last100Ticks = priceTicks.slice(-100);
     
     last100Ticks.forEach(tick => {
-        const priceString = tick.price.toFixed(activeAsset?.pip ?? 2);
+        const priceString = tick.price.toFixed(decimalPlaces);
         const lastChar = priceString.slice(-1);
         const digit = parseInt(lastChar, 10);
         if (!isNaN(digit)) {
@@ -231,12 +246,13 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
     const currentTick = priceTicks[priceTicks.length - 1];
     const tradesToRemove: string[] = [];
     let performanceChanged = false;
+    const decimalPlaces = getDecimalPlaces(activeAsset?.pip);
 
     virtualTradesRef.current.forEach(trade => {
       if (currentTick.epoch >= trade.exitEpoch) {
         tradesToRemove.push(trade.id);
         const exitTick = priceTicks.find(t => t.epoch >= trade.exitEpoch) || currentTick;
-        const priceString = exitTick.price.toFixed(activeAsset?.pip ?? 2);
+        const priceString = exitTick.price.toFixed(decimalPlaces);
         const lastDigit = parseInt(priceString.slice(-1), 10);
         
         let isWin = false;

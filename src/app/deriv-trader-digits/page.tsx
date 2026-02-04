@@ -24,6 +24,19 @@ import { BrainCircuit, Loader2, TrendingDown, TrendingUp } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 
+const getDecimalPlaces = (pipSize: number | undefined): number => {
+    if (pipSize === undefined || pipSize === null || pipSize <= 0) {
+        return 2; 
+    }
+    if (Math.floor(pipSize) === pipSize && pipSize >= 1) {
+        return 0;
+    }
+    const pipString = String(pipSize);
+    if (pipString.includes('.')) {
+        return pipString.split('.')[1].length;
+    }
+    return 0;
+};
 
 function HeaderDigits() {
     const {
@@ -98,12 +111,12 @@ function CurrentPriceDisplay() {
         );
     }
     
-    const pip = Math.max(activeAsset?.pip ?? 2, 2);
+    const decimalPlaces = getDecimalPlaces(activeAsset?.pip);
     const change = prevTick ? lastTick.price - prevTick.price : 0;
     const isUp = change > 0;
     const isDown = change < 0;
 
-    const priceString = lastTick.price.toFixed(pip);
+    const priceString = lastTick.price.toFixed(decimalPlaces);
     const lastDigit = priceString.slice(-1);
     const mainPart = priceString.slice(0, -1);
 
@@ -128,7 +141,7 @@ function CurrentPriceDisplay() {
                 )}>
                     {isUp && <TrendingUp className="h-4 w-4" />}
                     {isDown && <TrendingDown className="h-4 w-4" />}
-                    <span>{change.toFixed(pip)}</span>
+                    <span>{change.toFixed(decimalPlaces)}</span>
                 </div>
             </CardContent>
         </Card>

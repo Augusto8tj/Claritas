@@ -12,13 +12,29 @@ interface DigitStatsChartProps {
   pip?: number;
 }
 
+const getDecimalPlaces = (pipSize: number | undefined): number => {
+    if (pipSize === undefined || pipSize === null || pipSize <= 0) {
+        return 2; 
+    }
+    if (Math.floor(pipSize) === pipSize && pipSize >= 1) {
+        return 0;
+    }
+    const pipString = String(pipSize);
+    if (pipString.includes('.')) {
+        return pipString.split('.')[1].length;
+    }
+    return 0;
+};
+
 const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8', '#82ca9d', '#ffc658', '#a4de6c', '#d0ed57', '#ffc658'];
 
-export function DigitStatsChart({ priceTicks, pip = 2 }: DigitStatsChartProps) {
+export function DigitStatsChart({ priceTicks, pip }: DigitStatsChartProps) {
+  const decimalPlaces = getDecimalPlaces(pip);
+  
   const lastTick = priceTicks.length > 0 ? priceTicks[priceTicks.length - 1] : null;
   let lastDigit: number | null = null;
   if (lastTick) {
-      const priceString = lastTick.price.toFixed(pip);
+      const priceString = lastTick.price.toFixed(decimalPlaces);
       const lastChar = priceString.slice(-1);
       lastDigit = parseInt(lastChar, 10);
   }
@@ -32,7 +48,7 @@ export function DigitStatsChart({ priceTicks, pip = 2 }: DigitStatsChartProps) {
     const last100Ticks = priceTicks.slice(-100);
     
     last100Ticks.forEach(tick => {
-        const priceString = tick.price.toFixed(pip);
+        const priceString = tick.price.toFixed(decimalPlaces);
         const lastChar = priceString.slice(-1);
         const digit = parseInt(lastChar, 10);
         
@@ -48,7 +64,7 @@ export function DigitStatsChart({ priceTicks, pip = 2 }: DigitStatsChartProps) {
       value: count,
       probability: total > 0 ? `${((count / total) * 100).toFixed(1)}%` : '0.0%',
     }));
-  }, [priceTicks, pip]);
+  }, [priceTicks, decimalPlaces]);
 
   return (
     <Card>
