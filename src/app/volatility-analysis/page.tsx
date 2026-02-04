@@ -1,10 +1,10 @@
-// src/app/volatility-analysis/page.tsx
+// /src/app/volatility-analysis/page.tsx
 'use client';
 
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useForm, FormProvider, useFormContext } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { TrendingUp, TrendingDown, HelpCircle, Bot, FlaskConical, Target, Info, Settings, Sigma, Power, PlayCircle, PauseCircle, Skull, ChevronsUpDown, Activity, BarChart, Brain, TestTube, FilePieChart, CheckCheck, Loader2, Gauge } from 'lucide-react';
+import { TrendingUp, TrendingDown, HelpCircle, Bot, FlaskConical, Target, Info, Settings, Sigma, Power, PlayCircle, PauseCircle, Skull, ChevronsUpDown, Activity, BarChart, Brain, TestTube, FilePieChart, CheckCheck, Loader2, Gauge, XCircle } from 'lucide-react';
 import { DerivApiProviderV2 as DerivApiProvider, useDerivApiV2 as useDerivApi } from "@/features/trading/hooks/use-deriv-api-v2";
 import { AssetSelectorV2 as AssetSelector } from "@/features/trading/components/deriv-trader/asset-selector-v2";
 import { ApiStatusIndicatorV2 as ApiStatusIndicator } from "@/features/trading/components/deriv-trader/ApiStatusIndicatorV2";
@@ -40,6 +40,7 @@ import { useStochasticModels, type ExpertProjection, type StrongestSignal, type 
 import { runStochasticBacktest, type BacktestResult } from '@/features/trading/backtest/backtest-engine';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
+import { Badge } from '@/components/ui/badge';
 
 
 // --- TYPE DEFINITIONS ---
