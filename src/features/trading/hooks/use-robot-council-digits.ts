@@ -113,28 +113,28 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
   }, [priceTicks, activeAsset]);
 
   const toggleAutopilot = useCallback(() => {
-    setIsCouncilAutopilotOn(prev => {
-      const isActivating = !prev;
-      if (isActivating) {
-        setAutopilotStatus('WARMING_UP');
-        autopilotStartTimeRef.current = Date.now();
-        setWarmupTimeLeft(WARMUP_DURATION_MS);
-        if (warmupIntervalRef.current) clearInterval(warmupIntervalRef.current);
-        warmupIntervalRef.current = setInterval(() => {
-          const elapsed = Date.now() - (autopilotStartTimeRef.current || Date.now());
-          setWarmupTimeLeft(Math.max(0, WARMUP_DURATION_MS - elapsed));
-        }, 1000);
-        toast({ title: 'Piloto Automático Ativado', description: 'Período de aquecimento de 1 minuto iniciado.' });
-      } else {
-        setAutopilotStatus('PAUSED');
-        if (warmupIntervalRef.current) clearInterval(warmupIntervalRef.current);
-        setChampionRobotId(null);
-        setRecoveryState({ isActive: false, martingaleLevel: 0, stakeToRecover: 0 });
-        toast({ title: 'Piloto Automático Desativado' });
-      }
-      return isActivating;
-    });
-  }, [toast]);
+    const isActivating = !isCouncilAutopilotOn;
+
+    if (isActivating) {
+      setAutopilotStatus('WARMING_UP');
+      autopilotStartTimeRef.current = Date.now();
+      setWarmupTimeLeft(WARMUP_DURATION_MS);
+      if (warmupIntervalRef.current) clearInterval(warmupIntervalRef.current);
+      warmupIntervalRef.current = setInterval(() => {
+        const elapsed = Date.now() - (autopilotStartTimeRef.current || Date.now());
+        setWarmupTimeLeft(Math.max(0, WARMUP_DURATION_MS - elapsed));
+      }, 1000);
+      toast({ title: 'Piloto Automático Ativado', description: 'Período de aquecimento de 1 minuto iniciado.' });
+    } else {
+      setAutopilotStatus('PAUSED');
+      if (warmupIntervalRef.current) clearInterval(warmupIntervalRef.current);
+      setChampionRobotId(null);
+      setRecoveryState({ isActive: false, martingaleLevel: 0, stakeToRecover: 0 });
+      toast({ title: 'Piloto Automático Desativado' });
+    }
+    
+    setIsCouncilAutopilotOn(isActivating);
+  }, [toast, isCouncilAutopilotOn]);
   
   useEffect(() => {
     if (autopilotStatus === 'WARMING_UP' && warmupTimeLeft <= 0) {
