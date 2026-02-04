@@ -82,7 +82,6 @@ export function useHFStrikeZone(
     if (!enabled || chartData.length < 20) return null;
     const candles = chartData.filter(isCandleData);
     if (candles.length < 20) return null;
-    // Passamos um array vazio para as estratégias porque só precisamos dos valores brutos dos indicadores
     return calculateAllIndicators(candles, [], '1m', { duration: 1, unit: 't' });
   }, [chartData, enabled]);
 
@@ -193,11 +192,11 @@ export function useHFStrikeZone(
     // LONG ENTRY
     if (bbAnalysis.touchingLower) {
       triggers.push(`📉 Preço na Banda Inferior (${currentPrice.toFixed(5)})`);
-      confidence += 30;
+      confidence += 40;
     }
     if (rsiAnalysis.oversold) {
       triggers.push(`📊 RSI Oversold (${rsiAnalysis.value.toFixed(1)})`);
-      confidence += 25;
+      confidence += 35;
     }
     if (rsiAnalysis.divergence === 'bullish') {
       triggers.push('🔄 Divergência Bullish Detectada');
@@ -207,7 +206,7 @@ export function useHFStrikeZone(
     if (confidence >= 60) {
       if (volumeAnalysis.isSpike) {
         triggers.push(`📈 Volume Spike (${(volumeAnalysis.ratio * 100).toFixed(0)}%)`);
-        confidence += 20;
+        confidence += 15;
       }
       if (bbAnalysis.isSqueezed) {
         triggers.push('🎯 Bollinger Squeeze Ativo');
@@ -243,11 +242,11 @@ export function useHFStrikeZone(
 
     if (bbAnalysis.touchingUpper) {
       triggers.push(`📈 Preço na Banda Superior (${currentPrice.toFixed(5)})`);
-      confidence += 30;
+      confidence += 40;
     }
     if (rsiAnalysis.overbought) {
       triggers.push(`📊 RSI Overbought (${rsiAnalysis.value.toFixed(1)})`);
-      confidence += 25;
+      confidence += 35;
     }
     if (rsiAnalysis.divergence === 'bearish') {
       triggers.push('🔄 Divergência Bearish Detectada');
@@ -257,7 +256,7 @@ export function useHFStrikeZone(
     if (confidence >= 60) {
         if (volumeAnalysis.isSpike) {
             triggers.push(`📈 Volume Spike (${(volumeAnalysis.ratio * 100).toFixed(0)}%)`);
-            confidence += 20;
+            confidence += 15;
         }
         if (bbAnalysis.isSqueezed) {
             triggers.push('🎯 Bollinger Squeeze Ativo');

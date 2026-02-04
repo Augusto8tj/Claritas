@@ -4,7 +4,6 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
@@ -21,7 +20,19 @@ import { saveHFTradeLog, calculateHFStats } from '@/services/hf-data-service';
 import { Target, TrendingUp, BarChart, Brain, Activity, Zap } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { Operation, TradeResult } from '@/lib/types';
-import { Indicators } from '@/features/trading/services/indicator-service';
+
+const MetricCard = ({ icon, label, value, subtext, color }: { icon: React.ReactNode; label: string; value: string | number; subtext?: string; color?: string }) => (
+    <Card>
+      <CardContent className="p-4">
+        <div className="flex items-center justify-between text-xs text-muted-foreground mb-1">
+          <span className="font-semibold">{label}</span>
+          {icon}
+        </div>
+        <p className={cn('text-2xl font-bold', color)}>{value}</p>
+        {subtext && <p className="text-xs text-muted-foreground mt-1">{subtext}</p>}
+      </CardContent>
+    </Card>
+);
 
 function PageContent() {
   const { user } = useAuth();
@@ -241,60 +252,40 @@ function PageContent() {
 
       {/* Stats Overview */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-        <Card>
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between text-xs text-muted-foreground mb-1">
-              <span>Total Strikes</span>
-              <BarChart className="h-3 w-3" />
-            </div>
-            <p className="text-2xl font-bold">{stats.totalStrikes}</p>
-            <p className="text-xs text-muted-foreground mt-1">
-              L:{stats.strikesByType.long} S:{stats.strikesByType.short}
-            </p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between text-xs text-muted-foreground mb-1">
-              <span>Win Rate</span>
-              <TrendingUp className="h-3 w-3" />
-            </div>
-            <p className={cn('text-2xl font-bold', hfStats.winRate > 60 ? 'text-green-600' : 'text-red-600')}>
-              {hfStats.winRate.toFixed(1)}%
-            </p>
-            <p className="text-xs text-muted-foreground mt-1">{hfStats.totalTrades} trades</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between text-xs text-muted-foreground mb-1">
-              <span>P&L Total</span>
-              <Target className="h-3 w-3" />
-            </div>
-            <p className={cn('text-2xl font-bold', hfStats.totalPnL > 0 ? 'text-green-600' : 'text-red-600')}>
-              ${Math.abs(hfStats.totalPnL).toFixed(2)}
-            </p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between text-xs text-muted-foreground mb-1">
-              <span>Sharpe Ratio</span>
-              <Brain className="h-3 w-3" />
-            </div>
-            <p className="text-2xl font-bold">{hfStats.sharpeRatio.toFixed(2)}</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between text-xs text-muted-foreground mb-1">
-              <span>Avg Confiança</span>
-              <Activity className="h-3 w-3" />
-            </div>
-            <p className="text-2xl font-bold">{stats.avgConfidence}%</p>
-          </CardContent>
-        </Card>
+        <MetricCard
+          icon={<BarChart className="h-4 w-4" />}
+          label="Total Strikes"
+          value={stats.totalStrikes}
+          subtext={`L:${stats.strikesByType.long} S:${stats.strikesByType.short}`}
+        />
+        <MetricCard
+          icon={<TrendingUp className="h-4 w-4" />}
+          label="Win Rate"
+          value={`${hfStats.winRate.toFixed(1)}%`}
+          subtext={`${hfStats.totalTrades} trades`}
+          color={hfStats.winRate > 60 ? 'text-green-600' : 'text-red-600'}
+        />
+        <MetricCard
+          icon={<Target className="h-4 w-4" />}
+          label="P&L Total"
+          value={`${hfStats.totalPnL >= 0 ? '+' : '-'}$${Math.abs(hfStats.totalPnL).toFixed(2)}`}
+          subtext={hfStats.totalPnL > 0 ? 'Lucro' : 'Prejuízo'}
+          color={hfStats.totalPnL >= 0 ? 'text-green-600' : 'text-red-600'}
+        />
+        <MetricCard
+          icon={<Brain className="h-4 w-4" />}
+          label="Sharpe Ratio"
+          value={hfStats.sharpeRatio.toFixed(2)}
+          subtext="Risco-Retorno"
+        />
+        <MetricCard
+          icon={<Activity className="h-4 w-4" />}
+          label="Avg Confiança"
+          value={`${stats.avgConfidence}%`}
+          subtext="Qualidade do Sinal"
+        />
       </div>
+
 
       {/* Market Chart */}
       <Card>
