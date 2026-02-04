@@ -216,3 +216,5 @@ export default function DerivTraderDigitsPage() {
             <DerivTraderPageContentDigits />
         </FormProvider>
     </DerivApiProviderDigits>
+  );
+}
