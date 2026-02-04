@@ -130,22 +130,25 @@ export function useDerivApiDigitsState() {
     const activeToken = accountType === 'demo' ? demoToken : realToken;
 
     const makeRequest = useCallback((request: object): Promise<any> => {
-        return new Promise((resolve, reject) => {
+        return new Promise((resolve) => { 
             const ws = wsRef.current;
             if (!ws || ws.readyState !== WebSocket.OPEN) {
-                return reject(new Error("WebSocket não está conectado."));
+                return resolve({ error: { message: "WebSocket não está conectado." } });
             }
             const req_id = Date.now() + Math.floor(Math.random() * 1000000);
             const payload = { ...request, req_id };
             const timeoutId = setTimeout(() => {
                 if (promisesRef.current.has(String(req_id))) {
+                    promisesRef.current.get(String(req_id))?.resolve({ error: { message: `O pedido à API expirou (60s).` } });
                     promisesRef.current.delete(String(req_id));
-                    reject(new Error(`O pedido à API expirou (60s).`));
                 }
             }, 60000);
             promisesRef.current.set(String(req_id), {
                 resolve: (value: any) => { clearTimeout(timeoutId); resolve(value); },
-                reject: (reason: any) => { clearTimeout(timeoutId); reject(reason); }
+                reject: (reason: any) => { 
+                  clearTimeout(timeoutId); 
+                  resolve({ error: { message: reason?.message || 'Erro interno na Promise.' } });
+                }
             });
             ws.send(JSON.stringify(payload));
         });
@@ -228,7 +231,7 @@ export function useDerivApiDigitsState() {
     }, []);
 
     useEffect(() => {
-        if (!activeToken || isLoading) {
+        if (!user || !activeToken || isLoading) {
             if (wsRef.current) wsRef.current.close();
             return;
         }
@@ -245,8 +248,7 @@ export function useDerivApiDigitsState() {
                     if (reqId && promisesRef.current.has(String(reqId))) {
                         const promise = promisesRef.current.get(String(reqId));
                         if (promise) {
-                            if (response.error) promise.reject(new Error(response.error.message));
-                            else promise.resolve(response);
+                            promise.resolve(response);
                             promisesRef.current.delete(String(reqId));
                         }
                         return; 
@@ -353,7 +355,7 @@ export function useDerivApiDigitsState() {
             if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
             reconnectInProgressRef.current = false;
         };
-    }, [activeToken, isLoading, triggerReconnect, user]);
+    }, [activeToken, isLoading, triggerReconnect, user, makeRequest, setAndPersistOperationsLog, startConnectionMonitor]);
 
     useEffect(() => {
         if (isConnected && activeSymbol && !isConnecting) subscribeToTicks(activeSymbol);
@@ -408,7 +410,6 @@ export function useDerivApiDigitsState() {
     return contextValue;
 }
 
-// This is the provider component that will wrap the app
 export function DerivApiProviderDigits({ children }: { children: React.ReactNode }) {
   const contextValue = useDerivApiDigitsState();
   
@@ -420,7 +421,6 @@ export function DerivApiProviderDigits({ children }: { children: React.ReactNode
   );
 }
 
-// This is the consumer hook
 export function useDerivApiDigits() {
   const context = useContext(DerivApiContextDigits);
   if (context === undefined) {
