@@ -10,25 +10,37 @@ import {
     TableHeader,
     TableRow,
 } from '@/components/ui/table';
-import type { RobotPerformance, CouncilVotes } from '@/lib/types';
-import { Bot, LayoutGrid, AlertTriangle } from 'lucide-react';
+import type { RobotPerformance } from '@/lib/types';
+import { Bot, LayoutGrid, AlertTriangle, TrendingUp, TrendingDown, CheckCircle, XCircle } from 'lucide-react';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
+import { Progress } from '@/components/ui/progress';
+import { cn } from '@/lib/utils';
+import { useMemo } from 'react';
 
 interface TradingDeskDigitsProps {
-    isMeritocracyOn: boolean;
-    setIsMeritocracyOn: (isOn: boolean) => void;
     isCouncilAutopilotOn: boolean;
     robotPerformance: RobotPerformance[];
-    councilVotes: CouncilVotes; 
 }
 
 export function TradingDeskDigits({
-    isMeritocracyOn,
-    setIsMeritocracyOn,
     isCouncilAutopilotOn,
     robotPerformance,
 }: TradingDeskDigitsProps) {
+
+    const sortedPerformance = useMemo(() => {
+        if (!robotPerformance) return [];
+        // Ordena por lucro total, depois por taxa de acerto
+        return [...robotPerformance].sort((a, b) => {
+            const profitA = a.totalProfit || 0;
+            const profitB = b.totalProfit || 0;
+            if (profitA !== profitB) return profitB - profitA;
+            const winRateA = a.winRate || 0;
+            const winRateB = b.winRate || 0;
+            return winRateB - winRateA;
+        });
+    }, [robotPerformance]);
+
 
     return (
         <Card>
@@ -40,20 +52,8 @@ export function TradingDeskDigits({
                             Arena Virtual (Digits)
                         </CardTitle>
                         <CardDescription>
-                           O modo Arena para dígitos ainda está em desenvolvimento.
+                           Desempenho em tempo real das estratégias simuladas.
                         </CardDescription>
-                    </div>
-                    <div className="flex items-center space-x-2 rounded-lg border p-3 shadow-sm shrink-0">
-                        <div className="space-y-0.5">
-                            <Label htmlFor="meritocracy-switch-desk" className="font-semibold">
-                                Modo Meritocracia
-                            </Label>
-                        </div>
-                        <Switch
-                            id="meritocracy-switch-desk"
-                            checked={false}
-                            disabled={true}
-                        />
                     </div>
                 </div>
             </CardHeader>
@@ -62,22 +62,72 @@ export function TradingDeskDigits({
                     <TableHeader>
                         <TableRow>
                             <TableHead>Estratégia</TableHead>
-                            <TableHead className="text-center">Voto Atual</TableHead>
+                            <TableHead className="text-center">Score (V/D)</TableHead>
                             <TableHead className="text-center">Taxa de Acerto</TableHead>
                             <TableHead className="text-right">P&amp;L (USD)</TableHead>
                         </TableRow>
                     </TableHeader>
                     <TableBody>
-                        <TableRow>
-                            <TableCell colSpan={4} className="text-center h-24">
-                                <div className="flex flex-col items-center justify-center gap-2 text-muted-foreground">
-                                    <AlertTriangle className="h-8 w-8" />
-                                    <p>
-                                       Funcionalidade em desenvolvimento.
-                                    </p>
-                                </div>
-                            </TableCell>
-                        </TableRow>
+                        {!isCouncilAutopilotOn || sortedPerformance.length === 0 ? (
+                             <TableRow>
+                                <TableCell colSpan={4} className="text-center h-24">
+                                    <div className="flex flex-col items-center justify-center gap-2 text-muted-foreground">
+                                        <Bot className="h-8 w-8" />
+                                        <p>
+                                        Ative o piloto para iniciar a simulação da arena.
+                                        </p>
+                                    </div>
+                                </TableCell>
+                            </TableRow>
+                        ) : (
+                           sortedPerformance.map((robot) => (
+                                <TableRow key={robot.id}>
+                                    <TableCell className="font-semibold text-sm">
+                                        {(robot.strategy as any).description}
+                                    </TableCell>
+                                    <TableCell className="text-center">
+                                         <div className="flex items-center justify-center gap-2">
+                                            <span className="flex items-center gap-1 text-green-600">
+                                                <CheckCircle className="h-4 w-4" />
+                                                {robot.wins || 0}
+                                            </span>
+                                            <span className="text-muted-foreground">/</span>
+                                            <span className="flex items-center gap-1 text-red-600">
+                                                {robot.losses || 0}
+                                                <XCircle className="h-4 w-4" />
+                                            </span>
+                                        </div>
+                                    </TableCell>
+                                    <TableCell className="text-center">
+                                        {((robot.wins || 0) + (robot.losses || 0)) > 0 ? (
+                                             <div className="flex items-center justify-center gap-2">
+                                                 <span className="font-mono">{robot.winRate?.toFixed(1)}%</span>
+                                                  <Progress
+                                                    value={robot.winRate}
+                                                    className="w-16 h-1.5"
+                                                    indicatorClassName={
+                                                        (robot.winRate || 0) >= 50 ? 'bg-green-500' : 'bg-red-500'
+                                                    }
+                                                />
+                                             </div>
+                                        ) : (
+                                            <span className="text-muted-foreground">-</span>
+                                        )}
+                                    </TableCell>
+                                     <TableCell
+                                        className={cn(
+                                            'text-right font-bold font-mono',
+                                            (robot.totalProfit || 0) > 0 ? 'text-green-600' : (robot.totalProfit || 0) < 0 ? 'text-red-600' : 'text-muted-foreground'
+                                        )}
+                                    >
+                                        {(robot.totalProfit || 0).toLocaleString('en-US', {
+                                            style: 'currency',
+                                            currency: 'USD',
+                                        })}
+                                    </TableCell>
+                                </TableRow>
+                           ))
+                        )}
                     </TableBody>
                 </Table>
             </CardContent>
