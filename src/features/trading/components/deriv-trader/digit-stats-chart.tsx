@@ -15,15 +15,28 @@ const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8', '#82ca9d'
 
 export function DigitStatsChart({ priceTicks }: DigitStatsChartProps) {
   const digitStats = useMemo(() => {
-    if (priceTicks.length < 100) {
+    // Aumentado ligeiramente para garantir que temos dados suficientes para uma média
+    if (priceTicks.length < 20) {
       return Array.from({ length: 10 }, (_, i) => ({ name: String(i), value: 0, probability: '0.0%' }));
     }
     
     const counts = Array(10).fill(0);
-    const last1000Ticks = priceTicks.slice(-1000);
+    // Alterado de 1000 para 100 para uma análise mais reativa
+    const last100Ticks = priceTicks.slice(-100);
     
-    last1000Ticks.forEach(tick => {
-      const lastDigit = parseInt(String(tick.price).slice(-1));
+    last100Ticks.forEach(tick => {
+      let price = tick.price;
+      
+      // Lógica matemática para obter o último dígito, evitando problemas com `toString()`
+      // Multiplica o preço por 10 até que se torne um inteiro para lidar com decimais.
+      // A salvaguarda `price < Number.MAX_SAFE_INTEGER / 10` previne loops infinitos.
+      while (Math.abs(price - Math.round(price)) > 1e-9 && price < Number.MAX_SAFE_INTEGER / 10) {
+          price *= 10;
+      }
+      price = Math.round(price);
+
+      const lastDigit = price % 10;
+
       if (!isNaN(lastDigit)) {
         counts[lastDigit]++;
       }
@@ -43,7 +56,7 @@ export function DigitStatsChart({ priceTicks }: DigitStatsChartProps) {
       <CardHeader>
         <CardTitle className="font-headline flex items-center gap-2">
             <BarChartIcon className="h-5 w-5 text-primary" />
-            Estatísticas do Último Dígito (Últimos 1000 Ticks)
+            Estatísticas do Último Dígito (Últimos 100 Ticks)
         </CardTitle>
         <CardDescription>
           Frequência de ocorrência de cada dígito final.
