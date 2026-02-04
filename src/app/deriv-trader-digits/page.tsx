@@ -9,7 +9,6 @@ import { AssetSelectorDigits } from "@/features/trading/components/deriv-trader/
 import { Skeleton } from "@/components/ui/skeleton";
 import { DerivApiProviderDigits, useDerivApiDigits } from "@/features/trading/hooks/use-deriv-api-digits";
 import { OperationsLogDigits } from "@/features/trading/components/deriv-trader/operations-log-digits";
-import { AIAnalysisInterfaceDigits } from "@/features/trading/components/deriv-trader/ai-analysis-interface-digits";
 import { digitSchema, type DigitFormValues } from "@/features/trading/components/deriv-trader/deriv-trader-interface-digits.types";
 import { CouncilAutopilotInterfaceDigits } from "@/features/trading/components/deriv-trader/council-autopilot-interface-digits";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
@@ -134,41 +133,10 @@ function CurrentPriceDisplay() {
     );
 }
 
-function MainContentDigits() {
+function DerivTraderPageContentDigits() {
     const { activeSymbol, priceTicks, operationsLog, sellContract } = useDerivApiDigits();
     const robotCouncil = useRobotCouncilDigits(activeSymbol, priceTicks);
-    
-    return (
-        <div className="mt-6 space-y-6">
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-               <div className="lg:col-span-1">
-                 <DerivTraderInterfaceDigits symbol={activeSymbol || ""} />
-               </div>
-               <div className="lg:col-span-2 space-y-6">
-                 <DigitStatsChart priceTicks={priceTicks} />
-                 <AITradeSuggestionDigits
-                      digitStats={robotCouncil.digitStats}
-                      isAutopilotOn={robotCouncil.isCouncilAutopilotOn}
-                  />
-               </div>
-            </div>
-            <CouncilAutopilotInterfaceDigits {...robotCouncil} />
-            <Tabs defaultValue="logs" className="w-full mt-6">
-                 <TabsList className="grid grid-cols-3">
-                    <TabsTrigger value="logs">Registo</TabsTrigger>
-                    <TabsTrigger value="arena">Arena</TabsTrigger>
-                    <TabsTrigger value="evolucao">Evolução</TabsTrigger>
-                </TabsList>
-                <TabsContent value="logs" className="mt-4"><OperationsLogDigits operations={operationsLog} sellContract={sellContract} priceTicks={priceTicks} /></TabsContent>
-                <TabsContent value="arena" className="mt-4"><TradingDeskDigits {...robotCouncil} /></TabsContent>
-                <TabsContent value="evolucao" className="mt-4"><EvolutionLabDigits history={robotCouncil.evolutionHistory} activeSymbol={activeSymbol} /></TabsContent>
-            </Tabs>
-        </div>
-    );
-};
 
-
-function DerivTraderPageContentDigits() {
     return (
         <div className="flex-1 space-y-4 p-4 sm:p-8 pt-6">
             <HeaderDigits />
@@ -180,9 +148,39 @@ function DerivTraderPageContentDigits() {
                 </AlertDescription>
             </Alert>
             
-            <CurrentPriceDisplay />
+            <div className="grid grid-cols-1 lg:grid-cols-5 gap-6 mt-6">
+                {/* --- Coluna da Esquerda (Controles) --- */}
+                <div className="lg:col-span-2 space-y-6">
+                    <CurrentPriceDisplay />
+                    <DerivTraderInterfaceDigits symbol={activeSymbol || ""} />
+                    <CouncilAutopilotInterfaceDigits {...robotCouncil} />
+                </div>
 
-            <MainContentDigits />
+                {/* --- Coluna da Direita (Dados e Logs) --- */}
+                <div className="lg:col-span-3 space-y-6">
+                    <DigitStatsChart priceTicks={priceTicks} />
+                    <AITradeSuggestionDigits
+                        digitStats={robotCouncil.digitStats}
+                        isAutopilotOn={robotCouncil.isCouncilAutopilotOn}
+                    />
+                    <Tabs defaultValue="logs" className="w-full">
+                        <TabsList className="grid w-full grid-cols-3">
+                            <TabsTrigger value="logs">Registo</TabsTrigger>
+                            <TabsTrigger value="arena">Arena</TabsTrigger>
+                            <TabsTrigger value="evolucao">Evolução</TabsTrigger>
+                        </TabsList>
+                        <TabsContent value="logs" className="mt-4">
+                            <OperationsLogDigits operations={operationsLog} sellContract={sellContract} priceTicks={priceTicks} />
+                        </TabsContent>
+                        <TabsContent value="arena" className="mt-4">
+                            <TradingDeskDigits {...robotCouncil} />
+                        </TabsContent>
+                        <TabsContent value="evolucao" className="mt-4">
+                            <EvolutionLabDigits history={robotCouncil.evolutionHistory} activeSymbol={activeSymbol} />
+                        </TabsContent>
+                    </Tabs>
+                </div>
+            </div>
         </div>
     );
 }
