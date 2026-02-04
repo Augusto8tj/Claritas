@@ -19,8 +19,8 @@ import { ApiStatusIndicatorMultipliers } from "@/features/trading/components/der
 import { useMultipliersCouncil } from "@/features/trading/hooks/use-multipliers-council";
 import { MultipliersAutopilotInterface } from "@/features/trading/components/deriv-trader/multipliers-autopilot-interface";
 import { IndicatorPanel } from "@/features/trading/components/deriv-trader/indicator-panel";
-import { calculateAllIndicators, type Indicators } from '@/services/indicator-service';
-import { initialCouncilStrategies } from '@/services/council-strategies';
+import { calculateAllIndicators, type Indicators } from '@/features/trading/services/indicator-service';
+import { initialCouncilStrategies } from '@/features/trading/services/council-strategies';
 import type { CandleData, ChartData } from '@/lib/types';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
