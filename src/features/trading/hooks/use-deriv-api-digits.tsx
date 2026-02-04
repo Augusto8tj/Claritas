@@ -57,6 +57,7 @@ export interface DerivApiContextTypeDigits {
   assetGroups: AssetGroup[];
   isAssetsLoading: boolean;
   activeSymbol: string | null;
+  activeAsset: Asset | null;
   setActiveSymbol: (symbol: string | null) => void;
   priceTicks: TickData[]; 
   chartData: ChartData[];
@@ -329,7 +330,7 @@ export function useDerivApiDigitsState() {
                     filteredSymbols.forEach((s: any) => {
                         const groupName = marketNameMapping[s.market] || 'Outros';
                         if (!groupedAssets[groupName]) groupedAssets[groupName] = [];
-                        groupedAssets[groupName].push({ value: s.symbol, label: s.display_name, marketIsOpen: s.exchange_is_open === 1, submarket: s.submarket, market: s.market, minDuration: '5t' });
+                        groupedAssets[groupName].push({ value: s.symbol, label: s.display_name, marketIsOpen: s.exchange_is_open === 1, submarket: s.submarket, market: s.market, minDuration: '5t', pip: s.pip });
                     });
                     setAssetGroups(Object.keys(groupedAssets).map(label => ({ label, options: groupedAssets[label] })));
                     setIsAssetsLoading(false);
@@ -504,16 +505,25 @@ export function useDerivApiDigitsState() {
         });
     }, []);
     
+    const activeAsset = useMemo(() => {
+        if (!activeSymbol || assetGroups.length === 0) return null;
+        for (const group of assetGroups) {
+            const asset = group.options.find(a => a.value === activeSymbol);
+            if (asset) return asset;
+        }
+        return null;
+    }, [activeSymbol, assetGroups]);
+    
     const contextValue: DerivApiContextTypeDigits = useMemo(() => ({
         ws: wsRef.current, isConnected, isConnecting, connectionError, demoToken, realToken, activeToken,
-        accountType, accountBalance, operationsLog, assetGroups, isAssetsLoading, activeSymbol, 
+        accountType, accountBalance, operationsLog, assetGroups, isAssetsLoading, activeSymbol, activeAsset,
         setActiveSymbol, priceTicks, setAccountType, setTokens,
         disconnect, reconnect, executeTrade, sellContract,
         chartData, isChartLoading, chartError, chartType, setChartType, timePeriod, setTimePeriod, dataVersion, tradeAnnotations,
         durationLimits
     }), [
         isConnected, isConnecting, connectionError, demoToken, realToken, activeToken, accountType, 
-        accountBalance, operationsLog, assetGroups, isAssetsLoading, activeSymbol, 
+        accountBalance, operationsLog, assetGroups, isAssetsLoading, activeSymbol, activeAsset,
         priceTicks, setAccountType, setTokens, disconnect, reconnect, executeTrade, sellContract, setActiveSymbol,
         chartData, isChartLoading, chartError, chartType, timePeriod, dataVersion, tradeAnnotations,
         durationLimits

@@ -9,37 +9,28 @@ import { BarChart as BarChartIcon } from 'lucide-react';
 
 interface DigitStatsChartProps {
   priceTicks: TickData[];
+  pip?: number;
 }
 
 const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8', '#82ca9d', '#ffc658', '#a4de6c', '#d0ed57', '#ffc658'];
 
-export function DigitStatsChart({ priceTicks }: DigitStatsChartProps) {
+export function DigitStatsChart({ priceTicks, pip = 2 }: DigitStatsChartProps) {
   const digitStats = useMemo(() => {
-    // Aumentado ligeiramente para garantir que temos dados suficientes para uma média
     if (priceTicks.length < 20) {
       return Array.from({ length: 10 }, (_, i) => ({ name: String(i), value: 0, probability: '0.0%' }));
     }
     
     const counts = Array(10).fill(0);
-    // Alterado de 1000 para 100 para uma análise mais reativa
     const last100Ticks = priceTicks.slice(-100);
     
     last100Ticks.forEach(tick => {
-      let price = tick.price;
-      
-      // Lógica matemática para obter o último dígito, evitando problemas com `toString()`
-      // Multiplica o preço por 10 até que se torne um inteiro para lidar com decimais.
-      // A salvaguarda `price < Number.MAX_SAFE_INTEGER / 10` previne loops infinitos.
-      while (Math.abs(price - Math.round(price)) > 1e-9 && price < Number.MAX_SAFE_INTEGER / 10) {
-          price *= 10;
-      }
-      price = Math.round(price);
-
-      const lastDigit = price % 10;
-
-      if (!isNaN(lastDigit)) {
-        counts[lastDigit]++;
-      }
+        const priceString = tick.price.toFixed(pip);
+        const lastChar = priceString.slice(-1);
+        const lastDigit = parseInt(lastChar, 10);
+        
+        if (!isNaN(lastDigit)) {
+            counts[lastDigit]++;
+        }
     });
 
     const total = counts.reduce((a, b) => a + b, 0);
@@ -49,7 +40,7 @@ export function DigitStatsChart({ priceTicks }: DigitStatsChartProps) {
       value: count,
       probability: total > 0 ? `${((count / total) * 100).toFixed(1)}%` : '0.0%',
     }));
-  }, [priceTicks]);
+  }, [priceTicks, pip]);
 
   return (
     <Card>

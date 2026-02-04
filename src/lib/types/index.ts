@@ -59,6 +59,7 @@ export interface Asset {
   submarket: string;
   market: string;
   minDuration: string;
+  pip?: number;
 }
 
 export type TimePeriod = '1m' | '2m' | '3m' | '5m' | '10m' | '15m' | '30m' | '1h' | '8h' | '1d';
@@ -82,23 +83,6 @@ export type ChartData = TickData | CandleData;
 export type DurationUnit = DurationUnitT;
 
 export type DurationLimits = Record<DurationUnit, { min: number; max: number }>;
-
-export interface TradeAnnotation {
-  id: string;
-  contractId: string;
-  entryTime: number; // epoch timestamp
-  createdAt?: number; // performance.now() timestamp
-  entryPrice: number;
-  exitTime?: number;
-  exitPrice?: number;
-  direction: 'rise' | 'fall';
-  status: 'pending' | 'won' | 'lost';
-  stake: number;
-  profit?: number;
-  symbol: string;
-  expirationTime?: number;
-  contractType?: 'option' | 'multiplier' | 'accumulator';
-}
 
 export type OperationStatus = 'pending' | 'won' | 'lost';
 export type OperationInitiator = 'Manual' | 'Piloto' | 'Conselho';

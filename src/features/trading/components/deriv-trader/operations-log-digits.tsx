@@ -10,7 +10,7 @@ import {
 } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
-import type { Operation, OperationInitiator, TickData } from "@/lib/types";
+import type { Operation, OperationInitiator, TickData, Asset } from "@/lib/types";
 import { Bot, User, Users, MoveRight, Clock } from "lucide-react";
 import { useMemo } from "react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
@@ -20,6 +20,7 @@ interface OperationsLogDigitsProps {
   operations: Operation[];
   sellContract: (contractId: number) => Promise<any>;
   priceTicks: TickData[];
+  activeAsset: Asset | null;
 }
 
 const initiatorIcons: Record<OperationInitiator, React.ReactNode> = {
@@ -49,7 +50,7 @@ const getContractDisplayName = (contractType?: string) => {
 };
 
 
-export function OperationsLogDigits({ operations }: OperationsLogDigitsProps) {
+export function OperationsLogDigits({ operations, activeAsset }: OperationsLogDigitsProps) {
     const dailySummary = useMemo(() => {
         const today = new Date();
         today.setHours(0, 0, 0, 0);
@@ -61,12 +62,8 @@ export function OperationsLogDigits({ operations }: OperationsLogDigitsProps) {
 
     const getLastDigit = (price: number | undefined): string => {
         if (price === undefined) return '...';
-        // Lógica matemática para lidar com casas decimais variáveis corretamente
-        let p = price;
-        while (Math.abs(p - Math.round(p)) > 1e-9 && p < Number.MAX_SAFE_INTEGER / 10) {
-            p *= 10;
-        }
-        return String(Math.round(p) % 10);
+        const pip = activeAsset?.pip ?? 2;
+        return price.toFixed(pip).slice(-1);
     };
 
     return (

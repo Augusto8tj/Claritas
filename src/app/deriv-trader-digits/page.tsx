@@ -81,7 +81,7 @@ function HeaderDigits() {
 };
 
 function CurrentPriceDisplay() {
-    const { priceTicks } = useDerivApiDigits();
+    const { priceTicks, activeAsset } = useDerivApiDigits();
     const lastTick = priceTicks.length > 0 ? priceTicks[priceTicks.length - 1] : null;
     const prevTick = priceTicks.length > 1 ? priceTicks[priceTicks.length - 2] : null;
 
@@ -98,12 +98,12 @@ function CurrentPriceDisplay() {
         );
     }
     
+    const pip = activeAsset?.pip ?? 2;
     const change = prevTick ? lastTick.price - prevTick.price : 0;
     const isUp = change > 0;
     const isDown = change < 0;
 
-    // Converte o preço para string para lidar com casas decimais variáveis sem arredondar/preencher
-    const priceString = lastTick.price.toString();
+    const priceString = lastTick.price.toFixed(pip);
     const lastDigit = priceString.slice(-1);
     const mainPart = priceString.slice(0, -1);
 
@@ -126,8 +126,7 @@ function CurrentPriceDisplay() {
                 )}>
                     {isUp && <TrendingUp className="h-4 w-4" />}
                     {isDown && <TrendingDown className="h-4 w-4" />}
-                    {/* Usa uma precisão fixa maior para a variação */}
-                    <span>{change.toFixed(4)}</span>
+                    <span>{change.toFixed(pip)}</span>
                 </div>
             </CardContent>
         </Card>
@@ -135,7 +134,7 @@ function CurrentPriceDisplay() {
 }
 
 function DerivTraderPageContentDigits() {
-    const { activeSymbol, priceTicks, operationsLog, sellContract } = useDerivApiDigits();
+    const { activeSymbol, priceTicks, operationsLog, sellContract, activeAsset } = useDerivApiDigits();
     const robotCouncil = useRobotCouncilDigits(activeSymbol, priceTicks);
 
     return (
@@ -159,7 +158,7 @@ function DerivTraderPageContentDigits() {
 
                 {/* --- Coluna da Direita (Dados e Logs) --- */}
                 <div className="lg:col-span-3 space-y-6">
-                    <DigitStatsChart priceTicks={priceTicks} />
+                    <DigitStatsChart priceTicks={priceTicks} pip={activeAsset?.pip} />
                     <AITradeSuggestionDigits
                         digitStats={robotCouncil.digitStats}
                         isAutopilotOn={robotCouncil.isCouncilAutopilotOn}
@@ -171,7 +170,7 @@ function DerivTraderPageContentDigits() {
                             <TabsTrigger value="evolucao">Evolução</TabsTrigger>
                         </TabsList>
                         <TabsContent value="logs" className="mt-4">
-                            <OperationsLogDigits operations={operationsLog} sellContract={sellContract} priceTicks={priceTicks} />
+                            <OperationsLogDigits operations={operationsLog} sellContract={sellContract} priceTicks={priceTicks} activeAsset={activeAsset} />
                         </TabsContent>
                         <TabsContent value="arena" className="mt-4">
                             <TradingDeskDigits {...robotCouncil} />
