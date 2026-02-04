@@ -515,9 +515,9 @@ function StochasticLab({
                         </CardContent>
                     </Card>
                     
-                     <Accordion type="single" collapsible className="w-full mt-4" defaultValue="audit">
+                     <Accordion type="single" collapsible className="w-full mt-4">
                         <AccordionItem value="audit">
-                            <AccordionTrigger className="text-base font-semibold px-1">Auditoria Preditiva ({predictiveLogs.length} Registos)</AccordionTrigger>
+                            <AccordionTrigger className="text-base font-semibold px-1">iniviar mimizadovamos novo desafio vamos novo desafio</AccordionTrigger>
                             <AccordionContent className="pt-2">
                                <PredictiveLogViewer logs={predictiveLogs} onDeleteLog={onDeletePredictiveLog} deletingPredictiveLogId={deletingPredictiveLogId} />
                             </AccordionContent>
