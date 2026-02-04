@@ -1003,7 +1003,7 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
                 setTriggerReconnect(c => c + 1);
             }, 3000);
           } else if (!event.wasClean && !allowAutoReconnectRef.current) {
-             console.error(`[WS] Conexão falhou permanentemente (provavelmente token inválido). Auto-reconexão desativada.`);
+             console.warn(`[WS] Conexão falhou permanentemente (provavelmente token inválido). Auto-reconexão desativada.`);
              setConnectionError(`Authorization failed. Please check your API token.`);
           }
           
@@ -1145,7 +1145,6 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
     chartError,
     chartType,
     setChartType,
-    timePeriod,
     setTimePeriod,
     dataVersion,
     executeTrade,

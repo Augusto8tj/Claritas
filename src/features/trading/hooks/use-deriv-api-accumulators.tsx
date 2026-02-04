@@ -1,4 +1,4 @@
-// /src/features/trading/hooks/use-deriv-api-accumulators.tsx
+// src/features/trading/hooks/use-deriv-api-accumulators.tsx
 'use client';
 
 import { createContext, useContext, useState, useEffect, type ReactNode, useCallback, useRef, useMemo } from 'react';
@@ -724,7 +724,7 @@ export const DerivApiProviderAccumulators = ({ children }: { children: ReactNode
                 setTriggerReconnect(c => c + 1);
             }, 3000);
           } else if (!event.wasClean && !allowAutoReconnectRef.current) {
-             console.error(`[WS] Conexão falhou permanentemente (provavelmente token inválido). Auto-reconexão desativada.`);
+             console.warn(`[WS] Conexão falhou permanentemente (provavelmente token inválido). Auto-reconexão desativada.`);
              setConnectionError(`Authorization failed. Please check your API token.`);
           }
           setIsConnected(false); setIsConnecting(false);

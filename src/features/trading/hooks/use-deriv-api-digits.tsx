@@ -288,7 +288,7 @@ export function useDerivApiDigitsState() {
                     if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
                     reconnectTimeoutRef.current = setTimeout(() => { reconnectInProgressRef.current = false; setTriggerReconnect(c => c + 1); }, 3000);
                 } else if (!event.wasClean && !allowAutoReconnectRef.current) {
-                    console.error(`[WS] Conexão falhou permanentemente. Auto-reconexão desativada.`);
+                    console.warn(`[WS] Conexão falhou permanentemente (provavelmente token inválido). Auto-reconexão desativada.`);
                     setConnectionError(`Authorization failed. Please check your API token.`);
                 }
                 setIsConnected(false); setIsConnecting(false);
@@ -429,14 +429,13 @@ export function useDerivApiDigitsState() {
 }
 
 export function DerivApiProviderDigits({ children }: { children: React.ReactNode }) {
-  const contextValue = useDerivApiDigitsState();
-  
-  return (
-    <DerivApiContextDigits.Provider value={contextValue}>
-      <FirebaseErrorListener />
-      {children}
-    </DerivApiContextDigits.Provider>
-  );
+    const contextValue = useDerivApiDigitsState();
+    return (
+        <DerivApiContextDigits.Provider value={contextValue}>
+            <FirebaseErrorListener />
+            {children}
+        </DerivApiContextDigits.Provider>
+    );
 }
 
 export function useDerivApiDigits() {

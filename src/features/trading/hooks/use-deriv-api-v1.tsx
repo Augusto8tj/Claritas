@@ -869,7 +869,7 @@ const executeTrade = useCallback(async (
                 setTriggerReconnect(c => c + 1);
             }, 3000);
           } else if (!event.wasClean && !allowAutoReconnectRef.current) {
-             console.error(`[WS] Conexão falhou permanentemente (provavelmente token inválido). Auto-reconexão desativada.`);
+             console.warn(`[WS] Conexão falhou permanentemente (provavelmente token inválido). Auto-reconexão desativada.`);
              setConnectionError(`Authorization failed. Please check your API token.`);
           }
           
@@ -901,7 +901,7 @@ const executeTrade = useCallback(async (
       }
       reconnectInProgressRef.current = false;
     };
-  }, [activeToken, isLoading, triggerReconnect, updateTradeAnnotation, addTradeAnnotation, toast, setAndPersistOperationsLog, setToastQueue, startConnectionMonitor, makeRequest]);
+  }, [activeToken, isLoading, triggerReconnect]);
 
   
   useEffect(() => {
@@ -1030,7 +1030,7 @@ const executeTrade = useCallback(async (
     isConnected, isConnecting, connectionError, demoToken, realToken, activeToken, accountType, 
     setAccountType, setTokens, disconnect, reconnect, accountBalance, operationsLog, assetGroups, 
     isAssetsLoading, activeSymbol, setActiveSymbol, chartData, priceTicks, isChartLoading, 
-    chartError, chartType, setChartType, timePeriod, setTimePeriod, executeTrade, sellContract, 
+    chartError, chartType, setChartType, timePeriod, executeTrade, sellContract, 
     clearActiveContracts, tradeAnnotations, durationLimits, getHistoricalData
   ]);
 

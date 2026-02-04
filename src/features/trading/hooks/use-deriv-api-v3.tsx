@@ -641,7 +641,7 @@ export const DerivApiProviderV3 = ({ children }: { children: ReactNode }) => {
                         if ((contract.contract_type || '').startsWith('MULT')) {
                           return;
                         }
-
+                    
                         setAndPersistOperationsLog(prevLog => {
                             const existingOpIndex = prevLog.findIndex(op => op.id === contract.contract_id);
                             const isSold = contract.is_sold === 1;
@@ -856,7 +856,7 @@ export const DerivApiProviderV3 = ({ children }: { children: ReactNode }) => {
                 setTriggerReconnect(c => c + 1);
             }, 3000);
           } else if (!event.wasClean && !allowAutoReconnectRef.current) {
-             console.error(`[WS] Conexão falhou permanentemente (provavelmente token inválido). Auto-reconexão desativada.`);
+             console.warn(`[WS] Conexão falhou permanentemente (provavelmente token inválido). Auto-reconexão desativada.`);
              setConnectionError(`Authorization failed. Please check your API token.`);
           }
           
