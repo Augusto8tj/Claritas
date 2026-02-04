@@ -135,32 +135,39 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
   }, [priceTicks, activeAsset]);
 
   const toggleAutopilot = useCallback((pilotType: PilotType) => {
-    setPilots(prev => {
-        const newPilots = { ...prev };
-        const pilot = newPilots[pilotType];
-        const isActivating = !pilot.isOn;
+    const pilotState = pilots[pilotType];
+    const isActivating = !pilotState.isOn;
 
-        if (isActivating) {
-            pilot.status = 'WARMING_UP';
-            autopilotStartTimeRef.current = Date.now();
-            setWarmupTimeLeft(WARMUP_DURATION_MS);
-            if (warmupIntervalRef.current) clearInterval(warmupIntervalRef.current);
-            warmupIntervalRef.current = setInterval(() => {
-                const elapsed = Date.now() - (autopilotStartTimeRef.current || Date.now());
-                setWarmupTimeLeft(Math.max(0, WARMUP_DURATION_MS - elapsed));
-            }, 1000);
-            toast({ title: `Piloto ${pilotType} Ativado`, description: 'Período de aquecimento de 1 minuto iniciado.' });
-        } else {
-            pilot.status = 'PAUSED';
-            if (warmupIntervalRef.current) clearInterval(warmupIntervalRef.current);
-            pilot.championId = null;
-            pilot.recoveryState = { isActive: false, martingaleLevel: 0, stakeToRecover: 0 };
-            toast({ title: `Piloto ${pilotType} Desativado` });
-        }
-        pilot.isOn = isActivating;
-        return newPilots;
+    if (isActivating) {
+      toast({ title: `Piloto ${pilotType} Ativado`, description: 'Período de aquecimento de 1 minuto iniciado.' });
+    } else {
+      toast({ title: `Piloto ${pilotType} Desativado` });
+    }
+
+    setPilots(prev => {
+      const newPilots = { ...prev };
+      const pilot = newPilots[pilotType]!;
+      pilot.isOn = isActivating;
+
+      if (isActivating) {
+        pilot.status = 'WARMING_UP';
+        autopilotStartTimeRef.current = Date.now();
+        setWarmupTimeLeft(WARMUP_DURATION_MS);
+        if (warmupIntervalRef.current) clearInterval(warmupIntervalRef.current);
+        warmupIntervalRef.current = setInterval(() => {
+          const elapsed = Date.now() - (autopilotStartTimeRef.current || Date.now());
+          setWarmupTimeLeft(Math.max(0, WARMUP_DURATION_MS - elapsed));
+        }, 1000);
+      } else {
+        pilot.status = 'PAUSED';
+        if (warmupIntervalRef.current) clearInterval(warmupIntervalRef.current);
+        pilot.championId = null;
+        pilot.recoveryState = { isActive: false, martingaleLevel: 0, stakeToRecover: 0 };
+      }
+      
+      return newPilots;
     });
-  }, [toast]);
+  }, [toast, pilots]);
   
   useEffect(() => {
     Object.entries(pilots).forEach(([type, state]) => {
