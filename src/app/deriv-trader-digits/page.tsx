@@ -13,9 +13,6 @@ import { digitSchema, type DigitFormValues } from "@/features/trading/components
 import { DigitsAutopilotManager } from "@/features/trading/components/deriv-trader/council-autopilot-interface-digits";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { useRobotCouncilDigits } from "@/features/trading/hooks/use-robot-council-digits";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { TradingDeskDigits } from "@/features/trading/components/deriv-trader/trading-desk-digits";
-import { EvolutionLabDigits } from "@/features/trading/components/deriv-trader/evolution-lab-digits";
 import { AITradeSuggestionDigits } from "@/features/trading/components/deriv-trader/ai-trade-suggestion-digits";
 import { ApiStatusIndicatorDigits } from "@/features/trading/components/deriv-trader/ApiStatusIndicatorDigits";
 import { DigitStatsChart } from "@/features/trading/components/deriv-trader/digit-stats-chart";
@@ -173,26 +170,7 @@ function DerivTraderPageContentDigits() {
                         digitStats={robotCouncil.digitStats}
                         isAutopilotOn={robotCouncil.isCouncilAutopilotOn}
                     />
-                    <Tabs defaultValue="logs" className="w-full">
-                        <TabsList className="grid grid-cols-3">
-                            <TabsTrigger value="logs">Registo</TabsTrigger>
-                            <TabsTrigger value="arena">Arena</TabsTrigger>
-                            <TabsTrigger value="evolucao">Evolução</TabsTrigger>
-                        </TabsList>
-                        <TabsContent value="logs" className="mt-4">
-                            <OperationsLogDigits operations={operationsLog} sellContract={sellContract} priceTicks={priceTicks} activeAsset={activeAsset} clearActiveContracts={clearActiveContracts} />
-                        </TabsContent>
-                        <TabsContent value="arena" className="mt-4">
-                            <TradingDeskDigits 
-                                isCouncilAutopilotOn={robotCouncil.isCouncilAutopilotOn} 
-                                robotPerformance={robotCouncil.robotPerformance}
-                                championRobotId={null} // O conceito de campeão único foi removido
-                            />
-                        </TabsContent>
-                        <TabsContent value="evolucao" className="mt-4">
-                            <EvolutionLabDigits history={robotCouncil.evolutionHistory} activeSymbol={activeSymbol} />
-                        </TabsContent>
-                    </Tabs>
+                    <OperationsLogDigits operations={operationsLog} sellContract={sellContract} priceTicks={priceTicks} activeAsset={activeAsset} clearActiveContracts={clearActiveContracts} />
                 </div>
             </div>
         </div>
