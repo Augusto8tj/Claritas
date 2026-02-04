@@ -4,6 +4,24 @@ Este documento regista a jornada de desenvolvimento e as principais funcionalida
 
 ---
 
+### v5.5.0 - Robustez Arquitetural e Documentação Definitiva
+
+**Melhorias Estratégicas e Arquiteturais:**
+- **Portal de Arquitetura Centralizado:** O `README.md` principal foi transformado num guia completo, detalhando a filosofia de design e os ficheiros-chave para cada uma das nossas 7 plataformas de trading, servindo como um ponto de entrada único para entender o ecossistema.
+- **Documentação Dedicada por Sistema:** Foram criados e atualizados documentos de arquitetura específicos para as plataformas V1, V2.5 e Multipliers (`docs/`), garantindo que a lógica complexa de cada sistema esteja claramente documentada.
+- **Profissionalização da Plataforma "Deriv Digits":** A página de "Digits" foi completamente reconstruída. Foi integrado o gráfico de mercado avançado (`MarketChart`) e o seu hook de API (`use-deriv-api-digits.tsx`) foi refatorado para ter a mesma robustez dos outros sistemas, resolvendo falhas críticas no fluxo de dados em tempo real.
+- **Resiliência da API Aprimorada:** Todos os 6 hooks de conexão com a API da Deriv foram refatorados para tratar erros de rede e timeouts de forma controlada, eliminando "unhandled promise rejections" e tornando a aplicação mais estável.
+
+**Correções Críticas:**
+- **Ativação do "Trailing Stop" nos Multiplicadores:** Corrigida uma falha crítica na plataforma "Deriv Multipliers". A lógica do **stop-loss móvel (trailing stop)**, que é o coração da estratégia, foi movida para o hook correto (`use-multipliers-council.ts`) e agora funciona como projetado, permitindo "deixar os lucros correr" de forma segura.
+- **Resolução de Erros de Build:** Corrigidos múltiplos erros de importação que surgiram após a reorganização dos ficheiros de serviços, garantindo que a compilação do projeto seja estável.
+- **Correção de Erro de Runtime:** Corrigido um `ReferenceError` na função `extractMicrostructureFeatures` que impedia o funcionamento de análises avançadas.
+
+**Ferramentas de Desenvolvimento:**
+- **Script de Recuperação Git:** Adicionado o script `abort_rebase.sh` para ajudar a resolver estados de `rebase` pendentes no Git, restaurando a estabilidade do repositório local com um único comando.
+
+---
+
 ### v4.5.0 - O Mestre dos Multiplicadores e a Centralização da Arquitetura
 
 **Melhorias Estratégicas:**
