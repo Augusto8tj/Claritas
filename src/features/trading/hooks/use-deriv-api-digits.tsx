@@ -4,7 +4,7 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef, useMemo, type ReactNode } from 'react';
 import type { TradeResult } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
-import type { Operation, OperationInitiator, DurationUnit, TickData, Asset, ChartData, CandleData, TimePeriod, ChartType } from '@/lib/types';
+import type { Operation, OperationInitiator, DurationUnit, TickData, Asset, ChartData, CandleData, TimePeriod, ChartType, TradeAnnotation } from '@/lib/types';
 import { FirebaseErrorListener } from '@/components/firebase-error-listener';
 import { useAuth } from '@/features/auth/hooks/use-auth';
 
@@ -79,6 +79,7 @@ export interface DerivApiContextTypeDigits {
     initiator: OperationInitiator,
   ) => Promise<TradeResult>;
   sellContract: (contractId: number) => Promise<TradeResult>;
+  tradeAnnotations: TradeAnnotation[];
 }
 
 export const DerivApiContextDigits = createContext<DerivApiContextTypeDigits | undefined>(undefined);
@@ -90,6 +91,22 @@ const addDataPoint = (prevData: ChartData[], newPoint: ChartData): ChartData[] =
     }
     return data;
 };
+
+const getGranularityForTimePeriod = (timePeriod: TimePeriod): number => {
+    switch(timePeriod) {
+        case '1m': return 60;
+        case '2m': return 120;
+        case '3m': return 180;
+        case '5m': return 300;
+        case '10m': return 600;
+        case '15m': return 900;
+        case '30m': return 1800;
+        case '1h': return 3600;
+        case '8h': return 28800;
+        case '1d': return 86400;
+        default: return 60;
+    }
+}
 
 // This is the main state logic hook
 export function useDerivApiDigitsState() {
@@ -114,6 +131,7 @@ export function useDerivApiDigitsState() {
   const chartTypeRef = useRef(chartType);
   const timePeriodRef = useRef(timePeriod);
   const activeSubscriptionIdRef = useRef<string | null>(null);
+  const [tradeAnnotations, setTradeAnnotations] = useState<TradeAnnotation[]>([]);
   
   const wsRef = useRef<WebSocket | null>(null);
   const [isConnected, setIsConnected] = useState(false);
@@ -169,6 +187,18 @@ export function useDerivApiDigitsState() {
         });
     }, []);
 
+    const getHistoricalData = useCallback(async (symbol: string, style: 'ticks' | 'candles', count: number, period?: TimePeriod): Promise<ApiHistoricalData[]> => {
+      const request: any = { ticks_history: symbol, end: "latest", count, adjust_start_time: 1, style };
+      if (style === 'candles' && period) request.granularity = getGranularityForTimePeriod(period);
+      try {
+        const response: any = await makeRequest(request);
+        if (response.error) throw new Error(response.error.message);
+        if (response.history) return response.history.times.map((time: number, index: number) => ({ epoch: time, price: response.history.prices[index] }));
+        if (response.candles) return response.candles.map((c: any) => ({ epoch: c.epoch, open: c.open, high: c.high, low: c.low, close: c.close }));
+        return [];
+      } catch (error) { throw error; }
+    }, [makeRequest]);
+
     const startConnectionMonitor = useCallback(() => {
         if (pingIntervalRef.current) clearInterval(pingIntervalRef.current);
         pingIntervalRef.current = setInterval(() => {
@@ -216,14 +246,9 @@ export function useDerivApiDigitsState() {
                         const promise = promisesRef.current.get(String(reqId));
                         if (promise) {
                             if (response.error) {
-                                if (response.error.code === 'AlreadySubscribed') {
-                                    promise.resolve(response); // Not a real error, resolve it
-                                } else {
-                                    promise.reject(new Error(response.error.message));
-                                }
-                            } else {
-                                promise.resolve(response);
-                            }
+                                if (response.error.code === 'AlreadySubscribed') promise.resolve(response);
+                                else promise.reject(new Error(response.error.message));
+                            } else promise.resolve(response);
                             promisesRef.current.delete(String(reqId));
                         }
                         return; 
@@ -256,52 +281,48 @@ export function useDerivApiDigitsState() {
                             });
                             break;
                         case 'tick':
-                            if (response.subscription?.id === activeSubscriptionIdRef.current) {
-                                const tick = response.tick;
-                                const newTick: TickData = { 
-                                  epoch: tick.epoch, 
-                                  price: parseFloat(tick.quote)
-                                };
-                                
-                                setPriceTicks(prev => addDataPoint(prev, newTick));
-                                setChartData(prev => addDataPoint(prev, newTick));
-                            }
-                            break;
+                        case 'ohlc':
+                             const isTick = response.msg_type === 'tick';
+                             const tickData = isTick ? response.tick : response.ohlc;
+                             if (tickData?.symbol === activeSymbol) {
+                                 const newPoint: ChartData = isTick
+                                     ? { epoch: tickData.epoch, price: tickData.quote }
+                                     : { epoch: tickData.open_time, open: tickData.open, high: tickData.high, low: tickData.low, close: tickData.close };
+                                 setChartData(prev => addDataPoint(prev, newPoint));
+                                 setPriceTicks(prev => addDataPoint(prev, { epoch: tickData.epoch || tickData.open_time, price: isTick ? tickData.quote : tickData.close }));
+                             }
+                             break;
                     }
                 } catch (parseError) { console.error('[Deriv WS Digits] Parse error:', parseError); }
             };
             
             ws.onopen = async () => {
-                console.log('[Digits] WebSocket aberto');
                 try {
                     reconnectInProgressRef.current = false;
                     if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
                     const authResponse: any = await makeRequest({ authorize: activeToken });
                     if (authResponse.error) throw new Error(authResponse.error.message);
-                    console.log('[Digits] Autenticado com sucesso');
                     setIsConnected(true); setIsConnecting(false); setConnectionError(null);
                     ws.send(JSON.stringify({ "proposal_open_contract": 1, "subscribe": 1 }));
                     ws.send(JSON.stringify({ "balance": 1, "subscribe": 1 }));
                     startConnectionMonitor();
                     const assetsRes: any = await makeRequest({ active_symbols: 'full', product_type: 'basic' });
                     if (assetsRes.error) throw new Error(assetsRes.error.message);
-                    const filteredSymbols = assetsRes.active_symbols.filter((symbol: any) => 
-                        symbol.market === 'synthetic_index' && symbol.available_contract_types?.some((c: string) => c.startsWith('DIGIT'))
+                    const filteredSymbols = assetsRes.active_symbols.filter((s: any) => 
+                        s.market === 'synthetic_index' && s.available_contract_types?.some((c: string) => c.startsWith('DIGIT'))
                     );
                     const groupedAssets: { [key: string]: Asset[] } = {};
-                    filteredSymbols.forEach((symbol: any) => {
-                        const groupName = marketNameMapping[symbol.market] || 'Outros';
+                    filteredSymbols.forEach((s: any) => {
+                        const groupName = marketNameMapping[s.market] || 'Outros';
                         if (!groupedAssets[groupName]) groupedAssets[groupName] = [];
-                        groupedAssets[groupName].push({ value: symbol.symbol, label: symbol.display_name, marketIsOpen: symbol.exchange_is_open === 1, submarket: symbol.submarket, market: symbol.market, minDuration: '5t' });
+                        groupedAssets[groupName].push({ value: s.symbol, label: s.display_name, marketIsOpen: s.exchange_is_open === 1, submarket: s.submarket, market: s.market, minDuration: '5t' });
                     });
                     setAssetGroups(Object.keys(groupedAssets).map(label => ({ label, options: groupedAssets[label] })));
                     setIsAssetsLoading(false);
                 } catch (error: any) {
-                    console.error('[Digits] Erro na autenticação:', error);
                     reconnectInProgressRef.current = false;
                     if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
-                    let errorMessage = error instanceof Error ? error.message : 'Erro desconhecido ao conectar';
-                    setConnectionError(`Falha na autorização: ${errorMessage}`);
+                    setConnectionError(`Falha na autorização: ${error instanceof Error ? error.message : 'Erro desconhecido'}`);
                     setIsConnected(false); setIsConnecting(false); setIsAssetsLoading(false);
                     setAccountBalance({ balance: null, currency: null, loading: false });
                     allowAutoReconnectRef.current = false;
@@ -320,7 +341,6 @@ export function useDerivApiDigitsState() {
                     if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
                     reconnectTimeoutRef.current = setTimeout(() => { reconnectInProgressRef.current = false; setTriggerReconnect(c => c + 1); }, 3000);
                 } else if (!event.wasClean && !allowAutoReconnectRef.current) {
-                    console.warn(`[WS] Conexão falhou permanentemente (provavelmente token inválido). Auto-reconexão desativada.`);
                     setConnectionError(`Authorization failed. Please check your API token.`);
                 }
                 setIsConnected(false); setIsConnecting(false);
@@ -388,33 +408,38 @@ export function useDerivApiDigitsState() {
         return { success: false, message: "Contratos de dígitos não podem ser vendidos." };
     }, []);
 
-    const subscribeToTicks = useCallback(async (symbol: string) => {
+    const subscribeToMarketData = useCallback(async (symbol: string) => {
         if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
         if (activeSubscriptionIdRef.current) {
             try { await makeRequest({ forget: activeSubscriptionIdRef.current }); } catch (e) { /* ignore */ }
         }
-        setPriceTicks([]); 
-        setChartData([]);
-        setIsChartLoading(true);
+        setPriceTicks([]); setChartData([]); setIsChartLoading(true);
         try {
-            const history: any = await makeRequest({ ticks_history: symbol, end: "latest", count: MAX_TICKS, adjust_start_time: 1 });
-            if (history.error) throw new Error(history.error.message);
-            const initialTicks = history.history.times.map((t: number, i: number) => ({ epoch: t, price: history.history.prices[i] }));
-            setPriceTicks(initialTicks);
-            setChartData(initialTicks);
-            const subResponse: any = await makeRequest({ ticks: symbol, subscribe: 1 });
-            if(subResponse.error) throw new Error(subResponse.error.message);
+            const historyStyle = chartTypeRef.current === 'Candle' ? 'candles' : 'ticks';
+            const history = await getHistoricalData(symbol, historyStyle, MAX_TICKS, timePeriodRef.current);
+            setChartData(history as ChartData[]);
+            if (historyStyle === 'ticks') setPriceTicks(history as TickData[]);
+            else setPriceTicks(history.map(c => ({ epoch: c.epoch, price: c.close || 0 })));
+
+            let subRequest: any;
+            if (chartTypeRef.current === 'Candle') {
+                subRequest = { ticks_history: symbol, style: 'candles', granularity: getGranularityForTimePeriod(timePeriodRef.current), subscribe: 1, end: "latest", count: 1, adjust_start_time: 1 };
+            } else {
+                subRequest = { ticks: symbol, subscribe: 1 };
+            }
+            const subResponse: any = await makeRequest(subRequest);
+            if (subResponse.error) throw new Error(subResponse.error.message);
             activeSubscriptionIdRef.current = subResponse.subscription?.id || null;
         } catch (error: any) {
             console.error(`[Market Data - Digits] Error for ${symbol}:`, error);
         } finally {
             setIsChartLoading(false);
         }
-    }, [makeRequest]);
+    }, [makeRequest, getHistoricalData]);
 
     useEffect(() => {
-        if (isConnected && activeSymbol && !isConnecting) subscribeToTicks(activeSymbol);
-    }, [isConnected, activeSymbol, isConnecting, subscribeToTicks]);
+        if (isConnected && activeSymbol && !isConnecting) subscribeToMarketData(activeSymbol);
+    }, [isConnected, activeSymbol, isConnecting, subscribeToMarketData, chartType, timePeriod]);
 
     const setAccountType = useCallback((type: AccountType) => {
         try { localStorage.setItem(DERIV_ACCOUNT_TYPE_KEY, type); setAccountTypeState(type); allowAutoReconnectRef.current = true; setTriggerReconnect(c => c + 1); } catch (e) {}
@@ -456,18 +481,18 @@ export function useDerivApiDigitsState() {
         accountType, accountBalance, operationsLog, assetGroups, isAssetsLoading, activeSymbol, 
         setActiveSymbol, priceTicks, setAccountType, setTokens,
         disconnect, reconnect, executeTrade, sellContract,
-        chartData, isChartLoading, chartError, chartType, setChartType, timePeriod, setTimePeriod,
+        chartData, isChartLoading, chartError, chartType, setChartType, timePeriod, setTimePeriod, tradeAnnotations,
     }), [
         isConnected, isConnecting, connectionError, demoToken, realToken, activeToken, accountType, 
         accountBalance, operationsLog, assetGroups, isAssetsLoading, activeSymbol, 
         priceTicks, setAccountType, setTokens, disconnect, reconnect, executeTrade, sellContract, setActiveSymbol,
-        chartData, isChartLoading, chartError, chartType, timePeriod
+        chartData, isChartLoading, chartError, chartType, timePeriod, tradeAnnotations
     ]);
 
     return contextValue;
 }
 
-export function DerivApiProviderDigits({ children }: React.ReactNode) {
+export function DerivApiProviderDigits({ children }: { children: React.ReactNode }) {
     const contextValue = useDerivApiDigitsState();
     return (
         <DerivApiContextDigits.Provider value={contextValue}>

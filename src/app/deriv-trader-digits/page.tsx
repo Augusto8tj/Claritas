@@ -7,7 +7,6 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import DerivTraderInterfaceDigits from "@/features/trading/components/deriv-trader/deriv-trader-interface-digits";
 import { AssetSelectorDigits } from "@/features/trading/components/deriv-trader/asset-selector-digits";
 import { Skeleton } from "@/components/ui/skeleton";
-// CORRECTED IMPORT
 import { DerivApiProviderDigits, useDerivApiDigits } from "@/features/trading/hooks/use-deriv-api-digits";
 import { OperationsLogDigits } from "@/features/trading/components/deriv-trader/operations-log-digits";
 import { AIAnalysisInterfaceDigits } from "@/features/trading/components/deriv-trader/ai-analysis-interface-digits";
@@ -23,6 +22,8 @@ import { ApiStatusIndicatorDigits } from "@/features/trading/components/deriv-tr
 import { DigitStatsChart } from "@/features/trading/components/deriv-trader/digit-stats-chart";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { BrainCircuit } from 'lucide-react';
+import { MarketChart } from "@/features/trading/components/deriv-trader/market-chart";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 
 
 function HeaderDigits() {
@@ -87,12 +88,17 @@ function MainContentDigits() {
     
     return (
         <div className="mt-6 space-y-6">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-               <DerivTraderInterfaceDigits symbol={activeSymbol || ""} />
-               <AITradeSuggestionDigits
-                    digitStats={robotCouncil.digitStats}
-                    isAutopilotOn={robotCouncil.isCouncilAutopilotOn}
-                />
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+               <div className="lg:col-span-1">
+                 <DerivTraderInterfaceDigits symbol={activeSymbol || ""} />
+               </div>
+               <div className="lg:col-span-2 space-y-6">
+                 <DigitStatsChart priceTicks={priceTicks} />
+                 <AITradeSuggestionDigits
+                      digitStats={robotCouncil.digitStats}
+                      isAutopilotOn={robotCouncil.isCouncilAutopilotOn}
+                  />
+               </div>
             </div>
             <CouncilAutopilotInterfaceDigits {...robotCouncil} />
             <Tabs defaultValue="logs" className="w-full mt-6">
@@ -111,7 +117,10 @@ function MainContentDigits() {
 
 
 function DerivTraderPageContentDigits() {
-    const { priceTicks } = useDerivApiDigits();
+    const { 
+        activeSymbol, operationsLog, chartData, isChartLoading, chartError, 
+        chartType, setChartType, timePeriod, setTimePeriod, tradeAnnotations, priceTicks
+    } = useDerivApiDigits();
 
     return (
         <div className="flex-1 space-y-4 p-4 sm:p-8 pt-6">
@@ -123,7 +132,31 @@ function DerivTraderPageContentDigits() {
                     Esta plataforma foca-se nos Índices de Volatilidade (Sintéticos) porque a sua geração algorítmica constante permite uma análise estatística mais pura e previsível, livre de ruídos de eventos económicos externos.
                 </AlertDescription>
             </Alert>
-            <DigitStatsChart priceTicks={priceTicks} />
+            
+            <Card>
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                    <div>
+                        <CardTitle className="font-headline text-lg">Gráfico ({activeSymbol})</CardTitle>
+                        <CardDescription className="text-xs">Desempenho em tempo real do ativo.</CardDescription>
+                    </div>
+                </CardHeader>
+                <CardContent>
+                    <MarketChart
+                        activeSymbol={activeSymbol || ''}
+                        chartData={chartData}
+                        isChartLoading={isChartLoading}
+                        chartError={chartError}
+                        chartType={chartType}
+                        setChartType={setChartType}
+                        timePeriod={timePeriod}
+                        setTimePeriod={setTimePeriod}
+                        operations={operationsLog}
+                        indicators={null} // Digits não usa indicadores complexos
+                        tradeAnnotations={tradeAnnotations}
+                    />
+                </CardContent>
+            </Card>
+
             <MainContentDigits />
         </div>
     );
