@@ -98,7 +98,7 @@ function CurrentPriceDisplay() {
         );
     }
     
-    const pip = activeAsset?.pip ?? 2;
+    const pip = Math.max(activeAsset?.pip ?? 2, 2);
     const change = prevTick ? lastTick.price - prevTick.price : 0;
     const isUp = change > 0;
     const isDown = change < 0;
