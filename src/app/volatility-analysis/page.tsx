@@ -4,7 +4,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useForm, FormProvider, useFormContext } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { TrendingUp, TrendingDown, HelpCircle, Bot, FlaskConical, Target, Info, Settings, Sigma, Power, PlayCircle, PauseCircle, Skull, ChevronsUpDown, Activity, BarChart, Brain, TestTube, FilePieChart, CheckCheck, Loader2 } from 'lucide-react';
+import { TrendingUp, TrendingDown, HelpCircle, Bot, FlaskConical, Target, Info, Settings, Sigma, Power, PlayCircle, PauseCircle, Skull, ChevronsUpDown, Activity, BarChart, Brain, TestTube, FilePieChart, CheckCheck, Loader2, Gauge } from 'lucide-react';
 import { DerivApiProviderV2 as DerivApiProvider, useDerivApiV2 as useDerivApi } from "@/features/trading/hooks/use-deriv-api-v2";
 import { AssetSelectorV2 as AssetSelector } from "@/features/trading/components/deriv-trader/asset-selector-v2";
 import { ApiStatusIndicatorV2 as ApiStatusIndicator } from "@/features/trading/components/deriv-trader/ApiStatusIndicatorV2";
@@ -32,11 +32,11 @@ import { Button } from '@/components/ui/button';
 import { Slider } from '@/components/ui/slider';
 import { Separator } from '@/components/ui/separator';
 import { useMasterAutopilot } from '@/features/trading/hooks/use-master-autopilot';
-import type { AssertivenessData } from '@/features/trading/hooks/use-master-autopilot';
+import type { AssertivenessData, SignalQuality } from '@/features/trading/hooks/use-master-autopilot';
 import { MarketChart } from "@/features/trading/components/deriv-trader/market-chart";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Skeleton } from '@/components/ui/skeleton';
-import { useStochasticModels, type ExpertProjection, type StrongestSignal, type MarketStats } from '@/features/trading/hooks/use-stochastic-models';
+import { useStochasticModels, type ExpertProjection, type StrongestSignal, type MarketStats, type VolatilityRegime, type MeanReversionSignal } from '@/features/trading/hooks/use-stochastic-models';
 import { runStochasticBacktest, type BacktestResult } from '@/features/trading/backtest/backtest-engine';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
@@ -47,6 +47,8 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/
 interface ConsensusData {
     strongestSignal: StrongestSignal;
     projectionExperts: ExpertProjection[];
+    meanReversionSignal: MeanReversionSignal;
+    volatilityRegime: VolatilityRegime;
 }
 
 
@@ -66,13 +68,19 @@ const StatItem = ({ label, value }: { label: string; value: string | number }) =
     </div>
 );
 
-const StrongestSignalCard = ({ signal, className }: { signal: StrongestSignal, className?: string }) => {
-    const isHold = signal.direction === 'HOLD' || signal.certaintyScore === 0;
-    const displayAccuracy = Math.max(signal.rawWinRate, 100 - signal.rawWinRate);
+const StrongestSignalCard = ({ signal, meanReversion, regime, className }: { signal: StrongestSignal, meanReversion: MeanReversionSignal, regime: VolatilityRegime, className?: string }) => {
+    const isLowVol = regime.type === 'LOW';
+    const effectiveSignal = isLowVol && meanReversion.direction !== 'HOLD' ? 
+        { ...meanReversion, horizon: 'Z-Score' } : 
+        { ...signal, direction: signal.direction as 'LONG' | 'SHORT' | 'HOLD' };
+
+    const displayDirection = effectiveSignal.direction === 'LONG' ? 'RISE' : (effectiveSignal.direction === 'SHORT' ? 'FALL' : 'HOLD');
+    const isHold = displayDirection === 'HOLD';
+    const displayAccuracy = 'rawWinRate' in effectiveSignal ? Math.max(effectiveSignal.rawWinRate, 100 - effectiveSignal.rawWinRate) : ('confidence' in effectiveSignal ? effectiveSignal.confidence : 0);
 
     return (
         <Card className={cn("p-4 flex flex-col justify-center", 
-            isHold ? 'bg-slate-50' : signal.direction === 'RISE' ? 'bg-green-50' : 'bg-red-50',
+            isHold ? 'bg-slate-50' : displayDirection === 'RISE' ? 'bg-green-50' : 'bg-red-50',
             className
         )}>
             <CardTitle className="text-sm font-semibold text-muted-foreground mb-2">Sinal Preditivo Mais Forte</CardTitle>
@@ -84,18 +92,78 @@ const StrongestSignalCard = ({ signal, className }: { signal: StrongestSignal, c
                 </div>
             ) : (
                 <div className="text-center">
-                    {signal.direction === 'RISE' ? <TrendingUp className="mx-auto h-8 w-8 text-green-500 mb-2" /> : <TrendingDown className="mx-auto h-8 w-8 text-red-500 mb-2" />}
-                    <p className={cn("font-bold text-lg", signal.direction === 'RISE' ? 'text-green-600' : 'text-red-600')}>
-                        {signal.direction} para {signal.horizon}
+                    {displayDirection === 'RISE' ? <TrendingUp className="mx-auto h-8 w-8 text-green-500 mb-2" /> : <TrendingDown className="mx-auto h-8 w-8 text-red-500 mb-2" />}
+                    <p className={cn("font-bold text-lg", displayDirection === 'RISE' ? 'text-green-600' : 'text-red-600')}>
+                        {displayDirection} para {effectiveSignal.horizon}
                     </p>
                     <p className="text-xs text-muted-foreground">
-                        Assertividade Efetiva: <span className="font-bold">{displayAccuracy.toFixed(1)}%</span>
+                        Confiança: <span className="font-bold">{displayAccuracy.toFixed(1)}%</span>
+                        {isLowVol && <Badge variant="outline" className="ml-2">Mean Reversion</Badge>}
                     </p>
                 </div>
             )}
         </Card>
     );
 };
+
+const SignalQualityCard = ({ quality }: { quality: SignalQuality | null }) => {
+  if (!quality) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base font-headline flex items-center gap-2"><Gauge className="h-4 w-4" />Qualidade do Sinal</CardTitle>
+        </CardHeader>
+        <CardContent className="text-center text-muted-foreground">
+          <Loader2 className="animate-spin h-6 w-6 mx-auto" />
+          <p className="text-sm mt-2">A avaliar...</p>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  const { score, reasons, shouldTrade } = quality;
+  const scoreColor = score >= 80 ? 'text-green-600' : score >= 60 ? 'text-blue-600' : 'text-red-600';
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base font-headline flex items-center gap-2"><Gauge className="h-4 w-4" />Qualidade do Sinal</CardTitle>
+        <div className="flex items-center gap-3 pt-2">
+          <Progress value={score} className="h-2 flex-1" />
+          <span className={cn("font-bold text-xl", scoreColor)}>{score.toFixed(0)}</span>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <ul className="text-xs space-y-1 text-muted-foreground list-disc pl-4">
+          {reasons.map((reason, i) => <li key={i}>{reason}</li>)}
+        </ul>
+        <Alert variant={shouldTrade ? "default" : "destructive"} className={cn("p-3", shouldTrade && "bg-green-500/10 border-green-500/20")}>
+          <AlertTitle className="flex items-center gap-2 font-bold">
+            {shouldTrade ? <CheckCheck className="h-4 w-4 text-green-600" /> : <XCircle className="h-4 w-4" />}
+            Veredito: {shouldTrade ? "Aprovado para Execução" : "Sinal Rejeitado"}
+          </AlertTitle>
+        </Alert>
+      </CardContent>
+    </Card>
+  );
+};
+
+const VolatilityRegimeBadge = ({ regime }: { regime: VolatilityRegime | null }) => {
+    if (!regime) return <Badge variant="secondary">Analisando...</Badge>;
+    
+    const regimeConfig = {
+        'LOW': { text: 'Baixa Volatilidade', color: 'bg-blue-500/10 text-blue-700 border-blue-500/20' },
+        'NORMAL': { text: 'Normal', color: 'bg-green-500/10 text-green-700 border-green-500/20' },
+        'HIGH': { text: 'Alta Volatilidade', color: 'bg-red-500/10 text-red-700 border-red-500/20' }
+    };
+    
+    return (
+        <Badge className={cn("text-xs", regimeConfig[regime.type].color)}>
+            {regimeConfig[regime.type].text}
+        </Badge>
+    );
+};
+
 
 const ProjectionExpertsPanel = ({ experts, adaptiveDrifts, className }: { experts: ExpertProjection[], adaptiveDrifts: Record<string, number>, className?: string }) => {
     
@@ -202,7 +270,6 @@ const ProjectionExpertsPanel = ({ experts, adaptiveDrifts, className }: { expert
 
 
 interface StochasticLabProps {
-  onConsensusUpdate: (consensus: ConsensusData) => void;
   predictiveLogs: PredictiveTradeLog[];
   onDeletePredictiveLog: (logId: string) => void;
   deletingPredictiveLogId: string | null;
@@ -267,7 +334,6 @@ const BacktestResultViewer = ({ result }: { result: BacktestResult | null }) => 
 };
 
 function StochasticLab({ 
-    onConsensusUpdate, 
     predictiveLogs,
     onDeletePredictiveLog,
     deletingPredictiveLogId,
@@ -276,9 +342,16 @@ function StochasticLab({
 }: StochasticLabProps) {
   const { user } = useAuth();
   const { toast } = useToast();
-  const { getHistoricalData, chartData: realData } = useDerivApi();
+  const { getHistoricalData, chartData: realData, priceTicks } = useDerivApi();
   
-  const { projectionExperts, strongestSignal, stats, adaptiveDrifts } = useStochasticModels(realData);
+  const { 
+    projectionExperts, 
+    strongestSignal, 
+    stats, 
+    adaptiveDrifts, 
+    meanReversionSignal, 
+    volatilityRegime 
+  } = useStochasticModels(realData, priceTicks, operationsLog);
   
   const [isBacktesting, setIsBacktesting] = useState(false);
   const [backtestPoints, setBacktestPoints] = useState(20000);
@@ -301,7 +374,6 @@ function StochasticLab({
     toast({ title: "Iniciando Backtest...", description: `A obter ${backtestPoints} pontos de dados históricos...` });
 
     try {
-      // Fetch fresh, deep historical data instead of using session data
       const historicalData = await getHistoricalData(activeSymbol, 'candles', backtestPoints, '1m');
 
       if (historicalData.length < 500) {
@@ -310,7 +382,6 @@ function StochasticLab({
 
       toast({ title: "Dados Obtidos!", description: "A processar simulação. Isto pode demorar alguns segundos." });
 
-      // Run in a timeout to allow the UI to update with the toast message
       await new Promise(resolve => setTimeout(resolve, 50));
       
       const result = runStochasticBacktest(historicalData, {
@@ -329,10 +400,6 @@ function StochasticLab({
     }
   };
   
-  useEffect(() => {
-    onConsensusUpdate({strongestSignal, projectionExperts});
-  }, [strongestSignal, onConsensusUpdate, projectionExperts]);
-
   const MetricCard = ({ label, value, icon, color }: { label: string; value: string | number; icon: React.ReactNode; color?: string }) => (
       <div className="flex flex-col p-3 border rounded-lg bg-background shadow-sm">
           <div className="flex items-center justify-between text-xs text-muted-foreground mb-1">
@@ -373,13 +440,16 @@ function StochasticLab({
                 <FlaskConical className="h-5 w-5 text-purple-600" />
                 Laboratório Preditivo (Cérebro Cético V2.1)
             </CardTitle>
-            <CardDescription>O cientista usa GBM auto-calibrável, Confiança Bayesiana e gestão de risco por modelo para projetar o futuro.</CardDescription>
+            <CardDescription className="flex justify-between items-center">
+                <span>O cientista usa GBM, Mean Reversion e gestão de risco para projetar o futuro.</span>
+                <VolatilityRegimeBadge regime={volatilityRegime} />
+            </CardDescription>
         </CardHeader>
         <CardContent className="flex-1 flex flex-col min-h-0">
           <ScrollArea className="flex-1">
                 <div className="p-1 space-y-6">
                     <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                         <StrongestSignalCard signal={strongestSignal} className="md:col-span-1" />
+                         <StrongestSignalCard signal={strongestSignal} meanReversion={meanReversionSignal} regime={volatilityRegime} className="md:col-span-1" />
                          <ProjectionExpertsPanel experts={projectionExperts} adaptiveDrifts={adaptiveDrifts} className="md:col-span-3" />
                     </div>
                     
@@ -532,26 +602,14 @@ function PageContent() {
     priceTicks, durationLimits,
   } = useDerivApi();
   const { toast } = useToast();
-  const [consensusData, setConsensusData] = useState<ConsensusData | null>(null);
   const [predictiveLogs, setPredictiveLogs] = useState<PredictiveTradeLog[]>([]);
   const [isLogsLoading, setIsLogsLoading] = useState(true);
   const [deletingPredictiveLogId, setDeletingPredictiveLogId] = useState<string | null>(null);
   const { user } = useAuth();
   
   const autopilot = useMasterAutopilot();
-  const { isAutopilotOn, runAutopilotCycle } = autopilot;
   
   const form = useFormContext<VolatilityTraderFormValues>();
-
-  const handleConsensusUpdate = useCallback((data: ConsensusData) => {
-    setConsensusData(data);
-    if (isAutopilotOn && data?.projectionExperts) {
-      runAutopilotCycle(Object.fromEntries(
-          data.projectionExperts.map(p => [p.name, { accuracy: p.rawWinRate, vote: p.vote, lastResult: p.lastResult }])
-      ));
-    }
-  }, [isAutopilotOn, runAutopilotCycle]);
-
 
   useEffect(() => {
     if (!user) {
@@ -613,13 +671,13 @@ function PageContent() {
   };
 
   const handleSyncDuration = () => {
-    const { direction, horizon } = consensusData?.strongestSignal || {};
-    if (!horizon || horizon === 'N/A' || !durationLimits) {
+    const { finalSignal } = autopilot.masterState;
+    if (!finalSignal || finalSignal.horizon === 'N/A' || !durationLimits) {
       toast({ variant: 'destructive', title: 'Nenhum Sinal Forte', description: 'Aguarde um sinal preditivo forte para sincronizar.' });
       return;
     }
 
-    const durationMatch = horizon.match(/(\d+)([st])/);
+    const durationMatch = finalSignal.horizon.match(/(\d+)([st])/);
     let duration: number = 15;
     let durationUnit: 's' | 't' = 's';
     if (durationMatch) {
@@ -639,10 +697,16 @@ function PageContent() {
 
     toast({
       title: 'Duração Sincronizada!',
-      description: `Duração definida para ${duration} segundos, com base no sinal de ${horizon}.`,
+      description: `Duração definida para ${duration} segundos, com base no sinal de ${finalSignal.horizon}.`,
     });
   };
   
+  // Atualiza o stake no formulário quando o Kelly Stake é calculado
+  useEffect(() => {
+    if (autopilot.kellyStake > 0) {
+        form.setValue('stake', autopilot.kellyStake);
+    }
+  }, [autopilot.kellyStake, form]);
 
   return (
     <div className="flex-1 space-y-4 p-4 sm:p-8 pt-6">
@@ -650,7 +714,6 @@ function PageContent() {
       <IsolatedMarketChart />
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
         <StochasticLab 
-          onConsensusUpdate={handleConsensusUpdate}
           predictiveLogs={predictiveLogs}
           onDeletePredictiveLog={handleDeletePredictiveLog}
           deletingPredictiveLogId={deletingPredictiveLogId}
@@ -660,12 +723,13 @@ function PageContent() {
         <div className="lg:col-span-2 space-y-6">
           <VolatilityTraderInterface 
             symbol={activeSymbol || ''} 
-            consensus={consensusData?.strongestSignal}
+            consensus={autopilot.masterState.finalSignal}
             onSyncDuration={handleSyncDuration}
           />
           <VolatilityAutopilotInterface 
             autopilot={autopilot}
-            projectionExperts={consensusData?.projectionExperts || []}
+            projectionExperts={autopilot.masterState.projectionExperts || []}
+            signalQuality={autopilot.signalQuality}
           >
             <Collapsible className="pt-4">
               <CollapsibleTrigger asChild>
@@ -799,10 +863,12 @@ const VolatilityAutopilotInterface = ({
   autopilot,
   children,
   projectionExperts,
+  signalQuality,
 }: { 
   autopilot: ReturnType<typeof useMasterAutopilot>;
   children?: React.ReactNode,
   projectionExperts: ExpertProjection[],
+  signalQuality: SignalQuality | null,
 }) => {
   return (
     <Card>
@@ -812,7 +878,7 @@ const VolatilityAutopilotInterface = ({
           Piloto Automático Preditivo
         </CardTitle>
         <CardDescription>
-          Executa trades automaticamente com base na confirmação dupla de especialistas.
+          Executa trades automaticamente com base na confirmação e qualidade do sinal.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -828,6 +894,7 @@ const VolatilityAutopilotInterface = ({
             className="data-[state=checked]:bg-green-600"
           />
         </div>
+        <SignalQualityCard quality={signalQuality} />
          <Alert className={cn(
            "text-sm",
            autopilot.masterState.trigger.signal === 'HOLD' && "bg-muted/50",
@@ -839,44 +906,6 @@ const VolatilityAutopilotInterface = ({
           </AlertDescription>
         </Alert>
         {children}
-        <Alert className="mt-4 bg-blue-50 border-blue-200">
-          <AlertTitle className="text-blue-900 font-semibold flex items-center gap-2">
-            <CheckCheck className="h-4 w-4"/>
-            Assertividade vs Thresholds
-          </AlertTitle>
-          <AlertDescription>
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-2 mt-2 text-xs">
-              {Object.keys(autopilot.riskManager.thresholds).map((horizon) => {
-                const expert = projectionExperts?.find(p => p.name === horizon);
-                const accuracy = expert?.rawWinRate || 0;
-                const threshold = autopilot.riskManager.thresholds[horizon];
-                const effectiveAccuracy = Math.max(accuracy, 100 - accuracy);
-                const passes = effectiveAccuracy >= threshold;
-                
-                return (
-                  <div key={horizon} className={cn(
-                    "flex flex-col p-2 rounded border",
-                    passes 
-                      ? "bg-green-100 border-green-300 text-green-900" 
-                      : "bg-red-100 border-red-300 text-red-900"
-                  )}>
-                    <div className="font-mono font-bold text-sm">{horizon}</div>
-                    <div className="font-mono text-xs">
-                      {effectiveAccuracy.toFixed(1)}% / {threshold}%
-                    </div>
-                    <div className="text-xs font-bold">
-                      {passes ? '✅ PASSA' : '❌ BLOQUEIA'}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-            <p className="text-xs text-muted-foreground mt-3 border-t pt-2">
-              💡 <strong>Verde</strong> = Assertividade Efetiva ≥ Limiar | 
-              <strong className="text-red-600"> Vermelho</strong> = Bloqueado
-            </p>
-          </AlertDescription>
-        </Alert>
       </CardContent>
     </Card>
   );

@@ -4,6 +4,8 @@
  * @fileOverview Serviço Numérico para Previsão de Volatilidade.
  * Contém funções matemáticas puras para serem usadas em hooks e engines de backtesting.
  */
+import type { CandleData, TickData } from '@/lib/types';
+
 
 /**
  * Limita um número a um intervalo [min, max].
@@ -87,3 +89,52 @@ export const estimateDtSecondsFromEpochs = (
     return clamp(medianDt, 0.5, 5.0);
 };
 
+// --- NOVAS FUNÇÕES ADICIONADAS ---
+
+/**
+ * Calcula o Z-Score para uma série de preços.
+ */
+export const calculateZScore = (ticks: TickData[], window: number = 20): number[] => {
+  if (ticks.length < window) return [];
+  const prices = ticks.map(t => t.price);
+  const zScores: number[] = [];
+  for (let i = window - 1; i < prices.length; i++) {
+    const slice = prices.slice(i - window + 1, i + 1);
+    const mean = slice.reduce((a, b) => a + b, 0) / slice.length;
+    const std = Math.sqrt(slice.map(x => Math.pow(x - mean, 2)).reduce((a, b) => a + b, 0) / slice.length);
+    const zscore = std > 0 ? (prices[i] - mean) / std : 0;
+    zScores.push(zscore);
+  }
+  return zScores;
+};
+
+/**
+ * Calcula o Average True Range (ATR).
+ */
+export const calculateATR = (data: CandleData[], period: number): number => {
+    if (data.length < period) return 0;
+    const recentData = data.slice(-period);
+    const trs: number[] = [];
+    for (let i = 1; i < recentData.length; i++) {
+        const c = recentData[i];
+        const p = recentData[i-1];
+        trs.push(Math.max(c.high - c.low, Math.abs(c.high - p.close), Math.abs(c.low - p.close)));
+    }
+    if (trs.length === 0) return 0;
+    return trs.reduce((a, b) => a + b, 0) / trs.length;
+};
+
+/**
+ * Calcula a Largura das Bandas de Bollinger (BBW).
+ */
+export const calculateBBWidth = (data: CandleData[], period: number, stdDev: number): number => {
+    if (data.length < period) return 0;
+    const slice = data.slice(-period);
+    const prices = slice.map(c => c.close);
+    const mean = prices.reduce((a, b) => a + b, 0) / period;
+    const sd = Math.sqrt(prices.map(x => Math.pow(x - mean, 2)).reduce((a, b) => a + b, 0) / period);
+    if (mean === 0) return 0;
+    const upper = mean + sd * stdDev;
+    const lower = mean - sd * stdDev;
+    return ((upper - lower) / mean) * 100;
+};
