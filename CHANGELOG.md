@@ -44,6 +44,24 @@ Este documento regista a jornada de desenvolvimento e as principais funcionalida
 
 ---
 
+### v4.5.0 - O Mestre dos Multiplicadores e a Centralização da Arquitetura
+
+**Melhorias Estratégicas:**
+- **Ativação do "Trailing Stop" nos Multiplicadores:** Corrigida uma falha crítica na arquitetura da plataforma "Deriv Multipliers". A lógica do **stop-loss móvel (trailing stop)**, que é o coração da estratégia, foi movida para o hook `use-multipliers-council.ts`, que tem acesso aos indicadores (ATR) necessários para o seu cálculo. A estratégia agora funciona conforme o seu design original, permitindo "deixar os lucros correr" de forma automática e segura.
+- **Profissionalização da Plataforma "Deriv Digits":** A página de "Digits" foi completamente reconstruída. Foi integrado o **gráfico de mercado avançado (`MarketChart`)**, e o seu hook de API (`use-deriv-api-digits.tsx`) foi atualizado para ter a mesma robustez dos outros sistemas, resolvendo falhas no fluxo de dados em tempo real.
+- **Reorganização e Centralização da Arquitetura:** Executada uma refatoração completa da estrutura do projeto. Todos os serviços específicos de trading (`indicator-service`, `council-strategies`, `advanced-trading-services`) foram movidos da pasta genérica `src/services` para a sua localização correta em `src/features/trading/services`. Esta mudança eliminou múltiplos erros de build e tornou a arquitetura mais limpa e manutenível.
+- **Resiliência da API Aprimorada:** A lógica de comunicação com a API em todos os hooks de trading foi refatorada. Erros de rede e timeouts agora são tratados de forma controlada, eliminando "unhandled promise rejections" e tornando a aplicação mais estável. A mensagem de "token inválido" foi reclassificada para um aviso (`warn`) para reduzir o ruído na consola do programador.
+
+**Correções Críticas:**
+- **Resolução de Erros de Build:** Corrigidos múltiplos erros de importação que surgiram após a reorganização dos ficheiros.
+- **Correção de Conflito de Merge:** Removidos marcadores de conflito de merge (`=======`, `>>>>>>>`) que estavam a impedir a compilação da página `deriv-trader-v2`.
+- **Correção de Erro de Runtime:** Corrigido um `ReferenceError` na função `extractMicrostructureFeatures` (`advanced-trading-services.ts`) onde uma variável (`mean`) foi usada incorretamente em vez de `avgPrice`.
+
+**Ferramentas de Desenvolvimento:**
+- Adicionado o script `abort_rebase.sh` para ajudar a resolver estados de `rebase` pendentes no Git, restaurando a estabilidade do repositório local.
+
+---
+
 ### v4.0.0 (IA Lab) - O Mestre da Volatilidade: Deriv Accumulators
 
 **Funcionalidades Principais:**
