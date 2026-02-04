@@ -89,7 +89,7 @@ function CurrentPriceDisplay() {
         return (
             <Card>
                 <CardHeader className="pb-2">
-                    <CardTitle className="font-headline text-lg">Preço Atual</CardTitle>
+                    <CardTitle className="font-headline text-lg">Preço Atual ({activeAsset?.label || 'A carregar...'})</CardTitle>
                 </CardHeader>
                 <CardContent className="flex items-center justify-center h-32">
                     <Loader2 className="h-8 w-8 animate-spin text-primary" />
@@ -110,13 +110,15 @@ function CurrentPriceDisplay() {
     return (
         <Card>
             <CardHeader className="pb-2">
-                <CardTitle className="font-headline text-lg">Preço Atual</CardTitle>
+                <CardTitle className="font-headline text-lg">Preço Atual ({activeAsset?.label || 'A carregar...'})</CardTitle>
                 <CardDescription>O último preço recebido para o ativo selecionado.</CardDescription>
             </CardHeader>
             <CardContent>
-                <div className="flex items-baseline justify-center gap-2">
-                    <p className="text-5xl font-bold tracking-tighter text-foreground">{mainPart}</p>
-                    <p className="text-6xl font-bold text-primary animate-pulse">{lastDigit}</p>
+                <div className="flex items-baseline justify-center">
+                    <p className="text-5xl font-bold font-mono text-foreground">
+                        {mainPart}
+                        <span className="text-primary animate-pulse">{lastDigit}</span>
+                    </p>
                 </div>
                 <div className={cn(
                     "flex items-center justify-center gap-1 text-sm font-semibold mt-1",
@@ -164,7 +166,7 @@ function DerivTraderPageContentDigits() {
                         isAutopilotOn={robotCouncil.isCouncilAutopilotOn}
                     />
                     <Tabs defaultValue="logs" className="w-full">
-                        <TabsList className="grid w-full grid-cols-3">
+                        <TabsList className="grid grid-cols-3">
                             <TabsTrigger value="logs">Registo</TabsTrigger>
                             <TabsTrigger value="arena">Arena</TabsTrigger>
                             <TabsTrigger value="evolucao">Evolução</TabsTrigger>

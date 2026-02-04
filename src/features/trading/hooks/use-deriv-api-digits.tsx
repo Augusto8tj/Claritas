@@ -324,7 +324,7 @@ export function useDerivApiDigitsState() {
                     const assetsRes: any = await makeRequest({ active_symbols: 'full', product_type: 'basic' });
                     if (assetsRes.error) throw new Error(assetsRes.error.message);
                     const filteredSymbols = assetsRes.active_symbols.filter((s: any) => 
-                        s.market === 'synthetic_index' && s.available_contract_types?.some((c: string) => c.startsWith('DIGIT'))
+                        s.market === 'synthetic_index'
                     );
                     const groupedAssets: { [key: string]: Asset[] } = {};
                     filteredSymbols.forEach((s: any) => {
