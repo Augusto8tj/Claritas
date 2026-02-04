@@ -21,9 +21,9 @@ import { AITradeSuggestionDigits } from "@/features/trading/components/deriv-tra
 import { ApiStatusIndicatorDigits } from "@/features/trading/components/deriv-trader/ApiStatusIndicatorDigits";
 import { DigitStatsChart } from "@/features/trading/components/deriv-trader/digit-stats-chart";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { BrainCircuit } from 'lucide-react';
-import { MarketChart } from "@/features/trading/components/deriv-trader/market-chart";
+import { BrainCircuit, Loader2, TrendingDown, TrendingUp } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { cn } from "@/lib/utils";
 
 
 function HeaderDigits() {
@@ -81,6 +81,58 @@ function HeaderDigits() {
     );
 };
 
+function CurrentPriceDisplay() {
+    const { priceTicks } = useDerivApiDigits();
+    const lastTick = priceTicks.length > 0 ? priceTicks[priceTicks.length - 1] : null;
+    const prevTick = priceTicks.length > 1 ? priceTicks[priceTicks.length - 2] : null;
+
+    if (!lastTick) {
+        return (
+            <Card>
+                <CardHeader className="pb-2">
+                    <CardTitle className="font-headline text-lg">Preço Atual</CardTitle>
+                </CardHeader>
+                <CardContent className="flex items-center justify-center h-32">
+                    <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                </CardContent>
+            </Card>
+        );
+    }
+    
+    const change = prevTick ? lastTick.price - prevTick.price : 0;
+    const isUp = change > 0;
+    const isDown = change < 0;
+
+    // Split the price to style the last digit differently
+    const priceString = lastTick.price.toFixed(4); // Ensure consistent decimal places
+    const lastDigit = priceString.slice(-1);
+    const mainPart = priceString.slice(0, -1);
+
+    return (
+        <Card>
+            <CardHeader className="pb-2">
+                <CardTitle className="font-headline text-lg">Preço Atual</CardTitle>
+                <CardDescription>O último preço recebido para o ativo selecionado.</CardDescription>
+            </CardHeader>
+            <CardContent>
+                <div className="flex items-baseline justify-center gap-2">
+                    <p className="text-5xl font-bold tracking-tighter text-foreground">{mainPart}</p>
+                    <p className="text-6xl font-bold text-primary animate-pulse">{lastDigit}</p>
+                </div>
+                <div className={cn(
+                    "flex items-center justify-center gap-1 text-sm font-semibold mt-1",
+                    isUp && "text-green-600",
+                    isDown && "text-red-600",
+                    !isUp && !isDown && "text-muted-foreground"
+                )}>
+                    {isUp && <TrendingUp className="h-4 w-4" />}
+                    {isDown && <TrendingDown className="h-4 w-4" />}
+                    <span>{change.toFixed(4)}</span>
+                </div>
+            </CardContent>
+        </Card>
+    );
+}
 
 function MainContentDigits() {
     const { activeSymbol, priceTicks, operationsLog, sellContract } = useDerivApiDigits();
@@ -117,11 +169,6 @@ function MainContentDigits() {
 
 
 function DerivTraderPageContentDigits() {
-    const { 
-        activeSymbol, operationsLog, chartData, isChartLoading, chartError, 
-        chartType, setChartType, timePeriod, setTimePeriod, tradeAnnotations, priceTicks
-    } = useDerivApiDigits();
-
     return (
         <div className="flex-1 space-y-4 p-4 sm:p-8 pt-6">
             <HeaderDigits />
@@ -133,29 +180,7 @@ function DerivTraderPageContentDigits() {
                 </AlertDescription>
             </Alert>
             
-            <Card>
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                    <div>
-                        <CardTitle className="font-headline text-lg">Gráfico ({activeSymbol})</CardTitle>
-                        <CardDescription className="text-xs">Desempenho em tempo real do ativo.</CardDescription>
-                    </div>
-                </CardHeader>
-                <CardContent>
-                    <MarketChart
-                        activeSymbol={activeSymbol || ''}
-                        chartData={chartData}
-                        isChartLoading={isChartLoading}
-                        chartError={chartError}
-                        chartType={chartType}
-                        setChartType={setChartType}
-                        timePeriod={timePeriod}
-                        setTimePeriod={setTimePeriod}
-                        operations={operationsLog}
-                        indicators={null} // Digits não usa indicadores complexos
-                        tradeAnnotations={tradeAnnotations}
-                    />
-                </CardContent>
-            </Card>
+            <CurrentPriceDisplay />
 
             <MainContentDigits />
         </div>
