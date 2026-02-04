@@ -1,7 +1,7 @@
 // src/features/trading/hooks/use-stochastic-models.ts
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import type { ChartData, CandleData, TickData, Operation } from '@/lib/types';
 import { calculateATR, calculateBBWidth, calculateZScore } from '../services/volatility-forecast';
 
@@ -154,7 +154,7 @@ export function useStochasticModels(
 
         // 2. Volatility Regime Detection
         const atr = calculateATR(candleData, 14);
-        const avgATR = calculateATR(candleData, 50);
+        const avgATR = calculateATR(candleData, 50); // baseline
         const bbWidth = calculateBBWidth(candleData, 20, 2);
         const avgBBWidth = calculateBBWidth(candleData.slice(0, -20), 20, 2); // baseline
 
