@@ -6,7 +6,7 @@ import type { RobotStrategy, RobotPerformance } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/features/auth/hooks/use-auth';
 import { saveEvolutionHistory, loadEvolutionHistory, clearEvolutionHistory } from '@/services/financial-data-service';
-import { initialCouncilStrategies } from '@/services/council-strategies';
+import { initialCouncilStrategies } from '@/features/trading/services/council-strategies';
 import type { EvolutionEvent as EvolutionEventV2 } from './use-strategy-evolution-v2'; // Import the richer type
 
 // ============================================================================
@@ -150,8 +150,8 @@ export function useStrategyEvolutionV1(assetSymbol: string | null) {
                     mutations: h.mutations.map(m => ({
                         replacedBotId: m.robotId,
                         replacedBotType: m.robotType,
-                        parentBotId: m.parentId,
-                        parentBotType: m.parentType,
+                        parentId: m.parentId,
+                        parentType: m.parentType,
                         diagnosis: m.diagnosis,
                         prescription: m.prescription,
                         mutatedGenes: m.mutatedGenes,
