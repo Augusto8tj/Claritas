@@ -1,10 +1,10 @@
-// /src/features/trading/hooks/use-deriv-api-digits.tsx
+// src/features/trading/hooks/use-deriv-api-digits.tsx
 'use client';
 
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef, useMemo, type ReactNode } from 'react';
 import type { TradeResult } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
-import type { Operation, OperationInitiator, DurationUnit, TickData, Asset, ChartData, CandleData, TimePeriod, ChartType, TradeAnnotation } from '@/lib/types';
+import type { Operation, OperationInitiator, DurationUnit, TickData, Asset, ChartData, CandleData, TimePeriod, ChartType, TradeAnnotation, DurationLimits } from '@/lib/types';
 import { FirebaseErrorListener } from '@/components/firebase-error-listener';
 import { useAuth } from '@/features/auth/hooks/use-auth';
 
@@ -65,6 +65,7 @@ export interface DerivApiContextTypeDigits {
   setChartType: (type: ChartType) => void;
   timePeriod: TimePeriod;
   setTimePeriod: (period: TimePeriod) => void;
+  dataVersion: number;
   setAccountType: (type: AccountType) => void;
   setTokens: (tokens: { demo?: string; real?: string }) => void;
   disconnect: (type: AccountType) => void;
@@ -80,17 +81,10 @@ export interface DerivApiContextTypeDigits {
   ) => Promise<TradeResult>;
   sellContract: (contractId: number) => Promise<TradeResult>;
   tradeAnnotations: TradeAnnotation[];
+  durationLimits: DurationLimits | null;
 }
 
 export const DerivApiContextDigits = createContext<DerivApiContextTypeDigits | undefined>(undefined);
-
-const addDataPoint = (prevData: ChartData[], newPoint: ChartData): ChartData[] => {
-    const data = [...prevData, newPoint];
-    if (data.length > MAX_TICKS) {
-        return data.slice(-MAX_TICKS);
-    }
-    return data;
-};
 
 const getGranularityForTimePeriod = (timePeriod: TimePeriod): number => {
     switch(timePeriod) {
@@ -108,6 +102,14 @@ const getGranularityForTimePeriod = (timePeriod: TimePeriod): number => {
     }
 }
 
+const addDataPoint = (prevData: ChartData[], newPoint: ChartData): ChartData[] => {
+    const data = [...prevData, newPoint];
+    if (data.length > MAX_TICKS) {
+        return data.slice(-MAX_TICKS);
+    }
+    return data;
+};
+
 // This is the main state logic hook
 export function useDerivApiDigitsState() {
   const { user } = useAuth();
@@ -122,12 +124,14 @@ export function useDerivApiDigitsState() {
   const { toast } = useToast();
   
   const [activeSymbol, setActiveSymbol] = useState<string | null>('1HZ10V');
-  const [priceTicks, setPriceTicks] = useState<TickData[]>([]);
+  const [priceTicks, setPriceTicks] = useState<TickData[]>([]); 
   const [chartData, setChartData] = useState<ChartData[]>([]);
   const [isChartLoading, setIsChartLoading] = useState(true);
   const [chartError, setChartError] = useState<string | null>(null);
   const [chartType, setChartType] = useState<ChartType>('Area');
   const [timePeriod, setTimePeriod] = useState<TimePeriod>('1m');
+  const [dataVersion, setDataVersion] = useState(0);
+  const [durationLimits, setDurationLimits] = useState<DurationLimits | null>(null);
   const chartTypeRef = useRef(chartType);
   const timePeriodRef = useRef(timePeriod);
   const activeSubscriptionIdRef = useRef<string | null>(null);
@@ -247,14 +251,14 @@ export function useDerivApiDigitsState() {
                         if (promise) {
                             if (response.error) {
                                 if (response.error.code === 'AlreadySubscribed') promise.resolve(response);
-                                else promise.reject(new Error(response.error.message));
+                                else promise.resolve({ error: { message: response.error.message } });
                             } else promise.resolve(response);
                             promisesRef.current.delete(String(reqId));
                         }
                         return; 
                     }
                     if (response.error && response.error.message) {
-                        if (response.error.code !== 'AlreadySubscribed') console.error(`[Deriv WS Digits] Error:`, response.error.message);
+                        if (response.error.code !== 'AlreadySubscribed') console.warn(`[Deriv WS Digits] Error:`, response.error.message);
                         return;
                     }
                     switch (response.msg_type) {
@@ -272,7 +276,8 @@ export function useDerivApiDigitsState() {
                                     const op = updatedLog[existingOpIndex]!;
                                     if (contract.is_sold === 1) {
                                         const newStatus = contract.status === 'won' ? 'won' : 'lost';
-                                        updatedLog[existingOpIndex] = { ...op, status: newStatus, result: contract.profit, exitPrice: parseFloat(contract.exit_tick_display_value), exitTimestamp: new Date(contract.sell_time * 1000).toISOString() };
+                                        const exitPrice = contract.exit_tick ? parseFloat(String(contract.exit_tick).slice(-1)) : op.exitPrice;
+                                        updatedLog[existingOpIndex] = { ...op, status: newStatus, result: contract.profit, exitPrice: exitPrice, exitTimestamp: new Date(contract.sell_time * 1000).toISOString() };
                                         if (wsRef.current?.readyState === WebSocket.OPEN) wsRef.current.send(JSON.stringify({"balance": 1}));
                                         return updatedLog;
                                     }
@@ -281,15 +286,23 @@ export function useDerivApiDigitsState() {
                             });
                             break;
                         case 'tick':
+                            if (response.subscription?.id === activeSubscriptionIdRef.current) {
+                                const tick = response.tick;
+                                const newTick = { epoch: tick.epoch, price: tick.quote };
+                                setPriceTicks(prev => addDataPoint(prev, newTick));
+                                if (chartTypeRef.current === 'Area') {
+                                    setChartData(prev => addDataPoint(prev, newTick));
+                                }
+                                setDataVersion(v => v + 1);
+                            }
+                            break;
                         case 'ohlc':
-                             const isTick = response.msg_type === 'tick';
-                             const tickData = isTick ? response.tick : response.ohlc;
-                             if (tickData?.symbol === activeSymbol) {
-                                 const newPoint: ChartData = isTick
-                                     ? { epoch: tickData.epoch, price: tickData.quote }
-                                     : { epoch: tickData.open_time, open: tickData.open, high: tickData.high, low: tickData.low, close: tickData.close };
-                                 setChartData(prev => addDataPoint(prev, newPoint));
-                                 setPriceTicks(prev => addDataPoint(prev, { epoch: tickData.epoch || tickData.open_time, price: isTick ? tickData.quote : tickData.close }));
+                             if (response.subscription?.id === activeSubscriptionIdRef.current) {
+                                const candle = response.ohlc;
+                                const newCandle: CandleData = { epoch: candle.open_time, open: parseFloat(candle.open), high: parseFloat(candle.high), low: parseFloat(candle.low), close: parseFloat(candle.close) };
+                                setChartData(prev => addDataPoint(prev, newCandle));
+                                setPriceTicks(prev => addDataPoint(prev, { epoch: newCandle.epoch, price: newCandle.close }));
+                                setDataVersion(v => v + 1);
                              }
                              break;
                     }
@@ -341,6 +354,7 @@ export function useDerivApiDigitsState() {
                     if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
                     reconnectTimeoutRef.current = setTimeout(() => { reconnectInProgressRef.current = false; setTriggerReconnect(c => c + 1); }, 3000);
                 } else if (!event.wasClean && !allowAutoReconnectRef.current) {
+                    console.warn(`[WS] Conexão falhou permanentemente (provavelmente token inválido). Auto-reconexão desativada.`);
                     setConnectionError(`Authorization failed. Please check your API token.`);
                 }
                 setIsConnected(false); setIsConnecting(false);
@@ -420,6 +434,7 @@ export function useDerivApiDigitsState() {
             setChartData(history as ChartData[]);
             if (historyStyle === 'ticks') setPriceTicks(history as TickData[]);
             else setPriceTicks(history.map(c => ({ epoch: c.epoch, price: c.close || 0 })));
+            setDataVersion(v => v + 1);
 
             let subRequest: any;
             if (chartTypeRef.current === 'Candle') {
@@ -481,18 +496,20 @@ export function useDerivApiDigitsState() {
         accountType, accountBalance, operationsLog, assetGroups, isAssetsLoading, activeSymbol, 
         setActiveSymbol, priceTicks, setAccountType, setTokens,
         disconnect, reconnect, executeTrade, sellContract,
-        chartData, isChartLoading, chartError, chartType, setChartType, timePeriod, setTimePeriod, tradeAnnotations,
+        chartData, isChartLoading, chartError, chartType, setChartType, timePeriod, setTimePeriod, dataVersion, tradeAnnotations,
+        durationLimits
     }), [
         isConnected, isConnecting, connectionError, demoToken, realToken, activeToken, accountType, 
         accountBalance, operationsLog, assetGroups, isAssetsLoading, activeSymbol, 
         priceTicks, setAccountType, setTokens, disconnect, reconnect, executeTrade, sellContract, setActiveSymbol,
-        chartData, isChartLoading, chartError, chartType, timePeriod, tradeAnnotations
+        chartData, isChartLoading, chartError, chartType, timePeriod, dataVersion, tradeAnnotations,
+        durationLimits
     ]);
 
     return contextValue;
 }
 
-export function DerivApiProviderDigits({ children }: { children: React.ReactNode }) {
+export function DerivApiProviderDigits({ children }: { children: ReactNode }) {
     const contextValue = useDerivApiDigitsState();
     return (
         <DerivApiContextDigits.Provider value={contextValue}>
