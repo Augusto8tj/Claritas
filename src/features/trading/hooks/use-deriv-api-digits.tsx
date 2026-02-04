@@ -387,16 +387,21 @@ export function useDerivApiDigitsState() {
         const sanitizedDuration = Math.round(duration);
 
         const proposalRequest: any = { 
-            "proposal": 1, "amount": sanitizedStake, "basis": "stake", "contract_type": contractType,
-            "currency": "USD", "duration": sanitizedDuration, "duration_unit": durationUnit,
+            "proposal": 1, 
+            "amount": sanitizedStake, 
+            "basis": "stake", 
+            "contract_type": contractType,
+            "currency": "USD", 
+            "duration": sanitizedDuration, 
+            "duration_unit": durationUnit,
             "symbol": symbol,
         };
 
-        if (contractType !== 'DIGITEVEN' && contractType !== 'DIGITODD') {
+        if (contractType === 'DIGITMATCH' || contractType === 'DIGITDIFF' || contractType === 'DIGITOVER' || contractType === 'DIGITUNDER') {
             if (last_digit === undefined || last_digit === null) {
-              throw new Error(`last_digit_prediction é necessário para o tipo de contrato ${contractType}.`);
+              throw new Error(`O dígito é necessário para o tipo de contrato ${contractType}.`);
             }
-            proposalRequest.last_digit_prediction = last_digit;
+            proposalRequest.barrier = last_digit;
         }
 
         const proposalResponse: any = await makeRequest(proposalRequest);
@@ -526,7 +531,7 @@ export function useDerivApiDigitsState() {
         accountBalance, operationsLog, assetGroups, isAssetsLoading, activeSymbol, activeAsset,
         priceTicks, setAccountType, setTokens, disconnect, reconnect, executeTrade, sellContract, setActiveSymbol,
         chartData, isChartLoading, chartError, chartType, timePeriod, dataVersion, tradeAnnotations,
-        durationLimits,
+        durationLimits
     ]);
 
     return contextValue;
