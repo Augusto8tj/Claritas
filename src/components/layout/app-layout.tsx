@@ -29,6 +29,7 @@ import {
   BarChartHorizontal,
   Calculator,
   Crosshair,
+  Zap
 } from "lucide-react";
 import {
   Sidebar,
@@ -92,6 +93,11 @@ const navItems = [
     href: "/volatility-analysis",
     icon: Calculator,
     label: "Análise de Volatilidade",
+  },
+  {
+    href: "/hf-strike-zone",
+    icon: Zap,
+    label: "HF Strike Zone",
   },
   {
     href: "/deriv-trader-accumulators",
