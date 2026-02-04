@@ -110,6 +110,40 @@ export function useDerivApiDigitsState() {
         });
     }, []);
 
+    const makeRequest = useCallback((request: object): Promise<any> => {
+        return new Promise((resolve, reject) => {
+            const ws = wsRef.current;
+            if (!ws || ws.readyState !== WebSocket.OPEN) {
+                return reject(new Error("WebSocket não está conectado."));
+            }
+            const req_id = Date.now() + Math.floor(Math.random() * 1000000);
+            const payload = { ...request, req_id };
+            const timeoutId = setTimeout(() => {
+                if (promisesRef.current.has(String(req_id))) {
+                    promisesRef.current.get(String(req_id))?.reject(new Error(`O pedido à API expirou (60s).`));
+                    promisesRef.current.delete(String(req_id));
+                }
+            }, 60000);
+            promisesRef.current.set(String(req_id), {
+                resolve: (value: any) => { clearTimeout(timeoutId); resolve(value); },
+                reject: (reason: any) => { 
+                  clearTimeout(timeoutId); 
+                  reject(reason);
+                }
+            });
+            ws.send(JSON.stringify(payload));
+        });
+    }, []);
+
+    const startConnectionMonitor = useCallback(() => {
+        if (pingIntervalRef.current) clearInterval(pingIntervalRef.current);
+        pingIntervalRef.current = setInterval(() => {
+            if (wsRef.current?.readyState === WebSocket.OPEN) {
+                try { wsRef.current.send(JSON.stringify({ ping: 1 })); } catch (error) { console.warn('[Ping] Failed:', error); }
+            }
+        }, 30000);
+    }, []);
+
     useEffect(() => {
         try {
             const storedDemoToken = localStorage.getItem(DERIV_DEMO_TOKEN_KEY);
@@ -129,30 +163,150 @@ export function useDerivApiDigitsState() {
 
     const activeToken = accountType === 'demo' ? demoToken : realToken;
 
-    const makeRequest = useCallback((request: object): Promise<any> => {
-        return new Promise((resolve) => { 
-            const ws = wsRef.current;
-            if (!ws || ws.readyState !== WebSocket.OPEN) {
-                return resolve({ error: { message: "WebSocket não está conectado." } });
-            }
-            const req_id = Date.now() + Math.floor(Math.random() * 1000000);
-            const payload = { ...request, req_id };
-            const timeoutId = setTimeout(() => {
-                if (promisesRef.current.has(String(req_id))) {
-                    promisesRef.current.get(String(req_id))?.resolve({ error: { message: `O pedido à API expirou (60s).` } });
-                    promisesRef.current.delete(String(req_id));
+    useEffect(() => {
+        if (!user || !activeToken || isLoading) {
+            if (wsRef.current) wsRef.current.close();
+            return;
+        }
+        const connect = () => {
+            setIsConnecting(true); setConnectionError(null); setIsAssetsLoading(true);
+            if (wsRef.current) { wsRef.current.close(); wsRef.current = null; }
+            const ws = new WebSocket(`wss://ws.derivws.com/websockets/v3?app_id=${DERIV_APP_ID}`);
+            wsRef.current = ws;
+            
+            ws.onmessage = (event) => {
+                try {
+                    const response = JSON.parse(event.data);
+                    const reqId = response.req_id;
+                    if (reqId && promisesRef.current.has(String(reqId))) {
+                        const promise = promisesRef.current.get(String(reqId));
+                        if (promise) {
+                            if (response.error) {
+                                if (response.error.code === 'AlreadySubscribed') {
+                                    promise.resolve(response); // Not a real error, resolve it
+                                } else {
+                                    promise.reject(new Error(response.error.message));
+                                }
+                            } else {
+                                promise.resolve(response);
+                            }
+                            promisesRef.current.delete(String(reqId));
+                        }
+                        return; 
+                    }
+                    if (response.error && response.error.message) {
+                        if (response.error.code !== 'AlreadySubscribed') console.error(`[Deriv WS Digits] Error:`, response.error.message);
+                        return;
+                    }
+                    switch (response.msg_type) {
+                        case 'balance':
+                            setAccountBalance({ balance: response.balance.balance, currency: response.balance.currency, loading: false });
+                            break;
+                       case 'proposal_open_contract':
+                            const contract = response.proposal_open_contract;
+                            if (!contract || !contract.contract_type?.startsWith('DIGIT')) return;
+                        
+                            setAndPersistOperationsLog(prevLog => {
+                                const existingOpIndex = prevLog.findIndex(op => op.id === contract.contract_id);
+                                if (existingOpIndex !== -1 && prevLog[existingOpIndex]?.status === 'pending') {
+                                    const updatedLog = [...prevLog];
+                                    const op = updatedLog[existingOpIndex]!;
+                                    if (contract.is_sold === 1) {
+                                        const newStatus = contract.status === 'won' ? 'won' : 'lost';
+                                        updatedLog[existingOpIndex] = { ...op, status: newStatus, result: contract.profit, exitPrice: parseFloat(contract.exit_tick_display_value), exitTimestamp: new Date(contract.sell_time * 1000).toISOString() };
+                                        if (wsRef.current?.readyState === WebSocket.OPEN) wsRef.current.send(JSON.stringify({"balance": 1}));
+                                        return updatedLog;
+                                    }
+                                }
+                                return prevLog;
+                            });
+                            break;
+                        case 'tick':
+                            if (response.subscription?.id === activeSubscriptionIdRef.current) {
+                                const tick = response.tick;
+                                const newTick: TickData = { 
+                                  epoch: tick.epoch, 
+                                  price: parseFloat(tick.quote)
+                                };
+                                
+                                setPriceTicks(prev => {
+                                  const updated = [...prev, newTick];
+                                  return updated.length > MAX_TICKS ? updated.slice(-MAX_TICKS) : updated;
+                                });
+                            }
+                            break;
+                    }
+                } catch (parseError) { console.error('[Deriv WS Digits] Parse error:', parseError); }
+            };
+            
+            ws.onopen = async () => {
+                console.log('[Digits] WebSocket aberto');
+                try {
+                    reconnectInProgressRef.current = false;
+                    if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
+                    const authResponse: any = await makeRequest({ authorize: activeToken });
+                    if (authResponse.error) throw new Error(authResponse.error.message);
+                    console.log('[Digits] Autenticado com sucesso');
+                    setIsConnected(true); setIsConnecting(false); setConnectionError(null);
+                    ws.send(JSON.stringify({ "proposal_open_contract": 1, "subscribe": 1 }));
+                    ws.send(JSON.stringify({ "balance": 1, "subscribe": 1 }));
+                    startConnectionMonitor();
+                    const assetsRes: any = await makeRequest({ active_symbols: 'full', product_type: 'basic' });
+                    if (assetsRes.error) throw new Error(assetsRes.error.message);
+                    const filteredSymbols = assetsRes.active_symbols.filter((symbol: any) => 
+                        symbol.market === 'synthetic_index' && symbol.available_contract_types?.some((c: string) => c.startsWith('DIGIT'))
+                    );
+                    const groupedAssets: { [key: string]: Asset[] } = {};
+                    filteredSymbols.forEach((symbol: any) => {
+                        const groupName = marketNameMapping[symbol.market] || 'Outros';
+                        if (!groupedAssets[groupName]) groupedAssets[groupName] = [];
+                        groupedAssets[groupName].push({ value: symbol.symbol, label: symbol.display_name, marketIsOpen: symbol.exchange_is_open === 1, submarket: symbol.submarket, market: symbol.market, minDuration: '5t' });
+                    });
+                    setAssetGroups(Object.keys(groupedAssets).map(label => ({ label, options: groupedAssets[label] })));
+                    setIsAssetsLoading(false);
+                } catch (error: any) {
+                    console.error('[Digits] Erro na autenticação:', error);
+                    reconnectInProgressRef.current = false;
+                    if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
+                    let errorMessage = error instanceof Error ? error.message : 'Erro desconhecido ao conectar';
+                    setConnectionError(`Falha na autorização: ${errorMessage}`);
+                    setIsConnected(false); setIsConnecting(false); setIsAssetsLoading(false);
+                    setAccountBalance({ balance: null, currency: null, loading: false });
+                    allowAutoReconnectRef.current = false;
+                    if (ws.readyState === WebSocket.OPEN) ws.close();
                 }
-            }, 60000);
-            promisesRef.current.set(String(req_id), {
-                resolve: (value: any) => { clearTimeout(timeoutId); resolve(value); },
-                reject: (reason: any) => { 
-                  clearTimeout(timeoutId); 
-                  resolve({ error: { message: reason?.message || 'Erro interno na Promise.' } });
+            };
+            
+            ws.onclose = (event) => {
+                if (!wsRef.current || reconnectInProgressRef.current) return;
+                if (pingIntervalRef.current) clearInterval(pingIntervalRef.current);
+                promisesRef.current.forEach(p => p.reject(new Error("WebSocket fechado.")));
+                promisesRef.current.clear();
+                if (!event.wasClean && allowAutoReconnectRef.current) {
+                    reconnectInProgressRef.current = true;
+                    setConnectionError(`Conexão perdida. Reconectando...`);
+                    if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
+                    reconnectTimeoutRef.current = setTimeout(() => { reconnectInProgressRef.current = false; setTriggerReconnect(c => c + 1); }, 3000);
+                } else if (!event.wasClean && !allowAutoReconnectRef.current) {
+                    console.error(`[WS] Conexão falhou permanentemente. Auto-reconexão desativada.`);
+                    setConnectionError(`Authorization failed. Please check your API token.`);
                 }
-            });
-            ws.send(JSON.stringify(payload));
-        });
-    }, []);
+                setIsConnected(false); setIsConnecting(false);
+                setAccountBalance({ balance: null, currency: null, loading: false });
+                wsRef.current = null;
+            };
+
+            ws.onerror = () => { /* Silencioso */ };
+        };
+        connect();
+        return () => {
+            allowAutoReconnectRef.current = false;
+            if (wsRef.current) { wsRef.current.onclose = null; wsRef.current.close(); }
+            if (pingIntervalRef.current) clearInterval(pingIntervalRef.current);
+            if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
+            reconnectInProgressRef.current = false;
+        };
+    }, [user, activeToken, isLoading, triggerReconnect, makeRequest, setAndPersistOperationsLog, startConnectionMonitor]);
 
     const executeTrade = useCallback(async (
         contractType: 'DIGITMATCH' | 'DIGITDIFF', stake: number, symbol: string, last_digit: number,
@@ -220,142 +374,6 @@ export function useDerivApiDigitsState() {
             console.error(`[Market Data - Digits] Error for ${symbol}:`, error);
         }
     }, [makeRequest]);
-
-    const startConnectionMonitor = useCallback(() => {
-        if (pingIntervalRef.current) clearInterval(pingIntervalRef.current);
-        pingIntervalRef.current = setInterval(() => {
-            if (wsRef.current?.readyState === WebSocket.OPEN) {
-                try { wsRef.current.send(JSON.stringify({ ping: 1 })); } catch (error) { console.warn('[Ping] Failed:', error); }
-            }
-        }, 30000);
-    }, []);
-
-    useEffect(() => {
-        if (!user || !activeToken || isLoading) {
-            if (wsRef.current) wsRef.current.close();
-            return;
-        }
-        const connect = () => {
-            setIsConnecting(true); setConnectionError(null); setIsAssetsLoading(true);
-            if (wsRef.current) { wsRef.current.close(); wsRef.current = null; }
-            const ws = new WebSocket(`wss://ws.derivws.com/websockets/v3?app_id=${DERIV_APP_ID}`);
-            wsRef.current = ws;
-            
-            ws.onmessage = (event) => {
-                try {
-                    const response = JSON.parse(event.data);
-                    const reqId = response.req_id;
-                    if (reqId && promisesRef.current.has(String(reqId))) {
-                        const promise = promisesRef.current.get(String(reqId));
-                        if (promise) {
-                            promise.resolve(response);
-                            promisesRef.current.delete(String(reqId));
-                        }
-                        return; 
-                    }
-                    if (response.error && response.error.message) {
-                        if (response.error.code !== 'AlreadySubscribed') console.error(`[Deriv WS Digits] Error:`, response.error.message);
-                        return;
-                    }
-                    switch (response.msg_type) {
-                        case 'balance':
-                            setAccountBalance({ balance: response.balance.balance, currency: response.balance.currency, loading: false });
-                            break;
-                       case 'proposal_open_contract':
-                            const contract = response.proposal_open_contract;
-                            if (!contract || !contract.contract_type?.startsWith('DIGIT')) return;
-                        
-                            setAndPersistOperationsLog(prevLog => {
-                                const existingOpIndex = prevLog.findIndex(op => op.id === contract.contract_id);
-                                if (existingOpIndex !== -1 && prevLog[existingOpIndex]?.status === 'pending') {
-                                    const updatedLog = [...prevLog];
-                                    const op = updatedLog[existingOpIndex]!;
-                                    if (contract.is_sold === 1) {
-                                        const newStatus = contract.status === 'won' ? 'won' : 'lost';
-                                        updatedLog[existingOpIndex] = { ...op, status: newStatus, result: contract.profit, exitPrice: parseFloat(contract.exit_tick_display_value), exitTimestamp: new Date(contract.sell_time * 1000).toISOString() };
-                                        if (wsRef.current?.readyState === WebSocket.OPEN) wsRef.current.send(JSON.stringify({"balance": 1}));
-                                        return updatedLog;
-                                    }
-                                }
-                                return prevLog;
-                            });
-                            break;
-                        case 'tick':
-                            if (response.subscription?.id === activeSubscriptionIdRef.current) {
-                                const tick = response.tick;
-                                const newTick = { epoch: tick.epoch, price: tick.quote };
-                                setPriceTicks(prev => [...prev, newTick].slice(-MAX_TICKS));
-                            }
-                            break;
-                    }
-                } catch (parseError) { console.error('[Deriv WS Digits] Parse error:', parseError); }
-            };
-            
-            ws.onopen = async () => {
-                try {
-                    reconnectInProgressRef.current = false;
-                    if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
-                    const authResponse: any = await makeRequest({ authorize: activeToken });
-                    if (authResponse.error) throw new Error(authResponse.error.message);
-                    setIsConnected(true); setIsConnecting(false); setConnectionError(null);
-                    ws.send(JSON.stringify({ "proposal_open_contract": 1, "subscribe": 1 }));
-                    ws.send(JSON.stringify({ "balance": 1, "subscribe": 1 }));
-                    startConnectionMonitor();
-                    const assetsRes: any = await makeRequest({ active_symbols: 'full', product_type: 'basic' });
-                    if (assetsRes.error) throw new Error(assetsRes.error.message);
-                    const filteredSymbols = assetsRes.active_symbols.filter((symbol: any) => 
-                        symbol.market === 'synthetic_index' && symbol.available_contract_types?.some((c: string) => c.startsWith('DIGIT'))
-                    );
-                    const groupedAssets: { [key: string]: Asset[] } = {};
-                    filteredSymbols.forEach((symbol: any) => {
-                        const groupName = marketNameMapping[symbol.market] || 'Outros';
-                        if (!groupedAssets[groupName]) groupedAssets[groupName] = [];
-                        groupedAssets[groupName].push({ value: symbol.symbol, label: symbol.display_name, marketIsOpen: symbol.exchange_is_open === 1, submarket: symbol.submarket, market: symbol.market, minDuration: '5t' });
-                    });
-                    setAssetGroups(Object.keys(groupedAssets).map(label => ({ label, options: groupedAssets[label] })));
-                    setIsAssetsLoading(false);
-                } catch (error: any) {
-                    reconnectInProgressRef.current = false;
-                    if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
-                    let errorMessage = error instanceof Error ? error.message : 'Erro desconhecido ao conectar';
-                    setConnectionError(`Falha na autorização: ${errorMessage}`);
-                    setIsConnected(false); setIsConnecting(false); setIsAssetsLoading(false);
-                    setAccountBalance({ balance: null, currency: null, loading: false });
-                    allowAutoReconnectRef.current = false;
-                    if (ws.readyState === WebSocket.OPEN) ws.close();
-                }
-            };
-            
-            ws.onclose = (event) => {
-                if (!wsRef.current || reconnectInProgressRef.current) return;
-                if (pingIntervalRef.current) clearInterval(pingIntervalRef.current);
-                promisesRef.current.forEach(p => p.reject(new Error("WebSocket fechado.")));
-                promisesRef.current.clear();
-                if (!event.wasClean && allowAutoReconnectRef.current) {
-                    reconnectInProgressRef.current = true;
-                    setConnectionError(`Conexão perdida. Reconectando...`);
-                    if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
-                    reconnectTimeoutRef.current = setTimeout(() => { reconnectInProgressRef.current = false; setTriggerReconnect(c => c + 1); }, 3000);
-                } else if (!event.wasClean && !allowAutoReconnectRef.current) {
-                    console.error(`[WS] Conexão falhou permanentemente. Auto-reconexão desativada.`);
-                    setConnectionError(`Authorization failed. Please check your API token.`);
-                }
-                setIsConnected(false); setIsConnecting(false);
-                setAccountBalance({ balance: null, currency: null, loading: false });
-                wsRef.current = null;
-            };
-
-            ws.onerror = () => { /* Silencioso */ };
-        };
-        connect();
-        return () => {
-            allowAutoReconnectRef.current = false;
-            if (wsRef.current) { wsRef.current.onclose = null; wsRef.current.close(); }
-            if (pingIntervalRef.current) clearInterval(pingIntervalRef.current);
-            if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
-            reconnectInProgressRef.current = false;
-        };
-    }, [activeToken, isLoading, triggerReconnect, user, makeRequest, setAndPersistOperationsLog, startConnectionMonitor]);
 
     useEffect(() => {
         if (isConnected && activeSymbol && !isConnecting) subscribeToTicks(activeSymbol);
