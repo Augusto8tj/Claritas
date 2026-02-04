@@ -26,27 +26,19 @@ export function AssetSelectorDigits({ selectedAsset, onAssetChange, assetGroups,
   const [marketStatusFilter, setMarketStatusFilter] = useState('all');
 
   const filteredAssets = useMemo(() => {
-    let assets = assetGroups.flatMap(g => g.options);
-
-    if (marketStatusFilter === 'open') {
-      assets = assets.filter(a => a.marketIsOpen);
-    }
-    
-    // Regroup assets after filtering
-    const regrouped: { [key: string]: Asset[] } = {};
-    assets.forEach(asset => {
-        const groupLabel = assetGroups.find(g => g.options.some(o => o.value === asset.value))?.label || 'Outros';
-        if (!regrouped[groupLabel]) {
-            regrouped[groupLabel] = [];
+    // The assetGroups are already pre-filtered for Digits compatibility in the API hook.
+    // We just need to apply the UI filters like market status.
+    const newGroups = assetGroups.map(group => ({
+      label: group.label,
+      options: group.options.filter(asset => {
+        if (marketStatusFilter === 'open' && !asset.marketIsOpen) {
+          return false;
         }
-        regrouped[groupLabel].push(asset);
-    });
+        return true;
+      }),
+    }));
 
-    return Object.keys(regrouped).map(label => ({
-        label,
-        options: regrouped[label],
-    })).filter(group => group.options.length > 0);
-
+    return newGroups.filter(group => group.options.length > 0);
   }, [assetGroups, marketStatusFilter]);
   
   const selectedAssetLabel = useMemo(() => {
