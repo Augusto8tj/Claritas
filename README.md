@@ -1,79 +1,134 @@
+# Claritas Copilot - Arquitetura Técnica e Ecossistema de Trading
 
-# Claritas Copilot - Arquitetura Técnica: Deriv Trader 2.0
+Bem-vindo à documentação técnica do **Claritas Copilot**, um ambiente de trading de alta frequência impulsionado por múltiplos motores cognitivos e plataformas de negociação especializadas.
 
-Este documento detalha a arquitetura do sistema **Deriv Trader 2.0**, um ambiente de trading de alta frequência impulsionado por um motor cognitivo multicamada. O sistema foi projetado para ser robusto, adaptativo e resiliente, separando a lógica de decisão de alta frequência da camada de apresentação.
+Este documento serve como guia central para a arquitetura do sistema, detalhando a filosofia de design, os componentes de código e os princípios operacionais de cada uma das nossas plataformas de trading.
 
----
+## Ecossistema de Trading: Arquitetura por Plataforma
 
-## 1. Filosofia de Design: O Cérebro Quantitativo
-
-O Deriv Trader 2.0 abandona a abordagem de "estratégia única" e implementa um modelo de **consenso adaptativo e consciente do contexto de mercado (regime-aware)**. Ele opera não como um único robô, mas como uma mesa de operações quantitativa completa, com especialistas, gestores de risco e sistemas de validação.
-
-**Princípios Fundamentais:**
-
-1.  **Context is King (O Contexto é Rei):** Uma estratégia (ex: oscilador) que funciona em um mercado lateral (`ranging`) é desastrosa em um mercado de forte tendência (`trending`). O sistema primeiro identifica o **regime de mercado** e só então ativa os robôs especialistas adequados para esse contexto.
-2.  **Consenso Bayesiano > Votação Simples:** Em vez de uma contagem de votos, o sistema utiliza **inferência Bayesiana**. A confiança de cada robô é continuamente calibrada pelo seu desempenho histórico *naquele regime específico*, resultando em uma probabilidade final de sucesso muito mais precisa.
-3.  **Gestão de Risco Científica:** O valor da aposta (`stake`) não é fixo. É calculado a cada oportunidade de trade usando o **Critério de Kelly Fracionado (Quarter Kelly)**, que aposta mais agressivamente quando a vantagem probabilística é alta e protege o capital quando a vantagem é baixa.
-4.  **Validação Contínua:** O desempenho de cada robô é constantemente validado para garantir que os resultados são fruto de habilidade (`skill`), não de sorte (`luck`), utilizando métricas como o **Sharpe Ratio** e testes de **Monte Carlo**.
-5.  **Desacoplamento Cognitivo-UI:** O motor de alta frequência (`useRobotCouncilV2`) é desacoplado da interface (`deriv-trader-interface-v2.tsx`). A UI consome o estado a um ritmo controlado (`throttle`), prevenindo colapsos de renderização e garantindo a estabilidade.
+O Claritas Copilot não é um único sistema, mas um conjunto de ecossistemas de trading isolados, cada um com uma filosofia e arquitetura distintas, otimizados para diferentes tipos de contratos e condições de mercado.
 
 ---
 
-## 2. Arquitetura em Camadas
+### 1. Deriv Trader V1 (`/deriv-trader`)
 
-O sistema é dividido em três camadas principais que trabalham em conjunto.
+**A Fundação Cognitiva.** O nosso sistema de produção mais estável e a base de muitos dos nossos princípios quantitativos.
 
-### 2.1. Camada 1: O Motor Cognitivo de Alta Frequência (`useRobotCouncilV2.ts`)
+*   **Princípios de Funcionamento:**
+    *   **Consenso Adaptativo:** Um conselho de 22 robôs vota na direção do mercado.
+    *   **Meritocracia por Desempenho:** Votos são ponderados pelo `Sharpe Ratio` de cada robô, dando mais poder aos mais consistentes.
+    *   **Gestão de Risco Científica:** O valor da aposta (`stake`) é calculado usando o Critério de Kelly Fracionado.
+    *   **Memória Estratégica:** Aprende e guarda no Firestore o "perfil" de cada ativo, permitindo colaboração Homem-Máquina.
+    *   **Documento de Arquitetura:** `docs/deriv-trader-v1-architecture.md`
 
-Este é o "cérebro" do sistema. A cada tick de preço, ele executa um ciclo de análise completo e throttled (controlado para rodar no máximo a cada segundo).
-
-**Componentes do Ciclo:**
-
--   **Cálculo de Indicadores:** Um motor otimizado calcula um vasto leque de indicadores técnicos que alimentam as camadas superiores.
--   **Detecção de Regime (HMM Lite):** Um modelo inspirado em *Hidden Markov Models* analisa a estrutura do mercado (volatilidade, momentum) para classificar o ambiente atual em um de cinco regimes (ex: `TREND_UP`, `RANGING`, `HIGH_VOLATILITY`).
--   **Análise de Microestrutura:** Examina os últimos ticks para detetar anomalias como picos de volume, desequilíbrio de ordens e aceleração de preço, servindo como uma camada de veto final.
--   **Consenso Bayesiano Ponderado:**
-    1.  **Filtragem por Regime:** Apenas os robôs eficazes para o regime atual são autorizados a "votar".
-    2.  **Cálculo do Voto Técnico:** Cada robô ativo calcula sua decisão (`RISE`/`FALL`) e confiança inicial.
-    3.  **Atualização Bayesiana:** A confiança de cada voto é ajustada usando o seu `winRate` histórico *naquele regime*, gerando uma probabilidade posterior.
-    4.  **Agregação:** As probabilidades são agregadas para formar uma única **probabilidade de consenso Bayesiano** para a direção do trade.
--   **Cálculo de Risco (Kelly Criterion):** Com a probabilidade final em mãos, o sistema calcula o tamanho ótimo da posição (`stake`) usando o Critério de Kelly Fracionado.
--   **Decisão Final e Execução:** Se a probabilidade de consenso e as condições de risco são favoráveis, a ordem é formatada e enviada para a Camada 2.
-
-### 2.2. Camada 2: Conexão e Gerenciamento de Estado (`useDerivApi.tsx`)
-
-Esta camada é a espinha dorsal de comunicação e estado.
-
--   **WebSocket Management:** Gerencia a conexão persistente com a API da Deriv, tratando de autenticação, reconexão e subscrições de dados de mercado.
--   **Estado Centralizado:** Mantém o estado global do ambiente de trading: dados do gráfico (`chartData`), ticks brutos (`priceTicks`), log de operações (`operationsLog`), balanço da conta, etc.
--   **Fila de Execução:** Provê a função `executeTrade`, que envia as ordens para a corretora e gere as respostas de forma assíncrona.
--   **Parsing de Mensagens:** Recebe e processa todas as mensagens da API, atualizando o estado correspondente (ex: um `proposal_open_contract` atualiza o `operationsLog`).
-
-### 2.3. Camada 3: Interface de Usuário (UI) Reativa e Desacoplada
-
-Os componentes da UI são projetados para serem "burros" e reativos, consumindo o estado complexo do cérebro V2 de forma segura.
-
--   **`deriv-trader-v2/page.tsx`:** O orquestrador que une o cérebro (`useRobotCouncilV2`) e a camada de API (`useDerivApi`), passando os dados para os componentes visuais.
--   **`CouncilDashboard.tsx`:** O painel principal que exibe uma visão em tempo real do estado interno do cérebro: o regime de mercado, a probabilidade Bayesiana, o `stake` calculado pelo Kelly e a análise de microestrutura.
--   **`deriv-trader-interface-v2.tsx`:** O painel de negociação manual. Ele utiliza o padrão **HF-Safe (High-Frequency Safe)**:
-    -   **Estado Local:** Componentes complexos como o `<Select>` mantêm o seu próprio estado local para evitar re-renderizações diretas a cada tick.
-    -   **Sincronização Assíncrona:** O estado local da UI é sincronizado com o estado global do formulário (React Hook Form) de forma assíncrona (`queueMicrotask`), quebrando qualquer possibilidade de loop de renderização.
+*   **Ficheiros Chave:**
+    *   **Página:** `src/app/deriv-trader/page.tsx`
+    *   **API Hook:** `src/features/trading/hooks/use-deriv-api-v1.tsx`
+    *   **Cérebro Cognitivo:** `src/features/trading/hooks/use-robot-council-v1.ts`
+    *   **Evolução:** `src/features/trading/hooks/use-strategy-evolution-v1.ts`
 
 ---
 
-## 3. Fluxo de Decisão de um Trade Automático (Exemplo)
+### 2. Deriv Trader V2.5 (`/deriv-trader-v2`)
 
-1.  Um novo `tick` chega do `useDerivApi`.
-2.  O `useEffect` principal em `useRobotCouncilV2` é acionado (respeitando o `throttle`).
-3.  O **HMM Lite** analisa os últimos 50 candles e define o regime como `RANGING`.
-4.  O sistema **silencia** os robôs de tendência (ex: ADX) e **ativa** os osciladores (ex: RSI, Estocástico).
-5.  O robô de RSI vota `RISE` com 70% de confiança, pois o RSI está em 25.
-6.  O sistema consulta a performance histórica do robô de RSI no regime `RANGING` e descobre que ele tem um `winRate` de 68% neste cenário.
-7.  A **inferência Bayesiana** combina a confiança do sinal (70%) com o `winRate` histórico (68%), resultando numa probabilidade posterior ajustada de, digamos, 72% de sucesso.
-8.  Outros robôs de `ranging` votam, e o consenso final chega a uma probabilidade de `RISE` de 75%.
-9.  O **Kelly Criterion** usa essa probabilidade de 75% e o `payoff` médio para calcular um `stake` de $1.25.
-10. A **análise de microestrutura** confirma que não há uma pressão de venda súbita nos últimos 10 ticks.
-11. A decisão é aprovada. A função `executeTrade` do `useDerivApi` é chamada com os parâmetros `direction: RISE`, `stake: 1.25`, e uma duração ótima calculada.
-12. A ordem é executada.
+**O Cérebro Quantitativo Avançado.** A nossa implementação mais sofisticada de trading por consenso, operando como uma mesa de operações completa.
 
-Este ciclo demonstra como o sistema combina análise de contexto, validação histórica e gestão de risco científica para tomar decisões de trading muito além de uma simples leitura de indicador.
+*   **Princípios de Funcionamento:**
+    *   **Deteção de Regime de Mercado:** Classifica o mercado (`trending`, `ranging`, etc.) e ativa apenas os robôs especialistas adequados.
+    *   **Consenso Bayesiano:** A confiança de cada robô é calibrada pelo seu desempenho histórico *naquele regime específico*.
+    *   **Veto de Microestrutura:** Analisa os últimos ticks para detetar anomalias e vetar operações de risco.
+    *   **Evolução Genética Acelerada:** Os piores robôs são substituídos por "mutações" dos robôs de elite.
+    *   **Documento de Arquitetura:** `ARQUITETURA.md`
+
+*   **Ficheiros Chave:**
+    *   **Página:** `src/app/deriv-trader-v2/page.tsx`
+    *   **API Hook:** `src/features/trading/hooks/use-deriv-api-v2.tsx`
+    *   **Cérebro Cognitivo:** `src/features/trading/hooks/use-robot-council-v2.ts`
+    *   **Evolução:** `src/features/trading/hooks/use-strategy-evolution-v2.ts`
+    *   **Serviços Avançados:** `src/features/trading/services/advanced-trading-services.ts`
+
+---
+
+### 3. Deriv Trader V3.0 (`/deriv-trader-v3`)
+
+**O Laboratório de IA (IA Lab).** Um ambiente de testes isolado para experimentar com arquiteturas de IA radicais sem comprometer a estabilidade dos sistemas de produção.
+
+*   **Princípios de Funcionamento:**
+    *   **Deteção de Regime Hierárquica:** Classifica o mercado em três níveis (Macro, Meso, Micro) para permitir decisões mais contextuais.
+    *   **Isolamento Total:** Duplicação de todos os hooks e componentes para garantir que a experimentação não afete outros sistemas.
+
+*   **Ficheiros Chave:**
+    *   **Página:** `src/app/deriv-trader-v3/page.tsx`
+    *   **API Hook:** `src/features/trading/hooks/use-deriv-api-v3.tsx`
+    *   **Cérebro Cognitivo:** `src/features/trading/hooks/use-robot-council-v3.ts`
+    *   **Evolução:** `src/features/trading/hooks/use-strategy-evolution-v3.ts`
+
+---
+
+### 4. Deriv Multipliers (`/deriv-trader-multipliers`)
+
+**O Seguidor de Tendência "Padrão Ouro".** Uma plataforma especializada em seguir tendências de forma disciplinada.
+
+*   **Princípios de Funcionamento:**
+    *   **Operar a Favor da Maré:** Identifica a tendência macro com uma EMA de 100 períodos e só opera nessa direção.
+    *   **Entrada em Pullback:** Aguarda uma confirmação de retomada do momentum (usando o RSI) para entrar.
+    *   **Trailing Stop Dinâmico:** Gere ativamente as posições abertas, subindo o stop-loss com base no ATR para maximizar ganhos e proteger lucros.
+    *   **Documento de Arquitetura:** `docs/deriv-trader-multipliers-architecture.md`
+
+*   **Ficheiros Chave:**
+    *   **Página:** `src/app/deriv-trader-multipliers/page.tsx`
+    *   **API Hook:** `src/features/trading/hooks/use-deriv-api-multipliers.tsx`
+    *   **Cérebro Cognitivo:** `src/features/trading/hooks/use-multipliers-council.ts`
+
+---
+
+### 5. Deriv Accumulators (`/deriv-trader-accumulators`)
+
+**O Preditor Quantitativo Auto-Adaptativo.** Um sistema preditivo que aposta na estabilidade da volatilidade.
+
+*   **Princípios de Funcionamento:**
+    *   **Entrada Probabilística:** Usa um modelo de **Primeira Passagem de Movimento Browniano** para calcular a probabilidade de a posição não quebrar a barreira.
+    *   **Otimização Dinâmica:** Calcula o `stake` (Critério de Kelly) e a `growth_rate` ótimos antes de cada trade.
+    *   **Aprendizagem Contínua:** Analisa o resultado de cada operação e auto-calibra os seus parâmetros de risco, tornando-se mais cauteloso após perdas.
+    *   **Documento de Arquitetura:** `docs/deriv-trader-accumulators-architecture.md`
+
+*   **Ficheiros Chave:**
+    *   **Página:** `src/app/deriv-trader-accumulators/page.tsx`
+    *   **API Hook:** `src/features/trading/hooks/use-deriv-api-accumulators.tsx`
+    *   **Cérebros Cognitivos:** `src/features/trading/hooks/use-accumulators-council.ts` e `src/features/trading/hooks/use-time-master.ts`
+
+---
+
+### 6. Deriv Digits (`/deriv-trader-digits`)
+
+**O Caçador de Probabilidades.** Uma plataforma focada em arbitragem estatística do último dígito do preço em Índices Sintéticos.
+
+*   **Princípios de Funcionamento:**
+    *   **Análise de Frequência:** Analisa a distribuição dos últimos 1000 dígitos.
+    *   **Aposta na Regressão à Média:** Opera "Difere" no dígito mais frequente e "Combina" no dígito menos frequente (mais "atrasado").
+    *   **Contexto Visual:** Integra o gráfico de mercado para correlacionar a ação do preço com os padrões estatísticos.
+    *   **Documento de Arquitetura:** `docs/deriv-trader-digits-architecture.md`
+
+*   **Ficheiros Chave:**
+    *   **Página:** `src/app/deriv-trader-digits/page.tsx`
+    *   **API Hook:** `src/features/trading/hooks/use-deriv-api-digits.tsx`
+    *   **Cérebro Cognitivo:** `src/features/trading/hooks/use-robot-council-digits.ts`
+
+---
+
+### 7. Análise de Volatilidade (`/volatility-analysis`)
+
+**O Laboratório Preditivo.** Um ambiente de análise quantitativa avançado que usa um comitê de especialistas de IA para prever movimentos de preço.
+
+*   **Princípios de Funcionamento:**
+    *   **Previsão Multi-Horizonte:** Usa o modelo **Movimento Browniano Geométrico (GBM)** com volatilidade dinâmica (EWMA) para gerar projeções.
+    *   **Controlador de Drift Neuro-Adaptativo:** Compara o preço previsto com o real e auto-calibra o "drift" do modelo.
+    *   **Meritocracia Preditiva:** Usa um **Intervalo de Confiança Bayesiano** para avaliar a performance de cada especialista, dando peso apenas aos que demonstram habilidade estatística.
+    *   **Meta-Aprendizagem (Epsilon-Greedy):** Foca o "orçamento computacional" nos especialistas de melhor desempenho, mas explora aleatoriamente outros para se adaptar a novas condições de mercado.
+    *   **Documento de Arquitetura:** `docs/volatility-analysis-architecture.md`
+
+*   **Ficheiros Chave:**
+    *   **Página:** `src/app/volatility-analysis/page.tsx`
+    *   **API Hook (Reutilizado):** `src/features/trading/hooks/use-deriv-api-v2.tsx`
+    *   **Cérebro Preditivo:** `src/features/trading/hooks/use-stochastic-models.ts`
+    *   **Comandante Tático:** `src/features/trading/hooks/use-master-autopilot.ts`
