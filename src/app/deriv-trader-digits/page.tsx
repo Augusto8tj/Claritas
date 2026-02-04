@@ -111,7 +111,7 @@ function CurrentPriceDisplay() {
         );
     }
     
-    const decimalPlaces = getDecimalPlaces(activeAsset?.pip);
+    const decimalPlaces = Math.max(2, getDecimalPlaces(activeAsset?.pip));
     const change = prevTick ? lastTick.price - prevTick.price : 0;
     const isUp = change > 0;
     const isDown = change < 0;
@@ -149,7 +149,7 @@ function CurrentPriceDisplay() {
 }
 
 function DerivTraderPageContentDigits() {
-    const { activeSymbol, priceTicks, operationsLog, sellContract, activeAsset } = useDerivApiDigits();
+    const { activeSymbol, priceTicks, operationsLog, sellContract, activeAsset, clearActiveContracts } = useDerivApiDigits();
     const robotCouncil = useRobotCouncilDigits(activeSymbol, priceTicks, activeAsset);
 
     return (
@@ -185,7 +185,7 @@ function DerivTraderPageContentDigits() {
                             <TabsTrigger value="evolucao">Evolução</TabsTrigger>
                         </TabsList>
                         <TabsContent value="logs" className="mt-4">
-                            <OperationsLogDigits operations={operationsLog} sellContract={sellContract} priceTicks={priceTicks} activeAsset={activeAsset} />
+                            <OperationsLogDigits operations={operationsLog} sellContract={sellContract} priceTicks={priceTicks} activeAsset={activeAsset} clearActiveContracts={clearActiveContracts} />
                         </TabsContent>
                         <TabsContent value="arena" className="mt-4">
                             <TradingDeskDigits 

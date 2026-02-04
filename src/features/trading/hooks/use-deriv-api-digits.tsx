@@ -84,6 +84,7 @@ export interface DerivApiContextTypeDigits {
   sellContract: (contractId: number) => Promise<TradeResult>;
   tradeAnnotations: TradeAnnotation[];
   durationLimits: DurationLimits | null;
+  clearActiveContracts: () => void;
 }
 
 export const DerivApiContextDigits = createContext<DerivApiContextTypeDigits | undefined>(undefined);
@@ -166,6 +167,12 @@ export function useDerivApiDigitsState() {
             return newLog;
         });
     }, []);
+
+    const clearActiveContracts = useCallback(() => {
+        setAndPersistOperationsLog([]);
+        setTradeAnnotations([]);
+        toast({ title: 'Log Limpo', description: 'O histórico de operações de dígitos foi limpo.' });
+    }, [setAndPersistOperationsLog, toast]);
 
     const makeRequest = useCallback(<T,>(request: object): Promise<T> => {
         return new Promise((resolve) => {
@@ -396,7 +403,7 @@ export function useDerivApiDigitsState() {
             "duration_unit": durationUnit,
             "symbol": symbol,
         };
-
+        
         if (contractType === 'DIGITMATCH' || contractType === 'DIGITDIFF' || contractType === 'DIGITOVER' || contractType === 'DIGITUNDER') {
             if (last_digit === undefined || last_digit === null) {
               throw new Error(`O dígito é necessário para o tipo de contrato ${contractType}.`);
@@ -523,18 +530,18 @@ export function useDerivApiDigitsState() {
         ws: wsRef.current, isConnected, isConnecting, connectionError, demoToken, realToken, activeToken,
         accountType, accountBalance, operationsLog, assetGroups, isAssetsLoading, activeSymbol, activeAsset,
         setActiveSymbol, priceTicks, setAccountType, setTokens,
-        disconnect, reconnect, executeTrade, sellContract,
+        disconnect, reconnect, executeTrade, sellContract, clearActiveContracts,
         chartData, isChartLoading, chartError, chartType, setChartType, timePeriod, setTimePeriod, dataVersion, tradeAnnotations,
         durationLimits
     }), [
         isConnected, isConnecting, connectionError, demoToken, realToken, activeToken, accountType, 
         accountBalance, operationsLog, assetGroups, isAssetsLoading, activeSymbol, activeAsset,
-        priceTicks, setAccountType, setTokens, disconnect, reconnect, executeTrade, sellContract, setActiveSymbol,
+        priceTicks, setAccountType, setTokens, disconnect, reconnect, executeTrade, sellContract, clearActiveContracts, setActiveSymbol,
         chartData, isChartLoading, chartError, chartType, timePeriod, dataVersion, tradeAnnotations,
         durationLimits
-    ]);
+  ]);
 
-    return contextValue;
+  return contextValue;
 }
 
 export function DerivApiProviderDigits({ children }: { children: ReactNode }) {
