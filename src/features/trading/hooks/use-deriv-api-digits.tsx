@@ -18,6 +18,7 @@ const MAX_TICKS = 1000;
 const marketNameMapping: Record<string, string> = { 'synthetic_index': 'Índices Sintéticos' };
 
 // --- TYPES ---
+type DigitContractType = 'DIGITMATCH' | 'DIGITDIFF' | 'DIGITOVER' | 'DIGITUNDER' | 'DIGITEVEN' | 'DIGITODD';
 export type AccountType = 'demo' | 'real';
 export interface AccountBalance {
   balance: number | null;
@@ -71,13 +72,13 @@ export interface DerivApiContextTypeDigits {
   disconnect: (type: AccountType) => void;
   reconnect: () => Promise<boolean>;
   executeTrade: (
-    contractType: 'DIGITMATCH' | 'DIGITDIFF',
+    contractType: DigitContractType,
     stake: number,
     symbol: string,
-    last_digit: number,
     duration: number,
     durationUnit: DurationUnit,
     initiator: OperationInitiator,
+    last_digit?: number,
   ) => Promise<TradeResult>;
   sellContract: (contractId: number) => Promise<TradeResult>;
   tradeAnnotations: TradeAnnotation[];
@@ -375,19 +376,29 @@ export function useDerivApiDigitsState() {
     }, [user, activeToken, isLoading, triggerReconnect, makeRequest, setAndPersistOperationsLog, startConnectionMonitor]);
 
     const executeTrade = useCallback(async (
-        contractType: 'DIGITMATCH' | 'DIGITDIFF', stake: number, symbol: string, last_digit: number,
-        duration: number, durationUnit: DurationUnit, initiator: OperationInitiator
+        contractType: DigitContractType, stake: number, symbol: string, 
+        duration: number, durationUnit: DurationUnit, initiator: OperationInitiator,
+        last_digit?: number,
     ): Promise<TradeResult> => {
       try {
         if (!wsRef.current || !isConnected) throw new Error("A conexão com a API não está ativa.");
         const sanitizedStake = parseFloat(stake.toFixed(2));
         const sanitizedDuration = Math.round(duration);
 
-        const proposalResponse: any = await makeRequest({ 
+        const proposalRequest: any = { 
             "proposal": 1, "amount": sanitizedStake, "basis": "stake", "contract_type": contractType,
             "currency": "USD", "duration": sanitizedDuration, "duration_unit": durationUnit,
-            "symbol": symbol, "last_digit": last_digit,
-        });
+            "symbol": symbol,
+        };
+
+        if (contractType !== 'DIGITEVEN' && contractType !== 'DIGITODD') {
+            if (last_digit === undefined || last_digit === null) {
+              throw new Error(`last_digit é necessário para o tipo de contrato ${contractType}.`);
+            }
+            proposalRequest.last_digit = last_digit;
+        }
+
+        const proposalResponse: any = await makeRequest(proposalRequest);
 
         if (proposalResponse.error) throw new Error(proposalResponse.error.message);
         const proposal = proposalResponse.proposal;
@@ -399,10 +410,12 @@ export function useDerivApiDigitsState() {
         
         const purchaseTimeMs = (buyResult.purchase_time || Math.floor(Date.now() / 1000)) * 1000;
         const expirationTimeMs = buyResult.expiry_time * 1000;
+        
+        const direction = (contractType.includes('MATCH') || contractType.includes('EVEN') || contractType.includes('OVER')) ? 'rise' : 'fall';
 
         const newOperation: any = {
             id: buyResult.contract_id, asset: symbol,
-            direction: contractType === 'DIGITMATCH' ? 'rise' : 'fall',
+            direction: direction,
             stake: sanitizedStake, status: 'pending',
             timestamp: new Date(purchaseTimeMs).toISOString(),
             duration: sanitizedDuration, durationUnit: durationUnit, initiator,

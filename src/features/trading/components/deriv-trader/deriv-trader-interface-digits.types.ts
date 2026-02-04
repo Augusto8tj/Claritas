@@ -7,7 +7,8 @@ export const digitSchema = z.object({
   duration_unit: z.literal('t', {
     errorMap: () => ({ message: "Apenas 'ticks' são suportados para contratos de dígitos." })
   }),
-  last_digit_prediction: z.coerce.number().min(0, "O dígito deve ser de 0 a 9.").max(9, "O dígito deve ser de 0 a 9."),
+  // Torna-se opcional, pois não é necessário para Par/Ímpar
+  last_digit_prediction: z.coerce.number().min(0).max(9).optional(),
 });
 
 export type DigitFormValues = z.infer<typeof digitSchema>;

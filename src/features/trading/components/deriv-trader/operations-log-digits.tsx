@@ -37,6 +37,18 @@ const formatTime = (isoString: string | undefined): string => {
     }
 };
 
+const getContractDisplayName = (contractType?: string) => {
+    if (!contractType) return 'Dígito';
+    if (contractType === 'DIGITMATCH') return 'Combina';
+    if (contractType === 'DIGITDIFF') return 'Difere';
+    if (contractType === 'DIGITOVER') return 'Acima';
+    if (contractType === 'DIGITUNDER') return 'Abaixo';
+    if (contractType === 'DIGITEVEN') return 'Par';
+    if (contractType === 'DIGITODD') return 'Ímpar';
+    return contractType;
+};
+
+
 export function OperationsLogDigits({ operations }: OperationsLogDigitsProps) {
     const dailySummary = useMemo(() => {
         const today = new Date();
@@ -81,7 +93,7 @@ export function OperationsLogDigits({ operations }: OperationsLogDigitsProps) {
                             operations
                                 .filter(op => op && op.id != null)
                                 .map((op) => {
-                                const isMatch = op.contractType === 'DIGITMATCH';
+                                const displayName = getContractDisplayName(op.contractType);
                                 return (
                                     <div key={op.id} className="flex items-center gap-4">
                                         <div className="flex-shrink-0">
@@ -98,7 +110,7 @@ export function OperationsLogDigits({ operations }: OperationsLogDigitsProps) {
                                         </div>
                                         <div className="flex-1 grid grid-cols-2 md:grid-cols-4 gap-x-4 gap-y-1 text-xs">
                                             <div className="col-span-2 md:col-span-4">
-                                                <p className="text-sm font-medium leading-none">{op.asset} - {isMatch ? 'Combina' : 'Difere'}</p>
+                                                <p className="text-sm font-medium leading-none">{op.asset} - {displayName}</p>
                                             </div>
                                             <div className="text-muted-foreground">
                                                 <p>Entrada: <span className="font-semibold text-foreground">${op.stake.toFixed(2)}</span></p>
@@ -109,8 +121,8 @@ export function OperationsLogDigits({ operations }: OperationsLogDigitsProps) {
                                                 <p className="flex items-center gap-1"><MoveRight className="h-3 w-3"/><span>{formatTime(op.exitTimestamp)}</span></p>
                                             </div>
                                             <div className="text-muted-foreground font-mono col-span-2 md:col-span-1">
-                                                <p>Previsão: <span className="font-bold text-primary">{(op as any).last_digit_prediction}</span></p>
-                                                <p>Resultado: @{op.exitPrice?.toFixed(0) || '...'}</p>
+                                                <p>Previsão: <span className="font-bold text-primary">{(op as any).last_digit_prediction ?? '-'}</span></p>
+                                                <p>Resultado: @{op.exitPrice !== undefined ? String(op.exitPrice).slice(-1) : '...'}</p>
                                             </div>
                                         </div>
                                         <div className="w-28 text-right">
