@@ -21,6 +21,7 @@ import { saveHFTradeLog, calculateHFStats } from '@/services/hf-data-service';
 import { Target, TrendingUp, BarChart, Brain, Activity, Zap } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { Operation, TradeResult } from '@/lib/types';
+import { Indicators } from '@/features/trading/services/indicator-service';
 
 function PageContent() {
   const { user } = useAuth();
@@ -66,7 +67,7 @@ function PageContent() {
   });
 
   // Strike Zone Hook
-  const { currentZone, strikeHistory, stats, bbAnalysis, rsiAnalysis } = useHFStrikeZone(
+  const { currentZone, strikeHistory, stats, bbAnalysis, rsiAnalysis, fullIndicators } = useHFStrikeZone(
     priceTicks,
     chartData,
     hfConfig.enabled
@@ -317,14 +318,7 @@ function PageContent() {
             timePeriod={timePeriod}
             setTimePeriod={setTimePeriod}
             operations={operationsLog}
-            indicators={{
-              bb: bbAnalysis ? {
-                upper: bbAnalysis.upper,
-                middle: bbAnalysis.middle,
-                lower: bbAnalysis.lower,
-              } : null,
-              rsi: rsiAnalysis ? rsiAnalysis.value : null,
-            }}
+            indicators={fullIndicators}
             tradeAnnotations={tradeAnnotations}
           />
         </CardContent>
