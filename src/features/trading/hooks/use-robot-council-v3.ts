@@ -12,17 +12,17 @@ import type {
   BayesianVote as BayesianVoteType, EnhancedRobotPerformance as EnhancedRobotPerformanceType,
   TimePeriod, TradeDecisionLog,
 } from '@/lib/types';
-import { calculateAllIndicators, type Indicators } from '@/services/indicator-service';
+import { calculateAllIndicators, type Indicators } from '@/features/trading/services/indicator-service';
 import { useAuth } from '@/features/auth/hooks/use-auth';
 import { saveRobotPerformanceV3, loadRobotPerformanceV3, saveTradeDecisionV3 } from '@/services/financial-data-service-v3';
 import { useStrategyEvolutionV3 } from './use-strategy-evolution-v3';
-import { initialCouncilStrategies } from '@/services/council-strategies';
+import { initialCouncilStrategies } from '@/features/trading/services/council-strategies';
 import {
   detectMarketRegime, calculateKellyStake, bayesianUpdate,
   extractMicrostructureFeatures, calculatePerformanceMetrics,
   calculateShannonEntropy,
   type RegimeDetectionResult,
-} from '@/services/advanced-trading-services';
+} from '@/features/trading/services/advanced-trading-services';
 import { TRADER_CONFIG, ARENA_CONFIG, RISK_CONFIG } from '@/features/trading/config/trader-config';
 
 
@@ -705,7 +705,7 @@ export function useRobotCouncilV3(
               }
             }
         } else {
-             kellyStake = 1.0;
+             kellyStake = 1.0; 
         }
         
         kellyStake = Math.max(RISK_CONFIG.MIN_STAKE, kellyStake);

@@ -7,8 +7,8 @@ import { useToast } from '@/hooks/use-toast';
 import type { CandleData } from '@/lib/types';
 import { useFormContext } from 'react-hook-form';
 import type { MultipliersFormValues } from '../components/deriv-trader/deriv-trader-interface-multipliers.types';
-import { calculateAllIndicators, type Indicators } from '@/services/indicator-service';
-import { initialCouncilStrategies } from '@/services/council-strategies';
+import { calculateAllIndicators, type Indicators } from '@/features/trading/services/indicator-service';
+import { initialCouncilStrategies } from '@/features/trading/services/council-strategies';
 
 // ============================================================================
 // 1. CONFIGURAÇÕES E CONSTANTES

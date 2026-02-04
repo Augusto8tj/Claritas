@@ -10,8 +10,8 @@
  */
 import { useState, useEffect, useMemo, useRef } from 'react';
 import type { CandleData, TickData } from '@/lib/types';
-import { calculateAllIndicators, type Indicators } from '@/services/indicator-service';
-import { initialCouncilStrategies } from '@/services/council-strategies';
+import { calculateAllIndicators, type Indicators } from '@/features/trading/services/indicator-service';
+import { initialCouncilStrategies } from '@/features/trading/services/council-strategies';
 
 // --- CONFIGURAÇÕES ---
 const ANALYSIS_INTERVAL_MS = 1000;

@@ -30,17 +30,17 @@ import type {
   BayesianVote as BayesianVoteType, EnhancedRobotPerformance as EnhancedRobotPerformanceType,
   TimePeriod, TradeDecisionLog,
 } from '@/lib/types';
-import { calculateAllIndicators, type Indicators } from '@/services/indicator-service';
+import { calculateAllIndicators, type Indicators } from '@/features/trading/services/indicator-service';
 import { useAuth } from '@/features/auth/hooks/use-auth';
 import { saveRobotPerformance, loadRobotPerformance, saveTradeDecision, saveEvolutionHistory, clearEvolutionHistory, deleteEvolutionEvent } from '@/services/financial-data-service';
 import { useStrategyEvolution } from './use-strategy-evolution-v2';
-import { getCouncilStrategies, type TradingMode } from '@/services/council-strategies';
+import { getCouncilStrategies, type TradingMode } from '@/features/trading/services/council-strategies';
 import {
   detectMarketRegime, calculateKellyStake, bayesianUpdate,
   extractMicrostructureFeatures, calculatePerformanceMetrics,
   calculateShannonEntropy,
   type RegimeDetectionResult,
-} from '@/services/advanced-trading-services';
+} from '@/features/trading/services/advanced-trading-services';
 import { TRADER_CONFIG, ARENA_CONFIG, RISK_CONFIG } from '@/features/trading/config/trader-config';
 
 
@@ -197,7 +197,7 @@ const calculateTechnicalVote = (
     // Cap confidence at 100
     confidence = Math.min(100, Math.max(0, newConfidence));
     reason = newReason;
-    suggestedStake = baseStake * (1 + (confidence / 100)); 
+    suggestedStake = baseStake * (1 + (newConfidence / 100)); 
   };
   
   // Helper for confidence interpolation

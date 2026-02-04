@@ -4,10 +4,10 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useDerivApiV2 } from './use-deriv-api-v2';
 import { useToast } from '@/hooks/use-toast';
-import { calculateAllIndicators, type Indicators } from '@/services/indicator-service';
-import { getCouncilStrategies } from '@/services/council-strategies';
+import { calculateAllIndicators, type Indicators } from '@/features/trading/services/indicator-service';
+import { getCouncilStrategies } from '@/features/trading/services/council-strategies';
 import type { DurationUnit, Operation, OperationInitiator, MarketRegime, CandleData, PredictiveTradeLog } from '@/lib/types';
-import { extractMicrostructureFeatures, type MicrostructureFeatures, detectMarketRegime as detectMarketRegimeService } from '@/services/advanced-trading-services';
+import { extractMicrostructureFeatures, type MicrostructureFeatures, detectMarketRegime as detectMarketRegimeService } from '@/features/trading/services/advanced-trading-services';
 import { evaluateTriggerConditions, evaluateManualTrigger } from '../services/predictive-logic';
 import { useAuth } from '@/features/auth/hooks/use-auth';
 import { savePredictiveTradeLog } from '@/services/financial-data-service';
@@ -526,5 +526,3 @@ export function useMasterAutopilot() {
     setActiveHorizons,
   };
 }
-
-    

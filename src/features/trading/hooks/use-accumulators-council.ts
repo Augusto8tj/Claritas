@@ -5,8 +5,8 @@ import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useDerivApiAccumulators } from './use-deriv-api-accumulators';
 import { useToast } from '@/hooks/use-toast';
 import type { CandleData, Operation, TickData } from '@/lib/types';
-import { calculateAllIndicators, type Indicators } from '@/services/indicator-service';
-import { initialCouncilStrategies } from '@/services/council-strategies';
+import { calculateAllIndicators, type Indicators } from '@/features/trading/services/indicator-service';
+import { initialCouncilStrategies } from '@/features/trading/services/council-strategies';
 import { useTimeMaster, type VolatilityRegime } from './use-time-master';
 
 // --- TIPOS E CONFIGURAÇÕES DA ESTRATÉGIA ---
