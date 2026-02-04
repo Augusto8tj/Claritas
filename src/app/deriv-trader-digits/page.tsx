@@ -103,7 +103,7 @@ function CurrentPriceDisplay() {
     const isDown = change < 0;
 
     // Split the price to style the last digit differently
-    const priceString = lastTick.price.toFixed(4); // Ensure consistent decimal places
+    const priceString = lastTick.price.toFixed(2); // Ensure consistent decimal places
     const lastDigit = priceString.slice(-1);
     const mainPart = priceString.slice(0, -1);
 
@@ -126,7 +126,7 @@ function CurrentPriceDisplay() {
                 )}>
                     {isUp && <TrendingUp className="h-4 w-4" />}
                     {isDown && <TrendingDown className="h-4 w-4" />}
-                    <span>{change.toFixed(4)}</span>
+                    <span>{change.toFixed(2)}</span>
                 </div>
             </CardContent>
         </Card>
