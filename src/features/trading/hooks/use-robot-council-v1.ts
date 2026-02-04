@@ -181,7 +181,7 @@ const calculateRobotVote = (
 };
 
 
-export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickData[], chartData: ChartData[], dataVersion: number) {
+export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickData[], chartData: ChartData[]) {
   const { operationsLog, executeTrade, timePeriod, isConnected, durationLimits, sellContract } = useDerivApiV1();
   const { user, loading: isAuthLoading } = useAuth();
   const { toast } = useToast();
@@ -405,7 +405,7 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
       const source = chartData.length > 0 ? chartData : priceTicks;
       if (source.length === 0) return [];
       return source.map((t) => ({ epoch: t.epoch, open: getPrice(t)!, high: getPrice(t)!, low: getPrice(t)!, close: getPrice(t)!, volume: 1 }));
-  }, [chartData, priceTicks, dataVersion]);
+  }, [chartData, priceTicks]);
 
   useEffect(() => {
     if (!isConnected || !user || !isCouncilAutopilotOn || !durationLimits || strategyCouncil.length === 0 || !activeSymbol || tickCandles.length < 2) return;
@@ -787,7 +787,7 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
 
     councilExecutionRef.current.isExecuting = false;
   }, [
-      dataVersion, isConnected, user, isCouncilAutopilotOn, durationLimits, strategyCouncil, robotPerformance, isMeritocracyOn, activeSymbol, operationsLog, toast, executeTrade, timePeriod, evolveTrigger, tickCandles, form, dailyBalance, dailyTarget, consensusThreshold, isDynamicConsensusOn, isAuditingOn, assetProfile, dissolveCouncil
+      isConnected, user, isCouncilAutopilotOn, durationLimits, strategyCouncil, robotPerformance, isMeritocracyOn, activeSymbol, operationsLog, toast, executeTrade, timePeriod, evolveTrigger, tickCandles, form, dailyBalance, dailyTarget, consensusThreshold, isDynamicConsensusOn, isAuditingOn, assetProfile, dissolveCouncil
   ]);
 
   return {

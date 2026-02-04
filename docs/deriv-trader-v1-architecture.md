@@ -88,6 +88,6 @@ Esta camada visualiza o estado do Cérebro V1 e permite a interação do utiliza
 -   **Comunicação com a API:** `src/features/trading/hooks/use-deriv-api-v1.tsx`
 -   **Cérebro de Decisão:** `src/features/trading/hooks/use-robot-council-v1.ts`
 -   **Motor de Evolução:** `src/features/trading/hooks/use-strategy-evolution-v1.ts`
--   **Cálculo de Indicadores:** `src/services/indicator-service.ts` (partilhado)
--   **Estratégias Base:** `src/services/council-strategies.ts` (partilhado)
+-   **Cálculo de Indicadores:** `src/features/trading/services/indicator-service.ts` (partilhado)
+-   **Estratégias Base:** `src/features/trading/services/council-strategies.ts` (partilhado)
 -   **Persistência de Dados:** `src/services/financial-data-service.ts` (funções como `saveRobotPerformance`, `saveTradeDecision`, `saveAssetProfileV1` e `saveEvolutionHistory` com um parâmetro `version: 'v1'`)
