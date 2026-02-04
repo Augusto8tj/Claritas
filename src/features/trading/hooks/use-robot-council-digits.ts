@@ -1,8 +1,9 @@
+// src/features/trading/hooks/use-robot-council-digits.ts
 'use client';
 
 import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import { useToast } from '@/hooks/use-toast';
-import type { RobotPerformance, TickData, RobotStrategy } from '@/lib/types';
+import type { RobotPerformance, TickData, Asset } from '@/lib/types';
 import { useDerivApiDigits } from './use-deriv-api-digits';
 
 // ============================================================================
@@ -42,7 +43,7 @@ const councilStrategies: CouncilStrategy[] = [
 // ============================================================================
 // HOOK PRINCIPAL
 // ============================================================================
-export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: TickData[]) {
+export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: TickData[], activeAsset: Asset | null) {
   const { toast } = useToast();
   const { executeTrade } = useDerivApiDigits();
 
@@ -78,11 +79,14 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
     }
     const counts = Array(10).fill(0);
     const last100Ticks = priceTicks.slice(-100);
+    
     last100Ticks.forEach(tick => {
-      let price = tick.price;
-      while (Math.abs(price - Math.round(price)) > 1e-9 && price < Number.MAX_SAFE_INTEGER / 10) price *= 10;
-      const lastDigit = Math.round(price) % 10;
-      if (!isNaN(lastDigit)) counts[lastDigit]++;
+        const priceString = tick.price.toFixed(activeAsset?.pip ?? 2);
+        const lastChar = priceString.slice(-1);
+        const digit = parseInt(lastChar, 10);
+        if (!isNaN(digit)) {
+            counts[digit]++;
+        }
     });
 
     const total = counts.reduce((a, b) => a + b, 0);
@@ -91,7 +95,7 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
       count: count,
       probability: total > 0 ? (count / total) * 100 : 10,
     }));
-  }, [priceTicks]);
+  }, [priceTicks, activeAsset]);
 
   // Lógica de Autopilot (mantida como antes)
   const councilDecision = useMemo(() => {
@@ -129,9 +133,8 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
       if (currentTick.epoch >= trade.exitEpoch) {
         tradesToRemove.push(trade.id);
         const exitTick = priceTicks.find(t => t.epoch >= trade.exitEpoch) || currentTick;
-        let price = exitTick.price;
-        while (Math.abs(price - Math.round(price)) > 1e-9 && price < Number.MAX_SAFE_INTEGER / 10) price *= 10;
-        const lastDigit = Math.round(price) % 10;
+        const priceString = exitTick.price.toFixed(activeAsset?.pip ?? 2);
+        const lastDigit = parseInt(priceString.slice(-1), 10);
         
         let isWin = false;
         switch (trade.contractType) {
@@ -146,9 +149,10 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
         const perfIndex = performanceRef.current.findIndex(p => p.id === trade.robotId);
         if (perfIndex !== -1) {
           const perf = performanceRef.current[perfIndex];
+          const payoutRate = trade.contractType === 'DIGITMATCH' ? 8.09 : 0.099; // Simulação do retorno
           perf.wins += isWin ? 1 : 0;
           perf.losses += isWin ? 0 : 1;
-          perf.totalProfit += isWin ? 0.33 : -0.35; // Payout ~95%
+          perf.totalProfit += isWin ? (0.35 * payoutRate) : -0.35;
           const total = perf.wins + perf.losses;
           perf.winRate = total > 0 ? (perf.wins / total) * 100 : 0;
           performanceChanged = true;
@@ -162,7 +166,7 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
     if(performanceChanged) {
         setRobotPerformance([...performanceRef.current]);
     }
-  }, [priceTicks]);
+  }, [priceTicks, activeAsset]);
 
   // Arena Virtual: Cria novos trades
   useEffect(() => {
@@ -172,8 +176,15 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
     const sortedByProb = [...digitStats].sort((a, b) => b.probability - a.probability);
     const mostProbable = sortedByProb[0];
     const leastProbable = sortedByProb[sortedByProb.length - 1];
+    
+    const sumProb = (digits: number[]) => digits.reduce((sum, d) => sum + (digitStats.find(s => s.digit === d)?.probability || 0), 0);
+    const probOver4 = sumProb([5,6,7,8,9]);
+    const probUnder5 = sumProb([0,1,2,3,4]);
+    const probEven = sumProb([0,2,4,6,8]);
+    const probOdd = sumProb([1,3,5,7,9]);
 
     councilStrategies.forEach(strategy => {
+      // Evita criar novo trade se um da mesma estratégia já estiver pendente
       if (virtualTradesRef.current.some(t => t.robotId === strategy.id)) return;
 
       let shouldTrade = false;
@@ -181,23 +192,21 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
 
       switch (strategy.id) {
         case 'diff_most_freq':
-          if (mostProbable.probability > 20) {
+          if (mostProbable.probability > 15) { // Limiar mais baixo para mais trades
              shouldTrade = true;
              prediction = mostProbable.digit;
           }
           break;
         case 'match_least_freq':
-           if (leastProbable.probability < 5) {
+           if (leastProbable.probability < 8) { // Limiar mais baixo
              shouldTrade = true;
              prediction = leastProbable.digit;
           }
           break;
-        case 'over_4':
-        case 'under_5':
-        case 'even':
-        case 'odd':
-          shouldTrade = true; 
-          break;
+        case 'over_4': if (probOver4 > 55) shouldTrade = true; break;
+        case 'under_5': if (probUnder5 > 55) shouldTrade = true; break;
+        case 'even': if (probEven > 55) shouldTrade = true; break;
+        case 'odd': if (probOdd > 55) shouldTrade = true; break;
       }
       
       if (shouldTrade) {

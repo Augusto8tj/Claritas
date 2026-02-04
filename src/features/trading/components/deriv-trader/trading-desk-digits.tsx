@@ -11,9 +11,7 @@ import {
     TableRow,
 } from '@/components/ui/table';
 import type { RobotPerformance } from '@/lib/types';
-import { Bot, LayoutGrid, AlertTriangle, TrendingUp, TrendingDown, CheckCircle, XCircle } from 'lucide-react';
-import { Switch } from '@/components/ui/switch';
-import { Label } from '@/components/ui/label';
+import { Bot, LayoutGrid, CheckCircle, XCircle } from 'lucide-react';
 import { Progress } from '@/components/ui/progress';
 import { cn } from '@/lib/utils';
 import { useMemo } from 'react';
@@ -30,15 +28,7 @@ export function TradingDeskDigits({
 
     const sortedPerformance = useMemo(() => {
         if (!robotPerformance) return [];
-        // Ordena por lucro total, depois por taxa de acerto
-        return [...robotPerformance].sort((a, b) => {
-            const profitA = a.totalProfit || 0;
-            const profitB = b.totalProfit || 0;
-            if (profitA !== profitB) return profitB - profitA;
-            const winRateA = a.winRate || 0;
-            const winRateB = b.winRate || 0;
-            return winRateB - winRateA;
-        });
+        return [...robotPerformance].sort((a, b) => (b.totalProfit || 0) - (a.totalProfit || 0));
     }, [robotPerformance]);
 
 
@@ -63,7 +53,7 @@ export function TradingDeskDigits({
                         <TableRow>
                             <TableHead>Estratégia</TableHead>
                             <TableHead className="text-center">Score (V/D)</TableHead>
-                            <TableHead className="text-center">Taxa de Acerto</TableHead>
+                            <TableHead className="text-center w-[120px]">Taxa de Acerto</TableHead>
                             <TableHead className="text-right">P&amp;L (USD)</TableHead>
                         </TableRow>
                     </TableHeader>

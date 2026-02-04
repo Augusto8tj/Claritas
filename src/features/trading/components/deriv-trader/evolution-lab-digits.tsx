@@ -20,7 +20,7 @@ export function EvolutionLabDigits({ history, activeSymbol }: EvolutionLabDigits
             Laboratório de Evolução (Digits)
         </CardTitle>
         <CardDescription>
-          Otimização de estratégias com base no desempenho da Arena Virtual.
+          Otimização automática de estratégias com base no desempenho da Arena Virtual.
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -28,8 +28,8 @@ export function EvolutionLabDigits({ history, activeSymbol }: EvolutionLabDigits
           <div className="flex flex-col items-center gap-2">
             <Dna className="h-10 w-10 text-muted-foreground/50"/>
             <div>
-              <p className="font-semibold">Evolução Genética é o Próximo Passo</p>
-              <p className="text-sm">Após a Arena Virtual coletar dados, este laboratório usará os resultados para evoluir e otimizar as estratégias.</p>
+              <p className="font-semibold">Próximo Passo: Evolução Genética</p>
+              <p className="text-sm">Nesta fase, a IA usará os dados de P&amp;L e Win Rate da Arena para descartar as estratégias perdedoras e criar "mutações" das vencedoras, melhorando continuamente o sistema.</p>
             </div>
           </div>
         </div>
