@@ -1,4 +1,4 @@
-// src/features/trading/components/deriv-trader/council-autopilot-interface-digits.tsx
+// src/features/trading/components/deriv-trader/digits-autopilot-manager.tsx
 'use client';
 
 import React from "react";
@@ -9,160 +9,171 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Loader2, LayoutGrid, Power, PowerOff, Bot, Clock, ShieldAlert } from "lucide-react";
+import { Bot, Binary, TrendingUp, HelpCircle } from "lucide-react";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Separator } from "@/components/ui/separator";
-import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
-import type { useRobotCouncilDigits } from "@/features/trading/hooks/use-robot-council-digits";
+import type { useRobotCouncilDigits, PilotType } from "@/features/trading/hooks/use-robot-council-digits";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 
-interface CouncilAutopilotInterfaceDigitsProps extends ReturnType<typeof useRobotCouncilDigits> {}
+interface DigitsAutopilotManagerProps extends ReturnType<typeof useRobotCouncilDigits> {}
 
-const formatTime = (ms: number) => {
-  const totalSeconds = Math.floor(ms / 1000);
-  const minutes = Math.floor(totalSeconds / 60).toString().padStart(2, '0');
-  const seconds = (totalSeconds % 60).toString().padStart(2, '0');
-  return `${minutes}:${seconds}`;
+const PilotTabContent: React.FC<{
+    pilotKey: PilotType;
+    title: string;
+    description: string;
+    pilotState: ReturnType<typeof useRobotCouncilDigits>['pilots'][PilotType];
+    toggleAutopilot: (type: PilotType) => void;
+}> = ({ pilotKey, title, description, pilotState, toggleAutopilot }) => {
+    const { isOn, status, championId } = pilotState;
+
+    const statusInfo = {
+        'PAUSED': { text: 'Pausado', color: 'bg-gray-500' },
+        'WARMING_UP': { text: 'Aquecendo Arena...', color: 'bg-blue-500 animate-pulse' },
+        'TRADING': { text: 'Operando', color: 'bg-green-500' },
+        'RECOVERING': { text: 'Recuperação de Risco', color: 'bg-orange-500' },
+    };
+
+    return (
+        <div className="space-y-4">
+            <div className="flex items-center justify-between rounded-lg border p-3">
+                <div>
+                    <Label htmlFor={`${pilotKey}-switch`} className="font-semibold">{title}</Label>
+                    <p className="text-xs text-muted-foreground">{description}</p>
+                </div>
+                <Switch
+                    id={`${pilotKey}-switch`}
+                    checked={isOn}
+                    onCheckedChange={() => toggleAutopilot(pilotKey)}
+                />
+            </div>
+
+            {isOn && (
+                <div className="grid grid-cols-2 gap-3 text-center text-xs">
+                    <div className="p-2 border rounded-lg bg-muted/50">
+                        <p className="text-muted-foreground font-semibold mb-1">Status</p>
+                        <Badge variant="outline" className="flex items-center justify-center gap-1.5">
+                            <div className={cn("h-2 w-2 rounded-full", statusInfo[status].color)}></div>
+                            {statusInfo[status].text}
+                        </Badge>
+                    </div>
+                     <div className="p-2 border rounded-lg bg-muted/50">
+                        <p className="text-muted-foreground font-semibold mb-1">Campeão</p>
+                        <p className="font-bold text-sm truncate" title={championId || ''}>{championId || 'Aguardando...'}</p>
+                    </div>
+                </div>
+            )}
+        </div>
+    );
 };
 
 
-export const CouncilAutopilotInterfaceDigits: React.FC<CouncilAutopilotInterfaceDigitsProps> = (props) => {
+export const DigitsAutopilotManager: React.FC<DigitsAutopilotManagerProps> = (props) => {
   const { 
-    isCouncilAutopilotOn,
+    pilots,
+    toggleAutopilot,
     dailyBalance,
     setDailyBalance,
     dailyTarget,
     setDailyTarget,
     consensusThreshold,
     setConsensusThreshold,
-    toggleAutopilot,
-    autopilotStatus,
-    warmupTimeLeft,
-    championRobotId,
-    recoveryState,
-    robotPerformance,
  } = props;
 
-  const champion = robotPerformance.find(r => r.id === championRobotId);
-
-  const getStatusDisplay = () => {
-    switch (autopilotStatus) {
-        case 'PAUSED':
-            return <p className="text-sm text-muted-foreground">Piloto desativado.</p>;
-        case 'WARMING_UP':
-            return (
-                <div className="flex items-center gap-2 text-sm text-blue-600">
-                    <Clock className="h-4 w-4" />
-                    <span>Aquecendo Arena... <strong>{formatTime(warmupTimeLeft)}</strong> restantes.</span>
-                </div>
-            );
-        case 'TRADING':
-            return (
-                <p className="text-sm text-green-600 font-semibold">
-                    Operando com Campeão: {champion?.strategy.description || '...'}
-                </p>
-            );
-        case 'RECOVERING':
-            return (
-                <div className="flex items-center gap-2 text-sm text-orange-500 font-semibold">
-                    <ShieldAlert className="h-4 w-4" />
-                    <span>Modo Recuperação (Nível {recoveryState.martingaleLevel})</span>
-                </div>
-            );
-        default:
-            return null;
-    }
-  };
-
+  const isAnyPilotOn = Object.values(pilots).some(p => p.isOn);
 
   return (
     <Card>
       <CardHeader>
-        <div className="flex justify-between items-center">
-            <CardTitle className="font-headline flex items-center gap-2">
-                <Bot className="h-5 w-5 text-primary" />
-                Piloto Automático (Digits)
-            </CardTitle>
-            <Badge variant={isCouncilAutopilotOn ? "default" : "secondary"}>
-                {isCouncilAutopilotOn ? "Ativo" : "Inativo"}
-            </Badge>
-        </div>
+        <CardTitle className="font-headline flex items-center gap-2">
+            <Bot className="h-5 w-5 text-primary" />
+            Pilotos Automáticos (Digits)
+        </CardTitle>
         <CardDescription>
-          Controle o piloto que opera com base na frequência estatística e probabilidade dos dígitos.
+          Controle os especialistas que operam com base na frequência estatística de cada tipo de contrato.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
-        <div className="flex items-center justify-between rounded-lg border p-4 bg-muted/50">
-            <div className="space-y-1">
-                <Label htmlFor="council-autopilot-switch" className="font-semibold text-base">
-                    Status do Piloto
-                </Label>
-                <div className="h-5">{getStatusDisplay()}</div>
-            </div>
-            <Switch
-                id="council-autopilot-switch"
-                checked={isCouncilAutopilotOn}
-                onCheckedChange={toggleAutopilot}
-                className="data-[state=checked]:bg-green-600"
-            />
-        </div>
-
-        {recoveryState.isActive && (
-            <div className="p-3 border rounded-lg bg-orange-500/10 text-orange-700 space-y-1">
-                <p className="font-bold text-sm">Recuperação de Risco Ativa</p>
-                <div className="flex justify-between text-xs">
-                    <span>A recuperar:</span>
-                    <span className="font-mono font-bold">${recoveryState.stakeToRecover.toFixed(2)}</span>
-                </div>
-                 <div className="flex justify-between text-xs">
-                    <span>Próximo Stake (x{Math.pow(2, recoveryState.martingaleLevel)}):</span>
-                    <span className="font-mono font-bold">${(0.35 * Math.pow(2, recoveryState.martingaleLevel)).toFixed(2)}</span>
-                </div>
-            </div>
-        )}
-
-        <div className="grid grid-cols-2 gap-4">
-             <div className="space-y-2">
-                <Label htmlFor="council-daily-balance-digits">Banca do Dia (USD)</Label>
-                <Input 
-                    id="council-daily-balance-digits"
-                    type="number"
-                    value={dailyBalance}
-                    onChange={(e) => setDailyBalance(Number(e.target.value))}
-                    placeholder="Ex: 10"
-                    disabled={isCouncilAutopilotOn}
+        <Tabs defaultValue="matchesDiffers" className="w-full">
+            <TabsList className="grid w-full grid-cols-3">
+                <TabsTrigger value="matchesDiffers" className="text-xs sm:text-sm"><HelpCircle className="h-4 w-4 mr-1.5"/>Combina/Difere</TabsTrigger>
+                <TabsTrigger value="overUnder" className="text-xs sm:text-sm"><TrendingUp className="h-4 w-4 mr-1.5"/>Acima/Abaixo</TabsTrigger>
+                <TabsTrigger value="evenOdd" className="text-xs sm:text-sm"><Binary className="h-4 w-4 mr-1.5"/>Par/Ímpar</TabsTrigger>
+            </TabsList>
+            <TabsContent value="matchesDiffers" className="pt-4">
+                <PilotTabContent
+                    pilotKey="matchesDiffers"
+                    title="Piloto Combina/Difere"
+                    description="Opera 'Difere' no dígito mais provável ou 'Combina' no menos provável."
+                    pilotState={pilots.matchesDiffers}
+                    toggleAutopilot={toggleAutopilot}
                 />
-            </div>
-            <div className="space-y-2">
-                <Label htmlFor="council-daily-target-digits">Alvo de Lucro (USD)</Label>
-                <Input 
-                    id="council-daily-target-digits"
-                    type="number"
-                    value={dailyTarget}
-                    onChange={(e) => setDailyTarget(Number(e.target.value))}
-                    placeholder="Ex: 5"
-                    disabled={isCouncilAutopilotOn}
+            </TabsContent>
+            <TabsContent value="overUnder" className="pt-4">
+                <PilotTabContent
+                    pilotKey="overUnder"
+                    title="Piloto Acima/Abaixo"
+                    description="Analisa a probabilidade de o dígito final ser maior ou menor que uma barreira."
+                    pilotState={pilots.overUnder}
+                    toggleAutopilot={toggleAutopilot}
                 />
-            </div>
-        </div>
-
-        <Separator />
+            </TabsContent>
+            <TabsContent value="evenOdd" className="pt-4">
+                 <PilotTabContent
+                    pilotKey="evenOdd"
+                    title="Piloto Par/Ímpar"
+                    description="Opera na probabilidade do dígito final ser par ou ímpar."
+                    pilotState={pilots.evenOdd}
+                    toggleAutopilot={toggleAutopilot}
+                />
+            </TabsContent>
+        </Tabs>
         
-        <div className="space-y-2">
-            <Label htmlFor="council-consensus-digits">Limiar de Probabilidade (%)</Label>
-            <Input 
-                id="council-consensus-digits"
-                type="number"
-                min={10} max={90}
-                value={consensusThreshold}
-                onChange={(e) => setConsensusThreshold(Number(e.target.value))}
-                placeholder="Ex: 25"
-                disabled={isCouncilAutopilotOn}
-            />
-            <p className="text-xs text-muted-foreground">O piloto irá operar 'Difere' se um dígito superar esta probabilidade.</p>
+        <Separator />
+
+        <div className="space-y-4">
+            <h4 className="font-semibold text-sm">Configurações Gerais dos Pilotos</h4>
+             <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                    <Label htmlFor="council-daily-balance-digits">Banca do Dia (USD)</Label>
+                    <Input 
+                        id="council-daily-balance-digits"
+                        type="number"
+                        value={dailyBalance}
+                        onChange={(e) => setDailyBalance(Number(e.target.value))}
+                        placeholder="Ex: 10"
+                        disabled={isAnyPilotOn}
+                    />
+                </div>
+                <div className="space-y-2">
+                    <Label htmlFor="council-daily-target-digits">Alvo de Lucro (USD)</Label>
+                    <Input 
+                        id="council-daily-target-digits"
+                        type="number"
+                        value={dailyTarget}
+                        onChange={(e) => setDailyTarget(Number(e.target.value))}
+                        placeholder="Ex: 5"
+                        disabled={isAnyPilotOn}
+                    />
+                </div>
+            </div>
+
+            <div className="space-y-2">
+                <Label htmlFor="council-consensus-digits">Limiar de Probabilidade (%)</Label>
+                <Input 
+                    id="council-consensus-digits"
+                    type="number"
+                    min={10} max={90}
+                    value={consensusThreshold}
+                    onChange={(e) => setConsensusThreshold(Number(e.target.value))}
+                    placeholder="Ex: 25"
+                    disabled={isAnyPilotOn}
+                />
+                <p className="text-xs text-muted-foreground">O piloto irá operar se a probabilidade do sinal superar este valor.</p>
+            </div>
         </div>
       </CardContent>
     </Card>

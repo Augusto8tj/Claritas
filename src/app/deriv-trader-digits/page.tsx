@@ -10,7 +10,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { DerivApiProviderDigits, useDerivApiDigits } from "@/features/trading/hooks/use-deriv-api-digits";
 import { OperationsLogDigits } from "@/features/trading/components/deriv-trader/operations-log-digits";
 import { digitSchema, type DigitFormValues } from "@/features/trading/components/deriv-trader/deriv-trader-interface-digits.types";
-import { CouncilAutopilotInterfaceDigits } from "@/features/trading/components/deriv-trader/council-autopilot-interface-digits";
+import { DigitsAutopilotManager } from "@/features/trading/components/deriv-trader/digits-autopilot-manager";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { useRobotCouncilDigits } from "@/features/trading/hooks/use-robot-council-digits";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -117,9 +117,7 @@ function CurrentPriceDisplay() {
     const isDown = change < 0;
 
     const priceString = lastTick.price.toFixed(decimalPlaces);
-    const lastDigit = priceString.slice(-1);
-    const mainPart = priceString.slice(0, -1);
-
+    
     return (
         <Card>
             <CardHeader className="pb-2">
@@ -128,10 +126,7 @@ function CurrentPriceDisplay() {
             </CardHeader>
             <CardContent>
                 <div className="flex items-baseline justify-center">
-                    <p className="text-5xl font-bold font-mono text-foreground">
-                        {mainPart}
-                        <span className="text-primary animate-pulse">{lastDigit}</span>
-                    </p>
+                    <p className="text-5xl font-bold font-mono text-foreground">{priceString}</p>
                 </div>
                 <div className={cn(
                     "flex items-center justify-center gap-1 text-sm font-semibold mt-1",
@@ -168,7 +163,7 @@ function DerivTraderPageContentDigits() {
                 <div className="lg:col-span-2 space-y-6">
                     <CurrentPriceDisplay />
                     <DerivTraderInterfaceDigits symbol={activeSymbol || ""} />
-                    <CouncilAutopilotInterfaceDigits {...robotCouncil} />
+                    <DigitsAutopilotManager {...robotCouncil} />
                 </div>
 
                 {/* --- Coluna da Direita (Dados e Logs) --- */}
@@ -191,7 +186,7 @@ function DerivTraderPageContentDigits() {
                             <TradingDeskDigits 
                                 isCouncilAutopilotOn={robotCouncil.isCouncilAutopilotOn} 
                                 robotPerformance={robotCouncil.robotPerformance}
-                                championRobotId={robotCouncil.championRobotId}
+                                championRobotId={null} // O conceito de campeão único foi removido
                             />
                         </TabsContent>
                         <TabsContent value="evolucao" className="mt-4">
@@ -221,5 +216,3 @@ export default function DerivTraderDigitsPage() {
             <DerivTraderPageContentDigits />
         </FormProvider>
     </DerivApiProviderDigits>
-  );
-}
