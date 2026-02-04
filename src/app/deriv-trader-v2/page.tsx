@@ -253,7 +253,6 @@ const PageContent = () => {
             </div>
         </FormProvider>
     );
-<<<<<<< HEAD
 };
 
 export default function DerivTraderV2Page() {
@@ -262,6 +261,4 @@ export default function DerivTraderV2Page() {
             <PageContent />
         </DerivApiProviderV2>
     );
-=======
->>>>>>> 45c0a96 (O código do use-robot-council-v2.ts agora está em um nível profissional)
 }
