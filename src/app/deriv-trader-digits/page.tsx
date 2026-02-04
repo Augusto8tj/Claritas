@@ -10,7 +10,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { DerivApiProviderDigits, useDerivApiDigits } from "@/features/trading/hooks/use-deriv-api-digits";
 import { OperationsLogDigits } from "@/features/trading/components/deriv-trader/operations-log-digits";
 import { digitSchema, type DigitFormValues } from "@/features/trading/components/deriv-trader/deriv-trader-interface-digits.types";
-import { DigitsAutopilotManager } from "@/features/trading/components/deriv-trader/digits-autopilot-manager";
+import { DigitsAutopilotManager } from "@/features/trading/components/deriv-trader/council-autopilot-interface-digits";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { useRobotCouncilDigits } from "@/features/trading/hooks/use-robot-council-digits";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
