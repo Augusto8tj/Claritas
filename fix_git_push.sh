@@ -14,4 +14,3 @@ else
   echo "O 'git push --force' falhou. Verifique a saída de erro acima."
   echo "Possíveis causas: falta de credenciais, token de acesso inválido ou repositório remoto não encontrado."
 fi
-
