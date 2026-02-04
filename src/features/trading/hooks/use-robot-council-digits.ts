@@ -3,7 +3,7 @@
 
 import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import { useToast } from '@/hooks/use-toast';
-import type { RobotPerformance, TickData, Asset } from '@/lib/types';
+import type { RobotPerformance, TickData, Asset, Operation } from '@/lib/types';
 import { useDerivApiDigits } from './use-deriv-api-digits';
 
 // ============================================================================
@@ -31,6 +31,9 @@ type VirtualTrade = {
   exitEpoch: number;
 };
 
+export type AutopilotStatus = 'PAUSED' | 'WARMING_UP' | 'TRADING' | 'RECOVERING';
+const WARMUP_DURATION_MS = 60000; // 1 minuto
+
 const councilStrategies: CouncilStrategy[] = [
   { id: 'diff_most_freq', type: 'DIGITDIFF', description: 'Difere do dígito mais frequente' },
   { id: 'match_least_freq', type: 'DIGITMATCH', description: 'Combina com o dígito menos frequente' },
@@ -45,7 +48,7 @@ const councilStrategies: CouncilStrategy[] = [
 // ============================================================================
 export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: TickData[], activeAsset: Asset | null) {
   const { toast } = useToast();
-  const { executeTrade } = useDerivApiDigits();
+  const { executeTrade, operationsLog } = useDerivApiDigits();
 
   const [isCouncilAutopilotOn, setIsCouncilAutopilotOn] = useState(false);
   const [dailyBalance, setDailyBalance] = useState(10);
@@ -55,16 +58,28 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
   const virtualTradesRef = useRef<VirtualTrade[]>([]);
   const performanceRef = useRef<RobotPerformance[]>([]);
 
+  // Estados da nova lógica de piloto
+  const [autopilotStatus, setAutopilotStatus] = useState<AutopilotStatus>('PAUSED');
+  const [warmupTimeLeft, setWarmupTimeLeft] = useState(WARMUP_DURATION_MS);
+  const [championRobotId, setChampionRobotId] = useState<string | null>(null);
+  const [recoveryState, setRecoveryState] = useState({
+    isActive: false,
+    martingaleLevel: 0,
+    stakeToRecover: 0,
+  });
+  const processedLossesRef = useRef<Set<number>>(new Set());
+  const autopilotStartTimeRef = useRef<number | null>(null);
+  const warmupIntervalRef = useRef<NodeJS.Timeout | null>(null);
+
   useEffect(() => {
     performanceRef.current = robotPerformance;
   }, [robotPerformance]);
   
   useEffect(() => {
-    // Inicializa o estado de performance quando as estratégias são definidas
     const initialPerformance = councilStrategies.map(strat => ({
       id: strat.id,
       strategyType: strat.type,
-      strategy: { description: strat.description } as any, // Simplificado para exibição
+      strategy: { description: strat.description } as any,
       wins: 0,
       losses: 0,
       totalProfit: 0,
@@ -97,32 +112,120 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
     }));
   }, [priceTicks, activeAsset]);
 
-  // Lógica de Autopilot (mantida como antes)
-  const councilDecision = useMemo(() => {
-    if (digitStats.every(s => s.probability === 10)) return { type: 'hold', digit: -1, probability: 0 };
-    const sortedByProb = [...digitStats].sort((a, b) => b.probability - a.probability);
-    const mostProbable = sortedByProb[0];
-    if (mostProbable.probability > consensusThreshold) {
-      return { type: 'differs', digit: mostProbable.digit, probability: mostProbable.probability };
-    }
-    return { type: 'hold', digit: -1, probability: 0 };
-  }, [digitStats, consensusThreshold]);
+  const toggleAutopilot = useCallback(() => {
+    setIsCouncilAutopilotOn(prev => {
+      const isActivating = !prev;
+      if (isActivating) {
+        setAutopilotStatus('WARMING_UP');
+        autopilotStartTimeRef.current = Date.now();
+        setWarmupTimeLeft(WARMUP_DURATION_MS);
+        if (warmupIntervalRef.current) clearInterval(warmupIntervalRef.current);
+        warmupIntervalRef.current = setInterval(() => {
+          const elapsed = Date.now() - (autopilotStartTimeRef.current || Date.now());
+          setWarmupTimeLeft(Math.max(0, WARMUP_DURATION_MS - elapsed));
+        }, 1000);
+        toast({ title: 'Piloto Automático Ativado', description: 'Período de aquecimento de 1 minuto iniciado.' });
+      } else {
+        setAutopilotStatus('PAUSED');
+        if (warmupIntervalRef.current) clearInterval(warmupIntervalRef.current);
+        setChampionRobotId(null);
+        setRecoveryState({ isActive: false, martingaleLevel: 0, stakeToRecover: 0 });
+        toast({ title: 'Piloto Automático Desativado' });
+      }
+      return isActivating;
+    });
+  }, [toast]);
   
+  useEffect(() => {
+    if (autopilotStatus === 'WARMING_UP' && warmupTimeLeft <= 0) {
+      if (warmupIntervalRef.current) clearInterval(warmupIntervalRef.current);
+
+      const eligibleRobots = robotPerformance.filter(r => (r.wins + r.losses) >= 5);
+      if (eligibleRobots.length === 0) {
+        toast({ title: 'Aquecimento Estendido', description: 'Nenhum robô com dados suficientes. Aguardando mais trades virtuais.' });
+        autopilotStartTimeRef.current = Date.now();
+        setWarmupTimeLeft(WARMUP_DURATION_MS);
+        return;
+      }
+
+      const champion = eligibleRobots.reduce((best, current) => 
+        (current.totalProfit > best.totalProfit) ? current : best
+      );
+
+      setChampionRobotId(champion.id);
+      setAutopilotStatus('TRADING');
+      toast({ title: '🏆 Campeão da Arena Selecionado!', description: `Robô '${champion.strategy.description}' assume o controlo.` });
+    }
+  }, [autopilotStatus, warmupTimeLeft, robotPerformance, toast]);
+  
+  useEffect(() => {
+    const lastPilotTrade = operationsLog.find(op => op.initiator === 'Piloto' && !processedLossesRef.current.has(op.id) && op.status !== 'pending');
+    if (!lastPilotTrade) return;
+
+    processedLossesRef.current.add(lastPilotTrade.id);
+
+    if (lastPilotTrade.status === 'lost') {
+        if (recoveryState.isActive) {
+            const nextLevel = recoveryState.martingaleLevel + 1;
+            if (nextLevel > 2) {
+                toast({ title: '🚨 Falha na Recuperação', description: 'Limite de Martingale atingido. Resetando para stake normal.', variant: 'destructive' });
+                setRecoveryState({ isActive: false, martingaleLevel: 0, stakeToRecover: 0 });
+                setAutopilotStatus('TRADING');
+            } else {
+                toast({ title: `⚠️ Recuperação Nível ${recoveryState.martingaleLevel} Falhou`, description: `Aumentando para nível ${nextLevel}.`, variant: 'destructive' });
+                setRecoveryState(prev => ({ ...prev, martingaleLevel: nextLevel, stakeToRecover: prev.stakeToRecover + lastPilotTrade.stake }));
+            }
+        } else {
+            toast({ title: '📉 Perda Detectada!', description: 'Ativando modo de recuperação de risco.', variant: 'destructive' });
+            setRecoveryState({ isActive: true, martingaleLevel: 1, stakeToRecover: lastPilotTrade.stake });
+            setAutopilotStatus('RECOVERING');
+        }
+    } else if (lastPilotTrade.status === 'won' && recoveryState.isActive) {
+        toast({ title: '✅ Recuperação Bem-sucedida!', description: 'Voltando ao modo de trading normal.' });
+        setRecoveryState({ isActive: false, martingaleLevel: 0, stakeToRecover: 0 });
+        setAutopilotStatus('TRADING');
+    }
+  }, [operationsLog, recoveryState.isActive, toast]);
+
   const autopilotExecutionRef = useRef(false);
   useEffect(() => {
     if (!isCouncilAutopilotOn || !activeSymbol || autopilotExecutionRef.current) return;
-    const runAutopilot = async () => {
-      autopilotExecutionRef.current = true;
-      const { type, digit } = councilDecision;
-      if (type === 'differs' && digit !== -1) {
-        await executeTrade('DIGITDIFF', 0.35, activeSymbol, 5, 't', 'Piloto', digit);
-      }
-      setTimeout(() => { autopilotExecutionRef.current = false }, 2000);
-    };
-    runAutopilot();
-  }, [isCouncilAutopilotOn, councilDecision, activeSymbol, executeTrade]);
+    if (autopilotStatus !== 'TRADING' && autopilotStatus !== 'RECOVERING') return;
 
-  // Arena Virtual: Processa trades
+    const runAutopilot = async () => {
+        autopilotExecutionRef.current = true;
+        
+        const champion = robotPerformance.find(r => r.id === championRobotId);
+        if (!champion) {
+            autopilotExecutionRef.current = false;
+            return;
+        }
+
+        const sortedByProb = [...digitStats].sort((a, b) => b.probability - a.probability);
+        const mostProbable = sortedByProb[0];
+        
+        let signalType: CouncilStrategy['type'] | null = null;
+        let predictionDigit: number | undefined;
+
+        if (champion.id === 'diff_most_freq') {
+            const threshold = recoveryState.isActive ? 40 : consensusThreshold;
+            if (mostProbable.probability > threshold) {
+                signalType = 'DIGITDIFF';
+                predictionDigit = mostProbable.digit;
+            }
+        }
+
+        if (signalType) {
+            const stake = recoveryState.isActive ? (0.35 * Math.pow(2, recoveryState.martingaleLevel)) : 0.35;
+            await executeTrade(signalType, stake, activeSymbol, 5, 't', 'Piloto', predictionDigit);
+        }
+
+        setTimeout(() => { autopilotExecutionRef.current = false; }, 2000);
+    };
+
+    runAutopilot();
+  }, [isCouncilAutopilotOn, autopilotStatus, championRobotId, digitStats, consensusThreshold, activeSymbol, executeTrade, recoveryState, robotPerformance]);
+
   useEffect(() => {
     if (priceTicks.length < 2) return;
     const currentTick = priceTicks[priceTicks.length - 1];
@@ -149,10 +252,10 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
         const perfIndex = performanceRef.current.findIndex(p => p.id === trade.robotId);
         if (perfIndex !== -1) {
           const perf = performanceRef.current[perfIndex];
-          const payoutRate = trade.contractType === 'DIGITMATCH' ? 8.09 : 0.099; // Simulação do retorno
-          perf.wins += isWin ? 1 : 0;
-          perf.losses += isWin ? 0 : 1;
-          perf.totalProfit += isWin ? (0.35 * payoutRate) : -0.35;
+          const payoutRate = trade.contractType === 'DIGITMATCH' ? 8.09 : 0.099;
+          perf.wins = (perf.wins || 0) + (isWin ? 1 : 0);
+          perf.losses = (perf.losses || 0) + (isWin ? 0 : 1);
+          perf.totalProfit = (perf.totalProfit || 0) + (isWin ? (0.35 * payoutRate) : -0.35);
           const total = perf.wins + perf.losses;
           perf.winRate = total > 0 ? (perf.wins / total) * 100 : 0;
           performanceChanged = true;
@@ -168,7 +271,6 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
     }
   }, [priceTicks, activeAsset]);
 
-  // Arena Virtual: Cria novos trades
   useEffect(() => {
     if (!isCouncilAutopilotOn || priceTicks.length < 100) return;
 
@@ -184,7 +286,6 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
     const probOdd = sumProb([1,3,5,7,9]);
 
     councilStrategies.forEach(strategy => {
-      // Evita criar novo trade se um da mesma estratégia já estiver pendente
       if (virtualTradesRef.current.some(t => t.robotId === strategy.id)) return;
 
       let shouldTrade = false;
@@ -192,13 +293,13 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
 
       switch (strategy.id) {
         case 'diff_most_freq':
-          if (mostProbable.probability > 15) { // Limiar mais baixo para mais trades
+          if (mostProbable.probability > 15) {
              shouldTrade = true;
              prediction = mostProbable.digit;
           }
           break;
         case 'match_least_freq':
-           if (leastProbable.probability < 8) { // Limiar mais baixo
+           if (leastProbable.probability < 8) {
              shouldTrade = true;
              prediction = leastProbable.digit;
           }
@@ -221,28 +322,19 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
       }
     });
   }, [digitStats, isCouncilAutopilotOn, priceTicks]);
-
-  const fetchStrategyCouncil = useCallback(() => {
-    setIsCouncilAutopilotOn(true);
-    toast({ title: 'Piloto Automático de Dígitos Ativado' });
-  }, [toast]);
-
-  const dissolveCouncil = useCallback(() => {
-    setIsCouncilAutopilotOn(false);
-    toast({ title: 'Piloto Automático de Dígitos Desativado' });
-  }, [toast]);
   
   return {
     isCouncilAutopilotOn,
-    isFetchingCouncil: false,
     dailyBalance, setDailyBalance,
     dailyTarget, setDailyTarget,
     consensusThreshold, setConsensusThreshold,
-    fetchStrategyCouncil, dissolveCouncil,
     digitStats,
-    councilDecision,
-    robotPerformance, // Para o TradingDeskDigits
-    // Placeholders
-    evolutionHistory: [],
+    robotPerformance,
+    evolutionHistory: [], // Placeholder
+    toggleAutopilot,
+    autopilotStatus,
+    warmupTimeLeft,
+    championRobotId,
+    recoveryState,
   };
 }

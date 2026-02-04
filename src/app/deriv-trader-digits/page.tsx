@@ -135,7 +135,7 @@ function CurrentPriceDisplay() {
 
 function DerivTraderPageContentDigits() {
     const { activeSymbol, priceTicks, operationsLog, sellContract, activeAsset } = useDerivApiDigits();
-    const robotCouncil = useRobotCouncilDigits(activeSymbol, priceTicks);
+    const robotCouncil = useRobotCouncilDigits(activeSymbol, priceTicks, activeAsset);
 
     return (
         <div className="flex-1 space-y-4 p-4 sm:p-8 pt-6">
@@ -173,7 +173,11 @@ function DerivTraderPageContentDigits() {
                             <OperationsLogDigits operations={operationsLog} sellContract={sellContract} priceTicks={priceTicks} activeAsset={activeAsset} />
                         </TabsContent>
                         <TabsContent value="arena" className="mt-4">
-                            <TradingDeskDigits {...robotCouncil} />
+                            <TradingDeskDigits 
+                                isCouncilAutopilotOn={robotCouncil.isCouncilAutopilotOn} 
+                                robotPerformance={robotCouncil.robotPerformance}
+                                championRobotId={robotCouncil.championRobotId}
+                            />
                         </TabsContent>
                         <TabsContent value="evolucao" className="mt-4">
                             <EvolutionLabDigits history={robotCouncil.evolutionHistory} activeSymbol={activeSymbol} />

@@ -11,7 +11,7 @@ import {
     TableRow,
 } from '@/components/ui/table';
 import type { RobotPerformance } from '@/lib/types';
-import { Bot, LayoutGrid, CheckCircle, XCircle } from 'lucide-react';
+import { Bot, LayoutGrid, CheckCircle, XCircle, Trophy } from 'lucide-react';
 import { Progress } from '@/components/ui/progress';
 import { cn } from '@/lib/utils';
 import { useMemo } from 'react';
@@ -19,11 +19,13 @@ import { useMemo } from 'react';
 interface TradingDeskDigitsProps {
     isCouncilAutopilotOn: boolean;
     robotPerformance: RobotPerformance[];
+    championRobotId: string | null;
 }
 
 export function TradingDeskDigits({
     isCouncilAutopilotOn,
     robotPerformance,
+    championRobotId,
 }: TradingDeskDigitsProps) {
 
     const sortedPerformance = useMemo(() => {
@@ -42,7 +44,7 @@ export function TradingDeskDigits({
                             Arena Virtual (Digits)
                         </CardTitle>
                         <CardDescription>
-                           Desempenho em tempo real das estratégias simuladas.
+                           Desempenho em tempo real das estratégias simuladas para selecionar o campeão.
                         </CardDescription>
                     </div>
                 </div>
@@ -70,9 +72,12 @@ export function TradingDeskDigits({
                                 </TableCell>
                             </TableRow>
                         ) : (
-                           sortedPerformance.map((robot) => (
-                                <TableRow key={robot.id}>
-                                    <TableCell className="font-semibold text-sm">
+                           sortedPerformance.map((robot) => {
+                                const isChampion = robot.id === championRobotId;
+                                return (
+                                <TableRow key={robot.id} className={cn(isChampion && "bg-primary/10 border-l-4 border-primary")}>
+                                    <TableCell className="font-semibold text-sm flex items-center gap-2">
+                                        {isChampion && <Trophy className="h-4 w-4 text-amber-500" />}
                                         {(robot.strategy as any).description}
                                     </TableCell>
                                     <TableCell className="text-center">
@@ -116,7 +121,7 @@ export function TradingDeskDigits({
                                         })}
                                     </TableCell>
                                 </TableRow>
-                           ))
+                           )})
                         )}
                     </TableBody>
                 </Table>
