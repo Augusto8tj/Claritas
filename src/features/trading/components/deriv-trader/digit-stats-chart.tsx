@@ -15,6 +15,14 @@ interface DigitStatsChartProps {
 const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8', '#82ca9d', '#ffc658', '#a4de6c', '#d0ed57', '#ffc658'];
 
 export function DigitStatsChart({ priceTicks, pip = 2 }: DigitStatsChartProps) {
+  const lastTick = priceTicks.length > 0 ? priceTicks[priceTicks.length - 1] : null;
+  let lastDigit: number | null = null;
+  if (lastTick) {
+      const priceString = lastTick.price.toFixed(pip);
+      const lastChar = priceString.slice(-1);
+      lastDigit = parseInt(lastChar, 10);
+  }
+
   const digitStats = useMemo(() => {
     if (priceTicks.length < 20) {
       return Array.from({ length: 10 }, (_, i) => ({ name: String(i), value: 0, probability: '0.0%' }));
@@ -26,10 +34,10 @@ export function DigitStatsChart({ priceTicks, pip = 2 }: DigitStatsChartProps) {
     last100Ticks.forEach(tick => {
         const priceString = tick.price.toFixed(pip);
         const lastChar = priceString.slice(-1);
-        const lastDigit = parseInt(lastChar, 10);
+        const digit = parseInt(lastChar, 10);
         
-        if (!isNaN(lastDigit)) {
-            counts[lastDigit]++;
+        if (!isNaN(digit)) {
+            counts[digit]++;
         }
     });
 
@@ -50,7 +58,7 @@ export function DigitStatsChart({ priceTicks, pip = 2 }: DigitStatsChartProps) {
             Estatísticas do Último Dígito (Últimos 100 Ticks)
         </CardTitle>
         <CardDescription>
-          Frequência de ocorrência de cada dígito final.
+          Frequência de ocorrência de cada dígito final. A barra destacada indica o último dígito reportado.
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -61,9 +69,17 @@ export function DigitStatsChart({ priceTicks, pip = 2 }: DigitStatsChartProps) {
             <YAxis stroke="#888888" fontSize={12} tickLine={false} axisLine={false} tickFormatter={(value) => `${value}`} />
             <Bar dataKey="value" radius={[4, 4, 0, 0]}>
                 <LabelList dataKey="probability" position="top" fill="#666" fontSize={12} />
-                 {digitStats.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                ))}
+                 {digitStats.map((entry, index) => {
+                    const isLastDigit = lastDigit !== null && parseInt(entry.name, 10) === lastDigit;
+                    return (
+                        <Cell 
+                            key={`cell-${index}`} 
+                            fill={isLastDigit ? 'hsl(var(--primary))' : COLORS[index % COLORS.length]} 
+                            stroke={isLastDigit ? 'hsl(var(--ring))' : 'none'}
+                            strokeWidth={isLastDigit ? 2 : 0}
+                        />
+                    );
+                 })}
             </Bar>
           </BarChart>
         </ResponsiveContainer>
