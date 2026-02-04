@@ -248,7 +248,7 @@ function DesktopSidebar() {
             </SidebarContent>
              <SidebarFooter>
                 <div className="text-xs text-muted-foreground text-center p-2 group-data-[collapsible=icon]:hidden">
-                    Versão 4.0.0
+                    Versão 5.5.0
                 </div>
                 <Button variant="ghost" onClick={toggleSidebar} className="w-full justify-start">
                     {state === 'expanded' ? <PanelLeftClose /> : <PanelRightClose />}
