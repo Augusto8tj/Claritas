@@ -861,7 +861,7 @@ export const extractMicrostructureFeatures = (
   }
   const gapRatio = gapCount / recentTicks.length;
 
-  const stdDev = Math.sqrt(prices.reduce((sum, p) => sum + Math.pow(p - mean, 2), 0) / prices.length);
+  const stdDev = Math.sqrt(prices.reduce((sum, p) => sum + Math.pow(p - avgPrice, 2), 0) / prices.length);
   const currentPrice = recentTicks[recentTicks.length - 1].price;
   const meanReversion = stdDev > 0 ? (currentPrice - avgPrice) / stdDev : 0;
 
@@ -964,5 +964,3 @@ export const analyzeStrategyByRegime = (
 
   return effectiveRegimes;
 };
-
-    
