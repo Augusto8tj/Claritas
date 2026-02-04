@@ -377,7 +377,7 @@ export function useDerivApiDigitsState() {
     }, [user, activeToken, isLoading, triggerReconnect]);
 
     const executeTrade = useCallback(async (
-        contractType: DigitContractType, stake: number, symbol: string, 
+        contractType: DigitContractType, stake: number, symbol: string,
         duration: number, durationUnit: DurationUnit, initiator: OperationInitiator,
         last_digit?: number,
     ): Promise<TradeResult> => {
@@ -394,9 +394,9 @@ export function useDerivApiDigitsState() {
 
         if (contractType !== 'DIGITEVEN' && contractType !== 'DIGITODD') {
             if (last_digit === undefined || last_digit === null) {
-              throw new Error(`last_digit é necessário para o tipo de contrato ${contractType}.`);
+              throw new Error(`last_digit_prediction é necessário para o tipo de contrato ${contractType}.`);
             }
-            proposalRequest.last_digit = last_digit;
+            proposalRequest.last_digit_prediction = last_digit;
         }
 
         const proposalResponse: any = await makeRequest(proposalRequest);
@@ -526,7 +526,7 @@ export function useDerivApiDigitsState() {
         accountBalance, operationsLog, assetGroups, isAssetsLoading, activeSymbol, activeAsset,
         priceTicks, setAccountType, setTokens, disconnect, reconnect, executeTrade, sellContract, setActiveSymbol,
         chartData, isChartLoading, chartError, chartType, timePeriod, dataVersion, tradeAnnotations,
-        durationLimits
+        durationLimits,
     ]);
 
     return contextValue;
