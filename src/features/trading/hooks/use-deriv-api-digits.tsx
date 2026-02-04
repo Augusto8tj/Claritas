@@ -6,6 +6,7 @@ import type { TradeResult } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
 import type { Operation, OperationInitiator, DurationUnit, TickData, Asset } from '@/lib/types';
 import { FirebaseErrorListener } from '@/components/firebase-error-listener';
+import { useAuth } from '@/features/auth/hooks/use-auth';
 
 // --- CONSTANTS ---
 const DERIV_DEMO_TOKEN_KEY = 'derivDemoApiToken';
@@ -67,6 +68,7 @@ export const DerivApiContextDigits = createContext<DerivApiContextTypeDigits | u
 
 // This is the main state logic hook
 export function useDerivApiDigitsState() {
+  const { user } = useAuth();
   const [demoToken, setDemoToken] = useState<string | null>(null);
   const [realToken, setRealToken] = useState<string | null>(null);
   const [accountType, setAccountTypeState] = useState<AccountType>('demo');
@@ -351,11 +353,11 @@ export function useDerivApiDigitsState() {
             if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
             reconnectInProgressRef.current = false;
         };
-    }, [activeToken, isLoading, makeRequest, setAndPersistOperationsLog, startConnectionMonitor, subscribeToTicks, triggerReconnect]);
+    }, [activeToken, isLoading, triggerReconnect, user]);
 
     useEffect(() => {
-        if (isConnected && activeSymbol) subscribeToTicks(activeSymbol);
-    }, [isConnected, activeSymbol, subscribeToTicks]);
+        if (isConnected && activeSymbol && !isConnecting) subscribeToTicks(activeSymbol);
+    }, [isConnected, activeSymbol, isConnecting, subscribeToTicks]);
 
     const setAccountType = useCallback((type: AccountType) => {
         try { localStorage.setItem(DERIV_ACCOUNT_TYPE_KEY, type); setAccountTypeState(type); allowAutoReconnectRef.current = true; setTriggerReconnect(c => c + 1); } catch (e) {}
@@ -407,7 +409,7 @@ export function useDerivApiDigitsState() {
 }
 
 // This is the provider component that will wrap the app
-export function DerivApiProviderDigits({ children }: { children: ReactNode }) {
+export function DerivApiProviderDigits({ children }: { children: React.ReactNode }) {
   const contextValue = useDerivApiDigitsState();
   
   return (
