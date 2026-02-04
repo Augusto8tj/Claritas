@@ -3,7 +3,7 @@ import { z } from 'zod';
 
 export const digitSchema = z.object({
   stake: z.coerce.number().min(0.35, "O valor mínimo é $0.35."),
-  duration: z.coerce.number().min(5, "A duração mínima é de 5 ticks.").max(10, "A duração máxima é de 10 ticks."),
+  duration: z.coerce.number().min(1, "A duração para dígitos é de 1 a 10 ticks.").max(10, "A duração máxima é de 10 ticks."),
   duration_unit: z.literal('t', {
     errorMap: () => ({ message: "Apenas 'ticks' são suportados para contratos de dígitos." })
   }),

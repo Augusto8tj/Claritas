@@ -209,7 +209,7 @@ export default function DerivTraderDigitsPage() {
     resolver: zodResolver(digitSchema),
     defaultValues: {
       stake: 0.35,
-      duration: 5,
+      duration: 1,
       duration_unit: "t",
       last_digit_prediction: 5,
     },

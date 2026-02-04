@@ -232,7 +232,7 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
 
         if (signalType) {
             const stake = recoveryState.isActive ? (0.35 * Math.pow(2, recoveryState.martingaleLevel)) : 0.35;
-            await executeTrade(signalType, stake, activeSymbol, 5, 't', 'Piloto', predictionDigit);
+            await executeTrade(signalType, stake, activeSymbol, 1, 't', 'Piloto', predictionDigit);
         }
 
         setTimeout(() => { autopilotExecutionRef.current = false; }, 2000);
@@ -333,7 +333,7 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
           contractType: strategy.type,
           prediction: prediction,
           entryEpoch: currentTick.epoch,
-          exitEpoch: currentTick.epoch + (5 * 2), // 5 ticks, 2s/tick
+          exitEpoch: currentTick.epoch + (1 * 2), // 1 tick, 2s/tick
         });
       }
     });
