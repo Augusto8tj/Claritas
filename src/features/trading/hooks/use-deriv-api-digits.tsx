@@ -277,7 +277,7 @@ export function useDerivApiDigitsState() {
                                     const op = updatedLog[existingOpIndex]!;
                                     if (contract.is_sold === 1) {
                                         const newStatus = contract.status === 'won' ? 'won' : 'lost';
-                                        const exitPrice = contract.exit_tick ? parseFloat(String(contract.exit_tick).slice(-1)) : op.exitPrice;
+                                        const exitPrice = contract.exit_tick ? parseFloat(contract.exit_tick) : op.exitPrice;
                                         updatedLog[existingOpIndex] = { ...op, status: newStatus, result: contract.profit, exitPrice: exitPrice, exitTimestamp: new Date(contract.sell_time * 1000).toISOString() };
                                         if (wsRef.current?.readyState === WebSocket.OPEN) wsRef.current.send(JSON.stringify({"balance": 1}));
                                         return updatedLog;
@@ -373,7 +373,7 @@ export function useDerivApiDigitsState() {
             if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
             reconnectInProgressRef.current = false;
         };
-    }, [user, activeToken, isLoading, triggerReconnect, makeRequest, setAndPersistOperationsLog, startConnectionMonitor]);
+    }, [user, activeToken, isLoading, triggerReconnect]);
 
     const executeTrade = useCallback(async (
         contractType: DigitContractType, stake: number, symbol: string, 

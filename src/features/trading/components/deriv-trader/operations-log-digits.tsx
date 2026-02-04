@@ -59,6 +59,16 @@ export function OperationsLogDigits({ operations }: OperationsLogDigitsProps) {
         .reduce((sum, op) => sum + (op.result || 0), 0);
     }, [operations]);
 
+    const getLastDigit = (price: number | undefined): string => {
+        if (price === undefined) return '...';
+        // Lógica matemática para lidar com casas decimais variáveis corretamente
+        let p = price;
+        while (Math.abs(p - Math.round(p)) > 1e-9 && p < Number.MAX_SAFE_INTEGER / 10) {
+            p *= 10;
+        }
+        return String(Math.round(p) % 10);
+    };
+
     return (
         <Card className="h-full flex flex-col">
             <CardHeader>
@@ -122,7 +132,7 @@ export function OperationsLogDigits({ operations }: OperationsLogDigitsProps) {
                                             </div>
                                             <div className="text-muted-foreground font-mono col-span-2 md:col-span-1">
                                                 <p>Previsão: <span className="font-bold text-primary">{(op as any).last_digit_prediction ?? '-'}</span></p>
-                                                <p>Resultado: @{op.exitPrice !== undefined ? String(op.exitPrice).slice(-1) : '...'}</p>
+                                                <p>Resultado: @{getLastDigit(op.exitPrice)}</p>
                                             </div>
                                         </div>
                                         <div className="w-28 text-right">
