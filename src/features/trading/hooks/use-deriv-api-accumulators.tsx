@@ -434,7 +434,11 @@ export const DerivApiProviderAccumulators = ({ children }: { children: ReactNode
           return { success: true, message: "Contrato já estava fechado no servidor." };
         }
         
-        console.error("[Deriv Hook] Erro na resposta da API de venda:", sellResponse.error);
+        if (sellResponse.error.message) {
+            console.error("[Deriv Hook] Erro na API de venda:", sellResponse.error);
+        } else {
+            console.warn(`[Deriv Hook] Falha operacional ao vender o contrato #${contractId}. Resposta da API:`, sellResponse.error);
+        }
         sellingContractsRef.current.delete(contractId);
         return { success: false, message };
       }
