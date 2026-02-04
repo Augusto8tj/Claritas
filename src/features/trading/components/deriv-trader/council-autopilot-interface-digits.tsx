@@ -1,4 +1,4 @@
-// src/features/trading/components/deriv-trader/digits-autopilot-manager.tsx
+// src/features/trading/components/deriv-trader/council-autopilot-interface-digits.tsx
 'use client';
 
 import React from "react";
@@ -34,7 +34,7 @@ const PilotTabContent: React.FC<{
         'PAUSED': { text: 'Pausado', color: 'bg-gray-500' },
         'WARMING_UP': { text: 'Aquecendo Arena...', color: 'bg-blue-500 animate-pulse' },
         'TRADING': { text: 'Operando', color: 'bg-green-500' },
-        'RECOVERING': { text: 'Recuperação de Risco', color: 'bg-orange-500' },
+        'COOLDOWN': { text: 'Cooldown Pós-Perda', color: 'bg-orange-500' },
     };
 
     return (
