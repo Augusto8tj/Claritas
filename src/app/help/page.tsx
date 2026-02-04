@@ -15,7 +15,101 @@ Este documento regista a jornada de desenvolvimento e as principais funcionalida
 
 ---
 
-### v2.5.0 (Atual) - O Despertar Cognitivo: A Mesa Operacional Completa
+### v5.5.0 - Robustez Arquitetural e Documentação Definitiva
+
+**Melhorias Estratégicas e Arquiteturais:**
+- **Portal de Arquitetura Centralizado:** O \`README.md\` principal foi transformado num guia completo, detalhando a filosofia de design e os ficheiros-chave para cada uma das nossas 7 plataformas de trading, servindo como um ponto de entrada único para entender o ecossistema.
+- **Documentação Dedicada por Sistema:** Foram criados e atualizados documentos de arquitetura específicos para as plataformas V1, V2.5 e Multipliers (\`docs/\`), garantindo que a lógica complexa de cada sistema esteja claramente documentada.
+- **Profissionalização da Plataforma "Deriv Digits":** A página de "Digits" foi completamente reconstruída. Foi integrado o gráfico de mercado avançado (\`MarketChart\`) e o seu hook de API (\`use-deriv-api-digits.tsx\`) foi refatorado para ter a mesma robustez dos outros sistemas, resolvendo falhas críticas no fluxo de dados em tempo real.
+- **Resiliência da API Aprimorada:** Todos os 6 hooks de conexão com a API da Deriv foram refatorados para tratar erros de rede e timeouts de forma controlada, eliminando "unhandled promise rejections" e tornando a aplicação mais estável.
+
+**Correções Críticas:**
+- **Ativação do "Trailing Stop" nos Multiplicadores:** Corrigida uma falha crítica na plataforma "Deriv Multipliers". A lógica do **stop-loss móvel (trailing stop)**, que é o coração da estratégia, foi movida para o hook correto (\`use-multipliers-council.ts\`) e agora funciona como projetado, permitindo "deixar os lucros correr" de forma segura.
+- **Resolução de Erros de Build:** Corrigidos múltiplos erros de importação que surgiram após a reorganização dos ficheiros de serviços, garantindo que a compilação do projeto seja estável.
+- **Correção de Erro de Runtime:** Corrigido um \`ReferenceError\` na função \`extractMicrostructureFeatures\` que impedia o funcionamento de análises avançadas.
+
+**Ferramentas de Desenvolvimento:**
+- **Script de Recuperação Git:** Adicionado o script \`abort_rebase.sh\` para ajudar a resolver estados de \`rebase\` pendentes no Git, restaurando a estabilidade do repositório local com um único comando.
+
+---
+
+### v5.1.0 - Otimização e Foco: Descontinuação da Central de Comando
+
+**Mudanças Estratégicas:**
+- **Descontinuação da Página "Master Autopilot":** A página \`/master-autopilot\` e sua interface complexa foram removidas. O sistema estava a consumir recursos excessivos e a sua funcionalidade foi consolidada.
+- **Foco na "Análise de Volatilidade":** Toda a lógica do piloto automático preditivo, anteriormente partilhada, está agora concentrada e otimizada exclusivamente para a página \`/volatility-analysis\`.
+- **Navegação Simplificada:** O link para a "Central de Comando" foi removido do menu principal, simplificando a navegação e focando nos ecossistemas de trading mais estáveis e performáticos.
+
+---
+
+### v5.0.0 - O Comandante Tático: Master Autopilot V5 (Regime-Aware)
+
+**Funcionalidades Principais:**
+- **Implementação do Master Autopilot V5:** O sistema de comando foi promovido para se tornar um **comandante tático, consciente do regime de mercado**.
+- **Análise Tática de Regime:** O piloto agora classifica o mercado em 5 regimes (\`trending_bull\`, \`ranging\`, etc.) e valida se o contrato selecionado pelo operador é compatível com o cenário atual antes de operar.
+- **Laboratório Preditivo (\`/volatility-analysis\`):** Criação de um ambiente de análise quantitativa avançado para dissecar e prever o comportamento de ativos.
+- **Comitê de Especialistas Temporais:** O laboratório utiliza um comitê de especialistas de IA, cada um focado num horizonte de tempo (1t, 3t, 10s, etc.), que usam o modelo **Movimento Browniano Geométrico (GBM)** para gerar projeções.
+- **Meritocracia Preditiva:** O sistema mede constantemente a **Assertividade** (taxa de acerto) de cada especialista e usa essa métrica para ponderar as suas decisões, criando um ciclo de aprendizagem e auto-avaliação.
+- **Gestão de Risco Granular e Adaptativa:** A penalidade ou recompensa após um trade é agora aplicada **individualmente** aos especialistas que participaram na decisão, tornando o sistema mais justo e rápido a adaptar-se.
+- **Confirmação Tripla:** Foi adicionada uma configuração experimental que exige o consenso de três especialistas vizinhos (anterior, atual e próximo) para aumentar a robustez dos sinais de entrada.
+
+---
+
+### v4.5.0 - O Mestre dos Multiplicadores e a Centralização da Arquitetura
+
+**Melhorias Estratégicas:**
+- **Ativação do "Trailing Stop" nos Multiplicadores:** Corrigida uma falha crítica na arquitetura da plataforma "Deriv Multipliers". A lógica do **stop-loss móvel (trailing stop)**, que é o coração da estratégia, foi movida para o hook \`use-multipliers-council.ts\`, que tem acesso aos indicadores (ATR) necessários para o seu cálculo. A estratégia agora funciona conforme o seu design original, permitindo "deixar os lucros correr" de forma automática e segura.
+- **Profissionalização da Plataforma "Deriv Digits":** A página de "Digits" foi completamente reconstruída. Foi integrado o **gráfico de mercado avançado (\`MarketChart\`)**, e o seu hook de API (\`use-deriv-api-digits.tsx\`) foi atualizado para ter a mesma robustez dos outros sistemas, resolvendo falhas no fluxo de dados em tempo real.
+- **Reorganização e Centralização da Arquitetura:** Executada uma refatoração completa da estrutura do projeto. Todos os serviços específicos de trading (\`indicator-service\`, \`council-strategies\`, \`advanced-trading-services\`) foram movidos da pasta genérica \`src/services\` para a sua localização correta em \`src/features/trading/services\`. Esta mudança eliminou múltiplos erros de build e tornou a arquitetura mais limpa e manutenível.
+- **Resiliência da API Aprimorada:** A lógica de comunicação com a API em todos os hooks de trading foi refatorada. Erros de rede e timeouts agora são tratados de forma controlada, eliminando "unhandled promise rejections" e tornando a aplicação mais estável. A mensagem de "token inválido" foi reclassificada para um aviso (\`warn\`) para reduzir o ruído na consola do programador.
+
+**Correções Críticas:**
+- **Resolução de Erros de Build:** Corrigidos múltiplos erros de importação que surgiram após a reorganização dos ficheiros.
+- **Correção de Conflito de Merge:** Removidos marcadores de conflito de merge (\`=======\`, \`>>>>>>>\`) que estavam a impedir a compilação da página \`deriv-trader-v2\`.
+- **Correção de Erro de Runtime:** Corrigido um \`ReferenceError\` na função \`extractMicrostructureFeatures\` (\`advanced-trading-services.ts\`) onde uma variável (\`mean\`) foi usada incorretamente em vez de \`avgPrice\`.
+
+**Ferramentas de Desenvolvimento:**
+- Adicionado o script \`abort_rebase.sh\` para ajudar a resolver estados de \`rebase\` pendentes no Git, restaurando a estabilidade do repositório local.
+
+---
+
+### v4.0.0 (IA Lab) - O Mestre da Volatilidade: Deriv Accumulators
+
+**Funcionalidades Principais:**
+- **Criação da Plataforma "Deriv Accumulators":** Um novo ambiente de trading foi construído do zero, inspirado na estabilidade do Deriv Trader V1, mas focado exclusivamente no novo tipo de contrato "Accumulator".
+- **Mudança de Paradigma:** O sistema abandona a negociação direcional (subida/queda) e foca-se em apostar na **estabilidade da volatilidade**. O objetivo é lucrar enquanto o preço se mantém dentro de barreiras dinâmicas.
+- **Nova Interface de Trading:** Foi criada uma interface de utilizador simplificada e especializada (\`deriv-trader-interface-accumulators.tsx\`) que remove os botões de "Rise/Fall" e introduz controlos para os parâmetros chave dos Acumuladores:
+    - **Taxa de Crescimento (Growth Rate):** Um slider permite ao operador escolher o seu apetite de risco (de 1% a 5%).
+    - **Valor da Aposta (Stake):** Controlo de risco para cada operação.
+- **Motor de API Dedicado:** O hook \`use-deriv-api-accumulators.tsx\` foi desenvolvido para lidar com a lógica de compra de contratos do tipo \`ACCU\`, garantindo que os pedidos corretos são enviados à API da Deriv.
+- **Arquitetura Isolada:** Toda a plataforma de Acumuladores (página, hooks, componentes) opera de forma independente, garantindo que a experimentação com este novo tipo de contrato não afete a estabilidade dos sistemas V1, V2.5 e Multiplicadores.
+
+---
+
+### v3.5.0 - A Fundação Cognitiva: Promoção do Cérebro Quântico V1
+
+**Funcionalidades Principais:**
+- **Promoção da Arquitetura V1:** O motor do Deriv Trader V1 foi solidificado e promovido como a fundação cognitiva estável do sistema. A sua arquitetura, agora documentada em \`docs/deriv-trader-v1-architecture.md\`, serve como a base comprovada para os nossos princípios de trading.
+- **Memória Estratégica & Aprendizagem Colaborativa:** Implementação da camada de persistência \`AssetProfileV1\` no Firestore. O sistema agora aprende o "regime preferencial" e o "limiar de consenso ótimo" de cada ativo.
+- **Interface de Colaboração Homem-Máquina:** A adição do painel \`AssetIntelligenceCard\` permite que **você, o operador**, insira os seus próprios *insights* sobre um ativo, que são fundidos com a análise da IA para criar um cérebro híbrido e colaborativo.
+- **Auditoria Forense Completa:** A "caixa-preta" do sistema V1 foi finalizada. O \`TradingDecisionLogViewer\` agora captura e exibe não apenas as decisões de execução, mas também todas as operações da **Arena Virtual** iniciadas em cada ciclo de decisão, garantindo transparência total.
+- **Controlo Granular:** Adicionado um interruptor na interface do V1 para ligar ou desligar a "Auditoria Cognitiva", permitindo otimizar a performance ao desativar o logging detalhado quando não for necessário.
+
+---
+
+### v3.1.0 - O Laboratório de IA e a Visão Hierárquica
+
+**Funcionalidades Principais:**
+- **Criação do Deriv Trader 3.0 (IA Lab):** Um ambiente de desenvolvimento totalmente independente e isolado foi criado para permitir a experimentação e implementação de arquiteturas de IA radicais sem afetar a estabilidade da versão 2.5. Isto inclui a duplicação de todos os hooks e componentes essenciais (\`use-deriv-api-v3\`, \`use-robot-council-v3\`, \`use-strategy-evolution-v3\`, etc.).
+- **Implementação da Detecção de Regime Hierárquica:** Como o primeiro avanço no laboratório 3.0, o sistema agora classifica o mercado em três níveis:
+    - **Macro:** Tendência de longo prazo (bull/bear/sideways market).
+    - **Meso:** O regime de curto prazo (trending, ranging, etc.).
+    - **Micro:** Padrões de curtíssimo prazo (consolidação, exaustão, etc.).
+- **Consenso Contextualizado:** O Cérebro V3 agora tem acesso a este contexto hierárquico completo, permitindo decisões de trading muito mais sofisticadas (ex: ser mais agressivo numa compra se o micro-padrão for de reversão dentro de um macro-mercado de alta).
+
+---
+
+### v2.5.0 - O Despertar Cognitivo: A Mesa Operacional Completa
 
 **Funcionalidades Principais:**
 - **Ativação Total do Conselho:** A lógica de votação (\`calculateTechnicalVote\`) foi expandida para incluir todos os 22 robôs-analistas. Estratégias como \`ICHIMOKU\`, \`VWAP\`, \`Z_SCORE\` e \`TRIX\` agora participam ativamente do consenso, trazendo uma diversidade de perspetivas sem precedentes.
@@ -125,11 +219,12 @@ const ChangelogContent = () => {
     // Por simplicidade, vamos usar uma regex para substituir os marcadores por elementos HTML
     const formattedContent = changelogContentString
         .replace(/### (.*)/g, '<h3 class="text-xl font-bold mt-4 mb-2 font-headline">$1</h3>')
-        .replace(/#### (.*)/g, '<h4 class="text-lg font-semibold mt-3 mb-1">$1</h4>')
         .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
         .replace(/`([^`]+)`/g, '<code class="bg-muted text-muted-foreground px-1 py-0.5 rounded text-sm font-mono">$1</code>')
         .replace(/---/g, '<hr class="my-4 border-border" />')
-        .replace(/^- (.*)/gm, '<li class="ml-4 list-disc">$1</li>');
+        .replace(/^- (.*)/gm, '<li class="ml-4 list-disc">$1</li>')
+        .replace(/\*\*\s(.*?):\*\*/g, '<strong>$1:</strong>'); // Make bolded colons consistent
+
 
     return (
         <div 
@@ -208,7 +303,6 @@ export default function HelpPage() {
               </AccordionTrigger>
               <AccordionContent className="text-base leading-relaxed space-y-2">
                 <p>Na seção de <strong>Metas</strong>, você pode criar, visualizar e deletar suas metas financeiras. Ao adicionar uma nova meta, a IA gera uma imagem inspiradora para representá-la!</p>
-                <p>Use a ferramenta de <strong>Projeção de IA</strong> em cada meta para simular cenários e descobrir quanto tempo levará para atingir cada objetivo com base em suas contribuições e no retorno esperado dos seus investimentos.</p>
               </AccordionContent>
             </AccordionItem>
             
@@ -225,200 +319,97 @@ export default function HelpPage() {
               </AccordionContent>
             </AccordionItem>
 
-            <AccordionItem value="item-15">
-                <AccordionTrigger className="text-lg font-semibold">O Cérebro V2.5: Como Funciona o Deriv Trader</AccordionTrigger>
-                <AccordionContent className="text-base leading-relaxed space-y-4">
-                    <p>O Deriv Trader 2.5 representa uma evolução fundamental, saindo de um sistema de "consenso simples" para um verdadeiro <strong>"Cérebro Quantitativo"</strong>, que opera de forma semelhante a uma mesa de operações de um fundo de investimento de alta frequência.</p>
-                    
-                    <h3 className="text-md font-bold mt-3">1. Camada de Conexão: `use-deriv-api-v2.tsx`</h3>
-                    <p>Esta camada é a nossa única ponte de comunicação com a corretora. É responsável por gerir a conexão WebSocket, autenticação, e atuar como a "fonte da verdade" para todos os dados de mercado, como o gráfico (`chartData`) e o saldo da conta.</p>
+            <AccordionItem value="item-20">
+                <AccordionTrigger className="text-lg font-semibold">Ecossistema de Trading: As Plataformas</AccordionTrigger>
+                <AccordionContent className="text-base leading-relaxed space-y-2">
+                    <p>O Claritas Copilot não é um único robô, mas um conjunto de ecossistemas de trading, cada um otimizado para uma estratégia diferente. Aqui está um resumo de cada um:</p>
+                    <Accordion type="single" collapsible className="w-full mt-4 space-y-2">
+                        
+                        <AccordionItem value="platform-1">
+                            <AccordionTrigger>Deriv Trader V2.5: O Cérebro Quantitativo</AccordionTrigger>
+                            <AccordionContent className="text-sm space-y-2">
+                                <p>A nossa implementação mais sofisticada de trading por consenso. Opera como uma mesa de operações completa.</p>
+                                <ul className="list-disc pl-5 space-y-1">
+                                    <li><strong>Deteção de Regime:</strong> Classifica o mercado (ex: tendência, lateral) e ativa apenas os robôs especialistas adequados para o contexto.</li>
+                                    <li><strong>Consenso Bayesiano:</strong> A confiança de cada robô é calibrada pelo seu desempenho histórico naquele regime específico.</li>
+                                    <li><strong>Gestão de Risco com Critério de Kelly:</strong> O valor da aposta é calculado cientificamente com base na probabilidade de sucesso.</li>
+                                    <li><strong>Evolução Genética Acelerada:</strong> Os piores robôs são substituídos por "mutações" dos robôs de elite.</li>
+                                </ul>
+                            </AccordionContent>
+                        </AccordionItem>
 
-                    <h3 className="text-md font-bold mt-3">2. O Cérebro Cognitivo: `use-robot-council-v2.ts`</h3>
-                    <p>Este é o coração do sistema, executando um ciclo de análise a cada tick de preço. As suas responsabilidades incluem:</p>
-                     <ul className="list-disc pl-6 space-y-2">
-                        <li><strong>Cálculo de Indicadores (`indicator-service-v2.ts`):</strong> Um motor autónomo que calcula mais de 25 indicadores técnicos (RSI, MACD, etc.) a partir dos dados brutos.</li>
-                        <li><strong>Deteção de Regime de Mercado (`advanced-trading-services.ts`):</strong> Um modelo inspirado em HMM que classifica o mercado (ex: `TREND_UP`, `RANGING`) e ativa apenas os robôs especialistas adequados para aquele contexto.</li>
-                        <li><strong>Consenso Bayesiano Ponderado:</strong> Os robôs ativos votam e os seus votos são ponderados pelo desempenho histórico (`Sharpe Ratio`). O sistema usa inferência Bayesiana para calcular uma probabilidade de sucesso final muito mais precisa.</li>
-                        <li><strong>Gestão de Risco com Critério de Kelly:</strong> O tamanho da aposta (`stake`) é calculado cientificamente com base na probabilidade de sucesso, apostando mais agressivamente quando a vantagem é alta.</li>
-                        <li><strong>Veto de Microestrutura:</strong> Uma camada de proteção final que analisa os últimos ticks para detetar anomalias (como picos de volume) e pode vetar uma operação.</li>
-                        <li><strong>Arena Virtual & Evolução Genética:</strong> Todos os votos são executados como "paper trades" na Arena Virtual. A cada 50 trades, o sistema identifica os robôs de pior desempenho e os substitui por "mutações" genéticas dos robôs de elite.</li>
-                     </ul>
+                        <AccordionItem value="platform-2">
+                            <AccordionTrigger>Deriv Multipliers: O Seguidor de Tendência</AccordionTrigger>
+                            <AccordionContent className="text-sm space-y-2">
+                               <p>Uma plataforma "padrão ouro" especializada em seguir tendências de forma disciplinada.</p>
+                                <ul className="list-disc pl-5 space-y-1">
+                                    <li><strong>Operar a Favor da Maré:</strong> Usa uma EMA de 100 períodos para identificar a tendência principal e só opera nessa direção.</li>
+                                    <li><strong>Entrada em Pullback:</strong> Aguarda uma confirmação de retomada do momentum (usando o RSI) para entrar na operação.</li>
+                                    <li><strong>Trailing Stop Dinâmico (Corrigido):</strong> A funcionalidade crucial que gere ativamente as posições abertas, subindo o stop-loss com base na volatilidade (ATR) para maximizar ganhos, agora está fully-functional.</li>
+                                </ul>
+                            </AccordionContent>
+                        </AccordionItem>
+                        
+                        <AccordionItem value="platform-3">
+                            <AccordionTrigger>Deriv Trader V1: A Fundação Cognitiva</AccordionTrigger>
+                            <AccordionContent className="text-sm space-y-2">
+                               <p>O nosso sistema de produção mais estável e a base de muitos dos nossos princípios quantitativos.</p>
+                                <ul className="list-disc pl-5 space-y-1">
+                                    <li><strong>Meritocracia por Desempenho:</strong> Os votos dos robôs são ponderados pelo seu `Sharpe Ratio`, dando mais poder aos mais consistentes.</li>
+                                    <li><strong>Memória Estratégica:</strong> Aprende e guarda no Firestore o "perfil" de cada ativo (regime preferencial, limiar de consenso), permitindo colaboração Homem-Máquina.</li>
+                                </ul>
+                            </AccordionContent>
+                        </AccordionItem>
 
-                    <h3 className="text-md font-bold mt-3">3. A Interface do Utilizador: `deriv-trader-v2/page.tsx`</h3>
-                    <p>A camada de apresentação exibe a complexidade do cérebro de forma clara, com componentes como o `CouncilDashboardV2` (visão geral), `DebugCouncilView` (detalhes de cada robô), `TradingDeskV2` (ranking de desempenho) e `EvolutionLab` (histórico de mutações).</p>
-                </AccordionContent>
-            </AccordionItem>
+                        <AccordionItem value="platform-4">
+                            <AccordionTrigger>Deriv Accumulators: O Preditor Auto-Adaptativo</AccordionTrigger>
+                            <AccordionContent className="text-sm space-y-2">
+                               <p>Um sistema que aposta na estabilidade da volatilidade, em vez da direção do preço.</p>
+                                <ul className="list-disc pl-5 space-y-1">
+                                    <li><strong>Entrada Probabilística:</strong> Usa um modelo de "Primeira Passagem de Movimento Browniano" para calcular a probabilidade de a posição não quebrar a barreira.</li>
+                                    <li><strong>Otimização Dinâmica:</strong> Calcula o `stake` (Critério de Kelly) e a `growth_rate` ótimos antes de cada trade.</li>
+                                    <li><strong>Aprendizagem Contínua:</strong> Analisa o resultado de cada operação e auto-calibra os seus parâmetros de risco, tornando-se mais cauteloso após perdas.</li>
+                                </ul>
+                            </AccordionContent>
+                        </AccordionItem>
 
-            <AccordionItem value="item-16">
-                <AccordionTrigger className="text-lg font-semibold">Conheça a Mesa: A Estratégia de Cada Robô</AccordionTrigger>
-                <AccordionContent className="text-base leading-relaxed space-y-4">
-                    <p>A nossa "Mesa Operacional" é um ecossistema de especialistas, cada um com uma visão única do mercado, agrupados em "comités". Cada robô precisa de indicadores específicos, calculados pelo motor do `indicator-service.ts`, para poder tomar uma decisão.</p>
+                        <AccordionItem value="platform-5">
+                            <AccordionTrigger>Deriv Digits: O Caçador de Probabilidades</AccordionTrigger>
+                            <AccordionContent className="text-sm space-y-2">
+                               <p>Focada em arbitragem estatística do último dígito do preço em Índices Sintéticos.</p>
+                                <ul className="list-disc pl-5 space-y-1">
+                                    <li><strong>Análise de Frequência:</strong> Analisa a distribuição dos últimos 1000 dígitos.</li>
+                                    <li><strong>Regressão à Média:</strong> Opera "Difere" no dígito mais frequente e "Combina" no dígito menos frequente (mais "atrasado").</li>
+                                    <li><strong>Contexto Visual (Melhorado):**</strong> Integra o gráfico de mercado para correlacionar a ação do preço com os padrões estatísticos.</li>
+                                </ul>
+                            </AccordionContent>
+                        </AccordionItem>
 
-                    <h3 className="text-md font-bold mt-3">1. Comité de Momentum: Os "Velocistas"</h3>
-                    <p>Obcecados com a velocidade e aceleração do preço. São os primeiros a detetar quando o mercado ganha ou perde força.</p>
-                    <ul className="list-disc pl-6 space-y-2 text-sm">
-                        <li><strong>RSI:</strong> Especialista em reversão. Precisa do indicador `RSI` para detetar sobrecompra (&gt;70) ou sobrevenda (&lt;30).</li>
-                        <li><strong>STOCHASTIC:</strong> Semelhante ao RSI, mas mais sensível. Precisa do indicador `Stochastic Oscillator (STOCH)` para encontrar pontos de exaustão.</li>
-                        <li><strong>MACD:</strong> Um confirmador de momentum. Precisa dos valores de `MACD Line` e `Signal Line` para detetar cruzamentos que sinalizam uma nova direção.</li>
-                        <li><strong>Awesome Oscillator, TRIX, ROC:</strong> Detetam a aceleração e a "convicção" por trás de um movimento, confirmando que a tendência tem força para continuar. Precisam, respetivamente, dos indicadores `Awesome Oscillator`, `TRIX` e `Rate of Change (ROC)`.</li>
-                         <li><strong>RVI (Relative Vigor Index):</strong> Mede a convicção do movimento. Precisa do indicador `RVI`.</li>
-                    </ul>
+                        <AccordionItem value="platform-6">
+                            <AccordionTrigger>Análise de Volatilidade: O Laboratório Preditivo</AccordionTrigger>
+                            <AccordionContent className="text-sm space-y-2">
+                               <p>Um ambiente de análise quantitativa avançado que usa um comitê de especialistas de IA para prever movimentos de preço.</p>
+                                <ul className="list-disc pl-5 space-y-1">
+                                    <li><strong>Previsão Multi-Horizonte:</strong> Usa o modelo **Movimento Browniano Geométrico (GBM)** com volatilidade dinâmica (EWMA) para gerar projeções.</li>
+                                    <li><strong>Meritocracia Preditiva:</strong> Usa um **Intervalo de Confiança Bayesiano** para avaliar a performance de cada especialista, dando peso apenas aos que demonstram habilidade estatística.</li>
+                                    <li><strong>Meta-Aprendizagem (Epsilon-Greedy):**</strong> Foca o "orçamento computacional" nos especialistas de melhor desempenho, mas explora aleatoriamente outros para se adaptar a novas condições.</li>
+                                </ul>
+                            </AccordionContent>
+                        </AccordionItem>
 
-                    <h3 className="text-md font-bold mt-3">2. Comité de Tendência: Os "Navegadores"</h3>
-                    <p>Focam-se na direção principal e sustentada do mercado.</p>
-                    <ul className="list-disc pl-6 space-y-2 text-sm">
-                        <li><strong>Moving Average Cross:</strong> Estratégia clássica. Precisa da `Média Móvel Curta` e da `Média Móvel Longa` para detetar cruzamentos.</li>
-                        <li><strong>ADX:</strong> O "rei" da força da tendência. Precisa do `ADX`, `+DI (PDI)` e `-DI (NDI)` para determinar não só se há tendência, mas também qual a sua direção.</li>
-                        <li><strong>Parabolic SAR:</strong> Um seguidor de tendência agressivo. Precisa do indicador `Parabolic SAR` para traçar os seus pontos acima ou abaixo do preço.</li>
-                        <li><strong>Ichimoku Cloud:</strong> Um "estratega geopolítico". Precisa de todos os componentes da Nuvem: `Tenkan-sen`, `Kijun-sen`, `Senkou Span A` e `Senkou Span B`.</li>
-                    </ul>
-
-                    <h3 className="text-md font-bold mt-3">3. Comité de Volatilidade e Estrutura: Os "Arquitetos"</h3>
-                    <p>Analisam a "arquitetura" do mercado, como a sua largura e canais.</p>
-                    <ul className="list-disc pl-6 space-y-2 text-sm">
-                        <li><strong>Bollinger Bands:</strong> Especialista em reversão. Precisa das `Bandas de Bollinger Superior e Inferior` e da `Média Móvel` central.</li>
-                        <li><strong>KAMA (Kaufman's Adaptive Moving Average):</strong> Uma média móvel inteligente. Precisa do indicador `KAMA`.</li>
-                        <li><strong>Donchian Channels:</strong> Detetor de rompimentos. Precisa dos canais `Donchian Superior e Inferior`.</li>
-                        <li><strong>Chandelier Exit:</strong> Baseado em volatilidade (ATR), precisa do indicador `Chandelier Exit` para os seus cálculos de saída.</li>
-                    </ul>
-
-                    <h3 className="text-md font-bold mt-3">4. Comité de Volume e Fluxo de Ordens: Os "Detetives"</h3>
-                    <p>Analisam o combustível por trás do movimento: o volume.</p>
-                    <ul className="list-disc pl-6 space-y-2 text-sm">
-                        <li><strong>VWAP (Volume-Weighted Average Price):</strong> Usa o `VWAP` como referência de "preço justo". Preço acima do VWAP é um sinal de alta.</li>
-                        <li><strong>MFI (Money Flow Index):</strong> O "RSI do volume". Precisa do indicador `MFI`.</li>
-                        <li><strong>OBV (On-Balance Volume):</strong> Mede se o "dinheiro inteligente" está a entrar ou a sair. Precisa do indicador `OBV`.</li>
-                    </ul>
-
-                     <h3 className="text-md font-bold mt-3">5. Comité Estatístico e de Padrões: Os "Académicos"</h3>
-                    <p>Usam modelos matemáticos e reconhecimento de padrões.</p>
-                    <ul className="list-disc pl-6 space-y-2 text-sm">
-                        <li><strong>Z-SCORE:</strong> Deteta desvios estatísticos extremos, apostando num regresso à média. Precisa do indicador `Z-Score`.</li>
-                        <li><strong>STOCHASTIC RSI (STOCH_RSI):</strong> Um "sismógrafo" ultra-sensível para micro-sinais. Precisa do `Stochastic RSI`.</li>
-                        <li><strong>PRICE ACTION PATTERN:</strong> Reconhece padrões de velas. O `indicator-service` não calcula isto diretamente; a lógica de deteção de padrões (ex: 'martelo') é aplicada dentro do próprio `useRobotCouncil` com base nos dados brutos das velas.</li>
-                    </ul>
-                </AccordionContent>
-            </AccordionItem>
-            
-            <AccordionItem value="item-10">
-              <AccordionTrigger className="text-lg font-semibold">
-                Deriv Trader: A Interface de Trading
-              </AccordionTrigger>
-              <AccordionContent className="text-base leading-relaxed space-y-2">
-                 <p>A página <strong>Deriv Trader</strong> é um ambiente de negociação integrado que transforma o Claritas num copiloto financeiro avançado, operando com uma arquitetura de alta performance.</p>
-                 <ol className="list-decimal pl-6 space-y-3">
-                    <li>
-                      <strong>Motor de Indicadores Centralizado:</strong> O coração do nosso sistema de trading é um motor que calcula, em tempo real, um conjunto completo de <strong>22 categorias de indicadores técnicos</strong> (RSI, Estocástico, MACD, etc.). Este motor alimenta tanto o gráfico que você vê quanto a lógica de decisão do Conselho de Robôs, garantindo consistência total dos dados.
-                    </li>
-                    <li>
-                      <strong>Gráfico de Trading Avançado (SVG):</strong>
-                      <ul className="list-disc pl-6 mt-2 space-y-2">
-                          <li><strong>Estabilidade e Responsividade:</strong> O gráfico é renderizado com tecnologia SVG, eliminando problemas de "quebra" de velas. É 100% estável e responsivo.</li>
-                          <li><strong>Indicadores Controláveis:</strong> Através do botão "Indicadores", você pode ligar ou desligar individualmente a Média Móvel Simples (SMA), Exponencial (EMA), VWAP e as Bandas de Bollinger.</li>
-                          <li><strong>Ferramentas de Análise:</strong> Use o "brush" na base para dar zoom e o "crosshair" para uma leitura precisa de preços e tempo.</li>
-                      </ul>
-                    </li>
-                    <li>
-                      <strong>Análise de Sessão com IA:</strong>
-                      <ul className="list-disc pl-6 mt-2">
-                          <li>Ao clicar em <strong>"Analisar Desempenho"</strong>, uma IA avalia o seu histórico de operações da sessão e fornece um resumo da sua performance com métricas chave.</li>
-                      </ul>
-                    </li>
-                 </ol>
-              </AccordionContent>
-            </AccordionItem>
-
-             <AccordionItem value="item-11">
-                <AccordionTrigger className="text-lg font-semibold">
-                    A Mesa Operacional: O Cérebro do Claritas Trader
-                </AccordionTrigger>
-                <AccordionContent className="text-base leading-relaxed space-y-4">
-                    <p>
-                        A "Mesa Operacional" é o sistema autónomo do Claritas. Em vez de depender de uma única estratégia, ela simula uma equipa de 22 robôs-analistas para tomar decisões de trading mais seguras e inteligentes, com base no poderoso motor de indicadores interno.
-                    </p>
-                    <div>
-                        <h4 className="font-semibold text-md mb-2">Camada 1: Os 22 Analistas Táticos (A Equipa)</h4>
-                        <p className="text-sm">
-                           São os especialistas da linha da frente. Cada um domina uma estratégia de indicador (RSI, MACD, etc.), definida no ficheiro \`src/services/council-strategies.ts\`. A cada tick, eles analisam os dados do motor de indicadores e emitem um "voto" (\`RISE\`, \`FALL\`, \`HOLD\`) com um nível de confiança.
-                        </p>
-                    </div>
-                    <div>
-                        <h4 className="font-semibold text-md mb-2">Camada 2: O Comité de Supervisão e Risco (A Direção)</h4>
-                        <p className="text-sm">
-                          Esta é a camada final e mais poderosa. Este comité recebe a recomendação do consenso, mas tem **poder de veto e de ajuste dinâmico**. Ele responde a perguntas cruciais:
-                        </p>
-                         <ul className="list-disc pl-6 mt-2 space-y-1 text-sm">
-                            <li>"Já atingimos o nosso limite de perda ou a nossa meta de lucro do dia?" (se sim, **VETO** e para as operações).</li>
-                            <li>"O mercado está demasiado caótico ou volátil?" (Com base no ADX e BBW, ele **reduz o valor da aposta (\`stake\`)** e **aumenta a duração do contrato** para se proteger).</li>
-                            <li>"O consenso dos analistas é forte o suficiente para esta condição de mercado?" (se não, aguarda).</li>
-                        </ul>
-                        <p className="text-sm mt-2">É a direção de risco que dá a aprovação final e ajusta os parâmetros de cada trade de forma autónoma, usando os valores de "Aposta Base" e "Duração Base" como ponto de partida.</p>
-                    </div>
+                         <AccordionItem value="platform-7">
+                            <AccordionTrigger>Deriv Trader V3.0: O Laboratório de IA</AccordionTrigger>
+                            <AccordionContent className="text-sm space-y-2">
+                               <p>Um ambiente de testes isolado para experimentar com arquiteturas de IA radicais sem comprometer a estabilidade dos sistemas de produção.</p>
+                                <ul className="list-disc pl-5 space-y-1">
+                                    <li><strong>Deteção de Regime Hierárquica:</strong> Classifica o mercado em três níveis (Macro, Meso, Micro) para permitir decisões mais contextuais.</li>
+                                </ul>
+                            </AccordionContent>
+                        </AccordionItem>
+                    </Accordion>
                 </AccordionContent>
             </AccordionItem>
             
-            <AccordionItem value="item-13">
-              <AccordionTrigger className="text-lg font-semibold">
-                A Arena Virtual e o Laboratório de Evolução
-              </AccordionTrigger>
-              <AccordionContent className="text-base leading-relaxed space-y-4">
-                <p>Para elevar a inteligência do sistema, implementámos uma "Arena Virtual" e um "Laboratório de Evolução".</p>
-                <div>
-                    <h4 className="font-semibold text-md mb-2">Arena Virtual: Meritocracia em Tempo Real</h4>
-                    <p className="text-sm">
-                      O painel <strong>Arena Virtual</strong> funciona como um *leaderboard* da sua equipa de robôs. Quando o modo <strong>Meritocracia</strong> está ativo, os robôs com melhor desempenho ganham mais peso na votação, tornando o sistema auto-otimizável.
-                    </p>
-                </div>
-                 <div>
-                    <h4 className="font-semibold text-md mb-2">Laboratório de Evolução Genética</h4>
-                    <p className="text-sm">
-                      Este é o próximo nível. A cada 50 trades virtuais, o sistema identifica os robôs de pior desempenho e os **substitui por mutações genéticas dos robôs de elite**. Isto garante que o sistema não só promove os melhores, mas também se adapta e melhora autonomamente ao longo do tempo. Pode acompanhar este processo na aba <strong>Evolução</strong>.
-                    </p>
-                </div>
-                 <div>
-                    <h4 className="font-semibold text-md mb-2">Hall da Fama</h4>
-                    <p className="text-sm">
-                      Os robôs que atingem um desempenho excecional são promovidos para o <strong>Hall da Fama</strong>, uma aba dedicada no Deriv Trader que mostra um registo persistente dos seus analistas de IA mais lendários, com dados carregados diretamente do Firebase.
-                    </p>
-                </div>
-              </AccordionContent>
-            </AccordionItem>
-
-            <AccordionItem value="item-12">
-                <AccordionTrigger className="text-lg font-semibold">
-                    Ficheiros da Mesa Operacional
-                </AccordionTrigger>
-                <AccordionContent className="text-base leading-relaxed space-y-4">
-                  <p>A "Mesa Operacional" é um sistema composto por vários ficheiros chave que trabalham em conjunto. Aqui está um resumo das suas responsabilidades:</p>
-                  <ul className="list-disc pl-6 space-y-3">
-                    <li>
-                      <strong className="font-mono">src/hooks/use-deriv-api.tsx</strong><br/>
-                      A camada de comunicação. Estabelece a conexão WebSocket com a corretora, recebe os dados de mercado (\`chartData\`) e envia as ordens de negociação (\`executeTrade\`). É os "ouvidos" e as "mãos" do sistema.
-                    </li>
-                    <li>
-                      <strong className="font-mono">src/hooks/use-robot-council.ts</strong><br/>
-                      O cérebro da operação. Contém o motor de cálculo de todos os indicadores técnicos, a lógica de votação dos robôs, a formação do conselho e o "Comité de Supervisão" para gestão de risco final.
-                    </li>
-                    <li>
-                      <strong className="font-mono">src/services/council-strategies.ts</strong><br/>
-                      O Manual de Estratégias. Este ficheiro define localmente as regras, parâmetros e justificações para cada um dos 22 robôs analistas, tornando o processo mais rápido e fiável.
-                    </li>
-                     <li>
-                      <strong className="font-mono">src/services/financial-data-service.ts</strong><br/>
-                      O serviço de persistência. Contém as funções para guardar e carregar o desempenho dos robôs no banco de dados Firebase Firestore, garantindo que o progresso da Arena e do Hall da Fama não se perca.
-                    </li>
-                     <li>
-                      <strong className="font-mono">src/hooks/use-strategy-evolution.ts</strong><br/>
-                      O Laboratório de Evolução. Este novo hook contém a lógica para substituir os robôs de baixo desempenho por mutações dos robôs de elite, garantindo a adaptação do sistema.
-                    </li>
-                    <li>
-                      <strong className="font-mono">src/app/deriv-trader/page.tsx</strong><br/>
-                      A interface e o orquestrador. Esta página integra todos os hooks e componentes visuais, como o gráfico e o painel da Arena Virtual, permitindo a interação do utilizador com o sistema.
-                    </li>
-                  </ul>
-                </AccordionContent>
-            </AccordionItem>
-
             <AccordionItem value="item-9">
               <AccordionTrigger className="text-lg font-semibold">
                 Teste de Estratégias (Backtesting)
@@ -461,6 +452,7 @@ export default function HelpPage() {
                 </ol>
               </AccordionContent>
             </AccordionItem>
+
             <AccordionItem value="item-14">
               <AccordionTrigger className="text-lg font-semibold">
                 Histórico de Versões (Changelog)
