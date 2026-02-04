@@ -28,7 +28,7 @@ const PilotTabContent: React.FC<{
     pilotState: ReturnType<typeof useRobotCouncilDigits>['pilots'][PilotType];
     toggleAutopilot: (type: PilotType) => void;
 }> = ({ pilotKey, title, description, pilotState, toggleAutopilot }) => {
-    const { isOn, status, championId } = pilotState;
+    const { isOn, status, championId, consecutiveLosses } = pilotState;
 
     const statusInfo = {
         'PAUSED': { text: 'Pausado', color: 'bg-gray-500' },
@@ -52,17 +52,27 @@ const PilotTabContent: React.FC<{
             </div>
 
             {isOn && (
-                <div className="grid grid-cols-2 gap-3 text-center text-xs">
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-3 text-center text-xs">
                     <div className="p-2 border rounded-lg bg-muted/50">
                         <p className="text-muted-foreground font-semibold mb-1">Status</p>
                         <Badge variant="outline" className="flex items-center justify-center gap-1.5">
-                            <div className={cn("h-2 w-2 rounded-full", statusInfo[status].color)}></div>
-                            {statusInfo[status].text}
+                            <div className={cn("h-2 w-2 rounded-full", statusInfo[status]?.color || 'bg-gray-500')}></div>
+                            {statusInfo[status]?.text || status}
                         </Badge>
                     </div>
                      <div className="p-2 border rounded-lg bg-muted/50">
-                        <p className="text-muted-foreground font-semibold mb-1">Campeão</p>
-                        <p className="font-bold text-sm truncate" title={championId || ''}>{championId || 'Aguardando...'}</p>
+                        <p className="text-muted-foreground font-semibold mb-1">
+                            {pilotKey === 'evenOdd' ? 'Estratégia' : 'Campeão'}
+                        </p>
+                        <p className="font-bold text-sm truncate" title={pilotKey === 'evenOdd' ? 'Aposta Fixa em Par' : championId || ''}>
+                            {pilotKey === 'evenOdd' ? 'Aposta Fixa em Par' : (championId || 'Aguardando...')}
+                        </p>
+                    </div>
+                     <div className="p-2 border rounded-lg bg-muted/50 col-span-2 md:col-span-1">
+                        <p className="text-muted-foreground font-semibold mb-1">Perdas Seguidas</p>
+                        <p className="font-bold text-sm text-red-600">
+                            {consecutiveLosses} / 5
+                        </p>
                     </div>
                 </div>
             )}

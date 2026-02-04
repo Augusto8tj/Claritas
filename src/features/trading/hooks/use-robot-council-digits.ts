@@ -36,11 +36,11 @@ type VirtualTrade = {
 
 export type AutopilotStatus = 'PAUSED' | 'WARMING_UP' | 'TRADING' | 'COOLDOWN';
 const WARMUP_DURATION_MS = 60000;
+const COOLDOWN_AFTER_LOSS_MS = 15000; // 15 segundos
+const MAX_CONSECUTIVE_LOSSES = 5;
 
 const councilStrategies: CouncilStrategy[] = [
-  // Foco exclusivo na estratégia de alta probabilidade
   { id: 'diff_most_freq', type: 'DIGITDIFF', pilot: 'matchesDiffers', description: 'Difere do dígito mais frequente' },
-  // As outras permanecem pois são mais balanceadas
   { id: 'over_4', type: 'DIGITOVER', pilot: 'overUnder', prediction: 4, description: 'Acima de 4' },
   { id: 'under_5', type: 'DIGITUNDER', pilot: 'overUnder', prediction: 5, description: 'Abaixo de 5' },
   { id: 'even', type: 'DIGITEVEN', pilot: 'evenOdd', description: 'O resultado é Par' },
@@ -59,6 +59,7 @@ export interface PilotState {
   isOn: boolean;
   status: AutopilotStatus;
   championId: string | null;
+  consecutiveLosses: number;
 }
 
 // ============================================================================
@@ -76,9 +77,9 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
   const performanceRef = useRef<RobotPerformance[]>([]);
 
   const initialPilotState: Record<PilotType, PilotState> = {
-    matchesDiffers: { isOn: false, status: 'PAUSED', championId: 'diff_most_freq' },
-    overUnder: { isOn: false, status: 'PAUSED', championId: 'over_4' },
-    evenOdd: { isOn: false, status: 'PAUSED', championId: 'even' },
+    matchesDiffers: { isOn: false, status: 'PAUSED', championId: 'diff_most_freq', consecutiveLosses: 0 },
+    overUnder: { isOn: false, status: 'PAUSED', championId: 'over_4', consecutiveLosses: 0 },
+    evenOdd: { isOn: false, status: 'PAUSED', championId: null, consecutiveLosses: 0 },
   };
 
   const [pilots, setPilots] = useState<Record<PilotType, PilotState>>(initialPilotState);
@@ -137,45 +138,46 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
   }, [priceTicks, activeAsset]);
 
   const toggleAutopilot = useCallback((pilotType: PilotType) => {
-    const isActivating = !pilots[pilotType].isOn;
-  
-    if (isActivating) {
-      toast({ title: `Piloto ${pilotType} Ativado`, description: 'Período de aquecimento de 1 minuto iniciado.' });
-    } else {
-      toast({ title: `Piloto ${pilotType} Desativado` });
-    }
-  
     setPilots(prev => {
       const newPilots = { ...prev };
       const pilot = newPilots[pilotType]!;
+      const isActivating = !pilot.isOn;
       pilot.isOn = isActivating;
-  
+
       if (isActivating) {
-        pilot.status = 'WARMING_UP';
-        autopilotStartTimeRef.current = Date.now();
-        setWarmupTimeLeft(WARMUP_DURATION_MS);
-        if (warmupIntervalRef.current) clearInterval(warmupIntervalRef.current);
-        warmupIntervalRef.current = setInterval(() => {
-          const elapsed = Date.now() - (autopilotStartTimeRef.current || Date.now());
-          setWarmupTimeLeft(Math.max(0, WARMUP_DURATION_MS - elapsed));
-        }, 1000);
+        pilot.consecutiveLosses = 0;
+        if (pilotType === 'evenOdd') {
+          pilot.status = 'TRADING';
+          toast({ title: `Piloto ${pilotType} Ativado`, description: 'Estratégia de aposta fixa iniciada.' });
+        } else {
+          pilot.status = 'WARMING_UP';
+          autopilotStartTimeRef.current = Date.now();
+          setWarmupTimeLeft(WARMUP_DURATION_MS);
+          if (warmupIntervalRef.current) clearInterval(warmupIntervalRef.current);
+          warmupIntervalRef.current = setInterval(() => {
+            const elapsed = Date.now() - (autopilotStartTimeRef.current || Date.now());
+            setWarmupTimeLeft(Math.max(0, WARMUP_DURATION_MS - elapsed));
+          }, 1000);
+          toast({ title: `Piloto ${pilotType} Ativado`, description: 'Período de aquecimento da arena iniciado.' });
+        }
       } else {
         pilot.status = 'PAUSED';
-        if (warmupIntervalRef.current) clearInterval(warmupIntervalRef.current);
         if (cooldownTimersRef.current[pilotType]) {
           clearTimeout(cooldownTimersRef.current[pilotType]!);
         }
-        pilot.championId = null;
+        if (pilotType !== 'evenOdd') {
+             pilot.championId = null;
+        }
+        toast({ title: `Piloto ${pilotType} Desativado` });
       }
-      
       return newPilots;
     });
-  }, [toast, pilots]);
+  }, [toast]);
   
   useEffect(() => {
     Object.entries(pilots).forEach(([type, state]) => {
       const pilotKey = type as PilotType;
-      if (state.status === 'WARMING_UP' && warmupTimeLeft <= 0) {
+      if (pilotKey !== 'evenOdd' && state.status === 'WARMING_UP' && warmupTimeLeft <= 0) {
         if (warmupIntervalRef.current) clearInterval(warmupIntervalRef.current);
 
         const pilotStrategies = councilStrategies.filter(s => s.pilot === pilotKey);
@@ -207,25 +209,37 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
     const pilotType = lastPilotTrade.initiator!.split('_')[1] as PilotType;
     
     if (lastPilotTrade.status === 'lost') {
-        toast({ title: `📉 Perda Detectada! (${pilotType})`, description: 'Piloto entrará em cooldown por 10 segundos.', variant: 'destructive' });
+        const newConsecutiveLosses = (pilots[pilotType]?.consecutiveLosses || 0) + 1;
+        toast({ title: `📉 Perda Detectada! (${pilotType})`, description: `Piloto entrará em cooldown por ${COOLDOWN_AFTER_LOSS_MS/1000} segundos. Perdas seguidas: ${newConsecutiveLosses}.`, variant: 'destructive' });
         
         setPilots(prev => ({
           ...prev,
-          [pilotType]: { ...prev[pilotType], status: 'COOLDOWN' }
+          [pilotType]: { ...prev[pilotType], status: 'COOLDOWN', consecutiveLosses: newConsecutiveLosses }
         }));
         
         if (cooldownTimersRef.current[pilotType]) {
             clearTimeout(cooldownTimersRef.current[pilotType]!);
         }
         cooldownTimersRef.current[pilotType] = setTimeout(() => {
-            setPilots(prev => ({
-              ...prev,
-              [pilotType]: { ...prev[pilotType], status: 'TRADING' }
-            }));
-            toast({ title: `✅ Cooldown Finalizado (${pilotType})`, description: 'Piloto está ativo novamente.' });
-        }, 10000);
+            setPilots(prev => {
+                const currentPilotState = prev[pilotType];
+                // Só volta a TRADING se não atingiu o limite de perdas
+                if (currentPilotState.consecutiveLosses < MAX_CONSECUTIVE_LOSSES) {
+                    toast({ title: `✅ Cooldown Finalizado (${pilotType})`, description: 'Piloto está ativo novamente.' });
+                    return { ...prev, [pilotType]: { ...currentPilotState, status: 'TRADING' } };
+                }
+                return prev;
+            });
+        }, COOLDOWN_AFTER_LOSS_MS);
+
+    } else if (lastPilotTrade.status === 'won') {
+        // Zera as perdas consecutivas em caso de vitória
+        setPilots(prev => ({
+          ...prev,
+          [pilotType]: { ...prev[pilotType], consecutiveLosses: 0 }
+        }));
     }
-  }, [operationsLog, toast]);
+  }, [operationsLog, toast, pilots]);
 
   const autopilotExecutionRef = useRef(false);
   useEffect(() => {
@@ -238,6 +252,35 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
         for (const [type, state] of Object.entries(pilots)) {
             const pilotKey = type as PilotType;
             if (!state.isOn || state.status !== 'TRADING') continue;
+
+             const pilotPnL = operationsLog
+                .filter(op => op.initiator === `Piloto_${pilotKey}` && op.status !== 'pending')
+                .reduce((sum, op) => sum + (op.result || 0), 0);
+            
+            if (pilotPnL <= -dailyBalance || pilotPnL >= dailyTarget) {
+                toggleAutopilot(pilotKey);
+                toast({
+                    title: `Piloto ${pilotKey} Desativado`,
+                    description: pilotPnL <= -dailyBalance ? `Limite de perda de $${dailyBalance.toFixed(2)} atingido.` : `Meta de lucro de $${dailyTarget.toFixed(2)} atingida.`,
+                    variant: pilotPnL <= -dailyBalance ? 'destructive' : 'default',
+                });
+                continue;
+            }
+
+            if (state.consecutiveLosses >= MAX_CONSECUTIVE_LOSSES) {
+                 if (state.isOn) {
+                    toggleAutopilot(pilotKey);
+                    toast({ title: `Piloto ${pilotKey} Pausado`, description: `Limite de ${MAX_CONSECUTIVE_LOSSES} perdas consecutivas atingido.`, variant: 'destructive' });
+                 }
+                continue;
+            }
+
+            if (pilotKey === 'evenOdd') {
+                const signalType: CouncilStrategy['type'] = 'DIGITEVEN';
+                const stake = 0.35;
+                await executeTrade(signalType, stake, activeSymbol, 1, 't', `Piloto_${pilotKey}`, undefined);
+                continue; 
+            }
             
             const champion = robotPerformance.find(r => r.id === state.championId);
             if (!champion) continue;
@@ -248,7 +291,7 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
 
             switch(champion.id) {
                 case 'diff_most_freq':
-                    if (sortedByProb[0].probability > threshold) { signalType = 'DIGITDIFF'; predictionDigit = sortedByProb[0].digit; }
+                    if (sortedByProb[0] && sortedByProb[0].probability > threshold) { signalType = 'DIGITDIFF'; predictionDigit = sortedByProb[0].digit; }
                     break;
                 case 'over_4':
                     if (digitStats.filter(d => d.digit > 4).reduce((s, d) => s + d.probability, 0) > 55) signalType = 'DIGITOVER';
@@ -258,16 +301,10 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
                     if (digitStats.filter(d => d.digit < 5).reduce((s, d) => s + d.probability, 0) > 55) signalType = 'DIGITUNDER';
                     predictionDigit = 5;
                     break;
-                case 'even':
-                    if (digitStats.filter(d => d.digit % 2 === 0).reduce((s, d) => s + d.probability, 0) > 52) signalType = 'DIGITEVEN';
-                    break;
-                case 'odd':
-                    if (digitStats.filter(d => d.digit % 2 !== 0).reduce((s, d) => s + d.probability, 0) > 52) signalType = 'DIGITODD';
-                    break;
             }
 
             if (signalType) {
-                const stake = 0.35; // Aposta mínima fixa
+                const stake = 0.35;
                 await executeTrade(signalType, stake, activeSymbol, 1, 't', `Piloto_${pilotKey}`, predictionDigit);
             }
         }
@@ -276,7 +313,7 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
     };
 
     runAutopilots();
-  }, [pilots, digitStats, consensusThreshold, activeSymbol, executeTrade, robotPerformance]);
+  }, [pilots, digitStats, consensusThreshold, activeSymbol, executeTrade, robotPerformance, operationsLog, dailyBalance, dailyTarget, toggleAutopilot]);
 
   useEffect(() => {
     if (priceTicks.length < 2) return;
