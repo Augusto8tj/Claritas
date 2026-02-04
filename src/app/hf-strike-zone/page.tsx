@@ -47,6 +47,7 @@ function PageContent() {
     accountBalance,
     isConnecting,
     chartData,
+    botCandleData,
     priceTicks,
     isChartLoading,
     chartError,
@@ -80,7 +81,7 @@ function PageContent() {
   // Strike Zone Hook
   const { currentZone, strikeHistory, stats, bbAnalysis, rsiAnalysis, fullIndicators } = useHFStrikeZone(
     priceTicks,
-    chartData,
+    botCandleData,
     hfConfig.enabled
   );
 
@@ -338,7 +339,7 @@ function PageContent() {
 
       {/* Alert */}
       {hfConfig.autoExecute && hfConfig.enabled && (
-        <Alert className="bg-yellow-50 border-yellow-300">
+        <Alert className="bg-yellow-50 border-yellow-200">
           <Zap className="h-4 w-4 text-yellow-600" />
           <AlertTitle className="text-yellow-900">🤖 Auto-Execute Ativo</AlertTitle>
           <AlertDescription className="text-yellow-800">

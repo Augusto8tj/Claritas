@@ -73,17 +73,16 @@ const isCandleData = (d: ChartData): d is CandleData => 'close' in d;
  */
 export function useHFStrikeZone(
   priceTicks: TickData[],
-  chartData: ChartData[],
+  candleData: CandleData[],
   enabled: boolean = true
 ) {
   const [strikeHistory, setStrikeHistory] = useState<StrikeZone[]>([]);
 
   const indicators = useMemo((): Indicators | null => {
-    if (!enabled || chartData.length < 20) return null;
-    const candles = chartData.filter(isCandleData);
-    if (candles.length < 20) return null;
-    return calculateAllIndicators(candles, [], '1m', { duration: 1, unit: 't' });
-  }, [chartData, enabled]);
+    if (!enabled || candleData.length < 20) return null;
+    if (candleData.length < 20) return null;
+    return calculateAllIndicators(candleData, [], '1m', { duration: 1, unit: 't' });
+  }, [candleData, enabled]);
 
   /**
    * Layer 1: Bollinger Bands Analysis
@@ -94,10 +93,10 @@ export function useHFStrikeZone(
     const { upper, middle, lower } = indicators.bb;
     if (upper === null || middle === null || lower === null) return null;
 
-    const currentCandle = chartData[chartData.length - 1];
+    const currentCandle = candleData[candleData.length - 1];
     if (!currentCandle) return null;
     
-    const currentPrice = isCandleData(currentCandle) ? currentCandle.close : currentCandle.price;
+    const currentPrice = currentCandle.close;
 
     const bandWidth = ((upper - lower) / middle) * 100;
     const bbPosition = middle > 0 ? (currentPrice - middle) / (upper - middle) : 0;
@@ -113,7 +112,7 @@ export function useHFStrikeZone(
       touchingLower: currentPrice <= lower * 1.005,
       touchingUpper: currentPrice >= upper * 0.995,
     };
-  }, [chartData, indicators]);
+  }, [candleData, indicators]);
 
   /**
    * Layer 2: RSI Analysis com Divergence Detection
