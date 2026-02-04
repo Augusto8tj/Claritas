@@ -34,12 +34,13 @@ type VirtualTrade = {
   exitEpoch: number;
 };
 
-export type AutopilotStatus = 'PAUSED' | 'WARMING_UP' | 'TRADING' | 'RECOVERING';
+export type AutopilotStatus = 'PAUSED' | 'WARMING_UP' | 'TRADING' | 'COOLDOWN';
 const WARMUP_DURATION_MS = 60000;
 
 const councilStrategies: CouncilStrategy[] = [
+  // Foco exclusivo na estratégia de alta probabilidade
   { id: 'diff_most_freq', type: 'DIGITDIFF', pilot: 'matchesDiffers', description: 'Difere do dígito mais frequente' },
-  { id: 'match_least_freq', type: 'DIGITMATCH', pilot: 'matchesDiffers', description: 'Combina com o dígito menos frequente' },
+  // As outras permanecem pois são mais balanceadas
   { id: 'over_4', type: 'DIGITOVER', pilot: 'overUnder', prediction: 4, description: 'Acima de 4' },
   { id: 'under_5', type: 'DIGITUNDER', pilot: 'overUnder', prediction: 5, description: 'Abaixo de 5' },
   { id: 'even', type: 'DIGITEVEN', pilot: 'evenOdd', description: 'O resultado é Par' },
@@ -58,11 +59,6 @@ export interface PilotState {
   isOn: boolean;
   status: AutopilotStatus;
   championId: string | null;
-  recoveryState: {
-    isActive: boolean;
-    martingaleLevel: number;
-    stakeToRecover: number;
-  };
 }
 
 // ============================================================================
@@ -80,9 +76,9 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
   const performanceRef = useRef<RobotPerformance[]>([]);
 
   const initialPilotState: Record<PilotType, PilotState> = {
-    matchesDiffers: { isOn: false, status: 'PAUSED', championId: 'diff_most_freq', recoveryState: { isActive: false, martingaleLevel: 0, stakeToRecover: 0 } },
-    overUnder: { isOn: false, status: 'PAUSED', championId: 'over_4', recoveryState: { isActive: false, martingaleLevel: 0, stakeToRecover: 0 } },
-    evenOdd: { isOn: false, status: 'PAUSED', championId: 'even', recoveryState: { isActive: false, martingaleLevel: 0, stakeToRecover: 0 } },
+    matchesDiffers: { isOn: false, status: 'PAUSED', championId: 'diff_most_freq' },
+    overUnder: { isOn: false, status: 'PAUSED', championId: 'over_4' },
+    evenOdd: { isOn: false, status: 'PAUSED', championId: 'even' },
   };
 
   const [pilots, setPilots] = useState<Record<PilotType, PilotState>>(initialPilotState);
@@ -91,6 +87,12 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
   const autopilotStartTimeRef = useRef<number | null>(null);
   const warmupIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const processedLossesRef = useRef<Set<number>>(new Set());
+
+  const cooldownTimersRef = useRef<Record<PilotType, NodeJS.Timeout | null>>({
+    matchesDiffers: null,
+    overUnder: null,
+    evenOdd: null,
+  });
 
   useEffect(() => {
     performanceRef.current = robotPerformance;
@@ -135,20 +137,19 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
   }, [priceTicks, activeAsset]);
 
   const toggleAutopilot = useCallback((pilotType: PilotType) => {
-    const pilotState = pilots[pilotType];
-    const isActivating = !pilotState.isOn;
-
+    const isActivating = !pilots[pilotType].isOn;
+  
     if (isActivating) {
       toast({ title: `Piloto ${pilotType} Ativado`, description: 'Período de aquecimento de 1 minuto iniciado.' });
     } else {
       toast({ title: `Piloto ${pilotType} Desativado` });
     }
-
+  
     setPilots(prev => {
       const newPilots = { ...prev };
       const pilot = newPilots[pilotType]!;
       pilot.isOn = isActivating;
-
+  
       if (isActivating) {
         pilot.status = 'WARMING_UP';
         autopilotStartTimeRef.current = Date.now();
@@ -161,8 +162,10 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
       } else {
         pilot.status = 'PAUSED';
         if (warmupIntervalRef.current) clearInterval(warmupIntervalRef.current);
+        if (cooldownTimersRef.current[pilotType]) {
+          clearTimeout(cooldownTimersRef.current[pilotType]!);
+        }
         pilot.championId = null;
-        pilot.recoveryState = { isActive: false, martingaleLevel: 0, stakeToRecover: 0 };
       }
       
       return newPilots;
@@ -199,31 +202,30 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
   useEffect(() => {
     const lastPilotTrade = operationsLog.find(op => op.initiator?.startsWith('Piloto_') && !processedLossesRef.current.has(op.id) && op.status !== 'pending');
     if (!lastPilotTrade) return;
-
+  
     processedLossesRef.current.add(lastPilotTrade.id);
     const pilotType = lastPilotTrade.initiator!.split('_')[1] as PilotType;
-    const pilotState = pilots[pilotType];
-
+    
     if (lastPilotTrade.status === 'lost') {
-        const { recoveryState } = pilotState;
-        if (recoveryState.isActive) {
-            const nextLevel = recoveryState.martingaleLevel + 1;
-            if (nextLevel > 2) {
-                toast({ title: `🚨 Falha na Recuperação (${pilotType})`, variant: 'destructive' });
-                setPilots(prev => ({ ...prev, [pilotType]: { ...pilotState, recoveryState: { isActive: false, martingaleLevel: 0, stakeToRecover: 0 }, status: 'TRADING' }}));
-            } else {
-                toast({ title: `⚠️ Recuperação Nível ${recoveryState.martingaleLevel} Falhou (${pilotType})`, variant: 'destructive' });
-                setPilots(prev => ({ ...prev, [pilotType]: { ...pilotState, recoveryState: { ...recoveryState, martingaleLevel: nextLevel, stakeToRecover: recoveryState.stakeToRecover + lastPilotTrade.stake }}}));
-            }
-        } else {
-            toast({ title: `📉 Perda Detectada! (${pilotType})`, variant: 'destructive' });
-            setPilots(prev => ({ ...prev, [pilotType]: { ...pilotState, status: 'RECOVERING', recoveryState: { isActive: true, martingaleLevel: 1, stakeToRecover: lastPilotTrade.stake }}}));
+        toast({ title: `📉 Perda Detectada! (${pilotType})`, description: 'Piloto entrará em cooldown por 10 segundos.', variant: 'destructive' });
+        
+        setPilots(prev => ({
+          ...prev,
+          [pilotType]: { ...prev[pilotType], status: 'COOLDOWN' }
+        }));
+        
+        if (cooldownTimersRef.current[pilotType]) {
+            clearTimeout(cooldownTimersRef.current[pilotType]!);
         }
-    } else if (lastPilotTrade.status === 'won' && pilotState.recoveryState.isActive) {
-        toast({ title: `✅ Recuperação Bem-sucedida! (${pilotType})` });
-        setPilots(prev => ({ ...prev, [pilotType]: { ...pilotState, recoveryState: { isActive: false, martingaleLevel: 0, stakeToRecover: 0 }, status: 'TRADING' }}));
+        cooldownTimersRef.current[pilotType] = setTimeout(() => {
+            setPilots(prev => ({
+              ...prev,
+              [pilotType]: { ...prev[pilotType], status: 'TRADING' }
+            }));
+            toast({ title: `✅ Cooldown Finalizado (${pilotType})`, description: 'Piloto está ativo novamente.' });
+        }, 10000);
     }
-  }, [operationsLog, pilots, toast]);
+  }, [operationsLog, toast]);
 
   const autopilotExecutionRef = useRef(false);
   useEffect(() => {
@@ -235,21 +237,18 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
 
         for (const [type, state] of Object.entries(pilots)) {
             const pilotKey = type as PilotType;
-            if (!state.isOn || (state.status !== 'TRADING' && state.status !== 'RECOVERING')) continue;
+            if (!state.isOn || state.status !== 'TRADING') continue;
             
             const champion = robotPerformance.find(r => r.id === state.championId);
             if (!champion) continue;
 
             let signalType: CouncilStrategy['type'] | null = null;
             let predictionDigit: number | undefined;
-            const threshold = state.recoveryState.isActive ? 40 : consensusThreshold;
+            const threshold = consensusThreshold;
 
             switch(champion.id) {
                 case 'diff_most_freq':
                     if (sortedByProb[0].probability > threshold) { signalType = 'DIGITDIFF'; predictionDigit = sortedByProb[0].digit; }
-                    break;
-                case 'match_least_freq':
-                    if (sortedByProb[9].probability < (100 - threshold) / 9) { signalType = 'DIGITMATCH'; predictionDigit = sortedByProb[9].digit; }
                     break;
                 case 'over_4':
                     if (digitStats.filter(d => d.digit > 4).reduce((s, d) => s + d.probability, 0) > 55) signalType = 'DIGITOVER';
@@ -268,7 +267,7 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
             }
 
             if (signalType) {
-                const stake = state.recoveryState.isActive ? (0.35 * Math.pow(2, state.recoveryState.martingaleLevel)) : 0.35;
+                const stake = 0.35; // Aposta mínima fixa
                 await executeTrade(signalType, stake, activeSymbol, 1, 't', `Piloto_${pilotKey}`, predictionDigit);
             }
         }
@@ -342,7 +341,6 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
 
       switch (strategy.id) {
         case 'diff_most_freq': if (sortedByProb[0].probability > 15) { shouldTrade = true; prediction = sortedByProb[0].digit; } break;
-        case 'match_least_freq': if (sortedByProb[9].probability < 8) { shouldTrade = true; prediction = sortedByProb[9].digit; } break;
         case 'over_4': if (digitStats.filter(d => d.digit > 4).reduce((s, d) => s + d.probability, 0) > 55) shouldTrade = true; break;
         case 'under_5': if (digitStats.filter(d => d.digit < 5).reduce((s, d) => s + d.probability, 0) > 55) shouldTrade = true; break;
         case 'even': if (digitStats.filter(d => d.digit % 2 === 0).reduce((s, d) => s + d.probability, 0) > 52) shouldTrade = true; break;
