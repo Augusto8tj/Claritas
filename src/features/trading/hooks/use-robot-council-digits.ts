@@ -1,4 +1,3 @@
-// src/features/trading/hooks/use-robot-council-digits.ts
 'use client';
 
 import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
