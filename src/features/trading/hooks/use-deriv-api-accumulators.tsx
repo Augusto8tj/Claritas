@@ -231,10 +231,10 @@ export const DerivApiProviderAccumulators = ({ children }: { children: ReactNode
   const activeToken = accountType === 'demo' ? demoToken : realToken;
 
   const makeRequest = useCallback(<T,>(request: object, noResponse = false): Promise<T> => {
-    return new Promise((resolve, reject) => {
+    return new Promise((resolve) => {
         const ws = wsRef.current;
         if (!ws || ws.readyState !== WebSocket.OPEN) {
-            return reject(new Error("WebSocket não está conectado."));
+            return resolve({ error: { message: "WebSocket não está conectado." } } as any);
         }
   
         const req_id = Date.now() + Math.floor(Math.random() * 1000000);
@@ -243,8 +243,9 @@ export const DerivApiProviderAccumulators = ({ children }: { children: ReactNode
         if (!noResponse) {
             const timeoutId = setTimeout(() => {
                 if (promisesRef.current.has(String(req_id))) {
+                    const promise = promisesRef.current.get(String(req_id));
+                    promise?.resolve({ error: { message: `O pedido à API expirou (60s). O token pode ser inválido ou a rede está lenta.` } } as any);
                     promisesRef.current.delete(String(req_id));
-                    reject(new Error(`O pedido à API expirou (60s). O token pode ser inválido ou a rede está lenta.`));
                 }
             }, 60000);
             
@@ -253,9 +254,9 @@ export const DerivApiProviderAccumulators = ({ children }: { children: ReactNode
                     clearTimeout(timeoutId);
                     resolve(value);
                 },
-                reject: (reason: any) => {
+                reject: (reason: any) => { // This reject is now for internal/unexpected errors
                     clearTimeout(timeoutId);
-                    reject(reason);
+                    resolve({ error: { message: reason?.message || 'Erro interno na Promise.' } } as any);
                 }
             });
         }
@@ -265,8 +266,9 @@ export const DerivApiProviderAccumulators = ({ children }: { children: ReactNode
         } catch (sendError) {
             console.error('[makeRequest] Send failed:', sendError);
             if (!noResponse && promisesRef.current.has(String(req_id))) {
+                const promise = promisesRef.current.get(String(req_id));
+                promise?.resolve({ error: { message: 'Falha ao enviar pedido via WebSocket.' } } as any);
                 promisesRef.current.delete(String(req_id));
-                reject(sendError);
             }
         }
         
@@ -291,6 +293,7 @@ export const DerivApiProviderAccumulators = ({ children }: { children: ReactNode
       
       try {
           const response: any = await makeRequest(request);
+          if (response.error) throw new Error(response.error.message);
 
           if (response.history) {
               return response.history.times.map((time: number, index: number) => ({
@@ -341,6 +344,8 @@ export const DerivApiProviderAccumulators = ({ children }: { children: ReactNode
           growth_rate: sanitizedGrowthRate,
       });
 
+      if (proposalResponse.error) throw new Error(proposalResponse.error.message);
+
       const proposal = proposalResponse.proposal;
       if (!proposal || !proposal.id) {
           throw new Error("Falha ao obter uma proposta de negociação da API. A resposta não continha um ID.");
@@ -348,6 +353,7 @@ export const DerivApiProviderAccumulators = ({ children }: { children: ReactNode
       
       const sanitizedAskPrice = parseFloat(proposal.ask_price.toFixed(2));
       const buyResponse: any = await makeRequest({ "buy": proposal.id, "price": sanitizedAskPrice });
+      if (buyResponse.error) throw new Error(buyResponse.error.message);
       
       const buyResult = buyResponse.buy;
       const contractId = buyResult.contract_id;
@@ -473,12 +479,14 @@ export const DerivApiProviderAccumulators = ({ children }: { children: ReactNode
         setBotCandleData(botHistory);
         const botSubRequest = { ticks_history: symbol, style: 'candles', granularity: 60, subscribe: 1, end: "latest", count: 1, adjust_start_time: 1 };
         const botSubResponse: any = await makeRequest(botSubRequest);
+        if (botSubResponse.error) throw new Error(`Bot Sub: ${botSubResponse.error.message}`);
         if (botSubResponse.subscription?.id) {
             botSubscriptionIdRef.current = botSubResponse.subscription.id;
         }
 
         const tickSubRequest = { ticks: symbol, subscribe: 1 };
         const tickSubResponse: any = await makeRequest(tickSubRequest);
+        if (tickSubResponse.error) throw new Error(`Tick Sub: ${tickSubResponse.error.message}`);
         if (tickSubResponse.subscription?.id) {
             tickSubscriptionIdRef.current = tickSubResponse.subscription.id;
         }
@@ -498,6 +506,7 @@ export const DerivApiProviderAccumulators = ({ children }: { children: ReactNode
             setChartData(uiHistory as CandleData[]);
             const uiSubRequest = { ticks_history: symbol, style: 'candles', granularity: getGranularityForTimePeriod(currentTimePeriod), subscribe: 1, end: "latest", count: 1, adjust_start_time: 1 };
             const uiSubResponse: any = await makeRequest(uiSubRequest);
+            if(uiSubResponse.error) throw new Error(`UI Sub: ${uiSubResponse.error.message}`);
             if (uiSubResponse.subscription?.id) {
                 activeSubscriptionIdRef.current = uiSubResponse.subscription.id;
             }
@@ -688,6 +697,8 @@ export const DerivApiProviderAccumulators = ({ children }: { children: ReactNode
                 
                 startConnectionMonitor();
                 const assetsRes: any = await makeRequest({ active_symbols: 'full', product_type: 'basic' });
+                if (assetsRes.error) throw new Error(assetsRes.error.message);
+
                 const filteredSymbols = assetsRes.active_symbols.filter((symbol: any) => symbol.market === 'synthetic_index' && symbol.allow_accumulator_contracts === 1);
                 const groupedAssets: { [key: string]: Asset[] } = {};
                 filteredSymbols.forEach((symbol: any) => {

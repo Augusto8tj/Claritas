@@ -138,7 +138,7 @@ const getDurationInSeconds = (duration: number, unit: DurationUnit): number => {
         case 'm': return duration * 60;
         case 'h': return duration * 3600;
         case 'd': return duration * 86400;
-        default: return duration;
+        default: return duration * 2;
     }
 };
 
@@ -281,10 +281,10 @@ export const DerivApiProviderV1 = ({ children }: { children: ReactNode }) => {
 
 
   const makeRequest = useCallback(<T,>(request: object, noResponse = false): Promise<T> => {
-    return new Promise((resolve, reject) => {
+    return new Promise((resolve) => {
         const ws = wsRef.current;
         if (!ws || ws.readyState !== WebSocket.OPEN) {
-            return reject(new Error("WebSocket não está conectado. Verifique o token e a conexão."));
+            return resolve({ error: { message: "WebSocket não está conectado. Verifique o token e a conexão." } } as any);
         }
         
         const req_id = Date.now() + Math.floor(Math.random() * 1000000);
@@ -293,8 +293,9 @@ export const DerivApiProviderV1 = ({ children }: { children: ReactNode }) => {
         if (!noResponse) {
             const timeoutId = setTimeout(() => {
                 if (promisesRef.current.has(String(req_id))) {
+                    const promise = promisesRef.current.get(String(req_id));
+                    promise?.resolve({ error: { message: `O pedido à API expirou (60s) para req_id: ${req_id}. O token pode ser inválido ou a rede está lenta.` } } as any);
                     promisesRef.current.delete(String(req_id));
-                    reject(new Error(`O pedido à API expirou (60s) para req_id: ${'${req_id}'}. O token pode ser inválido ou a rede está lenta.`));
                 }
             }, 60000); // Aumentado para 60 segundos
             
@@ -305,7 +306,7 @@ export const DerivApiProviderV1 = ({ children }: { children: ReactNode }) => {
                 },
                 reject: (reason: any) => {
                     clearTimeout(timeoutId);
-                    reject(reason);
+                    resolve({ error: { message: reason?.message || 'Erro interno na Promise.' } } as any);
                 }
             });
         }
@@ -333,6 +334,7 @@ const getHistoricalData = useCallback(async (symbol: string, style: 'ticks' | 'c
     
     try {
         const response: any = await makeRequest(request);
+        if(response.error) throw new Error(response.error.message);
 
         if (response.history) {
             return response.history.times.map((time: number, index: number) => ({
@@ -379,6 +381,7 @@ const subscribeToMarketData = useCallback(async (symbol: string) => {
 
     try {
         const contractsRes: any = await makeRequest({ contracts_for: symbol });
+        if(contractsRes.error) throw new Error(contractsRes.error.message);
         const tradingPeriod = contractsRes.contracts_for?.trading_period;
         const riseFallPeriod = tradingPeriod?.rise_fall;
 
@@ -424,7 +427,7 @@ const subscribeToMarketData = useCallback(async (symbol: string) => {
         makeRequest(subRequest, true);
 
     } catch (error: any) {
-        console.error(`[Market Data] Error for ${'${symbol}'}:`, error);
+        console.error(`[Market Data] Error for ${symbol}:`, error);
         setChartError(error.message || 'Falha ao carregar dados do mercado.');
     } finally {
         setIsChartLoading(false);
@@ -459,6 +462,7 @@ const executeTrade = useCallback(async (
             "duration_unit": durationUnit,
             "symbol": symbol,
         });
+        if(proposalResponse.error) throw new Error(proposalResponse.error.message);
 
         const proposal = proposalResponse.proposal;
         if (!proposal || !proposal.id) {
@@ -466,6 +470,7 @@ const executeTrade = useCallback(async (
         }
         
         const buyResponse: any = await makeRequest({ "buy": proposal.id, "price": proposal.ask_price });
+        if(buyResponse.error) throw new Error(buyResponse.error.message);
         const buyResult = buyResponse.buy;
         
         const latestTick = priceTicks.length > 0 ? priceTicks[priceTicks.length - 1].price : 0;
@@ -512,7 +517,7 @@ const executeTrade = useCallback(async (
 
         return {
           success: true,
-          message: `Ordem do tipo "${contractType}" para ${'${symbol}'} no valor de ${'${sanitizedStake}'} USD executada com sucesso.`,
+          message: `Ordem do tipo "${contractType}" para ${symbol} no valor de ${sanitizedStake} USD executada com sucesso.`,
           contractId: buyResult.contract_id,
           entryPrice: entryPrice,
         };
@@ -538,6 +543,7 @@ const executeTrade = useCallback(async (
 
     try {
         const sellResponse: any = await makeRequest({ "sell": contractId });
+        if (sellResponse.error) throw new Error(sellResponse.error.message);
 
         const sellResult = sellResponse.sell;
         if (sellResult) {
@@ -551,7 +557,7 @@ const executeTrade = useCallback(async (
         return { success: false, message };
     }
   }, [isConnected, makeRequest, operationsLog]);
-
+  
   const startConnectionMonitor = useCallback(() => {
     if (pingIntervalRef.current) clearInterval(pingIntervalRef.current);
     pingIntervalRef.current = setInterval(() => {
@@ -581,7 +587,7 @@ const executeTrade = useCallback(async (
             wsRef.current = null;
         }
     
-        const ws = new WebSocket(`wss://ws.derivws.com/websockets/v3?app_id=${'${DERIV_APP_ID}'}`);
+        const ws = new WebSocket(`wss://ws.derivws.com/websockets/v3?app_id=${DERIV_APP_ID}`);
         wsRef.current = ws;
         
         ws.onmessage = (event) => {
@@ -593,8 +599,8 @@ const executeTrade = useCallback(async (
                     const promise = promisesRef.current.get(String(reqId));
                     if (promise) {
                         if (response.error) {
-                            const errorMessage = response.error.message || `Unknown API error. Code: ${'${response.error.code || \'N/A\'}'}`;
-                            promise.reject(new Error(`${'${errorMessage}'}`));
+                            const errorMessage = response.error.message || `Unknown API error. Code: ${response.error.code || 'N/A'}`;
+                            promise.reject(new Error(`${errorMessage}`));
                         } else {
                             promise.resolve(response);
                         }
@@ -651,8 +657,8 @@ const executeTrade = useCallback(async (
                                         }
                                         
                                         const toastMessage = {
-                                            title: `Posição Fechada (${'${op.asset}'})`,
-                                            description: `Resultado: ${'${contract.currency}'} ${'${contract.profit.toFixed(2)}'}`,
+                                            title: `Posição Fechada (${op.asset})`,
+                                            description: `Resultado: ${contract.currency} ${contract.profit.toFixed(2)}`,
                                             variant: newStatus === 'won' ? 'default' : 'destructive',
                                         };
                                         
@@ -730,6 +736,7 @@ const executeTrade = useCallback(async (
                         break;
                     
                     case 'ohlc':
+                    case 'candles':
                         if (chartTypeRef.current === 'Candle' && response.ohlc?.symbol === activeSymbol) {
                             const ohlc = response.ohlc;
                             const newCandle: CandleData = {
@@ -751,33 +758,6 @@ const executeTrade = useCallback(async (
                                 }
                                 return newTicks;
                             });
-                        }
-                        break;
-                    
-                    case 'candles':
-                        if (chartTypeRef.current === 'Candle' && response.candles?.length > 0) {
-                            const candle = response.candles[0];
-                            if (candle && (!activeSymbol || response.echo_req?.ticks_history === activeSymbol)) {
-                                const newCandle: CandleData = {
-                                    epoch: candle.epoch,
-                                    open: parseFloat(candle.open),
-                                    high: parseFloat(candle.high),
-                                    low: parseFloat(candle.low),
-                                    close: parseFloat(candle.close),
-                                };
-                                setChartData(prev => addDataPoint(prev, newCandle));
-                                const newTickFromCandle: TickData = {
-                                    epoch: newCandle.epoch,
-                                    price: newCandle.close,
-                                };
-                                setPriceTicks(prev => {
-                                    const newTicks = [...prev, newTickFromCandle];
-                                    if (newTicks.length > MAX_DATA_POINTS) {
-                                        return newTicks.slice(1);
-                                    }
-                                    return newTicks;
-                                });
-                            }
                         }
                         break;
                 }
@@ -831,7 +811,7 @@ const executeTrade = useCallback(async (
               if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
               
               let errorMessage = error instanceof Error ? error.message : 'Erro desconhecido ao conectar';
-              setConnectionError(`Falha na autorização: ${'${errorMessage}'}`);
+              setConnectionError(`Falha na autorização: ${errorMessage}`);
               setIsConnected(false);
               setIsConnecting(false);
               setIsAssetsLoading(false);
@@ -858,7 +838,7 @@ const executeTrade = useCallback(async (
 
           if (!event.wasClean && allowAutoReconnectRef.current) {
             reconnectInProgressRef.current = true;
-            console.warn(`[WS] Fechado inesperadamente. Código: ${'${event.code}'}. Tentando reconectar...`);
+            console.warn(`[WS] Fechado inesperadamente. Código: ${event.code}. Tentando reconectar...`);
             setConnectionError(`Conexão perdida. Reconectando...`);
             
             if (reconnectTimeoutRef.current) {

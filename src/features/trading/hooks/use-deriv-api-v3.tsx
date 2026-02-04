@@ -286,10 +286,10 @@ export const DerivApiProviderV3 = ({ children }: { children: ReactNode }) => {
 
 
   const makeRequest = useCallback(<T,>(request: object, noResponse = false): Promise<T> => {
-    return new Promise((resolve, reject) => {
+    return new Promise((resolve) => {
         const ws = wsRef.current;
         if (!ws || ws.readyState !== WebSocket.OPEN) {
-            return reject(new Error("WebSocket não está conectado."));
+            return resolve({ error: { message: "WebSocket não está conectado." } } as any);
         }
         
         const req_id = Date.now() + Math.floor(Math.random() * 1000000);
@@ -298,8 +298,9 @@ export const DerivApiProviderV3 = ({ children }: { children: ReactNode }) => {
         if (!noResponse) {
             const timeoutId = setTimeout(() => {
                 if (promisesRef.current.has(String(req_id))) {
+                    const promise = promisesRef.current.get(String(req_id));
+                    promise?.resolve({ error: { message: `O pedido à API expirou (60s) para req_id: ${req_id}. O token pode ser inválido ou a rede está lenta.` } } as any);
                     promisesRef.current.delete(String(req_id));
-                    reject(new Error(`O pedido à API expirou (60s) para req_id: ${req_id}. O token pode ser inválido ou a rede está lenta.`));
                 }
             }, 60000);
             
@@ -310,7 +311,7 @@ export const DerivApiProviderV3 = ({ children }: { children: ReactNode }) => {
                 },
                 reject: (reason: any) => {
                     clearTimeout(timeoutId);
-                    reject(reason);
+                    resolve({ error: { message: reason?.message || 'Erro interno na Promise.' } } as any);
                 }
             });
         }
@@ -338,6 +339,7 @@ export const DerivApiProviderV3 = ({ children }: { children: ReactNode }) => {
         
         try {
             const response: any = await makeRequest(request);
+            if (response.error) throw new Error(response.error.message);
 
             if (response.history) {
                 return response.history.times.map((time: number, index: number) => ({
@@ -392,6 +394,7 @@ export const DerivApiProviderV3 = ({ children }: { children: ReactNode }) => {
               "duration_unit": durationUnit,
               "symbol": symbol,
           });
+          if (proposalResponse.error) throw new Error(proposalResponse.error.message);
 
           const proposal = proposalResponse.proposal;
           if (!proposal || !proposal.id) {
@@ -399,6 +402,7 @@ export const DerivApiProviderV3 = ({ children }: { children: ReactNode }) => {
           }
           
           const buyResponse: any = await makeRequest({ "buy": proposal.id, "price": proposal.ask_price });
+          if(buyResponse.error) throw new Error(buyResponse.error.message);
           const buyResult = buyResponse.buy;
           
           const latestTick = priceTicks.length > 0 ? priceTicks[priceTicks.length - 1].price : 0;
@@ -469,10 +473,8 @@ export const DerivApiProviderV3 = ({ children }: { children: ReactNode }) => {
     }
 
     try {
-        const sellResponse: any = await makeRequest({ 
-            "sell": contractId,
-            "price": 0, 
-        });
+        const sellResponse: any = await makeRequest({ "sell": contractId });
+        if (sellResponse.error) throw new Error(sellResponse.error.message);
 
         const sellResult = sellResponse.sell;
         if (sellResult) {
@@ -507,7 +509,7 @@ export const DerivApiProviderV3 = ({ children }: { children: ReactNode }) => {
         try { 
             await makeRequest({ forget: activeSubscriptionIdRef.current }, true); 
         } catch (e) { 
-            // Ignore if forget fails
+            console.log('[Market Data] Previous subscription cancelled'); 
         }
         activeSubscriptionIdRef.current = null;
     }
@@ -522,6 +524,7 @@ export const DerivApiProviderV3 = ({ children }: { children: ReactNode }) => {
         const currentTimePeriod = timePeriodRef.current;
 
         const contractsRes: any = await makeRequest({ contracts_for: symbol });
+        if (contractsRes.error) throw new Error(contractsRes.error.message);
         const tradingPeriod = contractsRes.contracts_for?.trading_period;
         const riseFallPeriod = tradingPeriod?.rise_fall;
 
@@ -685,7 +688,7 @@ export const DerivApiProviderV3 = ({ children }: { children: ReactNode }) => {
                                 const direction = (contract.contract_type || '').includes('CALL') ? 'rise' : 'fall';
                                 const purchaseTime = contract.purchase_time || Math.floor(Date.now() / 1000);
                                 const durationInSeconds = contract.date_expiry ? (contract.date_expiry - purchaseTime) : 0;
-                                const durationUnit: DurationUnit = 's'; // Safe default
+                                const durationUnit: DurationUnit = 's';
     
                                 const newOperation: Operation = {
                                     id: contract.contract_id,
@@ -842,7 +845,7 @@ export const DerivApiProviderV3 = ({ children }: { children: ReactNode }) => {
             }
           });
           promisesRef.current.clear();
-    
+
           if (!event.wasClean && allowAutoReconnectRef.current) {
             reconnectInProgressRef.current = true;
             console.warn(`[WS] Fechado inesperadamente. Código: ${event.code}. Tentando reconectar...`);
@@ -1017,8 +1020,8 @@ export const DerivApiProviderV3 = ({ children }: { children: ReactNode }) => {
       isConnected, isConnecting, connectionError, demoToken, realToken, activeToken, accountType, 
       setAccountType, setTokens, disconnect, reconnect, accountBalance, operationsLog, assetGroups, 
       isAssetsLoading, activeSymbol, setActiveSymbol, chartData, priceTicks, isChartLoading, 
-      chartError, chartType, setChartType, timePeriod, dataVersion, executeTrade, sellContract, 
-      getHistoricalData, clearActiveContracts, tradeAnnotations, durationLimits
+      chartError, chartType, setChartType, timePeriod, dataVersion, executeTrade, 
+      sellContract, getHistoricalData, clearActiveContracts, tradeAnnotations, durationLimits
   ]);
 
   return (
