@@ -87,18 +87,16 @@ export function useHFStrikeZone(
    * Layer 1: Bollinger Bands Analysis
    */
   const bbAnalysis = useMemo((): BBAnalysis | null => {
-    if (!indicators || !indicators.bb || !indicators.bollingerBands) return null;
+    if (!indicators || !indicators.bb || !indicators.bollingerBands || priceTicks.length === 0) return null;
 
     const { upper, middle, lower } = indicators.bb;
     if (upper === null || middle === null || lower === null) return null;
-
-    const currentCandle = candleData[candleData.length - 1];
-    if (!currentCandle) return null;
     
-    const currentPrice = currentCandle.close;
+    const currentPrice = priceTicks[priceTicks.length - 1].price;
 
-    const bandWidth = ((upper - lower) / middle) * 100;
-    const bbPosition = middle > 0 ? (currentPrice - middle) / (upper - middle) : 0;
+    const bandWidth = middle > 0 ? ((upper - lower) / middle) * 100 : 0;
+    const bandRange = upper - lower;
+    const bbPosition = bandRange > 0 ? (currentPrice - lower) / bandRange : 0.5;
 
     return {
       series: indicators.bollingerBands,
@@ -111,21 +109,19 @@ export function useHFStrikeZone(
       touchingLower: currentPrice <= lower * 1.005,
       touchingUpper: currentPrice >= upper * 0.995,
     };
-  }, [candleData, indicators]);
+  }, [indicators, priceTicks]);
 
   /**
    * Layer 2: RSI Analysis com Divergence Detection
    */
-  const rsiAnalysis = useMemo((): RSIAnalysis | null => {
-    if (!indicators || indicators.rsi === null) return null;
+    const rsiAnalysis = useMemo((): RSIAnalysis | null => {
+    if (!indicators || indicators.rsi === null || candleData.length < 10) return null;
 
     const rsi = indicators.rsi;
     
-    // Divergence Detection Simplificada
-    const last10Ticks = priceTicks.slice(-10);
-    if (last10Ticks.length < 10) return { value: rsi, oversold: rsi < 30, overbought: rsi > 70, divergence: null };
+    const last10Candles = candleData.slice(-10);
     
-    const priceChange = last10Ticks[9].price - last10Ticks[0].price;
+    const priceChange = last10Candles[9].close - last10Candles[0].close;
     const priceIncreasing = priceChange > 0;
     let divergence: 'bullish' | 'bearish' | null = null;
 
@@ -141,7 +137,7 @@ export function useHFStrikeZone(
       overbought: rsi > 70,
       divergence,
     };
-  }, [priceTicks, indicators]);
+  }, [candleData, indicators]);
 
   /**
    * Layer 3: Volume Spike Detection
