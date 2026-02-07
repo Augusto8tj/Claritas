@@ -59,6 +59,7 @@ function PageContent() {
     operationsLog,
     tradeAnnotations,
     executeTrade,
+    clearActiveContracts,
   } = useDerivApi();
 
   // HF Configuration State
@@ -331,7 +332,7 @@ function PageContent() {
       </div>
       
       <div className="pt-6">
-        <HFExecutionLog operations={operationsLog} />
+        <HFExecutionLog operations={operationsLog} clearActiveContracts={clearActiveContracts} />
       </div>
 
 

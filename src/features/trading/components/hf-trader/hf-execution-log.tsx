@@ -11,12 +11,14 @@ import {
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import type { Operation } from "@/lib/types";
-import { Archive, ArrowDown, ArrowUp } from "lucide-react";
+import { Archive, ArrowDown, ArrowUp, Trash2 } from "lucide-react";
 import { useMemo } from "react";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 
 interface HFExecutionLogProps {
   operations: Operation[];
+  clearActiveContracts: () => void;
 }
 
 const formatTime = (isoString: string | undefined): string => {
@@ -28,7 +30,7 @@ const formatTime = (isoString: string | undefined): string => {
     }
 };
 
-export function HFExecutionLog({ operations }: HFExecutionLogProps) {
+export function HFExecutionLog({ operations, clearActiveContracts }: HFExecutionLogProps) {
     const hfOperations = useMemo(
         () => operations.filter(op => op.initiator === 'HF_Strike').sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()),
         [operations]
@@ -60,15 +62,23 @@ export function HFExecutionLog({ operations }: HFExecutionLogProps) {
                             Histórico de todas as operações executadas pelo sistema HF Strike Zone.
                         </CardDescription>
                     </div>
-                    <div className="text-right">
-                        <p className="text-xs text-muted-foreground">P&L da Sessão</p>
-                        <p className={cn(
-                            "text-lg font-bold",
-                            summary.pnl >= 0 && "text-green-600",
-                            summary.pnl < 0 && "text-destructive"
-                        )}>
-                            {summary.pnl.toLocaleString('pt-BR', { style: 'currency', currency: 'USD' })}
-                        </p>
+                    <div className="flex items-center gap-2">
+                        <div className="text-right">
+                            <p className="text-xs text-muted-foreground">P&L da Sessão</p>
+                            <p className={cn(
+                                "text-lg font-bold",
+                                summary.pnl >= 0 && "text-green-600",
+                                summary.pnl < 0 && "text-destructive"
+                            )}>
+                                {summary.pnl.toLocaleString('pt-BR', { style: 'currency', currency: 'USD' })}
+                            </p>
+                        </div>
+                        {operations.length > 0 && (
+                            <Button variant="ghost" size="icon" onClick={clearActiveContracts}>
+                                <Trash2 className="h-4 w-4" />
+                                <span className="sr-only">Limpar log</span>
+                            </Button>
+                        )}
                     </div>
                 </div>
             </CardHeader>
