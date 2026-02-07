@@ -1,7 +1,7 @@
 // src/app/hf-strike-zone/page.tsx
 'use client';
 
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
@@ -13,7 +13,7 @@ import { DerivApiProviderV2 as DerivApiProvider, useDerivApiV2 as useDerivApi } 
 import { AssetSelectorV2 as AssetSelector } from '@/features/trading/components/deriv-trader/asset-selector-v2';
 import { ApiStatusIndicatorV2 as ApiStatusIndicator } from '@/features/trading/components/deriv-trader/ApiStatusIndicatorV2';
 import { MarketChart } from '@/features/trading/components/deriv-trader/market-chart';
-import { useHFStrikeZone } from '@/features/trading/hooks/use-hf-strike-zone';
+import { useHFStrikeZone, type StrikeZone } from '@/features/trading/hooks/use-hf-strike-zone';
 import { StrikeZoneCard } from '@/features/trading/components/hf-trader/strike-zone-card';
 import { HFConfigPanel, type HFConfig } from '@/features/trading/components/hf-trader/hf-config-panel';
 import { saveHFTradeLog, calculateHFStats } from '@/services/hf-data-service';
@@ -79,6 +79,8 @@ function PageContent() {
     avgConfidence: 0,
     sharpeRatio: 0,
   });
+
+  const prevZoneRef = useRef<StrikeZone | null>(null);
 
   // Strike Zone Hook
   const { currentZone, strikeHistory, stats, bbAnalysis, rsiAnalysis, fullIndicators } = useHFStrikeZone(
@@ -178,16 +180,22 @@ function PageContent() {
 
   // Auto-execute
   useEffect(() => {
-    if (!hfConfig.autoExecute || !hfConfig.enabled) return;
-    if (!currentZone || currentZone.type === 'NEUTRAL') return;
-    if (currentZone.confidence < hfConfig.minConfidence) return;
+    const prevZone = prevZoneRef.current;
+    
+    const justEnteredValidZone = 
+        currentZone && 
+        currentZone.type !== 'NEUTRAL' && 
+        (!prevZone || prevZone.type === 'NEUTRAL');
 
-    const timeout = setTimeout(() => {
-      handleExecuteStrike();
-    }, 5000);
+    if (hfConfig.autoExecute && hfConfig.enabled && justEnteredValidZone) {
+      if (currentZone.confidence >= hfConfig.minConfidence) {
+        handleExecuteStrike();
+      }
+    }
 
-    return () => clearTimeout(timeout);
-  }, [currentZone, hfConfig, handleExecuteStrike]);
+    prevZoneRef.current = currentZone;
+  }, [currentZone, hfConfig.autoExecute, hfConfig.enabled, hfConfig.minConfidence, handleExecuteStrike]);
+
 
   const filteredZone = useMemo(() => {
     if (!currentZone || currentZone.type === 'NEUTRAL') return null;
@@ -331,14 +339,8 @@ function PageContent() {
         </div>
       </div>
       
-      <div className="pt-6">
-        <HFExecutionLog operations={operationsLog} clearActiveContracts={clearActiveContracts} />
-      </div>
-
-
-      {/* Alert */}
       {hfConfig.autoExecute && hfConfig.enabled && (
-        <Alert className="bg-yellow-50 border-yellow-200">
+        <Alert className="mt-6 bg-yellow-50 border-yellow-200">
           <Zap className="h-4 w-4 text-yellow-600" />
           <AlertTitle className="text-yellow-900">🤖 Auto-Execute Ativo</AlertTitle>
           <AlertDescription className="text-yellow-800">
@@ -347,6 +349,12 @@ function PageContent() {
           </AlertDescription>
         </Alert>
       )}
+
+      <div className="pt-6">
+        <HFExecutionLog operations={operationsLog} clearActiveContracts={clearActiveContracts} />
+      </div>
+
+
     </div>
   );
 }

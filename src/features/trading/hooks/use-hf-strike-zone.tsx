@@ -109,7 +109,7 @@ export function useHFStrikeZone(
       touchingLower: currentPrice <= lower * 1.005,
       touchingUpper: currentPrice >= upper * 0.995,
     };
-  }, [indicators, priceTicks]);
+  }, [indicators, priceTicks, enabled]);
 
   /**
    * Layer 2: RSI Analysis com Divergence Detection
