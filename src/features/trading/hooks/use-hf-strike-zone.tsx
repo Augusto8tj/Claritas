@@ -80,7 +80,6 @@ export function useHFStrikeZone(
 
   const indicators = useMemo((): Indicators | null => {
     if (!enabled || candleData.length < 20) return null;
-    if (candleData.length < 20) return null;
     return calculateAllIndicators(candleData, [], '1m', { duration: 1, unit: 't' });
   }, [candleData, enabled]);
 

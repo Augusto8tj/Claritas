@@ -20,6 +20,7 @@ import { saveHFTradeLog, calculateHFStats } from '@/services/hf-data-service';
 import { Target, TrendingUp, BarChart, Brain, Activity, Zap } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { Operation, TradeResult } from '@/lib/types';
+import { HFExecutionLog } from '@/features/trading/components/hf-trader/hf-execution-log';
 
 const MetricCard = ({ icon, label, value, subtext, color }: { icon: React.ReactNode; label: string; value: string | number; subtext?: string; color?: string }) => (
     <Card>
@@ -115,7 +116,6 @@ function PageContent() {
       return;
     }
 
-    // Verificar trades concorrentes
     const pendingHFTrades = operationsLog.filter(
       (op: Operation) => op.status === 'pending' && op.initiator === 'HF_Strike'
     );
@@ -134,7 +134,6 @@ function PageContent() {
       const direction = currentZone.type === 'LONG_ENTRY' ? 'rise' : 'fall';
       const contractType = currentZone.type === 'LONG_ENTRY' ? 'CALL' : 'PUT';
 
-      // Executar trade via Deriv API
       const tradeResult: TradeResult = await executeTrade(
         contractType,
         1.0, // Stake fixo para HF
@@ -142,14 +141,13 @@ function PageContent() {
         direction,
         hfConfig.preferredDuration,
         's',
-        'HF_Strike' as any // Marcador especial
+        'HF_Strike' as any 
       );
       
       if (!tradeResult.success) {
         throw new Error(tradeResult.message);
       }
 
-      // Salvar log no Firebase
       await saveHFTradeLog(user.uid, {
         symbol: activeSymbol,
         strikeZone: currentZone,
@@ -177,13 +175,12 @@ function PageContent() {
     }
   }, [currentZone, user, activeSymbol, hfConfig, operationsLog, executeTrade, toast]);
 
-  // Auto-execute quando habilitado
+  // Auto-execute
   useEffect(() => {
     if (!hfConfig.autoExecute || !hfConfig.enabled) return;
     if (!currentZone || currentZone.type === 'NEUTRAL') return;
     if (currentZone.confidence < hfConfig.minConfidence) return;
 
-    // Debounce de 5 segundos para evitar execuções duplicadas
     const timeout = setTimeout(() => {
       handleExecuteStrike();
     }, 5000);
@@ -191,7 +188,6 @@ function PageContent() {
     return () => clearTimeout(timeout);
   }, [currentZone, hfConfig, handleExecuteStrike]);
 
-  // Filtar zonas por confiança mínima
   const filteredZone = useMemo(() => {
     if (!currentZone || currentZone.type === 'NEUTRAL') return null;
     if (currentZone.confidence < hfConfig.minConfidence) return null;
@@ -318,7 +314,6 @@ function PageContent() {
 
       {/* Main Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Strike Zone Card */}
         <div className="lg:col-span-2">
           <StrikeZoneCard
             zone={filteredZone}
@@ -326,8 +321,6 @@ function PageContent() {
             isExecuting={isExecuting}
           />
         </div>
-
-        {/* Config Panel */}
         <div>
           <HFConfigPanel
             config={hfConfig}
@@ -336,6 +329,11 @@ function PageContent() {
           />
         </div>
       </div>
+      
+      <div className="pt-6">
+        <HFExecutionLog operations={operationsLog} />
+      </div>
+
 
       {/* Alert */}
       {hfConfig.autoExecute && hfConfig.enabled && (
