@@ -232,13 +232,17 @@ function PageContent() {
   }, [currentZone, hfConfig.autoExecute, hfConfig.enabled, hfConfig.minConfidence, handleExecuteStrike, isExecuting, strikeHistory]);
 
   const filteredZone = useMemo(() => {
-    if (!currentZone || currentZone.type === 'NEUTRAL') {
-        const isVetoed = currentZone.triggers.some(t => t.startsWith('VETO'));
-        if (isVetoed) return currentZone; // Mostra a zona vetada para feedback
-        if (currentZone.confidence < hfConfig.minConfidence) return null;
-        return currentZone;
+    if (!currentZone) {
+      return null;
     }
-    return null;
+    if (currentZone.type === 'NEUTRAL') {
+      const isVetoed = currentZone.triggers?.some(t => t.startsWith('VETO'));
+      return isVetoed ? currentZone : null;
+    }
+    if (currentZone.confidence < hfConfig.minConfidence) {
+      return null;
+    }
+    return currentZone;
   }, [currentZone, hfConfig.minConfidence]);
 
   return (
@@ -361,16 +365,15 @@ function PageContent() {
         </div>
       </div>
       
-      <Alert className={cn("mt-6 bg-yellow-50 border-yellow-200", !hfConfig.autoExecute && "hidden")}>
-        <Bot className="h-4 w-4 text-yellow-600" />
-        <AlertTitle className="text-yellow-900">🤖 Auto-Execute Ativo</AlertTitle>
-        <AlertDescription className="text-yellow-800">
-          O sistema executará automaticamente strikes com confiança ≥ {hfConfig.minConfidence}%.
-          Limite de {hfConfig.maxConcurrentTrades} posições simultâneas.
-        </AlertDescription>
-      </Alert>
-
       <div className="pt-6">
+        <Alert className={cn("bg-yellow-50 border-yellow-200", !hfConfig.autoExecute && "hidden")}>
+          <Bot className="h-4 w-4 text-yellow-600" />
+          <AlertTitle className="text-yellow-900">🤖 Auto-Execute Ativo</AlertTitle>
+          <AlertDescription className="text-yellow-800">
+            O sistema executará automaticamente strikes com confiança ≥ {hfConfig.minConfidence}%.
+            Limite de {hfConfig.maxConcurrentTrades} posições simultâneas.
+          </AlertDescription>
+        </Alert>
         <HFExecutionLog operations={operationsLog} clearActiveContracts={clearActiveContracts} />
       </div>
 
