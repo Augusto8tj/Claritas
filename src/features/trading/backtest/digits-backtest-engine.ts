@@ -1,4 +1,5 @@
 // src/features/trading/backtest/digits-backtest-engine.ts
+'use client';
 
 import type { TickData } from '@/lib/types';
 
