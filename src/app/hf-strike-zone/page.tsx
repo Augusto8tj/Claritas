@@ -19,7 +19,7 @@ import { HFConfigPanel, type HFConfig } from '@/features/trading/components/hf-t
 import { saveHFTradeLog, calculateHFStats } from '@/services/hf-data-service';
 import { Target, TrendingUp, BarChart, Brain, Activity, Zap } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import type { Operation, TradeResult } from '@/lib/types';
+import type { Operation, TradeResult, DurationUnit } from '@/lib/types';
 import { HFExecutionLog } from '@/features/trading/components/hf-trader/hf-execution-log';
 
 const MetricCard = ({ icon, label, value, subtext, color }: { icon: React.ReactNode; label: string; value: string | number; subtext?: string; color?: string }) => (
@@ -62,6 +62,8 @@ function PageContent() {
     clearActiveContracts,
   } = useDerivApi();
 
+  const [tradingMode, setTradingMode] = useState<'hf' | 'standard'>('hf');
+
   // HF Configuration State
   const [hfConfig, setHFConfig] = useState<HFConfig>({
     enabled: true,
@@ -82,11 +84,18 @@ function PageContent() {
 
   const prevZoneRef = useRef<StrikeZone | null>(null);
 
-  // Strike Zone Hook - AGORA USA botCandleData para consistência de análise
-  const { currentZone, strikeHistory, stats, bbAnalysis, rsiAnalysis, fullIndicators } = useHFStrikeZone(
+  // Auto-switch time period based on trading mode
+  useEffect(() => {
+    setTimePeriod(tradingMode === 'hf' ? '1m' : '15m');
+  }, [tradingMode, setTimePeriod]);
+
+  // Strike Zone Hook - NOW ACCEPTS TRADING MODE
+  const { currentZone, strikeHistory, stats, fullIndicators } = useHFStrikeZone(
     priceTicks,
-    botCandleData,
-    hfConfig.enabled
+    botCandleData, // Always use 1-min candles for bot logic base
+    chartData,      // Pass UI chart data for standard mode
+    hfConfig.enabled,
+    tradingMode
   );
 
   // Kill Switch Logic
@@ -95,7 +104,7 @@ function PageContent() {
 
     const last3Trades = operationsLog
       .filter(op => op.initiator === 'HF_Strike' && op.status !== 'pending')
-      .slice(0, 3);
+      .slice(-3); // Get last 3 trades
     
     if (last3Trades.length === 3) {
       const allLost = last3Trades.every(t => t.result !== undefined && t.result < 0);
@@ -157,14 +166,17 @@ function PageContent() {
     try {
       const direction = currentZone.type === 'LONG_ENTRY' ? 'rise' : 'fall';
       const contractType = currentZone.type === 'LONG_ENTRY' ? 'CALL' : 'PUT';
+      
+      const durationUnit = tradingMode === 'hf' ? 's' : 'm';
+      const duration = tradingMode === 'hf' ? hfConfig.preferredDuration : 45; // 45 mins for standard
 
       const tradeResult: TradeResult = await executeTrade(
         contractType,
         1.0, // Stake fixo para HF
         activeSymbol,
         direction,
-        hfConfig.preferredDuration,
-        's',
+        duration,
+        durationUnit as DurationUnit,
         'HF_Strike' as any 
       );
       
@@ -185,7 +197,7 @@ function PageContent() {
 
       toast({
         title: '⚡ Strike Executado!',
-        description: `${contractType} ${direction.toUpperCase()} - ${hfConfig.preferredDuration}s`,
+        description: `${contractType} ${direction.toUpperCase()} - ${duration}${durationUnit}`,
       });
     } catch (error: any) {
       console.error('[HF Strike] Execution error:', error);
@@ -197,21 +209,19 @@ function PageContent() {
     } finally {
       setIsExecuting(false);
     }
-  }, [currentZone, user, activeSymbol, hfConfig, operationsLog, executeTrade, toast]);
+  }, [currentZone, user, activeSymbol, hfConfig, operationsLog, executeTrade, toast, tradingMode]);
 
   // Auto-execute
   useEffect(() => {
-    const prevZone = prevZoneRef.current;
-    
+    if (!hfConfig.autoExecute || !hfConfig.enabled) return;
+
     const justEnteredValidZone = 
         currentZone && 
         currentZone.type !== 'NEUTRAL' && 
-        (!prevZone || prevZone.type === 'NEUTRAL');
-
-    if (hfConfig.autoExecute && hfConfig.enabled && justEnteredValidZone) {
-      if (currentZone.confidence >= hfConfig.minConfidence) {
-        handleExecuteStrike();
-      }
+        (!prevZoneRef.current || prevZoneRef.current.type === 'NEUTRAL' || prevZoneRef.current.type !== currentZone.type);
+    
+    if (justEnteredValidZone && currentZone.confidence >= hfConfig.minConfidence) {
+      handleExecuteStrike();
     }
 
     prevZoneRef.current = currentZone;
@@ -231,7 +241,7 @@ function PageContent() {
         <div>
           <h1 className="text-3xl font-bold tracking-tight font-headline">⚡ HF Strike Zone</h1>
           <p className="text-sm text-muted-foreground mt-1">
-            High Frequency Trading baseado em reversão estatística
+            Trading de Alta Frequência e Padrão para Sintéticos e Forex.
           </p>
         </div>
         <div className="flex-1 grid grid-cols-1 md:grid-cols-3 gap-4 items-center">
@@ -277,6 +287,18 @@ function PageContent() {
         </div>
       </div>
 
+       <div className="flex items-center justify-center">
+        <ToggleGroup 
+            type="single"
+            value={tradingMode}
+            onValueChange={(value: 'hf' | 'standard') => value && setTradingMode(value)}
+            className="border bg-background p-1 rounded-lg"
+        >
+            <ToggleGroupItem value="hf">Alta Frequência</ToggleGroupItem>
+            <ToggleGroupItem value="standard">Padrão (15min)</ToggleGroupItem>
+        </ToggleGroup>
+       </div>
+
       {/* Stats Overview */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
         <MetricCard
@@ -290,7 +312,7 @@ function PageContent() {
           label="Win Rate"
           value={`${hfStats.winRate.toFixed(1)}%`}
           subtext={`${hfStats.totalTrades} trades`}
-          color={hfStats.winRate > 60 ? 'text-green-600' : 'text-red-600'}
+          color={hfStats.winRate > 53 ? 'text-green-600' : 'text-red-600'}
         />
         <MetricCard
           icon={<Target className="h-4 w-4" />}
@@ -319,7 +341,7 @@ function PageContent() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Zap className="h-5 w-5 text-yellow-500" />
-            Gráfico de Mercado ({activeSymbol})
+            Gráfico de Mercado ({activeSymbol}) - {tradingMode === 'hf' ? '1 Minuto' : '15 Minutos'}
           </CardTitle>
           <CardDescription>
             Análise em tempo real com overlays de BB, RSI e Strike Zones
@@ -356,6 +378,7 @@ function PageContent() {
             config={hfConfig}
             onConfigChange={updates => setHFConfig(prev => ({ ...prev, ...updates }))}
             disabled={isExecuting}
+            tradingMode={tradingMode}
           />
         </div>
       </div>

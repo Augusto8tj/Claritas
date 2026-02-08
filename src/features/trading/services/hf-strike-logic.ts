@@ -59,9 +59,6 @@ export interface StrikeZone {
 
 /**
  * Analisa as Bandas de Bollinger em tempo real a cada tick.
- * @param bbData Dados das bandas (upper, middle, lower) já calculados.
- * @param bbSeries Histórico das bandas para cálculo da largura.
- * @param currentPrice O preço do tick atual.
  */
 export function analyzeBollingerBands(
     bbData: Indicators['bb'], 
@@ -72,7 +69,6 @@ export function analyzeBollingerBands(
     if (!bbData || !bbData.upper || !bbData.middle || !bbData.lower) return null;
     const { upper, middle, lower } = bbData;
 
-    // A largura (width) é calculada usando o histórico das bandas.
     const lastBand = bbSeries[bbSeries.length - 1];
     const bandWidth = lastBand && lastBand.middle > 0 ? ((lastBand.upper - lastBand.lower) / lastBand.middle) * 100 : 0;
     
@@ -80,9 +76,7 @@ export function analyzeBollingerBands(
     const bbPosition = bandRange > 0 ? (currentPrice - lower) / bandRange : 0.5;
 
     return {
-      upper,
-      lower,
-      middle,
+      upper, lower, middle,
       width: bandWidth,
       position: bbPosition,
       isSqueezed: bandWidth < 1.5,
@@ -97,8 +91,6 @@ export function analyzeBollingerBands(
 
 /**
  * Analisa o RSI e detecta divergências.
- * @param rsi O valor atual do RSI já calculado.
- * @param candleData O histórico de velas para detecção de divergência.
  */
 export function analyzeRSI(
   rsi: number,
@@ -107,7 +99,6 @@ export function analyzeRSI(
   try {
     if (candleData.length < 10) return null;
     
-    // Detecção de Divergência Simplificada
     const last10Candles = candleData.slice(-10);
     const priceChange = last10Candles[9].close - last10Candles[0].close;
     const priceIncreasing = priceChange > 0;
@@ -140,12 +131,12 @@ export function analyzeVolume(priceTicks: TickData[]): VolumeAnalysis | null {
     const window60Duration = last60Ticks[59].epoch - last60Ticks[0].epoch;
     const window10Duration = last10Ticks[9].epoch - last10Ticks[0].epoch;
 
-    if (window60Duration === 0 || window10Duration === 0) return null;
+    if (window60Duration <= 0 || window10Duration <= 0) return null;
 
     const avgTickRate = 60 / window60Duration;
     const recentTickRate = 10 / window10Duration;
 
-    const ratio = recentTickRate / avgTickRate;
+    const ratio = avgTickRate > 0 ? recentTickRate / avgTickRate : 1;
     const isSpike = ratio > 1.3;
 
     return { isSpike, ratio };
@@ -156,121 +147,123 @@ export function analyzeVolume(priceTicks: TickData[]): VolumeAnalysis | null {
 }
 
 /**
- * Combina todas as análises para detectar uma Strike Zone, aplicando filtros de "Guardião".
+ * Combina análises para detectar uma Strike Zone de REVERSÃO À MÉDIA (HF).
  */
-export function detectStrikeZone(
-  bbAnalysis: BBAnalysis | null,
-  rsiAnalysis: RSIAnalysis | null,
-  volumeAnalysis: VolumeAnalysis | null,
+export function detectHFMeanReversionZone(
+  indicators: Indicators,
   currentPrice: number,
-  ema100: number | null,
-  atr: number | null
 ): StrikeZone | null {
-  if (!bbAnalysis || !rsiAnalysis || !volumeAnalysis) return null;
+  const { bb, bollingerBands, rsi: rsiValue } = indicators;
+  
+  if (!bb || !bollingerBands || rsiValue === null) return null;
 
-  // --- GUARDIAN FILTERS ---
-  const ATR_CHAOS_THRESHOLD = 0.0005; // Ajuste conforme o ativo
-  if (atr && atr > ATR_CHAOS_THRESHOLD) {
-    return { 
-      type: 'NEUTRAL', confidence: 0, triggers: ['VETO: Volatilidade Caótica (ATR Alto)'], 
-      // ... preencher o resto com valores padrão
-      entry: { price: 0, timestamp: 0 }, targets: { takeProfit: 0, stopLoss: 0, riskReward: 0 }, 
-      indicators: { rsi: 0, bbPosition: 0, bbWidth: 0, volumeSpike: false, divergence: null }, duration: 0
-    };
-  }
+  const bbAnalysis = analyzeBollingerBands(bb, bollingerBands, currentPrice);
+  const rsiAnalysis = analyzeRSI(rsiValue, []); // Divergence logic needs candles, simplified here
+  const volumeAnalysis = analyzeVolume([]); // Volume logic needs ticks
+  
+  if(!bbAnalysis || !rsiAnalysis) return null;
 
   const triggers: string[] = [];
   let confidence = 0;
   let type: StrikeZone['type'] = 'NEUTRAL';
 
-  // --- LONG ENTRY CONDITIONS ---
-  const longTriggers: string[] = [];
-  let longConfidence = 0;
+  // LONG ENTRY
   if (bbAnalysis.touchingLower) {
-    longTriggers.push(`📉 Preço na Banda Inferior`);
-    longConfidence += 40;
+    triggers.push(`📉 Preço na Banda Inferior`);
+    confidence += 40;
   }
   if (rsiAnalysis.oversold) {
-    longTriggers.push(`📊 RSI Oversold (${rsiAnalysis.value.toFixed(1)})`);
-    longConfidence += 35;
+    triggers.push(`📊 RSI Oversold (${rsiAnalysis.value.toFixed(1)})`);
+    confidence += 35;
   }
-  if (rsiAnalysis.divergence === 'bullish') {
-    longTriggers.push('🔄 Divergência Bullish');
-    longConfidence += 25;
-  }
-  if (longConfidence > 0 && volumeAnalysis.isSpike) {
-    longTriggers.push('📈 Spike de Volume');
-    longConfidence += 15;
-  }
-
-  if (longConfidence >= 60) {
-    // GUARDIAN CHECK (TREND)
-    if (ema100 && currentPrice < ema100) {
-       return { 
-        type: 'NEUTRAL', confidence: 0, triggers: ['VETO: Sinal de compra contra tendência de baixa macro.'], 
-        entry: { price: 0, timestamp: 0 }, targets: { takeProfit: 0, stopLoss: 0, riskReward: 0 }, 
-        indicators: { rsi: 0, bbPosition: 0, bbWidth: 0, volumeSpike: false, divergence: null }, duration: 0
-      };
-    }
-    type = 'LONG_ENTRY';
-    confidence = longConfidence;
-    triggers.push(...longTriggers);
-  }
-  // --- SHORT ENTRY CONDITIONS (if no long signal) ---
-  else {
-    const shortTriggers: string[] = [];
-    let shortConfidence = 0;
-    if (bbAnalysis.touchingUpper) {
-      shortTriggers.push(`📈 Preço na Banda Superior`);
-      shortConfidence += 40;
-    }
-    if (rsiAnalysis.overbought) {
-      shortTriggers.push(`📊 RSI Overbought (${rsiAnalysis.value.toFixed(1)})`);
-      shortConfidence += 35;
-    }
-    if (rsiAnalysis.divergence === 'bearish') {
-      shortTriggers.push('🔄 Divergência Bearish');
-      shortConfidence += 25;
-    }
-    if (shortConfidence > 0 && volumeAnalysis.isSpike) {
-      shortTriggers.push('📈 Spike de Volume');
-      shortConfidence += 15;
-    }
-    if (shortConfidence >= 60) {
-      // GUARDIAN CHECK (TREND)
-      if (ema100 && currentPrice > ema100) {
-        return { 
-          type: 'NEUTRAL', confidence: 0, triggers: ['VETO: Sinal de venda contra tendência de alta macro.'], 
-          entry: { price: 0, timestamp: 0 }, targets: { takeProfit: 0, stopLoss: 0, riskReward: 0 }, 
-          indicators: { rsi: 0, bbPosition: 0, bbWidth: 0, volumeSpike: false, divergence: null }, duration: 0
-        };
+  if (confidence >= 60) type = 'LONG_ENTRY';
+  
+  // SHORT ENTRY (only if no long)
+  if (type === 'NEUTRAL') {
+      let shortConfidence = 0;
+      const shortTriggers: string[] = [];
+      if (bbAnalysis.touchingUpper) {
+        shortTriggers.push(`📈 Preço na Banda Superior`);
+        shortConfidence += 40;
       }
-      type = 'SHORT_ENTRY';
-      confidence = shortConfidence;
-      triggers.push(...shortTriggers);
-    }
+      if (rsiAnalysis.overbought) {
+        shortTriggers.push(`📊 RSI Overbought (${rsiAnalysis.value.toFixed(1)})`);
+        shortConfidence += 35;
+      }
+      if (shortConfidence >= 60) {
+          type = 'SHORT_ENTRY';
+          confidence = shortConfidence;
+          triggers.push(...shortTriggers);
+      }
   }
   
   if (type === 'NEUTRAL') return null;
 
-  const currentATR = atr || (bbAnalysis.upper - bbAnalysis.lower); // Fallback para BB range se ATR for nulo
+  const atr = bbAnalysis.upper - bbAnalysis.lower;
   return {
     type,
     confidence: Math.min(100, confidence),
     triggers,
     entry: { price: currentPrice, timestamp: Date.now() },
     targets: {
-      takeProfit: type === 'LONG_ENTRY' ? currentPrice + currentATR * 0.75 : currentPrice - currentATR * 0.75,
-      stopLoss: type === 'LONG_ENTRY' ? currentPrice - currentATR * 0.5 : currentPrice + currentATR * 0.5,
+      takeProfit: type === 'LONG_ENTRY' ? currentPrice + atr * 0.75 : currentPrice - atr * 0.75,
+      stopLoss: type === 'LONG_ENTRY' ? currentPrice - atr * 0.5 : currentPrice + atr * 0.5,
       riskReward: 1.5,
     },
-    indicators: {
-      rsi: rsiAnalysis.value,
-      bbPosition: bbAnalysis.position,
-      bbWidth: bbAnalysis.width,
-      volumeSpike: volumeAnalysis.isSpike,
-      divergence: rsiAnalysis.divergence,
-    },
+    indicators: { rsi: rsiAnalysis.value, bbPosition: bbAnalysis.position, bbWidth: bbAnalysis.width, volumeSpike: false, divergence: null },
     duration: bbAnalysis.isSqueezed ? 30 : 20,
+  };
+}
+
+/**
+ * Detecta um sinal de SEGUIMENTO DE TENDÊNCIA (Standard).
+ */
+export function detectStandardTrendZone(
+  indicators: Indicators, 
+  currentPrice: number, 
+  prevRsi: number
+): StrikeZone | null {
+  if (!indicators.adx || !indicators.ma.long || !indicators.rsi || !indicators.atr) return null;
+
+  const { adx, ma: { long: ema100 }, rsi, atr } = indicators;
+  let type: StrikeZone['type'] = 'NEUTRAL';
+  const triggers: string[] = [];
+  let confidence = 0;
+
+  const isUpTrend = currentPrice > ema100!;
+  const isDownTrend = currentPrice < ema100!;
+
+  if (adx < 25) return null; // No trend
+  
+  if (isUpTrend && rsi > 50 && prevRsi <= 50) {
+      type = 'LONG_ENTRY';
+      triggers.push(`📈 Tendência de Alta (Acima da EMA 100)`);
+      triggers.push(`🐂 Momentum de Compra (RSI cruzou 50)`);
+      confidence = 50 + Math.min(50, (adx - 20) * 2);
+  } else if (isDownTrend && rsi < 50 && prevRsi >= 50) {
+      type = 'SHORT_ENTRY';
+      triggers.push(`📉 Tendência de Baixa (Abaixo da EMA 100)`);
+      triggers.push(`🐻 Momentum de Venda (RSI cruzou 50)`);
+      confidence = 50 + Math.min(50, (adx - 20) * 2);
+  }
+  
+  if (type === 'NEUTRAL') return null;
+
+  const durationInMinutes = 45; // 3 velas de 15m
+
+  return {
+    type,
+    confidence: Math.min(100, confidence),
+    triggers,
+    entry: { price: currentPrice, timestamp: Date.now() },
+    targets: {
+      takeProfit: type === 'LONG_ENTRY' ? currentPrice + atr * 2.0 : currentPrice - atr * 2.0,
+      stopLoss: type === 'LONG_ENTRY' ? currentPrice - atr * 1.5 : currentPrice + atr * 1.5,
+      riskReward: 2.0 / 1.5,
+    },
+    indicators: {
+      rsi: rsi, bbPosition: 0, bbWidth: 0, volumeSpike: false, divergence: null,
+    },
+    duration: durationInMinutes * 60,
   };
 }
