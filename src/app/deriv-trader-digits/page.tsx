@@ -148,7 +148,7 @@ function CurrentPriceDisplay() {
 }
 
 function DerivTraderPageContentDigits() {
-    const { activeSymbol, priceTicks, operationsLog, sellContract, activeAsset, clearActiveContracts, getHistoricalData } = useDerivApiDigits();
+    const { activeSymbol, priceTicks, operationsLog, activeAsset, clearActiveContracts, getHistoricalData } = useDerivApiDigits();
     const robotCouncil = useRobotCouncilDigits(activeSymbol, priceTicks, activeAsset);
     const { toast } = useToast();
 
@@ -208,21 +208,6 @@ function DerivTraderPageContentDigits() {
                     <CurrentPriceDisplay />
                     <DerivTraderInterfaceDigits symbol={activeSymbol || ""} />
                     <DigitsAutopilotManager {...robotCouncil} />
-                     <Collapsible>
-                        <CollapsibleTrigger asChild>
-                           <Button variant="outline" className="w-full">
-                                <TestTube className="mr-2 h-4 w-4" />
-                                Painel de Backtesting de Dígitos
-                           </Button>
-                        </CollapsibleTrigger>
-                        <CollapsibleContent className="pt-4">
-                            <DigitsBacktestPanel 
-                                results={backtestResults}
-                                onRunBacktest={handleRunBacktest}
-                                isBacktesting={isBacktesting}
-                            />
-                        </CollapsibleContent>
-                    </Collapsible>
                 </div>
 
                 {/* --- Coluna da Direita (Dados e Logs) --- */}
@@ -232,7 +217,7 @@ function DerivTraderPageContentDigits() {
                         digitStats={robotCouncil.digitStats}
                         isAutopilotOn={robotCouncil.isCouncilAutopilotOn}
                     />
-                    <OperationsLogDigits operations={operationsLog} sellContract={sellContract} priceTicks={priceTicks} activeAsset={activeAsset} clearActiveContracts={clearActiveContracts} />
+                    <OperationsLogDigits operations={operationsLog} priceTicks={priceTicks} activeAsset={activeAsset} clearActiveContracts={clearActiveContracts} />
                 </div>
             </div>
         </div>

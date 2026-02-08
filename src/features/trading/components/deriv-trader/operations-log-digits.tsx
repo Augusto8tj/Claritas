@@ -19,7 +19,6 @@ import { Button } from "@/components/ui/button";
 
 interface OperationsLogDigitsProps {
   operations: Operation[];
-  sellContract: (contractId: number) => Promise<any>;
   priceTicks: TickData[];
   activeAsset: Asset | null;
   clearActiveContracts: () => void;
@@ -51,15 +50,60 @@ const getContractDisplayName = (contractType?: string) => {
     return contractType;
 };
 
+const StatCard = ({ title, value, subtext, colorClass }: { title: string, value: string, subtext?: string, colorClass?: string }) => (
+    <div className="p-3 border rounded-lg bg-background shadow-sm text-center">
+        <p className="text-xs text-muted-foreground">{title}</p>
+        <p className={cn("text-xl font-bold", colorClass)}>{value}</p>
+        {subtext && <p className="text-[11px] text-muted-foreground mt-0.5">{subtext}</p>}
+    </div>
+);
 
 export function OperationsLogDigits({ operations, activeAsset, clearActiveContracts }: OperationsLogDigitsProps) {
-    const dailySummary = useMemo(() => {
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
+    const stats = useMemo(() => {
+        const finishedOps = operations.filter(op => op.status !== 'pending');
+        
+        const totalTrades = finishedOps.length;
+        if (totalTrades === 0) {
+            return {
+                totalTrades: 0,
+                totalStaked: 0,
+                pnl: 0,
+                winRate: 0,
+                wins: 0,
+                losses: 0,
+                payoffRatio: 0,
+            };
+        }
 
-        return operations
-        .filter(op => op.status !== 'pending' && new Date(op.timestamp).toDateString() === today.toDateString())
-        .reduce((sum, op) => sum + (op.result || 0), 0);
+        const wins = finishedOps.filter(op => op.status === 'won');
+        const losses = finishedOps.filter(op => op.status === 'lost');
+
+        const totalStaked = finishedOps.reduce((sum, op) => sum + op.stake, 0);
+        const pnl = finishedOps.reduce((sum, op) => {
+            if(op.status === 'won') return sum + (op.result || 0);
+            if(op.status === 'lost') return sum - op.stake;
+            return sum;
+        }, 0);
+
+        const winRate = totalTrades > 0 ? (wins.length / totalTrades) * 100 : 0;
+
+        const totalWinAmount = wins.reduce((sum, op) => sum + (op.result || 0), 0);
+        const totalLossAmount = losses.reduce((sum, op) => sum + op.stake, 0);
+
+        const avgWin = wins.length > 0 ? totalWinAmount / wins.length : 0;
+        const avgLoss = losses.length > 0 ? totalLossAmount / losses.length : 0;
+        
+        const payoffRatio = avgLoss > 0 ? avgWin / avgLoss : 0;
+
+        return {
+            totalTrades,
+            totalStaked,
+            pnl,
+            winRate,
+            wins: wins.length,
+            losses: losses.length,
+            payoffRatio,
+        };
     }, [operations]);
 
     const getLastDigit = (price: number | undefined): string => {
@@ -73,29 +117,40 @@ export function OperationsLogDigits({ operations, activeAsset, clearActiveContra
             <CardHeader>
                 <div className="flex justify-between items-start">
                     <div>
-                        <CardTitle className="font-headline">Operações de Dígitos</CardTitle>
+                        <CardTitle className="font-headline">Dashboard de Dígitos</CardTitle>
                         <CardDescription>
-                            Histórico e status das suas negociações de dígitos.
+                            Análise de desempenho da sua sessão atual.
                         </CardDescription>
                     </div>
-                     <div className="flex items-center gap-2">
-                        <div className="text-right">
-                            <p className="text-xs text-muted-foreground">Resultado do Dia</p>
-                            <p className={cn(
-                                "text-lg font-bold",
-                                dailySummary > 0 && "text-green-600",
-                                dailySummary < 0 && "text-destructive"
-                            )}>
-                                {dailySummary.toLocaleString('pt-BR', { style: 'currency', currency: 'USD' })}
-                            </p>
-                        </div>
-                         {operations.length > 0 && (
-                            <Button variant="ghost" size="icon" onClick={clearActiveContracts}>
-                                <Trash2 className="h-4 w-4" />
-                                <span className="sr-only">Limpar log</span>
-                            </Button>
-                        )}
-                    </div>
+                     {operations.length > 0 && (
+                        <Button variant="ghost" size="icon" onClick={clearActiveContracts}>
+                            <Trash2 className="h-4 w-4" />
+                            <span className="sr-only">Limpar log</span>
+                        </Button>
+                    )}
+                </div>
+                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3 pt-4">
+                    <StatCard 
+                        title="Resultado Total" 
+                        value={stats.pnl.toLocaleString('pt-BR', { style: 'currency', currency: 'USD' })}
+                        colorClass={stats.pnl >= 0 ? 'text-green-600' : 'text-red-600'}
+                    />
+                    <StatCard 
+                        title="Win Rate" 
+                        value={`${stats.winRate.toFixed(1)}%`} 
+                        colorClass={stats.winRate >= 50 ? 'text-green-600' : 'text-red-600'}
+                        subtext={`${stats.wins}V / ${stats.losses}D`}
+                    />
+                    <StatCard 
+                        title="Payoff Ratio" 
+                        value={stats.payoffRatio.toFixed(2)}
+                        subtext="Lucro/Prejuízo Médio"
+                    />
+                    <StatCard 
+                        title="Total Apostado" 
+                        value={stats.totalStaked.toLocaleString('pt-BR', { style: 'currency', currency: 'USD' })}
+                        subtext={`${stats.totalTrades} trades`}
+                    />
                 </div>
             </CardHeader>
             <CardContent className="flex-1 p-0">
