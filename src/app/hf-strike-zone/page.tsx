@@ -1,7 +1,7 @@
 // src/app/hf-strike-zone/page.tsx
 'use client';
 
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
@@ -13,7 +13,7 @@ import { DerivApiProviderV2 as DerivApiProvider, useDerivApiV2 as useDerivApi } 
 import { AssetSelectorV2 as AssetSelector } from '@/features/trading/components/deriv-trader/asset-selector-v2';
 import { ApiStatusIndicatorV2 as ApiStatusIndicator } from '@/features/trading/components/deriv-trader/ApiStatusIndicatorV2';
 import { MarketChart } from '@/features/trading/components/deriv-trader/market-chart';
-import { useHFStrikeZone } from '@/features/trading/hooks/use-hf-strike-zone';
+import { useHFStrikeZone, type StrikeZone } from '@/features/trading/hooks/use-hf-strike-zone';
 import { StrikeZoneCard } from '@/features/trading/components/hf-trader/strike-zone-card';
 import { HFConfigPanel, type HFConfig } from '@/features/trading/components/hf-trader/hf-config-panel';
 import { saveHFTradeLog, calculateHFStats } from '@/services/hf-data-service';
@@ -54,7 +54,7 @@ function PageContent() {
     setAccountType,
     accountBalance,
     isConnecting,
-    chartData,
+    chartData: rawChartData,
     botCandleData,
     priceTicks,
     isChartLoading,
@@ -89,7 +89,7 @@ function PageContent() {
 
   const [strategy, setStrategy] = useState<StrategyType>('HF_MEAN_REVERSION');
   
-  const uiChartData = useMemo(() => chartData.filter((d): d is CandleData => 'close' in d), [chartData]);
+  const chartDataForUI = useMemo(() => rawChartData.filter((d): d is CandleData => 'close' in d), [rawChartData]);
   const isHFMode = strategyMetadata[strategy]?.isHF ?? true;
 
   const {
@@ -115,11 +115,10 @@ function PageContent() {
   };
 
   useEffect(() => {
-    if (!hfConfig.autoExecute) return;
     const last3Trades = operationsLog
       .filter(op => op.initiator === 'HF_Strike' && op.status !== 'pending')
       .slice(-3);
-    if (last3Trades.length === 3) {
+    if (hfConfig.autoExecute && last3Trades.length === 3) {
       const allLost = last3Trades.every(t => t.result !== undefined && t.result < 0);
       if (allLost) {
         setHFConfig(prev => ({ ...prev, autoExecute: false }));
@@ -146,6 +145,11 @@ function PageContent() {
   const handleExecuteStrike = useCallback(async () => {
     if (!currentZone || !user || !activeSymbol) {
       toast({ title: 'Erro', description: 'Dados insuficientes para executar', variant: 'destructive' });
+      return;
+    }
+    const isVetoed = currentZone.triggers.some(t => t.startsWith('VETO'));
+    if (isVetoed) {
+      toast({ title: 'Operação Vetada', description: currentZone.triggers[0], variant: 'destructive' });
       return;
     }
     if (currentZone.confidence < hfConfig.minConfidence) {
@@ -223,31 +227,23 @@ function PageContent() {
   useEffect(() => {
     if (!hfConfig.autoExecute || !hfConfig.enabled || isExecuting) return;
     
-    // Removido o setTimeout para execução imediata
-    const lastStrike = strikeHistory[strikeHistory.length - 1];
-    if (currentZone && currentZone.type !== 'NEUTRAL' && (!lastStrike || lastStrike.entry.timestamp !== currentZone.entry.timestamp)) {
+    if (currentZone && currentZone.type !== 'NEUTRAL' && !currentZone.triggers.some(t => t.startsWith('VETO'))) {
         if (currentZone.confidence >= hfConfig.minConfidence) {
             handleExecuteStrike();
         }
     }
-  }, [currentZone, hfConfig.autoExecute, hfConfig.enabled, hfConfig.minConfidence, handleExecuteStrike, isExecuting, strikeHistory]);
+  }, [currentZone, hfConfig.autoExecute, hfConfig.enabled, hfConfig.minConfidence, handleExecuteStrike, isExecuting]);
 
   const filteredZone = useMemo(() => {
-    if (!currentZone) {
-      return null;
-    }
+    if (!currentZone) return null;
     const isVetoed = currentZone.triggers.some(t => t.startsWith('VETO'));
-    if (isVetoed) {
-      return currentZone; // Mostra a zona vetada para feedback
-    }
-    if (currentZone.type === 'NEUTRAL') {
-      return null;
-    }
-    if (currentZone.confidence < hfConfig.minConfidence) {
-      return null;
-    }
+    if (currentZone.type === 'NEUTRAL' && isVetoed) return currentZone;
+    if (currentZone.type === 'NEUTRAL') return null;
+    if (isVetoed) return currentZone; 
+    if (currentZone.confidence < hfConfig.minConfidence) return null;
     return currentZone;
   }, [currentZone, hfConfig.minConfidence]);
+
 
   const [isBacktesting, setIsBacktesting] = useState(false);
   const [backtestResults, setBacktestResults] = useState<Record<string, BacktestResult> | null>(null);
@@ -369,7 +365,7 @@ function PageContent() {
         <CardContent>
           <MarketChart
             activeSymbol={activeSymbol || ''}
-            chartData={chartData}
+            chartData={rawChartData}
             isChartLoading={isChartLoading}
             chartError={chartError}
             chartType={chartType}
@@ -419,7 +415,7 @@ function PageContent() {
         </CollapsibleContent>
       </Collapsible>
       
-      <div className="pt-6">
+      <div className="pt-6 space-y-4">
         <Alert className={cn("bg-yellow-50 border-yellow-200", !hfConfig.autoExecute && "hidden")}>
           <Bot className="h-4 w-4 text-yellow-600" />
           <AlertTitle className="text-yellow-900">🤖 Auto-Execute Ativo</AlertTitle>

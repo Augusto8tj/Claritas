@@ -353,7 +353,7 @@ const calculateKAMA = (data: CandleData[], period = 10, fast = 2, slow = 30) => 
     let kama = data[period-1].close; // Seed
     
     for(let i = period; i < data.length; i++) {
-        const change = Math.abs(data[i].close - data[i-period].close);
+        const change = Math.abs(data[i].close - (data[i-period]?.close || d[0].close));
         let volatility = 0;
         for(let j=0; j<period; j++) volatility += Math.abs(data[i-j].close - data[i-j-1].close);
         

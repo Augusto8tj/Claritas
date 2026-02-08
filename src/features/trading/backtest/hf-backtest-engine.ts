@@ -125,7 +125,7 @@ export function runAllStrategiesBacktest(
     while (i < historicalData.length - 30) {
       const windowCandles = historicalData.slice(0, i + 1);
       
-      const indicators = calculateAllIndicators(windowCandles, initialStrategies, timePeriodForIndicators, {duration: 15, unit: 's'});
+      const indicators = calculateAllIndicators(windowCandles, initialStrategies, timePeriodForIndicators, { duration: 15, unit: 's' });
       if (!indicators) { i++; continue; }
       
       const currentPrice = windowCandles[windowCandles.length - 1].close;
@@ -152,7 +152,7 @@ export function runAllStrategiesBacktest(
       
       if (indicators.rsi) prevRsi = indicators.rsi;
       
-      if (strikeZone && strikeZone.confidence >= config.minConfidence) {
+      if (strikeZone && strikeZone.confidence >= config.minConfidence && !strikeZone.triggers.some(t => t.startsWith('VETO'))) {
         const outcome = simulateTradeOutcome(i, strikeZone, historicalData, strategy);
         trades.push({ ...outcome, strikeZone, strategy });
         i = outcome.exitIndex;
