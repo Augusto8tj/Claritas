@@ -9,7 +9,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Bot, Binary, TrendingUp, HelpCircle } from "lucide-react";
+import { Bot, Binary, TrendingUp, HelpCircle, Trophy } from "lucide-react";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Separator } from "@/components/ui/separator";
@@ -28,11 +28,10 @@ const PilotTabContent: React.FC<{
     pilotState: ReturnType<typeof useRobotCouncilDigits>['pilots'][PilotType];
     toggleAutopilot: (type: PilotType) => void;
 }> = ({ pilotKey, title, description, pilotState, toggleAutopilot }) => {
-    const { isOn, status, championId, consecutiveLosses } = pilotState;
+    const { isOn, status, currentTarget, consecutiveLosses } = pilotState;
 
     const statusInfo = {
         'PAUSED': { text: 'Pausado', color: 'bg-gray-500' },
-        'WARMING_UP': { text: 'Aquecendo Arena...', color: 'bg-blue-500 animate-pulse' },
         'TRADING': { text: 'Operando', color: 'bg-green-500' },
         'COOLDOWN': { text: 'Cooldown Pós-Perda', color: 'bg-orange-500' },
     };
@@ -62,10 +61,10 @@ const PilotTabContent: React.FC<{
                     </div>
                      <div className="p-2 border rounded-lg bg-muted/50">
                         <p className="text-muted-foreground font-semibold mb-1">
-                            {pilotKey === 'evenOdd' ? 'Estratégia' : 'Campeão'}
+                            Alvo Atual
                         </p>
-                        <p className="font-bold text-sm truncate" title={pilotKey === 'evenOdd' ? 'Aposta Fixa em Par' : championId || ''}>
-                            {pilotKey === 'evenOdd' ? 'Aposta Fixa em Par' : (championId || 'Aguardando...')}
+                        <p className="font-bold text-sm truncate" title={currentTarget || ''}>
+                            {currentTarget || 'Aguardando...'}
                         </p>
                     </div>
                      <div className="p-2 border rounded-lg bg-muted/50 col-span-2 md:col-span-1">
@@ -108,16 +107,17 @@ export const DigitsAutopilotManager: React.FC<DigitsAutopilotManagerProps> = (pr
       </CardHeader>
       <CardContent className="space-y-4">
         <Tabs defaultValue="matchesDiffers" className="w-full">
-            <TabsList className="grid w-full grid-cols-3">
-                <TabsTrigger value="matchesDiffers" className="text-xs sm:text-sm"><HelpCircle className="h-4 w-4 mr-1.5"/>Combina/Difere</TabsTrigger>
+            <TabsList className="grid w-full grid-cols-4">
+                <TabsTrigger value="matchesDiffers" className="text-xs sm:text-sm"><HelpCircle className="h-4 w-4 mr-1.5"/>Difere</TabsTrigger>
                 <TabsTrigger value="overUnder" className="text-xs sm:text-sm"><TrendingUp className="h-4 w-4 mr-1.5"/>Acima/Abaixo</TabsTrigger>
                 <TabsTrigger value="evenOdd" className="text-xs sm:text-sm"><Binary className="h-4 w-4 mr-1.5"/>Par/Ímpar</TabsTrigger>
+                <TabsTrigger value="underdog" className="text-xs sm:text-sm"><Trophy className="h-4 w-4 mr-1.5"/>Azarão</TabsTrigger>
             </TabsList>
             <TabsContent value="matchesDiffers" className="pt-4">
                 <PilotTabContent
                     pilotKey="matchesDiffers"
-                    title="Piloto Combina/Difere"
-                    description="Opera 'Difere' no dígito mais provável ou 'Combina' no menos provável."
+                    title="Piloto Contra-Tendência"
+                    description="Opera 'Difere' no dígito mais frequente, apostando na regressão à média."
                     pilotState={pilots.matchesDiffers}
                     toggleAutopilot={toggleAutopilot}
                 />
@@ -137,6 +137,15 @@ export const DigitsAutopilotManager: React.FC<DigitsAutopilotManagerProps> = (pr
                     title="Piloto Par/Ímpar"
                     description="Opera na probabilidade do dígito final ser par ou ímpar."
                     pilotState={pilots.evenOdd}
+                    toggleAutopilot={toggleAutopilot}
+                />
+            </TabsContent>
+            <TabsContent value="underdog" className="pt-4">
+                <PilotTabContent
+                    pilotKey="underdog"
+                    title="Piloto Caçador de Azarão"
+                    description="Aposta 'Combina' no dígito menos frequente, explorando a regressão à média."
+                    pilotState={pilots.underdog}
                     toggleAutopilot={toggleAutopilot}
                 />
             </TabsContent>

@@ -15,7 +15,7 @@ export type DigitStats = {
     probability: number;
 };
 
-export type PilotType = 'matchesDiffers' | 'overUnder' | 'evenOdd';
+export type PilotType = 'matchesDiffers' | 'overUnder' | 'evenOdd' | 'underdog';
 
 type CouncilStrategy = {
   id: string;
@@ -41,6 +41,7 @@ export interface PilotState {
   isOn: boolean;
   status: AutopilotStatus;
   consecutiveLosses: number;
+  currentTarget?: string;
 }
 
 // ============================================================================
@@ -55,9 +56,10 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
   const [consensusThreshold, setConsensusThreshold] = useState(25);
 
   const initialPilotState: Record<PilotType, PilotState> = {
-    matchesDiffers: { isOn: false, status: 'PAUSED', consecutiveLosses: 0 },
-    overUnder: { isOn: false, status: 'PAUSED', consecutiveLosses: 0 },
-    evenOdd: { isOn: false, status: 'PAUSED', consecutiveLosses: 0 },
+    matchesDiffers: { isOn: false, status: 'PAUSED', consecutiveLosses: 0, currentTarget: undefined },
+    overUnder: { isOn: false, status: 'PAUSED', consecutiveLosses: 0, currentTarget: 'Acima de 4' },
+    evenOdd: { isOn: false, status: 'PAUSED', consecutiveLosses: 0, currentTarget: 'Par' },
+    underdog: { isOn: false, status: 'PAUSED', consecutiveLosses: 0, currentTarget: undefined },
   };
 
   const [pilots, setPilots] = useState<Record<PilotType, PilotState>>(initialPilotState);
@@ -67,6 +69,7 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
     matchesDiffers: null,
     overUnder: null,
     evenOdd: null,
+    underdog: null,
   });
   
   const digitStats: DigitStats[] = useMemo(() => {
@@ -124,6 +127,7 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
     
     if (lastPilotTrade.status === 'lost') {
         setPilots(prevPilots => {
+            if(!prevPilots[pilotType]) return prevPilots; // Safety check
             const newConsecutiveLosses = (prevPilots[pilotType]?.consecutiveLosses || 0) + 1;
             
             setTimeout(() => {
@@ -137,7 +141,7 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
             cooldownTimersRef.current[pilotType] = setTimeout(() => {
                 setPilots(currentPilots => {
                     const pilotState = currentPilots[pilotType];
-                    if (pilotState.consecutiveLosses < MAX_CONSECUTIVE_LOSSES) {
+                    if (pilotState && pilotState.consecutiveLosses < MAX_CONSECUTIVE_LOSSES) {
                         setTimeout(() => {
                             toast({ title: `✅ Cooldown Finalizado (${pilotType})`, description: 'Piloto está ativo novamente.' });
                         }, 0);
@@ -154,10 +158,13 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
         });
 
     } else if (lastPilotTrade.status === 'won') {
-        setPilots(prev => ({
-          ...prev,
-          [pilotType]: { ...prev[pilotType], consecutiveLosses: 0 }
-        }));
+        setPilots(prev => {
+          if (!prev[pilotType]) return prev;
+          return {
+            ...prev,
+            [pilotType]: { ...prev[pilotType], consecutiveLosses: 0 }
+          }
+        });
     }
   }, [operationsLog, toast]);
 
@@ -167,7 +174,17 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
 
     const runAutopilots = async () => {
         autopilotExecutionRef.current = true;
+        
         const sortedByProb = [...digitStats].sort((a, b) => b.probability - a.probability);
+        const mostProbable = sortedByProb[0];
+        const leastProbable = sortedByProb[sortedByProb.length - 1];
+
+        // Update targets for UI display
+        setPilots(prev => ({
+            ...prev,
+            matchesDiffers: { ...prev.matchesDiffers, currentTarget: `Difere de ${mostProbable?.digit}` },
+            underdog: { ...prev.underdog, currentTarget: `Combina com ${leastProbable?.digit}` },
+        }));
 
         for (const [type, state] of Object.entries(pilots)) {
             const pilotKey = type as PilotType;
@@ -179,7 +196,7 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
             
             if (pilotPnL <= -dailyBalance || pilotPnL >= dailyTarget) {
                 if (state.isOn) {
-                    toggleAutopilot(pilotKey, true); // Desativa silenciosamente
+                    toggleAutopilot(pilotKey, true); // Silent toggle
                     setTimeout(() => toast({
                         title: `Piloto ${pilotKey} Desativado Automaticamente`,
                         description: pilotPnL <= -dailyBalance ? `Limite de perda de $${dailyBalance.toFixed(2)} atingido.` : `Meta de lucro de $${dailyTarget.toFixed(2)} atingida.`,
@@ -191,7 +208,7 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
 
             if (state.consecutiveLosses >= MAX_CONSECUTIVE_LOSSES) {
                  if (state.isOn) {
-                    toggleAutopilot(pilotKey, true); // Desativa silenciosamente
+                    toggleAutopilot(pilotKey, true); // Silent toggle
                     setTimeout(() => toast({ title: `Piloto ${pilotKey} Pausado`, description: `Limite de ${MAX_CONSECUTIVE_LOSSES} perdas consecutivas atingido.`, variant: 'destructive' }), 0);
                  }
                 continue;
@@ -200,20 +217,12 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
             let signalType: CouncilStrategy['type'] | null = null;
             let predictionDigit: number | undefined;
             const threshold = consensusThreshold;
-            const stake = 0.35; // Aposta mínima fixa
+            const stake = 0.35; 
 
             if (pilotKey === 'matchesDiffers') {
-                if (sortedByProb[0] && sortedByProb[0].probability > threshold) {
+                if (mostProbable && mostProbable.probability > threshold) {
                     signalType = 'DIGITDIFF';
-                    predictionDigit = sortedByProb[0].digit;
-                }
-            } else if (pilotKey === 'evenOdd') {
-                const probEven = digitStats.filter(s => s.digit % 2 === 0).reduce((sum, s) => sum + s.probability, 0);
-                const evenOddThreshold = threshold + 15; // Threshold mais alto
-                if (probEven > evenOddThreshold) {
-                    signalType = 'DIGITEVEN';
-                } else if ((100 - probEven) > evenOddThreshold) {
-                    signalType = 'DIGITODD';
+                    predictionDigit = mostProbable.digit;
                 }
             } else if (pilotKey === 'overUnder') {
                 const overUnderThreshold = threshold + 15;
@@ -227,6 +236,21 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
                     signalType = 'DIGITUNDER';
                     predictionDigit = 5;
                 }
+            } else if (pilotKey === 'evenOdd') {
+                const evenOddThreshold = threshold + 15;
+                const probEven = digitStats.filter(s => s.digit % 2 === 0).reduce((sum, s) => sum + s.probability, 0);
+                
+                if (probEven > evenOddThreshold) {
+                    signalType = 'DIGITEVEN';
+                } else if ((100 - probEven) > evenOddThreshold) {
+                    signalType = 'DIGITODD';
+                }
+            } else if (pilotKey === 'underdog') {
+                const underdogThreshold = 5.0; // Bet if a digit has less than 5% frequency
+                if (leastProbable && leastProbable.probability < underdogThreshold) {
+                    signalType = 'DIGITMATCH';
+                    predictionDigit = leastProbable.digit;
+                }
             }
             
             if (signalType) {
@@ -237,7 +261,9 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
         setTimeout(() => { autopilotExecutionRef.current = false; }, 2000); // Cooldown global para evitar rajadas de trades
     };
 
-    runAutopilots();
+    const timeoutId = setTimeout(runAutopilots, 100); // Adiciona um pequeno delay para garantir que o estado se propague
+    return () => clearTimeout(timeoutId);
+
   }, [pilots, digitStats, consensusThreshold, activeSymbol, executeTrade, operationsLog, dailyBalance, dailyTarget, toggleAutopilot, toast]);
   
   return {
