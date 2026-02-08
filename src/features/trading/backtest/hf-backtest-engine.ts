@@ -103,7 +103,7 @@ function simulateTradeOutcome(
     pnl: finalPnl, 
     exitPrice, 
     exitIndex: entryCandleIndex + tradeDurationInCandles,
-    durationInCandles
+    durationInCandles: tradeDurationInCandles
   };
 }
 
