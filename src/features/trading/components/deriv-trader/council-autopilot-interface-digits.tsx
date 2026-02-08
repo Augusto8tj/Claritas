@@ -104,6 +104,10 @@ export const DigitsAutopilotManager: React.FC<DigitsAutopilotManagerProps> = (pr
     setCooldownTime,
     maxLosses,
     setMaxLosses,
+    isOverUnderUnderdogMode,
+    setIsOverUnderUnderdogMode,
+    overUnderUnderdogThreshold,
+    setOverUnderUnderdogThreshold,
  } = props;
 
   const isAnyPilotOn = Object.values(pilots).some(p => p.isOn);
@@ -121,22 +125,23 @@ export const DigitsAutopilotManager: React.FC<DigitsAutopilotManagerProps> = (pr
       </CardHeader>
       <CardContent className="space-y-4">
         <Collapsible>
-          <CollapsibleTrigger asChild>
-              <Button variant="outline" className="w-full">
-                  <TestTube className="mr-2 h-4 w-4" />
-                  Painel de Backtesting de Dígitos
-              </Button>
-          </CollapsibleTrigger>
-          <CollapsibleContent className="pt-4">
-              {/* O conteúdo do backtesting foi movido para o componente DigitsBacktestPanel, mas a lógica para renderizá-lo está na página principal. Aqui é só um gatilho. */}
-          </CollapsibleContent>
+            <CollapsibleTrigger asChild>
+                <Button variant="outline" className="w-full">
+                    <TestTube className="mr-2 h-4 w-4" />
+                    Painel de Backtesting de Dígitos
+                </Button>
+            </CollapsibleTrigger>
+            <CollapsibleContent className="pt-4">
+                {/* A LÓGICA DO BACKTESTING ESTÁ NA PÁGINA PAI, AQUI É SÓ O GATILHO VISUAL */}
+            </CollapsibleContent>
         </Collapsible>
         <Tabs defaultValue="matchesDiffers" className="w-full">
-            <TabsList className="grid w-full grid-cols-4">
+            <TabsList className="grid w-full grid-cols-5">
                 <TabsTrigger value="matchesDiffers" className="text-xs sm:text-sm"><HelpCircle className="h-4 w-4 mr-1.5"/>Difere</TabsTrigger>
                 <TabsTrigger value="overUnder" className="text-xs sm:text-sm"><TrendingUp className="h-4 w-4 mr-1.5"/>Acima/Abaixo</TabsTrigger>
                 <TabsTrigger value="evenOdd" className="text-xs sm:text-sm"><Binary className="h-4 w-4 mr-1.5"/>Par/Ímpar</TabsTrigger>
                 <TabsTrigger value="underdog" className="text-xs sm:text-sm"><Trophy className="h-4 w-4 mr-1.5"/>Azarão</TabsTrigger>
+                <TabsTrigger value="underdogOverUnder" className="text-xs sm:text-sm"><Trophy className="h-4 w-4 mr-1.5"/>Azarão A/A</TabsTrigger>
             </TabsList>
             <TabsContent value="matchesDiffers" className="pt-4">
                 <PilotTabContent
@@ -150,7 +155,7 @@ export const DigitsAutopilotManager: React.FC<DigitsAutopilotManagerProps> = (pr
             <TabsContent value="overUnder" className="pt-4">
                 <PilotTabContent
                     pilotKey="overUnder"
-                    title="Piloto Acima/Abaixo"
+                    title="Piloto Acima/Abaixo (Padrão)"
                     description="Analisa a probabilidade de o dígito final ser maior ou menor que uma barreira."
                     pilotState={pilots.overUnder}
                     toggleAutopilot={toggleAutopilot}
@@ -199,6 +204,29 @@ export const DigitsAutopilotManager: React.FC<DigitsAutopilotManagerProps> = (pr
                             onCheckedChange={setIsUnderdogInverse}
                             disabled={isAnyPilotOn}
                         />
+                    </div>
+                </div>
+            </TabsContent>
+            <TabsContent value="underdogOverUnder" className="pt-4">
+                <PilotTabContent
+                    pilotKey="underdogOverUnder"
+                    title="Piloto Azarão Acima/Abaixo"
+                    description="Aposta no bloco (0-4 ou 5-9) que está estatisticamente 'atrasado'."
+                    pilotState={pilots.underdogOverUnder}
+                    toggleAutopilot={toggleAutopilot}
+                />
+                 <div className="space-y-4 pt-4 mt-4 border-t">
+                    <h4 className="text-xs font-semibold text-muted-foreground">Configuração Fina (Azarão A/A)</h4>
+                    <div className="space-y-2">
+                        <Label htmlFor="underdog-ou-threshold">Limiar de Frequência de Bloco ({overUnderUnderdogThreshold.toFixed(1)}%)</Label>
+                        <Slider
+                            id="underdog-ou-threshold"
+                            min={30} max={48} step={1}
+                            value={[overUnderUnderdogThreshold]}
+                            onValueChange={(value) => setOverUnderUnderdogThreshold(value[0])}
+                            disabled={isAnyPilotOn}
+                        />
+                        <p className="text-xs text-muted-foreground">Operar em um bloco se a probabilidade dele cair abaixo deste valor.</p>
                     </div>
                 </div>
             </TabsContent>

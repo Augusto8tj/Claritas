@@ -15,7 +15,7 @@ export type DigitStats = {
     probability: number;
 };
 
-export type PilotType = 'matchesDiffers' | 'overUnder' | 'evenOdd' | 'underdog';
+export type PilotType = 'matchesDiffers' | 'overUnder' | 'evenOdd' | 'underdog' | 'underdogOverUnder';
 
 type CouncilStrategy = {
   id: string;
@@ -60,6 +60,9 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
   const [underdogThreshold, setUnderdogThreshold] = useState(5.0);
   const [isUnderdogInverse, setIsUnderdogInverse] = useState(false);
 
+  // --- Over/Under Underdog Specific Settings ---
+  const [overUnderUnderdogThreshold, setOverUnderUnderdogThreshold] = useState(40);
+
   // --- Risk Management Settings ---
   const [martingaleMultiplier, setMartingaleMultiplier] = useState(1.0);
   const [cooldownTime, setCooldownTime] = useState(0); // in seconds
@@ -70,6 +73,7 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
     overUnder: { isOn: false, status: 'PAUSED', consecutiveLosses: 0, currentTarget: 'Acima de 4', lastStake: BASE_STAKE },
     evenOdd: { isOn: false, status: 'PAUSED', consecutiveLosses: 0, currentTarget: 'Par', lastStake: BASE_STAKE },
     underdog: { isOn: false, status: 'PAUSED', consecutiveLosses: 0, currentTarget: undefined, lastStake: BASE_STAKE },
+    underdogOverUnder: { isOn: false, status: 'PAUSED', consecutiveLosses: 0, currentTarget: 'Bloco Azarão', lastStake: BASE_STAKE },
   };
 
   const [pilots, setPilots] = useState<Record<PilotType, PilotState>>(initialPilotState);
@@ -80,6 +84,7 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
     overUnder: null,
     evenOdd: null,
     underdog: null,
+    underdogOverUnder: null,
   });
   
   const digitStats: DigitStats[] = useMemo(() => {
@@ -207,10 +212,15 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
         const mostProbable = sortedByProb[0];
         const leastProbable = sortedByProb[sortedByProb.length - 1];
 
+        const probOver4 = digitStats.filter(s => s.digit > 4).reduce((sum, s) => sum + s.probability, 0);
+        const probUnder5 = digitStats.filter(s => s.digit < 5).reduce((sum, s) => sum + s.probability, 0);
+        
         setPilots(prev => ({
             ...prev,
             matchesDiffers: { ...prev.matchesDiffers, currentTarget: `Difere de ${mostProbable?.digit}` },
             underdog: { ...prev.underdog, currentTarget: isUnderdogInverse ? `Difere de ${leastProbable?.digit}` : `Combina com ${leastProbable?.digit}` },
+            overUnder: { ...prev.overUnder, currentTarget: probOver4 > probUnder5 ? 'Acima de 4' : 'Abaixo de 5'},
+            underdogOverUnder: { ...prev.underdogOverUnder, currentTarget: probOver4 < probUnder5 ? 'Acima de 4 (Azarão)' : 'Abaixo de 5 (Azarão)'},
         }));
 
         for (const [type, state] of Object.entries(pilots)) {
@@ -252,9 +262,6 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
                 }
             } else if (pilotKey === 'overUnder') {
                 const overUnderThreshold = consensusThreshold + 15;
-                const probOver4 = digitStats.filter(s => s.digit > 4).reduce((sum, s) => sum + s.probability, 0);
-                const probUnder5 = digitStats.filter(s => s.digit < 5).reduce((sum, s) => sum + s.probability, 0);
-
                 if (probOver4 > overUnderThreshold) {
                     signalType = 'DIGITOVER';
                     predictionDigit = 4;
@@ -276,6 +283,14 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
                     signalType = isUnderdogInverse ? 'DIGITDIFF' : 'DIGITMATCH';
                     predictionDigit = leastProbable.digit;
                 }
+            } else if (pilotKey === 'underdogOverUnder') {
+                if (probOver4 < overUnderUnderdogThreshold) {
+                    signalType = 'DIGITOVER';
+                    predictionDigit = 4;
+                } else if (probUnder5 < overUnderUnderdogThreshold) {
+                    signalType = 'DIGITUNDER';
+                    predictionDigit = 5;
+                }
             }
             
             if (signalType) {
@@ -289,7 +304,7 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
     const timeoutId = setTimeout(runAutopilots, 100);
     return () => clearTimeout(timeoutId);
 
-  }, [pilots, digitStats, consensusThreshold, activeSymbol, executeTrade, operationsLog, dailyBalance, dailyTarget, toggleAutopilot, toast, underdogThreshold, isUnderdogInverse, maxLosses, cooldownTime, martingaleMultiplier]);
+  }, [pilots, digitStats, consensusThreshold, activeSymbol, executeTrade, operationsLog, dailyBalance, dailyTarget, toggleAutopilot, toast, underdogThreshold, isUnderdogInverse, maxLosses, cooldownTime, martingaleMultiplier, overUnderUnderdogThreshold]);
   
   return {
     isCouncilAutopilotOn: Object.values(pilots).some(p => p.isOn),
@@ -304,5 +319,9 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
     martingaleMultiplier, setMartingaleMultiplier,
     cooldownTime, setCooldownTime,
     maxLosses, setMaxLosses,
+    // NOVO
+    isOverUnderUnderdogMode: false, // Manter por compatibilidade, mas a lógica mudou
+    setIsOverUnderUnderdogMode: () => {}, // Manter por compatibilidade
+    overUnderUnderdogThreshold, setOverUnderUnderdogThreshold,
   };
 }
