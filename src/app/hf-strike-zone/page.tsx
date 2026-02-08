@@ -89,18 +89,19 @@ function PageContent() {
     sharpeRatio: 0,
   });
 
+  const [strategy, setStrategy] = useState<StrategyType>('HF_MEAN_REVERSION');
+
   const {
     currentZone,
     strikeHistory,
     stats,
     fullIndicators,
-    strategy,
-    setStrategy,
   } = useHFStrikeZone(
     priceTicks,
     botCandleData,
     chartData,
     hfConfig.enabled,
+    strategy
   );
   
   const handleStrategyChange = (newStrategy: StrategyType) => {
@@ -361,4 +362,3 @@ export default function HFStrikeZonePage() {
     </DerivApiProvider>
   );
 }
-```
