@@ -120,6 +120,17 @@ export const DigitsAutopilotManager: React.FC<DigitsAutopilotManagerProps> = (pr
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
+        <Collapsible>
+          <CollapsibleTrigger asChild>
+              <Button variant="outline" className="w-full">
+                  <TestTube className="mr-2 h-4 w-4" />
+                  Painel de Backtesting de Dígitos
+              </Button>
+          </CollapsibleTrigger>
+          <CollapsibleContent className="pt-4">
+              {/* O conteúdo do backtesting foi movido para o componente DigitsBacktestPanel, mas a lógica para renderizá-lo está na página principal. Aqui é só um gatilho. */}
+          </CollapsibleContent>
+        </Collapsible>
         <Tabs defaultValue="matchesDiffers" className="w-full">
             <TabsList className="grid w-full grid-cols-4">
                 <TabsTrigger value="matchesDiffers" className="text-xs sm:text-sm"><HelpCircle className="h-4 w-4 mr-1.5"/>Difere</TabsTrigger>
@@ -276,7 +287,7 @@ export const DigitsAutopilotManager: React.FC<DigitsAutopilotManagerProps> = (pr
                     <Label htmlFor="max-losses-slider">Limite de Perdas Seguidas ({maxLosses})</Label>
                     <Slider
                         id="max-losses-slider"
-                        min={3} max={15} step={1}
+                        min={3} max={40} step={1}
                         value={[maxLosses]}
                         onValueChange={(value) => setMaxLosses(value[0])}
                         disabled={isAnyPilotOn}
