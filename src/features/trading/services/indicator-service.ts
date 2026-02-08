@@ -74,6 +74,7 @@ export interface Indicators {
     // --- Volume ---
     obv: number | null;      // On Balance Volume: Fluxo acumulado de volume
     obvPrev: number | null;  // Para detectar divergências
+    volSma?: (number | null)[] | undefined;
 }
 
 // ============================================================================
@@ -106,6 +107,21 @@ const calculateSMA = (data: CandleData[], period: number): (number | null)[] => 
         }
         let sum = 0;
         for (let j = 0; j < period; j++) sum += data[i - j].close;
+        results.push(sum / period);
+    }
+    return results;
+};
+
+const calculateSMA_Volume = (data: CandleData[], period: number): (number | null)[] => {
+    if (data.length < period) return Array(data.length).fill(null);
+    const results: (number | null)[] = [];
+    for (let i = 0; i < data.length; i++) {
+        if (i < period - 1) {
+            results.push(null);
+            continue;
+        }
+        let sum = 0;
+        for (let j = 0; j < period; j++) sum += (data[i - j].volume || 1);
         results.push(sum / period);
     }
     return results;
@@ -353,7 +369,7 @@ const calculateKAMA = (data: CandleData[], period = 10, fast = 2, slow = 30) => 
     let kama = data[period-1].close; // Seed
     
     for(let i = period; i < data.length; i++) {
-        const change = Math.abs(data[i].close - (data[i-period]?.close || d[0].close));
+        const change = Math.abs(data[i].close - (data[i-period]?.close || data[0].close));
         let volatility = 0;
         for(let j=0; j<period; j++) volatility += Math.abs(data[i-j].close - data[i-j-1].close);
         
@@ -578,6 +594,7 @@ export function calculateAllIndicators(
         const obvData = calculateOBV(validCandles);
         const stochRSI = calculateStochRSI(validCandles, rsiSeries);
         const vwapSeries = calculateVWAP(validCandles);
+        const volSma = calculateSMA_Volume(validCandles, 20);
         
         const rocPeriod = getParam('ROC', 'period', 12);
         const roc = validCandles.length > rocPeriod ? 
@@ -628,6 +645,7 @@ export function calculateAllIndicators(
             rvi,
             mfi,
             vwap: vwapSeries,
+            volSma,
             zScore,
             psar,
             bollingerBands: bbSeries,

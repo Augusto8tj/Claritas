@@ -148,7 +148,7 @@ export function runAllStrategiesBacktest(
           strikeZone = detectVolumeAbsorptionZone(windowCandles, indicators);
           break;
         case 'MICROSTRUCTURE_SCALP':
-          strikeZone = detectMicrostructureScalpZone(windowTicks, indicators, currentPrice);
+          strikeZone = detectMicrostructureScalpZone(windowTicks, windowCandles, indicators, currentPrice);
           break;
       }
       

@@ -6,9 +6,16 @@ import type { TickData, CandleData } from '@/lib/types';
 import {
     detectHFMeanReversionZone,
     detectStandardTrendZone,
+    detectBollingerSqueezeZone,
+    detectVolumeAbsorptionZone,
+    detectMicrostructureScalpZone,
     type StrikeZone,
+    StrategyType,
+    strategyMetadata
 } from '../services/hf-strike-logic';
 import { calculateAllIndicators, type Indicators } from '@/features/trading/services/indicator-service';
+import { getCouncilStrategies } from '../services/council-strategies';
+
 
 export type { StrikeZone } from '../services/hf-strike-logic';
 
@@ -25,41 +32,50 @@ export interface HFStats {
 
 export function useHFStrikeZone(
   priceTicks: TickData[],
-  botCandleData: CandleData[], // Sempre 1 minuto para base
-  uiChartData: CandleData[],   // Dados do gráfico da UI (pode ser 15m)
+  botCandleData: CandleData[],
+  uiChartPeriod: TimePeriod,
   enabled: boolean = true,
-  tradingMode: 'hf' | 'standard' = 'hf'
+  strategy: StrategyType
 ) {
   const [strikeHistory, setStrikeHistory] = useState<StrikeZone[]>([]);
   const rsiStateRef = useRef({ prev: 50 });
+  
+  const initialStrategies = useMemo(() => getCouncilStrategies('standard'), []);
 
   const indicators = useMemo((): Indicators | null => {
-    if (!enabled || (tradingMode === 'hf' && botCandleData.length < 20) || (tradingMode === 'standard' && uiChartData.length < 100)) return null;
+    const isHF = strategyMetadata[strategy]?.isHF ?? true;
+    const dataForIndicators = isHF ? botCandleData : botCandleData; // Sempre usar 1m para base de indicadores HF
+    const timePeriodForIndicators = isHF ? '1m' : uiChartPeriod;
+
+    if (!enabled || dataForIndicators.length < 100) return null;
     
-    // Use os dados de vela apropriados para o modo de trading
-    const dataForIndicators = tradingMode === 'standard' ? uiChartData : botCandleData;
-    const timePeriodForIndicators = tradingMode === 'standard' ? '15m' : '1m';
-
-    return calculateAllIndicators(dataForIndicators, [], timePeriodForIndicators, { duration: 1, unit: 't' });
-  }, [botCandleData, uiChartData, enabled, tradingMode]);
-
+    return calculateAllIndicators(dataForIndicators, initialStrategies, timePeriodForIndicators, { duration: 1, unit: 't' });
+  }, [botCandleData, uiChartPeriod, enabled, strategy, initialStrategies]);
+  
   const currentZone = useMemo((): StrikeZone | null => {
     if (!enabled || !indicators || priceTicks.length === 0) return null;
 
     const currentPrice = priceTicks[priceTicks.length - 1].price;
     let zone: StrikeZone | null = null;
     
-    if (tradingMode === 'hf') {
-        zone = detectHFMeanReversionZone(
-            indicators,
-            currentPrice
-        );
-    } else { // standard mode
-        zone = detectStandardTrendZone(
-            indicators,
-            currentPrice,
-            rsiStateRef.current.prev
-        );
+    const windowCandles = strategyMetadata[strategy]?.isHF ? botCandleData : botCandleData; // Passa os candles corretos
+
+    switch (strategy) {
+        case 'HF_MEAN_REVERSION':
+          zone = detectHFMeanReversionZone(indicators, currentPrice);
+          break;
+        case 'STD_TREND_FOLLOW':
+          zone = detectStandardTrendZone(indicators, currentPrice, rsiStateRef.current.prev);
+          break;
+        case 'BOLLINGER_SQUEEZE':
+          zone = detectBollingerSqueezeZone(indicators, currentPrice);
+          break;
+        case 'VOLUME_ABSORPTION':
+          zone = detectVolumeAbsorptionZone(windowCandles, indicators);
+          break;
+        case 'MICROSTRUCTURE_SCALP':
+          zone = detectMicrostructureScalpZone(priceTicks, windowCandles, indicators, currentPrice);
+          break;
     }
     
     if (indicators.rsi) {
@@ -67,7 +83,7 @@ export function useHFStrikeZone(
     }
 
     return zone;
-  }, [indicators, priceTicks, enabled, tradingMode]);
+  }, [indicators, priceTicks, enabled, strategy, botCandleData]);
   
   useEffect(() => {
     if (!currentZone || currentZone.type === 'NEUTRAL') return;
@@ -108,5 +124,6 @@ export function useHFStrikeZone(
     stats,
     clearHistory,
     fullIndicators: indicators,
+    supplyDemandZones: (indicators as any)?.supplyDemandZones,
   };
 }

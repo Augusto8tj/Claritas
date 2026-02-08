@@ -180,7 +180,9 @@ export const IndicatorsSchema = z.object({
   rsi: z.number().nullable(),
   stoch: z.number().nullable(),
   atr: z.number().nullable(),
+  atrSeries: z.array(z.number().nullable()),
   adx: z.number().nullable(),
+  adxSeries: z.array(z.number().nullable()),
   pdi: z.number().nullable(),
   ndi: z.number().nullable(),
   macd: z.object({
@@ -230,7 +232,9 @@ export const IndicatorsSchema = z.object({
     exitShort: z.number().nullable(),
   }).nullable(),
   rvi: z.number().nullable(),
+  volSma: z.array(z.number().nullable()).optional(),
 });
+export type Indicators = z.infer<typeof IndicatorsSchema>;
 
 export const RobotVoteSchema = z.object({
   vote: z.enum(['RISE', 'FALL', 'HOLD']),
