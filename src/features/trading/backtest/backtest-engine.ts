@@ -9,7 +9,7 @@ import {
     ewmaVarianceUpdate, 
     logReturnsFromPrices,
     clamp
-} from '../services/volatility-forecast';
+} from '@/features/trading/services/volatility-forecast';
 
 // --- CONFIGURAÇÕES ---
 const DEFAULT_SEED = 12345;
@@ -198,4 +198,5 @@ export function runStochasticBacktest(
         stability: finalStability,
     };
 }
-
+      
+    

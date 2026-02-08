@@ -118,6 +118,12 @@ export function runAllStrategiesBacktest(
   const initialStrategies = getCouncilStrategies('standard');
 
   for (const strategy of allStrategies) {
+    // A simulação de 'MICROSTRUCTURE_SCALP' não é viável com dados de vela, pois requer ticks.
+    if (strategy === 'MICROSTRUCTURE_SCALP') {
+      allResults[strategy] = { totalTrades: 0, winRate: 0, totalPnl: 0, trades: [] };
+      continue;
+    }
+
     const trades: TradeResult[] = [];
     let i = 100;
     let prevRsi = 50;
@@ -148,7 +154,7 @@ export function runAllStrategiesBacktest(
           strikeZone = detectVolumeAbsorptionZone(windowCandles, indicators);
           break;
         case 'MICROSTRUCTURE_SCALP':
-          strikeZone = detectMicrostructureScalpZone(windowTicks, windowCandles, indicators, currentPrice);
+           // Ignorado no backtest
           break;
       }
       
@@ -167,3 +173,5 @@ export function runAllStrategiesBacktest(
 
   return allResults as Record<StrategyType, BacktestResult>;
 }
+      
+    
