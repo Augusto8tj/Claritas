@@ -51,7 +51,8 @@ function simulateTradeOutcome(
   entryCandleIndex: number,
   strikeZone: StrikeZone,
   allCandles: CandleData[],
-  strategy: StrategyType
+  strategy: StrategyType,
+  stake: number
 ): { exitPrice: number; exitIndex: number; result: 'win' | 'loss'; pnl: number, durationInCandles: number } {
   const entryPrice = strikeZone.entry.price;
   const { takeProfit, stopLoss } = strikeZone.targets;
@@ -79,24 +80,24 @@ function simulateTradeOutcome(
     if (!candle) continue;
 
     if (strikeZone.type === 'LONG_ENTRY') {
-      if (candle.high >= takeProfit) return { result: 'win', pnl: strikeZone.stake * strikeZone.targets.riskReward, exitPrice: takeProfit, exitIndex: entryCandleIndex + 1 + i, durationInCandles: i+1 };
-      if (candle.low <= stopLoss) return { result: 'loss', pnl: -strikeZone.stake, exitPrice: stopLoss, exitIndex: entryCandleIndex + 1 + i, durationInCandles: i+1 };
+      if (candle.high >= takeProfit) return { result: 'win', pnl: stake * strikeZone.targets.riskReward, exitPrice: takeProfit, exitIndex: entryCandleIndex + 1 + i, durationInCandles: i+1 };
+      if (candle.low <= stopLoss) return { result: 'loss', pnl: -stake, exitPrice: stopLoss, exitIndex: entryCandleIndex + 1 + i, durationInCandles: i+1 };
     } else { // SHORT_ENTRY
-      if (candle.low <= takeProfit) return { result: 'win', pnl: strikeZone.stake * strikeZone.targets.riskReward, exitPrice: takeProfit, exitIndex: entryCandleIndex + 1 + i, durationInCandles: i+1 };
-      if (candle.high >= stopLoss) return { result: 'loss', pnl: -strikeZone.stake, exitPrice: stopLoss, exitIndex: entryCandleIndex + 1 + i, durationInCandles: i+1 };
+      if (candle.low <= takeProfit) return { result: 'win', pnl: stake * strikeZone.targets.riskReward, exitPrice: takeProfit, exitIndex: entryCandleIndex + 1 + i, durationInCandles: i+1 };
+      if (candle.high >= stopLoss) return { result: 'loss', pnl: -stake, exitPrice: stopLoss, exitIndex: entryCandleIndex + 1 + i, durationInCandles: i+1 };
     }
   }
 
   const lastCandle = exitWindow[exitWindow.length - 1];
   if (!lastCandle) {
-      return { result: 'loss', pnl: -strikeZone.stake, exitPrice: entryPrice, exitIndex: entryCandleIndex, durationInCandles: 0 };
+      return { result: 'loss', pnl: -stake, exitPrice: entryPrice, exitIndex: entryCandleIndex, durationInCandles: 0 };
   }
   
   const exitPrice = lastCandle.close;
-  const pnlRatio = (exitPrice - entryPrice) / (takeProfit - entryPrice); // Simplistic PnL ratio
+  
   const finalPnl = strikeZone.type === 'LONG_ENTRY'
-    ? (exitPrice > entryPrice ? strikeZone.stake * strikeZone.targets.riskReward : -strikeZone.stake)
-    : (exitPrice < entryPrice ? strikeZone.stake * strikeZone.targets.riskReward : -strikeZone.stake);
+    ? (exitPrice > entryPrice ? stake * strikeZone.targets.riskReward : -stake)
+    : (exitPrice < entryPrice ? stake * strikeZone.targets.riskReward : -stake);
 
   return { 
     result: finalPnl > 0 ? 'win' : 'loss', 
@@ -111,6 +112,7 @@ export function runAllStrategiesBacktest(
   historicalData: CandleData[],
   config: HFConfig,
 ): Record<StrategyType, BacktestResult> {
+  const BACKTEST_STAKE = 1.0;
   const allStrategies: StrategyType[] = Object.keys(strategyMetadata) as StrategyType[];
   const allResults: Record<string, BacktestResult> = {};
   const initialStrategies = getCouncilStrategies('standard');
@@ -120,7 +122,7 @@ export function runAllStrategiesBacktest(
     let i = 100;
     let prevRsi = 50;
     
-    const timePeriodForIndicators = strategyMetadata[strategy].isHF ? '1m' : '15m';
+    const timePeriodForIndicators = strategyMetadata[strategy]?.isHF ? '1m' : '15m';
 
     while (i < historicalData.length - 30) {
       const windowCandles = historicalData.slice(0, i + 1);
@@ -153,7 +155,7 @@ export function runAllStrategiesBacktest(
       if (indicators.rsi) prevRsi = indicators.rsi;
       
       if (strikeZone && strikeZone.confidence >= config.minConfidence && !strikeZone.triggers.some(t => t.startsWith('VETO'))) {
-        const outcome = simulateTradeOutcome(i, strikeZone, historicalData, strategy);
+        const outcome = simulateTradeOutcome(i, strikeZone, historicalData, strategy, BACKTEST_STAKE);
         trades.push({ ...outcome, strikeZone, strategy });
         i = outcome.exitIndex;
       } else {
