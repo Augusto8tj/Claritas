@@ -9,6 +9,7 @@ import { Slider } from '@/components/ui/slider';
 import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
 import { Settings, Zap, Clock } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { StrategyType } from '@/features/trading/services/hf-strike-logic';
 
 export interface HFConfig {
   enabled: boolean;
@@ -18,20 +19,30 @@ export interface HFConfig {
   preferredDuration: number;
 }
 
+const strategyMetadata: Record<StrategyType, { label: string; description: string; isHF: boolean; }> = {
+  HF_MEAN_REVERSION: { label: 'Alta Frequência (Reversão)', description: 'Otimizado para reversão à média em 15-45s.', isHF: true },
+  STD_TREND_FOLLOW: { label: 'Padrão (Tendência)', description: 'Segue tendências em velas de 15m.', isHF: false },
+  BOLLINGER_SQUEEZE: { label: 'Alta Frequência (Breakout)', description: 'Opera na explosão de volatilidade.', isHF: true },
+  VOLUME_ABSORPTION: { label: 'Padrão (Volume)', description: 'Analisa o clímax e absorção de volume.', isHF: false },
+  MICROSTRUCTURE_SCALP: { label: 'Ultra HF (Scalping)', description: 'Opera o fluxo de ordens para trades de 5 ticks.', isHF: true },
+};
+
 interface HFConfigPanelProps {
   config: HFConfig;
   onConfigChange: (config: Partial<HFConfig>) => void;
   disabled?: boolean;
-  tradingMode: 'hf' | 'standard';
+  strategy: StrategyType;
 }
 
-export function HFConfigPanel({ config, onConfigChange, disabled = false, tradingMode }: HFConfigPanelProps) {
+export function HFConfigPanel({ config, onConfigChange, disabled = false, strategy }: HFConfigPanelProps) {
+  const metadata = strategyMetadata[strategy];
+
   return (
     <Card>
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <Settings className="h-5 w-5 text-primary" />
-          Configurações ({tradingMode === 'hf' ? 'Alta Frequência' : 'Padrão'})
+          Configurações ({metadata.label})
         </CardTitle>
         <CardDescription>
           Parâmetros do sistema de trading.
@@ -104,7 +115,7 @@ export function HFConfigPanel({ config, onConfigChange, disabled = false, tradin
           </p>
         </div>
 
-        {tradingMode === 'hf' && (
+        {metadata.isHF && strategy !== 'MICROSTRUCTURE_SCALP' && (
           <div className="space-y-2">
             <Label htmlFor="preferred-duration">
               Duração Preferida ({config.preferredDuration}s)
@@ -119,24 +130,21 @@ export function HFConfigPanel({ config, onConfigChange, disabled = false, tradin
               disabled={disabled || !config.enabled}
             />
             <p className="text-xs text-muted-foreground">
-              Duração da operação para o modo de alta frequência.
+              Ajusta a duração da operação para os modos de alta frequência.
             </p>
           </div>
         )}
 
         <Alert className={cn(
             "border-opacity-50",
-            tradingMode === 'hf' ? 'bg-yellow-50 border-yellow-300' : 'bg-blue-50 border-blue-300'
+            metadata.isHF ? 'bg-yellow-50 border-yellow-300' : 'bg-blue-50 border-blue-300'
         )}>
-          {tradingMode === 'hf' ? <Zap className="h-4 w-4 text-yellow-600" /> : <Clock className="h-4 w-4 text-blue-600" />}
-          <AlertTitle className={cn(tradingMode === 'hf' ? 'text-yellow-900' : 'text-blue-900')}>
-            Modo {tradingMode === 'hf' ? 'Alta Frequência' : 'Padrão'}
+          {metadata.isHF ? <Zap className="h-4 w-4 text-yellow-600" /> : <Clock className="h-4 w-4 text-blue-600" />}
+          <AlertTitle className={cn(metadata.isHF ? 'text-yellow-900' : 'text-blue-900')}>
+            Modo {metadata.label}
           </AlertTitle>
-          <AlertDescription className={cn('text-xs', tradingMode === 'hf' ? 'text-yellow-800' : 'text-blue-800')}>
-            {tradingMode === 'hf' 
-              ? 'Otimizado para reversão à média em janelas de 15-45s em ativos sintéticos.'
-              : 'Otimizado para seguir tendências em janelas de 15 minutos, ideal para Forex e outros mercados.'
-            }
+          <AlertDescription className={cn('text-xs', metadata.isHF ? 'text-yellow-800' : 'text-blue-800')}>
+            {metadata.description}
           </AlertDescription>
         </Alert>
       </CardContent>

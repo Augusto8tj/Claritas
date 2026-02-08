@@ -92,6 +92,8 @@ function PageContent() {
   });
 
   const [strategy, setStrategy] = useState<StrategyType>('HF_MEAN_REVERSION');
+  
+  const uiChartData = useMemo(() => chartData.filter((d): d is CandleData => 'close' in d), [chartData]);
 
   const {
     currentZone,
@@ -102,7 +104,7 @@ function PageContent() {
   } = useHFStrikeZone(
     priceTicks,
     botCandleData,
-    chartData as CandleData[],
+    uiChartData,
     hfConfig.enabled,
     strategy
   );
@@ -179,8 +181,8 @@ function PageContent() {
       if (strategy === 'MICROSTRUCTURE_SCALP') {
         duration = 5;
         durationUnit = 't';
-      } else if (strategy === 'STD_TREND_FOLLOW') {
-        duration = 45; // 3 velas de 15m
+      } else if (strategy === 'STD_TREND_FOLLOW' || strategy === 'VOLUME_ABSORPTION') {
+        duration = 3;
         durationUnit = 'm';
       } else {
         duration = currentZone.duration;
@@ -230,13 +232,13 @@ function PageContent() {
   }, [currentZone, hfConfig.autoExecute, hfConfig.enabled, hfConfig.minConfidence, handleExecuteStrike, isExecuting, strikeHistory]);
 
   const filteredZone = useMemo(() => {
-    if (!currentZone || currentZone.type === 'NEUTRAL') return null;
-    const isVetoed = currentZone.triggers.some(t => t.startsWith('VETO'));
-    if (isVetoed) {
-        return currentZone; // Mostra a zona vetada para feedback
+    if (!currentZone || currentZone.type === 'NEUTRAL') {
+        const isVetoed = currentZone.triggers.some(t => t.startsWith('VETO'));
+        if (isVetoed) return currentZone; // Mostra a zona vetada para feedback
+        if (currentZone.confidence < hfConfig.minConfidence) return null;
+        return currentZone;
     }
-    if (currentZone.confidence < hfConfig.minConfidence) return null;
-    return currentZone;
+    return null;
   }, [currentZone, hfConfig.minConfidence]);
 
   return (
@@ -344,6 +346,7 @@ function PageContent() {
         <div className="lg:col-span-2">
           <StrikeZoneCard
             zone={filteredZone}
+            strategy={strategy}
             onExecute={handleExecuteStrike}
             isExecuting={isExecuting}
           />
@@ -353,7 +356,7 @@ function PageContent() {
             config={hfConfig}
             onConfigChange={updates => setHFConfig(prev => ({ ...prev, ...updates }))}
             disabled={isExecuting}
-            tradingMode={strategy.includes('HF') || strategy.includes('SCALP') ? 'hf' : 'standard'}
+            strategy={strategy}
           />
         </div>
       </div>

@@ -9,15 +9,31 @@ import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { Target, TrendingUp, TrendingDown, Activity, CheckCheck, Zap, ShieldAlert } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { StrategyType } from '@/features/trading/services/hf-strike-logic';
 import type { StrikeZone } from '@/features/trading/hooks/use-hf-strike-zone';
 
 interface StrikeZoneCardProps {
   zone: StrikeZone | null;
+  strategy: StrategyType;
   onExecute?: () => void;
   isExecuting?: boolean;
 }
 
-export function StrikeZoneCard({ zone, onExecute, isExecuting = false }: StrikeZoneCardProps) {
+export function StrikeZoneCard({ zone, strategy, onExecute, isExecuting = false }: StrikeZoneCardProps) {
+  
+  const getDurationDisplay = () => {
+    if (!zone) return '';
+    switch (strategy) {
+      case 'MICROSTRUCTURE_SCALP':
+        return '5 ticks';
+      case 'STD_TREND_FOLLOW':
+      case 'VOLUME_ABSORPTION':
+        return '3 velas (45m)';
+      default:
+        return `${zone.duration} segundos`;
+    }
+  };
+
   if (!zone || zone.type === 'NEUTRAL') {
     const isVeto = zone?.triggers?.some(t => t.startsWith('VETO'));
     const vetoReason = isVeto ? zone.triggers[0] : null;
@@ -41,7 +57,7 @@ export function StrikeZoneCard({ zone, onExecute, isExecuting = false }: StrikeZ
             <>
                 <Activity className="h-12 w-12 mx-auto opacity-20 mb-2 animate-pulse" />
                 <p className="text-sm font-semibold">Aguardando Configuração Ideal...</p>
-                <p className="text-xs mt-1">Monitorando BB + RSI + Volume em tempo real</p>
+                <p className="text-xs mt-1">Monitorando indicadores em tempo real</p>
             </>
           )}
         </CardContent>
@@ -92,7 +108,7 @@ export function StrikeZoneCard({ zone, onExecute, isExecuting = false }: StrikeZ
               </div>
               <div>
                 <p className="font-semibold">Duração:</p>
-                <p className="font-mono">{zone.duration}s</p>
+                <p className="font-mono">{getDurationDisplay()}</p>
               </div>
               <div>
                 <p className="font-semibold">Take Profit:</p>
