@@ -208,17 +208,7 @@ function DerivTraderPageContentDigits() {
                     <CurrentPriceDisplay />
                     <DerivTraderInterfaceDigits symbol={activeSymbol || ""} />
                     <DigitsAutopilotManager {...robotCouncil} />
-                </div>
-
-                {/* --- Coluna da Direita (Dados e Logs) --- */}
-                <div className="lg:col-span-3 space-y-6">
-                    <DigitStatsChart priceTicks={priceTicks} pip={activeAsset?.pip} />
-                    <AITradeSuggestionDigits
-                        digitStats={robotCouncil.digitStats}
-                        isAutopilotOn={robotCouncil.isCouncilAutopilotOn}
-                    />
-                    <OperationsLogDigits operations={operationsLog} sellContract={sellContract} priceTicks={priceTicks} activeAsset={activeAsset} clearActiveContracts={clearActiveContracts} />
-                    <Collapsible>
+                     <Collapsible>
                         <CollapsibleTrigger asChild>
                            <Button variant="outline" className="w-full">
                                 <TestTube className="mr-2 h-4 w-4" />
@@ -233,6 +223,16 @@ function DerivTraderPageContentDigits() {
                             />
                         </CollapsibleContent>
                     </Collapsible>
+                </div>
+
+                {/* --- Coluna da Direita (Dados e Logs) --- */}
+                <div className="lg:col-span-3 space-y-6">
+                    <DigitStatsChart priceTicks={priceTicks} pip={activeAsset?.pip} />
+                    <AITradeSuggestionDigits
+                        digitStats={robotCouncil.digitStats}
+                        isAutopilotOn={robotCouncil.isCouncilAutopilotOn}
+                    />
+                    <OperationsLogDigits operations={operationsLog} sellContract={sellContract} priceTicks={priceTicks} activeAsset={activeAsset} clearActiveContracts={clearActiveContracts} />
                 </div>
             </div>
         </div>
