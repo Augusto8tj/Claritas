@@ -85,6 +85,7 @@ export interface DerivApiContextTypeDigits {
   tradeAnnotations: TradeAnnotation[];
   durationLimits: DurationLimits | null;
   clearActiveContracts: () => void;
+  getHistoricalData: (symbol: string, style: 'ticks' | 'candles', count: number, period?: TimePeriod) => Promise<ApiHistoricalData[]>;
 }
 
 export const DerivApiContextDigits = createContext<DerivApiContextTypeDigits | undefined>(undefined);
@@ -538,13 +539,13 @@ export function useDerivApiDigitsState() {
         setActiveSymbol, priceTicks, setAccountType, setTokens,
         disconnect, reconnect, executeTrade, sellContract, clearActiveContracts,
         chartData, isChartLoading, chartError, chartType, setChartType, timePeriod, setTimePeriod, dataVersion, tradeAnnotations,
-        durationLimits
+        durationLimits, getHistoricalData
     }), [
         isConnected, isConnecting, connectionError, demoToken, realToken, activeToken, accountType, 
         accountBalance, operationsLog, assetGroups, isAssetsLoading, activeSymbol, activeAsset,
         priceTicks, setAccountType, setTokens, disconnect, reconnect, executeTrade, sellContract, clearActiveContracts, setActiveSymbol,
         chartData, isChartLoading, chartError, chartType, timePeriod, dataVersion, tradeAnnotations,
-        durationLimits
+        durationLimits, getHistoricalData
   ]);
 
   return contextValue;
