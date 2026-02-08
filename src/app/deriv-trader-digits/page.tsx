@@ -1,7 +1,7 @@
 // /src/app/deriv-trader-digits/page.tsx
 'use client';
 
-import React from "react";
+import React, { useState, useCallback } from "react";
 import { useForm, FormProvider } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import DerivTraderInterfaceDigits from "@/features/trading/components/deriv-trader/deriv-trader-interface-digits";
@@ -17,9 +17,16 @@ import { AITradeSuggestionDigits } from "@/features/trading/components/deriv-tra
 import { ApiStatusIndicatorDigits } from "@/features/trading/components/deriv-trader/ApiStatusIndicatorDigits";
 import { DigitStatsChart } from "@/features/trading/components/deriv-trader/digit-stats-chart";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { BrainCircuit, Loader2, TrendingDown, TrendingUp } from 'lucide-react';
+import { BrainCircuit, Loader2, TrendingDown, TrendingUp, TestTube } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { Button } from "@/components/ui/button";
+import { useToast } from "@/hooks/use-toast";
+import type { TickData } from "@/lib/types";
+import { runDigitsBacktest, type StrategyBacktestResult } from '@/features/trading/backtest/digits-backtest-engine';
+import { DigitsBacktestPanel } from '@/features/trading/components/deriv-trader/digits-backtest-panel';
+
 
 const getDecimalPlaces = (pipSize: number | undefined): number => {
     if (pipSize === undefined || pipSize === null || pipSize <= 0) {
@@ -141,8 +148,48 @@ function CurrentPriceDisplay() {
 }
 
 function DerivTraderPageContentDigits() {
-    const { activeSymbol, priceTicks, operationsLog, sellContract, activeAsset, clearActiveContracts } = useDerivApiDigits();
+    const { activeSymbol, priceTicks, operationsLog, sellContract, activeAsset, clearActiveContracts, getHistoricalData } = useDerivApiDigits();
     const robotCouncil = useRobotCouncilDigits(activeSymbol, priceTicks, activeAsset);
+    const { toast } = useToast();
+
+    const [isBacktesting, setIsBacktesting] = useState(false);
+    const [backtestResults, setBacktestResults] = useState<Record<string, StrategyBacktestResult> | null>(null);
+
+    const handleRunBacktest = useCallback(async () => {
+        if (!activeSymbol) {
+            toast({ title: "Selecione um ativo", variant: 'destructive' });
+            return;
+        }
+        setIsBacktesting(true);
+        setBacktestResults(null);
+        try {
+            toast({ title: "Iniciando Backtest...", description: "Buscando 1000 ticks históricos..." });
+            
+            const historicalData = await getHistoricalData(activeSymbol, 'ticks', 1000) as TickData[];
+            
+            if (historicalData.length < 100) {
+                throw new Error("Dados históricos insuficientes para o backtest.");
+            }
+            
+            toast({ title: "Dados recebidos", description: `Analisando ${historicalData.length} ticks... Isso pode ser rápido.` });
+            
+            await new Promise(resolve => setTimeout(resolve, 50));
+            
+            const results = runDigitsBacktest(historicalData, {
+                stake: 0.35,
+                threshold: robotCouncil.consensusThreshold,
+                windowSize: 100
+            });
+            setBacktestResults(results);
+            
+            toast({ title: "Backtest Concluído!", description: "Resultados da simulação estão disponíveis abaixo." });
+
+        } catch (e: any) {
+            toast({ title: "Erro no Backtest", description: e.message, variant: 'destructive' });
+        } finally {
+            setIsBacktesting(false);
+        }
+    }, [activeSymbol, getHistoricalData, toast, robotCouncil.consensusThreshold]);
 
     return (
         <div className="flex-1 space-y-4 p-4 sm:p-8 pt-6">
@@ -171,6 +218,21 @@ function DerivTraderPageContentDigits() {
                         isAutopilotOn={robotCouncil.isCouncilAutopilotOn}
                     />
                     <OperationsLogDigits operations={operationsLog} sellContract={sellContract} priceTicks={priceTicks} activeAsset={activeAsset} clearActiveContracts={clearActiveContracts} />
+                    <Collapsible>
+                        <CollapsibleTrigger asChild>
+                           <Button variant="outline" className="w-full">
+                                <TestTube className="mr-2 h-4 w-4" />
+                                Painel de Backtesting de Dígitos
+                           </Button>
+                        </CollapsibleTrigger>
+                        <CollapsibleContent className="pt-4">
+                            <DigitsBacktestPanel 
+                                results={backtestResults}
+                                onRunBacktest={handleRunBacktest}
+                                isBacktesting={isBacktesting}
+                            />
+                        </CollapsibleContent>
+                    </Collapsible>
                 </div>
             </div>
         </div>
