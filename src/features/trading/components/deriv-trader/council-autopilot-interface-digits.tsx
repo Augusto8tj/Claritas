@@ -98,8 +98,8 @@ export const DigitsAutopilotManager: React.FC<DigitsAutopilotManagerProps> = (pr
     setUnderdogThreshold,
     isUnderdogInverse,
     setIsUnderdogInverse,
-    martingaleEnabled,
-    setMartingaleEnabled,
+    martingaleMultiplier,
+    setMartingaleMultiplier,
     cooldownTime,
     setCooldownTime,
     maxLosses,
@@ -250,17 +250,18 @@ export const DigitsAutopilotManager: React.FC<DigitsAutopilotManagerProps> = (pr
                 </Button>
             </CollapsibleTrigger>
             <CollapsibleContent className="pt-4 space-y-6">
-                <div className="flex items-center justify-between rounded-lg border p-3 shadow-sm">
-                    <Label htmlFor="martingale-switch" className="flex flex-col space-y-1 flex-1 pr-4">
-                        <span>Estratégia Martingale</span>
+                 <div className="space-y-2">
+                    <Label htmlFor="martingale-slider" className="flex flex-col space-y-1">
+                        <span>Multiplicador Martingale ({martingaleMultiplier.toFixed(1)}x)</span>
                         <span className="font-normal text-xs text-muted-foreground">
-                            Multiplica a aposta após uma perda para recuperação. Use com extrema cautela.
+                            Multiplica a aposta após uma perda. Valor '1' desativa. Use com extrema cautela.
                         </span>
                     </Label>
-                    <Switch
-                        id="martingale-switch"
-                        checked={martingaleEnabled}
-                        onCheckedChange={setMartingaleEnabled}
+                    <Slider
+                        id="martingale-slider"
+                        min={1} max={10} step={0.1}
+                        value={[martingaleMultiplier]}
+                        onValueChange={(value) => setMartingaleMultiplier(value[0])}
                         disabled={isAnyPilotOn}
                     />
                 </div>
@@ -288,7 +289,7 @@ export const DigitsAutopilotManager: React.FC<DigitsAutopilotManagerProps> = (pr
                 </div>
             </CollapsibleContent>
         </Collapsible>
-        <Collapsible>
+         <Collapsible className="mt-4">
             <CollapsibleTrigger asChild>
                 <Button variant="outline" className="w-full">
                     <TestTube className="mr-2 h-4 w-4" />

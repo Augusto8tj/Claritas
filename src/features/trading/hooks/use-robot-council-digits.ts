@@ -26,7 +26,6 @@ type CouncilStrategy = {
 };
 
 export type AutopilotStatus = 'PAUSED' | 'TRADING' | 'COOLDOWN';
-const MARTINGALE_MULTIPLIER = 2.15; // Cobre a perda e adiciona um pequeno lucro
 const BASE_STAKE = 0.35;
 
 const getDecimalPlaces = (pipSize: number | undefined): number => {
@@ -62,8 +61,8 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
   const [isUnderdogInverse, setIsUnderdogInverse] = useState(false);
 
   // --- Risk Management Settings ---
-  const [martingaleEnabled, setMartingaleEnabled] = useState(false);
-  const [cooldownTime, setCooldownTime] = useState(10); // in seconds
+  const [martingaleMultiplier, setMartingaleMultiplier] = useState(1.0);
+  const [cooldownTime, setCooldownTime] = useState(0); // in seconds
   const [maxLosses, setMaxLosses] = useState(5);
 
   const initialPilotState: Record<PilotType, PilotState> = {
@@ -141,7 +140,7 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
         setPilots(prevPilots => {
             if(!prevPilots[pilotType]) return prevPilots;
             const newConsecutiveLosses = (prevPilots[pilotType]?.consecutiveLosses || 0) + 1;
-            const newStake = martingaleEnabled ? prevPilots[pilotType].lastStake * MARTINGALE_MULTIPLIER : BASE_STAKE;
+            const newStake = martingaleMultiplier > 1 ? prevPilots[pilotType].lastStake * martingaleMultiplier : BASE_STAKE;
 
             if (newConsecutiveLosses >= maxLosses) {
                 if (prevPilots[pilotType].isOn) {
@@ -156,29 +155,33 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
             }
             
             setTimeout(() => {
-                toast({ title: `📉 Perda Detectada! (${pilotType})`, description: `Piloto entrará em cooldown por ${cooldownTime} segundos. Perdas seguidas: ${newConsecutiveLosses}.`, variant: 'destructive' });
+                if (cooldownTime > 0) {
+                    toast({ title: `📉 Perda Detectada! (${pilotType})`, description: `Piloto entrará em cooldown por ${cooldownTime} segundos. Perdas seguidas: ${newConsecutiveLosses}.`, variant: 'destructive' });
+                }
             }, 0);
             
             if (cooldownTimersRef.current[pilotType]) {
                 clearTimeout(cooldownTimersRef.current[pilotType]!);
             }
 
-            cooldownTimersRef.current[pilotType] = setTimeout(() => {
-                setPilots(currentPilots => {
-                    const pilotState = currentPilots[pilotType];
-                    if (pilotState && pilotState.status === 'COOLDOWN') {
-                        setTimeout(() => {
-                            toast({ title: `✅ Cooldown Finalizado (${pilotType})`, description: 'Piloto está ativo novamente.' });
-                        }, 0);
-                        return { ...currentPilots, [pilotType]: { ...pilotState, status: 'TRADING' } };
-                    }
-                    return currentPilots;
-                });
-            }, cooldownTime * 1000);
+            if (cooldownTime > 0) {
+                cooldownTimersRef.current[pilotType] = setTimeout(() => {
+                    setPilots(currentPilots => {
+                        const pilotState = currentPilots[pilotType];
+                        if (pilotState && pilotState.status === 'COOLDOWN') {
+                            setTimeout(() => {
+                                toast({ title: `✅ Cooldown Finalizado (${pilotType})`, description: 'Piloto está ativo novamente.' });
+                            }, 0);
+                            return { ...currentPilots, [pilotType]: { ...pilotState, status: 'TRADING' } };
+                        }
+                        return currentPilots;
+                    });
+                }, cooldownTime * 1000);
+            }
 
             return {
               ...prevPilots,
-              [pilotType]: { ...prevPilots[pilotType], status: 'COOLDOWN', consecutiveLosses: newConsecutiveLosses, lastStake: newStake }
+              [pilotType]: { ...prevPilots[pilotType], status: cooldownTime > 0 ? 'COOLDOWN' : 'TRADING', consecutiveLosses: newConsecutiveLosses, lastStake: newStake }
             };
         });
 
@@ -191,7 +194,7 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
           }
         });
     }
-  }, [operationsLog, toast, martingaleEnabled, cooldownTime, maxLosses, toggleAutopilot]);
+  }, [operationsLog, toast, martingaleMultiplier, cooldownTime, maxLosses, toggleAutopilot]);
 
   const autopilotExecutionRef = useRef(false);
   useEffect(() => {
@@ -286,7 +289,7 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
     const timeoutId = setTimeout(runAutopilots, 100);
     return () => clearTimeout(timeoutId);
 
-  }, [pilots, digitStats, consensusThreshold, activeSymbol, executeTrade, operationsLog, dailyBalance, dailyTarget, toggleAutopilot, toast, underdogThreshold, isUnderdogInverse, martingaleEnabled, cooldownTime, maxLosses]);
+  }, [pilots, digitStats, consensusThreshold, activeSymbol, executeTrade, operationsLog, dailyBalance, dailyTarget, toggleAutopilot, toast, underdogThreshold, isUnderdogInverse, maxLosses, cooldownTime, martingaleMultiplier]);
   
   return {
     isCouncilAutopilotOn: Object.values(pilots).some(p => p.isOn),
@@ -298,10 +301,8 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
     pilots,
     underdogThreshold, setUnderdogThreshold,
     isUnderdogInverse, setIsUnderdogInverse,
-    martingaleEnabled, setMartingaleEnabled,
+    martingaleMultiplier, setMartingaleMultiplier,
     cooldownTime, setCooldownTime,
     maxLosses, setMaxLosses,
   };
 }
-
-    
