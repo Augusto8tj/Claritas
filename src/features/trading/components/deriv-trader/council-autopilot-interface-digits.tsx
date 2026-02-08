@@ -21,6 +21,7 @@ import { cn } from "@/lib/utils";
 import { Slider } from "@/components/ui/slider";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Button } from "@/components/ui/button";
+import { DigitsBacktestPanel } from "./digits-backtest-panel";
 
 interface DigitsAutopilotManagerProps extends ReturnType<typeof useRobotCouncilDigits> {}
 
@@ -103,6 +104,9 @@ export const DigitsAutopilotManager: React.FC<DigitsAutopilotManagerProps> = (pr
     setCooldownTime,
     maxLosses,
     setMaxLosses,
+    backtestResults,
+    handleRunBacktest,
+    isBacktesting,
  } = props;
 
   const isAnyPilotOn = Object.values(pilots).some(p => p.isOn);
@@ -265,7 +269,7 @@ export const DigitsAutopilotManager: React.FC<DigitsAutopilotManagerProps> = (pr
                     <Label htmlFor="cooldown-slider">Tempo de Cooldown Pós-Perda ({cooldownTime}s)</Label>
                     <Slider
                         id="cooldown-slider"
-                        min={5} max={60} step={5}
+                        min={0} max={60} step={1}
                         value={[cooldownTime]}
                         onValueChange={(value) => setCooldownTime(value[0])}
                         disabled={isAnyPilotOn}
@@ -284,7 +288,7 @@ export const DigitsAutopilotManager: React.FC<DigitsAutopilotManagerProps> = (pr
                 </div>
             </CollapsibleContent>
         </Collapsible>
-         <Collapsible>
+        <Collapsible>
             <CollapsibleTrigger asChild>
                 <Button variant="outline" className="w-full">
                     <TestTube className="mr-2 h-4 w-4" />
@@ -292,7 +296,11 @@ export const DigitsAutopilotManager: React.FC<DigitsAutopilotManagerProps> = (pr
                 </Button>
             </CollapsibleTrigger>
             <CollapsibleContent className="pt-4">
-                {/* O conteúdo do BacktestPanel será renderizado aqui */}
+                <DigitsBacktestPanel 
+                    results={backtestResults}
+                    onRunBacktest={handleRunBacktest}
+                    isBacktesting={isBacktesting}
+                />
             </CollapsibleContent>
         </Collapsible>
       </CardContent>
