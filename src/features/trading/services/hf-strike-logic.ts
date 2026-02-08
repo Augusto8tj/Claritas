@@ -106,36 +106,44 @@ export function detectBollingerSqueezeZone(indicators: Indicators, currentPrice:
 }
 
 export function detectVolumeAbsorptionZone(candles: CandleData[], indicators: Indicators): StrikeZone | null {
-  if (candles.length < 5 || !indicators.atr || !indicators.volSma || indicators.volSma.length < 5) return null;
+    if (candles.length < 5 || !indicators.atr || !indicators.volSma || indicators.volSma.length < 5) return null;
 
-  const last4 = candles.slice(-4);
-  const climaxCandle = last4[0];
-  const absorptionCandle = last4[3];
-  
-  if (!climaxCandle.volume || !absorptionCandle.volume) return null;
-  
-  const lastVolSma = indicators.volSma[indicators.volSma.length - 5]; // Get SMA from a few candles ago to avoid using the spike itself
-  const isClimax = climaxCandle.volume > (lastVolSma ? lastVolSma * 2.5 : 50) && Math.abs(climaxCandle.close - climaxCandle.open) > indicators.atr;
+    const last4 = candles.slice(-4);
+    const climaxCandle = last4[0];
+    const absorptionCandle = last4[3];
+    
+    if (!climaxCandle.volume || !absorptionCandle.volume) return null;
+    
+    // CORREÇÃO: Comparar volume com a média móvel de volume, não com ATR.
+    const lastVolSma = indicators.volSma[indicators.volSma.length - 5]; 
+    const isClimax = climaxCandle.volume > (lastVolSma ? lastVolSma * 2.5 : 50);
 
-  if (!isClimax) return null;
+    if (!isClimax) return null;
 
-  const isSellClimax = climaxCandle.close < climaxCandle.open;
-  const isBuyClimax = climaxCandle.close > climaxCandle.open;
-  const isAbsorption = absorptionCandle.volume < climaxCandle.volume * 0.5 && Math.abs(absorptionCandle.close - absorptionCandle.open) < climaxCandle.open * 0.5;
+    // CORREÇÃO: Usar o range total (high - low) para clímax, não o corpo.
+    const climaxRange = climaxCandle.high - climaxCandle.low;
+    const isWideRangeClimax = climaxRange > indicators.atr * 1.5;
+
+    const isSellClimax = climaxCandle.close < climaxCandle.open;
+    const isBuyClimax = climaxCandle.close > climaxCandle.open;
+    const isAbsorption = absorptionCandle.volume < climaxCandle.volume * 0.5 && Math.abs(absorptionCandle.close - absorptionCandle.open) < climaxCandle.open * 0.5;
   
-  let type: StrikeZone['type'] = 'NEUTRAL';
-  if (isSellClimax && isAbsorption && absorptionCandle.close > absorptionCandle.open) type = 'LONG_ENTRY';
-  else if (isBuyClimax && isAbsorption && absorptionCandle.close < absorptionCandle.open) type = 'SHORT_ENTRY';
-  if (type === 'NEUTRAL') return null;
+    let type: StrikeZone['type'] = 'NEUTRAL';
+    if (isSellClimax && isWideRangeClimax && isAbsorption && absorptionCandle.close > absorptionCandle.open) type = 'LONG_ENTRY';
+    else if (isBuyClimax && isWideRangeClimax && isAbsorption && absorptionCandle.close < absorptionCandle.open) type = 'SHORT_ENTRY';
+    
+    if (type === 'NEUTRAL') return null;
   
-  return { type, confidence: 85, triggers: [`Absorção de Volume após clímax`], entry: { price: absorptionCandle.close, timestamp: Date.now() },
-    targets: {
-      takeProfit: type === 'LONG_ENTRY' ? climaxCandle.high : climaxCandle.low,
-      stopLoss: type === 'LONG_ENTRY' ? climaxCandle.low : climaxCandle.high,
-      riskReward: 2.5, },
-    indicators: { rsi: indicators.rsi || 50, bbPosition: 0, bbWidth: 0, volumeSpike: true, divergence: null },
-    duration: 180, };
+    return { type, confidence: 85, triggers: [`Absorção de Volume após clímax`], entry: { price: absorptionCandle.close, timestamp: Date.now() },
+        targets: {
+            takeProfit: type === 'LONG_ENTRY' ? climaxCandle.high : climaxCandle.low,
+            stopLoss: type === 'LONG_ENTRY' ? climaxCandle.low : climaxCandle.high,
+            riskReward: 2.5, },
+        indicators: { rsi: indicators.rsi || 50, bbPosition: 0, bbWidth: 0, volumeSpike: true, divergence: null },
+        duration: 180, 
+    };
 }
+
 
 export function detectMicrostructureScalpZone(ticks: TickData[], candles: CandleData[], indicators: Indicators, currentPrice: number): StrikeZone | null {
   const micro = extractMicrostructureFeaturesFromService(ticks, candles);

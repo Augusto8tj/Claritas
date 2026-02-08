@@ -8,11 +8,11 @@ import {
     detectVolumeAbsorptionZone,
     detectMicrostructureScalpZone,
     type StrikeZone,
-    StrategyType
+    StrategyType,
+    strategyMetadata
 } from '@/features/trading/services/hf-strike-logic';
 import { calculateAllIndicators } from '@/features/trading/services/indicator-service';
 import { getCouncilStrategies } from '@/features/trading/services/council-strategies';
-import { strategyMetadata } from '@/features/trading/services/hf-strike-logic';
 
 
 // --- TYPES ---
@@ -154,7 +154,7 @@ export function runAllStrategiesBacktest(
           strikeZone = detectVolumeAbsorptionZone(windowCandles, indicators);
           break;
         case 'MICROSTRUCTURE_SCALP':
-           // Ignorado no backtest
+           strikeZone = detectMicrostructureScalpZone(windowTicks, windowCandles, indicators, currentPrice);
           break;
       }
       

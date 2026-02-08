@@ -233,14 +233,19 @@ function PageContent() {
         }
     }
   }, [currentZone, hfConfig.autoExecute, hfConfig.enabled, hfConfig.minConfidence, handleExecuteStrike, isExecuting]);
-
+  
   const filteredZone = useMemo(() => {
     if (!currentZone) return null;
-    const isVetoed = currentZone.triggers.some(t => t.startsWith('VETO'));
-    if (currentZone.type === 'NEUTRAL' && isVetoed) return currentZone;
-    if (currentZone.type === 'NEUTRAL') return null;
+    const isVetoed = currentZone.triggers?.some(t => t.startsWith('VETO')) ?? false;
+    
+    if (currentZone.type === 'NEUTRAL') {
+      return isVetoed ? currentZone : null;
+    }
+
     if (isVetoed) return currentZone; 
+    
     if (currentZone.confidence < hfConfig.minConfidence) return null;
+    
     return currentZone;
   }, [currentZone, hfConfig.minConfidence]);
 
