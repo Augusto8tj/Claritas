@@ -178,12 +178,14 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
                 .reduce((sum, op) => sum + (op.result || 0), 0);
             
             if (pilotPnL <= -dailyBalance || pilotPnL >= dailyTarget) {
-                toggleAutopilot(pilotKey, true); // Desativa silenciosamente
-                setTimeout(() => toast({
-                    title: `Piloto ${pilotKey} Desativado Automaticamente`,
-                    description: pilotPnL <= -dailyBalance ? `Limite de perda de $${dailyBalance.toFixed(2)} atingido.` : `Meta de lucro de $${dailyTarget.toFixed(2)} atingida.`,
-                    variant: pilotPnL <= -dailyBalance ? 'destructive' : 'default',
-                }), 0);
+                if (state.isOn) {
+                    toggleAutopilot(pilotKey, true); // Desativa silenciosamente
+                    setTimeout(() => toast({
+                        title: `Piloto ${pilotKey} Desativado Automaticamente`,
+                        description: pilotPnL <= -dailyBalance ? `Limite de perda de $${dailyBalance.toFixed(2)} atingido.` : `Meta de lucro de $${dailyTarget.toFixed(2)} atingida.`,
+                        variant: pilotPnL <= -dailyBalance ? 'destructive' : 'default',
+                    }), 0);
+                }
                 continue;
             }
 
@@ -206,9 +208,25 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
                     predictionDigit = sortedByProb[0].digit;
                 }
             } else if (pilotKey === 'evenOdd') {
-                signalType = 'DIGITEVEN'; // Estratégia fixa de apostar em Par
+                const probEven = digitStats.filter(s => s.digit % 2 === 0).reduce((sum, s) => sum + s.probability, 0);
+                const evenOddThreshold = threshold + 15; // Threshold mais alto
+                if (probEven > evenOddThreshold) {
+                    signalType = 'DIGITEVEN';
+                } else if ((100 - probEven) > evenOddThreshold) {
+                    signalType = 'DIGITODD';
+                }
             } else if (pilotKey === 'overUnder') {
-                 // A lógica para Over/Under pode ser reintroduzida aqui se necessário.
+                const overUnderThreshold = threshold + 15;
+                const probOver4 = digitStats.filter(s => s.digit > 4).reduce((sum, s) => sum + s.probability, 0);
+                const probUnder5 = digitStats.filter(s => s.digit < 5).reduce((sum, s) => sum + s.probability, 0);
+
+                if (probOver4 > overUnderThreshold) {
+                    signalType = 'DIGITOVER';
+                    predictionDigit = 4;
+                } else if (probUnder5 > overUnderThreshold) {
+                    signalType = 'DIGITUNDER';
+                    predictionDigit = 5;
+                }
             }
             
             if (signalType) {
