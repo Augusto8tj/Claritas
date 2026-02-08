@@ -2,128 +2,167 @@
 import type { CandleData, TickData } from '@/lib/types';
 import type { HFConfig } from '@/features/trading/components/hf-trader/hf-config-panel';
 import { 
-    analyzeBollingerBands, 
-    analyzeRSI, 
-    analyzeVolume, 
-    detectStrikeZone,
-    type StrikeZone
+    detectHFMeanReversionZone, 
+    detectStandardTrendZone,
+    detectBollingerSqueezeZone,
+    detectVolumeAbsorptionZone,
+    detectMicrostructureScalpZone,
+    type StrikeZone,
+    StrategyType
 } from '../services/hf-strike-logic';
-import type { Indicators } from '../services/indicator-service';
+import { calculateAllIndicators } from '../services/indicator-service';
+import { initialCouncilStrategies } from '../services/council-strategies';
+import { strategyMetadata } from '../services/hf-strike-logic';
 
-interface TradeResult {
+
+// --- TYPES ---
+export interface TradeResult {
   entryPrice: number;
   exitPrice: number;
   result: 'win' | 'loss';
-  duration: number;
+  pnl: number;
+  durationInCandles: number;
   strikeZone: StrikeZone;
+  strategy: StrategyType;
 }
 
-interface BacktestResult {
+export interface BacktestResult {
   totalTrades: number;
   winRate: number;
   totalPnl: number;
   trades: TradeResult[];
 }
 
+// --- HELPERS ---
 function convertToTicks(candles: CandleData[]): TickData[] {
     return candles.map(c => ({ epoch: c.epoch, price: c.close }));
+}
+
+function calculateBacktestMetrics(trades: TradeResult[]): BacktestResult {
+  const wins = trades.filter(t => t.result === 'win').length;
+  const totalTrades = trades.length;
+  const winRate = totalTrades > 0 ? (wins / totalTrades) * 100 : 0;
+  const totalPnl = trades.reduce((sum, trade) => sum + trade.pnl, 0);
+
+  return { totalTrades, winRate, totalPnl, trades };
 }
 
 function simulateTradeOutcome(
   entryCandleIndex: number,
   strikeZone: StrikeZone,
-  allCandles: CandleData[]
-): { result: 'win' | 'loss'; exitPrice: number; exitIndex: number } {
+  allCandles: CandleData[],
+  strategy: StrategyType
+): { exitPrice: number; exitIndex: number; result: 'win' | 'loss'; pnl: number, durationInCandles: number } {
   const entryPrice = strikeZone.entry.price;
   const { takeProfit, stopLoss } = strikeZone.targets;
   
-  // Assume 1m candles, so duration in seconds needs to be converted
-  const tradeDurationInCandles = Math.ceil(strikeZone.duration / 60);
+  let tradeDurationInCandles: number;
+
+  switch (strategy) {
+    case 'MICROSTRUCTURE_SCALP':
+        tradeDurationInCandles = 1; // Approx. 5 ticks within the next candle
+        break;
+    case 'STD_TREND_FOLLOW':
+    case 'VOLUME_ABSORPTION':
+        tradeDurationInCandles = 3; // Based on 15m chart, so 3 candles of 1m data
+        break;
+    default: // HF strategies based on seconds
+        const candleDurationSeconds = allCandles[1] ? allCandles[1].epoch - allCandles[0].epoch : 60;
+        tradeDurationInCandles = Math.max(1, Math.ceil(strikeZone.duration / candleDurationSeconds));
+        break;
+  }
+  
   const exitWindow = allCandles.slice(entryCandleIndex + 1, entryCandleIndex + 1 + tradeDurationInCandles);
 
   for (let i = 0; i < exitWindow.length; i++) {
     const candle = exitWindow[i];
-    if (!candle) continue; // Safety check
+    if (!candle) continue;
 
     if (strikeZone.type === 'LONG_ENTRY') {
-      if (candle.high >= takeProfit) return { result: 'win', exitPrice: takeProfit, exitIndex: entryCandleIndex + 1 + i };
-      if (candle.low <= stopLoss) return { result: 'loss', exitPrice: stopLoss, exitIndex: entryCandleIndex + 1 + i };
+      if (candle.high >= takeProfit) return { result: 'win', pnl: strikeZone.stake * strikeZone.targets.riskReward, exitPrice: takeProfit, exitIndex: entryCandleIndex + 1 + i, durationInCandles: i+1 };
+      if (candle.low <= stopLoss) return { result: 'loss', pnl: -strikeZone.stake, exitPrice: stopLoss, exitIndex: entryCandleIndex + 1 + i, durationInCandles: i+1 };
     } else { // SHORT_ENTRY
-      if (candle.low <= takeProfit) return { result: 'win', exitPrice: takeProfit, exitIndex: entryCandleIndex + 1 + i };
-      if (candle.high >= stopLoss) return { result: 'loss', exitPrice: stopLoss, exitIndex: entryCandleIndex + 1 + i };
+      if (candle.low <= takeProfit) return { result: 'win', pnl: strikeZone.stake * strikeZone.targets.riskReward, exitPrice: takeProfit, exitIndex: entryCandleIndex + 1 + i, durationInCandles: i+1 };
+      if (candle.high >= stopLoss) return { result: 'loss', pnl: -strikeZone.stake, exitPrice: stopLoss, exitIndex: entryCandleIndex + 1 + i, durationInCandles: i+1 };
     }
   }
 
-  // If neither TP nor SL is hit, result is based on exit price at end of duration
   const lastCandle = exitWindow[exitWindow.length - 1];
   if (!lastCandle) {
-      // If the exit window is empty (end of data), consider it a loss
-      return { result: 'loss', exitPrice: entryPrice, exitIndex: entryCandleIndex };
+      return { result: 'loss', pnl: -strikeZone.stake, exitPrice: entryPrice, exitIndex: entryCandleIndex, durationInCandles: 0 };
   }
   
   const exitPrice = lastCandle.close;
-  const result = strikeZone.type === 'LONG_ENTRY' 
-    ? (exitPrice > entryPrice ? 'win' : 'loss')
-    : (exitPrice < entryPrice ? 'win' : 'loss');
+  const pnlRatio = (exitPrice - entryPrice) / (takeProfit - entryPrice); // Simplistic PnL ratio
+  const finalPnl = strikeZone.type === 'LONG_ENTRY'
+    ? (exitPrice > entryPrice ? strikeZone.stake * strikeZone.targets.riskReward : -strikeZone.stake)
+    : (exitPrice < entryPrice ? strikeZone.stake * strikeZone.targets.riskReward : -strikeZone.stake);
 
-  return { result, exitPrice, exitIndex: entryCandleIndex + tradeDurationInCandles };
+  return { 
+    result: finalPnl > 0 ? 'win' : 'loss', 
+    pnl: finalPnl, 
+    exitPrice, 
+    exitIndex: entryCandleIndex + tradeDurationInCandles,
+    durationInCandles
+  };
 }
 
-export async function runHFBacktest(
+export function runAllStrategiesBacktest(
   historicalData: CandleData[],
   config: HFConfig,
-  // Mock 'calculateAllIndicators' to avoid full dependency in this engine
-  mockIndicatorsFn: (data: CandleData[]) => Partial<Indicators>
-): Promise<BacktestResult> {
-  const trades: TradeResult[] = [];
-  let i = 60; // Warm-up period
+): Record<StrategyType, BacktestResult> {
+  const allStrategies: StrategyType[] = Object.keys(strategyMetadata) as StrategyType[];
+  const allResults: Record<string, BacktestResult> = {};
 
-  while (i < historicalData.length) {
-    const windowCandles = historicalData.slice(0, i + 1);
-    const windowTicks = convertToTicks(windowCandles);
+  for (const strategy of allStrategies) {
+    const trades: TradeResult[] = [];
+    let i = 100;
+    let prevRsi = 50;
     
-    if(windowTicks.length === 0) {
-        i++;
-        continue;
-    }
-    
-    const currentPrice = windowTicks[windowTicks.length - 1].price;
-    const indicators = mockIndicatorsFn(windowCandles) as Indicators;
-    
-    // Call the pure analysis functions
-    const bbAnalysis = analyzeBollingerBands(indicators.bb, indicators.bollingerBands, currentPrice);
-    const rsiAnalysis = analyzeRSI(indicators.rsi || 50, windowCandles);
-    const volumeAnalysis = analyzeVolume(windowTicks);
-    const strikeZone = detectStrikeZone(bbAnalysis, rsiAnalysis, volumeAnalysis, currentPrice);
-    
-    if (strikeZone && strikeZone.confidence >= config.minConfidence) {
-      const outcome = simulateTradeOutcome(i, strikeZone, historicalData);
+    const timePeriodForIndicators = strategyMetadata[strategy].isHF ? '1m' : '15m';
+
+    while (i < historicalData.length - 30) {
+      const windowCandles = historicalData.slice(0, i + 1);
       
-      trades.push({
-        entryPrice: strikeZone.entry.price,
-        exitPrice: outcome.exitPrice,
-        result: outcome.result,
-        duration: (historicalData[outcome.exitIndex]?.epoch || historicalData[i].epoch) - historicalData[i].epoch,
-        strikeZone: strikeZone
-      });
+      const indicators = calculateAllIndicators(windowCandles, initialCouncilStrategies, timePeriodForIndicators, {duration: 15, unit: 's'});
+      if (!indicators) { i++; continue; }
+      
+      const currentPrice = windowCandles[windowCandles.length - 1].close;
+      const windowTicks = convertToTicks(windowCandles); 
 
-      i = outcome.exitIndex; // Jump forward to the end of the trade
-    } else {
-      i++; // Move to the next candle
+      let strikeZone: StrikeZone | null = null;
+      switch (strategy) {
+        case 'HF_MEAN_REVERSION':
+          strikeZone = detectHFMeanReversionZone(indicators, currentPrice);
+          break;
+        case 'STD_TREND_FOLLOW':
+          strikeZone = detectStandardTrendZone(indicators, currentPrice, prevRsi);
+          break;
+        case 'BOLLINGER_SQUEEZE':
+          strikeZone = detectBollingerSqueezeZone(indicators, currentPrice);
+          break;
+        case 'VOLUME_ABSORPTION':
+          strikeZone = detectVolumeAbsorptionZone(windowCandles, indicators);
+          break;
+        case 'MICROSTRUCTURE_SCALP':
+          strikeZone = detectMicrostructureScalpZone(windowTicks, indicators, currentPrice);
+          break;
+      }
+      
+      if (indicators.rsi) prevRsi = indicators.rsi;
+      
+      if (strikeZone && strikeZone.confidence >= config.minConfidence) {
+        const outcome = simulateTradeOutcome(i, strikeZone, historicalData, strategy);
+        trades.push({ ...outcome, strikeZone, strategy });
+        i = outcome.exitIndex;
+      } else {
+        i++;
+      }
     }
+    allResults[strategy] = calculateBacktestMetrics(trades);
   }
 
-  // Calculate final metrics
-  const wins = trades.filter(t => t.result === 'win').length;
-  const totalTrades = trades.length;
-  const winRate = totalTrades > 0 ? (wins / totalTrades) * 100 : 0;
-  const totalPnl = trades.reduce((sum, trade) => {
-      // Use a simplified P&L calculation for backtesting
-      const pnl = trade.result === 'win' 
-        ? Math.abs(trade.strikeZone.targets.riskReward) // Simplified win
-        : -1; // Simplified loss
-      return sum + pnl;
-  }, 0);
-
-  return { totalTrades, winRate, totalPnl, trades };
+  return allResults as Record<StrategyType, BacktestResult>;
 }
+
+export { StrategyType };

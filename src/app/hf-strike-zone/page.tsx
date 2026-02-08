@@ -17,12 +17,15 @@ import { useHFStrikeZone } from '@/features/trading/hooks/use-hf-strike-zone';
 import { StrikeZoneCard } from '@/features/trading/components/hf-trader/strike-zone-card';
 import { HFConfigPanel, type HFConfig } from '@/features/trading/components/hf-trader/hf-config-panel';
 import { saveHFTradeLog, calculateHFStats } from '@/services/hf-data-service';
-import { Target, TrendingUp, BarChart, Brain, Activity, Zap, ShieldAlert, Bot } from 'lucide-react';
+import { Target, TrendingUp, BarChart, Brain, Activity, Zap, ShieldAlert, Bot, TestTube } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { Operation, TradeResult, DurationUnit, CandleData } from '@/lib/types';
 import { HFExecutionLog } from '@/features/trading/components/hf-trader/hf-execution-log';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { StrategyType } from '@/features/trading/services/hf-strike-logic';
+import { StrategyType, strategyMetadata } from '@/features/trading/services/hf-strike-logic';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { runAllStrategiesBacktest, type BacktestResult, type StrategyType as HFStrategyType } from '@/features/trading/backtest/hf-backtest-engine';
+import { BacktestPanel } from '@/features/trading/components/hf-trader/BacktestPanel';
 
 
 const MetricCard = ({ icon, label, value, subtext, color }: { icon: React.ReactNode; label: string; value: string | number; subtext?: string; color?: string }) => (
@@ -37,14 +40,6 @@ const MetricCard = ({ icon, label, value, subtext, color }: { icon: React.ReactN
       </CardContent>
     </Card>
 );
-
-const strategyDetails: Record<StrategyType, { label: string; description: string; optimalTimeframe: '1m' | '15m' }> = {
-  HF_MEAN_REVERSION: { label: 'Alta Frequência (Reversão)', description: 'Otimizado para reversão à média em 15-45s em ativos sintéticos.', optimalTimeframe: '1m' },
-  STD_TREND_FOLLOW: { label: 'Padrão (Tendência)', description: 'Segue tendências em velas de 15m, ideal para Forex.', optimalTimeframe: '15m' },
-  BOLLINGER_SQUEEZE: { label: 'Alta Frequência (Breakout)', description: 'Detecta compressão de volatilidade e opera no rompimento.', optimalTimeframe: '1m' },
-  VOLUME_ABSORPTION: { label: 'Padrão (Absorção Volume)', description: 'Analisa o clímax de volume e a absorção para prever reversões.', optimalTimeframe: '15m' },
-  MICROSTRUCTURE_SCALP: { label: 'Ultra HF (Scalping)', description: 'Analisa o fluxo de ordens para trades de 5 ticks.', optimalTimeframe: '1m' },
-};
 
 
 function PageContent() {
@@ -72,6 +67,7 @@ function PageContent() {
     tradeAnnotations,
     executeTrade,
     clearActiveContracts,
+    getHistoricalData,
   } = useDerivApi();
 
   const [hfConfig, setHFConfig] = useState<HFConfig>({
@@ -94,7 +90,7 @@ function PageContent() {
   const [strategy, setStrategy] = useState<StrategyType>('HF_MEAN_REVERSION');
   
   const uiChartData = useMemo(() => chartData.filter((d): d is CandleData => 'close' in d), [chartData]);
-  const tradingModeForHook = strategyDetails[strategy].optimalTimeframe === '1m' ? 'hf' : 'standard';
+  const isHFMode = strategyMetadata[strategy]?.isHF ?? true;
 
   const {
     currentZone,
@@ -104,17 +100,16 @@ function PageContent() {
     supplyDemandZones,
   } = useHFStrikeZone(
     priceTicks,
-    botCandleData,
-    uiChartData,
+    isHFMode ? botCandleData : uiChartData,
     hfConfig.enabled,
     strategy
   );
   
   const handleStrategyChange = (newStrategy: StrategyType) => {
     setStrategy(newStrategy);
-    const details = strategyDetails[newStrategy];
+    const details = strategyMetadata[newStrategy];
     if (details) {
-        setTimePeriod(details.optimalTimeframe);
+        setTimePeriod(details.isHF ? '1m' : '15m');
     }
   };
 
@@ -234,21 +229,47 @@ function PageContent() {
   }, [currentZone, hfConfig.autoExecute, hfConfig.enabled, hfConfig.minConfidence, handleExecuteStrike, isExecuting, strikeHistory]);
 
   const filteredZone = useMemo(() => {
-    if (!currentZone) {
-      return null;
-    }
-    const isVetoed = currentZone.triggers?.some(t => t.startsWith('VETO'));
-    if (isVetoed) {
-      return currentZone; // Mostra a zona vetada para feedback
-    }
-    if (currentZone.type === 'NEUTRAL') {
-      return null;
-    }
-    if (currentZone.confidence < hfConfig.minConfidence) {
-      return null;
-    }
+    if (!currentZone) return null;
+    const isVetoed = currentZone.triggers.some(t => t.startsWith('VETO'));
+    if (isVetoed) return currentZone; 
+    if (currentZone.type === 'NEUTRAL') return null;
+    if (currentZone.confidence < hfConfig.minConfidence) return null;
     return currentZone;
   }, [currentZone, hfConfig.minConfidence]);
+
+  const [isBacktesting, setIsBacktesting] = useState(false);
+  const [backtestResults, setBacktestResults] = useState<Record<HFStrategyType, BacktestResult> | null>(null);
+
+  const handleRunBacktest = useCallback(async () => {
+    if (!activeSymbol) {
+      toast({ title: "Selecione um ativo", variant: 'destructive' });
+      return;
+    }
+    setIsBacktesting(true);
+    setBacktestResults(null);
+    try {
+      toast({ title: "Iniciando Backtest...", description: "Buscando 1500 velas de 1 minuto..." });
+      const historicalData = await getHistoricalData(activeSymbol, 'candles', 1500, '1m') as CandleData[];
+      if (historicalData.length < 200) {
+        throw new Error("Dados históricos insuficientes para o backtest.");
+      }
+      
+      toast({ title: "Dados recebidos", description: `Analisando ${historicalData.length} velas... Isso pode levar um momento.` });
+      
+      await new Promise(resolve => setTimeout(resolve, 50));
+      
+      const results = runAllStrategiesBacktest(historicalData, hfConfig);
+      setBacktestResults(results);
+      
+      toast({ title: "Backtest Concluído!", description: "Resultados da simulação estão disponíveis abaixo." });
+
+    } catch (e: any) {
+      toast({ title: "Erro no Backtest", description: e.message, variant: 'destructive' });
+    } finally {
+      setIsBacktesting(false);
+    }
+  }, [activeSymbol, getHistoricalData, hfConfig, toast]);
+
 
   return (
     <div className="flex-1 space-y-4 p-4 sm:p-8 pt-6">
@@ -308,7 +329,7 @@ function PageContent() {
             <SelectValue placeholder="Selecione uma estratégia..." />
           </SelectTrigger>
           <SelectContent>
-            {Object.entries(strategyDetails).map(([key, details]) => (
+            {Object.entries(strategyMetadata).map(([key, details]) => (
               <SelectItem key={key} value={key}>{details.label}</SelectItem>
             ))}
           </SelectContent>
@@ -369,6 +390,22 @@ function PageContent() {
           />
         </div>
       </div>
+      
+       <Collapsible>
+        <CollapsibleTrigger asChild>
+           <Button variant="outline" className="w-full mt-6">
+                <TestTube className="mr-2 h-4 w-4" />
+                Painel de Backtesting de Estratégias
+           </Button>
+        </CollapsibleTrigger>
+        <CollapsibleContent className="pt-4">
+            <BacktestPanel 
+                results={backtestResults} 
+                onRunBacktest={handleRunBacktest} 
+                isBacktesting={isBacktesting} 
+            />
+        </CollapsibleContent>
+      </Collapsible>
       
       <div className="pt-6">
         <Alert className={cn("bg-yellow-50 border-yellow-200", !hfConfig.autoExecute && "hidden")}>
