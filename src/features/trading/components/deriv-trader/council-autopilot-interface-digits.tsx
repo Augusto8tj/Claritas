@@ -9,7 +9,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Bot, Binary, TrendingUp, HelpCircle, Trophy } from "lucide-react";
+import { Bot, Binary, TrendingUp, HelpCircle, Trophy, Settings } from "lucide-react";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Separator } from "@/components/ui/separator";
@@ -19,6 +19,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { Slider } from "@/components/ui/slider";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { Button } from "@/components/ui/button";
 
 interface DigitsAutopilotManagerProps extends ReturnType<typeof useRobotCouncilDigits> {}
 
@@ -71,7 +73,7 @@ const PilotTabContent: React.FC<{
                      <div className="p-2 border rounded-lg bg-muted/50 col-span-2 md:col-span-1">
                         <p className="text-muted-foreground font-semibold mb-1">Perdas Seguidas</p>
                         <p className="font-bold text-sm text-red-600">
-                            {consecutiveLosses} / 5
+                            {consecutiveLosses}
                         </p>
                     </div>
                 </div>
@@ -95,6 +97,12 @@ export const DigitsAutopilotManager: React.FC<DigitsAutopilotManagerProps> = (pr
     setUnderdogThreshold,
     isUnderdogInverse,
     setIsUnderdogInverse,
+    martingaleEnabled,
+    setMartingaleEnabled,
+    cooldownTime,
+    setCooldownTime,
+    maxLosses,
+    setMaxLosses,
  } = props;
 
   const isAnyPilotOn = Object.values(pilots).some(p => p.isOn);
@@ -229,7 +237,69 @@ export const DigitsAutopilotManager: React.FC<DigitsAutopilotManagerProps> = (pr
                 <p className="text-xs text-muted-foreground">O piloto irá operar se a probabilidade do sinal superar este valor.</p>
             </div>
         </div>
+        
+        <Collapsible>
+            <CollapsibleTrigger asChild>
+                <Button variant="outline" className="w-full">
+                    <Settings className="mr-2 h-4 w-4"/>
+                    Gestão de Risco Avançada
+                </Button>
+            </CollapsibleTrigger>
+            <CollapsibleContent className="pt-4 space-y-6">
+                <div className="flex items-center justify-between rounded-lg border p-3 shadow-sm">
+                    <Label htmlFor="martingale-switch" className="flex flex-col space-y-1 flex-1 pr-4">
+                        <span>Estratégia Martingale</span>
+                        <span className="font-normal text-xs text-muted-foreground">
+                            Multiplica a aposta após uma perda para recuperação. Use com extrema cautela.
+                        </span>
+                    </Label>
+                    <Switch
+                        id="martingale-switch"
+                        checked={martingaleEnabled}
+                        onCheckedChange={setMartingaleEnabled}
+                        disabled={isAnyPilotOn}
+                    />
+                </div>
+
+                <div className="space-y-2">
+                    <Label htmlFor="cooldown-slider">Tempo de Cooldown Pós-Perda ({cooldownTime}s)</Label>
+                    <Slider
+                        id="cooldown-slider"
+                        min={5} max={60} step={5}
+                        value={[cooldownTime]}
+                        onValueChange={(value) => setCooldownTime(value[0])}
+                        disabled={isAnyPilotOn}
+                    />
+                </div>
+
+                <div className="space-y-2">
+                    <Label htmlFor="max-losses-slider">Limite de Perdas Seguidas ({maxLosses})</Label>
+                    <Slider
+                        id="max-losses-slider"
+                        min={3} max={15} step={1}
+                        value={[maxLosses]}
+                        onValueChange={(value) => setMaxLosses(value[0])}
+                        disabled={isAnyPilotOn}
+                    />
+                </div>
+            </CollapsibleContent>
+        </Collapsible>
+         <div className="lg:col-span-2 space-y-6">
+            <Collapsible>
+                <CollapsibleTrigger asChild>
+                    <Button variant="outline" className="w-full">
+                        <TestTube className="mr-2 h-4 w-4" />
+                        Painel de Backtesting de Dígitos
+                    </Button>
+                </CollapsibleTrigger>
+                <CollapsibleContent className="pt-4">
+                    {/* O conteúdo do BacktestPanel será renderizado aqui */}
+                </CollapsibleContent>
+            </Collapsible>
+        </div>
       </CardContent>
     </Card>
   );
 }
+
+    

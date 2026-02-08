@@ -26,8 +26,8 @@ type CouncilStrategy = {
 };
 
 export type AutopilotStatus = 'PAUSED' | 'TRADING' | 'COOLDOWN';
-const COOLDOWN_AFTER_LOSS_MS = 10000; // 10 segundos
-const MAX_CONSECUTIVE_LOSSES = 5;
+const MARTINGALE_MULTIPLIER = 2.15; // Cobre a perda e adiciona um pequeno lucro
+const BASE_STAKE = 0.35;
 
 const getDecimalPlaces = (pipSize: number | undefined): number => {
     if (pipSize === undefined || pipSize === null || pipSize <= 0) return 2;
@@ -42,6 +42,7 @@ export interface PilotState {
   status: AutopilotStatus;
   consecutiveLosses: number;
   currentTarget?: string;
+  lastStake: number;
 }
 
 // ============================================================================
@@ -51,17 +52,25 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
   const { toast } = useToast();
   const { executeTrade, operationsLog } = useDerivApiDigits();
 
+  // --- General Settings ---
   const [dailyBalance, setDailyBalance] = useState(10);
   const [dailyTarget, setDailyTarget] = useState(5);
   const [consensusThreshold, setConsensusThreshold] = useState(25);
+  
+  // --- Underdog Specific Settings ---
   const [underdogThreshold, setUnderdogThreshold] = useState(5.0);
   const [isUnderdogInverse, setIsUnderdogInverse] = useState(false);
 
+  // --- Risk Management Settings ---
+  const [martingaleEnabled, setMartingaleEnabled] = useState(false);
+  const [cooldownTime, setCooldownTime] = useState(10); // in seconds
+  const [maxLosses, setMaxLosses] = useState(5);
+
   const initialPilotState: Record<PilotType, PilotState> = {
-    matchesDiffers: { isOn: false, status: 'PAUSED', consecutiveLosses: 0, currentTarget: undefined },
-    overUnder: { isOn: false, status: 'PAUSED', consecutiveLosses: 0, currentTarget: 'Acima de 4' },
-    evenOdd: { isOn: false, status: 'PAUSED', consecutiveLosses: 0, currentTarget: 'Par' },
-    underdog: { isOn: false, status: 'PAUSED', consecutiveLosses: 0, currentTarget: undefined },
+    matchesDiffers: { isOn: false, status: 'PAUSED', consecutiveLosses: 0, currentTarget: undefined, lastStake: BASE_STAKE },
+    overUnder: { isOn: false, status: 'PAUSED', consecutiveLosses: 0, currentTarget: 'Acima de 4', lastStake: BASE_STAKE },
+    evenOdd: { isOn: false, status: 'PAUSED', consecutiveLosses: 0, currentTarget: 'Par', lastStake: BASE_STAKE },
+    underdog: { isOn: false, status: 'PAUSED', consecutiveLosses: 0, currentTarget: undefined, lastStake: BASE_STAKE },
   };
 
   const [pilots, setPilots] = useState<Record<PilotType, PilotState>>(initialPilotState);
@@ -114,7 +123,8 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
                 ...prev[pilotType],
                 isOn: isActivating,
                 status: isActivating ? 'TRADING' : 'PAUSED',
-                consecutiveLosses: 0 // Reseta ao ligar/desligar
+                consecutiveLosses: 0,
+                lastStake: BASE_STAKE, // Reset stake on toggle
             }
         };
     });
@@ -129,11 +139,24 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
     
     if (lastPilotTrade.status === 'lost') {
         setPilots(prevPilots => {
-            if(!prevPilots[pilotType]) return prevPilots; // Safety check
+            if(!prevPilots[pilotType]) return prevPilots;
             const newConsecutiveLosses = (prevPilots[pilotType]?.consecutiveLosses || 0) + 1;
+            const newStake = martingaleEnabled ? prevPilots[pilotType].lastStake * MARTINGALE_MULTIPLIER : BASE_STAKE;
+
+            if (newConsecutiveLosses >= maxLosses) {
+                if (prevPilots[pilotType].isOn) {
+                    toggleAutopilot(pilotType, true); // Silent toggle
+                    setTimeout(() => toast({
+                        title: `Piloto ${pilotType} Pausado Automaticamente`,
+                        description: `Limite de ${maxLosses} perdas consecutivas atingido.`,
+                        variant: 'destructive',
+                    }), 0);
+                }
+                 return { ...prevPilots, [pilotType]: { ...prevPilots[pilotType], consecutiveLosses: newConsecutiveLosses, lastStake: BASE_STAKE } };
+            }
             
             setTimeout(() => {
-                toast({ title: `📉 Perda Detectada! (${pilotType})`, description: `Piloto entrará em cooldown por ${COOLDOWN_AFTER_LOSS_MS/1000} segundos. Perdas seguidas: ${newConsecutiveLosses}.`, variant: 'destructive' });
+                toast({ title: `📉 Perda Detectada! (${pilotType})`, description: `Piloto entrará em cooldown por ${cooldownTime} segundos. Perdas seguidas: ${newConsecutiveLosses}.`, variant: 'destructive' });
             }, 0);
             
             if (cooldownTimersRef.current[pilotType]) {
@@ -143,7 +166,7 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
             cooldownTimersRef.current[pilotType] = setTimeout(() => {
                 setPilots(currentPilots => {
                     const pilotState = currentPilots[pilotType];
-                    if (pilotState && pilotState.consecutiveLosses < MAX_CONSECUTIVE_LOSSES) {
+                    if (pilotState && pilotState.status === 'COOLDOWN') {
                         setTimeout(() => {
                             toast({ title: `✅ Cooldown Finalizado (${pilotType})`, description: 'Piloto está ativo novamente.' });
                         }, 0);
@@ -151,11 +174,11 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
                     }
                     return currentPilots;
                 });
-            }, COOLDOWN_AFTER_LOSS_MS);
+            }, cooldownTime * 1000);
 
             return {
               ...prevPilots,
-              [pilotType]: { ...prevPilots[pilotType], status: 'COOLDOWN', consecutiveLosses: newConsecutiveLosses }
+              [pilotType]: { ...prevPilots[pilotType], status: 'COOLDOWN', consecutiveLosses: newConsecutiveLosses, lastStake: newStake }
             };
         });
 
@@ -164,11 +187,11 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
           if (!prev[pilotType]) return prev;
           return {
             ...prev,
-            [pilotType]: { ...prev[pilotType], consecutiveLosses: 0 }
+            [pilotType]: { ...prev[pilotType], consecutiveLosses: 0, lastStake: BASE_STAKE }
           }
         });
     }
-  }, [operationsLog, toast]);
+  }, [operationsLog, toast, martingaleEnabled, cooldownTime, maxLosses, toggleAutopilot]);
 
   const autopilotExecutionRef = useRef(false);
   useEffect(() => {
@@ -181,7 +204,6 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
         const mostProbable = sortedByProb[0];
         const leastProbable = sortedByProb[sortedByProb.length - 1];
 
-        // Update targets for UI display
         setPilots(prev => ({
             ...prev,
             matchesDiffers: { ...prev.matchesDiffers, currentTarget: `Difere de ${mostProbable?.digit}` },
@@ -198,7 +220,7 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
             
             if (pilotPnL <= -dailyBalance || pilotPnL >= dailyTarget) {
                 if (state.isOn) {
-                    toggleAutopilot(pilotKey, true); // Silent toggle
+                    toggleAutopilot(pilotKey, true);
                     setTimeout(() => toast({
                         title: `Piloto ${pilotKey} Desativado Automaticamente`,
                         description: pilotPnL <= -dailyBalance ? `Limite de perda de $${dailyBalance.toFixed(2)} atingido.` : `Meta de lucro de $${dailyTarget.toFixed(2)} atingida.`,
@@ -208,17 +230,17 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
                 continue;
             }
 
-            if (state.consecutiveLosses >= MAX_CONSECUTIVE_LOSSES) {
+            if (state.consecutiveLosses >= maxLosses) {
                  if (state.isOn) {
-                    toggleAutopilot(pilotKey, true); // Silent toggle
-                    setTimeout(() => toast({ title: `Piloto ${pilotKey} Pausado`, description: `Limite de ${MAX_CONSECUTIVE_LOSSES} perdas consecutivas atingido.`, variant: 'destructive' }), 0);
+                    toggleAutopilot(pilotKey, true);
+                    setTimeout(() => toast({ title: `Piloto ${pilotKey} Pausado`, description: `Limite de ${maxLosses} perdas consecutivas atingido.`, variant: 'destructive' }), 0);
                  }
                 continue;
             }
 
             let signalType: CouncilStrategy['type'] | null = null;
             let predictionDigit: number | undefined;
-            const stake = 0.35; 
+            const stake = state.lastStake;
 
             if (pilotKey === 'matchesDiffers') {
                 if (mostProbable && mostProbable.probability > consensusThreshold) {
@@ -258,13 +280,13 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
             }
         }
         
-        setTimeout(() => { autopilotExecutionRef.current = false; }, 2000); // Cooldown global para evitar rajadas de trades
+        setTimeout(() => { autopilotExecutionRef.current = false; }, 2000);
     };
 
-    const timeoutId = setTimeout(runAutopilots, 100); // Adiciona um pequeno delay para garantir que o estado se propague
+    const timeoutId = setTimeout(runAutopilots, 100);
     return () => clearTimeout(timeoutId);
 
-  }, [pilots, digitStats, consensusThreshold, activeSymbol, executeTrade, operationsLog, dailyBalance, dailyTarget, toggleAutopilot, toast, underdogThreshold, isUnderdogInverse]);
+  }, [pilots, digitStats, consensusThreshold, activeSymbol, executeTrade, operationsLog, dailyBalance, dailyTarget, toggleAutopilot, toast, underdogThreshold, isUnderdogInverse, martingaleEnabled, cooldownTime, maxLosses]);
   
   return {
     isCouncilAutopilotOn: Object.values(pilots).some(p => p.isOn),
@@ -276,5 +298,10 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
     pilots,
     underdogThreshold, setUnderdogThreshold,
     isUnderdogInverse, setIsUnderdogInverse,
+    martingaleEnabled, setMartingaleEnabled,
+    cooldownTime, setCooldownTime,
+    maxLosses, setMaxLosses,
   };
 }
+
+    
