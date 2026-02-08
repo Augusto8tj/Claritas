@@ -13,15 +13,16 @@ import { DerivApiProviderV2 as DerivApiProvider, useDerivApiV2 as useDerivApi } 
 import { AssetSelectorV2 as AssetSelector } from '@/features/trading/components/deriv-trader/asset-selector-v2';
 import { ApiStatusIndicatorV2 as ApiStatusIndicator } from '@/features/trading/components/deriv-trader/ApiStatusIndicatorV2';
 import { MarketChart } from '@/features/trading/components/deriv-trader/market-chart';
-import { useHFStrikeZone, type StrikeZone, type StrategyType } from '@/features/trading/hooks/use-hf-strike-zone';
+import { useHFStrikeZone } from '@/features/trading/hooks/use-hf-strike-zone';
 import { StrikeZoneCard } from '@/features/trading/components/hf-trader/strike-zone-card';
 import { HFConfigPanel, type HFConfig } from '@/features/trading/components/hf-trader/hf-config-panel';
 import { saveHFTradeLog, calculateHFStats } from '@/services/hf-data-service';
 import { Target, TrendingUp, BarChart, Brain, Activity, Zap, ShieldAlert, Bot } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import type { Operation, TradeResult, DurationUnit } from '@/lib/types';
+import type { Operation, TradeResult, DurationUnit, CandleData } from '@/lib/types';
 import { HFExecutionLog } from '@/features/trading/components/hf-trader/hf-execution-log';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { StrategyType } from '@/features/trading/services/hf-strike-logic';
 
 
 const MetricCard = ({ icon, label, value, subtext, color }: { icon: React.ReactNode; label: string; value: string | number; subtext?: string; color?: string }) => (
@@ -41,7 +42,7 @@ const strategyDetails: Record<StrategyType, { label: string; description: string
   HF_MEAN_REVERSION: { label: 'Reversão à Média (HF)', description: 'Otimizado para reversão à média em 15-45s em ativos sintéticos.', optimalTimeframe: '1m' },
   STD_TREND_FOLLOW: { label: 'Seguidor de Tendência (Padrão)', description: 'Otimizado para seguir tendências em velas de 15m, ideal para Forex.', optimalTimeframe: '15m' },
   BOLLINGER_SQUEEZE: { label: 'Caçador de Breakouts (Squeeze)', description: 'Detecta compressão de volatilidade e opera no rompimento.', optimalTimeframe: '1m' },
-  VOLUME_ABSORPTION: { label: 'Absorção de Volume (PA)', description: 'Analisa o clímax de volume e a absorção para prever reversões.', optimalTimeframe: '5m' },
+  VOLUME_ABSORPTION: { label: 'Absorção de Volume (PA)', description: 'Analisa o clímax de volume e a absorção para prever reversões.', optimalTimeframe: '15m' },
   MICROSTRUCTURE_SCALP: { label: 'Scalper de Microestrutura', description: 'Analisa o fluxo de ordens para trades de 5 ticks.', optimalTimeframe: '1m' },
 };
 
@@ -108,7 +109,10 @@ function PageContent() {
   
   const handleStrategyChange = (newStrategy: StrategyType) => {
     setStrategy(newStrategy);
-    setTimePeriod(strategyDetails[newStrategy].optimalTimeframe);
+    const details = strategyDetails[newStrategy];
+    if (details) {
+        setTimePeriod(details.optimalTimeframe);
+    }
   };
 
   useEffect(() => {
@@ -169,9 +173,19 @@ function PageContent() {
       const direction = currentZone.type === 'LONG_ENTRY' ? 'rise' : 'fall';
       const contractType = currentZone.type === 'LONG_ENTRY' ? 'CALL' : 'PUT';
       
-      const { duration, durationUnit } = strategy === 'MICROSTRUCTURE_SCALP' 
-          ? { duration: 5, durationUnit: 't' }
-          : { duration: currentZone.duration, durationUnit: 's' };
+      let duration: number;
+      let durationUnit: DurationUnit;
+
+      if (strategy === 'MICROSTRUCTURE_SCALP') {
+        duration = 5;
+        durationUnit = 't';
+      } else if (strategy === 'STD_TREND_FOLLOW') {
+        duration = 45; // 3 velas de 15m
+        durationUnit = 'm';
+      } else {
+        duration = currentZone.duration;
+        durationUnit = 's';
+      }
 
       const tradeResult: TradeResult = await executeTrade(
         contractType,
@@ -179,7 +193,7 @@ function PageContent() {
         activeSymbol,
         direction,
         duration,
-        durationUnit as DurationUnit,
+        durationUnit,
         'HF_Strike' as any
       );
       if (!tradeResult.success) {
@@ -218,7 +232,10 @@ function PageContent() {
   const filteredZone = useMemo(() => {
     if (!currentZone || currentZone.type === 'NEUTRAL') return null;
     const isVetoed = currentZone.triggers.some(t => t.startsWith('VETO'));
-    if (currentZone.confidence < hfConfig.minConfidence && !isVetoed) return null;
+    if (isVetoed) {
+        return currentZone; // Mostra a zona vetada para feedback
+    }
+    if (currentZone.confidence < hfConfig.minConfidence) return null;
     return currentZone;
   }, [currentZone, hfConfig.minConfidence]);
 
@@ -336,7 +353,7 @@ function PageContent() {
             config={hfConfig}
             onConfigChange={updates => setHFConfig(prev => ({ ...prev, ...updates }))}
             disabled={isExecuting}
-            strategy={strategy}
+            tradingMode={strategy.includes('HF') || strategy.includes('SCALP') ? 'hf' : 'standard'}
           />
         </div>
       </div>
@@ -365,4 +382,3 @@ export default function HFStrikeZonePage() {
     </DerivApiProvider>
   );
 }
-```
