@@ -1,7 +1,7 @@
 // src/app/hf-strike-zone/page.tsx
 'use client';
 
-import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
@@ -13,14 +13,16 @@ import { DerivApiProviderV2 as DerivApiProvider, useDerivApiV2 as useDerivApi } 
 import { AssetSelectorV2 as AssetSelector } from '@/features/trading/components/deriv-trader/asset-selector-v2';
 import { ApiStatusIndicatorV2 as ApiStatusIndicator } from '@/features/trading/components/deriv-trader/ApiStatusIndicatorV2';
 import { MarketChart } from '@/features/trading/components/deriv-trader/market-chart';
-import { useHFStrikeZone, type StrikeZone } from '@/features/trading/hooks/use-hf-strike-zone';
+import { useHFStrikeZone, type StrikeZone, type StrategyType } from '@/features/trading/hooks/use-hf-strike-zone';
 import { StrikeZoneCard } from '@/features/trading/components/hf-trader/strike-zone-card';
 import { HFConfigPanel, type HFConfig } from '@/features/trading/components/hf-trader/hf-config-panel';
 import { saveHFTradeLog, calculateHFStats } from '@/services/hf-data-service';
-import { Target, TrendingUp, BarChart, Brain, Activity, Zap } from 'lucide-react';
+import { Target, TrendingUp, BarChart, Brain, Activity, Zap, ShieldAlert, Bot } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { Operation, TradeResult, DurationUnit } from '@/lib/types';
 import { HFExecutionLog } from '@/features/trading/components/hf-trader/hf-execution-log';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+
 
 const MetricCard = ({ icon, label, value, subtext, color }: { icon: React.ReactNode; label: string; value: string | number; subtext?: string; color?: string }) => (
     <Card>
@@ -34,6 +36,14 @@ const MetricCard = ({ icon, label, value, subtext, color }: { icon: React.ReactN
       </CardContent>
     </Card>
 );
+
+const strategyDetails: Record<StrategyType, { label: string; description: string; optimalTimeframe: '1m' | '15m' }> = {
+  HF_MEAN_REVERSION: { label: 'Reversão à Média (HF)', description: 'Otimizado para reversão à média em 15-45s em ativos sintéticos.', optimalTimeframe: '1m' },
+  STD_TREND_FOLLOW: { label: 'Seguidor de Tendência (Padrão)', description: 'Otimizado para seguir tendências em velas de 15m, ideal para Forex.', optimalTimeframe: '15m' },
+  BOLLINGER_SQUEEZE: { label: 'Caçador de Breakouts (Squeeze)', description: 'Detecta compressão de volatilidade e opera no rompimento.', optimalTimeframe: '1m' },
+  MICROSTRUCTURE_SCALP: { label: 'Scalper de Microestrutura', description: 'Analisa o fluxo de ordens para trades de 5 ticks.', optimalTimeframe: '1m' },
+};
+
 
 function PageContent() {
   const { user } = useAuth();
@@ -62,9 +72,6 @@ function PageContent() {
     clearActiveContracts,
   } = useDerivApi();
 
-  const [tradingMode, setTradingMode] = useState<'hf' | 'standard'>('hf');
-
-  // HF Configuration State
   const [hfConfig, setHFConfig] = useState<HFConfig>({
     enabled: true,
     minConfidence: 60,
@@ -82,30 +89,30 @@ function PageContent() {
     sharpeRatio: 0,
   });
 
-  const prevZoneRef = useRef<StrikeZone | null>(null);
-
-  // Auto-switch time period based on trading mode
-  useEffect(() => {
-    setTimePeriod(tradingMode === 'hf' ? '1m' : '15m');
-  }, [tradingMode, setTimePeriod]);
-
-  // Strike Zone Hook - NOW ACCEPTS TRADING MODE
-  const { currentZone, strikeHistory, stats, fullIndicators } = useHFStrikeZone(
+  const {
+    currentZone,
+    strikeHistory,
+    stats,
+    fullIndicators,
+    strategy,
+    setStrategy,
+  } = useHFStrikeZone(
     priceTicks,
-    botCandleData, // Always use 1-min candles for bot logic base
-    chartData,      // Pass UI chart data for standard mode
+    botCandleData,
+    chartData,
     hfConfig.enabled,
-    tradingMode
   );
+  
+  const handleStrategyChange = (newStrategy: StrategyType) => {
+    setStrategy(newStrategy);
+    setTimePeriod(strategyDetails[newStrategy].optimalTimeframe);
+  };
 
-  // Kill Switch Logic
   useEffect(() => {
-    if (!hfConfig.autoExecute) return; // Only run if autopilot is on
-
+    if (!hfConfig.autoExecute) return;
     const last3Trades = operationsLog
       .filter(op => op.initiator === 'HF_Strike' && op.status !== 'pending')
-      .slice(-3); // Get last 3 trades
-    
+      .slice(-3);
     if (last3Trades.length === 3) {
       const allLost = last3Trades.every(t => t.result !== undefined && t.result < 0);
       if (allLost) {
@@ -119,27 +126,22 @@ function PageContent() {
     }
   }, [operationsLog, hfConfig.autoExecute, toast]);
 
-  // Carregar estatísticas do Firebase
   useEffect(() => {
     if (!user) return;
-
     const loadStats = async () => {
       const stats = await calculateHFStats(user.uid);
       setHFStats(stats);
     };
-
     loadStats();
-    const interval = setInterval(loadStats, 30000); // Atualizar a cada 30s
+    const interval = setInterval(loadStats, 30000);
     return () => clearInterval(interval);
   }, [user]);
 
-  // Executar Strike Zone
   const handleExecuteStrike = useCallback(async () => {
     if (!currentZone || !user || !activeSymbol) {
       toast({ title: 'Erro', description: 'Dados insuficientes para executar', variant: 'destructive' });
       return;
     }
-
     if (currentZone.confidence < hfConfig.minConfidence) {
       toast({
         title: 'Confiança Insuficiente',
@@ -148,42 +150,38 @@ function PageContent() {
       });
       return;
     }
-
     const pendingHFTrades = operationsLog.filter(
       (op: Operation) => op.status === 'pending' && op.initiator === 'HF_Strike'
     );
     if (pendingHFTrades.length >= hfConfig.maxConcurrentTrades) {
       toast({
         title: 'Limite Atingido',
-        description: `Máximo de ${hfConfig.maxConcurrentTrades} trades HF simultâneos`,
+        description: `Máximo de ${hfConfig.maxConcurrentTrades} trades simultâneos`,
         variant: 'destructive',
       });
       return;
     }
-
     setIsExecuting(true);
-
     try {
       const direction = currentZone.type === 'LONG_ENTRY' ? 'rise' : 'fall';
       const contractType = currentZone.type === 'LONG_ENTRY' ? 'CALL' : 'PUT';
       
-      const durationUnit = tradingMode === 'hf' ? 's' : 'm';
-      const duration = tradingMode === 'hf' ? hfConfig.preferredDuration : 45; // 45 mins for standard
+      const { duration, durationUnit } = strategy === 'MICROSTRUCTURE_SCALP' 
+          ? { duration: 5, durationUnit: 't' }
+          : { duration: currentZone.duration, durationUnit: 's' };
 
       const tradeResult: TradeResult = await executeTrade(
         contractType,
-        1.0, // Stake fixo para HF
+        1.0,
         activeSymbol,
         direction,
         duration,
         durationUnit as DurationUnit,
-        'HF_Strike' as any 
+        'HF_Strike' as any
       );
-      
       if (!tradeResult.success) {
         throw new Error(tradeResult.message);
       }
-
       await saveHFTradeLog(user.uid, {
         symbol: activeSymbol,
         strikeZone: currentZone,
@@ -194,49 +192,35 @@ function PageContent() {
           executedAt: new Date().toISOString(),
         },
       });
-
       toast({
         title: '⚡ Strike Executado!',
         description: `${contractType} ${direction.toUpperCase()} - ${duration}${durationUnit}`,
       });
     } catch (error: any) {
-      console.error('[HF Strike] Execution error:', error);
-      toast({
-        title: 'Erro na Execução',
-        description: error.message || 'Falha ao executar strike',
-        variant: 'destructive',
-      });
+      toast({ title: 'Erro na Execução', description: error.message || 'Falha ao executar strike', variant: 'destructive' });
     } finally {
       setIsExecuting(false);
     }
-  }, [currentZone, user, activeSymbol, hfConfig, operationsLog, executeTrade, toast, tradingMode]);
+  }, [currentZone, user, activeSymbol, hfConfig, operationsLog, executeTrade, toast, strategy]);
 
-  // Auto-execute
   useEffect(() => {
-    if (!hfConfig.autoExecute || !hfConfig.enabled) return;
-
-    const justEnteredValidZone = 
-        currentZone && 
-        currentZone.type !== 'NEUTRAL' && 
-        (!prevZoneRef.current || prevZoneRef.current.type === 'NEUTRAL' || prevZoneRef.current.type !== currentZone.type);
-    
-    if (justEnteredValidZone && currentZone.confidence >= hfConfig.minConfidence) {
+    if (!hfConfig.autoExecute || !hfConfig.enabled || isExecuting) return;
+    const lastStrike = strikeHistory[strikeHistory.length - 1];
+    if (!currentZone || currentZone.type === 'NEUTRAL' || (lastStrike && lastStrike.entry.timestamp === currentZone.entry.timestamp)) return;
+    if (currentZone.confidence >= hfConfig.minConfidence) {
       handleExecuteStrike();
     }
-
-    prevZoneRef.current = currentZone;
-  }, [currentZone, hfConfig.autoExecute, hfConfig.enabled, hfConfig.minConfidence, handleExecuteStrike]);
-
+  }, [currentZone, hfConfig.autoExecute, hfConfig.enabled, hfConfig.minConfidence, handleExecuteStrike, isExecuting, strikeHistory]);
 
   const filteredZone = useMemo(() => {
     if (!currentZone || currentZone.type === 'NEUTRAL') return null;
-    if (currentZone.confidence < hfConfig.minConfidence) return null;
+    const isVetoed = currentZone.triggers.some(t => t.startsWith('VETO'));
+    if (currentZone.confidence < hfConfig.minConfidence && !isVetoed) return null;
     return currentZone;
   }, [currentZone, hfConfig.minConfidence]);
 
   return (
     <div className="flex-1 space-y-4 p-4 sm:p-8 pt-6">
-      {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h1 className="text-3xl font-bold tracking-tight font-headline">⚡ HF Strike Zone</h1>
@@ -288,60 +272,31 @@ function PageContent() {
       </div>
 
        <div className="flex items-center justify-center">
-        <ToggleGroup 
-            type="single"
-            value={tradingMode}
-            onValueChange={(value: 'hf' | 'standard') => value && setTradingMode(value)}
-            className="border bg-background p-1 rounded-lg"
-        >
-            <ToggleGroupItem value="hf">Alta Frequência</ToggleGroupItem>
-            <ToggleGroupItem value="standard">Padrão (15min)</ToggleGroupItem>
-        </ToggleGroup>
+        <Select value={strategy} onValueChange={(v) => handleStrategyChange(v as StrategyType)}>
+          <SelectTrigger className="w-full md:w-[480px]">
+            <SelectValue placeholder="Selecione uma estratégia..." />
+          </SelectTrigger>
+          <SelectContent>
+            {Object.entries(strategyDetails).map(([key, details]) => (
+              <SelectItem key={key} value={key}>{details.label}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
        </div>
 
-      {/* Stats Overview */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-        <MetricCard
-          icon={<BarChart className="h-4 w-4" />}
-          label="Total Strikes"
-          value={stats.totalStrikes}
-          subtext={`L:${stats.strikesByType.long} S:${stats.strikesByType.short}`}
-        />
-        <MetricCard
-          icon={<TrendingUp className="h-4 w-4" />}
-          label="Win Rate"
-          value={`${hfStats.winRate.toFixed(1)}%`}
-          subtext={`${hfStats.totalTrades} trades`}
-          color={hfStats.winRate > 53 ? 'text-green-600' : 'text-red-600'}
-        />
-        <MetricCard
-          icon={<Target className="h-4 w-4" />}
-          label="P&L Total"
-          value={`${hfStats.totalPnL >= 0 ? '+' : '-'}$${Math.abs(hfStats.totalPnL).toFixed(2)}`}
-          subtext={hfStats.totalPnL > 0 ? 'Lucro' : 'Prejuízo'}
-          color={hfStats.totalPnL >= 0 ? 'text-green-600' : 'text-red-600'}
-        />
-        <MetricCard
-          icon={<Brain className="h-4 w-4" />}
-          label="Sharpe Ratio"
-          value={hfStats.sharpeRatio.toFixed(2)}
-          subtext="Risco-Retorno"
-        />
-        <MetricCard
-          icon={<Activity className="h-4 w-4" />}
-          label="Avg Confiança"
-          value={`${stats.avgConfidence}%`}
-          subtext="Qualidade do Sinal"
-        />
+        <MetricCard icon={<BarChart className="h-4 w-4" />} label="Total Strikes" value={stats.totalStrikes} subtext={`L:${stats.strikesByType.long} S:${stats.strikesByType.short}`} />
+        <MetricCard icon={<TrendingUp className="h-4 w-4" />} label="Win Rate" value={`${hfStats.winRate.toFixed(1)}%`} subtext={`${hfStats.totalTrades} trades`} color={hfStats.winRate > 53 ? 'text-green-600' : 'text-red-600'} />
+        <MetricCard icon={<Target className="h-4 w-4" />} label="P&L Total" value={`${hfStats.totalPnL >= 0 ? '+' : '-'}$${Math.abs(hfStats.totalPnL).toFixed(2)}`} subtext={hfStats.totalPnL > 0 ? 'Lucro' : 'Prejuízo'} color={hfStats.totalPnL >= 0 ? 'text-green-600' : 'text-red-600'} />
+        <MetricCard icon={<Brain className="h-4 w-4" />} label="Sharpe Ratio" value={hfStats.sharpeRatio.toFixed(2)} subtext="Risco-Retorno" />
+        <MetricCard icon={<Activity className="h-4 w-4" />} label="Avg Confiança" value={`${stats.avgConfidence}%`} subtext="Qualidade do Sinal" />
       </div>
 
-
-      {/* Market Chart */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Zap className="h-5 w-5 text-yellow-500" />
-            Gráfico de Mercado ({activeSymbol}) - {tradingMode === 'hf' ? '1 Minuto' : '15 Minutos'}
+            Gráfico de Mercado ({activeSymbol})
           </CardTitle>
           <CardDescription>
             Análise em tempo real com overlays de BB, RSI e Strike Zones
@@ -364,7 +319,6 @@ function PageContent() {
         </CardContent>
       </Card>
 
-      {/* Main Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2">
           <StrikeZoneCard
@@ -378,13 +332,13 @@ function PageContent() {
             config={hfConfig}
             onConfigChange={updates => setHFConfig(prev => ({ ...prev, ...updates }))}
             disabled={isExecuting}
-            tradingMode={tradingMode}
+            strategy={strategy}
           />
         </div>
       </div>
       
       <Alert className={cn("mt-6 bg-yellow-50 border-yellow-200", !hfConfig.autoExecute && "hidden")}>
-        <Zap className="h-4 w-4 text-yellow-600" />
+        <Bot className="h-4 w-4 text-yellow-600" />
         <AlertTitle className="text-yellow-900">🤖 Auto-Execute Ativo</AlertTitle>
         <AlertDescription className="text-yellow-800">
           O sistema executará automaticamente strikes com confiança ≥ {hfConfig.minConfidence}%.
@@ -395,7 +349,6 @@ function PageContent() {
       <div className="pt-6">
         <HFExecutionLog operations={operationsLog} clearActiveContracts={clearActiveContracts} />
       </div>
-
 
     </div>
   );
@@ -408,3 +361,4 @@ export default function HFStrikeZonePage() {
     </DerivApiProvider>
   );
 }
+```
