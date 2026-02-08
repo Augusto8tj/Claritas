@@ -37,10 +37,11 @@ const MetricCard = ({ icon, label, value, subtext, color }: { icon: React.ReactN
     </Card>
 );
 
-const strategyDetails: Record<StrategyType, { label: string; description: string; optimalTimeframe: '1m' | '15m' }> = {
+const strategyDetails: Record<StrategyType, { label: string; description: string; optimalTimeframe: '1m' | '5m' | '15m' }> = {
   HF_MEAN_REVERSION: { label: 'Reversão à Média (HF)', description: 'Otimizado para reversão à média em 15-45s em ativos sintéticos.', optimalTimeframe: '1m' },
   STD_TREND_FOLLOW: { label: 'Seguidor de Tendência (Padrão)', description: 'Otimizado para seguir tendências em velas de 15m, ideal para Forex.', optimalTimeframe: '15m' },
   BOLLINGER_SQUEEZE: { label: 'Caçador de Breakouts (Squeeze)', description: 'Detecta compressão de volatilidade e opera no rompimento.', optimalTimeframe: '1m' },
+  VOLUME_ABSORPTION: { label: 'Absorção de Volume (PA)', description: 'Analisa o clímax de volume e a absorção para prever reversões.', optimalTimeframe: '5m' },
   MICROSTRUCTURE_SCALP: { label: 'Scalper de Microestrutura', description: 'Analisa o fluxo de ordens para trades de 5 ticks.', optimalTimeframe: '1m' },
 };
 
@@ -96,10 +97,11 @@ function PageContent() {
     strikeHistory,
     stats,
     fullIndicators,
+    supplyDemandZones,
   } = useHFStrikeZone(
     priceTicks,
     botCandleData,
-    chartData,
+    chartData as CandleData[],
     hfConfig.enabled,
     strategy
   );
@@ -120,7 +122,7 @@ function PageContent() {
         setHFConfig(prev => ({ ...prev, autoExecute: false }));
         toast({
           title: '🛑 Kill Switch Ativado',
-          description: '3 perdas HF consecutivas detectadas. Auto-execute pausado.',
+          description: '3 perdas consecutivas detectadas. Auto-execute pausado.',
           variant: 'destructive',
         });
       }
@@ -300,7 +302,7 @@ function PageContent() {
             Gráfico de Mercado ({activeSymbol})
           </CardTitle>
           <CardDescription>
-            Análise em tempo real com overlays de BB, RSI e Strike Zones
+            Análise em tempo real com overlays de indicadores e zonas de interesse.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -316,6 +318,7 @@ function PageContent() {
             operations={operationsLog}
             indicators={fullIndicators}
             tradeAnnotations={tradeAnnotations}
+            supplyDemandZones={supplyDemandZones}
           />
         </CardContent>
       </Card>
@@ -362,3 +365,4 @@ export default function HFStrikeZonePage() {
     </DerivApiProvider>
   );
 }
+```
