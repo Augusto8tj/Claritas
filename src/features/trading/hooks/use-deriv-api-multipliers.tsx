@@ -592,16 +592,22 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
         }
         setDataVersion(v => v + 1);
 
-        let subRequest: any;
+        let uiSubRequest: any;
         if (currentChartType === 'Candle') {
-            subRequest = { ticks_history: symbol, style: 'candles', granularity: getGranularityForTimePeriod(currentTimePeriod), subscribe: 1, end: "latest", count: 1, adjust_start_time: 1 };
+            uiSubRequest = { ticks_history: symbol, style: 'candles', granularity: getGranularityForTimePeriod(currentTimePeriod), subscribe: 1, end: "latest", count: 1, adjust_start_time: 1 };
         } else {
-            subRequest = { ticks: symbol, subscribe: 1 };
+            uiSubRequest = { ticks: symbol, subscribe: 1 };
         }
-        const subResponse: any = await makeRequest(subRequest);
-        if(subResponse.error) throw new Error(`UI Sub: ${subResponse.error.message}`);
-        if (subResponse.subscription?.id) {
-            activeSubscriptionIdRef.current = subResponse.subscription.id;
+        const uiSubResponse: any = await makeRequest(uiSubRequest);
+        if (uiSubResponse.error) {
+            if (uiSubResponse.error.code !== 'AlreadySubscribed') {
+                throw new Error(`UI Sub: ${uiSubResponse.error.message}`);
+            } else {
+                 console.warn(`[Multipliers] UI data already subscribed for ${symbol}.`);
+            }
+        }
+        if (uiSubResponse.subscription?.id) {
+            activeSubscriptionIdRef.current = uiSubResponse.subscription.id;
         }
     } catch (error: any) {
         setChartError(error.message || 'Falha ao carregar dados do mercado.');
@@ -638,7 +644,13 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
             adjust_start_time: 1 
         };
         const subResponse: any = await makeRequest(subRequest);
-        if (subResponse.error) throw new Error(`Bot Sub: ${subResponse.error.message}`);
+        if (subResponse.error) {
+            if (subResponse.error.code !== 'AlreadySubscribed') {
+                throw new Error(`Bot Sub: ${subResponse.error.message}`);
+            } else {
+                console.warn(`[Multipliers] Bot data already subscribed for ${symbol}.`);
+            }
+        }
         if (subResponse.subscription?.id) {
             botSubscriptionIdRef.current = subResponse.subscription.id;
         }

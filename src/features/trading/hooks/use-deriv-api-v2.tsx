@@ -535,22 +535,22 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
         if (botSubscriptionIdRef.current) {
             try { await makeRequest({ forget: botSubscriptionIdRef.current }, true); } catch (e) { /* silent */ }
         }
-
+        
         activeSubscriptionIdRef.current = null;
         botSubscriptionIdRef.current = null;
 
         setIsChartLoading(true);
         setChartError(null);
         setChartData([]);
-        setPriceTicks([]);
         setBotCandleData([]);
-        
+        setPriceTicks([]); 
+
         const currentChartType = chartTypeRef.current;
         const currentTimePeriod = timePeriodRef.current;
         
         const contractsRes: any = await makeRequest({ contracts_for: symbol });
         if (contractsRes.error) throw new Error(contractsRes.error.message);
-
+        
         const tradingPeriod = contractsRes.contracts_for?.trading_period;
         const riseFallPeriod = tradingPeriod?.rise_fall;
 
@@ -569,6 +569,25 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
         
         const botHistory = await getHistoricalData(symbol, 'candles', 1000, '1m');
         setBotCandleData(botHistory as CandleData[]);
+        
+        const botSubRequest = { 
+            ticks_history: symbol, 
+            style: 'candles', 
+            granularity: 60,
+            subscribe: 1, 
+            end: "latest", 
+            count: 1, 
+            adjust_start_time: 1 
+        };
+        const botSubResponse: any = await makeRequest(botSubRequest);
+        if (botSubResponse.error) {
+            if (botSubResponse.error.code !== 'AlreadySubscribed') {
+                throw new Error(`Bot Sub: ${botSubResponse.error.message}`);
+            } else {
+                console.warn(`[Deriv WS V2] Bot data already subscribed for ${symbol}.`);
+            }
+        }
+        if(botSubResponse.subscription?.id) botSubscriptionIdRef.current = botSubResponse.subscription.id;
         
         const historyStyle = currentChartType === 'Candle' ? 'candles' : 'ticks';
         const uiHistory = await getHistoricalData(symbol, historyStyle, 1000, currentTimePeriod);
@@ -603,22 +622,19 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
                 subscribe: 1 
             };
         }
-        const uiSubResponse: any = await makeRequest(uiSubRequest);
-        if(uiSubResponse.error) throw new Error(`UI Sub: ${uiSubResponse.error.message}`);
-        if(uiSubResponse.subscription?.id) activeSubscriptionIdRef.current = uiSubResponse.subscription.id;
         
-        const botSubRequest = { 
-            ticks_history: symbol, 
-            style: 'candles', 
-            granularity: 60,
-            subscribe: 1, 
-            end: "latest", 
-            count: 1, 
-            adjust_start_time: 1 
-        };
-        const botSubResponse: any = await makeRequest(botSubRequest);
-        if(botSubResponse.error) throw new Error(`Bot Sub: ${botSubResponse.error.message}`);
-        if(botSubResponse.subscription?.id) botSubscriptionIdRef.current = botSubResponse.subscription.id;
+        const uiSubResponse: any = await makeRequest(uiSubRequest);
+        if (uiSubResponse.error) {
+             if (uiSubResponse.error.code !== 'AlreadySubscribed') {
+                throw new Error(`UI Sub: ${uiSubResponse.error.message}`);
+            } else {
+                 console.warn(`[Deriv WS V2] UI data already subscribed for ${symbol}.`);
+            }
+        }
+        if (uiSubResponse.subscription?.id) {
+            activeSubscriptionIdRef.current = uiSubResponse.subscription.id;
+        }
+
     } catch (error: any) {
         console.error(`[Market Data] Error for ${symbol}:`, error);
         setChartError(error.message || 'Falha ao carregar dados do mercado.');

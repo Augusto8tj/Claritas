@@ -469,7 +469,13 @@ export function useDerivApiDigitsState() {
                 subRequest = { ticks: symbol, subscribe: 1 };
             }
             const subResponse: any = await makeRequest(subRequest);
-            if (subResponse.error) throw new Error(subResponse.error.message);
+            if (subResponse.error) {
+                if (subResponse.error.code !== 'AlreadySubscribed') {
+                    throw new Error(subResponse.error.message);
+                } else {
+                    console.warn(`[Digits] Data already subscribed for ${symbol}.`);
+                }
+            }
             activeSubscriptionIdRef.current = subResponse.subscription?.id || null;
         } catch (error: any) {
             console.error(`[Market Data - Digits] Error for ${symbol}:`, error);

@@ -234,7 +234,7 @@ export const DerivApiProviderAccumulators = ({ children }: { children: ReactNode
     return new Promise((resolve) => {
         const ws = wsRef.current;
         if (!ws || ws.readyState !== WebSocket.OPEN) {
-            return resolve({ error: { message: "WebSocket não está conectado." } } as any);
+            return resolve({ error: { message: "WebSocket não está conectado. Verifique o token e a conexão." } } as any);
         }
   
         const req_id = Date.now() + Math.floor(Math.random() * 1000000);
@@ -489,14 +489,26 @@ export const DerivApiProviderAccumulators = ({ children }: { children: ReactNode
         setBotCandleData(botHistory);
         const botSubRequest = { ticks_history: symbol, style: 'candles', granularity: 60, subscribe: 1, end: "latest", count: 1, adjust_start_time: 1 };
         const botSubResponse: any = await makeRequest(botSubRequest);
-        if (botSubResponse.error) throw new Error(`Bot Sub: ${botSubResponse.error.message}`);
+        if (botSubResponse.error) {
+            if (botSubResponse.error.code !== 'AlreadySubscribed') {
+                throw new Error(`Bot Sub: ${botSubResponse.error.message}`);
+            } else {
+                console.warn(`[Accumulators] Bot data already subscribed for ${symbol}.`);
+            }
+        }
         if (botSubResponse.subscription?.id) {
             botSubscriptionIdRef.current = botSubResponse.subscription.id;
         }
 
         const tickSubRequest = { ticks: symbol, subscribe: 1 };
         const tickSubResponse: any = await makeRequest(tickSubRequest);
-        if (tickSubResponse.error) throw new Error(`Tick Sub: ${tickSubResponse.error.message}`);
+        if (tickSubResponse.error) {
+            if (tickSubResponse.error.code !== 'AlreadySubscribed') {
+                throw new Error(`Tick Sub: ${tickSubResponse.error.message}`);
+            } else {
+                console.warn(`[Accumulators] Tick data already subscribed for ${symbol}.`);
+            }
+        }
         if (tickSubResponse.subscription?.id) {
             tickSubscriptionIdRef.current = tickSubResponse.subscription.id;
         }
@@ -516,7 +528,13 @@ export const DerivApiProviderAccumulators = ({ children }: { children: ReactNode
             setChartData(uiHistory as CandleData[]);
             const uiSubRequest = { ticks_history: symbol, style: 'candles', granularity: getGranularityForTimePeriod(currentTimePeriod), subscribe: 1, end: "latest", count: 1, adjust_start_time: 1 };
             const uiSubResponse: any = await makeRequest(uiSubRequest);
-            if(uiSubResponse.error) throw new Error(`UI Sub: ${uiSubResponse.error.message}`);
+            if(uiSubResponse.error) {
+                if (uiSubResponse.error.code !== 'AlreadySubscribed') {
+                    throw new Error(`UI Sub: ${uiSubResponse.error.message}`);
+                } else {
+                    console.warn(`[Accumulators] UI data already subscribed for ${symbol}.`);
+                }
+            }
             if (uiSubResponse.subscription?.id) {
                 activeSubscriptionIdRef.current = uiSubResponse.subscription.id;
             }
@@ -726,6 +744,7 @@ export const DerivApiProviderAccumulators = ({ children }: { children: ReactNode
                 const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
                 setConnectionError(`Falha na autorização: ${errorMessage}`);
                 setIsConnected(false); setIsConnecting(false); setIsAssetsLoading(false);
+                setAccountBalance({ balance: null, currency: null, loading: false });
                 allowAutoReconnectRef.current = false; // PREVENT RECONNECT LOOP
                 if (ws.readyState === WebSocket.OPEN) ws.close();
             }
