@@ -6,7 +6,7 @@ import { useFormContext } from "react-hook-form";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Form, FormControl, FormField, FormItem, FormMessage } from "@/components/ui/form";
-import { Loader2, Minus, Plus } from "lucide-react";
+import { Loader2, Minus, Plus, BrainCircuit } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -16,6 +16,7 @@ import type { DigitFormValues, DurationUnit } from "./deriv-trader-interface-dig
 import { useDerivApiDigits } from "@/features/trading/hooks/use-deriv-api-digits";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 
 type TradeCategory = 'matches_differs' | 'over_under' | 'even_odd';
 type DigitContractType = 'DIGITMATCH' | 'DIGITDIFF' | 'DIGITOVER' | 'DIGITUNDER' | 'DIGITEVEN' | 'DIGITODD';
@@ -202,6 +203,13 @@ function DerivTraderInterfaceDigits({ symbol }: DerivTraderInterfaceProps) {
           </TabsContent>
 
           <TabsContent value="over_under" className="pt-4 space-y-4">
+            <Alert>
+              <BrainCircuit className="h-4 w-4" />
+              <AlertTitle>Lógica da Estratégia</AlertTitle>
+              <AlertDescription className="text-xs">
+                Para negociação manual, o dígito que você selecionar abaixo será a barreira. Para o piloto automático, ele usa uma lógica fixa (Acima de 4 / Abaixo de 5) baseada na análise de probabilidade.
+              </AlertDescription>
+            </Alert>
             <DigitPredictionSelector />
             <div className="grid grid-cols-2 gap-4">
               <Button
