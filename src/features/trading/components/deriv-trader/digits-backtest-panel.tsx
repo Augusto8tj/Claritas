@@ -17,6 +17,8 @@ interface DigitsBacktestPanelProps {
 
 const strategyLabels: Record<string, string> = {
     matchesDiffers: 'Combina / Difere',
+    overUnder: 'Acima / Abaixo',
+    evenOdd: 'Par / Ímpar',
 };
 
 export function DigitsBacktestPanel({ results, onRunBacktest, isBacktesting }: DigitsBacktestPanelProps) {

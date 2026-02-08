@@ -47,9 +47,11 @@ const getLastDigit = (price: number): number => {
 export function runDigitsBacktest(
   ticks: TickData[],
   config: DigitsBacktestConfig
-): Record<'matchesDiffers', StrategyBacktestResult> {
+): Record<'matchesDiffers' | 'overUnder' | 'evenOdd', StrategyBacktestResult> {
 
   const matchesDiffersTrades: DigitTradeResult[] = [];
+  const overUnderTrades: DigitTradeResult[] = [];
+  const evenOddTrades: DigitTradeResult[] = [];
 
   // Loop through the ticks, starting after the first window, leaving one tick at the end for the result.
   for (let i = config.windowSize; i < ticks.length - 1; i++) {
@@ -71,17 +73,15 @@ export function runDigitsBacktest(
       probability: (count / total) * 100,
     })).sort((a, b) => b.probability - a.probability);
 
-    const mostProbable = stats[0];
     const exitTick = ticks[i + 1];
     const actualDigit = getLastDigit(exitTick.price);
 
-    // Simulate "DIFFERS" strategy
+    // 1. Matches/Differs Strategy
+    const mostProbable = stats[0];
     if (mostProbable && mostProbable.probability > config.threshold) {
       const predictionDigit = mostProbable.digit;
       const isWin = actualDigit !== predictionDigit;
-      // Deriv payout for differs is complex. We use a conservative estimate of 10% profit on win.
-      const pnl = isWin ? config.stake * 0.1 : -config.stake;
-
+      const pnl = isWin ? config.stake * 0.10 : -config.stake; // Conservative 10% payout on win
       matchesDiffersTrades.push({
         tickIndex: i,
         entryPrice: ticks[i].price,
@@ -91,6 +91,68 @@ export function runDigitsBacktest(
         result: isWin ? 'win' : 'loss',
         pnl,
       });
+    }
+    
+    // 2. Over/Under Strategy (fixed barrier for now: Over 4 / Under 5)
+    // Higher threshold because it's closer to a 50/50 bet
+    const overUnderThreshold = config.threshold + 20;
+    const probOver4 = stats.filter(s => s.digit > 4).reduce((sum, s) => sum + s.probability, 0);
+    const probUnder5 = stats.filter(s => s.digit < 5).reduce((sum, s) => sum + s.probability, 0);
+
+    if (probOver4 > overUnderThreshold) {
+        const isWin = actualDigit > 4;
+        const pnl = isWin ? config.stake * 0.95 : -config.stake;
+        overUnderTrades.push({
+            tickIndex: i,
+            entryPrice: ticks[i].price,
+            exitPrice: exitTick.price,
+            prediction: 'OVER 4',
+            actualDigit,
+            result: isWin ? 'win' : 'loss',
+            pnl,
+        });
+    } else if (probUnder5 > overUnderThreshold) {
+        const isWin = actualDigit < 5;
+        const pnl = isWin ? config.stake * 0.95 : -config.stake;
+        overUnderTrades.push({
+            tickIndex: i,
+            entryPrice: ticks[i].price,
+            exitPrice: exitTick.price,
+            prediction: 'UNDER 5',
+            actualDigit,
+            result: isWin ? 'win' : 'loss',
+            pnl,
+        });
+    }
+
+    // 3. Even/Odd Strategy
+    const evenOddThreshold = config.threshold + 20;
+    const probEven = stats.filter(s => s.digit % 2 === 0).reduce((sum, s) => sum + s.probability, 0);
+    
+    if (probEven > evenOddThreshold) {
+        const isWin = actualDigit % 2 === 0;
+        const pnl = isWin ? config.stake * 0.95 : -config.stake;
+        evenOddTrades.push({
+            tickIndex: i,
+            entryPrice: ticks[i].price,
+            exitPrice: exitTick.price,
+            prediction: 'EVEN',
+            actualDigit,
+            result: isWin ? 'win' : 'loss',
+            pnl,
+        });
+    } else if ((100 - probEven) > evenOddThreshold) { // Probability of Odd
+        const isWin = actualDigit % 2 !== 0;
+        const pnl = isWin ? config.stake * 0.95 : -config.stake;
+        evenOddTrades.push({
+            tickIndex: i,
+            entryPrice: ticks[i].price,
+            exitPrice: exitTick.price,
+            prediction: 'ODD',
+            actualDigit,
+            result: isWin ? 'win' : 'loss',
+            pnl,
+        });
     }
   }
 
@@ -103,8 +165,9 @@ export function runDigitsBacktest(
       return { totalTrades, winRate, totalPnl, trades };
   };
 
-  // NOTE: Other strategies like 'overUnder' or 'evenOdd' can be added here in the future.
   return {
     matchesDiffers: calculateMetrics(matchesDiffersTrades),
+    overUnder: calculateMetrics(overUnderTrades),
+    evenOdd: calculateMetrics(evenOddTrades),
   };
 }
