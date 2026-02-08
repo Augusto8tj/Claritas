@@ -104,9 +104,6 @@ export const DigitsAutopilotManager: React.FC<DigitsAutopilotManagerProps> = (pr
     setCooldownTime,
     maxLosses,
     setMaxLosses,
-    backtestResults,
-    handleRunBacktest,
-    isBacktesting,
  } = props;
 
   const isAnyPilotOn = Object.values(pilots).some(p => p.isOn);
@@ -165,36 +162,34 @@ export const DigitsAutopilotManager: React.FC<DigitsAutopilotManagerProps> = (pr
                     pilotState={pilots.underdog}
                     toggleAutopilot={toggleAutopilot}
                 />
-                 {pilots.underdog.isOn && (
-                    <div className="space-y-4 pt-4 mt-4 border-t">
-                        <h4 className="text-xs font-semibold text-muted-foreground">Configuração Fina (Azarão)</h4>
-                        <div className="space-y-2">
-                            <Label htmlFor="underdog-threshold">Limiar de Frequência de Disparo ({underdogThreshold.toFixed(1)}%)</Label>
-                            <Slider
-                                id="underdog-threshold"
-                                min={1.0} max={10.0} step={0.5}
-                                value={[underdogThreshold]}
-                                onValueChange={(value) => setUnderdogThreshold(value[0])}
-                                disabled={!pilots.underdog.isOn}
-                            />
-                            <p className="text-xs text-muted-foreground">Operar 'Combina' se a frequência de um dígito cair abaixo deste valor.</p>
-                        </div>
-                        <div className="flex items-center justify-between rounded-lg border p-3">
-                            <Label htmlFor="underdog-inverse-switch" className="flex flex-col space-y-1">
-                                <span>Inverter Lógica</span>
-                                <span className="font-normal text-xs text-muted-foreground">
-                                    Apostar 'Difere' no dígito menos frequente (alto risco).
-                                </span>
-                            </Label>
-                            <Switch
-                                id="underdog-inverse-switch"
-                                checked={isUnderdogInverse}
-                                onCheckedChange={setIsUnderdogInverse}
-                                disabled={!pilots.underdog.isOn}
-                            />
-                        </div>
+                <div className="space-y-4 pt-4 mt-4 border-t">
+                    <h4 className="text-xs font-semibold text-muted-foreground">Configuração Fina (Azarão)</h4>
+                    <div className="space-y-2">
+                        <Label htmlFor="underdog-threshold">Limiar de Frequência de Disparo ({underdogThreshold.toFixed(1)}%)</Label>
+                        <Slider
+                            id="underdog-threshold"
+                            min={1.0} max={10.0} step={0.5}
+                            value={[underdogThreshold]}
+                            onValueChange={(value) => setUnderdogThreshold(value[0])}
+                            disabled={isAnyPilotOn}
+                        />
+                        <p className="text-xs text-muted-foreground">Operar 'Combina' se a frequência de um dígito cair abaixo deste valor.</p>
                     </div>
-                )}
+                    <div className="flex items-center justify-between rounded-lg border p-3">
+                        <Label htmlFor="underdog-inverse-switch" className="flex flex-col space-y-1">
+                            <span>Inverter Lógica</span>
+                            <span className="font-normal text-xs text-muted-foreground">
+                                Apostar 'Difere' no dígito menos frequente (alto risco).
+                            </span>
+                        </Label>
+                        <Switch
+                            id="underdog-inverse-switch"
+                            checked={isUnderdogInverse}
+                            onCheckedChange={setIsUnderdogInverse}
+                            disabled={isAnyPilotOn}
+                        />
+                    </div>
+                </div>
             </TabsContent>
         </Tabs>
         
@@ -287,21 +282,6 @@ export const DigitsAutopilotManager: React.FC<DigitsAutopilotManagerProps> = (pr
                         disabled={isAnyPilotOn}
                     />
                 </div>
-            </CollapsibleContent>
-        </Collapsible>
-         <Collapsible className="mt-4">
-            <CollapsibleTrigger asChild>
-                <Button variant="outline" className="w-full">
-                    <TestTube className="mr-2 h-4 w-4" />
-                    Painel de Backtesting de Dígitos
-                </Button>
-            </CollapsibleTrigger>
-            <CollapsibleContent className="pt-4">
-                <DigitsBacktestPanel 
-                    results={backtestResults}
-                    onRunBacktest={handleRunBacktest}
-                    isBacktesting={isBacktesting}
-                />
             </CollapsibleContent>
         </Collapsible>
       </CardContent>
