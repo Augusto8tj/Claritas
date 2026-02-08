@@ -2,33 +2,21 @@
 'use client';
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import type { TickData, ChartData, CandleData } from '@/lib/types';
+import type { TickData, CandleData } from '@/lib/types';
+import {
+    analyzeBollingerBands,
+    analyzeRSI,
+    analyzeVolume,
+    detectStrikeZone,
+    type StrikeZone,
+    type BBAnalysis,
+    type RSIAnalysis,
+    type VolumeAnalysis,
+} from '../services/hf-strike-logic';
 import { calculateAllIndicators, type Indicators } from '@/features/trading/services/indicator-service';
-import { initialCouncilStrategies } from '@/features/trading/services/council-strategies';
 
+export type { StrikeZone } from '../services/hf-strike-logic';
 
-export interface StrikeZone {
-  type: 'LONG_ENTRY' | 'SHORT_ENTRY' | 'NEUTRAL';
-  confidence: number;
-  triggers: string[];
-  entry: {
-    price: number;
-    timestamp: number;
-  };
-  targets: {
-    takeProfit: number;
-    stopLoss: number;
-    riskReward: number;
-  };
-  indicators: {
-    rsi: number;
-    bbPosition: number;
-    bbWidth: number;
-    volumeSpike: boolean;
-    divergence: 'bullish' | 'bearish' | null;
-  };
-  duration: number; // Duração sugerida em segundos
-}
 
 export interface HFStats {
   totalStrikes: number;
@@ -39,32 +27,6 @@ export interface HFStats {
     short: number;
   };
 }
-
-interface BBAnalysis {
-  series: ({ upper: number; middle: number; lower: number; } | null)[];
-  upper: number;
-  lower: number;
-  middle: number;
-  width: number;
-  position: number;
-  isSqueezed: boolean;
-  touchingLower: boolean;
-  touchingUpper: boolean;
-}
-
-interface RSIAnalysis {
-  value: number;
-  oversold: boolean;
-  overbought: boolean;
-  divergence: 'bullish' | 'bearish' | null;
-}
-
-interface VolumeAnalysis {
-  isSpike: boolean;
-  ratio: number;
-}
-
-const isCandleData = (d: ChartData): d is CandleData => 'close' in d;
 
 /**
  * Hook para detecção de Strike Zones em High Frequency Trading
@@ -80,207 +42,43 @@ export function useHFStrikeZone(
 
   const indicators = useMemo((): Indicators | null => {
     if (!enabled || candleData.length < 20) return null;
+    // O serviço de indicadores já está otimizado com cache.
     return calculateAllIndicators(candleData, [], '1m', { duration: 1, unit: 't' });
   }, [candleData, enabled]);
 
   /**
-   * Layer 1: Bollinger Bands Analysis
+   * Layer 1: Bollinger Bands Analysis - Reage a cada tick!
    */
   const bbAnalysis = useMemo((): BBAnalysis | null => {
-    if (!indicators || !indicators.bb || !indicators.bollingerBands || priceTicks.length === 0) return null;
-
-    const { upper, middle, lower } = indicators.bb;
-    if (upper === null || middle === null || lower === null) return null;
-    
+    if (!enabled || !indicators || !indicators.bb || priceTicks.length === 0) return null;
     const currentPrice = priceTicks[priceTicks.length - 1].price;
-
-    const bandWidth = middle > 0 ? ((upper - lower) / middle) * 100 : 0;
-    const bandRange = upper - lower;
-    const bbPosition = bandRange > 0 ? (currentPrice - lower) / bandRange : 0.5;
-
-    return {
-      series: indicators.bollingerBands,
-      upper,
-      lower,
-      middle,
-      width: bandWidth,
-      position: bbPosition,
-      isSqueezed: bandWidth < 1.5,
-      touchingLower: currentPrice <= lower * 1.005,
-      touchingUpper: currentPrice >= upper * 0.995,
-    };
+    return analyzeBollingerBands(indicators.bb, indicators.bollingerBands, currentPrice);
   }, [indicators, priceTicks, enabled]);
+
 
   /**
    * Layer 2: RSI Analysis com Divergence Detection
    */
     const rsiAnalysis = useMemo((): RSIAnalysis | null => {
-    if (!indicators || indicators.rsi === null || candleData.length < 10) return null;
-
-    const rsi = indicators.rsi;
-    
-    const last10Candles = candleData.slice(-10);
-    
-    const priceChange = last10Candles[9].close - last10Candles[0].close;
-    const priceIncreasing = priceChange > 0;
-    let divergence: 'bullish' | 'bearish' | null = null;
-
-    if (!priceIncreasing && rsi < 35 && rsi > 25) {
-      divergence = 'bullish';
-    } else if (priceIncreasing && rsi > 65 && rsi < 75) {
-      divergence = 'bearish';
-    }
-
-    return {
-      value: rsi,
-      oversold: rsi < 30,
-      overbought: rsi > 70,
-      divergence,
-    };
-  }, [candleData, indicators]);
+    if (!enabled || !indicators || indicators.rsi === null || candleData.length < 14) return null;
+    return analyzeRSI(indicators.rsi, candleData);
+  }, [candleData, indicators, enabled]);
 
   /**
    * Layer 3: Volume Spike Detection
    */
   const volumeAnalysis = useMemo((): VolumeAnalysis | null => {
     if (!enabled || priceTicks.length < 60) return null;
-
-    try {
-      const last60Ticks = priceTicks.slice(-60);
-      const last10Ticks = priceTicks.slice(-10);
-
-      const window60Duration = last60Ticks[59].epoch - last60Ticks[0].epoch;
-      const window10Duration = last10Ticks[9].epoch - last10Ticks[0].epoch;
-
-      if (window60Duration === 0 || window10Duration === 0) return null;
-
-      const avgTickRate = 60 / window60Duration;
-      const recentTickRate = 10 / window10Duration;
-
-      const ratio = recentTickRate / avgTickRate;
-      const isSpike = ratio > 1.3;
-
-      return {
-        isSpike,
-        ratio,
-      };
-    } catch (error) {
-      console.error('[HF Strike Zone] Volume Analysis Error:', error);
-      return null;
-    }
+    return analyzeVolume(priceTicks);
   }, [priceTicks, enabled]);
 
   /**
    * Strike Zone Logic Combiner
    */
   const currentZone = useMemo((): StrikeZone | null => {
-    if (!enabled || !bbAnalysis || !rsiAnalysis || !volumeAnalysis) return null;
-    if (priceTicks.length === 0) return null;
-
-    const triggers: string[] = [];
-    let confidence = 0;
-    let type: StrikeZone['type'] = 'NEUTRAL';
-
+    if (!enabled || priceTicks.length === 0) return null;
     const currentPrice = priceTicks[priceTicks.length - 1].price;
-
-    // LONG ENTRY
-    if (bbAnalysis.touchingLower) {
-      triggers.push(`📉 Preço na Banda Inferior (${currentPrice.toFixed(5)})`);
-      confidence += 40;
-    }
-    if (rsiAnalysis.oversold) {
-      triggers.push(`📊 RSI Oversold (${rsiAnalysis.value.toFixed(1)})`);
-      confidence += 35;
-    }
-    if (rsiAnalysis.divergence === 'bullish') {
-      triggers.push('🔄 Divergência Bullish Detectada');
-      confidence += 25;
-    }
-
-    if (confidence >= 60) {
-      if (volumeAnalysis.isSpike) {
-        triggers.push(`📈 Volume Spike (${(volumeAnalysis.ratio * 100).toFixed(0)}%)`);
-        confidence += 15;
-      }
-      if (bbAnalysis.isSqueezed) {
-        triggers.push('🎯 Bollinger Squeeze Ativo');
-        confidence += 10;
-      }
-      
-      type = 'LONG_ENTRY';
-      const atr = bbAnalysis.upper - bbAnalysis.lower;
-      return {
-        type,
-        confidence: Math.min(confidence, 100),
-        triggers,
-        entry: { price: currentPrice, timestamp: Date.now() },
-        targets: {
-          takeProfit: currentPrice + atr * 0.75,
-          stopLoss: currentPrice - atr * 0.5,
-          riskReward: 1.5,
-        },
-        indicators: {
-          rsi: rsiAnalysis.value,
-          bbPosition: bbAnalysis.position,
-          bbWidth: bbAnalysis.width,
-          volumeSpike: volumeAnalysis.isSpike,
-          divergence: rsiAnalysis.divergence,
-        },
-        duration: bbAnalysis.isSqueezed ? 30 : 20,
-      };
-    }
-
-    // SHORT ENTRY
-    confidence = 0;
-    triggers.length = 0;
-
-    if (bbAnalysis.touchingUpper) {
-      triggers.push(`📈 Preço na Banda Superior (${currentPrice.toFixed(5)})`);
-      confidence += 40;
-    }
-    if (rsiAnalysis.overbought) {
-      triggers.push(`📊 RSI Overbought (${rsiAnalysis.value.toFixed(1)})`);
-      confidence += 35;
-    }
-    if (rsiAnalysis.divergence === 'bearish') {
-      triggers.push('🔄 Divergência Bearish Detectada');
-      confidence += 25;
-    }
-
-    if (confidence >= 60) {
-        if (volumeAnalysis.isSpike) {
-            triggers.push(`📈 Volume Spike (${(volumeAnalysis.ratio * 100).toFixed(0)}%)`);
-            confidence += 15;
-        }
-        if (bbAnalysis.isSqueezed) {
-            triggers.push('🎯 Bollinger Squeeze Ativo');
-            confidence += 10;
-        }
-
-      type = 'SHORT_ENTRY';
-      const atr = bbAnalysis.upper - bbAnalysis.lower;
-      return {
-        type,
-        confidence: Math.min(confidence, 100),
-        triggers,
-        entry: { price: currentPrice, timestamp: Date.now() },
-        targets: {
-          takeProfit: currentPrice - atr * 0.75,
-          stopLoss: currentPrice + atr * 0.5,
-          riskReward: 1.5,
-        },
-        indicators: {
-          rsi: rsiAnalysis.value,
-          bbPosition: bbAnalysis.position,
-          bbWidth: bbAnalysis.width,
-          volumeSpike: volumeAnalysis.isSpike,
-          divergence: rsiAnalysis.divergence,
-        },
-        duration: bbAnalysis.isSqueezed ? 30 : 20,
-      };
-    }
-
-    return null;
+    return detectStrikeZone(bbAnalysis, rsiAnalysis, volumeAnalysis, currentPrice);
   }, [bbAnalysis, rsiAnalysis, volumeAnalysis, priceTicks, enabled]);
   
   useEffect(() => {

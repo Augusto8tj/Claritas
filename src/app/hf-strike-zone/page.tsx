@@ -65,7 +65,7 @@ function PageContent() {
   // HF Configuration State
   const [hfConfig, setHFConfig] = useState<HFConfig>({
     enabled: true,
-    minConfidence: 70,
+    minConfidence: 60,
     autoExecute: false,
     maxConcurrentTrades: 2,
     preferredDuration: 20,
@@ -82,12 +82,33 @@ function PageContent() {
 
   const prevZoneRef = useRef<StrikeZone | null>(null);
 
-  // Strike Zone Hook
+  // Strike Zone Hook - AGORA USA botCandleData para consistência de análise
   const { currentZone, strikeHistory, stats, bbAnalysis, rsiAnalysis, fullIndicators } = useHFStrikeZone(
     priceTicks,
     botCandleData,
     hfConfig.enabled
   );
+
+  // Kill Switch Logic
+  useEffect(() => {
+    if (!hfConfig.autoExecute) return; // Only run if autopilot is on
+
+    const last3Trades = operationsLog
+      .filter(op => op.initiator === 'HF_Strike' && op.status !== 'pending')
+      .slice(0, 3);
+    
+    if (last3Trades.length === 3) {
+      const allLost = last3Trades.every(t => t.result !== undefined && t.result < 0);
+      if (allLost) {
+        setHFConfig(prev => ({ ...prev, autoExecute: false }));
+        toast({
+          title: '🛑 Kill Switch Ativado',
+          description: '3 perdas HF consecutivas detectadas. Auto-execute pausado.',
+          variant: 'destructive',
+        });
+      }
+    }
+  }, [operationsLog, hfConfig.autoExecute, toast]);
 
   // Carregar estatísticas do Firebase
   useEffect(() => {
@@ -339,16 +360,14 @@ function PageContent() {
         </div>
       </div>
       
-      {hfConfig.autoExecute && hfConfig.enabled && (
-        <Alert className="mt-6 bg-yellow-50 border-yellow-200">
-          <Zap className="h-4 w-4 text-yellow-600" />
-          <AlertTitle className="text-yellow-900">🤖 Auto-Execute Ativo</AlertTitle>
-          <AlertDescription className="text-yellow-800">
-            O sistema executará automaticamente strikes com confiança ≥ {hfConfig.minConfidence}%.
-            Limite de {hfConfig.maxConcurrentTrades} posições simultâneas.
-          </AlertDescription>
-        </Alert>
-      )}
+      <Alert className={cn("mt-6 bg-yellow-50 border-yellow-200", !hfConfig.autoExecute && "hidden")}>
+        <Zap className="h-4 w-4 text-yellow-600" />
+        <AlertTitle className="text-yellow-900">🤖 Auto-Execute Ativo</AlertTitle>
+        <AlertDescription className="text-yellow-800">
+          O sistema executará automaticamente strikes com confiança ≥ {hfConfig.minConfidence}%.
+          Limite de {hfConfig.maxConcurrentTrades} posições simultâneas.
+        </AlertDescription>
+      </Alert>
 
       <div className="pt-6">
         <HFExecutionLog operations={operationsLog} clearActiveContracts={clearActiveContracts} />
