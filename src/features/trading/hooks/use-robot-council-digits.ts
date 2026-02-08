@@ -94,26 +94,26 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
     }));
   }, [priceTicks, activeAsset]);
 
-  const toggleAutopilot = useCallback((pilotType: PilotType) => {
-    const isActivating = !pilots[pilotType].isOn;
-    
-    setPilots(prev => ({
-        ...prev,
-        [pilotType]: { 
-            ...prev[pilotType],
-            isOn: isActivating,
-            status: isActivating ? 'TRADING' : 'PAUSED',
-            consecutiveLosses: 0 // Reseta ao ligar/desligar
+  const toggleAutopilot = useCallback((pilotType: PilotType, silent: boolean = false) => {
+    setPilots(prev => {
+        const isActivating = !prev[pilotType].isOn;
+        if (!silent) {
+            setTimeout(() => toast({ title: `Piloto ${pilotType} ${isActivating ? 'Ativado' : 'Desativado'}` }), 0);
         }
-    }));
-    
-    toast({ title: `Piloto ${pilotType} ${isActivating ? 'Ativado' : 'Desativado'}` });
-
-    if (!isActivating && cooldownTimersRef.current[pilotType]) {
-        clearTimeout(cooldownTimersRef.current[pilotType]!);
-    }
-
-  }, [pilots, toast]);
+        if (!isActivating && cooldownTimersRef.current[pilotType]) {
+            clearTimeout(cooldownTimersRef.current[pilotType]!);
+        }
+        return {
+            ...prev,
+            [pilotType]: { 
+                ...prev[pilotType],
+                isOn: isActivating,
+                status: isActivating ? 'TRADING' : 'PAUSED',
+                consecutiveLosses: 0 // Reseta ao ligar/desligar
+            }
+        };
+    });
+  }, [toast]);
   
   useEffect(() => {
     const lastPilotTrade = operationsLog.find(op => op.initiator?.startsWith('Piloto_') && !processedLossesRef.current.has(op.id) && op.status !== 'pending');
@@ -123,29 +123,35 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
     const pilotType = lastPilotTrade.initiator!.split('_')[1] as PilotType;
     
     if (lastPilotTrade.status === 'lost') {
-        const newConsecutiveLosses = (pilots[pilotType]?.consecutiveLosses || 0) + 1;
-        
-        toast({ title: `📉 Perda Detectada! (${pilotType})`, description: `Piloto entrará em cooldown por ${COOLDOWN_AFTER_LOSS_MS/1000} segundos. Perdas seguidas: ${newConsecutiveLosses}.`, variant: 'destructive' });
-        
-        setPilots(prev => ({
-          ...prev,
-          [pilotType]: { ...prev[pilotType], status: 'COOLDOWN', consecutiveLosses: newConsecutiveLosses }
-        }));
-        
-        if (cooldownTimersRef.current[pilotType]) {
-            clearTimeout(cooldownTimersRef.current[pilotType]!);
-        }
+        setPilots(prevPilots => {
+            const newConsecutiveLosses = (prevPilots[pilotType]?.consecutiveLosses || 0) + 1;
+            
+            setTimeout(() => {
+                toast({ title: `📉 Perda Detectada! (${pilotType})`, description: `Piloto entrará em cooldown por ${COOLDOWN_AFTER_LOSS_MS/1000} segundos. Perdas seguidas: ${newConsecutiveLosses}.`, variant: 'destructive' });
+            }, 0);
+            
+            if (cooldownTimersRef.current[pilotType]) {
+                clearTimeout(cooldownTimersRef.current[pilotType]!);
+            }
 
-        cooldownTimersRef.current[pilotType] = setTimeout(() => {
-            setPilots(prev => {
-                const currentPilotState = prev[pilotType];
-                if (currentPilotState.consecutiveLosses < MAX_CONSECUTIVE_LOSSES) {
-                    toast({ title: `✅ Cooldown Finalizado (${pilotType})`, description: 'Piloto está ativo novamente.' });
-                    return { ...prev, [pilotType]: { ...currentPilotState, status: 'TRADING' } };
-                }
-                return prev;
-            });
-        }, COOLDOWN_AFTER_LOSS_MS);
+            cooldownTimersRef.current[pilotType] = setTimeout(() => {
+                setPilots(currentPilots => {
+                    const pilotState = currentPilots[pilotType];
+                    if (pilotState.consecutiveLosses < MAX_CONSECUTIVE_LOSSES) {
+                        setTimeout(() => {
+                            toast({ title: `✅ Cooldown Finalizado (${pilotType})`, description: 'Piloto está ativo novamente.' });
+                        }, 0);
+                        return { ...currentPilots, [pilotType]: { ...pilotState, status: 'TRADING' } };
+                    }
+                    return currentPilots;
+                });
+            }, COOLDOWN_AFTER_LOSS_MS);
+
+            return {
+              ...prevPilots,
+              [pilotType]: { ...prevPilots[pilotType], status: 'COOLDOWN', consecutiveLosses: newConsecutiveLosses }
+            };
+        });
 
     } else if (lastPilotTrade.status === 'won') {
         setPilots(prev => ({
@@ -153,7 +159,7 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
           [pilotType]: { ...prev[pilotType], consecutiveLosses: 0 }
         }));
     }
-  }, [operationsLog, toast, pilots]);
+  }, [operationsLog, toast]);
 
   const autopilotExecutionRef = useRef(false);
   useEffect(() => {
@@ -172,19 +178,19 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
                 .reduce((sum, op) => sum + (op.result || 0), 0);
             
             if (pilotPnL <= -dailyBalance || pilotPnL >= dailyTarget) {
-                toggleAutopilot(pilotKey);
-                toast({
-                    title: `Piloto ${pilotKey} Desativado`,
+                toggleAutopilot(pilotKey, true); // Desativa silenciosamente
+                setTimeout(() => toast({
+                    title: `Piloto ${pilotKey} Desativado Automaticamente`,
                     description: pilotPnL <= -dailyBalance ? `Limite de perda de $${dailyBalance.toFixed(2)} atingido.` : `Meta de lucro de $${dailyTarget.toFixed(2)} atingida.`,
                     variant: pilotPnL <= -dailyBalance ? 'destructive' : 'default',
-                });
+                }), 0);
                 continue;
             }
 
             if (state.consecutiveLosses >= MAX_CONSECUTIVE_LOSSES) {
                  if (state.isOn) {
-                    toggleAutopilot(pilotKey);
-                    toast({ title: `Piloto ${pilotKey} Pausado`, description: `Limite de ${MAX_CONSECUTIVE_LOSSES} perdas consecutivas atingido.`, variant: 'destructive' });
+                    toggleAutopilot(pilotKey, true); // Desativa silenciosamente
+                    setTimeout(() => toast({ title: `Piloto ${pilotKey} Pausado`, description: `Limite de ${MAX_CONSECUTIVE_LOSSES} perdas consecutivas atingido.`, variant: 'destructive' }), 0);
                  }
                 continue;
             }
@@ -214,7 +220,7 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
     };
 
     runAutopilots();
-  }, [pilots, digitStats, consensusThreshold, activeSymbol, executeTrade, operationsLog, dailyBalance, dailyTarget, toggleAutopilot]);
+  }, [pilots, digitStats, consensusThreshold, activeSymbol, executeTrade, operationsLog, dailyBalance, dailyTarget, toggleAutopilot, toast]);
   
   return {
     isCouncilAutopilotOn: Object.values(pilots).some(p => p.isOn),
