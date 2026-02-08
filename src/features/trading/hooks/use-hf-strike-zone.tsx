@@ -76,10 +76,19 @@ export function useHFStrikeZone(
    * Strike Zone Logic Combiner
    */
   const currentZone = useMemo((): StrikeZone | null => {
-    if (!enabled || priceTicks.length === 0) return null;
+    if (!enabled || priceTicks.length === 0 || !indicators) return null;
     const currentPrice = priceTicks[priceTicks.length - 1].price;
-    return detectStrikeZone(bbAnalysis, rsiAnalysis, volumeAnalysis, currentPrice);
-  }, [bbAnalysis, rsiAnalysis, volumeAnalysis, priceTicks, enabled]);
+    
+    // Passa os novos indicadores para o detector
+    return detectStrikeZone(
+      bbAnalysis, 
+      rsiAnalysis, 
+      volumeAnalysis, 
+      currentPrice,
+      indicators.ma?.long || null, // EMA 100
+      indicators.atr || null
+    );
+  }, [bbAnalysis, rsiAnalysis, volumeAnalysis, priceTicks, enabled, indicators]);
   
   useEffect(() => {
     if (!currentZone || currentZone.type === 'NEUTRAL') return;

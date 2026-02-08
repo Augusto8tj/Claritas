@@ -156,15 +156,28 @@ export function analyzeVolume(priceTicks: TickData[]): VolumeAnalysis | null {
 }
 
 /**
- * Combina todas as análises para detectar uma Strike Zone.
+ * Combina todas as análises para detectar uma Strike Zone, aplicando filtros de "Guardião".
  */
 export function detectStrikeZone(
   bbAnalysis: BBAnalysis | null,
   rsiAnalysis: RSIAnalysis | null,
   volumeAnalysis: VolumeAnalysis | null,
-  currentPrice: number
+  currentPrice: number,
+  ema100: number | null,
+  atr: number | null
 ): StrikeZone | null {
   if (!bbAnalysis || !rsiAnalysis || !volumeAnalysis) return null;
+
+  // --- GUARDIAN FILTERS ---
+  const ATR_CHAOS_THRESHOLD = 0.0005; // Ajuste conforme o ativo
+  if (atr && atr > ATR_CHAOS_THRESHOLD) {
+    return { 
+      type: 'NEUTRAL', confidence: 0, triggers: ['VETO: Volatilidade Caótica (ATR Alto)'], 
+      // ... preencher o resto com valores padrão
+      entry: { price: 0, timestamp: 0 }, targets: { takeProfit: 0, stopLoss: 0, riskReward: 0 }, 
+      indicators: { rsi: 0, bbPosition: 0, bbWidth: 0, volumeSpike: false, divergence: null }, duration: 0
+    };
+  }
 
   const triggers: string[] = [];
   let confidence = 0;
@@ -189,14 +202,22 @@ export function detectStrikeZone(
     longTriggers.push('📈 Spike de Volume');
     longConfidence += 15;
   }
+
   if (longConfidence >= 60) {
+    // GUARDIAN CHECK (TREND)
+    if (ema100 && currentPrice < ema100) {
+       return { 
+        type: 'NEUTRAL', confidence: 0, triggers: ['VETO: Sinal de compra contra tendência de baixa macro.'], 
+        entry: { price: 0, timestamp: 0 }, targets: { takeProfit: 0, stopLoss: 0, riskReward: 0 }, 
+        indicators: { rsi: 0, bbPosition: 0, bbWidth: 0, volumeSpike: false, divergence: null }, duration: 0
+      };
+    }
     type = 'LONG_ENTRY';
     confidence = longConfidence;
     triggers.push(...longTriggers);
   }
-
   // --- SHORT ENTRY CONDITIONS (if no long signal) ---
-  if (type === 'NEUTRAL') {
+  else {
     const shortTriggers: string[] = [];
     let shortConfidence = 0;
     if (bbAnalysis.touchingUpper) {
@@ -216,6 +237,14 @@ export function detectStrikeZone(
       shortConfidence += 15;
     }
     if (shortConfidence >= 60) {
+      // GUARDIAN CHECK (TREND)
+      if (ema100 && currentPrice > ema100) {
+        return { 
+          type: 'NEUTRAL', confidence: 0, triggers: ['VETO: Sinal de venda contra tendência de alta macro.'], 
+          entry: { price: 0, timestamp: 0 }, targets: { takeProfit: 0, stopLoss: 0, riskReward: 0 }, 
+          indicators: { rsi: 0, bbPosition: 0, bbWidth: 0, volumeSpike: false, divergence: null }, duration: 0
+        };
+      }
       type = 'SHORT_ENTRY';
       confidence = shortConfidence;
       triggers.push(...shortTriggers);
@@ -224,15 +253,15 @@ export function detectStrikeZone(
   
   if (type === 'NEUTRAL') return null;
 
-  const atr = bbAnalysis.upper - bbAnalysis.lower;
+  const currentATR = atr || (bbAnalysis.upper - bbAnalysis.lower); // Fallback para BB range se ATR for nulo
   return {
     type,
     confidence: Math.min(100, confidence),
     triggers,
     entry: { price: currentPrice, timestamp: Date.now() },
     targets: {
-      takeProfit: type === 'LONG_ENTRY' ? currentPrice + atr * 0.75 : currentPrice - atr * 0.75,
-      stopLoss: type === 'LONG_ENTRY' ? currentPrice - atr * 0.5 : currentPrice + atr * 0.5,
+      takeProfit: type === 'LONG_ENTRY' ? currentPrice + currentATR * 0.75 : currentPrice - currentATR * 0.75,
+      stopLoss: type === 'LONG_ENTRY' ? currentPrice - currentATR * 0.5 : currentPrice + currentATR * 0.5,
       riskReward: 1.5,
     },
     indicators: {

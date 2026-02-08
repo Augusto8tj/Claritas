@@ -7,7 +7,7 @@ import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
-import { Target, TrendingUp, TrendingDown, Activity, CheckCheck, Zap } from 'lucide-react';
+import { Target, TrendingUp, TrendingDown, Activity, CheckCheck, Zap, ShieldAlert } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { StrikeZone } from '@/features/trading/hooks/use-hf-strike-zone';
 
@@ -19,6 +19,9 @@ interface StrikeZoneCardProps {
 
 export function StrikeZoneCard({ zone, onExecute, isExecuting = false }: StrikeZoneCardProps) {
   if (!zone || zone.type === 'NEUTRAL') {
+    const isVeto = zone?.triggers?.some(t => t.startsWith('VETO'));
+    const vetoReason = isVeto ? zone.triggers[0] : null;
+
     return (
       <Card className="border-2 border-dashed border-muted">
         <CardHeader>
@@ -28,9 +31,19 @@ export function StrikeZoneCard({ zone, onExecute, isExecuting = false }: StrikeZ
           </CardTitle>
         </CardHeader>
         <CardContent className="text-center text-muted-foreground py-8">
-          <Activity className="h-12 w-12 mx-auto opacity-20 mb-2 animate-pulse" />
-          <p className="text-sm font-semibold">Aguardando Configuração Ideal...</p>
-          <p className="text-xs mt-1">Monitorando BB + RSI + Volume em tempo real</p>
+          {isVeto ? (
+             <div className="flex flex-col items-center gap-2 text-amber-600">
+                <ShieldAlert className="h-12 w-12 mx-auto opacity-50 mb-2"/>
+                <p className="text-sm font-semibold">Guardião Tático Ativo</p>
+                <p className="text-xs mt-1">{vetoReason}</p>
+             </div>
+          ) : (
+            <>
+                <Activity className="h-12 w-12 mx-auto opacity-20 mb-2 animate-pulse" />
+                <p className="text-sm font-semibold">Aguardando Configuração Ideal...</p>
+                <p className="text-xs mt-1">Monitorando BB + RSI + Volume em tempo real</p>
+            </>
+          )}
         </CardContent>
       </Card>
     );
