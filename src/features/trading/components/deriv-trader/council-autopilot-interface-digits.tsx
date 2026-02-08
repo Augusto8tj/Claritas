@@ -9,7 +9,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Bot, Binary, TrendingUp, HelpCircle, Trophy, Settings } from "lucide-react";
+import { Bot, Binary, TrendingUp, HelpCircle, Trophy, Settings, TestTube } from "lucide-react";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Separator } from "@/components/ui/separator";
@@ -284,22 +284,18 @@ export const DigitsAutopilotManager: React.FC<DigitsAutopilotManagerProps> = (pr
                 </div>
             </CollapsibleContent>
         </Collapsible>
-         <div className="lg:col-span-2 space-y-6">
-            <Collapsible>
-                <CollapsibleTrigger asChild>
-                    <Button variant="outline" className="w-full">
-                        <TestTube className="mr-2 h-4 w-4" />
-                        Painel de Backtesting de Dígitos
-                    </Button>
-                </CollapsibleTrigger>
-                <CollapsibleContent className="pt-4">
-                    {/* O conteúdo do BacktestPanel será renderizado aqui */}
-                </CollapsibleContent>
-            </Collapsible>
-        </div>
+         <Collapsible>
+            <CollapsibleTrigger asChild>
+                <Button variant="outline" className="w-full">
+                    <TestTube className="mr-2 h-4 w-4" />
+                    Painel de Backtesting de Dígitos
+                </Button>
+            </CollapsibleTrigger>
+            <CollapsibleContent className="pt-4">
+                {/* O conteúdo do BacktestPanel será renderizado aqui */}
+            </CollapsibleContent>
+        </Collapsible>
       </CardContent>
     </Card>
   );
 }
-
-    
