@@ -24,7 +24,7 @@ import { HFExecutionLog } from '@/features/trading/components/hf-trader/hf-execu
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { StrategyType, strategyMetadata } from '@/features/trading/services/hf-strike-logic';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { runAllStrategiesBacktest, type BacktestResult, type StrategyType as HFStrategyType } from '@/features/trading/backtest/hf-backtest-engine';
+import { runAllStrategiesBacktest, type BacktestResult } from '@/features/trading/backtest/hf-backtest-engine';
 import { BacktestPanel } from '@/features/trading/components/hf-trader/BacktestPanel';
 
 
@@ -100,7 +100,8 @@ function PageContent() {
     supplyDemandZones,
   } = useHFStrikeZone(
     priceTicks,
-    isHFMode ? botCandleData : uiChartData,
+    botCandleData,
+    isHFMode ? '1m' : '15m',
     hfConfig.enabled,
     strategy
   );
@@ -221,24 +222,35 @@ function PageContent() {
 
   useEffect(() => {
     if (!hfConfig.autoExecute || !hfConfig.enabled || isExecuting) return;
+    
+    // Removido o setTimeout para execução imediata
     const lastStrike = strikeHistory[strikeHistory.length - 1];
-    if (!currentZone || currentZone.type === 'NEUTRAL' || (lastStrike && lastStrike.entry.timestamp === currentZone.entry.timestamp)) return;
-    if (currentZone.confidence >= hfConfig.minConfidence) {
-      handleExecuteStrike();
+    if (currentZone && currentZone.type !== 'NEUTRAL' && (!lastStrike || lastStrike.entry.timestamp !== currentZone.entry.timestamp)) {
+        if (currentZone.confidence >= hfConfig.minConfidence) {
+            handleExecuteStrike();
+        }
     }
   }, [currentZone, hfConfig.autoExecute, hfConfig.enabled, hfConfig.minConfidence, handleExecuteStrike, isExecuting, strikeHistory]);
 
   const filteredZone = useMemo(() => {
-    if (!currentZone) return null;
+    if (!currentZone) {
+      return null;
+    }
     const isVetoed = currentZone.triggers.some(t => t.startsWith('VETO'));
-    if (isVetoed) return currentZone; 
-    if (currentZone.type === 'NEUTRAL') return null;
-    if (currentZone.confidence < hfConfig.minConfidence) return null;
+    if (isVetoed) {
+      return currentZone; // Mostra a zona vetada para feedback
+    }
+    if (currentZone.type === 'NEUTRAL') {
+      return null;
+    }
+    if (currentZone.confidence < hfConfig.minConfidence) {
+      return null;
+    }
     return currentZone;
   }, [currentZone, hfConfig.minConfidence]);
 
   const [isBacktesting, setIsBacktesting] = useState(false);
-  const [backtestResults, setBacktestResults] = useState<Record<HFStrategyType, BacktestResult> | null>(null);
+  const [backtestResults, setBacktestResults] = useState<Record<string, BacktestResult> | null>(null);
 
   const handleRunBacktest = useCallback(async () => {
     if (!activeSymbol) {

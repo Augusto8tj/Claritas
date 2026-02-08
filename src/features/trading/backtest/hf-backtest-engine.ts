@@ -9,10 +9,10 @@ import {
     detectMicrostructureScalpZone,
     type StrikeZone,
     StrategyType
-} from '../services/hf-strike-logic';
-import { calculateAllIndicators } from '../services/indicator-service';
-import { initialCouncilStrategies } from '../services/council-strategies';
-import { strategyMetadata } from '../services/hf-strike-logic';
+} from '@/features/trading/services/hf-strike-logic';
+import { calculateAllIndicators } from '@/features/trading/services/indicator-service';
+import { getCouncilStrategies } from '@/features/trading/services/council-strategies';
+import { strategyMetadata } from '@/features/trading/services/hf-strike-logic';
 
 
 // --- TYPES ---
@@ -113,6 +113,7 @@ export function runAllStrategiesBacktest(
 ): Record<StrategyType, BacktestResult> {
   const allStrategies: StrategyType[] = Object.keys(strategyMetadata) as StrategyType[];
   const allResults: Record<string, BacktestResult> = {};
+  const initialStrategies = getCouncilStrategies('standard');
 
   for (const strategy of allStrategies) {
     const trades: TradeResult[] = [];
@@ -124,7 +125,7 @@ export function runAllStrategiesBacktest(
     while (i < historicalData.length - 30) {
       const windowCandles = historicalData.slice(0, i + 1);
       
-      const indicators = calculateAllIndicators(windowCandles, initialCouncilStrategies, timePeriodForIndicators, {duration: 15, unit: 's'});
+      const indicators = calculateAllIndicators(windowCandles, initialStrategies, timePeriodForIndicators, {duration: 15, unit: 's'});
       if (!indicators) { i++; continue; }
       
       const currentPrice = windowCandles[windowCandles.length - 1].close;
@@ -164,5 +165,3 @@ export function runAllStrategiesBacktest(
 
   return allResults as Record<StrategyType, BacktestResult>;
 }
-
-export { StrategyType };
