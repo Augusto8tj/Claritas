@@ -38,12 +38,12 @@ const MetricCard = ({ icon, label, value, subtext, color }: { icon: React.ReactN
     </Card>
 );
 
-const strategyDetails: Record<StrategyType, { label: string; description: string; optimalTimeframe: '1m' | '5m' | '15m' }> = {
-  HF_MEAN_REVERSION: { label: 'Reversão à Média (HF)', description: 'Otimizado para reversão à média em 15-45s em ativos sintéticos.', optimalTimeframe: '1m' },
-  STD_TREND_FOLLOW: { label: 'Seguidor de Tendência (Padrão)', description: 'Otimizado para seguir tendências em velas de 15m, ideal para Forex.', optimalTimeframe: '15m' },
-  BOLLINGER_SQUEEZE: { label: 'Caçador de Breakouts (Squeeze)', description: 'Detecta compressão de volatilidade e opera no rompimento.', optimalTimeframe: '1m' },
-  VOLUME_ABSORPTION: { label: 'Absorção de Volume (PA)', description: 'Analisa o clímax de volume e a absorção para prever reversões.', optimalTimeframe: '15m' },
-  MICROSTRUCTURE_SCALP: { label: 'Scalper de Microestrutura', description: 'Analisa o fluxo de ordens para trades de 5 ticks.', optimalTimeframe: '1m' },
+const strategyDetails: Record<StrategyType, { label: string; description: string; optimalTimeframe: '1m' | '15m' }> = {
+  HF_MEAN_REVERSION: { label: 'Alta Frequência (Reversão)', description: 'Otimizado para reversão à média em 15-45s em ativos sintéticos.', optimalTimeframe: '1m' },
+  STD_TREND_FOLLOW: { label: 'Padrão (Tendência)', description: 'Segue tendências em velas de 15m, ideal para Forex.', optimalTimeframe: '15m' },
+  BOLLINGER_SQUEEZE: { label: 'Alta Frequência (Breakout)', description: 'Detecta compressão de volatilidade e opera no rompimento.', optimalTimeframe: '1m' },
+  VOLUME_ABSORPTION: { label: 'Padrão (Absorção Volume)', description: 'Analisa o clímax de volume e a absorção para prever reversões.', optimalTimeframe: '15m' },
+  MICROSTRUCTURE_SCALP: { label: 'Ultra HF (Scalping)', description: 'Analisa o fluxo de ordens para trades de 5 ticks.', optimalTimeframe: '1m' },
 };
 
 
@@ -94,6 +94,7 @@ function PageContent() {
   const [strategy, setStrategy] = useState<StrategyType>('HF_MEAN_REVERSION');
   
   const uiChartData = useMemo(() => chartData.filter((d): d is CandleData => 'close' in d), [chartData]);
+  const tradingModeForHook = strategyDetails[strategy].optimalTimeframe === '1m' ? 'hf' : 'standard';
 
   const {
     currentZone,
@@ -196,7 +197,8 @@ function PageContent() {
         direction,
         duration,
         durationUnit,
-        'HF_Strike' as any
+        'HF_Strike' as any,
+        strategy
       );
       if (!tradeResult.success) {
         throw new Error(tradeResult.message);
@@ -235,9 +237,12 @@ function PageContent() {
     if (!currentZone) {
       return null;
     }
+    const isVetoed = currentZone.triggers?.some(t => t.startsWith('VETO'));
+    if (isVetoed) {
+      return currentZone; // Mostra a zona vetada para feedback
+    }
     if (currentZone.type === 'NEUTRAL') {
-      const isVetoed = currentZone.triggers?.some(t => t.startsWith('VETO'));
-      return isVetoed ? currentZone : null;
+      return null;
     }
     if (currentZone.confidence < hfConfig.minConfidence) {
       return null;

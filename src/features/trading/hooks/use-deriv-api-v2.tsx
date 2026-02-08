@@ -86,6 +86,7 @@ export interface DerivApiContextTypeV2 {
     duration: number,
     durationUnit: DurationUnit,
     initiator: OperationInitiator,
+    strategy?: string
   ) => Promise<TradeResult>;
   sellContract: (contractId: number) => Promise<TradeResult>;
   getHistoricalData: (symbol: string, style: 'ticks' | 'candles', count: number, period?: TimePeriod) => Promise<ApiHistoricalData[]>;
@@ -294,7 +295,7 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
 
 
   const makeRequest = useCallback(<T,>(request: object, noResponse = false): Promise<T> => {
-    return new Promise((resolve, reject) => {
+    return new Promise((resolve) => {
         const ws = wsRef.current;
         if (!ws || ws.readyState !== WebSocket.OPEN) {
             return resolve({ error: { message: "WebSocket não está conectado." } } as any);
@@ -307,17 +308,17 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
             const timeoutId = setTimeout(() => {
                 if (promisesRef.current.has(String(req_id))) {
                     const promise = promisesRef.current.get(String(req_id));
-                    promise?.resolve({ error: { message: `O pedido à API expirou (60s) para req_id: ${req_id}. O token pode ser inválido ou a rede está lenta.` } });
+                    promise?.resolve({ error: { message: `O pedido à API expirou (60s) para req_id: ${req_id}. O token pode ser inválido ou a rede está lenta.` } } as any);
                     promisesRef.current.delete(String(req_id));
                 }
-            }, 60000); // Aumentado para 60 segundos
+            }, 60000);
             
             promisesRef.current.set(String(req_id), {
                 resolve: (value: any) => {
                     clearTimeout(timeoutId);
                     resolve(value);
                 },
-                reject: (reason: any) => { // Manter reject para falhas internas, mas a API deve resolver
+                reject: (reason: any) => {
                     clearTimeout(timeoutId);
                     resolve({ error: { message: reason?.message || 'Erro interno na Promise.' } } as any);
                 }
@@ -382,7 +383,8 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
         tradeDirection: 'rise' | 'fall',
         duration: number,
         durationUnit: DurationUnit,
-        initiator: OperationInitiator
+        initiator: OperationInitiator,
+        strategy?: string,
       ): Promise<TradeResult> => {
         try {
           if (!wsRef.current || !isConnected) {
@@ -410,8 +412,7 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
           }
           
           const buyResponse: any = await makeRequest({ "buy": proposal.id, "price": proposal.ask_price });
-          if (buyResponse.error) throw new Error(buyResponse.error.message);
-
+          if(buyResponse.error) throw new Error(buyResponse.error.message);
           const buyResult = buyResponse.buy;
           
           const contractId = buyResult.contract_id;
@@ -445,6 +446,7 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
               duration: sanitizedDuration,
               durationUnit: durationUnit,
               initiator,
+              strategy,
               entryPrice: entryPrice,
               isSellable,
               expirationTime: expirationTimeMs,

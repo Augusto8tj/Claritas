@@ -15,6 +15,7 @@ import { Archive, ArrowDown, ArrowUp, Trash2 } from "lucide-react";
 import { useMemo } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { StrategyType } from '@/features/trading/services/hf-strike-logic';
 
 interface HFExecutionLogProps {
   operations: Operation[];
@@ -28,6 +29,14 @@ const formatTime = (isoString: string | undefined): string => {
     } catch {
         return "--:--:--";
     }
+};
+
+const strategyMetadata: Record<string, { label: string; description: string; isHF: boolean; }> = {
+  HF_MEAN_REVERSION: { label: 'Reversão à Média', description: 'Otimizado para reversão à média em 15-45s.', isHF: true },
+  STD_TREND_FOLLOW: { label: 'Seguidor de Tendência', description: 'Segue tendências em velas de 15m.', isHF: false },
+  BOLLINGER_SQUEEZE: { label: 'Breakout', description: 'Opera na explosão de volatilidade.', isHF: true },
+  VOLUME_ABSORPTION: { label: 'Absorção de Volume', description: 'Analisa o clímax e absorção de volume.', isHF: false },
+  MICROSTRUCTURE_SCALP: { label: 'Scalping', description: 'Opera o fluxo de ordens para trades de 5 ticks.', isHF: true },
 };
 
 export function HFExecutionLog({ operations, clearActiveContracts }: HFExecutionLogProps) {
@@ -74,7 +83,7 @@ export function HFExecutionLog({ operations, clearActiveContracts }: HFExecution
                             </p>
                         </div>
                         {operations.length > 0 && (
-                            <Button variant="ghost" size="icon" onClick={clearActiveContracts}>
+                            <Button variant="ghost" size="icon" onClick={clearActiveContracts} title="Limpar Log de Execuções">
                                 <Trash2 className="h-4 w-4" />
                                 <span className="sr-only">Limpar log</span>
                             </Button>
@@ -91,6 +100,7 @@ export function HFExecutionLog({ operations, clearActiveContracts }: HFExecution
                             </div>
                         ) : (
                             hfOperations.map((op) => {
+                                const strategyLabel = op.strategy ? strategyMetadata[op.strategy as StrategyType]?.label || op.strategy : 'N/A';
                                 return (
                                     <div key={op.id} className="flex items-center gap-4 border-b pb-3 last:border-b-0">
                                         <div className="flex-shrink-0">
@@ -101,11 +111,17 @@ export function HFExecutionLog({ operations, clearActiveContracts }: HFExecution
                                         <div className="flex-1 grid grid-cols-2 text-xs">
                                             <div>
                                                 <p className="font-bold text-sm">{op.asset}</p>
+                                                {op.strategy && (
+                                                    <p className="text-muted-foreground text-[11px] capitalize">{strategyLabel}</p>
+                                                )}
                                                 <p className="text-muted-foreground">Entrada: ${op.stake.toFixed(2)}</p>
                                             </div>
                                              <div className="text-right">
                                                 <p className="text-muted-foreground">{new Date(op.timestamp).toLocaleDateString('pt-BR')}</p>
                                                 <p className="text-muted-foreground">{formatTime(op.timestamp)}</p>
+                                                {op.duration && op.duration > 0 && (
+                                                    <p className="text-muted-foreground">Duração: {op.duration}{op.durationUnit}</p>
+                                                )}
                                             </div>
                                         </div>
                                         <div className="w-28 text-right">

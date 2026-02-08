@@ -32,6 +32,7 @@ export const OperationSchema = z.object({
   result: z.number().optional(),
   timestamp: z.string().describe("The ISO 8601 timestamp of when the operation was created."),
   initiator: z.string().optional(),
+  strategy: z.string().optional(),
   duration: z.number().optional(),
   durationUnit: z.string().optional(),
   entryPrice: z.number().optional(),
@@ -363,4 +364,3 @@ export const baseRiseFallSchema = z.object({
   duration_unit: DurationUnitSchema,
   allowEquals: z.boolean().default(false),
 });
-
