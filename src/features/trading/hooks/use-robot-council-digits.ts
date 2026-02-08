@@ -54,6 +54,8 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
   const [dailyBalance, setDailyBalance] = useState(10);
   const [dailyTarget, setDailyTarget] = useState(5);
   const [consensusThreshold, setConsensusThreshold] = useState(25);
+  const [underdogThreshold, setUnderdogThreshold] = useState(5.0);
+  const [isUnderdogInverse, setIsUnderdogInverse] = useState(false);
 
   const initialPilotState: Record<PilotType, PilotState> = {
     matchesDiffers: { isOn: false, status: 'PAUSED', consecutiveLosses: 0, currentTarget: undefined },
@@ -183,7 +185,7 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
         setPilots(prev => ({
             ...prev,
             matchesDiffers: { ...prev.matchesDiffers, currentTarget: `Difere de ${mostProbable?.digit}` },
-            underdog: { ...prev.underdog, currentTarget: `Combina com ${leastProbable?.digit}` },
+            underdog: { ...prev.underdog, currentTarget: isUnderdogInverse ? `Difere de ${leastProbable?.digit}` : `Combina com ${leastProbable?.digit}` },
         }));
 
         for (const [type, state] of Object.entries(pilots)) {
@@ -216,16 +218,15 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
 
             let signalType: CouncilStrategy['type'] | null = null;
             let predictionDigit: number | undefined;
-            const threshold = consensusThreshold;
             const stake = 0.35; 
 
             if (pilotKey === 'matchesDiffers') {
-                if (mostProbable && mostProbable.probability > threshold) {
+                if (mostProbable && mostProbable.probability > consensusThreshold) {
                     signalType = 'DIGITDIFF';
                     predictionDigit = mostProbable.digit;
                 }
             } else if (pilotKey === 'overUnder') {
-                const overUnderThreshold = threshold + 15;
+                const overUnderThreshold = consensusThreshold + 15;
                 const probOver4 = digitStats.filter(s => s.digit > 4).reduce((sum, s) => sum + s.probability, 0);
                 const probUnder5 = digitStats.filter(s => s.digit < 5).reduce((sum, s) => sum + s.probability, 0);
 
@@ -237,7 +238,7 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
                     predictionDigit = 5;
                 }
             } else if (pilotKey === 'evenOdd') {
-                const evenOddThreshold = threshold + 15;
+                const evenOddThreshold = consensusThreshold + 15;
                 const probEven = digitStats.filter(s => s.digit % 2 === 0).reduce((sum, s) => sum + s.probability, 0);
                 
                 if (probEven > evenOddThreshold) {
@@ -246,9 +247,8 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
                     signalType = 'DIGITODD';
                 }
             } else if (pilotKey === 'underdog') {
-                const underdogThreshold = 5.0; // Bet if a digit has less than 5% frequency
                 if (leastProbable && leastProbable.probability < underdogThreshold) {
-                    signalType = 'DIGITMATCH';
+                    signalType = isUnderdogInverse ? 'DIGITDIFF' : 'DIGITMATCH';
                     predictionDigit = leastProbable.digit;
                 }
             }
@@ -264,7 +264,7 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
     const timeoutId = setTimeout(runAutopilots, 100); // Adiciona um pequeno delay para garantir que o estado se propague
     return () => clearTimeout(timeoutId);
 
-  }, [pilots, digitStats, consensusThreshold, activeSymbol, executeTrade, operationsLog, dailyBalance, dailyTarget, toggleAutopilot, toast]);
+  }, [pilots, digitStats, consensusThreshold, activeSymbol, executeTrade, operationsLog, dailyBalance, dailyTarget, toggleAutopilot, toast, underdogThreshold, isUnderdogInverse]);
   
   return {
     isCouncilAutopilotOn: Object.values(pilots).some(p => p.isOn),
@@ -274,5 +274,7 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
     digitStats,
     toggleAutopilot,
     pilots,
+    underdogThreshold, setUnderdogThreshold,
+    isUnderdogInverse, setIsUnderdogInverse,
   };
 }
