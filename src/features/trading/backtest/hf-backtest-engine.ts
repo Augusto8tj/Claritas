@@ -1,5 +1,5 @@
 // src/features/trading/backtest/hf-backtest-engine.ts
-import type { CandleData, TickData } from '@/lib/types';
+import type { CandleData, TickData, ExecutionModel, InstitutionalBacktestResult, TradeResult } from '@/lib/types';
 import type { HFConfig } from '@/features/trading/components/hf-trader/hf-config-panel';
 import { 
     detectHFMeanReversionZone, 
@@ -15,37 +15,57 @@ import { calculateAllIndicators } from '@/features/trading/services/indicator-se
 import { getCouncilStrategies } from '@/features/trading/services/council-strategies';
 
 
-// --- TYPES ---
-export interface TradeResult {
-  entryPrice: number;
-  exitPrice: number;
-  result: 'win' | 'loss';
-  pnl: number;
-  durationInCandles: number;
-  strikeZone: StrikeZone;
-  strategy: StrategyType;
-}
+// ============================================================================
+// 1. MODELOS DE EXECUÇÃO E CUSTOS DE TRANSAÇÃO
+// ============================================================================
 
-export interface BacktestResult {
-  totalTrades: number;
-  winRate: number;
-  totalPnl: number;
-  trades: TradeResult[];
-  note?: string;
-}
+const executionModels: Record<string, ExecutionModel> = {
+  // Sintéticos Deriv
+  '1HZ10V': { spread: 0.0002, slippage: 0.5, rejectionRate: 0.02, latencyMs: 100 },
+  '1HZ25V': { spread: 0.0003, slippage: 1.0, rejectionRate: 0.05, latencyMs: 120 },
+  '1HZ75V': { spread: 0.0005, slippage: 2.0, rejectionRate: 0.10, latencyMs: 150 },
+  'R_75': { spread: 0.0004, slippage: 1.5, rejectionRate: 0.08, latencyMs: 130 },
+  
+  // Forex majors
+  'frxEURUSD': { spread: 0.00008, slippage: 0.3, rejectionRate: 0.01, latencyMs: 80 },
+  'frxGBPUSD': { spread: 0.00012, slippage: 0.5, rejectionRate: 0.02, latencyMs: 90 },
+  'frxUSDJPY': { spread: 0.00010, slippage: 0.4, rejectionRate: 0.015, latencyMs: 85 },
 
-// --- HELPERS ---
-function convertToTicks(candles: CandleData[]): TickData[] {
-    return candles.map(c => ({ epoch: c.epoch, price: c.close }));
-}
+  'default': { spread: 0.0003, slippage: 1.0, rejectionRate: 0.05, latencyMs: 120 },
+};
 
-function calculateBacktestMetrics(trades: TradeResult[]): BacktestResult {
-  const wins = trades.filter(t => t.result === 'win').length;
-  const totalTrades = trades.length;
-  const winRate = totalTrades > 0 ? (wins / totalTrades) * 100 : 0;
-  const totalPnl = trades.reduce((sum, trade) => sum + trade.pnl, 0);
-
-  return { totalTrades, winRate, totalPnl, trades };
+function simulateRealisticExecution(
+  targetPrice: number,
+  candle: CandleData,
+  direction: 'long' | 'short',
+  model: ExecutionModel
+): { executed: boolean; fillPrice: number; slippagePips: number } {
+  const spreadCost = targetPrice * model.spread;
+  const candleRange = candle.high - candle.low;
+  const volatilityMultiplier = Math.min(2.0, candleRange / (candle.close * 0.001 || 0.0001));
+  const actualSlippage = model.slippage * volatilityMultiplier;
+  
+  const isGap = candleRange > candle.close * 0.005;
+  if (isGap && Math.random() < model.rejectionRate) {
+    return { executed: false, fillPrice: 0, slippagePips: 0 };
+  }
+  
+  let fillPrice: number;
+  if (direction === 'long') {
+    fillPrice = targetPrice + spreadCost + (actualSlippage * targetPrice / 10000);
+  } else {
+    fillPrice = targetPrice - spreadCost - (actualSlippage * targetPrice / 10000);
+  }
+  
+  const wouldStillProfit = direction === 'long' 
+    ? candle.high >= fillPrice 
+    : candle.low <= fillPrice;
+  
+  return { 
+    executed: wouldStillProfit, 
+    fillPrice: wouldStillProfit ? fillPrice : targetPrice, 
+    slippagePips: actualSlippage 
+  };
 }
 
 function simulateTradeOutcome(
@@ -53,7 +73,8 @@ function simulateTradeOutcome(
   strikeZone: StrikeZone,
   allCandles: CandleData[],
   strategy: StrategyType,
-  stake: number
+  stake: number,
+  execModel: ExecutionModel
 ): { exitPrice: number; exitIndex: number; result: 'win' | 'loss'; pnl: number, durationInCandles: number } {
   const entryPrice = strikeZone.entry.price;
   const { takeProfit, stopLoss } = strikeZone.targets;
@@ -61,14 +82,10 @@ function simulateTradeOutcome(
   let tradeDurationInCandles: number;
 
   switch (strategy) {
-    case 'MICROSTRUCTURE_SCALP':
-        tradeDurationInCandles = 1; // Approx. 5 ticks within the next candle
-        break;
+    case 'MICROSTRUCTURE_SCALP': tradeDurationInCandles = 1; break;
     case 'STD_TREND_FOLLOW':
-    case 'VOLUME_ABSORPTION':
-        tradeDurationInCandles = 3; // Based on 15m chart, so 3 candles of 1m data
-        break;
-    default: // HF strategies based on seconds
+    case 'VOLUME_ABSORPTION': tradeDurationInCandles = 3; break;
+    default:
         const candleDurationSeconds = allCandles[1] ? allCandles[1].epoch - allCandles[0].epoch : 60;
         tradeDurationInCandles = Math.max(1, Math.ceil(strikeZone.duration / candleDurationSeconds));
         break;
@@ -81,101 +98,228 @@ function simulateTradeOutcome(
     if (!candle) continue;
 
     if (strikeZone.type === 'LONG_ENTRY') {
-      if (candle.high >= takeProfit) return { result: 'win', pnl: stake * strikeZone.targets.riskReward, exitPrice: takeProfit, exitIndex: entryCandleIndex + 1 + i, durationInCandles: i+1 };
-      if (candle.low <= stopLoss) return { result: 'loss', pnl: -stake, exitPrice: stopLoss, exitIndex: entryCandleIndex + 1 + i, durationInCandles: i+1 };
+      const tpExec = simulateRealisticExecution(takeProfit, candle, 'long', execModel);
+      if (tpExec.executed) return { result: 'win', pnl: stake * strikeZone.targets.riskReward, exitPrice: tpExec.fillPrice, exitIndex: entryCandleIndex + 1 + i, durationInCandles: i+1 };
+      
+      const slExec = simulateRealisticExecution(stopLoss, candle, 'long', execModel);
+      if (candle.low <= slExec.fillPrice) return { result: 'loss', pnl: -stake, exitPrice: slExec.fillPrice, exitIndex: entryCandleIndex + 1 + i, durationInCandles: i+1 };
+
     } else { // SHORT_ENTRY
-      if (candle.low <= takeProfit) return { result: 'win', pnl: stake * strikeZone.targets.riskReward, exitPrice: takeProfit, exitIndex: entryCandleIndex + 1 + i, durationInCandles: i+1 };
-      if (candle.high >= stopLoss) return { result: 'loss', pnl: -stake, exitPrice: stopLoss, exitIndex: entryCandleIndex + 1 + i, durationInCandles: i+1 };
+      const tpExec = simulateRealisticExecution(takeProfit, candle, 'short', execModel);
+      if (tpExec.executed) return { result: 'win', pnl: stake * strikeZone.targets.riskReward, exitPrice: tpExec.fillPrice, exitIndex: entryCandleIndex + 1 + i, durationInCandles: i+1 };
+
+      const slExec = simulateRealisticExecution(stopLoss, candle, 'short', execModel);
+      if (candle.high >= slExec.fillPrice) return { result: 'loss', pnl: -stake, exitPrice: slExec.fillPrice, exitIndex: entryCandleIndex + 1 + i, durationInCandles: i+1 };
     }
   }
 
   const lastCandle = exitWindow[exitWindow.length - 1];
-  if (!lastCandle) {
-      return { result: 'loss', pnl: -stake, exitPrice: entryPrice, exitIndex: entryCandleIndex, durationInCandles: 0 };
-  }
+  if (!lastCandle) return { result: 'loss', pnl: -stake, exitPrice: entryPrice, exitIndex: entryCandleIndex, durationInCandles: 0 };
   
   const exitPrice = lastCandle.close;
-  
   const finalPnl = strikeZone.type === 'LONG_ENTRY'
     ? (exitPrice > entryPrice ? stake * strikeZone.targets.riskReward : -stake)
     : (exitPrice < entryPrice ? stake * strikeZone.targets.riskReward : -stake);
 
-  return { 
-    result: finalPnl > 0 ? 'win' : 'loss', 
-    pnl: finalPnl, 
-    exitPrice, 
-    exitIndex: entryCandleIndex + tradeDurationInCandles,
-    durationInCandles: tradeDurationInCandles
-  };
+  return { result: finalPnl > 0 ? 'win' : 'loss', pnl: finalPnl, exitPrice, exitIndex: entryCandleIndex + tradeDurationInCandles, durationInCandles: tradeDurationInCandles };
 }
+
+// ============================================================================
+// 2. MOTOR DE TICK SINTÉTICO
+// ============================================================================
+
+function generateSyntheticTicks(candle: CandleData, ticksPerCandle: number = 60): TickData[] {
+  const ticks: TickData[] = [];
+  const timeIncrement = 60 / ticksPerCandle;
+  const drift = (candle.close - candle.open) / candle.open;
+  const volatility = (candle.high - candle.low) / (candle.open || 1);
+  let currentPrice = candle.open;
+  for (let i = 0; i < ticksPerCandle; i++) {
+    const dt = 1 / ticksPerCandle;
+    const randomShock = (Math.random() - 0.5) * 2;
+    const priceChange = currentPrice * (drift * dt + volatility * Math.sqrt(dt) * randomShock);
+    currentPrice += priceChange;
+    currentPrice = Math.max(candle.low, Math.min(candle.high, currentPrice));
+    ticks.push({ epoch: candle.epoch - 60 + (i * timeIncrement), price: currentPrice });
+  }
+  ticks[ticks.length - 1].price = candle.close;
+  return ticks;
+}
+
+function convertCandlesToSyntheticTicks(candles: CandleData[], ticksPerCandle: number = 60): TickData[] {
+  return candles.flatMap(candle => generateSyntheticTicks(candle, ticksPerCandle));
+}
+
+
+// ============================================================================
+// 3. CÁLCULO DE MÉTRICAS INSTITUCIONAIS
+// ============================================================================
+
+function getEmptyMetrics() {
+    return {
+        sharpeRatio: 0, sortinoRatio: 0, calmarRatio: 0, maxDrawdown: 0, maxDrawdownDuration: 0,
+        volatility: 0, profitFactor: 0, expectancy: 0, avgWin: 0, avgLoss: 0, largestWin: 0,
+        largestLoss: 0, consecutiveWins: 0, consecutiveLosses: 0, winStreakAvg: 0,
+        lossStreakAvg: 0, avgTradeDuration: 0, avgHoldingTimeMinutes: 0, tradesPerDay: 0,
+        avgSpreadCost: 0, avgSlippage: 0, rejectionRate: 0,
+    };
+}
+
+function calculateInstitutionalMetrics(trades: TradeResult[], historicalData: CandleData[], startingCapital: number = 1000, riskFreeRate: number = 0.02): InstitutionalBacktestResult['metrics'] {
+    if (trades.length < 10) return getEmptyMetrics();
+
+    const equityCurve = [startingCapital];
+    trades.forEach(trade => equityCurve.push(equityCurve[equityCurve.length - 1] + trade.pnl));
+    const returns = trades.map(t => t.pnl / startingCapital);
+    const avgReturn = returns.reduce((sum, r) => sum + r, 0) / returns.length;
+    const variance = returns.reduce((sum, r) => sum + Math.pow(r - avgReturn, 2), 0) / returns.length;
+    const stdDev = Math.sqrt(variance);
+    const annualizedReturn = avgReturn * 252;
+    const annualizedStdDev = stdDev * Math.sqrt(252);
+    const sharpeRatio = annualizedStdDev > 0 ? (annualizedReturn - riskFreeRate) / annualizedStdDev : 0;
+    
+    const downsideReturns = returns.filter(r => r < 0);
+    const downsideVariance = downsideReturns.length > 0 ? downsideReturns.reduce((sum, r) => sum + Math.pow(r, 2), 0) / downsideReturns.length : 0;
+    const downsideDeviation = Math.sqrt(downsideVariance) * Math.sqrt(252);
+    const sortinoRatio = downsideDeviation > 0 ? (annualizedReturn - riskFreeRate) / downsideDeviation : 0;
+    
+    let peak = equityCurve[0]; let maxDD = 0; let maxDDDuration = 0; let currentDDDuration = 0;
+    equityCurve.forEach(equity => {
+        if (equity > peak) { peak = equity; currentDDDuration = 0; }
+        else { currentDDDuration++; const drawdown = ((peak - equity) / peak) * 100;
+            if (drawdown > maxDD) { maxDD = drawdown; maxDDDuration = currentDDDuration; }
+        }
+    });
+    
+    const wins = trades.filter(t => t.result === 'win'); const losses = trades.filter(t => t.result === 'loss');
+    const grossProfit = wins.reduce((sum, t) => sum + t.pnl, 0);
+    const grossLoss = Math.abs(losses.reduce((sum, t) => sum + t.pnl, 0));
+    const profitFactor = grossLoss > 0 ? grossProfit / grossLoss : Infinity;
+    
+    const winRate = wins.length / trades.length; const avgWin = wins.length > 0 ? grossProfit / wins.length : 0;
+    const avgLoss = losses.length > 0 ? grossLoss / losses.length : 0;
+    const expectancy = (winRate * avgWin) - ((1 - winRate) * avgLoss);
+    
+    let currentStreak = 0; let maxWinStreak = 0; let maxLossStreak = 0; const winStreaks: number[] = []; const lossStreaks: number[] = [];
+    trades.forEach(trade => {
+        if (trade.result === 'win') { if (currentStreak < 0) lossStreaks.push(Math.abs(currentStreak)); currentStreak = currentStreak > 0 ? currentStreak + 1 : 1; maxWinStreak = Math.max(maxWinStreak, currentStreak); }
+        else { if (currentStreak > 0) winStreaks.push(currentStreak); currentStreak = currentStreak < 0 ? currentStreak - 1 : -1; maxLossStreak = Math.max(maxLossStreak, Math.abs(currentStreak)); }
+    });
+    const winStreakAvg = winStreaks.length > 0 ? winStreaks.reduce((a, b) => a + b, 0) / winStreaks.length : 0;
+    const lossStreakAvg = lossStreaks.length > 0 ? lossStreaks.reduce((a, b) => a + b, 0) / lossStreaks.length : 0;
+    
+    const avgTradeDuration = trades.reduce((sum, t) => sum + t.durationInCandles, 0) / trades.length;
+    const totalDays = (historicalData[historicalData.length-1].epoch - historicalData[0].epoch) / 86400;
+    
+    return {
+        sharpeRatio: parseFloat(sharpeRatio.toFixed(2)), sortinoRatio: parseFloat(sortinoRatio.toFixed(2)), calmarRatio: 0,
+        maxDrawdown: parseFloat(maxDD.toFixed(2)), maxDrawdownDuration, volatility: parseFloat((stdDev * 100).toFixed(2)),
+        profitFactor: parseFloat(profitFactor.toFixed(2)), expectancy: parseFloat(expectancy.toFixed(2)),
+        avgWin: parseFloat(avgWin.toFixed(2)), avgLoss: parseFloat(avgLoss.toFixed(2)),
+        largestWin: Math.max(...wins.map(t => t.pnl), 0), largestLoss: Math.min(...losses.map(t => t.pnl), 0),
+        consecutiveWins: maxWinStreak, consecutiveLosses: maxLossStreak,
+        winStreakAvg: parseFloat(winStreakAvg.toFixed(1)), lossStreakAvg: parseFloat(lossStreakAvg.toFixed(1)),
+        avgTradeDuration: parseFloat(avgTradeDuration.toFixed(1)), avgHoldingTimeMinutes: 0,
+        tradesPerDay: totalDays > 0 ? trades.length / totalDays : 0, avgSpreadCost: 0, avgSlippage: 0, rejectionRate: 0,
+    };
+}
+
+function calculateEquityAndMonthly(trades: TradeResult[], startingCapital: number): { equityCurve: any[], monthlyPerformance: any[] } {
+    const equityCurve: any[] = [{ candle: 0, equity: startingCapital, drawdown: 0 }];
+    const monthlyPerformance: Record<string, { month: string, trades: number, pnl: number, wins: number }> = {};
+    let peakEquity = startingCapital;
+
+    trades.forEach((trade, index) => {
+        const prevEquity = equityCurve[index].equity;
+        const newEquity = prevEquity + trade.pnl;
+        if (newEquity > peakEquity) peakEquity = newEquity;
+        const drawdown = peakEquity > 0 ? ((peakEquity - newEquity) / peakEquity) * 100 : 0;
+        equityCurve.push({ candle: index + 1, equity: newEquity, drawdown });
+        
+        const date = new Date(trade.strikeZone.entry.timestamp);
+        const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+        if (!monthlyPerformance[monthKey]) monthlyPerformance[monthKey] = { month: monthKey, trades: 0, pnl: 0, wins: 0 };
+        monthlyPerformance[monthKey].trades++;
+        monthlyPerformance[monthKey].pnl += trade.pnl;
+        if (trade.result === 'win') monthlyPerformance[monthKey].wins++;
+    });
+
+    const monthlyArray = Object.values(monthlyPerformance).map(m => ({ ...m, winRate: (m.wins / m.trades) * 100 }));
+    return { equityCurve, monthlyPerformance: monthlyArray };
+}
+
+
+// ============================================================================
+// 4. MOTOR PRINCIPAL DO BACKTEST
+// ============================================================================
+
+function runSingleStrategyBacktest(historicalData: CandleData[], config: HFConfig, strategy: StrategyType, assetSymbol: string): InstitutionalBacktestResult {
+    const BACKTEST_STAKE = 1.0;
+    const trades: TradeResult[] = [];
+    let i = 100;
+    let prevRsi = 50;
+    const timePeriodForIndicators = strategyMetadata[strategy]?.isHF ? '1m' : '15m';
+    const initialStrategies = getCouncilStrategies('standard');
+    const execModel = executionModels[assetSymbol] || executionModels.default;
+
+    while (i < historicalData.length - 30) {
+        const windowCandles = historicalData.slice(0, i + 1);
+        const indicators = calculateAllIndicators(windowCandles, initialStrategies, timePeriodForIndicators, { duration: 15, unit: 's' });
+        if (!indicators) { i++; continue; }
+        
+        const currentPrice = windowCandles[windowCandles.length - 1].close;
+        
+        let strikeZone: StrikeZone | null = null;
+        switch (strategy) {
+            case 'HF_MEAN_REVERSION': strikeZone = detectHFMeanReversionZone(indicators, currentPrice); break;
+            case 'STD_TREND_FOLLOW': strikeZone = detectStandardTrendZone(indicators, currentPrice, prevRsi); break;
+            case 'BOLLINGER_SQUEEZE': strikeZone = detectBollingerSqueezeZone(indicators, currentPrice); break;
+            case 'VOLUME_ABSORPTION': strikeZone = detectVolumeAbsorptionZone(windowCandles, indicators); break;
+            case 'MICROSTRUCTURE_SCALP':
+                const syntheticTicks = convertCandlesToSyntheticTicks(windowCandles.slice(-20));
+                strikeZone = detectMicrostructureScalpZone(syntheticTicks, windowCandles, indicators, currentPrice);
+                break;
+        }
+        
+        if (indicators.rsi) prevRsi = indicators.rsi;
+      
+        if (strikeZone && strikeZone.confidence >= config.minConfidence && !strikeZone.triggers.some(t => t.startsWith('VETO'))) {
+            const outcome = simulateTradeOutcome(i, strikeZone, historicalData, strategy, BACKTEST_STAKE, execModel);
+            trades.push({ ...outcome, strikeZone, strategy });
+            i = outcome.exitIndex;
+        } else {
+            i++;
+        }
+    }
+
+    const metrics = calculateInstitutionalMetrics(trades, historicalData);
+    const { equityCurve, monthlyPerformance } = calculateEquityAndMonthly(trades, 1000);
+
+    return {
+        totalTrades: trades.length,
+        winRate: metrics.avgWin > 0 || metrics.avgLoss > 0 ? (wins.length / trades.length) * 100 : 0,
+        totalPnl: trades.reduce((sum, t) => sum + t.pnl, 0),
+        trades,
+        metrics,
+        equityCurve,
+        monthlyPerformance,
+        note: strategy === 'MICROSTRUCTURE_SCALP' && trades.length === 0 ? 'Backtest executado com ticks sintéticos; resultados podem variar.' : undefined
+    };
+}
+
 
 export function runAllStrategiesBacktest(
   historicalData: CandleData[],
   config: HFConfig,
-): Record<StrategyType, BacktestResult> {
-  const BACKTEST_STAKE = 1.0;
+  assetSymbol: string,
+): Record<StrategyType, InstitutionalBacktestResult> {
+  
   const allStrategies: StrategyType[] = Object.keys(strategyMetadata) as StrategyType[];
-  const allResults: Record<string, BacktestResult> = {};
-  const initialStrategies = getCouncilStrategies('standard');
+  const allResults: Partial<Record<StrategyType, InstitutionalBacktestResult>> = {};
 
   for (const strategy of allStrategies) {
-    if (strategy === 'MICROSTRUCTURE_SCALP') {
-      allResults[strategy] = { 
-        totalTrades: 0, 
-        winRate: 0, 
-        totalPnl: 0, 
-        trades: [],
-        note: '⚠️ Estratégia requer dados de tick em tempo real. Backtest não aplicável.' 
-      };
-      continue;
-    }
-
-    const trades: TradeResult[] = [];
-    let i = 100;
-    let prevRsi = 50;
-    
-    const timePeriodForIndicators = strategyMetadata[strategy]?.isHF ? '1m' : '15m';
-
-    while (i < historicalData.length - 30) {
-      const windowCandles = historicalData.slice(0, i + 1);
-      
-      const indicators = calculateAllIndicators(windowCandles, initialStrategies, timePeriodForIndicators, { duration: 15, unit: 's' });
-      if (!indicators) { i++; continue; }
-      
-      const currentPrice = windowCandles[windowCandles.length - 1].close;
-      const windowTicks = convertToTicks(windowCandles); 
-
-      let strikeZone: StrikeZone | null = null;
-      switch (strategy) {
-        case 'HF_MEAN_REVERSION':
-          strikeZone = detectHFMeanReversionZone(indicators, currentPrice);
-          break;
-        case 'STD_TREND_FOLLOW':
-          strikeZone = detectStandardTrendZone(indicators, currentPrice, prevRsi);
-          break;
-        case 'BOLLINGER_SQUEEZE':
-          strikeZone = detectBollingerSqueezeZone(indicators, currentPrice);
-          break;
-        case 'VOLUME_ABSORPTION':
-          strikeZone = detectVolumeAbsorptionZone(windowCandles, indicators);
-          break;
-        case 'MICROSTRUCTURE_SCALP':
-           strikeZone = detectMicrostructureScalpZone(windowTicks, windowCandles, indicators, currentPrice);
-          break;
-      }
-      
-      if (indicators.rsi) prevRsi = indicators.rsi;
-      
-      if (strikeZone && strikeZone.confidence >= config.minConfidence && !strikeZone.triggers.some(t => t.startsWith('VETO'))) {
-        const outcome = simulateTradeOutcome(i, strikeZone, historicalData, strategy, BACKTEST_STAKE);
-        trades.push({ ...outcome, strikeZone, strategy });
-        i = outcome.exitIndex;
-      } else {
-        i++;
-      }
-    }
-    allResults[strategy] = calculateBacktestMetrics(trades);
+    allResults[strategy] = runSingleStrategyBacktest(historicalData, config, strategy, assetSymbol);
   }
 
-  return allResults as Record<StrategyType, BacktestResult>;
+  return allResults as Record<StrategyType, InstitutionalBacktestResult>;
 }

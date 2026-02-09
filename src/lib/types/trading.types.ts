@@ -365,5 +365,73 @@ export const baseRiseFallSchema = z.object({
   duration_unit: DurationUnitSchema,
   allowEquals: z.boolean().default(false),
 });
+
+// --- NOVAS INTERFACES PARA BACKTESTING INSTITUCIONAL ---
+
+export interface ExecutionModel {
+  spread: number;
+  slippage: number;
+  rejectionRate: number;
+  latencyMs: number;
+}
+
+export interface InstitutionalBacktestResult {
+  totalTrades: number;
+  winRate: number;
+  totalPnl: number;
+  trades: TradeResult[];
+  note?: string;
+  metrics: {
+    sharpeRatio: number;
+    sortinoRatio: number;
+    calmarRatio: number;
+    maxDrawdown: number;
+    maxDrawdownDuration: number;
+    volatility: number;
+    profitFactor: number;
+    expectancy: number;
+    avgWin: number;
+    avgLoss: number;
+    largestWin: number;
+    largestLoss: number;
+    consecutiveWins: number;
+    consecutiveLosses: number;
+    winStreakAvg: number;
+    lossStreakAvg: number;
+    avgTradeDuration: number;
+    avgHoldingTimeMinutes: number;
+    tradesPerDay: number;
+    avgSpreadCost: number;
+    avgSlippage: number;
+    rejectionRate: number;
+  };
+  equityCurve: Array<{ candle: number; equity: number; drawdown: number; }>;
+  monthlyPerformance: Array<{ month: string; trades: number; pnl: number; winRate: number; }>;
+}
+
+export interface WalkForwardResult {
+  inSample: InstitutionalBacktestResult;
+  outOfSample: InstitutionalBacktestResult;
+  degradation: {
+    sharpeRatio: number;
+    winRate: number;
+    profitFactor: number;
+  };
+  isRobust: boolean;
+}
+
+export interface MonteCarloResult {
+  scenarios: InstitutionalBacktestResult[];
+  statistics: {
+    meanSharpe: number;
+    stdDevSharpe: number;
+    percentile5: number;
+    percentile50: number;
+    percentile95: number;
+  };
+  probabilityOfProfit: number;
+  valueAtRisk95: number;
+}
       
     
+

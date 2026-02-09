@@ -14,7 +14,11 @@ import type {
     VirtualTradeLog as VirtualTradeLogT,
     TradeHistoryEvent as TradeHistoryEventT,
     TradeResult as TradeResultT,
-    DurationUnit as DurationUnitT
+    DurationUnit as DurationUnitT,
+    ExecutionModel as ExecutionModelT,
+    InstitutionalBacktestResult as InstitutionalBacktestResultT,
+    WalkForwardResult as WalkForwardResultT,
+    MonteCarloResult as MonteCarloResultT
 } from './trading.types';
 import { OperationSchema } from './trading.types';
 import type { AssetAnalysisInput as AssetAnalysisInputT, AssetAnalysisOutput as AssetAnalysisOutputT } from '@/ai/flows/asset-analysis.types';
@@ -85,7 +89,7 @@ export type DurationUnit = DurationUnitT;
 export type DurationLimits = Record<DurationUnit, { min: number; max: number }>;
 
 export type OperationStatus = 'pending' | 'won' | 'lost';
-export type OperationInitiator = 'Manual' | 'Piloto' | 'Conselho';
+export type OperationInitiator = 'Manual' | 'Piloto' | 'Conselho' | 'HF_Strike';
 
 export interface Operation {
   id: number;
@@ -108,6 +112,7 @@ export interface Operation {
   takeProfit?: number;
   stopLoss?: number;
   trailingStop?: number;
+  strategy?: string;
 }
 
 
@@ -127,6 +132,10 @@ export type CouncilVotes = CouncilVotesT;
 export type VirtualTradeLog = VirtualTradeLogT;
 export type TradeHistoryEvent = TradeHistoryEventT;
 export type TradeResult = TradeResultT;
+export type ExecutionModel = ExecutionModelT;
+export type InstitutionalBacktestResult = InstitutionalBacktestResultT;
+export type WalkForwardResult = WalkForwardResultT;
+export type MonteCarloResult = MonteCarloResultT;
 
 
 // =================================================================
