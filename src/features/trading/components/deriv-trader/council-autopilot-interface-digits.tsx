@@ -104,10 +104,10 @@ export const DigitsAutopilotManager: React.FC<DigitsAutopilotManagerProps> = (pr
     setCooldownTime,
     maxLosses,
     setMaxLosses,
-    isOverUnderUnderdogMode,
-    setIsOverUnderUnderdogMode,
     overUnderUnderdogThreshold,
     setOverUnderUnderdogThreshold,
+    evenOddUnderdogThreshold,
+    setEvenOddUnderdogThreshold,
  } = props;
 
   const isAnyPilotOn = Object.values(pilots).some(p => p.isOn);
@@ -125,12 +125,13 @@ export const DigitsAutopilotManager: React.FC<DigitsAutopilotManagerProps> = (pr
       </CardHeader>
       <CardContent className="space-y-4">
         <Tabs defaultValue="matchesDiffers" className="w-full">
-            <TabsList className="grid w-full grid-cols-5">
+            <TabsList className="grid w-full grid-cols-6">
                 <TabsTrigger value="matchesDiffers" className="text-xs sm:text-sm"><HelpCircle className="h-4 w-4 mr-1.5"/>Difere</TabsTrigger>
                 <TabsTrigger value="overUnder" className="text-xs sm:text-sm"><TrendingUp className="h-4 w-4 mr-1.5"/>Acima/Abaixo</TabsTrigger>
                 <TabsTrigger value="evenOdd" className="text-xs sm:text-sm"><Binary className="h-4 w-4 mr-1.5"/>Par/Ímpar</TabsTrigger>
                 <TabsTrigger value="underdog" className="text-xs sm:text-sm"><Trophy className="h-4 w-4 mr-1.5"/>Azarão</TabsTrigger>
                 <TabsTrigger value="underdogOverUnder" className="text-xs sm:text-sm"><Trophy className="h-4 w-4 mr-1.5"/>Azarão A/A</TabsTrigger>
+                <TabsTrigger value="underdogEvenOdd" className="text-xs sm:text-sm"><Trophy className="h-4 w-4 mr-1.5"/>Azarão P/I</TabsTrigger>
             </TabsList>
             <TabsContent value="matchesDiffers" className="pt-4">
                 <PilotTabContent
@@ -196,7 +197,7 @@ export const DigitsAutopilotManager: React.FC<DigitsAutopilotManagerProps> = (pr
                     </div>
                 </div>
             </TabsContent>
-            <TabsContent value="underdogOverUnder" className="pt-4">
+             <TabsContent value="underdogOverUnder" className="pt-4">
                 <PilotTabContent
                     pilotKey="underdogOverUnder"
                     title="Piloto Azarão Acima/Abaixo"
@@ -213,6 +214,29 @@ export const DigitsAutopilotManager: React.FC<DigitsAutopilotManagerProps> = (pr
                             min={30} max={48} step={1}
                             value={[overUnderUnderdogThreshold]}
                             onValueChange={(value) => setOverUnderUnderdogThreshold(value[0])}
+                            disabled={isAnyPilotOn}
+                        />
+                        <p className="text-xs text-muted-foreground">Operar em um bloco se a probabilidade dele cair abaixo deste valor.</p>
+                    </div>
+                </div>
+            </TabsContent>
+             <TabsContent value="underdogEvenOdd" className="pt-4">
+                <PilotTabContent
+                    pilotKey="underdogEvenOdd"
+                    title="Piloto Azarão Par/Ímpar"
+                    description="Aposta no bloco (Par ou Ímpar) que está estatisticamente 'atrasado'."
+                    pilotState={pilots.underdogEvenOdd}
+                    toggleAutopilot={toggleAutopilot}
+                />
+                 <div className="space-y-4 pt-4 mt-4 border-t">
+                    <h4 className="text-xs font-semibold text-muted-foreground">Configuração Fina (Azarão P/I)</h4>
+                    <div className="space-y-2">
+                        <Label htmlFor="underdog-eo-threshold">Limiar de Frequência de Bloco ({evenOddUnderdogThreshold.toFixed(1)}%)</Label>
+                        <Slider
+                            id="underdog-eo-threshold"
+                            min={30} max={48} step={1}
+                            value={[evenOddUnderdogThreshold]}
+                            onValueChange={(value) => setEvenOddUnderdogThreshold(value[0])}
                             disabled={isAnyPilotOn}
                         />
                         <p className="text-xs text-muted-foreground">Operar em um bloco se a probabilidade dele cair abaixo deste valor.</p>

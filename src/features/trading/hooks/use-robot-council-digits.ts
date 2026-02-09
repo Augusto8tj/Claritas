@@ -15,7 +15,7 @@ export type DigitStats = {
     probability: number;
 };
 
-export type PilotType = 'matchesDiffers' | 'overUnder' | 'evenOdd' | 'underdog' | 'underdogOverUnder';
+export type PilotType = 'matchesDiffers' | 'overUnder' | 'evenOdd' | 'underdog' | 'underdogOverUnder' | 'underdogEvenOdd';
 
 type CouncilStrategy = {
   id: string;
@@ -62,11 +62,14 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
 
   // --- Over/Under Underdog Specific Settings ---
   const [overUnderUnderdogThreshold, setOverUnderUnderdogThreshold] = useState(40);
+  
+  // --- Even/Odd Underdog Specific Settings ---
+  const [evenOddUnderdogThreshold, setEvenOddUnderdogThreshold] = useState(40);
 
   // --- Risk Management Settings ---
   const [martingaleMultiplier, setMartingaleMultiplier] = useState(1.0);
   const [cooldownTime, setCooldownTime] = useState(0); // in seconds
-  const [maxLosses, setMaxLosses] = useState(5);
+  const [maxLosses, setMaxLosses] = useState(40);
 
   const initialPilotState: Record<PilotType, PilotState> = {
     matchesDiffers: { isOn: false, status: 'PAUSED', consecutiveLosses: 0, currentTarget: undefined, lastStake: BASE_STAKE },
@@ -74,6 +77,7 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
     evenOdd: { isOn: false, status: 'PAUSED', consecutiveLosses: 0, currentTarget: 'Par', lastStake: BASE_STAKE },
     underdog: { isOn: false, status: 'PAUSED', consecutiveLosses: 0, currentTarget: undefined, lastStake: BASE_STAKE },
     underdogOverUnder: { isOn: false, status: 'PAUSED', consecutiveLosses: 0, currentTarget: 'Bloco Azarão', lastStake: BASE_STAKE },
+    underdogEvenOdd: { isOn: false, status: 'PAUSED', consecutiveLosses: 0, currentTarget: 'Bloco Par/Ímpar Azarão', lastStake: BASE_STAKE },
   };
 
   const [pilots, setPilots] = useState<Record<PilotType, PilotState>>(initialPilotState);
@@ -85,6 +89,7 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
     evenOdd: null,
     underdog: null,
     underdogOverUnder: null,
+    underdogEvenOdd: null,
   });
   
   const digitStats: DigitStats[] = useMemo(() => {
@@ -214,6 +219,8 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
 
         const probOver4 = digitStats.filter(s => s.digit > 4).reduce((sum, s) => sum + s.probability, 0);
         const probUnder5 = digitStats.filter(s => s.digit < 5).reduce((sum, s) => sum + s.probability, 0);
+        const probEven = digitStats.filter(s => s.digit % 2 === 0).reduce((sum, s) => sum + s.probability, 0);
+        const probOdd = 100 - probEven;
         
         setPilots(prev => ({
             ...prev,
@@ -221,6 +228,7 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
             underdog: { ...prev.underdog, currentTarget: isUnderdogInverse ? `Difere de ${leastProbable?.digit}` : `Combina com ${leastProbable?.digit}` },
             overUnder: { ...prev.overUnder, currentTarget: probOver4 > probUnder5 ? 'Acima de 4' : 'Abaixo de 5'},
             underdogOverUnder: { ...prev.underdogOverUnder, currentTarget: probOver4 < probUnder5 ? 'Acima de 4 (Azarão)' : 'Abaixo de 5 (Azarão)'},
+            underdogEvenOdd: { ...prev.underdogEvenOdd, currentTarget: probEven < probOdd ? 'Par (Azarão)' : 'Ímpar (Azarão)'},
         }));
 
         for (const [type, state] of Object.entries(pilots)) {
@@ -271,8 +279,6 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
                 }
             } else if (pilotKey === 'evenOdd') {
                 const evenOddThreshold = consensusThreshold + 15;
-                const probEven = digitStats.filter(s => s.digit % 2 === 0).reduce((sum, s) => sum + s.probability, 0);
-                
                 if (probEven > evenOddThreshold) {
                     signalType = 'DIGITEVEN';
                 } else if ((100 - probEven) > evenOddThreshold) {
@@ -291,6 +297,12 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
                     signalType = 'DIGITUNDER';
                     predictionDigit = 5;
                 }
+            } else if (pilotKey === 'underdogEvenOdd') {
+                if (probEven < evenOddUnderdogThreshold) {
+                    signalType = 'DIGITEVEN';
+                } else if (probOdd < evenOddUnderdogThreshold) {
+                    signalType = 'DIGITODD';
+                }
             }
             
             if (signalType) {
@@ -304,7 +316,7 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
     const timeoutId = setTimeout(runAutopilots, 100);
     return () => clearTimeout(timeoutId);
 
-  }, [pilots, digitStats, consensusThreshold, activeSymbol, executeTrade, operationsLog, dailyBalance, dailyTarget, toggleAutopilot, toast, underdogThreshold, isUnderdogInverse, maxLosses, cooldownTime, martingaleMultiplier, overUnderUnderdogThreshold]);
+  }, [pilots, digitStats, consensusThreshold, activeSymbol, executeTrade, operationsLog, dailyBalance, dailyTarget, toggleAutopilot, toast, underdogThreshold, isUnderdogInverse, maxLosses, cooldownTime, martingaleMultiplier, overUnderUnderdogThreshold, evenOddUnderdogThreshold]);
   
   return {
     isCouncilAutopilotOn: Object.values(pilots).some(p => p.isOn),
@@ -319,9 +331,7 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
     martingaleMultiplier, setMartingaleMultiplier,
     cooldownTime, setCooldownTime,
     maxLosses, setMaxLosses,
-    // NOVO
-    isOverUnderUnderdogMode: false, // Manter por compatibilidade, mas a lógica mudou
-    setIsOverUnderUnderdogMode: () => {}, // Manter por compatibilidade
     overUnderUnderdogThreshold, setOverUnderUnderdogThreshold,
+    evenOddUnderdogThreshold, setEvenOddUnderdogThreshold,
   };
 }
