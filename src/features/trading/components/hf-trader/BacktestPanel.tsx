@@ -1,11 +1,12 @@
 // src/features/trading/components/hf-trader/BacktestPanel.tsx
 'use client';
 
-import React from 'react';
+import React, { useState, useMemo } from 'react';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Loader2, TestTube } from 'lucide-react';
+import { Loader2, TestTube, TrendingUp } from 'lucide-react';
 import type { InstitutionalBacktestResult } from '@/lib/types';
 import { StrategyType, strategyMetadata } from '@/features/trading/services/hf-strike-logic';
 import { cn } from '@/lib/utils';
@@ -18,8 +19,9 @@ interface BacktestPanelProps {
 }
 
 export function BacktestPanel({ results, onRunBacktest, isBacktesting }: BacktestPanelProps) {
+  const [selectedStrategy, setSelectedStrategy] = useState<StrategyType | null>(null);
   
-  const sortedResults = React.useMemo(() => {
+  const sortedResults = useMemo(() => {
     if (!results) return [];
     return Object.entries(results).sort(([, a], [, b]) => b.metrics.sharpeRatio - a.metrics.sharpeRatio);
   }, [results]);
@@ -35,7 +37,7 @@ export function BacktestPanel({ results, onRunBacktest, isBacktesting }: Backtes
           Execute todas as estratégias contra os últimos 1500 pontos de dados para avaliar a performance histórica.
         </CardDescription>
       </CardHeader>
-      <CardContent className="space-y-4">
+      <CardContent className="space-y-6">
         <Button onClick={onRunBacktest} disabled={isBacktesting} className="w-full">
           {isBacktesting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <TestTube className="mr-2 h-4 w-4" />}
           {isBacktesting ? "A Simular..." : "Rodar Backtest Institucional"}
@@ -48,6 +50,7 @@ export function BacktestPanel({ results, onRunBacktest, isBacktesting }: Backtes
         )}
         
         {results && (
+          <>
             <ScrollArea className="h-[300px] w-full">
               <Table>
                 <TableHeader className="sticky top-0 bg-muted/50">
@@ -63,10 +66,17 @@ export function BacktestPanel({ results, onRunBacktest, isBacktesting }: Backtes
                 </TableHeader>
                 <TableBody>
                   {sortedResults.map(([strategyKey, result]) => {
-                    const strategyName = strategyMetadata[strategyKey as StrategyType]?.label || strategyKey;
-                    const isProfitable = result.totalPnl > 0;
+                     const strategyName = strategyMetadata[strategyKey as StrategyType]?.label || strategyKey;
+                     const isProfitable = result.totalPnl > 0;
                     return (
-                        <TableRow key={strategyKey}>
+                        <TableRow 
+                          key={strategyKey}
+                          onClick={() => setSelectedStrategy(strategyKey as StrategyType)}
+                          className={cn(
+                            "cursor-pointer transition-colors",
+                            selectedStrategy === strategyKey ? "bg-primary/10" : "hover:bg-muted/50"
+                          )}
+                        >
                             <TableCell className="font-medium">{strategyName}</TableCell>
                             <TableCell className="text-center font-mono">{result.totalTrades}</TableCell>
                             <TableCell className="text-center">
@@ -86,6 +96,65 @@ export function BacktestPanel({ results, onRunBacktest, isBacktesting }: Backtes
                 </TableBody>
               </Table>
             </ScrollArea>
+            
+            {selectedStrategy && results[selectedStrategy]?.equityCurve && (
+              <Card className="border-2 border-primary">
+                <CardHeader>
+                  <CardTitle className="text-base flex items-center gap-2">
+                    <TrendingUp className="h-4 w-4" />
+                    Equity Curve - {strategyMetadata[selectedStrategy].label}
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <ResponsiveContainer width="100%" height={250}>
+                    <LineChart data={results[selectedStrategy].equityCurve}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                      <XAxis 
+                        dataKey="candle" 
+                        label={{ value: 'Trade #', position: 'insideBottom', offset: -5 }} 
+                      />
+                      <YAxis 
+                        yAxisId="left"
+                        label={{ value: 'Equity ($)', angle: -90, position: 'insideLeft' }} 
+                      />
+                      <YAxis 
+                        yAxisId="right" 
+                        orientation="right"
+                        label={{ value: 'Drawdown (%)', angle: 90, position: 'insideRight' }} 
+                      />
+                      <Tooltip 
+                        contentStyle={{ backgroundColor: '#fff', border: '1px solid #e5e7eb' }}
+                        formatter={(value: number, name: string) => {
+                          if (name === 'Equity') return [`$${value.toFixed(2)}`, name];
+                          if (name === 'Drawdown') return [`${value.toFixed(1)}%`, 'Drawdown'];
+                          return [value, name];
+                        }}
+                      />
+                      <Legend />
+                      <Line 
+                        yAxisId="left"
+                        type="monotone" 
+                        dataKey="equity" 
+                        stroke="#10b981" 
+                        strokeWidth={2}
+                        dot={false}
+                        name="Equity"
+                      />
+                      <Line 
+                        yAxisId="right"
+                        type="monotone" 
+                        dataKey="drawdown" 
+                        stroke="#ef4444" 
+                        strokeWidth={2}
+                        dot={false}
+                        name="Drawdown"
+                      />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </CardContent>
+              </Card>
+            )}
+          </>
         )}
       </CardContent>
     </Card>
