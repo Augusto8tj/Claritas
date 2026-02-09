@@ -7,20 +7,23 @@ import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Label } from '@/components/ui/label';
-import { Brain } from 'lucide-react';
+import { Brain, Target, TrendingUp, TrendingDown } from 'lucide-react';
 import type { EnsembleSignal } from '../../ensemble/strategy-ensemble';
 import type { RegimeCharacteristics } from '../../ml/market-regime-detector';
 import { strategyMetadata } from '../../services/hf-strike-logic';
 import { cn } from '@/lib/utils';
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
+import { ScrollArea } from '@/components/ui/scroll-area';
 
 interface EnsembleSignalCardProps {
   signal: EnsembleSignal | null;
   regime: RegimeCharacteristics | null;
+  previousZones: EnsembleSignal[];
   onExecute: () => void;
   isExecuting: boolean;
 }
 
-export function EnsembleSignalCard({ signal, regime, onExecute, isExecuting }: EnsembleSignalCardProps) {
+export function EnsembleSignalCard({ signal, regime, previousZones, onExecute, isExecuting }: EnsembleSignalCardProps) {
   if (!signal || signal.direction === 'NEUTRAL' || !regime) {
     return (
       <Card>
@@ -75,6 +78,38 @@ export function EnsembleSignalCard({ signal, regime, onExecute, isExecuting }: E
         <Button onClick={onExecute} className="w-full mt-4" variant={isLong ? 'default' : 'destructive'} disabled={isExecuting}>
           Executar com Ensemble
         </Button>
+
+         {previousZones.length > 0 && (
+            <Accordion type="single" collapsible className="mt-4">
+              <AccordionItem value="history">
+                <AccordionTrigger className="text-sm text-muted-foreground">
+                  📜 Últimas 5 Zonas Detectadas
+                </AccordionTrigger>
+                <AccordionContent>
+                  <ScrollArea className="h-[200px]">
+                    {previousZones.slice(0, 5).map((pZone, idx) => (
+                      <div key={idx} className="border-b last:border-0 py-2">
+                        <div className="flex justify-between items-center">
+                          <div>
+                            <Badge variant={pZone.direction === 'LONG' ? 'default' : 'destructive'} className="text-xs">
+                              {pZone.direction === 'LONG' ? '📈 LONG' : '📉 SHORT'}
+                            </Badge>
+                            <span className="text-xs ml-2">{pZone.confidence.toFixed(0)}% conf</span>
+                          </div>
+                          <span className="text-xs text-muted-foreground">
+                            {/* Assuming timestamp is available */}
+                          </span>
+                        </div>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          {pZone.reasoning}
+                        </p>
+                      </div>
+                    ))}
+                  </ScrollArea>
+                </AccordionContent>
+              </AccordionItem>
+            </Accordion>
+          )}
       </CardContent>
     </Card>
   );

@@ -123,7 +123,7 @@ export function BacktestPanel({
             </Button>
         </div>
         
-        {(isBacktesting && !results) && (
+        {(isBacktesting && !results && !walkForwardResults && !monteCarloResult) && (
           <div className="flex justify-center items-center p-8">
             <Loader2 className="h-8 w-8 animate-spin text-primary" />
           </div>

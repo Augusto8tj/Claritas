@@ -14,7 +14,7 @@ import { useHFStrikeZone } from '@/features/trading/hooks/use-hf-strike-zone';
 import { HFExecutionLog } from '@/features/trading/components/hf-trader/hf-execution-log';
 import { HFConfig, HFConfigPanel } from '@/features/trading/components/hf-trader/hf-config-panel';
 import { saveHFTradeLog } from '@/services/hf-data-service';
-import { Target, TrendingUp, BarChart, Brain, Activity, Zap, ShieldAlert, Bot, TestTube } from 'lucide-react';
+import { Target, TrendingUp, BarChart, Brain, Activity, Zap, ShieldAlert, Bot, TestTube, GitCompareArrows, Dice5 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { Operation, CandleData, TimePeriod, InstitutionalBacktestResult, WalkForwardResult, MonteCarloResult } from '@/lib/types';
 import { InstitutionalMetricsDashboard } from '@/features/trading/components/hf-trader/institutional-metrics-dashboard';
@@ -216,7 +216,7 @@ function PageContent() {
       await new Promise(resolve => setTimeout(resolve, 50));
       
       try {
-          const result = runMonteCarloSimulation(backtestResults[bestStrategyKey], 1000);
+          const result = runMonteCarloSimulation(backtestResults[bestStrategyKey as StrategyType], 1000);
           setMonteCarloResult(result);
           toast({ title: "Simulação de Monte Carlo Concluída!", description: "Resultados da validação estatística disponíveis." });
       } catch(e: any) {
@@ -282,7 +282,7 @@ function PageContent() {
             <HFExecutionLog operations={operationsLog} clearActiveContracts={clearActiveContracts} />
         </div>
         <div className="space-y-6">
-          <EnsembleSignalCard signal={ensembleSignal} regime={marketRegime} onExecute={handleExecuteStrike} isExecuting={isExecuting} />
+          <EnsembleSignalCard signal={ensembleSignal} regime={marketRegime} onExecute={handleExecuteStrike} isExecuting={isExecuting} previousZones={previousZones}/>
           <HFConfigPanel config={hfConfig} onConfigChange={updates => setHFConfig(prev => ({ ...prev, ...updates }))} disabled={isExecuting} strategy={'HF_MEAN_REVERSION'} />
         </div>
       </div>
