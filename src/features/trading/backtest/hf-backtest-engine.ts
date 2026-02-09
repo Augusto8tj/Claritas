@@ -84,12 +84,13 @@ function simulateTradeOutcome(
   
   let tradeDurationInCandles: number;
 
+  const candleDurationSeconds = allCandles && allCandles.length > 1 && allCandles[1].epoch > allCandles[0].epoch ? allCandles[1].epoch - allCandles[0].epoch : 60;
+  
   switch (strategy) {
     case 'MICROSTRUCTURE_SCALP': tradeDurationInCandles = 1; break;
     case 'STD_TREND_FOLLOW':
     case 'VOLUME_ABSORPTION': tradeDurationInCandles = 3; break;
     default:
-        const candleDurationSeconds = allCandles && allCandles.length > 1 && allCandles[1].epoch > allCandles[0].epoch ? allCandles[1].epoch - allCandles[0].epoch : 60;
         tradeDurationInCandles = Math.max(1, Math.ceil(strikeZone.duration / candleDurationSeconds));
         break;
   }
@@ -297,19 +298,17 @@ function runSingleStrategyBacktest(historicalData: CandleData[], config: HFConfi
 
     const metrics = calculateInstitutionalMetrics(trades, historicalData);
     const { equityCurve, monthlyPerformance } = calculateEquityAndMonthly(trades, 1000);
-    
     const wins = trades.filter(t => t.result === 'win').length;
-    const winRate = trades.length > 0 ? (wins / trades.length) * 100 : 0;
     
     return {
         totalTrades: trades.length,
-        winRate: winRate,
+        winRate: trades.length > 0 ? (wins / trades.length) * 100 : 0,
         totalPnl: trades.reduce((sum, t) => sum + t.pnl, 0),
         trades,
         metrics,
         equityCurve,
         monthlyPerformance,
-        note: strategy === 'MICROSTRUCTURE_SCALP' && trades.length === 0 ? 'Backtest executado com ticks sintéticos; resultados podem variar.' : undefined
+        note: strategy === 'MICROSTRUCTURE_SCALP' ? 'Backtest executado com ticks sintéticos; resultados podem variar.' : undefined
     };
 }
 
