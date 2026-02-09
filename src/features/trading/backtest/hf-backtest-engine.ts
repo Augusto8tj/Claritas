@@ -198,6 +198,15 @@ function calculateInstitutionalMetrics(trades: TradeResult[], historicalData: Ca
         }
     });
     
+    const totalReturn = ((equityCurve[equityCurve.length - 1] - equityCurve[0]) / equityCurve[0]) * 100;
+    
+    const totalDays = (historicalData && historicalData.length > 1)
+      ? (historicalData[historicalData.length - 1].epoch - historicalData[0].epoch) / 86400
+      : 0;
+
+    const cagr = totalDays > 0 ? (Math.pow(1 + totalReturn / 100, 365 / totalDays) - 1) * 100 : 0;
+    const calmarRatio = maxDD > 0 ? cagr / maxDD : 0;
+    
     const wins = trades.filter(t => t.result === 'win'); const losses = trades.filter(t => t.result === 'loss');
     const grossProfit = wins.reduce((sum, t) => sum + t.pnl, 0);
     const grossLoss = Math.abs(losses.reduce((sum, t) => sum + t.pnl, 0));
@@ -217,12 +226,11 @@ function calculateInstitutionalMetrics(trades: TradeResult[], historicalData: Ca
     const lossStreakAvg = lossStreaks.length > 0 ? lossStreaks.reduce((a, b) => a + b, 0) / lossStreaks.length : 0;
     
     const avgTradeDuration = trades.reduce((sum, t) => sum + t.durationInCandles, 0) / trades.length;
-    const totalDays = (historicalData[historicalData.length-1].epoch - historicalData[0].epoch) / 86400;
     
     return {
-        sharpeRatio: parseFloat(sharpeRatio.toFixed(2)), sortinoRatio: parseFloat(sortinoRatio.toFixed(2)), calmarRatio: 0,
+        sharpeRatio: parseFloat(sharpeRatio.toFixed(2)), sortinoRatio: parseFloat(sortinoRatio.toFixed(2)), calmarRatio: parseFloat(calmarRatio.toFixed(2)),
         maxDrawdown: parseFloat(maxDD.toFixed(2)), maxDrawdownDuration: maxDDDuration,
-        volatility: parseFloat((stdDev * 100).toFixed(2)),
+        volatility: parseFloat((annualizedStdDev * 100).toFixed(2)),
         profitFactor: parseFloat(profitFactor.toFixed(2)), expectancy: parseFloat(expectancy.toFixed(2)),
         avgWin: parseFloat(avgWin.toFixed(2)), avgLoss: parseFloat(avgLoss.toFixed(2)),
         largestWin: Math.max(...wins.map(t => t.pnl), 0), largestLoss: Math.min(...losses.map(t => t.pnl), 0),
@@ -303,8 +311,7 @@ function runSingleStrategyBacktest(historicalData: CandleData[], config: HFConfi
     
     const metrics = calculateInstitutionalMetrics(trades, historicalData);
     const { equityCurve, monthlyPerformance } = calculateEquityAndMonthly(trades, 1000);
-    
-    const winRate = (trades.filter(t => t.result === 'win').length / (trades.length || 1)) * 100;
+    const winRate = trades.length > 0 ? (trades.filter(t => t.result === 'win').length / trades.length) * 100 : 0;
     
     return {
         totalTrades: trades.length,
@@ -405,6 +412,7 @@ const calculateVaR = (pnlArray: number[], percentile: number): number => {
 
 export function runMonteCarloSimulation(
   baselineResult: InstitutionalBacktestResult,
+  historicalData: CandleData[],
   iterations: number = 1000
 ): MonteCarloResult {
   const scenarios: InstitutionalBacktestResult[] = [];
@@ -416,7 +424,7 @@ export function runMonteCarloSimulation(
     const scenarioResult = {
       ...baselineResult,
       trades: shuffledTrades,
-      metrics: calculateInstitutionalMetrics(shuffledTrades, [], 1000),
+      metrics: calculateInstitutionalMetrics(shuffledTrades, historicalData, 1000),
       ...calculateEquityAndMonthly(shuffledTrades, 1000)
     };
     

@@ -134,6 +134,7 @@ function PageContent() {
   }, [ensembleSignal, positionSizing, hfConfig.autoExecute, hfConfig.enabled, isExecuting, handleExecuteStrike]);
 
   const [isBacktesting, setIsBacktesting] = useState(false);
+  const [backtestData, setBacktestData] = useState<CandleData[]>([]);
   const [backtestResults, setBacktestResults] = useState<Record<string, InstitutionalBacktestResult> | null>(null);
   const [walkForwardResults, setWalkForwardResults] = useState<WalkForwardResult[] | null>(null);
   const [monteCarloResult, setMonteCarloResult] = useState<MonteCarloResult | null>(null);
@@ -147,10 +148,12 @@ function PageContent() {
     setBacktestResults(null);
     setWalkForwardResults(null);
     setMonteCarloResult(null);
+    setBacktestData([]); 
     try {
         toast({ title: "Iniciando Backtest...", description: "Buscando 1500 velas históricas..." });
         
         const historicalData = await getHistoricalData(activeSymbol, 'candles', 1500, '1m') as CandleData[];
+        setBacktestData(historicalData);
         
         if (historicalData.length < 100) {
             throw new Error("Dados históricos insuficientes para o backtest.");
@@ -203,6 +206,11 @@ function PageContent() {
           toast({ title: "Execute o Backtest Simples Primeiro", description: "A Simulação de Monte Carlo precisa dos resultados de um backtest base.", variant: 'destructive' });
           return;
       }
+      if (!backtestData || backtestData.length === 0) {
+          toast({ title: "Dados Históricos Não Encontrados", description: "Execute o Backtest Simples novamente para carregar os dados.", variant: 'destructive' });
+          setIsBacktesting(false); 
+          return;
+      }
       const bestStrategyKey = Object.entries(backtestResults).sort(([, a], [, b]) => (b.metrics?.sharpeRatio || 0) - (a.metrics?.sharpeRatio || 0))[0][0];
       if (!bestStrategyKey) {
           toast({ title: "Nenhuma estratégia para analisar", variant: 'destructive' });
@@ -216,7 +224,7 @@ function PageContent() {
       await new Promise(resolve => setTimeout(resolve, 50));
       
       try {
-          const result = runMonteCarloSimulation(backtestResults[bestStrategyKey as StrategyType], 1000);
+          const result = runMonteCarloSimulation(backtestResults[bestStrategyKey as StrategyType], backtestData, 1000);
           setMonteCarloResult(result);
           toast({ title: "Simulação de Monte Carlo Concluída!", description: "Resultados da validação estatística disponíveis." });
       } catch(e: any) {
@@ -224,7 +232,7 @@ function PageContent() {
       } finally {
           setIsBacktesting(false);
       }
-  }, [backtestResults, toast]);
+  }, [backtestResults, backtestData, toast]);
 
 
   return (
@@ -261,10 +269,10 @@ function PageContent() {
 
             <Collapsible>
                 <CollapsibleTrigger asChild>
-                    <Button variant="outline" className="w-full">
+                   <Button variant="outline" className="w-full">
                         <TestTube className="mr-2 h-4 w-4" />
                         Painel de Backtesting
-                    </Button>
+                   </Button>
                 </CollapsibleTrigger>
                 <CollapsibleContent className="pt-4">
                     <BacktestPanel 
@@ -277,7 +285,7 @@ function PageContent() {
                         onRunMonteCarlo={handleRunMonteCarlo}
                     />
                 </CollapsibleContent>
-            </Collapsible>
+              </Collapsible>
             
             <HFExecutionLog operations={operationsLog} clearActiveContracts={clearActiveContracts} />
         </div>
