@@ -124,17 +124,6 @@ export const DigitsAutopilotManager: React.FC<DigitsAutopilotManagerProps> = (pr
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
-        <Collapsible>
-            <CollapsibleTrigger asChild>
-                <Button variant="outline" className="w-full">
-                    <TestTube className="mr-2 h-4 w-4" />
-                    Painel de Backtesting de Dígitos
-                </Button>
-            </CollapsibleTrigger>
-            <CollapsibleContent className="pt-4">
-                {/* A LÓGICA DO BACKTESTING ESTÁ NA PÁGINA PAI, AQUI É SÓ O GATILHO VISUAL */}
-            </CollapsibleContent>
-        </Collapsible>
         <Tabs defaultValue="matchesDiffers" className="w-full">
             <TabsList className="grid w-full grid-cols-5">
                 <TabsTrigger value="matchesDiffers" className="text-xs sm:text-sm"><HelpCircle className="h-4 w-4 mr-1.5"/>Difere</TabsTrigger>

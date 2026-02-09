@@ -207,7 +207,7 @@ function DerivTraderPageContentDigits() {
                 <div className="lg:col-span-2 space-y-6">
                     <CurrentPriceDisplay />
                     <DerivTraderInterfaceDigits symbol={activeSymbol || ""} />
-                    <DigitsAutopilotManager {...robotCouncil} />
+                    <OperationsLogDigits operations={operationsLog} priceTicks={priceTicks} activeAsset={activeAsset} clearActiveContracts={clearActiveContracts} />
                 </div>
 
                 {/* --- Coluna da Direita (Dados e Logs) --- */}
@@ -217,7 +217,22 @@ function DerivTraderPageContentDigits() {
                         digitStats={robotCouncil.digitStats}
                         isAutopilotOn={robotCouncil.isCouncilAutopilotOn}
                     />
-                    <OperationsLogDigits operations={operationsLog} priceTicks={priceTicks} activeAsset={activeAsset} clearActiveContracts={clearActiveContracts} />
+                    <DigitsAutopilotManager {...robotCouncil} />
+                     <Collapsible>
+                        <CollapsibleTrigger asChild>
+                           <Button variant="outline" className="w-full">
+                                <TestTube className="mr-2 h-4 w-4" />
+                                Painel de Backtesting de Dígitos
+                           </Button>
+                        </CollapsibleTrigger>
+                        <CollapsibleContent className="pt-4">
+                            <DigitsBacktestPanel 
+                                results={backtestResults} 
+                                onRunBacktest={handleRunBacktest} 
+                                isBacktesting={isBacktesting} 
+                            />
+                        </CollapsibleContent>
+                      </Collapsible>
                 </div>
             </div>
         </div>
