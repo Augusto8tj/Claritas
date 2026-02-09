@@ -130,7 +130,10 @@ function CurrentPriceDisplay() {
             </CardHeader>
             <CardContent>
                 <div className="flex items-baseline justify-center">
-                    <p className="text-5xl font-bold font-mono text-foreground">{priceString}</p>
+                    <p className="text-5xl font-bold font-mono text-foreground">
+                        {priceString.slice(0, -1)}
+                        <span className="text-primary">{priceString.slice(-1)}</span>
+                    </p>
                 </div>
                 <div className={cn(
                     "flex items-center justify-center gap-1 text-sm font-semibold mt-1",
