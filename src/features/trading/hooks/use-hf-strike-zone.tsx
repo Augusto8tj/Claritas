@@ -1,3 +1,4 @@
+
 // src/features/trading/hooks/use-hf-strike-zone.tsx
 'use client';
 
@@ -6,38 +7,41 @@ import type { TickData, CandleData, TimePeriod } from '@/lib/types';
 import { calculateAllIndicators, type Indicators } from '@/features/trading/services/indicator-service';
 import { getCouncilStrategies } from '../services/council-strategies';
 import { useAuth } from '@/features/auth/hooks/use-auth';
-
-// NEW IMPORTS
-import { optimizeStrategyWeights, type OptimizedWeights } from '../ml/adaptive-optimizer';
-import { getEnsembleSignal, type EnsembleSignal } from '../ensemble/strategy-ensemble';
 import { detectMarketRegime, type RegimeCharacteristics } from '../ml/market-regime-detector';
 import { AdvancedRiskManager, type PositionSizeRecommendation } from '../risk/advanced-risk-manager';
+import {
+  detectHFMeanReversionZone,
+  detectStandardTrendZone,
+  detectBollingerSqueezeZone,
+  detectVolumeAbsorptionZone,
+  detectMicrostructureScalpZone,
+  type StrikeZone,
+  type StrategyType
+} from '../services/hf-strike-logic';
 
-export type { StrikeZone } from '../services/hf-strike-logic'; // Keep for hf-data-service compatibility for now
+export type { StrikeZone } from '../services/hf-strike-logic';
 
-export interface HFStats {
-  totalStrikes: number;
-  avgConfidence: number;
-  lastStrike: any | null; // StrikeZone is now EnsembleSignal
-  strikesByType: { long: number; short: number; };
-}
+const CHAMPION_STRATEGY_MAP: Record<RegimeCharacteristics['regime'], { strategy: StrategyType, reason: string }> = {
+  HIGH_VOLATILITY_TRENDING: { strategy: 'STD_TREND_FOLLOW', reason: 'Melhor para capturar movimentos direcionais fortes.' },
+  LOW_VOLATILITY_RANGING: { strategy: 'HF_MEAN_REVERSION', reason: 'Otimizada para reversão à média em mercados laterais.' },
+  BREAKOUT_IMMINENT: { strategy: 'BOLLINGER_SQUEEZE', reason: 'Especializada em operar a expansão de volatilidade.' },
+  POST_NEWS_CHAOS: { strategy: 'MICROSTRUCTURE_SCALP', reason: 'Reação rápida ao fluxo de ordens em alta incerteza.' },
+  CALM_ACCUMULATION: { strategy: 'VOLUME_ABSORPTION', reason: 'Identifica zonas de absorção antes de grandes movimentos.' },
+};
 
 export function useHFStrikeZone(
   priceTicks: TickData[],
   botCandleData: CandleData[],
   uiChartPeriod: TimePeriod,
-  enabled: boolean = true,
-  strategy: any // strategy is now managed by ensemble
+  enabled: boolean = true
 ) {
   const { user } = useAuth();
-  const [strikeHistory, setStrikeHistory] = useState<any[]>([]); // EnsembleSignal[]
   const rsiStateRef = useRef({ prev: 50 });
   const initialStrategies = useMemo(() => getCouncilStrategies('standard'), []);
 
-  // NEW STATES
-  const [optimizedWeights, setOptimizedWeights] = useState<OptimizedWeights[]>([]);
-  const [ensembleSignal, setEnsembleSignal] = useState<EnsembleSignal | null>(null);
   const [marketRegime, setMarketRegime] = useState<RegimeCharacteristics | null>(null);
+  const [championStrategy, setChampionStrategy] = useState<{ strategy: StrategyType, reason: string } | null>(null);
+  const [activeStrikeZone, setActiveStrikeZone] = useState<StrikeZone | null>(null);
   const [riskManager] = useState(() => new AdvancedRiskManager({ maxDailyLoss: 10, maxDrawdown: 20, maxConcurrentTrades: 3, maxExposurePerAsset: 25, kellyFraction: 0.25 }, 1000));
   const [positionSizing, setPositionSizing] = useState<PositionSizeRecommendation | null>(null);
 
@@ -46,28 +50,54 @@ export function useHFStrikeZone(
     return calculateAllIndicators(botCandleData, initialStrategies, '1m', { duration: 1, unit: 't' });
   }, [botCandleData, enabled, initialStrategies]);
   
-  // Main Logic Loop
   useEffect(() => {
     if (!enabled || !indicators || priceTicks.length < 2 || !user) {
-      setEnsembleSignal(null);
+      setActiveStrikeZone(null);
       return;
     };
 
     const runCycle = async () => {
-      // 1. Detect Market Regime
+      // 1. Detectar Regime de Mercado
       const regime = detectMarketRegime(indicators, botCandleData);
       setMarketRegime(regime);
-      
-      // 2. Get Ensemble Signal
-      const signal = await getEnsembleSignal(priceTicks, botCandleData, indicators, optimizedWeights, rsiStateRef.current.prev, riskManager.currentCapital);
-      setEnsembleSignal(signal);
 
-      // 3. Get Position Sizing recommendation
-      if (signal.direction !== 'NEUTRAL') {
-          const sizing = riskManager.calculatePositionSize(signal, riskManager.currentCapital);
-          setPositionSizing(sizing);
+      // 2. Selecionar Estratégia Campeã
+      const champion = CHAMPION_STRATEGY_MAP[regime.regime];
+      setChampionStrategy(champion);
+
+      // 3. Executar Apenas a Estratégia Campeã
+      let strikeZone: StrikeZone | null = null;
+      const currentPrice = priceTicks[priceTicks.length - 1].price;
+
+      switch (champion.strategy) {
+        case 'HF_MEAN_REVERSION':
+          strikeZone = detectHFMeanReversionZone(indicators, currentPrice);
+          break;
+        case 'STD_TREND_FOLLOW':
+          strikeZone = detectStandardTrendZone(indicators, currentPrice, rsiStateRef.current.prev);
+          break;
+        case 'BOLLINGER_SQUEEZE':
+          strikeZone = detectBollingerSqueezeZone(indicators, currentPrice);
+          break;
+        case 'VOLUME_ABSORPTION':
+          strikeZone = detectVolumeAbsorptionZone(botCandleData, indicators);
+          break;
+        case 'MICROSTRUCTURE_SCALP':
+          strikeZone = detectMicrostructureScalpZone(priceTicks, botCandleData, indicators, currentPrice);
+          break;
+      }
+      setActiveStrikeZone(strikeZone);
+      
+      // 4. Calcular Tamanho da Posição se houver sinal
+      if (strikeZone && strikeZone.type !== 'NEUTRAL') {
+        const pseudoSignal = {
+          expectedWinRate: 0.5 + (strikeZone.confidence - 50) / 100 * 0.4, // Mapeia 50-100% conf. para 50-70% WR
+          // Adicione outras propriedades necessárias se `calculatePositionSize` precisar
+        };
+        const sizing = riskManager.calculatePositionSize(pseudoSignal as any, riskManager.currentCapital);
+        setPositionSizing(sizing);
       } else {
-          setPositionSizing(null);
+        setPositionSizing(null);
       }
 
       if (indicators.rsi) {
@@ -75,47 +105,18 @@ export function useHFStrikeZone(
       }
     };
     
-    const timeoutId = setTimeout(runCycle, 200); // Debounce
+    const timeoutId = setTimeout(runCycle, 200); 
     return () => clearTimeout(timeoutId);
 
-  }, [indicators, priceTicks, enabled, optimizedWeights, botCandleData, user, riskManager]);
+  }, [indicators, priceTicks, enabled, botCandleData, user, riskManager]);
   
-  // Weight optimization loop
-  useEffect(() => {
-      if (!user || !marketRegime) return;
-
-      const optimize = async () => {
-          const weights = await optimizeStrategyWeights(user.uid, marketRegime);
-          setOptimizedWeights(weights);
-      };
-      
-      optimize(); // Initial run
-      const interval = setInterval(optimize, 60 * 60 * 1000); // every hour
-      return () => clearInterval(interval);
-  }, [user, marketRegime]);
-
-  const stats: HFStats = useMemo(() => {
-      // This needs to be adapted for ensemble signals
-      return { totalStrikes: 0, avgConfidence: 0, lastStrike: null, strikesByType: { long: 0, short: 0 } };
-  }, []);
-
-  const clearHistory = useCallback(() => {
-    setStrikeHistory([]);
-  }, []);
-
   return {
-    // Legacy returns for compatibility
-    currentZone: null, // Replaced by ensembleSignal
-    strikeHistory,
-    stats,
-    clearHistory,
+    activeStrikeZone,
+    marketRegime,
+    championStrategy,
+    positionSizing,
+    riskManager,
     fullIndicators: indicators,
     supplyDemandZones: (indicators as any)?.supplyDemandZones,
-    // New Institutional returns
-    ensembleSignal,
-    marketRegime,
-    optimizedWeights,
-    positionSizing,
-    riskManager
   };
 }

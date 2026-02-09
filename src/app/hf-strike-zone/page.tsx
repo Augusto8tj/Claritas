@@ -1,3 +1,4 @@
+
 // src/app/hf-strike-zone/page.tsx
 'use client';
 
@@ -18,7 +19,7 @@ import { Target, TrendingUp, BarChart, Brain, Activity, Zap, ShieldAlert, Bot, T
 import { cn } from '@/lib/utils';
 import type { Operation, CandleData, TimePeriod, InstitutionalBacktestResult, WalkForwardResult, MonteCarloResult } from '@/lib/types';
 import { InstitutionalMetricsDashboard } from '@/features/trading/components/hf-trader/institutional-metrics-dashboard';
-import { EnsembleSignalCard } from '@/features/trading/components/hf-trader/ensemble-signal-card';
+import { ChampionSignalCard } from '@/features/trading/components/hf-trader/champion-signal-card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { runAllStrategiesBacktest, runWalkForwardAnalysis, runMonteCarloSimulation } from '@/features/trading/backtest/hf-backtest-engine';
 import { StrategyType } from '@/features/trading/services/hf-strike-logic';
@@ -41,57 +42,44 @@ function PageContent() {
     enabled: true, minConfidence: 70, autoExecute: false, maxConcurrentTrades: 1, preferredDuration: 20
   });
   const [isExecuting, setIsExecuting] = useState(false);
-  const [previousZones, setPreviousZones] = useState<any[]>([]);
 
   const {
-    ensembleSignal, marketRegime, positionSizing, riskManager,
-    fullIndicators, supplyDemandZones, stats
-  } = useHFStrikeZone(priceTicks, botCandleData, timePeriod, hfConfig.enabled, 'HF_MEAN_REVERSION'); 
-
-  useEffect(() => {
-    if (ensembleSignal && ensembleSignal.direction !== 'NEUTRAL') {
-      setPreviousZones(prev => [ensembleSignal, ...prev].slice(0, 10));
-    }
-  }, [ensembleSignal]);
-
-  const dailyPnL = useMemo(() => {
-     return operationsLog.filter(op => op.initiator === 'HF_Strike' && op.status !== 'pending').reduce((sum, op) => sum + (op.result || 0), 0);
-  }, [operationsLog]);
-  
-  useEffect(() => {
-    if(accountBalance.balance) {
-      riskManager.resetDaily(accountBalance.balance);
-    }
-  }, [accountBalance.balance, riskManager]);
-
+    activeStrikeZone,
+    marketRegime,
+    championStrategy,
+    positionSizing,
+    riskManager,
+    fullIndicators,
+    supplyDemandZones,
+  } = useHFStrikeZone(priceTicks, botCandleData, timePeriod, hfConfig.enabled); 
 
   const handleExecuteStrike = useCallback(async () => {
-    if (!ensembleSignal || !positionSizing || positionSizing.recommendedStake === 0 || !user || !activeSymbol) {
+    if (!activeStrikeZone || !positionSizing || positionSizing.recommendedStake === 0 || !user || !activeSymbol) {
       toast({ title: 'Sinal Inválido', description: 'Não há sinal válido para executar.', variant: 'destructive' });
       return;
     }
     
     setIsExecuting(true);
     try {
-      const duration = 20; 
+      const duration = activeStrikeZone.duration; 
       const durationUnit = 's';
-      const direction = ensembleSignal.direction === 'LONG' ? 'rise' : 'fall';
-      const contractType = ensembleSignal.direction === 'LONG' ? 'CALL' : 'PUT';
+      const direction = activeStrikeZone.type === 'LONG_ENTRY' ? 'rise' : 'fall';
+      const contractType = activeStrikeZone.type === 'LONG_ENTRY' ? 'CALL' : 'PUT';
 
       const tradeResult = await executeTrade(
         contractType, positionSizing.recommendedStake, activeSymbol, direction,
-        duration, durationUnit, 'HF_Strike', 'ENSEMBLE'
+        duration, durationUnit, 'HF_Strike', championStrategy?.strategy
       );
       
       if (tradeResult.success && tradeResult.contractId) {
-        toast({ title: '⚡ Ensemble Strike Executado!', description: `${contractType} ${direction.toUpperCase()} - $${positionSizing.recommendedStake}` });
+        toast({ title: '⚡ Strike Executado!', description: `${championStrategy?.strategy}: ${direction.toUpperCase()} - $${positionSizing.recommendedStake}` });
         
         await saveHFTradeLog(user.uid, {
             symbol: activeSymbol,
-            strikeZone: {} as any,
+            strikeZone: activeStrikeZone,
             execution: { contractId: String(tradeResult.contractId), entryPrice: tradeResult.entryPrice!, status: 'pending', executedAt: new Date().toISOString() },
             marketRegime: marketRegime?.regime || 'CALM_ACCUMULATION',
-            ensembleParticipants: ensembleSignal.participants.map(p => p.strategy),
+            ensembleParticipants: [championStrategy!.strategy],
             positionSize: {
                 recommended: positionSizing.recommendedStake,
                 actual: positionSizing.recommendedStake,
@@ -113,25 +101,14 @@ function PageContent() {
     } finally {
       setIsExecuting(false);
     }
-  }, [ensembleSignal, positionSizing, user, activeSymbol, executeTrade, toast, riskManager, accountBalance.balance, marketRegime]);
-
-  useEffect(() => {
-    const last3Trades = operationsLog.filter(op => op.initiator === 'HF_Strike' && op.status !== 'pending').slice(-3);
-    if (hfConfig.autoExecute && last3Trades.length === 3) {
-      const allLost = last3Trades.every(t => t.result !== undefined && t.result < 0);
-      if (allLost) {
-        setHFConfig(prev => ({ ...prev, autoExecute: false }));
-        toast({ title: '🛑 Kill Switch Ativado', description: '3 perdas consecutivas detectadas. Auto-execute pausado.', variant: 'destructive' });
-      }
-    }
-  }, [operationsLog, hfConfig.autoExecute, toast]);
+  }, [activeStrikeZone, championStrategy, positionSizing, user, activeSymbol, executeTrade, toast, riskManager, accountBalance.balance, marketRegime]);
 
   useEffect(() => {
     if (!hfConfig.autoExecute || !hfConfig.enabled || isExecuting) return;
-    if (ensembleSignal && ensembleSignal.direction !== 'NEUTRAL' && positionSizing && positionSizing.recommendedStake > 0) {
+    if (activeStrikeZone && activeStrikeZone.type !== 'NEUTRAL' && positionSizing && positionSizing.recommendedStake > 0) {
       handleExecuteStrike();
     }
-  }, [ensembleSignal, positionSizing, hfConfig.autoExecute, hfConfig.enabled, isExecuting, handleExecuteStrike]);
+  }, [activeStrikeZone, positionSizing, hfConfig.autoExecute, hfConfig.enabled, isExecuting, handleExecuteStrike]);
 
   const [isBacktesting, setIsBacktesting] = useState(false);
   const [backtestData, setBacktestData] = useState<CandleData[]>([]);
@@ -176,8 +153,8 @@ function PageContent() {
   }, [activeSymbol, getHistoricalData, toast, hfConfig]);
   
   const handleRunWalkForward = useCallback(async () => {
-    if (!activeSymbol) {
-        toast({ title: "Selecione um ativo", variant: 'destructive' });
+    if (!activeSymbol || !backtestData || backtestData.length < 1500) {
+        toast({ title: "Dados insuficientes", description: "Execute o Backtest Simples primeiro com um ativo que retorne pelo menos 1500 velas.", variant: 'destructive' });
         return;
     }
     setIsBacktesting(true);
@@ -185,13 +162,10 @@ function PageContent() {
     setWalkForwardResults(null);
     setMonteCarloResult(null);
     try {
-        toast({ title: "Iniciando Walk-Forward...", description: "Buscando 5000 velas e rodando 3 folds..." });
-        const historicalData = await getHistoricalData(activeSymbol, 'candles', 5000, '1m') as CandleData[];
-        if (historicalData.length < 1500) throw new Error("Dados históricos insuficientes para análise Walk-Forward.");
-        toast({ title: "Dados recebidos", description: `Analisando ${historicalData.length} velas...` });
+        toast({ title: "Iniciando Walk-Forward...", description: "Rodando 3 folds..." });
         await new Promise(resolve => setTimeout(resolve, 50));
-        const strategyToTest = 'STD_TREND_FOLLOW'; // Test a single robust strategy for this example
-        const results = runWalkForwardAnalysis(historicalData, hfConfig, strategyToTest, activeSymbol);
+        const strategyToTest = 'STD_TREND_FOLLOW'; 
+        const results = runWalkForwardAnalysis(backtestData, hfConfig, strategyToTest, activeSymbol);
         setWalkForwardResults(results);
         toast({ title: "Análise Walk-Forward Concluída!", description: "Resultados da robustez da estratégia estão disponíveis." });
     } catch (e: any) {
@@ -199,16 +173,11 @@ function PageContent() {
     } finally {
         setIsBacktesting(false);
     }
-  }, [activeSymbol, getHistoricalData, toast, hfConfig]);
+  }, [activeSymbol, backtestData, toast, hfConfig]);
   
   const handleRunMonteCarlo = useCallback(async () => {
-      if (!backtestResults) {
+      if (!backtestResults || !backtestData || backtestData.length === 0) {
           toast({ title: "Execute o Backtest Simples Primeiro", description: "A Simulação de Monte Carlo precisa dos resultados de um backtest base.", variant: 'destructive' });
-          return;
-      }
-      if (!backtestData || backtestData.length === 0) {
-          toast({ title: "Dados Históricos Não Encontrados", description: "Execute o Backtest Simples novamente para carregar os dados.", variant: 'destructive' });
-          setIsBacktesting(false); 
           return;
       }
       const bestStrategyKey = Object.entries(backtestResults).sort(([, a], [, b]) => (b.metrics?.sharpeRatio || 0) - (a.metrics?.sharpeRatio || 0))[0][0];
@@ -267,6 +236,8 @@ function PageContent() {
                 <CardContent><MarketChart activeSymbol={activeSymbol || ''} chartData={rawChartData} isChartLoading={isChartLoading} chartError={chartError} chartType={chartType} setChartType={setChartType} timePeriod={timePeriod} setTimePeriod={setTimePeriod} operations={operationsLog} indicators={fullIndicators} tradeAnnotations={tradeAnnotations} supplyDemandZones={supplyDemandZones}/></CardContent>
             </Card>
 
+            <HFExecutionLog operations={operationsLog} clearActiveContracts={clearActiveContracts} />
+            
             <Collapsible>
                 <CollapsibleTrigger asChild>
                    <Button variant="outline" className="w-full">
@@ -286,12 +257,10 @@ function PageContent() {
                     />
                 </CollapsibleContent>
               </Collapsible>
-            
-            <HFExecutionLog operations={operationsLog} clearActiveContracts={clearActiveContracts} />
         </div>
         <div className="space-y-6">
-          <EnsembleSignalCard signal={ensembleSignal} regime={marketRegime} onExecute={handleExecuteStrike} isExecuting={isExecuting} previousZones={previousZones}/>
-          <HFConfigPanel config={hfConfig} onConfigChange={updates => setHFConfig(prev => ({ ...prev, ...updates }))} disabled={isExecuting} strategy={'HF_MEAN_REVERSION'} />
+          <ChampionSignalCard champion={championStrategy} signal={activeStrikeZone} regime={marketRegime} onExecute={handleExecuteStrike} isExecuting={isExecuting}/>
+          {championStrategy && <HFConfigPanel config={hfConfig} onConfigChange={updates => setHFConfig(prev => ({ ...prev, ...updates }))} disabled={isExecuting} strategy={championStrategy.strategy} />}
         </div>
       </div>
     </div>
