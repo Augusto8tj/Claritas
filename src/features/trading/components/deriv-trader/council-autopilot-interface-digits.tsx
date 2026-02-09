@@ -165,9 +165,10 @@ export const DigitsAutopilotManager: React.FC<DigitsAutopilotManagerProps> = (pr
         <div className="space-y-2">
             <Label className="text-sm font-semibold text-muted-foreground">Estratégias de Azarão (Regressão à Média)</Label>
             <Tabs defaultValue="underdog" className="w-full">
-                <TabsList className="grid w-full grid-cols-3">
+                <TabsList className="grid w-full grid-cols-4">
                     <TabsTrigger value="underdog" className="text-xs sm:text-sm"><Trophy className="h-4 w-4 mr-1.5"/>Dígito</TabsTrigger>
-                    <TabsTrigger value="underdogOverUnder" className="text-xs sm:text-sm"><Trophy className="h-4 w-4 mr-1.5"/>Acima/Abaixo</TabsTrigger>
+                    <TabsTrigger value="underdogOverUnder" className="text-xs sm:text-sm"><Trophy className="h-4 w-4 mr-1.5"/>A/A Fixo</TabsTrigger>
+                    <TabsTrigger value="dynamicUnderdogOverUnder" className="text-xs sm:text-sm"><Trophy className="h-4 w-4 mr-1.5"/>A/A Dinâmico</TabsTrigger>
                     <TabsTrigger value="underdogEvenOdd" className="text-xs sm:text-sm"><Trophy className="h-4 w-4 mr-1.5"/>Par/Ímpar</TabsTrigger>
                 </TabsList>
                 <TabsContent value="underdog" className="pt-4">
@@ -208,9 +209,9 @@ export const DigitsAutopilotManager: React.FC<DigitsAutopilotManagerProps> = (pr
                     </div>
                 </TabsContent>
                 <TabsContent value="underdogOverUnder" className="pt-4">
-                    <PilotTabContent
+                     <PilotTabContent
                         pilotKey="underdogOverUnder"
-                        title="Piloto Azarão Acima/Abaixo"
+                        title="Piloto Azarão Acima/Abaixo (Fixo)"
                         description="Aposta no bloco (0-4 ou 5-9) que está estatisticamente 'atrasado'."
                         pilotState={pilots.underdogOverUnder}
                         toggleAutopilot={toggleAutopilot}
@@ -226,7 +227,30 @@ export const DigitsAutopilotManager: React.FC<DigitsAutopilotManagerProps> = (pr
                                 onValueChange={(value) => setOverUnderUnderdogThreshold(value[0])}
                                 disabled={isAnyPilotOn}
                             />
-                            <p className="text-xs text-muted-foreground">Operar em um bloco se a probabilidade dele cair abaixo deste valor.</p>
+                            <p className="text-xs text-muted-foreground">Ambos os pilotos A/A Azarão usarão este limiar para operar.</p>
+                        </div>
+                    </div>
+                </TabsContent>
+                 <TabsContent value="dynamicUnderdogOverUnder" className="pt-4">
+                     <PilotTabContent
+                        pilotKey="dynamicUnderdogOverUnder"
+                        title="Piloto Azarão Acima/Abaixo (Dinâmico)"
+                        description="Analisa a composição dos 5 dígitos menos prováveis para apostar no bloco oposto."
+                        pilotState={pilots.dynamicUnderdogOverUnder}
+                        toggleAutopilot={toggleAutopilot}
+                    />
+                    <div className="space-y-4 pt-4 mt-4 border-t">
+                        <h4 className="text-xs font-semibold text-muted-foreground">Configuração Fina (Azarão A/A)</h4>
+                        <div className="space-y-2">
+                            <Label htmlFor="underdog-ou-threshold">Limiar de Frequência de Bloco ({overUnderUnderdogThreshold.toFixed(1)}%)</Label>
+                            <Slider
+                                id="underdog-ou-threshold"
+                                min={30} max={48} step={1}
+                                value={[overUnderUnderdogThreshold]}
+                                onValueChange={(value) => setOverUnderUnderdogThreshold(value[0])}
+                                disabled={isAnyPilotOn}
+                            />
+                            <p className="text-xs text-muted-foreground">Ambos os pilotos A/A Azarão usarão este limiar para operar.</p>
                         </div>
                     </div>
                 </TabsContent>

@@ -15,7 +15,7 @@ export type DigitStats = {
     probability: number;
 };
 
-export type PilotType = 'matchesDiffers' | 'overUnder' | 'evenOdd' | 'underdog' | 'underdogOverUnder' | 'underdogEvenOdd';
+export type PilotType = 'matchesDiffers' | 'overUnder' | 'evenOdd' | 'underdog' | 'underdogOverUnder' | 'dynamicUnderdogOverUnder' | 'underdogEvenOdd';
 
 type CouncilStrategy = {
   id: string;
@@ -76,7 +76,8 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
     overUnder: { isOn: false, status: 'PAUSED', consecutiveLosses: 0, currentTarget: 'Acima de 4', lastStake: BASE_STAKE },
     evenOdd: { isOn: false, status: 'PAUSED', consecutiveLosses: 0, currentTarget: 'Par', lastStake: BASE_STAKE },
     underdog: { isOn: false, status: 'PAUSED', consecutiveLosses: 0, currentTarget: undefined, lastStake: BASE_STAKE },
-    underdogOverUnder: { isOn: false, status: 'PAUSED', consecutiveLosses: 0, currentTarget: 'Bloco Azarão', lastStake: BASE_STAKE },
+    underdogOverUnder: { isOn: false, status: 'PAUSED', consecutiveLosses: 0, currentTarget: 'Bloco Azarão Fixo', lastStake: BASE_STAKE },
+    dynamicUnderdogOverUnder: { isOn: false, status: 'PAUSED', consecutiveLosses: 0, currentTarget: 'Bloco Azarão Dinâmico', lastStake: BASE_STAKE },
     underdogEvenOdd: { isOn: false, status: 'PAUSED', consecutiveLosses: 0, currentTarget: 'Bloco Par/Ímpar Azarão', lastStake: BASE_STAKE },
   };
 
@@ -89,6 +90,7 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
     evenOdd: null,
     underdog: null,
     underdogOverUnder: null,
+    dynamicUnderdogOverUnder: null,
     underdogEvenOdd: null,
   });
   
@@ -228,6 +230,7 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
             underdog: { ...prev.underdog, currentTarget: isUnderdogInverse ? `Difere de ${leastProbable?.digit}` : `Combina com ${leastProbable?.digit}` },
             overUnder: { ...prev.overUnder, currentTarget: probOver4 > probUnder5 ? 'Acima de 4' : 'Abaixo de 5'},
             underdogOverUnder: { ...prev.underdogOverUnder, currentTarget: 'Aguardando Bloco Azarão' },
+            dynamicUnderdogOverUnder: { ...prev.dynamicUnderdogOverUnder, currentTarget: 'Aguardando Bloco Dinâmico' },
             underdogEvenOdd: { ...prev.underdogEvenOdd, currentTarget: probEven < probOdd ? 'Par (Azarão)' : 'Ímpar (Azarão)'},
         }));
 
@@ -290,6 +293,14 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
                     predictionDigit = leastProbable.digit;
                 }
             } else if (pilotKey === 'underdogOverUnder') {
+                if (probOver4 < overUnderUnderdogThreshold) {
+                    signalType = 'DIGITOVER';
+                    predictionDigit = 4;
+                } else if (probUnder5 < overUnderUnderdogThreshold) {
+                    signalType = 'DIGITUNDER';
+                    predictionDigit = 5;
+                }
+            } else if (pilotKey === 'dynamicUnderdogOverUnder') {
                 const underdogStats = sortedByProb.slice(-5);
                 const leastProbableDigits = underdogStats.map(s => s.digit);
                 const totalProbOfUnderdogs = underdogStats.reduce((sum, s) => sum + s.probability, 0);
@@ -301,18 +312,19 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
                     if (lowNumbersInUnderdogGroup >= 4) {
                         signalType = 'DIGITOVER';
                         predictionDigit = 4;
-                        setPilots(prev => ({...prev, underdogOverUnder: {...prev.underdogOverUnder, currentTarget: 'OVER 4 (Underdogs são Baixos)'}}));
+                        setPilots(prev => ({...prev, dynamicUnderdogOverUnder: {...prev.dynamicUnderdogOverUnder, currentTarget: 'OVER 4 (Azarões são Baixos)'}}));
                     } else if (highNumbersInUnderdogGroup >= 4) {
                         signalType = 'DIGITUNDER';
                         predictionDigit = 5;
-                        setPilots(prev => ({...prev, underdogOverUnder: {...prev.underdogOverUnder, currentTarget: 'UNDER 5 (Underdogs são Altos)'}}));
+                        setPilots(prev => ({...prev, dynamicUnderdogOverUnder: {...prev.dynamicUnderdogOverUnder, currentTarget: 'UNDER 5 (Azarões são Altos)'}}));
                     } else {
-                        setPilots(prev => ({...prev, underdogOverUnder: {...prev.underdogOverUnder, currentTarget: 'Blocos Azarão Equilibrados'}}));
+                        setPilots(prev => ({...prev, dynamicUnderdogOverUnder: {...prev.dynamicUnderdogOverUnder, currentTarget: 'Blocos Azarão Equilibrados'}}));
                     }
                 } else {
-                    setPilots(prev => ({...prev, underdogOverUnder: {...prev.underdogOverUnder, currentTarget: `Aguardando Prob. Bloco < ${overUnderUnderdogThreshold.toFixed(1)}%`}}));
+                    setPilots(prev => ({...prev, dynamicUnderdogOverUnder: {...prev.dynamicUnderdogOverUnder, currentTarget: `Aguardando Prob. < ${overUnderUnderdogThreshold.toFixed(1)}%`}}));
                 }
-            } else if (pilotKey === 'underdogEvenOdd') {
+            }
+            else if (pilotKey === 'underdogEvenOdd') {
                 if (probEven < evenOddUnderdogThreshold) {
                     signalType = 'DIGITEVEN';
                 } else if (probOdd < evenOddUnderdogThreshold) {
