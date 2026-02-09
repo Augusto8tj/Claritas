@@ -123,127 +123,138 @@ export const DigitsAutopilotManager: React.FC<DigitsAutopilotManagerProps> = (pr
           Controle os especialistas que operam com base na frequência estatística de cada tipo de contrato.
         </CardDescription>
       </CardHeader>
-      <CardContent className="space-y-4">
-        <Tabs defaultValue="matchesDiffers" className="w-full">
-            <TabsList className="grid w-full grid-cols-6">
-                <TabsTrigger value="matchesDiffers" className="text-xs sm:text-sm"><HelpCircle className="h-4 w-4 mr-1.5"/>Difere</TabsTrigger>
-                <TabsTrigger value="overUnder" className="text-xs sm:text-sm"><TrendingUp className="h-4 w-4 mr-1.5"/>Acima/Abaixo</TabsTrigger>
-                <TabsTrigger value="evenOdd" className="text-xs sm:text-sm"><Binary className="h-4 w-4 mr-1.5"/>Par/Ímpar</TabsTrigger>
-                <TabsTrigger value="underdog" className="text-xs sm:text-sm"><Trophy className="h-4 w-4 mr-1.5"/>Azarão</TabsTrigger>
-                <TabsTrigger value="underdogOverUnder" className="text-xs sm:text-sm"><Trophy className="h-4 w-4 mr-1.5"/>Azarão A/A</TabsTrigger>
-                <TabsTrigger value="underdogEvenOdd" className="text-xs sm:text-sm"><Trophy className="h-4 w-4 mr-1.5"/>Azarão P/I</TabsTrigger>
-            </TabsList>
-            <TabsContent value="matchesDiffers" className="pt-4">
-                <PilotTabContent
-                    pilotKey="matchesDiffers"
-                    title="Piloto Contra-Tendência"
-                    description="Opera 'Difere' no dígito mais frequente, apostando na regressão à média."
-                    pilotState={pilots.matchesDiffers}
-                    toggleAutopilot={toggleAutopilot}
-                />
-            </TabsContent>
-            <TabsContent value="overUnder" className="pt-4">
-                <PilotTabContent
-                    pilotKey="overUnder"
-                    title="Piloto Acima/Abaixo (Padrão)"
-                    description="Analisa a probabilidade de o dígito final ser maior ou menor que uma barreira."
-                    pilotState={pilots.overUnder}
-                    toggleAutopilot={toggleAutopilot}
-                />
-            </TabsContent>
-            <TabsContent value="evenOdd" className="pt-4">
-                 <PilotTabContent
-                    pilotKey="evenOdd"
-                    title="Piloto Par/Ímpar"
-                    description="Opera na probabilidade do dígito final ser par ou ímpar."
-                    pilotState={pilots.evenOdd}
-                    toggleAutopilot={toggleAutopilot}
-                />
-            </TabsContent>
-            <TabsContent value="underdog" className="pt-4">
-                <PilotTabContent
-                    pilotKey="underdog"
-                    title="Piloto Caçador de Azarão"
-                    description="Aposta 'Combina' no dígito menos frequente, explorando a regressão à média."
-                    pilotState={pilots.underdog}
-                    toggleAutopilot={toggleAutopilot}
-                />
-                <div className="space-y-4 pt-4 mt-4 border-t">
-                    <h4 className="text-xs font-semibold text-muted-foreground">Configuração Fina (Azarão)</h4>
-                    <div className="space-y-2">
-                        <Label htmlFor="underdog-threshold">Limiar de Frequência de Disparo ({underdogThreshold.toFixed(1)}%)</Label>
-                        <Slider
-                            id="underdog-threshold"
-                            min={1.0} max={10.0} step={0.5}
-                            value={[underdogThreshold]}
-                            onValueChange={(value) => setUnderdogThreshold(value[0])}
-                            disabled={isAnyPilotOn}
-                        />
-                        <p className="text-xs text-muted-foreground">Operar 'Combina' se a frequência de um dígito cair abaixo deste valor.</p>
+      <CardContent className="space-y-6">
+        <div className="space-y-2">
+            <Label className="text-sm font-semibold text-muted-foreground">Estratégias Padrão</Label>
+            <Tabs defaultValue="matchesDiffers" className="w-full">
+                <TabsList className="grid w-full grid-cols-3">
+                    <TabsTrigger value="matchesDiffers" className="text-xs sm:text-sm"><HelpCircle className="h-4 w-4 mr-1.5"/>Difere</TabsTrigger>
+                    <TabsTrigger value="overUnder" className="text-xs sm:text-sm"><TrendingUp className="h-4 w-4 mr-1.5"/>Acima/Abaixo</TabsTrigger>
+                    <TabsTrigger value="evenOdd" className="text-xs sm:text-sm"><Binary className="h-4 w-4 mr-1.5"/>Par/Ímpar</TabsTrigger>
+                </TabsList>
+                <TabsContent value="matchesDiffers" className="pt-4">
+                    <PilotTabContent
+                        pilotKey="matchesDiffers"
+                        title="Piloto Contra-Tendência"
+                        description="Opera 'Difere' no dígito mais frequente, apostando na regressão à média."
+                        pilotState={pilots.matchesDiffers}
+                        toggleAutopilot={toggleAutopilot}
+                    />
+                </TabsContent>
+                <TabsContent value="overUnder" className="pt-4">
+                    <PilotTabContent
+                        pilotKey="overUnder"
+                        title="Piloto Acima/Abaixo (Padrão)"
+                        description="Analisa a probabilidade de o dígito final ser maior ou menor que uma barreira."
+                        pilotState={pilots.overUnder}
+                        toggleAutopilot={toggleAutopilot}
+                    />
+                </TabsContent>
+                <TabsContent value="evenOdd" className="pt-4">
+                    <PilotTabContent
+                        pilotKey="evenOdd"
+                        title="Piloto Par/Ímpar"
+                        description="Opera na probabilidade do dígito final ser par ou ímpar."
+                        pilotState={pilots.evenOdd}
+                        toggleAutopilot={toggleAutopilot}
+                    />
+                </TabsContent>
+            </Tabs>
+        </div>
+
+        <div className="space-y-2">
+            <Label className="text-sm font-semibold text-muted-foreground">Estratégias de Azarão (Regressão à Média)</Label>
+            <Tabs defaultValue="underdog" className="w-full">
+                <TabsList className="grid w-full grid-cols-3">
+                    <TabsTrigger value="underdog" className="text-xs sm:text-sm"><Trophy className="h-4 w-4 mr-1.5"/>Dígito</TabsTrigger>
+                    <TabsTrigger value="underdogOverUnder" className="text-xs sm:text-sm"><Trophy className="h-4 w-4 mr-1.5"/>Acima/Abaixo</TabsTrigger>
+                    <TabsTrigger value="underdogEvenOdd" className="text-xs sm:text-sm"><Trophy className="h-4 w-4 mr-1.5"/>Par/Ímpar</TabsTrigger>
+                </TabsList>
+                <TabsContent value="underdog" className="pt-4">
+                    <PilotTabContent
+                        pilotKey="underdog"
+                        title="Piloto Caçador de Azarão"
+                        description="Aposta 'Combina' no dígito menos frequente, explorando a regressão à média."
+                        pilotState={pilots.underdog}
+                        toggleAutopilot={toggleAutopilot}
+                    />
+                    <div className="space-y-4 pt-4 mt-4 border-t">
+                        <h4 className="text-xs font-semibold text-muted-foreground">Configuração Fina (Azarão)</h4>
+                        <div className="space-y-2">
+                            <Label htmlFor="underdog-threshold">Limiar de Frequência de Disparo ({underdogThreshold.toFixed(1)}%)</Label>
+                            <Slider
+                                id="underdog-threshold"
+                                min={1.0} max={10.0} step={0.5}
+                                value={[underdogThreshold]}
+                                onValueChange={(value) => setUnderdogThreshold(value[0])}
+                                disabled={isAnyPilotOn}
+                            />
+                            <p className="text-xs text-muted-foreground">Operar 'Combina' se a frequência de um dígito cair abaixo deste valor.</p>
+                        </div>
+                        <div className="flex items-center justify-between rounded-lg border p-3">
+                            <Label htmlFor="underdog-inverse-switch" className="flex flex-col space-y-1">
+                                <span>Inverter Lógica</span>
+                                <span className="font-normal text-xs text-muted-foreground">
+                                    Apostar 'Difere' no dígito menos frequente (alto risco).
+                                </span>
+                            </Label>
+                            <Switch
+                                id="underdog-inverse-switch"
+                                checked={isUnderdogInverse}
+                                onCheckedChange={setIsUnderdogInverse}
+                                disabled={isAnyPilotOn}
+                            />
+                        </div>
                     </div>
-                    <div className="flex items-center justify-between rounded-lg border p-3">
-                        <Label htmlFor="underdog-inverse-switch" className="flex flex-col space-y-1">
-                            <span>Inverter Lógica</span>
-                            <span className="font-normal text-xs text-muted-foreground">
-                                Apostar 'Difere' no dígito menos frequente (alto risco).
-                            </span>
-                        </Label>
-                        <Switch
-                            id="underdog-inverse-switch"
-                            checked={isUnderdogInverse}
-                            onCheckedChange={setIsUnderdogInverse}
-                            disabled={isAnyPilotOn}
-                        />
+                </TabsContent>
+                <TabsContent value="underdogOverUnder" className="pt-4">
+                    <PilotTabContent
+                        pilotKey="underdogOverUnder"
+                        title="Piloto Azarão Acima/Abaixo"
+                        description="Aposta no bloco (0-4 ou 5-9) que está estatisticamente 'atrasado'."
+                        pilotState={pilots.underdogOverUnder}
+                        toggleAutopilot={toggleAutopilot}
+                    />
+                    <div className="space-y-4 pt-4 mt-4 border-t">
+                        <h4 className="text-xs font-semibold text-muted-foreground">Configuração Fina (Azarão A/A)</h4>
+                        <div className="space-y-2">
+                            <Label htmlFor="underdog-ou-threshold">Limiar de Frequência de Bloco ({overUnderUnderdogThreshold.toFixed(1)}%)</Label>
+                            <Slider
+                                id="underdog-ou-threshold"
+                                min={30} max={48} step={1}
+                                value={[overUnderUnderdogThreshold]}
+                                onValueChange={(value) => setOverUnderUnderdogThreshold(value[0])}
+                                disabled={isAnyPilotOn}
+                            />
+                            <p className="text-xs text-muted-foreground">Operar em um bloco se a probabilidade dele cair abaixo deste valor.</p>
+                        </div>
                     </div>
-                </div>
-            </TabsContent>
-             <TabsContent value="underdogOverUnder" className="pt-4">
-                <PilotTabContent
-                    pilotKey="underdogOverUnder"
-                    title="Piloto Azarão Acima/Abaixo"
-                    description="Aposta no bloco (0-4 ou 5-9) que está estatisticamente 'atrasado'."
-                    pilotState={pilots.underdogOverUnder}
-                    toggleAutopilot={toggleAutopilot}
-                />
-                 <div className="space-y-4 pt-4 mt-4 border-t">
-                    <h4 className="text-xs font-semibold text-muted-foreground">Configuração Fina (Azarão A/A)</h4>
-                    <div className="space-y-2">
-                        <Label htmlFor="underdog-ou-threshold">Limiar de Frequência de Bloco ({overUnderUnderdogThreshold.toFixed(1)}%)</Label>
-                        <Slider
-                            id="underdog-ou-threshold"
-                            min={30} max={48} step={1}
-                            value={[overUnderUnderdogThreshold]}
-                            onValueChange={(value) => setOverUnderUnderdogThreshold(value[0])}
-                            disabled={isAnyPilotOn}
-                        />
-                        <p className="text-xs text-muted-foreground">Operar em um bloco se a probabilidade dele cair abaixo deste valor.</p>
+                </TabsContent>
+                <TabsContent value="underdogEvenOdd" className="pt-4">
+                    <PilotTabContent
+                        pilotKey="underdogEvenOdd"
+                        title="Piloto Azarão Par/Ímpar"
+                        description="Aposta no bloco (Par ou Ímpar) que está estatisticamente 'atrasado'."
+                        pilotState={pilots.underdogEvenOdd}
+                        toggleAutopilot={toggleAutopilot}
+                    />
+                    <div className="space-y-4 pt-4 mt-4 border-t">
+                        <h4 className="text-xs font-semibold text-muted-foreground">Configuração Fina (Azarão P/I)</h4>
+                        <div className="space-y-2">
+                            <Label htmlFor="underdog-eo-threshold">Limiar de Frequência de Bloco ({evenOddUnderdogThreshold.toFixed(1)}%)</Label>
+                            <Slider
+                                id="underdog-eo-threshold"
+                                min={30} max={48} step={1}
+                                value={[evenOddUnderdogThreshold]}
+                                onValueChange={(value) => setEvenOddUnderdogThreshold(value[0])}
+                                disabled={isAnyPilotOn}
+                            />
+                            <p className="text-xs text-muted-foreground">Operar em um bloco se a probabilidade dele cair abaixo deste valor.</p>
+                        </div>
                     </div>
-                </div>
-            </TabsContent>
-             <TabsContent value="underdogEvenOdd" className="pt-4">
-                <PilotTabContent
-                    pilotKey="underdogEvenOdd"
-                    title="Piloto Azarão Par/Ímpar"
-                    description="Aposta no bloco (Par ou Ímpar) que está estatisticamente 'atrasado'."
-                    pilotState={pilots.underdogEvenOdd}
-                    toggleAutopilot={toggleAutopilot}
-                />
-                 <div className="space-y-4 pt-4 mt-4 border-t">
-                    <h4 className="text-xs font-semibold text-muted-foreground">Configuração Fina (Azarão P/I)</h4>
-                    <div className="space-y-2">
-                        <Label htmlFor="underdog-eo-threshold">Limiar de Frequência de Bloco ({evenOddUnderdogThreshold.toFixed(1)}%)</Label>
-                        <Slider
-                            id="underdog-eo-threshold"
-                            min={30} max={48} step={1}
-                            value={[evenOddUnderdogThreshold]}
-                            onValueChange={(value) => setEvenOddUnderdogThreshold(value[0])}
-                            disabled={isAnyPilotOn}
-                        />
-                        <p className="text-xs text-muted-foreground">Operar em um bloco se a probabilidade dele cair abaixo deste valor.</p>
-                    </div>
-                </div>
-            </TabsContent>
-        </Tabs>
+                </TabsContent>
+            </Tabs>
+        </div>
         
         <Separator />
 
