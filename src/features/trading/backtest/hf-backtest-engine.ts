@@ -191,7 +191,10 @@ function calculateInstitutionalMetrics(trades: TradeResult[], historicalData: Ca
     equityCurve.forEach(equity => {
         if (equity > peak) { peak = equity; currentDDDuration = 0; }
         else { currentDDDuration++; const drawdown = ((peak - equity) / peak) * 100;
-            if (drawdown > maxDD) { maxDD = drawdown; maxDDDuration = currentDDDuration; }
+            if (drawdown > maxDD) { 
+                maxDD = drawdown; 
+                maxDDDuration = currentDDDuration;
+            }
         }
     });
     
@@ -217,7 +220,8 @@ function calculateInstitutionalMetrics(trades: TradeResult[], historicalData: Ca
     
     return {
         sharpeRatio: parseFloat(sharpeRatio.toFixed(2)), sortinoRatio: parseFloat(sortinoRatio.toFixed(2)), calmarRatio: 0,
-        maxDrawdown: parseFloat(maxDD.toFixed(2)), maxDrawdownDuration, volatility: parseFloat((stdDev * 100).toFixed(2)),
+        maxDrawdown: parseFloat(maxDD.toFixed(2)), maxDrawdownDuration: maxDDDuration,
+        volatility: parseFloat((stdDev * 100).toFixed(2)),
         profitFactor: parseFloat(profitFactor.toFixed(2)), expectancy: parseFloat(expectancy.toFixed(2)),
         avgWin: parseFloat(avgWin.toFixed(2)), avgLoss: parseFloat(avgLoss.toFixed(2)),
         largestWin: Math.max(...wins.map(t => t.pnl), 0), largestLoss: Math.min(...losses.map(t => t.pnl), 0),
