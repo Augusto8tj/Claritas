@@ -209,11 +209,7 @@ function PageContent() {
                 <CardContent><MarketChart activeSymbol={activeSymbol || ''} chartData={rawChartData} isChartLoading={isChartLoading} chartError={chartError} chartType={chartType} setChartType={setChartType} timePeriod={timePeriod} setTimePeriod={setTimePeriod} operations={operationsLog} indicators={fullIndicators} tradeAnnotations={tradeAnnotations} supplyDemandZones={supplyDemandZones}/></CardContent>
             </Card>
             <HFExecutionLog operations={operationsLog} clearActiveContracts={clearActiveContracts} />
-        </div>
-        <div className="space-y-6">
-          <EnsembleSignalCard signal={ensembleSignal} regime={marketRegime} onExecute={handleExecuteStrike} isExecuting={isExecuting} />
-          <HFConfigPanel config={hfConfig} onConfigChange={updates => setHFConfig(prev => ({ ...prev, ...updates }))} disabled={isExecuting} strategy={'HF_MEAN_REVERSION'} />
-           <Collapsible>
+            <Collapsible>
                 <CollapsibleTrigger asChild>
                     <Button variant="outline" className="w-full">
                         <TestTube className="mr-2 h-4 w-4" />
@@ -230,6 +226,10 @@ function PageContent() {
                     />
                 </CollapsibleContent>
             </Collapsible>
+        </div>
+        <div className="space-y-6">
+          <EnsembleSignalCard signal={ensembleSignal} regime={marketRegime} onExecute={handleExecuteStrike} isExecuting={isExecuting} />
+          <HFConfigPanel config={hfConfig} onConfigChange={updates => setHFConfig(prev => ({ ...prev, ...updates }))} disabled={isExecuting} strategy={'HF_MEAN_REVERSION'} />
         </div>
       </div>
     </div>
