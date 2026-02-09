@@ -1,25 +1,54 @@
 // src/features/trading/components/hf-trader/strike-zone-card.tsx
 'use client';
 
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
-import { Target, TrendingUp, TrendingDown, Activity, CheckCheck, Zap, ShieldAlert } from 'lucide-react';
+import { Target, TrendingUp, TrendingDown, Activity, CheckCheck, Zap, ShieldAlert, Clock } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { StrategyType } from '@/features/trading/services/hf-strike-logic';
 import type { StrikeZone } from '@/features/trading/hooks/use-hf-strike-zone';
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
+import { ScrollArea } from '@/components/ui/scroll-area';
+
 
 interface StrikeZoneCardProps {
   zone: StrikeZone | null;
+  previousZones: StrikeZone[];
   strategy: StrategyType;
   onExecute?: () => void;
   isExecuting?: boolean;
 }
 
-export function StrikeZoneCard({ zone, strategy, onExecute, isExecuting = false }: StrikeZoneCardProps) {
+export function StrikeZoneCard({ zone, previousZones, strategy, onExecute, isExecuting = false }: StrikeZoneCardProps) {
+  const [timeLeft, setTimeLeft] = useState<number | null>(null);
+  
+  useEffect(() => {
+    if (!zone || zone.type === 'NEUTRAL') {
+      setTimeLeft(null);
+      return;
+    }
+    
+    const expiryTime = zone.entry.timestamp + (zone.duration * 1000);
+    
+    const updateTimer = () => {
+      const now = Date.now();
+      const remaining = Math.max(0, Math.floor((expiryTime - now) / 1000));
+      setTimeLeft(remaining);
+      
+      if (remaining === 0) {
+        clearInterval(interval);
+      }
+    };
+    
+    updateTimer();
+    const interval = setInterval(updateTimer, 1000);
+    
+    return () => clearInterval(interval);
+  }, [zone]);
   
   const getDurationDisplay = () => {
     if (!zone) return '';
@@ -77,11 +106,26 @@ export function StrikeZoneCard({ zone, strategy, onExecute, isExecuting = false 
             <Target className={cn('h-5 w-5', isLong ? 'text-green-600' : 'text-red-600')} />
             ⚡ Strike Zone Ativa!
           </span>
-          <Badge
-            className={cn('font-bold text-white', isLong ? 'bg-green-600' : 'bg-red-600')}
-          >
-            {zone.confidence.toFixed(0)}% Confiança
-          </Badge>
+          <div className="flex items-center gap-3">
+            {timeLeft !== null && (
+              <div className="flex items-center gap-2 bg-white px-3 py-1 rounded-full border-2 border-amber-500">
+                <Clock className="h-4 w-4 text-amber-600" />
+                <span className={cn(
+                  "font-mono font-bold text-lg",
+                  timeLeft < 10 && "text-red-600 animate-pulse",
+                  timeLeft >= 10 && timeLeft < 30 && "text-amber-600",
+                  timeLeft >= 30 && "text-green-600"
+                )}>
+                  {timeLeft}s
+                </span>
+              </div>
+            )}
+            <Badge
+              className={cn('font-bold text-white', isLong ? 'bg-green-600' : 'bg-red-600')}
+            >
+              {zone.confidence.toFixed(0)}% Confiança
+            </Badge>
+          </div>
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -176,6 +220,37 @@ export function StrikeZoneCard({ zone, strategy, onExecute, isExecuting = false 
             )}
           </Button>
         )}
+        {previousZones.length > 0 && (
+            <Accordion type="single" collapsible className="mt-4">
+              <AccordionItem value="history">
+                <AccordionTrigger className="text-sm text-muted-foreground">
+                  📜 Últimas 5 Zonas Detectadas
+                </AccordionTrigger>
+                <AccordionContent>
+                  <ScrollArea className="h-[200px]">
+                    {previousZones.slice(0, 5).map((pZone, idx) => (
+                      <div key={idx} className="border-b last:border-0 py-2">
+                        <div className="flex justify-between items-center">
+                          <div>
+                            <Badge variant={pZone.type === 'LONG_ENTRY' ? 'default' : 'destructive'} className="text-xs">
+                              {pZone.type === 'LONG_ENTRY' ? '📈 LONG' : '📉 SHORT'}
+                            </Badge>
+                            <span className="text-xs ml-2">{pZone.confidence.toFixed(0)}% conf</span>
+                          </div>
+                          <span className="text-xs text-muted-foreground">
+                            {new Date(pZone.entry.timestamp).toLocaleTimeString()}
+                          </span>
+                        </div>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          ${pZone.entry.price.toFixed(5)} → ${pZone.targets.takeProfit.toFixed(5)}
+                        </p>
+                      </div>
+                    ))}
+                  </ScrollArea>
+                </AccordionContent>
+              </AccordionItem>
+            </Accordion>
+          )}
       </CardContent>
     </Card>
   );

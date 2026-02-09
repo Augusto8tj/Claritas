@@ -1,3 +1,4 @@
+// src/app/hf-strike-zone/page.tsx
 'use client';
 
 import React, { useState, useMemo, useCallback, useEffect } from 'react';
@@ -9,7 +10,7 @@ import { DerivApiProviderV2 as DerivApiProvider, useDerivApiV2 as useDerivApi } 
 import { AssetSelectorV2 as AssetSelector } from '@/features/trading/components/deriv-trader/asset-selector-v2';
 import { ApiStatusIndicatorV2 as ApiStatusIndicator } from '@/features/trading/components/deriv-trader/ApiStatusIndicatorV2';
 import { MarketChart } from '@/features/trading/components/deriv-trader/market-chart';
-import { useHFStrikeZone } from '@/features/trading/hooks/use-hf-strike-zone';
+import { useHFStrikeZone, type StrikeZone } from '@/features/trading/hooks/use-hf-strike-zone';
 import { HFExecutionLog } from '@/features/trading/components/hf-trader/hf-execution-log';
 import { HFConfig, HFConfigPanel } from '@/features/trading/components/hf-trader/hf-config-panel';
 import { saveHFTradeLog } from '@/services/hf-data-service';
@@ -19,7 +20,7 @@ import type { Operation, CandleData, TimePeriod } from '@/lib/types';
 import { InstitutionalMetricsDashboard } from '@/features/trading/components/hf-trader/institutional-metrics-dashboard';
 import { EnsembleSignalCard } from '@/features/trading/components/hf-trader/ensemble-signal-card';
 import { Skeleton } from '@/components/ui/skeleton';
-import { runAllStrategiesBacktest, BacktestResult } from '@/features/trading/backtest/hf-backtest-engine';
+import { runAllStrategiesBacktest, runWalkForwardAnalysis, runMonteCarloSimulation, type InstitutionalBacktestResult, type WalkForwardResult, type MonteCarloResult } from '@/features/trading/backtest/hf-backtest-engine';
 import { StrategyType } from '@/features/trading/services/hf-strike-logic';
 import { Button } from '@/components/ui/button';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
@@ -40,11 +41,18 @@ function PageContent() {
     enabled: true, minConfidence: 70, autoExecute: false, maxConcurrentTrades: 1, preferredDuration: 20
   });
   const [isExecuting, setIsExecuting] = useState(false);
+  const [previousZones, setPreviousZones] = useState<StrikeZone[]>([]);
 
   const {
     ensembleSignal, marketRegime, positionSizing, riskManager,
     fullIndicators, supplyDemandZones, stats
   } = useHFStrikeZone(priceTicks, botCandleData, timePeriod, hfConfig.enabled, 'HF_MEAN_REVERSION'); 
+
+  useEffect(() => {
+    if (ensembleSignal && ensembleSignal.direction !== 'NEUTRAL') {
+      setPreviousZones(prev => [ensembleSignal as unknown as StrikeZone, ...prev].slice(0, 10));
+    }
+  }, [ensembleSignal]);
 
   const dailyPnL = useMemo(() => {
      return operationsLog.filter(op => op.initiator === 'HF_Strike' && op.status !== 'pending').reduce((sum, op) => sum + (op.result || 0), 0);
@@ -126,7 +134,7 @@ function PageContent() {
   }, [ensembleSignal, positionSizing, hfConfig.autoExecute, hfConfig.enabled, isExecuting, handleExecuteStrike]);
 
   const [isBacktesting, setIsBacktesting] = useState(false);
-  const [backtestResults, setBacktestResults] = useState<Record<StrategyType, BacktestResult> | null>(null);
+  const [backtestResults, setBacktestResults] = useState<Record<string, InstitutionalBacktestResult> | null>(null);
 
   const handleRunBacktest = useCallback(async () => {
     if (!activeSymbol) {
@@ -148,7 +156,7 @@ function PageContent() {
         
         await new Promise(resolve => setTimeout(resolve, 50)); 
         
-        const results = runAllStrategiesBacktest(historicalData, hfConfig);
+        const results = runAllStrategiesBacktest(historicalData, hfConfig, activeSymbol);
         setBacktestResults(results);
         
         toast({ title: "Backtest Concluído!", description: "Resultados da simulação estão disponíveis." });

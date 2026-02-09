@@ -11,11 +11,12 @@ import {
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import type { Operation } from "@/lib/types";
-import { Archive, ArrowDown, ArrowUp, Trash2 } from "lucide-react";
-import { useMemo } from "react";
+import { Archive, ArrowDown, ArrowUp, Trash2, Download } from "lucide-react";
+import { useMemo, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { StrategyType } from '@/features/trading/services/hf-strike-logic';
+import { StrategyType, strategyMetadata } from '@/features/trading/services/hf-strike-logic';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 interface HFExecutionLogProps {
   operations: Operation[];
@@ -31,32 +32,55 @@ const formatTime = (isoString: string | undefined): string => {
     }
 };
 
-const strategyMetadata: Record<string, { label: string; description: string; isHF: boolean; }> = {
-  HF_MEAN_REVERSION: { label: 'Reversão à Média', description: 'Otimizado para reversão à média em 15-45s.', isHF: true },
-  STD_TREND_FOLLOW: { label: 'Seguidor de Tendência', description: 'Segue tendências em velas de 15m.', isHF: false },
-  BOLLINGER_SQUEEZE: { label: 'Breakout', description: 'Opera na explosão de volatilidade.', isHF: true },
-  VOLUME_ABSORPTION: { label: 'Absorção de Volume', description: 'Analisa o clímax e absorção de volume.', isHF: false },
-  MICROSTRUCTURE_SCALP: { label: 'Scalping', description: 'Opera o fluxo de ordens para trades de 5 ticks.', isHF: true },
-};
-
 export function HFExecutionLog({ operations, clearActiveContracts }: HFExecutionLogProps) {
+    const [strategyFilter, setStrategyFilter] = useState<StrategyType | 'all'>('all');
+    const [statusFilter, setStatusFilter] = useState<'all' | 'won' | 'lost' | 'pending'>('all');
+
     const hfOperations = useMemo(
         () => operations.filter(op => op.initiator === 'HF_Strike').sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()),
         [operations]
     );
 
+    const filteredOps = useMemo(() => {
+        return hfOperations.filter(op => {
+            if (strategyFilter !== 'all' && op.strategy !== strategyFilter) return false;
+            if (statusFilter !== 'all' && op.status !== statusFilter) return false;
+            return true;
+        });
+    }, [hfOperations, strategyFilter, statusFilter]);
+
     const summary = useMemo(() => {
-        const finishedTrades = hfOperations.filter(op => op.status !== 'pending');
+        const finishedTrades = filteredOps.filter(op => op.status !== 'pending');
         const wins = finishedTrades.filter(op => op.status === 'won').length;
-        const losses = finishedTrades.filter(op => op.status === 'lost').length;
-        const total = wins + losses;
-        const winRate = total > 0 ? (wins / total) * 100 : 0;
         const pnl = finishedTrades.reduce((sum, op) => {
             if (op.status === 'lost') return sum - op.stake;
             return sum + (op.result || 0);
         }, 0);
-        return { wins, losses, total, winRate, pnl };
-    }, [hfOperations]);
+        return { pnl };
+    }, [filteredOps]);
+
+    const exportToCSV = () => {
+        const headers = ['Timestamp', 'Asset', 'Strategy', 'Direction', 'Stake', 'Duration', 'Result', 'Status'];
+        const rows = filteredOps.map(op => [
+            new Date(op.timestamp).toISOString(),
+            op.asset,
+            op.strategy || 'N/A',
+            op.direction,
+            op.stake,
+            `${op.duration}${op.durationUnit}`,
+            op.result || 0,
+            op.status
+        ]);
+        
+        const csv = [headers, ...rows].map(row => row.join(',')).join('\n');
+        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `hf-execution-log-${Date.now()}.csv`;
+        a.click();
+        URL.revokeObjectURL(url);
+    };
     
     return (
         <Card>
@@ -73,7 +97,7 @@ export function HFExecutionLog({ operations, clearActiveContracts }: HFExecution
                     </div>
                     <div className="flex items-center gap-2">
                         <div className="text-right">
-                            <p className="text-xs text-muted-foreground">P&L da Sessão</p>
+                            <p className="text-xs text-muted-foreground">P&L (Filtrado)</p>
                             <p className={cn(
                                 "text-lg font-bold",
                                 summary.pnl >= 0 && "text-green-600",
@@ -82,24 +106,55 @@ export function HFExecutionLog({ operations, clearActiveContracts }: HFExecution
                                 {summary.pnl.toLocaleString('pt-BR', { style: 'currency', currency: 'USD' })}
                             </p>
                         </div>
+                        <Button variant="ghost" size="icon" onClick={exportToCSV} title="Exportar para CSV">
+                            <Download className="h-4 w-4" />
+                        </Button>
                         {operations.length > 0 && (
                             <Button variant="ghost" size="icon" onClick={clearActiveContracts} title="Limpar Log de Execuções">
                                 <Trash2 className="h-4 w-4" />
-                                <span className="sr-only">Limpar log</span>
                             </Button>
                         )}
                     </div>
+                </div>
+                 <div className="flex gap-2 mt-4">
+                  <Select value={strategyFilter} onValueChange={(v) => setStrategyFilter(v as any)}>
+                    <SelectTrigger className="w-[180px]">
+                      <SelectValue placeholder="Filtrar por estratégia" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">🎯 Todas</SelectItem>
+                      {Object.entries(strategyMetadata).map(([key, meta]) => (
+                        <SelectItem key={key} value={key}>{meta.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  
+                  <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v as any)}>
+                    <SelectTrigger className="w-[140px]">
+                      <SelectValue placeholder="Status" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">📊 Todos</SelectItem>
+                      <SelectItem value="won">✅ Ganhos</SelectItem>
+                      <SelectItem value="lost">❌ Perdas</SelectItem>
+                      <SelectItem value="pending">⏳ Pendentes</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  
+                  <Badge variant="outline" className="ml-auto">
+                    {filteredOps.length} / {hfOperations.length} ops
+                  </Badge>
                 </div>
             </CardHeader>
             <CardContent className="p-0">
                 <ScrollArea className="h-[300px]">
                     <div className="p-6 pt-0 space-y-4">
-                        {hfOperations.length === 0 ? (
+                        {filteredOps.length === 0 ? (
                             <div className="text-center text-muted-foreground pt-10 h-full flex items-center justify-center">
-                                <p>Nenhuma operação HF executada ainda.</p>
+                                <p>Nenhuma operação com os filtros selecionados.</p>
                             </div>
                         ) : (
-                            hfOperations.map((op) => {
+                            filteredOps.map((op) => {
                                 const strategyLabel = op.strategy ? strategyMetadata[op.strategy as StrategyType]?.label || op.strategy : 'N/A';
                                 return (
                                     <div key={op.id} className="flex items-center gap-4 border-b pb-3 last:border-b-0">

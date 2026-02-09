@@ -220,7 +220,7 @@ function calculateInstitutionalMetrics(trades: TradeResult[], historicalData: Ca
     
     return {
         sharpeRatio: parseFloat(sharpeRatio.toFixed(2)), sortinoRatio: parseFloat(sortinoRatio.toFixed(2)), calmarRatio: 0,
-        maxDrawdown: parseFloat(maxDD.toFixed(2)), maxDrawdownDuration: maxDDDuration,
+        maxDrawdown: parseFloat(maxDD.toFixed(2)), maxDrawdownDuration,
         volatility: parseFloat((stdDev * 100).toFixed(2)),
         profitFactor: parseFloat(profitFactor.toFixed(2)), expectancy: parseFloat(expectancy.toFixed(2)),
         avgWin: parseFloat(avgWin.toFixed(2)), avgLoss: parseFloat(avgLoss.toFixed(2)),
@@ -299,14 +299,16 @@ function runSingleStrategyBacktest(historicalData: CandleData[], config: HFConfi
             i++;
         }
     }
-
+    
+    const wins = trades.filter(t => t.result === 'win').length;
+    const winRate = trades.length > 0 ? (wins / trades.length) * 100 : 0;
+    
     const metrics = calculateInstitutionalMetrics(trades, historicalData);
     const { equityCurve, monthlyPerformance } = calculateEquityAndMonthly(trades, 1000);
-    const wins = trades.filter(t => t.result === 'win').length;
     
     return {
         totalTrades: trades.length,
-        winRate: trades.length > 0 ? (wins / trades.length) * 100 : 0,
+        winRate,
         totalPnl: trades.reduce((sum, t) => sum + t.pnl, 0),
         trades,
         metrics,
