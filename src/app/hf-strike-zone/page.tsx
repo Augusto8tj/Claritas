@@ -16,11 +16,11 @@ import { HFConfig, HFConfigPanel } from '@/features/trading/components/hf-trader
 import { saveHFTradeLog } from '@/services/hf-data-service';
 import { Target, TrendingUp, BarChart, Brain, Activity, Zap, ShieldAlert, Bot, TestTube } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import type { Operation, CandleData, TimePeriod, InstitutionalBacktestResult } from '@/lib/types';
+import type { Operation, CandleData, TimePeriod, InstitutionalBacktestResult, WalkForwardResult, MonteCarloResult } from '@/lib/types';
 import { InstitutionalMetricsDashboard } from '@/features/trading/components/hf-trader/institutional-metrics-dashboard';
 import { EnsembleSignalCard } from '@/features/trading/components/hf-trader/ensemble-signal-card';
 import { Skeleton } from '@/components/ui/skeleton';
-import { runAllStrategiesBacktest } from '@/features/trading/backtest/hf-backtest-engine';
+import { runAllStrategiesBacktest, runWalkForwardAnalysis, runMonteCarloSimulation } from '@/features/trading/backtest/hf-backtest-engine';
 import { StrategyType } from '@/features/trading/services/hf-strike-logic';
 import { Button } from '@/components/ui/button';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
@@ -135,6 +135,8 @@ function PageContent() {
 
   const [isBacktesting, setIsBacktesting] = useState(false);
   const [backtestResults, setBacktestResults] = useState<Record<string, InstitutionalBacktestResult> | null>(null);
+  const [walkForwardResults, setWalkForwardResults] = useState<WalkForwardResult[] | null>(null);
+  const [monteCarloResult, setMonteCarloResult] = useState<MonteCarloResult | null>(null);
 
   const handleRunBacktest = useCallback(async () => {
     if (!activeSymbol) {
@@ -143,6 +145,8 @@ function PageContent() {
     }
     setIsBacktesting(true);
     setBacktestResults(null);
+    setWalkForwardResults(null);
+    setMonteCarloResult(null);
     try {
         toast({ title: "Iniciando Backtest...", description: "Buscando 1500 velas históricas..." });
         
@@ -168,13 +172,59 @@ function PageContent() {
     }
   }, [activeSymbol, getHistoricalData, toast, hfConfig]);
   
-  const handleRunWalkForward = useCallback(() => {
-    toast({ title: 'Em Breve', description: 'A análise Walk-Forward será implementada futuramente.' });
-  }, [toast]);
-
-  const handleRunMonteCarlo = useCallback(() => {
-    toast({ title: 'Em Breve', description: 'A simulação de Monte Carlo será implementada futuramente.' });
-  }, [toast]);
+  const handleRunWalkForward = useCallback(async () => {
+    if (!activeSymbol) {
+        toast({ title: "Selecione um ativo", variant: 'destructive' });
+        return;
+    }
+    setIsBacktesting(true);
+    setBacktestResults(null);
+    setWalkForwardResults(null);
+    setMonteCarloResult(null);
+    try {
+        toast({ title: "Iniciando Walk-Forward...", description: "Buscando 5000 velas e rodando 3 folds..." });
+        const historicalData = await getHistoricalData(activeSymbol, 'candles', 5000, '1m') as CandleData[];
+        if (historicalData.length < 1500) throw new Error("Dados históricos insuficientes para análise Walk-Forward.");
+        toast({ title: "Dados recebidos", description: `Analisando ${historicalData.length} velas...` });
+        await new Promise(resolve => setTimeout(resolve, 50));
+        const strategyToTest = 'STD_TREND_FOLLOW'; // Test a single robust strategy for this example
+        const results = runWalkForwardAnalysis(historicalData, hfConfig, strategyToTest, activeSymbol);
+        setWalkForwardResults(results);
+        toast({ title: "Análise Walk-Forward Concluída!", description: "Resultados da robustez da estratégia estão disponíveis." });
+    } catch (e: any) {
+        toast({ title: "Erro na Análise Walk-Forward", description: e.message, variant: 'destructive' });
+    } finally {
+        setIsBacktesting(false);
+    }
+  }, [activeSymbol, getHistoricalData, toast, hfConfig]);
+  
+  const handleRunMonteCarlo = useCallback(async () => {
+      if (!backtestResults) {
+          toast({ title: "Execute o Backtest Simples Primeiro", description: "A Simulação de Monte Carlo precisa dos resultados de um backtest base.", variant: 'destructive' });
+          return;
+      }
+      const bestStrategyKey = Object.entries(backtestResults).sort(([, a], [, b]) => (b.metrics?.sharpeRatio || 0) - (a.metrics?.sharpeRatio || 0))[0][0];
+      if (!bestStrategyKey) {
+          toast({ title: "Nenhuma estratégia para analisar", variant: 'destructive' });
+          return;
+      }
+      
+      setIsBacktesting(true);
+      setMonteCarloResult(null);
+      toast({ title: "Iniciando Simulação de Monte Carlo...", description: `Rodando 1000 iterações para a estratégia '${bestStrategyKey}'...` });
+      
+      await new Promise(resolve => setTimeout(resolve, 50));
+      
+      try {
+          const result = runMonteCarloSimulation(backtestResults[bestStrategyKey], 1000);
+          setMonteCarloResult(result);
+          toast({ title: "Simulação de Monte Carlo Concluída!", description: "Resultados da validação estatística disponíveis." });
+      } catch(e: any) {
+          toast({ title: "Erro na Simulação", description: e.message, variant: 'destructive' });
+      } finally {
+          setIsBacktesting(false);
+      }
+  }, [backtestResults, toast]);
 
 
   return (
@@ -208,7 +258,7 @@ function PageContent() {
                 </CardHeader>
                 <CardContent><MarketChart activeSymbol={activeSymbol || ''} chartData={rawChartData} isChartLoading={isChartLoading} chartError={chartError} chartType={chartType} setChartType={setChartType} timePeriod={timePeriod} setTimePeriod={setTimePeriod} operations={operationsLog} indicators={fullIndicators} tradeAnnotations={tradeAnnotations} supplyDemandZones={supplyDemandZones}/></CardContent>
             </Card>
-            <HFExecutionLog operations={operationsLog} clearActiveContracts={clearActiveContracts} />
+
             <Collapsible>
                 <CollapsibleTrigger asChild>
                     <Button variant="outline" className="w-full">
@@ -219,6 +269,8 @@ function PageContent() {
                 <CollapsibleContent className="pt-4">
                     <BacktestPanel 
                         results={backtestResults} 
+                        walkForwardResults={walkForwardResults}
+                        monteCarloResult={monteCarloResult}
                         onRunBacktest={handleRunBacktest} 
                         isBacktesting={isBacktesting}
                         onRunWalkForward={handleRunWalkForward}
@@ -226,6 +278,8 @@ function PageContent() {
                     />
                 </CollapsibleContent>
             </Collapsible>
+            
+            <HFExecutionLog operations={operationsLog} clearActiveContracts={clearActiveContracts} />
         </div>
         <div className="space-y-6">
           <EnsembleSignalCard signal={ensembleSignal} regime={marketRegime} onExecute={handleExecuteStrike} isExecuting={isExecuting} />

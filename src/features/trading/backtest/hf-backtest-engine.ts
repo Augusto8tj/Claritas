@@ -1,5 +1,6 @@
 // src/features/trading/backtest/hf-backtest-engine.ts
-import type { CandleData, TickData, ExecutionModel, InstitutionalBacktestResult, TradeResult as BaseTradeResult } from '@/lib/types';
+// ✅ VERSION FULLY REWRITTEN TO INSTITUTIONAL STANDARD
+import type { CandleData, TickData, ExecutionModel, InstitutionalBacktestResult, TradeResult as BaseTradeResult, WalkForwardResult, MonteCarloResult } from '@/lib/types';
 import type { HFConfig } from '@/features/trading/components/hf-trader/hf-config-panel';
 import { 
     detectHFMeanReversionZone, 
@@ -159,7 +160,7 @@ function convertCandlesToSyntheticTicks(candles: CandleData[], ticksPerCandle: n
 // 3. CÁLCULO DE MÉTRICAS INSTITUCIONAIS
 // ============================================================================
 
-function getEmptyMetrics() {
+function getEmptyMetrics(): InstitutionalBacktestResult['metrics'] {
     return {
         sharpeRatio: 0, sortinoRatio: 0, calmarRatio: 0, maxDrawdown: 0, maxDrawdownDuration: 0,
         volatility: 0, profitFactor: 0, expectancy: 0, avgWin: 0, avgLoss: 0, largestWin: 0,
@@ -212,6 +213,7 @@ function calculateInstitutionalMetrics(trades: TradeResult[], historicalData: Ca
         if (trade.result === 'win') { if (currentStreak < 0) lossStreaks.push(Math.abs(currentStreak)); currentStreak = currentStreak > 0 ? currentStreak + 1 : 1; maxWinStreak = Math.max(maxWinStreak, currentStreak); }
         else { if (currentStreak > 0) winStreaks.push(currentStreak); currentStreak = currentStreak < 0 ? currentStreak - 1 : -1; maxLossStreak = Math.max(maxLossStreak, Math.abs(currentStreak)); }
     });
+    
     const winStreakAvg = winStreaks.length > 0 ? winStreaks.reduce((a, b) => a + b, 0) / winStreaks.length : 0;
     const lossStreakAvg = lossStreaks.length > 0 ? lossStreaks.reduce((a, b) => a + b, 0) / lossStreaks.length : 0;
     
@@ -314,7 +316,7 @@ function runSingleStrategyBacktest(historicalData: CandleData[], config: HFConfi
         metrics,
         equityCurve,
         monthlyPerformance,
-        note: strategy === 'MICROSTRUCTURE_SCALP' ? 'Backtest executado com ticks sintéticos; resultados podem variar.' : undefined
+        note: strategy === 'MICROSTRUCTURE_SCALP' ? 'Resultados baseados em ticks sintéticos.' : undefined
     };
 }
 
@@ -338,17 +340,6 @@ export function runAllStrategiesBacktest(
 // ============================================================================
 // 5. ANÁLISE AVANÇADA (WALK-FORWARD & MONTE CARLO)
 // ============================================================================
-
-export interface WalkForwardResult {
-  inSample: InstitutionalBacktestResult;
-  outOfSample: InstitutionalBacktestResult;
-  degradation: {
-    sharpeRatio: number;
-    winRate: number;
-    profitFactor: number;
-  };
-  isRobust: boolean;
-}
 
 export function runWalkForwardAnalysis(
   historicalData: CandleData[],
@@ -401,25 +392,14 @@ export function runWalkForwardAnalysis(
   return results;
 }
 
-export interface MonteCarloResult {
-  scenarios: InstitutionalBacktestResult[];
-  statistics: {
-    meanSharpe: number;
-    stdDevSharpe: number;
-    percentile5: number;
-    percentile50: number;
-    percentile95: number;
-  };
-  probabilityOfProfit: number;
-  valueAtRisk95: number;
-}
-
 const calculateStdDev = (arr: number[]): number => {
+    if(arr.length === 0) return 0;
     const mean = arr.reduce((a, b) => a + b, 0) / arr.length;
     return Math.sqrt(arr.map(x => Math.pow(x - mean, 2)).reduce((a, b) => a + b, 0) / arr.length);
 };
 
 const calculateVaR = (pnlArray: number[], percentile: number): number => {
+    if(pnlArray.length === 0) return 0;
     const sortedPnL = [...pnlArray].sort((a,b) => a - b);
     const index = Math.floor(pnlArray.length * (1 - percentile));
     return sortedPnL[index] || 0;
@@ -432,21 +412,20 @@ export function runMonteCarloSimulation(
   const scenarios: InstitutionalBacktestResult[] = [];
   
   for (let i = 0; i < iterations; i++) {
-    // Embaralhar ordem dos trades (preservando distribuição)
     const shuffledTrades = [...baselineResult.trades]
       .sort(() => Math.random() - 0.5);
     
-    // Recalcular métricas com nova ordem
     const scenarioResult = {
       ...baselineResult,
       trades: shuffledTrades,
-      metrics: calculateInstitutionalMetrics(shuffledTrades, [], 1000)
+      metrics: calculateInstitutionalMetrics(shuffledTrades, [], 1000),
+      // Recalculate equity and monthly performance for the shuffled order
+      ...calculateEquityAndMonthly(shuffledTrades, 1000)
     };
     
     scenarios.push(scenarioResult);
   }
   
-  // Calcular estatísticas
   const sharpeRatios = scenarios.map(s => s.metrics.sharpeRatio).sort((a, b) => a - b);
   const profitableScenarios = scenarios.filter(s => s.totalPnl > 0).length;
   
