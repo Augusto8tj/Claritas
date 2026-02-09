@@ -252,60 +252,93 @@
       "type": "object",
       "description": "Records a single executed trade from the HF Strike Zone system.",
       "properties": {
-        "userId": {
-          "type": "string",
-          "description": "Owner's user ID."
-        },
-        "symbol": {
-          "type": "string",
-          "description": "The asset symbol traded."
-        },
-        "timestamp": {
-          "type": "string",
-          "format": "date-time",
-          "description": "ISO timestamp of the log creation."
-        },
-        "strikeZone": {
-          "type": "object",
-          "description": "A snapshot of the StrikeZone data that triggered the trade."
-        },
+        "userId": { "type": "string", "description": "Owner's user ID." },
+        "symbol": { "type": "string", "description": "The asset symbol traded." },
+        "timestamp": { "type": "string", "format": "date-time", "description": "ISO timestamp of the log creation." },
+        "strikeZone": { "type": "object", "description": "A snapshot of the StrikeZone data that triggered the trade (legacy)." },
         "execution": {
           "type": "object",
           "description": "Details about the trade execution and result.",
           "properties": {
-            "status": {
-              "type": "string",
-              "enum": [
-                "pending",
-                "won",
-                "lost"
-              ]
-            },
-            "entryPrice": {
-              "type": "number"
-            },
-            "result": {
-              "type": "number"
-            },
-            "executedAt": {
-              "type": "string",
-              "format": "date-time"
-            }
+            "status": { "type": "string", "enum": ["pending", "won", "lost"] },
+            "entryPrice": { "type": "number" },
+            "exitPrice": { "type": "number" },
+            "result": { "type": "number" },
+            "executedAt": { "type": "string", "format": "date-time" },
+            "closedAt": { "type": "string", "format": "date-time" }
           },
-          "required": [
-            "status",
-            "entryPrice",
-            "executedAt"
-          ]
+          "required": ["status", "entryPrice", "executedAt"]
+        },
+        "marketRegime": { "type": "string", "description": "Market regime at time of execution." },
+        "ensembleParticipants": { "type": "array", "items": { "type": "string" }, "description": "Strategies that participated in the consensus signal." },
+        "positionSize": {
+          "type": "object",
+          "properties": {
+            "recommended": { "type": "number" },
+            "actual": { "type": "number" },
+            "reasoning": { "type": "array", "items": { "type": "string" } }
+          }
+        },
+        "riskMetrics": {
+          "type": "object",
+          "properties": {
+            "sharpeContribution": { "type": "number" },
+            "portfolioExposure": { "type": "number" }
+          }
         }
       },
-      "required": [
-        "userId",
-        "symbol",
-        "timestamp",
-        "strikeZone",
-        "execution"
-      ]
+      "required": ["userId", "symbol", "timestamp", "execution"]
+    },
+    "HFSettings": {
+      "title": "High Frequency Trading Settings",
+      "type": "object",
+      "description": "User-specific settings for the HF trading system.",
+      "properties": {
+        "minConfidence": { "type": "number" },
+        "kellyFraction": { "type": "number" },
+        "maxDailyLoss": { "type": "number" },
+        "maxDrawdown": { "type": "number" },
+        "enabledStrategies": { "type": "array", "items": { "type": "string" } },
+        "autoOptimization": {
+          "type": "object",
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "frequency": { "type": "string", "enum": ["hourly", "daily", "weekly"] },
+            "lastRun": { "type": "string", "format": "date-time" }
+          }
+        }
+      }
+    },
+    "OptimizationRecord": {
+        "title": "Optimization Record",
+        "type": "object",
+        "description": "Record of an auto-optimization cycle.",
+        "properties": {
+            "userId": { "type": "string" },
+            "timestamp": { "type": "string", "format": "date-time" },
+            "changes": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "parameter": { "type": "string" },
+                        "oldValue": { "type": "any" },
+                        "newValue": { "type": "any" },
+                        "reasoning": { "type": "string" },
+                        "confidence": { "type": "number" }
+                    }
+                }
+            },
+            "backtestResults": {
+                "type": "object",
+                "properties": {
+                    "beforeSharpe": { "type": "number" },
+                    "afterSharpe": { "type": "number" },
+                    "improvement": { "type": "number" }
+                }
+            },
+            "appliedSuccessfully": { "type": "boolean" }
+        }
     }
   },
   "auth": {
@@ -451,8 +484,36 @@
             }
           ]
         }
+      },
+      {
+        "path": "/users/{userId}/optimization_history/{optimizationId}",
+        "definition": {
+          "entityName": "OptimizationRecord",
+          "schema": {
+            "$ref": "#/backend/entities/OptimizationRecord"
+          },
+          "description": "Stores a log of each auto-optimization cycle for a user.",
+          "params": [
+            { "name": "userId", "description": "The user's UID." },
+            { "name": "optimizationId", "description": "The unique ID for the optimization log." }
+          ]
+        }
+      },
+      {
+        "path": "/users/{userId}/hf_settings/{assetSymbol}",
+        "definition": {
+          "entityName": "HFSettings",
+          "schema": {
+            "$ref": "#/backend/entities/HFSettings"
+          },
+          "description": "Stores user-specific settings for the HF trading system per asset.",
+          "params": [
+            { "name": "userId", "description": "The user's UID." },
+            { "name": "assetSymbol", "description": "The asset these settings apply to." }
+          ]
+        }
       }
     ],
-    "reasoning": "The Firestore structure is designed to ensure security, scalability, and ease of debugging, following the core design principles of Authorization Independence, Clarity of Intent, DBAC (Database-Based Access Control), and QAPs (Rules are not Filters). Authorization Independence is achieved through denormalization. For instance, access control data for FinancialAccounts, Transactions, FinancialGoals, and AiInsights are kept under the user's profile to avoid using `get()` calls in security rules.\n\nStructural Segregation is applied by storing user-specific data like profiles, financial accounts, transactions, goals, and insights in separate collections under each user's document. This allows for homogeneous security postures within each collection, as all documents share similar access requirements.\n\nAccess Modeling is standardized using hierarchical paths for user-owned data, such as `/users/{userId}/financialAccounts/{accountId}`, `/users/{userId}/transactions/{transactionId}`, `/users/{userId}/financialGoals/{goalId}`, `/users/{userId}/aiInsights/{insightId}`, and the new `/users/{userId}/hf_trades_v1/{tradeId}`. This structure simplifies ownership-based security rules.\n\nThe structure supports the required QAPs by ensuring that list operations are secure. Since each subcollection is scoped to a specific user, listing documents within these subcollections is inherently limited to that user's data, preventing unauthorized access to other users' information."
+    "reasoning": "The Firestore structure is designed to ensure security, scalability, and ease of debugging, following the core design principles of Authorization Independence, Clarity of Intent, DBAC (Database-Based Access Control), and QAPs (Rules are not Filters). Authorization Independence is achieved through denormalization. For instance, access control data for FinancialAccounts, Transactions, FinancialGoals, and AiInsights are kept under the user's profile to avoid using `get()` calls in security rules.\n\nStructural Segregation is applied by storing user-specific data like profiles, financial accounts, transactions, goals, and insights in separate collections under each user's document. This allows for homogeneous security postures within each collection, as all documents share similar access requirements.\n\nAccess Modeling is standardized using hierarchical paths for user-owned data, such as `/users/{userId}/financialAccounts/{accountId}`, `/users/{userId}/transactions/{transactionId}`, `/users/{userId}/financialGoals/{goalId}`, `/users/{userId}/aiInsights/{insightId}`, and the new `/users/{userId}/hf_trades_v1/{tradeId}`. This structure simplifies ownership-based security rules.\n\nThe structure supports the required QAPs by ensuring that list operations are secure. Since each subcollection is scoped to a specific user, listing documents within these subcollections is inherently limited to that user's data, preventing unauthorized access to other users' information. New collections for HF settings and optimization history follow the same user-centric pattern."
   }
 }

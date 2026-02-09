@@ -13,12 +13,14 @@ import {
   doc,
 } from 'firebase/firestore';
 import type { StrikeZone } from '@/features/trading/hooks/use-hf-strike-zone';
+import type { StrategyType } from '@/features/trading/services/hf-strike-logic';
+import type { MarketRegime } from '@/features/trading/ml/market-regime-detector';
 
 export interface HFTradeLog {
   id?: string;
   userId: string;
   symbol: string;
-  strikeZone: StrikeZone;
+  strikeZone: StrikeZone; // Kept for some legacy data, but new data is in other fields
   execution: {
     contractId?: string;
     entryPrice: number;
@@ -29,6 +31,18 @@ export interface HFTradeLog {
     closedAt?: string;
   };
   timestamp: string;
+  // NEW FIELDS
+  marketRegime: MarketRegime;
+  ensembleParticipants: StrategyType[];
+  positionSize: {
+    recommended: number;
+    actual: number;
+    reasoning: string[];
+  };
+  riskMetrics: {
+    sharpeContribution: number;
+    portfolioExposure: number;
+  };
 }
 
 /**

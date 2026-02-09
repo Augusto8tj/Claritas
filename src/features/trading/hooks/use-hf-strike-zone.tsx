@@ -2,32 +2,24 @@
 'use client';
 
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import type { TickData, CandleData } from '@/lib/types';
-import {
-    detectHFMeanReversionZone,
-    detectStandardTrendZone,
-    detectBollingerSqueezeZone,
-    detectVolumeAbsorptionZone,
-    detectMicrostructureScalpZone,
-    type StrikeZone,
-    StrategyType,
-    strategyMetadata
-} from '../services/hf-strike-logic';
+import type { TickData, CandleData, TimePeriod } from '@/lib/types';
 import { calculateAllIndicators, type Indicators } from '@/features/trading/services/indicator-service';
 import { getCouncilStrategies } from '../services/council-strategies';
+import { useAuth } from '@/features/auth/hooks/use-auth';
 
+// NEW IMPORTS
+import { optimizeStrategyWeights, type OptimizedWeights } from '../ml/adaptive-optimizer';
+import { getEnsembleSignal, type EnsembleSignal } from '../ensemble/strategy-ensemble';
+import { detectMarketRegime, type RegimeCharacteristics } from '../ml/market-regime-detector';
+import { AdvancedRiskManager, type PositionSizeRecommendation } from '../risk/advanced-risk-manager';
 
-export type { StrikeZone } from '../services/hf-strike-logic';
-
+export type { StrikeZone } from '../services/hf-strike-logic'; // Keep for hf-data-service compatibility for now
 
 export interface HFStats {
   totalStrikes: number;
   avgConfidence: number;
-  lastStrike: StrikeZone | null;
-  strikesByType: {
-    long: number;
-    short: number;
-  };
+  lastStrike: any | null; // StrikeZone is now EnsembleSignal
+  strikesByType: { long: number; short: number; };
 }
 
 export function useHFStrikeZone(
@@ -35,95 +27,95 @@ export function useHFStrikeZone(
   botCandleData: CandleData[],
   uiChartPeriod: TimePeriod,
   enabled: boolean = true,
-  strategy: StrategyType
+  strategy: any // strategy is now managed by ensemble
 ) {
-  const [strikeHistory, setStrikeHistory] = useState<StrikeZone[]>([]);
+  const { user } = useAuth();
+  const [strikeHistory, setStrikeHistory] = useState<any[]>([]); // EnsembleSignal[]
   const rsiStateRef = useRef({ prev: 50 });
-  
   const initialStrategies = useMemo(() => getCouncilStrategies('standard'), []);
 
+  // NEW STATES
+  const [optimizedWeights, setOptimizedWeights] = useState<OptimizedWeights[]>([]);
+  const [ensembleSignal, setEnsembleSignal] = useState<EnsembleSignal | null>(null);
+  const [marketRegime, setMarketRegime] = useState<RegimeCharacteristics | null>(null);
+  const [riskManager] = useState(() => new AdvancedRiskManager({ maxDailyLoss: 10, maxDrawdown: 20, maxConcurrentTrades: 3, maxExposurePerAsset: 25, kellyFraction: 0.25 }, 1000));
+  const [positionSizing, setPositionSizing] = useState<PositionSizeRecommendation | null>(null);
+
   const indicators = useMemo((): Indicators | null => {
-    const isHF = strategyMetadata[strategy]?.isHF ?? true;
-    const dataForIndicators = isHF ? botCandleData : botCandleData; // Sempre usar 1m para base de indicadores HF
-    const timePeriodForIndicators = isHF ? '1m' : uiChartPeriod;
-
-    if (!enabled || dataForIndicators.length < 100) return null;
-    
-    return calculateAllIndicators(dataForIndicators, initialStrategies, timePeriodForIndicators, { duration: 1, unit: 't' });
-  }, [botCandleData, uiChartPeriod, enabled, strategy, initialStrategies]);
+    if (!enabled || botCandleData.length < 100) return null;
+    return calculateAllIndicators(botCandleData, initialStrategies, '1m', { duration: 1, unit: 't' });
+  }, [botCandleData, enabled, initialStrategies]);
   
-  const currentZone = useMemo((): StrikeZone | null => {
-    if (!enabled || !indicators || priceTicks.length === 0) return null;
-
-    const currentPrice = priceTicks[priceTicks.length - 1].price;
-    let zone: StrikeZone | null = null;
-    
-    const windowCandles = strategyMetadata[strategy]?.isHF ? botCandleData : botCandleData; // Passa os candles corretos
-
-    switch (strategy) {
-        case 'HF_MEAN_REVERSION':
-          zone = detectHFMeanReversionZone(indicators, currentPrice);
-          break;
-        case 'STD_TREND_FOLLOW':
-          zone = detectStandardTrendZone(indicators, currentPrice, rsiStateRef.current.prev);
-          break;
-        case 'BOLLINGER_SQUEEZE':
-          zone = detectBollingerSqueezeZone(indicators, currentPrice);
-          break;
-        case 'VOLUME_ABSORPTION':
-          zone = detectVolumeAbsorptionZone(windowCandles, indicators);
-          break;
-        case 'MICROSTRUCTURE_SCALP':
-          zone = detectMicrostructureScalpZone(priceTicks, windowCandles, indicators, currentPrice);
-          break;
-    }
-    
-    if (indicators.rsi) {
-      rsiStateRef.current.prev = indicators.rsi;
-    }
-
-    return zone;
-  }, [indicators, priceTicks, enabled, strategy, botCandleData]);
-  
+  // Main Logic Loop
   useEffect(() => {
-    if (!currentZone || currentZone.type === 'NEUTRAL') return;
+    if (!enabled || !indicators || priceTicks.length < 2 || !user) {
+      setEnsembleSignal(null);
+      return;
+    };
 
-    setStrikeHistory(prev => {
-      const lastStrike = prev[prev.length - 1];
-      if (lastStrike && Date.now() - lastStrike.entry.timestamp < 10000) {
-        return prev;
+    const runCycle = async () => {
+      // 1. Detect Market Regime
+      const regime = detectMarketRegime(indicators, botCandleData);
+      setMarketRegime(regime);
+      
+      // 2. Get Ensemble Signal
+      const signal = await getEnsembleSignal(priceTicks, botCandleData, indicators, optimizedWeights, rsiStateRef.current.prev, riskManager.currentCapital);
+      setEnsembleSignal(signal);
+
+      // 3. Get Position Sizing recommendation
+      if (signal.direction !== 'NEUTRAL') {
+          const sizing = riskManager.calculatePositionSize(signal, riskManager.currentCapital);
+          setPositionSizing(sizing);
+      } else {
+          setPositionSizing(null);
       }
-      return [...prev, currentZone].slice(-100);
-    });
-  }, [currentZone]);
+
+      if (indicators.rsi) {
+        rsiStateRef.current.prev = indicators.rsi;
+      }
+    };
+    
+    const timeoutId = setTimeout(runCycle, 200); // Debounce
+    return () => clearTimeout(timeoutId);
+
+  }, [indicators, priceTicks, enabled, optimizedWeights, botCandleData, user, riskManager]);
+  
+  // Weight optimization loop
+  useEffect(() => {
+      if (!user || !marketRegime) return;
+
+      const optimize = async () => {
+          const weights = await optimizeStrategyWeights(user.uid, marketRegime);
+          setOptimizedWeights(weights);
+      };
+      
+      optimize(); // Initial run
+      const interval = setInterval(optimize, 60 * 60 * 1000); // every hour
+      return () => clearInterval(interval);
+  }, [user, marketRegime]);
 
   const stats: HFStats = useMemo(() => {
-    const total = strikeHistory.length;
-    const avgConfidence = total > 0 ? strikeHistory.reduce((sum, s) => sum + s.confidence, 0) / total : 0;
-    const strikesByType = strikeHistory.reduce((acc, strike) => {
-        if (strike.type === 'LONG_ENTRY') acc.long++;
-        if (strike.type === 'SHORT_ENTRY') acc.short++;
-        return acc;
-      }, { long: 0, short: 0 });
-
-    return {
-      totalStrikes: total,
-      avgConfidence: parseFloat(avgConfidence.toFixed(1)),
-      lastStrike: strikeHistory[strikeHistory.length - 1] || null,
-      strikesByType,
-    };
-  }, [strikeHistory]);
+      // This needs to be adapted for ensemble signals
+      return { totalStrikes: 0, avgConfidence: 0, lastStrike: null, strikesByType: { long: 0, short: 0 } };
+  }, []);
 
   const clearHistory = useCallback(() => {
     setStrikeHistory([]);
   }, []);
 
   return {
-    currentZone,
+    // Legacy returns for compatibility
+    currentZone: null, // Replaced by ensembleSignal
     strikeHistory,
     stats,
     clearHistory,
     fullIndicators: indicators,
     supplyDemandZones: (indicators as any)?.supplyDemandZones,
+    // New Institutional returns
+    ensembleSignal,
+    marketRegime,
+    optimizedWeights,
+    positionSizing,
+    riskManager
   };
 }
