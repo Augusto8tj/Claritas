@@ -52,10 +52,11 @@ export function BacktestPanel({ results, onRunBacktest, isBacktesting }: Backtes
               <Table>
                 <TableHeader className="sticky top-0 bg-muted/50">
                   <TableRow>
-                    <TableHead className="w-[250px]">Estratégia</TableHead>
+                    <TableHead className="w-[180px]">Estratégia</TableHead>
                     <TableHead className="text-center">Win Rate</TableHead>
-                    <TableHead className="text-center">Total Trades</TableHead>
+                    <TableHead className="text-center">Trades</TableHead>
                     <TableHead className="text-right">P&L Total</TableHead>
+                    <TableHead className="text-left w-[200px]">Notas</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -67,13 +68,14 @@ export function BacktestPanel({ results, onRunBacktest, isBacktesting }: Backtes
                             <TableCell className="font-medium">{strategyName}</TableCell>
                             <TableCell className="text-center">
                                 <span className={cn("font-semibold", result.winRate > 52 ? 'text-green-600' : 'text-red-600')}>
-                                    {result.winRate.toFixed(1)}%
+                                    {result.totalTrades > 0 ? `${result.winRate.toFixed(1)}%` : '-'}
                                 </span>
                             </TableCell>
                             <TableCell className="text-center font-mono">{result.totalTrades}</TableCell>
                             <TableCell className={cn("text-right font-bold font-mono", isProfitable ? 'text-green-600' : 'text-red-600')}>
                                 {result.totalPnl.toLocaleString('en-US', { style: 'currency', currency: 'USD' })}
                             </TableCell>
+                            <TableCell className="text-xs text-muted-foreground">{result.note || ''}</TableCell>
                         </TableRow>
                     );
                   })}

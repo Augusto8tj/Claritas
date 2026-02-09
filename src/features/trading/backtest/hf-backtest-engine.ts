@@ -31,6 +31,7 @@ export interface BacktestResult {
   winRate: number;
   totalPnl: number;
   trades: TradeResult[];
+  note?: string;
 }
 
 // --- HELPERS ---
@@ -118,9 +119,14 @@ export function runAllStrategiesBacktest(
   const initialStrategies = getCouncilStrategies('standard');
 
   for (const strategy of allStrategies) {
-    // A simulação de 'MICROSTRUCTURE_SCALP' não é viável com dados de vela, pois requer ticks.
     if (strategy === 'MICROSTRUCTURE_SCALP') {
-      allResults[strategy] = { totalTrades: 0, winRate: 0, totalPnl: 0, trades: [] };
+      allResults[strategy] = { 
+        totalTrades: 0, 
+        winRate: 0, 
+        totalPnl: 0, 
+        trades: [],
+        note: '⚠️ Estratégia requer dados de tick em tempo real. Backtest não aplicável.' 
+      };
       continue;
     }
 
@@ -173,5 +179,3 @@ export function runAllStrategiesBacktest(
 
   return allResults as Record<StrategyType, BacktestResult>;
 }
-      
-    
