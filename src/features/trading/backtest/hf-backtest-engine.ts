@@ -220,7 +220,7 @@ function calculateInstitutionalMetrics(trades: TradeResult[], historicalData: Ca
     
     return {
         sharpeRatio: parseFloat(sharpeRatio.toFixed(2)), sortinoRatio: parseFloat(sortinoRatio.toFixed(2)), calmarRatio: 0,
-        maxDrawdown: parseFloat(maxDD.toFixed(2)), maxDrawdownDuration,
+        maxDrawdown: parseFloat(maxDD.toFixed(2)), maxDrawdownDuration: maxDDDuration,
         volatility: parseFloat((stdDev * 100).toFixed(2)),
         profitFactor: parseFloat(profitFactor.toFixed(2)), expectancy: parseFloat(expectancy.toFixed(2)),
         avgWin: parseFloat(avgWin.toFixed(2)), avgLoss: parseFloat(avgLoss.toFixed(2)),
@@ -432,9 +432,11 @@ export function runMonteCarloSimulation(
   const scenarios: InstitutionalBacktestResult[] = [];
   
   for (let i = 0; i < iterations; i++) {
+    // Embaralhar ordem dos trades (preservando distribuição)
     const shuffledTrades = [...baselineResult.trades]
       .sort(() => Math.random() - 0.5);
     
+    // Recalcular métricas com nova ordem
     const scenarioResult = {
       ...baselineResult,
       trades: shuffledTrades,
@@ -444,6 +446,7 @@ export function runMonteCarloSimulation(
     scenarios.push(scenarioResult);
   }
   
+  // Calcular estatísticas
   const sharpeRatios = scenarios.map(s => s.metrics.sharpeRatio).sort((a, b) => a - b);
   const profitableScenarios = scenarios.filter(s => s.totalPnl > 0).length;
   
