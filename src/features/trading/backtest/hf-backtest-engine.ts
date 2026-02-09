@@ -89,7 +89,7 @@ function simulateTradeOutcome(
     case 'STD_TREND_FOLLOW':
     case 'VOLUME_ABSORPTION': tradeDurationInCandles = 3; break;
     default:
-        const candleDurationSeconds = allCandles && allCandles.length > 1 ? allCandles[1].epoch - allCandles[0].epoch : 60;
+        const candleDurationSeconds = allCandles && allCandles.length > 1 && allCandles[1].epoch > allCandles[0].epoch ? allCandles[1].epoch - allCandles[0].epoch : 60;
         tradeDurationInCandles = Math.max(1, Math.ceil(strikeZone.duration / candleDurationSeconds));
         break;
   }
@@ -186,11 +186,11 @@ function calculateInstitutionalMetrics(trades: TradeResult[], historicalData: Ca
     const downsideDeviation = Math.sqrt(downsideVariance) * Math.sqrt(252);
     const sortinoRatio = downsideDeviation > 0 ? (annualizedReturn - riskFreeRate) / downsideDeviation : 0;
     
-    let peak = equityCurve[0]; let maxDD = 0; let maxDrawdownDuration = 0; let currentDDDuration = 0;
+    let peak = equityCurve[0]; let maxDD = 0; let maxDDDuration = 0; let currentDDDuration = 0;
     equityCurve.forEach(equity => {
         if (equity > peak) { peak = equity; currentDDDuration = 0; }
         else { currentDDDuration++; const drawdown = ((peak - equity) / peak) * 100;
-            if (drawdown > maxDD) { maxDD = drawdown; maxDrawdownDuration = currentDDDuration; }
+            if (drawdown > maxDD) { maxDD = drawdown; maxDDDuration = currentDDDuration; }
         }
     });
     
@@ -298,9 +298,12 @@ function runSingleStrategyBacktest(historicalData: CandleData[], config: HFConfi
     const metrics = calculateInstitutionalMetrics(trades, historicalData);
     const { equityCurve, monthlyPerformance } = calculateEquityAndMonthly(trades, 1000);
     
+    const wins = trades.filter(t => t.result === 'win').length;
+    const winRate = trades.length > 0 ? (wins / trades.length) * 100 : 0;
+    
     return {
         totalTrades: trades.length,
-        winRate: metrics.winRate,
+        winRate: winRate,
         totalPnl: trades.reduce((sum, t) => sum + t.pnl, 0),
         trades,
         metrics,
