@@ -1,5 +1,5 @@
 // src/features/trading/backtest/hf-backtest-engine.ts
-import type { CandleData, TickData, ExecutionModel, InstitutionalBacktestResult, TradeResult } from '@/lib/types';
+import type { CandleData, TickData, ExecutionModel, InstitutionalBacktestResult, TradeResult as BaseTradeResult } from '@/lib/types';
 import type { HFConfig } from '@/features/trading/components/hf-trader/hf-config-panel';
 import { 
     detectHFMeanReversionZone, 
@@ -18,6 +18,9 @@ import { getCouncilStrategies } from '@/features/trading/services/council-strate
 // ============================================================================
 // 1. MODELOS DE EXECUÇÃO E CUSTOS DE TRANSAÇÃO
 // ============================================================================
+interface TradeResult extends BaseTradeResult {
+  durationInCandles: number;
+}
 
 const executionModels: Record<string, ExecutionModel> = {
   // Sintéticos Deriv
@@ -86,7 +89,7 @@ function simulateTradeOutcome(
     case 'STD_TREND_FOLLOW':
     case 'VOLUME_ABSORPTION': tradeDurationInCandles = 3; break;
     default:
-        const candleDurationSeconds = allCandles[1] ? allCandles[1].epoch - allCandles[0].epoch : 60;
+        const candleDurationSeconds = allCandles && allCandles.length > 1 ? allCandles[1].epoch - allCandles[0].epoch : 60;
         tradeDurationInCandles = Math.max(1, Math.ceil(strikeZone.duration / candleDurationSeconds));
         break;
   }
@@ -183,11 +186,11 @@ function calculateInstitutionalMetrics(trades: TradeResult[], historicalData: Ca
     const downsideDeviation = Math.sqrt(downsideVariance) * Math.sqrt(252);
     const sortinoRatio = downsideDeviation > 0 ? (annualizedReturn - riskFreeRate) / downsideDeviation : 0;
     
-    let peak = equityCurve[0]; let maxDD = 0; let maxDDDuration = 0; let currentDDDuration = 0;
+    let peak = equityCurve[0]; let maxDD = 0; let maxDrawdownDuration = 0; let currentDDDuration = 0;
     equityCurve.forEach(equity => {
         if (equity > peak) { peak = equity; currentDDDuration = 0; }
         else { currentDDDuration++; const drawdown = ((peak - equity) / peak) * 100;
-            if (drawdown > maxDD) { maxDD = drawdown; maxDDDuration = currentDDDuration; }
+            if (drawdown > maxDD) { maxDD = drawdown; maxDrawdownDuration = currentDDDuration; }
         }
     });
     
@@ -230,7 +233,7 @@ function calculateEquityAndMonthly(trades: TradeResult[], startingCapital: numbe
     let peakEquity = startingCapital;
 
     trades.forEach((trade, index) => {
-        const prevEquity = equityCurve[index].equity;
+        const prevEquity = equityCurve[equityCurve.length - 1].equity;
         const newEquity = prevEquity + trade.pnl;
         if (newEquity > peakEquity) peakEquity = newEquity;
         const drawdown = peakEquity > 0 ? ((peakEquity - newEquity) / peakEquity) * 100 : 0;
@@ -294,10 +297,10 @@ function runSingleStrategyBacktest(historicalData: CandleData[], config: HFConfi
 
     const metrics = calculateInstitutionalMetrics(trades, historicalData);
     const { equityCurve, monthlyPerformance } = calculateEquityAndMonthly(trades, 1000);
-
+    
     return {
         totalTrades: trades.length,
-        winRate: metrics.avgWin > 0 || metrics.avgLoss > 0 ? (wins.length / trades.length) * 100 : 0,
+        winRate: metrics.winRate,
         totalPnl: trades.reduce((sum, t) => sum + t.pnl, 0),
         trades,
         metrics,
@@ -322,4 +325,130 @@ export function runAllStrategiesBacktest(
   }
 
   return allResults as Record<StrategyType, InstitutionalBacktestResult>;
+}
+
+// ============================================================================
+// 5. ANÁLISE AVANÇADA (WALK-FORWARD & MONTE CARLO)
+// ============================================================================
+
+export interface WalkForwardResult {
+  inSample: InstitutionalBacktestResult;
+  outOfSample: InstitutionalBacktestResult;
+  degradation: {
+    sharpeRatio: number;
+    winRate: number;
+    profitFactor: number;
+  };
+  isRobust: boolean;
+}
+
+export function runWalkForwardAnalysis(
+  historicalData: CandleData[],
+  config: HFConfig,
+  strategy: StrategyType,
+  assetSymbol: string,
+  folds: number = 3
+): WalkForwardResult[] {
+  const foldSize = Math.floor(historicalData.length / (folds + 1));
+  const results: WalkForwardResult[] = [];
+  
+  for (let i = 0; i < folds; i++) {
+    const inSampleStart = i * foldSize;
+    const inSampleEnd = inSampleStart + Math.floor(foldSize * 0.7);
+    const inSampleData = historicalData.slice(inSampleStart, inSampleEnd);
+    
+    const oosSampleStart = inSampleEnd;
+    const oosSampleEnd = oosSampleStart + Math.floor(foldSize * 0.3);
+    const oosSampleData = historicalData.slice(oosSampleStart, oosSampleEnd);
+    
+    const inSampleResult = runSingleStrategyBacktest(inSampleData, config, strategy, assetSymbol);
+    const oosSampleResult = runSingleStrategyBacktest(oosSampleData, config, strategy, assetSymbol);
+    
+    const sharpeDegradation = inSampleResult.metrics.sharpeRatio > 0
+      ? ((inSampleResult.metrics.sharpeRatio - oosSampleResult.metrics.sharpeRatio) / inSampleResult.metrics.sharpeRatio) * 100
+      : 0;
+    
+    const winRateDegradation = inSampleResult.winRate > 0
+      ? ((inSampleResult.winRate - oosSampleResult.winRate) / inSampleResult.winRate) * 100
+      : 0;
+    
+    const pfDegradation = inSampleResult.metrics.profitFactor > 0
+      ? ((inSampleResult.metrics.profitFactor - oosSampleResult.metrics.profitFactor) / inSampleResult.metrics.profitFactor) * 100
+      : 0;
+    
+    const avgDegradation = (sharpeDegradation + winRateDegradation + pfDegradation) / 3;
+    
+    results.push({
+      inSample: inSampleResult,
+      outOfSample: oosSampleResult,
+      degradation: {
+        sharpeRatio: sharpeDegradation,
+        winRate: winRateDegradation,
+        profitFactor: pfDegradation,
+      },
+      isRobust: avgDegradation < 20,
+    });
+  }
+  
+  return results;
+}
+
+export interface MonteCarloResult {
+  scenarios: InstitutionalBacktestResult[];
+  statistics: {
+    meanSharpe: number;
+    stdDevSharpe: number;
+    percentile5: number;
+    percentile50: number;
+    percentile95: number;
+  };
+  probabilityOfProfit: number;
+  valueAtRisk95: number;
+}
+
+const calculateStdDev = (arr: number[]): number => {
+    const mean = arr.reduce((a, b) => a + b, 0) / arr.length;
+    return Math.sqrt(arr.map(x => Math.pow(x - mean, 2)).reduce((a, b) => a + b, 0) / arr.length);
+};
+
+const calculateVaR = (pnlArray: number[], percentile: number): number => {
+    const sortedPnL = [...pnlArray].sort((a,b) => a - b);
+    const index = Math.floor(pnlArray.length * (1 - percentile));
+    return sortedPnL[index] || 0;
+};
+
+export function runMonteCarloSimulation(
+  baselineResult: InstitutionalBacktestResult,
+  iterations: number = 1000
+): MonteCarloResult {
+  const scenarios: InstitutionalBacktestResult[] = [];
+  
+  for (let i = 0; i < iterations; i++) {
+    const shuffledTrades = [...baselineResult.trades]
+      .sort(() => Math.random() - 0.5);
+    
+    const scenarioResult = {
+      ...baselineResult,
+      trades: shuffledTrades,
+      metrics: calculateInstitutionalMetrics(shuffledTrades, [], 1000)
+    };
+    
+    scenarios.push(scenarioResult);
+  }
+  
+  const sharpeRatios = scenarios.map(s => s.metrics.sharpeRatio).sort((a, b) => a - b);
+  const profitableScenarios = scenarios.filter(s => s.totalPnl > 0).length;
+  
+  return {
+    scenarios,
+    statistics: {
+      meanSharpe: sharpeRatios.reduce((a, b) => a + b, 0) / sharpeRatios.length,
+      stdDevSharpe: calculateStdDev(sharpeRatios),
+      percentile5: sharpeRatios[Math.floor(iterations * 0.05)],
+      percentile50: sharpeRatios[Math.floor(iterations * 0.50)],
+      percentile95: sharpeRatios[Math.floor(iterations * 0.95)],
+    },
+    probabilityOfProfit: (profitableScenarios / iterations) * 100,
+    valueAtRisk95: calculateVaR(scenarios.map(s => s.totalPnl), 0.95),
+  };
 }
