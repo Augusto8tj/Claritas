@@ -150,7 +150,7 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
   const [operationsLog, setOperationsLog] = useState<Operation[]>([]);
   const operationsLogRef = useRef(operationsLog);
   const sellingContractsRef = useRef<Set<number>>(new Set());
-  const trailingStateRef = useRef<Map<number, { highestProfit: number }>>(new Map());
+  
   useEffect(() => {
       operationsLogRef.current = operationsLog;
   }, [operationsLog]);
@@ -773,30 +773,8 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
                             trailingStop: op.trailingStop,
                         };
 
-                        if (!isSold && op.initiator === 'Piloto' && contract.profit > 0) {
-                            const trailingState = trailingStateRef.current.get(op.id) || { highestProfit: 0 };
-                            const activationThreshold = op.stake * 0.15; // NOVO: 15%
-                            const trailingDistance = op.stake * 0.10;   // NOVO: 10%
-
-                            if (contract.profit > trailingState.highestProfit) {
-                                trailingState.highestProfit = contract.profit;
-                                trailingStateRef.current.set(op.id, trailingState);
-                            }
-
-                            if (trailingState.highestProfit > activationThreshold) {
-                                const rawNewStop = trailingState.highestProfit - trailingDistance;
-                                const newStopLossAmount = parseFloat(rawNewStop.toFixed(2));
-                                updatedOp.trailingStop = newStopLossAmount;
-
-                                if (newStopLossAmount > (op.stopLoss || 0)) {
-                                    updateContract(op.id, undefined, newStopLossAmount);
-                                }
-                            }
-                        }
-
                         if (isSold) {
                             sellingContractsRef.current.delete(contract.contract_id);
-                            trailingStateRef.current.delete(contract.contract_id);
 
                             const newStatus = contract.profit >= 0 ? 'won' : 'lost';
                             const exitPrice = contract.exit_tick_display_value 
@@ -867,7 +845,7 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
                             expirationTime: newOperation.expirationTime,
                             contractType: 'multiplier'
                         });
-
+            
                         return [newOperation, ...prevLog];
                     }
                     

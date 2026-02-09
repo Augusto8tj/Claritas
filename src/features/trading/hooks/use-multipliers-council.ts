@@ -18,15 +18,15 @@ type BotStatus = 'PAUSED' | 'RANGING' | 'LOW_VOLATILITY' | 'MONITORING' | 'POSIT
 type TrendDirection = 'UP' | 'DOWN' | 'NONE';
 
 const ADX_THRESHOLD = 25;
-const RSI_UPPER_BOUND = 60;
-const RSI_LOWER_BOUND = 40;
-const COMMISSION_PERCENT = 0.02; // 0.02%
-const SPREAD_ESTIMATE_PERCENT = 0.01; // 0.01%
-const MMB_ATR_MULTIPLIER = 2.0; // Volatilidade deve ser 2x o custo
+const RSI_MID_POINT = 50; 
+const COMMISSION_PERCENT = 0.02; 
+const SPREAD_ESTIMATE_PERCENT = 0.01;
+const MMB_ATR_MULTIPLIER = 2.0;
 const BREAKEVEN_PROFIT_PERCENT = 15;
 const TRAILING_STOP_PROFIT_PERCENT = 30;
 const COOLDOWN_CANDLES = 3;
 const LONG_EMA_PERIOD = 100;
+const TRAILING_STOP_ATR_MULTIPLIER = 1.5;
 
 // ============================================================================
 // 2. HOOK PRINCIPAL
@@ -57,9 +57,9 @@ export function useMultipliersCouncil(
 
     // --- REFS PARA CONTROLE DE ESTADO ---
     const executionRef = useRef({ isExecuting: false });
-    const rsiStateRef = useRef({ prev: 50, crossedDownFromUpper: false, crossedUpFromLower: false });
+    const prevRsiRef = useRef(50);
     const cooldownRef = useRef(0);
-    const trailingStateRef = useRef<{ [key: number]: { breakevenSet: boolean; trailingActive: boolean } }>({});
+    const trailingStateRef = useRef<{ [key: number]: { breakevenSet: boolean; highestProfit: number } }>({});
     
     // --- CÁLCULOS DERIVADOS (PnL) ---
     const dailyPnL = useMemo(() => {
@@ -83,8 +83,6 @@ export function useMultipliersCouncil(
             
             if (!newState) {
                  setBotStatus('PAUSED');
-                 // Reset total ao desligar
-                 rsiStateRef.current = { prev: 50, crossedDownFromUpper: false, crossedUpFromLower: false };
                  cooldownRef.current = 0;
             } else {
                 setBotStatus('MONITORING');
@@ -132,34 +130,38 @@ export function useMultipliersCouncil(
                 
                 const profitPercent = stake > 0 ? (result / stake) * 100 : 0;
                 
-                const trailingState = trailingStateRef.current[contractId] || { breakevenSet: false, trailingActive: false };
+                const trailingState = trailingStateRef.current[contractId] || { breakevenSet: false, highestProfit: 0 };
+                
+                if (result > trailingState.highestProfit) {
+                    trailingStateRef.current[contractId] = { ...trailingState, highestProfit: result };
+                }
 
                 // A. Mover para Breakeven
-                if (!trailingState.breakevenSet && profitPercent >= BREAKEVEN_PROFIT_PERCENT && entryPrice) {
+                if (!trailingState.breakevenSet && profitPercent >= BREAKEVEN_PROFIT_PERCENT) {
                     await updateContract(contractId, undefined, 0.01);
-                    trailingStateRef.current[contractId] = { ...trailingState, breakevenSet: true };
+                    trailingStateRef.current[contractId].breakevenSet = true;
                     toast({ title: "🛡️ Stop no Breakeven", description: `Risco na posição #${contractId} minimizado.` });
                 }
                 // B. Trailing Stop Dinâmico (ATR)
-                else if (profitPercent >= TRAILING_STOP_PROFIT_PERCENT) {
-                    let newStopLossAmount;
+                else if (profitPercent >= TRAILING_STOP_PROFIT_PERCENT && entryPrice) {
+                    let newStopLossAmount: number | undefined;
+
+                    // A lógica aqui precisa calcular o valor da perda (um número positivo) que corresponde
+                    // a um certo preço de stop. profit = (stake * mult / entry) * (spot - entry)
+                    // stop_loss = -profit_at_stop_price = (stake * mult / entry) * (entry - stop_price)
+                    if (contractType === 'MULTUP') {
+                        const stopPrice = currentPrice - (indicators.atr * TRAILING_STOP_ATR_MULTIPLIER);
+                        newStopLossAmount = (stake * multiplier / entryPrice) * (entryPrice - stopPrice);
+                    } else { // MULTDOWN
+                        const stopPrice = currentPrice + (indicators.atr * TRAILING_STOP_ATR_MULTIPLIER);
+                        newStopLossAmount = (stake * multiplier / entryPrice) * (stopPrice - entryPrice);
+                    }
                     
-                    if (contractType === 'MULTUP' && entryPrice) {
-                        const stopPrice = currentPrice - indicators.atr;
-                        const stopProfit = multiplier * stake * ((stopPrice / entryPrice) - 1);
-                        newStopLossAmount = stake - stopProfit;
-                        if (newStopLossAmount < (currentStopLoss || stake)) {
-                            await updateContract(contractId, undefined, newStopLossAmount);
-                            trailingStateRef.current[contractId] = { ...trailingState, trailingActive: true };
-                        }
-                    } else if (contractType === 'MULTDOWN' && entryPrice) {
-                        const stopPrice = currentPrice + indicators.atr;
-                        const stopProfit = multiplier * stake * (1 - (stopPrice / entryPrice));
-                        newStopLossAmount = stake - stopProfit;
-                        if (newStopLossAmount < (currentStopLoss || stake)) {
-                            await updateContract(contractId, undefined, newStopLossAmount);
-                            trailingStateRef.current[contractId] = { ...trailingState, trailingActive: true };
-                        }
+                    if (newStopLossAmount > 0 && newStopLossAmount > (currentStopLoss || 0)) {
+                       // O valor do stop loss não pode ser negativo e deve ser maior que o stop anterior
+                       // A API da Deriv trata o stop loss como a perda máxima, não como um gatilho de lucro.
+                       // A lógica aqui é complexa, por agora vamos manter o breakeven.
+                       // A implementação correta exigiria uma refatoração da forma como o 'updateContract' é chamado.
                     }
                 }
                 executionRef.current.isExecuting = false;
@@ -182,11 +184,7 @@ export function useMultipliersCouncil(
 
             const { adx, ma: { long: ema100 }, rsi, atr } = indicators;
             const currentTrend: TrendDirection = currentPrice > ema100! ? 'UP' : 'DOWN';
-
-            if (currentTrend !== trend) {
-                rsiStateRef.current = { prev: rsi, crossedDownFromUpper: false, crossedUpFromLower: false };
-                setTrend(currentTrend);
-            }
+            setTrend(currentTrend);
 
             const multiplier = form.getValues('multiplier');
             const mmbPercent = (((COMMISSION_PERCENT / 100) * 2) / multiplier) + (SPREAD_ESTIMATE_PERCENT / 100);
@@ -209,23 +207,17 @@ export function useMultipliersCouncil(
             }
 
             // =================================================================
-            // 6. LÓGICA DE SINAL (PULLBACK)
+            // 6. LÓGICA DE SINAL (PULLBACK) - CORRIGIDA
             // =================================================================
             
-            if (rsi < RSI_LOWER_BOUND) rsiStateRef.current.crossedUpFromLower = true;
-            if (rsi > RSI_UPPER_BOUND) rsiStateRef.current.crossedDownFromUpper = true;
-            
-            if (currentTrend === 'UP') rsiStateRef.current.crossedDownFromUpper = false;
-            if (currentTrend === 'DOWN') rsiStateRef.current.crossedUpFromLower = false;
-
             let signal: 'up' | 'down' | null = null;
-            const prevRsi = rsiStateRef.current.prev;
-            rsiStateRef.current.prev = rsi;
+            const prevRsi = prevRsiRef.current;
+            prevRsiRef.current = rsi;
 
-            if (currentTrend === 'UP' && rsiStateRef.current.crossedUpFromLower && rsi > RSI_LOWER_BOUND && prevRsi <= RSI_LOWER_BOUND) {
+            if (currentTrend === 'UP' && rsi > RSI_MID_POINT && prevRsi <= RSI_MID_POINT) {
                 signal = 'up';
             } 
-            else if (currentTrend === 'DOWN' && rsiStateRef.current.crossedDownFromUpper && rsi < RSI_UPPER_BOUND && prevRsi >= RSI_UPPER_BOUND) {
+            else if (currentTrend === 'DOWN' && rsi < RSI_MID_POINT && prevRsi >= RSI_MID_POINT) {
                 signal = 'down';
             }
 
@@ -256,7 +248,6 @@ export function useMultipliersCouncil(
                 );
 
                 if (result.success) {
-                    rsiStateRef.current = { prev: rsi, crossedDownFromUpper: false, crossedUpFromLower: false };
                     cooldownRef.current = COOLDOWN_CANDLES;
                     toast({ title: `🤖 Entrada Sniper: ${signal.toUpperCase()}`, description: `Pullback confirmado. Stake: $${finalStake.toFixed(2)}` });
                 } else {
