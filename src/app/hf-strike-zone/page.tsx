@@ -1,4 +1,3 @@
-// src/app/hf-strike-zone/page.tsx
 'use client';
 
 import React, { useState, useMemo, useCallback, useEffect } from 'react';
@@ -18,7 +17,7 @@ import { Target, TrendingUp, BarChart, Brain, Activity, Zap, ShieldAlert, Bot, T
 import { cn } from '@/lib/utils';
 import type { Operation, CandleData, TimePeriod } from '@/lib/types';
 import { InstitutionalMetricsDashboard } from '@/features/trading/components/hf-trader/institutional-metrics-dashboard';
-import EnsembleSignalCard from '@/features/trading/components/hf-trader/ensemble-signal-card';
+import { EnsembleSignalCard } from '@/features/trading/components/hf-trader/ensemble-signal-card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { runAllStrategiesBacktest, BacktestResult } from '@/features/trading/backtest/hf-backtest-engine';
 import { StrategyType } from '@/features/trading/services/hf-strike-logic';
