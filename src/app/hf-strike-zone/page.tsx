@@ -10,17 +10,17 @@ import { DerivApiProviderV2 as DerivApiProvider, useDerivApiV2 as useDerivApi } 
 import { AssetSelectorV2 as AssetSelector } from '@/features/trading/components/deriv-trader/asset-selector-v2';
 import { ApiStatusIndicatorV2 as ApiStatusIndicator } from '@/features/trading/components/deriv-trader/ApiStatusIndicatorV2';
 import { MarketChart } from '@/features/trading/components/deriv-trader/market-chart';
-import { useHFStrikeZone, type StrikeZone } from '@/features/trading/hooks/use-hf-strike-zone';
+import { useHFStrikeZone } from '@/features/trading/hooks/use-hf-strike-zone';
 import { HFExecutionLog } from '@/features/trading/components/hf-trader/hf-execution-log';
 import { HFConfig, HFConfigPanel } from '@/features/trading/components/hf-trader/hf-config-panel';
 import { saveHFTradeLog } from '@/services/hf-data-service';
 import { Target, TrendingUp, BarChart, Brain, Activity, Zap, ShieldAlert, Bot, TestTube } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import type { Operation, CandleData, TimePeriod } from '@/lib/types';
+import type { Operation, CandleData, TimePeriod, InstitutionalBacktestResult } from '@/lib/types';
 import { InstitutionalMetricsDashboard } from '@/features/trading/components/hf-trader/institutional-metrics-dashboard';
 import { EnsembleSignalCard } from '@/features/trading/components/hf-trader/ensemble-signal-card';
 import { Skeleton } from '@/components/ui/skeleton';
-import { runAllStrategiesBacktest, runWalkForwardAnalysis, runMonteCarloSimulation, type InstitutionalBacktestResult, type WalkForwardResult, type MonteCarloResult } from '@/features/trading/backtest/hf-backtest-engine';
+import { runAllStrategiesBacktest } from '@/features/trading/backtest/hf-backtest-engine';
 import { StrategyType } from '@/features/trading/services/hf-strike-logic';
 import { Button } from '@/components/ui/button';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
@@ -41,7 +41,7 @@ function PageContent() {
     enabled: true, minConfidence: 70, autoExecute: false, maxConcurrentTrades: 1, preferredDuration: 20
   });
   const [isExecuting, setIsExecuting] = useState(false);
-  const [previousZones, setPreviousZones] = useState<StrikeZone[]>([]);
+  const [previousZones, setPreviousZones] = useState<any[]>([]);
 
   const {
     ensembleSignal, marketRegime, positionSizing, riskManager,
@@ -50,7 +50,7 @@ function PageContent() {
 
   useEffect(() => {
     if (ensembleSignal && ensembleSignal.direction !== 'NEUTRAL') {
-      setPreviousZones(prev => [ensembleSignal as unknown as StrikeZone, ...prev].slice(0, 10));
+      setPreviousZones(prev => [ensembleSignal, ...prev].slice(0, 10));
     }
   }, [ensembleSignal]);
 
@@ -167,6 +167,14 @@ function PageContent() {
         setIsBacktesting(false);
     }
   }, [activeSymbol, getHistoricalData, toast, hfConfig]);
+  
+  const handleRunWalkForward = useCallback(() => {
+    toast({ title: 'Em Breve', description: 'A análise Walk-Forward será implementada futuramente.' });
+  }, [toast]);
+
+  const handleRunMonteCarlo = useCallback(() => {
+    toast({ title: 'Em Breve', description: 'A simulação de Monte Carlo será implementada futuramente.' });
+  }, [toast]);
 
 
   return (
@@ -216,7 +224,9 @@ function PageContent() {
                     <BacktestPanel 
                         results={backtestResults} 
                         onRunBacktest={handleRunBacktest} 
-                        isBacktesting={isBacktesting} 
+                        isBacktesting={isBacktesting}
+                        onRunWalkForward={handleRunWalkForward}
+                        onRunMonteCarlo={handleRunMonteCarlo}
                     />
                 </CollapsibleContent>
             </Collapsible>

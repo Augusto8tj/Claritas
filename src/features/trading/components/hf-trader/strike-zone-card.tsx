@@ -27,7 +27,7 @@ export function StrikeZoneCard({ zone, previousZones, strategy, onExecute, isExe
   const [timeLeft, setTimeLeft] = useState<number | null>(null);
   
   useEffect(() => {
-    if (!zone || zone.type === 'NEUTRAL') {
+    if (!zone || zone.type === 'NEUTRAL' || !zone.entry.timestamp || zone.duration <= 0) {
       setTimeLeft(null);
       return;
     }
@@ -39,7 +39,7 @@ export function StrikeZoneCard({ zone, previousZones, strategy, onExecute, isExe
       const remaining = Math.max(0, Math.floor((expiryTime - now) / 1000));
       setTimeLeft(remaining);
       
-      if (remaining === 0) {
+      if (remaining === 0 && interval) {
         clearInterval(interval);
       }
     };
@@ -163,7 +163,7 @@ export function StrikeZoneCard({ zone, previousZones, strategy, onExecute, isExe
                 <p className="font-mono text-red-700">${zone.targets.stopLoss.toFixed(5)}</p>
               </div>
             </div>
-            <div className="mt-2 pt-2 border-t border-green-300">
+            <div className="mt-2 pt-2 border-t border-current opacity-30">
               <p className="text-xs">
                 <strong>Risk/Reward:</strong> 1:{zone.targets.riskReward.toFixed(1)}
               </p>
