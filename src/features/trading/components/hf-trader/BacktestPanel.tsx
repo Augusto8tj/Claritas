@@ -115,12 +115,28 @@ export function BacktestPanel({
                 <TestTube className="mr-2 h-4 w-4" />
                 Backtest Simples
             </Button>
-            <Button onClick={onRunWalkForward} disabled={isBacktesting} variant="secondary" className="flex-1">
-                <GitCompareArrows className="mr-2 h-4 w-4" /> Walk-Forward
-            </Button>
-            <Button onClick={onRunMonteCarlo} disabled={isBacktesting || !results} variant="outline" className="flex-1">
-                <Dice5 className="mr-2 h-4 w-4" /> Monte Carlo
-            </Button>
+            <TooltipProvider>
+                <Tooltip>
+                    <TooltipTrigger asChild>
+                        <div className="flex-1">
+                            <Button onClick={onRunWalkForward} disabled={isBacktesting || !results} variant="secondary" className="w-full">
+                                <GitCompareArrows className="mr-2 h-4 w-4" /> Walk-Forward
+                            </Button>
+                        </div>
+                    </TooltipTrigger>
+                    {!results && <TooltipContent><p>Execute o 'Backtest Simples' primeiro para habilitar esta análise.</p></TooltipContent>}
+                </Tooltip>
+                <Tooltip>
+                    <TooltipTrigger asChild>
+                        <div className="flex-1">
+                            <Button onClick={onRunMonteCarlo} disabled={isBacktesting || !results} variant="outline" className="w-full">
+                                <Dice5 className="mr-2 h-4 w-4" /> Monte Carlo
+                            </Button>
+                        </div>
+                    </TooltipTrigger>
+                    {!results && <TooltipContent><p>Execute o 'Backtest Simples' primeiro para habilitar esta análise.</p></TooltipContent>}
+                </Tooltip>
+            </TooltipProvider>
         </div>
         
         {(isBacktesting && !results && !walkForwardResults && !monteCarloResult) && (
