@@ -421,7 +421,7 @@ export const DerivApiProviderAccumulators = ({ children }: { children: ReactNode
       const sellResponse: any = await makeRequest({ sell: contractId, price: 0 });
   
       if (sellResponse.error) {
-        const message = sellResponse.error.message || "Erro desconhecido da API ao vender.";
+        const message = sellResponse.error.message || `Erro desconhecido da API: ${JSON.stringify(sellResponse.error)}`;
         
         if (message.toLowerCase().includes("contract has expired") || message.toLowerCase().includes("contract is already closed")) {
           console.warn(`[Deriv Hook] Tentativa de vender contrato #${contractId} que já estava fechado.`);
@@ -434,11 +434,8 @@ export const DerivApiProviderAccumulators = ({ children }: { children: ReactNode
           return { success: true, message: "Contrato já estava fechado no servidor." };
         }
         
-        if (sellResponse.error.message) {
-            console.error("[Deriv Hook] Erro na API de venda:", sellResponse.error);
-        } else {
-            console.warn(`[Deriv Hook] Falha operacional ao vender o contrato #${contractId}. Resposta da API:`, sellResponse.error);
-        }
+        console.error(`[Deriv Hook] Erro na API de venda para o contrato #${contractId}:`, message, sellResponse.error);
+        
         sellingContractsRef.current.delete(contractId);
         return { success: false, message };
       }
