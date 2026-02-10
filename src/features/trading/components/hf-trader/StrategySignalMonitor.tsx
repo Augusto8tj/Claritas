@@ -9,7 +9,7 @@ import { Zap, TrendingUp, TrendingDown, HelpCircle, Activity } from 'lucide-reac
 import type { StrikeZone } from '@/features/trading/services/hf-strike-logic';
 import { strategyMetadata, StrategyType } from '@/features/trading/services/hf-strike-logic';
 import { cn } from '@/lib/utils';
-import { Tooltip, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { Tooltip, TooltipProvider, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
 
 interface StrategySignalMonitorProps {
   signals: (StrikeZone | null)[];
