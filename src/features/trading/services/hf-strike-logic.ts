@@ -31,6 +31,7 @@ export interface StrikeZone {
   entry: { price: number; timestamp: number; };
   targets: { takeProfit: number; stopLoss: number; riskReward: number; };
   indicators: { rsi: number; bbPosition: number; bbWidth: number; volumeSpike: boolean; divergence: 'bullish' | 'bearish' | null; };
+  strategy: StrategyType;
   duration: number; // Duração sugerida em segundos
 }
 
@@ -61,6 +62,7 @@ export function detectHFMeanReversionZone(indicators: Indicators, currentPrice: 
   if (type === 'NEUTRAL') return null;
   const atr = bbAnalysis.upper - bbAnalysis.lower;
   return { type, confidence: Math.min(100, confidence), triggers, entry: { price: currentPrice, timestamp: Date.now() },
+    strategy: 'HF_MEAN_REVERSION',
     targets: {
       takeProfit: type === 'LONG_ENTRY' ? currentPrice + atr * 0.75 : currentPrice - atr * 0.75,
       stopLoss: type === 'LONG_ENTRY' ? currentPrice - atr * 0.5 : currentPrice + atr * 0.5,
@@ -73,7 +75,7 @@ export function detectStandardTrendZone(indicators: Indicators, currentPrice: nu
   if (!indicators.adx || !indicators.ma.long || !indicators.rsi || !indicators.atr) return null;
   const { adx, ma: { long: ema100 }, rsi, atr } = indicators;
   
-  if (adx < 20) return { type: 'NEUTRAL', confidence: 0, triggers: ['VETO: Mercado lateral (ADX < 20)'], entry: {price:0, timestamp:0}, targets: {takeProfit:0, stopLoss:0, riskReward:0}, indicators:{rsi:0,bbPosition:0,bbWidth:0,volumeSpike:false,divergence:null}, duration:0 };
+  if (adx < 20) return { type: 'NEUTRAL', confidence: 0, triggers: ['VETO: Mercado lateral (ADX < 20)'], strategy: 'STD_TREND_FOLLOW', entry: {price:0, timestamp:0}, targets: {takeProfit:0, stopLoss:0, riskReward:0}, indicators:{rsi:0,bbPosition:0,bbWidth:0,volumeSpike:false,divergence:null}, duration:0 };
   
   const isUpTrend = currentPrice > ema100!;
   const isDownTrend = currentPrice < ema100!;
@@ -101,6 +103,7 @@ export function detectStandardTrendZone(indicators: Indicators, currentPrice: nu
   if (type === 'NEUTRAL') return null;
   
   return { type, confidence, triggers, entry: { price: currentPrice, timestamp: Date.now() },
+    strategy: 'STD_TREND_FOLLOW',
     targets: {
       takeProfit: type === 'LONG_ENTRY' ? currentPrice + atr * 2.0 : currentPrice - atr * 2.0,
       stopLoss: type === 'LONG_ENTRY' ? currentPrice - atr * 1.5 : currentPrice + atr * 1.5,
@@ -120,6 +123,7 @@ export function detectBollingerSqueezeZone(indicators: Indicators, currentPrice:
   else if (currentPrice < bb.lower) type = 'SHORT_ENTRY';
   else return null;
   return { type, confidence: 80, triggers: [`Squeeze de Bollinger rompido (${indicators.bbw.toFixed(2)}%)`], entry: { price: currentPrice, timestamp: Date.now() },
+    strategy: 'BOLLINGER_SQUEEZE',
     targets: {
       takeProfit: type === 'LONG_ENTRY' ? currentPrice + (bb.upper - bb.lower) * 1.5 : currentPrice - (bb.upper - bb.lower) * 1.5,
       stopLoss: bb.middle!,
@@ -174,6 +178,7 @@ export function detectVolumeAbsorptionZone(candles: CandleData[], indicators: In
     type, 
     confidence: 80,
     triggers: [`Absorção de Volume após clímax (${(climaxCandle.volume! / avgVolume).toFixed(1)}x média)`], 
+    strategy: 'VOLUME_ABSORPTION',
     entry: { price: absorptionCandle.close, timestamp: Date.now() },
     targets: {
       takeProfit: type === 'LONG_ENTRY' ? climaxCandle.high : climaxCandle.low,
@@ -195,6 +200,7 @@ export function detectMicrostructureScalpZone(ticks: TickData[], candles: Candle
   if (type === 'NEUTRAL') return null;
   const atr = indicators.atr || 0.0001;
   return { type, confidence: 70, triggers: [`Fluxo de Ordens (${micro.pressure})`], entry: { price: currentPrice, timestamp: Date.now() },
+    strategy: 'MICROSTRUCTURE_SCALP',
     targets: {
       takeProfit: type === 'LONG_ENTRY' ? currentPrice + atr * 0.5 : currentPrice - atr * 0.5,
       stopLoss: type === 'LONG_ENTRY' ? currentPrice - atr * 0.25 : currentPrice + atr * 0.25,

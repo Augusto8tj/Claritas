@@ -29,6 +29,12 @@ const CHAMPION_STRATEGY_MAP: Record<RegimeCharacteristics['regime'], { strategy:
   CALM_ACCUMULATION: { strategy: 'VOLUME_ABSORPTION', reason: 'Identifica zonas de absorção antes de grandes movimentos.' },
 };
 
+const EXPLORATORY_CONFIG = {
+  MIN_CONFIDENCE: 85, // Apenas considera sinais exploratórios de alta confiança
+  STAKE_SCALING: 0.25 // Usa apenas 25% do stake calculado para trades exploratórios
+};
+
+
 export function useHFStrikeZone(
   priceTicks: TickData[],
   botCandleData: CandleData[],
@@ -42,6 +48,7 @@ export function useHFStrikeZone(
   const [marketRegime, setMarketRegime] = useState<RegimeCharacteristics | null>(null);
   const [championStrategy, setChampionStrategy] = useState<{ strategy: StrategyType, reason: string } | null>(null);
   const [activeStrikeZone, setActiveStrikeZone] = useState<StrikeZone | null>(null);
+  const [isExploratory, setIsExploratory] = useState(false);
   const [riskManager] = useState(() => new AdvancedRiskManager({ maxDailyLoss: 10, maxDrawdown: 20, maxConcurrentTrades: 3, maxExposurePerAsset: 25, kellyFraction: 0.25 }, 1000));
   const [positionSizing, setPositionSizing] = useState<PositionSizeRecommendation | null>(null);
 
@@ -57,44 +64,58 @@ export function useHFStrikeZone(
     };
 
     const runCycle = async () => {
-      // 1. Detectar Regime de Mercado
       const regime = detectMarketRegime(indicators, botCandleData);
       setMarketRegime(regime);
 
-      // 2. Selecionar Estratégia Campeã
       const champion = CHAMPION_STRATEGY_MAP[regime.regime];
       setChampionStrategy(champion);
 
-      // 3. Executar Apenas a Estratégia Campeã
-      let strikeZone: StrikeZone | null = null;
       const currentPrice = priceTicks[priceTicks.length - 1].price;
-
-      switch (champion.strategy) {
-        case 'HF_MEAN_REVERSION':
-          strikeZone = detectHFMeanReversionZone(indicators, currentPrice);
-          break;
-        case 'STD_TREND_FOLLOW':
-          strikeZone = detectStandardTrendZone(indicators, currentPrice, rsiStateRef.current.prev);
-          break;
-        case 'BOLLINGER_SQUEEZE':
-          strikeZone = detectBollingerSqueezeZone(indicators, currentPrice);
-          break;
-        case 'VOLUME_ABSORPTION':
-          strikeZone = detectVolumeAbsorptionZone(botCandleData, indicators);
-          break;
-        case 'MICROSTRUCTURE_SCALP':
-          strikeZone = detectMicrostructureScalpZone(priceTicks, botCandleData, indicators, currentPrice);
-          break;
-      }
-      setActiveStrikeZone(strikeZone);
       
-      // 4. Calcular Tamanho da Posição se houver sinal
-      if (strikeZone && strikeZone.type !== 'NEUTRAL') {
+      const allSignals: (StrikeZone | null)[] = [
+        detectHFMeanReversionZone(indicators, currentPrice),
+        detectStandardTrendZone(indicators, currentPrice, rsiStateRef.current.prev),
+        detectBollingerSqueezeZone(indicators, currentPrice),
+        detectVolumeAbsorptionZone(botCandleData, indicators),
+        detectMicrostructureScalpZone(priceTicks, botCandleData, indicators, currentPrice),
+      ];
+      
+      const validSignals = allSignals.filter((zone): zone is StrikeZone => zone !== null && zone.type !== 'NEUTRAL');
+      
+      let finalStrikeZone: StrikeZone | null = null;
+      let finalIsExploratory = false;
+
+      const championSignal = validSignals.find(s => s.strategy === champion.strategy);
+
+      if (championSignal) {
+        finalStrikeZone = championSignal;
+        finalIsExploratory = false;
+      } else {
+        const exploratorySignals = validSignals.filter(
+          s => s.confidence >= EXPLORATORY_CONFIG.MIN_CONFIDENCE
+        );
+        
+        if (exploratorySignals.length > 0) {
+          exploratorySignals.sort((a, b) => b.confidence - a.confidence);
+          finalStrikeZone = exploratorySignals[0];
+          finalIsExploratory = true;
+        }
+      }
+      
+      setActiveStrikeZone(finalStrikeZone);
+      setIsExploratory(finalIsExploratory);
+      
+      if (finalStrikeZone) {
         const pseudoSignal = {
-          expectedWinRate: 0.5 + (strikeZone.confidence - 50) / 100 * 0.4, // Mapeia 50-100% conf. para 50-70% WR
-          // Adicione outras propriedades necessárias se `calculatePositionSize` precisar
+          expectedWinRate: 0.5 + (finalStrikeZone.confidence - 50) / 100 * 0.4,
         };
         const sizing = riskManager.calculatePositionSize(pseudoSignal as any, riskManager.currentCapital);
+
+        if (finalIsExploratory) {
+            sizing.recommendedStake *= EXPLORATORY_CONFIG.STAKE_SCALING;
+            sizing.reasoning.push(`EXPLORATÓRIO: Stake reduzido em ${(1-EXPLORATORY_CONFIG.STAKE_SCALING)*100}%`);
+        }
+        
         setPositionSizing(sizing);
       } else {
         setPositionSizing(null);
@@ -114,6 +135,7 @@ export function useHFStrikeZone(
     activeStrikeZone,
     marketRegime,
     championStrategy,
+    isExploratory,
     positionSizing,
     riskManager,
     fullIndicators: indicators,
