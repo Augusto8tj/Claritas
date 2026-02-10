@@ -51,6 +51,7 @@ export function useHFStrikeZone(
   const [isExploratory, setIsExploratory] = useState(false);
   const [riskManager] = useState(() => new AdvancedRiskManager({ maxDailyLoss: 10, maxDrawdown: 20, maxConcurrentTrades: 3, maxExposurePerAsset: 25, kellyFraction: 0.25 }, 1000));
   const [positionSizing, setPositionSizing] = useState<PositionSizeRecommendation | null>(null);
+  const [allSignals, setAllSignals] = useState<(StrikeZone | null)[]>([]);
 
   const indicators = useMemo((): Indicators | null => {
     if (!enabled || botCandleData.length < 100) return null;
@@ -72,15 +73,16 @@ export function useHFStrikeZone(
 
       const currentPrice = priceTicks[priceTicks.length - 1].price;
       
-      const allSignals: (StrikeZone | null)[] = [
+      const allSignalsResult: (StrikeZone | null)[] = [
         detectHFMeanReversionZone(indicators, currentPrice),
         detectStandardTrendZone(indicators, currentPrice, rsiStateRef.current.prev),
         detectBollingerSqueezeZone(indicators, currentPrice),
         detectVolumeAbsorptionZone(botCandleData, indicators),
         detectMicrostructureScalpZone(priceTicks, botCandleData, indicators, currentPrice),
       ];
+      setAllSignals(allSignalsResult);
       
-      const validSignals = allSignals.filter((zone): zone is StrikeZone => zone !== null && zone.type !== 'NEUTRAL');
+      const validSignals = allSignalsResult.filter((zone): zone is StrikeZone => zone !== null && zone.type !== 'NEUTRAL');
       
       let finalStrikeZone: StrikeZone | null = null;
       let finalIsExploratory = false;
@@ -140,5 +142,6 @@ export function useHFStrikeZone(
     riskManager,
     fullIndicators: indicators,
     supplyDemandZones: (indicators as any)?.supplyDemandZones,
+    allSignals,
   };
 }

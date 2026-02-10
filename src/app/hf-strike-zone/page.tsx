@@ -26,6 +26,7 @@ import { StrategyType } from '@/features/trading/services/hf-strike-logic';
 import { Button } from '@/components/ui/button';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { BacktestPanel } from '@/features/trading/components/hf-trader/BacktestPanel';
+import { StrategySignalMonitor } from '@/features/trading/components/hf-trader/StrategySignalMonitor';
 
 
 function PageContent() {
@@ -47,10 +48,12 @@ function PageContent() {
     activeStrikeZone,
     marketRegime,
     championStrategy,
+    isExploratory,
     positionSizing,
     riskManager,
     fullIndicators,
     supplyDemandZones,
+    allSignals,
   } = useHFStrikeZone(priceTicks, botCandleData, timePeriod, hfConfig.enabled); 
 
   const handleExecuteStrike = useCallback(async () => {
@@ -176,7 +179,7 @@ function PageContent() {
   }, [activeSymbol, backtestData, toast, hfConfig]);
   
   const handleRunMonteCarlo = useCallback(async () => {
-      if (!backtestResults || !backtestData || backtestData.length === 0) {
+      if (!backtestResults || backtestData.length === 0) {
           toast({ title: "Execute o Backtest Simples Primeiro", description: "A Simulação de Monte Carlo precisa dos resultados de um backtest base.", variant: 'destructive' });
           return;
       }
@@ -238,9 +241,9 @@ function PageContent() {
 
             <HFExecutionLog operations={operationsLog} clearActiveContracts={clearActiveContracts} />
             
-            <Collapsible>
+             <Collapsible>
                 <CollapsibleTrigger asChild>
-                   <Button variant="outline" className="w-full">
+                   <Button variant="outline" className="w-full" type="button">
                         <TestTube className="mr-2 h-4 w-4" />
                         Painel de Backtesting
                    </Button>
@@ -259,7 +262,8 @@ function PageContent() {
               </Collapsible>
         </div>
         <div className="space-y-6">
-          <ChampionSignalCard champion={championStrategy} signal={activeStrikeZone} regime={marketRegime} onExecute={handleExecuteStrike} isExecuting={isExecuting}/>
+          <ChampionSignalCard champion={championStrategy} signal={activeStrikeZone} regime={marketRegime} onExecute={handleExecuteStrike} isExecuting={isExecuting} isExploratory={isExploratory} />
+          <StrategySignalMonitor signals={allSignals} />
           {championStrategy && <HFConfigPanel config={hfConfig} onConfigChange={updates => setHFConfig(prev => ({ ...prev, ...updates }))} disabled={isExecuting} strategy={championStrategy.strategy} />}
         </div>
       </div>
