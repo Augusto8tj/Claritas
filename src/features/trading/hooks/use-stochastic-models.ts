@@ -66,7 +66,7 @@ const bayesianConfidenceInterval = (wins: number, total: number): { lower: numbe
     const alpha = wins + 1;
     const beta = (total - wins) + 1;
     const mean = alpha / (alpha + beta);
-    if (total < 20) return { mean, lower: 0, upper: 1 };
+    if (total < 10) return { mean, lower: 0, upper: 1 };
     const variance = (alpha * beta) / ((alpha + beta) ** 2 * (alpha + beta + 1));
     const stdDev = Math.sqrt(variance);
     const z = 1.645;
