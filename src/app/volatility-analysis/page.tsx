@@ -613,7 +613,7 @@ const IsolatedMarketChart = () => {
 function PageContent() {
   const { 
     activeSymbol, chartData, operationsLog, sellContract, clearActiveContracts,
-    priceTicks, durationLimits, getHistoricalData,
+    priceTicks, durationLimits, getHistoricalData, isConnected
   } = useDerivApi();
   const { toast } = useToast();
   const [predictiveLogs, setPredictiveLogs] = useState<PredictiveTradeLog[]>([]);
@@ -635,7 +635,7 @@ function PageContent() {
   ], []);
 
   const handleInitialWarmup = useCallback(async () => {
-    if (!user || !activeSymbol) {
+    if (!user || !activeSymbol || !isConnected) {
         setIsWarmingUp(false);
         return;
     };
@@ -654,11 +654,13 @@ function PageContent() {
     } finally {
         setIsWarmingUp(false);
     }
-  }, [user, activeSymbol, getHistoricalData, toast, horizonsConfigForBacktest]);
+  }, [user, activeSymbol, getHistoricalData, toast, horizonsConfigForBacktest, isConnected]);
 
   useEffect(() => {
-    handleInitialWarmup();
-  }, [activeSymbol, handleInitialWarmup]);
+    if (isConnected) {
+      handleInitialWarmup();
+    }
+  }, [activeSymbol, handleInitialWarmup, isConnected]);
 
   useEffect(() => {
     if (!user) {
