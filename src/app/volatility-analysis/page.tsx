@@ -276,6 +276,8 @@ interface StochasticLabProps {
   deletingPredictiveLogId: string | null;
   operationsLog: Operation[];
   activeSymbol: string | null;
+  initialPerformance: BacktestResult | null;
+  isWarmingUp: boolean;
 }
 
 const BacktestResultViewer = ({ result }: { result: BacktestResult | null }) => {
@@ -340,6 +342,8 @@ function StochasticLab({
     deletingPredictiveLogId,
     operationsLog,
     activeSymbol,
+    initialPerformance,
+    isWarmingUp,
 }: StochasticLabProps) {
   const { user } = useAuth();
   const { toast } = useToast();
@@ -352,7 +356,7 @@ function StochasticLab({
     adaptiveDrifts, 
     meanReversionSignal, 
     volatilityRegime 
-  } = useStochasticModels(realData, priceTicks, operationsLog);
+  } = useStochasticModels(realData, priceTicks, operationsLog, initialPerformance);
   
   const [isBacktesting, setIsBacktesting] = useState(false);
   const [backtestPoints, setBacktestPoints] = useState(20000);
@@ -433,6 +437,15 @@ function StochasticLab({
 
   const isSystemViable = systemHealthStats.totalTrades >= 200 && systemHealthStats.winRate > 51;
 
+  if (isWarmingUp) {
+    return (
+        <Card className="h-full flex flex-col col-span-1 lg:col-span-3 items-center justify-center text-muted-foreground">
+            <Loader2 className="h-10 w-10 animate-spin text-primary mb-4" />
+            <p className="font-semibold">Aquecendo Cérebro Preditivo...</p>
+            <p className="text-sm">Calibrando confiança inicial com dados históricos.</p>
+        </Card>
+    );
+  }
 
   return (
     <Card className="h-full flex flex-col col-span-1 lg:col-span-3">
@@ -600,17 +613,52 @@ const IsolatedMarketChart = () => {
 function PageContent() {
   const { 
     activeSymbol, chartData, operationsLog, sellContract, clearActiveContracts,
-    priceTicks, durationLimits,
+    priceTicks, durationLimits, getHistoricalData,
   } = useDerivApi();
   const { toast } = useToast();
   const [predictiveLogs, setPredictiveLogs] = useState<PredictiveTradeLog[]>([]);
   const [isLogsLoading, setIsLogsLoading] = useState(true);
   const [deletingPredictiveLogId, setDeletingPredictiveLogId] = useState<string | null>(null);
   const { user } = useAuth();
+  const [initialPerformance, setInitialPerformance] = useState<BacktestResult | null>(null);
+  const [isWarmingUp, setIsWarmingUp] = useState(true);
   
   const autopilot = useMasterAutopilot();
-  
   const form = useFormContext<VolatilityTraderFormValues>();
+
+  const horizonsConfigForBacktest = useMemo(() => [
+    { name: '1t', ticks: 1, type: 'tick', window: 6 }, { name: '3t', ticks: 3, type: 'tick', window: 6 },
+    { name: '6t', ticks: 6, type: 'tick', window: 6 }, { name: '10t', ticks: 10, type: 'tick', window: 10 },
+    { name: '15s', ticks: 15, type: 'second', window: 10 }, { name: '20s', ticks: 20, type: 'second', window: 10 },
+    { name: '30s', ticks: 30, type: 'second', window: 75 }, { name: '40s', ticks: 40, type: 'second', window: 75 },
+    { name: '50s', ticks: 50, type: 'second', window: 75 },
+  ], []);
+
+  const handleInitialWarmup = useCallback(async () => {
+    if (!user || !activeSymbol) {
+        setIsWarmingUp(false);
+        return;
+    };
+    setIsWarmingUp(true);
+    try {
+        const historicalData = await getHistoricalData(activeSymbol, 'candles', 5000, '1m');
+        if (historicalData.length < 500) {
+            throw new Error("Dados históricos insuficientes para o aquecimento.");
+        }
+        const result = runStochasticBacktest(historicalData, { horizons: horizonsConfigForBacktest });
+        setInitialPerformance(result);
+        toast({ title: "Cérebro Preditivo Aquecido", description: "Confiança inicial calibrada com dados históricos." });
+    } catch (e: any) {
+        toast({ title: "Erro no Aquecimento", description: e.message, variant: 'destructive' });
+        setInitialPerformance(null);
+    } finally {
+        setIsWarmingUp(false);
+    }
+  }, [user, activeSymbol, getHistoricalData, toast, horizonsConfigForBacktest]);
+
+  useEffect(() => {
+    handleInitialWarmup();
+  }, [activeSymbol, handleInitialWarmup]);
 
   useEffect(() => {
     if (!user) {
@@ -702,7 +750,6 @@ function PageContent() {
     });
   };
   
-  // Atualiza o stake no formulário quando o Kelly Stake é calculado
   useEffect(() => {
     if (autopilot.kellyStake > 0) {
         form.setValue('stake', autopilot.kellyStake);
@@ -720,6 +767,8 @@ function PageContent() {
           deletingPredictiveLogId={deletingPredictiveLogId}
           operationsLog={operationsLog}
           activeSymbol={activeSymbol}
+          initialPerformance={initialPerformance}
+          isWarmingUp={isWarmingUp}
         />
         <div className="lg:col-span-2 space-y-6">
           <VolatilityTraderInterface 

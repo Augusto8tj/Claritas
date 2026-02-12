@@ -4,6 +4,7 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import type { ChartData, CandleData, TickData, Operation } from '@/lib/types';
 import { calculateATR, calculateBBWidth, calculateZScore } from '../services/volatility-forecast';
+import type { BacktestResult } from '../backtest/backtest-engine';
 
 // --- TYPE DEFINITIONS ---
 
@@ -16,6 +17,7 @@ export interface ExpertProjection {
     total: number;
     status: 'active' | 'suspended' | 'permanently_disabled';
     consecutiveLosses: number;
+    consecutiveWins: number;
     totalSuspensions: number;
     lastResult?: boolean;
 }
@@ -92,13 +94,13 @@ const updateDrift = (currentErrorEma: number, newError: number): number => (newE
 export function useStochasticModels(
     realData: ChartData[],
     priceTicks: TickData[],
-    operationsLog: Operation[] // Pass operations log for performance metrics
+    operationsLog: Operation[],
+    initialPerformance: BacktestResult | null
 ) {
     const [stats, setStats] = useState<MarketStats>({ annualizedVol: '0.0000', skewness: '0.0000', kurtosis: '0.0000' });
     const [assertivenessStats, setAssertivenessStats] = useState<Record<string, { wins: number; total: number; consecutiveLosses: number; consecutiveWins: number; status: 'active' | 'suspended' | 'permanently_disabled'; totalSuspensions: number; }>>({});
     const [expertVotes, setExpertVotes] = useState<Record<string, 'RISE' | 'FALL' | 'HOLD'>>({});
     
-    // NEW STATES
     const [meanReversionSignal, setMeanReversionSignal] = useState<MeanReversionSignal>({ zscore: 0, threshold: 2.0, direction: 'HOLD', confidence: 0 });
     const [volatilityRegime, setVolatilityRegime] = useState<VolatilityRegime>({ type: 'NORMAL', atr: 0, bbWidth: 0 });
 
@@ -118,10 +120,27 @@ export function useStochasticModels(
     useEffect(() => {
         const initialStats: Record<string, any> = {};
         horizons.forEach(h => {
-            initialStats[h.name] = { wins: 0, total: 0, consecutiveLosses: 0, consecutiveWins: 0, status: 'active', totalSuspensions: 0 };
+            const backtestMetrics = initialPerformance?.metricsByHorizon[h.name];
+            const wins = backtestMetrics?.wins || 0;
+            const total = backtestMetrics?.total || 0;
+
+            initialStats[h.name] = {
+                wins,
+                total,
+                consecutiveLosses: 0,
+                consecutiveWins: 0,
+                status: 'active',
+                totalSuspensions: 0
+            };
+            
+            if (total > 0) {
+                const winsArr = Array(wins).fill(true);
+                const lossesArr = Array(total - wins).fill(false);
+                assertivenessHistoryRef.current[h.name] = [...winsArr, ...lossesArr];
+            }
         });
         setAssertivenessStats(initialStats);
-    }, [horizons]);
+    }, [horizons, initialPerformance]);
 
     useEffect(() => {
         const candleData = realData.filter(isCandle);
@@ -141,9 +160,6 @@ export function useStochasticModels(
             setStats({ annualizedVol: annualizedVol.toFixed(4), skewness: skewness.toFixed(4), kurtosis: kurtosis.toFixed(4) });
         }
         
-        // --- NEW LOGIC INTEGRATION ---
-        
-        // 1. Mean Reversion Signal
         if (priceTicks.length >= 20) {
             const zscoreResult = calculateZScore(priceTicks, 20);
             const zscore = zscoreResult[zscoreResult.length-1];
@@ -152,7 +168,6 @@ export function useStochasticModels(
             else setMeanReversionSignal({ zscore, threshold: 0, direction: 'HOLD', confidence: 0 });
         }
 
-        // 2. Volatility Regime Detection
         const atr = calculateATR(candleData, 14);
         const avgATR = calculateATR(candleData, 50); // baseline
         const bbWidth = calculateBBWidth(candleData, 20, 2);
@@ -163,7 +178,6 @@ export function useStochasticModels(
         else if (atr < avgATR * 0.7) regimeType = 'LOW';
         setVolatilityRegime({ type: regimeType, atr, bbWidth });
 
-        // --- EXISTING GBM LOGIC ---
         const lastPriceValue = prices[prices.length - 1];
         const lastTime = candleData[candleData.length - 1].epoch;
         const newFuturePaths: Record<string, any[]> = {}, newAssertivenessData: Record<string, any> = {}, horizonsToUpdateStats = new Set<string>(), newVotes: Record<string, any> = {};
@@ -226,13 +240,16 @@ export function useStochasticModels(
             const history = assertivenessHistoryRef.current[h.name] || [];
             return { 
                 name: h.name, vote: expertVotes[h.name] || 'HOLD', wilson: bayesianConfidenceInterval(stats.wins, stats.total),
-                rawWinRate: stats.total > 0 ? (stats.wins / stats.total) * 100 : 0, hits: stats.wins, total: stats.total, ...stats, lastResult: history[history.length - 1]
+                rawWinRate: stats.total > 0 ? (stats.wins / stats.total) * 100 : 50, // Default to 50 if no trades
+                hits: stats.wins, total: stats.total, ...stats, lastResult: history[history.length - 1]
             };
         });
     }, [horizons, assertivenessStats, expertVotes]);
 
     const getEffectiveVote = useCallback((expert: ExpertProjection | undefined): 'RISE' | 'FALL' | 'HOLD' => {
         if (!expert || expert.vote === 'HOLD' || expert.status !== 'active') return 'HOLD';
+        // CORREÇÃO: Usar um limiar de 10 trades para o intervalo de confiança Bayesiano
+        if (expert.total < 10) return 'HOLD';
         if (expert.wilson.lower > 0.5) return expert.vote;
         if (expert.wilson.upper < 0.5) return expert.vote === 'RISE' ? 'FALL' : (expert.vote === 'FALL' ? 'RISE' : 'HOLD');
         return 'HOLD';
@@ -259,7 +276,6 @@ export function useStochasticModels(
         strongestSignal,
         stats,
         adaptiveDrifts: adaptiveDriftRef.current,
-        // NEW VALUES
         meanReversionSignal,
         volatilityRegime
     };
