@@ -39,8 +39,13 @@ export interface StrikeZone {
 // ============================================================================
 
 export function detectHFMeanReversionZone(indicators: Indicators, currentPrice: number): StrikeZone | null {
+  const startTime = performance.now();
   const { bb, bollingerBands, rsi: rsiValue } = indicators;
-  if (!bb || !bollingerBands || rsiValue === null) return null;
+  
+  if (!bb || !bollingerBands || rsiValue === null) {
+    console.debug('[HF_MEAN_REV] Missing indicators:', { bb: !!bb, rsi: !!rsiValue });
+    return null;
+  }
   
   const bbAnalysis = {
     upper: bb.upper!,
@@ -48,11 +53,9 @@ export function detectHFMeanReversionZone(indicators: Indicators, currentPrice: 
     middle: bb.middle!,
     width: indicators.bbw!,
     position: (currentPrice - bb.lower!) / (bb.upper! - bb.lower! || 1),
-    isSqueezed: indicators.bbw! < 1.5,
-    
-    // ✅ CORRIGIDO: Adiciona tolerância de 0.3%
-    touchingLower: currentPrice <= bb.lower! * 1.003,
-    touchingUpper: currentPrice >= bb.upper! * 0.997,
+    isSqueezed: indicators.bbw! < 1.0, // Squeeze mais apertado
+    touchingLower: currentPrice <= bb.lower! * 1.0003, // Tolerância menor
+    touchingUpper: currentPrice >= bb.upper! * 0.9997, // Tolerância menor
   };
   
   const rsiAnalysis = { value: rsiValue, oversold: rsiValue < 30, overbought: rsiValue > 70, divergence: null };
@@ -71,11 +74,9 @@ export function detectHFMeanReversionZone(indicators: Indicators, currentPrice: 
     confidence = 75;
   }
   
-  if (type === 'NEUTRAL') return null;
-  
   const atr = bbAnalysis.upper - bbAnalysis.lower;
   
-  return {
+  const zone: StrikeZone | null = type === 'NEUTRAL' ? null : {
     type,
     confidence: Math.min(100, confidence),
     triggers,
@@ -89,24 +90,37 @@ export function detectHFMeanReversionZone(indicators: Indicators, currentPrice: 
     indicators: { rsi: rsiAnalysis.value, bbPosition: bbAnalysis.position, bbWidth: bbAnalysis.width, volumeSpike: false, divergence: null },
     duration: bbAnalysis.isSqueezed ? 30 : 20
   };
+
+  if (zone) {
+    console.log('[HF_MEAN_REV] SIGNAL DETECTED:', {
+      type: zone.type,
+      confidence: zone.confidence,
+      price: currentPrice,
+      bbLower: bb.lower,
+      bbUpper: bb.upper,
+      rsi: rsiValue
+    });
+  }
+
+  const executionTime = performance.now() - startTime;
+  if (executionTime > 5) {
+    console.warn('[PERFORMANCE] HF Mean Reversion took', executionTime.toFixed(2), 'ms');
+  }
+
+  return zone;
 }
 
 export function detectStandardTrendZone(indicators: Indicators, currentPrice: number, prevRsi: number): StrikeZone | null {
-  if (!indicators.adx || !indicators.ma.long || !indicators.rsi || !indicators.atr) return null;
+  const startTime = performance.now();
+  if (!indicators.adx || !indicators.ma.long || !indicators.rsi || !indicators.atr) {
+    console.debug('[STD_TREND] Missing indicators:', { adx: !!indicators.adx, ma: !!indicators.ma.long, rsi: !!indicators.rsi, atr: !!indicators.atr });
+    return null;
+  }
   
   const { adx, ma: { long: ema100 }, rsi, atr } = indicators;
   
   if (adx < 20) {
-    return {
-      type: 'NEUTRAL',
-      confidence: 0,
-      triggers: ['VETO: Mercado lateral (ADX < 20)'],
-      strategy: 'STD_TREND_FOLLOW',
-      entry: { price: 0, timestamp: 0 },
-      targets: { takeProfit: 0, stopLoss: 0, riskReward: 0 },
-      indicators: { rsi: 0, bbPosition: 0, bbWidth: 0, volumeSpike: false, divergence: null },
-      duration: 0
-    };
+    return null;
   }
   
   const isUpTrend = currentPrice > ema100!;
@@ -132,9 +146,7 @@ export function detectStandardTrendZone(indicators: Indicators, currentPrice: nu
     confidence = strongDownTrend ? 75 : 65; 
   }
   
-  if (type === 'NEUTRAL') return null;
-  
-  return {
+  const zone = type === 'NEUTRAL' ? null : {
     type,
     confidence,
     triggers,
@@ -148,18 +160,34 @@ export function detectStandardTrendZone(indicators: Indicators, currentPrice: nu
     indicators: { rsi: rsi, bbPosition: 0, bbWidth: 0, volumeSpike: false, divergence: null },
     duration: 180,
   };
+
+  if (zone) {
+    console.log('[STD_TREND] SIGNAL DETECTED:', { type, confidence, price: currentPrice, adx, rsi });
+  }
+
+  const executionTime = performance.now() - startTime;
+  if (executionTime > 5) {
+    console.warn('[PERFORMANCE] STD Trend Follow took', executionTime.toFixed(2), 'ms');
+  }
+
+  return zone;
 }
 
 export function detectBollingerSqueezeZone(indicators: Indicators, currentPrice: number): StrikeZone | null {
-  // ✅ CORRIGIDO: Volta para 1.0% (squeeze verdadeiro)
-  if (!indicators.bbw || indicators.bbw > 1.0) return null;
+  const startTime = performance.now();
+  if (!indicators.bbw) {
+    console.debug('[BB_SQUEEZE] Missing indicators: BBW');
+    return null;
+  }
+  if (indicators.bbw > 1.0) return null;
   
   const { bb } = indicators;
-  if (!bb?.upper || !bb.lower) return null;
+  if (!bb?.upper || !bb.lower) {
+    console.debug('[BB_SQUEEZE] Missing indicators: BB');
+    return null;
+  }
   
   let type: StrikeZone['type'] = 'NEUTRAL';
-  
-  // ✅ CORRIGIDO: Adiciona margem para confirmar breakout
   const breakoutMargin = (bb.upper - bb.lower) * 0.02;
   
   if (currentPrice > bb.upper + breakoutMargin) {
@@ -170,7 +198,7 @@ export function detectBollingerSqueezeZone(indicators: Indicators, currentPrice:
     return null;
   }
   
-  return {
+  const zone = {
     type,
     confidence: 80,
     triggers: [`🎯 Squeeze de Bollinger rompido (${indicators.bbw.toFixed(2)}%)`],
@@ -184,10 +212,21 @@ export function detectBollingerSqueezeZone(indicators: Indicators, currentPrice:
     indicators: { rsi: indicators.rsi || 50, bbPosition: 0, bbWidth: indicators.bbw, volumeSpike: false, divergence: null },
     duration: 30,
   };
+
+  console.log('[BB_SQUEEZE] SIGNAL DETECTED:', { type, confidence: zone.confidence, price: currentPrice, bbw: indicators.bbw });
+  
+  const executionTime = performance.now() - startTime;
+  if (executionTime > 5) {
+    console.warn('[PERFORMANCE] Bollinger Squeeze took', executionTime.toFixed(2), 'ms');
+  }
+  
+  return zone;
 }
 
 export function detectVolumeAbsorptionZone(candles: CandleData[], indicators: Indicators): StrikeZone | null {
+  const startTime = performance.now();
   if (candles.length < 10 || !indicators.atr || !indicators.volSma || indicators.volSma.length === 0) {
+    console.debug('[VOL_ABSORB] Missing indicators or data');
     return null;
   }
 
@@ -206,7 +245,6 @@ export function detectVolumeAbsorptionZone(candles: CandleData[], indicators: In
   const absorptionCandle = candles[candles.length - 1];
   const avgVolume = indicators.volSma[indicators.volSma.length - 1] || 1;
   
-  // ✅ CORRIGIDO: Aumenta threshold para 2.0x
   const isClimax = climaxCandle.volume! > avgVolume * 2.0;
   if (!isClimax) return null;
   
@@ -216,7 +254,6 @@ export function detectVolumeAbsorptionZone(candles: CandleData[], indicators: In
   const isSellClimax = climaxCandle.close < climaxCandle.open;
   const isBuyClimax = climaxCandle.close > climaxCandle.open;
   
-  // ✅ CORRIGIDO: Volta para 2 candles + validação temporal
   const recentAbsorption = recentCandles.slice(-2);
   const climaxIndex = recentCandles.indexOf(climaxCandle);
   const isRecentClimax = climaxIndex >= recentCandles.length - 5;
@@ -234,9 +271,7 @@ export function detectVolumeAbsorptionZone(candles: CandleData[], indicators: In
   if (isSellClimax && isWideRangeClimax) type = 'LONG_ENTRY';
   else if (isBuyClimax && isWideRangeClimax) type = 'SHORT_ENTRY';
   
-  if (type === 'NEUTRAL') return null;
-  
-  return { 
+  const zone = (type === 'NEUTRAL') ? null : { 
     type, 
     confidence: 80,
     triggers: [
@@ -253,21 +288,34 @@ export function detectVolumeAbsorptionZone(candles: CandleData[], indicators: In
     indicators: { rsi: indicators.rsi || 50, bbPosition: 0, bbWidth: 0, volumeSpike: true, divergence: null },
     duration: 120,
   };
+
+  if (zone) {
+      console.log('[VOL_ABSORB] SIGNAL DETECTED:', { type: zone.type, confidence: zone.confidence, climaxVolume: climaxCandle.volume, avgVolume });
+  }
+
+  const executionTime = performance.now() - startTime;
+  if (executionTime > 5) {
+    console.warn('[PERFORMANCE] Volume Absorption took', executionTime.toFixed(2), 'ms');
+  }
+
+  return zone;
 }
 
 export function detectMicrostructureScalpZone(ticks: TickData[], candles: CandleData[], indicators: Indicators, currentPrice: number): StrikeZone | null {
+  const startTime = performance.now();
   const micro = extractMicrostructureFeaturesFromService(ticks, candles);
-  if (!micro) return null;
+  if (!micro) {
+      console.debug('[MICRO_SCALP] Missing microstructure features');
+      return null;
+  }
   
   let type: StrikeZone['type'] = 'NEUTRAL';
   if (micro.pressure === 'buy' && micro.tickVelocity > 1.5) type = 'LONG_ENTRY';
   else if (micro.pressure === 'sell' && micro.tickVelocity > 1.5) type = 'SHORT_ENTRY';
   
-  if (type === 'NEUTRAL') return null;
-  
   const atr = indicators.atr || 0.0001;
   
-  return {
+  const zone = (type === 'NEUTRAL') ? null : {
     type,
     confidence: 70,
     triggers: [`⚡ Fluxo de Ordens (${micro.pressure})`],
@@ -279,6 +327,17 @@ export function detectMicrostructureScalpZone(ticks: TickData[], candles: Candle
       riskReward: 2.0,
     },
     indicators: { rsi: indicators.rsi || 50, bbPosition: 0, bbWidth: 0, volumeSpike: true, divergence: null },
-    duration: 10, // ✅ CORRIGIDO: Volta para 10s
+    duration: 5,
   };
+
+  if (zone) {
+      console.log('[MICRO_SCALP] SIGNAL DETECTED:', { type: zone.type, confidence: zone.confidence, pressure: micro.pressure, velocity: micro.tickVelocity });
+  }
+
+  const executionTime = performance.now() - startTime;
+  if (executionTime > 5) {
+    console.warn('[PERFORMANCE] Microstructure Scalp took', executionTime.toFixed(2), 'ms');
+  }
+
+  return zone;
 }
