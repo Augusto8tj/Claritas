@@ -2,12 +2,14 @@
 'use client';
 
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import type { TickData, CandleData, TimePeriod } from '@/lib/types';
+import type { TickData, CandleData, TimePeriod, Operation } from '@/lib/types';
 import { calculateAllIndicators, type Indicators } from '@/features/trading/services/indicator-service';
 import { getCouncilStrategies } from '../services/council-strategies';
 import { useAuth } from '@/features/auth/hooks/use-auth';
 import { detectMarketRegime, type RegimeCharacteristics } from '../ml/market-regime-detector';
 import { AdvancedRiskManager, type PositionSizeRecommendation } from '../risk/advanced-risk-manager';
+import { useToast } from '@/hooks/use-toast';
+import { useDerivApiV2 as useDerivApi } from '@/features/trading/hooks/use-deriv-api-v2';
 import {
   detectHFMeanReversionZone,
   detectStandardTrendZone,
@@ -18,55 +20,81 @@ import {
   type StrategyType
 } from '../services/hf-strike-logic';
 import type { HFConfig } from '@/features/trading/components/hf-trader/hf-config-panel';
-
+import { saveHFTradeLog } from '@/services/hf-data-service';
 
 export type { StrikeZone } from '../services/hf-strike-logic';
 
-const CHAMPION_STRATEGY_MAP: Record<RegimeCharacteristics['regime'], { strategy: StrategyType, reason: string }> = {
-  HIGH_VOLATILITY_TRENDING: { strategy: 'STD_TREND_FOLLOW', reason: 'Melhor para capturar movimentos direcionais fortes.' },
-  LOW_VOLATILITY_RANGING: { strategy: 'HF_MEAN_REVERSION', reason: 'Otimizada para reversão à média em mercados laterais.' },
-  BREAKOUT_IMMINENT: { strategy: 'BOLLINGER_SQUEEZE', reason: 'Especializada em operar a expansão de volatilidade.' },
-  POST_NEWS_CHAOS: { strategy: 'MICROSTRUCTURE_SCALP', reason: 'Reação rápida ao fluxo de ordens em alta incerteza.' },
-  CALM_ACCUMULATION: { strategy: 'VOLUME_ABSORPTION', reason: 'Identifica zonas de absorção antes de grandes movimentos.' },
-};
+interface SessionConfig {
+    dailyBalance: number;
+    dailyTarget: number;
+    operationsLog: Operation[];
+}
 
 export function useHFStrikeZone(
   priceTicks: TickData[],
   botCandleData: CandleData[],
   uiChartPeriod: TimePeriod,
-  config: HFConfig
+  config: HFConfig,
+  sessionConfig: SessionConfig
 ) {
   const { user } = useAuth();
-  const { enabled, minConfidence } = config;
+  const { executeTrade } = useDerivApi();
+  const { toast } = useToast();
+  const { enabled, minConfidence, autoExecute, minConsensusSignals, martingaleMultiplier, maxConsecutiveLosses, cooldownSeconds } = config;
+  const { dailyBalance, dailyTarget, operationsLog } = sessionConfig;
+  
   const rsiStateRef = useRef({ prev: 50 });
   const initialStrategies = useMemo(() => getCouncilStrategies('standard'), []);
-
+  
   const [marketRegime, setMarketRegime] = useState<RegimeCharacteristics | null>(null);
-  const [championStrategy, setChampionStrategy] = useState<{ strategy: StrategyType, reason: string } | null>(null);
   const [activeStrikeZone, setActiveStrikeZone] = useState<StrikeZone | null>(null);
-  const [isExploratory, setIsExploratory] = useState(false);
-  const [riskManager] = useState(() => new AdvancedRiskManager({ maxDailyLoss: 10, maxDrawdown: 20, maxConcurrentTrades: 3, maxExposurePerAsset: 25, kellyFraction: 0.25 }, 1000));
+  const [riskManager] = useState(() => new AdvancedRiskManager({ maxDailyLoss: dailyBalance, maxDrawdown: 30, maxConcurrentTrades: 3, maxExposurePerAsset: 25, kellyFraction: 0.25 }, 1000));
   const [positionSizing, setPositionSizing] = useState<PositionSizeRecommendation | null>(null);
   const [allSignals, setAllSignals] = useState<(StrikeZone | null)[]>([]);
-
+  
+  // New state for risk management
+  const [consecutiveLosses, setConsecutiveLosses] = useState(0);
+  const [isCooldownActive, setIsCooldownActive] = useState(false);
+  const [isExecuting, setIsExecuting] = useState(false);
+  const lastProcessedOpIdRef = useRef<number | null>(null);
+  
   const indicators = useMemo((): Indicators | null => {
     if (!enabled || botCandleData.length < 100) return null;
     return calculateAllIndicators(botCandleData, initialStrategies, '1m', { duration: 1, unit: 't' });
   }, [botCandleData, enabled, initialStrategies]);
   
   useEffect(() => {
-    if (!enabled || !indicators || priceTicks.length < 2 || !user) {
+    const lastOp = operationsLog.length > 0 ? operationsLog[0] : null;
+    if (lastOp && lastOp.status !== 'pending' && lastOp.id !== lastProcessedOpIdRef.current) {
+        lastProcessedOpIdRef.current = lastOp.id;
+        if (lastOp.result! < 0) {
+            const newLossCount = consecutiveLosses + 1;
+            setConsecutiveLosses(newLossCount);
+            if (newLossCount >= maxConsecutiveLosses) {
+                toast({ title: '🛑 Stop de Perdas Consecutivas', description: `Limite de ${maxConsecutiveLosses} perdas atingido. Autopilot pausado.`, variant: 'destructive' });
+                config.onConfigChange({ autoExecute: false });
+            } else if (cooldownSeconds > 0) {
+                setIsCooldownActive(true);
+                toast({ title: '❄️ Cooldown Ativado', description: `Pausa de ${cooldownSeconds}s após perda.`, variant: 'default' });
+                setTimeout(() => setIsCooldownActive(false), cooldownSeconds * 1000);
+            }
+        } else if (lastOp.result! > 0) {
+            setConsecutiveLosses(0);
+        }
+    }
+  }, [operationsLog, consecutiveLosses, maxConsecutiveLosses, cooldownSeconds, toast, config]);
+
+
+  useEffect(() => {
+    if (!enabled || !indicators || priceTicks.length < 2 || !user || isCooldownActive || isExecuting) {
       setActiveStrikeZone(null);
       return;
-    };
+    }
 
     const runCycle = async () => {
       const regime = detectMarketRegime(indicators, botCandleData);
       setMarketRegime(regime);
       
-      const champion = CHAMPION_STRATEGY_MAP[regime.regime];
-      setChampionStrategy(champion);
-
       const currentPrice = priceTicks[priceTicks.length - 1].price;
       
       const allSignalsResult: (StrikeZone | null)[] = [
@@ -78,22 +106,24 @@ export function useHFStrikeZone(
       ];
       setAllSignals(allSignalsResult);
       
-      const validSignals = allSignalsResult.filter((zone): zone is StrikeZone => zone !== null && zone.type !== 'NEUTRAL');
+      const validSignals = allSignalsResult.filter((zone): zone is StrikeZone => zone !== null && zone.type !== 'NEUTRAL' && zone.confidence >= minConfidence);
       
-      // --- Lógica: Highest-Confidence-First ---
-      const eligibleSignals = validSignals.filter(s => s.confidence >= minConfidence);
+      const longSignals = validSignals.filter(s => s.type === 'LONG_ENTRY');
+      const shortSignals = validSignals.filter(s => s.type === 'SHORT_ENTRY');
 
       let finalStrikeZone: StrikeZone | null = null;
-      if (eligibleSignals.length > 0) {
-          // Ordena por confiança para pegar o sinal mais forte
-          eligibleSignals.sort((a, b) => b.confidence - a.confidence);
-          finalStrikeZone = eligibleSignals[0];
-      }
-
-      // O conceito 'exploratório' não é mais necessário com este modelo direto.
-      setActiveStrikeZone(finalStrikeZone);
-      setIsExploratory(false); 
+      let consensusReason = 'Nenhum consenso atingido.';
       
+      if (longSignals.length >= minConsensusSignals) {
+          finalStrikeZone = longSignals.sort((a,b) => b.confidence - a.confidence)[0]!;
+          consensusReason = `${longSignals.length} especialistas concordam em COMPRA.`;
+      } else if (shortSignals.length >= minConsensusSignals) {
+          finalStrikeZone = shortSignals.sort((a,b) => b.confidence - a.confidence)[0]!;
+          consensusReason = `${shortSignals.length} especialistas concordam em VENDA.`;
+      }
+      
+      setActiveStrikeZone(finalStrikeZone);
+
       if (finalStrikeZone) {
         const pseudoSignal = {
           expectedWinRate: 0.5 + (finalStrikeZone.confidence - 50) / 100 * 0.4,
@@ -101,30 +131,56 @@ export function useHFStrikeZone(
         };
         const sizing = riskManager.calculatePositionSize(pseudoSignal as any, riskManager.currentCapital);
         
-        setPositionSizing(sizing);
+        let finalStake = sizing.recommendedStake;
+        if (consecutiveLosses > 0 && martingaleMultiplier > 1) {
+            finalStake = sizing.recommendedStake * Math.pow(martingaleMultiplier, consecutiveLosses);
+            sizing.reasoning.push(`🔥 Martingale x${Math.pow(martingaleMultiplier, consecutiveLosses).toFixed(1)} aplicado.`);
+        }
+        
+        setPositionSizing({...sizing, recommendedStake: finalStake});
+
+        if (autoExecute) {
+            setIsExecuting(true);
+            try {
+              const tradeResult = await executeTrade(
+                  finalStrikeZone.type === 'LONG_ENTRY' ? 'CALL' : 'PUT', finalStake, activeSymbol!, 
+                  finalStrikeZone.type === 'LONG_ENTRY' ? 'rise' : 'fall', 
+                  finalStrikeZone.duration, 's', 'HF_Strike', finalStrikeZone.strategy
+              );
+              if (tradeResult.success && tradeResult.contractId) {
+                toast({ title: '⚡ Strike Executado (Consenso)!', description: `${consensusReason} | Stake: $${finalStake.toFixed(2)}` });
+                await saveHFTradeLog(user.uid, {
+                    symbol: activeSymbol!,
+                    strikeZone: finalStrikeZone,
+                    execution: { contractId: String(tradeResult.contractId), entryPrice: tradeResult.entryPrice!, status: 'pending', executedAt: new Date().toISOString() },
+                    marketRegime: regime.regime,
+                    ensembleParticipants: validSignals.map(s => s.strategy),
+                    positionSize: sizing,
+                    riskMetrics: { sharpeContribution: sizing.sharpeContribution, portfolioExposure: 0 }
+                });
+              } else {
+                throw new Error(tradeResult.message);
+              }
+            } catch (error: any) {
+              toast({ title: 'Erro na Auto-Execução', description: error.message, variant: 'destructive' });
+            } finally {
+              setIsExecuting(false);
+            }
+        }
       } else {
         setPositionSizing(null);
       }
 
-      if (indicators.rsi) {
-        rsiStateRef.current.prev = indicators.rsi;
-      }
+      if (indicators.rsi) rsiStateRef.current.prev = indicators.rsi;
     };
     
     const timeoutId = setTimeout(runCycle, 200); 
     return () => clearTimeout(timeoutId);
 
-  }, [indicators, priceTicks, enabled, botCandleData, user, riskManager, minConfidence]);
+  }, [indicators, priceTicks, enabled, botCandleData, user, riskManager, minConfidence, minConsensusSignals, autoExecute, executeTrade, activeSymbol, toast, martingaleMultiplier, consecutiveLosses, isCooldownActive, isExecuting]);
   
   return {
-    activeStrikeZone,
-    marketRegime,
-    championStrategy,
-    isExploratory,
-    positionSizing,
-    riskManager,
-    fullIndicators: indicators,
-    supplyDemandZones: (indicators as any)?.supplyDemandZones,
-    allSignals,
+    activeStrikeZone, marketRegime, positionSizing, riskManager, fullIndicators: indicators,
+    supplyDemandZones: (indicators as any)?.supplyDemandZones, allSignals, consecutiveLosses, isCooldownActive,
   };
 }
