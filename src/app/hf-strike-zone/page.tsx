@@ -18,7 +18,7 @@ import { Target, TrendingUp, BarChart, Brain, Activity, Zap, ShieldAlert, Bot, T
 import { cn } from '@/lib/utils';
 import type { Operation, CandleData, TimePeriod, InstitutionalBacktestResult, WalkForwardResult, MonteCarloResult, DurationUnit } from '@/lib/types';
 import { HFStatsOverview } from '@/features/trading/components/hf-trader/hf-stats-overview';
-import { HFSignalCard } from '@/features/trading/components/hf-trader/champion-signal-card';
+import { HFSignalCard } from '@/features/trading/components/hf-trader/hf-signal-card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { runAllStrategiesBacktest, runWalkForwardAnalysis, runMonteCarloSimulation } from '@/features/trading/backtest/hf-backtest-engine';
 import { StrategyType } from '@/features/trading/services/hf-strike-logic';
@@ -68,7 +68,7 @@ function PageContent() {
       botCandleData, 
       timePeriod, 
       hfConfig, 
-      (newConfig) => setHFConfig(prev => ({...prev, ...newConfig})),
+      (newConfig: Partial<HFConfig>) => setHFConfig(prev => ({...prev, ...newConfig})),
       { 
         dailyBalance, 
         dailyTarget, 
