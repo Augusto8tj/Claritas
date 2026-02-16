@@ -80,7 +80,7 @@ export function useHFStrikeZone(
       
       const validSignals = allSignalsResult.filter((zone): zone is StrikeZone => zone !== null && zone.type !== 'NEUTRAL');
       
-      // --- Nova Lógica: Highest-Confidence-First ---
+      // --- Lógica: Highest-Confidence-First ---
       const eligibleSignals = validSignals.filter(s => s.confidence >= minConfidence);
 
       let finalStrikeZone: StrikeZone | null = null;
@@ -97,6 +97,7 @@ export function useHFStrikeZone(
       if (finalStrikeZone) {
         const pseudoSignal = {
           expectedWinRate: 0.5 + (finalStrikeZone.confidence - 50) / 100 * 0.4,
+          confidence: finalStrikeZone.confidence,
         };
         const sizing = riskManager.calculatePositionSize(pseudoSignal as any, riskManager.currentCapital);
         
