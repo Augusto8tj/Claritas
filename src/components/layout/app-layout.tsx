@@ -90,11 +90,6 @@ const navItems = [
     label: "Backtesting",
   },
    {
-    href: "/testing-dashboard",
-    icon: TestTube,
-    label: "Painel de Testes",
-  },
-   {
     href: "/volatility-analysis",
     icon: Calculator,
     label: "Análise de Volatilidade",
