@@ -73,28 +73,16 @@ export function HFConfigPanel({ config, onConfigChange }: HFConfigPanelProps) {
 
         <div className="space-y-2">
           <Label htmlFor="min-confidence">
-            Confiança Mínima para Sinal ({config.minConfidence}%)
+            Confiança Mínima do Consenso ({config.minConfidence}%)
           </Label>
           <Slider
             id="min-confidence"
-            min={55} max={90} step={5}
+            min={5} max={90} step={5}
             value={[config.minConfidence]}
             onValueChange={([minConfidence]) => onConfigChange({ minConfidence })}
           />
         </div>
         
-        <div className="space-y-2">
-          <Label htmlFor="max-concurrent-trades">
-            Máx. Ordens Concorrentes ({config.maxConcurrentTrades})
-          </Label>
-          <Slider
-            id="max-concurrent-trades"
-            min={1} max={5} step={1}
-            value={[config.maxConcurrentTrades]}
-            onValueChange={([maxConcurrentTrades]) => onConfigChange({ maxConcurrentTrades })}
-          />
-        </div>
-
         <div className="space-y-2">
           <Label htmlFor="min-consensus">
             Consenso Mínimo de Estratégias ({config.minConsensusSignals})
@@ -105,17 +93,18 @@ export function HFConfigPanel({ config, onConfigChange }: HFConfigPanelProps) {
             value={[config.minConsensusSignals]}
             onValueChange={([minConsensusSignals]) => onConfigChange({ minConsensusSignals })}
           />
+           <p className="text-xs text-muted-foreground pt-1">Número mínimo de estratégias que precisam concordar para formar um consenso.</p>
         </div>
 
         <div className="space-y-2">
-          <Label htmlFor="preferred-duration">
-            Duração Preferida (HF) ({config.preferredDuration}s)
+          <Label htmlFor="max-concurrent-trades">
+            Máx. Ordens Concorrentes ({config.maxConcurrentTrades})
           </Label>
           <Slider
-            id="preferred-duration"
-            min={15} max={45} step={5}
-            value={[config.preferredDuration]}
-            onValueChange={([preferredDuration]) => onConfigChange({ preferredDuration })}
+            id="max-concurrent-trades"
+            min={1} max={5} step={1}
+            value={[config.maxConcurrentTrades]}
+            onValueChange={([maxConcurrentTrades]) => onConfigChange({ maxConcurrentTrades })}
           />
         </div>
 

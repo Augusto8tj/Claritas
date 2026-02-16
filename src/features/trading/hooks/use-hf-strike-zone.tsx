@@ -42,7 +42,7 @@ export function useHFStrikeZone(
   const { user } = useAuth();
   const { executeTrade } = useDerivApiV2();
   const { toast } = useToast();
-  const { enabled, minConfidence, autoExecute, minConsensusSignals, martingaleMultiplier, maxConsecutiveLosses, cooldownSeconds, maxConcurrentTrades } = config;
+  const { enabled, minConfidence, autoExecute, maxConcurrentTrades, martingaleMultiplier, maxConsecutiveLosses, cooldownSeconds, preferredDuration, minConsensusSignals } = config;
   const { dailyBalance, dailyTarget, operationsLog, manualStake } = sessionConfig;
   
   const rsiStateRef = useRef({ prev: 50 });
@@ -54,7 +54,6 @@ export function useHFStrikeZone(
   const [positionSizing, setPositionSizing] = useState<PositionSizeRecommendation | null>(null);
   const [allSignals, setAllSignals] = useState<(StrikeZone | null)[]>([]);
   
-  // New state for risk management
   const [consecutiveLosses, setConsecutiveLosses] = useState(0);
   const [isCooldownActive, setIsCooldownActive] = useState(false);
   const [isExecuting, setIsExecuting] = useState(false);
@@ -112,12 +111,12 @@ export function useHFStrikeZone(
       
       let finalStrikeZone: StrikeZone | null = null;
       
-      if (validSignals.length > 0) {
+      if (validSignals.length >= minConsensusSignals) {
         finalStrikeZone = validSignals.reduce((best, current) => 
           current.confidence > best.confidence ? current : best
         );
       }
-      
+
       setActiveStrikeZone(finalStrikeZone);
 
       if (finalStrikeZone) {
@@ -125,13 +124,13 @@ export function useHFStrikeZone(
           expectedWinRate: 0.5 + (finalStrikeZone.confidence - 50) / 100 * 0.4,
           confidence: finalStrikeZone.confidence,
         };
-        let sizing = riskManager.calculatePositionSize(pseudoSignal as any, riskManager.currentCapital);
+        let sizing = riskManager.calculatePositionSize(pseudoSignal, riskManager.currentCapital);
         let finalStake = manualStake || sizing.recommendedStake;
 
         if (manualStake) {
             sizing = {
                 ...sizing,
-                recommendedStake: manualStake, // Override the recommended stake
+                recommendedStake: manualStake,
                 reasoning: ['Stake definido manualmente pelo operador.'],
             };
         }
@@ -192,7 +191,7 @@ export function useHFStrikeZone(
     const timeoutId = setTimeout(runCycle, 200); 
     return () => clearTimeout(timeoutId);
 
-  }, [indicators, priceTicks, enabled, botCandleData, user, riskManager, minConfidence, autoExecute, executeTrade, activeSymbol, toast, martingaleMultiplier, consecutiveLosses, isCooldownActive, isExecuting, minConsensusSignals, manualStake, operationsLog, maxConcurrentTrades]);
+  }, [indicators, priceTicks, enabled, botCandleData, user, riskManager, minConfidence, minConsensusSignals, autoExecute, executeTrade, activeSymbol, toast, martingaleMultiplier, consecutiveLosses, isCooldownActive, isExecuting, manualStake, operationsLog, maxConcurrentTrades]);
   
   return {
     activeStrikeZone, marketRegime, positionSizing, riskManager, fullIndicators: indicators,

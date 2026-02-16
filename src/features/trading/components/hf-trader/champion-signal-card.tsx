@@ -6,8 +6,8 @@ import { Card, CardHeader, CardTitle, CardContent, CardDescription } from '@/com
 import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Target, Zap, ShieldAlert, Users, Loader2 } from 'lucide-react';
-import type { StrikeZone } from '@/features/trading/services/hf-strike-logic';
+import { Target, Zap, ShieldAlert, Users, Loader2, CheckCheck } from 'lucide-react';
+import type { StrikeZone } from '@/features/trading/hooks/use-hf-strike-zone';
 import { cn } from '@/lib/utils';
 
 
@@ -73,13 +73,25 @@ export function HFSignalCard({ signal, onExecute, isExecuting, consecutiveLosses
             <AlertDescription className="mt-2 space-y-2">
                 <div className="grid grid-cols-2 gap-2 text-xs">
                     <div><span className="font-semibold">Direção:</span> {isLong ? 'LONG' : 'SHORT'}</div>
-                    <div><span className="font-semibold">Entrada:</span> ${signal.entry.price.toFixed(4)}</div>
+                    <div><span className="font-semibold">Duração Ótima:</span> {signal.duration}s</div>
                     <div className="text-green-600"><span className="font-semibold">Take Profit:</span> ${signal.targets.takeProfit.toFixed(4)}</div>
                     <div className="text-red-600"><span className="font-semibold">Stop Loss:</span> ${signal.targets.stopLoss.toFixed(4)}</div>
                 </div>
             </AlertDescription>
         </Alert>
         
+        <div className="space-y-1">
+          <p className="text-xs font-semibold text-muted-foreground">Especialistas em Acordo:</p>
+          <ul className="text-xs space-y-0.5">
+            {signal.triggers.map((trigger, i) => (
+              <li key={i} className="flex items-center gap-1">
+                <CheckCheck className="h-3 w-3 text-green-600 flex-shrink-0" />
+                <span>{trigger}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+
         <Button onClick={onExecute} className="w-full" variant={isLong ? 'default' : 'destructive'} disabled={isExecuting}>
           {isExecuting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Zap className="mr-2 h-4 w-4" />}
           {isExecuting ? 'Executando...' : 'Executar Strike de Consenso'}
