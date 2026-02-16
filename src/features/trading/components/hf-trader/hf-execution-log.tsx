@@ -189,8 +189,7 @@ export function HFExecutionLog({ operations, clearActiveContracts }: HFExecution
                                             )}
                                         </div>
                                     </div>
-                                )
-                            ))
+                                ))
                         )}
                     </div>
                 </ScrollArea>
