@@ -216,7 +216,10 @@ function PageContent() {
           </Card>
           <HFSignalCard signal={activeStrikeZone} onExecute={handleExecuteStrike} isExecuting={isExecuting} consecutiveLosses={consecutiveLosses} isCooldown={isCooldownActive}/>
           <StrategySignalMonitor signals={allSignals} />
-          <HFConfigPanel config={hfConfig} onConfigChange={updates => setHFConfig(prev => ({ ...prev, ...updates }))} disabled={hfConfig.enabled && hfConfig.autoExecute} />
+          <HFConfigPanel
+            config={hfConfig}
+            onConfigChange={updates => setHFConfig(prev => ({ ...prev, ...updates }))}
+          />
         </div>
       </div>
     </div>
