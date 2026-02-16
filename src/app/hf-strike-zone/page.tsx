@@ -13,7 +13,7 @@ import { MarketChart } from '@/features/trading/components/deriv-trader/market-c
 import { useHFStrikeZone } from '@/features/trading/hooks/use-hf-strike-zone';
 import { HFExecutionLog } from '@/features/trading/components/hf-trader/hf-execution-log';
 import { HFConfigPanel, type HFConfig } from '@/features/trading/components/hf-trader/hf-config-panel';
-import { saveHFTradeLog } from '@/services/hf-data-service';
+import { HFStrategyTuningPanel } from '@/features/trading/components/hf-trader/hf-strategy-tuning-panel';
 import { Target, TrendingUp, BarChart, Brain, Activity, Zap, ShieldAlert, Bot, TestTube, GitCompareArrows, Dice5, Wallet } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { Operation, CandleData, TimePeriod, InstitutionalBacktestResult, WalkForwardResult, MonteCarloResult, DurationUnit } from '@/lib/types';
@@ -21,7 +21,7 @@ import { HFStatsOverview } from '@/features/trading/components/hf-trader/hf-stat
 import { HFSignalCard } from '@/features/trading/components/hf-trader/hf-signal-card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { runAllStrategiesBacktest, runWalkForwardAnalysis, runMonteCarloSimulation } from '@/features/trading/backtest/hf-backtest-engine';
-import { StrategyType } from '@/features/trading/services/hf-strike-logic';
+import { StrategyType, strategyMetadata } from '@/features/trading/services/hf-strike-logic';
 import { Button } from '@/components/ui/button';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { BacktestPanel } from '@/features/trading/components/hf-trader/BacktestPanel';
@@ -62,6 +62,8 @@ function PageContent() {
     consecutiveLosses,
     isCooldownActive,
     isExecuting,
+    strategyParams,
+    updateStrategyParams,
   } = useHFStrikeZone(
       activeSymbol, 
       priceTicks, 
@@ -82,11 +84,8 @@ function PageContent() {
       toast({ title: 'Sinal Inválido', description: 'Não há sinal válido para executar.', variant: 'destructive' });
       return;
     }
-    // The execution logic in useHFStrikeZone will handle this
   }, [activeStrikeZone, positionSizing, user, activeSymbol, toast]);
   
-  
-  // ... backtesting logic remains the same ...
   const [isBacktesting, setIsBacktesting] = useState(false);
   const [backtestData, setBacktestData] = useState<CandleData[]>([]);
   const [backtestResults, setBacktestResults] = useState<Record<string, InstitutionalBacktestResult> | null>(null);
@@ -103,12 +102,12 @@ function PageContent() {
       if (historicalData.length < 100) throw new Error("Dados históricos insuficientes para o backtest.");
       toast({ title: "Dados recebidos", description: `Analisando ${historicalData.length} velas...` });
       await new Promise(resolve => setTimeout(resolve, 50)); 
-      const results = runAllStrategiesBacktest(historicalData, hfConfig, activeSymbol);
+      const results = runAllStrategiesBacktest(historicalData, hfConfig, activeSymbol, strategyParams);
       setBacktestResults(results);
       toast({ title: "Backtest Concluído!", description: "Resultados da simulação estão disponíveis." });
     } catch (e: any) { toast({ title: "Erro no Backtest", description: e.message, variant: 'destructive' });
     } finally { setIsBacktesting(false); }
-  }, [activeSymbol, getHistoricalData, toast, hfConfig]);
+  }, [activeSymbol, getHistoricalData, toast, hfConfig, strategyParams]);
   
   const handleRunWalkForward = useCallback(async () => {
     if (!activeSymbol || !backtestData || backtestData.length < 1500) { toast({ title: "Dados insuficientes", description: "Execute o Backtest Simples primeiro.", variant: 'destructive' }); return; }
@@ -117,12 +116,12 @@ function PageContent() {
       toast({ title: "Iniciando Walk-Forward...", description: "Rodando 3 folds..." });
       await new Promise(resolve => setTimeout(resolve, 50));
       const strategyToTest = 'STD_TREND_FOLLOW'; 
-      const results = runWalkForwardAnalysis(backtestData, hfConfig, strategyToTest, activeSymbol);
+      const results = runWalkForwardAnalysis(backtestData, hfConfig, strategyToTest, activeSymbol, strategyParams);
       setWalkForwardResults(results);
       toast({ title: "Análise Walk-Forward Concluída!" });
     } catch (e: any) { toast({ title: "Erro na Análise Walk-Forward", description: e.message, variant: 'destructive' });
     } finally { setIsBacktesting(false); }
-  }, [activeSymbol, backtestData, toast, hfConfig]);
+  }, [activeSymbol, backtestData, toast, hfConfig, strategyParams]);
   
   const handleRunMonteCarlo = useCallback(async () => {
       if (!backtestResults || backtestData.length === 0) { toast({ title: "Execute o Backtest Simples Primeiro", variant: 'destructive' }); return; }
@@ -221,6 +220,10 @@ function PageContent() {
           <HFConfigPanel
             config={hfConfig}
             onConfigChange={updates => setHFConfig((prev: any) => ({ ...prev, ...updates }))}
+          />
+          <HFStrategyTuningPanel 
+            params={strategyParams}
+            onParamChange={updateStrategyParams}
           />
         </div>
       </div>
