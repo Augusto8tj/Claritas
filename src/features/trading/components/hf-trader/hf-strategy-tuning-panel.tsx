@@ -78,13 +78,13 @@ export function HFStrategyTuningPanel({ params, onParamChange }: HFStrategyTunin
                         description="Nível de sobrevenda/sobrecompra do RSI. Valores menores (20-25) são mais agressivos. Maiores (30-35) são mais conservadores."
                     />
                      <StrategyTuningItem
-                        title="Tolerância da Banda"
+                        title="Tolerância (Bandas)"
                         paramKey="rev-tolerance"
-                        value={params.HF_MEAN_REVERSION.tolerance}
-                        onValueChange={(val) => onParamChange('HF_MEAN_REVERSION', { tolerance: val })}
-                        min={0.0001} max={0.0050} step={0.0001}
-                        unit=""
-                        description="A 'proximidade' que o preço precisa estar da banda para disparar. Menor = mais restritivo. Recomendado: 0.0015 (0.15%)."
+                        value={params.HF_MEAN_REVERSION.tolerance * 100}
+                        onValueChange={(val) => onParamChange('HF_MEAN_REVERSION', { tolerance: val / 100 })}
+                        min={0.05} max={0.3} step={0.01}
+                        unit="%"
+                        description="Margem (%) para considerar 'toque' nas Bandas de Bollinger. Maior valor = mais sinais."
                     />
                 </AccordionContent>
             </AccordionItem>
@@ -101,12 +101,12 @@ export function HFStrategyTuningPanel({ params, onParamChange }: HFStrategyTunin
                         description="Força mínima da tendência para o sinal ser válido. Ideal: 22-25."
                     />
                      <StrategyTuningItem
-                        title="Momentum do RSI"
+                        title="RSI Momentum"
                         paramKey="trend-rsi"
                         value={params.STD_TREND_FOLLOW.rsiMomentum}
                         onValueChange={(val) => onParamChange('STD_TREND_FOLLOW', { rsiMomentum: val })}
-                        min={51} max={60} step={1}
-                        description="Limiar do RSI que confirma o momentum na direção da tendência. Ideal: 52."
+                        min={50} max={60} step={1}
+                        description="RSI acima disso = momentum alta; abaixo de (100-X) = momentum baixa. Ideal: 52."
                     />
                 </AccordionContent>
             </AccordionItem>
@@ -115,7 +115,7 @@ export function HFStrategyTuningPanel({ params, onParamChange }: HFStrategyTunin
                 <AccordionTrigger>Rompimento (Squeeze)</AccordionTrigger>
                  <AccordionContent className="space-y-4 pt-2">
                     <StrategyTuningItem
-                        title="Limiar BBW (%)"
+                        title="BBW Máximo (%)"
                         paramKey="squeeze-bbw"
                         value={params.BOLLINGER_SQUEEZE.bbwThreshold}
                         onValueChange={(val) => onParamChange('BOLLINGER_SQUEEZE', { bbwThreshold: val })}
@@ -150,11 +150,10 @@ export function HFStrategyTuningPanel({ params, onParamChange }: HFStrategyTunin
                     <StrategyTuningItem
                         title="Fator de Absorção"
                         paramKey="absorb-factor"
-                        value={params.VOLUME_ABSORPTION.absorptionFactor * 100}
-                        onValueChange={(val) => onParamChange('VOLUME_ABSORPTION', { absorptionFactor: val / 100 })}
-                        min={30} max={90} step={5}
-                        unit="%"
-                        description="O volume e range da vela de absorção devem ser menores que este percentual do clímax. Ideal: 60-80%."
+                        value={params.VOLUME_ABSORPTION.absorptionFactor}
+                        onValueChange={(val) => onParamChange('VOLUME_ABSORPTION', { absorptionFactor: val })}
+                        min={0.5} max={0.9} step={0.05}
+                        description="Volume de absorção deve ser menor que clímax × este fator. Ideal: 0.8."
                     />
                 </AccordionContent>
             </AccordionItem>
@@ -163,7 +162,7 @@ export function HFStrategyTuningPanel({ params, onParamChange }: HFStrategyTunin
                 <AccordionTrigger>Scalping de Fluxo</AccordionTrigger>
                 <AccordionContent className="space-y-4 pt-2">
                     <StrategyTuningItem
-                        title="Velocidade dos Ticks"
+                        title="Velocidade Mínima"
                         paramKey="scalp-velocity"
                         value={params.MICROSTRUCTURE_SCALP.velocityThreshold}
                         onValueChange={(val) => onParamChange('MICROSTRUCTURE_SCALP', { velocityThreshold: val })}

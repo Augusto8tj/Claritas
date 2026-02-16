@@ -60,7 +60,7 @@ export function detectHFMeanReversionZone(indicators: Indicators, currentPrice: 
     middle: bb.middle!,
     width: indicators.bbw!,
     position: (currentPrice - bb.lower!) / (bb.upper! - bb.lower! || 1),
-    isSqueezed: (indicators.bbw || 100) < 1.5,
+    isSqueezed: (indicators.bbw || 100) < 2.5,
     touchingLower: currentPrice <= bb.lower! * (1 + params.tolerance),
     touchingUpper: currentPrice >= bb.upper! * (1 - params.tolerance),
   };
@@ -75,11 +75,13 @@ export function detectHFMeanReversionZone(indicators: Indicators, currentPrice: 
   if (bbAnalysis.touchingLower && rsiAnalysis.oversold) {
     type = 'LONG_ENTRY';
     triggers.push(`📉 Preço na Banda Inferior`, `📊 RSI Oversold (${rsiAnalysis.value.toFixed(1)})`);
-    confidence = 75;
+    confidence = bbAnalysis.isSqueezed ? 85 : 75;
+    if (bbAnalysis.isSqueezed) triggers.push('Squeeze Ativo');
   } else if (bbAnalysis.touchingUpper && rsiAnalysis.overbought) {
     type = 'SHORT_ENTRY';
     triggers.push(`📈 Preço na Banda Superior`, `📊 RSI Overbought (${rsiAnalysis.value.toFixed(1)})`);
-    confidence = 75;
+    confidence = bbAnalysis.isSqueezed ? 85 : 75;
+     if (bbAnalysis.isSqueezed) triggers.push('Squeeze Ativo');
   }
   
   if (type === 'NEUTRAL') return null;
@@ -88,7 +90,7 @@ export function detectHFMeanReversionZone(indicators: Indicators, currentPrice: 
   
   const zone: StrikeZone = {
     type,
-    confidence,
+    confidence: Math.min(100, confidence),
     triggers,
     entry: { price: currentPrice, timestamp: Date.now() },
     strategy: 'HF_MEAN_REVERSION',
@@ -126,21 +128,25 @@ export function detectStandardTrendZone(indicators: Indicators, currentPrice: nu
   const isUpTrend = currentPrice > ema100!;
   const isDownTrend = currentPrice < ema100!;
   
-  const strongUpTrend = isUpTrend && rsi > params.rsiMomentum && adx > 25;
-  const strongDownTrend = isDownTrend && rsi < (100 - params.rsiMomentum) && adx > 25;
+  const rsiMomentumThresholdUp = params.rsiMomentum;
+  const rsiMomentumThresholdDown = 100 - params.rsiMomentum;
+  
+  const rsiCrossedUp = rsi > rsiMomentumThresholdUp && prevRsi <= rsiMomentumThresholdUp;
+  const rsiCrossedDown = rsi < rsiMomentumThresholdDown && prevRsi >= rsiMomentumThresholdDown;
   
   let type: StrikeZone['type'] = 'NEUTRAL';
   const triggers: string[] = [];
   let confidence = 0;
   
-  if (strongUpTrend) { 
+  if (isUpTrend && rsiCrossedUp) { 
     type = 'LONG_ENTRY'; 
-    triggers.push(`📈 Tendência de Alta (ADX: ${adx.toFixed(1)})`, `🐂 RSI momentum positivo (${rsi.toFixed(1)})`); 
+    triggers.push(`📈 Tendência de Alta (ADX: ${adx.toFixed(1)})`, `🐂 RSI cruzou UP (${rsi.toFixed(1)})`); 
     confidence = 75; 
-  } else if (strongDownTrend) { 
+  }
+  else if (isDownTrend && rsiCrossedDown) { 
     type = 'SHORT_ENTRY'; 
-    triggers.push(`📉 Tendência de Baixa (ADX: ${adx.toFixed(1)})`, `🐻 RSI momentum negativo (${rsi.toFixed(1)})`); 
-    confidence = 75;
+    triggers.push(`📉 Tendência de Baixa (ADX: ${adx.toFixed(1)})`, `🐻 RSI cruzou DOWN (${rsi.toFixed(1)})`); 
+    confidence = 75; 
   }
   
   if (type === 'NEUTRAL') return null;
@@ -221,11 +227,12 @@ export function detectVolumeAbsorptionZone(candles: CandleData[], indicators: In
     return null;
   }
 
-  let climaxCandle: CandleData | null = null;
   const lookbackPeriod = 10;
   const recentCandles = candles.slice(-lookbackPeriod);
   
-  for (let i = 0; i < recentCandles.length - 2; i++) {
+  let climaxCandle: CandleData | null = null;
+  
+  for (let i = 0; i < recentCandles.length - 1; i++) { // Check up to the second to last candle
     const currentCandle = recentCandles[i];
     if (currentCandle && (!climaxCandle || (currentCandle.volume || 0) > (climaxCandle.volume || 0))) {
       climaxCandle = currentCandle;
@@ -246,7 +253,7 @@ export function detectVolumeAbsorptionZone(candles: CandleData[], indicators: In
   const isSellClimax = climaxCandle.close < climaxCandle.open;
   const isBuyClimax = climaxCandle.close > climaxCandle.open;
   
-  const hasAbsorption = candles.slice(-3).some(c => 
+  const hasAbsorption = recentCandles.slice(-2).some(c => 
     (c.volume || 0) < climaxCandle!.volume! * params.absorptionFactor && 
     Math.abs(c.close - c.open) < climaxRange * params.absorptionFactor
   );
