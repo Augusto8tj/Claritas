@@ -80,7 +80,6 @@ export function HFConfigPanel({ config, onConfigChange }: HFConfigPanelProps) {
             min={55} max={90} step={5}
             value={[config.minConfidence]}
             onValueChange={([minConfidence]) => onConfigChange({ minConfidence })}
-            disabled={!config.enabled}
           />
         </div>
         
@@ -93,7 +92,6 @@ export function HFConfigPanel({ config, onConfigChange }: HFConfigPanelProps) {
             min={1} max={5} step={1}
             value={[config.maxConcurrentTrades]}
             onValueChange={([maxConcurrentTrades]) => onConfigChange({ maxConcurrentTrades })}
-            disabled={!config.enabled}
           />
         </div>
 
@@ -106,7 +104,6 @@ export function HFConfigPanel({ config, onConfigChange }: HFConfigPanelProps) {
             min={1} max={3} step={1}
             value={[config.minConsensusSignals]}
             onValueChange={([minConsensusSignals]) => onConfigChange({ minConsensusSignals })}
-            disabled={!config.enabled}
           />
         </div>
 
@@ -119,7 +116,6 @@ export function HFConfigPanel({ config, onConfigChange }: HFConfigPanelProps) {
             min={15} max={45} step={5}
             value={[config.preferredDuration]}
             onValueChange={([preferredDuration]) => onConfigChange({ preferredDuration })}
-            disabled={!config.enabled}
           />
         </div>
 
@@ -137,7 +133,6 @@ export function HFConfigPanel({ config, onConfigChange }: HFConfigPanelProps) {
                 id="martingale-multiplier" min={1} max={10} step={0.1}
                 value={[config.martingaleMultiplier]}
                 onValueChange={([val]) => onConfigChange({ martingaleMultiplier: val })}
-                disabled={!config.enabled}
               />
               <p className="text-xs text-muted-foreground">Multiplica o stake após uma perda. `1.0` desativa.</p>
             </div>
@@ -147,7 +142,6 @@ export function HFConfigPanel({ config, onConfigChange }: HFConfigPanelProps) {
                 id="max-consecutive-losses" min={2} max={10} step={1}
                 value={[config.maxConsecutiveLosses]}
                 onValueChange={([val]) => onConfigChange({ maxConsecutiveLosses: val })}
-                disabled={!config.enabled}
               />
                <p className="text-xs text-muted-foreground">Pausa o piloto automático após atingir este limite.</p>
             </div>
@@ -157,7 +151,6 @@ export function HFConfigPanel({ config, onConfigChange }: HFConfigPanelProps) {
                 id="cooldown-seconds" min={0} max={120} step={5}
                 value={[config.cooldownSeconds]}
                 onValueChange={([val]) => onConfigChange({ cooldownSeconds: val })}
-                disabled={!config.enabled}
               />
               <p className="text-xs text-muted-foreground">Tempo de pausa em segundos após uma operação perdedora.</p>
             </div>
