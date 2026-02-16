@@ -40,9 +40,9 @@ export interface StrikeZone {
 
 export function detectHFMeanReversionZone(indicators: Indicators, currentPrice: number): StrikeZone | null {
   const startTime = performance.now();
-  const { bb, bollingerBands, rsi: rsiValue } = indicators;
+  const { bb, rsi: rsiValue } = indicators;
   
-  if (!bb || !bollingerBands || rsiValue === null) {
+  if (!bb || !bb.upper || !bb.lower || rsiValue === null) {
     console.debug('[HF_MEAN_REV] Missing indicators:', { bb: !!bb, rsi: !!rsiValue });
     return null;
   }
@@ -53,14 +53,15 @@ export function detectHFMeanReversionZone(indicators: Indicators, currentPrice: 
     middle: bb.middle!,
     width: indicators.bbw!,
     position: (currentPrice - bb.lower!) / (bb.upper! - bb.lower! || 1),
-    isSqueezed: indicators.bbw! < 1.0,
+    isSqueezed: (indicators.bbw || 100) < 1.5, // Squeeze se a largura for < 1.5%
     
-    // ✅ CORRIGIDO: Opção Balanceada (0.15%)
+    // ✅ CORRIGIDO: Tolerância aumentada para 0.15% (Opção Balanceada)
     touchingLower: currentPrice <= bb.lower! * 1.0015,
     touchingUpper: currentPrice >= bb.upper! * 0.9985,
   };
   
-  const rsiAnalysis = { value: rsiValue, oversold: rsiValue < 30, overbought: rsiValue > 70, divergence: null };
+  // ✅ CORRIGIDO: Limiares de RSI levemente relaxados
+  const rsiAnalysis = { value: rsiValue, oversold: rsiValue < 32, overbought: rsiValue > 68, divergence: null };
   
   const triggers: string[] = [];
   let confidence = 0;
@@ -69,18 +70,20 @@ export function detectHFMeanReversionZone(indicators: Indicators, currentPrice: 
   if (bbAnalysis.touchingLower && rsiAnalysis.oversold) {
     type = 'LONG_ENTRY';
     triggers.push(`📉 Preço na Banda Inferior`, `📊 RSI Oversold (${rsiAnalysis.value.toFixed(1)})`);
-    confidence = 75;
+    confidence = bbAnalysis.isSqueezed ? 80 : 70; // Confiança maior em Squeeze
   } else if (bbAnalysis.touchingUpper && rsiAnalysis.overbought) {
     type = 'SHORT_ENTRY';
     triggers.push(`📈 Preço na Banda Superior`, `📊 RSI Overbought (${rsiAnalysis.value.toFixed(1)})`);
-    confidence = 75;
+    confidence = bbAnalysis.isSqueezed ? 80 : 70;
   }
+  
+  if (type === 'NEUTRAL') return null;
   
   const atr = bbAnalysis.upper - bbAnalysis.lower;
   
-  const zone: StrikeZone | null = type === 'NEUTRAL' ? null : {
+  const zone: StrikeZone = {
     type,
-    confidence: Math.min(100, confidence),
+    confidence,
     triggers,
     entry: { price: currentPrice, timestamp: Date.now() },
     strategy: 'HF_MEAN_REVERSION',
@@ -89,20 +92,18 @@ export function detectHFMeanReversionZone(indicators: Indicators, currentPrice: 
       stopLoss: type === 'LONG_ENTRY' ? currentPrice - atr * 0.5 : currentPrice + atr * 0.5,
       riskReward: 1.5
     },
-    indicators: { rsi: rsiAnalysis.value, bbPosition: bbAnalysis.position, bbWidth: bbAnalysis.width, volumeSpike: false, divergence: null },
+    indicators: { rsi: rsiAnalysis.value, bbPosition: bbAnalysis.position, bbWidth: bbAnalysis.width || 0, volumeSpike: false, divergence: null },
     duration: bbAnalysis.isSqueezed ? 30 : 20
   };
 
-  if (zone) {
-    console.log('[HF_MEAN_REV] SIGNAL DETECTED:', {
+  console.log('[HF_MEAN_REV] SIGNAL DETECTED:', {
       type: zone.type,
       confidence: zone.confidence,
       price: currentPrice,
       bbLower: bb.lower,
       bbUpper: bb.upper,
       rsi: rsiValue
-    });
-  }
+  });
   
   const executionTime = performance.now() - startTime;
   if (executionTime > 5) {
@@ -121,35 +122,36 @@ export function detectStandardTrendZone(indicators: Indicators, currentPrice: nu
   
   const { adx, ma: { long: ema100 }, rsi, atr } = indicators;
   
-  if (adx < 20) {
-    // Retornar um objeto nulo é mais limpo que retornar um StrikeZone "VETO"
+  // ✅ CORRIGIDO: Limiar ADX levemente relaxado
+  if (adx < 22) {
     return null;
   }
   
   const isUpTrend = currentPrice > ema100!;
   const isDownTrend = currentPrice < ema100!;
   
-  const rsiCrossedUp = rsi >= 47 && rsi <= 53 && prevRsi < 47;
-  const rsiCrossedDown = rsi >= 47 && rsi <= 53 && prevRsi > 53;
-  const strongUpTrend = isUpTrend && rsi > 55 && adx > 25;
-  const strongDownTrend = isDownTrend && rsi < 45 && adx > 25;
+  // ✅ CORRIGIDO: Lógica de sinal simplificada e mais permissiva
+  const strongUpTrend = isUpTrend && rsi > 52 && adx > 22;
+  const strongDownTrend = isDownTrend && rsi < 48 && adx > 22;
   
   let type: StrikeZone['type'] = 'NEUTRAL';
   const triggers: string[] = [];
   let confidence = 0;
   
-  if ((isUpTrend && rsiCrossedUp) || strongUpTrend) { 
+  if (strongUpTrend) { 
     type = 'LONG_ENTRY'; 
-    triggers.push(`📈 Tendência de Alta`, `🐂 RSI momentum positivo`); 
-    confidence = strongUpTrend ? 75 : 65; 
+    triggers.push(`📈 Tendência de Alta (ADX: ${adx.toFixed(1)})`, `🐂 RSI momentum positivo (${rsi.toFixed(1)})`); 
+    confidence = 70; 
   }
-  else if ((isDownTrend && rsiCrossedDown) || strongDownTrend) { 
+  else if (strongDownTrend) { 
     type = 'SHORT_ENTRY'; 
-    triggers.push(`📉 Tendência de Baixa`, `🐻 RSI momentum negativo`); 
-    confidence = strongDownTrend ? 75 : 65; 
+    triggers.push(`📉 Tendência de Baixa (ADX: ${adx.toFixed(1)})`, `🐻 RSI momentum negativo (${rsi.toFixed(1)})`); 
+    confidence = 70;
   }
   
-  const zone = type === 'NEUTRAL' ? null : {
+  if (type === 'NEUTRAL') return null;
+  
+  const zone: StrikeZone = {
     type,
     confidence,
     triggers,
@@ -163,10 +165,8 @@ export function detectStandardTrendZone(indicators: Indicators, currentPrice: nu
     indicators: { rsi: rsi, bbPosition: 0, bbWidth: 0, volumeSpike: false, divergence: null },
     duration: 180,
   };
-
-  if (zone) {
-    console.log('[STD_TREND] SIGNAL DETECTED:', { type, confidence, price: currentPrice, adx, rsi });
-  }
+  
+  console.log('[STD_TREND] SIGNAL DETECTED:', { type, confidence, price: currentPrice, adx, rsi });
 
   const executionTime = performance.now() - startTime;
   if (executionTime > 5) {
@@ -178,7 +178,8 @@ export function detectStandardTrendZone(indicators: Indicators, currentPrice: nu
 
 export function detectBollingerSqueezeZone(indicators: Indicators, currentPrice: number): StrikeZone | null {
   const startTime = performance.now();
-  if (!indicators.bbw || indicators.bbw > 1.0) {
+  // ✅ CORRIGIDO: Limiar de BBW aumentado para 2.5%
+  if (!indicators.bbw || indicators.bbw > 2.5) {
     if(!indicators.bbw) console.debug('[BB_SQUEEZE] Missing indicators: BBW');
     return null;
   }
@@ -190,6 +191,7 @@ export function detectBollingerSqueezeZone(indicators: Indicators, currentPrice:
   }
   
   let type: StrikeZone['type'] = 'NEUTRAL';
+  
   const breakoutMargin = (bb.upper - bb.lower) * 0.02;
   
   if (currentPrice > bb.upper + breakoutMargin) {
@@ -200,7 +202,7 @@ export function detectBollingerSqueezeZone(indicators: Indicators, currentPrice:
     return null;
   }
   
-  const zone = {
+  const zone: StrikeZone = {
     type,
     confidence: 80,
     triggers: [`🎯 Squeeze de Bollinger rompido (${indicators.bbw.toFixed(2)}%)`],
@@ -215,9 +217,7 @@ export function detectBollingerSqueezeZone(indicators: Indicators, currentPrice:
     duration: 30,
   };
 
-  if(zone) {
-    console.log('[BB_SQUEEZE] SIGNAL DETECTED:', { type, confidence: zone.confidence, price: currentPrice, bbw: indicators.bbw });
-  }
+  console.log('[BB_SQUEEZE] SIGNAL DETECTED:', { type, confidence: zone.confidence, price: currentPrice, bbw: indicators.bbw });
   
   const executionTime = performance.now() - startTime;
   if (executionTime > 5) {
@@ -258,15 +258,12 @@ export function detectVolumeAbsorptionZone(candles: CandleData[], indicators: In
   const isSellClimax = climaxCandle.close < climaxCandle.open;
   const isBuyClimax = climaxCandle.close > climaxCandle.open;
   
-  const recentAbsorption = recentCandles.slice(-2);
-  const climaxIndex = recentCandles.indexOf(climaxCandle);
-  const isRecentClimax = climaxIndex >= recentCandles.length - 5;
-  
-  if (!isRecentClimax) return null;
-  
+  const recentAbsorption = recentCandles.slice(-3); // Olhar 3 velas para absorção
+
+  // ✅ CORRIGIDO: Lógica de absorção mais flexível
   const hasAbsorption = recentAbsorption.some(c => 
-    c.volume! < climaxCandle.volume! * 0.6 && 
-    Math.abs(c.close - c.open) < (climaxCandle.high - climaxCandle.low) * 0.6
+    c.volume! < climaxCandle.volume! * 0.8 && // Volume menor que 80% do clímax
+    Math.abs(c.close - c.open) < climaxRange * 0.6
   );
   
   if (!hasAbsorption) return null;
@@ -275,7 +272,9 @@ export function detectVolumeAbsorptionZone(candles: CandleData[], indicators: In
   if (isSellClimax && isWideRangeClimax) type = 'LONG_ENTRY';
   else if (isBuyClimax && isWideRangeClimax) type = 'SHORT_ENTRY';
   
-  const zone = (type === 'NEUTRAL') ? null : { 
+  if (type === 'NEUTRAL') return null;
+  
+  const zone: StrikeZone = { 
     type, 
     confidence: 80,
     triggers: [
@@ -292,10 +291,8 @@ export function detectVolumeAbsorptionZone(candles: CandleData[], indicators: In
     indicators: { rsi: indicators.rsi || 50, bbPosition: 0, bbWidth: 0, volumeSpike: true, divergence: null },
     duration: 120,
   };
-
-  if (zone) {
-      console.log('[VOL_ABSORB] SIGNAL DETECTED:', { type: zone.type, confidence: zone.confidence, climaxVolume: climaxCandle.volume, avgVolume });
-  }
+  
+  console.log('[VOL_ABSORB] SIGNAL DETECTED:', { type: zone.type, confidence: zone.confidence, climaxVolume: climaxCandle.volume, avgVolume });
 
   const executionTime = performance.now() - startTime;
   if (executionTime > 5) {
@@ -321,7 +318,7 @@ export function detectMicrostructureScalpZone(ticks: TickData[], candles: Candle
   
   const atr = indicators.atr || 0.0001;
   
-  const zone = (type === 'NEUTRAL') ? null : {
+  const zone: StrikeZone = {
     type,
     confidence: 70,
     triggers: [`⚡ Fluxo de Ordens (${micro.pressure})`],
@@ -333,12 +330,10 @@ export function detectMicrostructureScalpZone(ticks: TickData[], candles: Candle
       riskReward: 2.0,
     },
     indicators: { rsi: indicators.rsi || 50, bbPosition: 0, bbWidth: 0, volumeSpike: true, divergence: null },
-    duration: 10, // ✅ CORRIGIDO
+    duration: 10,
   };
-
-  if (zone) {
-      console.log('[MICRO_SCALP] SIGNAL DETECTED:', { type: zone.type, confidence: zone.confidence, pressure: micro.pressure, velocity: micro.tickVelocity });
-  }
+  
+  console.log('[MICRO_SCALP] SIGNAL DETECTED:', { type: zone.type, confidence: zone.confidence, pressure: micro.pressure, velocity: micro.tickVelocity });
 
   const executionTime = performance.now() - startTime;
   if (executionTime > 5) {
