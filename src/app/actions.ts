@@ -9,6 +9,7 @@ import { getFinancialSummary } from "@/services/financial-data-service";
 import { auth, db } from "@/lib/firebase";
 import WebSocket from 'ws';
 import { getDoc, doc } from 'firebase/firestore';
+import { generateFinancialInsights } from "@/ai/flows/financial-insights-flow";
 
 
 export async function getChatbotInsightsResponse(data: FinancialChatbotInsightsInput & { userId: string }) {
@@ -18,6 +19,16 @@ export async function getChatbotInsightsResponse(data: FinancialChatbotInsightsI
   } catch (e: any) {
     console.error("[Action Error] getChatbotInsightsResponse:", e);
     return { error: e.message || "Desculpe, não consegui processar isso. Por favor, tente novamente." };
+  }
+}
+
+export async function getFinancialInsights(financialData: string): Promise<{ success?: string[]; error?: any }> {
+  try {
+    const insights = await generateFinancialInsights(financialData);
+    return { success: insights };
+  } catch (e: any) {
+    console.error("[Action Error] getFinancialInsights:", e);
+    return { error: e.message || "Desculpe, não consegui processar isso." };
   }
 }
 

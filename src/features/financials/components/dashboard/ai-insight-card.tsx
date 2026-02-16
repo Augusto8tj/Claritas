@@ -1,9 +1,10 @@
 // /src/features/financials/components/dashboard/ai-insight-card.tsx
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { getFinancialInsights } from "@/services/financial-data-service";
+import { getFinancialSummary } from "@/services/financial-data-service";
+import { getFinancialInsights } from "@/app/actions";
 import { Lightbulb, Loader2, Wand2 } from "lucide-react";
 import { useAuth } from '@/features/auth/hooks/use-auth';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -24,8 +25,18 @@ export function AIInsightCard() {
     setLoading(true);
     setError(null);
     try {
-      const fetchedInsights = await getFinancialInsights(user.uid);
-      setInsights(fetchedInsights);
+      // 1. Fetch summary on client
+      const summary = await getFinancialSummary(user.uid);
+      const financialDataString = `Renda: ${summary.income.toFixed(2)}, Despesas: ${summary.expenses.toFixed(2)}, Saldo: ${summary.balance.toFixed(2)}`;
+      
+      // 2. Call server action with data
+      const result = await getFinancialInsights(financialDataString);
+
+      if (result.error) {
+        throw new Error(result.error);
+      }
+      
+      setInsights(result.success || []);
     } catch (error: any) {
       console.error("Failed to fetch AI insights:", error);
       setError(error.message || "Não foi possível carregar os insights.");

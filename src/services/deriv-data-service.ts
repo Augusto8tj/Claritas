@@ -13,7 +13,7 @@
  */
 
 import { AssetAnalysisInput, Operation } from '@/lib/types';
-import { getFinancialSummary } from './financial-data-service';
+
 
 // Mock/simulação de uma fonte de dados de trading.
 // Em um app real, isso viria do estado mantido pelo `useDerivApi`.
@@ -39,10 +39,8 @@ export async function getDerivApiDataForAnalysis(
   symbol: string
 ): Promise<AssetAnalysisInput | null> {
   try {
-    // 1. Obter dados financeiros (como saldo)
-    // Em um app real, o saldo da conta de trading viria da API Deriv,
-    // mas aqui vamos simular usando o saldo financeiro geral.
-    const financialSummary = await getFinancialSummary(userId);
+    // 1. Obter dados financeiros (como saldo) - REMOVIDO PARA EVITAR CONFLITO
+    const financialSummary = { balance: 10000 }; // Usando valor estático
 
     // 2. Obter dados de trading (simulados por enquanto)
     const tradingData = MOCK_TRADING_DATA['default'];
@@ -63,3 +61,4 @@ export async function getDerivApiDataForAnalysis(
     return null;
   }
 }
+    

@@ -1,4 +1,4 @@
-// /src/components/goals/add-goal-dialog.tsx
+// /src/features/financials/components/goals/add-goal-dialog.tsx
 "use client";
 
 import { useState } from "react";
@@ -26,7 +26,8 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
-import { addGoal } from "@/app/actions/financial-data-actions";
+import { generateGoalDataWithAIImage } from "@/app/actions/goal-actions";
+import { saveGoal } from "@/services/financial-data-service";
 import { useToast } from "@/hooks/use-toast";
 import type { Goal } from "@/lib/types";
 import { useAuth } from "@/features/auth/hooks/use-auth";
@@ -62,30 +63,47 @@ export function AddGoalDialog({ onGoalAdded }: AddGoalDialogProps) {
       return;
     }
     setLoading(true);
-    const response = await addGoal({ userId: user.uid, ...data });
     
-    if (response.error) {
-       if(typeof response.error === 'object') {
-        Object.entries(response.error).forEach(([key, value]) => {
-          form.setError(key as keyof FormValues, { message: (value as string[])[0] });
+    try {
+        // 1. Chama a Server Action para gerar dados da imagem
+        const imageResponse = await generateGoalDataWithAIImage({ userId: user.uid, name: data.name });
+
+        if (imageResponse.error || !imageResponse.success) {
+            throw new Error(imageResponse.error || "A IA não conseguiu gerar uma imagem para a meta.");
+        }
+
+        const { imageUrl, imageHint } = imageResponse.success;
+        
+        // 2. Prepara o objeto completo da meta
+        const goalData = {
+            name: data.name,
+            targetAmount: data.targetAmount,
+            currentAmount: 0,
+            imageUrl,
+            imageHint,
+        };
+
+        // 3. Chama a função do serviço (no cliente) para salvar no Firestore
+        const newGoal = await saveGoal(user.uid, goalData);
+
+        toast({
+            title: "Meta Adicionada!",
+            description: `A meta "${newGoal.name}" foi criada com uma imagem gerada por IA.`,
         });
-      } else {
-         toast({
+        onGoalAdded(newGoal);
+        setOpen(false);
+        form.reset();
+
+    } catch (error: any) {
+        console.error("Erro no processo de criação de meta:", error);
+        toast({
             variant: "destructive",
             title: "Falha ao Adicionar Meta",
-            description: response.error,
+            description: error.message || "Ocorreu um erro inesperado.",
         });
-      }
-    } else if (response.success) {
-      toast({
-        title: "Meta Adicionada!",
-        description: `A meta "${response.success.name}" foi criada.`,
-      });
-      onGoalAdded(response.success);
-      setOpen(false);
-      form.reset();
+    } finally {
+        setLoading(false);
     }
-    setLoading(false);
   };
 
   const handleOpenChange = (isOpen: boolean) => {
@@ -107,7 +125,7 @@ export function AddGoalDialog({ onGoalAdded }: AddGoalDialogProps) {
         <DialogHeader>
           <DialogTitle className="font-headline">Criar Nova Meta</DialogTitle>
           <DialogDescription>
-            Defina um novo objetivo financeiro para acompanhar.
+            Defina um novo objetivo financeiro. A IA irá gerar uma imagem inspiradora para si!
           </DialogDescription>
         </DialogHeader>
         <Form {...form}>

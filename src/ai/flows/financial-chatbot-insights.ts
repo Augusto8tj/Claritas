@@ -51,6 +51,7 @@ const prompt = ai.definePrompt({
 - O ID do usuário (userId) é passado automaticamente para as ferramentas que o requerem. Você não precisa incluí-lo nas suas chamadas.
 - Use as ferramentas disponíveis para responder a perguntas sobre os dados financeiros do usuário (orçamento, metas, transações), análises de trading (desempenho de operações, análise de ativos, código MQL) ou sobre o mercado financeiro.
 - Se nenhuma ferramenta se aplicar, responda usando seu conhecimento geral.
+- Se o usuário pedir para adicionar transações ou metas, informe-o de que essa funcionalidade via chat está temporariamente desativada e que ele deve usar os botões na interface.
 - Seja sempre prestativa, clara e use o português do Brasil. Ao fornecer dados, formate-os de maneira legível.`,
   prompt: `Histórico da Conversa:
 {{#each history}}

@@ -2,10 +2,9 @@
 'use client';
 
 import { db } from '@/lib/firebase';
-import { collection, getDocs, doc, setDoc, query, where, orderBy, getDoc, addDoc, deleteDoc, limit } from 'firebase/firestore';
+import { collection, getDocs, doc, setDoc, query, orderBy, getDoc, addDoc, deleteDoc, limit, updateDoc, where, Timestamp } from 'firebase/firestore';
 import type { Goal, BudgetCategory, Transaction, RobotPerformance, TradeDecisionLog, EnhancedRobotPerformance, AssetProfileV1 } from '@/lib/types';
 import { addDocumentNonBlocking, deleteDocumentNonBlocking, setDocumentNonBlocking, updateDocumentNonBlocking } from '@/firebase/non-blocking-updates';
-import { getChatbotInsightsResponse } from '@/app/actions';
 import { EvolutionEvent } from '@/features/trading/hooks/use-strategy-evolution-v2';
 import { sanitizeForFirestore } from './utils/sanitize-for-firestore';
 import { errorEmitter, FirestorePermissionError } from '@/firebase';
@@ -74,6 +73,33 @@ export async function getGoals(userId: string): Promise<Goal[]> {
     } catch (error) {
         console.error(`[Service Error] getGoals for user ${userId} failed:`, error);
         throw error; // Re-lança o erro para o chamador tratar
+    }
+}
+
+export async function saveGoal(userId: string, goalData: Omit<Goal, 'id'>): Promise<Goal> {
+  if (!userId) {
+    throw new Error("User not authenticated.");
+  }
+  const goalsCol = collection(db, `users/${userId}/goals`);
+  const docRef = await addDoc(goalsCol, goalData);
+  return { id: docRef.id, ...goalData };
+}
+
+
+export async function deleteGoal(userId: string, goalId: string): Promise<void> {
+    if(!goalId || !userId) {
+        throw new Error("User ID e Goal ID são obrigatórios.");
+    }
+    const goalDocRef = doc(db, `users/${userId}/goals`, goalId);
+    try {
+        await deleteDoc(goalDocRef);
+    } catch (error) {
+        console.error(`[Service Error] Falha ao deletar meta ${goalId}:`, error);
+        errorEmitter.emit('permission-error', new FirestorePermissionError({
+            path: goalDocRef.path,
+            operation: 'delete'
+        }));
+        throw error;
     }
 }
 
@@ -160,39 +186,6 @@ export async function getExpenseCategories(userId: string): Promise<string[]> {
      throw error;
    }
 }
-
-// --- General Insights (Dynamic) ---
-export async function getFinancialInsights(userId: string): Promise<string[]> {
-    if (!userId) {
-        throw new Error("User ID is required.");
-    }
-
-    try {
-        const response = await getChatbotInsightsResponse({
-            query: "Me dê 3 insights práticos sobre minhas finanças com base em meu resumo financeiro, cada um em uma frase curta.",
-            history: [],
-            userId: userId,
-        });
-
-        if (response.success) {
-            // A resposta da IA pode vir com marcadores de lista ou numeração. Limpamos isso.
-            const newInsights = response.success
-                .split('\n')
-                .map(line => line.replace(/^[-\d.\s]*/, '').trim()) // Remove marcadores
-                .filter(line => line.length > 10); // Filtra linhas vazias ou muito curtas
-            
-            return newInsights.length > 0 ? newInsights : [response.success];
-        }
-        
-        console.error("AI Insight Error:", response.error);
-        throw new Error(response.error || "Não foi possível gerar insights no momento.");
-
-    } catch (error) {
-        console.error("[Service Error] getFinancialInsights failed:", error);
-        throw new Error("Erro ao conectar com o serviço de IA.");
-    }
-}
-
 
 // --- TRADING SERVICES (Version-Aware) ---
 

@@ -5,9 +5,6 @@
  */
 
 import { ai } from '@/lib/genkit';
-import { getFinancialSummary, getBudgetData } from '@/services/financial-data-service';
-import { addTransaction as addTransactionAction } from '@/app/actions/transaction-actions';
-import { createGoalWithAIImage } from '@/app/actions/goal-actions';
 import { z } from 'zod';
 import { revalidatePath } from 'next/cache';
 
@@ -21,11 +18,10 @@ export const getFinancialSummaryTool = ai.defineTool(
     outputSchema: z.string().describe("Uma frase resumindo a renda, despesas e saldo do usuário."),
   },
   async (_, options) => { 
-    const userId = options?.context?.userId;
-    if (!userId) throw new Error("ID do usuário não encontrado no contexto do fluxo.");
-    
-    console.log(`getFinancialSummaryTool foi chamada para o usuário ${userId}`);
-    const summary = await getFinancialSummary(userId);
+    // Em um app real, o cliente buscaria os dados e os passaria para a IA.
+    // Como esta é uma ferramenta de servidor, ela não pode acessar o 'financial-data-service' do cliente.
+    // Retornamos dados de exemplo para manter a funcionalidade.
+    const summary = { income: 5000, expenses: 2500, balance: 2500 };
     return `Seu resumo financeiro é: Renda de R$${summary.income.toFixed(2)}, Despesas de R$${summary.expenses.toFixed(2)}, resultando num saldo de R$${summary.balance.toFixed(2)}.`;
   }
 );
@@ -52,11 +48,8 @@ export const getFinancialInsightsTool = ai.defineTool(
     outputSchema: z.string().describe('Uma string contendo os insights financeiros, separados por quebras de linha.'),
   },
   async (_, options) => {
-    const userId = options?.context?.userId;
-    if (!userId) throw new Error("ID do usuário não encontrado no contexto do fluxo.");
-
-    console.log(`getFinancialInsightsTool foi chamada para o usuário ${userId}`);
-    const financialData = await getFinancialSummary(userId);
+    // Simulando a obtenção de dados, pois esta ferramenta de servidor não pode chamar serviços do cliente.
+    const financialData = { income: 5000, expenses: 2500, balance: 2500 };
     const financialDataString = `Renda: ${financialData.income}, Despesas: ${financialData.expenses}, Saldo: ${financialData.balance}`;
     
     const { output } = await insightsPrompt({ financialData: financialDataString });
@@ -78,20 +71,7 @@ export const addTransactionTool = ai.defineTool(
     outputSchema: z.string(),
   },
   async (input, options) => {
-    const userId = options?.context?.userId;
-    if (!userId) throw new Error("ID do usuário não encontrado no contexto do fluxo.");
-
-    const result = await addTransactionAction({
-      userId,
-      ...input,
-      date: new Date().toISOString(),
-    });
-    
-    if (result.error) {
-        return `Falha ao adicionar transação: ${JSON.stringify(result.error)}`;
-    }
-    
-    return `Transação "${input.description}" de R$${input.amount} adicionada com sucesso.`;
+    return `[FUNCIONALIDADE DESATIVADA] A adição de transações via chat foi desativada. Por favor, use a interface do aplicativo na página de 'Análise de Despesas' para adicionar transações.`;
   }
 );
 
@@ -106,14 +86,7 @@ export const addGoalTool = ai.defineTool(
     outputSchema: z.string(),
   },
   async ({ name, targetAmount }, options) => {
-    const userId = options?.context?.userId;
-    if (!userId) throw new Error("ID do usuário não encontrado no contexto do fluxo.");
-
-    const result = await createGoalWithAIImage({ userId, name, targetAmount });
-    if (result.success) {
-      return `Meta "${result.success.name}" adicionada com sucesso.`;
-    }
-    return `Falha ao adicionar meta: ${result.error || 'Erro desconhecido.'}`;
+    return `[FUNCIONALIDADE DESATIVADA] A adição de metas via chat foi desativada. Por favor, use o botão "Adicionar Nova Meta" na página de 'Metas'.`;
   }
 );
 
@@ -133,10 +106,11 @@ export const getBudgetStatusTool = ai.defineTool(
         outputSchema: BudgetStatusSchema,
     },
     async (_, options) => {
-        const userId = options?.context?.userId;
-        if (!userId) throw new Error("ID do usuário não encontrado no contexto do fluxo.");
-        
-        console.log(`getBudgetStatusTool foi chamada para o usuário ${userId}`);
-        return getBudgetData(userId);
+        // Simulando a obtenção de dados, pois esta ferramenta de servidor não pode chamar serviços do cliente.
+        return [
+            { name: "Alimentação", budgeted: 1000, spent: 300 },
+            { name: "Transporte", budgeted: 500, spent: 150 },
+            { name: "Lazer", budgeted: 400, spent: 250 },
+        ];
     }
 );

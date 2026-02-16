@@ -26,7 +26,7 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
-import { updateBudget } from "@/app/actions/budget-actions";
+import { updateBudgetLimit } from "@/services/financial-data-service";
 import { useToast } from "@/hooks/use-toast";
 import type { BudgetCategory } from "@/lib/types";
 import { useAuth } from "@/features/auth/hooks/use-auth";
@@ -63,29 +63,27 @@ export function EditBudgetDialog({ category, onBudgetUpdated, children }: EditBu
     }
 
     setLoading(true);
-    const response = await updateBudget({ userId: user.uid, name: category.name, budgeted: data.budgeted });
-    
-    if (response.error) {
-       if(typeof response.error === 'object') {
-        Object.entries(response.error).forEach(([key, value]) => {
-          form.setError(key as keyof FormValues, { message: (value as string[])[0] });
+    try {
+      const updatedBudget = await updateBudgetLimit(user.uid, category.name, data.budgeted);
+      if (updatedBudget) {
+        toast({
+          title: "Orçamento Atualizado!",
+          description: `O limite para "${updatedBudget.name}" foi atualizado.`,
         });
+        onBudgetUpdated(updatedBudget);
+        setOpen(false);
       } else {
-         toast({
+         throw new Error("Não foi possível atualizar o orçamento.");
+      }
+    } catch (error: any) {
+       toast({
             variant: "destructive",
             title: "Falha ao Atualizar Orçamento",
-            description: response.error,
+            description: error.message || "Ocorreu um erro inesperado.",
         });
-      }
-    } else if (response.success) {
-      toast({
-        title: "Orçamento Atualizado!",
-        description: `O limite para "${response.success.name}" foi atualizado.`,
-      });
-      onBudgetUpdated(response.success);
-      setOpen(false);
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   const handleOpenChange = (isOpen: boolean) => {
