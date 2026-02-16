@@ -42,7 +42,7 @@ function PageContent() {
 
   const [hfConfig, setHFConfig] = useState<HFConfig>({
     enabled: true, minConfidence: 70, autoExecute: false, maxConcurrentTrades: 1, preferredDuration: 20,
-    minConsensusSignals: 2, martingaleMultiplier: 1.0, maxConsecutiveLosses: 5, cooldownSeconds: 30,
+    minConsensusSignals: 1, martingaleMultiplier: 1.0, maxConsecutiveLosses: 5, cooldownSeconds: 30,
   });
 
   const [dailyBalance, setDailyBalance] = useState(100.0);
@@ -192,6 +192,10 @@ function PageContent() {
                     />
                 </CollapsibleContent>
               </Collapsible>
+               <HFStrategyTuningPanel 
+                params={strategyParams}
+                onParamChange={updateStrategyParams}
+              />
         </div>
         <div className="space-y-6">
           <Card>
@@ -220,10 +224,6 @@ function PageContent() {
           <HFConfigPanel
             config={hfConfig}
             onConfigChange={updates => setHFConfig((prev: any) => ({ ...prev, ...updates }))}
-          />
-          <HFStrategyTuningPanel 
-            params={strategyParams}
-            onParamChange={updateStrategyParams}
           />
         </div>
       </div>
