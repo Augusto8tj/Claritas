@@ -89,7 +89,7 @@ export function HFConfigPanel({ config, onConfigChange }: HFConfigPanelProps) {
           </Label>
           <Slider
             id="min-consensus"
-            min={1} max={3} step={1}
+            min={1} max={5} step={1}
             value={[config.minConsensusSignals]}
             onValueChange={([minConsensusSignals]) => onConfigChange({ minConsensusSignals })}
           />
@@ -106,6 +106,9 @@ export function HFConfigPanel({ config, onConfigChange }: HFConfigPanelProps) {
             value={[config.maxConcurrentTrades]}
             onValueChange={([maxConcurrentTrades]) => onConfigChange({ maxConcurrentTrades })}
           />
+          <p className="text-xs text-muted-foreground pt-1">
+            Define o número máximo de posições que o sistema pode abrir e manter ativas ao mesmo tempo. Ajuda a controlar a exposição total ao risco.
+          </p>
         </div>
 
         <Collapsible>
