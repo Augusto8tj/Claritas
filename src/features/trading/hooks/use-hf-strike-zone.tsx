@@ -1,4 +1,3 @@
-
 // src/features/trading/hooks/use-hf-strike-zone.tsx
 'use client';
 
@@ -18,6 +17,8 @@ import {
   type StrikeZone,
   type StrategyType
 } from '../services/hf-strike-logic';
+import type { HFConfig } from '@/features/trading/components/hf-trader/hf-config-panel';
+
 
 export type { StrikeZone } from '../services/hf-strike-logic';
 
@@ -29,19 +30,14 @@ const CHAMPION_STRATEGY_MAP: Record<RegimeCharacteristics['regime'], { strategy:
   CALM_ACCUMULATION: { strategy: 'VOLUME_ABSORPTION', reason: 'Identifica zonas de absorção antes de grandes movimentos.' },
 };
 
-const EXPLORATORY_CONFIG = {
-  MIN_CONFIDENCE: 85, // Apenas considera sinais exploratórios de alta confiança
-  STAKE_SCALING: 0.25 // Usa apenas 25% do stake calculado para trades exploratórios
-};
-
-
 export function useHFStrikeZone(
   priceTicks: TickData[],
   botCandleData: CandleData[],
   uiChartPeriod: TimePeriod,
-  enabled: boolean = true
+  config: HFConfig
 ) {
   const { user } = useAuth();
+  const { enabled, minConfidence } = config;
   const rsiStateRef = useRef({ prev: 50 });
   const initialStrategies = useMemo(() => getCouncilStrategies('standard'), []);
 
@@ -67,7 +63,7 @@ export function useHFStrikeZone(
     const runCycle = async () => {
       const regime = detectMarketRegime(indicators, botCandleData);
       setMarketRegime(regime);
-
+      
       const champion = CHAMPION_STRATEGY_MAP[regime.regime];
       setChampionStrategy(champion);
 
@@ -84,39 +80,25 @@ export function useHFStrikeZone(
       
       const validSignals = allSignalsResult.filter((zone): zone is StrikeZone => zone !== null && zone.type !== 'NEUTRAL');
       
+      // --- Nova Lógica: Highest-Confidence-First ---
+      const eligibleSignals = validSignals.filter(s => s.confidence >= minConfidence);
+
       let finalStrikeZone: StrikeZone | null = null;
-      let finalIsExploratory = false;
-
-      const championSignal = validSignals.find(s => s.strategy === champion.strategy);
-
-      if (championSignal) {
-        finalStrikeZone = championSignal;
-        finalIsExploratory = false;
-      } else {
-        const exploratorySignals = validSignals.filter(
-          s => s.confidence >= EXPLORATORY_CONFIG.MIN_CONFIDENCE
-        );
-        
-        if (exploratorySignals.length > 0) {
-          exploratorySignals.sort((a, b) => b.confidence - a.confidence);
-          finalStrikeZone = exploratorySignals[0];
-          finalIsExploratory = true;
-        }
+      if (eligibleSignals.length > 0) {
+          // Ordena por confiança para pegar o sinal mais forte
+          eligibleSignals.sort((a, b) => b.confidence - a.confidence);
+          finalStrikeZone = eligibleSignals[0];
       }
-      
+
+      // O conceito 'exploratório' não é mais necessário com este modelo direto.
       setActiveStrikeZone(finalStrikeZone);
-      setIsExploratory(finalIsExploratory);
+      setIsExploratory(false); 
       
       if (finalStrikeZone) {
         const pseudoSignal = {
           expectedWinRate: 0.5 + (finalStrikeZone.confidence - 50) / 100 * 0.4,
         };
         const sizing = riskManager.calculatePositionSize(pseudoSignal as any, riskManager.currentCapital);
-
-        if (finalIsExploratory) {
-            sizing.recommendedStake *= EXPLORATORY_CONFIG.STAKE_SCALING;
-            sizing.reasoning.push(`EXPLORATÓRIO: Stake reduzido em ${(1-EXPLORATORY_CONFIG.STAKE_SCALING)*100}%`);
-        }
         
         setPositionSizing(sizing);
       } else {
@@ -131,7 +113,7 @@ export function useHFStrikeZone(
     const timeoutId = setTimeout(runCycle, 200); 
     return () => clearTimeout(timeoutId);
 
-  }, [indicators, priceTicks, enabled, botCandleData, user, riskManager]);
+  }, [indicators, priceTicks, enabled, botCandleData, user, riskManager, minConfidence]);
   
   return {
     activeStrikeZone,

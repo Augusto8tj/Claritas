@@ -53,7 +53,7 @@ function PageContent() {
     fullIndicators,
     supplyDemandZones,
     allSignals,
-  } = useHFStrikeZone(priceTicks, botCandleData, timePeriod, hfConfig.enabled); 
+  } = useHFStrikeZone(priceTicks, botCandleData, timePeriod, hfConfig); 
 
   const handleExecuteStrike = useCallback(async () => {
     if (!activeStrikeZone || !positionSizing || positionSizing.recommendedStake === 0 || !user || !activeSymbol) {
@@ -263,7 +263,7 @@ function PageContent() {
         <div className="space-y-6">
           <ChampionSignalCard champion={championStrategy} signal={activeStrikeZone} regime={marketRegime} onExecute={handleExecuteStrike} isExecuting={isExecuting} isExploratory={isExploratory} />
           <StrategySignalMonitor signals={allSignals} />
-          {championStrategy && <HFConfigPanel config={hfConfig} onConfigChange={updates => setHFConfig(prev => ({ ...prev, ...updates }))} disabled={isExecuting} strategy={championStrategy.strategy} />}
+          {activeStrikeZone && <HFConfigPanel config={hfConfig} onConfigChange={updates => setHFConfig(prev => ({ ...prev, ...updates }))} disabled={isExecuting} strategy={activeStrikeZone.strategy} />}
         </div>
       </div>
     </div>
