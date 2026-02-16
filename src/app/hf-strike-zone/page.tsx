@@ -18,7 +18,7 @@ import { Target, TrendingUp, BarChart, Brain, Activity, Zap, ShieldAlert, Bot, T
 import { cn } from '@/lib/utils';
 import type { Operation, CandleData, TimePeriod, InstitutionalBacktestResult, WalkForwardResult, MonteCarloResult } from '@/lib/types';
 import { InstitutionalMetricsDashboard } from '@/features/trading/components/hf-trader/institutional-metrics-dashboard';
-import { HFSignalCard } from '@/features/trading/components/hf-trader/hf-signal-card';
+import { HFSignalCard } from '@/features/trading/components/hf-trader/champion-signal-card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { runAllStrategiesBacktest, runWalkForwardAnalysis, runMonteCarloSimulation } from '@/features/trading/backtest/hf-backtest-engine';
 import { StrategyType } from '@/features/trading/services/hf-strike-logic';
@@ -48,6 +48,8 @@ function PageContent() {
   const [dailyBalance, setDailyBalance] = useState(100.0);
   const [dailyTarget, setDailyTarget] = useState(50.0);
 
+  const hfOperations = useMemo(() => operationsLog.filter(op => op.initiator === 'HF_Strike'), [operationsLog]);
+
   const {
     activeStrikeZone,
     marketRegime,
@@ -57,6 +59,7 @@ function PageContent() {
     allSignals,
     consecutiveLosses,
     isCooldownActive,
+    isExecuting,
   } = useHFStrikeZone(priceTicks, botCandleData, timePeriod, hfConfig, { dailyBalance, dailyTarget, operationsLog: hfOperations }); 
 
   const handleExecuteStrike = useCallback(async () => {
@@ -68,7 +71,6 @@ function PageContent() {
     // The execution logic in useHFStrikeZone will handle this
   }, [activeStrikeZone, positionSizing, user, activeSymbol, toast]);
   
-  const hfOperations = useMemo(() => operationsLog.filter(op => op.initiator === 'HF_Strike'), [operationsLog]);
   
   // ... backtesting logic remains the same ...
   const [isBacktesting, setIsBacktesting] = useState(false);
@@ -194,7 +196,7 @@ function PageContent() {
               </div>
             </CardContent>
           </Card>
-          <HFSignalCard signal={activeStrikeZone} onExecute={handleExecuteStrike} isExecuting={hfConfig.isExecuting} consecutiveLosses={consecutiveLosses} isCooldown={isCooldownActive}/>
+          <HFSignalCard signal={activeStrikeZone} onExecute={handleExecuteStrike} isExecuting={isExecuting} consecutiveLosses={consecutiveLosses} isCooldown={isCooldownActive}/>
           <StrategySignalMonitor signals={allSignals} />
           <HFConfigPanel config={hfConfig} onConfigChange={updates => setHFConfig(prev => ({ ...prev, ...updates }))} disabled={hfConfig.enabled && hfConfig.autoExecute} />
         </div>
