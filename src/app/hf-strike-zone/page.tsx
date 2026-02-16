@@ -60,7 +60,7 @@ function PageContent() {
     consecutiveLosses,
     isCooldownActive,
     isExecuting,
-  } = useHFStrikeZone(priceTicks, botCandleData, timePeriod, hfConfig, { dailyBalance, dailyTarget, operationsLog: hfOperations }); 
+  } = useHFStrikeZone(activeSymbol, priceTicks, botCandleData, timePeriod, hfConfig, { dailyBalance, dailyTarget, operationsLog: hfOperations }); 
 
   const handleExecuteStrike = useCallback(async () => {
     if (!activeStrikeZone || !positionSizing || positionSizing.recommendedStake === 0 || !user || !activeSymbol) {

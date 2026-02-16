@@ -31,6 +31,7 @@ interface SessionConfig {
 }
 
 export function useHFStrikeZone(
+  activeSymbol: string | null,
   priceTicks: TickData[],
   botCandleData: CandleData[],
   uiChartPeriod: TimePeriod,
@@ -108,18 +109,13 @@ export function useHFStrikeZone(
       
       const validSignals = allSignalsResult.filter((zone): zone is StrikeZone => zone !== null && zone.type !== 'NEUTRAL' && zone.confidence >= minConfidence);
       
-      const longSignals = validSignals.filter(s => s.type === 'LONG_ENTRY');
-      const shortSignals = validSignals.filter(s => s.type === 'SHORT_ENTRY');
-
       let finalStrikeZone: StrikeZone | null = null;
-      let consensusReason = 'Nenhum consenso atingido.';
       
-      if (longSignals.length >= minConsensusSignals) {
-          finalStrikeZone = longSignals.sort((a,b) => b.confidence - a.confidence)[0]!;
-          consensusReason = `${longSignals.length} especialistas concordam em COMPRA.`;
-      } else if (shortSignals.length >= minConsensusSignals) {
-          finalStrikeZone = shortSignals.sort((a,b) => b.confidence - a.confidence)[0]!;
-          consensusReason = `${shortSignals.length} especialistas concordam em VENDA.`;
+      if (validSignals.length > 0) {
+        // Select the signal with the highest confidence
+        finalStrikeZone = validSignals.reduce((best, current) => 
+          current.confidence > best.confidence ? current : best
+        );
       }
       
       setActiveStrikeZone(finalStrikeZone);
@@ -148,7 +144,7 @@ export function useHFStrikeZone(
                   finalStrikeZone.duration, 's', 'HF_Strike', finalStrikeZone.strategy
               );
               if (tradeResult.success && tradeResult.contractId) {
-                toast({ title: '⚡ Strike Executado (Consenso)!', description: `${consensusReason} | Stake: $${finalStake.toFixed(2)}` });
+                toast({ title: '⚡ Strike Executado (Maior Confiança)!', description: `Estratégia: ${finalStrikeZone.strategy} | Stake: $${finalStake.toFixed(2)}` });
                 await saveHFTradeLog(user.uid, {
                     symbol: activeSymbol!,
                     strikeZone: finalStrikeZone,
@@ -181,6 +177,6 @@ export function useHFStrikeZone(
   
   return {
     activeStrikeZone, marketRegime, positionSizing, riskManager, fullIndicators: indicators,
-    supplyDemandZones: (indicators as any)?.supplyDemandZones, allSignals, consecutiveLosses, isCooldownActive,
+    supplyDemandZones: (indicators as any)?.supplyDemandZones, allSignals, consecutiveLosses, isCooldownActive, isExecuting,
   };
 }
