@@ -22,7 +22,8 @@ import {
   TrendFollowParams,
   SqueezeParams,
   AbsorptionParams,
-  ScalpParams
+  ScalpParams,
+  strategyMetadata
 } from '../services/hf-strike-logic';
 import type { HFConfig } from '@/features/trading/components/hf-trader/hf-config-panel';
 import { saveHFTradeLog } from '@/services/hf-data-service';
@@ -70,7 +71,7 @@ export function useHFStrikeZone(
   const [strategyCounts, setStrategyCounts] = useState<Record<StrategyType, number>>({ HF_MEAN_REVERSION: 0, STD_TREND_FOLLOW: 0, BOLLINGER_SQUEEZE: 0, VOLUME_ABSORPTION: 0, MICROSTRUCTURE_SCALP: 0 });
   
   const [strategyParams, setStrategyParams] = useState<StrategyParams>({
-    HF_MEAN_REVERSION: { rsiThreshold: 30, tolerance: 0.0015 },
+    HF_MEAN_REVERSION: { rsiThreshold: 32, tolerance: 0.0015 },
     STD_TREND_FOLLOW: { adxStrength: 22, rsiMomentum: 52 },
     BOLLINGER_SQUEEZE: { bbwThreshold: 2.5, breakoutMargin: 0.02 },
     VOLUME_ABSORPTION: { climaxMultiplier: 2.0, absorptionFactor: 0.8 },
@@ -153,16 +154,52 @@ export function useHFStrikeZone(
         zone !== null && zone.type !== 'NEUTRAL' && zone.confidence >= minConfidence
       );
       
-      const highestConfidenceSignal = validSignals.reduce((best, current) => {
-        return (current.confidence > (best?.confidence || 0)) ? current : best;
-      }, null as StrikeZone | null);
+      const longSignals = validSignals.filter(s => s.type === 'LONG_ENTRY');
+      const shortSignals = validSignals.filter(s => s.type === 'SHORT_ENTRY');
 
-      setActiveStrikeZone(highestConfidenceSignal);
+      let consensusSignal: StrikeZone | null = null;
+      let ensembleParticipants: StrategyType[] = [];
 
-      if (highestConfidenceSignal) {
+      if (longSignals.length >= minConsensusSignals && longSignals.length > shortSignals.length) {
+          const participants = longSignals;
+          const totalConfidence = participants.reduce((sum, s) => sum + s.confidence, 0);
+          const avgConfidence = totalConfidence / participants.length;
+          const avgDuration = Math.round(participants.reduce((sum, s) => sum + s.duration, 0) / participants.length);
+          const leadSignal = participants.reduce((best, s) => s.confidence > best.confidence ? s : best, participants[0]);
+          ensembleParticipants = participants.map(p => p.strategy);
+          
+          consensusSignal = {
+              ...leadSignal,
+              type: 'LONG_ENTRY',
+              confidence: avgConfidence,
+              duration: avgDuration,
+              triggers: participants.map(s => strategyMetadata[s.strategy].label),
+              strategy: 'ENSEMBLE' as any,
+          };
+      } else if (shortSignals.length >= minConsensusSignals && shortSignals.length > longSignals.length) {
+          const participants = shortSignals;
+          const totalConfidence = participants.reduce((sum, s) => sum + s.confidence, 0);
+          const avgConfidence = totalConfidence / participants.length;
+          const avgDuration = Math.round(participants.reduce((sum, s) => sum + s.duration, 0) / participants.length);
+          const leadSignal = participants.reduce((best, s) => s.confidence > best.confidence ? s : best, participants[0]);
+          ensembleParticipants = participants.map(p => p.strategy);
+
+          consensusSignal = {
+              ...leadSignal,
+              type: 'SHORT_ENTRY',
+              confidence: avgConfidence,
+              duration: avgDuration,
+              triggers: participants.map(s => strategyMetadata[s.strategy].label),
+              strategy: 'ENSEMBLE' as any,
+          };
+      }
+
+      setActiveStrikeZone(consensusSignal);
+
+      if (consensusSignal) {
         const pseudoSignal = {
-          expectedWinRate: 0.5 + (highestConfidenceSignal.confidence - 50) / 100 * 0.4,
-          confidence: highestConfidenceSignal.confidence,
+          expectedWinRate: 0.5 + (consensusSignal.confidence - 50) / 100 * 0.4,
+          confidence: consensusSignal.confidence,
         };
         let sizing = riskManager.calculatePositionSize(pseudoSignal, riskManager.currentCapital);
         let finalStake = sizing.recommendedStake;
@@ -189,25 +226,25 @@ export function useHFStrikeZone(
         if (autoExecute) {
             setIsExecuting(true);
             try {
-              const durationUnit: DurationUnit = highestConfidenceSignal.strategy === 'MICROSTRUCTURE_SCALP' ? 't' : 's';
+              const durationUnit: DurationUnit = consensusSignal.strategy === 'MICROSTRUCTURE_SCALP' ? 't' : 's';
               const tradeResult = await executeTrade(
-                  highestConfidenceSignal.type === 'LONG_ENTRY' ? 'CALL' : 'PUT', 
+                  consensusSignal.type === 'LONG_ENTRY' ? 'CALL' : 'PUT', 
                   finalStake, 
                   activeSymbol!, 
-                  highestConfidenceSignal.type === 'LONG_ENTRY' ? 'rise' : 'fall', 
-                  highestConfidenceSignal.duration,
+                  consensusSignal.type === 'LONG_ENTRY' ? 'rise' : 'fall', 
+                  consensusSignal.duration,
                   durationUnit,
                   'HF_Strike',
-                  highestConfidenceSignal.strategy
+                  'ENSEMBLE' // A estratégia agora é o consenso
               );
               if (tradeResult.success && tradeResult.contractId) {
-                toast({ title: '⚡ Strike Executado!', description: `Estratégia: ${highestConfidenceSignal.strategy} | Stake: $${finalStake.toFixed(2)}` });
+                toast({ title: '⚡ Strike de Consenso Executado!', description: `${ensembleParticipants.length} especialistas concordaram. Stake: $${finalStake.toFixed(2)}` });
                 await saveHFTradeLog(user.uid, {
                     symbol: activeSymbol!,
-                    strikeZone: highestConfidenceSignal,
+                    strikeZone: consensusSignal,
                     execution: { contractId: String(tradeResult.contractId), entryPrice: tradeResult.entryPrice!, status: 'pending', executedAt: new Date().toISOString() },
                     marketRegime: regime.regime,
-                    ensembleParticipants: [highestConfidenceSignal.strategy],
+                    ensembleParticipants: ensembleParticipants,
                     positionSize: sizing,
                     riskMetrics: { sharpeContribution: sizing.sharpeContribution, portfolioExposure: 0 }
                 });
@@ -227,7 +264,8 @@ export function useHFStrikeZone(
       if (indicators.rsi) rsiStateRef.current.prev = indicators.rsi;
     };
     
-    const timeoutId = setTimeout(runCycle, 200); 
+    // Using a simple debounce/throttle
+    const timeoutId = setTimeout(runCycle, 250); 
     return () => clearTimeout(timeoutId);
 
   }, [indicators, priceTicks, enabled, botCandleData, user, riskManager, minConfidence, minConsensusSignals, autoExecute, executeTrade, activeSymbol, toast, martingaleMultiplier, consecutiveLosses, isCooldownActive, isExecuting, manualStake, operationsLog, maxConcurrentTrades, onConfigChange, strategyParams]);
@@ -238,3 +276,5 @@ export function useHFStrikeZone(
     strategyParams, updateStrategyParams: handleUpdateStrategyParams,
   };
 }
+
+    

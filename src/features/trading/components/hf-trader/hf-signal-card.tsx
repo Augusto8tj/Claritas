@@ -68,7 +68,7 @@ export function HFSignalCard({ signal, onExecute, isExecuting, consecutiveLosses
             <Zap className="h-4 w-4" />
             <AlertTitle className="font-bold flex items-center justify-between">
                 <span>STRIKE ZONE DETECTADA!</span>
-                <Badge variant="secondary">{signal.confidence.toFixed(0)}% Conf. Líquida</Badge>
+                <Badge variant="secondary">{signal.confidence.toFixed(0)}% Conf. Média</Badge>
             </AlertTitle>
             <AlertDescription className="mt-2 space-y-2">
                 <div className="grid grid-cols-2 gap-2 text-xs">
@@ -100,3 +100,5 @@ export function HFSignalCard({ signal, onExecute, isExecuting, consecutiveLosses
     </Card>
   );
 }
+
+    
