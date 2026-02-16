@@ -1,4 +1,3 @@
-
 // src/app/hf-strike-zone/page.tsx
 'use client';
 
@@ -245,7 +244,7 @@ function PageContent() {
                 <CollapsibleTrigger asChild>
                    <Button variant="outline" className="w-full" type="button">
                         <TestTube className="mr-2 h-4 w-4" />
-                        Painel de Backtesting
+                        Painel de Backtesting Avançado
                    </Button>
                 </CollapsibleTrigger>
                 <CollapsibleContent className="pt-4">

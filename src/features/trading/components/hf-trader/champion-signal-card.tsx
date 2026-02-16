@@ -1,4 +1,3 @@
-
 // src/features/trading/components/hf-trader/champion-signal-card.tsx
 'use client';
 
@@ -58,9 +57,9 @@ export function ChampionSignalCard({ champion, signal, regime, onExecute, isExec
   return (
     <Card className={cn(
       'border-2 transition-all',
-      isSignalActive && isLong && !isExploratory && 'border-green-500 bg-green-50',
-      isSignalActive && !isLong && !isExploratory && 'border-red-500 bg-red-50',
-      isSignalActive && isExploratory && 'border-blue-500 bg-blue-50',
+      isSignalActive && isLong && !isExploratory && 'border-green-500 bg-green-50/50',
+      isSignalActive && !isLong && !isExploratory && 'border-red-500 bg-red-50/50',
+      isSignalActive && isExploratory && 'border-blue-500 bg-blue-50/50',
     )}>
       <CardHeader>
         <div className="flex justify-between items-center">

@@ -1,3 +1,4 @@
+// src/features/trading/services/advanced-trading-services.ts
 /**
  * @fileOverview Serviços Avançados de Trading para o Cérebro V2.5
  * =================================================================================
@@ -118,6 +119,20 @@ export const bayesianUpdate = (prior: number, evidence: number): number => {
 // ============================================================================
 // 3. ANÁLISE DE MICROESTRUTURA (FLUXO DE ORDENS)
 // ============================================================================
+export interface MicrostructureFeatures {
+  spreadPercentage: number;
+  volumeImbalance: number;
+  tickVelocity: number;
+  priceAcceleration: number;
+  parkinsonVolatility: number;
+  yangZhangVolatility: number;
+  gapRatio: number;
+  meanReversion: number;
+  isSpike: boolean;
+  pressure: 'buy' | 'sell' | 'neutral';
+  analysis: string;
+}
+
 export const extractMicrostructureFeatures = (
   ticks: TickData[],
   candles: CandleData[],

@@ -61,18 +61,18 @@ export class AdvancedRiskManager {
     const kellySafe = kellyFull * this.params.kellyFraction;
     
     let recommendedStake = currentBalance * kellySafe;
-    reasoning.push(`Kelly: $${recommendedStake.toFixed(2)} (${(kellySafe * 100).toFixed(1)}% do capital)`);
+    reasoning.push(`Kelly Base: $${recommendedStake.toFixed(2)} (${(kellySafe * 100).toFixed(1)}% do capital)`);
     
     const confidenceMultiplier = signal.confidence / 100;
     recommendedStake *= confidenceMultiplier;
-    reasoning.push(`Ajuste por confiança (${signal.confidence.toFixed(0)}%): ${(confidenceMultiplier * 100).toFixed(0)}%`);
+    reasoning.push(`Ajuste Confiança (${signal.confidence.toFixed(0)}%): ${(confidenceMultiplier * 100).toFixed(0)}%`);
     
     const dailyLoss = this.dailyStartCapital - currentBalance;
     const dailyLossPercent = this.dailyStartCapital > 0 ? (dailyLoss / this.dailyStartCapital) * 100 : 0;
     
     if (dailyLossPercent >= this.params.maxDailyLoss * 0.8) {
       recommendedStake *= 0.5;
-      reasoning.push(`⚠️ Limite diário próximo (${dailyLossPercent.toFixed(1)}%), reduzindo stake em 50%`);
+      reasoning.push(`⚠️ Limite diário próximo (${dailyLossPercent.toFixed(1)}%), stake reduzido em 50%`);
     }
     
     if (dailyLossPercent >= this.params.maxDailyLoss) {
@@ -89,11 +89,11 @@ export class AdvancedRiskManager {
     const currentDrawdown = this.calculateCurrentDrawdown();
     if (currentDrawdown >= this.params.maxDrawdown * 0.8) {
       recommendedStake *= 0.3;
-      reasoning.push(`⚠️ Drawdown elevado (${currentDrawdown.toFixed(1)}%), stake reduzido drasticamente`);
+      reasoning.push(`🔥 Drawdown elevado (${currentDrawdown.toFixed(1)}%), stake reduzido drasticamente`);
     }
     
     const minStake = 0.35;
-    const maxStake = currentBalance * 0.05;
+    const maxStake = currentBalance * 0.05; // 5% do capital max
     recommendedStake = Math.max(minStake, Math.min(maxStake, recommendedStake));
     
     const stakePercent = (recommendedStake / currentBalance) * 100;

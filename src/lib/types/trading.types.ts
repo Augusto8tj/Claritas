@@ -9,6 +9,13 @@ export type MarketRegime =
   | 'high_volatility'
   | 'breakout';
 
+export type StrategyType =
+  | 'HF_MEAN_REVERSION'
+  | 'STD_TREND_FOLLOW'
+  | 'BOLLINGER_SQUEEZE'
+  | 'VOLUME_ABSORPTION'
+  | 'MICROSTRUCTURE_SCALP';
+
 export interface MicrostructureFeatures {
   spreadPercentage: number;
   volumeImbalance: number;
@@ -432,7 +439,3 @@ export interface MonteCarloResult {
   probabilityOfProfit: number;
   valueAtRisk95: number;
 }
-      
-    
-
-

@@ -56,7 +56,7 @@ export function StrategySignalMonitor({ signals }: StrategySignalMonitorProps) {
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <Activity className="h-5 w-5 text-primary" />
-          Monitor de Sinais HF
+          Monitor de Sinais da Esquadra
         </CardTitle>
         <CardDescription>
           Visualização em tempo real das decisões e confiança de cada estratégia.
