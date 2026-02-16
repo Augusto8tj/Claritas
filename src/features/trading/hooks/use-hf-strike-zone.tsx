@@ -53,6 +53,8 @@ export function useHFStrikeZone(
   const [riskManager] = useState(() => new AdvancedRiskManager({ maxDailyLoss: dailyBalance, maxDrawdown: 30, maxConcurrentTrades: 3, maxExposurePerAsset: 25, kellyFraction: 0.25 }, 1000));
   const [positionSizing, setPositionSizing] = useState<PositionSizeRecommendation | null>(null);
   const [allSignals, setAllSignals] = useState<(StrikeZone | null)[]>([]);
+  const strategyCountsRef = useRef<Record<StrategyType, number>>({ HF_MEAN_REVERSION: 0, STD_TREND_FOLLOW: 0, BOLLINGER_SQUEEZE: 0, VOLUME_ABSORPTION: 0, MICROSTRUCTURE_SCALP: 0 });
+  const [strategyCounts, setStrategyCounts] = useState<Record<StrategyType, number>>(strategyCountsRef.current);
   
   const [consecutiveLosses, setConsecutiveLosses] = useState(0);
   const [isCooldownActive, setIsCooldownActive] = useState(false);
@@ -106,12 +108,25 @@ export function useHFStrikeZone(
         detectMicrostructureScalpZone(priceTicks, botCandleData, indicators, currentPrice),
       ];
       setAllSignals(allSignalsResult);
+
+      let countsChanged = false;
+      allSignalsResult.forEach(signal => {
+        if (signal && signal.type !== 'NEUTRAL') {
+          strategyCountsRef.current[signal.strategy]++;
+          countsChanged = true;
+        }
+      });
+      if (countsChanged) {
+        setStrategyCounts({ ...strategyCountsRef.current });
+      }
       
-      const validSignals = allSignalsResult.filter((zone): zone is StrikeZone => zone !== null && zone.type !== 'NEUTRAL' && zone.confidence >= minConfidence);
+      const validSignals = allSignalsResult.filter((zone): zone is StrikeZone => 
+        zone !== null && zone.type !== 'NEUTRAL' && zone.confidence >= minConfidence
+      );
       
       let finalStrikeZone: StrikeZone | null = null;
       
-      if (validSignals.length >= minConsensusSignals) {
+      if (validSignals.length > 0) {
         finalStrikeZone = validSignals.reduce((best, current) => 
           current.confidence > best.confidence ? current : best
         );
@@ -195,6 +210,6 @@ export function useHFStrikeZone(
   
   return {
     activeStrikeZone, marketRegime, positionSizing, riskManager, fullIndicators: indicators,
-    supplyDemandZones: (indicators as any)?.supplyDemandZones, allSignals, consecutiveLosses, isCooldownActive, isExecuting,
+    supplyDemandZones: (indicators as any)?.supplyDemandZones, allSignals, strategyCounts, consecutiveLosses, isCooldownActive, isExecuting,
   };
 }

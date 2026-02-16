@@ -12,7 +12,7 @@ import { ApiStatusIndicatorV2 as ApiStatusIndicator } from '@/features/trading/c
 import { MarketChart } from '@/features/trading/components/deriv-trader/market-chart';
 import { useHFStrikeZone } from '@/features/trading/hooks/use-hf-strike-zone';
 import { HFExecutionLog } from '@/features/trading/components/hf-trader/hf-execution-log';
-import { HFConfig, HFConfigPanel } from '@/features/trading/components/hf-trader/hf-config-panel';
+import { HFConfigPanel } from '@/features/trading/components/hf-trader/hf-config-panel';
 import { saveHFTradeLog } from '@/services/hf-data-service';
 import { Target, TrendingUp, BarChart, Brain, Activity, Zap, ShieldAlert, Bot, TestTube, GitCompareArrows, Dice5, Wallet } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -40,7 +40,7 @@ function PageContent() {
     operationsLog, tradeAnnotations, executeTrade, clearActiveContracts, getHistoricalData,
   } = useDerivApi();
 
-  const [hfConfig, setHFConfig] = useState<HFConfig>({
+  const [hfConfig, setHFConfig] = useState<any>({
     enabled: true, minConfidence: 70, autoExecute: false, maxConcurrentTrades: 1, preferredDuration: 20,
     minConsensusSignals: 2, martingaleMultiplier: 1.0, maxConsecutiveLosses: 5, cooldownSeconds: 30,
   });
@@ -58,6 +58,7 @@ function PageContent() {
     fullIndicators,
     supplyDemandZones,
     allSignals,
+    strategyCounts,
     consecutiveLosses,
     isCooldownActive,
     isExecuting,
@@ -142,7 +143,7 @@ function PageContent() {
     <div className="flex-1 space-y-6 p-4 sm:p-8 pt-6">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight font-headline">⚡ HF Institucional</h1>
+          <h1 className="text-3xl font-bold tracking-tight font-headline">⚡ HF Strike Zone</h1>
           <p className="text-sm text-muted-foreground mt-1">Trading de Alta Frequência com Consenso de IA.</p>
         </div>
         <div className="flex-1 grid grid-cols-1 md:grid-cols-3 gap-4 items-center">
@@ -215,10 +216,10 @@ function PageContent() {
             </CardContent>
           </Card>
           <HFSignalCard signal={activeStrikeZone} onExecute={handleExecuteStrike} isExecuting={isExecuting} consecutiveLosses={consecutiveLosses} isCooldown={isCooldownActive}/>
-          <StrategySignalMonitor signals={allSignals} />
+          <StrategySignalMonitor signals={allSignals} counts={strategyCounts} />
           <HFConfigPanel
             config={hfConfig}
-            onConfigChange={updates => setHFConfig(prev => ({ ...prev, ...updates }))}
+            onConfigChange={updates => setHFConfig((prev: any) => ({ ...prev, ...updates }))}
           />
         </div>
       </div>
