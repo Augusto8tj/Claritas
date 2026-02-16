@@ -43,7 +43,7 @@ export function HFExecutionLog({ operations, clearActiveContracts }: HFExecution
 
     const filteredOps = useMemo(() => {
         return hfOperations.filter(op => {
-            if (strategyFilter !== 'all' && op.strategy !== strategyFilter) return false;
+            if (strategyFilter !== 'all' && op.strategy?.includes(strategyFilter) === false) return false;
             if (statusFilter !== 'all' && op.status !== statusFilter) return false;
             return true;
         });
@@ -51,7 +51,6 @@ export function HFExecutionLog({ operations, clearActiveContracts }: HFExecution
 
     const summary = useMemo(() => {
         const finishedTrades = filteredOps.filter(op => op.status !== 'pending');
-        const wins = finishedTrades.filter(op => op.status === 'won').length;
         const pnl = finishedTrades.reduce((sum, op) => {
             if (op.status === 'lost') return sum - op.stake;
             return sum + (op.result || 0);
@@ -64,7 +63,7 @@ export function HFExecutionLog({ operations, clearActiveContracts }: HFExecution
         const rows = filteredOps.map(op => [
             new Date(op.timestamp).toISOString(),
             op.asset,
-            op.strategy || 'N/A',
+            `"${op.strategy || 'N/A'}"`,
             op.direction,
             op.stake,
             `${op.duration}${op.durationUnit}`,
@@ -73,7 +72,7 @@ export function HFExecutionLog({ operations, clearActiveContracts }: HFExecution
         ]);
         
         const csv = [headers, ...rows].map(row => row.join(',')).join('\n');
-        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+        const blob = new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8;' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
@@ -154,9 +153,7 @@ export function HFExecutionLog({ operations, clearActiveContracts }: HFExecution
                                 <p>Nenhuma operação com os filtros selecionados.</p>
                             </div>
                         ) : (
-                            filteredOps.map((op) => {
-                                const strategyLabel = op.strategy ? strategyMetadata[op.strategy as StrategyType]?.label || op.strategy : 'N/A';
-                                return (
+                            filteredOps.map((op) => (
                                     <div key={op.id} className="flex items-center gap-4 border-b pb-3 last:border-b-0">
                                         <div className="flex-shrink-0">
                                             <div className={cn("p-2 rounded-full", op.direction === 'rise' ? 'bg-green-500/10 text-green-600' : 'bg-red-500/10 text-red-600')}>
@@ -167,7 +164,7 @@ export function HFExecutionLog({ operations, clearActiveContracts }: HFExecution
                                             <div>
                                                 <p className="font-bold text-sm">{op.asset}</p>
                                                 {op.strategy && (
-                                                    <p className="text-muted-foreground text-[11px] capitalize">{strategyLabel}</p>
+                                                    <p className="text-muted-foreground text-[11px] capitalize truncate" title={op.strategy}>{op.strategy.replace(/_/g, ' ').toLowerCase()}</p>
                                                 )}
                                                 <p className="text-muted-foreground">Entrada: ${op.stake.toFixed(2)}</p>
                                             </div>
@@ -192,8 +189,8 @@ export function HFExecutionLog({ operations, clearActiveContracts }: HFExecution
                                             )}
                                         </div>
                                     </div>
-                                );
-                            })
+                                )
+                            ))
                         )}
                     </div>
                 </ScrollArea>

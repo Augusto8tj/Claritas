@@ -13,6 +13,7 @@ import { Tooltip, TooltipProvider, TooltipTrigger, TooltipContent } from '@/comp
 
 interface StrategySignalMonitorProps {
   signals: (StrikeZone | null)[];
+  counts: Record<StrategyType, number>;
 }
 
 const strategyOrder: StrategyType[] = [
@@ -23,7 +24,7 @@ const strategyOrder: StrategyType[] = [
   'MICROSTRUCTURE_SCALP',
 ];
 
-const SignalBar = ({ signal }: { signal: StrikeZone | null }) => {
+const SignalBar = ({ signal, count }: { signal: StrikeZone | null, count: number }) => {
   const signalType = signal?.type || 'NEUTRAL';
   const confidence = signal?.confidence || 0;
   
@@ -43,14 +44,17 @@ const SignalBar = ({ signal }: { signal: StrikeZone | null }) => {
       <div className="flex-1">
         <Progress value={confidence} className="h-3" indicatorClassName={cn(barColor, 'transition-all duration-300')} />
       </div>
-      <Badge variant="outline" className="w-20 justify-center font-mono text-xs">
-        {confidence.toFixed(0)}%
+      <Badge variant="outline" className="w-24 justify-center font-mono text-xs">
+        {confidence > 0 ? `${confidence.toFixed(0)}%` : '---'}
+      </Badge>
+      <Badge variant="secondary" className="w-16 justify-center font-mono text-xs">
+        {count}
       </Badge>
     </div>
   );
 };
 
-export function StrategySignalMonitor({ signals }: StrategySignalMonitorProps) {
+export function StrategySignalMonitor({ signals, counts }: StrategySignalMonitorProps) {
   return (
     <Card>
       <CardHeader>
@@ -59,13 +63,14 @@ export function StrategySignalMonitor({ signals }: StrategySignalMonitorProps) {
           Monitor de Sinais da Esquadra
         </CardTitle>
         <CardDescription>
-          Visualização em tempo real das decisões e confiança de cada estratégia.
+          Visualização da confiança e contagem de ativações de cada especialista.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
         {strategyOrder.map((strategyKey) => {
           const signal = signals.find(s => s?.strategy === strategyKey) || null;
           const metadata = strategyMetadata[strategyKey];
+          const count = counts[strategyKey] || 0;
           
           return (
             <div key={strategyKey}>
@@ -79,7 +84,7 @@ export function StrategySignalMonitor({ signals }: StrategySignalMonitorProps) {
                   </TooltipContent>
                 </Tooltip>
               </TooltipProvider>
-              <SignalBar signal={signal} />
+              <SignalBar signal={signal} count={count} />
             </div>
           );
         })}
