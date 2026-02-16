@@ -2,14 +2,14 @@
 'use client';
 
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import type { TickData, CandleData, TimePeriod, Operation } from '@/lib/types';
+import type { TickData, CandleData, TimePeriod, Operation, DurationUnit } from '@/lib/types';
 import { calculateAllIndicators, type Indicators } from '@/features/trading/services/indicator-service';
 import { getCouncilStrategies } from '../services/council-strategies';
 import { useAuth } from '@/features/auth/hooks/use-auth';
 import { detectMarketRegime, type RegimeCharacteristics } from '../ml/market-regime-detector';
 import { AdvancedRiskManager, type PositionSizeRecommendation } from '../risk/advanced-risk-manager';
 import { useToast } from '@/hooks/use-toast';
-import { useDerivApiV2 as useDerivApi } from '@/features/trading/hooks/use-deriv-api-v2';
+import { useDerivApiV2 } from '@/features/trading/hooks/use-deriv-api-v2';
 import {
   detectHFMeanReversionZone,
   detectStandardTrendZone,
@@ -39,7 +39,7 @@ export function useHFStrikeZone(
   sessionConfig: SessionConfig
 ) {
   const { user } = useAuth();
-  const { executeTrade } = useDerivApi();
+  const { executeTrade } = useDerivApiV2();
   const { toast } = useToast();
   const { enabled, minConfidence, autoExecute, minConsensusSignals, martingaleMultiplier, maxConsecutiveLosses, cooldownSeconds } = config;
   const { dailyBalance, dailyTarget, operationsLog } = sessionConfig;
@@ -111,8 +111,7 @@ export function useHFStrikeZone(
       
       let finalStrikeZone: StrikeZone | null = null;
       
-      if (validSignals.length > 0) {
-        // Select the signal with the highest confidence
+      if (validSignals.length >= minConsensusSignals) {
         finalStrikeZone = validSignals.reduce((best, current) => 
           current.confidence > best.confidence ? current : best
         );
@@ -138,10 +137,14 @@ export function useHFStrikeZone(
         if (autoExecute) {
             setIsExecuting(true);
             try {
+              const durationUnit: DurationUnit = finalStrikeZone.strategy === 'MICROSTRUCTURE_SCALP' ? 't' : 's';
               const tradeResult = await executeTrade(
                   finalStrikeZone.type === 'LONG_ENTRY' ? 'CALL' : 'PUT', finalStake, activeSymbol!, 
                   finalStrikeZone.type === 'LONG_ENTRY' ? 'rise' : 'fall', 
-                  finalStrikeZone.duration, 's', 'HF_Strike', finalStrikeZone.strategy
+                  finalStrikeZone.duration,
+                  durationUnit,
+                  'HF_Strike',
+                  finalStrikeZone.strategy
               );
               if (tradeResult.success && tradeResult.contractId) {
                 toast({ title: '⚡ Strike Executado (Maior Confiança)!', description: `Estratégia: ${finalStrikeZone.strategy} | Stake: $${finalStake.toFixed(2)}` });

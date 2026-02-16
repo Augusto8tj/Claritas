@@ -206,5 +206,5 @@ export function detectMicrostructureScalpZone(ticks: TickData[], candles: Candle
       stopLoss: type === 'LONG_ENTRY' ? currentPrice - atr * 0.25 : currentPrice + atr * 0.25,
       riskReward: 2.0, },
     indicators: { rsi: indicators.rsi || 50, bbPosition: 0, bbWidth: 0, volumeSpike: true, divergence: null },
-    duration: 10, };
+    duration: 5, };
 }
