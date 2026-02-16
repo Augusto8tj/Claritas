@@ -16,7 +16,7 @@ import { HFConfig, HFConfigPanel } from '@/features/trading/components/hf-trader
 import { saveHFTradeLog } from '@/services/hf-data-service';
 import { Target, TrendingUp, BarChart, Brain, Activity, Zap, ShieldAlert, Bot, TestTube, GitCompareArrows, Dice5, Wallet } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import type { Operation, CandleData, TimePeriod, InstitutionalBacktestResult, WalkForwardResult, MonteCarloResult } from '@/lib/types';
+import type { Operation, CandleData, TimePeriod, InstitutionalBacktestResult, WalkForwardResult, MonteCarloResult, DurationUnit } from '@/lib/types';
 import { InstitutionalMetricsDashboard } from '@/features/trading/components/hf-trader/institutional-metrics-dashboard';
 import { HFSignalCard } from '@/features/trading/components/hf-trader/champion-signal-card';
 import { Skeleton } from '@/components/ui/skeleton';

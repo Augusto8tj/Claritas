@@ -42,7 +42,7 @@ export function useHFStrikeZone(
   const { user } = useAuth();
   const { executeTrade } = useDerivApiV2();
   const { toast } = useToast();
-  const { enabled, minConfidence, autoExecute, minConsensusSignals, martingaleMultiplier, maxConsecutiveLosses, cooldownSeconds } = config;
+  const { enabled, minConfidence, autoExecute, minConsensusSignals, martingaleMultiplier, maxConsecutiveLosses, cooldownSeconds, maxConcurrentTrades } = config;
   const { dailyBalance, dailyTarget, operationsLog, manualStake } = sessionConfig;
   
   const rsiStateRef = useRef({ prev: 50 });
@@ -112,7 +112,7 @@ export function useHFStrikeZone(
       
       let finalStrikeZone: StrikeZone | null = null;
       
-      if (validSignals.length >= minConsensusSignals) {
+      if (validSignals.length > 0) {
         finalStrikeZone = validSignals.reduce((best, current) => 
           current.confidence > best.confidence ? current : best
         );
@@ -126,7 +126,7 @@ export function useHFStrikeZone(
           confidence: finalStrikeZone.confidence,
         };
         let sizing = riskManager.calculatePositionSize(pseudoSignal as any, riskManager.currentCapital);
-        let finalStake = manualStake ?? sizing.recommendedStake;
+        let finalStake = manualStake || sizing.recommendedStake;
 
         if (manualStake) {
             sizing = {
@@ -142,6 +142,13 @@ export function useHFStrikeZone(
         }
         
         setPositionSizing({...sizing, recommendedStake: finalStake});
+
+        const openCouncilTrades = operationsLog.filter(op => op.status === 'pending' && op.initiator === 'HF_Strike').length;
+
+        if (openCouncilTrades >= maxConcurrentTrades) {
+            setActiveStrikeZone(prev => prev ? { ...prev, triggers: [...prev.triggers, `VETO: Limite de ${maxConcurrentTrades} ordens ativas atingido.`] } : null);
+            return;
+        }
 
         if (autoExecute) {
             setIsExecuting(true);
@@ -185,12 +192,7 @@ export function useHFStrikeZone(
     const timeoutId = setTimeout(runCycle, 200); 
     return () => clearTimeout(timeoutId);
 
-  }, [
-      indicators, priceTicks, enabled, botCandleData, user, riskManager, 
-      minConfidence, minConsensusSignals, autoExecute, executeTrade, 
-      activeSymbol, toast, martingaleMultiplier, consecutiveLosses, 
-      isCooldownActive, isExecuting, manualStake
-  ]);
+  }, [indicators, priceTicks, enabled, botCandleData, user, riskManager, minConfidence, autoExecute, executeTrade, activeSymbol, toast, martingaleMultiplier, consecutiveLosses, isCooldownActive, isExecuting, minConsensusSignals, manualStake, operationsLog, maxConcurrentTrades]);
   
   return {
     activeStrikeZone, marketRegime, positionSizing, riskManager, fullIndicators: indicators,

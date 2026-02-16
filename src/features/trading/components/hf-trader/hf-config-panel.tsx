@@ -7,7 +7,7 @@ import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Slider } from '@/components/ui/slider';
 import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
-import { Settings, Zap, Clock, Users, ShieldAlert, GitCommit, GitPullRequest } from 'lucide-react';
+import { Settings, Zap, Clock, Users, ShieldAlert, GitCommit, GitPullRequest, Layers } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { StrategyType } from '@/features/trading/services/hf-strike-logic';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
@@ -20,10 +20,10 @@ export interface HFConfig {
   autoExecute: boolean;
   maxConcurrentTrades: number;
   preferredDuration: number;
-  minConsensusSignals: number; // NOVO
-  martingaleMultiplier: number; // NOVO
-  maxConsecutiveLosses: number; // NOVO
-  cooldownSeconds: number; // NOVO
+  minConsensusSignals: number; 
+  martingaleMultiplier: number;
+  maxConsecutiveLosses: number;
+  cooldownSeconds: number;
 }
 
 interface HFConfigPanelProps {
@@ -80,6 +80,19 @@ export function HFConfigPanel({ config, onConfigChange }: HFConfigPanelProps) {
             min={55} max={90} step={5}
             value={[config.minConfidence]}
             onValueChange={([minConfidence]) => onConfigChange({ minConfidence })}
+            disabled={!config.enabled}
+          />
+        </div>
+        
+        <div className="space-y-2">
+          <Label htmlFor="max-concurrent-trades">
+            Máx. Ordens Concorrentes ({config.maxConcurrentTrades})
+          </Label>
+          <Slider
+            id="max-concurrent-trades"
+            min={1} max={5} step={1}
+            value={[config.maxConcurrentTrades]}
+            onValueChange={([maxConcurrentTrades]) => onConfigChange({ maxConcurrentTrades })}
             disabled={!config.enabled}
           />
         </div>
