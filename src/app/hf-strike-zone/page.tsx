@@ -17,7 +17,7 @@ import { saveHFTradeLog } from '@/services/hf-data-service';
 import { Target, TrendingUp, BarChart, Brain, Activity, Zap, ShieldAlert, Bot, TestTube, GitCompareArrows, Dice5, Wallet } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { Operation, CandleData, TimePeriod, InstitutionalBacktestResult, WalkForwardResult, MonteCarloResult, DurationUnit } from '@/lib/types';
-import { InstitutionalMetricsDashboard } from '@/features/trading/components/hf-trader/institutional-metrics-dashboard';
+import { HFStatsOverview } from '@/features/trading/components/hf-trader/hf-stats-overview';
 import { HFSignalCard } from '@/features/trading/components/hf-trader/champion-signal-card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { runAllStrategiesBacktest, runWalkForwardAnalysis, runMonteCarloSimulation } from '@/features/trading/backtest/hf-backtest-engine';
@@ -160,7 +160,7 @@ function PageContent() {
         </div>
       </div>
       
-      {user && <InstitutionalMetricsDashboard />}
+      <HFStatsOverview operations={hfOperations} strategyCounts={strategyCounts} />
       
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 space-y-6">
