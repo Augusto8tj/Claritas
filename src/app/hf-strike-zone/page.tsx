@@ -12,7 +12,7 @@ import { ApiStatusIndicatorV2 as ApiStatusIndicator } from '@/features/trading/c
 import { MarketChart } from '@/features/trading/components/deriv-trader/market-chart';
 import { useHFStrikeZone } from '@/features/trading/hooks/use-hf-strike-zone';
 import { HFExecutionLog } from '@/features/trading/components/hf-trader/hf-execution-log';
-import { HFConfigPanel } from '@/features/trading/components/hf-trader/hf-config-panel';
+import { HFConfigPanel, type HFConfig } from '@/features/trading/components/hf-trader/hf-config-panel';
 import { saveHFTradeLog } from '@/services/hf-data-service';
 import { Target, TrendingUp, BarChart, Brain, Activity, Zap, ShieldAlert, Bot, TestTube, GitCompareArrows, Dice5, Wallet } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -40,7 +40,7 @@ function PageContent() {
     operationsLog, tradeAnnotations, executeTrade, clearActiveContracts, getHistoricalData,
   } = useDerivApi();
 
-  const [hfConfig, setHFConfig] = useState<any>({
+  const [hfConfig, setHFConfig] = useState<HFConfig>({
     enabled: true, minConfidence: 70, autoExecute: false, maxConcurrentTrades: 1, preferredDuration: 20,
     minConsensusSignals: 2, martingaleMultiplier: 1.0, maxConsecutiveLosses: 5, cooldownSeconds: 30,
   });
@@ -68,6 +68,7 @@ function PageContent() {
       botCandleData, 
       timePeriod, 
       hfConfig, 
+      (newConfig) => setHFConfig(prev => ({...prev, ...newConfig})),
       { 
         dailyBalance, 
         dailyTarget, 

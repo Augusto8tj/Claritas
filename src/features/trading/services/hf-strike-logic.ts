@@ -46,7 +46,7 @@ export function detectHFMeanReversionZone(indicators: Indicators, currentPrice: 
     upper: bb.upper!, lower: bb.lower!, middle: bb.middle!,
     width: indicators.bbw!, position: (currentPrice - bb.lower!) / (bb.upper! - bb.lower! || 1),
     isSqueezed: indicators.bbw! < 1.5,
-    touchingLower: currentPrice <= bb.lower! * 1.005, touchingUpper: currentPrice >= bb.upper! * 0.995,
+    touchingLower: currentPrice <= bb.lower!, touchingUpper: currentPrice >= bb.upper!,
   };
   const rsiAnalysis = { value: rsiValue, oversold: rsiValue < 30, overbought: rsiValue > 70, divergence: null };
   const triggers: string[] = []; let confidence = 0; let type: StrikeZone['type'] = 'NEUTRAL';
@@ -115,7 +115,7 @@ export function detectStandardTrendZone(indicators: Indicators, currentPrice: nu
 }
 
 export function detectBollingerSqueezeZone(indicators: Indicators, currentPrice: number): StrikeZone | null {
-  if (!indicators.bbw || indicators.bbw > 1.0) return null;
+  if (!indicators.bbw || indicators.bbw > 1.5) return null;
   const { bb } = indicators;
   if (!bb?.upper || !bb.lower) return null;
   let type: StrikeZone['type'] = 'NEUTRAL';
@@ -160,7 +160,7 @@ export function detectVolumeAbsorptionZone(candles: CandleData[], indicators: In
   const isSellClimax = climaxCandle.close < climaxCandle.open;
   const isBuyClimax = climaxCandle.close > climaxCandle.open;
   
-  const recentAbsorption = recentCandles.slice(-2);
+  const recentAbsorption = recentCandles.slice(-3);
   const hasAbsorption = recentAbsorption.some(c => 
     c.volume! < climaxCandle.volume! * 0.6 && 
     Math.abs(c.close - c.open) < (climaxCandle.high - climaxCandle.low) * 0.6

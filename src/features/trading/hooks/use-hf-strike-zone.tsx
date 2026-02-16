@@ -37,6 +37,7 @@ export function useHFStrikeZone(
   botCandleData: CandleData[],
   uiChartPeriod: TimePeriod,
   config: HFConfig,
+  onConfigChange: (config: Partial<HFConfig>) => void,
   sessionConfig: SessionConfig
 ) {
   const { user } = useAuth();
@@ -53,8 +54,7 @@ export function useHFStrikeZone(
   const [riskManager] = useState(() => new AdvancedRiskManager({ maxDailyLoss: dailyBalance, maxDrawdown: 30, maxConcurrentTrades: 3, maxExposurePerAsset: 25, kellyFraction: 0.25 }, 1000));
   const [positionSizing, setPositionSizing] = useState<PositionSizeRecommendation | null>(null);
   const [allSignals, setAllSignals] = useState<(StrikeZone | null)[]>([]);
-  const strategyCountsRef = useRef<Record<StrategyType, number>>({ HF_MEAN_REVERSION: 0, STD_TREND_FOLLOW: 0, BOLLINGER_SQUEEZE: 0, VOLUME_ABSORPTION: 0, MICROSTRUCTURE_SCALP: 0 });
-  const [strategyCounts, setStrategyCounts] = useState<Record<StrategyType, number>>(strategyCountsRef.current);
+  const [strategyCounts, setStrategyCounts] = useState<Record<StrategyType, number>>({ HF_MEAN_REVERSION: 0, STD_TREND_FOLLOW: 0, BOLLINGER_SQUEEZE: 0, VOLUME_ABSORPTION: 0, MICROSTRUCTURE_SCALP: 0 });
   
   const [consecutiveLosses, setConsecutiveLosses] = useState(0);
   const [isCooldownActive, setIsCooldownActive] = useState(false);
@@ -75,7 +75,7 @@ export function useHFStrikeZone(
             setConsecutiveLosses(newLossCount);
             if (newLossCount >= maxConsecutiveLosses) {
                 toast({ title: '🛑 Stop de Perdas Consecutivas', description: `Limite de ${maxConsecutiveLosses} perdas atingido. Autopilot pausado.`, variant: 'destructive' });
-                config.onConfigChange({ autoExecute: false });
+                onConfigChange({ autoExecute: false });
             } else if (cooldownSeconds > 0) {
                 setIsCooldownActive(true);
                 toast({ title: '❄️ Cooldown Ativado', description: `Pausa de ${cooldownSeconds}s após perda.`, variant: 'default' });
@@ -85,7 +85,7 @@ export function useHFStrikeZone(
             setConsecutiveLosses(0);
         }
     }
-  }, [operationsLog, consecutiveLosses, maxConsecutiveLosses, cooldownSeconds, toast, config]);
+  }, [operationsLog, consecutiveLosses, maxConsecutiveLosses, cooldownSeconds, toast, onConfigChange]);
 
 
   useEffect(() => {
@@ -109,15 +109,16 @@ export function useHFStrikeZone(
       ];
       setAllSignals(allSignalsResult);
 
+      const newCounts = { ...strategyCounts };
       let countsChanged = false;
       allSignalsResult.forEach(signal => {
         if (signal && signal.type !== 'NEUTRAL') {
-          strategyCountsRef.current[signal.strategy]++;
+          newCounts[signal.strategy]++;
           countsChanged = true;
         }
       });
       if (countsChanged) {
-        setStrategyCounts({ ...strategyCountsRef.current });
+        setStrategyCounts(newCounts);
       }
       
       const validSignals = allSignalsResult.filter((zone): zone is StrikeZone => 
@@ -126,10 +127,26 @@ export function useHFStrikeZone(
       
       let finalStrikeZone: StrikeZone | null = null;
       
-      if (validSignals.length > 0) {
-        finalStrikeZone = validSignals.reduce((best, current) => 
-          current.confidence > best.confidence ? current : best
-        );
+      if (validSignals.length >= minConsensusSignals) {
+          const riseVotes = validSignals.filter(s => s.type === 'LONG_ENTRY');
+          const fallVotes = validSignals.filter(s => s.type === 'SHORT_ENTRY');
+
+          if (riseVotes.length > fallVotes.length) {
+              const totalConfidence = riseVotes.reduce((sum, s) => sum + s.confidence, 0);
+              const opponentConfidence = fallVotes.reduce((sum, s) => sum + s.confidence, 0);
+              const netConfidence = totalConfidence - opponentConfidence;
+              const avgDuration = riseVotes.reduce((sum, s) => sum + s.duration, 0) / riseVotes.length;
+              
+              finalStrikeZone = { ...riseVotes[0], confidence: netConfidence, duration: Math.round(avgDuration), triggers: riseVotes.map(s => s.strategy) };
+
+          } else if (fallVotes.length > riseVotes.length) {
+              const totalConfidence = fallVotes.reduce((sum, s) => sum + s.confidence, 0);
+              const opponentConfidence = riseVotes.reduce((sum, s) => sum + s.confidence, 0);
+              const netConfidence = totalConfidence - opponentConfidence;
+              const avgDuration = fallVotes.reduce((sum, s) => sum + s.duration, 0) / fallVotes.length;
+
+              finalStrikeZone = { ...fallVotes[0], confidence: netConfidence, duration: Math.round(avgDuration), triggers: fallVotes.map(s => s.strategy) };
+          }
       }
 
       setActiveStrikeZone(finalStrikeZone);
@@ -140,9 +157,10 @@ export function useHFStrikeZone(
           confidence: finalStrikeZone.confidence,
         };
         let sizing = riskManager.calculatePositionSize(pseudoSignal, riskManager.currentCapital);
-        let finalStake = manualStake || sizing.recommendedStake;
+        let finalStake = sizing.recommendedStake;
 
-        if (manualStake) {
+        if (manualStake && manualStake > 0) {
+            finalStake = manualStake;
             sizing = {
                 ...sizing,
                 recommendedStake: manualStake,
@@ -169,21 +187,23 @@ export function useHFStrikeZone(
             try {
               const durationUnit: DurationUnit = finalStrikeZone.strategy === 'MICROSTRUCTURE_SCALP' ? 't' : 's';
               const tradeResult = await executeTrade(
-                  finalStrikeZone.type === 'LONG_ENTRY' ? 'CALL' : 'PUT', finalStake, activeSymbol!, 
+                  finalStrikeZone.type === 'LONG_ENTRY' ? 'CALL' : 'PUT', 
+                  finalStake, 
+                  activeSymbol!, 
                   finalStrikeZone.type === 'LONG_ENTRY' ? 'rise' : 'fall', 
                   finalStrikeZone.duration,
                   durationUnit,
                   'HF_Strike',
-                  finalStrikeZone.strategy
+                  finalStrikeZone.triggers.join(', ') // Save consensus strategies
               );
               if (tradeResult.success && tradeResult.contractId) {
-                toast({ title: '⚡ Strike Executado (Maior Confiança)!', description: `Estratégia: ${finalStrikeZone.strategy} | Stake: $${finalStake.toFixed(2)}` });
+                toast({ title: '⚡ Strike Executado por Consenso!', description: `Estratégias: ${finalStrikeZone.triggers.join(', ')} | Stake: $${finalStake.toFixed(2)}` });
                 await saveHFTradeLog(user.uid, {
                     symbol: activeSymbol!,
                     strikeZone: finalStrikeZone,
                     execution: { contractId: String(tradeResult.contractId), entryPrice: tradeResult.entryPrice!, status: 'pending', executedAt: new Date().toISOString() },
                     marketRegime: regime.regime,
-                    ensembleParticipants: validSignals.map(s => s.strategy),
+                    ensembleParticipants: finalStrikeZone.triggers as StrategyType[],
                     positionSize: sizing,
                     riskMetrics: { sharpeContribution: sizing.sharpeContribution, portfolioExposure: 0 }
                 });
@@ -206,7 +226,7 @@ export function useHFStrikeZone(
     const timeoutId = setTimeout(runCycle, 200); 
     return () => clearTimeout(timeoutId);
 
-  }, [indicators, priceTicks, enabled, botCandleData, user, riskManager, minConfidence, minConsensusSignals, autoExecute, executeTrade, activeSymbol, toast, martingaleMultiplier, consecutiveLosses, isCooldownActive, isExecuting, manualStake, operationsLog, maxConcurrentTrades]);
+  }, [indicators, priceTicks, enabled, botCandleData, user, riskManager, minConfidence, minConsensusSignals, autoExecute, executeTrade, activeSymbol, toast, martingaleMultiplier, consecutiveLosses, isCooldownActive, isExecuting, manualStake, operationsLog, maxConcurrentTrades, onConfigChange]);
   
   return {
     activeStrikeZone, marketRegime, positionSizing, riskManager, fullIndicators: indicators,
