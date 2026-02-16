@@ -49,9 +49,9 @@ const mockIndicators: Indicators = {
     volSma: [100000]
 };
 
-const meanReversionParams = { rsiThreshold: 30, tolerance: 0.0015 };
+const meanReversionParams = { rsiThreshold: 32, tolerance: 0.0015 };
 const trendFollowParams = { adxStrength: 22, rsiMomentum: 52 };
-const squeezeParams = { bbwThreshold: 1.0, breakoutMargin: 0.02 };
+const squeezeParams = { bbwThreshold: 2.5, breakoutMargin: 0.02 };
 const absorptionParams = { climaxMultiplier: 2.0, absorptionFactor: 0.6 };
 const scalpParams = { velocityThreshold: 1.5 };
 
@@ -63,6 +63,7 @@ describe('HF Strike Logic - HF Mean Reversion', () => {
     const indicators: Indicators = {
       ...mockIndicators,
       bb: { upper: 1.0050, lower: 1.0000, middle: 1.0025 },
+      bbw: 1.5, // Not squeezed
       rsi: 28,
     };
     
@@ -81,6 +82,7 @@ describe('HF Strike Logic - HF Mean Reversion', () => {
     const indicators: Indicators = {
       ...mockIndicators,
       bb: { upper: 1.0050, lower: 1.0000, middle: 1.0025 },
+      bbw: 1.5, // Not squeezed
       rsi: 72,
     };
     
@@ -167,7 +169,7 @@ describe('HF Strike Logic - Bollinger Squeeze', () => {
     const indicators: Indicators = {
       ...mockIndicators,
       bb: { upper: 1.0060, lower: 1.0000, middle: 1.0030 },
-      bbw: 2.6, // No squeeze (threshold is 2.5)
+      bbw: 2.6, // No squeeze
     };
     
     const zone = detectBollingerSqueezeZone(indicators, 1.0065, squeezeParams);
@@ -297,7 +299,7 @@ describe('HF Strike Logic - Microstructure Scalp', () => {
       expect(zone.type).toBe('LONG_ENTRY');
       expect(zone.confidence).toBe(70);
       expect(zone.strategy).toBe('MICROSTRUCTURE_SCALP');
-      expect(zone.duration).toBe(10);
+      expect(zone.duration).toBe(10); // ✅ VALIDAR CORREÇÃO
     } else {
         // This can sometimes fail due to the randomness in microstructure, which is acceptable.
         console.warn("[Test Warning] Microstructure scalp test did not produce a signal under ideal conditions.");
