@@ -47,6 +47,7 @@ function PageContent() {
 
   const [dailyBalance, setDailyBalance] = useState(100.0);
   const [dailyTarget, setDailyTarget] = useState(50.0);
+  const [stakeValue, setStakeValue] = useState(1.0);
 
   const hfOperations = useMemo(() => operationsLog.filter(op => op.initiator === 'HF_Strike'), [operationsLog]);
 
@@ -60,14 +61,25 @@ function PageContent() {
     consecutiveLosses,
     isCooldownActive,
     isExecuting,
-  } = useHFStrikeZone(activeSymbol, priceTicks, botCandleData, timePeriod, hfConfig, { dailyBalance, dailyTarget, operationsLog: hfOperations }); 
+  } = useHFStrikeZone(
+      activeSymbol, 
+      priceTicks, 
+      botCandleData, 
+      timePeriod, 
+      hfConfig, 
+      { 
+        dailyBalance, 
+        dailyTarget, 
+        operationsLog: hfOperations,
+        manualStake: stakeValue,
+      }
+  ); 
 
   const handleExecuteStrike = useCallback(async () => {
     if (!activeStrikeZone || !positionSizing || positionSizing.recommendedStake === 0 || !user || !activeSymbol) {
       toast({ title: 'Sinal Inválido', description: 'Não há sinal válido para executar.', variant: 'destructive' });
       return;
     }
-    
     // The execution logic in useHFStrikeZone will handle this
   }, [activeStrikeZone, positionSizing, user, activeSymbol, toast]);
   
@@ -186,13 +198,19 @@ function PageContent() {
               <CardTitle className="flex items-center gap-2"><Wallet className="h-5 w-5"/>Gestão da Sessão</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="space-y-2">
-                  <Label htmlFor="daily-balance">Banca Diária (USD)</Label>
-                  <Input id="daily-balance" type="number" value={dailyBalance} onChange={e => setDailyBalance(Number(e.target.value))} disabled={hfConfig.enabled} />
+               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                 <div className="space-y-2">
+                    <Label htmlFor="stake-value">Valor do Contrato (USD)</Label>
+                    <Input id="stake-value" type="number" value={stakeValue} onChange={e => setStakeValue(Number(e.target.value))} step="0.01" min="0.35" />
+                  </div>
+                  <div className="space-y-2">
+                      <Label htmlFor="daily-balance">Banca Diária (USD)</Label>
+                      <Input id="daily-balance" type="number" value={dailyBalance} onChange={e => setDailyBalance(Number(e.target.value))} />
+                  </div>
               </div>
               <div className="space-y-2">
                   <Label htmlFor="daily-target">Alvo de Lucro Diário (USD)</Label>
-                  <Input id="daily-target" type="number" value={dailyTarget} onChange={e => setDailyTarget(Number(e.target.value))} disabled={hfConfig.enabled} />
+                  <Input id="daily-target" type="number" value={dailyTarget} onChange={e => setDailyTarget(Number(e.target.value))} />
               </div>
             </CardContent>
           </Card>

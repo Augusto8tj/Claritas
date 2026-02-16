@@ -28,6 +28,7 @@ interface SessionConfig {
     dailyBalance: number;
     dailyTarget: number;
     operationsLog: Operation[];
+    manualStake?: number;
 }
 
 export function useHFStrikeZone(
@@ -42,7 +43,7 @@ export function useHFStrikeZone(
   const { executeTrade } = useDerivApiV2();
   const { toast } = useToast();
   const { enabled, minConfidence, autoExecute, minConsensusSignals, martingaleMultiplier, maxConsecutiveLosses, cooldownSeconds } = config;
-  const { dailyBalance, dailyTarget, operationsLog } = sessionConfig;
+  const { dailyBalance, dailyTarget, operationsLog, manualStake } = sessionConfig;
   
   const rsiStateRef = useRef({ prev: 50 });
   const initialStrategies = useMemo(() => getCouncilStrategies('standard'), []);
@@ -124,11 +125,19 @@ export function useHFStrikeZone(
           expectedWinRate: 0.5 + (finalStrikeZone.confidence - 50) / 100 * 0.4,
           confidence: finalStrikeZone.confidence,
         };
-        const sizing = riskManager.calculatePositionSize(pseudoSignal as any, riskManager.currentCapital);
+        let sizing = riskManager.calculatePositionSize(pseudoSignal as any, riskManager.currentCapital);
+        let finalStake = manualStake ?? sizing.recommendedStake;
+
+        if (manualStake) {
+            sizing = {
+                ...sizing,
+                recommendedStake: manualStake, // Override the recommended stake
+                reasoning: ['Stake definido manualmente pelo operador.'],
+            };
+        }
         
-        let finalStake = sizing.recommendedStake;
         if (consecutiveLosses > 0 && martingaleMultiplier > 1) {
-            finalStake = sizing.recommendedStake * Math.pow(martingaleMultiplier, consecutiveLosses);
+            finalStake = finalStake * Math.pow(martingaleMultiplier, consecutiveLosses);
             sizing.reasoning.push(`🔥 Martingale x${Math.pow(martingaleMultiplier, consecutiveLosses).toFixed(1)} aplicado.`);
         }
         
@@ -176,7 +185,12 @@ export function useHFStrikeZone(
     const timeoutId = setTimeout(runCycle, 200); 
     return () => clearTimeout(timeoutId);
 
-  }, [indicators, priceTicks, enabled, botCandleData, user, riskManager, minConfidence, minConsensusSignals, autoExecute, executeTrade, activeSymbol, toast, martingaleMultiplier, consecutiveLosses, isCooldownActive, isExecuting]);
+  }, [
+      indicators, priceTicks, enabled, botCandleData, user, riskManager, 
+      minConfidence, minConsensusSignals, autoExecute, executeTrade, 
+      activeSymbol, toast, martingaleMultiplier, consecutiveLosses, 
+      isCooldownActive, isExecuting, manualStake
+  ]);
   
   return {
     activeStrikeZone, marketRegime, positionSizing, riskManager, fullIndicators: indicators,
