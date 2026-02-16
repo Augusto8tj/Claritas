@@ -27,7 +27,7 @@ import {
 } from "@/components/ui/alert-dialog"
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
-import { deleteGoal } from "@/app/actions/financial-data-actions";
+import { deleteGoal } from "@/app/actions/goal-actions";
 import { useAuth } from "@/features/auth/hooks/use-auth";
 import { generateGoalImage } from "@/ai/flows/goal-image-generation";
 import { doc, updateDoc } from 'firebase/firestore';
@@ -69,6 +69,7 @@ export function GoalCard({ goal, onGoalDeleted }: GoalCardProps) {
       });
     }
   };
+
 
   const handleGenerateImage = async () => {
     if (!user) return;

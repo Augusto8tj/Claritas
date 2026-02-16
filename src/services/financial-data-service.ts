@@ -1,8 +1,9 @@
 // Service module for financial data operations.
+'use client';
+
 import { db } from '@/lib/firebase';
 import { collection, getDocs, doc, setDoc, query, where, orderBy, getDoc, addDoc, deleteDoc, limit } from 'firebase/firestore';
 import type { Goal, BudgetCategory, Transaction, RobotPerformance, TradeDecisionLog, EnhancedRobotPerformance, AssetProfileV1 } from '@/lib/types';
-import { generateGoalImage } from '@/ai/flows/goal-image-generation';
 import { addDocumentNonBlocking, deleteDocumentNonBlocking, setDocumentNonBlocking, updateDocumentNonBlocking } from '@/firebase/non-blocking-updates';
 import { getChatbotInsightsResponse } from '@/app/actions';
 import { EvolutionEvent } from '@/features/trading/hooks/use-strategy-evolution-v2';
@@ -75,43 +76,6 @@ export async function getGoals(userId: string): Promise<Goal[]> {
         throw error; // Re-lança o erro para o chamador tratar
     }
 }
-
-export async function addGoal(userId: string, name: string, targetAmount: number): Promise<Goal> {
-    if (!userId) {
-        throw new Error("User not authenticated.");
-    }
-    const goalsCol = collection(db, `users/${userId}/goals`);
-    
-    const newGoalData: Omit<Goal, 'id' | 'imageUrl'> & {imageUrl?: string, userId: string} = {
-        userId,
-        name,
-        targetAmount,
-        currentAmount: 0,
-        imageHint: "new goal"
-    };
-
-    const docRef = await addDoc(goalsCol, newGoalData);
-
-    return { 
-        id: docRef.id, 
-        ...newGoalData, 
-        imageUrl: `https://placehold.co/600x400/334155/ffffff.png?text=${encodeURIComponent(name)}` 
-    };
-}
-
-
-export async function deleteGoal(userId: string, goalId: string): Promise<{ success: boolean }> {
-    if (!userId) {
-        throw new Error("User not authenticated.");
-    }
-    if (!goalId) {
-        throw new Error("Goal ID is required.");
-    }
-    const goalDoc = doc(db, `users/${userId}/goals`, goalId);
-    deleteDocumentNonBlocking(goalDoc);
-    return { success: true };
-}
-
 
 // --- Budget ---
 
@@ -534,4 +498,3 @@ export async function getBacktestRuns(userId: string, asset: string, limitN: num
   const snapshot = await getDocs(q);
   return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 }
-

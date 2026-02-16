@@ -5,8 +5,9 @@
  */
 
 import { ai } from '@/lib/genkit';
-import { addGoal, getFinancialSummary, getBudgetData } from '@/services/financial-data-service';
+import { getFinancialSummary, getBudgetData } from '@/services/financial-data-service';
 import { addTransaction as addTransactionAction } from '@/app/actions/transaction-actions';
+import { createGoalWithAIImage } from '@/app/actions/goal-actions';
 import { z } from 'zod';
 import { revalidatePath } from 'next/cache';
 
@@ -108,10 +109,11 @@ export const addGoalTool = ai.defineTool(
     const userId = options?.context?.userId;
     if (!userId) throw new Error("ID do usuário não encontrado no contexto do fluxo.");
 
-    const newGoal = await addGoal(userId, name, targetAmount);
-    revalidatePath('/goals');
-    revalidatePath('/');
-    return `Meta "${newGoal.name}" adicionada com sucesso.`;
+    const result = await createGoalWithAIImage({ userId, name, targetAmount });
+    if (result.success) {
+      return `Meta "${result.success.name}" adicionada com sucesso.`;
+    }
+    return `Falha ao adicionar meta: ${result.error || 'Erro desconhecido.'}`;
   }
 );
 

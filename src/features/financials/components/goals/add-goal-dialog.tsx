@@ -26,7 +26,7 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
-import { addGoal } from "@/app/actions/financial-data-actions";
+import { createGoalWithAIImage } from "@/app/actions/goal-actions";
 import { useToast } from "@/hooks/use-toast";
 import type { Goal } from "@/lib/types";
 import { useAuth } from "@/features/auth/hooks/use-auth";
@@ -62,7 +62,7 @@ export function AddGoalDialog({ onGoalAdded }: AddGoalDialogProps) {
       return;
     }
     setLoading(true);
-    const response = await addGoal({ userId: user.uid, ...data });
+    const response = await createGoalWithAIImage({ userId: user.uid, ...data });
     
     if (response.error) {
        if(typeof response.error === 'object') {
@@ -79,7 +79,7 @@ export function AddGoalDialog({ onGoalAdded }: AddGoalDialogProps) {
     } else if (response.success) {
       toast({
         title: "Meta Adicionada!",
-        description: `A meta "${response.success.name}" foi criada.`,
+        description: `A meta "${response.success.name}" foi criada com uma imagem gerada por IA.`,
       });
       onGoalAdded(response.success);
       setOpen(false);
@@ -107,7 +107,7 @@ export function AddGoalDialog({ onGoalAdded }: AddGoalDialogProps) {
         <DialogHeader>
           <DialogTitle className="font-headline">Criar Nova Meta</DialogTitle>
           <DialogDescription>
-            Defina um novo objetivo financeiro para acompanhar.
+            Defina um novo objetivo financeiro. A IA irá gerar uma imagem inspiradora para si!
           </DialogDescription>
         </DialogHeader>
         <Form {...form}>
