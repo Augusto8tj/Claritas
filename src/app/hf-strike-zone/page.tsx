@@ -28,6 +28,7 @@ import { BacktestPanel } from '@/features/trading/components/hf-trader/BacktestP
 import { StrategySignalMonitor } from '@/features/trading/components/hf-trader/StrategySignalMonitor';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
+import '@/lib/debug-helpers';  // ✅ Adicionar este import
 
 
 function PageContent() {
@@ -102,7 +103,7 @@ function PageContent() {
       if (historicalData.length < 100) throw new Error("Dados históricos insuficientes para o backtest.");
       toast({ title: "Dados recebidos", description: `Analisando ${historicalData.length} velas...` });
       await new Promise(resolve => setTimeout(resolve, 50)); 
-      const results = runAllStrategiesBacktest(historicalData, hfConfig, activeSymbol, strategyParams);
+      const results = runAllStrategiesBacktest(historicalData, hfConfig, activeSymbol);
       setBacktestResults(results);
       toast({ title: "Backtest Concluído!", description: "Resultados da simulação estão disponíveis." });
     } catch (e: any) { toast({ title: "Erro no Backtest", description: e.message, variant: 'destructive' });
@@ -116,7 +117,7 @@ function PageContent() {
       toast({ title: "Iniciando Walk-Forward...", description: "Rodando 3 folds..." });
       await new Promise(resolve => setTimeout(resolve, 50));
       const strategyToTest = 'STD_TREND_FOLLOW'; 
-      const results = runWalkForwardAnalysis(backtestData, hfConfig, strategyToTest, activeSymbol, strategyParams);
+      const results = runWalkForwardAnalysis(backtestData, hfConfig, strategyToTest, activeSymbol);
       setWalkForwardResults(results);
       toast({ title: "Análise Walk-Forward Concluída!" });
     } catch (e: any) { toast({ title: "Erro na Análise Walk-Forward", description: e.message, variant: 'destructive' });

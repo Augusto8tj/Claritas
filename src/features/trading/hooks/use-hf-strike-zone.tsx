@@ -16,6 +16,7 @@ import {
   detectBollingerSqueezeZone,
   detectVolumeAbsorptionZone,
   detectMicrostructureScalpZone,
+  detectRandomWalkZone,
   type StrikeZone,
   type StrategyType,
   MeanReversionParams,
@@ -131,15 +132,22 @@ export function useHFStrikeZone(
       
       const currentPrice = priceTicks[priceTicks.length - 1].price;
       
+      // ✅ ADICIONAR: Detecção de ativo randômico
       const isRandom = isRandomAsset(botCandleData, indicators);
+      
+      // ✅ ADICIONAR: Escolher parâmetros adaptativos
       const adaptiveParams = isRandom ? getRandomAssetParams() : strategyParams;
 
+      // ✅ MODIFICAR: Usar adaptiveParams ao invés de strategyParams
       const allSignalsResult: (StrikeZone | null)[] = [
-        detectHFMeanReversionZone(indicators, currentPrice, adaptiveParams.meanReversion),
-        detectStandardTrendZone(indicators, currentPrice, rsiStateRef.current.prev, adaptiveParams.trendFollow),
-        detectBollingerSqueezeZone(indicators, currentPrice, adaptiveParams.squeeze),
-        detectVolumeAbsorptionZone(botCandleData, indicators, adaptiveParams.absorption),
-        detectMicrostructureScalpZone(priceTicks, botCandleData, indicators, currentPrice, adaptiveParams.scalp),
+        detectHFMeanReversionZone(indicators, currentPrice, adaptiveParams.HF_MEAN_REVERSION),
+        detectStandardTrendZone(indicators, currentPrice, rsiStateRef.current.prev, adaptiveParams.STD_TREND_FOLLOW),
+        detectBollingerSqueezeZone(indicators, currentPrice, adaptiveParams.BOLLINGER_SQUEEZE),
+        detectVolumeAbsorptionZone(botCandleData, indicators, adaptiveParams.VOLUME_ABSORPTION),
+        detectMicrostructureScalpZone(priceTicks, botCandleData, indicators, currentPrice, adaptiveParams.MICROSTRUCTURE_SCALP),
+        
+        // ✅ ADICIONAR: Estratégia Random Walk
+        detectRandomWalkZone(botCandleData, indicators, currentPrice),
       ];
       setAllSignals(allSignalsResult);
 
