@@ -58,8 +58,8 @@ export function useHFStrikeZone(
   sessionConfig: SessionConfig
 ) {
   const { user } = useAuth();
-  const { executeTrade, durationLimits } = useDerivApiV2();
   const { toast } = useToast();
+  const { executeTrade, durationLimits, isConnected } = useDerivApiV2();
   const { enabled, minConfidence, autoExecute, maxConcurrentTrades, martingaleMultiplier, maxConsecutiveLosses, cooldownSeconds, preferredDuration, minConsensusSignals } = config;
   const { dailyBalance, dailyTarget, operationsLog, manualStake } = sessionConfig;
   
@@ -74,11 +74,11 @@ export function useHFStrikeZone(
   const [strategyCounts, setStrategyCounts] = useState<Record<StrategyType, number>>({ HF_MEAN_REVERSION: 0, STD_TREND_FOLLOW: 0, BOLLINGER_SQUEEZE: 0, VOLUME_ABSORPTION: 0, MICROSTRUCTURE_SCALP: 0 });
   
   const [strategyParams, setStrategyParams] = useState<StrategyParams>({
-    HF_MEAN_REVERSION: { rsiThreshold: 32, tolerance: 0.0015 },
-    STD_TREND_FOLLOW: { adxStrength: 22, rsiMomentum: 52 },
-    BOLLINGER_SQUEEZE: { bbwThreshold: 1.0, breakoutMargin: 0.02 },
+    HF_MEAN_REVERSION: { rsiThreshold: 32, tolerance: 0.005 },
+    STD_TREND_FOLLOW: { adxStrength: 15, rsiMomentum: 52 },
+    BOLLINGER_SQUEEZE: { bbwThreshold: 1.5, breakoutMargin: 0.01 },
     VOLUME_ABSORPTION: { climaxMultiplier: 1.8, absorptionFactor: 0.8 },
-    MICROSTRUCTURE_SCALP: { velocityThreshold: 1.5 }
+    MICROSTRUCTURE_SCALP: { velocityThreshold: 1.2 }
   });
 
   const handleUpdateStrategyParams = useCallback((strategy: StrategyType, params: any) => {
@@ -121,7 +121,7 @@ export function useHFStrikeZone(
 
 
   useEffect(() => {
-    if (!enabled || !indicators || priceTicks.length < 2 || !user || isCooldownActive || isExecuting) {
+    if (!enabled || !indicators || priceTicks.length < 2 || !user || isCooldownActive || isExecuting || !isConnected) {
       setActiveStrikeZone(null);
       return;
     }
@@ -132,10 +132,11 @@ export function useHFStrikeZone(
       
       const currentPrice = priceTicks[priceTicks.length - 1].price;
       
-      // ✅ ADICIONAR: Detecção de ativo randômico
       const isRandom = isRandomAsset(botCandleData, indicators);
-      
-      // ✅ ADICIONAR: Escolher parâmetros adaptativos
+      if (isRandom) {
+        console.warn('⚠️ ATIVO RANDÔMICO DETECTADO - Usando parâmetros adaptativos');
+      }
+
       const adaptiveParams = isRandom ? getRandomAssetParams() : strategyParams;
 
       const allSignalsResult: (StrikeZone | null)[] = [
@@ -254,7 +255,7 @@ export function useHFStrikeZone(
 
               if (canUseTicks && calculatedDurationInSeconds <= 10) {
                   durationUnit = 't';
-                  const durationInTicks = Math.ceil(calculatedDurationInSeconds / 2);
+                  const durationInTicks = Math.max(5, Math.ceil(calculatedDurationInSeconds / 2));
                   finalDuration = Math.max(durationLimits.t.min, Math.min(durationInTicks, durationLimits.t.max));
               } else if (canUseSeconds) {
                   durationUnit = 's';
@@ -262,7 +263,7 @@ export function useHFStrikeZone(
                   finalDuration = Math.max(durationLimits.s.min, Math.min(finalDuration, durationLimits.s.max));
               } else if (canUseTicks) {
                   durationUnit = 't';
-                  const durationInTicks = Math.ceil(calculatedDurationInSeconds / 2);
+                  const durationInTicks = Math.max(5, Math.ceil(calculatedDurationInSeconds / 2));
                   finalDuration = Math.max(durationLimits.t.min, Math.min(durationInTicks, durationLimits.t.max));
               } else {
                   durationUnit = 's';
@@ -311,7 +312,7 @@ export function useHFStrikeZone(
     const timeoutId = setTimeout(runCycle, 250); 
     return () => clearTimeout(timeoutId);
 
-  }, [indicators, priceTicks, enabled, botCandleData, user, riskManager, minConfidence, minConsensusSignals, autoExecute, executeTrade, activeSymbol, toast, martingaleMultiplier, consecutiveLosses, isCooldownActive, isExecuting, manualStake, operationsLog, maxConcurrentTrades, onConfigChange, strategyParams, durationLimits]);
+  }, [indicators, priceTicks, enabled, botCandleData, user, riskManager, minConfidence, minConsensusSignals, autoExecute, executeTrade, activeSymbol, toast, martingaleMultiplier, consecutiveLosses, isCooldownActive, isExecuting, manualStake, operationsLog, maxConcurrentTrades, onConfigChange, strategyParams, durationLimits, isConnected]);
   
   return {
     activeStrikeZone, marketRegime, positionSizing, riskManager, fullIndicators: indicators,
