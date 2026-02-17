@@ -60,7 +60,7 @@ export function detectHFMeanReversionZone(indicators: Indicators, currentPrice: 
     middle: bb.middle!,
     width: indicators.bbw!,
     position: (currentPrice - bb.lower!) / (bb.upper! - bb.lower! || 1),
-    isSqueezed: (indicators.bbw || 100) < 2.5,
+    isSqueezed: (indicators.bbw || 100) < 1.0,
     touchingLower: currentPrice <= bb.lower! * (1 + params.tolerance),
     touchingUpper: currentPrice >= bb.upper! * (1 - params.tolerance),
   };
@@ -222,74 +222,91 @@ export function detectBollingerSqueezeZone(indicators: Indicators, currentPrice:
 
 export function detectVolumeAbsorptionZone(candles: CandleData[], indicators: Indicators, params: AbsorptionParams): StrikeZone | null {
   const startTime = performance.now();
-  if (candles.length < 10 || !indicators.atr || !indicators.volSma || indicators.volSma.length === 0) {
-    console.debug('[VOL_ABSORB] Missing indicators or data');
+  if (candles.length < 20 || !indicators.atr || !indicators.volSma || indicators.volSma.length === 0) {
     return null;
   }
 
-  const lookbackPeriod = 10;
-  const recentCandles = candles.slice(-lookbackPeriod);
+  const lookbackPeriod = 15;
+  const searchWindow = candles.slice(-lookbackPeriod, -1);
+  
+  const avgVolume = indicators.volSma[indicators.volSma.length - 1] || 1;
   
   let climaxCandle: CandleData | null = null;
-  
-  for (let i = 0; i < recentCandles.length - 1; i++) { // Check up to the second to last candle
-    const currentCandle = recentCandles[i];
-    if (currentCandle && (!climaxCandle || (currentCandle.volume || 0) > (climaxCandle.volume || 0))) {
-      climaxCandle = currentCandle;
+  let climaxIndex = -1;
+
+  for (let i = searchWindow.length - 1; i >= 0; i--) {
+    const candle = searchWindow[i];
+    if (candle && candle.volume && candle.volume > avgVolume * params.climaxMultiplier) {
+      climaxCandle = candle;
+      climaxIndex = candles.length - lookbackPeriod + i;
+      break;
     }
   }
   
-  if (!climaxCandle || !climaxCandle.volume) return null;
-
-  const absorptionCandle = candles[candles.length - 1];
-  const avgVolume = indicators.volSma[indicators.volSma.length - 1] || 1;
-  
-  const isClimax = climaxCandle.volume! > avgVolume * params.climaxMultiplier;
-  if (!isClimax) return null;
+  if (!climaxCandle || climaxIndex === -1) {
+    return null;
+  }
   
   const climaxRange = climaxCandle.high - climaxCandle.low;
   const isWideRangeClimax = climaxRange > (indicators.atr || 0.001) * 1.2;
-  
-  const isSellClimax = climaxCandle.close < climaxCandle.open;
-  const isBuyClimax = climaxCandle.close > climaxCandle.open;
-  
-  const hasAbsorption = recentCandles.slice(-2).some(c => 
+  if (!isWideRangeClimax) return null;
+
+  const absorptionWindow = candles.slice(climaxIndex + 1);
+  if (absorptionWindow.length < 1) return null;
+
+  const hasAbsorption = absorptionWindow.some(c => 
     (c.volume || 0) < climaxCandle!.volume! * params.absorptionFactor && 
     Math.abs(c.close - c.open) < climaxRange * params.absorptionFactor
   );
-  
-  if (!hasAbsorption) return null;
+
+  if (!hasAbsorption) {
+    return null;
+  }
+
+  const isSellClimax = climaxCandle.close < climaxCandle.open;
+  const isBuyClimax = climaxCandle.close > climaxCandle.open;
   
   let type: StrikeZone['type'] = 'NEUTRAL';
-  if (isSellClimax && isWideRangeClimax) type = 'LONG_ENTRY';
-  else if (isBuyClimax && isWideRangeClimax) type = 'SHORT_ENTRY';
-  
+  if (isSellClimax) {
+    type = 'LONG_ENTRY';
+  } else if (isBuyClimax) {
+    type = 'SHORT_ENTRY';
+  }
+
   if (type === 'NEUTRAL') return null;
-  
+
+  const currentPrice = candles[candles.length - 1].close;
+
   const zone: StrikeZone = { 
     type, 
     confidence: 80,
     triggers: [
       `📊 Clímax de Volume (${(climaxCandle.volume! / avgVolume).toFixed(1)}x média)`,
-      `✅ Absorção detectada`
+      `✅ Absorção pós-clímax detectada`
     ], 
     strategy: 'VOLUME_ABSORPTION',
-    entry: { price: absorptionCandle.close, timestamp: Date.now() },
+    entry: { price: currentPrice, timestamp: Date.now() },
     targets: {
-      takeProfit: type === 'LONG_ENTRY' ? climaxCandle.high : climaxCandle.low,
+      takeProfit: type === 'LONG_ENTRY' ? currentPrice + climaxRange : currentPrice - climaxRange,
       stopLoss: type === 'LONG_ENTRY' ? climaxCandle.low : climaxCandle.high,
-      riskReward: 2.0,
+      riskReward: (climaxRange) / Math.abs(currentPrice - (type === 'LONG_ENTRY' ? climaxCandle.low : climaxCandle.high)) || 2.0,
     },
-    indicators: { rsi: indicators.rsi || 50, bbPosition: 0, bbWidth: 0, volumeSpike: true, divergence: null },
+    indicators: { 
+      rsi: indicators.rsi || 50, 
+      bbPosition: 0, 
+      bbWidth: indicators.bbw || 0, 
+      volumeSpike: true, 
+      divergence: null 
+    },
     duration: 120,
   };
   
-  console.log('[VOL_ABSORB] SIGNAL DETECTED:', { type: zone.type, confidence: zone.confidence });
   const executionTime = performance.now() - startTime;
   if (executionTime > 5) console.warn('[PERFORMANCE] Volume Absorption took', executionTime.toFixed(2), 'ms');
 
   return zone;
 }
+
 
 export function detectMicrostructureScalpZone(ticks: TickData[], candles: CandleData[], indicators: Indicators, currentPrice: number, params: ScalpParams): StrikeZone | null {
   const startTime = performance.now();

@@ -51,7 +51,7 @@ const mockIndicators: Indicators = {
 
 const meanReversionParams = { rsiThreshold: 32, tolerance: 0.0015 };
 const trendFollowParams = { adxStrength: 22, rsiMomentum: 52 };
-const squeezeParams = { bbwThreshold: 2.5, breakoutMargin: 0.02 };
+const squeezeParams = { bbwThreshold: 1.0, breakoutMargin: 0.02 };
 const absorptionParams = { climaxMultiplier: 2.0, absorptionFactor: 0.6 };
 const scalpParams = { velocityThreshold: 1.5 };
 
@@ -241,37 +241,43 @@ describe('HF Strike Logic - STD Trend Follow', () => {
 // TESTE 4: VOLUME ABSORPTION
 // ============================================================================
 describe('HF Strike Logic - Volume Absorption', () => {
-  it('should detect LONG after sell climax + absorption', () => {
-    const candles: CandleData[] = [
-      ...Array(8).fill(null).map((_, i) => ({
-        open: 1.0020, high: 1.0025, low: 1.0015, close: 1.0020, volume: 100000, epoch: Date.now() - (10 - i) * 60000,
-      })),
-      {
-        open: 1.0020, high: 1.0025, low: 1.0000, close: 1.0005, volume: 250000, epoch: Date.now() - 2 * 60000,
-      },
-      {
-        open: 1.0005, high: 1.0008, low: 1.0003, close: 1.0006, volume: 60000, epoch: Date.now() - 60000,
-      },
-      {
-        open: 1.0006, high: 1.0010, low: 1.0005, close: 1.0008, volume: 80000, epoch: Date.now(),
-      },
-    ];
+  it('should detect LONG after a recent sell climax and subsequent absorption candle', () => {
+    const baseCandles: CandleData[] = Array(20).fill(null).map((_, i) => ({
+      open: 1.0020, high: 1.0025, low: 1.0015, close: 1.0020, volume: 100000, epoch: Date.now() - (25 - i) * 60000,
+    }));
 
-    const indicators: Indicators = { ...mockIndicators, atr: 0.0015, volSma: [100000] };
+    const climaxCandle: CandleData = {
+        open: 1.0015, high: 1.0020, low: 1.0000, close: 1.0002, // Sell climax
+        volume: 250000, epoch: Date.now() - 4 * 60000
+    };
+    
+    const absorptionCandle1: CandleData = {
+        open: 1.0002, high: 1.0006, low: 1.0001, close: 1.0004, // Low volume, narrow range
+        volume: 80000, epoch: Date.now() - 3 * 60000
+    };
+
+    const postAbsorptionCandles: CandleData[] = Array(2).fill(null).map((_, i) => ({
+      open: 1.0005 + i*0.0001, high: 1.0010, low: 1.0004, close: 1.0008, volume: 110000, epoch: Date.now() - (2 - i) * 60000,
+    }));
+
+    const candles = [...baseCandles, climaxCandle, absorptionCandle1, ...postAbsorptionCandles];
+
+    const indicators: Indicators = { ...mockIndicators, atr: 0.0010, volSma: [100000] };
 
     const zone = detectVolumeAbsorptionZone(candles, indicators, absorptionParams);
 
     expect(zone).not.toBeNull();
     expect(zone?.type).toBe('LONG_ENTRY');
     expect(zone?.confidence).toBe(80);
-    expect(zone?.strategy).toBe('VOLUME_ABSORPTION');
+    expect(zone?.triggers).toContain('📊 Clímax de Volume (2.5x média)');
+    expect(zone?.triggers).toContain('✅ Absorção pós-clímax detectada');
   });
 
-  it('should return null when no recent climax', () => {
-    const candles: CandleData[] = Array(10).fill(null).map((_, i) => ({
-      open: 1.0020, high: 1.0025, low: 1.0015, close: 1.0020, volume: 100000, epoch: Date.now() - (10 - i) * 60000,
+  it('should return null when no recent climax event occurs', () => {
+    const candles: CandleData[] = Array(25).fill(null).map((_, i) => ({
+      open: 1.0020, high: 1.0025, low: 1.0015, close: 1.0020, volume: 100000, epoch: Date.now() - (25 - i) * 60000,
     }));
-    const indicators: Indicators = { ...mockIndicators, volSma: [100000] };
+    const indicators: Indicators = { ...mockIndicators, volSma: [110000] };
     const zone = detectVolumeAbsorptionZone(candles, indicators, absorptionParams);
     expect(zone).toBeNull();
   });
@@ -299,9 +305,8 @@ describe('HF Strike Logic - Microstructure Scalp', () => {
       expect(zone.type).toBe('LONG_ENTRY');
       expect(zone.confidence).toBe(70);
       expect(zone.strategy).toBe('MICROSTRUCTURE_SCALP');
-      expect(zone.duration).toBe(10); // ✅ VALIDAR CORREÇÃO
+      expect(zone.duration).toBe(10);
     } else {
-        // This can sometimes fail due to the randomness in microstructure, which is acceptable.
         console.warn("[Test Warning] Microstructure scalp test did not produce a signal under ideal conditions.");
     }
   });
