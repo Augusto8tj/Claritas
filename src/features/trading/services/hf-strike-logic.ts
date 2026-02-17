@@ -4,6 +4,86 @@
 import type { TickData, CandleData, MicrostructureFeatures } from '@/lib/types';
 import type { Indicators } from './indicator-service';
 import { extractMicrostructureFeatures as extractMicrostructureFeaturesFromService } from './advanced-trading-services';
+import { recordSignal, recordVeto } from './strategy-metrics';
+
+
+// ============================================================================
+// DETECÇÃO DE ATIVO RANDÔMICO
+// ============================================================================
+
+/**
+ * Detecta se o ativo é randômico analisando padrões de preço
+ * Ativos randômicos (1HZ10V, R_10, etc) têm características específicas:
+ * - ADX consistentemente baixo (< 20)
+ * - RSI oscilando em torno de 50
+ * - Volume relativamente constante
+ * - Sem tendências sustentadas
+ */
+export function isRandomAsset(candles: CandleData[], indicators: Indicators): boolean {
+  if (candles.length < 50) return false;
+  
+  const recentCandles = candles.slice(-50);
+  
+  // Teste 1: ADX baixo consistentemente
+  const adxBelowThreshold = (indicators.adx || 30) < 20;
+  
+  // Teste 2: RSI oscilando (não fica em extremos)
+  const rsi = indicators.rsi || 50;
+  const rsiNeutral = rsi > 40 && rsi < 60;
+  
+  // Teste 3: Volume consistente (baixa variação)
+  const volumes = recentCandles.map(c => c.volume || 0).filter(v => v > 0);
+  if (volumes.length < 10) return false;
+  
+  const avgVol = volumes.reduce((a, b) => a + b, 0) / volumes.length;
+  const maxVol = Math.max(...volumes);
+  const volumeVariation = maxVol / avgVol;
+  const volumeConsistent = volumeVariation < 2.5;  // Max 2.5x de variação
+  
+  // Teste 4: Sem tendências sustentadas (preço oscila em torno da média)
+  const prices = recentCandles.map(c => c.close);
+  const avgPrice = prices.reduce((a, b) => a + b, 0) / prices.length;
+  const priceStd = Math.sqrt(
+    prices.reduce((sum, p) => sum + Math.pow(p - avgPrice, 2), 0) / prices.length
+  );
+  const priceRange = Math.max(...prices) - Math.min(...prices);
+  const lowVolatilityTrend = priceRange < priceStd * 4;  // Range < 4 desvios padrão
+  
+  const isRandom = adxBelowThreshold && rsiNeutral && volumeConsistent && lowVolatilityTrend;
+  
+  if (isRandom) {
+    console.warn('[ASSET_DETECTION] ⚠️ ATIVO RANDÔMICO DETECTADO - Ajustando parâmetros');
+  }
+  
+  return isRandom;
+}
+
+/**
+ * Ajusta parâmetros de estratégias para ativos randômicos
+ */
+export function getRandomAssetParams() {
+  return {
+    meanReversion: {
+      rsiThreshold: 35,      // ✅ Mais permissivo (25→35)
+      tolerance: 0.005,      // ✅ Mais permissivo (0.0015→0.005 = 0.5%)
+    },
+    trendFollow: {
+      adxStrength: 15,       // ✅ Muito mais permissivo (20→15)
+      rsiMomentum: 52,       // ✅ Mais permissivo (55→52)
+    },
+    squeeze: {
+      bbwThreshold: 1.5,     // ✅ Mais permissivo (1.0→1.5%)
+      breakoutMargin: 0.01,  // ✅ Menos restritivo (2%→1%)
+    },
+    absorption: {
+      climaxMultiplier: 1.5, // ✅ Muito mais permissivo (2.0→1.5x)
+      absorptionFactor: 0.7, // ✅ Mais permissivo (0.6→0.7)
+    },
+    scalp: {
+      velocityThreshold: 1.2, // ✅ Mais permissivo (1.5→1.2)
+    },
+  };
+}
 
 // ============================================================================
 // TIPOS E INTERFACES REUTILIZÁVEIS
@@ -50,7 +130,7 @@ export function detectHFMeanReversionZone(indicators: Indicators, currentPrice: 
   const { bb, rsi: rsiValue } = indicators;
   
   if (!bb || !bb.upper || !bb.lower || rsiValue === null) {
-    console.debug('[HF_MEAN_REV] Missing indicators:', { bb: !!bb, rsi: !!rsiValue });
+    recordVeto('HF_MEAN_REVERSION', 'Indicadores ausentes (BB/RSI)');
     return null;
   }
   
@@ -84,7 +164,10 @@ export function detectHFMeanReversionZone(indicators: Indicators, currentPrice: 
      if (bbAnalysis.isSqueezed) triggers.push('Squeeze Ativo');
   }
   
-  if (type === 'NEUTRAL') return null;
+  if (type === 'NEUTRAL') {
+    recordVeto('HF_MEAN_REVERSION', 'Preço não em extremo OU RSI neutro');
+    return null;
+  }
   
   const atr = bbAnalysis.upper - bbAnalysis.lower;
   
@@ -103,7 +186,7 @@ export function detectHFMeanReversionZone(indicators: Indicators, currentPrice: 
     duration: bbAnalysis.isSqueezed ? 30 : 20
   };
   
-  console.log('[HF_MEAN_REV] SIGNAL DETECTED:', { type: zone.type, confidence, price: currentPrice, rsi: rsiValue });
+  recordSignal(zone.strategy, zone.confidence);
   
   const executionTime = performance.now() - startTime;
   if (executionTime > 5) console.warn('[PERFORMANCE] HF Mean Reversion took', executionTime.toFixed(2), 'ms');
@@ -114,14 +197,14 @@ export function detectHFMeanReversionZone(indicators: Indicators, currentPrice: 
 export function detectStandardTrendZone(indicators: Indicators, currentPrice: number, prevRsi: number, params: TrendFollowParams): StrikeZone | null {
   const startTime = performance.now();
   if (!indicators.adx || !indicators.ma.long || !indicators.rsi || !indicators.atr) {
-    console.debug('[STD_TREND] Missing indicators:', { adx: !!indicators.adx, ma: !!indicators.ma.long, rsi: !!indicators.rsi, atr: !!indicators.atr });
+    recordVeto('STD_TREND_FOLLOW', 'Indicadores ausentes (ADX/MA/RSI/ATR)');
     return null;
   }
   
   const { adx, ma: { long: ema100 }, rsi, atr } = indicators;
   
   if (adx < params.adxStrength) {
-    console.debug(`[STD_TREND] VETO: ADX ${adx.toFixed(1)} < ${params.adxStrength}`);
+    recordVeto('STD_TREND_FOLLOW', `ADX ${adx.toFixed(1)} < ${params.adxStrength}`);
     return null;
   }
   
@@ -149,7 +232,10 @@ export function detectStandardTrendZone(indicators: Indicators, currentPrice: nu
     confidence = 75; 
   }
   
-  if (type === 'NEUTRAL') return null;
+  if (type === 'NEUTRAL') {
+    recordVeto('STD_TREND_FOLLOW', 'Sem cruzamento de RSI em tendência');
+    return null;
+  }
   
   const zone: StrikeZone = {
     type,
@@ -166,7 +252,7 @@ export function detectStandardTrendZone(indicators: Indicators, currentPrice: nu
     duration: 180,
   };
   
-  console.log('[STD_TREND] SIGNAL DETECTED:', { type, confidence, price: currentPrice, adx, rsi });
+  recordSignal(zone.strategy, zone.confidence);
   const executionTime = performance.now() - startTime;
   if (executionTime > 5) console.warn('[PERFORMANCE] STD Trend Follow took', executionTime.toFixed(2), 'ms');
 
@@ -175,14 +261,19 @@ export function detectStandardTrendZone(indicators: Indicators, currentPrice: nu
 
 export function detectBollingerSqueezeZone(indicators: Indicators, currentPrice: number, params: SqueezeParams): StrikeZone | null {
   const startTime = performance.now();
-  if (!indicators.bbw || indicators.bbw > params.bbwThreshold) {
-    if(indicators.bbw) console.debug(`[BB_SQUEEZE] VETO: BBW ${indicators.bbw.toFixed(2)}% > ${params.bbwThreshold}%`);
+  if (!indicators.bbw) {
+      recordVeto('BOLLINGER_SQUEEZE', 'Indicador BBW ausente');
+      return null;
+  }
+  
+  if (indicators.bbw > params.bbwThreshold) {
+    recordVeto('BOLLINGER_SQUEEZE', `Sem squeeze (BBW ${indicators.bbw.toFixed(2)} > ${params.bbwThreshold})`);
     return null;
   }
   
   const { bb } = indicators;
   if (!bb?.upper || !bb.lower) {
-    console.debug('[BB_SQUEEZE] Missing indicators: BB');
+    recordVeto('BOLLINGER_SQUEEZE', 'Bandas de Bollinger ausentes');
     return null;
   }
   
@@ -195,6 +286,7 @@ export function detectBollingerSqueezeZone(indicators: Indicators, currentPrice:
   } else if (currentPrice < bb.lower - breakoutMargin) {
     type = 'SHORT_ENTRY';
   } else {
+    recordVeto('BOLLINGER_SQUEEZE', 'Preço não rompeu as bandas com margem');
     return null;
   }
   
@@ -213,7 +305,7 @@ export function detectBollingerSqueezeZone(indicators: Indicators, currentPrice:
     duration: 30,
   };
 
-  console.log('[BB_SQUEEZE] SIGNAL DETECTED:', { type, confidence: zone.confidence, bbw: indicators.bbw });
+  recordSignal(zone.strategy, zone.confidence);
   const executionTime = performance.now() - startTime;
   if (executionTime > 5) console.warn('[PERFORMANCE] Bollinger Squeeze took', executionTime.toFixed(2), 'ms');
   
@@ -223,35 +315,31 @@ export function detectBollingerSqueezeZone(indicators: Indicators, currentPrice:
 export function detectVolumeAbsorptionZone(candles: CandleData[], indicators: Indicators, params: AbsorptionParams): StrikeZone | null {
   const startTime = performance.now();
   
-  // ✅ MELHORIA: Log detalhado de pré-condições
   if (candles.length < 20) {
-    console.debug(`[VOL_ABSORB] VETO: Histórico insuficiente (${candles.length} < 20 candles)`);
+    recordVeto('VOLUME_ABSORPTION', `Histórico insuficiente (${candles.length} < 20)`);
     return null;
   }
   
   if (!indicators.atr) {
-    console.debug('[VOL_ABSORB] VETO: ATR não calculado');
+    recordVeto('VOLUME_ABSORPTION', 'ATR não calculado');
     return null;
   }
   
   if (!indicators.volSma || indicators.volSma.length === 0) {
-    console.debug('[VOL_ABSORB] VETO: VolSMA não calculado');
+    recordVeto('VOLUME_ABSORPTION', 'VolSMA não calculado');
     return null;
   }
 
-  // ✅ CORREÇÃO: Lookback mais curto (10 velas ao invés de 15)
   const lookbackPeriod = 10;
-  const searchWindow = candles.slice(-lookbackPeriod);  // ✅ Inclui última vela
+  const searchWindow = candles.slice(-lookbackPeriod);
   
   const avgVolume = indicators.volSma[indicators.volSma.length - 1] || 1;
   
-  // ✅ CORREÇÃO: Busca do mais antigo ao mais recente (left-to-right)
   let climaxCandle: CandleData | null = null;
   let climaxIndex = -1;
   let maxVolume = 0;
 
-  // ✅ MELHORIA: Encontra o clímax de maior volume (não o primeiro)
-  for (let i = 0; i < searchWindow.length - 2; i++) {  // ✅ Deixa 2 velas para absorção
+  for (let i = 0; i < searchWindow.length - 2; i++) {
     const candle = searchWindow[i];
     if (candle && candle.volume && candle.volume > avgVolume * params.climaxMultiplier) {
       if (candle.volume > maxVolume) {
@@ -263,32 +351,27 @@ export function detectVolumeAbsorptionZone(candles: CandleData[], indicators: In
   }
   
   if (!climaxCandle || climaxIndex === -1) {
-    console.debug(`[VOL_ABSORB] VETO: Nenhum clímax encontrado (threshold: ${params.climaxMultiplier}x)`);
+    recordVeto('VOLUME_ABSORPTION', `Nenhum clímax encontrado (threshold: ${params.climaxMultiplier}x)`);
     return null;
   }
-  
-  // ✅ MELHORIA: Log do clímax encontrado
-  console.debug(`[VOL_ABSORB] Clímax encontrado: volume=${climaxCandle.volume}, avg=${avgVolume.toFixed(0)}, ratio=${(climaxCandle.volume! / avgVolume).toFixed(2)}x`);
   
   const climaxRange = climaxCandle.high - climaxCandle.low;
   const isWideRangeClimax = climaxRange > (indicators.atr || 0.001) * 1.2;
   
   if (!isWideRangeClimax) {
-    console.debug(`[VOL_ABSORB] VETO: Range não é largo o suficiente (${(climaxRange / (indicators.atr || 1)).toFixed(2)}x ATR < 1.2x)`);
+    recordVeto('VOLUME_ABSORPTION', `Range não é largo o suficiente (${(climaxRange / (indicators.atr || 1)).toFixed(2)}x ATR < 1.2x)`);
     return null;
   }
 
-  // ✅ CORREÇÃO: Window de absorção limitada (apenas 2-4 velas após clímax)
   const absorptionWindowStart = climaxIndex + 1;
-  const absorptionWindowEnd = Math.min(climaxIndex + 5, candles.length);  // ✅ Max 4 velas após
+  const absorptionWindowEnd = Math.min(climaxIndex + 5, candles.length);
   const absorptionWindow = candles.slice(absorptionWindowStart, absorptionWindowEnd);
   
   if (absorptionWindow.length < 1) {
-    console.debug(`[VOL_ABSORB] VETO: Sem velas pós-clímax para validar absorção`);
+    recordVeto('VOLUME_ABSORPTION', 'Sem velas pós-clímax para validar absorção');
     return null;
   }
 
-  // ✅ MELHORIA: Validação mais robusta de absorção
   let absorptionCount = 0;
   for (const c of absorptionWindow) {
     const volumeAbsorbed = (c.volume || 0) < climaxCandle.volume! * params.absorptionFactor;
@@ -299,11 +382,10 @@ export function detectVolumeAbsorptionZone(candles: CandleData[], indicators: In
     }
   }
   
-  // ✅ CORREÇÃO: Exige pelo menos 50% das velas com absorção
   const hasAbsorption = absorptionCount >= Math.ceil(absorptionWindow.length / 2);
 
   if (!hasAbsorption) {
-    console.debug(`[VOL_ABSORB] VETO: Absorção insuficiente (${absorptionCount}/${absorptionWindow.length} velas)`);
+    recordVeto('VOLUME_ABSORPTION', `Absorção insuficiente (${absorptionCount}/${absorptionWindow.length} velas)`);
     return null;
   }
 
@@ -318,7 +400,7 @@ export function detectVolumeAbsorptionZone(candles: CandleData[], indicators: In
   }
 
   if (type === 'NEUTRAL') {
-    console.debug(`[VOL_ABSORB] VETO: Clímax não é claramente bullish ou bearish`);
+    recordVeto('VOLUME_ABSORPTION', 'Clímax não é claramente bullish ou bearish');
     return null;
   }
 
@@ -348,13 +430,7 @@ export function detectVolumeAbsorptionZone(candles: CandleData[], indicators: In
     duration: 120,
   };
   
-  console.log(`[VOL_ABSORB] SIGNAL DETECTED:`, { 
-    type: zone.type, 
-    confidence: zone.confidence,
-    climaxVolume: climaxCandle.volume,
-    avgVolume: avgVolume.toFixed(0),
-    absorptionRatio: `${absorptionCount}/${absorptionWindow.length}`
-  });
+  recordSignal(zone.strategy, zone.confidence);
   
   const executionTime = performance.now() - startTime;
   if (executionTime > 5) console.warn('[PERFORMANCE] Volume Absorption took', executionTime.toFixed(2), 'ms');
@@ -367,7 +443,7 @@ export function detectMicrostructureScalpZone(ticks: TickData[], candles: Candle
   const startTime = performance.now();
   const micro = extractMicrostructureFeaturesFromService(ticks, candles);
   if (!micro) {
-      console.debug('[MICRO_SCALP] Missing microstructure features');
+      recordVeto('MICROSTRUCTURE_SCALP', 'Microestrutura indisponível');
       return null;
   }
   
@@ -375,7 +451,10 @@ export function detectMicrostructureScalpZone(ticks: TickData[], candles: Candle
   if (micro.pressure === 'buy' && micro.tickVelocity > params.velocityThreshold) type = 'LONG_ENTRY';
   else if (micro.pressure === 'sell' && micro.tickVelocity > params.velocityThreshold) type = 'SHORT_ENTRY';
   
-  if (type === 'NEUTRAL') return null;
+  if (type === 'NEUTRAL') {
+    recordVeto('MICROSTRUCTURE_SCALP', `Pressão (${micro.pressure}) ou velocidade (${micro.tickVelocity.toFixed(1)}) insuficiente`);
+    return null;
+  }
   
   const atr = indicators.atr || 0.0001;
   
@@ -394,9 +473,55 @@ export function detectMicrostructureScalpZone(ticks: TickData[], candles: Candle
     duration: 10,
   };
   
-  console.log('[MICRO_SCALP] SIGNAL DETECTED:', { type: zone.type, confidence: zone.confidence, pressure: micro.pressure, velocity: micro.tickVelocity });
+  recordSignal(zone.strategy, zone.confidence);
   const executionTime = performance.now() - startTime;
   if (executionTime > 5) console.warn('[PERFORMANCE] Microstructure Scalp took', executionTime.toFixed(2), 'ms');
 
   return zone;
+}
+
+
+/**
+ * Estratégia EXPERIMENTAL para ativos randômicos
+ * Não tenta prever direção, opera baseado em:
+ * - Volatilidade do ativo
+ * - Time-based entry (não espera sinal)
+ * - TP/SL simétricos
+ * - Win rate esperado: ~50% (coin flip)
+ * - Lucro vem de RR > 1.5 e gerenciamento de stake
+ */
+export function detectRandomWalkZone(
+  candles: CandleData[], 
+  indicators: Indicators, 
+  currentPrice: number
+): StrikeZone | null {
+  // Só opera se ativo for confirmado como randômico
+  if (!isRandomAsset(candles, indicators)) return null;
+  
+  // Calcula volatilidade recente
+  const atr = indicators.atr || 0.001;
+  const bbw = indicators.bbw || 2.0;
+  
+  // Condição: Opera apenas quando volatilidade está normal (não em squeeze)
+  if (bbw < 0.8) return null;  // Muito comprimido
+  if (bbw > 3.0) return null;  // Muito volátil
+  
+  // Escolhe direção baseado em RSI (apenas para desempate)
+  const rsi = indicators.rsi || 50;
+  const type: StrikeZone['type'] = rsi < 50 ? 'LONG_ENTRY' : 'SHORT_ENTRY';
+  
+  return {
+    type,
+    confidence: 50,  // Sempre 50% (coin flip)
+    triggers: ['🎲 Random Walk Strategy', `RSI: ${rsi.toFixed(1)}`],
+    entry: { price: currentPrice, timestamp: Date.now() },
+    strategy: 'MICROSTRUCTURE_SCALP',  // Reutiliza tipo existente
+    targets: {
+      takeProfit: type === 'LONG_ENTRY' ? currentPrice + atr * 2.0 : currentPrice - atr * 2.0,
+      stopLoss: type === 'LONG_ENTRY' ? currentPrice - atr * 1.0 : currentPrice + atr * 1.0,
+      riskReward: 2.0,  // RR fixo 2:1
+    },
+    indicators: { rsi, bbPosition: 0, bbWidth: bbw, volumeSpike: false, divergence: null },
+    duration: 60,  // 1 minuto
+  };
 }

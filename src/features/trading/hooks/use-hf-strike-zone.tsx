@@ -23,7 +23,9 @@ import {
   SqueezeParams,
   AbsorptionParams,
   ScalpParams,
-  strategyMetadata
+  strategyMetadata,
+  isRandomAsset,
+  getRandomAssetParams
 } from '../services/hf-strike-logic';
 import type { HFConfig } from '@/features/trading/components/hf-trader/hf-config-panel';
 import { saveHFTradeLog } from '@/services/hf-data-service';
@@ -129,12 +131,15 @@ export function useHFStrikeZone(
       
       const currentPrice = priceTicks[priceTicks.length - 1].price;
       
+      const isRandom = isRandomAsset(botCandleData, indicators);
+      const adaptiveParams = isRandom ? getRandomAssetParams() : strategyParams;
+
       const allSignalsResult: (StrikeZone | null)[] = [
-        detectHFMeanReversionZone(indicators, currentPrice, strategyParams.HF_MEAN_REVERSION),
-        detectStandardTrendZone(indicators, currentPrice, rsiStateRef.current.prev, strategyParams.STD_TREND_FOLLOW),
-        detectBollingerSqueezeZone(indicators, currentPrice, strategyParams.BOLLINGER_SQUEEZE),
-        detectVolumeAbsorptionZone(botCandleData, indicators, strategyParams.VOLUME_ABSORPTION),
-        detectMicrostructureScalpZone(priceTicks, botCandleData, indicators, currentPrice, strategyParams.MICROSTRUCTURE_SCALP),
+        detectHFMeanReversionZone(indicators, currentPrice, adaptiveParams.meanReversion),
+        detectStandardTrendZone(indicators, currentPrice, rsiStateRef.current.prev, adaptiveParams.trendFollow),
+        detectBollingerSqueezeZone(indicators, currentPrice, adaptiveParams.squeeze),
+        detectVolumeAbsorptionZone(botCandleData, indicators, adaptiveParams.absorption),
+        detectMicrostructureScalpZone(priceTicks, botCandleData, indicators, currentPrice, adaptiveParams.scalp),
       ];
       setAllSignals(allSignalsResult);
 
@@ -216,7 +221,7 @@ export function useHFStrikeZone(
 
         if (manualStake && manualStake > 0) {
             finalStake = manualStake;
-            sizing = { ...sizing, recommendedStake: manualStake, reasoning: ['Stake definido manualmente pelo operador.'], };
+            sizing = { ...sizing, recommendedStake: finalStake, reasoning: ['Stake definido manualmente pelo operador.'], };
         }
         
         if (consecutiveLosses > 0 && martingaleMultiplier > 1) {
