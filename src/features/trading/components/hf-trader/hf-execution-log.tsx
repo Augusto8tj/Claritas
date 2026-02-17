@@ -17,6 +17,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { StrategyType, strategyMetadata } from '@/features/trading/services/hf-strike-logic';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Tooltip, TooltipProvider, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
 
 interface HFExecutionLogProps {
   operations: Operation[];
@@ -30,6 +31,14 @@ const formatTime = (isoString: string | undefined): string => {
     } catch {
         return "--:--:--";
     }
+};
+
+const getStrategyDisplay = (strategyString: string | undefined): string => {
+    if (!strategyString) return 'N/A';
+    return strategyString
+        .split(', ')
+        .map(s => strategyMetadata[s as StrategyType]?.label || s.replace(/_/g, ' ').toLowerCase())
+        .join(' + ');
 };
 
 export function HFExecutionLog({ operations, clearActiveContracts }: HFExecutionLogProps) {
@@ -164,7 +173,18 @@ export function HFExecutionLog({ operations, clearActiveContracts }: HFExecution
                                             <div>
                                                 <p className="font-bold text-sm">{op.asset}</p>
                                                 {op.strategy && (
-                                                    <p className="text-muted-foreground text-[11px] capitalize truncate" title={op.strategy}>{op.strategy.replace(/_/g, ' ').toLowerCase()}</p>
+                                                    <TooltipProvider>
+                                                        <Tooltip>
+                                                            <TooltipTrigger asChild>
+                                                                <p className="text-muted-foreground text-[11px] capitalize truncate" title={op.strategy}>
+                                                                    {getStrategyDisplay(op.strategy)}
+                                                                </p>
+                                                            </TooltipTrigger>
+                                                            <TooltipContent>
+                                                                <p>{getStrategyDisplay(op.strategy)}</p>
+                                                            </TooltipContent>
+                                                        </Tooltip>
+                                                    </TooltipProvider>
                                                 )}
                                                 <p className="text-muted-foreground">Entrada: ${op.stake.toFixed(2)}</p>
                                             </div>

@@ -160,38 +160,48 @@ export function useHFStrikeZone(
       let consensusSignal: StrikeZone | null = null;
       let ensembleParticipants: StrategyType[] = [];
 
-      if (longSignals.length >= minConsensusSignals && longSignals.length > shortSignals.length) {
+      if (longSignals.length >= minConsensusSignals) {
           const participants = longSignals;
           const totalConfidence = participants.reduce((sum, s) => sum + s.confidence, 0);
-          const avgConfidence = totalConfidence / participants.length;
-          const avgDuration = Math.round(participants.reduce((sum, s) => sum + s.duration, 0) / participants.length);
-          const leadSignal = participants.reduce((best, s) => s.confidence > best.confidence ? s : best, participants[0]);
-          ensembleParticipants = participants.map(p => p.strategy);
+          const opponentConfidence = shortSignals.reduce((sum, s) => sum + s.confidence, 0);
+          const netConfidence = totalConfidence - opponentConfidence;
           
-          consensusSignal = {
-              ...leadSignal,
-              type: 'LONG_ENTRY',
-              confidence: avgConfidence,
-              duration: avgDuration,
-              triggers: participants.map(s => strategyMetadata[s.strategy].label),
-              strategy: 'ENSEMBLE' as any,
-          };
-      } else if (shortSignals.length >= minConsensusSignals && shortSignals.length > longSignals.length) {
+          if (netConfidence > 0) {
+              const avgConfidence = totalConfidence / participants.length;
+              const avgDuration = Math.round(participants.reduce((sum, s) => sum + s.duration, 0) / participants.length);
+              const leadSignal = participants.reduce((best, s) => s.confidence > best.confidence ? s : best, participants[0]);
+              ensembleParticipants = participants.map(p => p.strategy);
+
+              consensusSignal = {
+                  ...leadSignal,
+                  type: 'LONG_ENTRY',
+                  confidence: avgConfidence,
+                  duration: avgDuration,
+                  triggers: participants.map(s => strategyMetadata[s.strategy].label),
+                  strategy: 'ENSEMBLE' as any,
+              };
+          }
+      } else if (shortSignals.length >= minConsensusSignals) {
           const participants = shortSignals;
           const totalConfidence = participants.reduce((sum, s) => sum + s.confidence, 0);
-          const avgConfidence = totalConfidence / participants.length;
-          const avgDuration = Math.round(participants.reduce((sum, s) => sum + s.duration, 0) / participants.length);
-          const leadSignal = participants.reduce((best, s) => s.confidence > best.confidence ? s : best, participants[0]);
-          ensembleParticipants = participants.map(p => p.strategy);
+          const opponentConfidence = longSignals.reduce((sum, s) => sum + s.confidence, 0);
+          const netConfidence = totalConfidence - opponentConfidence;
+          
+          if(netConfidence > 0) {
+              const avgConfidence = totalConfidence / participants.length;
+              const avgDuration = Math.round(participants.reduce((sum, s) => sum + s.duration, 0) / participants.length);
+              const leadSignal = participants.reduce((best, s) => s.confidence > best.confidence ? s : best, participants[0]);
+              ensembleParticipants = participants.map(p => p.strategy);
 
-          consensusSignal = {
-              ...leadSignal,
-              type: 'SHORT_ENTRY',
-              confidence: avgConfidence,
-              duration: avgDuration,
-              triggers: participants.map(s => strategyMetadata[s.strategy].label),
-              strategy: 'ENSEMBLE' as any,
-          };
+              consensusSignal = {
+                  ...leadSignal,
+                  type: 'SHORT_ENTRY',
+                  confidence: avgConfidence,
+                  duration: avgDuration,
+                  triggers: participants.map(s => strategyMetadata[s.strategy].label),
+                  strategy: 'ENSEMBLE' as any,
+              };
+          }
       }
 
       setActiveStrikeZone(consensusSignal);
@@ -235,7 +245,7 @@ export function useHFStrikeZone(
                   consensusSignal.duration,
                   durationUnit,
                   'HF_Strike',
-                  'ENSEMBLE' // A estratégia agora é o consenso
+                  ensembleParticipants.join(', ')
               );
               if (tradeResult.success && tradeResult.contractId) {
                 toast({ title: '⚡ Strike de Consenso Executado!', description: `${ensembleParticipants.length} especialistas concordaram. Stake: $${finalStake.toFixed(2)}` });
@@ -276,5 +286,3 @@ export function useHFStrikeZone(
     strategyParams, updateStrategyParams: handleUpdateStrategyParams,
   };
 }
-
-    
