@@ -112,7 +112,7 @@ export function useHFStrikeZone(
     const lastOp = operationsLog.length > 0 ? operationsLog[0] : null;
     if (lastOp && lastOp.status !== 'pending' && lastOp.id !== lastProcessedOpIdRef.current) {
         lastProcessedOpIdRef.current = lastOp.id;
-        if (lastOp.result < 0) {
+        if (lastOp.result! < 0) {
             const newLossCount = consecutiveLosses + 1;
             setConsecutiveLosses(newLossCount);
             if (newLossCount >= maxConsecutiveLosses) {
@@ -123,7 +123,7 @@ export function useHFStrikeZone(
                 toast({ title: '❄️ Cooldown Ativado', description: `Pausa de ${cooldownSeconds}s após perda.`, variant: 'default' });
                 setTimeout(() => setIsCooldownActive(false), cooldownSeconds * 1000);
             }
-        } else if (lastOp.result > 0) {
+        } else if (lastOp.result! > 0) {
             setConsecutiveLosses(0);
         }
     }
@@ -179,50 +179,59 @@ export function useHFStrikeZone(
       let consensusSignal: StrikeZone | null = null;
       let ensembleParticipants: StrategyType[] = [];
 
-      if (longSignals.length >= minConsensusSignals) {
-          const participants = longSignals;
-          const totalConfidence = participants.reduce((sum, s) => sum + s.confidence, 0);
-          const opponentConfidence = shortSignals.reduce((sum, s) => sum + s.confidence, 0);
-          const netConfidence = totalConfidence - opponentConfidence;
+      const determineConsensus = (participants: StrikeZone[], direction: 'LONG_ENTRY' | 'SHORT_ENTRY'): StrikeZone | null => {
+          if (participants.length < minConsensusSignals) return null;
           
-          if (netConfidence > 0) {
-              const avgConfidence = totalConfidence / participants.length;
-              const avgDuration = Math.round(participants.reduce((sum, s) => sum + s.duration, 0) / participants.length);
-              const leadSignal = participants.reduce((best, s) => s.confidence > best.confidence ? s : best, participants[0]);
-              ensembleParticipants = participants.map(p => p.strategy);
-
-              consensusSignal = {
-                  ...leadSignal,
-                  type: 'LONG_ENTRY',
-                  confidence: avgConfidence,
-                  duration: avgDuration,
-                  triggers: participants.map(s => strategyMetadata[s.strategy].label),
-                  strategy: 'ENSEMBLE' as any,
-              };
-          }
-      } else if (shortSignals.length >= minConsensusSignals) {
-          const participants = shortSignals;
           const totalConfidence = participants.reduce((sum, s) => sum + s.confidence, 0);
-          const opponentConfidence = longSignals.reduce((sum, s) => sum + s.confidence, 0);
-          const netConfidence = totalConfidence - opponentConfidence;
+          const opponentSignals = direction === 'LONG_ENTRY' ? shortSignals : longSignals;
+          const opponentConfidence = opponentSignals.reduce((sum, s) => sum + s.confidence, 0);
+
+          if (totalConfidence <= opponentConfidence) return null;
+
+          // --- INÍCIO: LÓGICA DO GERENTE DE TEMPO ---
+          let optimalDuration = 15; // Fallback
+          const gbm40s = participants.find(p => p.strategy === 'GBM_40S');
+          const gbm20s = participants.find(p => p.strategy === 'GBM_20S');
           
-          if(netConfidence > 0) {
-              const avgConfidence = totalConfidence / participants.length;
-              const avgDuration = Math.round(participants.reduce((sum, s) => sum + s.duration, 0) / participants.length);
-              const leadSignal = participants.reduce((best, s) => s.confidence > best.confidence ? s : best, participants[0]);
-              ensembleParticipants = participants.map(p => p.strategy);
-
-              consensusSignal = {
-                  ...leadSignal,
-                  type: 'SHORT_ENTRY',
-                  confidence: avgConfidence,
-                  duration: avgDuration,
-                  triggers: participants.map(s => strategyMetadata[s.strategy].label),
-                  strategy: 'ENSEMBLE' as any,
-              };
+          if (gbm40s) {
+              optimalDuration = 40;
+          } else if (gbm20s) {
+              optimalDuration = 20;
+          } else {
+              // Média ponderada pela confiança para especialistas não-preditivos
+              const nonPredictiveParticipants = participants.filter(p => p.strategy !== 'GBM_20S' && p.strategy !== 'GBM_40S');
+              if (nonPredictiveParticipants.length > 0) {
+                  const totalWeight = nonPredictiveParticipants.reduce((sum, s) => sum + s.confidence, 0);
+                  const weightedDuration = nonPredictiveParticipants.reduce((sum, s) => sum + s.duration * s.confidence, 0);
+                  if (totalWeight > 0) {
+                      optimalDuration = weightedDuration / totalWeight;
+                  }
+              }
           }
-      }
+          
+          // Ajuste fino pela volatilidade
+          if (indicators && indicators.bbw) {
+              if (indicators.bbw > 2.5) optimalDuration *= 0.8; // Mais volátil, mais curto
+              if (indicators.bbw < 0.8) optimalDuration *= 1.2; // Menos volátil, mais longo
+          }
+          // --- FIM DA LÓGICA DO GERENTE DE TEMPO ---
+          
+          const avgConfidence = totalConfidence / participants.length;
+          const leadSignal = participants.reduce((best, s) => s.confidence > best.confidence ? s : best, participants[0]);
+          ensembleParticipants = participants.map(p => p.strategy);
 
+          return {
+              ...leadSignal,
+              type: direction,
+              confidence: avgConfidence,
+              duration: optimalDuration, // ✅ USA A DURAÇÃO OTIMIZADA
+              triggers: participants.map(s => strategyMetadata[s.strategy].label),
+              strategy: 'ENSEMBLE' as any,
+          };
+      };
+
+      consensusSignal = determineConsensus(longSignals, 'LONG_ENTRY') ?? determineConsensus(shortSignals, 'SHORT_ENTRY');
+      
       setActiveStrikeZone(consensusSignal);
 
       if (consensusSignal) {
