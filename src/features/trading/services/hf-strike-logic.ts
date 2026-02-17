@@ -66,23 +66,23 @@ export function isRandomAsset(candles: CandleData[], indicators: Indicators): bo
  */
 export function getRandomAssetParams() {
   return {
-    meanReversion: {
+    HF_MEAN_REVERSION: {
       rsiThreshold: 35,      // ✅ Mais permissivo (25→35)
       tolerance: 0.005,      // ✅ Mais permissivo (0.0015→0.005 = 0.5%)
     },
-    trendFollow: {
+    STD_TREND_FOLLOW: {
       adxStrength: 15,       // ✅ Muito mais permissivo (20→15)
       rsiMomentum: 52,       // ✅ Mais permissivo (55→52)
     },
-    squeeze: {
+    BOLLINGER_SQUEEZE: {
       bbwThreshold: 1.5,     // ✅ Mais permissivo (1.0→1.5%)
       breakoutMargin: 0.01,  // ✅ Menos restritivo (2%→1%)
     },
-    absorption: {
+    VOLUME_ABSORPTION: {
       climaxMultiplier: 1.5, // ✅ Muito mais permissivo (2.0→1.5x)
       absorptionFactor: 0.7, // ✅ Mais permissivo (0.6→0.7)
     },
-    scalp: {
+    MICROSTRUCTURE_SCALP: {
       velocityThreshold: 1.2, // ✅ Mais permissivo (1.5→1.2)
     },
   };
