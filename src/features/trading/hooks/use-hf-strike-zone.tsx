@@ -137,21 +137,27 @@ export function useHFStrikeZone(
     }
 
     const runCycle = async () => {
-      const regime = detectMarketRegime(indicators, botCandleData);
+      const candles = botCandleData;
+      const ticks = priceTicks;
+      const regime = detectMarketRegime(indicators, candles);
       setMarketRegime(regime);
       
-      const currentPrice = priceTicks[priceTicks.length - 1].price;
+      const currentPrice = ticks[ticks.length - 1].price;
       
-      const isRandom = isRandomAsset(botCandleData, indicators);
+      const isRandom = isRandomAsset(candles, indicators);
+      if (isRandom) {
+        console.warn('⚠️ ATIVO RANDÔMICO DETECTADO - Usando parâmetros adaptativos');
+      }
+
       const adaptiveParams = isRandom ? getRandomAssetParams() : strategyParams;
 
       const allSignalsResult: (StrikeZone | null)[] = [
         detectHFMeanReversionZone(indicators, currentPrice, adaptiveParams.HF_MEAN_REVERSION),
         detectStandardTrendZone(indicators, currentPrice, rsiStateRef.current.prev, adaptiveParams.STD_TREND_FOLLOW),
         detectBollingerSqueezeZone(indicators, currentPrice, adaptiveParams.BOLLINGER_SQUEEZE),
-        detectVolumeAbsorptionZone(botCandleData, indicators, adaptiveParams.VOLUME_ABSORPTION),
-        detectMicrostructureScalpZone(priceTicks, botCandleData, indicators, currentPrice, adaptiveParams.MICROSTRUCTURE_SCALP),
-        detectRandomWalkZone(botCandleData, indicators, currentPrice),
+        detectVolumeAbsorptionZone(candles, indicators, adaptiveParams.VOLUME_ABSORPTION),
+        detectMicrostructureScalpZone(ticks, candles, indicators, currentPrice, adaptiveParams.MICROSTRUCTURE_SCALP),
+        detectRandomWalkZone(candles, indicators, currentPrice),
         detectGBM20sZone(indicators, currentPrice),
         detectGBM40sZone(indicators, currentPrice),
       ];
@@ -188,31 +194,45 @@ export function useHFStrikeZone(
 
           if (totalConfidence <= opponentConfidence) return null;
 
-          // --- INÍCIO: LÓGICA DO GERENTE DE TEMPO ---
+          // --- INÍCIO: LÓGICA DO GERENTE DE TEMPO (REVISADA) ---
           let optimalDuration = 15; // Fallback
-          const gbm40s = participants.find(p => p.strategy === 'GBM_40S');
-          const gbm20s = participants.find(p => p.strategy === 'GBM_20S');
-          
-          if (gbm40s) {
-              optimalDuration = 40;
-          } else if (gbm20s) {
-              optimalDuration = 20;
-          } else {
-              // Média ponderada pela confiança para especialistas não-preditivos
-              const nonPredictiveParticipants = participants.filter(p => p.strategy !== 'GBM_20S' && p.strategy !== 'GBM_40S');
+          let durationSource = "Fallback";
+
+          // 1. Identifica especialistas preditivos
+          const predictiveParticipants = participants.filter(
+            p => p.strategy === 'GBM_20S' || p.strategy === 'GBM_40S'
+          );
+
+          // 2. Se houver especialistas preditivos, usa o mais confiante
+          if (predictiveParticipants.length > 0) {
+              const mostConfidentPredictor = predictiveParticipants.reduce(
+                  (best, current) => current.confidence > best.confidence ? current : best
+              );
+              optimalDuration = mostConfidentPredictor.duration;
+              durationSource = `Preditor de Elite (${mostConfidentPredictor.strategy})`;
+          } 
+          // 3. Senão, usa média ponderada dos outros
+          else {
+              const nonPredictiveParticipants = participants;
               if (nonPredictiveParticipants.length > 0) {
                   const totalWeight = nonPredictiveParticipants.reduce((sum, s) => sum + s.confidence, 0);
                   const weightedDuration = nonPredictiveParticipants.reduce((sum, s) => sum + s.duration * s.confidence, 0);
                   if (totalWeight > 0) {
                       optimalDuration = weightedDuration / totalWeight;
+                      durationSource = "Média Ponderada Técnica";
                   }
               }
           }
           
-          // Ajuste fino pela volatilidade
+          // 4. Ajuste fino pela volatilidade
           if (indicators && indicators.bbw) {
-              if (indicators.bbw > 2.5) optimalDuration *= 0.8; // Mais volátil, mais curto
-              if (indicators.bbw < 0.8) optimalDuration *= 1.2; // Menos volátil, mais longo
+              if (indicators.bbw > 2.5) {
+                  optimalDuration *= 0.8; // Mais volátil, mais curto
+                  durationSource += ' (Ajuste Volatilidade Alta)';
+              } else if (indicators.bbw < 0.8) {
+                  optimalDuration *= 1.2; // Menos volátil, mais longo
+                  durationSource += ' (Ajuste Volatilidade Baixa)';
+              }
           }
           // --- FIM DA LÓGICA DO GERENTE DE TEMPO ---
           
@@ -224,8 +244,8 @@ export function useHFStrikeZone(
               ...leadSignal,
               type: direction,
               confidence: avgConfidence,
-              duration: optimalDuration, // ✅ USA A DURAÇÃO OTIMIZADA
-              triggers: participants.map(s => strategyMetadata[s.strategy].label),
+              duration: optimalDuration,
+              triggers: [...participants.map(s => strategyMetadata[s.strategy].label), `Tempo: ${durationSource}`],
               strategy: 'ENSEMBLE' as any,
           };
       };
