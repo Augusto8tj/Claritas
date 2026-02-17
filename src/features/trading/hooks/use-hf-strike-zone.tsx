@@ -138,15 +138,12 @@ export function useHFStrikeZone(
       // ✅ ADICIONAR: Escolher parâmetros adaptativos
       const adaptiveParams = isRandom ? getRandomAssetParams() : strategyParams;
 
-      // ✅ MODIFICAR: Usar adaptiveParams ao invés de strategyParams
       const allSignalsResult: (StrikeZone | null)[] = [
         detectHFMeanReversionZone(indicators, currentPrice, adaptiveParams.HF_MEAN_REVERSION),
         detectStandardTrendZone(indicators, currentPrice, rsiStateRef.current.prev, adaptiveParams.STD_TREND_FOLLOW),
         detectBollingerSqueezeZone(indicators, currentPrice, adaptiveParams.BOLLINGER_SQUEEZE),
         detectVolumeAbsorptionZone(botCandleData, indicators, adaptiveParams.VOLUME_ABSORPTION),
         detectMicrostructureScalpZone(priceTicks, botCandleData, indicators, currentPrice, adaptiveParams.MICROSTRUCTURE_SCALP),
-        
-        // ✅ ADICIONAR: Estratégia Random Walk
         detectRandomWalkZone(botCandleData, indicators, currentPrice),
       ];
       setAllSignals(allSignalsResult);

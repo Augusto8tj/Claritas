@@ -66,23 +66,23 @@ export function isRandomAsset(candles: CandleData[], indicators: Indicators): bo
  */
 export function getRandomAssetParams() {
   return {
-    HF_MEAN_REVERSION: {
+    meanReversion: {
       rsiThreshold: 35,      // ✅ Mais permissivo (25→35)
       tolerance: 0.005,      // ✅ Mais permissivo (0.0015→0.005 = 0.5%)
     },
-    STD_TREND_FOLLOW: {
+    trendFollow: {
       adxStrength: 15,       // ✅ Muito mais permissivo (20→15)
       rsiMomentum: 52,       // ✅ Mais permissivo (55→52)
     },
-    BOLLINGER_SQUEEZE: {
+    squeeze: {
       bbwThreshold: 1.5,     // ✅ Mais permissivo (1.0→1.5%)
       breakoutMargin: 0.01,  // ✅ Menos restritivo (2%→1%)
     },
-    VOLUME_ABSORPTION: {
+    absorption: {
       climaxMultiplier: 1.5, // ✅ Muito mais permissivo (2.0→1.5x)
       absorptionFactor: 0.7, // ✅ Mais permissivo (0.6→0.7)
     },
-    MICROSTRUCTURE_SCALP: {
+    scalp: {
       velocityThreshold: 1.2, // ✅ Mais permissivo (1.5→1.2)
     },
   };
@@ -318,7 +318,6 @@ export function detectBollingerSqueezeZone(indicators: Indicators, currentPrice:
 export function detectVolumeAbsorptionZone(candles: CandleData[], indicators: Indicators, params: AbsorptionParams): StrikeZone | null {
   const startTime = performance.now();
   
-  // ✅ MELHORIA: Log detalhado de pré-condições
   if (candles.length < 20) {
     console.debug(`[VOL_ABSORB] VETO: Histórico insuficiente (${candles.length} < 20 candles)`);
     return null;
@@ -334,19 +333,15 @@ export function detectVolumeAbsorptionZone(candles: CandleData[], indicators: In
     return null;
   }
 
-  // ✅ CORREÇÃO: Lookback mais longo (20 velas)
   const lookbackPeriod = 20;
-  const searchWindow = candles.slice(-lookbackPeriod);  // ✅ Inclui última vela
+  const searchWindow = candles.slice(-lookbackPeriod);
   
   const avgVolume = indicators.volSma[indicators.volSma.length - 1] || 1;
   
-  // ✅ CORREÇÃO: Busca do mais antigo ao mais recente (left-to-right)
   let climaxCandle: CandleData | null = null;
   let climaxIndex = -1;
   let maxVolume = 0;
 
-  // ✅ MELHORIA: Encontra o clímax de maior volume (não o primeiro)
-  // ✅ CORREÇÃO: Deixa 4 velas para absorção
   for (let i = 0; i < searchWindow.length - 4; i++) {
     const candle = searchWindow[i];
     if (candle && candle.volume && candle.volume > avgVolume * params.climaxMultiplier) {
@@ -363,7 +358,6 @@ export function detectVolumeAbsorptionZone(candles: CandleData[], indicators: In
     return null;
   }
   
-  // ✅ MELHORIA: Log do clímax encontrado
   console.debug(`[VOL_ABSORB] Clímax encontrado: volume=${climaxCandle.volume}, avg=${avgVolume.toFixed(0)}, ratio=${(climaxCandle.volume! / avgVolume).toFixed(2)}x`);
   
   const climaxRange = climaxCandle.high - climaxCandle.low;
@@ -374,9 +368,8 @@ export function detectVolumeAbsorptionZone(candles: CandleData[], indicators: In
     return null;
   }
 
-  // ✅ CORREÇÃO: Window de absorção limitada (apenas 2-4 velas após clímax)
   const absorptionWindowStart = climaxIndex + 1;
-  const absorptionWindowEnd = Math.min(climaxIndex + 5, candles.length);  // ✅ Max 4 velas após
+  const absorptionWindowEnd = Math.min(climaxIndex + 5, candles.length);
   const absorptionWindow = candles.slice(absorptionWindowStart, absorptionWindowEnd);
   
   if (absorptionWindow.length < 1) {
@@ -384,7 +377,6 @@ export function detectVolumeAbsorptionZone(candles: CandleData[], indicators: In
     return null;
   }
 
-  // ✅ MELHORIA: Validação mais robusta de absorção
   let absorptionCount = 0;
   for (const c of absorptionWindow) {
     const volumeAbsorbed = (c.volume || 0) < climaxCandle.volume! * params.absorptionFactor;
@@ -395,7 +387,6 @@ export function detectVolumeAbsorptionZone(candles: CandleData[], indicators: In
     }
   }
   
-  // ✅ CORREÇÃO: Exige pelo menos 50% das velas com absorção
   const hasAbsorption = absorptionCount >= Math.ceil(absorptionWindow.length / 2);
 
   if (!hasAbsorption) {
