@@ -131,7 +131,8 @@ export function useHFStrikeZone(
 
 
   useEffect(() => {
-    if (!enabled || !indicators || priceTicks.length < 2 || !user || isCooldownActive || isExecuting || !isConnected) {
+    // ✅ CORREÇÃO: Adicionada verificação !durationLimits para prevenir race condition.
+    if (!enabled || !indicators || priceTicks.length < 2 || !user || isCooldownActive || isExecuting || !isConnected || !durationLimits) {
       setActiveStrikeZone(null);
       return;
     }
@@ -145,10 +146,6 @@ export function useHFStrikeZone(
       const currentPrice = ticks[ticks.length - 1].price;
       
       const isRandom = isRandomAsset(candles, indicators);
-      if (isRandom) {
-        console.warn('⚠️ ATIVO RANDÔMICO DETECTADO - Usando parâmetros adaptativos');
-      }
-
       const adaptiveParams = isRandom ? getRandomAssetParams() : strategyParams;
 
       const allSignalsResult: (StrikeZone | null)[] = [
@@ -194,16 +191,13 @@ export function useHFStrikeZone(
 
           if (totalConfidence <= opponentConfidence) return null;
 
-          // --- INÍCIO: LÓGICA DO GERENTE DE TEMPO (REVISADA) ---
-          let optimalDuration = 15; // Fallback
+          let optimalDuration = 15;
           let durationSource = "Fallback";
 
-          // 1. Identifica especialistas preditivos
           const predictiveParticipants = participants.filter(
             p => p.strategy === 'GBM_20S' || p.strategy === 'GBM_40S'
           );
 
-          // 2. Se houver especialistas preditivos, usa o mais confiante
           if (predictiveParticipants.length > 0) {
               const mostConfidentPredictor = predictiveParticipants.reduce(
                   (best, current) => current.confidence > best.confidence ? current : best
@@ -211,7 +205,6 @@ export function useHFStrikeZone(
               optimalDuration = mostConfidentPredictor.duration;
               durationSource = `Preditor de Elite (${mostConfidentPredictor.strategy})`;
           } 
-          // 3. Senão, usa média ponderada dos outros
           else {
               const nonPredictiveParticipants = participants;
               if (nonPredictiveParticipants.length > 0) {
@@ -224,17 +217,15 @@ export function useHFStrikeZone(
               }
           }
           
-          // 4. Ajuste fino pela volatilidade
           if (indicators && indicators.bbw) {
               if (indicators.bbw > 2.5) {
-                  optimalDuration *= 0.8; // Mais volátil, mais curto
+                  optimalDuration *= 0.8;
                   durationSource += ' (Ajuste Volatilidade Alta)';
               } else if (indicators.bbw < 0.8) {
-                  optimalDuration *= 1.2; // Menos volátil, mais longo
+                  optimalDuration *= 1.2;
                   durationSource += ' (Ajuste Volatilidade Baixa)';
               }
           }
-          // --- FIM DA LÓGICA DO GERENTE DE TEMPO ---
           
           const avgConfidence = totalConfidence / participants.length;
           const leadSignal = participants.reduce((best, s) => s.confidence > best.confidence ? s : best, participants[0]);
@@ -305,7 +296,7 @@ export function useHFStrikeZone(
               } else {
                   durationUnit = 's';
                   finalDuration = 15;
-                  console.warn(`[HF-STRIKE] Nenhum limite de duração válido encontrado para ${activeSymbol}. Usando fallback: 15s.`);
+                  console.error(`[HF-STRIKE] BUG: Limites de duração NULOS, mas a guarda falhou. Usando fallback de 15s. ActiveSymbol: ${activeSymbol}`);
               }
               
               const tradeResult = await executeTrade(
