@@ -6,7 +6,7 @@ import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/com
 import { Progress } from '@/components/ui/progress';
 import { Badge } from '@/components/ui/badge';
 import { Zap, TrendingUp, TrendingDown, HelpCircle, Activity } from 'lucide-react';
-import type { StrikeZone } from '@/features/trading/services/hf-strike-logic';
+import type { StrikeZone } from '@/features/trading/hooks/use-hf-strike-zone';
 import { strategyMetadata, StrategyType } from '@/features/trading/services/hf-strike-logic';
 import { cn } from '@/lib/utils';
 import { Tooltip, TooltipProvider, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
@@ -22,6 +22,8 @@ const strategyOrder: StrategyType[] = [
   'BOLLINGER_SQUEEZE',
   'VOLUME_ABSORPTION',
   'MICROSTRUCTURE_SCALP',
+  'GBM_20S',
+  'GBM_40S',
 ];
 
 const SignalBar = ({ signal, count }: { signal: StrikeZone | null, count: number }) => {
