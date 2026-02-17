@@ -197,6 +197,7 @@ function PageContent() {
                 params={strategyParams}
                 onParamChange={updateStrategyParams}
               />
+               <HFSignalCard signal={activeStrikeZone} onExecute={handleExecuteStrike} isExecuting={isExecuting} consecutiveLosses={consecutiveLosses} isCooldown={isCooldownActive}/>
         </div>
         <div className="space-y-6">
           <Card>
@@ -220,7 +221,6 @@ function PageContent() {
               </div>
             </CardContent>
           </Card>
-          <HFSignalCard signal={activeStrikeZone} onExecute={handleExecuteStrike} isExecuting={isExecuting} consecutiveLosses={consecutiveLosses} isCooldown={isCooldownActive}/>
           <StrategySignalMonitor signals={allSignals} counts={strategyCounts} />
           <HFConfigPanel
             config={hfConfig}
