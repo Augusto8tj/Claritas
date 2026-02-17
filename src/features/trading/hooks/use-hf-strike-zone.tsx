@@ -99,7 +99,7 @@ export function useHFStrikeZone(
     const lastOp = operationsLog.length > 0 ? operationsLog[0] : null;
     if (lastOp && lastOp.status !== 'pending' && lastOp.id !== lastProcessedOpIdRef.current) {
         lastProcessedOpIdRef.current = lastOp.id;
-        if (lastOp.result! &lt; 0) {
+        if (lastOp.result! < 0) {
             const newLossCount = consecutiveLosses + 1;
             setConsecutiveLosses(newLossCount);
             if (newLossCount >= maxConsecutiveLosses) {
@@ -239,26 +239,22 @@ export function useHFStrikeZone(
               let finalDuration: number;
               let durationUnit: DurationUnit;
               const calculatedDurationInSeconds = consensusSignal.duration;
-
-              // CORREÇÃO: Converte a duração para Ticks ou Segundos com base nas regras do usuário e limites da API.
               const canUseTicks = durationLimits?.t && durationLimits.t.min > 0;
               const canUseSeconds = durationLimits?.s && durationLimits.s.min > 0;
 
-              if (canUseTicks && calculatedDurationInSeconds &lt;= 10) {
+              if (canUseTicks && calculatedDurationInSeconds <= 10) {
                   durationUnit = 't';
-                  // Aproximação: 1 tick ~= 2 segundos. Arredonda para cima.
                   const durationInTicks = Math.ceil(calculatedDurationInSeconds / 2);
                   finalDuration = Math.max(durationLimits.t.min, Math.min(durationInTicks, durationLimits.t.max));
               } else if (canUseSeconds) {
                   durationUnit = 's';
-                  finalDuration = Math.round(calculatedDurationInSeconds); // Arredonda para o segundo mais próximo
+                  finalDuration = Math.round(calculatedDurationInSeconds);
                   finalDuration = Math.max(durationLimits.s.min, Math.min(finalDuration, durationLimits.s.max));
-              } else if (canUseTicks) { // Fallback para ticks se segundos não for uma opção
+              } else if (canUseTicks) {
                   durationUnit = 't';
                   const durationInTicks = Math.ceil(calculatedDurationInSeconds / 2);
                   finalDuration = Math.max(durationLimits.t.min, Math.min(durationInTicks, durationLimits.t.max));
               } else {
-                  // Fallback final se nada for válido
                   durationUnit = 's';
                   finalDuration = 15;
                   console.warn(`[HF-STRIKE] Nenhum limite de duração válido encontrado para ${activeSymbol}. Usando fallback: 15s.`);
