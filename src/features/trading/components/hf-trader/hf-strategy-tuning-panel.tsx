@@ -5,8 +5,8 @@ import React from 'react';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
 import { Slider } from '@/components/ui/slider';
-import { AlertCircle, SlidersHorizontal } from 'lucide-react';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
+import { SlidersHorizontal } from 'lucide-react';
 import type { StrategyParams, StrategyType } from '@/features/trading/hooks/use-hf-strike-zone';
 
 interface HFStrategyTuningPanelProps {
@@ -14,17 +14,7 @@ interface HFStrategyTuningPanelProps {
   onParamChange: (strategy: StrategyType, newParams: any) => void;
 }
 
-const StrategyTuningItem = ({
-    title,
-    paramKey,
-    value,
-    description,
-    min,
-    max,
-    step,
-    unit = '',
-    onValueChange
-}: {
+interface StrategyTuningItemProps {
     title: string;
     paramKey: string;
     value: number;
@@ -34,11 +24,23 @@ const StrategyTuningItem = ({
     step: number;
     unit?: string;
     onValueChange: (value: number) => void;
+}
+
+const StrategyTuningItem: React.FC<StrategyTuningItemProps> = ({
+    title,
+    paramKey,
+    value,
+    description,
+    min,
+    max,
+    step,
+    unit = '',
+    onValueChange
 }) => (
     <div className="space-y-2 p-3 border rounded-lg bg-background">
         <div className="flex justify-between items-center mb-1">
-            <Label htmlFor={`${paramKey}-slider`}>{title}</Label>
-            <span className="font-mono text-sm text-primary">{value.toFixed(paramKey === 'tolerance' ? 4 : 1)}{unit}</span>
+            <Label htmlFor={`${paramKey}-slider`} className="font-medium">{title}</Label>
+            <span className="font-mono text-sm text-primary font-semibold">{value.toFixed(paramKey === 'rev-tolerance' || paramKey === 'squeeze-margin' ? 2 : 1)}{unit}</span>
         </div>
         <Slider
             id={`${paramKey}-slider`}
@@ -51,6 +53,7 @@ const StrategyTuningItem = ({
         <p className="text-xs text-muted-foreground pt-1">{description}</p>
     </div>
 );
+
 
 export function HFStrategyTuningPanel({ params, onParamChange }: HFStrategyTuningPanelProps) {
   return (
@@ -143,9 +146,9 @@ export function HFStrategyTuningPanel({ params, onParamChange }: HFStrategyTunin
                         paramKey="absorb-climax"
                         value={params.VOLUME_ABSORPTION.climaxMultiplier}
                         onValueChange={(val) => onParamChange('VOLUME_ABSORPTION', { climaxMultiplier: val })}
-                        min={1.5} max={5.0} step={0.1}
+                        min={1.5} max={3.0} step={0.1}
                         unit="x"
-                        description="Múltiplo do volume médio para identificar um pico. Mais baixo = mais sensível. Ideal: 1.8 - 2.2."
+                        description="Múltiplo do volume médio para identificar um pico. Ideal: 1.8 - 2.2."
                     />
                     <StrategyTuningItem
                         title="Fator de Absorção"
@@ -153,7 +156,7 @@ export function HFStrategyTuningPanel({ params, onParamChange }: HFStrategyTunin
                         value={params.VOLUME_ABSORPTION.absorptionFactor}
                         onValueChange={(val) => onParamChange('VOLUME_ABSORPTION', { absorptionFactor: val })}
                         min={0.5} max={0.9} step={0.05}
-                        description="Volume de absorção deve ser menor que clímax × este fator. Mais alto = mais sensível. Ideal: 0.7 - 0.8."
+                        description="Volume de absorção deve ser menor que clímax × este fator. Ideal: 0.7 - 0.8."
                     />
                 </AccordionContent>
             </AccordionItem>
