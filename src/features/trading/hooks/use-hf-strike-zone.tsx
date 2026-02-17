@@ -17,6 +17,8 @@ import {
   detectVolumeAbsorptionZone,
   detectMicrostructureScalpZone,
   detectRandomWalkZone,
+  detectGBM20sZone,
+  detectGBM40sZone,
   type StrikeZone,
   type StrategyType,
   MeanReversionParams,
@@ -71,7 +73,15 @@ export function useHFStrikeZone(
   const [riskManager] = useState(() => new AdvancedRiskManager({ maxDailyLoss: dailyBalance, maxDrawdown: 30, maxConcurrentTrades: 3, maxExposurePerAsset: 25, kellyFraction: 0.25 }, 1000));
   const [positionSizing, setPositionSizing] = useState<PositionSizeRecommendation | null>(null);
   const [allSignals, setAllSignals] = useState<(StrikeZone | null)[]>([]);
-  const [strategyCounts, setStrategyCounts] = useState<Record<StrategyType, number>>({ HF_MEAN_REVERSION: 0, STD_TREND_FOLLOW: 0, BOLLINGER_SQUEEZE: 0, VOLUME_ABSORPTION: 0, MICROSTRUCTURE_SCALP: 0 });
+  const [strategyCounts, setStrategyCounts] = useState<Record<StrategyType, number>>({ 
+      HF_MEAN_REVERSION: 0, 
+      STD_TREND_FOLLOW: 0, 
+      BOLLINGER_SQUEEZE: 0, 
+      VOLUME_ABSORPTION: 0, 
+      MICROSTRUCTURE_SCALP: 0,
+      GBM_20S: 0,
+      GBM_40S: 0
+  });
   
   const [strategyParams, setStrategyParams] = useState<StrategyParams>({
     HF_MEAN_REVERSION: { rsiThreshold: 32, tolerance: 0.005 },
@@ -102,7 +112,7 @@ export function useHFStrikeZone(
     const lastOp = operationsLog.length > 0 ? operationsLog[0] : null;
     if (lastOp && lastOp.status !== 'pending' && lastOp.id !== lastProcessedOpIdRef.current) {
         lastProcessedOpIdRef.current = lastOp.id;
-        if (lastOp.result! < 0) {
+        if (lastOp.result < 0) {
             const newLossCount = consecutiveLosses + 1;
             setConsecutiveLosses(newLossCount);
             if (newLossCount >= maxConsecutiveLosses) {
@@ -113,7 +123,7 @@ export function useHFStrikeZone(
                 toast({ title: '❄️ Cooldown Ativado', description: `Pausa de ${cooldownSeconds}s após perda.`, variant: 'default' });
                 setTimeout(() => setIsCooldownActive(false), cooldownSeconds * 1000);
             }
-        } else if (lastOp.result! > 0) {
+        } else if (lastOp.result > 0) {
             setConsecutiveLosses(0);
         }
     }
@@ -133,10 +143,6 @@ export function useHFStrikeZone(
       const currentPrice = priceTicks[priceTicks.length - 1].price;
       
       const isRandom = isRandomAsset(botCandleData, indicators);
-      if (isRandom) {
-        console.warn('⚠️ ATIVO RANDÔMICO DETECTADO - Usando parâmetros adaptativos');
-      }
-
       const adaptiveParams = isRandom ? getRandomAssetParams() : strategyParams;
 
       const allSignalsResult: (StrikeZone | null)[] = [
@@ -146,6 +152,8 @@ export function useHFStrikeZone(
         detectVolumeAbsorptionZone(botCandleData, indicators, adaptiveParams.VOLUME_ABSORPTION),
         detectMicrostructureScalpZone(priceTicks, botCandleData, indicators, currentPrice, adaptiveParams.MICROSTRUCTURE_SCALP),
         detectRandomWalkZone(botCandleData, indicators, currentPrice),
+        detectGBM20sZone(indicators, currentPrice),
+        detectGBM40sZone(indicators, currentPrice),
       ];
       setAllSignals(allSignalsResult);
 

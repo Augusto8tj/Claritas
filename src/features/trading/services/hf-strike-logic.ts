@@ -67,23 +67,23 @@ export function isRandomAsset(candles: CandleData[], indicators: Indicators): bo
 export function getRandomAssetParams() {
   return {
     HF_MEAN_REVERSION: {
-      rsiThreshold: 35,      // ✅ Mais permissivo (25→35)
-      tolerance: 0.005,      // ✅ Mais permissivo (0.0015→0.005 = 0.5%)
+      rsiThreshold: 35,
+      tolerance: 0.005,
     },
     STD_TREND_FOLLOW: {
-      adxStrength: 15,       // ✅ Muito mais permissivo (20→15)
-      rsiMomentum: 52,       // ✅ Mais permissivo (55→52)
+      adxStrength: 15,
+      rsiMomentum: 52,
     },
     BOLLINGER_SQUEEZE: {
-      bbwThreshold: 1.5,     // ✅ Mais permissivo (1.0→1.5%)
-      breakoutMargin: 0.01,  // ✅ Menos restritivo (2%→1%)
+      bbwThreshold: 1.5,
+      breakoutMargin: 0.01,
     },
     VOLUME_ABSORPTION: {
-      climaxMultiplier: 1.5, // ✅ Muito mais permissivo (2.0→1.5x)
-      absorptionFactor: 0.7, // ✅ Mais permissivo (0.6→0.7)
+      climaxMultiplier: 1.5,
+      absorptionFactor: 0.7,
     },
     MICROSTRUCTURE_SCALP: {
-      velocityThreshold: 1.2, // ✅ Mais permissivo (1.5→1.2)
+      velocityThreshold: 1.2,
     },
   };
 }
@@ -96,7 +96,9 @@ export type StrategyType =
   | 'STD_TREND_FOLLOW'
   | 'BOLLINGER_SQUEEZE'
   | 'VOLUME_ABSORPTION'
-  | 'MICROSTRUCTURE_SCALP';
+  | 'MICROSTRUCTURE_SCALP'
+  | 'GBM_20S'
+  | 'GBM_40S';
   
 export const strategyMetadata: Record<StrategyType, { label: string; description: string; isHF: boolean; }> = {
   HF_MEAN_REVERSION: { label: 'Alta Frequência (Reversão)', description: 'Otimizado para reversão à média em 15-45s.', isHF: true },
@@ -104,6 +106,8 @@ export const strategyMetadata: Record<StrategyType, { label: string; description
   BOLLINGER_SQUEEZE: { label: 'Rompimento (Squeeze)', description: 'Opera na explosão de volatilidade.', isHF: true },
   VOLUME_ABSORPTION: { label: 'Absorção de Volume', description: 'Analisa o clímax e absorção de volume.', isHF: false },
   MICROSTRUCTURE_SCALP: { label: 'Scalping de Fluxo', description: 'Opera o fluxo de ordens para trades de 5 ticks.', isHF: true },
+  GBM_20S: { label: 'Preditivo (GBM 20s)', description: 'Usa Movimento Browniano Geométrico para prever o preço em 20s.', isHF: true },
+  GBM_40S: { label: 'Preditivo (GBM 40s)', description: 'Usa Movimento Browniano Geométrico para prever o preço em 40s.', isHF: true },
 };
 
 export interface StrikeZone {
@@ -123,6 +127,65 @@ export interface TrendFollowParams { adxStrength: number; rsiMomentum: number; }
 export interface SqueezeParams { bbwThreshold: number; breakoutMargin: number; }
 export interface AbsorptionParams { climaxMultiplier: number; absorptionFactor: number; }
 export interface ScalpParams { velocityThreshold: number; }
+
+
+function runSimpleGBM(startPrice: number, durationSeconds: number, volatility: number): number {
+    const dt = 1; // Time step of 1 second
+    let price = startPrice;
+    const drift = 0; // Assume no drift for random assets
+    const steps = durationSeconds;
+
+    for (let i = 0; i < steps; i++) {
+        // Simplified normal random using central limit theorem approximation. More performant than Box-Muller.
+        let sum = 0;
+        for (let j = 0; j < 12; j++) {
+          sum += Math.random();
+        }
+        const randomShock = (sum - 6) * Math.sqrt(dt);
+        price += price * (drift * dt + volatility * randomShock);
+    }
+    return price;
+}
+
+function createGBMDetector(duration: 20 | 40): (indicators: Indicators, currentPrice: number) => StrikeZone | null {
+  const strategyType: StrategyType = `GBM_${duration}S` as StrategyType;
+
+  return (indicators: Indicators, currentPrice: number): StrikeZone | null => {
+    if (!indicators.atr || !currentPrice) {
+      recordVeto(strategyType, 'Indicadores (ATR) ou preço ausentes');
+      return null;
+    }
+
+    // Use a normalized ATR as a proxy for instantaneous volatility
+    const volatility = (indicators.atr / currentPrice) * 10; // Scaled up for more realistic simulation
+    
+    // Run a single simulation. For more robustness, one could run a mini-Monte Carlo.
+    const finalPrice = runSimpleGBM(currentPrice, duration, volatility);
+
+    const type = finalPrice > currentPrice ? 'LONG_ENTRY' : 'SHORT_ENTRY';
+    
+    // Confidence is inversely proportional to volatility. Less chaos = more confidence.
+    const confidence = Math.max(50, Math.min(90, 100 - (volatility * 1000)));
+
+    const zone: StrikeZone = {
+      type,
+      confidence,
+      triggers: [`🔮 Predição GBM ${duration}s`],
+      entry: { price: currentPrice, timestamp: Date.now() },
+      strategy: strategyType,
+      targets: {
+        takeProfit: type === 'LONG_ENTRY' ? currentPrice + indicators.atr * 1.5 : currentPrice - indicators.atr * 1.5,
+        stopLoss: type === 'LONG_ENTRY' ? currentPrice - indicators.atr : currentPrice + indicators.atr,
+        riskReward: 1.5,
+      },
+      indicators: { rsi: indicators.rsi || 50, bbPosition: 0, bbWidth: indicators.bbw || 0, volumeSpike: false, divergence: null },
+      duration,
+    };
+    
+    recordSignal(zone.strategy, zone.confidence);
+    return zone;
+  };
+}
 
 // ============================================================================
 // FUNÇÕES DE ANÁLISE PURAS
@@ -491,48 +554,37 @@ export function detectMicrostructureScalpZone(ticks: TickData[], candles: Candle
   return zone;
 }
 
-
-/**
- * Estratégia EXPERIMENTAL para ativos randômicos
- * Não tenta prever direção, opera baseado em:
- * - Volatilidade do ativo
- * - Time-based entry (não espera sinal)
- * - TP/SL simétricos
- * - Win rate esperado: ~50% (coin flip)
- * - Lucro vem de RR > 1.5 e gerenciamento de stake
- */
 export function detectRandomWalkZone(
   candles: CandleData[], 
   indicators: Indicators, 
   currentPrice: number
 ): StrikeZone | null {
-  // Só opera se ativo for confirmado como randômico
   if (!isRandomAsset(candles, indicators)) return null;
   
-  // Calcula volatilidade recente
   const atr = indicators.atr || 0.001;
   const bbw = indicators.bbw || 2.0;
   
-  // Condição: Opera apenas quando volatilidade está normal (não em squeeze)
-  if (bbw < 0.8) return null;  // Muito comprimido
-  if (bbw > 3.0) return null;  // Muito volátil
+  if (bbw < 0.8) return null;
+  if (bbw > 3.0) return null;
   
-  // Escolhe direção baseado em RSI (apenas para desempate)
   const rsi = indicators.rsi || 50;
   const type: StrikeZone['type'] = rsi < 50 ? 'LONG_ENTRY' : 'SHORT_ENTRY';
   
   return {
     type,
-    confidence: 50,  // Sempre 50% (coin flip)
+    confidence: 50,
     triggers: ['🎲 Random Walk Strategy', `RSI: ${rsi.toFixed(1)}`],
     entry: { price: currentPrice, timestamp: Date.now() },
-    strategy: 'MICROSTRUCTURE_SCALP',  // Reutiliza tipo existente
+    strategy: 'MICROSTRUCTURE_SCALP',
     targets: {
       takeProfit: type === 'LONG_ENTRY' ? currentPrice + atr * 2.0 : currentPrice - atr * 2.0,
       stopLoss: type === 'LONG_ENTRY' ? currentPrice - atr * 1.0 : currentPrice + atr * 1.0,
-      riskReward: 2.0,  // RR fixo 2:1
+      riskReward: 2.0,
     },
     indicators: { rsi, bbPosition: 0, bbWidth: bbw, volumeSpike: false, divergence: null },
-    duration: 60,  // 1 minuto
+    duration: 60,
   };
 }
+
+export const detectGBM20sZone = createGBMDetector(20);
+export const detectGBM40sZone = createGBMDetector(40);
