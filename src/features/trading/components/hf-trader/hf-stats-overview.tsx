@@ -46,24 +46,18 @@ export function HFStatsOverview({ operations, strategyCounts }: HFStatsOverviewP
     const sessionStats = useMemo(() => {
         const finishedTrades = operations.filter(op => op.status !== 'pending');
         const wins = finishedTrades.filter(t => t.result && t.result > 0);
-        const losses = finishedTrades.filter(t => t.result && t.result < 0);
         
-        const totalPnl = finishedTrades.reduce((sum, t) => {
-            if (t.status === 'won') return sum + (t.result || 0);
-            if (t.status === 'lost') return sum - t.stake;
-            return sum;
-        }, 0);
+        // CORREÇÃO: A lógica agora soma diretamente o `result`, que já é negativo para perdas.
+        const totalPnl = finishedTrades.reduce((sum, t) => sum + (t.result || 0), 0);
 
         const winRate = finishedTrades.length > 0 ? (wins.length / finishedTrades.length) * 100 : 0;
         
         const perStrategy = (Object.keys(strategyMetadata) as StrategyType[]).map(key => {
             const tradesForStrategy = finishedTrades.filter(op => op.strategy?.includes(key));
             const winsForStrategy = tradesForStrategy.filter(t => t.result && t.result > 0);
-            const pnlForStrategy = tradesForStrategy.reduce((sum, t) => {
-              if (t.status === 'won') return sum + (t.result || 0);
-              if (t.status === 'lost') return sum - t.stake;
-              return sum;
-            }, 0);
+            
+            // CORREÇÃO: A mesma lógica de soma direta é aplicada aqui.
+            const pnlForStrategy = tradesForStrategy.reduce((sum, t) => sum + (t.result || 0), 0);
             const tradeCount = tradesForStrategy.length;
             
             return {
@@ -74,7 +68,7 @@ export function HFStatsOverview({ operations, strategyCounts }: HFStatsOverviewP
                 pnl: pnlForStrategy,
                 winRate: tradeCount > 0 ? (winsForStrategy.length / tradeCount) * 100 : 0,
             }
-        }).sort((a,b) => b.signals - a.signals); // Sort by most signals
+        }).sort((a,b) => b.signals - a.signals);
 
         return {
             totalTrades: finishedTrades.length,
