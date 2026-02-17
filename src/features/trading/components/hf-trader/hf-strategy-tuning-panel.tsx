@@ -145,7 +145,7 @@ export function HFStrategyTuningPanel({ params, onParamChange }: HFStrategyTunin
                         onValueChange={(val) => onParamChange('VOLUME_ABSORPTION', { climaxMultiplier: val })}
                         min={1.5} max={5.0} step={0.1}
                         unit="x"
-                        description="Múltiplo do volume médio para identificar um pico. Ideal: 2.0 - 2.5."
+                        description="Múltiplo do volume médio para identificar um pico. Mais baixo = mais sensível. Ideal: 1.8 - 2.2."
                     />
                     <StrategyTuningItem
                         title="Fator de Absorção"
@@ -153,7 +153,7 @@ export function HFStrategyTuningPanel({ params, onParamChange }: HFStrategyTunin
                         value={params.VOLUME_ABSORPTION.absorptionFactor}
                         onValueChange={(val) => onParamChange('VOLUME_ABSORPTION', { absorptionFactor: val })}
                         min={0.5} max={0.9} step={0.05}
-                        description="Volume de absorção deve ser menor que clímax × este fator. Ideal: 0.8."
+                        description="Volume de absorção deve ser menor que clímax × este fator. Mais alto = mais sensível. Ideal: 0.7 - 0.8."
                     />
                 </AccordionContent>
             </AccordionItem>

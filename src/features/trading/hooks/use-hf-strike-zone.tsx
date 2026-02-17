@@ -73,8 +73,8 @@ export function useHFStrikeZone(
   const [strategyParams, setStrategyParams] = useState<StrategyParams>({
     HF_MEAN_REVERSION: { rsiThreshold: 32, tolerance: 0.0015 },
     STD_TREND_FOLLOW: { adxStrength: 22, rsiMomentum: 52 },
-    BOLLINGER_SQUEEZE: { bbwThreshold: 2.5, breakoutMargin: 0.02 },
-    VOLUME_ABSORPTION: { climaxMultiplier: 2.0, absorptionFactor: 0.6 },
+    BOLLINGER_SQUEEZE: { bbwThreshold: 1.0, breakoutMargin: 0.02 },
+    VOLUME_ABSORPTION: { climaxMultiplier: 1.8, absorptionFactor: 0.8 },
     MICROSTRUCTURE_SCALP: { velocityThreshold: 1.5 }
   });
 
