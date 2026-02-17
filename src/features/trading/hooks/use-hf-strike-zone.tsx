@@ -55,7 +55,7 @@ export function useHFStrikeZone(
   sessionConfig: SessionConfig
 ) {
   const { user } = useAuth();
-  const { executeTrade } = useDerivApiV2();
+  const { executeTrade, durationLimits } = useDerivApiV2();
   const { toast } = useToast();
   const { enabled, minConfidence, autoExecute, maxConcurrentTrades, martingaleMultiplier, maxConsecutiveLosses, cooldownSeconds, preferredDuration, minConsensusSignals } = config;
   const { dailyBalance, dailyTarget, operationsLog, manualStake } = sessionConfig;
@@ -74,7 +74,7 @@ export function useHFStrikeZone(
     HF_MEAN_REVERSION: { rsiThreshold: 32, tolerance: 0.0015 },
     STD_TREND_FOLLOW: { adxStrength: 22, rsiMomentum: 52 },
     BOLLINGER_SQUEEZE: { bbwThreshold: 2.5, breakoutMargin: 0.02 },
-    VOLUME_ABSORPTION: { climaxMultiplier: 2.0, absorptionFactor: 0.8 },
+    VOLUME_ABSORPTION: { climaxMultiplier: 2.0, absorptionFactor: 0.6 },
     MICROSTRUCTURE_SCALP: { velocityThreshold: 1.5 }
   });
 
@@ -237,12 +237,27 @@ export function useHFStrikeZone(
             setIsExecuting(true);
             try {
               const durationUnit: DurationUnit = consensusSignal.strategy === 'MICROSTRUCTURE_SCALP' ? 't' : 's';
+              let finalDuration = consensusSignal.duration;
+
+              // --- FIX START: CLAMP DURATION TO ASSET LIMITS ---
+              if (durationLimits?.[durationUnit]) {
+                const limits = durationLimits[durationUnit];
+                if (limits && limits.min > 0) { // Ensure limits are valid
+                  const originalDuration = finalDuration;
+                  finalDuration = Math.max(limits.min, Math.min(finalDuration, limits.max));
+                  if (originalDuration !== finalDuration) {
+                    console.log(`[HF-STRIKE] Duration adjusted from ${originalDuration} to ${finalDuration}${durationUnit} to comply with asset limits (${limits.min}-${limits.max}).`);
+                  }
+                }
+              }
+              // --- FIX END ---
+
               const tradeResult = await executeTrade(
                   consensusSignal.type === 'LONG_ENTRY' ? 'CALL' : 'PUT', 
                   finalStake, 
                   activeSymbol!, 
                   consensusSignal.type === 'LONG_ENTRY' ? 'rise' : 'fall', 
-                  consensusSignal.duration,
+                  finalDuration,
                   durationUnit,
                   'HF_Strike',
                   ensembleParticipants.join(', ')
@@ -278,7 +293,7 @@ export function useHFStrikeZone(
     const timeoutId = setTimeout(runCycle, 250); 
     return () => clearTimeout(timeoutId);
 
-  }, [indicators, priceTicks, enabled, botCandleData, user, riskManager, minConfidence, minConsensusSignals, autoExecute, executeTrade, activeSymbol, toast, martingaleMultiplier, consecutiveLosses, isCooldownActive, isExecuting, manualStake, operationsLog, maxConcurrentTrades, onConfigChange, strategyParams]);
+  }, [indicators, priceTicks, enabled, botCandleData, user, riskManager, minConfidence, minConsensusSignals, autoExecute, executeTrade, activeSymbol, toast, martingaleMultiplier, consecutiveLosses, isCooldownActive, isExecuting, manualStake, operationsLog, maxConcurrentTrades, onConfigChange, strategyParams, durationLimits]);
   
   return {
     activeStrikeZone, marketRegime, positionSizing, riskManager, fullIndicators: indicators,
