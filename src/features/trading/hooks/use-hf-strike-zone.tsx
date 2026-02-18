@@ -61,7 +61,7 @@ export function useHFStrikeZone(
 ) {
   const { user } = useAuth();
   const { toast } = useToast();
-  const { executeTrade, durationLimits, isConnected } = useDerivApiV2();
+  const { executeTrade, durationLimits, isConnected, dataVersion } = useDerivApiV2();
   const { enabled, minConfidence, autoExecute, maxConcurrentTrades, martingaleMultiplier, maxConsecutiveLosses, cooldownSeconds, preferredDuration, minConsensusSignals } = config;
   const { dailyBalance, dailyTarget, operationsLog, manualStake } = sessionConfig;
   
@@ -102,6 +102,7 @@ export function useHFStrikeZone(
   const [isCooldownActive, setIsCooldownActive] = useState(false);
   const [isExecuting, setIsExecuting] = useState(false);
   const lastProcessedOpIdRef = useRef<number | null>(null);
+  const executionLockRef = useRef(false);
   
   const indicators = useMemo((): Indicators | null => {
     if (!enabled || botCandleData.length < 100) return null;
@@ -131,216 +132,233 @@ export function useHFStrikeZone(
 
 
   useEffect(() => {
-    // ✅ CORREÇÃO: Adicionada verificação !durationLimits para prevenir race condition.
-    if (!enabled || !indicators || priceTicks.length < 2 || !user || isCooldownActive || isExecuting || !isConnected || !durationLimits) {
+    if (!enabled || isCooldownActive || isExecuting) {
       setActiveStrikeZone(null);
       return;
     }
 
-    const runCycle = async () => {
-      const candles = botCandleData;
-      const ticks = priceTicks;
-      const regime = detectMarketRegime(indicators, candles);
-      setMarketRegime(regime);
+    const timeoutId = setTimeout(() => {
+      if (executionLockRef.current) return;
+      executionLockRef.current = true;
       
-      const currentPrice = ticks[ticks.length - 1].price;
-      
-      const isRandom = isRandomAsset(candles, indicators);
-      const adaptiveParams = isRandom ? getRandomAssetParams() : strategyParams;
+      const runCycle = async () => {
+        try {
+          if (!indicators || priceTicks.length < 2 || !user || !isConnected) {
+            return;
+          }
 
-      const allSignalsResult: (StrikeZone | null)[] = [
-        detectHFMeanReversionZone(indicators, currentPrice, adaptiveParams.HF_MEAN_REVERSION),
-        detectStandardTrendZone(indicators, currentPrice, rsiStateRef.current.prev, adaptiveParams.STD_TREND_FOLLOW),
-        detectBollingerSqueezeZone(indicators, currentPrice, adaptiveParams.BOLLINGER_SQUEEZE),
-        detectVolumeAbsorptionZone(candles, indicators, adaptiveParams.VOLUME_ABSORPTION),
-        detectMicrostructureScalpZone(ticks, candles, indicators, currentPrice, adaptiveParams.MICROSTRUCTURE_SCALP),
-        detectRandomWalkZone(candles, indicators, currentPrice),
-        detectGBM20sZone(indicators, currentPrice),
-        detectGBM40sZone(indicators, currentPrice),
-      ];
-      setAllSignals(allSignalsResult);
-
-      const newCounts = { ...strategyCounts };
-      let countsChanged = false;
-      allSignalsResult.forEach(signal => {
-        if (signal && signal.type !== 'NEUTRAL') {
-          newCounts[signal.strategy]++;
-          countsChanged = true;
-        }
-      });
-      if (countsChanged) {
-        setStrategyCounts(newCounts);
-      }
-      
-      const validSignals = allSignalsResult.filter((zone): zone is StrikeZone => 
-        zone !== null && zone.type !== 'NEUTRAL' && zone.confidence >= minConfidence
-      );
-      
-      const longSignals = validSignals.filter(s => s.type === 'LONG_ENTRY');
-      const shortSignals = validSignals.filter(s => s.type === 'SHORT_ENTRY');
-
-      let consensusSignal: StrikeZone | null = null;
-      let ensembleParticipants: StrategyType[] = [];
-
-      const determineConsensus = (participants: StrikeZone[], direction: 'LONG_ENTRY' | 'SHORT_ENTRY'): StrikeZone | null => {
-          if (participants.length < minConsensusSignals) return null;
+          const candles = botCandleData;
+          const ticks = priceTicks;
+          const regime = detectMarketRegime(indicators, candles);
+          setMarketRegime(regime);
           
-          const totalConfidence = participants.reduce((sum, s) => sum + s.confidence, 0);
-          const opponentSignals = direction === 'LONG_ENTRY' ? shortSignals : longSignals;
-          const opponentConfidence = opponentSignals.reduce((sum, s) => sum + s.confidence, 0);
-
-          if (totalConfidence <= opponentConfidence) return null;
-
-          let optimalDuration = 15;
-          let durationSource = "Fallback";
-
-          const predictiveParticipants = participants.filter(
-            p => p.strategy === 'GBM_20S' || p.strategy === 'GBM_40S'
+          const currentPrice = ticks[ticks.length - 1].price;
+          
+          const isRandom = isRandomAsset(candles, indicators);
+          const adaptiveParams = isRandom ? getRandomAssetParams() : strategyParams;
+    
+          const allSignalsResult: (StrikeZone | null)[] = [
+            detectHFMeanReversionZone(indicators, currentPrice, adaptiveParams.HF_MEAN_REVERSION),
+            detectStandardTrendZone(indicators, currentPrice, rsiStateRef.current.prev, adaptiveParams.STD_TREND_FOLLOW),
+            detectBollingerSqueezeZone(indicators, currentPrice, adaptiveParams.BOLLINGER_SQUEEZE),
+            detectVolumeAbsorptionZone(candles, indicators, adaptiveParams.VOLUME_ABSORPTION),
+            detectMicrostructureScalpZone(ticks, candles, indicators, currentPrice, adaptiveParams.MICROSTRUCTURE_SCALP),
+            detectRandomWalkZone(candles, indicators, currentPrice),
+            detectGBM20sZone(indicators, currentPrice),
+            detectGBM40sZone(indicators, currentPrice),
+          ];
+          setAllSignals(allSignalsResult);
+    
+          const newCounts = { ...strategyCounts };
+          let countsChanged = false;
+          allSignalsResult.forEach(signal => {
+            if (signal && signal.type !== 'NEUTRAL') {
+              newCounts[signal.strategy]++;
+              countsChanged = true;
+            }
+          });
+          if (countsChanged) {
+            setStrategyCounts(newCounts);
+          }
+          
+          const validSignals = allSignalsResult.filter((zone): zone is StrikeZone => 
+            zone !== null && zone.type !== 'NEUTRAL' && zone.confidence >= minConfidence
           );
-
-          if (predictiveParticipants.length > 0) {
-              const mostConfidentPredictor = predictiveParticipants.reduce(
-                  (best, current) => current.confidence > best.confidence ? current : best
+          
+          const longSignals = validSignals.filter(s => s.type === 'LONG_ENTRY');
+          const shortSignals = validSignals.filter(s => s.type === 'SHORT_ENTRY');
+    
+          let consensusSignal: StrikeZone | null = null;
+          let ensembleParticipants: StrategyType[] = [];
+    
+          const determineConsensus = (participants: StrikeZone[], direction: 'LONG_ENTRY' | 'SHORT_ENTRY'): StrikeZone | null => {
+              if (participants.length < minConsensusSignals) return null;
+              
+              const totalConfidence = participants.reduce((sum, s) => sum + s.confidence, 0);
+              const opponentSignals = direction === 'LONG_ENTRY' ? shortSignals : longSignals;
+              const opponentConfidence = opponentSignals.reduce((sum, s) => sum + s.confidence, 0);
+    
+              if (totalConfidence <= opponentConfidence) return null;
+    
+              let optimalDuration = 32; // Fallback
+              let durationSource = "Fallback";
+    
+              const predictiveParticipants = participants.filter(
+                p => p.strategy === 'GBM_20S' || p.strategy === 'GBM_40S'
               );
-              optimalDuration = mostConfidentPredictor.duration;
-              durationSource = `Preditor de Elite (${mostConfidentPredictor.strategy})`;
-          } 
-          else {
-              const nonPredictiveParticipants = participants;
-              if (nonPredictiveParticipants.length > 0) {
-                  const totalWeight = nonPredictiveParticipants.reduce((sum, s) => sum + s.confidence, 0);
-                  const weightedDuration = nonPredictiveParticipants.reduce((sum, s) => sum + s.duration * s.confidence, 0);
-                  if (totalWeight > 0) {
-                      optimalDuration = weightedDuration / totalWeight;
-                      durationSource = "Média Ponderada Técnica";
+    
+              if (predictiveParticipants.length > 0) {
+                  const mostConfidentPredictor = predictiveParticipants.reduce(
+                      (best, current) => current.confidence > best.confidence ? current : best
+                  );
+                  optimalDuration = mostConfidentPredictor.duration;
+                  durationSource = `Preditor de Elite (${mostConfidentPredictor.strategy})`;
+              } 
+              else {
+                  const nonPredictiveParticipants = participants;
+                  if (nonPredictiveParticipants.length > 0) {
+                      const totalWeight = nonPredictiveParticipants.reduce((sum, s) => sum + s.confidence, 0);
+                      const weightedDuration = nonPredictiveParticipants.reduce((sum, s) => sum + s.duration * s.confidence, 0);
+                      if (totalWeight > 0) {
+                          optimalDuration = weightedDuration / totalWeight;
+                          durationSource = "Média Ponderada Técnica";
+                          
+                          if (indicators && indicators.bbw) {
+                              if (indicators.bbw > 2.5) {
+                                  optimalDuration *= 0.8;
+                                  durationSource += ' (Ajuste Volatilidade Alta)';
+                              } else if (indicators.bbw < 0.8) {
+                                  optimalDuration *= 1.2;
+                                  durationSource += ' (Ajuste Volatilidade Baixa)';
+                              }
+                          }
+                      }
                   }
               }
-          }
-          
-          if (indicators && indicators.bbw) {
-              if (indicators.bbw > 2.5) {
-                  optimalDuration *= 0.8;
-                  durationSource += ' (Ajuste Volatilidade Alta)';
-              } else if (indicators.bbw < 0.8) {
-                  optimalDuration *= 1.2;
-                  durationSource += ' (Ajuste Volatilidade Baixa)';
-              }
-          }
-          
-          const avgConfidence = totalConfidence / participants.length;
-          const leadSignal = participants.reduce((best, s) => s.confidence > best.confidence ? s : best, participants[0]);
-          ensembleParticipants = participants.map(p => p.strategy);
-
-          return {
-              ...leadSignal,
-              type: direction,
-              confidence: avgConfidence,
-              duration: optimalDuration,
-              triggers: [...participants.map(s => strategyMetadata[s.strategy].label), `Tempo: ${durationSource}`],
-              strategy: 'ENSEMBLE' as any,
+              
+              const avgConfidence = totalConfidence / participants.length;
+              const leadSignal = participants.reduce((best, s) => s.confidence > best.confidence ? s : best, participants[0]);
+              ensembleParticipants = participants.map(p => p.strategy);
+    
+              return {
+                  ...leadSignal,
+                  type: direction,
+                  confidence: avgConfidence,
+                  duration: optimalDuration,
+                  triggers: [...participants.map(s => strategyMetadata[s.strategy].label), `Tempo: ${durationSource}`],
+                  strategy: 'ENSEMBLE' as any,
+              };
           };
+    
+          consensusSignal = determineConsensus(longSignals, 'LONG_ENTRY') ?? determineConsensus(shortSignals, 'SHORT_ENTRY');
+          
+          setActiveStrikeZone(consensusSignal);
+    
+          if (consensusSignal) {
+            const pseudoSignal = {
+              expectedWinRate: 0.5 + (consensusSignal.confidence - 50) / 100 * 0.4,
+              confidence: consensusSignal.confidence,
+            };
+            let sizing = riskManager.calculatePositionSize(pseudoSignal, riskManager.currentCapital);
+            let finalStake = sizing.recommendedStake;
+    
+            if (manualStake && manualStake > 0) {
+                finalStake = manualStake;
+                sizing = { ...sizing, recommendedStake: finalStake, reasoning: ['Stake definido manualmente pelo operador.'], };
+            }
+            
+            if (consecutiveLosses > 0 && martingaleMultiplier > 1) {
+                finalStake = finalStake * Math.pow(martingaleMultiplier, consecutiveLosses);
+                sizing.reasoning.push(`🔥 Martingale x${Math.pow(martingaleMultiplier, consecutiveLosses).toFixed(1)} aplicado.`);
+            }
+            
+            setPositionSizing({...sizing, recommendedStake: finalStake});
+    
+            const openCouncilTrades = operationsLog.filter(op => op.status === 'pending' && op.initiator === 'HF_Strike').length;
+    
+            if (openCouncilTrades >= maxConcurrentTrades) {
+                setActiveStrikeZone(prev => prev ? { ...prev, triggers: [...prev.triggers, `VETO: Limite de ${maxConcurrentTrades} ordens ativas atingido.`] } : null);
+                return;
+            }
+    
+            if (autoExecute) {
+              if (!durationLimits) {
+                toast({ title: '⚠️ Aguardando Sincronização...', description: 'Ainda não recebemos os limites de duração do contrato da corretora. A ordem será enviada assim que os dados chegarem.', variant: 'default' });
+                return;
+              }
+              setIsExecuting(true);
+              try {
+                let finalDuration: number;
+                let durationUnit: DurationUnit;
+                const calculatedDurationInSeconds = consensusSignal.duration;
+                const canUseTicks = durationLimits?.t && durationLimits.t.min > 0;
+                const canUseSeconds = durationLimits?.s && durationLimits.s.min > 0;
+  
+                if (canUseTicks && calculatedDurationInSeconds <= 10) {
+                    durationUnit = 't';
+                    const durationInTicks = Math.max(5, Math.ceil(calculatedDurationInSeconds / 2));
+                    finalDuration = Math.max(durationLimits.t.min, Math.min(durationInTicks, durationLimits.t.max));
+                } else if (canUseSeconds) {
+                    durationUnit = 's';
+                    finalDuration = Math.round(calculatedDurationInSeconds);
+                    finalDuration = Math.max(durationLimits.s.min, Math.min(finalDuration, durationLimits.s.max));
+                } else if (canUseTicks) { // Fallback para ticks se for a única opção
+                    durationUnit = 't';
+                    const durationInTicks = Math.max(5, Math.ceil(calculatedDurationInSeconds / 2));
+                    finalDuration = Math.max(durationLimits.t.min, Math.min(durationInTicks, durationLimits.t.max));
+                } else {
+                    durationUnit = 's';
+                    finalDuration = 32; // Fallback
+                    console.error(`[HF-STRIKE] BUG: Limites de duração NULOS, mas a guarda falhou. Usando fallback de 32s. ActiveSymbol: ${activeSymbol}`);
+                }
+                
+                const tradeResult = await executeTrade(
+                    consensusSignal.type === 'LONG_ENTRY' ? 'CALL' : 'PUT', 
+                    finalStake, 
+                    activeSymbol!, 
+                    consensusSignal.type === 'LONG_ENTRY' ? 'rise' : 'fall', 
+                    finalDuration,
+                    durationUnit,
+                    'HF_Strike',
+                    ensembleParticipants.join(', ')
+                );
+                if (tradeResult.success && tradeResult.contractId) {
+                  toast({ title: '⚡ Strike de Consenso Executado!', description: `${ensembleParticipants.length} especialistas concordaram. Stake: $${finalStake.toFixed(2)}` });
+                  await saveHFTradeLog(user.uid, {
+                      symbol: activeSymbol!,
+                      strikeZone: consensusSignal,
+                      execution: { contractId: String(tradeResult.contractId), entryPrice: tradeResult.entryPrice!, status: 'pending', executedAt: new Date().toISOString() },
+                      marketRegime: regime.regime,
+                      ensembleParticipants: ensembleParticipants,
+                      positionSize: sizing,
+                      riskMetrics: { sharpeContribution: sizing.sharpeContribution, portfolioExposure: 0 }
+                  });
+                } else {
+                  throw new Error(tradeResult.message);
+                }
+              } catch (error: any) {
+                toast({ title: 'Erro na Auto-Execução', description: error.message, variant: 'destructive' });
+              } finally {
+                setIsExecuting(false);
+              }
+            }
+          } else {
+            setPositionSizing(null);
+          }
+    
+          if (indicators.rsi) rsiStateRef.current.prev = indicators.rsi;
+        } finally {
+          executionLockRef.current = false;
+        }
       };
 
-      consensusSignal = determineConsensus(longSignals, 'LONG_ENTRY') ?? determineConsensus(shortSignals, 'SHORT_ENTRY');
+      runCycle();
       
-      setActiveStrikeZone(consensusSignal);
+    }, TRADER_CONFIG.THROTTLE_MS);
 
-      if (consensusSignal) {
-        const pseudoSignal = {
-          expectedWinRate: 0.5 + (consensusSignal.confidence - 50) / 100 * 0.4,
-          confidence: consensusSignal.confidence,
-        };
-        let sizing = riskManager.calculatePositionSize(pseudoSignal, riskManager.currentCapital);
-        let finalStake = sizing.recommendedStake;
-
-        if (manualStake && manualStake > 0) {
-            finalStake = manualStake;
-            sizing = { ...sizing, recommendedStake: finalStake, reasoning: ['Stake definido manualmente pelo operador.'], };
-        }
-        
-        if (consecutiveLosses > 0 && martingaleMultiplier > 1) {
-            finalStake = finalStake * Math.pow(martingaleMultiplier, consecutiveLosses);
-            sizing.reasoning.push(`🔥 Martingale x${Math.pow(martingaleMultiplier, consecutiveLosses).toFixed(1)} aplicado.`);
-        }
-        
-        setPositionSizing({...sizing, recommendedStake: finalStake});
-
-        const openCouncilTrades = operationsLog.filter(op => op.status === 'pending' && op.initiator === 'HF_Strike').length;
-
-        if (openCouncilTrades >= maxConcurrentTrades) {
-            setActiveStrikeZone(prev => prev ? { ...prev, triggers: [...prev.triggers, `VETO: Limite de ${maxConcurrentTrades} ordens ativas atingido.`] } : null);
-            return;
-        }
-
-        if (autoExecute) {
-            setIsExecuting(true);
-            try {
-              let finalDuration: number;
-              let durationUnit: DurationUnit;
-              const calculatedDurationInSeconds = consensusSignal.duration;
-              const canUseTicks = durationLimits?.t && durationLimits.t.min > 0;
-              const canUseSeconds = durationLimits?.s && durationLimits.s.min > 0;
-
-              if (canUseTicks && calculatedDurationInSeconds <= 10) {
-                  durationUnit = 't';
-                  const durationInTicks = Math.max(5, Math.ceil(calculatedDurationInSeconds / 2));
-                  finalDuration = Math.max(durationLimits.t.min, Math.min(durationInTicks, durationLimits.t.max));
-              } else if (canUseSeconds) {
-                  durationUnit = 's';
-                  finalDuration = Math.round(calculatedDurationInSeconds);
-                  finalDuration = Math.max(durationLimits.s.min, Math.min(finalDuration, durationLimits.s.max));
-              } else if (canUseTicks) {
-                  durationUnit = 't';
-                  const durationInTicks = Math.max(5, Math.ceil(calculatedDurationInSeconds / 2));
-                  finalDuration = Math.max(durationLimits.t.min, Math.min(durationInTicks, durationLimits.t.max));
-              } else {
-                  durationUnit = 's';
-                  finalDuration = 15;
-                  console.error(`[HF-STRIKE] BUG: Limites de duração NULOS, mas a guarda falhou. Usando fallback de 15s. ActiveSymbol: ${activeSymbol}`);
-              }
-              
-              const tradeResult = await executeTrade(
-                  consensusSignal.type === 'LONG_ENTRY' ? 'CALL' : 'PUT', 
-                  finalStake, 
-                  activeSymbol!, 
-                  consensusSignal.type === 'LONG_ENTRY' ? 'rise' : 'fall', 
-                  finalDuration,
-                  durationUnit,
-                  'HF_Strike',
-                  ensembleParticipants.join(', ')
-              );
-              if (tradeResult.success && tradeResult.contractId) {
-                toast({ title: '⚡ Strike de Consenso Executado!', description: `${ensembleParticipants.length} especialistas concordaram. Stake: $${finalStake.toFixed(2)}` });
-                await saveHFTradeLog(user.uid, {
-                    symbol: activeSymbol!,
-                    strikeZone: consensusSignal,
-                    execution: { contractId: String(tradeResult.contractId), entryPrice: tradeResult.entryPrice!, status: 'pending', executedAt: new Date().toISOString() },
-                    marketRegime: regime.regime,
-                    ensembleParticipants: ensembleParticipants,
-                    positionSize: sizing,
-                    riskMetrics: { sharpeContribution: sizing.sharpeContribution, portfolioExposure: 0 }
-                });
-              } else {
-                throw new Error(tradeResult.message);
-              }
-            } catch (error: any) {
-              toast({ title: 'Erro na Auto-Execução', description: error.message, variant: 'destructive' });
-            } finally {
-              setIsExecuting(false);
-            }
-        }
-      } else {
-        setPositionSizing(null);
-      }
-
-      if (indicators.rsi) rsiStateRef.current.prev = indicators.rsi;
-    };
-    
-    // Using a simple debounce/throttle
-    const timeoutId = setTimeout(runCycle, 250); 
     return () => clearTimeout(timeoutId);
 
-  }, [indicators, priceTicks, enabled, botCandleData, user, riskManager, minConfidence, minConsensusSignals, autoExecute, executeTrade, activeSymbol, toast, martingaleMultiplier, consecutiveLosses, isCooldownActive, isExecuting, manualStake, operationsLog, maxConcurrentTrades, onConfigChange, strategyParams, durationLimits, isConnected]);
+  }, [dataVersion, enabled, isCooldownActive, isExecuting]);
   
   return {
     activeStrikeZone, marketRegime, positionSizing, riskManager, fullIndicators: indicators,
