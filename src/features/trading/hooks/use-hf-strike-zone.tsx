@@ -32,6 +32,7 @@ import {
 } from '../services/hf-strike-logic';
 import type { HFConfig } from '@/features/trading/components/hf-trader/hf-config-panel';
 import { saveHFTradeLog } from '@/services/hf-data-service';
+import { TRADER_CONFIG } from '@/features/trading/config/trader-config';
 
 export type { StrikeZone } from '../services/hf-strike-logic';
 
@@ -61,7 +62,7 @@ export function useHFStrikeZone(
 ) {
   const { user } = useAuth();
   const { toast } = useToast();
-  const { executeTrade, durationLimits, isConnected, dataVersion } = useDerivApiV2();
+  const { executeTrade, durationLimits, isConnected, dataVersion, isSwitchingSymbol } = useDerivApiV2();
   const { enabled, minConfidence, autoExecute, maxConcurrentTrades, martingaleMultiplier, maxConsecutiveLosses, cooldownSeconds, preferredDuration, minConsensusSignals } = config;
   const { dailyBalance, dailyTarget, operationsLog, manualStake } = sessionConfig;
   
@@ -132,7 +133,7 @@ export function useHFStrikeZone(
 
 
   useEffect(() => {
-    if (!enabled || isCooldownActive || isExecuting) {
+    if (!enabled || isCooldownActive || isExecuting || isSwitchingSymbol) {
       setActiveStrikeZone(null);
       return;
     }
@@ -200,7 +201,7 @@ export function useHFStrikeZone(
     
               if (totalConfidence <= opponentConfidence) return null;
     
-              let optimalDuration = 32; // Fallback
+              let optimalDuration = 32;
               let durationSource = "Fallback";
     
               const predictiveParticipants = participants.filter(
@@ -302,13 +303,13 @@ export function useHFStrikeZone(
                     durationUnit = 's';
                     finalDuration = Math.round(calculatedDurationInSeconds);
                     finalDuration = Math.max(durationLimits.s.min, Math.min(finalDuration, durationLimits.s.max));
-                } else if (canUseTicks) { // Fallback para ticks se for a única opção
+                } else if (canUseTicks) {
                     durationUnit = 't';
                     const durationInTicks = Math.max(5, Math.ceil(calculatedDurationInSeconds / 2));
                     finalDuration = Math.max(durationLimits.t.min, Math.min(durationInTicks, durationLimits.t.max));
                 } else {
                     durationUnit = 's';
-                    finalDuration = 32; // Fallback
+                    finalDuration = 32;
                     console.error(`[HF-STRIKE] BUG: Limites de duração NULOS, mas a guarda falhou. Usando fallback de 32s. ActiveSymbol: ${activeSymbol}`);
                 }
                 
@@ -358,7 +359,7 @@ export function useHFStrikeZone(
 
     return () => clearTimeout(timeoutId);
 
-  }, [dataVersion, enabled, isCooldownActive, isExecuting]);
+  }, [dataVersion, enabled, isCooldownActive, isExecuting, isSwitchingSymbol]);
   
   return {
     activeStrikeZone, marketRegime, positionSizing, riskManager, fullIndicators: indicators,
