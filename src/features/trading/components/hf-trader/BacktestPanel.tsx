@@ -95,7 +95,9 @@ export function BacktestPanel({
   
   const sortedResults = useMemo(() => {
     if (!results) return [];
-    return Object.entries(results).sort(([, a], [, b]) => (b.metrics?.sharpeRatio || -1) - (a.metrics?.sharpeRatio || -1));
+    return Object.entries(results)
+      .filter(([key]) => key !== '_optimalDurations' && results[key]) // Filter out meta-keys
+      .sort(([, a], [, b]) => (b.metrics?.sharpeRatio || -1) - (a.metrics?.sharpeRatio || -1));
   }, [results]);
 
   return (
@@ -198,7 +200,7 @@ export function BacktestPanel({
                 <TableBody>
                   {sortedResults.map(([strategyKey, result]) => {
                      const strategyName = strategyMetadata[strategyKey as StrategyType]?.label || strategyKey;
-                     const isProfitable = result.totalPnl > 0;
+                     const isProfitable = (result.totalPnl ?? 0) > 0;
                     return (
                         <TableRow 
                           key={strategyKey}
@@ -218,7 +220,7 @@ export function BacktestPanel({
                             <TableCell className="text-center font-mono">{result.metrics?.sharpeRatio?.toFixed(2) ?? 'N/A'}</TableCell>
                              <TableCell className="text-center font-mono text-red-600">{result.metrics?.maxDrawdown?.toFixed(1) ?? 'N/A'}%</TableCell>
                             <TableCell className={cn("text-right font-bold font-mono", isProfitable ? 'text-green-600' : 'text-red-600')}>
-                                {result.totalPnl.toLocaleString('en-US', { style: 'currency', currency: 'USD' })}
+                                {(result.totalPnl ?? 0).toLocaleString('en-US', { style: 'currency', currency: 'USD' })}
                             </TableCell>
                             <TableCell className="text-xs text-muted-foreground">{result.note || ''}</TableCell>
                         </TableRow>
