@@ -33,7 +33,7 @@ import {
 import type { HFConfig } from '@/features/trading/components/hf-trader/hf-config-panel';
 import { saveHFTradeLog } from '@/services/hf-data-service';
 import { runAllStrategiesBacktest } from '../backtest/hf-backtest-engine';
-import { getOptimalDuration } from '../services/gbm-calibrator';
+import { getOptimalDuration, analyzeOptimalDuration } from '../services/gbm-calibrator';
 import { TRADER_CONFIG } from '@/features/trading/config/trader-config';
 
 export type { StrikeZone } from '../services/hf-strike-logic';
@@ -74,6 +74,7 @@ export function useHFStrikeZone(
   const initialStrategies = useMemo(() => getCouncilStrategies('standard'), []);
   
   const lastBacktestRun = useRef<number>(0);
+  const [lastCalibrationTime, setLastCalibrationTime] = useState(0);
   
   const [marketRegime, setMarketRegime] = useState<RegimeCharacteristics | null>(null);
   const [activeStrikeZone, setActiveStrikeZone] = useState<StrikeZone | null>(null);
@@ -97,7 +98,6 @@ export function useHFStrikeZone(
     VOLUME_ABSORPTION: { climaxMultiplier: 1.8, absorptionFactor: 0.8 },
     MICROSTRUCTURE_SCALP: { velocityThreshold: 1.2 }
   });
-  const [lastCalibrationTime, setLastCalibrationTime] = useState(0);
 
   const handleUpdateStrategyParams = useCallback((strategy: StrategyType, params: any) => {
     setStrategyParams(prev => ({
@@ -111,6 +111,8 @@ export function useHFStrikeZone(
   const [isExecuting, setIsExecuting] = useState(false);
   const lastProcessedOpIdRef = useRef<number | null>(null);
   const executionLockRef = useRef(false);
+  const lastGBMRunRef = useRef<number>(0);
+  const gbmSignalsRef = useRef<{ gbm20: StrikeZone | null; gbm40: StrikeZone | null }>({ gbm20: null, gbm40: null });
   
   const indicators = useMemo((): Indicators | null => {
     if (!enabled || botCandleData.length < 100) return null;
@@ -213,8 +215,20 @@ export function useHFStrikeZone(
               detectRandomWalkZone(candles, indicators, currentPrice),
           ];
     
-          const gbm20sSignal = detectGBM20sZone(candles, indicators, currentPrice);
-          const gbm40sSignal = detectGBM40sZone(candles, indicators, currentPrice);
+          const now = Date.now();
+          const GBM_THROTTLE_MS = 3000;
+          
+          if (now - lastGBMRunRef.current >= GBM_THROTTLE_MS) {
+            lastGBMRunRef.current = now;
+            const validTechnicals = technicalSignals.filter((z): z is StrikeZone => z !== null);
+            gbmSignalsRef.current = {
+              gbm20: detectGBM20sZone(candles, indicators, currentPrice, validTechnicals),
+              gbm40: detectGBM40sZone(candles, indicators, currentPrice, validTechnicals),
+            };
+          }
+          
+          const gbm20sSignal = gbmSignalsRef.current.gbm20;
+          const gbm40sSignal = gbmSignalsRef.current.gbm40;
     
           const allSignalsResult = [...technicalSignals, gbm20sSignal, gbm40sSignal];
           
@@ -232,10 +246,15 @@ export function useHFStrikeZone(
             setStrategyCounts(newCounts);
           }
           
+          const GBM_MIN_CONFIDENCE = 15;
+          
           const validSignals = allSignalsResult
-            .filter((zone): zone is StrikeZone => 
-              zone !== null && zone.type !== 'NEUTRAL' && zone.confidence >= minConfidence
-            )
+            .filter((zone): zone is StrikeZone => {
+              if (zone === null || zone.type === 'NEUTRAL') return false;
+              const isGBM = zone.strategy === 'GBM_20S' || zone.strategy === 'GBM_40S';
+              if (isGBM) return (zone.gbmRawConfidence ?? zone.confidence) >= GBM_MIN_CONFIDENCE;
+              return zone.confidence >= minConfidence;
+            })
             .map(applyOptimalDuration);
           
           const longSignals = validSignals.filter(s => s.type === 'LONG_ENTRY');
@@ -256,12 +275,11 @@ export function useHFStrikeZone(
               const initialWeightedDuration = participants.length > 0
                 ? participants.reduce((sum, s) => sum + s.duration * s.confidence, 0) /
                   participants.reduce((sum, s) => sum + s.confidence, 0)
-                : 30; // fallback de 30s (razoável para HF)
+                : 30;
               
               let optimalDuration = initialWeightedDuration;
               let durationSource = "Média Ponderada Técnica";
             
-              // Ajuste por volatilidade do ativo
               if (indicators && indicators.bbw) {
                 if (indicators.bbw > 2.5) {
                   optimalDuration *= 0.8;
@@ -272,7 +290,6 @@ export function useHFStrikeZone(
                 }
               }
             
-              // Se preditores GBM participam, eles têm PRIORIDADE TOTAL na duração
               const predictiveParticipants = participants.filter(
                 p => p.strategy === 'GBM_20S' || p.strategy === 'GBM_40S'
               );

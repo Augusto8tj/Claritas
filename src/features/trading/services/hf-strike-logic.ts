@@ -80,6 +80,7 @@ export interface StrikeZone {
     volatility: number;
     probUp: number;
   };
+  gbmRawConfidence?: number;
 }
 
 export interface MeanReversionParams { rsiThreshold: number; tolerance: number; }
@@ -169,9 +170,8 @@ function createGBMDetector(
     const rawConfidence = Math.abs(probUp - 0.5) * 200;
     
     const MIN_CONFIDENCE = 15;
-    
     const statusMessage = rawConfidence >= MIN_CONFIDENCE ? 'SINAL GERADO ✅' : 'MONITORANDO (sem convicção suficiente)';
-    console.debug(`[${strategyType}] Monte Carlo: P(up)=${(probUp*100).toFixed(1)}%, Conf=${rawConfidence.toFixed(1)}%, drift=${drift.toFixed(7)}, σ=${volatility.toFixed(7)} | Status: ${statusMessage}`);
+    console.log(`[${strategyType}] Monte Carlo: P(up)=${(probUp*100).toFixed(1)}%, Conf=${rawConfidence.toFixed(1)}% | ${statusMessage}`);
 
     if (rawConfidence < MIN_CONFIDENCE) {
       recordVeto(strategyType, `Convicção insuficiente (${rawConfidence.toFixed(1)}% < ${MIN_CONFIDENCE}%)`);
@@ -203,6 +203,7 @@ function createGBMDetector(
       },
       duration,
       gbmParams: { drift, volatility, probUp },
+      gbmRawConfidence: rawConfidence,
     };
     
     recordSignal(zone.strategy, zone.confidence);
