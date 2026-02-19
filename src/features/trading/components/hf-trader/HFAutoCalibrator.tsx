@@ -7,17 +7,18 @@ import { Label } from '@/components/ui/label';
 import { Slider } from '@/components/ui/slider';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
-import { Bot, Loader2 } from 'lucide-react';
+import { Bot, Loader2, BarChart2 } from 'lucide-react';
 import type { StrategyType } from '../../services/hf-strike-logic';
 
 interface HFAutoCalibratorProps {
     isCalibrating: boolean;
     calibrationProgress: Record<StrategyType, { progress: number; details: string }>;
-    onCalibrate: (targetFrequency: number) => void;
+    onCalibrate: (targetFrequency: number, numCandles: number) => void;
 }
 
 export function HFAutoCalibrator({ isCalibrating, calibrationProgress, onCalibrate }: HFAutoCalibratorProps) {
     const [targetFrequency, setTargetFrequency] = useState(10);
+    const [calibrationCandles, setCalibrationCandles] = useState(1500);
     
     const strategiesBeingCalibrated = Object.keys(calibrationProgress) as StrategyType[];
 
@@ -33,10 +34,30 @@ export function HFAutoCalibrator({ isCalibrating, calibrationProgress, onCalibra
                 </CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
+                 <div className="space-y-2">
+                    <div className="flex justify-between items-center mb-1">
+                        <Label htmlFor="calibration-candles-slider" className="font-medium flex items-center gap-2">
+                            <BarChart2 className="h-4 w-4" />
+                            Período de Análise
+                        </Label>
+                        <span className="font-mono text-primary font-semibold">{calibrationCandles} velas</span>
+                    </div>
+                    <Slider
+                        id="calibration-candles-slider"
+                        min={100}
+                        max={1500}
+                        step={100}
+                        value={[calibrationCandles]}
+                        onValueChange={(value) => setCalibrationCandles(value[0])}
+                        disabled={isCalibrating}
+                    />
+                    <p className="text-xs text-muted-foreground pt-1">Número de velas recentes para usar no backtest de calibração.</p>
+                </div>
+                
                 <div className="space-y-2">
                     <div className="flex justify-between items-center mb-1">
                         <Label htmlFor="target-frequency-slider" className="font-medium">Target de Frequência de Trades</Label>
-                        <span className="font-mono text-primary font-semibold">{targetFrequency} trades / 1500 velas</span>
+                        <span className="font-mono text-primary font-semibold">{targetFrequency} trades / {calibrationCandles} velas</span>
                     </div>
                     <Slider
                         id="target-frequency-slider"
@@ -47,10 +68,10 @@ export function HFAutoCalibrator({ isCalibrating, calibrationProgress, onCalibra
                         onValueChange={(value) => setTargetFrequency(value[0])}
                         disabled={isCalibrating}
                     />
-                    <p className="text-xs text-muted-foreground pt-1">Define o número mínimo de operações que cada estratégia deve gerar no backtest de 1500 velas.</p>
+                    <p className="text-xs text-muted-foreground pt-1">Define o número mínimo de operações que cada estratégia deve gerar no backtest.</p>
                 </div>
 
-                <Button onClick={() => onCalibrate(targetFrequency)} disabled={isCalibrating} className="w-full">
+                <Button onClick={() => onCalibrate(targetFrequency, calibrationCandles)} disabled={isCalibrating} className="w-full">
                     {isCalibrating ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Bot className="mr-2 h-4 w-4" />}
                     {isCalibrating ? 'A Calibrar...' : 'Iniciar Calibração'}
                 </Button>

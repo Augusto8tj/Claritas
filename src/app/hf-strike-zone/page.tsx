@@ -199,16 +199,19 @@ function PageContent() {
                     />
                 </CollapsibleContent>
             </Collapsible>
-            <HFStrategyTuningPanel 
-                params={strategyParams}
-                onParamChange={updateStrategyParams}
-                gbmConfidenceThreshold={gbmConfidenceThreshold}
-            />
+            
             <HFAutoCalibrator 
                 isCalibrating={isCalibrating} 
                 calibrationProgress={calibrationProgress} 
                 onCalibrate={triggerAutoCalibration} 
             />
+
+            <HFStrategyTuningPanel 
+                params={strategyParams}
+                onParamChange={updateStrategyParams}
+                gbmConfidenceThreshold={gbmConfidenceThreshold}
+            />
+            
             <HFSignalCard signal={activeStrikeZone} onExecute={handleExecuteStrike} isExecuting={isExecuting} consecutiveLosses={consecutiveLosses} isCooldown={isCooldownActive}/>
         </div>
         <div className="space-y-6">

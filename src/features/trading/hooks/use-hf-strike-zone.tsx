@@ -118,6 +118,70 @@ export function useHFStrikeZone(
     }
   }, []);
   
+  const triggerAutoCalibration = useCallback(async (targetTradeFrequency: number, numCandles: number) => {
+      if (!activeSymbol) {
+          toast({ title: "Selecione um ativo", variant: "destructive" });
+          return;
+      }
+      setIsCalibrating(true);
+      setCalibrationProgress({} as any);
+      toast({ title: "🔬 Calibração Automática Iniciada", description: `Analisando últimas ${numCandles} velas...` });
+
+      try {
+          const historicalData = await getHistoricalData(activeSymbol, 'candles', numCandles, '1m') as CandleData[];
+          if (historicalData.length < 500) throw new Error("Dados históricos insuficientes.");
+
+          const results = await runAutoCalibration({
+              candles: historicalData,
+              initialParams: strategyParams,
+              hfConfig: config,
+              assetSymbol: activeSymbol,
+              targetTradeFrequency,
+              maxIterations: 20,
+              onProgress: (strategy, progress, details) => {
+                  setCalibrationProgress(prev => ({ ...prev, [strategy]: { progress, details } }));
+              },
+              gbmConfidenceThreshold: gbmConfidenceThreshold,
+          });
+          
+          if (results) {
+              const newParams = { ...strategyParams };
+              let updatedCount = 0;
+              let gbmThresholdUpdated = false;
+
+              Object.keys(results).forEach(key => {
+                  if (key === 'finalGbmThreshold') {
+                      if (results.finalGbmThreshold && results.finalGbmThreshold !== gbmConfidenceThreshold) {
+                          setGbmConfidenceThreshold(results.finalGbmThreshold);
+                          gbmThresholdUpdated = true;
+                      }
+                      return;
+                  }
+                  
+                  const result = results[key as StrategyType];
+                  if (result && result.success) {
+                      newParams[key as StrategyType] = result.finalParams;
+                      updatedCount++;
+                  }
+              });
+              
+              setStrategyParams(newParams);
+
+              if (gbmThresholdUpdated) updatedCount++;
+
+              toast({
+                  title: "✅ Calibração Aplicada!",
+                  description: `${updatedCount} especialistas foram otimizados e seus novos parâmetros estão ativos.`,
+              });
+          }
+
+      } catch (error: any) {
+          toast({ title: "❌ Erro na Calibração", description: error.message, variant: "destructive" });
+      } finally {
+          setIsCalibrating(false);
+      }
+  }, [activeSymbol, getHistoricalData, strategyParams, config, toast, gbmConfidenceThreshold]);
+
   const [consecutiveLosses, setConsecutiveLosses] = useState(0);
   const [isCooldownActive, setIsCooldownActive] = useState(false);
   const [isExecuting, setIsExecuting] = useState(false);
@@ -146,61 +210,6 @@ export function useHFStrikeZone(
     return isRandomCached.current;
   }, []);
   
-  const triggerAutoCalibration = useCallback(async (targetTradeFrequency: number) => {
-      if (!activeSymbol) {
-          toast({ title: "Selecione um ativo", variant: "destructive" });
-          return;
-      }
-      setIsCalibrating(true);
-      setCalibrationProgress({} as any);
-      toast({ title: "🔬 Calibração Automática Iniciada", description: "Otimizando parâmetros..." });
-
-      try {
-          const historicalData = await getHistoricalData(activeSymbol, 'candles', 1500, '1m') as CandleData[];
-          if (historicalData.length < 500) throw new Error("Dados históricos insuficientes.");
-
-          const results = await runAutoCalibration({
-              candles: historicalData,
-              initialParams: strategyParams,
-              hfConfig: config,
-              assetSymbol: activeSymbol,
-              targetTradeFrequency,
-              maxIterations: 20,
-              onProgress: (strategy, progress, details) => {
-                  setCalibrationProgress(prev => ({ ...prev, [strategy]: { progress, details } }));
-              },
-              gbmConfidenceThreshold: gbmConfidenceThreshold,
-          });
-          
-          let updatedCount = 0;
-          const newParams = { ...strategyParams };
-          for (const key in results) {
-              if (key === 'finalGbmThreshold') continue;
-              const result = results[key as StrategyType];
-              if (result && result.success) {
-                  newParams[key as StrategyType] = result.finalParams;
-                  updatedCount++;
-              }
-          }
-          
-          setStrategyParams(newParams);
-          if (results.finalGbmThreshold && results.finalGbmThreshold !== gbmConfidenceThreshold) {
-              setGbmConfidenceThreshold(results.finalGbmThreshold);
-              // We count this as one "strategy type" updated.
-              if (!Object.values(results).some(r => r?.strategy === 'GBM_20S' || r?.strategy === 'GBM_40S')) {
-                  updatedCount++;
-              }
-          }
-          
-          toast({ title: "✅ Calibração Concluída!", description: `${updatedCount} tipos de estratégia foram otimizados.` });
-
-      } catch (error: any) {
-          toast({ title: "❌ Erro na Calibração", description: error.message, variant: "destructive" });
-      } finally {
-          setIsCalibrating(false);
-      }
-  }, [activeSymbol, getHistoricalData, strategyParams, config, toast, gbmConfidenceThreshold]);
-
   useEffect(() => {
     const candles = botCandleData;
     if (!config || !activeSymbol || candles.length < 200) return;
