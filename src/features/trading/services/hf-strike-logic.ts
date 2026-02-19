@@ -188,7 +188,7 @@ function createGBMDetector(
       confidence,
       triggers: [
         `🔮 GBM ${duration}s — P(up)=${(probUp * 100).toFixed(1)}%`,
-        `📐 drift=${(drift * 60 * 100).toFixed(4)}%/m σ=${(volatility * Math.sqrt(60) * 100).toFixed(3)}%/√m`
+        `📐 drift=${(drift * 100).toFixed(4)}% σ=${(volatility * 100).toFixed(3)}%`
       ],
       entry: { price: currentPrice, timestamp: Date.now() },
       strategy: strategyType,
@@ -595,3 +595,5 @@ export function detectRandomWalkZone(
     duration: 60,
   };
 }
+
+    

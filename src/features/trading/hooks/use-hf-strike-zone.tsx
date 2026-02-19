@@ -33,7 +33,7 @@ import {
 import type { HFConfig } from '@/features/trading/components/hf-trader/hf-config-panel';
 import { saveHFTradeLog } from '@/services/hf-data-service';
 import { runAllStrategiesBacktest } from '../backtest/hf-backtest-engine';
-import { getOptimalDuration, analyzeOptimalDuration } from '../services/gbm-calibrator';
+import { getOptimalDuration, analyzeOptimalDuration, resetGBMCache } from '../services/gbm-calibrator';
 import { TRADER_CONFIG } from '@/features/trading/config/trader-config';
 
 export type { StrikeZone } from '../services/hf-strike-logic';
@@ -113,6 +113,8 @@ export function useHFStrikeZone(
   const executionLockRef = useRef(false);
   const lastGBMRunRef = useRef<number>(0);
   const gbmSignalsRef = useRef<{ gbm20: StrikeZone | null; gbm40: StrikeZone | null }>({ gbm20: null, gbm40: null });
+  const lastVolatilityIndexRef = useRef<number>(0);
+  const lastRecalibrationTimestampRef = useRef<number>(0);
   
   const indicators = useMemo((): Indicators | null => {
     if (!enabled || botCandleData.length < 100) return null;
@@ -201,6 +203,27 @@ export function useHFStrikeZone(
           const regime = detectMarketRegime(indicators, candles);
           setMarketRegime(regime);
           
+          // --- NOVO: Sensor de Regime de Volatilidade e Calibração Dinâmica ---
+          if (indicators.atr && indicators.bbw) {
+            const VOLATILITY_CHANGE_THRESHOLD = 0.25; // 25% change
+            const CALIBRATION_COOLDOWN_MS = 15000; // 15s
+
+            const currentVolatilityIndex = (indicators.atr * 0.7) + (indicators.bbw * 0.3);
+
+            if (lastVolatilityIndexRef.current > 0) {
+              const changePercent = Math.abs(currentVolatilityIndex - lastVolatilityIndexRef.current) / lastVolatilityIndexRef.current;
+              
+              const now = Date.now();
+              if (changePercent > VOLATILITY_CHANGE_THRESHOLD && now - lastRecalibrationTimestampRef.current > CALIBRATION_COOLDOWN_MS) {
+                console.log(`⚡️ [SENSOR DE VOLATILIDADE] Mudança de ${ (changePercent * 100).toFixed(1) }% detectada! Forçando recalibração dos parâmetros GBM.`);
+                resetGBMCache(); // Invalida o cache
+                lastRecalibrationTimestampRef.current = now;
+              }
+            }
+            lastVolatilityIndexRef.current = currentVolatilityIndex;
+          }
+          // --- FIM DO SENSOR ---
+
           const currentPrice = ticks[ticks.length - 1].price;
           
           const isRandom = getIsRandom(candles, indicators);
@@ -422,7 +445,7 @@ export function useHFStrikeZone(
 
       runCycle();
       
-    }, TRADER_CONFIG.THROTTLE_MS);
+    }, 1000);
 
     return () => clearTimeout(timeoutId);
 
@@ -432,7 +455,7 @@ export function useHFStrikeZone(
       activeSymbol, strategyParams, getIsRandom, applyOptimalDuration, 
       minConfidence, minConsensusSignals, operationsLog, autoExecute, 
       toast, saveHFTradeLog, riskManager, manualStake, consecutiveLosses, 
-      martingaleMultiplier, maxConcurrentTrades, durationLimits
+      martingaleMultiplier, maxConcurrentTrades, durationLimits, memoizedIndicators
   ]);
   
   return {
@@ -442,3 +465,5 @@ export function useHFStrikeZone(
     lastCalibrationTime,
   };
 }
+
+    
