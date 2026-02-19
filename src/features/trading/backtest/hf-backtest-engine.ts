@@ -275,12 +275,12 @@ function calculateEquityAndMonthly(trades: TradeResult[], startingCapital: numbe
 // 4. MOTOR PRINCIPAL DO BACKTEST
 // ============================================================================
 
-function runSingleStrategyBacktest(
+export function runSingleStrategyBacktest(
   historicalData: CandleData[],
   config: HFConfig,
   strategy: StrategyType,
   assetSymbol: string,
-  params: StrategyParams
+  params: any // Alterado para 'any' para flexibilidade na calibração
 ): InstitutionalBacktestResult {
     const BACKTEST_STAKE = 1.0;
     const trades: TradeResult[] = [];
@@ -312,26 +312,26 @@ function runSingleStrategyBacktest(
         let strikeZone: StrikeZone | null = null;
         switch (strategy) {
             case 'HF_MEAN_REVERSION': 
-                strikeZone = detectHFMeanReversionZone(indicators, currentPrice, params.HF_MEAN_REVERSION); 
+                strikeZone = detectHFMeanReversionZone(indicators, currentPrice, params); 
                 break;
             case 'STD_TREND_FOLLOW': 
-                strikeZone = detectStandardTrendZone(indicators, currentPrice, prevRsi, params.STD_TREND_FOLLOW); 
+                strikeZone = detectStandardTrendZone(indicators, currentPrice, prevRsi, params); 
                 break;
             case 'BOLLINGER_SQUEEZE': 
-                strikeZone = detectBollingerSqueezeZone(indicators, currentPrice, params.BOLLINGER_SQUEEZE); 
+                strikeZone = detectBollingerSqueezeZone(indicators, currentPrice, params); 
                 break;
             case 'VOLUME_ABSORPTION': 
-                strikeZone = detectVolumeAbsorptionZone(windowCandles, indicators, params.VOLUME_ABSORPTION); 
+                strikeZone = detectVolumeAbsorptionZone(windowCandles, indicators, params); 
                 break;
             case 'MICROSTRUCTURE_SCALP':
                 const syntheticTicks = convertCandlesToSyntheticTicks(windowCandles.slice(-20));
-                strikeZone = detectMicrostructureScalpZone(syntheticTicks, windowCandles, indicators, currentPrice, params.MICROSTRUCTURE_SCALP);
+                strikeZone = detectMicrostructureScalpZone(syntheticTicks, windowCandles, indicators, currentPrice, params);
                 break;
             case 'GBM_20S':
-                strikeZone = detectGBM20sZone(windowCandles, indicators, currentPrice, assetSymbol);
+                strikeZone = detectGBM20sZone(windowCandles, indicators, currentPrice, []);
                 break;
             case 'GBM_40S':
-                strikeZone = detectGBM40sZone(windowCandles, indicators, currentPrice, assetSymbol);
+                strikeZone = detectGBM40sZone(windowCandles, indicators, currentPrice, []);
                 break;
         }
         
@@ -374,7 +374,7 @@ export function runAllStrategiesBacktest(
   const allResults: Partial<Record<StrategyType, InstitutionalBacktestResult>> = {};
 
   for (const strategy of allStrategies) {
-    allResults[strategy] = runSingleStrategyBacktest(historicalData, config, strategy, assetSymbol, params);
+    allResults[strategy] = runSingleStrategyBacktest(historicalData, config, strategy, assetSymbol, params[strategy]);
   }
 
   // Consolidar todos os trades de todas as estratégias
@@ -419,8 +419,8 @@ export function runWalkForwardAnalysis(
     const oosSampleEnd = oosSampleStart + Math.floor(foldSize * 0.3);
     const oosSampleData = historicalData.slice(oosSampleStart, oosSampleEnd);
     
-    const inSampleResult = runSingleStrategyBacktest(inSampleData, config, strategy, assetSymbol, params);
-    const oosSampleResult = runSingleStrategyBacktest(oosSampleData, config, strategy, assetSymbol, params);
+    const inSampleResult = runSingleStrategyBacktest(inSampleData, config, strategy, assetSymbol, params[strategy]);
+    const oosSampleResult = runSingleStrategyBacktest(oosSampleData, config, strategy, assetSymbol, params[strategy]);
     
     const sharpeDegradation = inSampleResult.metrics.sharpeRatio > 0
       ? ((inSampleResult.metrics.sharpeRatio - oosSampleResult.metrics.sharpeRatio) / inSampleResult.metrics.sharpeRatio) * 100

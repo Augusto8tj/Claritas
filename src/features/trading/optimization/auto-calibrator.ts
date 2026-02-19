@@ -3,7 +3,7 @@
 
 import type { CandleData, InstitutionalBacktestResult } from '@/lib/types';
 import type { StrategyParams, StrategyType } from '../services/hf-strike-logic';
-import { runAllStrategiesBacktest } from '../backtest/hf-backtest-engine';
+import { runSingleStrategyBacktest } from '../backtest/hf-backtest-engine';
 import type { HFConfig } from '../components/hf-trader/hf-config-panel';
 
 export interface AutoCalibratorConfig {
@@ -74,8 +74,7 @@ export async function runAutoCalibration(
     let iteration = 0;
 
     // Run initial backtest to get a baseline
-    const initialFullBacktest = runAllStrategiesBacktest(candles, hfConfig, assetSymbol, { ...initialParams, [strategy]: currentParams });
-    const initialStrategyResult = initialFullBacktest[strategy];
+    const initialStrategyResult = runSingleStrategyBacktest(candles, hfConfig, strategy, assetSymbol, currentParams);
     let bestSharpe = initialStrategyResult?.metrics?.sharpeRatio ?? -Infinity;
     let bestTradeCount = initialStrategyResult?.totalTrades ?? 0;
     
@@ -92,9 +91,7 @@ export async function runAutoCalibration(
       iteration++;
       currentParams = perturbParams(currentParams, strategy);
 
-      const tempParams = { ...initialParams, [strategy]: currentParams };
-      const backtestResults = runAllStrategiesBacktest(candles, hfConfig, assetSymbol, tempParams);
-      const currentRunResult = backtestResults[strategy];
+      const currentRunResult = runSingleStrategyBacktest(candles, hfConfig, strategy, assetSymbol, currentParams);
       
       const currentTrades = currentRunResult?.totalTrades ?? 0;
       const currentSharpe = currentRunResult?.metrics?.sharpeRatio ?? -Infinity;
