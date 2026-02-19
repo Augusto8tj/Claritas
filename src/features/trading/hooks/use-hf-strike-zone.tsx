@@ -115,7 +115,7 @@ export function useHFStrikeZone(
   const gbmSignalsRef = useRef<{ gbm20: StrikeZone | null; gbm40: StrikeZone | null }>({ gbm20: null, gbm40: null });
   const lastVolatilityIndexRef = useRef<number>(0);
   const lastRecalibrationTimestampRef = useRef<number>(0);
-  
+
   const indicators = useMemo((): Indicators | null => {
     if (!enabled || botCandleData.length < 100) return null;
     return calculateAllIndicators(botCandleData, initialStrategies, '1m', { duration: 1, unit: 't' });
@@ -203,10 +203,9 @@ export function useHFStrikeZone(
           const regime = detectMarketRegime(indicators, candles);
           setMarketRegime(regime);
           
-          // --- NOVO: Sensor de Regime de Volatilidade e Calibração Dinâmica ---
           if (indicators.atr && indicators.bbw) {
-            const VOLATILITY_CHANGE_THRESHOLD = 0.25; // 25% change
-            const CALIBRATION_COOLDOWN_MS = 15000; // 15s
+            const VOLATILITY_CHANGE_THRESHOLD = 0.25; 
+            const CALIBRATION_COOLDOWN_MS = 15000; 
 
             const currentVolatilityIndex = (indicators.atr * 0.7) + (indicators.bbw * 0.3);
 
@@ -216,13 +215,12 @@ export function useHFStrikeZone(
               const now = Date.now();
               if (changePercent > VOLATILITY_CHANGE_THRESHOLD && now - lastRecalibrationTimestampRef.current > CALIBRATION_COOLDOWN_MS) {
                 console.log(`⚡️ [SENSOR DE VOLATILIDADE] Mudança de ${ (changePercent * 100).toFixed(1) }% detectada! Forçando recalibração dos parâmetros GBM.`);
-                resetGBMCache(); // Invalida o cache
+                resetGBMCache();
                 lastRecalibrationTimestampRef.current = now;
               }
             }
             lastVolatilityIndexRef.current = currentVolatilityIndex;
           }
-          // --- FIM DO SENSOR ---
 
           const currentPrice = ticks[ticks.length - 1].price;
           
@@ -274,10 +272,8 @@ export function useHFStrikeZone(
           const validSignals = allSignalsResult
             .filter((zone): zone is StrikeZone => {
               if (zone === null || zone.type === 'NEUTRAL') return false;
-              // GBM tem threshold separado — não usar minConfidence da UI
               const isGBM = zone.strategy === 'GBM_20S' || zone.strategy === 'GBM_40S';
               if (isGBM) return (zone.gbmRawConfidence ?? zone.confidence) >= GBM_MIN_CONFIDENCE;
-              // Estratégias técnicas: usar minConfidence da UI normalmente
               return zone.confidence >= minConfidence;
             })
             .map(applyOptimalDuration);
@@ -457,7 +453,7 @@ export function useHFStrikeZone(
       activeSymbol, strategyParams, getIsRandom, applyOptimalDuration, 
       minConfidence, minConsensusSignals, operationsLog, autoExecute, 
       toast, saveHFTradeLog, riskManager, manualStake, consecutiveLosses, 
-      martingaleMultiplier, maxConcurrentTrades, durationLimits
+      martingaleMultiplier, maxConcurrentTrades, durationLimits,
   ]);
   
   return {
@@ -467,5 +463,3 @@ export function useHFStrikeZone(
     lastCalibrationTime,
   };
 }
-
-```
