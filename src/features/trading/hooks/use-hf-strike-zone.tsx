@@ -274,8 +274,10 @@ export function useHFStrikeZone(
           const validSignals = allSignalsResult
             .filter((zone): zone is StrikeZone => {
               if (zone === null || zone.type === 'NEUTRAL') return false;
+              // GBM tem threshold separado — não usar minConfidence da UI
               const isGBM = zone.strategy === 'GBM_20S' || zone.strategy === 'GBM_40S';
               if (isGBM) return (zone.gbmRawConfidence ?? zone.confidence) >= GBM_MIN_CONFIDENCE;
+              // Estratégias técnicas: usar minConfidence da UI normalmente
               return zone.confidence >= minConfidence;
             })
             .map(applyOptimalDuration);
@@ -445,7 +447,7 @@ export function useHFStrikeZone(
 
       runCycle();
       
-    }, 1000);
+    }, TRADER_CONFIG.THROTTLE_MS);
 
     return () => clearTimeout(timeoutId);
 
@@ -455,7 +457,7 @@ export function useHFStrikeZone(
       activeSymbol, strategyParams, getIsRandom, applyOptimalDuration, 
       minConfidence, minConsensusSignals, operationsLog, autoExecute, 
       toast, saveHFTradeLog, riskManager, manualStake, consecutiveLosses, 
-      martingaleMultiplier, maxConcurrentTrades, durationLimits, memoizedIndicators
+      martingaleMultiplier, maxConcurrentTrades, durationLimits
   ]);
   
   return {
@@ -466,4 +468,4 @@ export function useHFStrikeZone(
   };
 }
 
-    
+```
