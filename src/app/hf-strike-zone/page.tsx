@@ -180,7 +180,7 @@ function PageContent() {
 
             <HFExecutionLog operations={hfOperations} clearActiveContracts={clearActiveContracts} />
             
-             <Collapsible>
+            <Collapsible>
                 <CollapsibleTrigger asChild>
                    <Button variant="outline" className="w-full" type="button">
                         <TestTube className="mr-2 h-4 w-4" />
@@ -198,8 +198,18 @@ function PageContent() {
                         onRunMonteCarlo={handleRunMonteCarlo}
                     />
                 </CollapsibleContent>
-              </Collapsible>
-               <HFSignalCard signal={activeStrikeZone} onExecute={handleExecuteStrike} isExecuting={isExecuting} consecutiveLosses={consecutiveLosses} isCooldown={isCooldownActive}/>
+            </Collapsible>
+            <HFStrategyTuningPanel 
+                params={strategyParams}
+                onParamChange={updateStrategyParams}
+                gbmConfidenceThreshold={gbmConfidenceThreshold}
+            />
+            <HFAutoCalibrator 
+                isCalibrating={isCalibrating} 
+                calibrationProgress={calibrationProgress} 
+                onCalibrate={triggerAutoCalibration} 
+            />
+            <HFSignalCard signal={activeStrikeZone} onExecute={handleExecuteStrike} isExecuting={isExecuting} consecutiveLosses={consecutiveLosses} isCooldown={isCooldownActive}/>
         </div>
         <div className="space-y-6">
           <Card>
@@ -232,16 +242,6 @@ function PageContent() {
             config={hfConfig}
             onConfigChange={updates => setHFConfig((prev: any) => ({ ...prev, ...updates }))}
           />
-          <HFStrategyTuningPanel 
-            params={strategyParams}
-            onParamChange={updateStrategyParams}
-            gbmConfidenceThreshold={gbmConfidenceThreshold}
-          />
-           <HFAutoCalibrator 
-             isCalibrating={isCalibrating} 
-             calibrationProgress={calibrationProgress} 
-             onCalibrate={triggerAutoCalibration} 
-           />
         </div>
       </div>
     </div>
