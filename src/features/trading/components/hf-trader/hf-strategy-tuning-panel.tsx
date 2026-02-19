@@ -40,7 +40,7 @@ const StrategyTuningItem: React.FC<StrategyTuningItemProps> = ({
     <div className="space-y-2 p-3 border rounded-lg bg-background">
         <div className="flex justify-between items-center mb-1">
             <Label htmlFor={`${paramKey}-slider`} className="font-medium">{title}</Label>
-            <span className="font-mono text-sm text-primary font-semibold">{value.toFixed(paramKey === 'rev-tolerance' || paramKey === 'squeeze-margin' ? 2 : 1)}{unit}</span>
+            <span className="font-mono text-sm text-primary font-semibold">{value.toFixed(paramKey === 'rev-tolerance' || paramKey === 'squeeze-margin' || paramKey === 'absorb-atr' ? 2 : 1)}{unit}</span>
         </div>
         <Slider
             id={`${paramKey}-slider`}
@@ -146,9 +146,18 @@ export function HFStrategyTuningPanel({ params, onParamChange }: HFStrategyTunin
                         paramKey="absorb-climax"
                         value={params.VOLUME_ABSORPTION.climaxMultiplier}
                         onValueChange={(val) => onParamChange('VOLUME_ABSORPTION', { climaxMultiplier: val })}
-                        min={1.5} max={3.0} step={0.1}
+                        min={1.2} max={3.0} step={0.1}
                         unit="x"
                         description="Múltiplo do volume médio para identificar um pico. Ideal: 1.8 - 2.2."
+                    />
+                     <StrategyTuningItem
+                        title="Multiplicador ATR de Clímax"
+                        paramKey="absorb-atr"
+                        value={params.VOLUME_ABSORPTION.atrMultiplier}
+                        onValueChange={(val) => onParamChange('VOLUME_ABSORPTION', { atrMultiplier: val })}
+                        min={0.5} max={2.5} step={0.1}
+                        unit="x"
+                        description="Fator pelo qual o range da vela de clímax deve superar o ATR. Valores menores tornam o gatilho mais sensível."
                     />
                     <StrategyTuningItem
                         title="Fator de Absorção"

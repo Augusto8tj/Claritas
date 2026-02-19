@@ -39,7 +39,7 @@ export function getRandomAssetParams() {
     HF_MEAN_REVERSION: { rsiThreshold: 35, tolerance: 0.005 },
     STD_TREND_FOLLOW: { adxStrength: 15, rsiMomentum: 52 },
     BOLLINGER_SQUEEZE: { bbwThreshold: 1.5, breakoutMargin: 0.01 },
-    VOLUME_ABSORPTION: { climaxMultiplier: 1.5, absorptionFactor: 0.7 },
+    VOLUME_ABSORPTION: { climaxMultiplier: 1.5, absorptionFactor: 0.7, atrMultiplier: 1.2 },
     MICROSTRUCTURE_SCALP: { velocityThreshold: 1.2 },
   };
 }
@@ -86,7 +86,7 @@ export interface StrikeZone {
 export interface MeanReversionParams { rsiThreshold: number; tolerance: number; }
 export interface TrendFollowParams { adxStrength: number; rsiMomentum: number; }
 export interface SqueezeParams { bbwThreshold: number; breakoutMargin: number; }
-export interface AbsorptionParams { climaxMultiplier: number; absorptionFactor: number; }
+export interface AbsorptionParams { climaxMultiplier: number; absorptionFactor: number; atrMultiplier: number; }
 export interface ScalpParams { velocityThreshold: number; }
 export interface StrategyParams {
   HF_MEAN_REVERSION: MeanReversionParams;
@@ -144,12 +144,6 @@ function createGBMDetector(
 ): (candles: CandleData[], indicators: Indicators, currentPrice: number, otherSignals?: StrikeZone[]) => StrikeZone | null {
   return (candles: CandleData[], indicators: Indicators, currentPrice: number, otherSignals?: StrikeZone[]): StrikeZone | null => {
     const strategyType = `GBM_${duration}S` as StrategyType;
-    
-    const minRequired = options?.minOtherSignals ?? 0;
-    if (minRequired > 0 && (!otherSignals || otherSignals.length < minRequired)) {
-      recordVeto(strategyType, `Aguardando consenso (${otherSignals?.length ?? 0}/${minRequired} sinais)`);
-      return null;
-    }
     
     if (!currentPrice || candles.length < 20) {
       recordVeto(strategyType, 'Dados de candle insuficientes para calibração');
@@ -446,7 +440,7 @@ export function detectVolumeAbsorptionZone(candles: CandleData[], indicators: In
   }
   
   const climaxRange = climaxCandle.high - climaxCandle.low;
-  const isWideRangeClimax = climaxRange > (indicators.atr || 0.001) * 1.2;
+  const isWideRangeClimax = climaxRange > (indicators.atr || 0.001) * params.atrMultiplier;
   
   if (!isWideRangeClimax) {
     return null;

@@ -95,7 +95,7 @@ export function useHFStrikeZone(
     HF_MEAN_REVERSION: { rsiThreshold: 32, tolerance: 0.005 },
     STD_TREND_FOLLOW: { adxStrength: 15, rsiMomentum: 52 },
     BOLLINGER_SQUEEZE: { bbwThreshold: 1.5, breakoutMargin: 0.01 },
-    VOLUME_ABSORPTION: { climaxMultiplier: 1.8, absorptionFactor: 0.8 },
+    VOLUME_ABSORPTION: { climaxMultiplier: 1.8, absorptionFactor: 0.8, atrMultiplier: 1.2 },
     MICROSTRUCTURE_SCALP: { velocityThreshold: 1.2 }
   });
 
@@ -136,7 +136,7 @@ export function useHFStrikeZone(
 
   useEffect(() => {
     const candles = botCandleData;
-    if (candles.length < 200 || !config || !activeSymbol) return;
+    if (!config || !activeSymbol || candles.length < 200) return;
     
     const now = Date.now();
     if (now - lastBacktestRun.current < 5 * 60_000) return;
@@ -153,7 +153,6 @@ export function useHFStrikeZone(
         setLastCalibrationTime(Date.now());
       }
     }, 0);
-    
   }, [botCandleData, config, activeSymbol, strategyParams]);
   
   const applyOptimalDuration = useCallback((zone: StrikeZone): StrikeZone => {
@@ -243,8 +242,8 @@ export function useHFStrikeZone(
             lastGBMRunRef.current = now;
             const validTechnicals = technicalSignals.filter((z): z is StrikeZone => z !== null);
             gbmSignalsRef.current = {
-              gbm20: detectGBM20sZone(candles, indicators, currentPrice),
-              gbm40: detectGBM40sZone(candles, indicators, currentPrice),
+              gbm20: detectGBM20sZone(candles, indicators, currentPrice, validTechnicals),
+              gbm40: detectGBM40sZone(candles, indicators, currentPrice, validTechnicals),
             };
           }
           
@@ -272,8 +271,10 @@ export function useHFStrikeZone(
           const validSignals = allSignalsResult
             .filter((zone): zone is StrikeZone => {
               if (zone === null || zone.type === 'NEUTRAL') return false;
+              
               const isGBM = zone.strategy === 'GBM_20S' || zone.strategy === 'GBM_40S';
               if (isGBM) return (zone.gbmRawConfidence ?? zone.confidence) >= GBM_MIN_CONFIDENCE;
+              
               return zone.confidence >= minConfidence;
             })
             .map(applyOptimalDuration);
@@ -388,17 +389,13 @@ export function useHFStrikeZone(
                     durationUnit = 't';
                     const durationInTicks = Math.max(5, Math.ceil(calculatedDurationInSeconds / 2));
                     finalDuration = Math.max(durationLimits.t.min, Math.min(durationInTicks, durationLimits.t.max));
-                } else if (preferredUnit === 's' && canUseSeconds) {
-                    durationUnit = 's';
-                    finalDuration = Math.round(calculatedDurationInSeconds);
-                    finalDuration = Math.max(durationLimits.s.min, Math.min(finalDuration, durationLimits.s.max));
                 } 
                 else if (canUseSeconds) {
                     durationUnit = 's';
                     finalDuration = Math.round(calculatedDurationInSeconds);
                     finalDuration = Math.max(durationLimits.s.min, Math.min(finalDuration, durationLimits.s.max));
-                    toast({ title: 'Ajuste de Duração', description: `Duração ótima em ticks indisponível. Usando segundos.`, variant: 'default' });
-                } else if (canUseTicks) {
+                } 
+                else if (canUseTicks) {
                     durationUnit = 't';
                     const durationInTicks = Math.max(5, Math.ceil(calculatedDurationInSeconds / 2));
                     finalDuration = Math.max(durationLimits.t.min, Math.min(durationInTicks, durationLimits.t.max));
@@ -407,7 +404,7 @@ export function useHFStrikeZone(
                 else {
                     durationUnit = 's';
                     finalDuration = 32;
-                    console.error(`[HF-STRIKE] ALERTA: Nenhuma unidade de duração ('t' ou 's') é suportada para o ativo ${activeSymbol}. Usando fallback de 32s.`);
+                    console.error(`[HF-STRIKE] BUG: Limites de duração NULOS, mas a guarda falhou. Usando fallback de 32s. ActiveSymbol: ${activeSymbol}`);
                 }
                 
                 const tradeResult = await executeTrade(
