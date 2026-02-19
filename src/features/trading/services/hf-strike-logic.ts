@@ -75,6 +75,11 @@ export interface StrikeZone {
   indicators: { rsi: number; bbPosition: number; bbWidth: number; volumeSpike: boolean; divergence: 'bullish' | 'bearish' | null; };
   strategy: StrategyType;
   duration: number;
+  gbmParams?: {
+    drift: number;
+    volatility: number;
+    probUp: number;
+  };
 }
 
 export interface MeanReversionParams { rsiThreshold: number; tolerance: number; }
@@ -150,7 +155,7 @@ function createGBMDetector(
       return null;
     }
     
-    const { drift, volatility } = getGBMParams(candles);
+    const { drift, volatility } = getGBMParams(candles.slice(-100));
     
     if (volatility === 0) {
         recordVeto(strategyType, 'Volatilidade calculada é zero, impossível prever.');
@@ -193,6 +198,7 @@ function createGBMDetector(
         bbWidth: indicators.bbw || 0, volumeSpike: false, divergence: null
       },
       duration,
+      gbmParams: { drift, volatility, probUp },
     };
     
     recordSignal(zone.strategy, zone.confidence);

@@ -65,6 +65,7 @@ function PageContent() {
     isExecuting,
     strategyParams,
     updateStrategyParams,
+    lastCalibrationTime,
   } = useHFStrikeZone(
       activeSymbol, 
       priceTicks, 
@@ -221,7 +222,11 @@ function PageContent() {
               </div>
             </CardContent>
           </Card>
-          <StrategySignalMonitor signals={allSignals} counts={strategyCounts} />
+          <StrategySignalMonitor 
+            signals={allSignals} 
+            counts={strategyCounts}
+            lastCalibrationTime={lastCalibrationTime}
+          />
           <HFConfigPanel
             config={hfConfig}
             onConfigChange={updates => setHFConfig((prev: any) => ({ ...prev, ...updates }))}

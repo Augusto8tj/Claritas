@@ -2,7 +2,7 @@
 'use client';
 
 import React from 'react';
-import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
+import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
 import { Badge } from '@/components/ui/badge';
 import { Zap, TrendingUp, TrendingDown, HelpCircle, Activity } from 'lucide-react';
@@ -10,10 +10,12 @@ import type { StrikeZone } from '@/features/trading/hooks/use-hf-strike-zone';
 import { strategyMetadata, StrategyType } from '@/features/trading/services/hf-strike-logic';
 import { cn } from '@/lib/utils';
 import { Tooltip, TooltipProvider, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
+import { getOptimalDuration } from '../../services/gbm-calibrator';
 
 interface StrategySignalMonitorProps {
   signals: (StrikeZone | null)[];
   counts: Record<StrategyType, number>;
+  lastCalibrationTime: number;
 }
 
 const strategyOrder: StrategyType[] = [
@@ -56,7 +58,10 @@ const SignalBar = ({ signal, count }: { signal: StrikeZone | null, count: number
   );
 };
 
-export function StrategySignalMonitor({ signals, counts }: StrategySignalMonitorProps) {
+export function StrategySignalMonitor({ signals, counts, lastCalibrationTime }: StrategySignalMonitorProps) {
+  const timeSinceLastCalibration = lastCalibrationTime > 0 ? Math.floor((Date.now() - lastCalibrationTime) / 1000) : null;
+  const timeToNextCalibration = timeSinceLastCalibration !== null ? Math.max(0, 300 - timeSinceLastCalibration) : 'N/A';
+  
   return (
     <Card>
       <CardHeader>
@@ -73,24 +78,46 @@ export function StrategySignalMonitor({ signals, counts }: StrategySignalMonitor
           const signal = signals.find(s => s?.strategy === strategyKey) || null;
           const metadata = strategyMetadata[strategyKey];
           const count = counts[strategyKey] || 0;
+          const optimalDuration = getOptimalDuration(strategyKey);
+          const isGbm = strategyKey.startsWith('GBM');
           
           return (
             <div key={strategyKey}>
-              <TooltipProvider>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <div className="text-sm font-semibold mb-2">{metadata.label}</div>
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    <p>{metadata.description}</p>
-                  </TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
+              <div className="flex justify-between items-center mb-1">
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <div className="text-sm font-semibold">{metadata.label}</div>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>{metadata.description}</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+                <Badge variant="outline">⏱ {optimalDuration}s</Badge>
+              </div>
               <SignalBar signal={signal} count={count} />
+              {isGbm && signal?.gbmParams && (
+                <div className="text-xs text-muted-foreground mt-1 pl-11 flex items-center gap-3">
+                  <span>
+                    Drift: <span className="font-mono">{(signal.gbmParams.drift * 100).toFixed(4)}%/s</span>
+                  </span>
+                  <span>
+                    σ: <span className="font-mono">{(signal.gbmParams.volatility * 100).toFixed(3)}%</span>
+                  </span>
+                  <span>
+                    P(up): <span className="font-mono">{(signal.gbmParams.probUp * 100).toFixed(1)}%</span>
+                  </span>
+                </div>
+              )}
             </div>
           );
         })}
       </CardContent>
+       <CardFooter className="text-xs text-muted-foreground justify-center pt-4">
+          Última calibração: {lastCalibrationTime > 0 ? new Date(lastCalibrationTime).toLocaleTimeString() : 'Aguardando'}
+          {timeToNextCalibration !== 'N/A' && ` | Próxima em: ${timeToNextCalibration}s`}
+      </CardFooter>
     </Card>
   );
 }

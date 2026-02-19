@@ -208,10 +208,10 @@ export function useHFStrikeZone(
               detectVolumeAbsorptionZone(candles, indicators, adaptiveParams.VOLUME_ABSORPTION),
               detectMicrostructureScalpZone(ticks, candles, indicators, currentPrice, adaptiveParams.MICROSTRUCTURE_SCALP),
               detectRandomWalkZone(candles, indicators, currentPrice),
-          ].filter((zone): zone is StrikeZone => zone !== null && zone.type !== 'NEUTRAL');
+          ];
     
-          const gbm20sSignal = detectGBM20sZone(candles, indicators, currentPrice, assetSymbol, technicalSignals);
-          const gbm40sSignal = detectGBM40sZone(candles, indicators, currentPrice, assetSymbol, technicalSignals);
+          const gbm20sSignal = detectGBM20sZone(candles, indicators, currentPrice, assetSymbol, technicalSignals.filter((z): z is StrikeZone => z !== null));
+          const gbm40sSignal = detectGBM40sZone(candles, indicators, currentPrice, assetSymbol, technicalSignals.filter((z): z is StrikeZone => z !== null));
     
           const allSignalsResult = [...technicalSignals, gbm20sSignal, gbm40sSignal];
           
@@ -404,7 +404,7 @@ export function useHFStrikeZone(
 
       runCycle();
       
-    }, 1000); // Removendo a referência a TRADER_CONFIG
+    }, 1000);
 
     return () => clearTimeout(timeoutId);
 
@@ -421,5 +421,6 @@ export function useHFStrikeZone(
     activeStrikeZone, marketRegime, positionSizing, riskManager, fullIndicators: indicators,
     supplyDemandZones: (indicators as any)?.supplyDemandZones, allSignals, strategyCounts, consecutiveLosses, isCooldownActive, isExecuting,
     strategyParams, updateStrategyParams: handleUpdateStrategyParams,
+    lastCalibrationTime: lastBacktestRun.current,
   };
 }
