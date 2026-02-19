@@ -34,6 +34,7 @@ import type { HFConfig } from '@/features/trading/components/hf-trader/hf-config
 import { saveHFTradeLog } from '@/services/hf-data-service';
 import { runAllStrategiesBacktest } from '../backtest/hf-backtest-engine';
 import { getOptimalDuration } from '../services/gbm-calibrator';
+import { TRADER_CONFIG } from '@/features/trading/config/trader-config';
 
 export type { StrikeZone } from '../services/hf-strike-logic';
 
@@ -130,7 +131,7 @@ export function useHFStrikeZone(
 
   useEffect(() => {
     const candles = botCandleData;
-    if (candles.length < 200 || !config || !assetSymbol) return;
+    if (candles.length < 200 || !config || !activeSymbol) return;
     
     const now = Date.now();
     if (now - lastBacktestRun.current < 5 * 60_000) return;
@@ -140,14 +141,14 @@ export function useHFStrikeZone(
     setTimeout(() => {
       console.log('[AUTO_CALIBRATE] Iniciando backtest em background para atualizar tempos ótimos...');
       const last500 = candles.slice(-500);
-      const results = runAllStrategiesBacktest(last500, config, assetSymbol!, strategyParams);
+      const results = runAllStrategiesBacktest(last500, config, activeSymbol!, strategyParams);
       
       if (results._optimalDurations) {
         console.log('[AUTO_CALIBRATE] Tempos ótimos atualizados:', results._optimalDurations);
       }
     }, 0);
     
-  }, [botCandleData, config, assetSymbol, strategyParams]);
+  }, [botCandleData, config, activeSymbol, strategyParams]);
   
   const applyOptimalDuration = useCallback((zone: StrikeZone): StrikeZone => {
     const optimal = getOptimalDuration(zone.strategy);
@@ -210,8 +211,8 @@ export function useHFStrikeZone(
               detectRandomWalkZone(candles, indicators, currentPrice),
           ];
     
-          const gbm20sSignal = detectGBM20sZone(candles, indicators, currentPrice, assetSymbol, technicalSignals.filter((z): z is StrikeZone => z !== null));
-          const gbm40sSignal = detectGBM40sZone(candles, indicators, currentPrice, assetSymbol, technicalSignals.filter((z): z is StrikeZone => z !== null));
+          const gbm20sSignal = detectGBM20sZone(candles, indicators, currentPrice, activeSymbol, technicalSignals.filter((z): z is StrikeZone => z !== null));
+          const gbm40sSignal = detectGBM40sZone(candles, indicators, currentPrice, activeSymbol, technicalSignals.filter((z): z is StrikeZone => z !== null));
     
           const allSignalsResult = [...technicalSignals, gbm20sSignal, gbm40sSignal];
           
@@ -404,23 +405,48 @@ export function useHFStrikeZone(
 
       runCycle();
       
-    }, 1000);
+    }, TRADER_CONFIG.THROTTLE_MS);
 
     return () => clearTimeout(timeoutId);
 
   }, [
       dataVersion, enabled, isCooldownActive, isExecuting, isSwitchingSymbol,
       indicators, priceTicks, user, isConnected, botCandleData, config, 
-      assetSymbol, strategyParams, getIsRandom, applyOptimalDuration, 
+      activeSymbol, strategyParams, getIsRandom, applyOptimalDuration, 
       minConfidence, minConsensusSignals, operationsLog, autoExecute, 
       toast, saveHFTradeLog, riskManager, manualStake, consecutiveLosses, 
       martingaleMultiplier, maxConcurrentTrades, durationLimits
   ]);
   
+  const [lastCalibrationTime, setLastCalibrationTime] = useState(0);
+
+  useEffect(() => {
+    const candles = botCandleData;
+    if (candles.length < 200 || !config || !activeSymbol) return;
+    
+    const now = Date.now();
+    if (now - lastBacktestRun.current < 5 * 60_000) return;
+    
+    lastBacktestRun.current = now;
+    
+    setTimeout(() => {
+      console.log('[AUTO_CALIBRATE] Iniciando backtest em background para atualizar tempos ótimos...');
+      const last500 = candles.slice(-500);
+      const results = runAllStrategiesBacktest(last500, config, activeSymbol!, strategyParams);
+      
+      if (results._optimalDurations) {
+        console.log('[AUTO_CALIBRATE] Tempos ótimos atualizados:', results._optimalDurations);
+        setLastCalibrationTime(Date.now());
+      }
+    }, 0);
+    
+  }, [botCandleData, config, activeSymbol, strategyParams]);
+
+
   return {
     activeStrikeZone, marketRegime, positionSizing, riskManager, fullIndicators: indicators,
     supplyDemandZones: (indicators as any)?.supplyDemandZones, allSignals, strategyCounts, consecutiveLosses, isCooldownActive, isExecuting,
     strategyParams, updateStrategyParams: handleUpdateStrategyParams,
-    lastCalibrationTime: lastBacktestRun.current,
+    lastCalibrationTime,
   };
 }
