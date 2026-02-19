@@ -140,8 +140,8 @@ function runMonteCarloPrediction(
 
 function createGBMDetector(
   duration: 20 | 40,
-): (candles: CandleData[], indicators: Indicators, currentPrice: number, otherSignals: StrikeZone[], params: { gbmConfidenceThreshold: number }) => StrikeZone | null {
-  return (candles: CandleData[], indicators: Indicators, currentPrice: number, otherSignals: StrikeZone[], params: { gbmConfidenceThreshold: number }): StrikeZone | null => {
+): (candles: CandleData[], indicators: Indicators, currentPrice: number, otherSignals: StrikeZone[], params?: { gbmConfidenceThreshold: number }) => StrikeZone | null {
+  return (candles: CandleData[], indicators: Indicators, currentPrice: number, otherSignals: StrikeZone[], params: { gbmConfidenceThreshold: number } = { gbmConfidenceThreshold: 15 }): StrikeZone | null => {
     const strategyType = `GBM_${duration}S` as StrategyType;
     
     if (!currentPrice || candles.length < 20) {
@@ -205,7 +205,6 @@ function createGBMDetector(
 
 export const detectGBM20sZone = createGBMDetector(20);
 export const detectGBM40sZone = createGBMDetector(40);
-
 
 // ============================================================================
 // FUNÇÕES DE ANÁLISE PURAS
@@ -587,5 +586,3 @@ export function detectRandomWalkZone(
     duration: 60,
   };
 }
-
-    
