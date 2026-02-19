@@ -28,9 +28,26 @@ function calibrateGBMParams(candles: CandleData[]): { drift: number; volatility:
   const dataSlice = candles.slice(-lookback);
 
   if (dataSlice.length < 10) {
-    // Fallback for insufficient data
     return { drift: 0, volatility: 0.002 / Math.sqrt(60) };
   }
+
+  // ✅ NOVO: Detectar duração real do candle a partir dos epochs
+  let candleDurationSeconds = 60; // valor default
+  if (dataSlice.length >= 2) {
+    const epochDiffs: number[] = [];
+    for (let i = 1; i < Math.min(10, dataSlice.length); i++) {
+      const diff = dataSlice[i].epoch - dataSlice[i - 1].epoch;
+      if (diff > 0) epochDiffs.push(diff);
+    }
+    if (epochDiffs.length > 0) {
+      // Mediana para robustez (evita outliers de gaps)
+      epochDiffs.sort((a, b) => a - b);
+      candleDurationSeconds = epochDiffs[Math.floor(epochDiffs.length / 2)];
+    }
+  }
+  
+  // Clamp para valores razoáveis (1s a 3600s)
+  candleDurationSeconds = Math.max(1, Math.min(3600, candleDurationSeconds));
 
   const logReturns: number[] = [];
   for (let i = 1; i < dataSlice.length; i++) {
@@ -47,13 +64,15 @@ function calibrateGBMParams(candles: CandleData[]): { drift: number; volatility:
   const variancePerCandle = logReturns.reduce((sum, r) => sum + Math.pow(r - meanReturnPerCandle, 2), 0) / (logReturns.length - 1);
   const volatilityPerCandle = Math.sqrt(variancePerCandle);
 
-  // Assuming 1-minute candles (60 seconds)
-  const candleDurationSeconds = 60;
+  // ✅ CORRIGIDO: Usa duração REAL detectada acima
   const driftPerSecond = meanReturnPerCandle / candleDurationSeconds;
   const volatilityPerSecond = volatilityPerCandle / Math.sqrt(candleDurationSeconds);
 
+  console.debug(`[GBM_CALIBRATOR] Candle duração detectada: ${candleDurationSeconds}s | drift/s=${driftPerSecond.toFixed(8)} | σ/s=${volatilityPerSecond.toFixed(8)}`);
+
   return { drift: driftPerSecond, volatility: volatilityPerSecond };
 }
+
 
 /**
  * Gets GBM parameters, using a cache to avoid frequent recalculations.
