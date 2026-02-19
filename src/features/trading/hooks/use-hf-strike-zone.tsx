@@ -32,7 +32,6 @@ import {
 } from '../services/hf-strike-logic';
 import type { HFConfig } from '@/features/trading/components/hf-trader/hf-config-panel';
 import { saveHFTradeLog } from '@/services/hf-data-service';
-import { TRADER_CONFIG } from '@/features/trading/config/trader-config';
 import { runAllStrategiesBacktest } from '../backtest/hf-backtest-engine';
 import { getOptimalDuration } from '../services/gbm-calibrator';
 
@@ -53,6 +52,8 @@ export interface StrategyParams {
   MICROSTRUCTURE_SCALP: ScalpParams;
 }
 
+const RANDOM_ASSET_PARAMS = getRandomAssetParams();
+
 export function useHFStrikeZone(
   activeSymbol: string | null,
   priceTicks: TickData[],
@@ -71,7 +72,6 @@ export function useHFStrikeZone(
   const rsiStateRef = useRef({ prev: 50 });
   const initialStrategies = useMemo(() => getCouncilStrategies('standard'), []);
   
-  // 1. State para controle de throttle
   const lastIsRandomCheck = useRef<number>(0);
   const isRandomCached = useRef<boolean>(false);
   const lastBacktestRun = useRef<number>(0);
@@ -117,18 +117,17 @@ export function useHFStrikeZone(
     return calculateAllIndicators(botCandleData, initialStrategies, '1m', { duration: 1, unit: 't' });
   }, [botCandleData, enabled, initialStrategies]);
   
-  // 2. isRandomAsset com cache de 60 segundos
-  const getIsRandom = useCallback((candles: CandleData[], indicators: Indicators) => {
+  const getIsRandom = useCallback((candles: CandleData[], indicators: Indicators | null) => {
+    if (!indicators) return false;
     const now = Date.now();
     if (now - lastIsRandomCheck.current < 60_000) {
-      return isRandomCached.current;  // usa cache
+      return isRandomCached.current;
     }
     isRandomCached.current = isRandomAsset(candles, indicators);
     lastIsRandomCheck.current = now;
     return isRandomCached.current;
   }, []);
 
-  // 3. Backtest automático a cada 5 minutos para recalibrar drift/duração
   useEffect(() => {
     const candles = botCandleData;
     if (candles.length < 200 || !config || !assetSymbol) return;
@@ -149,8 +148,7 @@ export function useHFStrikeZone(
     }, 0);
     
   }, [botCandleData, config, assetSymbol, strategyParams]);
-
-  // 4. Aplicar tempo ótimo
+  
   const applyOptimalDuration = useCallback((zone: StrikeZone): StrikeZone => {
     const optimal = getOptimalDuration(zone.strategy);
     return { ...zone, duration: optimal };
@@ -189,7 +187,7 @@ export function useHFStrikeZone(
       
       const runCycle = async () => {
         try {
-          if (!indicators || priceTicks.length < 2 || !user || !isConnected) {
+          if (!indicators || priceTicks.length < 2 || !user || !isConnected || !activeSymbol) {
             return;
           }
 
@@ -201,18 +199,22 @@ export function useHFStrikeZone(
           const currentPrice = ticks[ticks.length - 1].price;
           
           const isRandom = getIsRandom(candles, indicators);
-          const adaptiveParams = isRandom ? getRandomAssetParams() : strategyParams;
+          const adaptiveParams = isRandom ? RANDOM_ASSET_PARAMS : strategyParams;
     
-          const allSignalsResult: (StrikeZone | null)[] = [
-            detectHFMeanReversionZone(indicators, currentPrice, adaptiveParams.HF_MEAN_REVERSION),
-            detectStandardTrendZone(indicators, currentPrice, rsiStateRef.current.prev, adaptiveParams.STD_TREND_FOLLOW),
-            detectBollingerSqueezeZone(indicators, currentPrice, adaptiveParams.BOLLINGER_SQUEEZE),
-            detectVolumeAbsorptionZone(candles, indicators, adaptiveParams.VOLUME_ABSORPTION),
-            detectMicrostructureScalpZone(ticks, candles, indicators, currentPrice, adaptiveParams.MICROSTRUCTURE_SCALP),
-            detectRandomWalkZone(candles, indicators, currentPrice),
-            detectGBM20sZone(candles, indicators, currentPrice, activeSymbol!),
-            detectGBM40sZone(candles, indicators, currentPrice, activeSymbol!),
-          ];
+          const technicalSignals = [
+              detectHFMeanReversionZone(indicators, currentPrice, adaptiveParams.HF_MEAN_REVERSION),
+              detectStandardTrendZone(indicators, currentPrice, rsiStateRef.current.prev, adaptiveParams.STD_TREND_FOLLOW),
+              detectBollingerSqueezeZone(indicators, currentPrice, adaptiveParams.BOLLINGER_SQUEEZE),
+              detectVolumeAbsorptionZone(candles, indicators, adaptiveParams.VOLUME_ABSORPTION),
+              detectMicrostructureScalpZone(ticks, candles, indicators, currentPrice, adaptiveParams.MICROSTRUCTURE_SCALP),
+              detectRandomWalkZone(candles, indicators, currentPrice),
+          ].filter((zone): zone is StrikeZone => zone !== null && zone.type !== 'NEUTRAL');
+    
+          const gbm20sSignal = detectGBM20sZone(candles, indicators, currentPrice, assetSymbol, technicalSignals);
+          const gbm40sSignal = detectGBM40sZone(candles, indicators, currentPrice, assetSymbol, technicalSignals);
+    
+          const allSignalsResult = [...technicalSignals, gbm20sSignal, gbm40sSignal];
+          
           setAllSignals(allSignalsResult);
     
           const newCounts = { ...strategyCounts };
@@ -402,7 +404,7 @@ export function useHFStrikeZone(
 
       runCycle();
       
-    }, TRADER_CONFIG.THROTTLE_MS);
+    }, 1000); // Removendo a referência a TRADER_CONFIG
 
     return () => clearTimeout(timeoutId);
 

@@ -14,10 +14,9 @@ import {
     type StrikeZone,
     StrategyType,
     strategyMetadata,
-    StrategyParams,
-    getRandomAssetParams,
+    type StrategyParams,
 } from '@/features/trading/services/hf-strike-logic';
-import { calculateAllIndicators } from '@/features/trading/services/indicator-service';
+import { calculateAllIndicators, type Indicators } from '@/features/trading/services/indicator-service';
 import { getCouncilStrategies } from '@/features/trading/services/council-strategies';
 import { analyzeOptimalDuration } from '../services/gbm-calibrator';
 
@@ -291,9 +290,21 @@ function runSingleStrategyBacktest(
     const initialStrategies = getCouncilStrategies('standard');
     const execModel = executionModels[assetSymbol] || executionModels.default;
 
+    let indicatorUpdateCounter = 0;
+    let cachedIndicators: Indicators | null = null;
+
     while (i < historicalData.length - 30) {
         const windowCandles = historicalData.slice(0, i + 1);
-        const indicators = calculateAllIndicators(windowCandles, initialStrategies, timePeriodForIndicators, { duration: 15, unit: 's' });
+        
+        const shouldUpdate = strategyMetadata[strategy]?.isHF 
+          ? true 
+          : (indicatorUpdateCounter++ % 5 === 0);
+        
+        if (shouldUpdate || !cachedIndicators) {
+            cachedIndicators = calculateAllIndicators(windowCandles, initialStrategies, timePeriodForIndicators, { duration: 15, unit: 's' });
+        }
+        const indicators = cachedIndicators;
+
         if (!indicators) { i++; continue; }
         
         const currentPrice = windowCandles[windowCandles.length - 1].close;
@@ -317,10 +328,10 @@ function runSingleStrategyBacktest(
                 strikeZone = detectMicrostructureScalpZone(syntheticTicks, windowCandles, indicators, currentPrice, params.MICROSTRUCTURE_SCALP);
                 break;
             case 'GBM_20S':
-                strikeZone = detectGBM20sZone(indicators, currentPrice, windowCandles, assetSymbol);
+                strikeZone = detectGBM20sZone(windowCandles, indicators, currentPrice, assetSymbol);
                 break;
             case 'GBM_40S':
-                strikeZone = detectGBM40sZone(indicators, currentPrice, windowCandles, assetSymbol);
+                strikeZone = detectGBM40sZone(windowCandles, indicators, currentPrice, assetSymbol);
                 break;
         }
         

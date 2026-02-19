@@ -5,6 +5,7 @@ import type { TickData, CandleData, MicrostructureFeatures } from '@/lib/types';
 import type { Indicators } from './indicator-service';
 import { extractMicrostructureFeatures as extractMicrostructureFeaturesFromService } from './advanced-trading-services';
 import { recordSignal, recordVeto } from './strategy-metrics';
+import { getGBMParams } from './gbm-calibrator';
 
 
 // ============================================================================
@@ -81,60 +82,21 @@ export interface TrendFollowParams { adxStrength: number; rsiMomentum: number; }
 export interface SqueezeParams { bbwThreshold: number; breakoutMargin: number; }
 export interface AbsorptionParams { climaxMultiplier: number; absorptionFactor: number; }
 export interface ScalpParams { velocityThreshold: number; }
+export interface StrategyParams {
+  HF_MEAN_REVERSION: MeanReversionParams;
+  STD_TREND_FOLLOW: TrendFollowParams;
+  BOLLINGER_SQUEEZE: SqueezeParams;
+  VOLUME_ABSORPTION: AbsorptionParams;
+  MICROSTRUCTURE_SCALP: ScalpParams;
+}
+
 
 // ============================================================================
 // GBM MONTE CARLO - ESTRATEGISTAS PREDITIVOS (NOVA IMPLEMENTAÇÃO)
 // ============================================================================
-
-/**
- * Calcula os parâmetros de Drift e Volatilidade de um ativo a partir de dados históricos.
- * @param candles - Array de velas para análise (espera-se 1-minuto).
- * @returns Um objeto com drift e volatilidade por segundo.
- */
-function calibrateGBMParams(candles: CandleData[]): { drift: number; volatility: number } {
-  const lookback = 100;
-  const candleDurationSeconds = 60; // Assumindo velas de 1 minuto
-  const dataSlice = candles.length > lookback ? candles.slice(-lookback) : candles;
-
-  if (dataSlice.length < 10) {
-    // Fallback para volatilidade por segundo
-    return { drift: 0, volatility: 0.002 / Math.sqrt(candleDurationSeconds) };
-  }
-
-  const logReturns: number[] = [];
-  for (let i = 1; i < dataSlice.length; i++) {
-    if (dataSlice[i - 1].close > 0) {
-      logReturns.push(Math.log(dataSlice[i].close / dataSlice[i - 1].close));
-    }
-  }
-
-  if (logReturns.length < 2) {
-    return { drift: 0, volatility: 0.002 / Math.sqrt(candleDurationSeconds) };
-  }
-
-  const meanReturnPerCandle = logReturns.reduce((a, b) => a + b, 0) / logReturns.length;
-  const variancePerCandle = logReturns.reduce((sum, r) => sum + Math.pow(r - meanReturnPerCandle, 2), 0) / (logReturns.length - 1);
-  const volatilityPerCandle = Math.sqrt(variancePerCandle);
-  
-  // Converte os parâmetros de "por minuto" para "por segundo" para a simulação
-  const driftPerSecond = meanReturnPerCandle / candleDurationSeconds;
-  const volatilityPerSecond = volatilityPerCandle / Math.sqrt(candleDurationSeconds);
-  
-  return { drift: driftPerSecond, volatility: volatilityPerSecond };
-}
-
-/**
- * Roda uma simulação de Monte Carlo usando o Movimento Browniano Geométrico.
- * @param startPrice - Preço inicial para a simulação.
- * @param durationSeconds - Duração da simulação em segundos.
- * @param drift - O drift por segundo.
- * @param volatility - A volatilidade por segundo.
- * @param numPaths - O número de caminhos a simular.
- * @returns A probabilidade do preço terminar acima do inicial.
- */
 function runMonteCarloPrediction(
   startPrice: number,
-  durationSeconds: number, 
+  durationSeconds: number,
   drift: number,
   volatility: number,
   numPaths: number = 200
@@ -146,10 +108,8 @@ function runMonteCarloPrediction(
     }
     return sum - 6.0;
   };
-  
-  const dt = 1; // 1 segundo
+  const dt = 1;
   const sqrt_dt = 1;
-
   let finalPrices: number[] = [];
   let pathsEndingUp = 0;
 
@@ -172,21 +132,25 @@ function runMonteCarloPrediction(
   return { probUp, probDown, meanPrice };
 }
 
-/**
- * Função de fábrica para criar os detectores GBM de 20s e 40s.
- * @param duration - Duração da previsão em segundos (20 ou 40).
- * @returns Uma função de detecção de StrikeZone.
- */
-function createGBMDetector(duration: 20 | 40): (indicators: Indicators, currentPrice: number, candles: CandleData[], assetSymbol: string) => StrikeZone | null {
-  return (indicators: Indicators, currentPrice: number, candles: CandleData[], assetSymbol: string): StrikeZone | null => {
+function createGBMDetector(
+    duration: 20 | 40,
+    options?: { minOtherSignals?: number }
+): (candles: CandleData[], indicators: Indicators, currentPrice: number, assetSymbol: string, otherSignals?: StrikeZone[]) => StrikeZone | null {
+  return (candles: CandleData[], indicators: Indicators, currentPrice: number, assetSymbol: string, otherSignals?: StrikeZone[]): StrikeZone | null => {
     const strategyType = `GBM_${duration}S` as StrategyType;
+
+    const minRequired = options?.minOtherSignals ?? 0;
+    if (minRequired > 0 && (!otherSignals || otherSignals.length < minRequired)) {
+      recordVeto(strategyType, `Aguardando consenso (${otherSignals?.length ?? 0}/${minRequired} sinais)`);
+      return null;
+    }
     
     if (!currentPrice || candles.length < 20) {
       recordVeto(strategyType, 'Dados de candle insuficientes para calibração');
       return null;
     }
     
-    const { drift, volatility } = calibrateGBMParams(candles.slice(-100));
+    const { drift, volatility } = getGBMParams(candles);
     
     if (volatility === 0) {
         recordVeto(strategyType, 'Volatilidade calculada é zero, impossível prever.');
@@ -231,17 +195,13 @@ function createGBMDetector(duration: 20 | 40): (indicators: Indicators, currentP
       duration,
     };
     
-    console.log(`[GBM_${duration}S] SIGNAL:`, { 
-      type, confidence: confidence.toFixed(1), probUp: (probUp*100).toFixed(1)+'%', drift: drift.toFixed(8), volatility: volatility.toFixed(8) 
-    });
-    
     recordSignal(zone.strategy, zone.confidence);
     return zone;
   };
 }
 
-export const detectGBM20sZone = createGBMDetector(20);
-export const detectGBM40sZone = createGBMDetector(40);
+export const detectGBM20sZone = createGBMDetector(20, { minOtherSignals: 2 });
+export const detectGBM40sZone = createGBMDetector(40, { minOtherSignals: 2 });
 
 
 // ============================================================================
@@ -249,7 +209,6 @@ export const detectGBM40sZone = createGBMDetector(40);
 // ============================================================================
 
 export function detectHFMeanReversionZone(indicators: Indicators, currentPrice: number, params: MeanReversionParams): StrikeZone | null {
-  //... (código existente)
   const startTime = performance.now();
   const { bb, rsi: rsiValue } = indicators;
   
@@ -319,7 +278,6 @@ export function detectHFMeanReversionZone(indicators: Indicators, currentPrice: 
 }
 
 export function detectStandardTrendZone(indicators: Indicators, currentPrice: number, prevRsi: number, params: TrendFollowParams): StrikeZone | null {
-  //... (código existente)
   const startTime = performance.now();
   if (!indicators.adx || !indicators.ma.long || !indicators.rsi || !indicators.atr) {
     recordVeto('STD_TREND_FOLLOW', 'Indicadores ausentes (ADX/MA/RSI/ATR)');
@@ -385,7 +343,6 @@ export function detectStandardTrendZone(indicators: Indicators, currentPrice: nu
 }
 
 export function detectBollingerSqueezeZone(indicators: Indicators, currentPrice: number, params: SqueezeParams): StrikeZone | null {
-  //... (código existente)
   const startTime = performance.now();
   if (!indicators.bbw) {
       recordVeto('BOLLINGER_SQUEEZE', 'Indicador BBW ausente');
@@ -439,7 +396,6 @@ export function detectBollingerSqueezeZone(indicators: Indicators, currentPrice:
 }
 
 export function detectVolumeAbsorptionZone(candles: CandleData[], indicators: Indicators, params: AbsorptionParams): StrikeZone | null {
-  //... (código existente)
   const startTime = performance.now();
   
   if (candles.length < 20) {
@@ -557,7 +513,6 @@ export function detectVolumeAbsorptionZone(candles: CandleData[], indicators: In
 
 
 export function detectMicrostructureScalpZone(ticks: TickData[], candles: CandleData[], indicators: Indicators, currentPrice: number, params: ScalpParams): StrikeZone | null {
-  //... (código existente)
   const startTime = performance.now();
   const micro = extractMicrostructureFeaturesFromService(ticks, candles);
   if (!micro) {
@@ -603,7 +558,6 @@ export function detectRandomWalkZone(
   indicators: Indicators, 
   currentPrice: number
 ): StrikeZone | null {
-  //... (código existente)
   if (!isRandomAsset(candles, indicators)) return null;
   
   const atr = indicators.atr || 0.001;
