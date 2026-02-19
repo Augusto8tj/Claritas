@@ -1,4 +1,3 @@
-
 // src/features/trading/hooks/use-hf-strike-zone.tsx
 'use client';
 
@@ -324,8 +323,8 @@ export function useHFStrikeZone(
             setStrategyCounts(newCounts);
           }
           
-          const GBM_MIN_CONFIDENCE = 15;
-          
+          const GBM_MIN_CONFIDENCE = 15; 
+    
           const validSignals = allSignalsResult
             .filter((zone): zone is StrikeZone => {
               if (zone === null || zone.type === 'NEUTRAL') return false;

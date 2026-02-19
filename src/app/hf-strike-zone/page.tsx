@@ -25,6 +25,7 @@ import { StrategyType, strategyMetadata } from '@/features/trading/services/hf-s
 import { Button } from '@/components/ui/button';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { BacktestPanel } from '@/features/trading/components/hf-trader/BacktestPanel';
+import { HFAutoCalibrator } from '@/features/trading/components/hf-trader/HFAutoCalibrator';
 import { StrategySignalMonitor } from '@/features/trading/components/hf-trader/StrategySignalMonitor';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
@@ -67,6 +68,9 @@ function PageContent() {
     updateStrategyParams,
     gbmConfidenceThreshold,
     lastCalibrationTime,
+    isCalibrating,
+    calibrationProgress,
+    triggerAutoCalibration,
   } = useHFStrikeZone(
       activeSymbol, 
       priceTicks, 
@@ -128,7 +132,7 @@ function PageContent() {
   
   const handleRunMonteCarlo = useCallback(async () => {
       if (!backtestResults || backtestData.length === 0) { toast({ title: "Execute o Backtest Simples Primeiro", variant: 'destructive' }); return; }
-      const bestStrategyKey = Object.entries(backtestResults).sort(([, a], [, b]) => (b.metrics?.sharpeRatio || 0) - (a.metrics?.sharpeRatio || 0))[0][0];
+      const bestStrategyKey = Object.entries(backtestResults).filter(([key])=>key !=='_optimalDurations').sort(([, a], [, b]) => (b.metrics?.sharpeRatio || 0) - (a.metrics?.sharpeRatio || 0))[0][0];
       if (!bestStrategyKey) { toast({ title: "Nenhuma estratégia para analisar", variant: 'destructive' }); return; }
       setIsBacktesting(true); setMonteCarloResult(null);
       toast({ title: "Iniciando Simulação de Monte Carlo...", description: `Rodando 1000 iterações...` });
@@ -195,11 +199,6 @@ function PageContent() {
                     />
                 </CollapsibleContent>
               </Collapsible>
-               <HFStrategyTuningPanel 
-                params={strategyParams}
-                onParamChange={updateStrategyParams}
-                gbmConfidenceThreshold={gbmConfidenceThreshold}
-              />
                <HFSignalCard signal={activeStrikeZone} onExecute={handleExecuteStrike} isExecuting={isExecuting} consecutiveLosses={consecutiveLosses} isCooldown={isCooldownActive}/>
         </div>
         <div className="space-y-6">
@@ -233,6 +232,16 @@ function PageContent() {
             config={hfConfig}
             onConfigChange={updates => setHFConfig((prev: any) => ({ ...prev, ...updates }))}
           />
+          <HFStrategyTuningPanel 
+            params={strategyParams}
+            onParamChange={updateStrategyParams}
+            gbmConfidenceThreshold={gbmConfidenceThreshold}
+          />
+           <HFAutoCalibrator 
+             isCalibrating={isCalibrating} 
+             calibrationProgress={calibrationProgress} 
+             onCalibrate={triggerAutoCalibration} 
+           />
         </div>
       </div>
     </div>
