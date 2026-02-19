@@ -280,7 +280,8 @@ export function runSingleStrategyBacktest(
   config: HFConfig,
   strategy: StrategyType,
   assetSymbol: string,
-  params: any // Alterado para 'any' para flexibilidade na calibração
+  params: any,
+  options: { gbmConfidenceThreshold?: number } = {}
 ): InstitutionalBacktestResult {
     const BACKTEST_STAKE = 1.0;
     const trades: TradeResult[] = [];
@@ -328,10 +329,10 @@ export function runSingleStrategyBacktest(
                 strikeZone = detectMicrostructureScalpZone(syntheticTicks, windowCandles, indicators, currentPrice, params);
                 break;
             case 'GBM_20S':
-                strikeZone = detectGBM20sZone(windowCandles, indicators, currentPrice, []);
+                strikeZone = detectGBM20sZone(windowCandles, indicators, currentPrice, [], { gbmConfidenceThreshold: options.gbmConfidenceThreshold ?? 15 });
                 break;
             case 'GBM_40S':
-                strikeZone = detectGBM40sZone(windowCandles, indicators, currentPrice, []);
+                strikeZone = detectGBM40sZone(windowCandles, indicators, currentPrice, [], { gbmConfidenceThreshold: options.gbmConfidenceThreshold ?? 15 });
                 break;
         }
         
@@ -368,7 +369,7 @@ export function runAllStrategiesBacktest(
   config: HFConfig,
   assetSymbol: string,
   params: StrategyParams
-): Record<StrategyType, InstitutionalBacktestResult> & { _optimalDurations?: any } {
+): Record<string, InstitutionalBacktestResult> & { _optimalDurations?: any } {
   
   const allStrategies: StrategyType[] = Object.keys(strategyMetadata) as StrategyType[];
   const allResults: Partial<Record<StrategyType, InstitutionalBacktestResult>> = {};
@@ -392,7 +393,7 @@ export function runAllStrategiesBacktest(
   return {
     ...allResults,
     _optimalDurations: Object.fromEntries(optimalDurations),
-  } as Record<StrategyType, InstitutionalBacktestResult> & { _optimalDurations: any };
+  } as Record<string, InstitutionalBacktestResult> & { _optimalDurations: any };
 }
 
 // ============================================================================

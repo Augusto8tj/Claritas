@@ -35,7 +35,7 @@ import { saveHFTradeLog } from '@/services/hf-data-service';
 import { runAllStrategiesBacktest } from '../backtest/hf-backtest-engine';
 import { getOptimalDuration, analyzeOptimalDuration, resetGBMCache } from '../services/gbm-calibrator';
 import { TRADER_CONFIG } from '@/features/trading/config/trader-config';
-import { runAutoCalibration, type CalibrationResult } from '../optimization/auto-calibrator';
+import { runAutoCalibration, type AutoCalibrationResults } from '../optimization/auto-calibrator';
 
 
 export type { StrikeZone } from '../services/hf-strike-logic';
@@ -169,27 +169,37 @@ export function useHFStrikeZone(
               onProgress: (strategy, progress, details) => {
                   setCalibrationProgress(prev => ({ ...prev, [strategy]: { progress, details } }));
               },
+              gbmConfidenceThreshold: gbmConfidenceThreshold,
           });
           
           let updatedCount = 0;
           const newParams = { ...strategyParams };
           for (const key in results) {
+              if (key === 'finalGbmThreshold') continue;
               const result = results[key as StrategyType];
-              if (result.success) {
+              if (result && result.success) {
                   newParams[key as StrategyType] = result.finalParams;
                   updatedCount++;
               }
           }
           
           setStrategyParams(newParams);
-          toast({ title: "✅ Calibração Concluída!", description: `${updatedCount} estratégias foram otimizadas.` });
+          if (results.finalGbmThreshold && results.finalGbmThreshold !== gbmConfidenceThreshold) {
+              setGbmConfidenceThreshold(results.finalGbmThreshold);
+              // We count this as one "strategy type" updated.
+              if (!Object.values(results).some(r => r?.strategy === 'GBM_20S' || r?.strategy === 'GBM_40S')) {
+                  updatedCount++;
+              }
+          }
+          
+          toast({ title: "✅ Calibração Concluída!", description: `${updatedCount} tipos de estratégia foram otimizados.` });
 
       } catch (error: any) {
           toast({ title: "❌ Erro na Calibração", description: error.message, variant: "destructive" });
       } finally {
           setIsCalibrating(false);
       }
-  }, [activeSymbol, getHistoricalData, strategyParams, config, toast]);
+  }, [activeSymbol, getHistoricalData, strategyParams, config, toast, gbmConfidenceThreshold]);
 
   useEffect(() => {
     const candles = botCandleData;
@@ -323,8 +333,6 @@ export function useHFStrikeZone(
             setStrategyCounts(newCounts);
           }
           
-          const GBM_MIN_CONFIDENCE = 15; 
-    
           const validSignals = allSignalsResult
             .filter((zone): zone is StrikeZone => {
               if (zone === null || zone.type === 'NEUTRAL') return false;

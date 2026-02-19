@@ -14,6 +14,7 @@ export interface AutoCalibratorConfig {
   hfConfig: HFConfig;
   assetSymbol: string;
   onProgress: (strategy: StrategyType, progress: number, details: string) => void;
+  gbmConfidenceThreshold: number; 
 }
 
 export interface CalibrationResult {
@@ -25,6 +26,11 @@ export interface CalibrationResult {
   finalSharpe: number;
   finalParams: any;
 }
+
+export interface AutoCalibrationResults extends Partial<Record<StrategyType, CalibrationResult>> {
+    finalGbmThreshold?: number;
+}
+
 
 // Função para perturbar os parâmetros de forma mais agressiva
 const perturbParams = (params: any, strategy: StrategyType): any => {
@@ -48,6 +54,7 @@ const perturbParams = (params: any, strategy: StrategyType): any => {
     case 'MICROSTRUCTURE_SCALP':
         newParams.velocityThreshold = Math.max(0.8, newParams.velocityThreshold - 0.1);
         break;
+    // GBM strategies are handled in the main loop
     default:
       break;
   }
@@ -57,57 +64,84 @@ const perturbParams = (params: any, strategy: StrategyType): any => {
 
 export async function runAutoCalibration(
   config: AutoCalibratorConfig
-): Promise<Record<StrategyType, CalibrationResult>> {
-  const { candles, initialParams, hfConfig, assetSymbol, targetTradeFrequency, maxIterations, onProgress } = config;
+): Promise<AutoCalibrationResults> {
+  const { candles, initialParams, hfConfig, assetSymbol, targetTradeFrequency, maxIterations, onProgress, gbmConfidenceThreshold } = config;
   
-  const finalResults: Record<string, CalibrationResult> = {};
+  const finalResults: Partial<Record<StrategyType, CalibrationResult>> = {};
+
   const strategiesToCalibrate: StrategyType[] = [
-    'HF_MEAN_REVERSION', 'STD_TREND_FOLLOW', 'BOLLINGER_SQUEEZE', 'VOLUME_ABSORPTION', 'MICROSTRUCTURE_SCALP'
+    'HF_MEAN_REVERSION', 'STD_TREND_FOLLOW', 'BOLLINGER_SQUEEZE', 'VOLUME_ABSORPTION', 'MICROSTRUCTURE_SCALP', 'GBM_20S', 'GBM_40S'
   ];
+
+  let sharedGbmThreshold = gbmConfidenceThreshold;
 
   for (const strategy of strategiesToCalibrate) {
     onProgress(strategy, 0, `Iniciando calibração para ${strategy}...`);
 
     let currentParams = { ...initialParams[strategy] };
+    let currentGbmThresholdForLoop = sharedGbmThreshold;
+    
     let bestParams = { ...currentParams };
-    let bestResult: InstitutionalBacktestResult | null = null;
-    let iteration = 0;
+    let bestGbmThreshold = currentGbmThresholdForLoop;
 
-    // Run initial backtest to get a baseline
-    const initialStrategyResult = runSingleStrategyBacktest(candles, hfConfig, strategy, assetSymbol, currentParams);
+    const initialStrategyResult = runSingleStrategyBacktest(candles, hfConfig, strategy, assetSymbol, currentParams, { gbmConfidenceThreshold: currentGbmThresholdForLoop });
     let bestSharpe = initialStrategyResult?.metrics?.sharpeRatio ?? -Infinity;
     let bestTradeCount = initialStrategyResult?.totalTrades ?? 0;
     
-    if (bestTradeCount >= targetTradeFrequency) {
-        finalResults[strategy] = {
-            strategy, success: true, initialTrades: bestTradeCount, finalTrades: bestTradeCount,
-            initialSharpe: bestSharpe, finalSharpe: bestSharpe, finalParams: bestParams
-        };
-        onProgress(strategy, 100, "Meta já atingida com parâmetros iniciais.");
-        continue;
-    }
+    let iteration = 0;
+    let goalMet = bestTradeCount >= targetTradeFrequency;
 
     while (iteration < maxIterations) {
       iteration++;
-      currentParams = perturbParams(currentParams, strategy);
-
-      const currentRunResult = runSingleStrategyBacktest(candles, hfConfig, strategy, assetSymbol, currentParams);
       
+      let tempParams = { ...currentParams };
+      let tempGbmThreshold = currentGbmThresholdForLoop;
+
+      if (strategy === 'GBM_20S' || strategy === 'GBM_40S') {
+        tempGbmThreshold = Math.max(5, tempGbmThreshold - 1);
+      } else {
+        tempParams = perturbParams(tempParams, strategy);
+      }
+
+      const currentRunResult = runSingleStrategyBacktest(candles, hfConfig, strategy, assetSymbol, tempParams, { gbmConfidenceThreshold: tempGbmThreshold });
       const currentTrades = currentRunResult?.totalTrades ?? 0;
       const currentSharpe = currentRunResult?.metrics?.sharpeRatio ?? -Infinity;
       
       onProgress(strategy, (iteration / maxIterations) * 100, `Iteração ${iteration}: ${currentTrades} trades, Sharpe ${currentSharpe.toFixed(2)}`);
-      
-      if (currentTrades >= targetTradeFrequency) {
-        if (currentSharpe > bestSharpe) {
-          bestSharpe = currentSharpe;
-          bestParams = { ...currentParams };
+
+      if (!goalMet) {
+        if (currentTrades >= targetTradeFrequency) {
+          goalMet = true;
           bestTradeCount = currentTrades;
+          bestSharpe = currentSharpe;
+          bestParams = tempParams;
+          bestGbmThreshold = tempGbmThreshold;
+        } else if (currentTrades > bestTradeCount) {
+          bestTradeCount = currentTrades;
+          bestSharpe = currentSharpe;
+          bestParams = tempParams;
+          bestGbmThreshold = tempGbmThreshold;
+        }
+      } else {
+        if (currentTrades >= targetTradeFrequency && currentSharpe > bestSharpe) {
+          bestTradeCount = currentTrades;
+          bestSharpe = currentSharpe;
+          bestParams = tempParams;
+          bestGbmThreshold = tempGbmThreshold;
         }
       }
       
-      // Stop if we found a decent balance
-      if (currentTrades >= targetTradeFrequency && currentSharpe > 0.5) break;
+       currentParams = tempParams;
+       currentGbmThresholdForLoop = tempGbmThreshold;
+
+      if (goalMet && (strategy !== 'GBM_20S' && strategy !== 'GBM_40S')) break;
+      if (iteration === maxIterations && !goalMet) {
+          onProgress(strategy, 100, `Meta não atingida. Melhor resultado: ${bestTradeCount} trades.`);
+      }
+    }
+    
+    if (strategy === 'GBM_20S' || strategy === 'GBM_40S') {
+        sharedGbmThreshold = bestGbmThreshold;
     }
 
     finalResults[strategy] = {
@@ -118,6 +152,7 @@ export async function runAutoCalibration(
     };
      onProgress(strategy, 100, "Calibração concluída.");
   }
-
-  return finalResults as Record<StrategyType, CalibrationResult>;
+  
+  const finalResultObject = { ...finalResults, finalGbmThreshold: sharedGbmThreshold };
+  return finalResultObject as AutoCalibrationResults;
 }
