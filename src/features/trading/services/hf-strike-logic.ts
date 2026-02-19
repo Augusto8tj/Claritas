@@ -82,103 +82,166 @@ export interface SqueezeParams { bbwThreshold: number; breakoutMargin: number; }
 export interface AbsorptionParams { climaxMultiplier: number; absorptionFactor: number; }
 export interface ScalpParams { velocityThreshold: number; }
 
-// --- GBM Enhancements ---
-interface GBMParameters {
-  drift: number;
-  volatility: number;
-}
-const gbmCache = new Map<string, { params: GBMParameters, timestamp: number }>();
-const GBM_CACHE_TTL = 60 * 1000; // 1 minuto
-const GBM_SIMULATIONS = 200;
+// ============================================================================
+// GBM MONTE CARLO - ESTRATEGISTAS PREDITIVOS (NOVA IMPLEMENTAÇÃO)
+// ============================================================================
 
-const getLogReturns = (candles: CandleData[]): number[] => {
-  const returns = [];
-  for (let i = 1; i < candles.length; i++) {
-    if (candles[i-1].close > 0) {
-      returns.push(Math.log(candles[i].close / candles[i-1].close));
+/**
+ * Calcula os parâmetros de Drift e Volatilidade de um ativo a partir de dados históricos.
+ * @param candles - Array de velas para análise (espera-se 1-minuto).
+ * @returns Um objeto com drift e volatilidade por segundo.
+ */
+function calibrateGBMParams(candles: CandleData[]): { drift: number; volatility: number } {
+  const lookback = 100;
+  const candleDurationSeconds = 60; // Assumindo velas de 1 minuto
+  const dataSlice = candles.length > lookback ? candles.slice(-lookback) : candles;
+
+  if (dataSlice.length < 10) {
+    // Fallback para volatilidade por segundo
+    return { drift: 0, volatility: 0.002 / Math.sqrt(candleDurationSeconds) };
+  }
+
+  const logReturns: number[] = [];
+  for (let i = 1; i < dataSlice.length; i++) {
+    if (dataSlice[i - 1].close > 0) {
+      logReturns.push(Math.log(dataSlice[i].close / dataSlice[i - 1].close));
     }
   }
-  return returns;
-};
 
-const calibrateGBM = (candles: CandleData[], assetSymbol: string): GBMParameters => {
-  const now = Date.now();
-  const cached = gbmCache.get(assetSymbol);
-  if (cached && now - cached.timestamp < GBM_CACHE_TTL) {
-    return cached.params;
-  }
-
-  const logReturns = getLogReturns(candles);
   if (logReturns.length < 2) {
-    return { drift: 0, volatility: 0.001 };
+    return { drift: 0, volatility: 0.002 / Math.sqrt(candleDurationSeconds) };
   }
 
-  const meanReturn = logReturns.reduce((a, b) => a + b, 0) / logReturns.length;
-  const variance = logReturns.reduce((sum, r) => sum + Math.pow(r - meanReturn, 2), 0) / (logReturns.length - 1);
-  const stdDev = Math.sqrt(variance);
+  const meanReturnPerCandle = logReturns.reduce((a, b) => a + b, 0) / logReturns.length;
+  const variancePerCandle = logReturns.reduce((sum, r) => sum + Math.pow(r - meanReturnPerCandle, 2), 0) / (logReturns.length - 1);
+  const volatilityPerCandle = Math.sqrt(variancePerCandle);
+  
+  // Converte os parâmetros de "por minuto" para "por segundo" para a simulação
+  const driftPerSecond = meanReturnPerCandle / candleDurationSeconds;
+  const volatilityPerSecond = volatilityPerCandle / Math.sqrt(candleDurationSeconds);
+  
+  return { drift: driftPerSecond, volatility: volatilityPerSecond };
+}
 
-  const candleDurationSeconds = 60; // Assumindo velas de 1m
-  const drift = (meanReturn / candleDurationSeconds) + (variance / (2 * candleDurationSeconds));
-  const volatility = stdDev / Math.sqrt(candleDurationSeconds);
+/**
+ * Roda uma simulação de Monte Carlo usando o Movimento Browniano Geométrico.
+ * @param startPrice - Preço inicial para a simulação.
+ * @param durationSeconds - Duração da simulação em segundos.
+ * @param drift - O drift por segundo.
+ * @param volatility - A volatilidade por segundo.
+ * @param numPaths - O número de caminhos a simular.
+ * @returns A probabilidade do preço terminar acima do inicial.
+ */
+function runMonteCarloPrediction(
+  startPrice: number,
+  durationSeconds: number, 
+  drift: number,
+  volatility: number,
+  numPaths: number = 200
+): { probUp: number; probDown: number; meanPrice: number } {
+  const standardNormalRandom = (): number => {
+    let sum = 0.0;
+    for (let i = 0; i < 12; i++) {
+      sum += Math.random();
+    }
+    return sum - 6.0;
+  };
+  
+  const dt = 1; // 1 segundo
+  const sqrt_dt = 1;
 
-  const params = { drift, volatility };
-  gbmCache.set(assetSymbol, { params, timestamp: now });
-  return params;
-};
+  let finalPrices: number[] = [];
+  let pathsEndingUp = 0;
 
-function runGBMMonteCarlo(startPrice: number, durationSeconds: number, params: GBMParameters): number {
-  let finalPrices = [];
-  for (let i = 0; i < GBM_SIMULATIONS; i++) {
+  for (let i = 0; i < numPaths; i++) {
     let price = startPrice;
     for (let t = 0; t < durationSeconds; t++) {
-      const randomShock = (Math.random() - 0.5) + (Math.random() - 0.5) + (Math.random() - 0.5); // Aproximação normal
-      price *= Math.exp((params.drift - 0.5 * params.volatility ** 2) + params.volatility * randomShock);
+      const Z = standardNormalRandom();
+      price = price * Math.exp((drift - 0.5 * volatility * volatility) * dt + volatility * sqrt_dt * Z);
     }
     finalPrices.push(price);
+    if (price > startPrice) {
+      pathsEndingUp++;
+    }
   }
-  const winCount = finalPrices.filter(p => p > startPrice).length;
-  return (winCount / GBM_SIMULATIONS) * 100;
+
+  const probUp = pathsEndingUp / numPaths;
+  const probDown = 1 - probUp;
+  const meanPrice = finalPrices.reduce((a, b) => a + b, 0) / numPaths;
+
+  return { probUp, probDown, meanPrice };
 }
 
+/**
+ * Função de fábrica para criar os detectores GBM de 20s e 40s.
+ * @param duration - Duração da previsão em segundos (20 ou 40).
+ * @returns Uma função de detecção de StrikeZone.
+ */
 function createGBMDetector(duration: 20 | 40): (indicators: Indicators, currentPrice: number, candles: CandleData[], assetSymbol: string) => StrikeZone | null {
-  const strategyType: StrategyType = `GBM_${duration}S` as StrategyType;
-
   return (indicators: Indicators, currentPrice: number, candles: CandleData[], assetSymbol: string): StrikeZone | null => {
-    if (!indicators.atr || !currentPrice || candles.length < 50) {
-      recordVeto(strategyType, 'Dados insuficientes');
+    const strategyType = `GBM_${duration}S` as StrategyType;
+    
+    if (!currentPrice || candles.length < 20) {
+      recordVeto(strategyType, 'Dados de candle insuficientes para calibração');
       return null;
     }
-
-    const gbmParams = calibrateGBM(candles, assetSymbol);
-    const winProbability = runGBMMonteCarlo(currentPrice, duration, gbmParams);
-
-    const confidence = Math.abs(winProbability - 50) * 2;
-    if (confidence < 55) { // Limiar mínimo de confiança
-        recordVeto(strategyType, 'Confiança GBM baixa');
+    
+    const { drift, volatility } = calibrateGBMParams(candles.slice(-100));
+    
+    if (volatility === 0) {
+        recordVeto(strategyType, 'Volatilidade calculada é zero, impossível prever.');
         return null;
     }
-
-    const type = winProbability > 50 ? 'LONG_ENTRY' : 'SHORT_ENTRY';
+    
+    const { probUp } = runMonteCarloPrediction(
+      currentPrice, duration, drift, volatility, 200
+    );
+    
+    const rawConfidence = Math.abs(probUp - 0.5) * 200;
+    
+    const MIN_CONFIDENCE = 55;
+    if (rawConfidence < MIN_CONFIDENCE) {
+      recordVeto(strategyType, `Convicção insuficiente (${rawConfidence.toFixed(1)}% < ${MIN_CONFIDENCE}%)`);
+      return null;
+    }
+    
+    const type: StrikeZone['type'] = probUp > 0.5 ? 'LONG_ENTRY' : 'SHORT_ENTRY';
+    const confidence = Math.min(90, rawConfidence);
+    
+    const atr = indicators.atr || currentPrice * volatility * Math.sqrt(duration);
     
     const zone: StrikeZone = {
       type,
       confidence,
-      triggers: [`🔮 Predição GBM ${duration}s (${winProbability.toFixed(1)}%)`],
+      triggers: [
+        `🔮 GBM ${duration}s — P(up)=${(probUp * 100).toFixed(1)}%`,
+        `📐 drift=${(drift * 60 * 100).toFixed(4)}%/m σ=${(volatility * Math.sqrt(60) * 100).toFixed(3)}%/m`
+      ],
       entry: { price: currentPrice, timestamp: Date.now() },
       strategy: strategyType,
       targets: {
-        takeProfit: type === 'LONG_ENTRY' ? currentPrice + indicators.atr * 1.5 : currentPrice - indicators.atr * 1.5,
-        stopLoss: type === 'LONG_ENTRY' ? currentPrice - indicators.atr : currentPrice + indicators.atr,
+        takeProfit: type === 'LONG_ENTRY' ? currentPrice + atr * 1.5 : currentPrice - atr * 1.5,
+        stopLoss: type === 'LONG_ENTRY' ? currentPrice - atr : currentPrice + atr,
         riskReward: 1.5,
       },
-      indicators: { rsi: indicators.rsi || 50, bbPosition: 0, bbWidth: indicators.bbw || 0, volumeSpike: false, divergence: null },
+      indicators: {
+        rsi: indicators.rsi || 50, bbPosition: 0,
+        bbWidth: indicators.bbw || 0, volumeSpike: false, divergence: null
+      },
       duration,
     };
+    
+    console.log(`[GBM_${duration}S] SIGNAL:`, { 
+      type, confidence: confidence.toFixed(1), probUp: (probUp*100).toFixed(1)+'%', drift: drift.toFixed(8), volatility: volatility.toFixed(8) 
+    });
     
     recordSignal(zone.strategy, zone.confidence);
     return zone;
   };
 }
+
+export const detectGBM20sZone = createGBMDetector(20);
+export const detectGBM40sZone = createGBMDetector(40);
 
 
 // ============================================================================
@@ -567,6 +630,3 @@ export function detectRandomWalkZone(
     duration: 60,
   };
 }
-
-export const detectGBM20sZone = createGBMDetector(20);
-export const detectGBM40sZone = createGBMDetector(40);

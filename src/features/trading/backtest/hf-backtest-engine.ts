@@ -305,8 +305,12 @@ function runSingleStrategyBacktest(
                 const syntheticTicks = convertCandlesToSyntheticTicks(windowCandles.slice(-20));
                 strikeZone = detectMicrostructureScalpZone(syntheticTicks, windowCandles, indicators, currentPrice, params.MICROSTRUCTURE_SCALP);
                 break;
-            case 'GBM_20S': strikeZone = detectGBM20sZone(indicators, currentPrice, windowCandles, assetSymbol); break;
-            case 'GBM_40S': strikeZone = detectGBM40sZone(indicators, currentPrice, windowCandles, assetSymbol); break;
+            case 'GBM_20S': 
+                strikeZone = detectGBM20sZone(indicators, currentPrice, windowCandles, assetSymbol); 
+                break;
+            case 'GBM_40S': 
+                strikeZone = detectGBM40sZone(indicators, currentPrice, windowCandles, assetSymbol); 
+                break;
         }
         
         if (indicators.rsi) prevRsi = indicators.rsi;
