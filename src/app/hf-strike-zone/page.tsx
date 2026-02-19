@@ -65,6 +65,7 @@ function PageContent() {
     isExecuting,
     strategyParams,
     updateStrategyParams,
+    gbmConfidenceThreshold,
     lastCalibrationTime,
   } = useHFStrikeZone(
       activeSymbol, 
@@ -197,6 +198,7 @@ function PageContent() {
                <HFStrategyTuningPanel 
                 params={strategyParams}
                 onParamChange={updateStrategyParams}
+                gbmConfidenceThreshold={gbmConfidenceThreshold}
               />
                <HFSignalCard signal={activeStrikeZone} onExecute={handleExecuteStrike} isExecuting={isExecuting} consecutiveLosses={consecutiveLosses} isCooldown={isCooldownActive}/>
         </div>

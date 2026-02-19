@@ -274,15 +274,13 @@ export function useHFStrikeZone(
             setStrategyCounts(newCounts);
           }
           
+          const GBM_MIN_CONFIDENCE = 15;
+    
           const validSignals = allSignalsResult
             .filter((zone): zone is StrikeZone => {
               if (zone === null || zone.type === 'NEUTRAL') return false;
-              
               const isGBM = zone.strategy === 'GBM_20S' || zone.strategy === 'GBM_40S';
-              if (isGBM) {
-                  return true; 
-              }
-              
+              if (isGBM) return (zone.gbmRawConfidence ?? zone.confidence) >= GBM_MIN_CONFIDENCE;
               return zone.confidence >= minConfidence;
             })
             .map(applyOptimalDuration);
@@ -331,7 +329,7 @@ export function useHFStrikeZone(
                 optimalDuration = mostConfidentPredictor.duration;
                 durationSource = `GBM Preditor (${mostConfidentPredictor.strategy}, conf=${mostConfidentPredictor.confidence.toFixed(0)}%)`;
               }
-            
+    
               console.log(`[CONSENSUS_DURATION] Duração final: ${optimalDuration.toFixed(1)}s | Fonte: ${durationSource}`);
               
               const avgConfidence = totalConfidence / participants.length;
@@ -473,6 +471,7 @@ export function useHFStrikeZone(
     activeStrikeZone, marketRegime, positionSizing, riskManager, fullIndicators: indicators,
     supplyDemandZones: (indicators as any)?.supplyDemandZones, allSignals, strategyCounts, consecutiveLosses, isCooldownActive, isExecuting,
     strategyParams, updateStrategyParams: handleUpdateStrategyParams,
+    gbmConfidenceThreshold,
     lastCalibrationTime,
   };
 }

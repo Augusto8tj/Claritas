@@ -53,14 +53,14 @@ const StrategyTuningItem: React.FC<StrategyTuningItemProps> = ({
     <div className="space-y-2 p-3 border rounded-lg bg-background">
         <div className="flex justify-between items-center mb-1">
             <Label htmlFor={`${paramKey}-slider`} className="font-medium">{title}</Label>
-            <span className="font-mono text-sm text-primary font-semibold">{value.toFixed(paramKey === 'rev-tolerance' || paramKey === 'squeeze-margin' || paramKey === 'absorb-atr' ? 2 : 1)}{unit}</span>
+            <span className="font-mono text-sm text-primary font-semibold">{(value ?? 0).toFixed(paramKey === 'rev-tolerance' || paramKey === 'squeeze-margin' || paramKey === 'absorb-atr' ? 2 : 1)}{unit}</span>
         </div>
         <Slider
             id={`${paramKey}-slider`}
             min={min}
             max={max}
             step={step}
-            value={[value]}
+            value={[value ?? 0]}
             onValueChange={([val]) => onValueChange(val)}
         />
         <p className="text-xs text-muted-foreground pt-1">{description}</p>
