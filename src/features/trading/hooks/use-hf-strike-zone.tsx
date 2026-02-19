@@ -66,7 +66,7 @@ export function useHFStrikeZone(
 ) {
   const { user } = useAuth();
   const { toast } = useToast();
-  const { executeTrade, durationLimits, isConnected, dataVersion, isSwitchingSymbol } = useDerivApiV2();
+  const { executeTrade, durationLimits, isConnected, dataVersion } = useDerivApiV2();
   const { enabled, minConfidence, autoExecute, maxConcurrentTrades, martingaleMultiplier, maxConsecutiveLosses, cooldownSeconds, preferredDuration, minConsensusSignals } = config;
   const { dailyBalance, dailyTarget, operationsLog, manualStake } = sessionConfig;
   
@@ -129,6 +129,8 @@ export function useHFStrikeZone(
     return isRandomCached.current;
   }, []);
 
+  const [lastCalibrationTime, setLastCalibrationTime] = useState(0);
+
   useEffect(() => {
     const candles = botCandleData;
     if (candles.length < 200 || !config || !activeSymbol) return;
@@ -141,10 +143,11 @@ export function useHFStrikeZone(
     setTimeout(() => {
       console.log('[AUTO_CALIBRATE] Iniciando backtest em background para atualizar tempos ótimos...');
       const last500 = candles.slice(-500);
-      const results = runAllStrategiesBacktest(last500, config, activeSymbol!, strategyParams);
+      const results = runAllStrategiesBacktest(last500, config, activeSymbol, strategyParams);
       
       if (results._optimalDurations) {
         console.log('[AUTO_CALIBRATE] Tempos ótimos atualizados:', results._optimalDurations);
+        setLastCalibrationTime(Date.now());
       }
     }, 0);
     
@@ -180,7 +183,7 @@ export function useHFStrikeZone(
   useEffect(() => {
     const timeoutId = setTimeout(() => {
       if (executionLockRef.current) return;
-      if (!enabled || isCooldownActive || isExecuting || isSwitchingSymbol) {
+      if (!enabled || isCooldownActive || isExecuting) {
         setActiveStrikeZone(null);
         return;
       }
@@ -211,8 +214,8 @@ export function useHFStrikeZone(
               detectRandomWalkZone(candles, indicators, currentPrice),
           ];
     
-          const gbm20sSignal = detectGBM20sZone(candles, indicators, currentPrice, activeSymbol, technicalSignals.filter((z): z is StrikeZone => z !== null));
-          const gbm40sSignal = detectGBM40sZone(candles, indicators, currentPrice, activeSymbol, technicalSignals.filter((z): z is StrikeZone => z !== null));
+          const gbm20sSignal = detectGBM20sZone(candles, indicators, currentPrice, activeSymbol);
+          const gbm40sSignal = detectGBM40sZone(candles, indicators, currentPrice, activeSymbol);
     
           const allSignalsResult = [...technicalSignals, gbm20sSignal, gbm40sSignal];
           
@@ -253,36 +256,20 @@ export function useHFStrikeZone(
     
               let optimalDuration = 32;
               let durationSource = "Fallback";
-    
-              const predictiveParticipants = participants.filter(
-                p => p.strategy === 'GBM_20S' || p.strategy === 'GBM_40S'
-              );
-    
-              if (predictiveParticipants.length > 0) {
-                  const mostConfidentPredictor = predictiveParticipants.reduce(
-                      (best, current) => current.confidence > best.confidence ? current : best
-                  );
-                  optimalDuration = mostConfidentPredictor.duration;
-                  durationSource = `Preditor de Elite (${mostConfidentPredictor.strategy})`;
-              } 
-              else {
-                  const nonPredictiveParticipants = participants;
-                  if (nonPredictiveParticipants.length > 0) {
-                      const totalWeight = nonPredictiveParticipants.reduce((sum, s) => sum + s.confidence, 0);
-                      const weightedDuration = nonPredictiveParticipants.reduce((sum, s) => sum + s.duration * s.confidence, 0);
-                      if (totalWeight > 0) {
-                          optimalDuration = weightedDuration / totalWeight;
-                          durationSource = "Média Ponderada Técnica";
-                          
-                          if (indicators && indicators.bbw) {
-                              if (indicators.bbw > 2.5) {
-                                  optimalDuration *= 0.8;
-                                  durationSource += ' (Ajuste Volatilidade Alta)';
-                              } else if (indicators.bbw < 0.8) {
-                                  optimalDuration *= 1.2;
-                                  durationSource += ' (Ajuste Volatilidade Baixa)';
-                              }
-                          }
+
+              const totalWeight = participants.reduce((sum, s) => sum + s.confidence, 0);
+              const weightedDuration = participants.reduce((sum, s) => sum + s.duration * s.confidence, 0);
+
+              if (totalWeight > 0) {
+                  optimalDuration = weightedDuration / totalWeight;
+                  durationSource = "Média Ponderada Técnica";
+                  if (indicators && indicators.bbw) {
+                      if (indicators.bbw > 2.5) {
+                          optimalDuration *= 0.8;
+                          durationSource += ' (Ajuste Volatilidade Alta)';
+                      } else if (indicators.bbw < 0.8) {
+                          optimalDuration *= 1.2;
+                          durationSource += ' (Ajuste Volatilidade Baixa)';
                       }
                   }
               }
@@ -410,7 +397,7 @@ export function useHFStrikeZone(
     return () => clearTimeout(timeoutId);
 
   }, [
-      dataVersion, enabled, isCooldownActive, isExecuting, isSwitchingSymbol,
+      dataVersion, enabled, isCooldownActive, isExecuting,
       indicators, priceTicks, user, isConnected, botCandleData, config, 
       activeSymbol, strategyParams, getIsRandom, applyOptimalDuration, 
       minConfidence, minConsensusSignals, operationsLog, autoExecute, 
@@ -418,31 +405,6 @@ export function useHFStrikeZone(
       martingaleMultiplier, maxConcurrentTrades, durationLimits
   ]);
   
-  const [lastCalibrationTime, setLastCalibrationTime] = useState(0);
-
-  useEffect(() => {
-    const candles = botCandleData;
-    if (candles.length < 200 || !config || !activeSymbol) return;
-    
-    const now = Date.now();
-    if (now - lastBacktestRun.current < 5 * 60_000) return;
-    
-    lastBacktestRun.current = now;
-    
-    setTimeout(() => {
-      console.log('[AUTO_CALIBRATE] Iniciando backtest em background para atualizar tempos ótimos...');
-      const last500 = candles.slice(-500);
-      const results = runAllStrategiesBacktest(last500, config, activeSymbol!, strategyParams);
-      
-      if (results._optimalDurations) {
-        console.log('[AUTO_CALIBRATE] Tempos ótimos atualizados:', results._optimalDurations);
-        setLastCalibrationTime(Date.now());
-      }
-    }, 0);
-    
-  }, [botCandleData, config, activeSymbol, strategyParams]);
-
-
   return {
     activeStrikeZone, marketRegime, positionSizing, riskManager, fullIndicators: indicators,
     supplyDemandZones: (indicators as any)?.supplyDemandZones, allSignals, strategyCounts, consecutiveLosses, isCooldownActive, isExecuting,

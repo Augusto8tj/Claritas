@@ -138,17 +138,10 @@ function runMonteCarloPrediction(
 }
 
 function createGBMDetector(
-    duration: 20 | 40,
-    options?: { minOtherSignals?: number }
-): (candles: CandleData[], indicators: Indicators, currentPrice: number, assetSymbol: string, otherSignals?: StrikeZone[]) => StrikeZone | null {
-  return (candles: CandleData[], indicators: Indicators, currentPrice: number, assetSymbol: string, otherSignals?: StrikeZone[]): StrikeZone | null => {
+    duration: 20 | 40
+): (candles: CandleData[], indicators: Indicators, currentPrice: number, assetSymbol: string) => StrikeZone | null {
+  return (candles: CandleData[], indicators: Indicators, currentPrice: number, assetSymbol: string): StrikeZone | null => {
     const strategyType = `GBM_${duration}S` as StrategyType;
-
-    const minRequired = options?.minOtherSignals ?? 0;
-    if (minRequired > 0 && (!otherSignals || otherSignals.length < minRequired)) {
-      recordVeto(strategyType, `Aguardando consenso (${otherSignals?.length ?? 0}/${minRequired} sinais)`);
-      return null;
-    }
     
     if (!currentPrice || candles.length < 20) {
       recordVeto(strategyType, 'Dados de candle insuficientes para calibração');
@@ -168,7 +161,7 @@ function createGBMDetector(
     
     const rawConfidence = Math.abs(probUp - 0.5) * 200;
     
-    const MIN_CONFIDENCE = 55;
+    const MIN_CONFIDENCE = 10;
     if (rawConfidence < MIN_CONFIDENCE) {
       recordVeto(strategyType, `Convicção insuficiente (${rawConfidence.toFixed(1)}% < ${MIN_CONFIDENCE}%)`);
       return null;
@@ -206,8 +199,8 @@ function createGBMDetector(
   };
 }
 
-export const detectGBM20sZone = createGBMDetector(20, { minOtherSignals: 2 });
-export const detectGBM40sZone = createGBMDetector(40, { minOtherSignals: 2 });
+export const detectGBM20sZone = createGBMDetector(20);
+export const detectGBM40sZone = createGBMDetector(40);
 
 
 // ============================================================================
