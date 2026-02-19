@@ -6,12 +6,25 @@ import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/com
 import { Label } from '@/components/ui/label';
 import { Slider } from '@/components/ui/slider';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
-import { SlidersHorizontal } from 'lucide-react';
+import { SlidersHorizontal, Zap, Clock, Users, ShieldAlert, GitCommit, GitPullRequest, Layers, Brain } from 'lucide-react';
 import type { StrategyParams, StrategyType } from '@/features/trading/hooks/use-hf-strike-zone';
+
+export interface HFConfig {
+  enabled: boolean;
+  minConfidence: number;
+  autoExecute: boolean;
+  maxConcurrentTrades: number;
+  preferredDuration: number;
+  minConsensusSignals: number; 
+  martingaleMultiplier: number;
+  maxConsecutiveLosses: number;
+  cooldownSeconds: number;
+}
 
 interface HFStrategyTuningPanelProps {
   params: StrategyParams;
-  onParamChange: (strategy: StrategyType, newParams: any) => void;
+  gbmConfidenceThreshold: number;
+  onParamChange: (strategy: StrategyType | 'GBM', newParams: any) => void;
 }
 
 interface StrategyTuningItemProps {
@@ -55,7 +68,7 @@ const StrategyTuningItem: React.FC<StrategyTuningItemProps> = ({
 );
 
 
-export function HFStrategyTuningPanel({ params, onParamChange }: HFStrategyTuningPanelProps) {
+export function HFStrategyTuningPanel({ params, gbmConfidenceThreshold, onParamChange }: HFStrategyTuningPanelProps) {
   return (
     <Card>
       <CardHeader>
@@ -157,7 +170,7 @@ export function HFStrategyTuningPanel({ params, onParamChange }: HFStrategyTunin
                         onValueChange={(val) => onParamChange('VOLUME_ABSORPTION', { atrMultiplier: val })}
                         min={0.5} max={2.5} step={0.1}
                         unit="x"
-                        description="Fator pelo qual o range da vela de clímax deve superar o ATR. Valores menores tornam o gatilho mais sensível."
+                        description="Fator pelo qual o range da vela de clímax deve superar o ATR."
                     />
                     <StrategyTuningItem
                         title="Fator de Absorção"
@@ -181,6 +194,20 @@ export function HFStrategyTuningPanel({ params, onParamChange }: HFStrategyTunin
                         min={0.5} max={5.0} step={0.1}
                         unit=" t/s"
                         description="Número de ticks por segundo para considerar 'alta frequência'. Ideal: 1.5 - 2.0."
+                    />
+                </AccordionContent>
+            </AccordionItem>
+            <AccordionItem value="GBM">
+                <AccordionTrigger>Especialistas Preditivos (GBM)</AccordionTrigger>
+                <AccordionContent className="space-y-4 pt-2">
+                    <StrategyTuningItem
+                        title="Limiar de Confiança GBM"
+                        paramKey="gbm-confidence"
+                        value={gbmConfidenceThreshold}
+                        onValueChange={(val) => onParamChange('GBM', { confidenceThreshold: val })}
+                        min={5} max={40} step={1}
+                        unit="%"
+                        description="Confiança mínima para um sinal GBM ser válido. Valores baixos (10-15%) são mais agressivos."
                     />
                 </AccordionContent>
             </AccordionItem>

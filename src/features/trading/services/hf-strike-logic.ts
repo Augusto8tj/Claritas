@@ -139,10 +139,9 @@ function runMonteCarloPrediction(
 }
 
 function createGBMDetector(
-    duration: 20 | 40,
-    options?: { minOtherSignals?: number }
-): (candles: CandleData[], indicators: Indicators, currentPrice: number, otherSignals?: StrikeZone[]) => StrikeZone | null {
-  return (candles: CandleData[], indicators: Indicators, currentPrice: number, otherSignals?: StrikeZone[]): StrikeZone | null => {
+  duration: 20 | 40,
+): (candles: CandleData[], indicators: Indicators, currentPrice: number, otherSignals: StrikeZone[], params: { gbmConfidenceThreshold: number }) => StrikeZone | null {
+  return (candles: CandleData[], indicators: Indicators, currentPrice: number, otherSignals: StrikeZone[], params: { gbmConfidenceThreshold: number }): StrikeZone | null => {
     const strategyType = `GBM_${duration}S` as StrategyType;
     
     if (!currentPrice || candles.length < 20) {
@@ -163,12 +162,11 @@ function createGBMDetector(
     
     const rawConfidence = Math.abs(probUp - 0.5) * 200;
     
-    const MIN_CONFIDENCE = 15;
-    const statusMessage = rawConfidence >= MIN_CONFIDENCE ? 'SINAL GERADO ✅' : 'MONITORANDO (sem convicção suficiente)';
+    const statusMessage = rawConfidence >= params.gbmConfidenceThreshold ? 'SINAL GERADO ✅' : 'MONITORANDO (sem convicção suficiente)';
     console.log(`[${strategyType}] Monte Carlo: P(up)=${(probUp*100).toFixed(1)}%, Conf=${rawConfidence.toFixed(1)}% | ${statusMessage}`);
 
-    if (rawConfidence < MIN_CONFIDENCE) {
-      recordVeto(strategyType, `Convicção insuficiente (${rawConfidence.toFixed(1)}% < ${MIN_CONFIDENCE}%)`);
+    if (rawConfidence < params.gbmConfidenceThreshold) {
+      recordVeto(strategyType, `Convicção insuficiente (${rawConfidence.toFixed(1)}% < ${params.gbmConfidenceThreshold}%)`);
       return null;
     }
     

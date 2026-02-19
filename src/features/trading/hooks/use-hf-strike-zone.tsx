@@ -99,11 +99,19 @@ export function useHFStrikeZone(
     MICROSTRUCTURE_SCALP: { velocityThreshold: 1.2 }
   });
 
-  const handleUpdateStrategyParams = useCallback((strategy: StrategyType, params: any) => {
-    setStrategyParams(prev => ({
-        ...prev,
-        [strategy]: { ...prev[strategy], ...params }
-    }));
+  const [gbmConfidenceThreshold, setGbmConfidenceThreshold] = useState(15);
+
+  const handleUpdateStrategyParams = useCallback((strategy: StrategyType | 'GBM', params: any) => {
+    if (strategy === 'GBM') {
+        if (params.confidenceThreshold !== undefined) {
+            setGbmConfidenceThreshold(params.confidenceThreshold);
+        }
+    } else {
+        setStrategyParams(prev => ({
+            ...prev,
+            [strategy]: { ...prev[strategy], ...params }
+        }));
+    }
   }, []);
   
   const [consecutiveLosses, setConsecutiveLosses] = useState(0);
@@ -242,8 +250,8 @@ export function useHFStrikeZone(
             lastGBMRunRef.current = now;
             const validTechnicals = technicalSignals.filter((z): z is StrikeZone => z !== null);
             gbmSignalsRef.current = {
-              gbm20: detectGBM20sZone(candles, indicators, currentPrice, validTechnicals),
-              gbm40: detectGBM40sZone(candles, indicators, currentPrice, validTechnicals),
+              gbm20: detectGBM20sZone(candles, indicators, currentPrice, validTechnicals, { gbmConfidenceThreshold }),
+              gbm40: detectGBM40sZone(candles, indicators, currentPrice, validTechnicals, { gbmConfidenceThreshold }),
             };
           }
           
@@ -266,14 +274,14 @@ export function useHFStrikeZone(
             setStrategyCounts(newCounts);
           }
           
-          const GBM_MIN_CONFIDENCE = 15;
-          
           const validSignals = allSignalsResult
             .filter((zone): zone is StrikeZone => {
               if (zone === null || zone.type === 'NEUTRAL') return false;
               
               const isGBM = zone.strategy === 'GBM_20S' || zone.strategy === 'GBM_40S';
-              if (isGBM) return (zone.gbmRawConfidence ?? zone.confidence) >= GBM_MIN_CONFIDENCE;
+              if (isGBM) {
+                  return true; 
+              }
               
               return zone.confidence >= minConfidence;
             })
@@ -399,8 +407,7 @@ export function useHFStrikeZone(
                     durationUnit = 't';
                     const durationInTicks = Math.max(5, Math.ceil(calculatedDurationInSeconds / 2));
                     finalDuration = Math.max(durationLimits.t.min, Math.min(durationInTicks, durationLimits.t.max));
-                    toast({ title: 'Ajuste de Duração', description: `Duração ótima em segundos indisponível. Usando ticks.`, variant: 'default' });
-                }
+                } 
                 else {
                     durationUnit = 's';
                     finalDuration = 32;
@@ -459,7 +466,7 @@ export function useHFStrikeZone(
       activeSymbol, strategyParams, getIsRandom, applyOptimalDuration, 
       minConfidence, minConsensusSignals, operationsLog, autoExecute, 
       toast, saveHFTradeLog, riskManager, manualStake, consecutiveLosses, 
-      martingaleMultiplier, maxConcurrentTrades, durationLimits
+      martingaleMultiplier, maxConcurrentTrades, durationLimits, gbmConfidenceThreshold
   ]);
   
   return {
