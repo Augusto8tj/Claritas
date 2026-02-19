@@ -138,10 +138,17 @@ function runMonteCarloPrediction(
 }
 
 function createGBMDetector(
-    duration: 20 | 40
-): (candles: CandleData[], indicators: Indicators, currentPrice: number, assetSymbol: string) => StrikeZone | null {
-  return (candles: CandleData[], indicators: Indicators, currentPrice: number, assetSymbol: string): StrikeZone | null => {
+    duration: 20 | 40,
+    options?: { minOtherSignals?: number }
+): (candles: CandleData[], indicators: Indicators, currentPrice: number, otherSignals?: StrikeZone[]) => StrikeZone | null {
+  return (candles: CandleData[], indicators: Indicators, currentPrice: number, otherSignals?: StrikeZone[]): StrikeZone | null => {
     const strategyType = `GBM_${duration}S` as StrategyType;
+    
+    const minRequired = options?.minOtherSignals ?? 0;
+    if (minRequired > 0 && (!otherSignals || otherSignals.length < minRequired)) {
+      recordVeto(strategyType, `Aguardando consenso (${otherSignals?.length ?? 0}/${minRequired} sinais)`);
+      return null;
+    }
     
     if (!currentPrice || candles.length < 20) {
       recordVeto(strategyType, 'Dados de candle insuficientes para calibração');
@@ -161,7 +168,11 @@ function createGBMDetector(
     
     const rawConfidence = Math.abs(probUp - 0.5) * 200;
     
-    const MIN_CONFIDENCE = 10;
+    const MIN_CONFIDENCE = 15;
+    
+    const statusMessage = rawConfidence >= MIN_CONFIDENCE ? 'SINAL GERADO ✅' : 'MONITORANDO (sem convicção suficiente)';
+    console.debug(`[${strategyType}] Monte Carlo: P(up)=${(probUp*100).toFixed(1)}%, Conf=${rawConfidence.toFixed(1)}%, drift=${drift.toFixed(7)}, σ=${volatility.toFixed(7)} | Status: ${statusMessage}`);
+
     if (rawConfidence < MIN_CONFIDENCE) {
       recordVeto(strategyType, `Convicção insuficiente (${rawConfidence.toFixed(1)}% < ${MIN_CONFIDENCE}%)`);
       return null;
@@ -177,7 +188,7 @@ function createGBMDetector(
       confidence,
       triggers: [
         `🔮 GBM ${duration}s — P(up)=${(probUp * 100).toFixed(1)}%`,
-        `📐 drift=${(drift * 60 * 100).toFixed(4)}%/m σ=${(volatility * Math.sqrt(60) * 100).toFixed(3)}%/m`
+        `📐 drift=${(drift * 60 * 100).toFixed(4)}%/m σ=${(volatility * Math.sqrt(60) * 100).toFixed(3)}%/√m`
       ],
       entry: { price: currentPrice, timestamp: Date.now() },
       strategy: strategyType,
