@@ -73,8 +73,6 @@ export function useHFStrikeZone(
   const rsiStateRef = useRef({ prev: 50 });
   const initialStrategies = useMemo(() => getCouncilStrategies('standard'), []);
   
-  const lastIsRandomCheck = useRef<number>(0);
-  const isRandomCached = useRef<boolean>(false);
   const lastBacktestRun = useRef<number>(0);
   
   const [marketRegime, setMarketRegime] = useState<RegimeCharacteristics | null>(null);
@@ -99,6 +97,7 @@ export function useHFStrikeZone(
     VOLUME_ABSORPTION: { climaxMultiplier: 1.8, absorptionFactor: 0.8 },
     MICROSTRUCTURE_SCALP: { velocityThreshold: 1.2 }
   });
+  const [lastCalibrationTime, setLastCalibrationTime] = useState(0);
 
   const handleUpdateStrategyParams = useCallback((strategy: StrategyType, params: any) => {
     setStrategyParams(prev => ({
@@ -118,6 +117,8 @@ export function useHFStrikeZone(
     return calculateAllIndicators(botCandleData, initialStrategies, '1m', { duration: 1, unit: 't' });
   }, [botCandleData, enabled, initialStrategies]);
   
+  const lastIsRandomCheck = useRef<number>(0);
+  const isRandomCached = useRef<boolean>(false);
   const getIsRandom = useCallback((candles: CandleData[], indicators: Indicators | null) => {
     if (!indicators) return false;
     const now = Date.now();
@@ -128,8 +129,6 @@ export function useHFStrikeZone(
     lastIsRandomCheck.current = now;
     return isRandomCached.current;
   }, []);
-
-  const [lastCalibrationTime, setLastCalibrationTime] = useState(0);
 
   useEffect(() => {
     const candles = botCandleData;
@@ -214,8 +213,8 @@ export function useHFStrikeZone(
               detectRandomWalkZone(candles, indicators, currentPrice),
           ];
     
-          const gbm20sSignal = detectGBM20sZone(candles, indicators, currentPrice, activeSymbol);
-          const gbm40sSignal = detectGBM40sZone(candles, indicators, currentPrice, activeSymbol);
+          const gbm20sSignal = detectGBM20sZone(candles, indicators, currentPrice);
+          const gbm40sSignal = detectGBM40sZone(candles, indicators, currentPrice);
     
           const allSignalsResult = [...technicalSignals, gbm20sSignal, gbm40sSignal];
           
@@ -248,31 +247,45 @@ export function useHFStrikeZone(
           const determineConsensus = (participants: StrikeZone[], direction: 'LONG_ENTRY' | 'SHORT_ENTRY'): StrikeZone | null => {
               if (participants.length < minConsensusSignals) return null;
               
-              const totalConfidence = participants.reduce((sum, s) => sum + s.confidence, 0);
               const opponentSignals = direction === 'LONG_ENTRY' ? shortSignals : longSignals;
+              const totalConfidence = participants.reduce((sum, s) => sum + s.confidence, 0);
               const opponentConfidence = opponentSignals.reduce((sum, s) => sum + s.confidence, 0);
     
               if (totalConfidence <= opponentConfidence) return null;
     
-              let optimalDuration = 32;
-              let durationSource = "Fallback";
-
-              const totalWeight = participants.reduce((sum, s) => sum + s.confidence, 0);
-              const weightedDuration = participants.reduce((sum, s) => sum + s.duration * s.confidence, 0);
-
-              if (totalWeight > 0) {
-                  optimalDuration = weightedDuration / totalWeight;
-                  durationSource = "Média Ponderada Técnica";
-                  if (indicators && indicators.bbw) {
-                      if (indicators.bbw > 2.5) {
-                          optimalDuration *= 0.8;
-                          durationSource += ' (Ajuste Volatilidade Alta)';
-                      } else if (indicators.bbw < 0.8) {
-                          optimalDuration *= 1.2;
-                          durationSource += ' (Ajuste Volatilidade Baixa)';
-                      }
-                  }
+              const initialWeightedDuration = participants.length > 0
+                ? participants.reduce((sum, s) => sum + s.duration * s.confidence, 0) /
+                  participants.reduce((sum, s) => sum + s.confidence, 0)
+                : 30; // fallback de 30s (razoável para HF)
+              
+              let optimalDuration = initialWeightedDuration;
+              let durationSource = "Média Ponderada Técnica";
+            
+              // Ajuste por volatilidade do ativo
+              if (indicators && indicators.bbw) {
+                if (indicators.bbw > 2.5) {
+                  optimalDuration *= 0.8;
+                  durationSource += ' (Alta Volatilidade)';
+                } else if (indicators.bbw < 0.8) {
+                  optimalDuration *= 1.2;
+                  durationSource += ' (Baixa Volatilidade)';
+                }
               }
+            
+              // Se preditores GBM participam, eles têm PRIORIDADE TOTAL na duração
+              const predictiveParticipants = participants.filter(
+                p => p.strategy === 'GBM_20S' || p.strategy === 'GBM_40S'
+              );
+            
+              if (predictiveParticipants.length > 0) {
+                const mostConfidentPredictor = predictiveParticipants.reduce(
+                  (best, current) => current.confidence > best.confidence ? current : best
+                );
+                optimalDuration = mostConfidentPredictor.duration;
+                durationSource = `GBM Preditor (${mostConfidentPredictor.strategy}, conf=${mostConfidentPredictor.confidence.toFixed(0)}%)`;
+              }
+            
+              console.log(`[CONSENSUS_DURATION] Duração final: ${optimalDuration.toFixed(1)}s | Fonte: ${durationSource}`);
               
               const avgConfidence = totalConfidence / participants.length;
               const leadSignal = participants.reduce((best, s) => s.confidence > best.confidence ? s : best, participants[0]);
