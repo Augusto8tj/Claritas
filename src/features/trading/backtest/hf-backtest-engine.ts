@@ -8,15 +8,18 @@ import {
     detectBollingerSqueezeZone,
     detectVolumeAbsorptionZone,
     detectMicrostructureScalpZone,
+    detectRandomWalkZone,
     detectGBM20sZone,
     detectGBM40sZone,
     type StrikeZone,
     StrategyType,
     strategyMetadata,
     StrategyParams,
+    getRandomAssetParams,
 } from '@/features/trading/services/hf-strike-logic';
 import { calculateAllIndicators } from '@/features/trading/services/indicator-service';
 import { getCouncilStrategies } from '@/features/trading/services/council-strategies';
+import { analyzeOptimalDuration } from '../services/gbm-calibrator';
 
 
 // ============================================================================
@@ -297,19 +300,27 @@ function runSingleStrategyBacktest(
         
         let strikeZone: StrikeZone | null = null;
         switch (strategy) {
-            case 'HF_MEAN_REVERSION': strikeZone = detectHFMeanReversionZone(indicators, currentPrice, params.HF_MEAN_REVERSION); break;
-            case 'STD_TREND_FOLLOW': strikeZone = detectStandardTrendZone(indicators, currentPrice, prevRsi, params.STD_TREND_FOLLOW); break;
-            case 'BOLLINGER_SQUEEZE': strikeZone = detectBollingerSqueezeZone(indicators, currentPrice, params.BOLLINGER_SQUEEZE); break;
-            case 'VOLUME_ABSORPTION': strikeZone = detectVolumeAbsorptionZone(windowCandles, indicators, params.VOLUME_ABSORPTION); break;
+            case 'HF_MEAN_REVERSION': 
+                strikeZone = detectHFMeanReversionZone(indicators, currentPrice, params.HF_MEAN_REVERSION); 
+                break;
+            case 'STD_TREND_FOLLOW': 
+                strikeZone = detectStandardTrendZone(indicators, currentPrice, prevRsi, params.STD_TREND_FOLLOW); 
+                break;
+            case 'BOLLINGER_SQUEEZE': 
+                strikeZone = detectBollingerSqueezeZone(indicators, currentPrice, params.BOLLINGER_SQUEEZE); 
+                break;
+            case 'VOLUME_ABSORPTION': 
+                strikeZone = detectVolumeAbsorptionZone(windowCandles, indicators, params.VOLUME_ABSORPTION); 
+                break;
             case 'MICROSTRUCTURE_SCALP':
                 const syntheticTicks = convertCandlesToSyntheticTicks(windowCandles.slice(-20));
                 strikeZone = detectMicrostructureScalpZone(syntheticTicks, windowCandles, indicators, currentPrice, params.MICROSTRUCTURE_SCALP);
                 break;
-            case 'GBM_20S': 
-                strikeZone = detectGBM20sZone(indicators, currentPrice, windowCandles, assetSymbol); 
+            case 'GBM_20S':
+                strikeZone = detectGBM20sZone(indicators, currentPrice, windowCandles, assetSymbol);
                 break;
-            case 'GBM_40S': 
-                strikeZone = detectGBM40sZone(indicators, currentPrice, windowCandles, assetSymbol); 
+            case 'GBM_40S':
+                strikeZone = detectGBM40sZone(indicators, currentPrice, windowCandles, assetSymbol);
                 break;
         }
         
@@ -346,7 +357,7 @@ export function runAllStrategiesBacktest(
   config: HFConfig,
   assetSymbol: string,
   params: StrategyParams
-): Record<StrategyType, InstitutionalBacktestResult> {
+): Record<StrategyType, InstitutionalBacktestResult> & { _optimalDurations?: any } {
   
   const allStrategies: StrategyType[] = Object.keys(strategyMetadata) as StrategyType[];
   const allResults: Partial<Record<StrategyType, InstitutionalBacktestResult>> = {};
@@ -355,7 +366,22 @@ export function runAllStrategiesBacktest(
     allResults[strategy] = runSingleStrategyBacktest(historicalData, config, strategy, assetSymbol, params);
   }
 
-  return allResults as Record<StrategyType, InstitutionalBacktestResult>;
+  // Consolidar todos os trades de todas as estratégias
+  const allTrades = Object.values(allResults).flatMap(r => r?.trades || []);
+  
+  // Calcular duração dos candles em segundos
+  const candleDurationSeconds = historicalData.length > 1 
+    ? historicalData[1].epoch - historicalData[0].epoch 
+    : 60;
+  
+  // Analisar tempo ótimo por estratégia
+  const optimalDurations = analyzeOptimalDuration(allTrades, candleDurationSeconds);
+  
+  // Retornar junto com os resultados
+  return {
+    ...allResults,
+    _optimalDurations: Object.fromEntries(optimalDurations),
+  } as Record<StrategyType, InstitutionalBacktestResult> & { _optimalDurations: any };
 }
 
 // ============================================================================
