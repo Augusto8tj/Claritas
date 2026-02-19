@@ -9,22 +9,27 @@ interface StrategyMetrics {
   vetoReasons: Record<string, number>;
 }
 
-const metricsStore: Record<StrategyType, StrategyMetrics> = {
-  HF_MEAN_REVERSION: { totalSignals: 0, signalsLast24h: 0, avgConfidence: 0, lastSignalTime: 0, vetoReasons: {} },
-  STD_TREND_FOLLOW: { totalSignals: 0, signalsLast24h: 0, avgConfidence: 0, lastSignalTime: 0, vetoReasons: {} },
-  BOLLINGER_SQUEEZE: { totalSignals: 0, signalsLast24h: 0, avgConfidence: 0, lastSignalTime: 0, vetoReasons: {} },
-  VOLUME_ABSORPTION: { totalSignals: 0, signalsLast24h: 0, avgConfidence: 0, lastSignalTime: 0, vetoReasons: {} },
-  MICROSTRUCTURE_SCALP: { totalSignals: 0, signalsLast24h: 0, avgConfidence: 0, lastSignalTime: 0, vetoReasons: {} },
-  GBM_20S: { totalSignals: 0, signalsLast24h: 0, avgConfidence: 0, lastSignalTime: 0, vetoReasons: {} },
-  GBM_40S: { totalSignals: 0, signalsLast24h: 0, avgConfidence: 0, lastSignalTime: 0, vetoReasons: {} },
+const createInitialMetrics = (): StrategyMetrics => ({
+  totalSignals: 0,
+  signalsLast24h: 0,
+  avgConfidence: 0,
+  lastSignalTime: 0,
+  vetoReasons: {},
+});
+
+const metricsStore: Record<string, StrategyMetrics> = {};
+
+// Função para garantir que uma estratégia está inicializada no store
+const ensureStrategyMetrics = (strategy: StrategyType) => {
+  if (!metricsStore[strategy]) {
+    metricsStore[strategy] = createInitialMetrics();
+  }
 };
 
+
 export function recordSignal(strategy: StrategyType, confidence: number) {
+  ensureStrategyMetrics(strategy);
   const metrics = metricsStore[strategy];
-  if (!metrics) {
-    console.error(`[Metrics] Tentativa de registrar sinal para estratégia não inicializada: ${strategy}`);
-    return;
-  }
   metrics.totalSignals++;
   metrics.signalsLast24h++;
   metrics.avgConfidence = (metrics.avgConfidence * (metrics.totalSignals - 1) + confidence) / metrics.totalSignals;
@@ -32,11 +37,8 @@ export function recordSignal(strategy: StrategyType, confidence: number) {
 }
 
 export function recordVeto(strategy: StrategyType, reason: string) {
+  ensureStrategyMetrics(strategy);
   const metrics = metricsStore[strategy];
-   if (!metrics) {
-    console.error(`[Metrics] Tentativa de registrar veto para estratégia não inicializada: ${strategy}`);
-    return;
-  }
   metrics.vetoReasons[reason] = (metrics.vetoReasons[reason] || 0) + 1;
 }
 

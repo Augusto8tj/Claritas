@@ -359,7 +359,7 @@ export function useHFStrikeZone(
 
     return () => clearTimeout(timeoutId);
 
-  }, [dataVersion, enabled, isCooldownActive, isExecuting, isSwitchingSymbol]);
+  }, [dataVersion, enabled, isCooldownActive, isExecuting]);
   
   return {
     activeStrikeZone, marketRegime, positionSizing, riskManager, fullIndicators: indicators,

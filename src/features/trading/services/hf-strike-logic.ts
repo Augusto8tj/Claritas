@@ -11,80 +11,35 @@ import { recordSignal, recordVeto } from './strategy-metrics';
 // DETECÇÃO DE ATIVO RANDÔMICO
 // ============================================================================
 
-/**
- * Detecta se o ativo é randômico analisando padrões de preço
- * Ativos randômicos (1HZ10V, R_10, etc) têm características específicas:
- * - ADX consistentemente baixo (< 20)
- * - RSI oscilando em torno de 50
- * - Volume relativamente constante
- * - Sem tendências sustentadas
- */
 export function isRandomAsset(candles: CandleData[], indicators: Indicators): boolean {
   if (candles.length < 50) return false;
-  
   const recentCandles = candles.slice(-50);
-  
   const adxBelowThreshold = (indicators.adx || 30) < 22;
   const rsi = indicators.rsi || 50;
   const rsiNeutral = rsi > 35 && rsi < 65;
-  
   const volumes = recentCandles.map(c => c.volume || 0).filter(v => v > 0);
   if (volumes.length < 10) return false;
-  
   const avgVol = volumes.reduce((a, b) => a + b, 0) / volumes.length;
   const maxVol = Math.max(...volumes);
   const volumeVariation = maxVol / avgVol;
   const volumeConsistent = volumeVariation < 3.0;
-  
   const prices = recentCandles.map(c => c.close);
   const avgPrice = prices.reduce((a, b) => a + b, 0) / prices.length;
-  const priceStd = Math.sqrt(
-    prices.reduce((sum, p) => sum + Math.pow(p - avgPrice, 2), 0) / prices.length
-  );
+  const priceStd = Math.sqrt(prices.reduce((sum, p) => sum + Math.pow(p - avgPrice, 2), 0) / prices.length);
   const priceRange = Math.max(...prices) - Math.min(...prices);
   const lowVolatilityTrend = priceRange < priceStd * 5;
-  
-  const testsPass = [adxBelowThreshold, rsiNeutral, volumeConsistent, lowVolatilityTrend]
-    .filter(t => t).length;
-  
+  const testsPass = [adxBelowThreshold, rsiNeutral, volumeConsistent, lowVolatilityTrend].filter(t => t).length;
   const isRandom = testsPass >= 3;
-  
-  if (isRandom) {
-    console.warn('[ASSET_DETECTION] ⚠️ ATIVO RANDÔMICO DETECTADO', {
-      adx: indicators.adx?.toFixed(1),
-      rsi: rsi.toFixed(1),
-      volumeVariation: volumeVariation.toFixed(2),
-      testsPass
-    });
-  }
-  
   return isRandom;
 }
 
-/**
- * Ajusta parâmetros de estratégias para ativos randômicos
- */
 export function getRandomAssetParams() {
   return {
-    HF_MEAN_REVERSION: {
-      rsiThreshold: 35,
-      tolerance: 0.005,
-    },
-    STD_TREND_FOLLOW: {
-      adxStrength: 15,
-      rsiMomentum: 52,
-    },
-    BOLLINGER_SQUEEZE: {
-      bbwThreshold: 1.5,
-      breakoutMargin: 0.01,
-    },
-    VOLUME_ABSORPTION: {
-      climaxMultiplier: 1.5,
-      absorptionFactor: 0.7,
-    },
-    MICROSTRUCTURE_SCALP: {
-      velocityThreshold: 1.2,
-    },
+    HF_MEAN_REVERSION: { rsiThreshold: 35, tolerance: 0.005 },
+    STD_TREND_FOLLOW: { adxStrength: 15, rsiMomentum: 52 },
+    BOLLINGER_SQUEEZE: { bbwThreshold: 1.5, breakoutMargin: 0.01 },
+    VOLUME_ABSORPTION: { climaxMultiplier: 1.5, absorptionFactor: 0.7 },
+    MICROSTRUCTURE_SCALP: { velocityThreshold: 1.2 },
   };
 }
 
@@ -121,56 +76,94 @@ export interface StrikeZone {
   duration: number;
 }
 
-// --- TIPOS DE PARÂMETROS ---
 export interface MeanReversionParams { rsiThreshold: number; tolerance: number; }
 export interface TrendFollowParams { adxStrength: number; rsiMomentum: number; }
 export interface SqueezeParams { bbwThreshold: number; breakoutMargin: number; }
 export interface AbsorptionParams { climaxMultiplier: number; absorptionFactor: number; }
 export interface ScalpParams { velocityThreshold: number; }
 
+// --- GBM Enhancements ---
+interface GBMParameters {
+  drift: number;
+  volatility: number;
+}
+const gbmCache = new Map<string, { params: GBMParameters, timestamp: number }>();
+const GBM_CACHE_TTL = 60 * 1000; // 1 minuto
+const GBM_SIMULATIONS = 200;
 
-function runSimpleGBM(startPrice: number, durationSeconds: number, volatility: number): number {
-    const dt = 1; // Time step of 1 second
-    let price = startPrice;
-    const drift = 0; // Assume no drift for random assets
-    const steps = durationSeconds;
-
-    for (let i = 0; i < steps; i++) {
-        // Simplified normal random using central limit theorem approximation. More performant than Box-Muller.
-        let sum = 0;
-        for (let j = 0; j < 12; j++) {
-          sum += Math.random();
-        }
-        const randomShock = (sum - 6) * Math.sqrt(dt);
-        price += price * (drift * dt + volatility * randomShock);
+const getLogReturns = (candles: CandleData[]): number[] => {
+  const returns = [];
+  for (let i = 1; i < candles.length; i++) {
+    if (candles[i-1].close > 0) {
+      returns.push(Math.log(candles[i].close / candles[i-1].close));
     }
-    return price;
+  }
+  return returns;
+};
+
+const calibrateGBM = (candles: CandleData[], assetSymbol: string): GBMParameters => {
+  const now = Date.now();
+  const cached = gbmCache.get(assetSymbol);
+  if (cached && now - cached.timestamp < GBM_CACHE_TTL) {
+    return cached.params;
+  }
+
+  const logReturns = getLogReturns(candles);
+  if (logReturns.length < 2) {
+    return { drift: 0, volatility: 0.001 };
+  }
+
+  const meanReturn = logReturns.reduce((a, b) => a + b, 0) / logReturns.length;
+  const variance = logReturns.reduce((sum, r) => sum + Math.pow(r - meanReturn, 2), 0) / (logReturns.length - 1);
+  const stdDev = Math.sqrt(variance);
+
+  const candleDurationSeconds = 60; // Assumindo velas de 1m
+  const drift = (meanReturn / candleDurationSeconds) + (variance / (2 * candleDurationSeconds));
+  const volatility = stdDev / Math.sqrt(candleDurationSeconds);
+
+  const params = { drift, volatility };
+  gbmCache.set(assetSymbol, { params, timestamp: now });
+  return params;
+};
+
+function runGBMMonteCarlo(startPrice: number, durationSeconds: number, params: GBMParameters): number {
+  let finalPrices = [];
+  for (let i = 0; i < GBM_SIMULATIONS; i++) {
+    let price = startPrice;
+    for (let t = 0; t < durationSeconds; t++) {
+      const randomShock = (Math.random() - 0.5) + (Math.random() - 0.5) + (Math.random() - 0.5); // Aproximação normal
+      price *= Math.exp((params.drift - 0.5 * params.volatility ** 2) + params.volatility * randomShock);
+    }
+    finalPrices.push(price);
+  }
+  const winCount = finalPrices.filter(p => p > startPrice).length;
+  return (winCount / GBM_SIMULATIONS) * 100;
 }
 
-function createGBMDetector(duration: 20 | 40): (indicators: Indicators, currentPrice: number) => StrikeZone | null {
+function createGBMDetector(duration: 20 | 40): (indicators: Indicators, currentPrice: number, candles: CandleData[], assetSymbol: string) => StrikeZone | null {
   const strategyType: StrategyType = `GBM_${duration}S` as StrategyType;
 
-  return (indicators: Indicators, currentPrice: number): StrikeZone | null => {
-    if (!indicators.atr || !currentPrice) {
-      recordVeto(strategyType, 'Indicadores (ATR) ou preço ausentes');
+  return (indicators: Indicators, currentPrice: number, candles: CandleData[], assetSymbol: string): StrikeZone | null => {
+    if (!indicators.atr || !currentPrice || candles.length < 50) {
+      recordVeto(strategyType, 'Dados insuficientes');
       return null;
     }
 
-    // Use a normalized ATR as a proxy for instantaneous volatility
-    const volatility = (indicators.atr / currentPrice) * 10; // Scaled up for more realistic simulation
-    
-    // Run a single simulation. For more robustness, one could run a mini-Monte Carlo.
-    const finalPrice = runSimpleGBM(currentPrice, duration, volatility);
+    const gbmParams = calibrateGBM(candles, assetSymbol);
+    const winProbability = runGBMMonteCarlo(currentPrice, duration, gbmParams);
 
-    const type = finalPrice > currentPrice ? 'LONG_ENTRY' : 'SHORT_ENTRY';
-    
-    // Confidence is inversely proportional to volatility. Less chaos = more confidence.
-    const confidence = Math.max(50, Math.min(90, 100 - (volatility * 1000)));
+    const confidence = Math.abs(winProbability - 50) * 2;
+    if (confidence < 55) { // Limiar mínimo de confiança
+        recordVeto(strategyType, 'Confiança GBM baixa');
+        return null;
+    }
 
+    const type = winProbability > 50 ? 'LONG_ENTRY' : 'SHORT_ENTRY';
+    
     const zone: StrikeZone = {
       type,
       confidence,
-      triggers: [`🔮 Predição GBM ${duration}s`],
+      triggers: [`🔮 Predição GBM ${duration}s (${winProbability.toFixed(1)}%)`],
       entry: { price: currentPrice, timestamp: Date.now() },
       strategy: strategyType,
       targets: {
@@ -187,11 +180,13 @@ function createGBMDetector(duration: 20 | 40): (indicators: Indicators, currentP
   };
 }
 
+
 // ============================================================================
 // FUNÇÕES DE ANÁLISE PURAS
 // ============================================================================
 
 export function detectHFMeanReversionZone(indicators: Indicators, currentPrice: number, params: MeanReversionParams): StrikeZone | null {
+  //... (código existente)
   const startTime = performance.now();
   const { bb, rsi: rsiValue } = indicators;
   
@@ -261,6 +256,7 @@ export function detectHFMeanReversionZone(indicators: Indicators, currentPrice: 
 }
 
 export function detectStandardTrendZone(indicators: Indicators, currentPrice: number, prevRsi: number, params: TrendFollowParams): StrikeZone | null {
+  //... (código existente)
   const startTime = performance.now();
   if (!indicators.adx || !indicators.ma.long || !indicators.rsi || !indicators.atr) {
     recordVeto('STD_TREND_FOLLOW', 'Indicadores ausentes (ADX/MA/RSI/ATR)');
@@ -326,6 +322,7 @@ export function detectStandardTrendZone(indicators: Indicators, currentPrice: nu
 }
 
 export function detectBollingerSqueezeZone(indicators: Indicators, currentPrice: number, params: SqueezeParams): StrikeZone | null {
+  //... (código existente)
   const startTime = performance.now();
   if (!indicators.bbw) {
       recordVeto('BOLLINGER_SQUEEZE', 'Indicador BBW ausente');
@@ -379,20 +376,18 @@ export function detectBollingerSqueezeZone(indicators: Indicators, currentPrice:
 }
 
 export function detectVolumeAbsorptionZone(candles: CandleData[], indicators: Indicators, params: AbsorptionParams): StrikeZone | null {
+  //... (código existente)
   const startTime = performance.now();
   
   if (candles.length < 20) {
-    console.debug(`[VOL_ABSORB] VETO: Histórico insuficiente (${candles.length} < 20 candles)`);
     return null;
   }
   
   if (!indicators.atr) {
-    console.debug('[VOL_ABSORB] VETO: ATR não calculado');
     return null;
   }
   
   if (!indicators.volSma || indicators.volSma.length === 0) {
-    console.debug('[VOL_ABSORB] VETO: VolSMA não calculado');
     return null;
   }
 
@@ -417,17 +412,13 @@ export function detectVolumeAbsorptionZone(candles: CandleData[], indicators: In
   }
   
   if (!climaxCandle || climaxIndex === -1) {
-    console.debug(`[VOL_ABSORB] VETO: Nenhum clímax encontrado (threshold: ${params.climaxMultiplier}x)`);
     return null;
   }
-  
-  console.debug(`[VOL_ABSORB] Clímax encontrado: volume=${climaxCandle.volume}, avg=${avgVolume.toFixed(0)}, ratio=${(climaxCandle.volume! / avgVolume).toFixed(2)}x`);
   
   const climaxRange = climaxCandle.high - climaxCandle.low;
   const isWideRangeClimax = climaxRange > (indicators.atr || 0.001) * 1.2;
   
   if (!isWideRangeClimax) {
-    console.debug(`[VOL_ABSORB] VETO: Range não é largo o suficiente (${(climaxRange / (indicators.atr || 1)).toFixed(2)}x ATR < 1.2x)`);
     return null;
   }
 
@@ -436,7 +427,6 @@ export function detectVolumeAbsorptionZone(candles: CandleData[], indicators: In
   const absorptionWindow = candles.slice(absorptionWindowStart, absorptionWindowEnd);
   
   if (absorptionWindow.length < 1) {
-    console.debug(`[VOL_ABSORB] VETO: Sem velas pós-clímax para validar absorção`);
     return null;
   }
 
@@ -453,7 +443,6 @@ export function detectVolumeAbsorptionZone(candles: CandleData[], indicators: In
   const hasAbsorption = absorptionCount >= Math.ceil(absorptionWindow.length / 2);
 
   if (!hasAbsorption) {
-    console.debug(`[VOL_ABSORB] VETO: Absorção insuficiente (${absorptionCount}/${absorptionWindow.length} velas)`);
     return null;
   }
 
@@ -468,7 +457,6 @@ export function detectVolumeAbsorptionZone(candles: CandleData[], indicators: In
   }
 
   if (type === 'NEUTRAL') {
-    console.debug(`[VOL_ABSORB] VETO: Clímax não é claramente bullish ou bearish`);
     return null;
   }
 
@@ -479,7 +467,7 @@ export function detectVolumeAbsorptionZone(candles: CandleData[], indicators: In
     confidence: 80,
     triggers: [
       `📊 Clímax de Volume (${(climaxCandle.volume! / avgVolume).toFixed(1)}x média)`,
-      `✅ Absorção detectada (${absorptionCount}/${absorptionWindow.length} velas)`
+      `✅ Absorção pós-clímax detectada`
     ], 
     strategy: 'VOLUME_ABSORPTION',
     entry: { price: currentPrice, timestamp: Date.now() },
@@ -498,14 +486,6 @@ export function detectVolumeAbsorptionZone(candles: CandleData[], indicators: In
     duration: 120,
   };
   
-  console.log(`[VOL_ABSORB] SIGNAL DETECTED:`, { 
-    type: zone.type, 
-    confidence: zone.confidence,
-    climaxVolume: climaxCandle.volume,
-    avgVolume: avgVolume.toFixed(0),
-    absorptionRatio: `${absorptionCount}/${absorptionWindow.length}`
-  });
-  
   const executionTime = performance.now() - startTime;
   if (executionTime > 5) console.warn('[PERFORMANCE] Volume Absorption took', executionTime.toFixed(2), 'ms');
 
@@ -514,6 +494,7 @@ export function detectVolumeAbsorptionZone(candles: CandleData[], indicators: In
 
 
 export function detectMicrostructureScalpZone(ticks: TickData[], candles: CandleData[], indicators: Indicators, currentPrice: number, params: ScalpParams): StrikeZone | null {
+  //... (código existente)
   const startTime = performance.now();
   const micro = extractMicrostructureFeaturesFromService(ticks, candles);
   if (!micro) {
@@ -559,6 +540,7 @@ export function detectRandomWalkZone(
   indicators: Indicators, 
   currentPrice: number
 ): StrikeZone | null {
+  //... (código existente)
   if (!isRandomAsset(candles, indicators)) return null;
   
   const atr = indicators.atr || 0.001;

@@ -8,9 +8,12 @@ import {
     detectBollingerSqueezeZone,
     detectVolumeAbsorptionZone,
     detectMicrostructureScalpZone,
+    detectGBM20sZone,
+    detectGBM40sZone,
     type StrikeZone,
     StrategyType,
-    strategyMetadata
+    strategyMetadata,
+    StrategyParams,
 } from '@/features/trading/services/hf-strike-logic';
 import { calculateAllIndicators } from '@/features/trading/services/indicator-service';
 import { getCouncilStrategies } from '@/features/trading/services/council-strategies';
@@ -270,7 +273,13 @@ function calculateEquityAndMonthly(trades: TradeResult[], startingCapital: numbe
 // 4. MOTOR PRINCIPAL DO BACKTEST
 // ============================================================================
 
-function runSingleStrategyBacktest(historicalData: CandleData[], config: HFConfig, strategy: StrategyType, assetSymbol: string): InstitutionalBacktestResult {
+function runSingleStrategyBacktest(
+  historicalData: CandleData[],
+  config: HFConfig,
+  strategy: StrategyType,
+  assetSymbol: string,
+  params: StrategyParams
+): InstitutionalBacktestResult {
     const BACKTEST_STAKE = 1.0;
     const trades: TradeResult[] = [];
     let i = 100;
@@ -288,14 +297,16 @@ function runSingleStrategyBacktest(historicalData: CandleData[], config: HFConfi
         
         let strikeZone: StrikeZone | null = null;
         switch (strategy) {
-            case 'HF_MEAN_REVERSION': strikeZone = detectHFMeanReversionZone(indicators, currentPrice); break;
-            case 'STD_TREND_FOLLOW': strikeZone = detectStandardTrendZone(indicators, currentPrice, prevRsi); break;
-            case 'BOLLINGER_SQUEEZE': strikeZone = detectBollingerSqueezeZone(indicators, currentPrice); break;
-            case 'VOLUME_ABSORPTION': strikeZone = detectVolumeAbsorptionZone(windowCandles, indicators); break;
+            case 'HF_MEAN_REVERSION': strikeZone = detectHFMeanReversionZone(indicators, currentPrice, params.HF_MEAN_REVERSION); break;
+            case 'STD_TREND_FOLLOW': strikeZone = detectStandardTrendZone(indicators, currentPrice, prevRsi, params.STD_TREND_FOLLOW); break;
+            case 'BOLLINGER_SQUEEZE': strikeZone = detectBollingerSqueezeZone(indicators, currentPrice, params.BOLLINGER_SQUEEZE); break;
+            case 'VOLUME_ABSORPTION': strikeZone = detectVolumeAbsorptionZone(windowCandles, indicators, params.VOLUME_ABSORPTION); break;
             case 'MICROSTRUCTURE_SCALP':
                 const syntheticTicks = convertCandlesToSyntheticTicks(windowCandles.slice(-20));
-                strikeZone = detectMicrostructureScalpZone(syntheticTicks, windowCandles, indicators, currentPrice);
+                strikeZone = detectMicrostructureScalpZone(syntheticTicks, windowCandles, indicators, currentPrice, params.MICROSTRUCTURE_SCALP);
                 break;
+            case 'GBM_20S': strikeZone = detectGBM20sZone(indicators, currentPrice, windowCandles, assetSymbol); break;
+            case 'GBM_40S': strikeZone = detectGBM40sZone(indicators, currentPrice, windowCandles, assetSymbol); break;
         }
         
         if (indicators.rsi) prevRsi = indicators.rsi;
@@ -330,13 +341,14 @@ export function runAllStrategiesBacktest(
   historicalData: CandleData[],
   config: HFConfig,
   assetSymbol: string,
+  params: StrategyParams
 ): Record<StrategyType, InstitutionalBacktestResult> {
   
   const allStrategies: StrategyType[] = Object.keys(strategyMetadata) as StrategyType[];
   const allResults: Partial<Record<StrategyType, InstitutionalBacktestResult>> = {};
 
   for (const strategy of allStrategies) {
-    allResults[strategy] = runSingleStrategyBacktest(historicalData, config, strategy, assetSymbol);
+    allResults[strategy] = runSingleStrategyBacktest(historicalData, config, strategy, assetSymbol, params);
   }
 
   return allResults as Record<StrategyType, InstitutionalBacktestResult>;
@@ -351,6 +363,7 @@ export function runWalkForwardAnalysis(
   config: HFConfig,
   strategy: StrategyType,
   assetSymbol: string,
+  params: StrategyParams,
   folds: number = 3
 ): WalkForwardResult[] {
   const foldSize = Math.floor(historicalData.length / (folds + 1));
@@ -365,8 +378,8 @@ export function runWalkForwardAnalysis(
     const oosSampleEnd = oosSampleStart + Math.floor(foldSize * 0.3);
     const oosSampleData = historicalData.slice(oosSampleStart, oosSampleEnd);
     
-    const inSampleResult = runSingleStrategyBacktest(inSampleData, config, strategy, assetSymbol);
-    const oosSampleResult = runSingleStrategyBacktest(oosSampleData, config, strategy, assetSymbol);
+    const inSampleResult = runSingleStrategyBacktest(inSampleData, config, strategy, assetSymbol, params);
+    const oosSampleResult = runSingleStrategyBacktest(oosSampleData, config, strategy, assetSymbol, params);
     
     const sharpeDegradation = inSampleResult.metrics.sharpeRatio > 0
       ? ((inSampleResult.metrics.sharpeRatio - oosSampleResult.metrics.sharpeRatio) / inSampleResult.metrics.sharpeRatio) * 100
