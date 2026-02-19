@@ -141,8 +141,9 @@ function getClosestBucket(seconds: number): number {
 export function analyzeOptimalDuration(
   trades: TradeResult[],
   candleDurationSeconds: number
-): void {
+): Map<StrategyType, OptimalDuration> {
   const analysisByStrategy = new Map<StrategyType, { winRateByDuration: Record<number, { wins: number; total: number }> }>();
+  const localOptimalDurationStore = new Map<StrategyType, OptimalDuration>();
 
   // Initialize map
   for (const key in DEFAULT_DURATIONS) {
@@ -192,14 +193,19 @@ export function analyzeOptimalDuration(
       }
     }
     
-    optimalDurationStore.set(strategy, {
+    const optimalResult: OptimalDuration = {
       strategy,
       optimalSeconds,
       winRateByDuration,
       sampleSize: totalSampleSize,
       lastCalibrated: Date.now(),
-    });
+    };
+    
+    localOptimalDurationStore.set(strategy, optimalResult);
+    optimalDurationStore.set(strategy, optimalResult); // Also update the global store
   }
+  
+  return localOptimalDurationStore;
 }
 
 /**
