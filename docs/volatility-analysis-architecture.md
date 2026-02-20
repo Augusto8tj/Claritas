@@ -20,10 +20,12 @@ A página opera como um comitê de especialistas em IA que se auto-regula com ba
 1.  **Previsão Multi-Horizonte com Sigma Dinâmico (EWMA):** O sistema continua a gerar projeções para múltiplos horizontes de tempo (1t, 3t, 15s, etc.).
     *   **NOVO (Sigma Dinâmico):** O coração de cada especialista, o modelo de **Movimento Browniano Geométrico (GBM)**, agora é `GBM(µ(t), σ(t))`. A volatilidade (`sigma`) não é mais constante; ela é recalculada a cada tick usando uma **Média Móvel Exponencialmente Ponderada (EWMA)** dos retornos logarítmicos, tornando as previsões mais reativas à "nervosismo" do mercado.
 
-2.  **Controlador de Drift Neuro-Adaptativo (em Log-Space):** O "drift" (`mu`) de cada modelo é continuamente ajustado.
-    *   **Ciclo de Feedback:** O sistema compara o preço previsto com o real.
-    *   **NOVO (Correção em Log-Space):** O erro é agora calculado como `log(preço_real / preço_previsto)`, garantindo consistência matemática com o modelo GBM.
-    *   **Auto-Calibração:** Uma EMA do erro de previsão ajusta o `drift` para as próximas simulações, permitindo que o modelo aprenda com os seus próprios vieses.
+2.  **Controlador de Drift Neuro-Adaptativo (em Log-Space):** O "drift" (`mu`, a tendência média) de cada modelo é continuamente ajustado através de um ciclo de feedback de 5 passos:
+    *   **1. Previsão:** O especialista GBM para "15s" simula e guarda na memória: "prevejo que o preço será X em 15 segundos".
+    *   **2. Maturação:** O sistema aguarda os 15 segundos passarem.
+    *   **3. Verificação:** Após o tempo, ele compara o preço previsto com o preço real.
+    *   **4. Cálculo de Erro (Log-Space):** O erro é calculado como `log(preço_real / preço_previsto)`. Um resultado positivo significa que o modelo subestimou o movimento; negativo significa que superestimou.
+    *   **5. Auto-Correção:** Este erro, suavizado por uma Média Móvel Exponencial, ajusta o `drift` do especialista. Se ele tem subestimado o preço consistentemente, o seu `drift` é aumentado, tornando as suas futuras previsões mais otimistas (e vice-versa).
 
 3.  **Meritocracia Preditiva (Confiança Bayesiana):**
     *   **NOVO (Bayesian Confidence Interval):** Substituímos o *Wilson Score* por um **Intervalo de Confiança Bayesiano**. Este método, baseado numa distribuição Beta, é matematicamente mais robusto para avaliar a performance com poucas amostras.
@@ -39,7 +41,20 @@ A página opera como um comitê de especialistas em IA que se auto-regula com ba
 
 ---
 
-## 3. Arquitetura e Ficheiros Atuantes
+## 3. O Ciclo de Cálculo Perpétuo
+
+Uma pergunta comum é: "quantos cálculos são feitos antes de uma entrada?". A resposta é que não há um número fixo. O sistema está num **estado de cálculo perpétuo**. A cada nova vela ou tick de preço, ele executa o seguinte ciclo completo:
+
+1.  **Atualização de Volatilidade:** Recalcula a volatilidade (`sigma`) para todos os 9 especialistas.
+2.  **Ciclo de Aprendizagem:** Verifica se alguma previsão "amadureceu" e, se sim, executa os 5 passos do **ajuste de drift** para cada especialista maturado.
+3.  **Novas Simulações:** Roda **9 novas simulações de Monte Carlo** (uma para cada especialista), gerando 9 novas previsões de preço.
+4.  **Análise de Consenso:** Compara as 9 novas previsões, calcula a "Assertividade Bayesiana" de cada especialista e determina se há um gatilho de entrada que passe por todos os filtros de risco.
+
+Uma "entrada" não é o resultado de um cálculo único, mas sim o momento em que este ciclo contínuo finalmente produz um sinal de alta convicção.
+
+---
+
+## 4. Arquitetura e Ficheiros Atuantes
 
 | Ficheiro/Componente                                         | Responsabilidade                                                                                                                                                                                                           |
 | :---------------------------------------------------------- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -52,7 +67,7 @@ A página opera como um comitê de especialistas em IA que se auto-regula com ba
 
 ---
 
-## 4. O Funil de Decisão do Piloto Automático
+## 5. O Funil de Decisão do Piloto Automático
 
 O funil permanece o mesmo, mas a matéria-prima (as projeções) e os filtros são agora muito mais inteligentes:
 
@@ -65,7 +80,7 @@ O funil permanece o mesmo, mas a matéria-prima (as projeções) e os filtros s�
 
 ---
 
-## 5. Novas Funcionalidades e Como Usá-las
+## 6. Novas Funcionalidades e Como Usá-las
 
 | Novidade                                    | O que é?                                                                                                                                                             | Como Usar?                                                                                                                                                                                           |
 | :------------------------------------------ | :------------------------------------------------------------------------------------------------------------------------------------------------------------------- | :--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
