@@ -269,7 +269,8 @@ export function useHFStrikeZone(
       
       const runCycle = async () => {
         try {
-          if (!indicators || priceTicks.length < 2 || !user || !isConnected || !activeSymbol) {
+          // CORREÇÃO: Adicionada guarda para !durationLimits
+          if (!indicators || priceTicks.length < 2 || !user || !isConnected || !activeSymbol || !durationLimits) {
             return;
           }
 
@@ -441,40 +442,35 @@ export function useHFStrikeZone(
             }
     
             if (autoExecute) {
-              if (!durationLimits) {
-                toast({ title: '⚠️ Aguardando Sincronização...', description: 'Ainda não recebemos os limites de duração do contrato da corretora. A ordem será enviada assim que os dados chegarem.', variant: 'default' });
-                return;
+              // CORREÇÃO DA LÓGICA DE DURAÇÃO
+              let finalDuration: number;
+              let durationUnit: DurationUnit;
+              const calculatedDurationInSeconds = consensusSignal.duration;
+              const canUseTicks = durationLimits.t && durationLimits.t.min > 0;
+              const canUseSeconds = durationLimits.s && durationLimits.s.min > 0;
+              
+              if (calculatedDurationInSeconds <= 10 && canUseTicks) {
+                  durationUnit = 't';
+                  const durationInTicks = Math.ceil(calculatedDurationInSeconds / 2);
+                  finalDuration = Math.max(durationLimits.t.min, Math.min(durationInTicks, durationLimits.t.max));
+              } else if (canUseSeconds) {
+                  durationUnit = 's';
+                  finalDuration = Math.round(Math.max(calculatedDurationInSeconds, durationLimits.s.min));
+                  finalDuration = Math.min(finalDuration, durationLimits.s.max);
+              } else if (canUseTicks) {
+                  // Fallback para ticks se segundos não for suportado
+                  durationUnit = 't';
+                  const durationInTicks = Math.ceil(calculatedDurationInSeconds / 2);
+                  finalDuration = Math.max(durationLimits.t.min, Math.min(durationInTicks, durationLimits.t.max));
+              } else {
+                  // Fallback final, caso o ativo não suporte nem ticks nem segundos (improvável)
+                  console.warn(`[HF-STRIKE] Fallback: Ativo ${activeSymbol} não suporta ticks ou segundos, usando 15s como padrão.`);
+                  durationUnit = 's';
+                  finalDuration = 15;
               }
+
               setIsExecuting(true);
               try {
-                let finalDuration: number;
-                let durationUnit: DurationUnit;
-                const calculatedDurationInSeconds = consensusSignal.duration;
-                const canUseTicks = durationLimits?.t && durationLimits.t.min > 0;
-                const canUseSeconds = durationLimits?.s && durationLimits.s.min > 0;
-                const preferredUnit: DurationUnit = calculatedDurationInSeconds <= 10 && canUseTicks ? 't' : 's';
-                
-                if (preferredUnit === 't' && canUseTicks) {
-                    durationUnit = 't';
-                    const durationInTicks = Math.max(5, Math.ceil(calculatedDurationInSeconds / 2));
-                    finalDuration = Math.max(durationLimits.t.min, Math.min(durationInTicks, durationLimits.t.max));
-                } 
-                else if (canUseSeconds) {
-                    durationUnit = 's';
-                    finalDuration = Math.round(calculatedDurationInSeconds);
-                    finalDuration = Math.max(durationLimits.s.min, Math.min(finalDuration, durationLimits.s.max));
-                } 
-                else if (canUseTicks) {
-                    durationUnit = 't';
-                    const durationInTicks = Math.max(5, Math.ceil(calculatedDurationInSeconds / 2));
-                    finalDuration = Math.max(durationLimits.t.min, Math.min(durationInTicks, durationLimits.t.max));
-                } 
-                else {
-                    durationUnit = 's';
-                    finalDuration = 32;
-                    console.error(`[HF-STRIKE] BUG: Limites de duração NULOS, mas a guarda falhou. Usando fallback de 32s. ActiveSymbol: ${activeSymbol}`);
-                }
-                
                 const tradeResult = await executeTrade(
                     consensusSignal.type === 'LONG_ENTRY' ? 'CALL' : 'PUT', 
                     finalStake, 
@@ -527,7 +523,7 @@ export function useHFStrikeZone(
       activeSymbol, strategyParams, getIsRandom, applyOptimalDuration, 
       minConfidence, minConsensusSignals, operationsLog, autoExecute, 
       toast, saveHFTradeLog, riskManager, manualStake, consecutiveLosses, 
-      martingaleMultiplier, maxConcurrentTrades, durationLimits, gbmConfidenceThreshold, executeTrade
+      martingaleMultiplier, maxConcurrentTrades, durationLimits, gbmConfidenceThreshold, executeTrade, memoizedIndicators
   ]);
   
   return {
