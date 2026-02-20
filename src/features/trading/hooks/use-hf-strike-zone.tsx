@@ -1,4 +1,3 @@
-
 // src/features/trading/hooks/use-hf-strike-zone.tsx
 'use client';
 
@@ -57,6 +56,21 @@ export interface StrategyParams {
 }
 
 const RANDOM_ASSET_PARAMS = getRandomAssetParams();
+
+// Helper: retorna duração aproximada de 1 tick em segundos para o ativo
+const getTickDurationSeconds = (symbol: string | null): number => {
+  if (!symbol) return 2; // padrão seguro
+  // Ativos 1HZ: 1 tick por segundo
+  if (symbol.startsWith('1HZ')) return 1;
+  // Ativos R_ (Volatility Index): ~2s por tick
+  if (symbol.startsWith('R_')) return 2;
+  // Crash/Boom: tick a cada poucos segundos
+  if (symbol.startsWith('CRASH') || symbol.startsWith('BOOM')) return 2;
+  // Step Index: 1 tick por segundo
+  if (symbol.startsWith('STPIDX')) return 1;
+  // Padrão
+  return 2;
+};
 
 export function useHFStrikeZone(
   activeSymbol: string | null,
@@ -258,15 +272,6 @@ export function useHFStrikeZone(
     }
   }, [operationsLog, consecutiveLosses, maxConsecutiveLosses, cooldownSeconds, toast, onConfigChange]);
 
-  const getTickDurationSeconds = useCallback((symbol: string | null): number => {
-    if (!symbol) return 2;
-    if (symbol.startsWith('1HZ')) return 1;
-    if (symbol.startsWith('R_')) return 2;
-    if (symbol.startsWith('CRASH') || symbol.startsWith('BOOM')) return 2;
-    if (symbol.startsWith('STPIDX')) return 1;
-    return 2;
-  }, []);
-
   useEffect(() => {
     const timeoutId = setTimeout(() => {
       if (executionLockRef.current) return;
@@ -331,8 +336,8 @@ export function useHFStrikeZone(
             lastGBMRunRef.current = now;
             const validTechnicals = technicalSignals.filter((z): z is StrikeZone => z !== null);
             gbmSignalsRef.current = {
-              gbm20: detectGBM20sZone(candles, indicators, currentPrice, validTechnicals, { gbmConfidenceThreshold }),
-              gbm40: detectGBM40sZone(candles, indicators, currentPrice, validTechnicals, { gbmConfidenceThreshold }),
+              gbm20: detectGBM20sZone(candles, indicators, currentPrice, validTechnicals),
+              gbm40: detectGBM40sZone(candles, indicators, currentPrice, validTechnicals),
             };
           }
           
@@ -342,6 +347,16 @@ export function useHFStrikeZone(
           const allSignalsResult = [...technicalSignals, gbm20sSignal, gbm40sSignal];
           
           setAllSignals(allSignalsResult);
+          
+          // Normalizar durações ao máximo executável pelo ativo antes do filtro/consenso
+          // Evita que médias ponderadas sejam distorcidas por durações impossíveis
+          const allSignalsNormalized = allSignalsResult.map(zone => {
+            if (!zone || maxExecutableSeconds === Infinity) return zone;
+            if (zone.duration > maxExecutableSeconds) {
+              return { ...zone, duration: maxExecutableSeconds };
+            }
+            return zone;
+          });
 
           const tickDurSec = getTickDurationSeconds(activeSymbol);
           const maxExecutableSeconds = durationLimits
@@ -350,14 +365,6 @@ export function useHFStrikeZone(
               ?? (durationLimits.m?.max ? durationLimits.m.max * 60 : null)         // ou minutos
               ?? Infinity)
             : Infinity;
-          
-          const allSignalsNormalized = allSignalsResult.map(zone => {
-            if (!zone || maxExecutableSeconds === Infinity) return zone;
-            if (zone.duration > maxExecutableSeconds) {
-              return { ...zone, duration: maxExecutableSeconds };
-            }
-            return zone;
-          });
           
           const newCounts = { ...strategyCounts };
           let countsChanged = false;
@@ -470,62 +477,58 @@ export function useHFStrikeZone(
             }
     
             if (autoExecute) {
-              let finalDuration: number;
-              let durationUnit: DurationUnit;
-              const calculatedDurationInSeconds = consensusSignal.duration;
-
-              const canUseTicks = !!(durationLimits.t && durationLimits.t.max > 0);
-              const canUseSeconds = !!(durationLimits.s && durationLimits.s.max > 0);
-              const canUseMinutes = !!(durationLimits.m && durationLimits.m.max > 0);
-              
-              const tickDurationSec = getTickDurationSeconds(activeSymbol);
-              
-              if (canUseSeconds) {
-                durationUnit = 's';
-                finalDuration = Math.round(
-                  Math.max(calculatedDurationInSeconds, durationLimits.s!.min)
-                );
-                finalDuration = Math.min(finalDuration, durationLimits.s!.max);
-              } else if (canUseTicks) {
-                durationUnit = 't';
-                const durationInTicks = Math.ceil(calculatedDurationInSeconds / tickDurationSec);
-                const clampedTicks = Math.max(
-                  durationLimits.t!.min,
-                  Math.min(durationInTicks, durationLimits.t!.max)
-                );
-                finalDuration = clampedTicks;
-                
-                const executedSeconds = clampedTicks * tickDurationSec;
-                const mismatchFactor = calculatedDurationInSeconds / executedSeconds;
-                if (mismatchFactor > 3) {
-                  console.warn(
-                    `[DURATION_MISMATCH] Duração calculada ${calculatedDurationInSeconds.toFixed(0)}s ` +
-                    `não suportada pelo ativo. Enviando ${clampedTicks}t ≈ ${executedSeconds}s ` +
-                    `(mismatch ${mismatchFactor.toFixed(1)}x). ` +
-                    `Considere calibrar especialistas para durações <= ${(durationLimits.t!.max * tickDurationSec).toFixed(0)}s.`
-                  );
+                if (!durationLimits) {
+                    console.error("[HF-STRIKE] Tentativa de execução sem limites de duração definidos.");
+                    return;
                 }
-              } else if (canUseMinutes) {
-                durationUnit = 'm';
-                const durationInMinutes = Math.ceil(calculatedDurationInSeconds / 60);
-                finalDuration = Math.max(
-                  durationLimits.m!.min,
-                  Math.min(durationInMinutes, durationLimits.m!.max)
-                );
-              } else {
-                durationUnit = 't';
-                finalDuration = 5;
-                console.error(
-                  `[HF-STRIKE] FALLBACK ABSOLUTO: Nenhuma unidade de duração disponível. ` +
-                  `Enviando 5 ticks. durationLimits: ${JSON.stringify(durationLimits)}`
-                );
-              }
               
-              console.log(
-                `[DURATION_EXEC] calc=${calculatedDurationInSeconds.toFixed(1)}s → ` +
-                `${finalDuration}${durationUnit} (tickFactor=${tickDurationSec}s/tick) | ` +
-                `canUseTicks=${canUseTicks} canUseSeconds=${canUseSeconds}`
-              );
+                let finalDuration: number;
+                let durationUnit: DurationUnit;
+                const calculatedDurationInSeconds = consensusSignal.duration;
+                
+                // ✅ CORRIGIDO: verificar max > 0, não min > 0
+                // min pode ser 0 ou 1 (ambos válidos). O que importa é ter um max definido.
+                const canUseTicks = !!(durationLimits.t && durationLimits.t.max > 0);
+                const canUseSeconds = !!(durationLimits.s && durationLimits.s.min > 0);
+                
+                // Log diagnóstico para confirmar os limites recebidos
+                console.log(`[DURATION_EXEC] Limites: t=${JSON.stringify(durationLimits.t)} s=${JSON.stringify(durationLimits.s)} | canUseTicks=${canUseTicks} canUseSeconds=${canUseSeconds} | calculado=${calculatedDurationInSeconds.toFixed(1)}s`);
+              
+                if (canUseSeconds && calculatedDurationInSeconds >= durationLimits.s!.min) {
+                  // PREFER SECONDS: If seconds are available and the calculated duration is within its valid range.
+                  durationUnit = 's';
+                  finalDuration = Math.min(Math.round(calculatedDurationInSeconds), durationLimits.s!.max);
+
+                } else if (canUseTicks) {
+                  // FALLBACK TO TICKS: If seconds are not an option or duration is too short for seconds.
+                  durationUnit = 't';
+                  const durationInTicks = Math.ceil(calculatedDurationInSeconds / tickDurationSec);
+                  finalDuration = Math.max(
+                    durationLimits.t!.min,
+                    Math.min(durationInTicks, durationLimits.t!.max)
+                  );
+
+                  const executedSeconds = finalDuration * tickDurationSec;
+                  const mismatchFactor = calculatedDurationInSeconds / executedSeconds;
+                  if (mismatchFactor > 2.0 && calculatedDurationInSeconds > 10) { // Only warn for significant mismatches on longer durations
+                    console.warn(
+                      `[DURATION_MISMATCH] Duração de ${calculatedDurationInSeconds.toFixed(0)}s é incompatível. ` +
+                      `Enviando fallback de ${finalDuration}t (≈${executedSeconds}s).`
+                    );
+                  }
+                  
+                } else {
+                  // ABSOLUTE FALLBACK: Should not be reached with the improved API hook.
+                  durationUnit = 's';
+                  finalDuration = 15; // A safe default for most assets that support seconds.
+                  console.error(`[HF-STRIKE] FALLBACK CRÍTICO: Nenhuma unidade de duração (s/t) disponível. Enviando 15s. Verifique a resposta 'contracts_for' da API.`);
+                }
+                
+                console.log(
+                  `[DURATION_EXEC] calc=${calculatedDurationInSeconds.toFixed(1)}s → ` +
+                  `${finalDuration}${durationUnit} (tickFactor=${tickDurationSec}s/tick) | ` +
+                  `canUseTicks=${canUseTicks} canUseSeconds=${canUseSeconds}`
+                );
 
               const tradeResult = await executeTrade(
                   consensusSignal.type === 'LONG_ENTRY' ? 'CALL' : 'PUT', 
@@ -570,11 +573,10 @@ export function useHFStrikeZone(
 
   }, [
       dataVersion, enabled, isCooldownActive, isExecuting,
-      indicators, priceTicks, user, isConnected, botCandleData, config, 
-      activeSymbol, strategyParams, getIsRandom, applyOptimalDuration, 
-      minConfidence, minConsensusSignals, operationsLog, autoExecute, 
-      toast, saveHFTradeLog, riskManager, manualStake, consecutiveLosses, 
-      martingaleMultiplier, maxConcurrentTrades, durationLimits, gbmConfidenceThreshold, executeTrade, getTickDurationSeconds
+      botCandleData, priceTicks, user, isConnected,
+      config, activeSymbol, strategyParams, getIsRandom, 
+      applyOptimalDuration, toast, getTickDurationSeconds, executeTrade,
+      getHistoricalData,
   ]);
   
   return {

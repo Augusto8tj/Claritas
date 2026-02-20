@@ -451,14 +451,12 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
           }
         }
         
-        // Fallback de segurança: se nenhum dado foi encontrado (API não retornou available),
-        // usar valores conhecidos para 1HZ10V e ativos sintéticos similares.
-        // 1HZ10V suporta ticks (1-10) e segundos (15-3600) em Rise/Fall.
-        const hasAnyLimit = Object.values(newLimits).some(v => v !== null);
-        if (!hasAnyLimit) {
-          console.warn(`[DurationLimits] API não retornou limites para ${symbol}. Usando defaults de segurança.`);
-          newLimits.t = { min: 1, max: 10 };
-          newLimits.s = { min: 15, max: 3600 };
+        // Fallback de segurança: se NENHUM limite de segundos/ticks foi encontrado
+        // para um índice sintético (que deveria sempre ter), usar os defaults.
+        if ((newLimits.s === null || newLimits.t === null) && symbol?.includes('1HZ')) {
+            console.warn(`[DurationLimits] Limites de s/t não encontrados para ${symbol}. Aplicando defaults de segurança.`);
+            if (newLimits.t === null) newLimits.t = { min: 1, max: 10 };
+            if (newLimits.s === null) newLimits.s = { min: 15, max: 3600 };
         }
         
         console.log(`[DurationLimits] Limites para ${symbol}:`, JSON.stringify(newLimits));
@@ -525,9 +523,7 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
         
         const uiSubResponse: any = await makeRequest(uiSubRequest);
         if (uiSubResponse.error) {
-            if (uiSubResponse.error.code !== 'AlreadySubscribed') {
-                console.error(`[Deriv WS V2] Erro na subscrição da UI: ${uiSubResponse.error.message}`);
-                // Don't throw. Set the stateful error instead to be displayed on the chart.
+             if (uiSubResponse.error.code !== 'AlreadySubscribed') {
                 setChartError(`UI Sub: ${uiSubResponse.error.message}`);
             } else {
                  console.warn(`[Deriv WS V2] UI data already subscribed for ${symbol}.`);
