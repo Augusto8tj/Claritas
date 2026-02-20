@@ -375,6 +375,167 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
             throw error;
         }
     }, [makeRequest]);
+    
+  const subscribeToStreams = useCallback(async (symbol: string) => {
+    try {
+        if (wsRef.current?.readyState !== WebSocket.OPEN) return;
+
+        if (activeSubscriptionIdRef.current) {
+            try { await makeRequest({ forget: activeSubscriptionIdRef.current }, true); } catch (e) { /* silent */ }
+        }
+        if (botSubscriptionIdRef.current) {
+            try { await makeRequest({ forget: botSubscriptionIdRef.current }, true); } catch (e) { /* silent */ }
+        }
+        
+        activeSubscriptionIdRef.current = null;
+        botSubscriptionIdRef.current = null;
+
+        setIsChartLoading(true);
+        setChartError(null);
+        setChartData([]);
+        setBotCandleData([]);
+        setPriceTicks([]); 
+
+        const contractsRes: any = await makeRequest({ contracts_for: symbol });
+        if (contractsRes.error) throw new Error(contractsRes.error.message);
+
+        // ✅ CORRIGIDO: Extrair limites de duração de contracts_for.available[]
+        // O campo trading_period.rise_fall NÃO existe para índices sintéticos (1HZ10V, etc.)
+        // Os limites reais estão em available[].min_contract_duration / max_contract_duration
+        
+        const available: any[] = contractsRes.contracts_for?.available || [];
+        
+        // Inicializar com null (sem dado = unidade não suportada)
+        const newLimits: DurationLimits = { t: null, s: null, m: null, h: null, d: null };
+        
+        // Helper para parsear strings de duração como "1t", "10t", "15s", "1h"
+        const parseDuration = (dStr: string): { value: number; unit: DurationUnit } | null => {
+          if (!dStr) return null;
+          const match = dStr.match(/^(\d+)([tsmhd])$/);
+          if (!match) return null;
+          return { value: parseInt(match[1], 10), unit: match[2] as DurationUnit };
+        };
+        
+        // Filtrar apenas contratos Rise/Fall (CALL e PUT)
+        const riseFallContracts = available.filter(
+          (c: any) => c.contract_type === 'CALL' || c.contract_type === 'PUT'
+        );
+        
+        if (riseFallContracts.length > 0) {
+          // Para cada contrato Rise/Fall, extrair min e max durations
+          for (const contract of riseFallContracts) {
+            const minParsed = parseDuration(contract.min_contract_duration);
+            const maxParsed = parseDuration(contract.max_contract_duration);
+            
+            if (minParsed && maxParsed && minParsed.unit === maxParsed.unit) {
+              const unit = minParsed.unit;
+              const existing = newLimits[unit];
+              
+              if (!existing) {
+                // Primeira vez para esta unidade
+                newLimits[unit] = { min: minParsed.value, max: maxParsed.value };
+              } else {
+                // Se já existe, pegar o range mais amplo (menor min, maior max)
+                newLimits[unit] = {
+                  min: Math.min(existing.min, minParsed.value),
+                  max: Math.max(existing.max, maxParsed.value),
+                };
+              }
+            }
+          }
+        }
+        
+        // Fallback de segurança: se nenhum dado foi encontrado (API não retornou available),
+        // usar valores conhecidos para 1HZ10V e ativos sintéticos similares.
+        // 1HZ10V suporta ticks (1-10) e segundos (15-3600) em Rise/Fall.
+        const hasAnyLimit = Object.values(newLimits).some(v => v !== null);
+        if (!hasAnyLimit) {
+          console.warn(`[DurationLimits] API não retornou limites para ${symbol}. Usando defaults de segurança.`);
+          newLimits.t = { min: 1, max: 10 };
+          newLimits.s = { min: 15, max: 3600 };
+        }
+        
+        console.log(`[DurationLimits] Limites para ${symbol}:`, JSON.stringify(newLimits));
+        setDurationLimits(newLimits);
+
+        const currentChartType = chartTypeRef.current;
+        const currentTimePeriod = timePeriodRef.current;
+        
+        const botHistory = await getHistoricalData(symbol, 'candles', 1000, '1m');
+        setBotCandleData(botHistory as CandleData[]);
+        
+        const botSubRequest = { 
+            ticks_history: symbol, 
+            style: 'candles', 
+            granularity: 60,
+            subscribe: 1, 
+            end: "latest", 
+            count: 1, 
+            adjust_start_time: 1 
+        };
+        const botSubResponse: any = await makeRequest(botSubRequest);
+        if (botSubResponse.error) {
+            if (botSubResponse.error.code !== 'AlreadySubscribed') {
+                throw new Error(`Bot Sub: ${botSubResponse.error.message}`);
+            } else {
+                console.warn(`[Deriv WS V2] Bot data already subscribed for ${symbol}.`);
+            }
+        }
+        if(botSubResponse.subscription?.id) botSubscriptionIdRef.current = botSubResponse.subscription.id;
+        
+        const historyStyle = currentChartType === 'Candle' ? 'candles' : 'ticks';
+        const uiHistory = await getHistoricalData(symbol, historyStyle, 1000, currentTimePeriod);
+        
+        const chartHistory = uiHistory.map(h => {
+            if(historyStyle === 'candles' && h.open) {
+                return { epoch: h.epoch, open: h.open, high: h.high, low: h.low, close: h.close, volume: h.volume } as CandleData;
+            }
+            return { epoch: h.epoch, price: h.price } as TickData;
+        });
+
+        setChartData(chartHistory as ChartData[]);
+        if (historyStyle === 'ticks') {
+            setPriceTicks(uiHistory as TickData[]);
+        }
+        setDataVersion(v => v + 1);
+
+        let uiSubRequest: any;
+        if (currentChartType === 'Candle') {
+            uiSubRequest = { 
+                ticks_history: symbol, 
+                style: 'candles', 
+                granularity: getGranularityForTimePeriod(currentTimePeriod), 
+                subscribe: 1,
+                end: "latest",
+                count: 1,
+                adjust_start_time: 1
+            };
+        } else {
+            uiSubRequest = { 
+                ticks: symbol, 
+                subscribe: 1 
+            };
+        }
+        
+        const uiSubResponse: any = await makeRequest(uiSubRequest);
+        if (uiSubResponse.error) {
+             if (uiSubResponse.error.code !== 'AlreadySubscribed') {
+                throw new Error(`UI Sub: ${uiSubResponse.error.message}`);
+            } else {
+                 console.warn(`[Deriv WS V2] UI data already subscribed for ${symbol}.`);
+            }
+        }
+        if (uiSubResponse.subscription?.id) {
+            activeSubscriptionIdRef.current = uiSubResponse.subscription.id;
+        }
+
+    } catch (error: any) {
+        console.error(`[Market Data] Error for ${symbol}:`, error);
+        setChartError(error.message || 'Falha ao carregar dados do mercado.');
+    } finally {
+        setIsChartLoading(false);
+    }
+  }, [getHistoricalData, makeRequest]);
 
     const executeTrade = useCallback(async (
         contractType: string,
@@ -524,124 +685,6 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
         }
     }, 30000);
   }, []);
-  
-  const subscribeToStreams = useCallback(async (symbol: string) => {
-    try {
-        if (wsRef.current?.readyState !== WebSocket.OPEN) return;
-
-        if (activeSubscriptionIdRef.current) {
-            try { await makeRequest({ forget: activeSubscriptionIdRef.current }, true); } catch (e) { /* silent */ }
-        }
-        if (botSubscriptionIdRef.current) {
-            try { await makeRequest({ forget: botSubscriptionIdRef.current }, true); } catch (e) { /* silent */ }
-        }
-        
-        activeSubscriptionIdRef.current = null;
-        botSubscriptionIdRef.current = null;
-
-        setIsChartLoading(true);
-        setChartError(null);
-        setChartData([]);
-        setBotCandleData([]);
-        setPriceTicks([]); 
-
-        const currentChartType = chartTypeRef.current;
-        const currentTimePeriod = timePeriodRef.current;
-        
-        const contractsRes: any = await makeRequest({ contracts_for: symbol });
-        if (contractsRes.error) throw new Error(contractsRes.error.message);
-        
-        const tradingPeriod = contractsRes.contracts_for?.trading_period;
-        const riseFallPeriod = tradingPeriod?.rise_fall;
-
-        const newLimits: DurationLimits = { t: {min:0, max:0}, s: {min:0, max:0}, m: {min:0, max:0}, h: {min:0, max:0}, d: {min:0, max:0} };
-        
-        if (riseFallPeriod) {
-            Object.keys(riseFallPeriod).forEach(unit => {
-                const typedUnit = unit as keyof typeof riseFallPeriod;
-                const durationData = riseFallPeriod[typedUnit];
-                if(durationData && newLimits[typedUnit as DurationUnit]) {
-                   newLimits[typedUnit as DurationUnit] = { min: durationData.min, max: durationData.max };
-                }
-            });
-        }
-        setDurationLimits(newLimits);
-        
-        const botHistory = await getHistoricalData(symbol, 'candles', 1000, '1m');
-        setBotCandleData(botHistory as CandleData[]);
-        
-        const botSubRequest = { 
-            ticks_history: symbol, 
-            style: 'candles', 
-            granularity: 60,
-            subscribe: 1, 
-            end: "latest", 
-            count: 1, 
-            adjust_start_time: 1 
-        };
-        const botSubResponse: any = await makeRequest(botSubRequest);
-        if (botSubResponse.error) {
-            if (botSubResponse.error.code !== 'AlreadySubscribed') {
-                throw new Error(`Bot Sub: ${botSubResponse.error.message}`);
-            } else {
-                console.warn(`[Deriv WS V2] Bot data already subscribed for ${symbol}.`);
-            }
-        }
-        if(botSubResponse.subscription?.id) botSubscriptionIdRef.current = botSubResponse.subscription.id;
-        
-        const historyStyle = currentChartType === 'Candle' ? 'candles' : 'ticks';
-        const uiHistory = await getHistoricalData(symbol, historyStyle, 1000, currentTimePeriod);
-        
-        const chartHistory = uiHistory.map(h => {
-            if(historyStyle === 'candles' && h.open) {
-                return { epoch: h.epoch, open: h.open, high: h.high, low: h.low, close: h.close, volume: h.volume } as CandleData;
-            }
-            return { epoch: h.epoch, price: h.price } as TickData;
-        });
-
-        setChartData(chartHistory as ChartData[]);
-        if (historyStyle === 'ticks') {
-            setPriceTicks(uiHistory as TickData[]);
-        }
-        setDataVersion(v => v + 1);
-
-        let uiSubRequest: any;
-        if (currentChartType === 'Candle') {
-            uiSubRequest = { 
-                ticks_history: symbol, 
-                style: 'candles', 
-                granularity: getGranularityForTimePeriod(currentTimePeriod), 
-                subscribe: 1,
-                end: "latest",
-                count: 1,
-                adjust_start_time: 1
-            };
-        } else {
-            uiSubRequest = { 
-                ticks: symbol, 
-                subscribe: 1 
-            };
-        }
-        
-        const uiSubResponse: any = await makeRequest(uiSubRequest);
-        if (uiSubResponse.error) {
-             if (uiSubResponse.error.code !== 'AlreadySubscribed') {
-                throw new Error(`UI Sub: ${uiSubResponse.error.message}`);
-            } else {
-                 console.warn(`[Deriv WS V2] UI data already subscribed for ${symbol}.`);
-            }
-        }
-        if (uiSubResponse.subscription?.id) {
-            activeSubscriptionIdRef.current = uiSubResponse.subscription.id;
-        }
-
-    } catch (error: any) {
-        console.error(`[Market Data] Error for ${symbol}:`, error);
-        setChartError(error.message || 'Falha ao carregar dados do mercado.');
-    } finally {
-        setIsChartLoading(false);
-    }
-  }, [getHistoricalData, makeRequest]);
   
   useEffect(() => {
     if (!activeToken || isLoading) {

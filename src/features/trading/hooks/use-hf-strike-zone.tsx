@@ -194,8 +194,8 @@ export function useHFStrikeZone(
 
   const indicators = useMemo((): Indicators | null => {
     if (!enabled || botCandleData.length < 100) return null;
-    return calculateAllIndicators(botCandleData, initialStrategies, '1m', { duration: 1, unit: 't' });
-  }, [botCandleData, enabled, initialStrategies]);
+    return calculateAllIndicators(botCandleData, initialStrategies, uiChartPeriod, { duration: 1, unit: 't' });
+  }, [botCandleData, enabled, initialStrategies, uiChartPeriod]);
   
   const lastIsRandomCheck = useRef<number>(0);
   const isRandomCached = useRef<boolean>(false);
@@ -277,11 +277,7 @@ export function useHFStrikeZone(
           const ticks = priceTicks;
           
           const currentIndicators = indicators;
-          
-          if (!currentIndicators) {
-              councilExecutionRef.current.isExecuting = false;
-              return;
-          };
+            // indicators já foi verificado no guard acima. Esta verificação é redundante.
           
           const regime = detectMarketRegime(currentIndicators, candles);
           setMarketRegime(regime);
@@ -326,8 +322,8 @@ export function useHFStrikeZone(
             lastGBMRunRef.current = now;
             const validTechnicals = technicalSignals.filter((z): z is StrikeZone => z !== null);
             gbmSignalsRef.current = {
-              gbm20: detectGBM20sZone(candles, indicators, currentPrice, validTechnicals, { gbmConfidenceThreshold }),
-              gbm40: detectGBM40sZone(candles, indicators, currentPrice, validTechnicals, { gbmConfidenceThreshold }),
+              gbm20: detectGBM20sZone(candles, indicators, currentPrice, validTechnicals),
+              gbm40: detectGBM40sZone(candles, indicators, currentPrice, validTechnicals),
             };
           }
           
@@ -452,24 +448,35 @@ export function useHFStrikeZone(
               let finalDuration: number;
               let durationUnit: DurationUnit;
               const calculatedDurationInSeconds = consensusSignal.duration;
-              const canUseTicks = durationLimits.t && durationLimits.t.min > 0;
-              const canUseSeconds = durationLimits.s && durationLimits.s.min > 0;
+              
+              if (!durationLimits) {
+                console.error(`[HF-STRIKE] BUG: Tentativa de executar trade sem limites de duração carregados para ${activeSymbol}.`);
+                return;
+              }
+              
+                // ✅ CORRIGIDO: verificar max > 0, não min > 0
+                // min pode ser 0 ou 1 (ambos válidos). O que importa é ter um max definido.
+                const canUseTicks = !!(durationLimits.t && durationLimits.t.max > 0);
+                const canUseSeconds = !!(durationLimits.s && durationLimits.s.max > 0);
+                
+                // Log diagnóstico para confirmar os limites recebidos
+                console.log(`[DURATION_EXEC] Limites: t=${JSON.stringify(durationLimits.t)} s=${JSON.stringify(durationLimits.s)} | canUseTicks=${canUseTicks} canUseSeconds=${canUseSeconds} | calculado=${calculatedDurationInSeconds.toFixed(1)}s`);
               
               if (canUseTicks && calculatedDurationInSeconds <= 10) {
                   durationUnit = 't';
                   const durationInTicks = Math.ceil(calculatedDurationInSeconds / 2);
-                  finalDuration = Math.max(durationLimits.t.min, Math.min(durationInTicks, durationLimits.t.max));
+                  finalDuration = Math.max(durationLimits.t!.min, Math.min(durationInTicks, durationLimits.t!.max));
               } else if (canUseSeconds) {
                   durationUnit = 's';
-                  finalDuration = Math.round(Math.max(calculatedDurationInSeconds, durationLimits.s.min));
-                  finalDuration = Math.min(finalDuration, durationLimits.s.max);
+                  finalDuration = Math.round(Math.max(calculatedDurationInSeconds, durationLimits.s!.min));
+                  finalDuration = Math.min(finalDuration, durationLimits.s!.max);
               } else if (canUseTicks) {
                   durationUnit = 't';
                   const durationInTicks = Math.ceil(calculatedDurationInSeconds / 2);
-                  finalDuration = Math.max(durationLimits.t.min, Math.min(durationInTicks, durationLimits.t.max));
+                  finalDuration = Math.max(durationLimits.t!.min, Math.min(durationInTicks, durationLimits.t!.max));
               } else {
                   durationUnit = 's';
-                  finalDuration = 32; // Fallback mais longo e seguro
+                  finalDuration = 32;
                   console.error(`[HF-STRIKE] BUG: Limites de duração NULOS, mas a guarda falhou. Usando fallback de 32s. ActiveSymbol: ${activeSymbol}`);
               }
               
