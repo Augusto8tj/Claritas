@@ -525,13 +525,14 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
         
         const uiSubResponse: any = await makeRequest(uiSubRequest);
         if (uiSubResponse.error) {
-             if (uiSubResponse.error.code !== 'AlreadySubscribed') {
-                throw new Error(`UI Sub: ${uiSubResponse.error.message}`);
+            if (uiSubResponse.error.code !== 'AlreadySubscribed') {
+                console.error(`[Deriv WS V2] Erro na subscrição da UI: ${uiSubResponse.error.message}`);
+                // Don't throw. Set the stateful error instead to be displayed on the chart.
+                setChartError(`UI Sub: ${uiSubResponse.error.message}`);
             } else {
                  console.warn(`[Deriv WS V2] UI data already subscribed for ${symbol}.`);
             }
-        }
-        if (uiSubResponse.subscription?.id) {
+        } else if(uiSubResponse.subscription?.id) {
             activeSubscriptionIdRef.current = uiSubResponse.subscription.id;
         }
 
@@ -648,23 +649,21 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
       }, [isConnected, makeRequest, addTradeAnnotation, priceTicks, setAndPersistOperationsLog]);
 
   const sellContract = useCallback(async (contractId: number): Promise<TradeResult> => {
-    try {
-        const contract = operationsLog.find(op => op.id === contractId);
-        if (contract && contract.expirationTime) {
-            const remainingTime = contract.expirationTime - Date.now();
-            if (remainingTime < 1000) { 
-                throw new Error(`O contrato #${contractId} está no período de bloqueio final.`);
-            }
-        }
-        
-        const sellResponse: any = await makeRequest({ 
-            "sell": contractId,
-            "price": 0, 
-        });
+    if (!wsRef.current || !isConnected) {
+        return { success: false, message: "A conexão com a API da Deriv não está ativa." };
+    }
 
-        if (sellResponse.error) {
-            throw new Error(sellResponse.error.message);
-        }
+    const contract = operationsLog.find(op => op.id === contractId);
+    if (contract && contract.expirationTime) {
+      const remainingTime = contract.expirationTime - Date.now();
+      if (remainingTime < 1000) { 
+        return { success: false, message: `O contrato #${contractId} está no período de bloqueio final e não pode ser vendido.` };
+      }
+    }
+
+    try {
+        const sellResponse: any = await makeRequest({ "sell": contractId });
+        if (sellResponse.error) throw new Error(sellResponse.error.message);
 
         const sellResult = sellResponse.sell;
         if (sellResult) {
@@ -764,6 +763,7 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
                     const isSold = contract.is_sold === 1;
                     
                     if (existingOpIndex !== -1) {
+                        // UPDATE EXISTING OPERATION
                         const updatedLog = [...prevLog];
                         const op = updatedLog[existingOpIndex];
                         
