@@ -40,6 +40,17 @@ A cada atualização de dados (tick ou vela), o `use-hf-strike-zone.tsx` executa
 1.  **Cálculo de Indicadores:** O `indicator-service` processa os dados de velas (`botCandleData`) para gerar um objeto `Indicators` completo.
 2.  **Análise de Microestrutura:** A função `extractMicrostructureFeatures` analisa os últimos ticks de preço para medir o fluxo de ordens, a velocidade e a pressão de compra/venda.
 3.  **Votação dos Especialistas:** O sistema chama cada uma das 7 funções de detecção em `hf-strike-logic.ts` (ex: `detectHFMeanReversionZone`, `detectGBM20sZone`). Cada especialista retorna um "voto" (`StrikeZone`) se as suas condições forem atendidas, ou `null` se não houver sinal.
+
+#### Especialistas Preditivos (GBM): Como Funcionam?
+
+Ao contrário do Laboratório de Volatilidade (`/volatility-analysis`), os especialistas GBM (20s e 40s) no HF Strike Zone operam de forma mais direta e reativa, sem um ciclo de aprendizagem contínuo com feedback dos seus próprios erros.
+
+*   **Cálculo Sob Demanda:** A cada segundo (a cada ciclo do "Funil de Decisão"), os especialistas GBM são chamados. Eles não estão em um loop de aprendizagem perpétuo.
+*   **Ajuste de Drift Histórico (Não-Adaptativo):** Não há um "Controlador de Drift Neuro-Adaptativo" aqui. O parâmetro "drift" (a tendência média esperada) é simplesmente a **média histórica dos retornos das últimas 100 velas**. Este valor é pesado e recalculado a cada 30 segundos para se adaptar às condições recentes do mercado, mas ele não aprende com os erros das suas próprias previsões passadas.
+*   **Simulação de Monte Carlo:** A cada chamada, o especialista roda uma simulação de Monte Carlo com 200 "caminhos" possíveis para o preço, usando o drift histórico e a volatilidade atual para calcular a probabilidade de o preço terminar acima ou abaixo do ponto de partida.
+
+Em resumo, são preditores estatísticos rápidos, focados no "agora", que usam o passado recente como guia, mas sem a memória de longo prazo e o ciclo de auto-correção do seu "irmão" mais complexo no Laboratório de Volatilidade.
+
 4.  **Motor de Consenso:**
     *   O sistema agrupa os votos por direção (`LONG` vs. `SHORT`).
     *   Ele verifica se o número de votos em uma direção atinge o limiar `minConsensusSignals` definido pelo usuário na UI.
