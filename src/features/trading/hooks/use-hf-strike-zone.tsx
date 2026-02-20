@@ -32,7 +32,7 @@ import {
 } from '../services/hf-strike-logic';
 import type { HFConfig } from '@/features/trading/components/hf-trader/hf-config-panel';
 import { saveHFTradeLog } from '@/services/hf-data-service';
-import { runAllStrategiesBacktest } from '../backtest/hf-backtest-engine';
+import { runSingleStrategyBacktest, runAllStrategiesBacktest } from '../backtest/hf-backtest-engine';
 import { getOptimalDuration, analyzeOptimalDuration, resetGBMCache } from '../services/gbm-calibrator';
 import { TRADER_CONFIG } from '@/features/trading/config/trader-config';
 import { runAutoCalibration, type AutoCalibrationResults } from '../optimization/auto-calibrator';
@@ -222,14 +222,14 @@ export function useHFStrikeZone(
     setTimeout(() => {
       console.log('[AUTO_CALIBRATE] Iniciando backtest em background para atualizar tempos ótimos...');
       const last500 = candles.slice(-500);
-      const results = runAllStrategiesBacktest(last500, config, activeSymbol, strategyParams);
+      const results = runAllStrategiesBacktest(last500, config, activeSymbol, strategyParams, { gbmConfidenceThreshold });
       
       if (results._optimalDurations) {
         console.log('[AUTO_CALIBRATE] Tempos ótimos atualizados:', results._optimalDurations);
         setLastCalibrationTime(Date.now());
       }
     }, 0);
-  }, [botCandleData, config, activeSymbol, strategyParams]);
+  }, [botCandleData, config, activeSymbol, strategyParams, gbmConfidenceThreshold]);
   
   const applyOptimalDuration = useCallback((zone: StrikeZone): StrikeZone => {
     const optimal = getOptimalDuration(zone.strategy);
@@ -269,14 +269,21 @@ export function useHFStrikeZone(
       
       const runCycle = async () => {
         try {
-          // CORREÇÃO: Adicionada guarda para !durationLimits
           if (!indicators || priceTicks.length < 2 || !user || !isConnected || !activeSymbol || !durationLimits) {
             return;
           }
 
           const candles = botCandleData;
           const ticks = priceTicks;
-          const regime = detectMarketRegime(indicators, candles);
+          
+          const currentIndicators = indicators;
+          
+          if (!currentIndicators) {
+              councilExecutionRef.current.isExecuting = false;
+              return;
+          };
+          
+          const regime = detectMarketRegime(currentIndicators, candles);
           setMarketRegime(regime);
           
           if (indicators.atr && indicators.bbw) {
@@ -442,14 +449,13 @@ export function useHFStrikeZone(
             }
     
             if (autoExecute) {
-              // CORREÇÃO DA LÓGICA DE DURAÇÃO
               let finalDuration: number;
               let durationUnit: DurationUnit;
               const calculatedDurationInSeconds = consensusSignal.duration;
               const canUseTicks = durationLimits.t && durationLimits.t.min > 0;
               const canUseSeconds = durationLimits.s && durationLimits.s.min > 0;
               
-              if (calculatedDurationInSeconds <= 10 && canUseTicks) {
+              if (canUseTicks && calculatedDurationInSeconds <= 10) {
                   durationUnit = 't';
                   const durationInTicks = Math.ceil(calculatedDurationInSeconds / 2);
                   finalDuration = Math.max(durationLimits.t.min, Math.min(durationInTicks, durationLimits.t.max));
@@ -458,47 +464,38 @@ export function useHFStrikeZone(
                   finalDuration = Math.round(Math.max(calculatedDurationInSeconds, durationLimits.s.min));
                   finalDuration = Math.min(finalDuration, durationLimits.s.max);
               } else if (canUseTicks) {
-                  // Fallback para ticks se segundos não for suportado
                   durationUnit = 't';
                   const durationInTicks = Math.ceil(calculatedDurationInSeconds / 2);
                   finalDuration = Math.max(durationLimits.t.min, Math.min(durationInTicks, durationLimits.t.max));
               } else {
-                  // Fallback final, caso o ativo não suporte nem ticks nem segundos (improvável)
-                  console.warn(`[HF-STRIKE] Fallback: Ativo ${activeSymbol} não suporta ticks ou segundos, usando 15s como padrão.`);
                   durationUnit = 's';
-                  finalDuration = 15;
+                  finalDuration = 32; // Fallback mais longo e seguro
+                  console.error(`[HF-STRIKE] BUG: Limites de duração NULOS, mas a guarda falhou. Usando fallback de 32s. ActiveSymbol: ${activeSymbol}`);
               }
-
-              setIsExecuting(true);
-              try {
-                const tradeResult = await executeTrade(
-                    consensusSignal.type === 'LONG_ENTRY' ? 'CALL' : 'PUT', 
-                    finalStake, 
-                    activeSymbol!, 
-                    consensusSignal.type === 'LONG_ENTRY' ? 'rise' : 'fall', 
-                    finalDuration,
-                    durationUnit,
-                    'HF_Strike',
-                    ensembleParticipants.join(', ')
-                );
-                if (tradeResult.success && tradeResult.contractId) {
-                  toast({ title: '⚡ Strike de Consenso Executado!', description: `${ensembleParticipants.length} especialistas concordaram. Stake: $${finalStake.toFixed(2)}` });
-                  await saveHFTradeLog(user.uid, {
-                      symbol: activeSymbol!,
-                      strikeZone: consensusSignal,
-                      execution: { contractId: String(tradeResult.contractId), entryPrice: tradeResult.entryPrice!, status: 'pending', executedAt: new Date().toISOString() },
-                      marketRegime: regime.regime,
-                      ensembleParticipants: ensembleParticipants,
-                      positionSize: sizing,
-                      riskMetrics: { sharpeContribution: sizing.sharpeContribution, portfolioExposure: 0 }
-                  });
-                } else {
-                  throw new Error(tradeResult.message);
-                }
-              } catch (error: any) {
-                toast({ title: 'Erro na Auto-Execução', description: error.message, variant: 'destructive' });
-              } finally {
-                setIsExecuting(false);
+              
+              const tradeResult = await executeTrade(
+                  consensusSignal.type === 'LONG_ENTRY' ? 'CALL' : 'PUT', 
+                  finalStake, 
+                  activeSymbol!, 
+                  consensusSignal.type === 'LONG_ENTRY' ? 'rise' : 'fall', 
+                  finalDuration,
+                  durationUnit,
+                  'HF_Strike',
+                  ensembleParticipants.join(', ')
+              );
+              if (tradeResult.success && tradeResult.contractId) {
+                toast({ title: '⚡ Strike de Consenso Executado!', description: `${ensembleParticipants.length} especialistas concordaram. Stake: $${finalStake.toFixed(2)}` });
+                await saveHFTradeLog(user.uid, {
+                    symbol: activeSymbol!,
+                    strikeZone: consensusSignal,
+                    execution: { contractId: String(tradeResult.contractId), entryPrice: tradeResult.entryPrice!, status: 'pending', executedAt: new Date().toISOString() },
+                    marketRegime: regime.regime,
+                    ensembleParticipants: ensembleParticipants,
+                    positionSize: sizing,
+                    riskMetrics: { sharpeContribution: sizing.sharpeContribution, portfolioExposure: 0 }
+                });
+              } else {
+                throw new Error(tradeResult.message);
               }
             }
           } else {
@@ -523,7 +520,7 @@ export function useHFStrikeZone(
       activeSymbol, strategyParams, getIsRandom, applyOptimalDuration, 
       minConfidence, minConsensusSignals, operationsLog, autoExecute, 
       toast, saveHFTradeLog, riskManager, manualStake, consecutiveLosses, 
-      martingaleMultiplier, maxConcurrentTrades, durationLimits, gbmConfidenceThreshold, executeTrade, memoizedIndicators
+      martingaleMultiplier, maxConcurrentTrades, durationLimits, gbmConfidenceThreshold, executeTrade, 
   ]);
   
   return {
