@@ -9,7 +9,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Bot, Binary, TrendingUp, HelpCircle, Trophy, Settings, TestTube } from "lucide-react";
+import { Bot, Binary, TrendingUp, HelpCircle, Trophy, Settings } from "lucide-react";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Separator } from "@/components/ui/separator";
@@ -21,7 +21,6 @@ import { cn } from "@/lib/utils";
 import { Slider } from "@/components/ui/slider";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Button } from "@/components/ui/button";
-import { DigitsBacktestPanel } from "./digits-backtest-panel";
 
 interface DigitsAutopilotManagerProps extends ReturnType<typeof useRobotCouncilDigits> {}
 
@@ -32,7 +31,7 @@ const PilotTabContent: React.FC<{
     pilotState: ReturnType<typeof useRobotCouncilDigits>['pilots'][PilotType];
     toggleAutopilot: (type: PilotType) => void;
 }> = ({ pilotKey, title, description, pilotState, toggleAutopilot }) => {
-    const { isOn, status, currentTarget, consecutiveLosses } = pilotState;
+    const { isOn, status, currentTarget, consecutiveLosses, accumulatedLoss } = pilotState;
 
     const statusInfo = {
         'PAUSED': { text: 'Pausado', color: 'bg-gray-500' },
@@ -74,7 +73,7 @@ const PilotTabContent: React.FC<{
                      <div className="p-2 border rounded-lg bg-muted/50 col-span-2 md:col-span-1">
                         <p className="text-muted-foreground font-semibold mb-1">Perdas Seguidas</p>
                         <p className="font-bold text-sm text-red-600">
-                            {consecutiveLosses}
+                           {consecutiveLosses} {accumulatedLoss > 0 && `($${accumulatedLoss.toFixed(2)})`}
                         </p>
                     </div>
                 </div>
@@ -94,6 +93,10 @@ export const DigitsAutopilotManager: React.FC<DigitsAutopilotManagerProps> = (pr
     setDailyTarget,
     consensusThreshold,
     setConsensusThreshold,
+    overUnderThreshold,
+    setOverUnderThreshold,
+    evenOddThreshold,
+    setEvenOddThreshold,
     underdogThreshold,
     setUnderdogThreshold,
     isUnderdogInverse,
@@ -111,8 +114,6 @@ export const DigitsAutopilotManager: React.FC<DigitsAutopilotManagerProps> = (pr
     evenOddUnderdogThreshold,
     setEvenOddUnderdogThreshold,
  } = props;
-
-  const isAnyPilotOn = Object.values(pilots).some(p => p.isOn);
 
   return (
     <Card>
@@ -190,7 +191,6 @@ export const DigitsAutopilotManager: React.FC<DigitsAutopilotManagerProps> = (pr
                                 min={1.0} max={10.0} step={0.5}
                                 value={[underdogThreshold]}
                                 onValueChange={(value) => setUnderdogThreshold(value[0])}
-                                disabled={isAnyPilotOn}
                             />
                             <p className="text-xs text-muted-foreground">Operar 'Combina' se a frequência de um dígito cair abaixo deste valor.</p>
                         </div>
@@ -205,7 +205,6 @@ export const DigitsAutopilotManager: React.FC<DigitsAutopilotManagerProps> = (pr
                                 id="underdog-inverse-switch"
                                 checked={isUnderdogInverse}
                                 onCheckedChange={setIsUnderdogInverse}
-                                disabled={isAnyPilotOn}
                             />
                         </div>
                     </div>
@@ -227,7 +226,6 @@ export const DigitsAutopilotManager: React.FC<DigitsAutopilotManagerProps> = (pr
                                 min={30} max={48} step={1}
                                 value={[overUnderUnderdogThreshold]}
                                 onValueChange={(value) => setOverUnderUnderdogThreshold(value[0])}
-                                disabled={isAnyPilotOn}
                             />
                             <p className="text-xs text-muted-foreground">Ambos os pilotos A/A Azarão usarão este limiar para operar.</p>
                         </div>
@@ -250,7 +248,6 @@ export const DigitsAutopilotManager: React.FC<DigitsAutopilotManagerProps> = (pr
                                 min={30} max={48} step={1}
                                 value={[overUnderUnderdogThreshold]}
                                 onValueChange={(value) => setOverUnderUnderdogThreshold(value[0])}
-                                disabled={isAnyPilotOn}
                             />
                             <p className="text-xs text-muted-foreground">Ambos os pilotos A/A Azarão usarão este limiar para operar.</p>
                         </div>
@@ -273,7 +270,6 @@ export const DigitsAutopilotManager: React.FC<DigitsAutopilotManagerProps> = (pr
                                 min={30} max={48} step={1}
                                 value={[evenOddUnderdogThreshold]}
                                 onValueChange={(value) => setEvenOddUnderdogThreshold(value[0])}
-                                disabled={isAnyPilotOn}
                             />
                             <p className="text-xs text-muted-foreground">Operar em um bloco se a probabilidade dele cair abaixo deste valor.</p>
                         </div>
@@ -295,7 +291,6 @@ export const DigitsAutopilotManager: React.FC<DigitsAutopilotManagerProps> = (pr
                         value={dailyBalance}
                         onChange={(e) => setDailyBalance(Number(e.target.value))}
                         placeholder="Ex: 10"
-                        disabled={isAnyPilotOn}
                     />
                 </div>
                 <div className="space-y-2">
@@ -306,23 +301,36 @@ export const DigitsAutopilotManager: React.FC<DigitsAutopilotManagerProps> = (pr
                         value={dailyTarget}
                         onChange={(e) => setDailyTarget(Number(e.target.value))}
                         placeholder="Ex: 5"
-                        disabled={isAnyPilotOn}
                     />
                 </div>
             </div>
 
             <div className="space-y-2">
-                <Label htmlFor="council-consensus-digits">Limiar de Probabilidade (%)</Label>
-                <Input 
+                <Label htmlFor="council-consensus-digits">Limiar de Prob. (Difere) ({consensusThreshold}%)</Label>
+                <Slider
                     id="council-consensus-digits"
-                    type="number"
-                    min={10} max={90}
-                    value={consensusThreshold}
-                    onChange={(e) => setConsensusThreshold(Number(e.target.value))}
-                    placeholder="Ex: 25"
-                    disabled={isAnyPilotOn}
+                    min={15} max={50} step={1}
+                    value={[consensusThreshold]}
+                    onValueChange={(value) => setConsensusThreshold(value[0])}
                 />
-                <p className="text-xs text-muted-foreground">O piloto irá operar se a probabilidade do sinal superar este valor.</p>
+            </div>
+             <div className="space-y-2">
+                <Label htmlFor="over-under-threshold-slider">Limiar de Prob. (Acima/Abaixo) ({overUnderThreshold}%)</Label>
+                <Slider
+                    id="over-under-threshold-slider"
+                    min={55} max={80} step={1}
+                    value={[overUnderThreshold]}
+                    onValueChange={(value) => setOverUnderThreshold(value[0])}
+                />
+            </div>
+             <div className="space-y-2">
+                <Label htmlFor="even-odd-threshold-slider">Limiar de Prob. (Par/Ímpar) ({evenOddThreshold}%)</Label>
+                <Slider
+                    id="even-odd-threshold-slider"
+                    min={55} max={80} step={1}
+                    value={[evenOddThreshold]}
+                    onValueChange={(value) => setEvenOddThreshold(value[0])}
+                />
             </div>
         </div>
         
@@ -345,7 +353,6 @@ export const DigitsAutopilotManager: React.FC<DigitsAutopilotManagerProps> = (pr
                         id="martingale-switch"
                         checked={isMartingaleEnabled}
                         onCheckedChange={setIsMartingaleEnabled}
-                        disabled={isAnyPilotOn}
                     />
                 </div>
                 <div className="space-y-2">
@@ -357,7 +364,7 @@ export const DigitsAutopilotManager: React.FC<DigitsAutopilotManagerProps> = (pr
                         min={1.0} max={5.0} step={0.1}
                         value={[martingaleRecoveryFactor]}
                         onValueChange={(value) => setMartingaleRecoveryFactor(value[0])}
-                        disabled={isAnyPilotOn || !isMartingaleEnabled}
+                        disabled={!isMartingaleEnabled}
                     />
                     <p className={cn("text-xs text-muted-foreground", !isMartingaleEnabled && "opacity-50")}>
                         Define o lucro alvo da recuperação. 1.0 = apenas recuperar a perda.
@@ -371,7 +378,6 @@ export const DigitsAutopilotManager: React.FC<DigitsAutopilotManagerProps> = (pr
                         min={0} max={60} step={1}
                         value={[cooldownTime]}
                         onValueChange={(value) => setCooldownTime(value[0])}
-                        disabled={isAnyPilotOn}
                     />
                 </div>
 
@@ -382,7 +388,6 @@ export const DigitsAutopilotManager: React.FC<DigitsAutopilotManagerProps> = (pr
                         min={3} max={40} step={1}
                         value={[maxLosses]}
                         onValueChange={(value) => setMaxLosses(value[0])}
-                        disabled={isAnyPilotOn}
                     />
                 </div>
             </CollapsibleContent>
