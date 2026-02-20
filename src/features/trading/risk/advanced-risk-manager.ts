@@ -35,6 +35,12 @@ export class AdvancedRiskManager {
     this.dailyStartCapital = capital;
   }
   
+  // ✅ NOVO: Método para atualizar configurações dinamicamente
+  updateConfig(newParams: Partial<RiskParameters>): void {
+    this.params = { ...this.params, ...newParams };
+    console.log('[RiskManager] Configuração atualizada:', this.params);
+  }
+
   calculatePositionSize(
     signal: EnsembleSignal,
     currentBalance: number

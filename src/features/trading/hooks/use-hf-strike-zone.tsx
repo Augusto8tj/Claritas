@@ -94,6 +94,7 @@ export function useHFStrikeZone(
   const lastBacktestRun = useRef<number>(0);
   const [lastCalibrationTime, setLastCalibrationTime] = useState(0);
 
+  // Integração do Cérebro Preditivo
   const { projectionExperts } = useStochasticModels(
     botCandleData, 
     priceTicks, 
@@ -105,7 +106,7 @@ export function useHFStrikeZone(
   const [activeStrikeZone, setActiveStrikeZone] = useState<StrikeZone | null>(null);
   const riskManager = useMemo(() => new AdvancedRiskManager({ maxDailyLoss: dailyBalance, maxDrawdown: 30, maxConcurrentTrades: 3, maxExposurePerAsset: 25, kellyFraction: 0.25 }, 1000), [dailyBalance]);
   
-  // Sincronizar dailyBalance quando mudar (ex: usuário recarrega saldo)
+  // Sincronizar dailyBalance quando mudar
   useEffect(() => {
       riskManager.updateConfig({ maxDailyLoss: dailyBalance });
   }, [dailyBalance, riskManager]);
@@ -120,7 +121,6 @@ export function useHFStrikeZone(
       MICROSTRUCTURE_SCALP: 0,
       GBM_20S: 0,
       GBM_40S: 0,
-      RANDOM_WALK: 0, // Adicionado
   });
   
   const [strategyParams, setStrategyParams] = useState<StrategyParams>({
@@ -606,4 +606,3 @@ export function useHFStrikeZone(
     triggerAutoCalibration,
   };
 }
-```
