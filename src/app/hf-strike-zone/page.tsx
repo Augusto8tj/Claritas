@@ -71,6 +71,8 @@ function PageContent() {
     isCalibrating,
     calibrationProgress,
     triggerAutoCalibration,
+    calibrationResults,
+    setCalibrationResults,
   } = useHFStrikeZone(
       activeSymbol, 
       priceTicks, 
@@ -203,13 +205,20 @@ function PageContent() {
             <HFAutoCalibrator 
                 isCalibrating={isCalibrating} 
                 calibrationProgress={calibrationProgress} 
-                onCalibrate={triggerAutoCalibration} 
+                onCalibrate={triggerAutoCalibration}
+                calibrationResults={calibrationResults}
+                setCalibrationResults={setCalibrationResults}
+                lastCalibrationTime={lastCalibrationTime}
             />
 
             <HFStrategyTuningPanel 
                 params={strategyParams}
                 onParamChange={updateStrategyParams}
                 gbmConfidenceThreshold={gbmConfidenceThreshold}
+                calibrationMeta={calibrationResults ? Object.entries(calibrationResults).map(([key, res]) => res ? ({
+                    strategy: key as StrategyType,
+                    params: res.finalParams
+                }) : null).filter(Boolean) as any : []}
             />
             
             <HFSignalCard signal={activeStrikeZone} onExecute={handleExecuteStrike} isExecuting={isExecuting} consecutiveLosses={consecutiveLosses} isCooldown={isCooldownActive}/>

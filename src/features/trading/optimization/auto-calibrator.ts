@@ -25,6 +25,7 @@ export interface CalibrationResult {
   initialSharpe: number;
   finalSharpe: number;
   finalParams: any;
+  initialParams: any;
 }
 
 export interface AutoCalibrationResults extends Partial<Record<StrategyType, CalibrationResult>> {
@@ -145,10 +146,14 @@ export async function runAutoCalibration(
     }
 
     finalResults[strategy] = {
-        strategy, success: bestTradeCount >= targetTradeFrequency,
-        initialTrades: initialStrategyResult?.totalTrades ?? 0, finalTrades: bestTradeCount,
-        initialSharpe: initialStrategyResult?.metrics?.sharpeRatio ?? -Infinity, finalSharpe: bestSharpe,
-        finalParams: bestParams
+        strategy,
+        success: bestTradeCount >= targetTradeFrequency,
+        initialTrades: initialStrategyResult?.totalTrades ?? 0,
+        finalTrades: bestTradeCount,
+        initialSharpe: initialStrategyResult?.metrics?.sharpeRatio ?? -Infinity,
+        finalSharpe: bestSharpe,
+        finalParams: bestParams,
+        initialParams: initialParams[strategy],
     };
      onProgress(strategy, 100, "Calibração concluída.");
   }
