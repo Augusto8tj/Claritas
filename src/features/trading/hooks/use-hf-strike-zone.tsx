@@ -284,14 +284,14 @@ export function useHFStrikeZone(
       const runCycle = async () => {
         try {
           if (!indicators || !durationLimits) {
+            councilExecutionRef.current.isExecuting = false;
             return;
           }
-
           const candles = botCandleData;
           const ticks = priceTicks;
           
           const currentIndicators = indicators;
-          
+
           const regime = detectMarketRegime(currentIndicators, candles);
           setMarketRegime(regime);
           
@@ -344,7 +344,6 @@ export function useHFStrikeZone(
           const gbm20sSignal = gbmSignalsRef.current.gbm20;
           const gbm40sSignal = gbmSignalsRef.current.gbm40;
 
-          // Calcular a duração máxima executável para este ativo
           const tickDurSec = getTickDurationSeconds(activeSymbol);
           const maxExecutableSeconds = durationLimits
             ? (durationLimits.s?.max                              // preferir segundos
@@ -355,9 +354,6 @@ export function useHFStrikeZone(
           
           const allSignalsResult = [...technicalSignals, gbm20sSignal, gbm40sSignal];
           
-          setAllSignals(allSignalsResult);
-          
-          // Normalizar durações ao máximo executável pelo ativo antes do filtro/consenso
           // Evita que médias ponderadas sejam distorcidas por durações impossíveis
           const allSignalsNormalized = allSignalsResult.map(zone => {
             if (!zone || maxExecutableSeconds === Infinity) return zone;
@@ -366,7 +362,9 @@ export function useHFStrikeZone(
             }
             return zone;
           });
-          
+
+          setAllSignals(allSignalsResult);
+
           const newCounts = { ...strategyCounts };
           let countsChanged = false;
           allSignalsNormalized.forEach(signal => {
@@ -479,7 +477,7 @@ export function useHFStrikeZone(
     
             if (autoExecute) {
               if (!durationLimits) {
-                  console.error("[HF-STRIKE] Tentativa de execução sem limites de duração definidos.");
+                  console.error("[HF-STRIKE] BUG: Tentativa de execução sem limites de duração definidos.");
                   return;
               }
             
@@ -487,11 +485,15 @@ export function useHFStrikeZone(
               let durationUnit: DurationUnit;
               const calculatedDurationInSeconds = consensusSignal.duration;
               
+              // ✅ CORRIGIDO: verificar max > 0, não min > 0
+              // min pode ser 0 ou 1 (ambos válidos). O que importa é ter um max definido.
               const canUseTicks = !!(durationLimits.t && durationLimits.t.max > 0);
               const canUseSeconds = !!(durationLimits.s && durationLimits.s.max > 0);
               const canUseMinutes = !!(durationLimits.m && durationLimits.m.max > 0);
               
-              if (canUseSeconds) {
+              console.log(`[DURATION_EXEC] Limites: t=${JSON.stringify(durationLimits.t)} s=${JSON.stringify(durationLimits.s)} | canUseTicks=${canUseTicks} canUseSeconds=${canUseSeconds} | calculado=${calculatedDurationInSeconds.toFixed(1)}s`);
+            
+              if (canUseSeconds && calculatedDurationInSeconds >= durationLimits.s.min) {
                 durationUnit = 's';
                 finalDuration = Math.round(
                   Math.max(calculatedDurationInSeconds, durationLimits.s!.min)
@@ -586,13 +588,12 @@ export function useHFStrikeZone(
       dataVersion, enabled, isCooldownActive, isExecuting,
       botCandleData, priceTicks, user, isConnected,
       config, activeSymbol, strategyParams, getIsRandom, 
-      applyOptimalDuration, toast, executeTrade,
+      applyOptimalDuration, toast, 
       getHistoricalData,
-      getTickDurationSeconds,
-      indicators, // ✅ MUDANÇA: Usando 'indicators' em vez de 'memoizedIndicators'
+      indicators,
       minConfidence, minConsensusSignals, operationsLog, autoExecute, 
       saveHFTradeLog, riskManager, manualStake, consecutiveLosses, 
-      martingaleMultiplier, maxConcurrentTrades, durationLimits, gbmConfidenceThreshold
+      martingaleMultiplier, maxConcurrentTrades, durationLimits, gbmConfidenceThreshold, executeTrade
   ]);
   
   return {
@@ -607,5 +608,3 @@ export function useHFStrikeZone(
     triggerAutoCalibration,
   };
 }
-
-```
