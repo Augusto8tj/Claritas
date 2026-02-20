@@ -98,8 +98,10 @@ export const DigitsAutopilotManager: React.FC<DigitsAutopilotManagerProps> = (pr
     setUnderdogThreshold,
     isUnderdogInverse,
     setIsUnderdogInverse,
-    martingaleMultiplier,
-    setMartingaleMultiplier,
+    martingaleRecoveryFactor,
+    setMartingaleRecoveryFactor,
+    isMartingaleEnabled,
+    setIsMartingaleEnabled,
     cooldownTime,
     setCooldownTime,
     maxLosses,
@@ -332,20 +334,34 @@ export const DigitsAutopilotManager: React.FC<DigitsAutopilotManagerProps> = (pr
                 </Button>
             </CollapsibleTrigger>
             <CollapsibleContent className="pt-4 space-y-6">
-                 <div className="space-y-2">
-                    <Label htmlFor="martingale-slider" className="flex flex-col space-y-1">
-                        <span>Multiplicador Martingale ({martingaleMultiplier.toFixed(1)}x)</span>
+                <div className="flex items-center justify-between rounded-lg border p-3 shadow-sm">
+                    <Label htmlFor="martingale-switch" className="flex flex-col space-y-1">
+                        <span>Ativar Martingale Inteligente</span>
                         <span className="font-normal text-xs text-muted-foreground">
-                            Multiplica a aposta após uma perda. Valor '1' desativa. Use com extrema cautela.
+                            Calcula a próxima aposta para recuperar perdas + lucro.
                         </span>
                     </Label>
-                    <Slider
-                        id="martingale-slider"
-                        min={1} max={10} step={0.1}
-                        value={[martingaleMultiplier]}
-                        onValueChange={(value) => setMartingaleMultiplier(value[0])}
+                    <Switch
+                        id="martingale-switch"
+                        checked={isMartingaleEnabled}
+                        onCheckedChange={setIsMartingaleEnabled}
                         disabled={isAnyPilotOn}
                     />
+                </div>
+                <div className="space-y-2">
+                    <Label htmlFor="martingale-recovery-slider" className={cn(!isMartingaleEnabled && "text-muted-foreground/50")}>
+                        Fator de Recuperação ({martingaleRecoveryFactor.toFixed(1)}x)
+                    </Label>
+                    <Slider
+                        id="martingale-recovery-slider"
+                        min={1.0} max={5.0} step={0.1}
+                        value={[martingaleRecoveryFactor]}
+                        onValueChange={(value) => setMartingaleRecoveryFactor(value[0])}
+                        disabled={isAnyPilotOn || !isMartingaleEnabled}
+                    />
+                    <p className={cn("text-xs text-muted-foreground", !isMartingaleEnabled && "opacity-50")}>
+                        Define o lucro alvo da recuperação. 1.0 = apenas recuperar a perda.
+                    </p>
                 </div>
 
                 <div className="space-y-2">

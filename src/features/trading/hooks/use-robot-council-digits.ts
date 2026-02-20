@@ -44,6 +44,23 @@ export interface PilotState {
   lastStake: number;
 }
 
+const getPayoutRate = (contractType?: string): number => {
+    if (!contractType) return 0.95; // default fallback
+    switch (contractType) {
+        case 'DIGITDIFF':
+            return 0.10; // ~10% for differs
+        case 'DIGITMATCH':
+            return 8.5;  // ~850% for matches
+        case 'DIGITOVER':
+        case 'DIGITUNDER':
+        case 'DIGITEVEN':
+        case 'DIGITODD':
+            return 0.95; // ~95% for these
+        default:
+            return 0.95;
+    }
+};
+
 // ============================================================================
 // HOOK PRINCIPAL
 // ============================================================================
@@ -67,7 +84,8 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
   const [evenOddUnderdogThreshold, setEvenOddUnderdogThreshold] = useState(40);
 
   // --- Risk Management Settings ---
-  const [martingaleMultiplier, setMartingaleMultiplier] = useState(1.0);
+  const [isMartingaleEnabled, setIsMartingaleEnabled] = useState(false);
+  const [martingaleRecoveryFactor, setMartingaleRecoveryFactor] = useState(1.5);
   const [cooldownTime, setCooldownTime] = useState(0); // in seconds
   const [maxLosses, setMaxLosses] = useState(40);
 
@@ -152,7 +170,23 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
         setPilots(prevPilots => {
             if(!prevPilots[pilotType]) return prevPilots;
             const newConsecutiveLosses = (prevPilots[pilotType]?.consecutiveLosses || 0) + 1;
-            const newStake = martingaleMultiplier > 1 ? prevPilots[pilotType].lastStake * martingaleMultiplier : BASE_STAKE;
+            
+            let newStake = BASE_STAKE;
+            if (isMartingaleEnabled) {
+                const lastLossAmount = prevPilots[pilotType].lastStake;
+                const payoutRate = getPayoutRate(lastPilotTrade.contractType);
+                const profitTarget = BASE_STAKE * (martingaleRecoveryFactor - 1);
+
+                if (payoutRate > 0) {
+                    newStake = (lastLossAmount + profitTarget) / payoutRate;
+                } else {
+                    newStake = lastLossAmount * 2; // Fallback to simple doubling if payout is unknown
+                }
+                
+                // Security cap
+                newStake = Math.min(newStake, dailyBalance * 0.20);
+                newStake = Math.max(BASE_STAKE, newStake);
+            }
 
             if (newConsecutiveLosses >= maxLosses) {
                 if (prevPilots[pilotType].isOn) {
@@ -206,7 +240,7 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
           }
         });
     }
-  }, [operationsLog, toast, martingaleMultiplier, cooldownTime, maxLosses, toggleAutopilot]);
+  }, [operationsLog, toast, isMartingaleEnabled, martingaleRecoveryFactor, cooldownTime, maxLosses, toggleAutopilot, dailyBalance]);
 
   const autopilotExecutionRef = useRef(false);
   useEffect(() => {
@@ -343,7 +377,7 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
     const timeoutId = setTimeout(runAutopilots, 100);
     return () => clearTimeout(timeoutId);
 
-  }, [pilots, digitStats, consensusThreshold, activeSymbol, executeTrade, operationsLog, dailyBalance, dailyTarget, toggleAutopilot, toast, underdogThreshold, isUnderdogInverse, maxLosses, cooldownTime, martingaleMultiplier, overUnderUnderdogThreshold, evenOddUnderdogThreshold]);
+  }, [pilots, digitStats, consensusThreshold, activeSymbol, executeTrade, operationsLog, dailyBalance, dailyTarget, toggleAutopilot, toast, underdogThreshold, isUnderdogInverse, maxLosses, cooldownTime, isMartingaleEnabled, martingaleRecoveryFactor, overUnderUnderdogThreshold, evenOddUnderdogThreshold]);
   
   return {
     isCouncilAutopilotOn: Object.values(pilots).some(p => p.isOn),
@@ -355,7 +389,8 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
     pilots,
     underdogThreshold, setUnderdogThreshold,
     isUnderdogInverse, setIsUnderdogInverse,
-    martingaleMultiplier, setMartingaleMultiplier,
+    isMartingaleEnabled, setIsMartingaleEnabled,
+    martingaleRecoveryFactor, setMartingaleRecoveryFactor,
     cooldownTime, setCooldownTime,
     maxLosses, setMaxLosses,
     overUnderUnderdogThreshold, setOverUnderUnderdogThreshold,
