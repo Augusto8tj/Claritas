@@ -343,7 +343,16 @@ export function useHFStrikeZone(
           
           const gbm20sSignal = gbmSignalsRef.current.gbm20;
           const gbm40sSignal = gbmSignalsRef.current.gbm40;
-    
+
+          // Calcular a duração máxima executável para este ativo
+          const tickDurSec = getTickDurationSeconds(activeSymbol);
+          const maxExecutableSeconds = durationLimits
+            ? (durationLimits.s?.max                              // preferir segundos
+              ?? (durationLimits.t?.max ? durationLimits.t.max * tickDurSec : null) // ou ticks
+              ?? (durationLimits.m?.max ? durationLimits.m.max * 60 : null)         // ou minutos
+              ?? Infinity)
+            : Infinity;
+          
           const allSignalsResult = [...technicalSignals, gbm20sSignal, gbm40sSignal];
           
           setAllSignals(allSignalsResult);
@@ -357,14 +366,6 @@ export function useHFStrikeZone(
             }
             return zone;
           });
-
-          const tickDurSec = getTickDurationSeconds(activeSymbol);
-          const maxExecutableSeconds = durationLimits
-            ? (durationLimits.s?.max                              // preferir segundos
-              ?? (durationLimits.t?.max ? durationLimits.t.max * tickDurSec : null) // ou ticks
-              ?? (durationLimits.m?.max ? durationLimits.m.max * 60 : null)         // ou minutos
-              ?? Infinity)
-            : Infinity;
           
           const newCounts = { ...strategyCounts };
           let countsChanged = false;
@@ -477,58 +478,68 @@ export function useHFStrikeZone(
             }
     
             if (autoExecute) {
-                if (!durationLimits) {
-                    console.error("[HF-STRIKE] Tentativa de execução sem limites de duração definidos.");
-                    return;
-                }
+              if (!durationLimits) {
+                  console.error("[HF-STRIKE] Tentativa de execução sem limites de duração definidos.");
+                  return;
+              }
+            
+              let finalDuration: number;
+              let durationUnit: DurationUnit;
+              const calculatedDurationInSeconds = consensusSignal.duration;
               
-                let finalDuration: number;
-                let durationUnit: DurationUnit;
-                const calculatedDurationInSeconds = consensusSignal.duration;
-                
-                // ✅ CORRIGIDO: verificar max > 0, não min > 0
-                // min pode ser 0 ou 1 (ambos válidos). O que importa é ter um max definido.
-                const canUseTicks = !!(durationLimits.t && durationLimits.t.max > 0);
-                const canUseSeconds = !!(durationLimits.s && durationLimits.s.min > 0);
-                
-                // Log diagnóstico para confirmar os limites recebidos
-                console.log(`[DURATION_EXEC] Limites: t=${JSON.stringify(durationLimits.t)} s=${JSON.stringify(durationLimits.s)} | canUseTicks=${canUseTicks} canUseSeconds=${canUseSeconds} | calculado=${calculatedDurationInSeconds.toFixed(1)}s`);
+              const canUseTicks = !!(durationLimits.t && durationLimits.t.max > 0);
+              const canUseSeconds = !!(durationLimits.s && durationLimits.s.max > 0);
+              const canUseMinutes = !!(durationLimits.m && durationLimits.m.max > 0);
               
-                if (canUseSeconds && calculatedDurationInSeconds >= durationLimits.s!.min) {
-                  // PREFER SECONDS: If seconds are available and the calculated duration is within its valid range.
-                  durationUnit = 's';
-                  finalDuration = Math.min(Math.round(calculatedDurationInSeconds), durationLimits.s!.max);
-
-                } else if (canUseTicks) {
-                  // FALLBACK TO TICKS: If seconds are not an option or duration is too short for seconds.
-                  durationUnit = 't';
-                  const durationInTicks = Math.ceil(calculatedDurationInSeconds / tickDurationSec);
-                  finalDuration = Math.max(
-                    durationLimits.t!.min,
-                    Math.min(durationInTicks, durationLimits.t!.max)
-                  );
-
-                  const executedSeconds = finalDuration * tickDurationSec;
-                  const mismatchFactor = calculatedDurationInSeconds / executedSeconds;
-                  if (mismatchFactor > 2.0 && calculatedDurationInSeconds > 10) { // Only warn for significant mismatches on longer durations
-                    console.warn(
-                      `[DURATION_MISMATCH] Duração de ${calculatedDurationInSeconds.toFixed(0)}s é incompatível. ` +
-                      `Enviando fallback de ${finalDuration}t (≈${executedSeconds}s).`
-                    );
-                  }
-                  
-                } else {
-                  // ABSOLUTE FALLBACK: Should not be reached with the improved API hook.
-                  durationUnit = 's';
-                  finalDuration = 15; // A safe default for most assets that support seconds.
-                  console.error(`[HF-STRIKE] FALLBACK CRÍTICO: Nenhuma unidade de duração (s/t) disponível. Enviando 15s. Verifique a resposta 'contracts_for' da API.`);
-                }
-                
-                console.log(
-                  `[DURATION_EXEC] calc=${calculatedDurationInSeconds.toFixed(1)}s → ` +
-                  `${finalDuration}${durationUnit} (tickFactor=${tickDurationSec}s/tick) | ` +
-                  `canUseTicks=${canUseTicks} canUseSeconds=${canUseSeconds}`
+              if (canUseSeconds) {
+                durationUnit = 's';
+                finalDuration = Math.round(
+                  Math.max(calculatedDurationInSeconds, durationLimits.s!.min)
                 );
+                finalDuration = Math.min(finalDuration, durationLimits.s!.max);
+                
+              } else if (canUseTicks) {
+                durationUnit = 't';
+                const durationInTicks = Math.ceil(calculatedDurationInSeconds / tickDurSec);
+                const clampedTicks = Math.max(
+                  durationLimits.t!.min,
+                  Math.min(durationInTicks, durationLimits.t!.max)
+                );
+                finalDuration = clampedTicks;
+                
+                const executedSeconds = clampedTicks * tickDurSec;
+                const mismatchFactor = calculatedDurationInSeconds / executedSeconds;
+                if (mismatchFactor > 3) {
+                  console.warn(
+                    `[DURATION_MISMATCH] Duração calculada ${calculatedDurationInSeconds.toFixed(0)}s ` +
+                    `não suportada pelo ativo. Enviando ${clampedTicks}t ≈ ${executedSeconds}s ` +
+                    `(mismatch ${mismatchFactor.toFixed(1)}x). ` +
+                    `Considere calibrar especialistas para durações <= ${(durationLimits.t!.max * tickDurSec).toFixed(0)}s.`
+                  );
+                }
+                
+              } else if (canUseMinutes) {
+                durationUnit = 'm';
+                const durationInMinutes = Math.ceil(calculatedDurationInSeconds / 60);
+                finalDuration = Math.max(
+                  durationLimits.m!.min,
+                  Math.min(durationInMinutes, durationLimits.m!.max)
+                );
+                
+              } else {
+                durationUnit = 't';
+                finalDuration = 5;
+                console.error(
+                  `[HF-STRIKE] FALLBACK ABSOLUTO: Nenhuma unidade de duração disponível. ` +
+                  `Enviando 5 ticks. durationLimits: ${JSON.stringify(durationLimits)}`
+                );
+              }
+              
+              console.log(
+                `[DURATION_EXEC] calc=${calculatedDurationInSeconds.toFixed(1)}s → ` +
+                `${finalDuration}${durationUnit} (tickFactor=${tickDurSec}s/tick) | ` +
+                `canUseTicks=${canUseTicks} canUseSeconds=${canUseSeconds}`
+              );
 
               const tradeResult = await executeTrade(
                   consensusSignal.type === 'LONG_ENTRY' ? 'CALL' : 'PUT', 
@@ -575,8 +586,13 @@ export function useHFStrikeZone(
       dataVersion, enabled, isCooldownActive, isExecuting,
       botCandleData, priceTicks, user, isConnected,
       config, activeSymbol, strategyParams, getIsRandom, 
-      applyOptimalDuration, toast, getTickDurationSeconds, executeTrade,
+      applyOptimalDuration, toast, executeTrade,
       getHistoricalData,
+      getTickDurationSeconds,
+      indicators, // ✅ MUDANÇA: Usando 'indicators' em vez de 'memoizedIndicators'
+      minConfidence, minConsensusSignals, operationsLog, autoExecute, 
+      saveHFTradeLog, riskManager, manualStake, consecutiveLosses, 
+      martingaleMultiplier, maxConcurrentTrades, durationLimits, gbmConfidenceThreshold
   ]);
   
   return {
@@ -591,3 +607,5 @@ export function useHFStrikeZone(
     triggerAutoCalibration,
   };
 }
+
+```
