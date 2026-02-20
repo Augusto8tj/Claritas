@@ -36,6 +36,7 @@ import { runSingleStrategyBacktest, runAllStrategiesBacktest } from '../backtest
 import { getOptimalDuration, analyzeOptimalDuration, resetGBMCache } from '../services/gbm-calibrator';
 import { TRADER_CONFIG } from '@/features/trading/config/trader-config';
 import { runAutoCalibration, type AutoCalibrationResults } from '../optimization/auto-calibrator';
+import { useStochasticModels, type ExpertProjection } from './use-stochastic-models';
 
 
 export type { StrikeZone } from '../services/hf-strike-logic';
@@ -83,7 +84,7 @@ export function useHFStrikeZone(
 ) {
   const { user } = useAuth();
   const { toast } = useToast();
-  const { executeTrade, durationLimits, isConnected, dataVersion, getHistoricalData } = useDerivApiV2();
+  const { executeTrade, durationLimits, isConnected, dataVersion, getHistoricalData, operationsLog: fullOperationsLog } = useDerivApiV2();
   const { enabled, minConfidence, autoExecute, maxConcurrentTrades, martingaleMultiplier, maxConsecutiveLosses, cooldownSeconds, preferredDuration, minConsensusSignals } = config;
   const { dailyBalance, dailyTarget, operationsLog, manualStake } = sessionConfig;
   
@@ -92,10 +93,23 @@ export function useHFStrikeZone(
   
   const lastBacktestRun = useRef<number>(0);
   const [lastCalibrationTime, setLastCalibrationTime] = useState(0);
+
+  const { projectionExperts } = useStochasticModels(
+    botCandleData, 
+    priceTicks, 
+    fullOperationsLog.filter(op => op.initiator === 'Piloto'),
+    null
+  );
   
   const [marketRegime, setMarketRegime] = useState<RegimeCharacteristics | null>(null);
   const [activeStrikeZone, setActiveStrikeZone] = useState<StrikeZone | null>(null);
-  const [riskManager] = useState(() => new AdvancedRiskManager({ maxDailyLoss: dailyBalance, maxDrawdown: 30, maxConcurrentTrades: 3, maxExposurePerAsset: 25, kellyFraction: 0.25 }, 1000));
+  const riskManager = useMemo(() => new AdvancedRiskManager({ maxDailyLoss: dailyBalance, maxDrawdown: 30, maxConcurrentTrades: 3, maxExposurePerAsset: 25, kellyFraction: 0.25 }, 1000), [dailyBalance]);
+  
+  // Sincronizar dailyBalance quando mudar (ex: usuário recarrega saldo)
+  useEffect(() => {
+      riskManager.updateConfig({ maxDailyLoss: dailyBalance });
+  }, [dailyBalance, riskManager]);
+  
   const [positionSizing, setPositionSizing] = useState<PositionSizeRecommendation | null>(null);
   const [allSignals, setAllSignals] = useState<(StrikeZone | null)[]>([]);
   const [strategyCounts, setStrategyCounts] = useState<Record<StrategyType, number>>({ 
@@ -105,7 +119,8 @@ export function useHFStrikeZone(
       VOLUME_ABSORPTION: 0, 
       MICROSTRUCTURE_SCALP: 0,
       GBM_20S: 0,
-      GBM_40S: 0
+      GBM_40S: 0,
+      RANDOM_WALK: 0, // Adicionado
   });
   
   const [strategyParams, setStrategyParams] = useState<StrategyParams>({
@@ -202,8 +217,6 @@ export function useHFStrikeZone(
   const [isExecuting, setIsExecuting] = useState(false);
   const lastProcessedOpIdRef = useRef<number | null>(null);
   const executionLockRef = useRef(false);
-  const lastGBMRunRef = useRef<number>(0);
-  const gbmSignalsRef = useRef<{ gbm20: StrikeZone | null; gbm40: StrikeZone | null }>({ gbm20: null, gbm40: null });
   const lastVolatilityIndexRef = useRef<number>(0);
   const lastRecalibrationTimestampRef = useRef<number>(0);
   
@@ -284,7 +297,7 @@ export function useHFStrikeZone(
       const runCycle = async () => {
         try {
           if (!indicators || !durationLimits) {
-            councilExecutionRef.current.isExecuting = false;
+            executionLockRef.current = false;
             return;
           }
           const candles = botCandleData;
@@ -328,33 +341,20 @@ export function useHFStrikeZone(
               detectMicrostructureScalpZone(ticks, candles, indicators, currentPrice, adaptiveParams.MICROSTRUCTURE_SCALP),
               detectRandomWalkZone(candles, indicators, currentPrice),
           ];
-    
-          const now = Date.now();
-          const GBM_THROTTLE_MS = 3000;
-          
-          if (now - lastGBMRunRef.current >= GBM_THROTTLE_MS) {
-            lastGBMRunRef.current = now;
-            const validTechnicals = technicalSignals.filter((z): z is StrikeZone => z !== null);
-            gbmSignalsRef.current = {
-              gbm20: detectGBM20sZone(candles, indicators, currentPrice, validTechnicals),
-              gbm40: detectGBM40sZone(candles, indicators, currentPrice, validTechnicals),
-            };
-          }
-          
-          const gbm20sSignal = gbmSignalsRef.current.gbm20;
-          const gbm40sSignal = gbmSignalsRef.current.gbm40;
 
+          const gbmExpert20s = projectionExperts.find(e => e.name === '20s');
+          const gbmExpert40s = projectionExperts.find(e => e.name === '40s');
+
+          const gbm20sSignal = detectGBM20sZone(candles, indicators, currentPrice, [], { gbmConfidenceThreshold, expertProjection: gbmExpert20s });
+          const gbm40sSignal = detectGBM40sZone(candles, indicators, currentPrice, [], { gbmConfidenceThreshold, expertProjection: gbmExpert40s });
+          
           const tickDurSec = getTickDurationSeconds(activeSymbol);
           const maxExecutableSeconds = durationLimits
-            ? (durationLimits.s?.max                              // preferir segundos
-              ?? (durationLimits.t?.max ? durationLimits.t.max * tickDurSec : null) // ou ticks
-              ?? (durationLimits.m?.max ? durationLimits.m.max * 60 : null)         // ou minutos
-              ?? Infinity)
+            ? (durationLimits.s?.max ?? (durationLimits.t?.max ? durationLimits.t.max * tickDurSec : Infinity))
             : Infinity;
           
           const allSignalsResult = [...technicalSignals, gbm20sSignal, gbm40sSignal];
           
-          // Evita que médias ponderadas sejam distorcidas por durações impossíveis
           const allSignalsNormalized = allSignalsResult.map(zone => {
             if (!zone || maxExecutableSeconds === Infinity) return zone;
             if (zone.duration > maxExecutableSeconds) {
@@ -485,8 +485,6 @@ export function useHFStrikeZone(
               let durationUnit: DurationUnit;
               const calculatedDurationInSeconds = consensusSignal.duration;
               
-              // ✅ CORRIGIDO: verificar max > 0, não min > 0
-              // min pode ser 0 ou 1 (ambos válidos). O que importa é ter um max definido.
               const canUseTicks = !!(durationLimits.t && durationLimits.t.max > 0);
               const canUseSeconds = !!(durationLimits.s && durationLimits.s.max > 0);
               const canUseMinutes = !!(durationLimits.m && durationLimits.m.max > 0);
@@ -555,7 +553,7 @@ export function useHFStrikeZone(
               );
               if (tradeResult.success && tradeResult.contractId) {
                 toast({ title: '⚡ Strike de Consenso Executado!', description: `${ensembleParticipants.length} especialistas concordaram. Stake: $${finalStake.toFixed(2)}` });
-                await saveHFTradeLog(user.uid, {
+                await saveHFTradeLog(user!.uid, {
                     symbol: activeSymbol!,
                     strikeZone: consensusSignal,
                     execution: { contractId: String(tradeResult.contractId), entryPrice: tradeResult.entryPrice!, status: 'pending', executedAt: new Date().toISOString() },
@@ -593,7 +591,7 @@ export function useHFStrikeZone(
       indicators,
       minConfidence, minConsensusSignals, operationsLog, autoExecute, 
       saveHFTradeLog, riskManager, manualStake, consecutiveLosses, 
-      martingaleMultiplier, maxConcurrentTrades, durationLimits, gbmConfidenceThreshold, executeTrade
+      martingaleMultiplier, maxConcurrentTrades, durationLimits, gbmConfidenceThreshold, executeTrade, projectionExperts
   ]);
   
   return {
@@ -608,3 +606,4 @@ export function useHFStrikeZone(
     triggerAutoCalibration,
   };
 }
+```
