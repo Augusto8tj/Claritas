@@ -139,9 +139,15 @@ const addDataPoint = (prevData: ChartData[], newPoint: ChartData): ChartData[] =
     return data;
 };
 
-const getDurationInSeconds = (duration: number, unit: DurationUnit): number => {
+// Nota: esta função é usada apenas para calcular expirationTime no log,
+// não afeta a duração real enviada à API.
+// Para 1HZ10V: 1 tick ≈ 1s. Para outros ativos sintéticos: 1 tick ≈ 2s.
+// Usamos 1.5s como média segura para ativos 1HZ e 2s para os demais.
+const getDurationInSeconds = (duration: number, unit: DurationUnit, symbol?: string): number => {
     switch (unit) {
-        case 't': return duration * 2;
+        case 't':
+          const tickSec = (symbol && symbol.startsWith('1HZ')) ? 1 : 2;
+          return duration * tickSec;
         case 's': return duration;
         case 'm': return duration * 60;
         case 'h': return duration * 3600;
@@ -593,7 +599,7 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
 
           const isSellable = durationUnit !== 't';
           
-          const durationInSeconds = getDurationInSeconds(sanitizedDuration, durationUnit);
+          const durationInSeconds = getDurationInSeconds(sanitizedDuration, durationUnit, symbol);
           const purchaseTimeMs = (buyResult.purchase_time || Math.floor(Date.now() / 1000)) * 1000;
           const expirationTimeMs = purchaseTimeMs + durationInSeconds * 1000;
 
@@ -631,7 +637,7 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
           return {
             success: true,
             message: `Ordem do tipo "${contractType}" para ${symbol} no valor de ${sanitizedStake} USD executada com sucesso.`,
-            contractId: buyResult.contract_id,
+            contractId: contractId,
             entryPrice,
           };
         } catch (error) {
@@ -1031,11 +1037,11 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
 
   
   useEffect(() => {
-    if (isConnected && activeSymbol && !isConnecting) {
+    if (isConnected && activeSymbol) {
         subscribeToStreams(activeSymbol);
     }
-  }, [isConnected, isConnecting, activeSymbol, timePeriod, chartType, subscribeToStreams]);
-
+  }, [isConnected, activeSymbol, subscribeToStreams]);
+  
   const setAccountType = useCallback((type: AccountType) => {
     try {
         localStorage.setItem(DERIV_ACCOUNT_TYPE_KEY, type);
