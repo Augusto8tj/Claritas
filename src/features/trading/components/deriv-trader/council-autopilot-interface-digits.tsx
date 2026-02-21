@@ -9,7 +9,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Bot, Binary, TrendingUp, HelpCircle, Trophy, Settings, AlertTriangle, ShieldCheck, Power } from "lucide-react";
+import { Bot, Binary, TrendingUp, HelpCircle, Trophy, Settings, AlertTriangle, ShieldCheck, Power, Clock } from "lucide-react";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Separator } from "@/components/ui/separator";
@@ -121,6 +121,8 @@ export const DigitsAutopilotManager: React.FC<DigitsAutopilotManagerProps> = (pr
     setCooldownTime,
     maxLosses,
     setMaxLosses,
+    executionCooldown,
+    setExecutionCooldown,
  } = props;
 
   return (
@@ -332,6 +334,19 @@ export const DigitsAutopilotManager: React.FC<DigitsAutopilotManagerProps> = (pr
                         value={[evenOddThreshold]}
                         onValueChange={(value) => setEvenOddThreshold(value[0])}
                     />
+                </div>
+
+                <Separator />
+                
+                <div className="space-y-2">
+                  <Label htmlFor="execution-cooldown-slider">Intervalo Mínimo Entre Ordens ({executionCooldown}s)</Label>
+                  <Slider
+                    id="execution-cooldown-slider"
+                    min={0} max={10} step={1}
+                    value={[executionCooldown]}
+                    onValueChange={(value) => setExecutionCooldown(value[0])}
+                  />
+                  <p className="text-xs text-muted-foreground pt-1">Define um cooldown global entre o envio de ordens para evitar disparos muito rápidos e respeitar limites da API.</p>
                 </div>
 
                 <Separator />

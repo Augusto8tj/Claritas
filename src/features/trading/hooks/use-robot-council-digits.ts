@@ -71,6 +71,10 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
   const [cooldownTime, setCooldownTime] = useState(5);
   const [maxLosses, setMaxLosses] = useState(5);
   
+  // --- NOVO: CONTROLE DE CADÊNCIA (RATE LIMITER) ---
+  const [executionCooldown, setExecutionCooldown] = useState(1); // em segundos
+  const lastExecutionTimestampRef = useRef(0);
+
   const [sessionInitialBankroll, setSessionInitialBankroll] = useState<number | null>(null);
 
   const [pilots, setPilots] = useState<Record<PilotType, PilotState>>({
@@ -145,26 +149,27 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
 
   // --- LÓGICA DE EXECUÇÃO E ATUALIZAÇÃO ---
   const toggleAutopilot = useCallback((pilotType: PilotType) => {
-    const pilot = pilots[pilotType];
-    if (!pilot) return;
+    setPilots(prev => {
+      const pilot = prev[pilotType];
+      if (!pilot) return prev;
+      const newIsOnState = !pilot.isOn;
   
-    const newIsOnState = !pilot.isOn;
-  
-    toast({ title: `Piloto ${pilotType} ${newIsOnState ? 'Ativado' : 'Desativado'}` });
-  
-    if (newIsOnState && sessionInitialBankroll === null) {
-      setSessionInitialBankroll(accountBalance.balance ?? 1000);
-    }
-  
-    setPilots(prev => ({
-      ...prev,
-      [pilotType]: {
-        ...prev[pilotType],
-        isOn: newIsOnState,
-        status: newIsOnState ? 'TRADING' : 'PAUSED'
+      if (newIsOnState && sessionInitialBankroll === null) {
+        setSessionInitialBankroll(accountBalance.balance ?? 1000);
       }
-    }));
-  }, [pilots, sessionInitialBankroll, accountBalance.balance, toast]);
+      
+      toast({ title: `Piloto ${pilotType} ${newIsOnState ? 'Ativado' : 'Desativado'}` });
+
+      return {
+        ...prev,
+        [pilotType]: {
+          ...pilot,
+          isOn: newIsOnState,
+          status: newIsOnState ? 'TRADING' : 'PAUSED'
+        }
+      };
+    });
+  }, [sessionInitialBankroll, accountBalance.balance, toast]);
   
   useEffect(() => {
     if (executionRef.current) return;
@@ -212,44 +217,50 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
       const pilotKey = key as PilotType;
       if (pilot.status !== 'TRADING' || !signalQuality) return;
 
+      const now = Date.now();
+      if (now - lastExecutionTimestampRef.current < executionCooldown * 1000) {
+        return; // Cooldown global de execução ativo
+      }
+
       const initialBankroll = sessionInitialBankroll ?? (accountBalance.balance ?? 1000);
       const currentBankroll = initialBankroll + dailyPnl;
       
       const bankrollState: BankrollState = { currentBankroll, initialBankroll, maxDailyLoss: dailyBalance, dailyProfitTarget: dailyTarget };
-      
       const stakeConfig: SmartMartingaleConfig = { baseStake: BASE_STAKE, maxMartingaleLevels: maxLosses, martingaleMultiplier: martingaleRecoveryFactor, useAntiMartingale: false };
-      
       const stakeDecision = decideNextStake(pilot.tradeHistory, stakeConfig, bankrollState, signalQuality.confidenceLevel);
       
-      if(stakeDecision.shouldPause) {
+      if (stakeDecision.shouldPause) {
         setPilots(prev => ({ ...prev, [pilotKey]: { ...prev[pilotKey], status: 'CIRCUIT_BREAKER', currentTarget: stakeDecision.pauseReason || 'Limite de risco atingido' }}));
         toast({ title: `Piloto ${pilotKey} Pausado`, description: stakeDecision.pauseReason, variant: "destructive"});
         return;
       }
 
-      // --- INÍCIO DA LÓGICA DE EXECUÇÃO CORRIGIDA ---
+      // --- LÓGICA DE EXECUÇÃO ---
+      let tradeExecuted = false;
       
       if (pilotKey === 'matchesDiffers' && councilDecision.differs !== null && shouldTrade) {
           executeTrade('DIGITDIFF', stakeDecision.nextStake, activeSymbol!, 1, 't', 'Piloto', councilDecision.differs);
+          tradeExecuted = true;
       }
-      
-      if (pilotKey === 'overUnder' && shouldTrade) {
+      else if (pilotKey === 'overUnder' && shouldTrade) {
         if (overUnderStats.probOver4 > overUnderThreshold) {
             executeTrade('DIGITOVER', stakeDecision.nextStake, activeSymbol!, 1, 't', 'Piloto', 4);
+            tradeExecuted = true;
         } else if (overUnderStats.probUnder5 > overUnderThreshold) {
             executeTrade('DIGITUNDER', stakeDecision.nextStake, activeSymbol!, 1, 't', 'Piloto', 5);
+            tradeExecuted = true;
         }
       }
-
-      if (pilotKey === 'evenOdd' && shouldTrade) {
+      else if (pilotKey === 'evenOdd' && shouldTrade) {
         if (evenOddStats.probEven > evenOddThreshold) {
             executeTrade('DIGITEVEN', stakeDecision.nextStake, activeSymbol!, 1, 't', 'Piloto');
-        } else if ((100 - evenOddStats.probEven) > evenOddThreshold) { // Prob of Odd
+            tradeExecuted = true;
+        } else if ((100 - evenOddStats.probEven) > evenOddThreshold) {
             executeTrade('DIGITODD', stakeDecision.nextStake, activeSymbol!, 1, 't', 'Piloto');
+            tradeExecuted = true;
         }
       }
-
-      if (pilotKey === 'underdog' && councilDecision.matches !== null && shouldTrade) {
+      else if (pilotKey === 'underdog' && councilDecision.matches !== null && shouldTrade) {
         const digitFreq = digitStats.find(d => d.digit === councilDecision.matches);
         if (digitFreq && digitFreq.probability <= underdogThreshold) {
              if (isUnderdogInverse) {
@@ -257,36 +268,39 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
              } else {
                  executeTrade('DIGITMATCH', stakeDecision.nextStake, activeSymbol!, 1, 't', 'Piloto', councilDecision.matches);
              }
+             tradeExecuted = true;
         }
       }
-
-      if (pilotKey === 'underdogOverUnder' && shouldTrade) {
+      else if (pilotKey === 'underdogOverUnder' && shouldTrade) {
           if (overUnderStats.probOver4 < overUnderUnderdogThreshold) {
                executeTrade('DIGITOVER', stakeDecision.nextStake, activeSymbol!, 1, 't', 'Piloto', 4);
+               tradeExecuted = true;
           } else if (overUnderStats.probUnder5 < overUnderUnderdogThreshold) {
                executeTrade('DIGITUNDER', stakeDecision.nextStake, activeSymbol!, 1, 't', 'Piloto', 5);
+               tradeExecuted = true;
           }
       }
-
-      if (pilotKey === 'underdogEvenOdd' && shouldTrade) {
+      else if (pilotKey === 'underdogEvenOdd' && shouldTrade) {
           if (evenOddStats.probEven < evenOddUnderdogThreshold) {
                executeTrade('DIGITEVEN', stakeDecision.nextStake, activeSymbol!, 1, 't', 'Piloto');
+               tradeExecuted = true;
           } else if (100 - evenOddStats.probEven < evenOddUnderdogThreshold) {
                executeTrade('DIGITODD', stakeDecision.nextStake, activeSymbol!, 1, 't', 'Piloto');
+               tradeExecuted = true;
           }
       }
-      // Não há lógica para 'dynamicUnderdogOverUnder' pois ela é mais complexa e
-      // requer uma análise da composição dos 5 dígitos menos prováveis, que ainda não foi implementada.
       
-      // --- FIM DA LÓGICA DE EXECUÇÃO ---
-
+      if (tradeExecuted) {
+        lastExecutionTimestampRef.current = now;
+      }
     });
     
     executionRef.current = false;
   }, [
       priceTicks, pilots, operationsLog, signalQuality, shouldTrade, councilDecision, executeTrade, activeSymbol, toast, 
       dailyBalance, dailyTarget, maxLosses, martingaleRecoveryFactor, sessionInitialBankroll, accountBalance.balance, dailyPnl,
-      overUnderStats, evenOddStats, overUnderThreshold, evenOddThreshold, underdogThreshold, isUnderdogInverse, overUnderUnderdogThreshold, evenOddUnderdogThreshold, digitStats
+      overUnderStats, evenOddStats, overUnderThreshold, evenOddThreshold, underdogThreshold, isUnderdogInverse, 
+      overUnderUnderdogThreshold, evenOddUnderdogThreshold, digitStats, executionCooldown
   ]);
   
   return {
@@ -303,6 +317,7 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
     martingaleRecoveryFactor, setMartingaleRecoveryFactor,
     cooldownTime, setCooldownTime,
     maxLosses, setMaxLosses,
+    executionCooldown, setExecutionCooldown,
     
     isCouncilAutopilotOn: Object.values(pilots).some(p => p.isOn),
     digitStats,
