@@ -416,10 +416,14 @@ export function useDerivApiDigitsState() {
 
         if (proposalResponse.error) throw new Error(proposalResponse.error.message);
         const proposal = proposalResponse.proposal;
-        if (!proposal || !proposal.id) throw new Error("Falha ao obter uma proposta de negociação.");
+        if (!proposal || !proposal.id || typeof proposal.ask_price !== 'number') {
+            console.error("Invalid proposal response:", proposal);
+            throw new Error("Resposta da proposta da API inválida ou sem preço de compra.");
+        }
         
-        // CORREÇÃO: Usar o stake sanitizado original na ordem de compra para garantir consistência.
-        const buyResponse: any = await makeRequest({ "buy": proposal.id, "price": sanitizedStake });
+        const buyPrice = proposal.ask_price;
+        
+        const buyResponse: any = await makeRequest({ "buy": proposal.id, "price": buyPrice });
         if (buyResponse.error) throw new Error(buyResponse.error.message);
         const buyResult = buyResponse.buy;
         
