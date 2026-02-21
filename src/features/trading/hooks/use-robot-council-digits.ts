@@ -59,11 +59,20 @@ const getDecimalPlaces = (pipSize: number | undefined): number => {
     return 0;
 };
 
+/**
+ * Tabela de valores críticos para o teste qui-quadrado com 9 graus de liberdade (10 categorias - 1).
+ * Fonte: Tabelas estatísticas padrão.
+ */
 const CHI_SQUARE_CRITICAL_VALUES: { [pValue: number]: number } = {
   0.995: 1.735, 0.99: 2.088, 0.975: 2.700, 0.95: 3.325, 0.90: 4.168,
   0.10: 14.684, 0.05: 16.919, 0.025: 19.023, 0.01: 21.666, 0.005: 23.589,
 };
 
+/**
+ * Estima o p-value a partir do valor qui-quadrado por interpolação linear na tabela de valores críticos.
+ * @param chiSquareValue O valor calculado do teste qui-quadrado.
+ * @returns O p-value estimado.
+ */
 function getPValueFromChiSquare(chiSquareValue: number): number {
   if (chiSquareValue < CHI_SQUARE_CRITICAL_VALUES[0.995]) return 1.0;
   if (chiSquareValue > CHI_SQUARE_CRITICAL_VALUES[0.005]) return 0.005;
@@ -82,11 +91,19 @@ function getPValueFromChiSquare(chiSquareValue: number): number {
   return 0.005;
 }
 
+/**
+ * Função centralizada para calcular todas as estatísticas de dígitos para uma dada janela de ticks.
+ * @param ticks - O array de ticks para analisar.
+ * @param windowSize - O número de ticks a serem considerados.
+ * @param decimalPlaces - O número de casas decimais do preço do ativo.
+ * @returns Um objeto WindowDigitStats com a análise completa.
+ */
 function calculateDigitStatsForWindow(ticks: TickData[], windowSize: number, decimalPlaces: number): WindowDigitStats {
     const analysisTicks = ticks.slice(-windowSize);
     const n = analysisTicks.length;
     const expectedProbability = 0.1;
 
+    // 1. Contagem de frequência observada
     const observedCounts = Array(10).fill(0);
     analysisTicks.forEach(tick => {
         const priceString = tick.price.toFixed(decimalPlaces);
@@ -94,14 +111,20 @@ function calculateDigitStatsForWindow(ticks: TickData[], windowSize: number, dec
         if (!isNaN(digit)) observedCounts[digit]++;
     });
 
-    const expectedCount = n * expectedProbability;
+    // 2. Cálculo do Chi-Quadrado e Z-Score
     let chiSquareValue = 0;
+    // O erro padrão para uma proporção binomial
     const standardError = Math.sqrt((expectedProbability * (1 - expectedProbability)) / n);
 
     const frequencies: DigitFrequency[] = observedCounts.map((count, digit) => {
         const observedProb = n > 0 ? count / n : 0;
+        // Fórmula do Qui-Quadrado: Σ [ (Observado - Esperado)^2 / Esperado ]
+        const expectedCount = n * expectedProbability;
         chiSquareValue += n > 0 ? Math.pow(count - expectedCount, 2) / expectedCount : 0;
+
+        // Fórmula do Z-Score: (Observado - Esperado) / Erro Padrão
         const zScore = standardError > 0 ? (observedProb - expectedProbability) / standardError : 0;
+        
         return { digit: digit as Digit, count, probability: observedProb, zScore };
     });
 
@@ -112,6 +135,7 @@ function calculateDigitStatsForWindow(ticks: TickData[], windowSize: number, dec
         isSignificant: pValue < 0.05,
     };
     
+    // 3. Identificar dígitos "quentes" (mais frequentes) e "frios" (menos frequentes)
     const sortedByProb = [...frequencies].sort((a,b) => b.probability - a.probability);
     const hottestDigit = sortedByProb[0].digit;
     const coldestDigit = sortedByProb[sortedByProb.length-1].digit;
@@ -163,16 +187,22 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
   
   const isCouncilAutopilotOn = Object.values(pilots).some(p => p?.isOn);
   
-  // CORREÇÃO: Implementa a lógica para ligar/desligar um piloto específico.
   const toggleAutopilot = useCallback((pilotType: PilotType) => {
+    // Obter o estado *atual* para a mensagem do toast
+    const pilotToToggle = pilots[pilotType];
+    const newIsOnState = !pilotToToggle?.isOn;
+
+    // Chamar o efeito colateral (toast) fora da atualização de estado
+    toast({
+      title: `Piloto ${pilotType} ${newIsOnState ? 'Ativado' : 'Desativado'}`,
+    });
+    
+    // Agendar a atualização de estado de forma pura
     setPilots(prev => {
       const pilot = prev[pilotType];
       if (!pilot) return prev;
       
       const newState = !pilot.isOn;
-      toast({
-        title: `Piloto ${pilotType} ${newState ? 'Ativado' : 'Desativado'}`,
-      });
 
       return {
         ...prev,
@@ -183,7 +213,7 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
         },
       };
     });
-  }, [toast]);
+  }, [toast, pilots]); // Adiciona `pilots` à dependência para ter o estado mais recente
 
   const analysisResults = useMemo(() => {
       const windowSizes = [200, 500, 1000];
