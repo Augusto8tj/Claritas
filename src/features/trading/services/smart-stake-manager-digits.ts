@@ -11,7 +11,7 @@
 // 1. INTERFACES E TIPOS DE DADOS
 // ============================================================================
 
-export type ConfidenceLevel = 'MUITO_ALTA' | 'ALTA' | 'MEDIA' | 'BAIXA';
+export type ConfidenceLevel = 'MUITO_ALTA' | 'ALTA' | 'MEDIA' | 'BAIXA' | 'NULA';
 
 export interface TradeResult {
   id: string;
@@ -25,15 +25,15 @@ export interface TradeResult {
 export interface SmartMartingaleConfig {
   baseStake: number;
   maxMartingaleLevels: number;
-  martingaleMultiplier: number; // ex.: 1.3 a 1.5
+  martingaleMultiplier: number;    // ex.: 1.3 a 1.5
   useAntiMartingale: boolean;
 }
 
 export interface BankrollState {
   currentBankroll: number;
   initialBankroll: number;
-  maxDailyLoss: number; // valor absoluto
-  dailyProfitTarget: number; // valor absoluto
+  maxDailyLoss: number;            // valor absoluto
+  dailyProfitTarget: number;       // valor absoluto
 }
 
 export interface SmartStakeDecision {
@@ -106,6 +106,22 @@ const countConsecutiveLosses = (tradeHistory: TradeResult[]): number => {
 };
 
 /**
+ * Soma o valor das perdas consecutivas no final do histórico.
+ */
+const sumConsecutiveLosses = (tradeHistory: TradeResult[]): number => {
+  let accumulatedLoss = 0;
+  for (let i = tradeHistory.length - 1; i >= 0; i--) {
+    if (tradeHistory[i].profit < 0) {
+      accumulatedLoss += Math.abs(tradeHistory[i].profit);
+    } else {
+      break;
+    }
+  }
+  return accumulatedLoss;
+};
+
+
+/**
  * Conta o número de vitórias consecutivas no final do histórico.
  */
 const countConsecutiveWins = (tradeHistory: TradeResult[]): number => {
@@ -176,9 +192,15 @@ export function decideNextStake(
   const isWithinLevelLimit = consecutiveLosses <= maxMartingaleLevels;
 
   if (isSignalStrongEnough && isWithinLevelLimit) {
-    // Calcula o próximo stake multiplicando o último stake perdido.
-    const nextStake = lastTrade.stake * martingaleMultiplier;
-    // Adiciona uma trava de segurança para não exceder 20% do bankroll
+    // CORREÇÃO: Usa o acumulado de perdas para calcular a recuperação.
+    const accumulatedLoss = sumConsecutiveLosses(tradeHistory);
+    // Payout médio de 95% para contratos de dígito.
+    const payoutRatio = 0.95; 
+    const stakeToRecover = (accumulatedLoss + baseStake) / payoutRatio;
+    
+    // Aplica o multiplicador de agressividade
+    const nextStake = stakeToRecover * martingaleMultiplier;
+
     const maxSafeStake = currentBankroll * 0.20;
     
     if (nextStake > maxSafeStake) {

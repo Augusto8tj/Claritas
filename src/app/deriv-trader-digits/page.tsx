@@ -1,7 +1,7 @@
 // /src/app/deriv-trader-digits/page.tsx
 'use client';
 
-import React, { useState, useCallback } from "react";
+import React, { useState, useCallback, useMemo } from "react";
 import { useForm, FormProvider } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import DerivTraderInterfaceDigits from "@/features/trading/components/deriv-trader/deriv-trader-interface-digits";
@@ -17,15 +17,11 @@ import { AITradeSuggestionDigits } from "@/features/trading/components/deriv-tra
 import { ApiStatusIndicatorDigits } from "@/features/trading/components/deriv-trader/ApiStatusIndicatorDigits";
 import { DigitStatsChart } from "@/features/trading/components/deriv-trader/digit-stats-chart";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { BrainCircuit, Loader2, TrendingDown, TrendingUp, TestTube } from 'lucide-react';
+import { BrainCircuit, Loader2, TrendingDown, TrendingUp } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { Button } from "@/components/ui/button";
-import { useToast } from "@/hooks/use-toast";
-import type { TickData } from "@/lib/types";
-import { runDigitsBacktest, type StrategyBacktestResult } from '@/features/trading/backtest/digits-backtest-engine';
-import { DigitsBacktestPanel } from '@/features/trading/components/deriv-trader/digits-backtest-panel';
+import { MarketChart } from "@/features/trading/components/deriv-trader/market-chart";
+import DigitsDashboard from "@/features/trading/components/deriv-trader/DigitsDashboard";
 
 
 const getDecimalPlaces = (pipSize: number | undefined): number => {
@@ -151,48 +147,11 @@ function CurrentPriceDisplay() {
 }
 
 function DerivTraderPageContentDigits() {
-    const { activeSymbol, priceTicks, operationsLog, activeAsset, clearActiveContracts, getHistoricalData } = useDerivApiDigits();
+    const { 
+        activeSymbol, priceTicks, operationsLog, activeAsset, clearActiveContracts, 
+        chartData, isChartLoading, chartError, chartType, setChartType, timePeriod, setTimePeriod, tradeAnnotations
+    } = useDerivApiDigits();
     const robotCouncil = useRobotCouncilDigits(activeSymbol, priceTicks, activeAsset);
-    const { toast } = useToast();
-
-    const [isBacktesting, setIsBacktesting] = useState(false);
-    const [backtestResults, setBacktestResults] = useState<Record<string, StrategyBacktestResult> | null>(null);
-
-    const handleRunBacktest = useCallback(async () => {
-        if (!activeSymbol) {
-            toast({ title: "Selecione um ativo", variant: 'destructive' });
-            return;
-        }
-        setIsBacktesting(true);
-        setBacktestResults(null);
-        try {
-            toast({ title: "Iniciando Backtest...", description: "Buscando 1000 ticks históricos..." });
-            
-            const historicalData = await getHistoricalData(activeSymbol, 'ticks', 1000) as TickData[];
-            
-            if (historicalData.length < 100) {
-                throw new Error("Dados históricos insuficientes para o backtest.");
-            }
-            
-            toast({ title: "Dados recebidos", description: `Analisando ${historicalData.length} ticks... Isso pode ser rápido.` });
-            
-            await new Promise(resolve => setTimeout(resolve, 50));
-            
-            const results = runDigitsBacktest(historicalData, {
-                stake: 0.35,
-                threshold: robotCouncil.consensusThreshold,
-                windowSize: 100
-            });
-            setBacktestResults(results);
-            
-            toast({ title: "Backtest Concluído!", description: "Resultados da simulação estão disponíveis abaixo." });
-
-        } catch (e: any) {
-            toast({ title: "Erro no Backtest", description: e.message, variant: 'destructive' });
-        } finally {
-            setIsBacktesting(false);
-        }
-    }, [activeSymbol, getHistoricalData, toast, robotCouncil.consensusThreshold]);
 
     return (
         <div className="flex-1 space-y-4 p-4 sm:p-8 pt-6">
@@ -213,29 +172,35 @@ function DerivTraderPageContentDigits() {
                     <OperationsLogDigits operations={operationsLog} priceTicks={priceTicks} activeAsset={activeAsset} clearActiveContracts={clearActiveContracts} />
                 </div>
 
-                {/* --- Coluna da Direita (Dados e Logs) --- */}
+                {/* --- Coluna da Direita (Análise e Autopilot) --- */}
                 <div className="lg:col-span-3 space-y-6">
-                    <DigitStatsChart priceTicks={priceTicks} pip={activeAsset?.pip} />
-                    <AITradeSuggestionDigits
-                        digitStats={robotCouncil.digitStats}
-                        isAutopilotOn={robotCouncil.isCouncilAutopilotOn}
+                    <DigitsDashboard 
+                        signalQuality={robotCouncil.signalQuality}
+                        multiWindowAnalysis={robotCouncil.multiWindowAnalysis}
                     />
                     <DigitsAutopilotManager {...robotCouncil} />
-                     <Collapsible>
-                        <CollapsibleTrigger asChild>
-                           <Button variant="outline" className="w-full">
-                                <TestTube className="mr-2 h-4 w-4" />
-                                Painel de Backtesting de Dígitos
-                           </Button>
-                        </CollapsibleTrigger>
-                        <CollapsibleContent className="pt-4">
-                            <DigitsBacktestPanel 
-                                results={backtestResults} 
-                                onRunBacktest={handleRunBacktest} 
-                                isBacktesting={isBacktesting} 
+                     <Card>
+                        <CardHeader>
+                            <CardTitle className="font-headline">Gráfico de Mercado</CardTitle>
+                             <CardDescription>Visualize a ação do preço para ter contexto sobre os sinais de dígito.</CardDescription>
+                        </CardHeader>
+                        <CardContent>
+                             <MarketChart
+                                activeSymbol={activeSymbol || ''}
+                                chartData={chartData}
+                                isChartLoading={isChartLoading}
+                                chartError={chartError}
+                                chartType={chartType}
+                                setChartType={setChartType}
+                                timePeriod={timePeriod}
+                                setTimePeriod={setTimePeriod}
+                                operations={operationsLog}
+                                indicators={null} 
+                                tradeAnnotations={tradeAnnotations}
                             />
-                        </CollapsibleContent>
-                      </Collapsible>
+                        </CardContent>
+                     </Card>
+                    <DigitStatsChart priceTicks={priceTicks} pip={activeAsset?.pip} />
                 </div>
             </div>
         </div>

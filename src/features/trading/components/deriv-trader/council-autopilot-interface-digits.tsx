@@ -9,7 +9,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Bot, Binary, TrendingUp, HelpCircle, Trophy, Settings } from "lucide-react";
+import { Bot, Binary, TrendingUp, HelpCircle, Trophy, Settings, AlertTriangle, ShieldCheck, Power } from "lucide-react";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Separator } from "@/components/ui/separator";
@@ -37,6 +37,7 @@ const PilotTabContent: React.FC<{
         'PAUSED': { text: 'Pausado', color: 'bg-gray-500' },
         'TRADING': { text: 'Operando', color: 'bg-green-500' },
         'COOLDOWN': { text: 'Cooldown Pós-Perda', color: 'bg-orange-500' },
+        'CIRCUIT_BREAKER': { text: 'Pausa de Risco', color: 'bg-red-500' },
     };
 
     return (
@@ -46,10 +47,11 @@ const PilotTabContent: React.FC<{
                     <Label htmlFor={`${pilotKey}-switch`} className="font-semibold">{title}</Label>
                     <p className="text-xs text-muted-foreground">{description}</p>
                 </div>
-                <Switch
+                 <Switch
                     id={`${pilotKey}-switch`}
                     checked={isOn}
                     onCheckedChange={() => toggleAutopilot(pilotKey)}
+                    className="data-[state=checked]:bg-green-600"
                 />
             </div>
 
@@ -78,6 +80,12 @@ const PilotTabContent: React.FC<{
                     </div>
                 </div>
             )}
+             {status === 'CIRCUIT_BREAKER' && (
+                 <div className="text-xs text-destructive flex items-center gap-2 p-2 rounded-md bg-destructive/10">
+                    <AlertTriangle className="h-4 w-4" />
+                    <span>{currentTarget}</span>
+                 </div>
+            )}
         </div>
     );
 };
@@ -101,18 +109,18 @@ export const DigitsAutopilotManager: React.FC<DigitsAutopilotManagerProps> = (pr
     setUnderdogThreshold,
     isUnderdogInverse,
     setIsUnderdogInverse,
-    martingaleRecoveryFactor,
-    setMartingaleRecoveryFactor,
-    isMartingaleEnabled,
-    setIsMartingaleEnabled,
-    cooldownTime,
-    setCooldownTime,
-    maxLosses,
-    setMaxLosses,
     overUnderUnderdogThreshold,
     setOverUnderUnderdogThreshold,
     evenOddUnderdogThreshold,
     setEvenOddUnderdogThreshold,
+    isMartingaleEnabled,
+    setIsMartingaleEnabled,
+    martingaleRecoveryFactor,
+    setMartingaleRecoveryFactor,
+    cooldownTime,
+    setCooldownTime,
+    maxLosses,
+    setMaxLosses,
  } = props;
 
   return (
@@ -239,19 +247,6 @@ export const DigitsAutopilotManager: React.FC<DigitsAutopilotManagerProps> = (pr
                         pilotState={pilots.dynamicUnderdogOverUnder}
                         toggleAutopilot={toggleAutopilot}
                     />
-                    <div className="space-y-4 pt-4 mt-4 border-t">
-                        <h4 className="text-xs font-semibold text-muted-foreground">Configuração Fina (Azarão A/A)</h4>
-                        <div className="space-y-2">
-                            <Label htmlFor="underdog-ou-threshold">Limiar de Frequência de Bloco ({overUnderUnderdogThreshold.toFixed(1)}%)</Label>
-                            <Slider
-                                id="underdog-ou-threshold"
-                                min={30} max={48} step={1}
-                                value={[overUnderUnderdogThreshold]}
-                                onValueChange={(value) => setOverUnderUnderdogThreshold(value[0])}
-                            />
-                            <p className="text-xs text-muted-foreground">Ambos os pilotos A/A Azarão usarão este limiar para operar.</p>
-                        </div>
-                    </div>
                 </TabsContent>
                 <TabsContent value="underdogEvenOdd" className="pt-4">
                     <PilotTabContent
@@ -280,73 +275,72 @@ export const DigitsAutopilotManager: React.FC<DigitsAutopilotManagerProps> = (pr
         
         <Separator />
 
-        <div className="space-y-4">
-            <h4 className="font-semibold text-sm">Configurações Gerais dos Pilotos</h4>
-             <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                    <Label htmlFor="council-daily-balance-digits">Banca do Dia (USD)</Label>
-                    <Input 
-                        id="council-daily-balance-digits"
-                        type="number"
-                        value={dailyBalance}
-                        onChange={(e) => setDailyBalance(Number(e.target.value))}
-                        placeholder="Ex: 10"
-                    />
-                </div>
-                <div className="space-y-2">
-                    <Label htmlFor="council-daily-target-digits">Alvo de Lucro (USD)</Label>
-                    <Input 
-                        id="council-daily-target-digits"
-                        type="number"
-                        value={dailyTarget}
-                        onChange={(e) => setDailyTarget(Number(e.target.value))}
-                        placeholder="Ex: 5"
-                    />
-                </div>
-            </div>
-
-            <div className="space-y-2">
-                <Label htmlFor="council-consensus-digits">Limiar de Prob. (Difere) ({consensusThreshold}%)</Label>
-                <Slider
-                    id="council-consensus-digits"
-                    min={15} max={50} step={1}
-                    value={[consensusThreshold]}
-                    onValueChange={(value) => setConsensusThreshold(value[0])}
-                />
-            </div>
-             <div className="space-y-2">
-                <Label htmlFor="over-under-threshold-slider">Limiar de Prob. (Acima/Abaixo) ({overUnderThreshold}%)</Label>
-                <Slider
-                    id="over-under-threshold-slider"
-                    min={55} max={80} step={1}
-                    value={[overUnderThreshold]}
-                    onValueChange={(value) => setOverUnderThreshold(value[0])}
-                />
-            </div>
-             <div className="space-y-2">
-                <Label htmlFor="even-odd-threshold-slider">Limiar de Prob. (Par/Ímpar) ({evenOddThreshold}%)</Label>
-                <Slider
-                    id="even-odd-threshold-slider"
-                    min={55} max={80} step={1}
-                    value={[evenOddThreshold]}
-                    onValueChange={(value) => setEvenOddThreshold(value[0])}
-                />
-            </div>
-        </div>
-        
         <Collapsible>
             <CollapsibleTrigger asChild>
                 <Button variant="outline" className="w-full">
                     <Settings className="mr-2 h-4 w-4"/>
-                    Gestão de Risco Avançada
+                    Gestão de Risco e Parâmetros Gerais
                 </Button>
             </CollapsibleTrigger>
             <CollapsibleContent className="pt-4 space-y-6">
+                <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                        <Label htmlFor="council-daily-balance-digits">Banca do Dia (USD)</Label>
+                        <Input 
+                            id="council-daily-balance-digits"
+                            type="number"
+                            value={dailyBalance}
+                            onChange={(e) => setDailyBalance(Number(e.target.value))}
+                            placeholder="Ex: 10"
+                        />
+                    </div>
+                    <div className="space-y-2">
+                        <Label htmlFor="council-daily-target-digits">Alvo de Lucro (USD)</Label>
+                        <Input 
+                            id="council-daily-target-digits"
+                            type="number"
+                            value={dailyTarget}
+                            onChange={(e) => setDailyTarget(Number(e.target.value))}
+                            placeholder="Ex: 5"
+                        />
+                    </div>
+                </div>
+
+                <div className="space-y-2">
+                    <Label htmlFor="council-consensus-digits">Limiar de Prob. (Difere) ({consensusThreshold}%)</Label>
+                    <Slider
+                        id="council-consensus-digits"
+                        min={15} max={50} step={1}
+                        value={[consensusThreshold]}
+                        onValueChange={(value) => setConsensusThreshold(value[0])}
+                    />
+                </div>
+                <div className="space-y-2">
+                    <Label htmlFor="over-under-threshold-slider">Limiar de Prob. (Acima/Abaixo) ({overUnderThreshold}%)</Label>
+                    <Slider
+                        id="over-under-threshold-slider"
+                        min={55} max={80} step={1}
+                        value={[overUnderThreshold]}
+                        onValueChange={(value) => setOverUnderThreshold(value[0])}
+                    />
+                </div>
+                <div className="space-y-2">
+                    <Label htmlFor="even-odd-threshold-slider">Limiar de Prob. (Par/Ímpar) ({evenOddThreshold}%)</Label>
+                    <Slider
+                        id="even-odd-threshold-slider"
+                        min={55} max={80} step={1}
+                        value={[evenOddThreshold]}
+                        onValueChange={(value) => setEvenOddThreshold(value[0])}
+                    />
+                </div>
+
+                <Separator />
+
                 <div className="flex items-center justify-between rounded-lg border p-3 shadow-sm">
                     <Label htmlFor="martingale-switch" className="flex flex-col space-y-1">
                         <span>Ativar Martingale Inteligente</span>
                         <span className="font-normal text-xs text-muted-foreground">
-                            Calcula a próxima aposta para recuperar perdas + lucro.
+                            Calcula a próxima aposta para recuperar perdas.
                         </span>
                     </Label>
                     <Switch
@@ -361,18 +355,18 @@ export const DigitsAutopilotManager: React.FC<DigitsAutopilotManagerProps> = (pr
                     </Label>
                     <Slider
                         id="martingale-recovery-slider"
-                        min={1.0} max={5.0} step={0.1}
+                        min={1.1} max={2.5} step={0.1}
                         value={[martingaleRecoveryFactor]}
                         onValueChange={(value) => setMartingaleRecoveryFactor(value[0])}
                         disabled={!isMartingaleEnabled}
                     />
                     <p className={cn("text-xs text-muted-foreground", !isMartingaleEnabled && "opacity-50")}>
-                        Define o lucro alvo da recuperação. 1.0 = apenas recuperar a perda.
+                        Define a agressividade para recuperar perdas. Cuidado com valores altos.
                     </p>
                 </div>
 
                 <div className="space-y-2">
-                    <Label htmlFor="cooldown-slider">Tempo de Cooldown Pós-Perda ({cooldownTime}s)</Label>
+                    <Label htmlFor="cooldown-slider">Cooldown Pós-Perda ({cooldownTime}s)</Label>
                     <Slider
                         id="cooldown-slider"
                         min={0} max={60} step={1}
