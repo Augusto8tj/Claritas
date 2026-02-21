@@ -154,9 +154,9 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
       const pilot = prev[pilotType];
       if (!pilot) return prev;
       const newIsOnState = !pilot.isOn;
-  
+
       if (newIsOnState && sessionInitialBankroll === null) {
-        setSessionInitialBankroll(accountBalance.balance ?? 1000);
+          setSessionInitialBankroll(accountBalance.balance ?? 1000);
       }
       
       // Use um timeout para garantir que a atualização de estado não ocorra durante a renderização.
@@ -234,7 +234,7 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
       const initialBankroll = sessionInitialBankroll ?? (accountBalance.balance ?? 1000);
       const currentBankroll = initialBankroll + dailyPnl;
       
-      const bankrollState: BankrollState = { currentBankroll, initialBankroll, maxDailyLoss: dailyBalance, dailyProfitTarget };
+      const bankrollState: BankrollState = { currentBankroll, initialBankroll, maxDailyLoss: dailyBalance, dailyProfitTarget: dailyTarget };
       
       let confidenceForStake: ConfidenceLevel = 'NULA';
       switch (pilotKey) {
@@ -303,7 +303,7 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
         }
       }
       else if (pilotKey === 'underdog' && analysisResults.mainWindowStats) {
-        const coldestDigitStat = [...analysisResults.mainWindowStats.frequencies].sort((a, b) => a.probability - b.probability)[0];
+        const coldestDigitStat = [...digitStats].sort((a, b) => a.probability - b.probability)[0];
         if (coldestDigitStat && coldestDigitStat.probability <= underdogThreshold) {
              const contract = isUnderdogInverse ? 'DIGITDIFF' : 'DIGITMATCH';
              executeTrade(contract, stakeDecision.nextStake, activeSymbol!, 1, 't', 'Piloto', coldestDigitStat.digit, pilotKey);
@@ -350,8 +350,8 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
   }, [
       priceTicks, pilots, operationsLog, signalQuality, shouldTrade, councilDecision, executeTrade, activeSymbol, toast, 
       dailyBalance, dailyTarget, maxLosses, martingaleRecoveryFactor, sessionInitialBankroll, accountBalance.balance, dailyPnl,
-      overUnderStats, evenOddStats, overUnderThreshold, evenOddThreshold, underdogThreshold, isUnderdogInverse, overUnderUnderdogThreshold, evenOddUnderdogThreshold,
-      executionCooldown, isSmartMartingale, isMartingaleEnabled, digitStats, multiWindowAnalysis, analysisResults.mainWindowStats
+      overUnderStats, evenOddStats, overUnderThreshold, evenOddThreshold, underdogThreshold, isUnderdogInverse, overUnderUnderdogThreshold, evenOddUnderdogThreshold, digitStats,
+      executionCooldown, isMartingaleEnabled, isSmartMartingale, analysisResults.mainWindowStats, multiWindowAnalysis
   ]);
   
   return {
