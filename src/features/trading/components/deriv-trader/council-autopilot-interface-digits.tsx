@@ -9,7 +9,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Bot, Binary, TrendingUp, HelpCircle, Trophy, Settings, AlertTriangle, ShieldCheck, Power, Clock } from "lucide-react";
+import { Bot, Binary, TrendingUp, HelpCircle, Trophy, Settings, AlertTriangle, ShieldCheck, Power, Clock, Repeat } from "lucide-react";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Separator } from "@/components/ui/separator";
@@ -115,6 +115,8 @@ export const DigitsAutopilotManager: React.FC<DigitsAutopilotManagerProps> = (pr
     setEvenOddUnderdogThreshold,
     isMartingaleEnabled,
     setIsMartingaleEnabled,
+    isSmartMartingale,
+    setIsSmartMartingale,
     martingaleRecoveryFactor,
     setMartingaleRecoveryFactor,
     cooldownTime,
@@ -353,15 +355,29 @@ export const DigitsAutopilotManager: React.FC<DigitsAutopilotManagerProps> = (pr
 
                 <div className="flex items-center justify-between rounded-lg border p-3 shadow-sm">
                     <Label htmlFor="martingale-switch" className="flex flex-col space-y-1">
-                        <span>Ativar Martingale Inteligente</span>
+                        <span>Ativar Martingale</span>
                         <span className="font-normal text-xs text-muted-foreground">
-                            Calcula a próxima aposta para recuperar perdas.
+                            Aumenta a aposta após uma perda para acelerar a recuperação.
                         </span>
                     </Label>
                     <Switch
                         id="martingale-switch"
                         checked={isMartingaleEnabled}
                         onCheckedChange={setIsMartingaleEnabled}
+                    />
+                </div>
+                 <div className="flex items-center justify-between rounded-lg border p-3 shadow-sm">
+                    <Label htmlFor="smart-martingale-switch" className="flex flex-col space-y-1">
+                        <span>Ativar Martingale Inteligente</span>
+                        <span className="font-normal text-xs text-muted-foreground">
+                            Só aumenta a aposta se o próximo sinal for de alta confiança.
+                        </span>
+                    </Label>
+                    <Switch
+                        id="smart-martingale-switch"
+                        checked={isSmartMartingale}
+                        onCheckedChange={setIsSmartMartingale}
+                        disabled={!isMartingaleEnabled}
                     />
                 </div>
                 <div className="space-y-2">

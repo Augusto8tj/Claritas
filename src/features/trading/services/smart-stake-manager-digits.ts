@@ -27,6 +27,7 @@ export interface SmartMartingaleConfig {
   maxMartingaleLevels: number;
   martingaleMultiplier: number;    // ex.: 1.3 a 1.5
   useAntiMartingale: boolean;
+  isSmart: boolean; // NOVO: Flag para Martingale Inteligente
 }
 
 export interface BankrollState {
@@ -43,71 +44,21 @@ export interface SmartStakeDecision {
 }
 
 // ============================================================================
-// 2. FUNÇÃO DE CÁLCULO DE KELLY
+// 2. FUNÇÕES AUXILIARES INTERNAS
 // ============================================================================
 
-/**
- * Calcula o tamanho ideal da aposta usando o Critério de Kelly Fracionado.
- * @param winrate - A taxa de acerto histórica (0 a 1).
- * @param averageWin - O lucro médio das operações vencedoras.
- * @param averageLoss - O prejuízo médio das operações perdedoras (valor positivo).
- * @param bankroll - O capital total disponível.
- * @returns O valor da aposta recomendado.
- */
-export function calculateKellyStake(
-  winrate: number,
-  averageWin: number,
-  averageLoss: number,
-  bankroll: number
-): number {
-  if (averageLoss === 0 || winrate <= 0) {
-    return 0; // Evita divisão por zero ou cenários sem vitórias.
-  }
-
-  const p = winrate;
-  const q = 1 - p;
-  const b = averageWin / averageLoss; // Payout ratio
-
-  // Se a vantagem matemática (edge) for negativa ou nula, não aposta nada.
-  const edge = b * p - q;
-  if (edge <= 0) {
-    return 0;
-  }
-
-  const kellyFraction = edge / b;
-
-  // Aplicar Quarter Kelly (25%) para segurança.
-  const quarterKellyFraction = kellyFraction * 0.25;
-
-  // Calcular o stake e aplicar um teto de segurança (ex: 5% do bankroll).
-  const recommendedStake = bankroll * quarterKellyFraction;
-  const cappedStake = Math.min(recommendedStake, bankroll * 0.05);
-
-  return cappedStake;
-}
-
-// ============================================================================
-// 3. FUNÇÕES AUXILIARES INTERNAS
-// ============================================================================
-
-/**
- * Conta o número de perdas consecutivas no final do histórico.
- */
 const countConsecutiveLosses = (tradeHistory: TradeResult[]): number => {
   let consecutiveLosses = 0;
   for (let i = tradeHistory.length - 1; i >= 0; i--) {
     if (tradeHistory[i].profit < 0) {
       consecutiveLosses++;
     } else {
-      break; // Interrompe na primeira vitória encontrada.
+      break;
     }
   }
   return consecutiveLosses;
 };
 
-/**
- * Soma o valor das perdas consecutivas no final do histórico.
- */
 const sumConsecutiveLosses = (tradeHistory: TradeResult[]): number => {
   let accumulatedLoss = 0;
   for (let i = tradeHistory.length - 1; i >= 0; i--) {
@@ -120,10 +71,6 @@ const sumConsecutiveLosses = (tradeHistory: TradeResult[]): number => {
   return accumulatedLoss;
 };
 
-
-/**
- * Conta o número de vitórias consecutivas no final do histórico.
- */
 const countConsecutiveWins = (tradeHistory: TradeResult[]): number => {
     let consecutiveWins = 0;
     for (let i = tradeHistory.length - 1; i >= 0; i--) {
@@ -137,22 +84,19 @@ const countConsecutiveWins = (tradeHistory: TradeResult[]): number => {
 };
 
 // ============================================================================
-// 4. FUNÇÃO PRINCIPAL DE DECISÃO DE STAKE
+// 3. FUNÇÃO PRINCIPAL DE DECISÃO DE STAKE
 // ============================================================================
 
-/**
- * Decide o valor da próxima aposta com base no histórico, configurações e estado do capital.
- */
 export function decideNextStake(
   tradeHistory: TradeResult[],
   config: SmartMartingaleConfig,
   bankrollState: BankrollState,
   latestSignalConfidence: ConfidenceLevel
 ): SmartStakeDecision {
-  const { baseStake, maxMartingaleLevels, martingaleMultiplier, useAntiMartingale } = config;
+  const { baseStake, maxMartingaleLevels, martingaleMultiplier, useAntiMartingale, isSmart } = config;
   const { currentBankroll, initialBankroll, maxDailyLoss, dailyProfitTarget } = bankrollState;
 
-  // --- 1. Circuit Breakers (Verificações de Segurança Máximas) ---
+  // --- 1. Circuit Breakers ---
   const dailyPnl = currentBankroll - initialBankroll;
   if (dailyPnl <= -maxDailyLoss) {
     return {
@@ -172,51 +116,51 @@ export function decideNextStake(
   // --- 2. Lógica Principal ---
   const lastTrade = tradeHistory.length > 0 ? tradeHistory[tradeHistory.length - 1] : null;
 
-  // Se não houver histórico ou o último trade foi um ganho, reseta para o stake base.
   if (!lastTrade || lastTrade.profit > 0) {
-    // Lógica Anti-Martingale (Opcional)
     if (useAntiMartingale) {
         const wins = countConsecutiveWins(tradeHistory);
-        if (wins >= 3) { // Exemplo: aumentar após 3 vitórias seguidas
+        if (wins >= 3) {
             return { nextStake: baseStake * 1.2, shouldPause: false };
         }
     }
     return { nextStake: baseStake, shouldPause: false };
   }
 
-  // --- 3. Lógica de Martingale Inteligente (se o último trade foi perda) ---
+  // --- 3. Lógica de Martingale ---
   const consecutiveLosses = countConsecutiveLosses(tradeHistory);
 
-  // Condição para aplicar o Martingale:
-  const isSignalStrongEnough = latestSignalConfidence === 'ALTA' || latestSignalConfidence === 'MUITO_ALTA';
+  const isSignalStrongEnough = !isSmart || (latestSignalConfidence === 'ALTA' || latestSignalConfidence === 'MUITO_ALTA');
   const isWithinLevelLimit = consecutiveLosses <= maxMartingaleLevels;
 
   if (isSignalStrongEnough && isWithinLevelLimit) {
-    // CORREÇÃO: Usa o acumulado de perdas para calcular a recuperação.
     const accumulatedLoss = sumConsecutiveLosses(tradeHistory);
-    // Payout médio de 95% para contratos de dígito.
-    const payoutRatio = 0.95; 
-    const stakeToRecover = (accumulatedLoss + baseStake) / payoutRatio;
-    
-    // Aplica o multiplicador de agressividade
-    const nextStake = stakeToRecover * martingaleMultiplier;
+    const payoutRatio = 0.95;
 
+    // Opção 1: Martingale simples por multiplicador
+    const simpleMartingaleStake = lastTrade.stake * martingaleMultiplier;
+    
+    // Opção 2: Stake para recuperar perdas + ter lucro base
+    const recoveryStake = (accumulatedLoss + baseStake) / payoutRatio;
+    
+    // Usa o maior dos dois para garantir recuperação
+    let nextStake = Math.max(simpleMartingaleStake, recoveryStake);
+
+    // Verificação de segurança: não apostar mais que 20% do capital atual
     const maxSafeStake = currentBankroll * 0.20;
     
     if (nextStake > maxSafeStake) {
-         return {
-            nextStake: baseStake,
-            shouldPause: false,
-            pauseReason: `Martingale vetado: próximo stake ($${nextStake.toFixed(2)}) excede 20% do capital.`
-        };
+      return {
+        nextStake: baseStake,
+        shouldPause: true, // Pausa o piloto para proteger o capital
+        pauseReason: `Martingale vetado: próximo stake ($${nextStake.toFixed(2)}) excede 20% do capital.`,
+      };
     }
 
     return { nextStake: parseFloat(nextStake.toFixed(2)), shouldPause: false };
 
   } else {
-    // Se o sinal não for forte o suficiente ou o limite de níveis foi atingido, reseta.
     const reason = !isSignalStrongEnough 
-      ? 'Sinal fraco, Martingale não aplicado.' 
+      ? 'Sinal fraco, Martingale Inteligente não aplicado.' 
       : `Limite de ${maxMartingaleLevels} níveis de Martingale atingido. Resetando stake.`;
     
     return { nextStake: baseStake, shouldPause: false, pauseReason: reason };
