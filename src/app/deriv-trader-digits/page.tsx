@@ -20,7 +20,6 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { BrainCircuit, Loader2, TrendingDown, TrendingUp } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
-import { MarketChart } from "@/features/trading/components/deriv-trader/market-chart";
 import DigitsDashboard from "@/features/trading/components/deriv-trader/DigitsDashboard";
 
 
@@ -149,7 +148,6 @@ function CurrentPriceDisplay() {
 function DerivTraderPageContentDigits() {
     const { 
         activeSymbol, priceTicks, operationsLog, activeAsset, clearActiveContracts, 
-        chartData, isChartLoading, chartError, chartType, setChartType, timePeriod, setTimePeriod, tradeAnnotations
     } = useDerivApiDigits();
     const robotCouncil = useRobotCouncilDigits(activeSymbol, priceTicks, activeAsset);
 
@@ -179,27 +177,6 @@ function DerivTraderPageContentDigits() {
                         multiWindowAnalysis={robotCouncil.multiWindowAnalysis}
                     />
                     <DigitsAutopilotManager {...robotCouncil} />
-                     <Card>
-                        <CardHeader>
-                            <CardTitle className="font-headline">Gráfico de Mercado</CardTitle>
-                             <CardDescription>Visualize a ação do preço para ter contexto sobre os sinais de dígito.</CardDescription>
-                        </CardHeader>
-                        <CardContent>
-                             <MarketChart
-                                activeSymbol={activeSymbol || ''}
-                                chartData={chartData}
-                                isChartLoading={isChartLoading}
-                                chartError={chartError}
-                                chartType={chartType}
-                                setChartType={setChartType}
-                                timePeriod={timePeriod}
-                                setTimePeriod={setTimePeriod}
-                                operations={operationsLog}
-                                indicators={null} 
-                                tradeAnnotations={tradeAnnotations}
-                            />
-                        </CardContent>
-                     </Card>
                     <DigitStatsChart priceTicks={priceTicks} pip={activeAsset?.pip} />
                 </div>
             </div>
