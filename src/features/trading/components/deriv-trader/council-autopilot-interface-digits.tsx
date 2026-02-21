@@ -14,7 +14,7 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Separator } from "@/components/ui/separator";
 import { Input } from "@/components/ui/input";
-import type { useRobotCouncilDigits, PilotType } from "@/features/trading/hooks/use-robot-council-digits";
+import type { useRobotCouncilDigits, PilotType, PilotState } from "@/features/trading/hooks/use-robot-council-digits";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
@@ -28,7 +28,7 @@ const PilotTabContent: React.FC<{
     pilotKey: PilotType;
     title: string;
     description: string;
-    pilotState: ReturnType<typeof useRobotCouncilDigits>['pilots'][PilotType];
+    pilotState: PilotState;
     toggleAutopilot: (type: PilotType) => void;
 }> = ({ pilotKey, title, description, pilotState, toggleAutopilot }) => {
     const { isOn, status, currentTarget, consecutiveLosses, accumulatedLoss } = pilotState;
