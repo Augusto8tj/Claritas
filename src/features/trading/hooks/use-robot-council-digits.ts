@@ -71,7 +71,6 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
   const [cooldownTime, setCooldownTime] = useState(5);
   const [maxLosses, setMaxLosses] = useState(5);
   
-  // NOVO: Estado para armazenar o bankroll inicial da sessão
   const [sessionInitialBankroll, setSessionInitialBankroll] = useState<number | null>(null);
 
   const [pilots, setPilots] = useState<Record<PilotType, PilotState>>({
@@ -127,6 +126,21 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
     return Object.values(pilots).flatMap(p => p.tradeHistory).reduce((sum, trade) => sum + trade.profit, 0);
   }, [pilots]);
 
+  const overUnderStats = useMemo(() => {
+    if (!analysisResults.mainWindowStats) return { probOver4: 0, probUnder5: 0 };
+    const stats = analysisResults.mainWindowStats.frequencies;
+    const probOver4 = stats.filter(s => s.digit > 4).reduce((sum, s) => sum + s.probability, 0) * 100;
+    const probUnder5 = stats.filter(s => s.digit < 5).reduce((sum, s) => sum + s.probability, 0) * 100;
+    return { probOver4, probUnder5 };
+  }, [analysisResults.mainWindowStats]);
+
+  const evenOddStats = useMemo(() => {
+    if (!analysisResults.mainWindowStats) return { probEven: 0 };
+    const stats = analysisResults.mainWindowStats.frequencies;
+    const probEven = stats.filter(s => s.digit % 2 === 0).reduce((sum, s) => sum + s.probability, 0) * 100;
+    return { probEven };
+  }, [analysisResults.mainWindowStats]);
+
   // --- LÓGICA DE EXECUÇÃO E ATUALIZAÇÃO ---
   const toggleAutopilot = useCallback((pilotType: PilotType) => {
     const pilot = pilots[pilotType];
@@ -135,9 +149,8 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
     const newIsOnState = !pilot.isOn;
     toast({ title: `Piloto ${pilotType} ${newIsOnState ? 'Ativado' : 'Desativado'}` });
 
-    // NOVO: Captura o saldo da conta quando o primeiro piloto é ativado
     if (newIsOnState && sessionInitialBankroll === null) {
-      setSessionInitialBankroll(accountBalance.balance ?? 1000); // Usa o saldo real da conta ou um fallback
+      setSessionInitialBankroll(accountBalance.balance ?? 1000); 
     }
 
     setPilots(prev => ({
@@ -187,7 +200,7 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
       }
     }
 
-    // 2. Decidir e executar novos trades
+    // --- 2. Decidir e executar novos trades ---
     activePilotEntries.forEach(([key, pilot]) => {
       const pilotKey = key as PilotType;
       if (pilot.status !== 'TRADING' || !signalQuality) return;
@@ -195,7 +208,6 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
       const initialBankroll = sessionInitialBankroll ?? (accountBalance.balance ?? 1000);
       const currentBankroll = initialBankroll + dailyPnl;
       
-      // CORREÇÃO: Passa os valores corretos do estado para a função de decisão
       const bankrollState: BankrollState = { 
         currentBankroll, 
         initialBankroll, 
@@ -209,25 +221,71 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
       
       if(stakeDecision.shouldPause) {
         setPilots(prev => ({ ...prev, [pilotKey]: { ...prev[pilotKey], status: 'CIRCUIT_BREAKER', currentTarget: stakeDecision.pauseReason || 'Limite de risco atingido' }}));
-        toast({ title: `Piloto ${pilotKey} Pausado`, description: stakeDecision.pauseReason, variant: 'destructive'});
+        toast({ title: `Piloto ${pilotKey} Pausado`, description: stakeDecision.pauseReason, variant: "destructive"});
         return;
       }
 
+      // --- INÍCIO DA LÓGICA DE EXECUÇÃO CORRIGIDA ---
+      
       if (pilotKey === 'matchesDiffers' && councilDecision.differs !== null && shouldTrade) {
           executeTrade('DIGITDIFF', stakeDecision.nextStake, activeSymbol!, 1, 't', 'Piloto', councilDecision.differs);
       }
-      // Adicionar lógica para outros pilotos aqui...
+      
+      if (pilotKey === 'overUnder' && shouldTrade) {
+        if (overUnderStats.probOver4 > overUnderThreshold) {
+            executeTrade('DIGITOVER', stakeDecision.nextStake, activeSymbol!, 1, 't', 'Piloto', 4);
+        } else if (overUnderStats.probUnder5 > overUnderThreshold) {
+            executeTrade('DIGITUNDER', stakeDecision.nextStake, activeSymbol!, 1, 't', 'Piloto', 5);
+        }
+      }
+
+      if (pilotKey === 'evenOdd' && shouldTrade) {
+        if (evenOddStats.probEven > evenOddThreshold) {
+            executeTrade('DIGITEVEN', stakeDecision.nextStake, activeSymbol!, 1, 't', 'Piloto');
+        } else if ((100 - evenOddStats.probEven) > evenOddThreshold) { // Prob of Odd
+            executeTrade('DIGITODD', stakeDecision.nextStake, activeSymbol!, 1, 't', 'Piloto');
+        }
+      }
+
+      if (pilotKey === 'underdog' && councilDecision.matches !== null && shouldTrade) {
+        const digitFreq = digitStats.find(d => d.digit === councilDecision.matches);
+        if (digitFreq && digitFreq.probability <= underdogThreshold) {
+             if (isUnderdogInverse) {
+                 executeTrade('DIGITDIFF', stakeDecision.nextStake, activeSymbol!, 1, 't', 'Piloto', councilDecision.matches);
+             } else {
+                 executeTrade('DIGITMATCH', stakeDecision.nextStake, activeSymbol!, 1, 't', 'Piloto', councilDecision.matches);
+             }
+        }
+      }
+
+      if (pilotKey === 'underdogOverUnder' && shouldTrade) {
+          if (overUnderStats.probOver4 < overUnderUnderdogThreshold) {
+               executeTrade('DIGITOVER', stakeDecision.nextStake, activeSymbol!, 1, 't', 'Piloto', 4);
+          } else if (overUnderStats.probUnder5 < overUnderUnderdogThreshold) {
+               executeTrade('DIGITUNDER', stakeDecision.nextStake, activeSymbol!, 1, 't', 'Piloto', 5);
+          }
+      }
+
+      if (pilotKey === 'underdogEvenOdd' && shouldTrade) {
+          if (evenOddStats.probEven < evenOddUnderdogThreshold) {
+               executeTrade('DIGITEVEN', stakeDecision.nextStake, activeSymbol!, 1, 't', 'Piloto');
+          } else if (100 - evenOddStats.probEven < evenOddUnderdogThreshold) {
+               executeTrade('DIGITODD', stakeDecision.nextStake, activeSymbol!, 1, 't', 'Piloto');
+          }
+      }
+      // Não há lógica para 'dynamicUnderdogOverUnder' pois ela é mais complexa e
+      // requer uma análise da composição dos 5 dígitos menos prováveis, que ainda não foi implementada.
+      
+      // --- FIM DA LÓGICA DE EXECUÇÃO ---
+
     });
     
     executionRef.current = false;
   }, [
       priceTicks, pilots, operationsLog, signalQuality, shouldTrade, councilDecision, executeTrade, activeSymbol, toast, 
-      dailyBalance, dailyTarget, maxLosses, martingaleRecoveryFactor,
-      // Novas dependências para a lógica de bankroll corrigida
-      sessionInitialBankroll, accountBalance.balance, dailyPnl
-  ]); 
-  
-  const digitStats = analysisResults.mainWindowStats?.frequencies || [];
+      dailyBalance, dailyTarget, maxLosses, martingaleRecoveryFactor, sessionInitialBankroll, accountBalance.balance, dailyPnl,
+      overUnderStats, evenOddStats, overUnderThreshold, evenOddThreshold, underdogThreshold, isUnderdogInverse, overUnderUnderdogThreshold, evenOddUnderdogThreshold, digitStats
+  ]);
   
   return {
     dailyBalance, setDailyBalance,
