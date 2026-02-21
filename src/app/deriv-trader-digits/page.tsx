@@ -7,7 +7,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import DerivTraderInterfaceDigits from "@/features/trading/components/deriv-trader/deriv-trader-interface-digits";
 import { AssetSelectorDigits } from "@/features/trading/components/deriv-trader/asset-selector-digits";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useDerivApiDigits } from "@/features/trading/hooks/use-deriv-api-digits";
+import { DerivApiProviderDigits, useDerivApiDigits } from "@/features/trading/hooks/use-deriv-api-digits";
 import { OperationsLogDigits } from "@/features/trading/components/deriv-trader/operations-log-digits";
 import { digitSchema, type DigitFormValues } from "@/features/trading/components/deriv-trader/deriv-trader-interface-digits.types";
 import { DigitsAutopilotManager } from "@/features/trading/components/deriv-trader/council-autopilot-interface-digits";
