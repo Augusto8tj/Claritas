@@ -32,11 +32,28 @@ export interface WindowDigitStats {
   chiSquare: ChiSquareResult;
 }
 
+export type ConfidenceLevel = 'MUITO_ALTA' | 'ALTA' | 'MEDIA' | 'BAIXA' | 'NULA';
+
+export interface MultiWindowAnalysis {
+  windows: WindowDigitStats[];
+  hottestConsensusDigit?: Digit;
+  coldestConsensusDigit?: Digit;
+  consensusStrength: ConfidenceLevel;
+}
+
+export interface SignalQuality {
+  targetDigit: Digit;
+  contractType: 'DIGITDIFF' | 'DIGITMATCH';
+  mainWindow: WindowDigitStats;
+  multiWindowAnalysis: MultiWindowAnalysis;
+  recentWinrate?: number;
+  confidenceLevel: ConfidenceLevel;
+}
+
 export type PilotType = 'matchesDiffers' | 'overUnder' | 'evenOdd' | 'underdog' | 'underdogOverUnder' | 'dynamicUnderdogOverUnder' | 'underdogEvenOdd';
 
 export type AutopilotStatus = 'PAUSED' | 'TRADING' | 'COOLDOWN';
 
-// CORREÇÃO: Definir a estrutura completa do estado de um piloto.
 export interface PilotState {
     isOn: boolean;
     status: AutopilotStatus;
@@ -59,20 +76,11 @@ const getDecimalPlaces = (pipSize: number | undefined): number => {
     return 0;
 };
 
-/**
- * Tabela de valores críticos para o teste qui-quadrado com 9 graus de liberdade (10 categorias - 1).
- * Fonte: Tabelas estatísticas padrão.
- */
 const CHI_SQUARE_CRITICAL_VALUES: { [pValue: number]: number } = {
   0.995: 1.735, 0.99: 2.088, 0.975: 2.700, 0.95: 3.325, 0.90: 4.168,
   0.10: 14.684, 0.05: 16.919, 0.025: 19.023, 0.01: 21.666, 0.005: 23.589,
 };
 
-/**
- * Estima o p-value a partir do valor qui-quadrado por interpolação linear na tabela de valores críticos.
- * @param chiSquareValue O valor calculado do teste qui-quadrado.
- * @returns O p-value estimado.
- */
 function getPValueFromChiSquare(chiSquareValue: number): number {
   if (chiSquareValue < CHI_SQUARE_CRITICAL_VALUES[0.995]) return 1.0;
   if (chiSquareValue > CHI_SQUARE_CRITICAL_VALUES[0.005]) return 0.005;
@@ -91,19 +99,11 @@ function getPValueFromChiSquare(chiSquareValue: number): number {
   return 0.005;
 }
 
-/**
- * Função centralizada para calcular todas as estatísticas de dígitos para uma dada janela de ticks.
- * @param ticks - O array de ticks para analisar.
- * @param windowSize - O número de ticks a serem considerados.
- * @param decimalPlaces - O número de casas decimais do preço do ativo.
- * @returns Um objeto WindowDigitStats com a análise completa.
- */
 function calculateDigitStatsForWindow(ticks: TickData[], windowSize: number, decimalPlaces: number): WindowDigitStats {
     const analysisTicks = ticks.slice(-windowSize);
     const n = analysisTicks.length;
     const expectedProbability = 0.1;
 
-    // 1. Contagem de frequência observada
     const observedCounts = Array(10).fill(0);
     analysisTicks.forEach(tick => {
         const priceString = tick.price.toFixed(decimalPlaces);
@@ -111,31 +111,20 @@ function calculateDigitStatsForWindow(ticks: TickData[], windowSize: number, dec
         if (!isNaN(digit)) observedCounts[digit]++;
     });
 
-    // 2. Cálculo do Chi-Quadrado e Z-Score
     let chiSquareValue = 0;
-    // O erro padrão para uma proporção binomial
-    const standardError = Math.sqrt((expectedProbability * (1 - expectedProbability)) / n);
+    const standardError = n > 0 ? Math.sqrt((expectedProbability * (1 - expectedProbability)) / n) : 0;
 
     const frequencies: DigitFrequency[] = observedCounts.map((count, digit) => {
         const observedProb = n > 0 ? count / n : 0;
-        // Fórmula do Qui-Quadrado: Σ [ (Observado - Esperado)^2 / Esperado ]
         const expectedCount = n * expectedProbability;
         chiSquareValue += n > 0 ? Math.pow(count - expectedCount, 2) / expectedCount : 0;
-
-        // Fórmula do Z-Score: (Observado - Esperado) / Erro Padrão
         const zScore = standardError > 0 ? (observedProb - expectedProbability) / standardError : 0;
-        
         return { digit: digit as Digit, count, probability: observedProb, zScore };
     });
 
     const pValue = getPValueFromChiSquare(chiSquareValue);
-    const chiSquare: ChiSquareResult = {
-        chiSquareValue,
-        pValue,
-        isSignificant: pValue < 0.05,
-    };
+    const chiSquare: ChiSquareResult = { chiSquareValue, pValue, isSignificant: pValue < 0.05 };
     
-    // 3. Identificar dígitos "quentes" (mais frequentes) e "frios" (menos frequentes)
     const sortedByProb = [...frequencies].sort((a,b) => b.probability - a.probability);
     const hottestDigit = sortedByProb[0].digit;
     const coldestDigit = sortedByProb[sortedByProb.length-1].digit;
@@ -143,7 +132,79 @@ function calculateDigitStatsForWindow(ticks: TickData[], windowSize: number, dec
     return { windowSize, frequencies, hottestDigit, coldestDigit, chiSquare };
 }
 
-// CORREÇÃO: Função para criar o estado inicial de um piloto.
+function getMultiWindowAnalysis(windows: WindowDigitStats[]): MultiWindowAnalysis {
+    const hottestCounts: Record<string, number> = {};
+    const coldestCounts: Record<string, number> = {};
+    
+    windows.forEach(w => {
+        hottestCounts[w.hottestDigit] = (hottestCounts[w.hottestDigit] || 0) + 1;
+        coldestCounts[w.coldestDigit] = (coldestCounts[w.coldestDigit] || 0) + 1;
+    });
+
+    const findConsensusDigit = (counts: Record<string, number>): number | undefined => {
+        const entry = Object.entries(counts).find(([, count]) => count >= 2);
+        return entry ? parseInt(entry[0], 10) : undefined;
+    };
+
+    const hottestConsensusDigit = findConsensusDigit(hottestCounts) as Digit | undefined;
+    const coldestConsensusDigit = findConsensusDigit(coldestCounts) as Digit | undefined;
+
+    const maxHottestCount = Math.max(0, ...Object.values(hottestCounts));
+    const maxColdestCount = Math.max(0, ...Object.values(coldestCounts));
+    const maxConsensusCount = Math.max(maxHottestCount, maxColdestCount);
+
+    let consensusStrength: ConfidenceLevel = 'BAIXA';
+    if (maxConsensusCount === 3) consensusStrength = 'MUITO_ALTA';
+    else if (maxConsensusCount === 2) consensusStrength = 'ALTA';
+    
+    return {
+        windows,
+        hottestConsensusDigit,
+        coldestConsensusDigit,
+        consensusStrength,
+    };
+}
+
+function determineSignalQuality(
+    multiWindowAnalysis: MultiWindowAnalysis,
+    mainWindow: WindowDigitStats
+): SignalQuality | null {
+    const { hottestConsensusDigit, coldestConsensusDigit, consensusStrength } = multiWindowAnalysis;
+    const { isSignificant, pValue } = mainWindow.chiSquare;
+
+    let targetDigit: Digit | undefined;
+    let contractType: 'DIGITDIFF' | 'DIGITMATCH' | undefined;
+    let signalZScore = 0;
+    
+    // Prioriza o sinal de "DIFFERS" (mais seguro) se houver consenso
+    if (hottestConsensusDigit !== undefined) {
+        targetDigit = hottestConsensusDigit;
+        contractType = 'DIGITDIFF';
+        signalZScore = mainWindow.frequencies.find(f => f.digit === targetDigit)?.zScore || 0;
+    } else if (coldestConsensusDigit !== undefined) {
+        targetDigit = coldestConsensusDigit;
+        contractType = 'DIGITMATCH';
+        signalZScore = mainWindow.frequencies.find(f => f.digit === targetDigit)?.zScore || 0;
+    }
+
+    if (targetDigit === undefined || !contractType) return null;
+    
+    let confidenceLevel: ConfidenceLevel = 'BAIXA';
+    if (isSignificant) {
+        if (consensusStrength === 'MUITO_ALTA' && Math.abs(signalZScore) > 2.5) confidenceLevel = 'MUITO_ALTA';
+        else if (consensusStrength === 'ALTA' && Math.abs(signalZScore) > 1.96) confidenceLevel = 'ALTA';
+        else if (consensusStrength === 'MEDIA' || Math.abs(signalZScore) > 1.5) confidenceLevel = 'MEDIA';
+    }
+
+    return {
+        targetDigit,
+        contractType,
+        mainWindow,
+        multiWindowAnalysis,
+        confidenceLevel,
+    };
+}
+
 const createInitialPilotState = (): PilotState => ({
     isOn: false,
     status: 'PAUSED',
@@ -152,7 +213,6 @@ const createInitialPilotState = (): PilotState => ({
     accumulatedLoss: 0,
 });
 
-
 // ============================================================================
 // 3. HOOK PRINCIPAL (REATORIZADO)
 // ============================================================================
@@ -160,17 +220,14 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
   const { toast } = useToast();
   const { executeTrade, operationsLog } = useDerivApiDigits();
 
-  // CORREÇÃO: Inicializa o estado 'pilots' com valores padrão para evitar 'undefined'.
   const [pilots, setPilots] = useState<Record<PilotType, PilotState>>({
-    matchesDiffers: createInitialPilotState(),
-    overUnder: createInitialPilotState(),
-    evenOdd: createInitialPilotState(),
-    underdog: createInitialPilotState(),
-    underdogOverUnder: createInitialPilotState(),
-    dynamicUnderdogOverUnder: createInitialPilotState(),
+    matchesDiffers: createInitialPilotState(), overUnder: createInitialPilotState(),
+    evenOdd: createInitialPilotState(), underdog: createInitialPilotState(),
+    underdogOverUnder: createInitialPilotState(), dynamicUnderdogOverUnder: createInitialPilotState(),
     underdogEvenOdd: createInitialPilotState(),
   });
   
+  // Existing state...
   const [dailyBalance, setDailyBalance] = useState(10);
   const [dailyTarget, setDailyTarget] = useState(5);
   const [consensusThreshold, setConsensusThreshold] = useState(25);
@@ -185,68 +242,54 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
   const [cooldownTime, setCooldownTime] = useState(0);
   const [maxLosses, setMaxLosses] = useState(40);
   
-  const isCouncilAutopilotOn = Object.values(pilots).some(p => p?.isOn);
+  const isCouncilAutopilotOn = Object.values(pilots).some(p => p.isOn);
   
   const toggleAutopilot = useCallback((pilotType: PilotType) => {
-    // Obter o estado *atual* para a mensagem do toast
     const pilotToToggle = pilots[pilotType];
-    const newIsOnState = !pilotToToggle?.isOn;
-
-    // Chamar o efeito colateral (toast) fora da atualização de estado
-    toast({
-      title: `Piloto ${pilotType} ${newIsOnState ? 'Ativado' : 'Desativado'}`,
-    });
-    
-    // Agendar a atualização de estado de forma pura
-    setPilots(prev => {
-      const pilot = prev[pilotType];
-      if (!pilot) return prev;
-      
-      const newState = !pilot.isOn;
-
-      return {
+    if (!pilotToToggle) return;
+    const newIsOnState = !pilotToToggle.isOn;
+    toast({ title: `Piloto ${pilotType} ${newIsOnState ? 'Ativado' : 'Desativado'}` });
+    setPilots(prev => ({
         ...prev,
-        [pilotType]: {
-          ...pilot,
-          isOn: newState,
-          status: newState ? 'TRADING' : 'PAUSED',
-        },
-      };
-    });
-  }, [toast, pilots]); // Adiciona `pilots` à dependência para ter o estado mais recente
+        [pilotType]: { ...prev[pilotType], isOn: newIsOnState, status: newIsOnState ? 'TRADING' : 'PAUSED' },
+    }));
+  }, [toast, pilots]);
 
   const analysisResults = useMemo(() => {
       const windowSizes = [200, 500, 1000];
       const decimalPlaces = getDecimalPlaces(activeAsset?.pip);
-      
-      const windowsStats = windowSizes.map(size => 
-          calculateDigitStatsForWindow(priceTicks, size, decimalPlaces)
-      );
-      
+      const windowsStats = windowSizes.map(size => calculateDigitStatsForWindow(priceTicks, size, decimalPlaces));
       const mainWindowStats = windowsStats.find(w => w.windowSize === 1000) || windowsStats[windowsStats.length - 1];
-
-      return {
-          windowsStats,
-          mainWindowStats,
-      };
+      return { windowsStats, mainWindowStats };
   }, [priceTicks, activeAsset]);
 
+  const multiWindowAnalysis = useMemo(() => {
+    return getMultiWindowAnalysis(analysisResults.windowsStats);
+  }, [analysisResults.windowsStats]);
+  
+  const signalQuality = useMemo(() => {
+    if (!analysisResults.mainWindowStats) return null;
+    return determineSignalQuality(multiWindowAnalysis, analysisResults.mainWindowStats);
+  }, [multiWindowAnalysis, analysisResults.mainWindowStats]);
+
+  const shouldTrade = useMemo(() => {
+    if (!signalQuality) return false;
+    const { confidenceLevel, mainWindow } = signalQuality;
+    const isConfident = confidenceLevel === 'ALTA' || confidenceLevel === 'MUITO_ALTA';
+    return isConfident && mainWindow.chiSquare.isSignificant;
+  }, [signalQuality]);
+
   const councilDecision = useMemo(() => {
-    const stats = analysisResults.mainWindowStats;
-    if (!stats || stats.frequencies.length === 0) {
-      return { differs: null, matches: null };
-    }
-    
+    if (!signalQuality) return { differs: null, matches: null };
     return {
-      differs: stats.hottestDigit,
-      matches: stats.coldestDigit
+      differs: signalQuality.contractType === 'DIGITDIFF' ? signalQuality.targetDigit : null,
+      matches: signalQuality.contractType === 'DIGITMATCH' ? signalQuality.targetDigit : null,
     };
-  }, [analysisResults.mainWindowStats]);
+  }, [signalQuality]);
 
   useEffect(() => {
-    // ... lógica de execução de trades existente ...
-  }, [analysisResults, councilDecision, activeSymbol, pilots, executeTrade, consensusThreshold]);
-
+    // A lógica de execução do trade será movida para cá nas próximas etapas
+  }, [shouldTrade, signalQuality]);
 
   const digitStats = analysisResults.mainWindowStats?.frequencies || [];
   
@@ -266,12 +309,16 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
     cooldownTime, setCooldownTime,
     maxLosses, setMaxLosses,
     
-    digitStats,
-    councilDecision,
+    digitStats, // Preservado para a UI existente
+    councilDecision, // Preservado para a UI existente
     pilots,
     toggleAutopilot,
 
+    // NOVO: Exposto para a UI
     windowsStats: analysisResults.windowsStats,
     mainWindowStats: analysisResults.mainWindowStats,
+    multiWindowAnalysis,
+    signalQuality,
+    shouldTrade,
   };
 }
