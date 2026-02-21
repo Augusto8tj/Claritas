@@ -52,7 +52,7 @@ const createInitialPilotState = (): PilotState => ({
 
 export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: TickData[], activeAsset: Asset | null) {
   const { toast } = useToast();
-  const { executeTrade, operationsLog } = useDerivApiDigits();
+  const { executeTrade, operationsLog, accountBalance } = useDerivApiDigits();
 
   // --- CONFIGURAÇÕES DE RISCO E ESTRATÉGIA (ESTADO LOCAL) ---
   const [dailyBalance, setDailyBalance] = useState(10);
@@ -70,6 +70,9 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
   const [martingaleRecoveryFactor, setMartingaleRecoveryFactor] = useState(1.3);
   const [cooldownTime, setCooldownTime] = useState(5);
   const [maxLosses, setMaxLosses] = useState(5);
+  
+  // NOVO: Estado para armazenar o bankroll inicial da sessão
+  const [sessionInitialBankroll, setSessionInitialBankroll] = useState<number | null>(null);
 
   const [pilots, setPilots] = useState<Record<PilotType, PilotState>>({
     matchesDiffers: createInitialPilotState(),
@@ -120,7 +123,29 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
     };
   }, [signalQuality]);
 
+  const dailyPnl = useMemo(() => {
+    return Object.values(pilots).flatMap(p => p.tradeHistory).reduce((sum, trade) => sum + trade.profit, 0);
+  }, [pilots]);
+
   // --- LÓGICA DE EXECUÇÃO E ATUALIZAÇÃO ---
+  const toggleAutopilot = useCallback((pilotType: PilotType) => {
+    const pilot = pilots[pilotType];
+    if (!pilot) return;
+
+    const newIsOnState = !pilot.isOn;
+    toast({ title: `Piloto ${pilotType} ${newIsOnState ? 'Ativado' : 'Desativado'}` });
+
+    // NOVO: Captura o saldo da conta quando o primeiro piloto é ativado
+    if (newIsOnState && sessionInitialBankroll === null) {
+      setSessionInitialBankroll(accountBalance.balance ?? 1000); // Usa o saldo real da conta ou um fallback
+    }
+
+    setPilots(prev => ({
+      ...prev,
+      [pilotType]: { ...pilot, isOn: newIsOnState, status: newIsOnState ? 'TRADING' : 'PAUSED' },
+    }));
+  }, [toast, pilots, sessionInitialBankroll, accountBalance.balance]);
+  
   useEffect(() => {
     if (executionRef.current) return;
     const activePilotEntries = Object.entries(pilots).filter(([, p]) => p.isOn && p.status !== 'CIRCUIT_BREAKER');
@@ -167,7 +192,16 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
       const pilotKey = key as PilotType;
       if (pilot.status !== 'TRADING' || !signalQuality) return;
 
-      const bankrollState: BankrollState = { currentBankroll: dailyBalance - dailyPnl, initialBankroll: dailyBalance, maxDailyLoss, dailyProfitTarget };
+      const initialBankroll = sessionInitialBankroll ?? (accountBalance.balance ?? 1000);
+      const currentBankroll = initialBankroll + dailyPnl;
+      
+      // CORREÇÃO: Passa os valores corretos do estado para a função de decisão
+      const bankrollState: BankrollState = { 
+        currentBankroll, 
+        initialBankroll, 
+        maxDailyLoss: dailyBalance, 
+        dailyProfitTarget: dailyTarget 
+      };
       
       const stakeConfig: SmartMartingaleConfig = { baseStake: BASE_STAKE, maxMartingaleLevels: maxLosses, martingaleMultiplier: martingaleRecoveryFactor, useAntiMartingale: false };
       
@@ -186,25 +220,13 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
     });
     
     executionRef.current = false;
-  }, [priceTicks]); // Roda a cada novo tick
+  }, [
+      priceTicks, pilots, operationsLog, signalQuality, shouldTrade, councilDecision, executeTrade, activeSymbol, toast, 
+      dailyBalance, dailyTarget, maxLosses, martingaleRecoveryFactor,
+      // Novas dependências para a lógica de bankroll corrigida
+      sessionInitialBankroll, accountBalance.balance, dailyPnl
+  ]); 
   
-  const toggleAutopilot = useCallback((pilotType: PilotType) => {
-    toast({ title: `Piloto ${pilotType} ${!pilots[pilotType].isOn ? 'Ativado' : 'Desativado'}` });
-    setPilots(prev => {
-        const pilot = prev[pilotType];
-        if (!pilot) return prev;
-        const newIsOnState = !pilot.isOn;
-        return {
-            ...prev,
-            [pilotType]: { ...pilot, isOn: newIsOnState, status: newIsOnState ? 'TRADING' : 'PAUSED' },
-        };
-    });
-  }, [toast, pilots]);
-  
-  const dailyPnl = useMemo(() => {
-     return Object.values(pilots).flatMap(p => p.tradeHistory).reduce((sum, trade) => sum + trade.profit, 0);
-  }, [pilots]);
-
   const digitStats = analysisResults.mainWindowStats?.frequencies || [];
   
   return {
