@@ -394,37 +394,30 @@ export function useDerivApiDigitsState() {
         const sanitizedStake = parseFloat(stake.toFixed(2));
         const sanitizedDuration = Math.round(duration);
 
-        const proposalRequest: any = { 
-            "proposal": 1, 
-            "amount": sanitizedStake, 
-            "basis": "stake", 
-            "contract_type": contractType,
-            "currency": "USD", 
-            "duration": sanitizedDuration, 
-            "duration_unit": durationUnit,
-            "symbol": symbol,
+        const buyRequest: any = {
+            buy: 1,
+            price: sanitizedStake, // The max price we are willing to pay is our stake
+            parameters: {
+                amount: sanitizedStake,
+                basis: 'stake',
+                contract_type: contractType,
+                currency: 'USD',
+                duration: sanitizedDuration,
+                duration_unit: durationUnit,
+                symbol: symbol,
+            },
         };
-        
+
         if (contractType === 'DIGITMATCH' || contractType === 'DIGITDIFF' || contractType === 'DIGITOVER' || contractType === 'DIGITUNDER') {
             if (last_digit === undefined || last_digit === null) {
               throw new Error(`O dígito é necessário para o tipo de contrato ${contractType}.`);
             }
-            proposalRequest.barrier = last_digit;
+            buyRequest.parameters.barrier = last_digit;
         }
 
-        const proposalResponse: any = await makeRequest(proposalRequest);
-
-        if (proposalResponse.error) throw new Error(proposalResponse.error.message);
-        const proposal = proposalResponse.proposal;
-        if (!proposal || !proposal.id || typeof proposal.ask_price !== 'number') {
-            console.error("Invalid proposal response:", proposal);
-            throw new Error("Resposta da proposta da API inválida ou sem preço de compra.");
-        }
-        
-        const buyPrice = proposal.ask_price;
-        
-        const buyResponse: any = await makeRequest({ "buy": proposal.id, "price": buyPrice });
+        const buyResponse: any = await makeRequest(buyRequest);
         if (buyResponse.error) throw new Error(buyResponse.error.message);
+
         const buyResult = buyResponse.buy;
         
         const purchaseTimeMs = (buyResult.purchase_time || Math.floor(Date.now() / 1000)) * 1000;
