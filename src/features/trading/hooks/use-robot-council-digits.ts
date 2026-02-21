@@ -199,7 +199,7 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
   // aprimorado nas próximas etapas para usar o Z-Score e p-value.
   useEffect(() => {
     // ... lógica de execução de trades existente ...
-  }, [digitStats, councilDecision, activeSymbol, pilots, executeTrade, consensusThreshold /* etc. */]);
+  }, [analysisResults, councilDecision, activeSymbol, pilots, executeTrade, consensusThreshold /* etc. */]);
 
 
   // Preserva a compatibilidade com a UI antiga que consumia `digitStats`
@@ -235,4 +235,3 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
 
 // Interface vazia, pois a lógica de estado do piloto será adicionada depois.
 export interface PilotState {}
-```
