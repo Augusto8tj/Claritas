@@ -21,6 +21,18 @@ import { cn } from "@/lib/utils";
 import { Slider } from "@/components/ui/slider";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Button } from "@/components/ui/button";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
+
 
 interface DigitsAutopilotManagerProps extends ReturnType<typeof useRobotCouncilDigits> {}
 
@@ -125,6 +137,7 @@ export const DigitsAutopilotManager: React.FC<DigitsAutopilotManagerProps> = (pr
     setMaxLosses,
     executionCooldown,
     setExecutionCooldown,
+    resetSession,
  } = props;
 
   return (
@@ -415,6 +428,34 @@ export const DigitsAutopilotManager: React.FC<DigitsAutopilotManagerProps> = (pr
                         onValueChange={(value) => setMaxLosses(value[0])}
                     />
                 </div>
+
+                <Separator />
+                
+                <div className="space-y-2">
+                    <Label>Reiniciar Sessão</Label>
+                    <AlertDialog>
+                        <AlertDialogTrigger asChild>
+                             <Button variant="destructive" className="w-full">
+                                <Repeat className="mr-2 h-4 w-4" />
+                                Reiniciar P&L e Histórico da Sessão
+                            </Button>
+                        </AlertDialogTrigger>
+                        <AlertDialogContent>
+                            <AlertDialogHeader>
+                                <AlertDialogTitle>Tem a certeza?</AlertDialogTitle>
+                                <AlertDialogDescription>
+                                    Esta ação irá apagar o histórico de lucros/perdas e o estado de Martingale de todos os pilotos de dígitos para a sessão atual. As ordens na corretora não serão afetadas.
+                                </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                                <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                                <AlertDialogAction onClick={resetSession}>Sim, Reiniciar</AlertDialogAction>
+                            </AlertDialogFooter>
+                        </AlertDialogContent>
+                    </AlertDialog>
+                    <p className="text-xs text-muted-foreground pt-1">Use isto para resetar o cálculo de P&L diário e o estado do Martingale sem ter que recarregar a página.</p>
+                </div>
+
             </CollapsibleContent>
         </Collapsible>
       </CardContent>
