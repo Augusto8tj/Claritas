@@ -67,7 +67,7 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
   
   // --- GESTÃO DE RISCO AVANÇADA (MARTINGALE) ---
   const [isMartingaleEnabled, setIsMartingaleEnabled] = useState(true);
-  const [isSmartMartingale, setIsSmartMartingale] = useState(true); // NOVO
+  const [isSmartMartingale, setIsSmartMartingale] = useState(true);
   const [martingaleRecoveryFactor, setMartingaleRecoveryFactor] = useState(1.3);
   const [cooldownTime, setCooldownTime] = useState(5);
   const [maxLosses, setMaxLosses] = useState(5);
@@ -238,7 +238,6 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
       
       if (stakeDecision.shouldPause) {
         setPilots(prev => ({ ...prev, [pilotKey]: { ...prev[pilotKey], status: 'CIRCUIT_BREAKER', currentTarget: stakeDecision.pauseReason || 'Limite de risco atingido' }}));
-        toast({ title: `Piloto ${pilotKey} Pausado`, description: stakeDecision.pauseReason, variant: "destructive"});
         return;
       }
 
@@ -319,7 +318,7 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
       priceTicks, pilots, operationsLog, signalQuality, shouldTrade, councilDecision, executeTrade, activeSymbol, toast, 
       dailyBalance, dailyTarget, maxLosses, martingaleRecoveryFactor, sessionInitialBankroll, accountBalance.balance, dailyPnl,
       overUnderStats, evenOddStats, overUnderThreshold, evenOddThreshold, underdogThreshold, isUnderdogInverse, 
-      overUnderUnderdogThreshold, evenOddUnderdogThreshold, digitStats, executionCooldown, isSmartMartingale
+      overUnderUnderdogThreshold, evenOddUnderdogThreshold, digitStats, executionCooldown, isSmartMartingale, isMartingaleEnabled
   ]);
   
   return {
