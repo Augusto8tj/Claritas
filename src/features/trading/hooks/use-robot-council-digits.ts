@@ -168,28 +168,28 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
   }, [accountBalance.balance, toast]);
 
   const toggleAutopilot = useCallback((pilotType: PilotType) => {
-    setPilots(prev => {
-      const pilot = prev[pilotType];
-      if (!pilot) return prev;
-      const newIsOnState = !pilot.isOn;
-
-      if (newIsOnState && sessionInitialBankroll === null) {
-          setSessionInitialBankroll(accountBalance.balance ?? 1000);
-      }
-      
-      setTimeout(() => {
-        toast({ title: `Piloto ${pilotType} ${newIsOnState ? 'Ativado' : 'Desativado'}` });
-      }, 0);
-
-      return {
-        ...prev,
-        [pilotType]: {
-          ...pilot,
-          isOn: newIsOnState,
-          status: newIsOnState ? 'TRADING' : 'PAUSED'
+    setTimeout(() => {
+      setPilots(prev => {
+        const pilot = prev[pilotType];
+        if (!pilot) return prev;
+        const newIsOnState = !pilot.isOn;
+  
+        if (newIsOnState && sessionInitialBankroll === null) {
+            setSessionInitialBankroll(accountBalance.balance ?? 1000);
         }
-      };
-    });
+        
+        toast({ title: `Piloto ${pilotType} ${newIsOnState ? 'Ativado' : 'Desativado'}` });
+  
+        return {
+          ...prev,
+          [pilotType]: {
+            ...pilot,
+            isOn: newIsOnState,
+            status: newIsOnState ? 'TRADING' : 'PAUSED'
+          }
+        };
+      });
+    }, 0);
   }, [sessionInitialBankroll, accountBalance.balance, toast]);
   
   useEffect(() => {
@@ -287,7 +287,8 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
            break;
         case 'underdog':
            const coldestDigitStat = digitStats.length > 0 ? [...digitStats].sort((a, b) => a.probability - b.probability)[0] : null;
-           if (coldestDigitStat && coldestDigitStat.probability <= underdogThreshold) {
+           // CORREÇÃO: Comparar a probabilidade (0-1) com o limiar convertido para decimal (ex: 5.0 -> 0.05)
+           if (coldestDigitStat && coldestDigitStat.probability <= (underdogThreshold / 100)) {
                shouldExecute = true;
                confidenceForStake = 'ALTA';
                executionParams = [isUnderdogInverse ? 'DIGITDIFF' : 'DIGITMATCH', coldestDigitStat.digit, pilotKey];
@@ -345,8 +346,8 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
   }, [
       priceTicks, pilots, operationsLog, signalQuality, shouldTrade, councilDecision, executeTrade, activeSymbol, toast, 
       dailyBalance, dailyTarget, maxLosses, martingaleRecoveryFactor, sessionInitialBankroll, accountBalance.balance, dailyPnl,
-      overUnderStats, evenOddStats, overUnderThreshold, evenOddThreshold, underdogThreshold, isUnderdogInverse, overUnderUnderdogThreshold, evenOddUnderdogThreshold, digitStats,
-      executionCooldown, isMartingaleEnabled, isSmartMartingale, analysisResults.mainWindowStats, multiWindowAnalysis
+      overUnderStats, evenOddStats, overUnderThreshold, evenOddThreshold, underdogThreshold, isUnderdogInverse, overUnderUnderdogThreshold, evenOddUnderdogThreshold,
+      executionCooldown, isMartingaleEnabled, isSmartMartingale, analysisResults.mainWindowStats, multiWindowAnalysis, digitStats
   ]);
   
   return {
