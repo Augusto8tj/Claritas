@@ -418,7 +418,8 @@ export function useDerivApiDigitsState() {
         const proposal = proposalResponse.proposal;
         if (!proposal || !proposal.id) throw new Error("Falha ao obter uma proposta de negociação.");
         
-        const buyResponse: any = await makeRequest({ "buy": proposal.id, "price": proposal.ask_price });
+        // CORREÇÃO: Usar o stake sanitizado original na ordem de compra para garantir consistência.
+        const buyResponse: any = await makeRequest({ "buy": proposal.id, "price": sanitizedStake });
         if (buyResponse.error) throw new Error(buyResponse.error.message);
         const buyResult = buyResponse.buy;
         
@@ -435,6 +436,7 @@ export function useDerivApiDigitsState() {
             duration: sanitizedDuration, durationUnit: durationUnit, initiator,
             entryPrice: buyResult.entry_tick_display_value ? parseFloat(buyResult.entry_tick_display_value) : 0,
             isSellable: false, expirationTime: expirationTimeMs, contractType: contractType, last_digit_prediction: last_digit,
+            strategy: initiator === 'Piloto' ? contractType : undefined, // Adiciona a estratégia para o piloto
         };
         setAndPersistOperationsLog(prevLog => [newOperation, ...prevLog]);
         return { success: true, message: `Ordem executada.`, contractId: buyResult.contract_id };
