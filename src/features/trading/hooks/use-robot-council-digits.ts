@@ -36,6 +36,15 @@ export type PilotType = 'matchesDiffers' | 'overUnder' | 'evenOdd' | 'underdog' 
 
 export type AutopilotStatus = 'PAUSED' | 'TRADING' | 'COOLDOWN';
 
+// CORREÇÃO: Definir a estrutura completa do estado de um piloto.
+export interface PilotState {
+    isOn: boolean;
+    status: AutopilotStatus;
+    currentTarget: string | null;
+    consecutiveLosses: number;
+    accumulatedLoss: number;
+}
+
 const BASE_STAKE = 0.35;
 
 // ============================================================================
@@ -50,20 +59,11 @@ const getDecimalPlaces = (pipSize: number | undefined): number => {
     return 0;
 };
 
-/**
- * Tabela de valores críticos de Qui-Quadrado para 9 graus de liberdade (10 categorias - 1).
- * Usada para determinar o p-value de forma eficiente.
- */
 const CHI_SQUARE_CRITICAL_VALUES: { [pValue: number]: number } = {
   0.995: 1.735, 0.99: 2.088, 0.975: 2.700, 0.95: 3.325, 0.90: 4.168,
   0.10: 14.684, 0.05: 16.919, 0.025: 19.023, 0.01: 21.666, 0.005: 23.589,
 };
 
-/**
- * Calcula o p-value aproximado para um dado valor de Qui-Quadrado com 9 graus de liberdade.
- * @param chiSquareValue O valor calculado do teste Qui-Quadrado.
- * @returns O p-value estimado.
- */
 function getPValueFromChiSquare(chiSquareValue: number): number {
   if (chiSquareValue < CHI_SQUARE_CRITICAL_VALUES[0.995]) return 1.0;
   if (chiSquareValue > CHI_SQUARE_CRITICAL_VALUES[0.005]) return 0.005;
@@ -72,7 +72,6 @@ function getPValueFromChiSquare(chiSquareValue: number): number {
   for(let i=0; i< pValues.length; i++) {
     const p = pValues[i];
     if(chiSquareValue < CHI_SQUARE_CRITICAL_VALUES[p]) {
-      // Interpolação linear simples para uma estimativa
       const prevP = pValues[i-1] || 0;
       const prevChi = CHI_SQUARE_CRITICAL_VALUES[prevP] || 0;
       const range = CHI_SQUARE_CRITICAL_VALUES[p] - prevChi;
@@ -80,23 +79,14 @@ function getPValueFromChiSquare(chiSquareValue: number): number {
       return prevP + (p - prevP) * progress;
     }
   }
-  return 0.005; // Fallback para valores muito altos
+  return 0.005;
 }
 
-
-/**
- * Função central que encapsula toda a análise estatística para uma dada janela de ticks.
- * @param ticks - Array de dados de ticks para análise.
- * @param windowSize - O número de ticks recentes a serem analisados.
- * @param decimalPlaces - A precisão decimal do ativo.
- * @returns Um objeto WindowDigitStats com a análise completa.
- */
 function calculateDigitStatsForWindow(ticks: TickData[], windowSize: number, decimalPlaces: number): WindowDigitStats {
     const analysisTicks = ticks.slice(-windowSize);
     const n = analysisTicks.length;
     const expectedProbability = 0.1;
 
-    // 1. Contar frequências
     const observedCounts = Array(10).fill(0);
     analysisTicks.forEach(tick => {
         const priceString = tick.price.toFixed(decimalPlaces);
@@ -104,7 +94,6 @@ function calculateDigitStatsForWindow(ticks: TickData[], windowSize: number, dec
         if (!isNaN(digit)) observedCounts[digit]++;
     });
 
-    // 2. Calcular Qui-Quadrado e Z-Score
     const expectedCount = n * expectedProbability;
     let chiSquareValue = 0;
     const standardError = Math.sqrt((expectedProbability * (1 - expectedProbability)) / n);
@@ -116,7 +105,6 @@ function calculateDigitStatsForWindow(ticks: TickData[], windowSize: number, dec
         return { digit: digit as Digit, count, probability: observedProb, zScore };
     });
 
-    // 3. Obter resultado do Qui-Quadrado
     const pValue = getPValueFromChiSquare(chiSquareValue);
     const chiSquare: ChiSquareResult = {
         chiSquareValue,
@@ -124,13 +112,21 @@ function calculateDigitStatsForWindow(ticks: TickData[], windowSize: number, dec
         isSignificant: pValue < 0.05,
     };
     
-    // 4. Identificar dígitos "quentes" e "frios"
     const sortedByProb = [...frequencies].sort((a,b) => b.probability - a.probability);
     const hottestDigit = sortedByProb[0].digit;
     const coldestDigit = sortedByProb[sortedByProb.length-1].digit;
 
     return { windowSize, frequencies, hottestDigit, coldestDigit, chiSquare };
 }
+
+// CORREÇÃO: Função para criar o estado inicial de um piloto.
+const createInitialPilotState = (): PilotState => ({
+    isOn: false,
+    status: 'PAUSED',
+    currentTarget: null,
+    consecutiveLosses: 0,
+    accumulatedLoss: 0,
+});
 
 
 // ============================================================================
@@ -140,8 +136,17 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
   const { toast } = useToast();
   const { executeTrade, operationsLog } = useDerivApiDigits();
 
-  // --- ESTADOS DE CONFIGURAÇÃO (Mantidos da versão anterior) ---
-  const [pilots, setPilots] = useState<Record<PilotType, PilotState>>({} as any); // Será preenchido pelo useEffect
+  // CORREÇÃO: Inicializa o estado 'pilots' com valores padrão para evitar 'undefined'.
+  const [pilots, setPilots] = useState<Record<PilotType, PilotState>>({
+    matchesDiffers: createInitialPilotState(),
+    overUnder: createInitialPilotState(),
+    evenOdd: createInitialPilotState(),
+    underdog: createInitialPilotState(),
+    underdogOverUnder: createInitialPilotState(),
+    dynamicUnderdogOverUnder: createInitialPilotState(),
+    underdogEvenOdd: createInitialPilotState(),
+  });
+  
   const [dailyBalance, setDailyBalance] = useState(10);
   const [dailyTarget, setDailyTarget] = useState(5);
   const [consensusThreshold, setConsensusThreshold] = useState(25);
@@ -158,14 +163,28 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
   
   const isCouncilAutopilotOn = Object.values(pilots).some(p => p?.isOn);
   
+  // CORREÇÃO: Implementa a lógica para ligar/desligar um piloto específico.
   const toggleAutopilot = useCallback((pilotType: PilotType) => {
-    // A lógica desta função permanece a mesma da versão anterior
-  }, []);
+    setPilots(prev => {
+      const pilot = prev[pilotType];
+      if (!pilot) return prev;
+      
+      const newState = !pilot.isOn;
+      toast({
+        title: `Piloto ${pilotType} ${newState ? 'Ativado' : 'Desativado'}`,
+      });
 
-  /**
-   * ✅ NOVO: Ponto central de análise estatística.
-   * Roda para múltiplas janelas e expõe os resultados.
-   */
+      return {
+        ...prev,
+        [pilotType]: {
+          ...pilot,
+          isOn: newState,
+          status: newState ? 'TRADING' : 'PAUSED',
+        },
+      };
+    });
+  }, [toast]);
+
   const analysisResults = useMemo(() => {
       const windowSizes = [200, 500, 1000];
       const decimalPlaces = getDecimalPlaces(activeAsset?.pip);
@@ -182,7 +201,6 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
       };
   }, [priceTicks, activeAsset]);
 
-  // Decisão do conselho (agora alimentada pelas novas estatísticas)
   const councilDecision = useMemo(() => {
     const stats = analysisResults.mainWindowStats;
     if (!stats || stats.frequencies.length === 0) {
@@ -195,14 +213,11 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
     };
   }, [analysisResults.mainWindowStats]);
 
-  // O useEffect para executar trades permanece o mesmo, mas agora pode ser
-  // aprimorado nas próximas etapas para usar o Z-Score e p-value.
   useEffect(() => {
     // ... lógica de execução de trades existente ...
-  }, [analysisResults, councilDecision, activeSymbol, pilots, executeTrade, consensusThreshold /* etc. */]);
+  }, [analysisResults, councilDecision, activeSymbol, pilots, executeTrade, consensusThreshold]);
 
 
-  // Preserva a compatibilidade com a UI antiga que consumia `digitStats`
   const digitStats = analysisResults.mainWindowStats?.frequencies || [];
   
   return {
@@ -221,17 +236,12 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
     cooldownTime, setCooldownTime,
     maxLosses, setMaxLosses,
     
-    // Legacy return values
     digitStats,
     councilDecision,
     pilots,
     toggleAutopilot,
 
-    // ✅ NOVO: Exporta os dados estatísticos completos
     windowsStats: analysisResults.windowsStats,
     mainWindowStats: analysisResults.mainWindowStats,
   };
 }
-
-// Interface vazia, pois a lógica de estado do piloto será adicionada depois.
-export interface PilotState {}
