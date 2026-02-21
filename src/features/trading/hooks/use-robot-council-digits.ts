@@ -215,7 +215,7 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
       const initialBankroll = sessionInitialBankroll ?? (accountBalance.balance ?? 1000);
       const currentBankroll = initialBankroll + dailyPnl;
       
-      const bankrollState: BankrollState = { currentBankroll, initialBankroll, maxDailyLoss: dailyBalance, dailyProfitTarget };
+      const bankrollState: BankrollState = { currentBankroll, initialBankroll, maxDailyLoss: dailyBalance, dailyProfitTarget: dailyTarget };
       
       const stakeConfig: SmartMartingaleConfig = { baseStake: BASE_STAKE, maxMartingaleLevels: maxLosses, martingaleMultiplier: martingaleRecoveryFactor, useAntiMartingale: false };
       
