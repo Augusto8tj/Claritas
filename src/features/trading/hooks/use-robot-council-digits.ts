@@ -98,6 +98,8 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
     return { windowsStats, mainWindowStats };
   }, [priceTicks, activeAsset]);
 
+  const digitStats = useMemo(() => analysisResults.mainWindowStats?.frequencies || [], [analysisResults.mainWindowStats]);
+
   const multiWindowAnalysis = useMemo(() => {
     return getMultiWindowAnalysis(analysisResults.windowsStats);
   }, [analysisResults.windowsStats]);
@@ -145,19 +147,24 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
   const toggleAutopilot = useCallback((pilotType: PilotType) => {
     const pilot = pilots[pilotType];
     if (!pilot) return;
-
+  
     const newIsOnState = !pilot.isOn;
+  
     toast({ title: `Piloto ${pilotType} ${newIsOnState ? 'Ativado' : 'Desativado'}` });
-
+  
     if (newIsOnState && sessionInitialBankroll === null) {
-      setSessionInitialBankroll(accountBalance.balance ?? 1000); 
+      setSessionInitialBankroll(accountBalance.balance ?? 1000);
     }
-
+  
     setPilots(prev => ({
       ...prev,
-      [pilotType]: { ...pilot, isOn: newIsOnState, status: newIsOnState ? 'TRADING' : 'PAUSED' },
+      [pilotType]: {
+        ...prev[pilotType],
+        isOn: newIsOnState,
+        status: newIsOnState ? 'TRADING' : 'PAUSED'
+      }
     }));
-  }, [toast, pilots, sessionInitialBankroll, accountBalance.balance]);
+  }, [pilots, sessionInitialBankroll, accountBalance.balance, toast]);
   
   useEffect(() => {
     if (executionRef.current) return;
@@ -208,12 +215,7 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
       const initialBankroll = sessionInitialBankroll ?? (accountBalance.balance ?? 1000);
       const currentBankroll = initialBankroll + dailyPnl;
       
-      const bankrollState: BankrollState = { 
-        currentBankroll, 
-        initialBankroll, 
-        maxDailyLoss: dailyBalance, 
-        dailyProfitTarget: dailyTarget 
-      };
+      const bankrollState: BankrollState = { currentBankroll, initialBankroll, maxDailyLoss: dailyBalance, dailyProfitTarget };
       
       const stakeConfig: SmartMartingaleConfig = { baseStake: BASE_STAKE, maxMartingaleLevels: maxLosses, martingaleMultiplier: martingaleRecoveryFactor, useAntiMartingale: false };
       
