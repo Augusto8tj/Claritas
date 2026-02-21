@@ -129,40 +129,41 @@ export function decideNextStake(
   // --- 3. Lógica de Martingale ---
   const consecutiveLosses = countConsecutiveLosses(tradeHistory);
 
-  const isSignalStrongEnough = !isSmart || (latestSignalConfidence === 'ALTA' || latestSignalConfidence === 'MUITO_ALTA');
-  const isWithinLevelLimit = consecutiveLosses <= maxMartingaleLevels;
-
-  if (isSignalStrongEnough && isWithinLevelLimit) {
-    const accumulatedLoss = sumConsecutiveLosses(tradeHistory);
-    const payoutRatio = 0.95;
-
-    // Opção 1: Martingale simples por multiplicador
-    const simpleMartingaleStake = lastTrade.stake * martingaleMultiplier;
-    
-    // Opção 2: Stake para recuperar perdas + ter lucro base
-    const recoveryStake = (accumulatedLoss + baseStake) / payoutRatio;
-    
-    // Usa o maior dos dois para garantir recuperação
-    let nextStake = Math.max(simpleMartingaleStake, recoveryStake);
-
-    // Verificação de segurança: não apostar mais que 20% do capital atual
-    const maxSafeStake = currentBankroll * 0.20;
-    
-    if (nextStake > maxSafeStake) {
-      return {
-        nextStake: baseStake,
-        shouldPause: true, // Pausa o piloto para proteger o capital
-        pauseReason: `Martingale vetado: próximo stake ($${nextStake.toFixed(2)}) excede 20% do capital.`,
-      };
-    }
-
-    return { nextStake: parseFloat(nextStake.toFixed(2)), shouldPause: false };
-
-  } else {
-    const reason = !isSignalStrongEnough 
-      ? 'Sinal fraco, Martingale Inteligente não aplicado.' 
-      : `Limite de ${maxMartingaleLevels} níveis de Martingale atingido. Resetando stake.`;
-    
-    return { nextStake: baseStake, shouldPause: false, pauseReason: reason };
+  if (consecutiveLosses > maxMartingaleLevels) {
+    return {
+      nextStake: baseStake,
+      shouldPause: true,
+      pauseReason: `Limite de ${maxMartingaleLevels} perdas seguidas atingido. Resetando ciclo.`,
+    };
   }
+
+  // --- Bloco de Lógica Inteligente ---
+  if (isSmart) {
+      const isSignalStrongEnough = (latestSignalConfidence === 'ALTA' || latestSignalConfidence === 'MUITO_ALTA');
+      if (!isSignalStrongEnough) {
+          return { nextStake: baseStake, shouldPause: false, pauseReason: 'Sinal fraco, Martingale Inteligente não aplicado. Resetando para stake base.' };
+      }
+  }
+
+  // Se chegou aqui, ou é Martingale Normal, ou o Smart foi aprovado.
+  const accumulatedLoss = sumConsecutiveLosses(tradeHistory);
+  const payoutRatio = 0.95; // Para dígitos
+
+  const simpleMartingaleStake = lastTrade.stake * martingaleMultiplier;
+  const recoveryStake = (accumulatedLoss + baseStake) / payoutRatio;
+  
+  let nextStake = Math.max(simpleMartingaleStake, recoveryStake);
+
+  // Verificação de segurança: não apostar mais que 20% do capital atual
+  const maxSafeStake = currentBankroll * 0.20;
+  
+  if (nextStake > maxSafeStake) {
+    return {
+      nextStake: baseStake,
+      shouldPause: true, // Pausa o piloto para proteger o capital
+      pauseReason: `Martingale vetado: próximo stake ($${nextStake.toFixed(2)}) excede 20% do capital.`,
+    };
+  }
+
+  return { nextStake: parseFloat(nextStake.toFixed(2)), shouldPause: false };
 }

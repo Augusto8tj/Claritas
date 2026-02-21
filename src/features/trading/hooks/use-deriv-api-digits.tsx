@@ -80,6 +80,7 @@ export interface DerivApiContextTypeDigits {
     durationUnit: DurationUnit,
     initiator: OperationInitiator,
     last_digit?: number,
+    strategy?: string
   ) => Promise<TradeResult>;
   sellContract: (contractId: number) => Promise<TradeResult>;
   tradeAnnotations: TradeAnnotation[];
@@ -387,7 +388,7 @@ export function useDerivApiDigitsState() {
     const executeTrade = useCallback(async (
         contractType: DigitContractType, stake: number, symbol: string,
         duration: number, durationUnit: DurationUnit, initiator: OperationInitiator,
-        last_digit?: number,
+        last_digit?: number, strategy?: string
     ): Promise<TradeResult> => {
       try {
         if (!wsRef.current || !isConnected) throw new Error("A conexão com a API não está ativa.");
@@ -396,7 +397,7 @@ export function useDerivApiDigitsState() {
 
         const buyRequest: any = {
             buy: 1,
-            price: sanitizedStake, // The max price we are willing to pay is our stake
+            price: sanitizedStake,
             parameters: {
                 amount: sanitizedStake,
                 basis: 'stake',
@@ -414,15 +415,13 @@ export function useDerivApiDigitsState() {
             }
             buyRequest.parameters.barrier = last_digit;
         }
-
+        
         const buyResponse: any = await makeRequest(buyRequest);
         if (buyResponse.error) throw new Error(buyResponse.error.message);
-
-        const buyResult = buyResponse.buy;
         
+        const buyResult = buyResponse.buy;
         const purchaseTimeMs = (buyResult.purchase_time || Math.floor(Date.now() / 1000)) * 1000;
         const expirationTimeMs = buyResult.expiry_time * 1000;
-        
         const direction = (contractType.includes('MATCH') || contractType.includes('EVEN') || contractType.includes('OVER')) ? 'rise' : 'fall';
 
         const newOperation: any = {
@@ -433,7 +432,7 @@ export function useDerivApiDigitsState() {
             duration: sanitizedDuration, durationUnit: durationUnit, initiator,
             entryPrice: buyResult.entry_tick_display_value ? parseFloat(buyResult.entry_tick_display_value) : 0,
             isSellable: false, expirationTime: expirationTimeMs, contractType: contractType, last_digit_prediction: last_digit,
-            strategy: initiator === 'Piloto' ? contractType : undefined, // Adiciona a estratégia para o piloto
+            strategy: initiator === 'Piloto' ? strategy : undefined,
         };
         setAndPersistOperationsLog(prevLog => [newOperation, ...prevLog]);
         return { success: true, message: `Ordem executada.`, contractId: buyResult.contract_id };
