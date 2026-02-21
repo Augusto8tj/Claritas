@@ -168,18 +168,18 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
   }, [accountBalance.balance, toast]);
 
   const toggleAutopilot = useCallback((pilotType: PilotType) => {
-    setTimeout(() => {
-      setPilots(prev => {
+    let toggledIsOn: boolean | undefined;
+
+    setPilots(prev => {
         const pilot = prev[pilotType];
         if (!pilot) return prev;
         const newIsOnState = !pilot.isOn;
-  
+        toggledIsOn = newIsOnState;
+
         if (newIsOnState && sessionInitialBankroll === null) {
             setSessionInitialBankroll(accountBalance.balance ?? 1000);
         }
         
-        toast({ title: `Piloto ${pilotType} ${newIsOnState ? 'Ativado' : 'Desativado'}` });
-  
         return {
           ...prev,
           [pilotType]: {
@@ -188,9 +188,17 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
             status: newIsOnState ? 'TRADING' : 'PAUSED'
           }
         };
-      });
+    });
+    
+    // O setTimeout(..., 0) move a execução do toast para o final da fila de eventos,
+    // garantindo que ele não seja executado durante o ciclo de renderização do React.
+    setTimeout(() => {
+        if (toggledIsOn !== undefined) {
+             toast({ title: `Piloto ${pilotType} ${toggledIsOn ? 'Ativado' : 'Desativado'}` });
+        }
     }, 0);
-  }, [sessionInitialBankroll, accountBalance.balance, toast]);
+
+  }, [sessionInitialBankroll, accountBalance.balance, toast, setSessionInitialBankroll]);
   
   useEffect(() => {
     if (executionRef.current) return;
@@ -212,7 +220,7 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
             stake: lastOp.stake,
             profit: lastOp.result || -lastOp.stake,
             contractType: lastOp.contractType as any,
-            signalConfidence: 'ALTA' 
+            signalConfidence: 'ALTA' // Confiança default para cálculo
         };
         
         const updatedHistory = [...pilot.tradeHistory, newTradeResult];
@@ -287,7 +295,6 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
            break;
         case 'underdog':
            const coldestDigitStat = digitStats.length > 0 ? [...digitStats].sort((a, b) => a.probability - b.probability)[0] : null;
-           // CORREÇÃO: Comparar a probabilidade (0-1) com o limiar convertido para decimal (ex: 5.0 -> 0.05)
            if (coldestDigitStat && coldestDigitStat.probability <= (underdogThreshold / 100)) {
                shouldExecute = true;
                confidenceForStake = 'ALTA';
