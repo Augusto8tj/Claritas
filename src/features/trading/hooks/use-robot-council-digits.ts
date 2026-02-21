@@ -178,7 +178,7 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
       }
       
       setTimeout(() => {
-          toast({ title: `Piloto ${pilotType} ${newIsOnState ? 'Ativado' : 'Desativado'}` });
+        toast({ title: `Piloto ${pilotType} ${newIsOnState ? 'Ativado' : 'Desativado'}` });
       }, 0);
 
       return {
@@ -199,7 +199,6 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
 
     executionRef.current = true;
     
-    // 1. Processar resultados de trades passados
     const lastOp = operationsLog.length > 0 ? operationsLog[0] : null;
     if (lastOp && lastOp.id !== lastProcessedOpIdRef.current && lastOp.status !== 'pending') {
       lastProcessedOpIdRef.current = lastOp.id;
@@ -213,7 +212,7 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
             stake: lastOp.stake,
             profit: lastOp.result || -lastOp.stake,
             contractType: lastOp.contractType as any,
-            signalConfidence: 'ALTA' // Placeholder
+            signalConfidence: 'ALTA' 
         };
         
         const updatedHistory = [...pilot.tradeHistory, newTradeResult];
@@ -233,7 +232,6 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
       }
     }
 
-    // --- 2. Decidir e executar novos trades ---
     const now = Date.now();
     if (now - lastExecutionTimestampRef.current < executionCooldown * 1000) {
       executionRef.current = false;
@@ -262,59 +260,59 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
           if (councilDecision.differs !== null && shouldTrade) {
               shouldExecute = true;
               confidenceForStake = signalQuality.confidenceLevel;
-              executionParams = ['DIGITDIFF', councilDecision.differs];
+              executionParams = ['DIGITDIFF', councilDecision.differs, pilotKey];
           }
           break;
         case 'overUnder':
           if (overUnderStats.probOver4 > overUnderThreshold) {
               shouldExecute = true;
               confidenceForStake = overUnderStats.probOver4 > 80 ? 'MUITO_ALTA' : 'ALTA';
-              executionParams = ['DIGITOVER', 4];
+              executionParams = ['DIGITOVER', 4, pilotKey];
           } else if (overUnderStats.probUnder5 > overUnderThreshold) {
               shouldExecute = true;
               confidenceForStake = overUnderStats.probUnder5 > 80 ? 'MUITO_ALTA' : 'ALTA';
-              executionParams = ['DIGITUNDER', 5];
+              executionParams = ['DIGITUNDER', 5, pilotKey];
           }
           break;
         case 'evenOdd':
            if (evenOddStats.probEven > evenOddThreshold) {
               shouldExecute = true;
               confidenceForStake = evenOddStats.probEven > 80 ? 'MUITO_ALTA' : 'ALTA';
-              executionParams = ['DIGITEVEN'];
+              executionParams = ['DIGITEVEN', undefined, pilotKey];
            } else if ((100 - evenOddStats.probEven) > evenOddThreshold) {
               shouldExecute = true;
               confidenceForStake = (100 - evenOddStats.probEven) > 80 ? 'MUITO_ALTA' : 'ALTA';
-              executionParams = ['DIGITODD'];
+              executionParams = ['DIGITODD', undefined, pilotKey];
            }
            break;
         case 'underdog':
            const coldestDigitStat = digitStats.length > 0 ? [...digitStats].sort((a, b) => a.probability - b.probability)[0] : null;
            if (coldestDigitStat && coldestDigitStat.probability <= underdogThreshold) {
                shouldExecute = true;
-               confidenceForStake = 'ALTA'; // 'Underdog' bets are inherently confident if criteria met
-               executionParams = [isUnderdogInverse ? 'DIGITDIFF' : 'DIGITMATCH', coldestDigitStat.digit];
+               confidenceForStake = 'ALTA';
+               executionParams = [isUnderdogInverse ? 'DIGITDIFF' : 'DIGITMATCH', coldestDigitStat.digit, pilotKey];
            }
            break;
         case 'underdogOverUnder':
            if (overUnderStats.probOver4 < overUnderUnderdogThreshold) {
-               shouldExecute = true; confidenceForStake = 'ALTA'; executionParams = ['DIGITOVER', 4];
+               shouldExecute = true; confidenceForStake = 'ALTA'; executionParams = ['DIGITOVER', 4, pilotKey];
            } else if (overUnderStats.probUnder5 < overUnderUnderdogThreshold) {
-               shouldExecute = true; confidenceForStake = 'ALTA'; executionParams = ['DIGITUNDER', 5];
+               shouldExecute = true; confidenceForStake = 'ALTA'; executionParams = ['DIGITUNDER', 5, pilotKey];
            }
            break;
         case 'dynamicUnderdogOverUnder':
             const underdogBlock = multiWindowAnalysis?.coldestConsensusDigit;
             if (underdogBlock !== undefined) {
                 shouldExecute = true; confidenceForStake = 'ALTA';
-                if (underdogBlock > 4) executionParams = ['DIGITOVER', 4];
-                else executionParams = ['DIGITUNDER', 5];
+                if (underdogBlock > 4) executionParams = ['DIGITOVER', 4, pilotKey];
+                else executionParams = ['DIGITUNDER', 5, pilotKey];
             }
             break;
         case 'underdogEvenOdd':
             if (evenOddStats.probEven < evenOddUnderdogThreshold) {
-                shouldExecute = true; confidenceForStake = 'ALTA'; executionParams = ['DIGITEVEN'];
+                shouldExecute = true; confidenceForStake = 'ALTA'; executionParams = ['DIGITEVEN', undefined, pilotKey];
             } else if (100 - evenOddStats.probEven < evenOddUnderdogThreshold) {
-                shouldExecute = true; confidenceForStake = 'ALTA'; executionParams = ['DIGITODD'];
+                shouldExecute = true; confidenceForStake = 'ALTA'; executionParams = ['DIGITODD', undefined, pilotKey];
             }
             break;
       }
@@ -323,7 +321,7 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
           const stakeConfig: SmartMartingaleConfig = { 
               baseStake: BASE_STAKE, 
               maxMartingaleLevels: maxLosses, 
-              martingaleMultiplier,
+              martingaleMultiplier: martingaleRecoveryFactor,
               useAntiMartingale: false,
               isSmart: isSmartMartingale,
           };
@@ -334,7 +332,7 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
               continue;
           }
 
-          executeTrade(executionParams[0], stakeDecision.nextStake, activeSymbol!, 1, 't', 'Piloto', executionParams[1], pilotKey);
+          executeTrade(executionParams[0], stakeDecision.nextStake, activeSymbol!, 1, 't', 'Piloto', executionParams[1], executionParams[2]);
           tradeExecutedThisCycle = true;
       }
     }
