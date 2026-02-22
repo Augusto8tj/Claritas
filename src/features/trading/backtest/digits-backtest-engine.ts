@@ -47,6 +47,11 @@ export interface BacktestSummary {
   profitFactor: number;
 }
 
+// CORREÇÃO: Novo tipo para corresponder ao estado do hook
+export interface StrategyBacktestResult extends BacktestSummary {
+  strategyId: PilotType;
+}
+
 // ============================================================================
 // 2. FUNÇÕES AUXILIARES E CONSTANTES
 // ============================================================================
@@ -126,7 +131,7 @@ export function runDigitsBacktest(
     
     const stats = counts.map((count, digit) => ({
       digit,
-      probability: (count / total) * 100,
+      probability: (count / total), // CORREÇÃO: Probabilidade em decimal (0-1)
     }));
 
     let tradeTriggered = false;
@@ -136,7 +141,7 @@ export function runDigitsBacktest(
     // --- LÓGICA DE DECISÃO PARA CADA ESTRATÉGIA ---
     switch (strategy.id as PilotType) {
         case 'matchesDiffers': {
-            const threshold = params.consensusThreshold ?? 25;
+            const threshold = (params.consensusThreshold ?? 25) / 100;
             const mostProbable = [...stats].sort((a,b) => b.probability - a.probability)[0];
             if (mostProbable && mostProbable.probability > threshold) {
                 tradeTriggered = true;
@@ -146,7 +151,7 @@ export function runDigitsBacktest(
             break;
         }
         case 'underdog': {
-            const threshold = params.underdogThreshold ?? 5.0;
+            const threshold = (params.underdogThreshold ?? 5.0) / 100;
             const isInverse = params.isUnderdogInverse ?? false;
             const coldest = [...stats].sort((a,b) => a.probability - b.probability)[0];
             if (coldest && coldest.probability <= threshold) {
@@ -157,13 +162,13 @@ export function runDigitsBacktest(
             break;
         }
         case 'overUnder': {
-            const threshold = params.overUnderThreshold ?? 65;
+            const threshold = (params.overUnderThreshold ?? 65) / 100;
             const probOver4 = stats.filter(s => s.digit > 4).reduce((sum, s) => sum + s.probability, 0);
             if (probOver4 > threshold) {
                 tradeTriggered = true;
                 contractType = 'DIGITOVER';
                 targetDigit = 4;
-            } else if ((100 - probOver4) < (100 - threshold)) { // Probabilidade de ser < 5
+            } else if ((1 - probOver4) > threshold) {
                 tradeTriggered = true;
                 contractType = 'DIGITUNDER';
                 targetDigit = 5;
@@ -171,12 +176,12 @@ export function runDigitsBacktest(
             break;
         }
         case 'evenOdd': {
-            const threshold = params.evenOddThreshold ?? 65;
+            const threshold = (params.evenOddThreshold ?? 65) / 100;
             const probEven = stats.filter(s => s.digit % 2 === 0).reduce((sum, s) => sum + s.probability, 0);
             if (probEven > threshold) {
                 tradeTriggered = true;
                 contractType = 'DIGITEVEN';
-            } else if ((100 - probEven) > threshold) { // Probabilidade de Ímpar
+            } else if ((1 - probEven) > threshold) {
                 tradeTriggered = true;
                 contractType = 'DIGITODD';
             }

@@ -19,6 +19,8 @@ import {
     type TradeResult as StakeManagerTradeResult
 } from '@/features/trading/services/smart-stake-manager-digits';
 import type { ConfidenceLevel } from '@/features/trading/services/digits-analysis';
+import { runDigitsBacktest, type BacktestSummary } from '@/features/trading/backtest/digits-backtest-engine';
+import { STRATEGY_DEFINITIONS, type GlobalRiskConfig, type MartingaleConfig } from '@/app/deriv-trader-digits/strategies-config';
 
 // ============================================================================
 // 1. TIPOS E INTERFACES
@@ -35,6 +37,10 @@ export interface PilotState {
     accumulatedLoss: number;
     tradeHistory: StakeManagerTradeResult[];
     activeContractId: number | null; // Rastreia o contrato ativo do piloto
+}
+
+export interface StrategyBacktestResult extends BacktestSummary {
+  strategyId: PilotType;
 }
 
 const BASE_STAKE = 0.35;
@@ -79,6 +85,10 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
   const lastExecutionTimestampRef = useRef(0);
 
   const [sessionInitialBankroll, setSessionInitialBankroll] = useState<number | null>(null);
+
+  // NEW: Backtesting states
+  const [backtestResults, setBacktestResults] = useState<Record<string, StrategyBacktestResult> | null>(null);
+  const [isBacktesting, setIsBacktesting] = useState(false);
 
   const [pilots, setPilots] = useState<Record<PilotType, PilotState>>({
     matchesDiffers: createInitialPilotState(),
@@ -148,15 +158,15 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
   const overUnderStats = useMemo(() => {
     if (!analysisResults.mainWindowStats) return { probOver4: 0, probUnder5: 0 };
     const stats = analysisResults.mainWindowStats.frequencies;
-    const probOver4 = stats.filter(s => s.digit > 4).reduce((sum, s) => sum + s.probability, 0) * 100;
-    const probUnder5 = stats.filter(s => s.digit < 5).reduce((sum, s) => sum + s.probability, 0) * 100;
+    const probOver4 = stats.filter(s => s.digit > 4).reduce((sum, s) => sum + s.probability, 0);
+    const probUnder5 = stats.filter(s => s.digit < 5).reduce((sum, s) => sum + s.probability, 0);
     return { probOver4, probUnder5 };
   }, [analysisResults.mainWindowStats]);
 
   const evenOddStats = useMemo(() => {
     if (!analysisResults.mainWindowStats) return { probEven: 0 };
     const stats = analysisResults.mainWindowStats.frequencies;
-    const probEven = stats.filter(s => s.digit % 2 === 0).reduce((sum, s) => sum + s.probability, 0) * 100;
+    const probEven = stats.filter(s => s.digit % 2 === 0).reduce((sum, s) => sum + s.probability, 0);
     return { probEven };
   }, [analysisResults.mainWindowStats]);
 
@@ -180,17 +190,19 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
   }, [accountBalance.balance, toast]);
 
   const toggleAutopilot = useCallback((pilotType: PilotType) => {
-    let newIsOnState: boolean | undefined;
-    
     setPilots(prev => {
         const pilot = prev[pilotType];
         if (!pilot) return prev;
-        newIsOnState = !pilot.isOn;
+        const newIsOnState = !pilot.isOn;
 
         if (newIsOnState && sessionInitialBankroll === null) {
             setSessionInitialBankroll(accountBalance.balance ?? 1000);
         }
         
+        setTimeout(() => {
+            toast({ title: `Piloto ${pilotType} ${newIsOnState ? 'Ativado' : 'Desativado'}` });
+        }, 0);
+
         return {
           ...prev,
           [pilotType]: {
@@ -200,12 +212,6 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
           }
         };
     });
-    
-    setTimeout(() => {
-      if (newIsOnState !== undefined) {
-        toast({ title: `Piloto ${pilotType} ${newIsOnState ? 'Ativado' : 'Desativado'}` });
-      }
-    }, 0);
   }, [sessionInitialBankroll, accountBalance.balance, toast]);
   
   useEffect(() => {
@@ -296,39 +302,39 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
           }
           break;
         case 'overUnder':
-          if (overUnderStats.probOver4 > overUnderThreshold) {
+          if (overUnderStats.probOver4 > overUnderThreshold / 100) {
               shouldExecute = true;
-              confidenceForStake = overUnderStats.probOver4 > 80 ? 'MUITO_ALTA' : 'ALTA';
+              confidenceForStake = overUnderStats.probOver4 > 0.8 ? 'MUITO_ALTA' : 'ALTA';
               executionParams = ['DIGITOVER', 4, pilotKey];
-          } else if (overUnderStats.probUnder5 > overUnderThreshold) {
+          } else if (overUnderStats.probUnder5 > overUnderThreshold / 100) {
               shouldExecute = true;
-              confidenceForStake = overUnderStats.probUnder5 > 80 ? 'MUITO_ALTA' : 'ALTA';
+              confidenceForStake = overUnderStats.probUnder5 > 0.8 ? 'MUITO_ALTA' : 'ALTA';
               executionParams = ['DIGITUNDER', 5, pilotKey];
           }
           break;
         case 'evenOdd':
-           if (evenOddStats.probEven > evenOddThreshold) {
+           if (evenOddStats.probEven > evenOddThreshold / 100) {
               shouldExecute = true;
-              confidenceForStake = evenOddStats.probEven > 80 ? 'MUITO_ALTA' : 'ALTA';
+              confidenceForStake = evenOddStats.probEven > 0.8 ? 'MUITO_ALTA' : 'ALTA';
               executionParams = ['DIGITEVEN', undefined, pilotKey];
-           } else if ((100 - evenOddStats.probEven) > evenOddThreshold) {
+           } else if ((1 - evenOddStats.probEven) > evenOddThreshold / 100) {
               shouldExecute = true;
-              confidenceForStake = (100 - evenOddStats.probEven) > 80 ? 'MUITO_ALTA' : 'ALTA';
+              confidenceForStake = (1 - evenOddStats.probEven) > 0.8 ? 'MUITO_ALTA' : 'ALTA';
               executionParams = ['DIGITODD', undefined, pilotKey];
            }
            break;
         case 'underdog':
            const coldestDigitStat = underdogDigitStats.length > 0 ? [...underdogDigitStats].sort((a, b) => a.probability - b.probability)[0] : null;
-           if (coldestDigitStat && (coldestDigitStat.probability) <= (underdogThreshold / 100)) {
+           if (coldestDigitStat && coldestDigitStat.probability <= (underdogThreshold / 100)) {
                shouldExecute = true;
                confidenceForStake = 'ALTA';
                executionParams = [isUnderdogInverse ? 'DIGITDIFF' : 'DIGITMATCH', coldestDigitStat.digit, pilotKey];
            }
            break;
         case 'underdogOverUnder':
-           if (overUnderStats.probOver4 < overUnderUnderdogThreshold) {
+           if (overUnderStats.probOver4 < overUnderUnderdogThreshold / 100) {
                shouldExecute = true; confidenceForStake = 'ALTA'; executionParams = ['DIGITOVER', 4, pilotKey];
-           } else if (overUnderStats.probUnder5 < overUnderUnderdogThreshold) {
+           } else if (overUnderStats.probUnder5 < overUnderUnderdogThreshold / 100) {
                shouldExecute = true; confidenceForStake = 'ALTA'; executionParams = ['DIGITUNDER', 5, pilotKey];
            }
            break;
@@ -341,9 +347,9 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
             }
             break;
         case 'underdogEvenOdd':
-            if (evenOddStats.probEven < evenOddUnderdogThreshold) {
+            if (evenOddStats.probEven < evenOddUnderdogThreshold / 100) {
                 shouldExecute = true; confidenceForStake = 'ALTA'; executionParams = ['DIGITEVEN', undefined, pilotKey];
-            } else if (100 - evenOddStats.probEven < evenOddUnderdogThreshold) {
+            } else if (1 - evenOddStats.probEven < evenOddUnderdogThreshold / 100) {
                 shouldExecute = true; confidenceForStake = 'ALTA'; executionParams = ['DIGITODD', undefined, pilotKey];
             }
             break;
@@ -391,6 +397,57 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
       cooldownTime, consensusThreshold, underdogDigitStats
   ]);
   
+  // NEW: Backtesting function
+  const runBacktestForAllStrategies = useCallback(() => {
+    if (priceTicks.length < 1000) {
+      toast({
+        title: "Dados Insuficientes",
+        description: `São necessários pelo menos 1000 ticks para o backtest. Ticks atuais: ${priceTicks.length}`,
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    setIsBacktesting(true);
+    setBacktestResults(null);
+    toast({ title: "Iniciando Backtest...", description: "Simulando estratégias com dados históricos." });
+
+    setTimeout(() => {
+        const ticksForBacktest = priceTicks.slice(-1000);
+        const results: Record<string, StrategyBacktestResult> = {};
+        
+        STRATEGY_DEFINITIONS.filter(def => def.id !== 'dynamicUnderdogOverUnder').forEach(strategyDef => {
+            try {
+                const { summary } = runDigitsBacktest(ticksForBacktest, {
+                    strategy: strategyDef,
+                    initialBankroll: 100,
+                    stakePerTrade: 1,
+                    maxTrades: 200,
+                    paramsOverride: {
+                        consensusThreshold,
+                        overUnderThreshold,
+                        evenOddThreshold,
+                        underdogThreshold,
+                        isUnderdogInverse,
+                        overUnderUnderdogThreshold,
+                        evenOddUnderdogThreshold,
+                    }
+                });
+                results[strategyDef.id] = {
+                    ...summary,
+                    strategyId: strategyDef.id,
+                };
+            } catch (e) {
+                console.error(`Backtest para ${strategyDef.name} falhou:`, e);
+            }
+        });
+
+        setBacktestResults(results);
+        setIsBacktesting(false);
+        toast({ title: "Backtest Concluído!", description: "Os resultados da simulação estão disponíveis." });
+    }, 50); 
+  }, [priceTicks, toast, consensusThreshold, overUnderThreshold, evenOddThreshold, underdogThreshold, isUnderdogInverse, overUnderUnderdogThreshold, evenOddUnderdogThreshold]);
+
   return {
     dailyBalance, setDailyBalance,
     dailyTarget, setDailyTarget,
@@ -407,19 +464,21 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
     cooldownTime, setCooldownTime,
     maxLosses, setMaxLosses,
     executionCooldown, setExecutionCooldown,
-    
     isCouncilAutopilotOn: Object.values(pilots).some(p => p.isOn),
     digitStats,
     councilDecision,
     pilots,
     toggleAutopilot,
     resetSession,
-
     windowsStats: analysisResults.windowsStats,
     mainWindowStats: analysisResults.mainWindowStats,
     multiWindowAnalysis,
     signalQuality,
     shouldTrade,
+    // Backtesting exports
+    backtestResults,
+    isBacktesting,
+    runBacktestForAllStrategies,
   };
 }
 

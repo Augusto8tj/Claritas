@@ -21,6 +21,7 @@ import { BrainCircuit, Loader2, TrendingDown, TrendingUp } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import DigitsDashboard from "@/features/trading/components/deriv-trader/DigitsDashboard";
+import { DigitsBacktestPanel } from "@/features/trading/components/deriv-trader/digits-backtest-panel";
 
 
 const getDecimalPlaces = (pipSize: number | undefined): number => {
@@ -178,6 +179,11 @@ function DerivTraderPageContentDigits() {
                         multiWindowAnalysis={robotCouncil.multiWindowAnalysis}
                     />
                     <DigitsAutopilotManager {...robotCouncil} />
+                    <DigitsBacktestPanel
+                        results={robotCouncil.backtestResults}
+                        isBacktesting={robotCouncil.isBacktesting}
+                        onRunBacktest={robotCouncil.runBacktestForAllStrategies}
+                    />
                 </div>
             </div>
         </div>

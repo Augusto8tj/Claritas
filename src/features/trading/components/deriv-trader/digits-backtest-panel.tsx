@@ -16,15 +16,18 @@ interface DigitsBacktestPanelProps {
 }
 
 const strategyLabels: Record<string, string> = {
-    matchesDiffers: 'Combina / Difere',
-    overUnder: 'Acima / Abaixo',
-    evenOdd: 'Par / Ímpar',
+    matchesDiffers: 'Contra-Tendência',
+    overUnder: 'Acima/Abaixo (Padrão)',
+    evenOdd: 'Par/Ímpar (Padrão)',
+    underdog: 'Caçador de Azarão',
+    underdogOverUnder: 'Azarão Acima/Abaixo',
+    underdogEvenOdd: 'Azarão Par/Ímpar',
 };
 
 export function DigitsBacktestPanel({ results, onRunBacktest, isBacktesting }: DigitsBacktestPanelProps) {
   const sortedResults = React.useMemo(() => {
     if (!results) return [];
-    return Object.entries(results).sort(([, a], [, b]) => b.totalPnl - a.totalPnl);
+    return Object.entries(results).sort(([, a], [, b]) => b.totalProfit - a.totalProfit);
   }, [results]);
 
   return (
@@ -35,7 +38,7 @@ export function DigitsBacktestPanel({ results, onRunBacktest, isBacktesting }: D
           Simulador de Estratégias de Dígitos
         </CardTitle>
         <CardDescription>
-          Execute as estratégias de dígitos contra os últimos 1000 ticks para avaliar a performance histórica.
+          Execute as estratégias de dígitos contra os últimos 1000 ticks para avaliar a performance histórica e a viabilidade de cada piloto.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -54,27 +57,27 @@ export function DigitsBacktestPanel({ results, onRunBacktest, isBacktesting }: D
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead className="w-[250px]">Estratégia</TableHead>
+                  <TableHead className="w-[200px]">Estratégia</TableHead>
                   <TableHead className="text-center">Win Rate</TableHead>
-                  <TableHead className="text-center">Total Trades</TableHead>
+                  <TableHead className="text-center">Trades</TableHead>
                   <TableHead className="text-right">P&L Total</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {sortedResults.map(([strategyKey, result]) => {
                   const strategyName = strategyLabels[strategyKey] || strategyKey;
-                  const isProfitable = result.totalPnl > 0;
+                  const isProfitable = result.totalProfit > 0;
                   return (
                       <TableRow key={strategyKey}>
                           <TableCell className="font-medium">{strategyName}</TableCell>
                           <TableCell className="text-center">
-                              <span className={cn("font-semibold", result.winRate > 52 ? 'text-green-600' : 'text-red-600')}>
-                                  {result.winRate.toFixed(1)}%
+                              <span className={cn("font-semibold", result.winrate > 52 ? 'text-green-600' : 'text-red-600')}>
+                                  {result.winrate.toFixed(1)}%
                               </span>
                           </TableCell>
                           <TableCell className="text-center font-mono">{result.totalTrades}</TableCell>
                           <TableCell className={cn("text-right font-bold font-mono", isProfitable ? 'text-green-600' : 'text-red-600')}>
-                              {result.totalPnl.toLocaleString('en-US', { style: 'currency', currency: 'USD' })}
+                              {result.totalProfit.toLocaleString('en-US', { style: 'currency', currency: 'USD' })}
                           </TableCell>
                       </TableRow>
                   );
