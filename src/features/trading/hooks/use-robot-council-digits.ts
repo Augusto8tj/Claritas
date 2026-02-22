@@ -106,10 +106,8 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
     return { windowsStats, mainWindowStats };
   }, [priceTicks, activeAsset]);
   
-  // STATS DA JANELA PRINCIPAL (1000 ticks) - Usado pelo piloto 'matchesDiffers'
   const digitStats = useMemo(() => analysisResults.mainWindowStats?.frequencies || [], [analysisResults.mainWindowStats]);
 
-  // NOVO: Análise de janela curta (100 ticks) especificamente para o Azarão, como sugerido pelo usuário.
   const underdogDigitStats = useMemo(() => {
     const decimalPlaces = getDecimalPlaces(activeAsset?.pip);
     if (!priceTicks || priceTicks.length < 100) {
@@ -283,7 +281,7 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
       const initialBankroll = sessionInitialBankroll ?? (accountBalance.balance ?? 1000);
       const currentBankroll = initialBankroll + dailyPnl;
       
-      const bankrollState: BankrollState = { currentBankroll, initialBankroll, maxDailyLoss: dailyBalance, dailyProfitTarget };
+      const bankrollState: BankrollState = { currentBankroll, initialBankroll, maxDailyLoss: dailyBalance, dailyProfitTarget: dailyTarget };
       
       let shouldExecute = false;
       let executionParams: [DigitContractType, number?, string?] | null = null;
@@ -320,7 +318,6 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
            }
            break;
         case 'underdog':
-           // ✅ CORREÇÃO: Usa a análise de 100 ticks, tornando a estratégia mais reativa.
            const coldestDigitStat = underdogDigitStats.length > 0 ? [...underdogDigitStats].sort((a, b) => a.probability - b.probability)[0] : null;
            if (coldestDigitStat && (coldestDigitStat.probability) <= (underdogThreshold / 100)) {
                shouldExecute = true;
