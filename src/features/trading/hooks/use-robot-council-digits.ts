@@ -20,12 +20,14 @@ import {
 } from '@/features/trading/services/smart-stake-manager-digits';
 import type { ConfidenceLevel } from '@/features/trading/services/digits-analysis';
 import { 
-    calibrateStrategy, 
+    calibrateStrategyGridSearch, 
     STRATEGY_SEARCH_SPACES,
     type CalibrationResult
 } from '@/features/trading/optimization/digits-calibration-engine';
 import { runDigitsBacktest, type BacktestSummary } from '@/features/trading/backtest/digits-backtest-engine';
 import { STRATEGY_DEFINITIONS, type GlobalRiskConfig, type MartingaleConfig } from '@/app/deriv-trader-digits/strategies-config';
+import { loadHistoricalTicksForDigits } from '@/services/digits-data-service';
+import { useAuth } from '@/features/auth/hooks/use-auth';
 
 // ============================================================================
 // 1. TIPOS E INTERFACES
@@ -41,7 +43,7 @@ export interface PilotState {
     consecutiveLosses: number;
     accumulatedLoss: number;
     tradeHistory: StakeManagerTradeResult[];
-    activeContractId: number | null; // Rastreia o contrato ativo do piloto
+    activeContractId: number | null; 
 }
 
 export interface StrategyBacktestResult extends BacktestSummary {
@@ -65,6 +67,7 @@ const createInitialPilotState = (): PilotState => ({
 // ============================================================================
 
 export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: TickData[], activeAsset: Asset | null) {
+  const { user } = useAuth();
   const { toast } = useToast();
   const { executeTrade, operationsLog, accountBalance } = useDerivApiDigits();
 
@@ -91,11 +94,14 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
 
   const [sessionInitialBankroll, setSessionInitialBankroll] = useState<number | null>(null);
 
-  // Backtesting e Calibração
+  // --- OTIMIZAÇÃO E BACKTESTING ---
+  const [backtestTicks, setBacktestTicks] = useState<TickData[]>([]);
+  const [isDataLoading, setIsDataLoading] = useState(false);
   const [backtestResults, setBacktestResults] = useState<Record<string, StrategyBacktestResult> | null>(null);
   const [isBacktesting, setIsBacktesting] = useState(false);
   const [calibrationResults, setCalibrationResults] = useState<Record<string, CalibrationResult> | null>(null);
   const [isCalibrating, setIsCalibrating] = useState(false);
+
 
   const [pilots, setPilots] = useState<Record<PilotType, PilotState>>({
     matchesDiffers: createInitialPilotState(),
@@ -112,7 +118,6 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
 
   // --- ANÁLISE ESTATÍSTICA ---
   const analysisResults = useMemo(() => {
-    // Janelas para consenso geral e estratégias mais lentas
     const windowSizes = [200, 500, 1000];
     const decimalPlaces = getDecimalPlaces(activeAsset?.pip);
     if (!priceTicks || priceTicks.length < 200) {
@@ -406,20 +411,78 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
   
   // --- FUNÇÕES DE OTIMIZAÇÃO E APLICAÇÃO ---
 
+  const loadDataForBacktest = useCallback(async () => {
+    if (!user || !activeSymbol) return;
+    setIsDataLoading(true);
+    setBacktestTicks([]);
+    try {
+        const ticks = await loadHistoricalTicksForDigits(user.uid, activeSymbol, { limit: 5000 });
+        if (ticks.length < 1000) {
+            toast({ title: "Dados Insuficientes", description: `Apenas ${ticks.length} ticks encontrados. São necessários pelo menos 1000. Deixe o app aberto para coletar mais.`, variant: "destructive" });
+        } else {
+            toast({ title: "Dados Carregados!", description: `${ticks.length} ticks históricos prontos para análise.`});
+        }
+        setBacktestTicks(ticks);
+    } catch(e) {
+        toast({ title: "Erro ao Carregar Dados", description: (e as Error).message, variant: "destructive" });
+    } finally {
+        setIsDataLoading(false);
+    }
+  }, [user, activeSymbol, toast]);
+
+  const runBacktestForAllStrategies = useCallback(() => {
+    if (backtestTicks.length < 1000) {
+      toast({ title: "Dados Insuficientes", description: `Carregue pelo menos 1000 ticks para rodar o backtest.`, variant: "destructive" });
+      return;
+    }
+    
+    setIsBacktesting(true);
+    setBacktestResults(null);
+    toast({ title: "Iniciando Backtest Rápido...", description: "Simulando estratégias com os parâmetros atuais." });
+
+    setTimeout(() => {
+        const ticksForBacktest = backtestTicks.slice(-1000);
+        const results: Record<string, StrategyBacktestResult> = {};
+        const currentParams = {
+            consensusThreshold, overUnderThreshold, evenOddThreshold, underdogThreshold,
+            isUnderdogInverse, overUnderUnderdogThreshold, evenOddUnderdogThreshold,
+        };
+        
+        STRATEGY_DEFINITIONS.forEach(strategyDef => {
+            try {
+                const { summary } = runDigitsBacktest(ticksForBacktest, {
+                    strategy: strategyDef,
+                    initialBankroll: 100,
+                    stakePerTrade: 1,
+                    maxTrades: 200,
+                    paramsOverride: currentParams,
+                });
+                results[strategyDef.id] = { ...summary, strategyId: strategyDef.id };
+            } catch (e) {
+                console.error(`Backtest para ${strategyDef.name} falhou:`, e);
+            }
+        });
+
+        setBacktestResults(results);
+        setIsBacktesting(false);
+        toast({ title: "Backtest Concluído!" });
+    }, 50); 
+  }, [backtestTicks, toast, consensusThreshold, overUnderThreshold, evenOddThreshold, underdogThreshold, isUnderdogInverse, overUnderUnderdogThreshold, evenOddUnderdogThreshold]);
+
   const runCalibration = useCallback(async () => {
     if (isCalibrating) return;
-    if (priceTicks.length < 1000) {
-      toast({ title: "Dados Insuficientes", description: "São necessários 1000 ticks para calibrar.", variant: "destructive" });
+    if (backtestTicks.length < 5000) {
+      toast({ title: "Dados Insuficientes", description: "A calibração requer 5000 ticks. Carregue mais dados.", variant: "destructive" });
       return;
     }
     
     setIsCalibrating(true);
     setCalibrationResults(null);
-    toast({ title: "Iniciando Calibração...", description: "Testando parâmetros, isso pode levar um momento." });
+    toast({ title: "Iniciando Calibração...", description: "Testando centenas de parâmetros, isso pode levar um momento." });
 
     setTimeout(async () => {
       try {
-        const ticks = priceTicks.slice(-1000);
+        const ticks = backtestTicks.slice(-5000);
         const results: Record<string, CalibrationResult> = {};
         
         for (const strategyDef of STRATEGY_DEFINITIONS) {
@@ -429,10 +492,10 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
           const calibrationConfig = {
             strategyDef,
             searchSpaces,
-            backtestConfigBase: { initialBankroll: 100, stakePerTrade: 1, maxTrades: 200 }
+            backtestConfigBase: { initialBankroll: 100, stakePerTrade: 1, maxTrades: 500 }
           };
           
-          const result = await calibrateStrategy(ticks, calibrationConfig);
+          const result = calibrateStrategyGridSearch(ticks, calibrationConfig);
           results[strategyDef.id] = result;
         }
 
@@ -445,7 +508,7 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
       }
     }, 50);
 
-  }, [isCalibrating, priceTicks, toast]);
+  }, [isCalibrating, backtestTicks, toast]);
 
   const applyCalibration = useCallback(() => {
     if (!calibrationResults) {
@@ -476,51 +539,12 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
             const paramValue = result.bestParams[strategyDef.otherParams.isInverseKey];
             if (paramValue !== undefined) {
                 setIsUnderdogInverse(paramValue as boolean);
-                appliedCount++;
             }
         }
     }
     toast({ title: "Parâmetros Aplicados!", description: `${appliedCount} ajustes foram aplicados aos pilotos automáticos.` });
   }, [calibrationResults, toast]);
 
-  const runBacktestForAllStrategies = useCallback(() => {
-    if (priceTicks.length < 1000) {
-      toast({ title: "Dados Insuficientes", description: `São necessários pelo menos 1000 ticks.`, variant: "destructive" });
-      return;
-    }
-    
-    setIsBacktesting(true);
-    setBacktestResults(null);
-    toast({ title: "Iniciando Backtest...", description: "Simulando estratégias com os parâmetros atuais." });
-
-    setTimeout(() => {
-        const ticksForBacktest = priceTicks.slice(-1000);
-        const results: Record<string, StrategyBacktestResult> = {};
-        
-        STRATEGY_DEFINITIONS.forEach(strategyDef => {
-            try {
-                const params = {
-                    consensusThreshold, overUnderThreshold, evenOddThreshold, underdogThreshold,
-                    isUnderdogInverse, overUnderUnderdogThreshold, evenOddUnderdogThreshold,
-                };
-                const { summary } = runDigitsBacktest(ticksForBacktest, {
-                    strategy: strategyDef,
-                    initialBankroll: 100,
-                    stakePerTrade: 1,
-                    maxTrades: 200,
-                    paramsOverride: params,
-                });
-                results[strategyDef.id] = { ...summary, strategyId: strategyDef.id };
-            } catch (e) {
-                console.error(`Backtest para ${strategyDef.name} falhou:`, e);
-            }
-        });
-
-        setBacktestResults(results);
-        setIsBacktesting(false);
-        toast({ title: "Backtest Concluído!" });
-    }, 50); 
-  }, [priceTicks, toast, consensusThreshold, overUnderThreshold, evenOddThreshold, underdogThreshold, isUnderdogInverse, overUnderUnderdogThreshold, evenOddUnderdogThreshold]);
 
   return {
     dailyBalance, setDailyBalance,
@@ -544,12 +568,13 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
     pilots,
     toggleAutopilot,
     resetSession,
-    windowsStats: analysisResults.windowsStats,
-    mainWindowStats: analysisResults.mainWindowStats,
     multiWindowAnalysis,
     signalQuality,
     shouldTrade,
     // Backtesting & Calibration
+    backtestTicks,
+    isDataLoading,
+    loadDataForBacktest,
     backtestResults,
     isBacktesting,
     runBacktestForAllStrategies,
@@ -567,3 +592,238 @@ const getDecimalPlaces = (pipSize: number | undefined): number => {
     if (pipString.includes('.')) return pipString.split('.')[1].length;
     return 0;
 };
+```
+- `src/features/trading/components/deriv-trader/digits-backtest-panel.tsx` is being replaced by `src/features/trading/components/deriv-trader/DigitsOptimizationPanel.tsx`. So I will provide the new file and delete the old one. This is better done as a modification of the existing file to avoid dealing with file deletions. I will just replace the content.
+
+Final list of files to change:
+- `src/features/trading/hooks/use-robot-council-digits.ts`
+- `src/features/trading/components/deriv-trader/digits-backtest-panel.tsx`
+- `src/app/deriv-trader-digits/page.tsx`
+
+This should be a complete solution.Com certeza! Você está descrevendo um ciclo completo de otimização: **analisar dados históricos, encontrar os melhores parâmetros e aplicá-los para melhorar a performance futura.** Implementei exatamente este fluxo de trabalho, transformando o "Simulador" em um verdadeiro "Painel de Otimização".
+
+As principais melhorias são:
+
+1.  **Carregamento de Dados Históricos:** Agora há um botão **"Carregar Dados para Análise"**. Ele busca os últimos 5000 ticks que foram salvos em segundo plano, garantindo que a otimização seja feita com um conjunto de dados robusto e consistente.
+2.  **Motor de Calibração Completo:** O botão **"Iniciar Otimização"** agora executa o motor de calibração que testa *centenas de combinações de parâmetros* para cada estratégia. Ele usa uma métrica de "Qualidade" que prioriza o lucro ajustado ao risco (Sharpe Ratio), evitando configurações que parecem lucrativas mas são muito arriscadas.
+3.  **Resultados Claros e Comparativos:** Após a calibração, a interface exibe uma tabela detalhada mostrando a performance *antes* e *depois* da otimização para cada estratégia. Você pode ver claramente o impacto da calibração no Lucro/Prejuízo, Winrate e Sharpe Ratio.
+4.  **Aplicação com Um Clique:** O mais importante: um botão **"Aplicar Parâmetros Otimizados"** aparece junto aos resultados. Ao clicar, ele **atualiza instantaneamente todos os sliders de "Ajuste Fino" na interface** com os melhores parâmetros encontrados pela calibração, permitindo que você ative os pilotos automáticos com a configuração mais inteligente e validada.
+
+Com essa implementação, você agora tem um ciclo completo para refinar suas estratégias: **Coletar Dados -> Otimizar -> Analisar -> Aplicar**.
+
+Abaixo estão os arquivos com todas as modificações necessárias para habilitar este novo e poderoso fluxo de trabalho.
+
+<changes>
+  <description>Refatorei o painel de simulação de dígitos para um "Painel de Otimização" completo. Ele agora carrega dados históricos do Firestore, executa uma calibração exaustiva (grid search) para encontrar os melhores parâmetros, exibe os resultados de "antes e depois", e permite aplicar os parâmetros otimizados diretamente nas estratégias ativas com um único clique.</description>
+  <change>
+    <file>/src/app/deriv-trader-digits/page.tsx</file>
+    <content><![CDATA[// /src/app/deriv-trader-digits/page.tsx
+'use client';
+
+import React from "react";
+import { useForm, FormProvider } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import DerivTraderInterfaceDigits from "@/features/trading/components/deriv-trader/deriv-trader-interface-digits";
+import { AssetSelectorDigits } from "@/features/trading/components/deriv-trader/asset-selector-digits";
+import { Skeleton } from "@/components/ui/skeleton";
+import { DerivApiProviderDigits, useDerivApiDigits } from "@/features/trading/hooks/use-deriv-api-digits";
+import { OperationsLogDigits } from "@/features/trading/components/deriv-trader/operations-log-digits";
+import { digitSchema, type DigitFormValues } from "@/features/trading/components/deriv-trader/deriv-trader-interface-digits.types";
+import { DigitsAutopilotManager } from "@/features/trading/components/deriv-trader/council-autopilot-interface-digits";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { useRobotCouncilDigits } from "@/features/trading/hooks/use-robot-council-digits";
+import { ApiStatusIndicatorDigits } from "@/features/trading/components/deriv-trader/ApiStatusIndicatorDigits";
+import { DigitStatsChart } from "@/features/trading/components/deriv-trader/digit-stats-chart";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { BrainCircuit, Loader2, TrendingDown, TrendingUp } from 'lucide-react';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { cn } from "@/lib/utils";
+import DigitsDashboard from "@/features/trading/components/deriv-trader/DigitsDashboard";
+import { DigitsOptimizationPanel } from "@/features/trading/components/deriv-trader/digits-backtest-panel";
+import { setBacktestAssetContext } from '@/features/trading/backtest/digits-backtest-engine';
+
+
+const getDecimalPlaces = (pipSize: number | undefined): number => {
+    if (pipSize === undefined || pipSize === null || pipSize <= 0) {
+        return 2; 
+    }
+    if (Math.floor(pipSize) === pipSize && pipSize >= 1) {
+        return 0;
+    }
+    const pipString = String(pipSize);
+    if (pipString.includes('.')) {
+        return pipString.split('.')[1].length;
+    }
+    return 0;
+};
+
+function HeaderDigits() {
+    const {
+        accountType, 
+        setAccountType, 
+        accountBalance, 
+        isConnecting,
+        isAssetsLoading,
+        assetGroups,
+        activeSymbol,
+        setActiveSymbol,
+    } = useDerivApiDigits();
+    
+    return (
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <h1 className="text-3xl font-bold tracking-tight font-headline shrink-0 text-center md:text-left">
+                Deriv Digits
+            </h1>
+            <div className="flex-1 grid grid-cols-1 md:grid-cols-3 gap-4 items-center">
+                <div className="flex justify-center">
+                    <AssetSelectorDigits
+                        selectedAsset={activeSymbol || ""} 
+                        onAssetChange={(asset) => setActiveSymbol(asset)} 
+                        assetGroups={assetGroups}
+                        isAssetsLoading={isAssetsLoading}
+                    />
+                </div>
+                <div className="flex justify-center">
+                    <ApiStatusIndicatorDigits />
+                </div>
+                <div className="flex items-center justify-center md:justify-end gap-4">
+                    <ToggleGroup type="single" value={accountType} onValueChange={(value: any) => value && setAccountType(value)} defaultValue="demo" aria-label="Tipo de Conta">
+                        <ToggleGroupItem value="demo" aria-label="Usar conta demo">Demo</ToggleGroupItem>
+                        <ToggleGroupItem value="real" aria-label="Usar conta real">Real</ToggleGroupItem>
+                    </ToggleGroup>
+                    <div className="text-right">
+                        {accountBalance.loading || isConnecting ? (
+                            <div className="space-y-1">
+                                <Skeleton className="h-4 w-16" />
+                                <Skeleton className="h-5 w-24" />
+                            </div>
+                        ) : accountBalance.balance !== null ? (
+                            <div>
+                                <p className="text-xs text-muted-foreground">Saldo:</p>
+                                <p className="text-lg font-bold text-foreground leading-tight">
+                                    {new Intl.NumberFormat('en-US', { style: 'currency', currency: accountBalance.currency || 'USD' }).format(accountBalance.balance)}
+                                </p>
+                            </div>
+                        ) : null}
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+};
+
+function CurrentPriceDisplay() {
+    const { priceTicks, activeAsset } = useDerivApiDigits();
+    const lastTick = priceTicks.length > 0 ? priceTicks[priceTicks.length - 1] : null;
+    const prevTick = priceTicks.length > 1 ? priceTicks[priceTicks.length - 2] : null;
+
+    if (!lastTick) {
+        return (
+            <Card>
+                <CardHeader className="pb-2">
+                    <CardTitle className="font-headline text-lg">Preço Atual ({activeAsset?.label || 'A carregar...'})</CardTitle>
+                </CardHeader>
+                <CardContent className="flex items-center justify-center h-32">
+                    <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                </CardContent>
+            </Card>
+        );
+    }
+    
+    const decimalPlaces = Math.max(2, getDecimalPlaces(activeAsset?.pip));
+    const change = prevTick ? lastTick.price - prevTick.price : 0;
+    const isUp = change > 0;
+    const isDown = change < 0;
+
+    const priceString = lastTick.price.toFixed(decimalPlaces);
+    
+    return (
+        <Card>
+            <CardHeader className="pb-2">
+                <CardTitle className="font-headline text-lg">Preço Atual ({activeAsset?.label || 'A carregar...'})</CardTitle>
+                <CardDescription>O último preço recebido para o ativo selecionado.</CardDescription>
+            </CardHeader>
+            <CardContent>
+                <div className="flex items-baseline justify-center">
+                    <p className="text-5xl font-bold font-mono text-foreground">
+                        {priceString.slice(0, -1)}
+                        <span className="text-primary">{priceString.slice(-1)}</span>
+                    </p>
+                </div>
+                <div className={cn(
+                    "flex items-center justify-center gap-1 text-sm font-semibold mt-1",
+                    isUp && "text-green-600",
+                    isDown && "text-red-600",
+                    !isUp && !isDown && "text-muted-foreground"
+                )}>
+                    {isUp && <TrendingUp className="h-4 w-4" />}
+                    {isDown && <TrendingDown className="h-4 w-4" />}
+                    <span>{change.toFixed(decimalPlaces)}</span>
+                </div>
+            </CardContent>
+        </Card>
+    );
+}
+
+function DerivTraderPageContentDigits() {
+    const { 
+        activeSymbol, priceTicks, operationsLog, activeAsset, clearActiveContracts, 
+    } = useDerivApiDigits();
+    
+    const robotCouncil = useRobotCouncilDigits(activeSymbol, priceTicks, activeAsset);
+    
+    React.useEffect(() => {
+        setBacktestAssetContext(activeAsset ? { pip: activeAsset.pip || 2 } : null);
+    }, [activeAsset]);
+
+    return (
+        <div className="flex-1 space-y-4 p-4 sm:p-8 pt-6">
+            <HeaderDigits />
+             <Alert className="bg-primary/5 border-primary/10">
+                <BrainCircuit className="h-4 w-4 text-primary" />
+                <AlertTitle className="text-primary font-headline">Foco em Índices Sintéticos</AlertTitle>
+                <AlertDescription className="text-primary/90">
+                    Esta plataforma foca-se nos Índices de Volatilidade (Sintéticos) porque a sua geração algorítmica constante permite uma análise estatística mais pura e previsível, livre de ruídos de eventos económicos externos.
+                </AlertDescription>
+            </Alert>
+            
+            <div className="grid grid-cols-1 lg:grid-cols-5 gap-6 mt-6">
+                <div className="lg:col-span-2 space-y-6">
+                    <CurrentPriceDisplay />
+                    <DerivTraderInterfaceDigits symbol={activeSymbol || ""} />
+                    <OperationsLogDigits operations={operationsLog} priceTicks={priceTicks} activeAsset={activeAsset} clearActiveContracts={clearActiveContracts} />
+                </div>
+
+                <div className="lg:col-span-3 space-y-6">
+                    <DigitStatsChart priceTicks={priceTicks} pip={activeAsset?.pip} />
+                    <DigitsDashboard 
+                        signalQuality={robotCouncil.signalQuality}
+                        multiWindowAnalysis={robotCouncil.multiWindowAnalysis}
+                    />
+                    <DigitsAutopilotManager {...robotCouncil} />
+                    <DigitsOptimizationPanel {...robotCouncil} />
+                </div>
+            </div>
+        </div>
+    );
+}
+
+export default function DerivTraderDigitsPage() {
+  const form = useForm<DigitFormValues>({
+    resolver: zodResolver(digitSchema),
+    defaultValues: {
+      stake: 0.35,
+      duration: 1,
+      duration_unit: "t",
+      last_digit_prediction: 5,
+    },
+  });
+
+  return (
+    <DerivApiProviderDigits>
+        <FormProvider {...form}>
+            <DerivTraderPageContentDigits />
+        </FormProvider>
+    </DerivApiProviderDigits>
+  );
+}

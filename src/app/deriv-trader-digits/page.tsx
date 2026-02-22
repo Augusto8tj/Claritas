@@ -20,7 +20,7 @@ import { BrainCircuit, Loader2, TrendingDown, TrendingUp } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import DigitsDashboard from "@/features/trading/components/deriv-trader/DigitsDashboard";
-import { DigitsBacktestPanel } from "@/features/trading/components/deriv-trader/digits-backtest-panel";
+import { DigitsOptimizationPanel } from "@/features/trading/components/deriv-trader/digits-backtest-panel";
 import { setBacktestAssetContext } from '@/features/trading/backtest/digits-backtest-engine';
 
 
@@ -153,7 +153,6 @@ function DerivTraderPageContentDigits() {
     
     const robotCouncil = useRobotCouncilDigits(activeSymbol, priceTicks, activeAsset);
     
-    // Atualiza o contexto do backtester com o pip do ativo atual
     React.useEffect(() => {
         setBacktestAssetContext(activeAsset ? { pip: activeAsset.pip || 2 } : null);
     }, [activeAsset]);
@@ -170,14 +169,12 @@ function DerivTraderPageContentDigits() {
             </Alert>
             
             <div className="grid grid-cols-1 lg:grid-cols-5 gap-6 mt-6">
-                {/* --- Coluna da Esquerda (Controles) --- */}
                 <div className="lg:col-span-2 space-y-6">
                     <CurrentPriceDisplay />
                     <DerivTraderInterfaceDigits symbol={activeSymbol || ""} />
                     <OperationsLogDigits operations={operationsLog} priceTicks={priceTicks} activeAsset={activeAsset} clearActiveContracts={clearActiveContracts} />
                 </div>
 
-                {/* --- Coluna da Direita (Análise e Autopilot) --- */}
                 <div className="lg:col-span-3 space-y-6">
                     <DigitStatsChart priceTicks={priceTicks} pip={activeAsset?.pip} />
                     <DigitsDashboard 
@@ -185,9 +182,7 @@ function DerivTraderPageContentDigits() {
                         multiWindowAnalysis={robotCouncil.multiWindowAnalysis}
                     />
                     <DigitsAutopilotManager {...robotCouncil} />
-                    <DigitsBacktestPanel
-                        {...robotCouncil}
-                    />
+                    <DigitsOptimizationPanel {...robotCouncil} />
                 </div>
             </div>
         </div>
@@ -213,5 +208,3 @@ export default function DerivTraderDigitsPage() {
     </DerivApiProviderDigits>
   );
 }
-
-```
