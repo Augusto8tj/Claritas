@@ -19,6 +19,11 @@ import {
     type TradeResult as StakeManagerTradeResult
 } from '@/features/trading/services/smart-stake-manager-digits';
 import type { ConfidenceLevel } from '@/features/trading/services/digits-analysis';
+import { 
+    calibrateStrategy, 
+    STRATEGY_SEARCH_SPACES,
+    type CalibrationResult
+} from '@/features/trading/optimization/digits-calibration-engine';
 import { runDigitsBacktest, type BacktestSummary } from '@/features/trading/backtest/digits-backtest-engine';
 import { STRATEGY_DEFINITIONS, type GlobalRiskConfig, type MartingaleConfig } from '@/app/deriv-trader-digits/strategies-config';
 
@@ -86,9 +91,11 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
 
   const [sessionInitialBankroll, setSessionInitialBankroll] = useState<number | null>(null);
 
-  // NEW: Backtesting states
+  // Backtesting e Calibração
   const [backtestResults, setBacktestResults] = useState<Record<string, StrategyBacktestResult> | null>(null);
   const [isBacktesting, setIsBacktesting] = useState(false);
+  const [calibrationResults, setCalibrationResults] = useState<Record<string, CalibrationResult> | null>(null);
+  const [isCalibrating, setIsCalibrating] = useState(false);
 
   const [pilots, setPilots] = useState<Record<PilotType, PilotState>>({
     matchesDiffers: createInitialPilotState(),
@@ -397,46 +404,113 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
       cooldownTime, consensusThreshold, underdogDigitStats
   ]);
   
-  // NEW: Backtesting function
+  // --- FUNÇÕES DE OTIMIZAÇÃO E APLICAÇÃO ---
+
+  const runCalibration = useCallback(async () => {
+    if (isCalibrating) return;
+    if (priceTicks.length < 1000) {
+      toast({ title: "Dados Insuficientes", description: "São necessários 1000 ticks para calibrar.", variant: "destructive" });
+      return;
+    }
+    
+    setIsCalibrating(true);
+    setCalibrationResults(null);
+    toast({ title: "Iniciando Calibração...", description: "Testando parâmetros, isso pode levar um momento." });
+
+    setTimeout(async () => {
+      try {
+        const ticks = priceTicks.slice(-1000);
+        const results: Record<string, CalibrationResult> = {};
+        
+        for (const strategyDef of STRATEGY_DEFINITIONS) {
+          const searchSpaces = STRATEGY_SEARCH_SPACES[strategyDef.id];
+          if (!searchSpaces || searchSpaces.length === 0) continue;
+          
+          const calibrationConfig = {
+            strategyDef,
+            searchSpaces,
+            backtestConfigBase: { initialBankroll: 100, stakePerTrade: 1, maxTrades: 200 }
+          };
+          
+          const result = await calibrateStrategy(ticks, calibrationConfig);
+          results[strategyDef.id] = result;
+        }
+
+        setCalibrationResults(results);
+        toast({ title: "Calibração Concluída!", description: "Parâmetros otimizados estão prontos para serem aplicados." });
+      } catch (error) {
+        toast({ title: "Erro na Calibração", description: (error as Error).message, variant: "destructive" });
+      } finally {
+        setIsCalibrating(false);
+      }
+    }, 50);
+
+  }, [isCalibrating, priceTicks, toast]);
+
+  const applyCalibration = useCallback(() => {
+    if (!calibrationResults) {
+        toast({ title: "Nenhum Resultado", description: "Execute a calibração primeiro.", variant: "destructive" });
+        return;
+    }
+
+    let appliedCount = 0;
+    for (const key in calibrationResults) {
+        const result = calibrationResults[key];
+        const strategyDef = STRATEGY_DEFINITIONS.find(def => def.id === result.bestSummary.strategyId);
+
+        if (strategyDef && strategyDef.paramKey) {
+            const paramValue = result.bestParams[strategyDef.paramKey];
+            if (paramValue !== undefined) {
+                switch(strategyDef.paramKey) {
+                    case 'consensusThreshold': setConsensusThreshold(paramValue as number); break;
+                    case 'overUnderThreshold': setOverUnderThreshold(paramValue as number); break;
+                    case 'evenOddThreshold': setEvenOddThreshold(paramValue as number); break;
+                    case 'underdogThreshold': setUnderdogThreshold(paramValue as number); break;
+                    case 'overUnderUnderdogThreshold': setOverUnderUnderdogThreshold(paramValue as number); break;
+                    case 'evenOddUnderdogThreshold': setEvenOddUnderdogThreshold(paramValue as number); break;
+                }
+                appliedCount++;
+            }
+        }
+        if (strategyDef?.otherParams?.isInverseKey) {
+            const paramValue = result.bestParams[strategyDef.otherParams.isInverseKey];
+            if (paramValue !== undefined) {
+                setIsUnderdogInverse(paramValue as boolean);
+                appliedCount++;
+            }
+        }
+    }
+    toast({ title: "Parâmetros Aplicados!", description: `${appliedCount} ajustes foram aplicados aos pilotos automáticos.` });
+  }, [calibrationResults, toast]);
+
   const runBacktestForAllStrategies = useCallback(() => {
     if (priceTicks.length < 1000) {
-      toast({
-        title: "Dados Insuficientes",
-        description: `São necessários pelo menos 1000 ticks para o backtest. Ticks atuais: ${priceTicks.length}`,
-        variant: "destructive",
-      });
+      toast({ title: "Dados Insuficientes", description: `São necessários pelo menos 1000 ticks.`, variant: "destructive" });
       return;
     }
     
     setIsBacktesting(true);
     setBacktestResults(null);
-    toast({ title: "Iniciando Backtest...", description: "Simulando estratégias com dados históricos." });
+    toast({ title: "Iniciando Backtest...", description: "Simulando estratégias com os parâmetros atuais." });
 
     setTimeout(() => {
         const ticksForBacktest = priceTicks.slice(-1000);
         const results: Record<string, StrategyBacktestResult> = {};
         
-        STRATEGY_DEFINITIONS.filter(def => def.id !== 'dynamicUnderdogOverUnder').forEach(strategyDef => {
+        STRATEGY_DEFINITIONS.forEach(strategyDef => {
             try {
+                const params = {
+                    consensusThreshold, overUnderThreshold, evenOddThreshold, underdogThreshold,
+                    isUnderdogInverse, overUnderUnderdogThreshold, evenOddUnderdogThreshold,
+                };
                 const { summary } = runDigitsBacktest(ticksForBacktest, {
                     strategy: strategyDef,
                     initialBankroll: 100,
                     stakePerTrade: 1,
                     maxTrades: 200,
-                    paramsOverride: {
-                        consensusThreshold,
-                        overUnderThreshold,
-                        evenOddThreshold,
-                        underdogThreshold,
-                        isUnderdogInverse,
-                        overUnderUnderdogThreshold,
-                        evenOddUnderdogThreshold,
-                    }
+                    paramsOverride: params,
                 });
-                results[strategyDef.id] = {
-                    ...summary,
-                    strategyId: strategyDef.id,
-                };
+                results[strategyDef.id] = { ...summary, strategyId: strategyDef.id };
             } catch (e) {
                 console.error(`Backtest para ${strategyDef.name} falhou:`, e);
             }
@@ -444,7 +518,7 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
 
         setBacktestResults(results);
         setIsBacktesting(false);
-        toast({ title: "Backtest Concluído!", description: "Os resultados da simulação estão disponíveis." });
+        toast({ title: "Backtest Concluído!" });
     }, 50); 
   }, [priceTicks, toast, consensusThreshold, overUnderThreshold, evenOddThreshold, underdogThreshold, isUnderdogInverse, overUnderUnderdogThreshold, evenOddUnderdogThreshold]);
 
@@ -475,10 +549,14 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
     multiWindowAnalysis,
     signalQuality,
     shouldTrade,
-    // Backtesting exports
+    // Backtesting & Calibration
     backtestResults,
     isBacktesting,
     runBacktestForAllStrategies,
+    calibrationResults,
+    isCalibrating,
+    runCalibration,
+    applyCalibration,
   };
 }
 

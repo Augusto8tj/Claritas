@@ -61,7 +61,7 @@ export interface CalibrationResult {
  * Mapeia cada estratégia ao seu espaço de busca de parâmetros.
  * Este é o "mapa genético" para a otimização.
  */
-export const STRATEGY_SEARCH_SPACES: Record<PilotType, ParamSearchSpace[]> = {
+export const STRATEGY_SEARCH_SPACES: Record<string, ParamSearchSpace[]> = {
   matchesDiffers: [
     { paramKey: 'consensusThreshold', values: [15, 20, 25, 30, 35, 40] }
   ],
@@ -186,6 +186,9 @@ export async function calibrateStrategy(
   if (!bestSummary) {
     throw new Error('Calibração falhou: Nenhum resultado de backtest foi gerado.');
   }
+
+  // CORREÇÃO: Garante que bestSummary tenha strategyId
+  bestSummary.strategyId = config.strategyDef.id;
 
   return { bestParams, bestSummary, testedConfigs };
 }

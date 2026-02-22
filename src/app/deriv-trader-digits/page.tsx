@@ -180,9 +180,13 @@ function DerivTraderPageContentDigits() {
                     />
                     <DigitsAutopilotManager {...robotCouncil} />
                     <DigitsBacktestPanel
-                        results={robotCouncil.backtestResults}
+                        backtestResults={robotCouncil.backtestResults}
                         isBacktesting={robotCouncil.isBacktesting}
                         onRunBacktest={robotCouncil.runBacktestForAllStrategies}
+                        calibrationResults={robotCouncil.calibrationResults}
+                        isCalibrating={robotCouncil.isCalibrating}
+                        onRunCalibration={robotCouncil.runCalibration}
+                        onApplyCalibration={robotCouncil.applyCalibration}
                     />
                 </div>
             </div>

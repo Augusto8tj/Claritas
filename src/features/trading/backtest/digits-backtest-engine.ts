@@ -45,6 +45,7 @@ export interface BacktestSummary {
   totalProfit: number;
   maxDrawdown: number;
   profitFactor: number;
+  strategyId?: PilotType; // CORREÇÃO: Adicionado para rastrear qual estratégia foi testada
 }
 
 // CORREÇÃO: Novo tipo para corresponder ao estado do hook
