@@ -95,6 +95,7 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
 
   // --- ANÁLISE ESTATÍSTICA ---
   const analysisResults = useMemo(() => {
+    // Janelas para consenso geral e estratégias mais lentas
     const windowSizes = [200, 500, 1000];
     const decimalPlaces = getDecimalPlaces(activeAsset?.pip);
     if (!priceTicks || priceTicks.length < 200) {
@@ -105,7 +106,18 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
     return { windowsStats, mainWindowStats };
   }, [priceTicks, activeAsset]);
   
+  // STATS DA JANELA PRINCIPAL (1000 ticks) - Usado pelo piloto 'matchesDiffers'
   const digitStats = useMemo(() => analysisResults.mainWindowStats?.frequencies || [], [analysisResults.mainWindowStats]);
+
+  // NOVO: Análise de janela curta (100 ticks) especificamente para o Azarão, como sugerido pelo usuário.
+  const underdogDigitStats = useMemo(() => {
+    const decimalPlaces = getDecimalPlaces(activeAsset?.pip);
+    if (!priceTicks || priceTicks.length < 100) {
+      return [];
+    }
+    return calculateDigitStatsForWindow(priceTicks, 100, decimalPlaces).frequencies;
+  }, [priceTicks, activeAsset]);
+
 
   const multiWindowAnalysis = useMemo(() => {
     return getMultiWindowAnalysis(analysisResults.windowsStats);
@@ -167,10 +179,11 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
       title: "Sessão de Dígitos Reiniciada",
       description: "O histórico de P&L e os estados dos pilotos foram resetados.",
     });
-  }, [accountBalance.balance, toast, setSessionInitialBankroll]);
+  }, [accountBalance.balance, toast]);
 
   const toggleAutopilot = useCallback((pilotType: PilotType) => {
     let newIsOnState: boolean | undefined;
+    
     setPilots(prev => {
         const pilot = prev[pilotType];
         if (!pilot) return prev;
@@ -190,11 +203,10 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
         };
     });
     
-    // Adiar o toast para evitar o erro de renderização
     setTimeout(() => {
-        if (newIsOnState !== undefined) {
-             toast({ title: `Piloto ${pilotType} ${newIsOnState ? 'Ativado' : 'Desativado'}` });
-        }
+      if (newIsOnState !== undefined) {
+        toast({ title: `Piloto ${pilotType} ${newIsOnState ? 'Ativado' : 'Desativado'}` });
+      }
     }, 0);
   }, [sessionInitialBankroll, accountBalance.balance, toast]);
   
@@ -220,7 +232,7 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
             stake: lastOp.stake,
             profit: lastOp.result || -lastOp.stake,
             contractType: lastOp.contractType as any,
-            signalConfidence: 'ALTA' // Assumindo alta confiança para trades executados
+            signalConfidence: 'ALTA' 
         };
         
         const updatedHistory = [...pilot.tradeHistory, newTradeResult];
@@ -237,7 +249,7 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
                 consecutiveLosses: newLosses,
                 accumulatedLoss: newAccumulatedLoss,
                 status: newStatus,
-                activeContractId: null, // LIBERA O PILOTO
+                activeContractId: null,
             }
         }));
 
@@ -271,7 +283,7 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
       const initialBankroll = sessionInitialBankroll ?? (accountBalance.balance ?? 1000);
       const currentBankroll = initialBankroll + dailyPnl;
       
-      const bankrollState: BankrollState = { currentBankroll, initialBankroll, maxDailyLoss: dailyBalance, dailyProfitTarget: dailyTarget };
+      const bankrollState: BankrollState = { currentBankroll, initialBankroll, maxDailyLoss: dailyBalance, dailyProfitTarget };
       
       let shouldExecute = false;
       let executionParams: [DigitContractType, number?, string?] | null = null;
@@ -308,8 +320,9 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
            }
            break;
         case 'underdog':
-           const coldestDigitStat = digitStats.length > 0 ? [...digitStats].sort((a, b) => a.probability - b.probability)[0] : null;
-           if (coldestDigitStat && (coldestDigitStat.probability * 100) <= underdogThreshold) {
+           // ✅ CORREÇÃO: Usa a análise de 100 ticks, tornando a estratégia mais reativa.
+           const coldestDigitStat = underdogDigitStats.length > 0 ? [...underdogDigitStats].sort((a, b) => a.probability - b.probability)[0] : null;
+           if (coldestDigitStat && (coldestDigitStat.probability) <= (underdogThreshold / 100)) {
                shouldExecute = true;
                confidenceForStake = 'ALTA';
                executionParams = [isUnderdogInverse ? 'DIGITDIFF' : 'DIGITMATCH', coldestDigitStat.digit, pilotKey];
@@ -378,7 +391,7 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
       dailyBalance, dailyTarget, maxLosses, martingaleRecoveryFactor, sessionInitialBankroll, accountBalance.balance, dailyPnl,
       overUnderStats, evenOddStats, overUnderThreshold, evenOddThreshold, underdogThreshold, isUnderdogInverse, overUnderUnderdogThreshold, evenOddUnderdogThreshold,
       executionCooldown, isMartingaleEnabled, isSmartMartingale, analysisResults.mainWindowStats, multiWindowAnalysis, digitStats,
-      cooldownTime, consensusThreshold
+      cooldownTime, consensusThreshold, underdogDigitStats
   ]);
   
   return {
