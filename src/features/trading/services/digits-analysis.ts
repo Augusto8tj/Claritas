@@ -77,12 +77,12 @@ function getPValueFromChiSquare(chiSquareValue: number): number {
 /**
  * Helper para obter o último dígito de um preço, considerando casas decimais.
  */
-const getLastDigit = (price: number): Digit => {
-    const priceString = String(price);
-    if (priceString.includes('.')) {
-        return parseInt(priceString.slice(-1), 10) as Digit;
+const getLastDigit = (price: number, decimalPlaces: number): Digit => {
+    if (isNaN(price) || !Number.isFinite(price)) {
+        return 0 as Digit;
     }
-    return (price % 10) as Digit;
+    const priceString = price.toFixed(decimalPlaces);
+    return parseInt(priceString.slice(-1), 10) as Digit;
 };
 
 // ============================================================================
@@ -99,7 +99,7 @@ export function calculateDigitStatsForWindow(ticks: TickData[], windowSize: numb
 
   const counts = Array(10).fill(0);
   recentTicks.forEach(tick => {
-    const digit = getLastDigit(tick.price);
+    const digit = getLastDigit(tick.price, decimalPlaces);
     if (!isNaN(digit)) {
       counts[digit]++;
     }
@@ -116,6 +116,7 @@ export function calculateDigitStatsForWindow(ticks: TickData[], windowSize: numb
   const sortedByFreq = [...frequencies].sort((a, b) => b.count - a.count);
 
   const chiSquare = frequencies.reduce((sum, freq) => {
+    if (expectedFrequency === 0) return sum; // Evitar divisão por zero
     return sum + Math.pow(freq.count - expectedFrequency, 2) / expectedFrequency;
   }, 0);
   
