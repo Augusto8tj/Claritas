@@ -220,7 +220,7 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
             stake: lastOp.stake,
             profit: lastOp.result || -lastOp.stake,
             contractType: lastOp.contractType as any,
-            signalConfidence: 'ALTA'
+            signalConfidence: 'ALTA' // Assumindo alta confiança para trades executados
         };
         
         const updatedHistory = [...pilot.tradeHistory, newTradeResult];
@@ -244,7 +244,7 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
         if (newStatus === 'COOLDOWN') {
           setTimeout(() => {
             setPilots(prev => {
-              if (prev[pilotKey].status === 'COOLDOWN') {
+              if (prev[pilotKey]?.status === 'COOLDOWN') {
                 return { ...prev, [pilotKey]: { ...prev[pilotKey], status: 'TRADING' } };
               }
               return prev;
@@ -309,7 +309,7 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
            break;
         case 'underdog':
            const coldestDigitStat = digitStats.length > 0 ? [...digitStats].sort((a, b) => a.probability - b.probability)[0] : null;
-           if (coldestDigitStat && (coldestDigitStat.probability) <= (underdogThreshold / 100)) {
+           if (coldestDigitStat && (coldestDigitStat.probability * 100) <= underdogThreshold) {
                shouldExecute = true;
                confidenceForStake = 'ALTA';
                executionParams = [isUnderdogInverse ? 'DIGITDIFF' : 'DIGITMATCH', coldestDigitStat.digit, pilotKey];
@@ -341,6 +341,7 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
 
       if (shouldExecute && executionParams) {
           const stakeConfig: SmartMartingaleConfig = { 
+              isEnabled: isMartingaleEnabled,
               baseStake: BASE_STAKE, 
               maxMartingaleLevels: maxLosses, 
               martingaleMultiplier: martingaleRecoveryFactor,
@@ -350,8 +351,8 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
           const stakeDecision = decideNextStake(pilot.tradeHistory, stakeConfig, bankrollState, confidenceForStake);
 
           if (stakeDecision.shouldPause) {
-              setPilots(prev => ({ ...prev, [pilotKey]: { ...prev[pilotKey], status: 'CIRCUIT_BREAKER', currentTarget: stakeDecision.pauseReason || 'Limite de risco atingido' }}));
-              continue;
+            setPilots(prev => ({ ...prev, [pilotKey]: { ...prev[pilotKey], status: 'CIRCUIT_BREAKER', currentTarget: stakeDecision.pauseReason || 'Limite de risco atingido' }}));
+            continue;
           }
 
           executeTrade(executionParams[0], stakeDecision.nextStake, activeSymbol!, 1, 't', 'Piloto', executionParams[1], executionParams[2])
@@ -377,7 +378,7 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
       dailyBalance, dailyTarget, maxLosses, martingaleRecoveryFactor, sessionInitialBankroll, accountBalance.balance, dailyPnl,
       overUnderStats, evenOddStats, overUnderThreshold, evenOddThreshold, underdogThreshold, isUnderdogInverse, overUnderUnderdogThreshold, evenOddUnderdogThreshold,
       executionCooldown, isMartingaleEnabled, isSmartMartingale, analysisResults.mainWindowStats, multiWindowAnalysis, digitStats,
-      cooldownTime
+      cooldownTime, consensusThreshold
   ]);
   
   return {

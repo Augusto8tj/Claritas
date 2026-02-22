@@ -23,11 +23,12 @@ export interface TradeResult {
 }
 
 export interface SmartMartingaleConfig {
+  isEnabled: boolean; // Flag para ligar/desligar o Martingale
   baseStake: number;
   maxMartingaleLevels: number;
   martingaleMultiplier: number;    // ex.: 1.3 a 1.5
   useAntiMartingale: boolean;
-  isSmart: boolean; // NOVO: Flag para Martingale Inteligente
+  isSmart: boolean; 
 }
 
 export interface BankrollState {
@@ -93,7 +94,7 @@ export function decideNextStake(
   bankrollState: BankrollState,
   latestSignalConfidence: ConfidenceLevel
 ): SmartStakeDecision {
-  const { baseStake, maxMartingaleLevels, martingaleMultiplier, useAntiMartingale, isSmart } = config;
+  const { isEnabled, baseStake, maxMartingaleLevels, martingaleMultiplier, useAntiMartingale, isSmart } = config;
   const { currentBankroll, initialBankroll, maxDailyLoss, dailyProfitTarget } = bankrollState;
 
   // --- 1. Circuit Breakers ---
@@ -117,7 +118,7 @@ export function decideNextStake(
   const lastTrade = tradeHistory.length > 0 ? tradeHistory[tradeHistory.length - 1] : null;
 
   if (!lastTrade || lastTrade.profit > 0) {
-    if (useAntiMartingale) {
+    if (isEnabled && useAntiMartingale) {
         const wins = countConsecutiveWins(tradeHistory);
         if (wins >= 3) {
             return { nextStake: baseStake * 1.2, shouldPause: false };
@@ -127,6 +128,12 @@ export function decideNextStake(
   }
 
   // --- 3. Lógica de Martingale ---
+  
+  // Se o Martingale estiver DESATIVADO, retorna o stake base após uma perda.
+  if (!isEnabled) {
+    return { nextStake: baseStake, shouldPause: false, pauseReason: 'Martingale desativado.' };
+  }
+
   const consecutiveLosses = countConsecutiveLosses(tradeHistory);
 
   if (consecutiveLosses > maxMartingaleLevels) {
