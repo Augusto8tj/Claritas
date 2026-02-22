@@ -43,7 +43,8 @@ const PilotTabContent: React.FC<{
     description: string;
     pilotState: PilotState;
     toggleAutopilot: (type: PilotType) => void;
-}> = ({ pilotKey, title, description, pilotState, toggleAutopilot }) => {
+    children?: React.ReactNode; // Para adicionar os sliders
+}> = ({ pilotKey, title, description, pilotState, toggleAutopilot, children }) => {
     const { isOn, status, currentTarget, consecutiveLosses, accumulatedLoss } = pilotState;
 
     const statusInfo = {
@@ -99,6 +100,7 @@ const PilotTabContent: React.FC<{
                     <span>{currentTarget}</span>
                  </div>
             )}
+            {children}
         </div>
     );
 };
@@ -142,6 +144,10 @@ export const DigitsAutopilotManager: React.FC<DigitsAutopilotManagerProps> = (pr
     backtestResults,
     isBacktesting,
     runBacktestForAllStrategies,
+    calibrationResults,
+    isCalibrating,
+    runCalibration,
+    applyCalibration,
  } = props;
 
   return (
@@ -179,7 +185,16 @@ export const DigitsAutopilotManager: React.FC<DigitsAutopilotManagerProps> = (pr
                                     description="Opera 'Difere' no dígito mais frequente, apostando na regressão à média."
                                     pilotState={pilots.matchesDiffers}
                                     toggleAutopilot={toggleAutopilot}
-                                />
+                                >
+                                    <div className="space-y-4 pt-4 mt-4 border-t">
+                                        <h4 className="text-xs font-semibold text-muted-foreground">Configuração Fina</h4>
+                                        <div className="space-y-2">
+                                            <Label htmlFor="consensus-threshold">Limiar de Prob. de Disparo ({consensusThreshold.toFixed(1)}%)</Label>
+                                            <Slider id="consensus-threshold" min={15} max={40} step={1} value={[consensusThreshold]} onValueChange={v => setConsensusThreshold(v[0])} />
+                                            <p className="text-xs text-muted-foreground">Operar 'Difere' se a prob. do dígito mais provável exceder este valor.</p>
+                                        </div>
+                                    </div>
+                                </PilotTabContent>
                             </TabsContent>
                             <TabsContent value="overUnder" className="pt-4">
                                 <PilotTabContent
@@ -188,7 +203,16 @@ export const DigitsAutopilotManager: React.FC<DigitsAutopilotManagerProps> = (pr
                                     description="Analisa a probabilidade do dígito final ser maior ou menor que uma barreira."
                                     pilotState={pilots.overUnder}
                                     toggleAutopilot={toggleAutopilot}
-                                />
+                                >
+                                    <div className="space-y-4 pt-4 mt-4 border-t">
+                                        <h4 className="text-xs font-semibold text-muted-foreground">Configuração Fina</h4>
+                                        <div className="space-y-2">
+                                            <Label htmlFor="ou-threshold">Limiar de Prob. de Bloco ({overUnderThreshold.toFixed(1)}%)</Label>
+                                            <Slider id="ou-threshold" min={55} max={80} step={1} value={[overUnderThreshold]} onValueChange={v => setOverUnderThreshold(v[0])} />
+                                            <p className="text-xs text-muted-foreground">Operar se a prob. do bloco (0-4 ou 5-9) exceder este valor.</p>
+                                        </div>
+                                    </div>
+                                </PilotTabContent>
                             </TabsContent>
                             <TabsContent value="evenOdd" className="pt-4">
                                 <PilotTabContent
@@ -197,7 +221,16 @@ export const DigitsAutopilotManager: React.FC<DigitsAutopilotManagerProps> = (pr
                                     description="Opera na probabilidade do dígito final ser par ou ímpar."
                                     pilotState={pilots.evenOdd}
                                     toggleAutopilot={toggleAutopilot}
-                                />
+                                >
+                                    <div className="space-y-4 pt-4 mt-4 border-t">
+                                        <h4 className="text-xs font-semibold text-muted-foreground">Configuração Fina</h4>
+                                        <div className="space-y-2">
+                                            <Label htmlFor="eo-threshold">Limiar de Prob. de Bloco ({evenOddThreshold.toFixed(1)}%)</Label>
+                                            <Slider id="eo-threshold" min={55} max={80} step={1} value={[evenOddThreshold]} onValueChange={v => setEvenOddThreshold(v[0])} />
+                                            <p className="text-xs text-muted-foreground">Operar se a prob. do bloco (Par ou Ímpar) exceder este valor.</p>
+                                        </div>
+                                    </div>
+                                </PilotTabContent>
                             </TabsContent>
                         </Tabs>
                     </div>
@@ -218,33 +251,34 @@ export const DigitsAutopilotManager: React.FC<DigitsAutopilotManagerProps> = (pr
                                     description="Aposta 'Combina' no dígito menos frequente, explorando a regressão à média."
                                     pilotState={pilots.underdog}
                                     toggleAutopilot={toggleAutopilot}
-                                />
-                                <div className="space-y-4 pt-4 mt-4 border-t">
-                                    <h4 className="text-xs font-semibold text-muted-foreground">Configuração Fina (Azarão)</h4>
-                                    <div className="space-y-2">
-                                        <Label htmlFor="underdog-threshold">Limiar de Frequência de Disparo ({underdogThreshold.toFixed(1)}%)</Label>
-                                        <Slider
-                                            id="underdog-threshold"
-                                            min={1.0} max={10.0} step={0.5}
-                                            value={[underdogThreshold]}
-                                            onValueChange={(value) => setUnderdogThreshold(value[0])}
-                                        />
-                                        <p className="text-xs text-muted-foreground">Operar 'Combina' se a frequência de um dígito cair abaixo deste valor.</p>
+                                >
+                                    <div className="space-y-4 pt-4 mt-4 border-t">
+                                        <h4 className="text-xs font-semibold text-muted-foreground">Configuração Fina (Azarão)</h4>
+                                        <div className="space-y-2">
+                                            <Label htmlFor="underdog-threshold">Limiar de Frequência de Disparo ({underdogThreshold.toFixed(1)}%)</Label>
+                                            <Slider
+                                                id="underdog-threshold"
+                                                min={1.0} max={10.0} step={0.5}
+                                                value={[underdogThreshold]}
+                                                onValueChange={(value) => setUnderdogThreshold(value[0])}
+                                            />
+                                            <p className="text-xs text-muted-foreground">Operar 'Combina' se a frequência de um dígito cair abaixo deste valor.</p>
+                                        </div>
+                                        <div className="flex items-center justify-between rounded-lg border p-3">
+                                            <Label htmlFor="underdog-inverse-switch" className="flex flex-col space-y-1">
+                                                <span>Inverter Lógica</span>
+                                                <span className="font-normal text-xs text-muted-foreground">
+                                                    Apostar 'Difere' no dígito menos frequente (alto risco).
+                                                </span>
+                                            </Label>
+                                            <Switch
+                                                id="underdog-inverse-switch"
+                                                checked={isUnderdogInverse}
+                                                onCheckedChange={setIsUnderdogInverse}
+                                            />
+                                        </div>
                                     </div>
-                                    <div className="flex items-center justify-between rounded-lg border p-3">
-                                        <Label htmlFor="underdog-inverse-switch" className="flex flex-col space-y-1">
-                                            <span>Inverter Lógica</span>
-                                            <span className="font-normal text-xs text-muted-foreground">
-                                                Apostar 'Difere' no dígito menos frequente (alto risco).
-                                            </span>
-                                        </Label>
-                                        <Switch
-                                            id="underdog-inverse-switch"
-                                            checked={isUnderdogInverse}
-                                            onCheckedChange={setIsUnderdogInverse}
-                                        />
-                                    </div>
-                                </div>
+                                </PilotTabContent>
                             </TabsContent>
                             <TabsContent value="underdogOverUnder" className="pt-4">
                                 <PilotTabContent
@@ -253,20 +287,21 @@ export const DigitsAutopilotManager: React.FC<DigitsAutopilotManagerProps> = (pr
                                     description="Aposta no bloco (0-4 ou 5-9) que está estatisticamente 'atrasado'."
                                     pilotState={pilots.underdogOverUnder}
                                     toggleAutopilot={toggleAutopilot}
-                                />
-                                <div className="space-y-4 pt-4 mt-4 border-t">
-                                    <h4 className="text-xs font-semibold text-muted-foreground">Configuração Fina (Azarão A/A)</h4>
-                                    <div className="space-y-2">
-                                        <Label htmlFor="underdog-ou-threshold">Limiar de Frequência de Bloco ({overUnderUnderdogThreshold.toFixed(1)}%)</Label>
-                                        <Slider
-                                            id="underdog-ou-threshold"
-                                            min={30} max={48} step={1}
-                                            value={[overUnderUnderdogThreshold]}
-                                            onValueChange={(value) => setOverUnderUnderdogThreshold(value[0])}
-                                        />
-                                        <p className="text-xs text-muted-foreground">Ambos os pilotos A/A Azarão usarão este limiar para operar.</p>
+                                >
+                                    <div className="space-y-4 pt-4 mt-4 border-t">
+                                        <h4 className="text-xs font-semibold text-muted-foreground">Configuração Fina (Azarão A/A)</h4>
+                                        <div className="space-y-2">
+                                            <Label htmlFor="underdog-ou-threshold">Limiar de Frequência de Bloco ({overUnderUnderdogThreshold.toFixed(1)}%)</Label>
+                                            <Slider
+                                                id="underdog-ou-threshold"
+                                                min={30} max={48} step={1}
+                                                value={[overUnderUnderdogThreshold]}
+                                                onValueChange={(value) => setOverUnderUnderdogThreshold(value[0])}
+                                            />
+                                            <p className="text-xs text-muted-foreground">Ambos os pilotos A/A Azarão usarão este limiar para operar.</p>
+                                        </div>
                                     </div>
-                                </div>
+                                </PilotTabContent>
                             </TabsContent>
                             <TabsContent value="dynamicUnderdogOverUnder" className="pt-4">
                                 <PilotTabContent
@@ -284,20 +319,21 @@ export const DigitsAutopilotManager: React.FC<DigitsAutopilotManagerProps> = (pr
                                     description="Aposta no bloco (Par ou Ímpar) que está estatisticamente 'atrasado'."
                                     pilotState={pilots.underdogEvenOdd}
                                     toggleAutopilot={toggleAutopilot}
-                                />
-                                <div className="space-y-4 pt-4 mt-4 border-t">
-                                    <h4 className="text-xs font-semibold text-muted-foreground">Configuração Fina (Azarão P/I)</h4>
-                                    <div className="space-y-2">
-                                        <Label htmlFor="underdog-eo-threshold">Limiar de Frequência de Bloco ({evenOddUnderdogThreshold.toFixed(1)}%)</Label>
-                                        <Slider
-                                            id="underdog-eo-threshold"
-                                            min={30} max={48} step={1}
-                                            value={[evenOddUnderdogThreshold]}
-                                            onValueChange={(value) => setEvenOddUnderdogThreshold(value[0])}
-                                        />
-                                        <p className="text-xs text-muted-foreground">Operar em um bloco se a probabilidade dele cair abaixo deste valor.</p>
+                                >
+                                    <div className="space-y-4 pt-4 mt-4 border-t">
+                                        <h4 className="text-xs font-semibold text-muted-foreground">Configuração Fina (Azarão P/I)</h4>
+                                        <div className="space-y-2">
+                                            <Label htmlFor="underdog-eo-threshold">Limiar de Frequência de Bloco ({evenOddUnderdogThreshold.toFixed(1)}%)</Label>
+                                            <Slider
+                                                id="underdog-eo-threshold"
+                                                min={30} max={48} step={1}
+                                                value={[evenOddUnderdogThreshold]}
+                                                onValueChange={(value) => setEvenOddUnderdogThreshold(value[0])}
+                                            />
+                                            <p className="text-xs text-muted-foreground">Operar em um bloco se a probabilidade dele cair abaixo deste valor.</p>
+                                        </div>
                                     </div>
-                                </div>
+                                </PilotTabContent>
                             </TabsContent>
                         </Tabs>
                     </div>
