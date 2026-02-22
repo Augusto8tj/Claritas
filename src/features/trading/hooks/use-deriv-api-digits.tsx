@@ -7,6 +7,7 @@ import { useToast } from '@/hooks/use-toast';
 import type { Operation, OperationInitiator, DurationUnit, TickData, Asset, ChartData, CandleData, TimePeriod, ChartType, TradeAnnotation, DurationLimits } from '@/lib/types';
 import { FirebaseErrorListener } from '@/components/firebase-error-listener';
 import { useAuth } from '@/features/auth/hooks/use-auth';
+import { saveLiveTickForDigits } from '@/services/digits-data-service'; // NOVO: Importação do serviço de dados
 
 // --- CONSTANTS ---
 const DERIV_DEMO_TOKEN_KEY = 'derivDemoApiToken';
@@ -16,6 +17,7 @@ const DERIV_DIGITS_LOG_KEY = 'derivDigitsOperationsLog_v5';
 const DERIV_APP_ID = process.env.NEXT_PUBLIC_DERIV_APP_ID || "1089";
 const MAX_TICKS = 1000;
 const marketNameMapping: Record<string, string> = { 'synthetic_index': 'Índices Sintéticos' };
+const TICK_SAVE_INTERVAL_MS = 5000; // NOVO: Salvar um tick a cada 5 segundos
 
 // --- TYPES ---
 type DigitContractType = 'DIGITMATCH' | 'DIGITDIFF' | 'DIGITOVER' | 'DIGITUNDER' | 'DIGITEVEN' | 'DIGITODD';
@@ -152,6 +154,7 @@ export function useDerivApiDigitsState() {
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const allowAutoReconnectRef = useRef(true);
   const reconnectInProgressRef = useRef(false);
+  const lastTickSaveTimestampRef = useRef<number>(0); // NOVO: Ref para throttle
 
     const setAndPersistOperationsLog = useCallback((updater: React.SetStateAction<Operation[]>) => {
         setOperationsLog(prevLog => {
@@ -300,6 +303,14 @@ export function useDerivApiDigitsState() {
                             if (response.subscription?.id === activeSubscriptionIdRef.current) {
                                 const tick = response.tick;
                                 const newTick = { epoch: tick.epoch, price: tick.quote };
+
+                                // NOVO: Salvar tick no Firestore (com throttle)
+                                const now = Date.now();
+                                if (user && activeSymbol && (now - lastTickSaveTimestampRef.current > TICK_SAVE_INTERVAL_MS)) {
+                                    saveLiveTickForDigits(user.uid, activeSymbol, { timestamp: tick.epoch, price: tick.quote });
+                                    lastTickSaveTimestampRef.current = now;
+                                }
+
                                 setPriceTicks(prev => addDataPoint(prev, newTick));
                                 if (chartTypeRef.current === 'Area') {
                                     setChartData(prev => addDataPoint(prev, newTick));
