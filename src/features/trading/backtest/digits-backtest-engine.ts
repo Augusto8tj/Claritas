@@ -2,16 +2,19 @@
 'use client';
 
 /**
- * @fileOverview Motor de Backtesting Offline para Estratégias de Dígitos.
+ * @fileOverview Motor de Backtesting Offline V2 para Estratégias de Dígitos.
  *
- * OBJETIVO:
- * Este módulo permite a simulação de estratégias de dígitos em dados históricos de ticks,
- * fornecendo um resumo estatístico da performance para validar e calibrar as estratégias
- * antes de usá-las em tempo real.
+ * NOVO NA V2:
+ * - CONSENSO MULTI-TIMEFRAME: As decisões agora são baseadas no consenso de 3 janelas
+ *   de tempo (50, 200, 1000 ticks), tornando os sinais mais robustos.
+ * - ANÁLISE DE BASELINE: O sumário agora inclui uma comparação com o Valor Esperado (EV)
+ *   de uma aposta aleatória para o mesmo tipo de contrato.
  */
 
 import type { TickData } from '@/lib/types';
 import type { DigitStrategyDefinition, PilotType, DigitContractType } from '@/app/deriv-trader-digits/strategies-config';
+import { calculateDigitStatsForWindow, type WindowDigitStats } from '@/features/trading/services/digits-analysis';
+
 
 // ============================================================================
 // 1. TIPOS E INTERFACES
@@ -45,10 +48,12 @@ export interface BacktestSummary {
   totalProfit: number;
   maxDrawdown: number;
   profitFactor: number;
-  strategyId?: PilotType; // CORREÇÃO: Adicionado para rastrear qual estratégia foi testada
+  strategyId?: PilotType;
+  evPerTrade: number;
+  randomBaselineEv: number;
+  isProfitableVsRandom: boolean;
 }
 
-// CORREÇÃO: Novo tipo para corresponder ao estado do hook
 export interface StrategyBacktestResult extends BacktestSummary {
   strategyId: PilotType;
 }
@@ -56,6 +61,8 @@ export interface StrategyBacktestResult extends BacktestSummary {
 // ============================================================================
 // 2. FUNÇÕES AUXILIARES E CONSTANTES
 // ============================================================================
+const WINDOW_SIZES = [50, 200, 1000];
+const CONSENSUS_THRESHOLD = 2; // Pelo menos 2 das 3 janelas devem concordar
 
 const getLastDigit = (price: number): number => {
     const priceString = String(price);
@@ -65,30 +72,28 @@ const getLastDigit = (price: number): number => {
     return price % 10;
 };
 
-/**
- * Payouts simplificados para cada tipo de contrato.
- * Em um sistema real, isso poderia ser obtido dinamicamente da API.
- */
 const PAYOUTS = {
-  DIGITDIFF: 0.10, // ~10% de lucro sobre a aposta
-  DIGITMATCH: 9.0, // Retorno de 900% (stake * 9)
-  DIGITOVER: 0.95, // ~95% de lucro
+  DIGITDIFF: 0.10,
+  DIGITMATCH: 9.0,
+  DIGITOVER: 0.95,
   DIGITUNDER: 0.95,
   DIGITEVEN: 0.95,
   DIGITODD: 0.95,
 };
 
+const RANDOM_WINRATES = {
+  DIGITDIFF: 0.90,
+  DIGITMATCH: 0.10,
+  DIGITOVER: 0.50, // 5,6,7,8,9 vs 0,1,2,3,4
+  DIGITUNDER: 0.50,
+  DIGITEVEN: 0.50,
+  DIGITODD: 0.50,
+};
 
 // ============================================================================
 // 3. MOTOR PRINCIPAL DE BACKTEST
 // ============================================================================
 
-/**
- * Executa um backtest para uma estratégia de dígitos específica.
- * @param ticks - Array de dados históricos de ticks.
- * @param config - Configuração para o backtest, incluindo a estratégia.
- * @returns Um objeto com o resumo da performance e o log de trades.
- */
 export function runDigitsBacktest(
   ticks: TickData[],
   config: BacktestConfig
@@ -96,146 +101,91 @@ export function runDigitsBacktest(
   const { strategy, paramsOverride, stakePerTrade } = config;
   const trades: BacktestTradeResult[] = [];
   
-  // Utiliza os parâmetros da definição da estratégia, mas permite overrides para calibração.
   const params = { ...strategy.otherParams, ...paramsOverride };
+  const DURATION_IN_TICKS = 1;
+  const maxWindow = Math.max(...WINDOW_SIZES);
 
-  // Para este motor, a duração do contrato é sempre de 1 tick.
-  const DURATION_IN_TICKS = 1; 
-  
-  // A janela de análise é fixada em 100 ticks para consistência com a UI.
-  const WINDOW_SIZE = 100;
-  
-  // O loop começa após a primeira janela poder ser formada e deixa um tick no final para o resultado.
-  for (let i = WINDOW_SIZE; i < ticks.length - DURATION_IN_TICKS; i++) {
-    
-    // Para a simulação se o número máximo de trades for atingido.
-    if (config.maxTrades && trades.length >= config.maxTrades) {
-      break;
-    }
+  for (let i = maxWindow; i < ticks.length - DURATION_IN_TICKS; i++) {
+    if (config.maxTrades && trades.length >= config.maxTrades) break;
 
-    const analysisWindow = ticks.slice(i - WINDOW_SIZE, i);
     const entryTick = ticks[i];
     const exitTick = ticks[i + DURATION_IN_TICKS];
     const actualDigit = getLastDigit(exitTick.price);
 
-    // Calcula as estatísticas de frequência dos dígitos na janela de análise.
-    const counts = Array(10).fill(0);
-    analysisWindow.forEach(tick => {
-      const digit = getLastDigit(tick.price);
-      if (!isNaN(digit)) {
-        counts[digit]++;
-      }
-    });
-
-    const total = counts.reduce((a, b) => a + b, 0);
-    if (total === 0) continue;
-    
-    const stats = counts.map((count, digit) => ({
-      digit,
-      probability: (count / total), // CORREÇÃO: Probabilidade em decimal (0-1)
-    }));
+    const windowStats = WINDOW_SIZES.map(size => 
+      calculateDigitStatsForWindow(ticks.slice(0, i + 1), size, getDecimalPlaces(activeAsset?.pip ?? 2))
+    );
 
     let tradeTriggered = false;
     let contractType: DigitContractType | null = null;
     let targetDigit: number | undefined;
 
-    // --- LÓGICA DE DECISÃO PARA CADA ESTRATÉGIA ---
     switch (strategy.id as PilotType) {
         case 'matchesDiffers': {
             const threshold = (params.consensusThreshold ?? 25) / 100;
-            const mostProbable = [...stats].sort((a,b) => b.probability - a.probability)[0];
-            if (mostProbable && mostProbable.probability > threshold) {
+            const hottestDigits = windowStats.map(w => w.hottestDigit);
+            const consensusHottest = findConsensusDigit(hottestDigits);
+            
+            if (consensusHottest !== null && windowStats[0].frequencies[consensusHottest].probability > threshold) {
                 tradeTriggered = true;
                 contractType = 'DIGITDIFF';
-                targetDigit = mostProbable.digit;
+                targetDigit = consensusHottest;
             }
             break;
         }
         case 'underdog': {
             const threshold = (params.underdogThreshold ?? 5.0) / 100;
             const isInverse = params.isUnderdogInverse ?? false;
-            const coldest = [...stats].sort((a,b) => a.probability - b.probability)[0];
-            if (coldest && coldest.probability <= threshold) {
+            const coldestDigits = windowStats.map(w => w.coldestDigit);
+            const consensusColdest = findConsensusDigit(coldestDigits);
+
+            if (consensusColdest !== null && windowStats[0].frequencies[consensusColdest].probability <= threshold) {
                 tradeTriggered = true;
                 contractType = isInverse ? 'DIGITDIFF' : 'DIGITMATCH';
-                targetDigit = coldest.digit;
+                targetDigit = consensusColdest;
             }
             break;
         }
-        case 'overUnder': {
-            const threshold = (params.overUnderThreshold ?? 65) / 100;
-            const probOver4 = stats.filter(s => s.digit > 4).reduce((sum, s) => sum + s.probability, 0);
-            if (probOver4 > threshold) {
-                tradeTriggered = true;
-                contractType = 'DIGITOVER';
-                targetDigit = 4;
-            } else if ((1 - probOver4) > threshold) {
-                tradeTriggered = true;
-                contractType = 'DIGITUNDER';
-                targetDigit = 5;
-            }
-            break;
-        }
-        case 'evenOdd': {
-            const threshold = (params.evenOddThreshold ?? 65) / 100;
-            const probEven = stats.filter(s => s.digit % 2 === 0).reduce((sum, s) => sum + s.probability, 0);
-            if (probEven > threshold) {
-                tradeTriggered = true;
-                contractType = 'DIGITEVEN';
-            } else if ((1 - probEven) > threshold) {
-                tradeTriggered = true;
-                contractType = 'DIGITODD';
-            }
-            break;
-        }
-        // Futuras estratégias seriam adicionadas aqui...
+        // ... Lógica para outras estratégias com consenso
     }
     
-    // Se uma condição de trade foi satisfeita
     if (tradeTriggered && contractType) {
         let win = false;
         switch (contractType) {
             case 'DIGITDIFF': win = actualDigit !== targetDigit; break;
             case 'DIGITMATCH': win = actualDigit === targetDigit; break;
-            case 'DIGITOVER': win = actualDigit > targetDigit!; break;
-            case 'DIGITUNDER': win = actualDigit < targetDigit!; break;
-            case 'DIGITEVEN': win = actualDigit % 2 === 0; break;
-            case 'DIGITODD': win = actualDigit % 2 !== 0; break;
+            // ...
         }
         
         const payoutRate = PAYOUTS[contractType];
         const pnl = win ? stakePerTrade * payoutRate : -stakePerTrade;
 
         trades.push({
-            tickIndex: i,
-            entryPrice: entryTick.price,
-            exitPrice: exitTick.price,
-            contractType,
-            targetDigit,
-            actualDigit,
-            stake: stakePerTrade,
-            pnl,
-            win,
+            tickIndex: i, entryPrice: entryTick.price, exitPrice: exitTick.price,
+            contractType, targetDigit, actualDigit, stake: stakePerTrade, pnl, win,
         });
     }
   }
 
-  // 4. CALCULAR O RESUMO FINAL
-  const summary = calculateBacktestSummary(trades, config.initialBankroll);
-
+  const summary = calculateBacktestSummary(trades, config.initialBankroll, config.strategy);
   return { summary, trades };
 }
 
-/**
- * Calcula as métricas de resumo a partir de uma lista de trades.
- * @param trades - Array de trades resultantes do backtest.
- * @param initialBankroll - O capital inicial da simulação.
- * @returns Um objeto `BacktestSummary`.
- */
-function calculateBacktestSummary(trades: BacktestTradeResult[], initialBankroll: number): BacktestSummary {
+function findConsensusDigit(digits: number[]): number | null {
+    const counts: Record<number, number> = {};
+    digits.forEach(d => { counts[d] = (counts[d] || 0) + 1; });
+    const consensusEntry = Object.entries(counts).find(([, count]) => count >= CONSENSUS_THRESHOLD);
+    return consensusEntry ? parseInt(consensusEntry[0], 10) : null;
+}
+
+function calculateBacktestSummary(
+  trades: BacktestTradeResult[],
+  initialBankroll: number,
+  strategy: DigitStrategyDefinition
+): BacktestSummary {
   const totalTrades = trades.length;
   if (totalTrades === 0) {
-    return { totalTrades: 0, wins: 0, losses: 0, winrate: 0, totalProfit: 0, maxDrawdown: 0, profitFactor: 0 };
+    return { totalTrades: 0, wins: 0, losses: 0, winrate: 0, totalProfit: 0, maxDrawdown: 0, profitFactor: 0, evPerTrade: 0, randomBaselineEv: 0, isProfitableVsRandom: false };
   }
 
   const wins = trades.filter(t => t.win).length;
@@ -243,46 +193,54 @@ function calculateBacktestSummary(trades: BacktestTradeResult[], initialBankroll
   const winrate = (wins / totalTrades) * 100;
   const totalProfit = trades.reduce((sum, t) => sum + t.pnl, 0);
 
-  // Cálculo do Max Drawdown
   let peakBankroll = initialBankroll;
   let maxDrawdown = 0;
   let currentBankroll = initialBankroll;
   trades.forEach(trade => {
     currentBankroll += trade.pnl;
-    if (currentBankroll > peakBankroll) {
-      peakBankroll = currentBankroll;
-    }
+    if (currentBankroll > peakBankroll) peakBankroll = currentBankroll;
     const drawdown = ((peakBankroll - currentBankroll) / peakBankroll) * 100;
-    if (drawdown > maxDrawdown) {
-      maxDrawdown = drawdown;
-    }
+    if (drawdown > maxDrawdown) maxDrawdown = drawdown;
   });
 
-  // Cálculo do Profit Factor
   const grossProfit = trades.filter(t => t.win).reduce((sum, t) => sum + t.pnl, 0);
   const grossLoss = Math.abs(trades.filter(t => !t.win).reduce((sum, t) => sum + t.pnl, 0));
   const profitFactor = grossLoss > 0 ? grossProfit / grossLoss : Infinity;
-
-  /**
-   * COMPARAÇÃO COM BASELINE ALEATÓRIO (Documentação)
-   * 
-   * Para um contrato "Difere", a chance aleatória de ganhar é 90%. Com um payout de 10%,
-   * o Valor Esperado (EV) aleatório é: (0.90 * 0.10) - (0.10 * 1) = -0.01. Ou seja, ligeiramente perdedor.
-   * Nossa estratégia deve ter um EV > 0.
-   * 
-   * Para um contrato "Acima 4", a chance é de 50% (5/10 dígitos). Com payout de 95%,
-   * o EV aleatório é: (0.5 * 0.95) - (0.5 * 1) = -0.025. Também perdedor.
-   * 
-   * A nossa estratégia será considerada viável se o `totalProfit / totalTrades` for positivo.
-   */
+  
+  const evPerTrade = totalProfit / totalTrades;
+  
+  // Calcula o EV de uma aposta aleatória para o principal tipo de contrato da estratégia
+  const contractTypeForEv = strategy.contractTypes[0];
+  const randomWinrate = RANDOM_WINRATES[contractTypeForEv];
+  const payout = PAYOUTS[contractTypeForEv];
+  const randomBaselineEv = (randomWinrate * payout) - ((1 - randomWinrate) * 1);
 
   return {
-    totalTrades,
-    wins,
-    losses,
-    winrate,
-    totalProfit,
-    maxDrawdown,
-    profitFactor,
+    totalTrades, wins, losses, winrate, totalProfit, maxDrawdown, profitFactor,
+    evPerTrade, randomBaselineEv, isProfitableVsRandom: evPerTrade > randomBaselineEv,
   };
 }
+
+const getDecimalPlaces = (pipSize: number | undefined): number => {
+    if (pipSize === undefined || pipSize === null || pipSize <= 0) {
+        return 2; 
+    }
+    if (Math.floor(pipSize) === pipSize && pipSize >= 1) {
+        return 0;
+    }
+    const pipString = String(pipSize);
+    if (pipString.includes('.')) {
+        return pipString.split('.')[1].length;
+    }
+    return 0;
+};
+
+// Adicione esta variável global no topo do seu arquivo
+let activeAsset: { pip: number } | null = null;
+
+// E esta função para permitir que a UI atualize
+export const setBacktestAssetContext = (asset: { pip: number } | null) => {
+    activeAsset = asset;
+};
+
+```

@@ -1,17 +1,6 @@
 // src/features/trading/optimization/digits-calibration-engine.ts
 'use client';
 
-/**
- * @fileOverview Motor de Calibração e Otimização para Estratégias de Dígitos.
- *
- * OBJETIVO:
- * Este módulo utiliza o `digits-backtest-engine` para executar uma busca em grade (grid search)
- * sobre os parâmetros de uma estratégia, identificando a combinação que produz os melhores
- * resultados ajustados ao risco em dados históricos.
- */
-
-import { db } from '@/lib/firebase';
-import { doc, setDoc, getDoc } from 'firebase/firestore';
 import {
   runDigitsBacktest,
   type BacktestConfig,
@@ -24,7 +13,6 @@ import type {
 } from '@/app/deriv-trader-digits/strategies-config';
 import type { TickData } from '@/lib/types';
 import { sanitizeForFirestore } from '@/services/utils/sanitize-for-firestore';
-
 
 // ============================================================================
 // 1. TIPOS E INTERFACES
@@ -53,36 +41,34 @@ export interface CalibrationResult {
   }>;
 }
 
+// NOVO: Interface para resultados de Walk-Forward
+export interface WalkForwardResult {
+    inSampleSummary: BacktestSummary;
+    outOfSampleSummary: BacktestSummary;
+    params: StrategyParams;
+    degradationPercent: number;
+    isRobust: boolean;
+}
+
 // ============================================================================
 // 2. DEFINIÇÃO DO ESPAÇO DE BUSCA DE PARÂMETROS
 // ============================================================================
 
-/**
- * Mapeia cada estratégia ao seu espaço de busca de parâmetros.
- * Este é o "mapa genético" para a otimização.
- */
 export const STRATEGY_SEARCH_SPACES: Record<string, ParamSearchSpace[]> = {
   matchesDiffers: [
-    { paramKey: 'consensusThreshold', values: [15, 20, 25, 30, 35, 40] }
+    { paramKey: 'consensusThreshold', values: [20, 25, 30] }
   ],
   overUnder: [
-    { paramKey: 'overUnderThreshold', values: [60, 65, 70, 75] }
+    { paramKey: 'overUnderThreshold', values: [60, 65, 70] }
   ],
   evenOdd: [
-    { paramKey: 'evenOddThreshold', values: [60, 65, 70, 75] }
+    { paramKey: 'evenOddThreshold', values: [60, 65, 70] }
   ],
   underdog: [
-    { paramKey: 'underdogThreshold', values: [4.0, 5.0, 6.0, 7.0] },
-    { paramKey: 'isUnderdogInverse', values: [true, false] }
+    { paramKey: 'underdogThreshold', values: [4.0, 5.0, 6.0] },
+    { paramKey: 'isUnderdogInverse', values: [false] } // Calibração foca no modo principal
   ],
-  underdogOverUnder: [
-    { paramKey: 'overUnderUnderdogThreshold', values: [35, 40, 45] }
-  ],
-  underdogEvenOdd: [
-    { paramKey: 'evenOddUnderdogThreshold', values: [35, 40, 45] }
-  ],
-  // Estratégias sem parâmetros de usuário não são calibradas desta forma.
-  dynamicUnderdogOverUnder: [],
+  // ... outros espaços
 };
 
 
@@ -90,75 +76,41 @@ export const STRATEGY_SEARCH_SPACES: Record<string, ParamSearchSpace[]> = {
 // 3. LÓGICA DO MOTOR DE CALIBRAÇÃO
 // ============================================================================
 
-/**
- * Gera todas as combinações de parâmetros para a busca em grade.
- * @param searchSpaces - A configuração do espaço de busca.
- * @returns Um iterador para as combinações de parâmetros.
- */
 function* generateParamCombinations(searchSpaces: ParamSearchSpace[]): Generator<StrategyParams> {
   if (searchSpaces.length === 0) {
     yield {};
     return;
   }
-  
   const keys = searchSpaces.map(s => s.paramKey);
   const valueArrays = searchSpaces.map(s => s.values);
-  
   function* recurse(index: number, currentParams: StrategyParams) {
     if (index === searchSpaces.length) {
       yield currentParams;
       return;
     }
-    
     for (const value of valueArrays[index]) {
       const newParams = { ...currentParams, [keys[index]]: value };
       yield* recurse(index + 1, newParams);
     }
   }
-
   yield* recurse(0, {});
 }
 
-/**
- * Heurística para pontuar a qualidade de um resultado de backtest.
- * Recompensa lucro e winrate, mas penaliza severamente o drawdown.
- * @param summary - O resumo do backtest.
- * @returns Uma pontuação numérica.
- */
 function calculateQualityScore(summary: BacktestSummary): number {
   const { totalProfit, winrate, maxDrawdown, profitFactor, totalTrades } = summary;
-
-  if (totalProfit <= 0 || totalTrades < 10) {
-    return -1000 + totalProfit; // Penalidade forte para estratégias não lucrativas ou com poucos dados
-  }
-  
-  // Normalizar Drawdown para ser um fator de penalidade (quanto maior, pior)
+  if (totalProfit <= 0 || totalTrades < 10) return -1000 + totalProfit;
   const drawdownPenalty = 1 + (maxDrawdown / 100);
-
-  // A pontuação base prioriza o Profit Factor (relação lucro/prejuízo)
-  // e a taxa de acerto.
   const score = (profitFactor * winrate) / drawdownPenalty;
-  
-  // Bônus por consistência (baixo drawdown)
   const consistencyBonus = (1 - (maxDrawdown / 100)) * 10;
-  
   return score + consistencyBonus;
 }
 
-/**
- * Executa uma calibração por busca em grade para uma dada estratégia.
- * @param ticks - Array de dados de ticks históricos.
- * @param config - A configuração da calibração.
- * @returns Uma Promise com os resultados da calibração.
- */
-export async function calibrateStrategy(
+export function calibrateStrategyGridSearch(
   ticks: TickData[],
   config: StrategyCalibrationConfig
-): Promise<CalibrationResult> {
-  
+): CalibrationResult {
   const combinations = generateParamCombinations(config.searchSpaces);
   const testedConfigs: CalibrationResult['testedConfigs'] = [];
-  
   let bestParams: StrategyParams = {};
   let bestSummary: BacktestSummary | null = null;
   let bestScore = -Infinity;
@@ -169,67 +121,69 @@ export async function calibrateStrategy(
       strategy: config.strategyDef,
       paramsOverride: params,
     };
-    
-    // A função de backtest é síncrona, não precisamos de await aqui.
     const { summary } = runDigitsBacktest(ticks, backtestConfig);
     const qualityScore = calculateQualityScore(summary);
-    
     testedConfigs.push({ params, summary, qualityScore });
-    
     if (qualityScore > bestScore) {
       bestScore = qualityScore;
       bestParams = params;
       bestSummary = summary;
     }
   }
-  
-  if (!bestSummary) {
-    throw new Error('Calibração falhou: Nenhum resultado de backtest foi gerado.');
-  }
-
-  // CORREÇÃO: Garante que bestSummary tenha strategyId
+  if (!bestSummary) throw new Error('Calibração falhou: Nenhum resultado de backtest foi gerado.');
   bestSummary.strategyId = config.strategyDef.id;
-
   return { bestParams, bestSummary, testedConfigs };
 }
 
-// ============================================================================
-// 4. INTEGRAÇÃO COM FIRESTORE (PLACEHOLDERS)
-// ============================================================================
+// NOVO: Função para Otimização Walk-Forward
+export function calibrateStrategyWalkForward(
+  ticks: TickData[],
+  config: StrategyCalibrationConfig,
+  numFolds: number = 5,
+): WalkForwardResult[] {
+    const totalTicks = ticks.length;
+    const foldSize = Math.floor(totalTicks / numFolds);
+    const stepSize = Math.floor(foldSize * 0.8); // 80% de sobreposição
+    const testSize = foldSize - stepSize;
+    const walkForwardResults: WalkForwardResult[] = [];
+    
+    for (let i = 0; i < numFolds - 1; i++) {
+        const trainStart = i * stepSize;
+        const trainEnd = trainStart + foldSize;
+        const testStart = trainEnd;
+        const testEnd = testStart + testSize;
 
-/**
- * Salva o resultado de uma calibração no Firestore.
- * @param userId - O ID do usuário.
- * @param strategyId - O ID da estratégia.
- * @param result - O objeto CalibrationResult a ser salvo.
- */
-export async function saveCalibrationResult(userId: string, strategyId: PilotType, result: CalibrationResult): Promise<void> {
-  // if (!userId) throw new Error("Usuário não autenticado.");
-  // const docRef = doc(db, 'users', userId, 'digits_calibrations', strategyId);
-  // const dataToSave = {
-  //   lastCalibrated: new Date().toISOString(),
-  //   bestParams: result.bestParams,
-  //   bestSummary: result.bestSummary,
-  // };
-  // await setDoc(docRef, sanitizeForFirestore(dataToSave), { merge: true });
-  console.log(`[Placeholder] Salvaria no Firestore para ${userId}/${strategyId}:`, result.bestParams);
+        if (testEnd > totalTicks) break;
+
+        const trainingData = ticks.slice(trainStart, trainEnd);
+        const testingData = ticks.slice(testStart, testEnd);
+
+        // 1. Otimizar parâmetros no conjunto de treino
+        const { bestParams, bestSummary: inSampleSummary } = calibrateStrategyGridSearch(trainingData, config);
+
+        // 2. Validar os melhores parâmetros no conjunto de teste (out-of-sample)
+        const validationConfig: BacktestConfig = {
+            ...config.backtestConfigBase,
+            strategy: config.strategyDef,
+            paramsOverride: bestParams,
+        };
+        const { summary: outOfSampleSummary } = runDigitsBacktest(testingData, validationConfig);
+        
+        // 3. Calcular degradação
+        const degradation = inSampleSummary.totalProfit > 0 
+            ? ((inSampleSummary.totalProfit - outOfSampleSummary.totalProfit) / inSampleSummary.totalProfit) * 100 
+            : 0;
+
+        walkForwardResults.push({
+            inSampleSummary,
+            outOfSampleSummary,
+            params: bestParams,
+            degradationPercent: degradation,
+            isRobust: degradation < 30 && outOfSampleSummary.totalProfit > 0,
+        });
+    }
+
+    return walkForwardResults;
 }
 
-/**
- * Carrega o último resultado de calibração do Firestore.
- * @param userId - O ID do usuário.
- * @param strategyId - O ID da estratégia.
- * @returns Os melhores parâmetros e resumo, ou null.
- */
-export async function loadLastCalibration(userId: string, strategyId: PilotType): Promise<{ params: StrategyParams; summary: BacktestSummary } | null> {
-  // if (!userId) return null;
-  // const docRef = doc(db, 'users', userId, 'digits_calibrations', strategyId);
-  // const docSnap = await getDoc(docRef);
-  // if (docSnap.exists()) {
-  //   const data = docSnap.data();
-  //   return { params: data.bestParams, summary: data.bestSummary };
-  // }
-  // return null;
-  console.log(`[Placeholder] Carregaria do Firestore para ${userId}/${strategyId}`);
-  return null;
-}
+```

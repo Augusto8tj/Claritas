@@ -1,7 +1,7 @@
 // /src/app/deriv-trader-digits/page.tsx
 'use client';
 
-import React, { useState, useCallback, useMemo } from "react";
+import React from "react";
 import { useForm, FormProvider } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import DerivTraderInterfaceDigits from "@/features/trading/components/deriv-trader/deriv-trader-interface-digits";
@@ -13,7 +13,6 @@ import { digitSchema, type DigitFormValues } from "@/features/trading/components
 import { DigitsAutopilotManager } from "@/features/trading/components/deriv-trader/council-autopilot-interface-digits";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { useRobotCouncilDigits } from "@/features/trading/hooks/use-robot-council-digits";
-import { AITradeSuggestionDigits } from "@/features/trading/components/deriv-trader/ai-trade-suggestion-digits";
 import { ApiStatusIndicatorDigits } from "@/features/trading/components/deriv-trader/ApiStatusIndicatorDigits";
 import { DigitStatsChart } from "@/features/trading/components/deriv-trader/digit-stats-chart";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -22,6 +21,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { cn } from "@/lib/utils";
 import DigitsDashboard from "@/features/trading/components/deriv-trader/DigitsDashboard";
 import { DigitsBacktestPanel } from "@/features/trading/components/deriv-trader/digits-backtest-panel";
+import { setBacktestAssetContext } from '@/features/trading/backtest/digits-backtest-engine';
 
 
 const getDecimalPlaces = (pipSize: number | undefined): number => {
@@ -150,7 +150,13 @@ function DerivTraderPageContentDigits() {
     const { 
         activeSymbol, priceTicks, operationsLog, activeAsset, clearActiveContracts, 
     } = useDerivApiDigits();
+    
     const robotCouncil = useRobotCouncilDigits(activeSymbol, priceTicks, activeAsset);
+    
+    // Atualiza o contexto do backtester com o pip do ativo atual
+    React.useEffect(() => {
+        setBacktestAssetContext(activeAsset ? { pip: activeAsset.pip || 2 } : null);
+    }, [activeAsset]);
 
     return (
         <div className="flex-1 space-y-4 p-4 sm:p-8 pt-6">
@@ -180,13 +186,7 @@ function DerivTraderPageContentDigits() {
                     />
                     <DigitsAutopilotManager {...robotCouncil} />
                     <DigitsBacktestPanel
-                        backtestResults={robotCouncil.backtestResults}
-                        isBacktesting={robotCouncil.isBacktesting}
-                        onRunBacktest={robotCouncil.runBacktestForAllStrategies}
-                        calibrationResults={robotCouncil.calibrationResults}
-                        isCalibrating={robotCouncil.isCalibrating}
-                        onRunCalibration={robotCouncil.runCalibration}
-                        onApplyCalibration={robotCouncil.applyCalibration}
+                        {...robotCouncil}
                     />
                 </div>
             </div>
@@ -213,3 +213,5 @@ export default function DerivTraderDigitsPage() {
     </DerivApiProviderDigits>
   );
 }
+
+```
