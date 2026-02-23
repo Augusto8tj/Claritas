@@ -242,5 +242,3 @@ let activeAsset: { pip: number } | null = null;
 export const setBacktestAssetContext = (asset: { pip: number } | null) => {
     activeAsset = asset;
 };
-
-```
