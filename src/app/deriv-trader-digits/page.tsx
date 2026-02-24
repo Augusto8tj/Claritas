@@ -171,16 +171,16 @@ function DerivTraderPageContentDigits() {
             <div className="grid grid-cols-1 lg:grid-cols-5 gap-6 mt-6">
                 <div className="lg:col-span-2 space-y-6">
                     <CurrentPriceDisplay />
+                    <DigitsDashboard 
+                        signalQuality={robotCouncil.signalQuality}
+                        multiWindowAnalysis={robotCouncil.multiWindowAnalysis}
+                    />
                     <DerivTraderInterfaceDigits symbol={activeSymbol || ""} />
                     <OperationsLogDigits operations={operationsLog} priceTicks={priceTicks} activeAsset={activeAsset} clearActiveContracts={clearActiveContracts} />
                 </div>
 
                 <div className="lg:col-span-3 space-y-6">
                     <DigitStatsChart priceTicks={priceTicks} pip={activeAsset?.pip} />
-                    <DigitsDashboard 
-                        signalQuality={robotCouncil.signalQuality}
-                        multiWindowAnalysis={robotCouncil.multiWindowAnalysis}
-                    />
                     <DigitsAutopilotManager {...robotCouncil} />
                     <DigitsOptimizationPanel {...robotCouncil} />
                 </div>
