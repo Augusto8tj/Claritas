@@ -28,12 +28,13 @@ import { runDigitsBacktest, type BacktestSummary } from '@/features/trading/back
 import { STRATEGY_DEFINITIONS, type GlobalRiskConfig, type MartingaleConfig, strategyLabels } from '@/app/deriv-trader-digits/strategies-config';
 import { loadHistoricalTicksForDigits } from '@/services/digits-data-service';
 import { useAuth } from '@/features/auth/hooks/use-auth';
+import { useVagalumeAlternante, type VagalumeConfig, type VagalumeSignal } from './use-vagalume-alternante';
 
 // ============================================================================
 // 1. TIPOS E INTERFACES
 // ============================================================================
 
-export type PilotType = 'matchesDiffers' | 'overUnder' | 'evenOdd' | 'underdog' | 'underdogOverUnder' | 'dynamicUnderdogOverUnder' | 'underdogEvenOdd';
+export type PilotType = 'matchesDiffers' | 'overUnder' | 'evenOdd' | 'underdog' | 'underdogOverUnder' | 'dynamicUnderdogOverUnder' | 'underdogEvenOdd' | 'vagalume';
 export type AutopilotStatus = 'PAUSED' | 'TRADING' | 'COOLDOWN' | 'CIRCUIT_BREAKER';
 
 export interface PilotState {
@@ -81,6 +82,10 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
   const [isUnderdogInverse, setIsUnderdogInverse] = useState(false);
   const [overUnderUnderdogThreshold, setOverUnderUnderdogThreshold] = useState(40);
   const [evenOddUnderdogThreshold, setEvenOddUnderdogThreshold] = useState(40);
+  const [vagalumeConfig, setVagalumeConfig] = useState<VagalumeConfig>({
+      maxStreak: 2, stateW1_matchThreshold: 8, stateL1_differsThreshold: 15,
+      resetMultiplier: 1.2, pauseAfterFailedResets: 2, kellyFraction: 0.25
+  });
   
   // --- GESTÃO DE RISCO AVANÇADA (MARTINGALE) ---
   const [isMartingaleEnabled, setIsMartingaleEnabled] = useState(true);
@@ -111,33 +116,38 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
     underdogOverUnder: createInitialPilotState(),
     dynamicUnderdogOverUnder: createInitialPilotState(),
     underdogEvenOdd: createInitialPilotState(),
+    vagalume: createInitialPilotState(),
   });
   
   const executionRef = useRef(false);
   const lastProcessedOpIdRef = useRef<number | null>(null);
+  const decimalPlaces = useMemo(() => getDecimalPlaces(activeAsset?.pip), [activeAsset]);
+
+  const { signal: vagalumeSignal, onTradeCompleted: onVagalumeTradeCompleted } = useVagalumeAlternante(
+    priceTicks,
+    pilots.vagalume.tradeHistory.map(t => ({...t, strategy: 'vagalume'} as Operation)),
+    vagalumeConfig,
+    accountBalance.balance ?? 1000,
+    decimalPlaces
+  );
 
   // --- ANÁLISE ESTATÍSTICA ---
   const analysisResults = useMemo(() => {
     const windowSizes = [200, 500, 1000];
-    const decimalPlaces = getDecimalPlaces(activeAsset?.pip);
     if (!priceTicks || priceTicks.length < 200) {
       return { windowsStats: [], mainWindowStats: null };
     }
     const windowsStats = windowSizes.map(size => calculateDigitStatsForWindow(priceTicks, size, decimalPlaces));
     const mainWindowStats = windowsStats.find(w => w.windowSize === 1000) || windowsStats[windowsStats.length - 1];
     return { windowsStats, mainWindowStats };
-  }, [priceTicks, activeAsset]);
+  }, [priceTicks, decimalPlaces]);
   
   const digitStats = useMemo(() => analysisResults.mainWindowStats?.frequencies || [], [analysisResults.mainWindowStats]);
 
   const underdogDigitStats = useMemo(() => {
-    const decimalPlaces = getDecimalPlaces(activeAsset?.pip);
-    if (!priceTicks || priceTicks.length < 100) {
-      return [];
-    }
+    if (!priceTicks || priceTicks.length < 100) return [];
     return calculateDigitStatsForWindow(priceTicks, 100, decimalPlaces).frequencies;
-  }, [priceTicks, activeAsset]);
-
+  }, [priceTicks, decimalPlaces]);
 
   const multiWindowAnalysis = useMemo(() => {
     return getMultiWindowAnalysis(analysisResults.windowsStats);
@@ -192,6 +202,7 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
       underdogOverUnder: createInitialPilotState(),
       dynamicUnderdogOverUnder: createInitialPilotState(),
       underdogEvenOdd: createInitialPilotState(),
+      vagalume: createInitialPilotState(),
     });
     setSessionInitialBankroll(accountBalance.balance ?? 1000);
     lastProcessedOpIdRef.current = null;
@@ -201,7 +212,7 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
     });
   }, [accountBalance.balance, toast]);
 
-  const toggleAutopilot = useCallback((pilotType: PilotType) => {
+  const toggleAutopilot = useCallback((pilotType: PilotType | 'vagalume') => {
     setPilots(prev => {
         const pilot = prev[pilotType];
         if (!pilot) return prev;
@@ -212,7 +223,7 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
         }
         
         setTimeout(() => {
-            toast({ title: `Piloto ${pilotType} ${newIsOnState ? 'Ativado' : 'Desativado'}` });
+            toast({ title: `Piloto ${strategyLabels[pilotType] || 'Vagalume'} ${newIsOnState ? 'Ativado' : 'Desativado'}` });
         }, 0);
 
         return {
@@ -237,48 +248,54 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
     if (lastOp && lastOp.id !== lastProcessedOpIdRef.current && lastOp.status !== 'pending') {
       lastProcessedOpIdRef.current = lastOp.id;
       
-      const pilotKey = lastOp.strategy as PilotType;
-      const owningPilot = Object.values(pilots).find(p => p.activeContractId === lastOp.id);
-      
-      if (pilotKey && pilots[pilotKey] && owningPilot) {
-        const pilot = pilots[pilotKey];
-        const newTradeResult: StakeManagerTradeResult = {
-            id: String(lastOp.id),
-            timestamp: new Date(lastOp.timestamp).getTime(),
-            stake: lastOp.stake,
-            profit: lastOp.result || -lastOp.stake,
-            contractType: lastOp.contractType as any,
-            signalConfidence: 'ALTA' 
-        };
-        
-        const updatedHistory = [...pilot.tradeHistory, newTradeResult];
-        const newLosses = newTradeResult.profit < 0 ? pilot.consecutiveLosses + 1 : 0;
-        const newAccumulatedLoss = newTradeResult.profit < 0 ? pilot.accumulatedLoss + Math.abs(newTradeResult.profit) : 0;
+      const pilotKey = lastOp.strategy as PilotType | 'vagalume';
+      const isVagalumeTrade = pilotKey === 'vagalume';
 
-        const newStatus: AutopilotStatus = newLosses >= maxLosses ? 'CIRCUIT_BREAKER' : 'COOLDOWN';
+      if (isVagalumeTrade) {
+          onVagalumeTradeCompleted(lastOp);
+          const tradeResult: StakeManagerTradeResult = {
+              id: String(lastOp.id), timestamp: new Date(lastOp.timestamp).getTime(),
+              stake: lastOp.stake, profit: lastOp.result || -lastOp.stake,
+              contractType: lastOp.contractType as any, signalConfidence: 'ALTA'
+          };
+          setPilots(prev => ({
+              ...prev,
+              vagalume: { ...prev.vagalume, tradeHistory: [...prev.vagalume.tradeHistory, tradeResult] }
+          }));
+      } else {
+          const pilotKeyTyped = pilotKey as PilotType;
+          if (pilotKeyTyped && pilots[pilotKeyTyped]) {
+              const pilot = pilots[pilotKeyTyped];
+              const newTradeResult: StakeManagerTradeResult = {
+                  id: String(lastOp.id), timestamp: new Date(lastOp.timestamp).getTime(),
+                  stake: lastOp.stake, profit: lastOp.result || -lastOp.stake,
+                  contractType: lastOp.contractType as any, signalConfidence: 'ALTA' 
+              };
+              
+              const updatedHistory = [...pilot.tradeHistory, newTradeResult];
+              const newLosses = newTradeResult.profit < 0 ? pilot.consecutiveLosses + 1 : 0;
+              const newAccumulatedLoss = newTradeResult.profit < 0 ? pilot.accumulatedLoss + Math.abs(newTradeResult.profit) : 0;
+              const newStatus: AutopilotStatus = newLosses >= maxLosses ? 'CIRCUIT_BREAKER' : 'COOLDOWN';
 
-        setPilots(prev => ({
-            ...prev,
-            [pilotKey]: {
-                ...pilot,
-                tradeHistory: updatedHistory,
-                consecutiveLosses: newLosses,
-                accumulatedLoss: newAccumulatedLoss,
-                status: newStatus,
-                activeContractId: null,
-            }
-        }));
+              setPilots(prev => ({
+                  ...prev,
+                  [pilotKeyTyped]: {
+                      ...pilot, tradeHistory: updatedHistory, consecutiveLosses: newLosses,
+                      accumulatedLoss: newAccumulatedLoss, status: newStatus, activeContractId: null,
+                  }
+              }));
 
-        if (newStatus === 'COOLDOWN') {
-          setTimeout(() => {
-            setPilots(prev => {
-              if (prev[pilotKey]?.status === 'COOLDOWN') {
-                return { ...prev, [pilotKey]: { ...prev[pilotKey], status: 'TRADING' } };
+              if (newStatus === 'COOLDOWN') {
+                setTimeout(() => {
+                  setPilots(prev => {
+                    if (prev[pilotKeyTyped]?.status === 'COOLDOWN') {
+                      return { ...prev, [pilotKeyTyped]: { ...prev[pilotKeyTyped], status: 'TRADING' } };
+                    }
+                    return prev;
+                  });
+                }, cooldownTime * 1000);
               }
-              return prev;
-            });
-          }, cooldownTime * 1000);
-        }
+          }
       }
     }
 
@@ -299,10 +316,10 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
       const initialBankroll = sessionInitialBankroll ?? (accountBalance.balance ?? 1000);
       const currentBankroll = initialBankroll + dailyPnl;
       
-      const bankrollState: BankrollState = { currentBankroll, initialBankroll, maxDailyLoss: dailyBalance, dailyProfitTarget };
+      const bankrollState: BankrollState = { currentBankroll, initialBankroll, maxDailyLoss: dailyBalance, dailyProfitTarget: dailyTarget };
       
       let shouldExecute = false;
-      let executionParams: [DigitContractType, number?, string?] | null = null;
+      let executionParams: [DigitContractType, number?, string?, number?] | null = null;
       let confidenceForStake: ConfidenceLevel = 'NULA';
       
       switch (pilotKey) {
@@ -365,30 +382,43 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
                 shouldExecute = true; confidenceForStake = 'ALTA'; executionParams = ['DIGITODD', undefined, pilotKey];
             }
             break;
+        case 'vagalume':
+          if (vagalumeSignal?.shouldTrade) {
+            shouldExecute = true;
+            confidenceForStake = vagalumeSignal.confidence > 0.8 ? 'MUITO_ALTA' : 'ALTA';
+            executionParams = [
+              vagalumeSignal.suggestedContract,
+              vagalumeSignal.suggestedDigit,
+              pilotKey,
+              vagalumeSignal.suggestedStakeMultiplier,
+            ];
+          }
+          break;
       }
 
       if (shouldExecute && executionParams) {
+          const stakeMultiplier = executionParams[3] as number | undefined ?? 1.0;
+          const pilotKeyForStake = executionParams[2] as PilotType | 'vagalume';
+          const pilotForStake = pilots[pilotKeyForStake];
           const stakeConfig: SmartMartingaleConfig = { 
-              isEnabled: isMartingaleEnabled,
-              baseStake: BASE_STAKE, 
-              maxMartingaleLevels: maxLosses, 
-              martingaleMultiplier: martingaleRecoveryFactor,
-              useAntiMartingale: false,
-              isSmart: isSmartMartingale,
+              isEnabled: isMartingaleEnabled, baseStake: BASE_STAKE, maxMartingaleLevels: maxLosses, 
+              martingaleMultiplier: martingaleRecoveryFactor, useAntiMartingale: false, isSmart: isSmartMartingale,
           };
-          const stakeDecision = decideNextStake(pilot.tradeHistory, stakeConfig, bankrollState, confidenceForStake);
+          const stakeDecision = decideNextStake(pilotForStake.tradeHistory, stakeConfig, bankrollState, confidenceForStake);
 
           if (stakeDecision.shouldPause) {
-            setPilots(prev => ({ ...prev, [pilotKey]: { ...prev[pilotKey], status: 'CIRCUIT_BREAKER', currentTarget: stakeDecision.pauseReason || 'Limite de risco atingido' }}));
+            setPilots(prev => ({ ...prev, [pilotKeyForStake]: { ...prev[pilotKeyForStake], status: 'CIRCUIT_BREAKER', currentTarget: stakeDecision.pauseReason || 'Limite de risco atingido' }}));
             continue;
           }
 
-          executeTrade(executionParams[0], stakeDecision.nextStake, activeSymbol!, 1, 't', 'Piloto', executionParams[1], executionParams[2])
+          const finalStake = stakeDecision.nextStake * stakeMultiplier;
+
+          executeTrade(executionParams[0], finalStake, activeSymbol!, 1, 't', 'Piloto', executionParams[1], executionParams[2])
             .then(tradeResult => {
                 if (tradeResult.success && tradeResult.contractId) {
                     setPilots(prev => ({
                         ...prev,
-                        [pilotKey]: { ...prev[pilotKey], activeContractId: tradeResult.contractId! }
+                        [pilotKeyForStake]: { ...prev[pilotKeyForStake], activeContractId: tradeResult.contractId! }
                     }));
                 }
             });
@@ -406,7 +436,7 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
       dailyBalance, dailyTarget, maxLosses, martingaleRecoveryFactor, sessionInitialBankroll, accountBalance.balance, dailyPnl,
       overUnderStats, evenOddStats, overUnderThreshold, evenOddThreshold, underdogThreshold, isUnderdogInverse, overUnderUnderdogThreshold, evenOddUnderdogThreshold,
       executionCooldown, isMartingaleEnabled, isSmartMartingale, analysisResults.mainWindowStats, multiWindowAnalysis, digitStats,
-      cooldownTime, consensusThreshold, underdogDigitStats
+      cooldownTime, consensusThreshold, underdogDigitStats, onVagalumeTradeCompleted, vagalumeConfig, vagalumeSignal
   ]);
   
   // --- FUNÇÕES DE OTIMIZAÇÃO E APLICAÇÃO ---
@@ -449,6 +479,7 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
         };
         
         STRATEGY_DEFINITIONS.forEach(strategyDef => {
+            if (strategyDef.id === 'vagalume') return; // Vagalume não é parte do backtest simples
             try {
                 const { summary } = runDigitsBacktest(ticksForBacktest, {
                     strategy: strategyDef,
@@ -486,6 +517,7 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
         const results: Record<string, CalibrationResult> = {};
         
         for (const strategyDef of STRATEGY_DEFINITIONS) {
+          if (strategyDef.id === 'vagalume') continue;
           const searchSpaces = STRATEGY_SEARCH_SPACES[strategyDef.id];
           if (!searchSpaces || searchSpaces.length === 0) continue;
           
@@ -571,6 +603,10 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
     multiWindowAnalysis,
     signalQuality,
     shouldTrade,
+    // Vagalume
+    vagalumeSignal,
+    vagalumeConfig,
+    setVagalumeConfig,
     // Backtesting & Calibration
     backtestTicks,
     isDataLoading,

@@ -14,7 +14,8 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Separator } from "@/components/ui/separator";
 import { Input } from "@/components/ui/input";
-import type { useRobotCouncilDigits, PilotType, PilotState, VagalumeSignal } from "@/features/trading/hooks/use-robot-council-digits";
+import type { useRobotCouncilDigits, PilotType, PilotState } from "@/features/trading/hooks/use-robot-council-digits";
+import type { VagalumeSignal } from '@/features/trading/hooks/use-vagalume-alternante';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
@@ -38,11 +39,11 @@ import { DigitsOptimizationPanel } from "./digits-backtest-panel";
 interface DigitsAutopilotManagerProps extends ReturnType<typeof useRobotCouncilDigits> {}
 
 const PilotTabContent: React.FC<{
-    pilotKey: PilotType;
+    pilotKey: PilotType | 'vagalume';
     title: string;
     description: string;
     pilotState: PilotState;
-    toggleAutopilot: (type: PilotType) => void;
+    toggleAutopilot: (type: PilotType | 'vagalume') => void;
     children?: React.ReactNode; // Para adicionar os sliders
 }> = ({ pilotKey, title, description, pilotState, toggleAutopilot, children }) => {
     const { isOn, status, currentTarget, consecutiveLosses, accumulatedLoss } = pilotState;
@@ -156,7 +157,7 @@ const VagalumePanel: React.FC<{
                 <Slider min={2} max={10} step={0.5} value={[vagalumeConfig.stateW1_matchThreshold]} onValueChange={v => setVagalumeConfig({ ...vagalumeConfig, stateW1_matchThreshold: v[0]})} />
            </div>
             <div className="space-y-2">
-                <Label>Limiar 'DIFFERS' (L1)</бран>
+                <Label>Limiar 'DIFFERS' (L1)</Label>
                 <Slider min={12} max={25} step={1} value={[vagalumeConfig.stateL1_differsThreshold]} onValueChange={v => setVagalumeConfig({ ...vagalumeConfig, stateL1_differsThreshold: v[0]})} />
            </div>
       </div>
@@ -286,7 +287,7 @@ export const DigitsAutopilotManager: React.FC<DigitsAutopilotManagerProps> = (pr
                                         </div>
                                     </div>
                                 </PilotTabContent>
-                            TabsContent>
+                            </TabsContent>
                         </Tabs>
                     </div>
 
@@ -379,7 +380,7 @@ export const DigitsAutopilotManager: React.FC<DigitsAutopilotManagerProps> = (pr
                             </TabsContent>
                         </Tabs>
                     </div>
-                TabsContent>
+                </TabsContent>
                 <TabsContent value="risk" className="pt-4 space-y-6">
                     <div className="grid grid-cols-2 gap-4">
                         <div className="space-y-2">
@@ -456,7 +457,7 @@ export const DigitsAutopilotManager: React.FC<DigitsAutopilotManagerProps> = (pr
                                     <Repeat className="mr-2 h-4 w-4" />
                                     Reiniciar P&L e Histórico da Sessão
                                 </Button>
-                            AlertDialogTrigger>
+                            </AlertDialogTrigger>
                             <AlertDialogContent>
                                 <AlertDialogHeader>
                                     <AlertDialogTitle>Tem a certeza?</AlertDialogTitle>
@@ -473,7 +474,7 @@ export const DigitsAutopilotManager: React.FC<DigitsAutopilotManagerProps> = (pr
                 </TabsContent>
             </Tabs>
         </div>
-      CardContent>
+      </CardContent>
     </Card>
   );
 }
