@@ -21,7 +21,6 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { cn } from "@/lib/utils";
 import DigitsDashboard from "@/features/trading/components/deriv-trader/DigitsDashboard";
 import { DigitsOptimizationPanel } from "@/features/trading/components/deriv-trader/digits-backtest-panel";
-import { setBacktestAssetContext } from '@/features/trading/backtest/digits-backtest-engine';
 
 
 const getDecimalPlaces = (pipSize: number | undefined): number => {
@@ -153,10 +152,6 @@ function DerivTraderPageContentDigits() {
     
     const robotCouncil = useRobotCouncilDigits(activeSymbol, priceTicks, activeAsset);
     
-    React.useEffect(() => {
-        setBacktestAssetContext(activeAsset ? { pip: activeAsset.pip || 2 } : null);
-    }, [activeAsset]);
-
     return (
         <div className="flex-1 space-y-4 p-4 sm:p-8 pt-6">
             <HeaderDigits />
