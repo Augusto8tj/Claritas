@@ -125,7 +125,7 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
 
   const { signal: vagalumeSignal, onTradeCompleted: onVagalumeTradeCompleted } = useVagalumeAlternante(
     priceTicks,
-    pilots.vagalume.tradeHistory.map(t => ({...t, strategy: 'vagalume'} as Operation)),
+    pilots.vagalume.tradeHistory,
     vagalumeConfig,
     accountBalance.balance ?? 1000,
     decimalPlaces
@@ -248,54 +248,45 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
     if (lastOp && lastOp.id !== lastProcessedOpIdRef.current && lastOp.status !== 'pending') {
       lastProcessedOpIdRef.current = lastOp.id;
       
-      const pilotKey = lastOp.strategy as PilotType | 'vagalume';
-      const isVagalumeTrade = pilotKey === 'vagalume';
+      const pilotKey = lastOp.strategy as PilotType | 'vagalume' | undefined;
 
-      if (isVagalumeTrade) {
-          onVagalumeTradeCompleted(lastOp);
-          const tradeResult: StakeManagerTradeResult = {
-              id: String(lastOp.id), timestamp: new Date(lastOp.timestamp).getTime(),
-              stake: lastOp.stake, profit: lastOp.result || -lastOp.stake,
-              contractType: lastOp.contractType as any, signalConfidence: 'ALTA'
-          };
-          setPilots(prev => ({
-              ...prev,
-              vagalume: { ...prev.vagalume, tradeHistory: [...prev.vagalume.tradeHistory, tradeResult] }
-          }));
-      } else {
-          const pilotKeyTyped = pilotKey as PilotType;
-          if (pilotKeyTyped && pilots[pilotKeyTyped]) {
-              const pilot = pilots[pilotKeyTyped];
-              const newTradeResult: StakeManagerTradeResult = {
-                  id: String(lastOp.id), timestamp: new Date(lastOp.timestamp).getTime(),
-                  stake: lastOp.stake, profit: lastOp.result || -lastOp.stake,
-                  contractType: lastOp.contractType as any, signalConfidence: 'ALTA' 
-              };
-              
-              const updatedHistory = [...pilot.tradeHistory, newTradeResult];
-              const newLosses = newTradeResult.profit < 0 ? pilot.consecutiveLosses + 1 : 0;
-              const newAccumulatedLoss = newTradeResult.profit < 0 ? pilot.accumulatedLoss + Math.abs(newTradeResult.profit) : 0;
-              const newStatus: AutopilotStatus = newLosses >= maxLosses ? 'CIRCUIT_BREAKER' : 'COOLDOWN';
+      if (pilotKey) {
+        if (pilotKey === 'vagalume') {
+            onVagalumeTradeCompleted(lastOp);
+        }
 
-              setPilots(prev => ({
-                  ...prev,
-                  [pilotKeyTyped]: {
-                      ...pilot, tradeHistory: updatedHistory, consecutiveLosses: newLosses,
-                      accumulatedLoss: newAccumulatedLoss, status: newStatus, activeContractId: null,
+        if (pilots[pilotKey as PilotType]) {
+            const pilot = pilots[pilotKey as PilotType];
+            const newTradeResult: StakeManagerTradeResult = {
+                id: String(lastOp.id), timestamp: new Date(lastOp.timestamp).getTime(),
+                stake: lastOp.stake, profit: lastOp.result || -lastOp.stake,
+                contractType: lastOp.contractType as any, signalConfidence: 'ALTA' 
+            };
+            
+            const updatedHistory = [...pilot.tradeHistory, newTradeResult];
+            const newLosses = newTradeResult.profit < 0 ? pilot.consecutiveLosses + 1 : 0;
+            const newAccumulatedLoss = newTradeResult.profit < 0 ? pilot.accumulatedLoss + Math.abs(newTradeResult.profit) : 0;
+            const newStatus: AutopilotStatus = newLosses >= maxLosses ? 'CIRCUIT_BREAKER' : 'COOLDOWN';
+
+            setPilots(prev => ({
+                ...prev,
+                [pilotKey]: {
+                    ...pilot, tradeHistory: updatedHistory, consecutiveLosses: newLosses,
+                    accumulatedLoss: newAccumulatedLoss, status: newStatus, activeContractId: null,
+                }
+            }));
+
+            if (newStatus === 'COOLDOWN') {
+              setTimeout(() => {
+                setPilots(prev => {
+                  if (prev[pilotKey as PilotType]?.status === 'COOLDOWN') {
+                    return { ...prev, [pilotKey as PilotType]: { ...prev[pilotKey as PilotType], status: 'TRADING' } };
                   }
-              }));
-
-              if (newStatus === 'COOLDOWN') {
-                setTimeout(() => {
-                  setPilots(prev => {
-                    if (prev[pilotKeyTyped]?.status === 'COOLDOWN') {
-                      return { ...prev, [pilotKeyTyped]: { ...prev[pilotKeyTyped], status: 'TRADING' } };
-                    }
-                    return prev;
-                  });
-                }, cooldownTime * 1000);
-              }
-          }
+                  return prev;
+                });
+              }, cooldownTime * 1000);
+            }
+        }
       }
     }
 
@@ -479,7 +470,7 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
         };
         
         STRATEGY_DEFINITIONS.forEach(strategyDef => {
-            if (strategyDef.id === 'vagalume') return; // Vagalume não é parte do backtest simples
+            if (strategyDef.id === 'vagalume') return;
             try {
                 const { summary } = runDigitsBacktest(ticksForBacktest, {
                     strategy: strategyDef,

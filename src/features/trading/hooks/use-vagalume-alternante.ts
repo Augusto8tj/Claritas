@@ -2,8 +2,12 @@
 'use client';
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import type { TickData, Operation } from '@/lib/types';
-import type { DigitFrequency } from './use-robot-council-digits';
+import type { Operation, TickData } from '@/lib/types';
+import type { DigitFrequency } from '@/features/trading/services/digits-analysis';
+
+// ============================================================================
+// 1. TIPOS E INTERFACES
+// ============================================================================
 
 export type VagalumeState = 'W1' | 'L1' | 'W2' | 'L2' | 'PAUSED';
 export type DigitContractType = 'DIGITMATCH' | 'DIGITDIFF' | 'DIGITEVEN' | 'DIGITODD' | 'DIGITOVER' | 'DIGITUNDER';
@@ -32,46 +36,56 @@ export interface VagalumeSignal {
   shouldTrade: boolean;
 }
 
+// ============================================================================
+// 2. FUNÇÕES AUXILIARES
+// ============================================================================
+
+const getLastDigit = (price: number, decimalPlaces: number): number => {
+    if (isNaN(price) || !Number.isFinite(price)) return 0;
+    const priceString = price.toFixed(decimalPlaces);
+    return parseInt(priceString.slice(-1), 10);
+};
+
 const calculateAdaptiveAnalysis = (
   ticks: TickData[],
   state: VagalumeState,
   decimalPlaces: number
 ): { frequencies: DigitFrequency[]; hottestDigit: number; coldestDigit: number } => {
   const windowSize = state === 'W1' || state === 'L1' ? 50 : 200;
-  
+
   const emptyResult = {
-    frequencies: Array.from({ length: 10 }, (_, i) => ({ digit: i, count: 0, probability: 0, zScore: 0 })) as DigitFrequency[],
+    frequencies: Array.from({ length: 10 }, (_, i) => ({ digit: i, count: 0, probability: 0, zScore: 0 })),
     hottestDigit: 0,
-    coldestDigit: 0
+    coldestDigit: 0,
   };
 
-  if (ticks.length < windowSize) {
-    return emptyResult;
-  }
+  if (ticks.length < windowSize) return emptyResult;
+  
   const recentTicks = ticks.slice(-windowSize);
-
   const digitCounts = new Array(10).fill(0);
   recentTicks.forEach(tick => {
-    const priceString = tick.price.toFixed(decimalPlaces);
-    const lastDigit = parseInt(priceString.slice(-1), 10);
-    if (!isNaN(lastDigit)) {
-      digitCounts[lastDigit]++;
-    }
+    const lastDigit = getLastDigit(tick.price, decimalPlaces);
+    if (!isNaN(lastDigit)) digitCounts[lastDigit]++;
   });
 
   let hottestDigit = 0, coldestDigit = 0;
   let maxFreq = -1, minFreq = Infinity;
-  
+
   const frequencies: DigitFrequency[] = digitCounts.map((count, digit) => {
     if (count > maxFreq) { maxFreq = count; hottestDigit = digit; }
     if (count < minFreq) { minFreq = count; coldestDigit = digit; }
     const probability = count / windowSize;
     const zScore = (probability - 0.1) / Math.sqrt(0.1 * 0.9 / windowSize);
-    return { digit, count, probability, zScore } as DigitFrequency;
+    return { digit: digit, count, probability, zScore };
   });
 
   return { frequencies, hottestDigit, coldestDigit };
 };
+
+
+// ============================================================================
+// 3. HOOK PRINCIPAL
+// ============================================================================
 
 export const useVagalumeAlternante = (
   ticks: TickData[],
@@ -84,7 +98,7 @@ export const useVagalumeAlternante = (
   const [failedResets, setFailedResets] = useState(0);
 
   const sequenceStats = useMemo(() => {
-    const relevantTrades = tradeHistory.filter(t => t.strategy === 'vagalume').slice(-50);
+    const relevantTrades = tradeHistory.slice(-50);
     if (relevantTrades.length < 2) {
       return { currentStreak: relevantTrades.length, alternanceRate: 0, totalTrades: relevantTrades.length };
     }
@@ -98,8 +112,7 @@ export const useVagalumeAlternante = (
       streak = 1;
       const lastOutcomeIsWin = relevantTrades[relevantTrades.length - 1].result! > 0;
       for (let i = relevantTrades.length - 2; i >= 0; i--) {
-        const currentOutcomeIsWin = relevantTrades[i].result! > 0;
-        if (currentOutcomeIsWin === lastOutcomeIsWin) streak++;
+        if ((relevantTrades[i].result! > 0) === lastOutcomeIsWin) streak++;
         else break;
       }
     }
@@ -119,22 +132,13 @@ export const useVagalumeAlternante = (
         case 'W1': return isWin ? 'L1' : 'W1';
         case 'L1': return isWin ? 'W1' : 'W2';
         case 'W2':
-          if (isWin) {
-            setFailedResets(prev => prev + 1);
-            return 'L1';
-          }
-          return 'W1';
+          if (isWin) { setFailedResets(prev => prev + 1); return 'L1'; }
+          setFailedResets(0); return 'W1';
         case 'L2':
-          if (!isWin) {
-            setFailedResets(prev => prev + 1);
-            return 'W1';
-          }
-          return 'L1';
+          if (!isWin) { setFailedResets(prev => prev + 1); return 'W1'; }
+          setFailedResets(0); return 'L1';
         case 'PAUSED':
-          if (sequenceStats.alternanceRate > 70) {
-            setFailedResets(0);
-            return 'W1';
-          }
+          if (sequenceStats.alternanceRate > 70) { setFailedResets(0); return 'W1'; }
           return 'PAUSED';
         default: return prevState;
       }
@@ -151,7 +155,7 @@ export const useVagalumeAlternante = (
     return calculateAdaptiveAnalysis(ticks, state, decimalPlaces);
   }, [ticks, decimalPlaces]);
 
-  const signal = useMemo(() => {
+  const signal = useMemo((): VagalumeSignal | null => {
     if (vagalumeState === 'PAUSED' || ticks.length < 200) return null;
 
     const analysis = getAdaptiveAnalysis(vagalumeState);
@@ -171,6 +175,7 @@ export const useVagalumeAlternante = (
           shouldTrade = true;
         }
         break;
+
       case 'L1':
         if (analysis.hottestDigit !== undefined && analysis.frequencies[analysis.hottestDigit].probability >= config.stateL1_differsThreshold / 100) {
           suggestedContract = 'DIGITDIFF';
@@ -179,6 +184,7 @@ export const useVagalumeAlternante = (
           shouldTrade = true;
         }
         break;
+
       case 'W2':
       case 'L2':
         suggestedContract = Math.random() > 0.5 ? 'DIGITEVEN' : 'DIGITODD';
@@ -189,7 +195,7 @@ export const useVagalumeAlternante = (
     
     if (confidence < 0.51) shouldTrade = false;
 
-    const stakeMultiplier = sequenceStats.alternanceRate > 80 ? config.resetMultiplier : 1.0;
+    const stakeMultiplier = (vagalumeState === 'W2' || vagalumeState === 'L2') && sequenceStats.alternanceRate > 80 ? config.resetMultiplier : 1.0;
 
     return {
       state: vagalumeState,
@@ -201,7 +207,7 @@ export const useVagalumeAlternante = (
       sequenceStats,
       shouldTrade,
     };
-  }, [vagalumeState, ticks, sequenceStats, config, bankroll, getAdaptiveAnalysis]);
+  }, [vagalumeState, getAdaptiveAnalysis, config, sequenceStats]);
 
   return { signal, onTradeCompleted };
 };

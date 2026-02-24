@@ -15,7 +15,7 @@ import { Switch } from "@/components/ui/switch";
 import { Separator } from "@/components/ui/separator";
 import { Input } from "@/components/ui/input";
 import type { useRobotCouncilDigits, PilotType, PilotState } from "@/features/trading/hooks/use-robot-council-digits";
-import type { VagalumeSignal } from '@/features/trading/hooks/use-vagalume-alternante';
+import { useVagalumeAlternante, type VagalumeConfig, type VagalumeSignal } from '@/features/trading/hooks/use-vagalume-alternante';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
@@ -153,12 +153,12 @@ const VagalumePanel: React.FC<{
       <div className="space-y-4 pt-4 mt-4 border-t">
           <h4 className="text-xs font-semibold text-muted-foreground">Configuração Fina (Vagalume)</h4>
            <div className="space-y-2">
-                <Label>Limiar 'MATCH' (W1)</Label>
-                <Slider min={2} max={10} step={0.5} value={[vagalumeConfig.stateW1_matchThreshold]} onValueChange={v => setVagalumeConfig({ ...vagalumeConfig, stateW1_matchThreshold: v[0]})} />
+                <Label htmlFor="vagalume-w1-threshold">Limiar 'MATCH' (W1) - ({vagalumeConfig.stateW1_matchThreshold}%)</Label>
+                <Slider id="vagalume-w1-threshold" min={2} max={10} step={0.5} value={[vagalumeConfig.stateW1_matchThreshold]} onValueChange={v => setVagalumeConfig({ ...vagalumeConfig, stateW1_matchThreshold: v[0]})} />
            </div>
             <div className="space-y-2">
-                <Label>Limiar 'DIFFERS' (L1)</Label>
-                <Slider min={12} max={25} step={1} value={[vagalumeConfig.stateL1_differsThreshold]} onValueChange={v => setVagalumeConfig({ ...vagalumeConfig, stateL1_differsThreshold: v[0]})} />
+                <Label htmlFor="vagalume-l1-threshold">Limiar 'DIFFERS' (L1) - ({vagalumeConfig.stateL1_differsThreshold}%)</Label>
+                <Slider id="vagalume-l1-threshold" min={12} max={25} step={1} value={[vagalumeConfig.stateL1_differsThreshold]} onValueChange={v => setVagalumeConfig({ ...vagalumeConfig, stateL1_differsThreshold: v[0]})} />
            </div>
       </div>
     </PilotTabContent>
