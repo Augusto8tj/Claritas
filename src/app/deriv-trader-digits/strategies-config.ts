@@ -13,7 +13,7 @@
 // ============================================================================
 
 // O `PilotType` deve corresponder exatamente às chaves do estado `pilots` no hook `useRobotCouncilDigits`.
-export type PilotType = 'matchesDiffers' | 'overUnder' | 'evenOdd' | 'underdog' | 'underdogOverUnder' | 'dynamicUnderdogOverUnder' | 'underdogEvenOdd';
+export type PilotType = 'matchesDiffers' | 'overUnder' | 'evenOdd' | 'underdog' | 'underdogOverUnder' | 'dynamicUnderdogOverUnder' | 'underdogEvenOdd' | 'vagalume';
 
 export type DigitContractType =
   | 'DIGITMATCH'
@@ -30,13 +30,13 @@ export interface DigitStrategyDefinition {
   id: PilotType;
   name: string;
   description: string;
-  contractTypes: DigitContractType[];
+  contractTypes: DigitContractType[] | ['MULTI'];
   // Mapeia para a variável de estado em `useRobotCouncilDigits` que controla o limiar desta estratégia.
-  paramKey: 
-    | 'consensusThreshold' 
-    | 'overUnderThreshold' 
-    | 'evenOddThreshold' 
-    | 'underdogThreshold' 
+  paramKey:
+    | 'consensusThreshold'
+    | 'overUnderThreshold'
+    | 'evenOddThreshold'
+    | 'underdogThreshold'
     | 'overUnderUnderdogThreshold'
     | 'evenOddUnderdogThreshold'
     | null; // Usado para estratégias que não possuem um limiar de usuário direto.
@@ -104,7 +104,7 @@ export const STRATEGY_DEFINITIONS: DigitStrategyDefinition[] = [
     name: 'Azarão de Bloco Dinâmico',
     description: "Analisa a composição dos 5 dígitos menos prováveis para apostar no bloco oposto, usando um consenso de janelas de tempo.",
     contractTypes: ['DIGITOVER', 'DIGITUNDER'],
-    paramKey: null, 
+    paramKey: null,
   },
   // 7. Estratégia de "azarão" para blocos Par/Ímpar.
   {
@@ -114,10 +114,18 @@ export const STRATEGY_DEFINITIONS: DigitStrategyDefinition[] = [
     contractTypes: ['DIGITEVEN', 'DIGITODD'],
     paramKey: 'evenOddUnderdogThreshold',
   },
+  // 8. Nova estratégia Vagalume
+  {
+    id: 'vagalume',
+    name: 'Vagalume Alternante',
+    description: 'Estratégia de meta-aprendizagem que explora a alternância de vitória/derrota (W-L-W-L).',
+    contractTypes: ['MULTI'], // Indica que pode usar vários tipos de contrato
+    paramKey: null, // Parâmetros gerenciados por seu próprio hook
+  },
 ];
 
 // Adicionado para mapear IDs de estratégia a nomes legíveis para a UI.
-export const strategyLabels: Record<string, string> = 
+export const strategyLabels: Record<string, string> =
   STRATEGY_DEFINITIONS.reduce((acc, strategy) => {
     acc[strategy.id] = strategy.name;
     return acc;

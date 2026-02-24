@@ -9,12 +9,12 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Bot, Binary, TrendingUp, HelpCircle, Trophy, Settings, AlertTriangle, ShieldCheck, Power, Clock, Repeat, TestTube } from "lucide-react";
+import { Bot, Binary, TrendingUp, HelpCircle, Trophy, Settings, AlertTriangle, ShieldCheck, Power, Clock, Repeat, TestTube, Wand2 } from "lucide-react";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Separator } from "@/components/ui/separator";
 import { Input } from "@/components/ui/input";
-import type { useRobotCouncilDigits, PilotType, PilotState } from "@/features/trading/hooks/use-robot-council-digits";
+import type { useRobotCouncilDigits, PilotType, PilotState, VagalumeSignal } from "@/features/trading/hooks/use-robot-council-digits";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
@@ -32,7 +32,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { DigitsBacktestPanel } from "./digits-backtest-panel";
+import { DigitsOptimizationPanel } from "./digits-backtest-panel";
 
 
 interface DigitsAutopilotManagerProps extends ReturnType<typeof useRobotCouncilDigits> {}
@@ -105,6 +105,65 @@ const PilotTabContent: React.FC<{
     );
 };
 
+const VagalumePanel: React.FC<{
+  pilotKey: 'vagalume';
+  pilotState: PilotState;
+  toggleAutopilot: (type: 'vagalume') => void;
+  vagalumeSignal: VagalumeSignal | null;
+  vagalumeConfig: any;
+  setVagalumeConfig: (config: any) => void;
+}> = ({ pilotKey, pilotState, toggleAutopilot, vagalumeSignal, vagalumeConfig, setVagalumeConfig }) => {
+  if (!vagalumeSignal) {
+    return (
+      <PilotTabContent
+        pilotKey={pilotKey}
+        title="🪰 Vagalume Alternante"
+        description="Estratégia de meta-aprendizagem que explora a alternância W-L."
+        pilotState={pilotState}
+        toggleAutopilot={toggleAutopilot}
+      >
+        <div className="text-center text-muted-foreground p-4">Aguardando dados...</div>
+      </PilotTabContent>
+    );
+  }
+
+  return (
+    <PilotTabContent
+        pilotKey={pilotKey}
+        title="🪰 Vagalume Alternante"
+        description="Estratégia de meta-aprendizagem que explora a alternância W-L."
+        pilotState={pilotState}
+        toggleAutopilot={toggleAutopilot}
+    >
+      <div className="grid grid-cols-3 gap-2 text-center text-xs mt-2">
+        <div className="p-2 border rounded-lg bg-muted/50">
+            <p className="text-muted-foreground">Estado FSM</p>
+            <p className="font-bold text-primary">{vagalumeSignal.state}</p>
+        </div>
+        <div className="p-2 border rounded-lg bg-muted/50">
+            <p className="text-muted-foreground">Alvo</p>
+            <p className="font-bold text-primary">{vagalumeSignal.targetOutcome}</p>
+        </div>
+        <div className="p-2 border rounded-lg bg-muted/50">
+            <p className="text-muted-foreground">Alternância</p>
+            <p className="font-bold text-primary">{vagalumeSignal.sequenceStats.alternanceRate.toFixed(0)}%</p>
+        </div>
+      </div>
+      <div className="space-y-4 pt-4 mt-4 border-t">
+          <h4 className="text-xs font-semibold text-muted-foreground">Configuração Fina (Vagalume)</h4>
+           <div className="space-y-2">
+                <Label>Limiar 'MATCH' (W1)</Label>
+                <Slider min={2} max={10} step={0.5} value={[vagalumeConfig.stateW1_matchThreshold]} onValueChange={v => setVagalumeConfig({ ...vagalumeConfig, stateW1_matchThreshold: v[0]})} />
+           </div>
+            <div className="space-y-2">
+                <Label>Limiar 'DIFFERS' (L1)</бран>
+                <Slider min={12} max={25} step={1} value={[vagalumeConfig.stateL1_differsThreshold]} onValueChange={v => setVagalumeConfig({ ...vagalumeConfig, stateL1_differsThreshold: v[0]})} />
+           </div>
+      </div>
+    </PilotTabContent>
+  );
+};
+
 
 export const DigitsAutopilotManager: React.FC<DigitsAutopilotManagerProps> = (props) => {
   const { 
@@ -141,13 +200,9 @@ export const DigitsAutopilotManager: React.FC<DigitsAutopilotManagerProps> = (pr
     executionCooldown,
     setExecutionCooldown,
     resetSession,
-    backtestResults,
-    isBacktesting,
-    runBacktestForAllStrategies,
-    calibrationResults,
-    isCalibrating,
-    runCalibration,
-    applyCalibration,
+    vagalumeSignal,
+    vagalumeConfig,
+    setVagalumeConfig
  } = props;
 
   return (
@@ -231,18 +286,18 @@ export const DigitsAutopilotManager: React.FC<DigitsAutopilotManagerProps> = (pr
                                         </div>
                                     </div>
                                 </PilotTabContent>
-                            </TabsContent>
+                            TabsContent>
                         </Tabs>
                     </div>
 
                     <div className="space-y-2">
-                        <Label className="text-sm font-semibold text-muted-foreground">Estratégias de Azarão (Regressão à Média)</Label>
+                        <Label className="text-sm font-semibold text-muted-foreground">Estratégias Avançadas</Label>
                         <Tabs defaultValue="underdog" className="w-full">
                             <TabsList className="grid w-full grid-cols-4">
-                                <TabsTrigger value="underdog" className="text-xs sm:text-sm"><Trophy className="h-4 w-4 mr-1.5"/>Dígito</TabsTrigger>
+                                <TabsTrigger value="underdog" className="text-xs sm:text-sm"><Trophy className="h-4 w-4 mr-1.5"/>Azarão</TabsTrigger>
                                 <TabsTrigger value="underdogOverUnder" className="text-xs sm:text-sm"><Trophy className="h-4 w-4 mr-1.5"/>A/A Fixo</TabsTrigger>
                                 <TabsTrigger value="dynamicUnderdogOverUnder" className="text-xs sm:text-sm"><Trophy className="h-4 w-4 mr-1.5"/>A/A Dinâmico</TabsTrigger>
-                                <TabsTrigger value="underdogEvenOdd" className="text-xs sm:text-sm"><Trophy className="h-4 w-4 mr-1.5"/>Par/Ímpar</TabsTrigger>
+                                <TabsTrigger value="vagalume" className="text-xs sm:text-sm"><Wand2 className="h-4 w-4 mr-1.5"/>Vagalume</TabsTrigger>
                             </TabsList>
                             <TabsContent value="underdog" className="pt-4">
                                 <PilotTabContent
@@ -312,32 +367,19 @@ export const DigitsAutopilotManager: React.FC<DigitsAutopilotManagerProps> = (pr
                                     toggleAutopilot={toggleAutopilot}
                                 />
                             </TabsContent>
-                            <TabsContent value="underdogEvenOdd" className="pt-4">
-                                <PilotTabContent
-                                    pilotKey="underdogEvenOdd"
-                                    title="Piloto Azarão Par/Ímpar"
-                                    description="Aposta no bloco (Par ou Ímpar) que está estatisticamente 'atrasado'."
-                                    pilotState={pilots.underdogEvenOdd}
+                            <TabsContent value="vagalume" className="pt-4">
+                                <VagalumePanel
+                                    pilotKey="vagalume"
+                                    pilotState={pilots.vagalume}
                                     toggleAutopilot={toggleAutopilot}
-                                >
-                                    <div className="space-y-4 pt-4 mt-4 border-t">
-                                        <h4 className="text-xs font-semibold text-muted-foreground">Configuração Fina (Azarão P/I)</h4>
-                                        <div className="space-y-2">
-                                            <Label htmlFor="underdog-eo-threshold">Limiar de Frequência de Bloco ({evenOddUnderdogThreshold.toFixed(1)}%)</Label>
-                                            <Slider
-                                                id="underdog-eo-threshold"
-                                                min={30} max={48} step={1}
-                                                value={[evenOddUnderdogThreshold]}
-                                                onValueChange={(value) => setEvenOddUnderdogThreshold(value[0])}
-                                            />
-                                            <p className="text-xs text-muted-foreground">Operar em um bloco se a probabilidade dele cair abaixo deste valor.</p>
-                                        </div>
-                                    </div>
-                                </PilotTabContent>
+                                    vagalumeSignal={vagalumeSignal}
+                                    vagalumeConfig={vagalumeConfig}
+                                    setVagalumeConfig={setVagalumeConfig}
+                                />
                             </TabsContent>
                         </Tabs>
                     </div>
-                </TabsContent>
+                TabsContent>
                 <TabsContent value="risk" className="pt-4 space-y-6">
                     <div className="grid grid-cols-2 gap-4">
                         <div className="space-y-2">
@@ -414,7 +456,7 @@ export const DigitsAutopilotManager: React.FC<DigitsAutopilotManagerProps> = (pr
                                     <Repeat className="mr-2 h-4 w-4" />
                                     Reiniciar P&L e Histórico da Sessão
                                 </Button>
-                            </AlertDialogTrigger>
+                            AlertDialogTrigger>
                             <AlertDialogContent>
                                 <AlertDialogHeader>
                                     <AlertDialogTitle>Tem a certeza?</AlertDialogTitle>
@@ -431,7 +473,7 @@ export const DigitsAutopilotManager: React.FC<DigitsAutopilotManagerProps> = (pr
                 </TabsContent>
             </Tabs>
         </div>
-      </CardContent>
+      CardContent>
     </Card>
   );
 }

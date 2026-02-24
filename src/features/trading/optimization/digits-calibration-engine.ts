@@ -2,19 +2,17 @@
 'use client';
 
 /**
- * @fileOverview Motor de Calibração para Estratégias de Dígitos.
- * Realiza Grid Search e Walk-Forward Optimization para encontrar parâmetros robustos.
+ * @fileOverview Motor de Calibração e Otimização Walk-Forward para Estratégias de Dígitos.
+ * Realiza Grid Search e validação Out-of-Sample para encontrar parâmetros robustos.
  */
 
 import {
   runDigitsBacktest,
   type BacktestConfig,
   type BacktestSummary,
-  type BacktestTradeResult,
 } from '../backtest/digits-backtest-engine';
 import type {
   DigitStrategyDefinition,
-  PilotType,
 } from '@/app/deriv-trader-digits/strategies-config';
 import type { TickData } from '@/lib/types';
 import { sanitizeForFirestore } from '@/services/utils/sanitize-for-firestore';
@@ -44,16 +42,15 @@ export interface CalibrationResult {
     summary: BacktestSummary;
     qualityScore: number;
   }>;
-  initialSummary: BacktestSummary; // Adicionado para comparação
+  initialSummary: BacktestSummary;
 }
 
-// NOVO: Interface para resultados de Walk-Forward
 export interface WalkForwardResult {
-    inSampleSummary: BacktestSummary;
-    outOfSampleSummary: BacktestSummary;
-    params: StrategyParams;
-    degradationPercent: number;
-    isRobust: boolean;
+  inSampleSummary: BacktestSummary;
+  outOfSampleSummary: BacktestSummary;
+  params: StrategyParams;
+  degradationPercent: number;
+  isRobust: boolean;
 }
 
 // ============================================================================
@@ -77,12 +74,15 @@ export const STRATEGY_SEARCH_SPACES: Record<string, ParamSearchSpace[]> = {
   underdogOverUnder: [
     { paramKey: 'overUnderUnderdogThreshold', values: [35, 40, 45] }
   ],
-  dynamicUnderdogOverUnder: [], // Sem parâmetros para otimizar por agora
+  dynamicUnderdogOverUnder: [],
   underdogEvenOdd: [
     { paramKey: 'evenOddUnderdogThreshold', values: [35, 40, 45] }
+  ],
+  vagalume: [
+    { paramKey: 'stateW1_matchThreshold', values: [6, 8, 10] },
+    { paramKey: 'stateL1_differsThreshold', values: [12, 15, 18] },
   ]
 };
-
 
 // ============================================================================
 // 3. LÓGICA DO MOTOR DE CALIBRAÇÃO
@@ -110,20 +110,14 @@ function* generateParamCombinations(searchSpaces: ParamSearchSpace[]): Generator
 
 function calculateQualityScore(summary: BacktestSummary): number {
   const { totalProfit, winrate, maxDrawdown, profitFactor, totalTrades } = summary;
-  
+
   if (totalProfit <= 0 || totalTrades < 10) return -1000 + totalProfit;
-
-  // Normaliza o lucro pelo número de trades
+  
   const profitPerTrade = totalProfit / totalTrades;
-  
-  // Penaliza fortemente drawdowns altos
   const drawdownPenalty = Math.pow((1 - (maxDrawdown / 100)), 2);
-
   const score = (profitPerTrade * winrate * profitFactor) * drawdownPenalty;
-  
-  // Bônus por baixo drawdown
   const consistencyBonus = (1 - (maxDrawdown / 100)) * 50;
-
+  
   return score + consistencyBonus;
 }
 
@@ -137,7 +131,6 @@ export function calibrateStrategyGridSearch(
   let bestSummary: BacktestSummary | null = null;
   let bestScore = -Infinity;
 
-  // Executa um backtest inicial com os parâmetros padrão (vazios)
   const initialBacktestConfig: BacktestConfig = {
     ...config.backtestConfigBase,
     strategy: config.strategyDef,
@@ -165,7 +158,6 @@ export function calibrateStrategyGridSearch(
   return { bestParams, bestSummary, testedConfigs, initialSummary };
 }
 
-// NOVO: Função para Otimização Walk-Forward
 export function calibrateStrategyWalkForward(
   ticks: TickData[],
   config: StrategyCalibrationConfig,
@@ -173,7 +165,7 @@ export function calibrateStrategyWalkForward(
 ): WalkForwardResult[] {
     const totalTicks = ticks.length;
     const foldSize = Math.floor(totalTicks / numFolds);
-    const stepSize = Math.floor(foldSize * 0.8); // 80% de sobreposição
+    const stepSize = Math.floor(foldSize * 0.8);
     const testSize = foldSize - stepSize;
     const walkForwardResults: WalkForwardResult[] = [];
     
@@ -188,10 +180,8 @@ export function calibrateStrategyWalkForward(
         const trainingData = ticks.slice(trainStart, trainEnd);
         const testingData = ticks.slice(testStart, testEnd);
 
-        // 1. Otimizar parâmetros no conjunto de treino
         const { bestParams, bestSummary: inSampleSummary } = calibrateStrategyGridSearch(trainingData, config);
 
-        // 2. Validar os melhores parâmetros no conjunto de teste (out-of-sample)
         const validationConfig: BacktestConfig = {
             ...config.backtestConfigBase,
             strategy: config.strategyDef,
@@ -199,17 +189,16 @@ export function calibrateStrategyWalkForward(
         };
         const { summary: outOfSampleSummary } = runDigitsBacktest(testingData, validationConfig);
         
-        // 3. Calcular degradação
-        const degradation = inSampleSummary.totalProfit > 0 
-            ? ((inSampleSummary.totalProfit - outOfSampleSummary.totalProfit) / inSampleSummary.totalProfit) * 100 
-            : 0;
+        const degradation = inSampleSummary.totalProfit > 0
+            ? ((inSampleSummary.totalProfit - outOfSampleSummary.totalProfit) / Math.abs(inSampleSummary.totalProfit)) * 100
+            : outOfSampleSummary.totalProfit > 0 ? -100 : 0;
 
         walkForwardResults.push({
             inSampleSummary,
             outOfSampleSummary,
             params: bestParams,
             degradationPercent: degradation,
-            isRobust: degradation < 30 && outOfSampleSummary.totalProfit > 0,
+            isRobust: degradation < 50 && outOfSampleSummary.totalProfit > 0,
         });
     }
 

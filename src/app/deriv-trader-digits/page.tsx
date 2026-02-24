@@ -166,7 +166,7 @@ function DerivTraderPageContentDigits() {
                 <AlertDescription className="text-primary/90">
                     Esta plataforma foca-se nos Índices de Volatilidade (Sintéticos) porque a sua geração algorítmica constante permite uma análise estatística mais pura e previsível, livre de ruídos de eventos económicos externos.
                 </AlertDescription>
-            </Alert>
+            Alert>
             
             <div className="grid grid-cols-1 lg:grid-cols-5 gap-6 mt-6">
                 <div className="lg:col-span-2 space-y-6">
@@ -204,7 +204,7 @@ export default function DerivTraderDigitsPage() {
     <DerivApiProviderDigits>
         <FormProvider {...form}>
             <DerivTraderPageContentDigits />
-        </FormProvider>
+        FormProvider>
     </DerivApiProviderDigits>
   );
 }
