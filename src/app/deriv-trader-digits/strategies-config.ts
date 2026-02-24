@@ -116,6 +116,13 @@ export const STRATEGY_DEFINITIONS: DigitStrategyDefinition[] = [
   },
 ];
 
+// Adicionado para mapear IDs de estratégia a nomes legíveis para a UI.
+export const strategyLabels: Record<string, string> = 
+  STRATEGY_DEFINITIONS.reduce((acc, strategy) => {
+    acc[strategy.id] = strategy.name;
+    return acc;
+  }, {} as Record<string, string>);
+
 // ============================================================================
 // 3. CONFIGURAÇÕES GLOBAIS DE RISCO E MARTINGALE
 // ============================================================================
