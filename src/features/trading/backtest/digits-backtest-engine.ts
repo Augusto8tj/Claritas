@@ -64,12 +64,9 @@ export interface StrategyBacktestResult extends BacktestSummary {
 const WINDOW_SIZES = [50, 200, 1000];
 const CONSENSUS_THRESHOLD = 2; // Pelo menos 2 das 3 janelas devem concordar
 
-const getLastDigit = (price: number): number => {
-    const priceString = String(price);
-    if (priceString.includes('.')) {
-        return parseInt(priceString.slice(-1), 10);
-    }
-    return price % 10;
+const getLastDigit = (price: number, decimalPlaces: number): number => {
+    const priceString = String(price.toFixed(decimalPlaces));
+    return parseInt(priceString.slice(-1), 10);
 };
 
 const PAYOUTS = {
@@ -96,12 +93,13 @@ const RANDOM_WINRATES = {
 
 export function runDigitsBacktest(
   ticks: TickData[],
-  config: BacktestConfig
+  config: BacktestConfig,
+  decimalPlaces: number
 ): { summary: BacktestSummary; trades: BacktestTradeResult[] } {
   const { strategy, paramsOverride, stakePerTrade } = config;
   const trades: BacktestTradeResult[] = [];
   
-  const params = { ...strategy.otherParams, ...paramsOverride };
+  const params = { ...paramsOverride };
   const DURATION_IN_TICKS = 1;
   const maxWindow = Math.max(...WINDOW_SIZES);
 
@@ -110,10 +108,10 @@ export function runDigitsBacktest(
 
     const entryTick = ticks[i];
     const exitTick = ticks[i + DURATION_IN_TICKS];
-    const actualDigit = getLastDigit(exitTick.price);
+    const actualDigit = getLastDigit(exitTick.price, decimalPlaces);
 
     const windowStats = WINDOW_SIZES.map(size => 
-      calculateDigitStatsForWindow(ticks.slice(0, i + 1), size, getDecimalPlaces(activeAsset?.pip ?? 2))
+      calculateDigitStatsForWindow(ticks.slice(0, i + 1), size, decimalPlaces)
     );
 
     let tradeTriggered = false;
@@ -122,31 +120,79 @@ export function runDigitsBacktest(
 
     switch (strategy.id as PilotType) {
         case 'matchesDiffers': {
-            const threshold = (params.consensusThreshold ?? 25) / 100;
+            const threshold = (params.consensusThreshold as number ?? 25) / 100;
             const hottestDigits = windowStats.map(w => w.hottestDigit);
             const consensusHottest = findConsensusDigit(hottestDigits);
             
-            if (consensusHottest !== null && windowStats[0].frequencies[consensusHottest].probability > threshold) {
-                tradeTriggered = true;
-                contractType = 'DIGITDIFF';
-                targetDigit = consensusHottest;
+            if (consensusHottest !== null) {
+              const avgProb = windowStats.reduce((sum, w) => sum + w.frequencies[consensusHottest!].probability, 0) / windowStats.length;
+              if (avgProb > threshold) {
+                tradeTriggered = true; contractType = 'DIGITDIFF'; targetDigit = consensusHottest;
+              }
             }
             break;
         }
         case 'underdog': {
-            const threshold = (params.underdogThreshold ?? 5.0) / 100;
-            const isInverse = params.isUnderdogInverse ?? false;
+            const threshold = (params.underdogThreshold as number ?? 5.0) / 100;
+            const isInverse = params.isUnderdogInverse as boolean ?? false;
             const coldestDigits = windowStats.map(w => w.coldestDigit);
             const consensusColdest = findConsensusDigit(coldestDigits);
 
-            if (consensusColdest !== null && windowStats[0].frequencies[consensusColdest].probability <= threshold) {
-                tradeTriggered = true;
-                contractType = isInverse ? 'DIGITDIFF' : 'DIGITMATCH';
-                targetDigit = consensusColdest;
+            if (consensusColdest !== null) {
+              const avgProb = windowStats.reduce((sum, w) => sum + w.frequencies[consensusColdest!].probability, 0) / windowStats.length;
+              if (avgProb <= threshold) {
+                tradeTriggered = true; contractType = isInverse ? 'DIGITDIFF' : 'DIGITMATCH'; targetDigit = consensusColdest;
+              }
             }
             break;
         }
-        // ... Lógica para outras estratégias com consenso
+        case 'overUnder': {
+            const threshold = (params.overUnderThreshold as number ?? 65) / 100;
+            if (windowStats.filter(w => w.probOver4 > threshold).length >= CONSENSUS_THRESHOLD) {
+                tradeTriggered = true; contractType = 'DIGITOVER'; targetDigit = 4;
+            } else if (windowStats.filter(w => w.probUnder5 > threshold).length >= CONSENSUS_THRESHOLD) {
+                tradeTriggered = true; contractType = 'DIGITUNDER'; targetDigit = 5;
+            }
+            break;
+        }
+        case 'evenOdd': {
+            const threshold = (params.evenOddThreshold as number ?? 65) / 100;
+            if (windowStats.filter(w => w.probEven > threshold).length >= CONSENSUS_THRESHOLD) {
+                tradeTriggered = true; contractType = 'DIGITEVEN';
+            } else if (windowStats.filter(w => (1 - w.probEven) > threshold).length >= CONSENSUS_THRESHOLD) {
+                tradeTriggered = true; contractType = 'DIGITODD';
+            }
+            break;
+        }
+         case 'underdogOverUnder': {
+            const threshold = (params.overUnderUnderdogThreshold as number ?? 40) / 100;
+            if (windowStats.filter(w => w.probOver4 < threshold).length >= CONSENSUS_THRESHOLD) {
+                tradeTriggered = true; contractType = 'DIGITOVER'; targetDigit = 4;
+            } else if (windowStats.filter(w => w.probUnder5 < threshold).length >= CONSENSUS_THRESHOLD) {
+                tradeTriggered = true; contractType = 'DIGITUNDER'; targetDigit = 5;
+            }
+            break;
+        }
+        case 'dynamicUnderdogOverUnder': {
+            const consensusColdest5 = findConsensusColdest5(windowStats);
+            const overCount = consensusColdest5.filter(d => d > 4).length;
+            const underCount = consensusColdest5.filter(d => d < 5).length;
+            if (overCount >= 4) { // Se a maioria dos "frios" está no bloco de cima, aposte no de baixo
+                tradeTriggered = true; contractType = 'DIGITUNDER'; targetDigit = 5;
+            } else if (underCount >= 4) {
+                tradeTriggered = true; contractType = 'DIGITOVER'; targetDigit = 4;
+            }
+            break;
+        }
+        case 'underdogEvenOdd': {
+            const threshold = (params.evenOddUnderdogThreshold as number ?? 40) / 100;
+            if (windowStats.filter(w => w.probEven < threshold).length >= CONSENSUS_THRESHOLD) {
+                tradeTriggered = true; contractType = 'DIGITEVEN';
+            } else if (windowStats.filter(w => (1 - w.probEven) < threshold).length >= CONSENSUS_THRESHOLD) {
+                tradeTriggered = true; contractType = 'DIGITODD';
+            }
+            break;
+        }
     }
     
     if (tradeTriggered && contractType) {
@@ -154,7 +200,10 @@ export function runDigitsBacktest(
         switch (contractType) {
             case 'DIGITDIFF': win = actualDigit !== targetDigit; break;
             case 'DIGITMATCH': win = actualDigit === targetDigit; break;
-            // ...
+            case 'DIGITOVER': win = actualDigit > targetDigit!; break;
+            case 'DIGITUNDER': win = actualDigit < targetDigit!; break;
+            case 'DIGITEVEN': win = actualDigit % 2 === 0; break;
+            case 'DIGITODD': win = actualDigit % 2 !== 0; break;
         }
         
         const payoutRate = PAYOUTS[contractType];
@@ -176,6 +225,24 @@ function findConsensusDigit(digits: number[]): number | null {
     digits.forEach(d => { counts[d] = (counts[d] || 0) + 1; });
     const consensusEntry = Object.entries(counts).find(([, count]) => count >= CONSENSUS_THRESHOLD);
     return consensusEntry ? parseInt(consensusEntry[0], 10) : null;
+}
+
+function findConsensusColdest5(windowStats: WindowDigitStats[]): number[] {
+    const allColdest: number[] = [];
+    windowStats.forEach(w => {
+        const sorted = [...w.frequencies].sort((a,b) => a.probability - b.probability);
+        allColdest.push(...sorted.slice(0, 5).map(f => f.digit));
+    });
+    
+    const counts = allColdest.reduce((acc, digit) => {
+        acc[digit] = (acc[digit] || 0) + 1;
+        return acc;
+    }, {} as Record<number, number>);
+
+    return Object.entries(counts)
+        .sort(([, a], [, b]) => b - a)
+        .slice(0, 5)
+        .map(([digit]) => parseInt(digit, 10));
 }
 
 function calculateBacktestSummary(
@@ -211,6 +278,10 @@ function calculateBacktestSummary(
   
   // Calcula o EV de uma aposta aleatória para o principal tipo de contrato da estratégia
   const contractTypeForEv = strategy.contractTypes[0];
+  if (!contractTypeForEv || contractTypeForEv === 'MULTI') {
+      return { totalTrades, wins, losses, winrate, totalProfit, maxDrawdown, profitFactor, evPerTrade, randomBaselineEv: 0, isProfitableVsRandom: false };
+  }
+
   const randomWinrate = RANDOM_WINRATES[contractTypeForEv];
   const payout = PAYOUTS[contractTypeForEv];
   const randomBaselineEv = (randomWinrate * payout) - ((1 - randomWinrate) * 1);
@@ -221,24 +292,9 @@ function calculateBacktestSummary(
   };
 }
 
-const getDecimalPlaces = (pipSize: number | undefined): number => {
-    if (pipSize === undefined || pipSize === null || pipSize <= 0) {
-        return 2; 
-    }
-    if (Math.floor(pipSize) === pipSize && pipSize >= 1) {
-        return 0;
-    }
-    const pipString = String(pipSize);
-    if (pipString.includes('.')) {
-        return pipString.split('.')[1].length;
-    }
-    return 0;
-};
-
-// Adicione esta variável global no topo do seu arquivo
-let activeAsset: { pip: number } | null = null;
-
-// E esta função para permitir que a UI atualize
-export const setBacktestAssetContext = (asset: { pip: number } | null) => {
-    activeAsset = asset;
-};
+// Global variable removed for better encapsulation.
+// The `decimalPlaces` will be passed down from the component.
+// let activeAsset: { pip: number } | null = null;
+// export const setBacktestAssetContext = (asset: { pip: number } | null) => {
+//     activeAsset = asset;
+// };

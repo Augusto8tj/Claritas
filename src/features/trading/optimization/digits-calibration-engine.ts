@@ -123,7 +123,8 @@ function calculateQualityScore(summary: BacktestSummary): number {
 
 export function calibrateStrategyGridSearch(
   ticks: TickData[],
-  config: StrategyCalibrationConfig
+  config: StrategyCalibrationConfig,
+  decimalPlaces: number
 ): CalibrationResult {
   const combinations = generateParamCombinations(config.searchSpaces);
   const testedConfigs: CalibrationResult['testedConfigs'] = [];
@@ -136,7 +137,7 @@ export function calibrateStrategyGridSearch(
     strategy: config.strategyDef,
     paramsOverride: {},
   };
-  const { summary: initialSummary } = runDigitsBacktest(ticks, initialBacktestConfig);
+  const { summary: initialSummary } = runDigitsBacktest(ticks, initialBacktestConfig, decimalPlaces);
 
   for (const params of combinations) {
     const backtestConfig: BacktestConfig = {
@@ -144,7 +145,7 @@ export function calibrateStrategyGridSearch(
       strategy: config.strategyDef,
       paramsOverride: params,
     };
-    const { summary } = runDigitsBacktest(ticks, backtestConfig);
+    const { summary } = runDigitsBacktest(ticks, backtestConfig, decimalPlaces);
     const qualityScore = calculateQualityScore(summary);
     testedConfigs.push({ params, summary, qualityScore });
     if (qualityScore > bestScore) {
@@ -161,6 +162,7 @@ export function calibrateStrategyGridSearch(
 export function calibrateStrategyWalkForward(
   ticks: TickData[],
   config: StrategyCalibrationConfig,
+  decimalPlaces: number,
   numFolds: number = 5,
 ): WalkForwardResult[] {
     const totalTicks = ticks.length;
@@ -180,14 +182,14 @@ export function calibrateStrategyWalkForward(
         const trainingData = ticks.slice(trainStart, trainEnd);
         const testingData = ticks.slice(testStart, testEnd);
 
-        const { bestParams, bestSummary: inSampleSummary } = calibrateStrategyGridSearch(trainingData, config);
+        const { bestParams, bestSummary: inSampleSummary } = calibrateStrategyGridSearch(trainingData, config, decimalPlaces);
 
         const validationConfig: BacktestConfig = {
             ...config.backtestConfigBase,
             strategy: config.strategyDef,
             paramsOverride: bestParams,
         };
-        const { summary: outOfSampleSummary } = runDigitsBacktest(testingData, validationConfig);
+        const { summary: outOfSampleSummary } = runDigitsBacktest(testingData, validationConfig, decimalPlaces);
         
         const degradation = inSampleSummary.totalProfit > 0
             ? ((inSampleSummary.totalProfit - outOfSampleSummary.totalProfit) / Math.abs(inSampleSummary.totalProfit)) * 100

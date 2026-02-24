@@ -28,6 +28,9 @@ export interface WindowDigitStats {
   hottestDigit: Digit;
   coldestDigit: Digit;
   chiSquare: ChiSquareResult;
+  probOver4: number;
+  probUnder5: number;
+  probEven: number;
 }
 
 export type ConfidenceLevel = 'MUITO_ALTA' | 'ALTA' | 'MEDIA' | 'BAIXA' | 'NULA';
@@ -122,12 +125,19 @@ export function calculateDigitStatsForWindow(ticks: TickData[], windowSize: numb
   
   const pValue = getPValueFromChiSquare(chiSquare);
 
+  const probOver4 = frequencies.filter(f => f.digit > 4).reduce((sum, f) => sum + f.probability, 0);
+  const probUnder5 = frequencies.filter(f => f.digit < 5).reduce((sum, f) => sum + f.probability, 0);
+  const probEven = frequencies.filter(f => f.digit % 2 === 0).reduce((sum, f) => sum + f.probability, 0);
+
   return {
     windowSize,
     frequencies,
     hottestDigit: sortedByFreq[0]?.digit ?? 0,
     coldestDigit: sortedByFreq[9]?.digit ?? 9,
     chiSquare: { chiSquare, pValue, isSignificant: pValue < 0.05 },
+    probOver4,
+    probUnder5,
+    probEven,
   };
 }
 

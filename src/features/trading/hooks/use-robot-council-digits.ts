@@ -179,17 +179,15 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
 
   const overUnderStats = useMemo(() => {
     if (!analysisResults.mainWindowStats) return { probOver4: 0, probUnder5: 0 };
-    const stats = analysisResults.mainWindowStats.frequencies;
-    const probOver4 = stats.filter(s => s.digit > 4).reduce((sum, s) => sum + s.probability, 0);
-    const probUnder5 = stats.filter(s => s.digit < 5).reduce((sum, s) => sum + s.probability, 0);
-    return { probOver4, probUnder5 };
+    return {
+        probOver4: analysisResults.mainWindowStats.probOver4,
+        probUnder5: analysisResults.mainWindowStats.probUnder5,
+    };
   }, [analysisResults.mainWindowStats]);
 
   const evenOddStats = useMemo(() => {
     if (!analysisResults.mainWindowStats) return { probEven: 0 };
-    const stats = analysisResults.mainWindowStats.frequencies;
-    const probEven = stats.filter(s => s.digit % 2 === 0).reduce((sum, s) => sum + s.probability, 0);
-    return { probEven };
+    return { probEven: analysisResults.mainWindowStats.probEven };
   }, [analysisResults.mainWindowStats]);
 
   // --- LÓGICA DE EXECUÇÃO E ATUALIZAÇÃO ---
@@ -478,7 +476,7 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
                     stakePerTrade: 1,
                     maxTrades: 200,
                     paramsOverride: currentParams,
-                });
+                }, decimalPlaces);
                 results[strategyDef.id] = { ...summary, strategyId: strategyDef.id };
             } catch (e) {
                 console.error(`Backtest para ${strategyDef.name} falhou:`, e);
@@ -489,7 +487,7 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
         setIsBacktesting(false);
         toast({ title: "Backtest Concluído!" });
     }, 50); 
-  }, [backtestTicks, toast, consensusThreshold, overUnderThreshold, evenOddThreshold, underdogThreshold, isUnderdogInverse, overUnderUnderdogThreshold, evenOddUnderdogThreshold]);
+  }, [backtestTicks, toast, consensusThreshold, overUnderThreshold, evenOddThreshold, underdogThreshold, isUnderdogInverse, overUnderUnderdogThreshold, evenOddUnderdogThreshold, decimalPlaces]);
 
   const runCalibration = useCallback(async () => {
     if (isCalibrating) return;
@@ -518,7 +516,7 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
             backtestConfigBase: { initialBankroll: 100, stakePerTrade: 1, maxTrades: 500 }
           };
           
-          const result = calibrateStrategyGridSearch(ticks, calibrationConfig);
+          const result = calibrateStrategyGridSearch(ticks, calibrationConfig, decimalPlaces);
           results[strategyDef.id] = result;
         }
 
@@ -531,7 +529,7 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
       }
     }, 50);
 
-  }, [isCalibrating, backtestTicks, toast]);
+  }, [isCalibrating, backtestTicks, toast, decimalPlaces]);
 
   const applyCalibration = useCallback(() => {
     if (!calibrationResults) {
