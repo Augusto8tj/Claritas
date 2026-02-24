@@ -1,6 +1,11 @@
 // src/features/trading/optimization/digits-calibration-engine.ts
 'use client';
 
+/**
+ * @fileOverview Motor de Calibração para Estratégias de Dígitos.
+ * Realiza Grid Search e Walk-Forward Optimization para encontrar parâmetros robustos.
+ */
+
 import {
   runDigitsBacktest,
   type BacktestConfig,
@@ -39,6 +44,7 @@ export interface CalibrationResult {
     summary: BacktestSummary;
     qualityScore: number;
   }>;
+  initialSummary: BacktestSummary; // Adicionado para comparação
 }
 
 // NOVO: Interface para resultados de Walk-Forward
@@ -56,19 +62,25 @@ export interface WalkForwardResult {
 
 export const STRATEGY_SEARCH_SPACES: Record<string, ParamSearchSpace[]> = {
   matchesDiffers: [
-    { paramKey: 'consensusThreshold', values: [20, 25, 30] }
+    { paramKey: 'consensusThreshold', values: [15, 20, 25, 30, 35, 40] }
   ],
   overUnder: [
-    { paramKey: 'overUnderThreshold', values: [60, 65, 70] }
+    { paramKey: 'overUnderThreshold', values: [55, 60, 65, 70, 75] }
   ],
   evenOdd: [
-    { paramKey: 'evenOddThreshold', values: [60, 65, 70] }
+    { paramKey: 'evenOddThreshold', values: [55, 60, 65, 70, 75] }
   ],
   underdog: [
-    { paramKey: 'underdogThreshold', values: [4.0, 5.0, 6.0] },
-    { paramKey: 'isUnderdogInverse', values: [false] } // Calibração foca no modo principal
+    { paramKey: 'underdogThreshold', values: [3.0, 4.0, 5.0, 6.0, 7.0] },
+    { paramKey: 'isUnderdogInverse', values: [false] } 
   ],
-  // ... outros espaços
+  underdogOverUnder: [
+    { paramKey: 'overUnderUnderdogThreshold', values: [35, 40, 45] }
+  ],
+  dynamicUnderdogOverUnder: [], // Sem parâmetros para otimizar por agora
+  underdogEvenOdd: [
+    { paramKey: 'evenOddUnderdogThreshold', values: [35, 40, 45] }
+  ]
 };
 
 
@@ -98,10 +110,20 @@ function* generateParamCombinations(searchSpaces: ParamSearchSpace[]): Generator
 
 function calculateQualityScore(summary: BacktestSummary): number {
   const { totalProfit, winrate, maxDrawdown, profitFactor, totalTrades } = summary;
+  
   if (totalProfit <= 0 || totalTrades < 10) return -1000 + totalProfit;
-  const drawdownPenalty = 1 + (maxDrawdown / 100);
-  const score = (profitFactor * winrate) / drawdownPenalty;
-  const consistencyBonus = (1 - (maxDrawdown / 100)) * 10;
+
+  // Normaliza o lucro pelo número de trades
+  const profitPerTrade = totalProfit / totalTrades;
+  
+  // Penaliza fortemente drawdowns altos
+  const drawdownPenalty = Math.pow((1 - (maxDrawdown / 100)), 2);
+
+  const score = (profitPerTrade * winrate * profitFactor) * drawdownPenalty;
+  
+  // Bônus por baixo drawdown
+  const consistencyBonus = (1 - (maxDrawdown / 100)) * 50;
+
   return score + consistencyBonus;
 }
 
@@ -114,6 +136,14 @@ export function calibrateStrategyGridSearch(
   let bestParams: StrategyParams = {};
   let bestSummary: BacktestSummary | null = null;
   let bestScore = -Infinity;
+
+  // Executa um backtest inicial com os parâmetros padrão (vazios)
+  const initialBacktestConfig: BacktestConfig = {
+    ...config.backtestConfigBase,
+    strategy: config.strategyDef,
+    paramsOverride: {},
+  };
+  const { summary: initialSummary } = runDigitsBacktest(ticks, initialBacktestConfig);
 
   for (const params of combinations) {
     const backtestConfig: BacktestConfig = {
@@ -132,7 +162,7 @@ export function calibrateStrategyGridSearch(
   }
   if (!bestSummary) throw new Error('Calibração falhou: Nenhum resultado de backtest foi gerado.');
   bestSummary.strategyId = config.strategyDef.id;
-  return { bestParams, bestSummary, testedConfigs };
+  return { bestParams, bestSummary, testedConfigs, initialSummary };
 }
 
 // NOVO: Função para Otimização Walk-Forward
@@ -185,5 +215,3 @@ export function calibrateStrategyWalkForward(
 
     return walkForwardResults;
 }
-
-```
