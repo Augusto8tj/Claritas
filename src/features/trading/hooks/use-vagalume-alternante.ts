@@ -5,6 +5,7 @@ import { useState, useEffect, useMemo, useCallback } from 'react';
 import type { Operation, TickData } from '@/lib/types';
 import type { DigitFrequency, WindowDigitStats } from '@/features/trading/services/digits-analysis';
 import { calculateDigitStatsForWindow } from '@/features/trading/services/digits-analysis';
+import { timingMonitor } from '@/features/trading/utils/timing-monitor';
 
 // ============================================================================
 // 1. TIPOS E INTERFACES
@@ -20,56 +21,64 @@ export interface VagalumeConfig {
   resetMultiplier: number;
   pauseAfterFailedResets: number;
   kellyFraction: number;
+  usePredictiveAnalysis: boolean;
 }
 
 export interface VagalumeSignal {
   state: VagalumeState;
   targetOutcome: 'WIN' | 'LOSS';
-  confidence: number;          // 0-1
+  confidence: number;
   suggestedContract: DigitContractType;
   suggestedDigit?: number;
   suggestedStakeMultiplier: number;
   sequenceStats: {
     currentStreak: number;
-    alternanceRate: number;    // últimos 50 trades
+    alternanceRate: number;
     totalTrades: number;
   };
   shouldTrade: boolean;
+  lastTickEpoch: number;
+  analysisWindowEnd: number;
 }
 
 // ============================================================================
 // 2. FUNÇÕES AUXILIARES
 // ============================================================================
 
-const getLastDigit = (price: number, decimalPlaces: number): number => {
-    if (isNaN(price) || !Number.isFinite(price)) return 0;
-    const priceString = price.toFixed(decimalPlaces);
-    return parseInt(priceString.slice(-1), 10);
-};
-
 const calculateAdaptiveAnalysis = (
   ticks: TickData[],
   state: VagalumeState,
-  decimalPlaces: number
-): WindowDigitStats => {
+  decimalPlaces: number,
+  usePredictiveAnalysis: boolean = true
+): WindowDigitStats & { analyzedEpoch: number } => {
   const windowSize = (state === 'W1' || state === 'L1') ? 50 : 200;
   
-  const emptyResult: WindowDigitStats = {
+  const emptyResult: WindowDigitStats & { analyzedEpoch: number } = {
     windowSize,
-    frequencies: Array.from({ length: 10 }, (_, i) => ({ digit: i as any, count: 0, probability: 0, zScore: 0 })),
+    frequencies: Array.from({ length: 10 }, (_, i) => ({ 
+      digit: i as any, count: 0, probability: 0, zScore: 0 
+    })),
     hottestDigit: 0,
     coldestDigit: 0,
     chiSquare: { chiSquare: 0, pValue: 1, isSignificant: false },
     probOver4: 0.5,
     probUnder5: 0.5,
     probEven: 0.5,
+    analyzedEpoch: 0,
   };
 
-  if (ticks.length < windowSize) return emptyResult;
+  const minTicks = usePredictiveAnalysis ? windowSize + 1 : windowSize;
+  if (ticks.length < minTicks) return emptyResult;
   
-  return calculateDigitStatsForWindow(ticks, windowSize, decimalPlaces);
+  const ticksToAnalyze = usePredictiveAnalysis 
+    ? ticks.slice(-(windowSize + 1), -1)
+    : ticks.slice(-windowSize);
+  
+  const stats = calculateDigitStatsForWindow(ticksToAnalyze, windowSize, decimalPlaces);
+  const analyzedEpoch = ticksToAnalyze[ticksToAnalyze.length - 1]?.epoch || 0;
+  
+  return { ...stats, analyzedEpoch };
 };
-
 
 // ============================================================================
 // 3. HOOK PRINCIPAL
@@ -100,9 +109,9 @@ export const useVagalumeAlternante = (
       const lastOutcomeIsWin = relevantTrades[relevantTrades.length - 1].result! > 0;
       for (let i = relevantTrades.length - 2; i >= 0; i--) {
         if ((relevantTrades[i].result! > 0) === lastOutcomeIsWin) {
-             streak++;
+          streak++;
         } else {
-            break;
+          break;
         }
       }
     }
@@ -142,13 +151,17 @@ export const useVagalumeAlternante = (
   }, [failedResets, sequenceStats.alternanceRate, config.pauseAfterFailedResets]);
 
   const getAdaptiveAnalysis = useCallback((state: VagalumeState) => {
-    return calculateAdaptiveAnalysis(ticks, state, decimalPlaces);
-  }, [ticks, decimalPlaces]);
+    return calculateAdaptiveAnalysis(ticks, state, decimalPlaces, config.usePredictiveAnalysis);
+  }, [ticks, decimalPlaces, config.usePredictiveAnalysis]);
 
   const signal = useMemo((): VagalumeSignal | null => {
+    const measure = timingMonitor.startMeasurement();
+    
     if (vagalumeState === 'PAUSED') return null;
-    if ((vagalumeState === 'W1' || vagalumeState === 'L1') && ticks.length < 50) return null;
-    if ((vagalumeState === 'W2' || vagalumeState === 'L2') && ticks.length < 200) return null;
+    
+    const minTicks = (vagalumeState === 'W1' || vagalumeState === 'L1') ? 50 : 200;
+    const requiredTicks = config.usePredictiveAnalysis ? minTicks + 1 : minTicks;
+    if (ticks.length < requiredTicks) return null;
 
     const analysis = getAdaptiveAnalysis(vagalumeState);
     const targetOutcome = vagalumeState.startsWith('W') ? 'WIN' : 'LOSS';
@@ -159,76 +172,91 @@ export const useVagalumeAlternante = (
     let shouldTrade = false;
     
     const windowSize = (vagalumeState === 'W1' || vagalumeState === 'L1') ? 50 : 200;
+    const lastTickEpoch = ticks[ticks.length - 1]?.epoch || 0;
 
     switch (vagalumeState) {
-        case 'W1':
-          if (analysis.probEven < 0.49) {
-            const zScore = Math.abs((analysis.probEven - 0.5) / Math.sqrt(0.25 / windowSize));
-            suggestedContract = 'DIGITODD';
-            confidence = 0.5 + (0.5 - analysis.probEven) + (zScore * 0.05);
-            shouldTrade = confidence > 0.51;
-          } else if (analysis.probEven > 0.51) {
-            const zScore = Math.abs((analysis.probEven - 0.5) / Math.sqrt(0.25 / windowSize));
-            suggestedContract = 'DIGITEVEN';
-            confidence = 0.5 + (analysis.probEven - 0.5) + (zScore * 0.05);
-            shouldTrade = confidence > 0.51;
-          }
-          break;
+      case 'W1':
+        if (analysis.probEven < 0.49) { // Ímpar favorecido
+          const zScore = Math.abs((analysis.probEven - 0.5) / Math.sqrt(0.25 / windowSize));
+          suggestedContract = 'DIGITODD';
+          confidence = Math.min(0.95, 0.5 + (0.5 - analysis.probEven) + (zScore * 0.05));
+          shouldTrade = confidence > 0.51;
+        } else if (analysis.probEven > 0.51) { // Par favorecido
+          const zScore = Math.abs((analysis.probEven - 0.5) / Math.sqrt(0.25 / windowSize));
+          suggestedContract = 'DIGITEVEN';
+          confidence = Math.min(0.95, 0.5 + (analysis.probEven - 0.5) + (zScore * 0.05));
+          shouldTrade = confidence > 0.51;
+        }
+        break;
 
-        case 'L1':
-          if (analysis.probOver4 > 0.51) {
+      case 'L1':
+        const probOver = analysis.frequencies.slice(5).reduce((sum, f) => sum + f.probability, 0);
+        if (probOver > 0.51) {
+          suggestedContract = 'DIGITOVER';
+          suggestedDigit = 4;
+          confidence = 0.5 + (probOver - 0.5);
+          shouldTrade = confidence > 0.51;
+        } else if (probOver < 0.49) {
+          suggestedContract = 'DIGITUNDER';
+          suggestedDigit = 5;
+          confidence = 0.5 + (0.5 - probOver);
+          shouldTrade = confidence > 0.51;
+        }
+        break;
+
+      case 'W2':
+      case 'L2':
+        if (analysis.probEven > 0.55) {
+          suggestedContract = 'DIGITEVEN';
+          confidence = 0.5 + (analysis.probEven - 0.5);
+          shouldTrade = true;
+        } else if (analysis.probEven < 0.45) {
+          suggestedContract = 'DIGITODD';
+          confidence = 0.5 + (0.5 - analysis.probEven);
+          shouldTrade = true;
+        } else {
+          const probOver = analysis.frequencies.slice(5).reduce((sum, f) => sum + f.probability, 0);
+          if (probOver > 0.52) {
             suggestedContract = 'DIGITOVER';
             suggestedDigit = 4;
-            confidence = 0.5 + (analysis.probOver4 - 0.5);
-            shouldTrade = confidence > 0.51;
-          } else if (analysis.probUnder5 > 0.51) {
+            confidence = 0.52;
+          } else {
             suggestedContract = 'DIGITUNDER';
             suggestedDigit = 5;
-            confidence = 0.5 + (analysis.probUnder5 - 0.5);
-            shouldTrade = confidence > 0.51;
+            confidence = 0.52;
           }
-          break;
-
-        case 'W2':
-        case 'L2':
-            if (analysis.probEven > 0.55) {
-                suggestedContract = 'DIGITEVEN';
-                confidence = 0.5 + (analysis.probEven - 0.5);
-                shouldTrade = true;
-            } else if (analysis.probEven < 0.45) {
-                suggestedContract = 'DIGITODD';
-                confidence = 0.5 + (0.5 - analysis.probEven);
-                shouldTrade = true;
-            } else {
-                if (analysis.probOver4 > 0.52) {
-                    suggestedContract = 'DIGITOVER';
-                    suggestedDigit = 4;
-                    confidence = 0.52;
-                } else {
-                    suggestedContract = 'DIGITUNDER';
-                    suggestedDigit = 5;
-                    confidence = 0.52;
-                }
-                shouldTrade = true;
-            }
-            break;
+          shouldTrade = true;
+        }
+        break;
     }
 
     const stakeMultiplier = (vagalumeState === 'W2' || vagalumeState === 'L2') && sequenceStats.alternanceRate > 80 
-        ? config.resetMultiplier 
-        : 1.0;
+      ? config.resetMultiplier 
+      : 1.0;
+
+    const analysisTime = measure.end();
+    const tickAge = Date.now() - (lastTickEpoch * 1000);
+    
+    timingMonitor.recordTiming('vagalume', {
+      analysisTime,
+      executionTime: 0,
+      totalLatency: analysisTime,
+      tickAge,
+    });
 
     return {
-        state: vagalumeState,
-        targetOutcome,
-        confidence,
-        suggestedContract,
-        suggestedDigit,
-        suggestedStakeMultiplier: stakeMultiplier,
-        sequenceStats,
-        shouldTrade,
+      state: vagalumeState,
+      targetOutcome,
+      confidence,
+      suggestedContract,
+      suggestedDigit,
+      suggestedStakeMultiplier: stakeMultiplier,
+      sequenceStats,
+      shouldTrade,
+      lastTickEpoch,
+      analysisWindowEnd: analysis.analyzedEpoch,
     };
-  }, [vagalumeState, getAdaptiveAnalysis, config, sequenceStats, ticks.length]);
+  }, [vagalumeState, getAdaptiveAnalysis, config, sequenceStats, ticks]);
 
   return { signal, onTradeCompleted };
 };

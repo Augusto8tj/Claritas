@@ -14,8 +14,10 @@ export type StrategyType =
   | 'STD_TREND_FOLLOW'
   | 'BOLLINGER_SQUEEZE'
   | 'VOLUME_ABSORPTION'
-  | 'MICROSTRUCTURE_SCALP';
-
+  | 'MICROSTRUCTURE_SCALP'
+  | 'GBM_20S'
+  | 'GBM_40S';
+  
 export interface MicrostructureFeatures {
   spreadPercentage: number;
   volumeImbalance: number;
@@ -52,6 +54,9 @@ export const OperationSchema = z.object({
   takeProfit: z.number().optional(),
   stopLoss: z.number().optional(),
   trailingStop: z.number().optional(),
+  apiStatus: z.enum(['won', 'lost']).optional(),
+  validationLog: z.any().optional(),
+  executionLatency: z.number().optional(),
 });
 
 
