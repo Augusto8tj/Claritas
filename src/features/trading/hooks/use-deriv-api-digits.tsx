@@ -1,3 +1,4 @@
+
 // src/features/trading/hooks/use-deriv-api-digits.tsx
 'use client';
 
@@ -424,7 +425,7 @@ export function useDerivApiDigitsState() {
             if (last_digit === undefined || last_digit === null) {
               throw new Error(`O dígito é necessário para o tipo de contrato ${contractType}.`);
             }
-            buyRequest.parameters.barrier = last_digit;
+            buyRequest.parameters.barrier = String(last_digit);
         }
         
         const buyResponse: any = await makeRequest(buyRequest);
