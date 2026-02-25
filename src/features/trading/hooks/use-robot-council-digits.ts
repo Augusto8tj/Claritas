@@ -59,8 +59,6 @@ export interface CalibrationResult {
   initialSummary: BacktestSummary;
 }
 
-const BASE_STAKE = 0.35;
-
 const createInitialPilotState = (): PilotState => ({
     isOn: false,
     status: 'PAUSED',
@@ -75,7 +73,8 @@ const createInitialPilotState = (): PilotState => ({
 // 2. HOOK PRINCIPAL
 // ============================================================================
 
-export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: TickData[], activeAsset: Asset | null) {
+export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: TickData[], activeAsset: Asset | null, formStake: number) {
+  const BASE_STAKE = formStake;
   const { user } = useAuth();
   const { toast } = useToast();
   const { executeTrade, operationsLog, accountBalance } = useDerivApiDigits();
@@ -102,7 +101,7 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
   
   // --- GESTÃO DE RISCO AVANÇADA (MARTINGALE) ---
   const [isMartingaleEnabled, setIsMartingaleEnabled] = useState(false);
-  const [isSmartMartingale, setIsSmartMartingale] = useState(true);
+  const [isSmartMartingale, setIsSmartMartingale] = useState(false);
   const [martingaleRecoveryFactor, setMartingaleRecoveryFactor] = useState(1.3);
   const [cooldownTime, setCooldownTime] = useState(5);
   const [maxLosses, setMaxLosses] = useState(5);
@@ -339,8 +338,12 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
           const currentBankroll = initialBankroll + dailyPnl;
           const bankrollState: BankrollState = { currentBankroll, initialBankroll, maxDailyLoss: dailyBalance, dailyProfitTarget: dailyTarget };
           const stakeConfig: SmartMartingaleConfig = { 
-              isEnabled: isMartingaleEnabled, baseStake: BASE_STAKE, maxMartingaleLevels: maxLosses, 
-              martingaleMultiplier: martingaleRecoveryFactor, useAntiMartingale: false, isSmart: isSmartMartingale,
+              isEnabled: isMartingaleEnabled, 
+              baseStake: BASE_STAKE, 
+              maxMartingaleLevels: maxLosses, 
+              martingaleMultiplier: martingaleRecoveryFactor, 
+              useAntiMartingale: false, 
+              isSmart: false,
           };
           const stakeDecision = decideNextStake(vagalumePilot.tradeHistory, stakeConfig, bankrollState, vagalumeSignal.suggestedContract, vagalumeSignal.adjustedConfidence);
 
@@ -384,7 +387,6 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
           }
       }
       
-      // Bloqueia outros pilotos se o Vagalume estiver ativo
       tradeExecutedThisCycle = true;
     }
     

@@ -2,7 +2,7 @@
 'use client';
 
 import React from "react";
-import { useForm, FormProvider } from "react-hook-form";
+import { useForm, FormProvider, useFormContext } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import DerivTraderInterfaceDigits from "@/features/trading/components/deriv-trader/deriv-trader-interface-digits";
 import { AssetSelectorDigits } from "@/features/trading/components/deriv-trader/asset-selector-digits";
@@ -150,7 +150,10 @@ function DerivTraderPageContentDigits() {
         activeSymbol, priceTicks, operationsLog, activeAsset, clearActiveContracts, 
     } = useDerivApiDigits();
     
-    const robotCouncil = useRobotCouncilDigits(activeSymbol, priceTicks, activeAsset);
+    const form = useFormContext<DigitFormValues>();
+    const stakeValue = form.watch('stake');
+
+    const robotCouncil = useRobotCouncilDigits(activeSymbol, priceTicks, activeAsset, stakeValue);
     
     return (
         <div className="flex-1 space-y-4 p-4 sm:p-8 pt-6">
