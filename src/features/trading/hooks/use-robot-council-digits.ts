@@ -95,7 +95,7 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
   });
   
   // --- GESTÃO DE RISCO AVANÇADA (MARTINGALE) ---
-  const [isMartingaleEnabled, setIsMartingaleEnabled] = useState(false);
+  const [isMartingaleEnabled, setIsMartingaleEnabled] = useState(false); // ✅ CORREÇÃO: Desativado por padrão
   const [isSmartMartingale, setIsSmartMartingale] = useState(true);
   const [martingaleRecoveryFactor, setMartingaleRecoveryFactor] = useState(1.3);
   const [cooldownTime, setCooldownTime] = useState(5);
@@ -140,11 +140,15 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
 
   // --- ANÁLISE ESTATÍSTICA ---
   const analysisResults = useMemo(() => {
-    const windowSizes = [200, 500, 1000];
-    if (!priceTicks || priceTicks.length < 200) {
+    const windowSizes = [50, 200, 1000];
+    if (!priceTicks || priceTicks.length < 50) {
       return { windowsStats: [], mainWindowStats: null };
     }
-    const windowsStats = windowSizes.map(size => calculateDigitStatsForWindow(priceTicks, size, decimalPlaces));
+    const windowsStats = windowSizes.map(size => {
+        if(priceTicks.length < size) return null;
+        return calculateDigitStatsForWindow(priceTicks, size, decimalPlaces);
+    }).filter(w => w !== null) as WindowDigitStats[];
+
     const mainWindowStats = windowsStats.find(w => w.windowSize === 1000) || windowsStats[windowsStats.length - 1];
     return { windowsStats, mainWindowStats };
   }, [priceTicks, decimalPlaces]);
@@ -157,11 +161,12 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
   }, [priceTicks, decimalPlaces]);
 
   const multiWindowAnalysis = useMemo(() => {
+    if (analysisResults.windowsStats.length === 0) return null;
     return getMultiWindowAnalysis(analysisResults.windowsStats);
   }, [analysisResults.windowsStats]);
   
   const signalQuality = useMemo(() => {
-    if (!analysisResults.mainWindowStats) return null;
+    if (!multiWindowAnalysis || !analysisResults.mainWindowStats) return null;
     return determineSignalQuality(multiWindowAnalysis, analysisResults.mainWindowStats);
   }, [multiWindowAnalysis, analysisResults.mainWindowStats]);
 
@@ -184,7 +189,7 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
     const allTrades = Object.values(pilots).flatMap(p => p.tradeHistory);
     return allTrades.reduce((sum, trade) => {
         const profit = trade.result || 0;
-        return sum + (profit > 0 ? profit : -trade.stake);
+        return sum + profit;
     }, 0);
   }, [pilots]);
 
@@ -368,7 +373,6 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
             }
         }
         
-        // ✅ CORREÇÃO: Bloqueia outros pilotos se o Vagalume estiver ativo, independente do estado
         tradeExecutedThisCycle = true;
     }
     
@@ -447,12 +451,12 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
                 if (underdogBlock !== undefined) {
                     shouldExecute = true; confidenceForStake = 'ALTA';
                     if (underdogBlock > 4) {
-                      executionParams = ['DIGITOVER', 4, pilotKey];
-                      contractTypeForStake = 'DIGITOVER';
-                    }
-                    else {
                       executionParams = ['DIGITUNDER', 5, pilotKey];
                       contractTypeForStake = 'DIGITUNDER';
+                    }
+                    else {
+                      executionParams = ['DIGITOVER', 4, pilotKey];
+                      contractTypeForStake = 'DIGITOVER';
                     }
                 }
                 break;
