@@ -3,7 +3,7 @@
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import type { Operation, TickData } from '@/lib/types';
-import type { DigitFrequency } from '@/features/trading/services/digits-analysis';
+import type { DigitFrequency, WindowDigitStats } from '@/features/trading/services/digits-analysis';
 
 // ============================================================================
 // 1. TIPOS E INTERFACES
@@ -101,11 +101,10 @@ export const useVagalumeAlternante = (
   const [failedResets, setFailedResets] = useState(0);
 
   const sequenceStats = useMemo(() => {
-    const relevantTrades = tradeHistory.slice(-50);
-    if (relevantTrades.length < 2) {
-      return { currentStreak: relevantTrades.length, alternanceRate: 0, totalTrades: relevantTrades.length };
+    if (tradeHistory.length < 2) {
+      return { currentStreak: tradeHistory.length, alternanceRate: 0, totalTrades: tradeHistory.length };
     }
-
+    const relevantTrades = tradeHistory.slice(-50);
     const alternances = relevantTrades.slice(1).filter((t, i) =>
       (relevantTrades[i].result! > 0) !== (t.result! > 0)
     ).length;
@@ -169,7 +168,7 @@ export const useVagalumeAlternante = (
     
     let suggestedContract: DigitContractType = 'DIGITDIFF';
     let suggestedDigit: number | undefined;
-    let confidence = 0.5; // baseline 50%
+    let confidence = 0.5;
     let shouldTrade = false;
 
     switch (vagalumeState) {
@@ -193,16 +192,19 @@ export const useVagalumeAlternante = (
 
       case 'W2':
       case 'L2':
-        // **LÓGICA APRIMORADA** para Reset com Par/Ímpar
-        if (analysis.probEven > 0.51) {
-          suggestedContract = 'DIGITODD';
+        // Reset: Aposta COM a anomalia estatística de Par/Ímpar
+        if (analysis.probEven > 0.55) { // se par está mais provável
+          suggestedContract = 'DIGITEVEN'; // Aposta em Par
           confidence = 0.5 + (analysis.probEven - 0.5);
-        } else {
-          suggestedContract = 'DIGITEVEN';
+          shouldTrade = true;
+        } else if (analysis.probEven < 0.45) { // se ímpar está mais provável (probEven < 45%)
+          suggestedContract = 'DIGITODD'; // Aposta em Ímpar
           confidence = 0.5 + (0.5 - analysis.probEven);
+          shouldTrade = true;
+        } else {
+            shouldTrade = false; // Zona neutra, sem vantagem estatística clara
         }
-        shouldTrade = true;
-        suggestedDigit = undefined; // Não precisa de dígito para Par/Ímpar
+        suggestedDigit = undefined;
         break;
     }
     
