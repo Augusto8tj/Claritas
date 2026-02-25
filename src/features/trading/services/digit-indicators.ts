@@ -3,6 +3,7 @@
 
 import type { TickData } from '@/lib/types';
 import type { Digit, DigitFrequency } from './digits-analysis';
+import { timingMonitor } from '../utils/timing-monitor';
 
 // ============================================================================
 // 1. MOMENTUM INDICATORS
@@ -17,17 +18,6 @@ export interface MomentumIndicators {
 
 /**
  * Calcula momentum do último dígito nas últimas N observações
- * 
- * Lógica:
- * - Se dígitos recentes > média histórica → momentum positivo
- * - Se dígitos recentes < média histórica → momentum negativo
- * - Trend strength mede consistência da direção
- * 
- * @param ticks - Array de ticks históricos
- * @param shortPeriod - Período curto (ex: 10 ticks)
- * @param longPeriod - Período longo (ex: 50 ticks)
- * @param decimalPlaces - Casas decimais do ativo
- * @returns Indicadores de momentum
  */
 export function calculateMomentum(
   ticks: TickData[], 
@@ -40,23 +30,20 @@ export function calculateMomentum(
   }
 
   const getLastDigit = (price: number): number => {
-    if (isNaN(price)) return 0;
+    if (isNaN(price) || !Number.isFinite(price)) return 0;
     const priceString = price.toFixed(decimalPlaces);
     return parseInt(priceString.slice(-1), 10);
   };
 
-  // 1. Média Móvel Simples (SMA)
   const recentDigits = ticks.slice(-shortPeriod).map(t => getLastDigit(t.price));
   const historicDigits = ticks.slice(-longPeriod).map(t => getLastDigit(t.price));
   
   const smaRecent = recentDigits.reduce((a, b) => a + b, 0) / recentDigits.length;
   const smaHistoric = historicDigits.reduce((a, b) => a + b, 0) / historicDigits.length;
 
-  // 2. Momentum = (SMA curto - SMA longo) / SMA longo
-  const momentum = (smaRecent - smaHistoric) / (smaHistoric || 5); // Normalizado
-  const digitMomentum = Math.max(-1, Math.min(1, momentum)); // Clamp [-1, 1]
+  const momentum = (smaRecent - smaHistoric) / (smaHistoric || 5);
+  const digitMomentum = Math.max(-1, Math.min(1, momentum));
 
-  // 3. Trend Strength (consistência da direção)
   let upMoves = 0;
   let downMoves = 0;
   for (let i = 1; i < recentDigits.length; i++) {
@@ -66,7 +53,6 @@ export function calculateMomentum(
   const totalMoves = upMoves + downMoves;
   const trendStrength = totalMoves > 0 ? Math.max(upMoves, downMoves) / totalMoves : 0;
 
-  // 4. Rate of Change (ROC)
   const oldDigit = historicDigits[0];
   const newDigit = recentDigits[recentDigits.length - 1];
   const rateOfChange = oldDigit !== 0 ? (newDigit - oldDigit) / oldDigit : 0;
@@ -84,23 +70,12 @@ export function calculateMomentum(
 // ============================================================================
 
 export interface VolatilityIndicators {
-  digitVolatility: number;     // Desvio padrão do último dígito
+  digitVolatility: number;
   volatilityRegime: 'LOW' | 'MEDIUM' | 'HIGH';
-  atr: number;                 // Average True Range (adaptado para dígitos)
-  isExpanding: boolean;        // Volatilidade está aumentando?
+  atr: number;
+  isExpanding: boolean;
 }
 
-/**
- * Calcula volatilidade do último dígito
- * 
- * Insight:
- * - Alta volatilidade = dígitos variam muito (ex: 1, 9, 3, 7)
- * - Baixa volatilidade = dígitos estáveis (ex: 4, 5, 4, 5)
- * 
- * Uso estratégico:
- * - Em alta volatilidade: aumentar threshold de confiança
- * - Em baixa volatilidade: diminuir stake (sinais fracos)
- */
 export function calculateVolatility(
   ticks: TickData[],
   period: number = 20,
@@ -118,34 +93,33 @@ export function calculateVolatility(
   const digits = ticks.slice(-period).map(t => getLastDigit(t.price));
   const mean = digits.reduce((a, b) => a + b, 0) / digits.length;
   
-  // Desvio padrão
   const variance = digits.reduce((sum, d) => sum + Math.pow(d - mean, 2), 0) / digits.length;
   const digitVolatility = Math.sqrt(variance);
 
-  // ATR (Average True Range) para dígitos
   let atrSum = 0;
   for (let i = 1; i < digits.length; i++) {
     atrSum += Math.abs(digits[i] - digits[i - 1]);
   }
   const atr = atrSum / (digits.length - 1);
 
-  // Regime de volatilidade (baseado no desvio padrão teórico = 2.87 para uniforme)
   let volatilityRegime: 'LOW' | 'MEDIUM' | 'HIGH' = 'MEDIUM';
   if (digitVolatility < 2.5) volatilityRegime = 'LOW';
   else if (digitVolatility > 3.2) volatilityRegime = 'HIGH';
 
-  // Está expandindo? (compara metade recente vs metade antiga)
   const halfPeriod = Math.floor(period / 2);
   const recentDigits = digits.slice(-halfPeriod);
   const oldDigits = digits.slice(0, halfPeriod);
   
+  const recentMean = recentDigits.length > 0 ? recentDigits.reduce((s, d) => s + d, 0) / recentDigits.length : 0;
+  const oldMean = oldDigits.length > 0 ? oldDigits.reduce((s, d) => s + d, 0) / oldDigits.length : 0;
+
   const recentVol = Math.sqrt(
-    recentDigits.reduce((sum, d) => sum + Math.pow(d - mean, 2), 0) / recentDigits.length
+    recentDigits.reduce((sum, d) => sum + Math.pow(d - recentMean, 2), 0) / (recentDigits.length || 1)
   );
   const oldVol = Math.sqrt(
-    oldDigits.reduce((sum, d) => sum + Math.pow(d - mean, 2), 0) / oldDigits.length
+    oldDigits.reduce((sum, d) => sum + Math.pow(d - oldMean, 2), 0) / (oldDigits.length || 1)
   );
-  const isExpanding = recentVol > oldVol * 1.1; // 10% de aumento
+  const isExpanding = recentVol > oldVol * 1.1;
 
   return {
     digitVolatility,
@@ -161,24 +135,11 @@ export function calculateVolatility(
 
 export interface MarketRegime {
   type: 'TRENDING' | 'RANGING' | 'CHAOTIC';
-  confidence: number; // 0 a 1
+  confidence: number;
   isTrendingUp: boolean;
   isTrendingDown: boolean;
 }
 
-/**
- * Detecta o regime do mercado (trending vs ranging)
- * 
- * Lógica:
- * - TRENDING: Dígitos seguem padrão direcional (crescente ou decrescente)
- * - RANGING: Dígitos oscilam em torno de média (ex: 4-5-4-6-5)
- * - CHAOTIC: Volatilidade muito alta sem padrão claro
- * 
- * Aplicação:
- * - TRENDING → Usar estratégias de momentum
- * - RANGING → Usar estratégias mean-reversion (Vagalume atual)
- * - CHAOTIC → Aumentar thresholds ou pausar
- */
 export function detectRegime(
   momentum: MomentumIndicators,
   volatility: VolatilityIndicators
@@ -186,13 +147,8 @@ export function detectRegime(
   const { digitMomentum, trendStrength } = momentum;
   const { volatilityRegime } = volatility;
 
-  // Trending: momentum forte + baixa volatilidade
   const isTrending = Math.abs(digitMomentum) > 0.3 && trendStrength > 0.6;
-  
-  // Ranging: momentum fraco + volatilidade média
   const isRanging = Math.abs(digitMomentum) < 0.2 && volatilityRegime === 'MEDIUM';
-  
-  // Chaotic: volatilidade alta
   const isChaotic = volatilityRegime === 'HIGH' && trendStrength < 0.5;
 
   let type: 'TRENDING' | 'RANGING' | 'CHAOTIC' = 'RANGING';
@@ -200,13 +156,13 @@ export function detectRegime(
 
   if (isChaotic) {
     type = 'CHAOTIC';
-    confidence = 0.3; // Baixa confiança
+    confidence = 0.3;
   } else if (isTrending) {
     type = 'TRENDING';
-    confidence = trendStrength; // Confiança = força da tendência
+    confidence = trendStrength;
   } else if (isRanging) {
     type = 'RANGING';
-    confidence = 0.7; // Boa confiança (Vagalume funciona bem aqui)
+    confidence = 0.7;
   }
 
   return {
@@ -222,8 +178,8 @@ export function detectRegime(
 // ============================================================================
 
 export interface AdvancedSignalScore {
-  rawScore: number;           // 0 a 100
-  adjustedScore: number;      // Score ajustado por regime
+  rawScore: number;
+  adjustedScore: number;
   momentum: MomentumIndicators;
   volatility: VolatilityIndicators;
   regime: MarketRegime;
@@ -231,12 +187,9 @@ export interface AdvancedSignalScore {
   analysisTime: number;
 }
 
-/**
- * Combina todos os indicadores em um score unificado
- */
 export function calculateAdvancedSignalScore(
   ticks: TickData[],
-  baseConfidence: number, // Do Vagalume (0.5 - 0.95)
+  baseConfidence: number,
   decimalPlaces: number = 2
 ): AdvancedSignalScore {
   const startTime = performance.now();
@@ -244,28 +197,23 @@ export function calculateAdvancedSignalScore(
   const volatility = calculateVolatility(ticks, 20, decimalPlaces);
   const regime = detectRegime(momentum, volatility);
 
-  // Score base (do Vagalume)
-  let rawScore = baseConfidence * 100; // 50 - 95
-
-  // Ajustes por regime
+  let rawScore = baseConfidence * 100;
   let adjustedScore = rawScore;
+  
   if (regime.type === 'RANGING') {
-    adjustedScore *= 1.15; // +15% em ranging (Vagalume performa melhor)
+    adjustedScore *= 1.15;
   } else if (regime.type === 'TRENDING') {
-    adjustedScore *= 0.90; // -10% em trending (mean-reversion funciona mal)
+    adjustedScore *= 0.90;
   } else if (regime.type === 'CHAOTIC') {
-    adjustedScore *= 0.70; // -30% em caos (muito arriscado)
+    adjustedScore *= 0.70;
   }
 
-  // Ajuste por volatilidade
   if (volatility.volatilityRegime === 'HIGH') {
-    adjustedScore *= 0.85; // -15% em alta volatilidade
+    adjustedScore *= 0.85;
   }
 
-  // Clamp score
   adjustedScore = Math.max(0, Math.min(100, adjustedScore));
 
-  // Recomendação
   let recommendation: 'STRONG_BUY' | 'BUY' | 'NEUTRAL' | 'AVOID' = 'NEUTRAL';
   if (adjustedScore >= 75) recommendation = 'STRONG_BUY';
   else if (adjustedScore >= 60) recommendation = 'BUY';

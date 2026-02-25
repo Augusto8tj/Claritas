@@ -29,7 +29,7 @@ export function VagalumeAdvancedDashboard({ signal }: VagalumeAdvancedDashboardP
   const { momentum, volatility, regime, recommendation, rawScore, adjustedScore: scoreValue } = advancedScore;
 
   // Cores por recomendação
-  const recommendationColors = {
+  const recommendationColors: { [key: string]: string } = {
     STRONG_BUY: 'bg-green-500',
     BUY: 'bg-blue-500',
     NEUTRAL: 'bg-yellow-500',
@@ -37,7 +37,7 @@ export function VagalumeAdvancedDashboard({ signal }: VagalumeAdvancedDashboardP
   };
 
   // Cores por regime
-  const regimeColors = {
+  const regimeColors: { [key: string]: string } = {
     RANGING: 'text-green-600 bg-green-50 border-green-200',
     TRENDING: 'text-blue-600 bg-blue-50 border-blue-200',
     CHAOTIC: 'text-red-600 bg-red-50 border-red-200',
@@ -86,14 +86,14 @@ export function VagalumeAdvancedDashboard({ signal }: VagalumeAdvancedDashboardP
           <div className="flex items-center justify-between pt-2 border-t">
             <span className="text-xs text-muted-foreground">Regime Adjustment</span>
             <span className={`text-xs font-medium ${scoreValue > rawScore ? 'text-green-600' : 'text-red-600'}`}>
-              {scoreValue > rawScore ? '+' : ''}{((scoreValue - rawScore) / rawScore * 100).toFixed(1)}%
+              {scoreValue > rawScore ? '+' : ''}{rawScore > 0 ? (((scoreValue - rawScore) / rawScore) * 100).toFixed(1) : '0'}%
             </span>
           </div>
         </CardContent>
       </Card>
 
       {/* CARD 2: MARKET REGIME */}
-      <Card className={`border-2 ${regimeColors[regime.type]}`}>
+      <Card className={cn("border-2", regimeColors[regime.type])}>
         <CardHeader className="pb-3">
           <div className="flex items-center justify-between">
             <CardTitle className="text-sm font-medium flex items-center gap-2">
@@ -206,7 +206,7 @@ export function VagalumeAdvancedDashboard({ signal }: VagalumeAdvancedDashboardP
       </Card>
 
       {/* CARD 5: TRADING RECOMMENDATION */}
-      <Card className={`border-2 col-span-full ${signal.shouldTrade ? 'border-green-500 bg-green-50/50' : 'border-red-500 bg-red-50/50'}`}>
+      <Card className={cn('border-2 col-span-full', signal.shouldTrade ? 'border-green-500 bg-green-50/50' : 'border-red-500 bg-red-50/50')}>
         <CardContent className="pt-6">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
