@@ -10,6 +10,7 @@ import { cn } from '@/lib/utils';
 import type { SignalQuality, MultiWindowAnalysis } from '@/features/trading/hooks/use-robot-council-digits';
 import type { VagalumeSignal } from '@/features/trading/hooks/use-vagalume-alternante';
 import { Separator } from '@/components/ui/separator';
+import { Progress } from '@/components/ui/progress';
 
 interface DigitsDashboardProps {
   signalQuality: SignalQuality | null;

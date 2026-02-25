@@ -6,6 +6,7 @@ import type { Operation, TickData } from '@/lib/types';
 import type { DigitFrequency, WindowDigitStats } from '@/features/trading/services/digits-analysis';
 import { calculateDigitStatsForWindow } from '@/features/trading/services/digits-analysis';
 import { timingMonitor } from '@/features/trading/utils/timing-monitor';
+import { calculateAdvancedSignalScore, type AdvancedSignalScore } from '@/features/trading/services/digit-indicators';
 
 // ============================================================================
 // 1. TIPOS E INTERFACES
@@ -39,6 +40,8 @@ export interface VagalumeSignal {
   shouldTrade: boolean;
   lastTickEpoch: number;
   analysisWindowEnd: number;
+  advancedScore?: AdvancedSignalScore;
+  adjustedConfidence: number;
 }
 
 // ============================================================================
@@ -191,16 +194,15 @@ export const useVagalumeAlternante = (
         break;
 
       case 'L1':
-        const probOver = analysis.frequencies.slice(5, 10).reduce((sum, f) => sum + f.probability, 0);
-        if (probOver > 0.51) {
+        if (analysis.probOver4 > 0.51) {
           suggestedContract = 'DIGITOVER';
-          suggestedDigit = 5;
-          confidence = 0.5 + (probOver - 0.5);
+          suggestedDigit = 4;
+          confidence = 0.5 + (analysis.probOver4 - 0.5);
           shouldTrade = confidence > 0.51;
-        } else if (probOver < 0.49) {
+        } else if (analysis.probUnder5 > 0.51) {
           suggestedContract = 'DIGITUNDER';
           suggestedDigit = 5;
-          confidence = 0.5 + (0.5 - probOver);
+          confidence = 0.5 + (analysis.probUnder5 - 0.5);
           shouldTrade = confidence > 0.51;
         }
         break;
@@ -216,10 +218,9 @@ export const useVagalumeAlternante = (
           confidence = 0.5 + (0.5 - analysis.probEven);
           shouldTrade = true;
         } else {
-          const probOver = analysis.frequencies.slice(5, 10).reduce((sum, f) => sum + f.probability, 0);
-          if (probOver > 0.52) {
+          if (analysis.probOver4 > 0.52) {
             suggestedContract = 'DIGITOVER';
-            suggestedDigit = 5;
+            suggestedDigit = 4;
             confidence = 0.52;
           } else {
             suggestedContract = 'DIGITUNDER';
@@ -234,28 +235,43 @@ export const useVagalumeAlternante = (
     const stakeMultiplier = (vagalumeState === 'W2' || vagalumeState === 'L2') && sequenceStats.alternanceRate > 80 
       ? config.resetMultiplier 
       : 1.0;
+    
+    const advancedScore = calculateAdvancedSignalScore(ticks, confidence, decimalPlaces);
+    
+    let adjustedConfidence = confidence;
+    if (advancedScore.regime.type === 'RANGING') {
+      adjustedConfidence = Math.min(0.95, confidence * 1.10);
+    } else if (advancedScore.regime.type === 'CHAOTIC') {
+      adjustedConfidence = Math.max(0.50, confidence * 0.80);
+    }
 
+    const shouldTradeAdvanced = 
+      shouldTrade && 
+      (advancedScore.recommendation === 'STRONG_BUY' || advancedScore.recommendation === 'BUY');
+      
     const analysisTime = measure.end();
     const tickAge = Date.now() - (lastTickEpoch * 1000);
     
     timingMonitor.recordTiming('vagalume', {
-      analysisTime,
+      analysisTime: analysisTime + advancedScore.analysisTime,
       executionTime: 0,
-      totalLatency: analysisTime,
+      totalLatency: analysisTime + advancedScore.analysisTime,
       tickAge,
     });
 
     return {
       state: vagalumeState,
       targetOutcome,
-      confidence,
+      confidence: adjustedConfidence,
       suggestedContract,
       suggestedDigit,
       suggestedStakeMultiplier: stakeMultiplier,
       sequenceStats,
-      shouldTrade,
+      shouldTrade: shouldTradeAdvanced,
       lastTickEpoch,
       analysisWindowEnd: analysis.analyzedEpoch,
+      advancedScore,
+      adjustedConfidence,
     };
   }, [vagalumeState, getAdaptiveAnalysis, config, sequenceStats, ticks]);
 
