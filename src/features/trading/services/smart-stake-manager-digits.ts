@@ -48,6 +48,7 @@ const countConsecutiveLosses = (tradeHistory: Operation[]): number => {
   return consecutiveLosses;
 };
 
+// Payouts Corrigidos
 const PAYOUTS: Record<DigitContractType, number> = {
   DIGITMATCH: 9.5,
   DIGITDIFF: 0.11,
@@ -61,6 +62,7 @@ const getPayoutRatio = (contractType: DigitContractType): number => {
     return PAYOUTS[contractType] || 0.95;
 };
 
+// Kelly Criterion Adaptativo
 function calculateKellyStake(
   confidence: number,
   payoutOdds: number,
@@ -104,17 +106,18 @@ export function decideNextStake(
   if (dailyPnl >= dailyProfitTarget) {
     return { nextStake: baseStake, shouldPause: true, pauseReason: `Meta de lucro diária de $${dailyProfitTarget.toFixed(2)} atingida.` };
   }
-
+  
   const consecutiveLosses = countConsecutiveLosses(tradeHistory);
   const totalTrades = tradeHistory.length;
-  const winRate = totalTrades > 0 ? tradeHistory.filter(t => (t.result ?? 0) > 0).length / totalTrades : 0;
-  
-  if (consecutiveLosses >= 3 && winRate < 0.45) {
-      return {
-          nextStake: baseStake,
-          shouldPause: true,
-          pauseReason: `Win rate da sessão (${(winRate * 100).toFixed(1)}%) abaixo de 45%. Pausando para revisão.`
-      };
+  if(totalTrades > 5) {
+      const winRate = tradeHistory.filter(t => (t.result ?? 0) > 0).length / totalTrades;
+      if (consecutiveLosses >= 3 && winRate < 0.45) {
+          return {
+              nextStake: baseStake,
+              shouldPause: true,
+              pauseReason: `Win rate da sessão (${(winRate * 100).toFixed(1)}%) abaixo de 45%. Pausando para revisão.`
+          };
+      }
   }
 
   if (isEnabled && consecutiveLosses >= maxMartingaleLevels) {
@@ -146,7 +149,6 @@ export function decideNextStake(
   // --- 3. PROTEÇÃO DE LIMITE ---
   const maxSafeStake = Math.max(baseStake, currentBankroll * 0.10); // Nunca arriscar mais de 10%
   if (nextStake > maxSafeStake) {
-    console.warn(`[StakeManager] Stake calculado ($${nextStake.toFixed(2)}) excedeu limite de segurança ($${maxSafeStake.toFixed(2)}). Resetando para stake base.`);
     nextStake = baseStake;
   }
   

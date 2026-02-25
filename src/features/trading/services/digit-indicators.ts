@@ -40,6 +40,7 @@ export function calculateMomentum(
   }
 
   const getLastDigit = (price: number): number => {
+    if (isNaN(price)) return 0;
     const priceString = price.toFixed(decimalPlaces);
     return parseInt(priceString.slice(-1), 10);
   };
@@ -110,6 +111,7 @@ export function calculateVolatility(
   }
 
   const getLastDigit = (price: number): number => {
+    if (isNaN(price)) return 0;
     return parseInt(price.toFixed(decimalPlaces).slice(-1), 10);
   };
 
@@ -226,7 +228,7 @@ export interface AdvancedSignalScore {
   volatility: VolatilityIndicators;
   regime: MarketRegime;
   recommendation: 'STRONG_BUY' | 'BUY' | 'NEUTRAL' | 'AVOID';
-  analysisTime: number; // For performance monitoring
+  analysisTime: number;
 }
 
 /**
@@ -268,7 +270,7 @@ export function calculateAdvancedSignalScore(
   if (adjustedScore >= 75) recommendation = 'STRONG_BUY';
   else if (adjustedScore >= 60) recommendation = 'BUY';
   else if (adjustedScore < 45) recommendation = 'AVOID';
-  
+
   const analysisTime = performance.now() - startTime;
 
   return {

@@ -11,6 +11,7 @@ import type { SignalQuality, MultiWindowAnalysis } from '@/features/trading/hook
 import type { VagalumeSignal } from '@/features/trading/hooks/use-vagalume-alternante';
 import { Separator } from '@/components/ui/separator';
 import { Progress } from '@/components/ui/progress';
+import { VagalumeAdvancedDashboard } from './VagalumeAdvancedDashboard';
 
 interface DigitsDashboardProps {
   signalQuality: SignalQuality | null;
@@ -154,6 +155,12 @@ export function DigitsDashboard({ signalQuality, multiWindowAnalysis, vagalumeSi
                     )}
                     <VagalumeStatusCard signal={vagalumeSignal} />
                 </div>
+                
+                {vagalumeSignal && (
+                  <div className="mt-4">
+                    <VagalumeAdvancedDashboard signal={vagalumeSignal} />
+                  </div>
+                )}
 
                 <div className="grid grid-cols-2 gap-3 pt-2">
                      <StatsCard 

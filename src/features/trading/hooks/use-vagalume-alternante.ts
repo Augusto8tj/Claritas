@@ -221,12 +221,11 @@ export const useVagalumeAlternante = (
           if (analysis.probOver4 > 0.52) {
             suggestedContract = 'DIGITOVER';
             suggestedDigit = 4;
-            confidence = 0.52;
           } else {
             suggestedContract = 'DIGITUNDER';
             suggestedDigit = 5;
-            confidence = 0.52;
           }
+          confidence = 0.52;
           shouldTrade = true;
         }
         break;
