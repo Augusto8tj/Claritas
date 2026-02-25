@@ -5,7 +5,7 @@ import React from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { CheckCircle, XCircle, HelpCircle, BarChart2, TrendingUp, TrendingDown, Info, Sigma, Wand2, Target } from 'lucide-react';
+import { CheckCircle, XCircle, HelpCircle, BarChart2, TrendingUp, TrendingDown, Info, Sigma, Wand2, Target, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { SignalQuality, MultiWindowAnalysis } from '@/features/trading/hooks/use-robot-council-digits';
 import type { VagalumeSignal } from '@/features/trading/hooks/use-vagalume-alternante';
@@ -51,7 +51,19 @@ const SignalCard: React.FC<{ signal: SignalQuality }> = ({ signal }) => {
     );
 };
 
-const VagalumeStatusCard: React.FC<{ signal: VagalumeSignal }> = ({ signal }) => {
+const VagalumeStatusCard: React.FC<{ signal: VagalumeSignal | null }> = ({ signal }) => {
+    if (!signal) {
+        return (
+            <Card className="flex items-center justify-center text-muted-foreground p-4 border-dashed">
+                <div className="text-center">
+                    <Loader2 className="h-6 w-6 mx-auto mb-2 animate-spin opacity-50" />
+                    <p className="font-semibold text-sm">Vagalume Aguardando</p>
+                    <p className="text-xs">Analisando padrão de W/L...</p>
+                </div>
+            </Card>
+        );
+    }
+
   return (
     <Card className="border-purple-500/50 bg-purple-50/50">
         <CardHeader className="pb-2">
@@ -139,7 +151,7 @@ const DigitsDashboard: React.FC<DigitsDashboardProps> = ({ signalQuality, multiW
                             </div>
                         </Card>
                     )}
-                    {vagalumeSignal && <VagalumeStatusCard signal={vagalumeSignal} />}
+                    <VagalumeStatusCard signal={vagalumeSignal} />
                 </div>
 
                 <div className="grid grid-cols-2 gap-3 pt-2">
