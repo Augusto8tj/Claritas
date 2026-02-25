@@ -24,13 +24,13 @@ export interface VagalumeConfig {
 export interface VagalumeSignal {
   state: VagalumeState;
   targetOutcome: 'WIN' | 'LOSS';
-  confidence: number;
+  confidence: number;          // 0-1
   suggestedContract: DigitContractType;
   suggestedDigit?: number;
   suggestedStakeMultiplier: number;
   sequenceStats: {
     currentStreak: number;
-    alternanceRate: number;
+    alternanceRate: number;    // últimos 50 trades
     totalTrades: number;
   };
   shouldTrade: boolean;
@@ -50,13 +50,14 @@ const calculateAdaptiveAnalysis = (
   ticks: TickData[],
   state: VagalumeState,
   decimalPlaces: number
-): { frequencies: DigitFrequency[]; hottestDigit: number; coldestDigit: number } => {
+): { frequencies: DigitFrequency[]; hottestDigit: number; coldestDigit: number; probEven: number } => {
   const windowSize = state === 'W1' || state === 'L1' ? 50 : 200;
 
   const emptyResult = {
     frequencies: Array.from({ length: 10 }, (_, i) => ({ digit: i, count: 0, probability: 0, zScore: 0 })),
     hottestDigit: 0,
     coldestDigit: 0,
+    probEven: 0.5,
   };
 
   if (ticks.length < windowSize) return emptyResult;
@@ -78,8 +79,10 @@ const calculateAdaptiveAnalysis = (
     const zScore = (probability - 0.1) / Math.sqrt(0.1 * 0.9 / windowSize);
     return { digit: digit, count, probability, zScore };
   });
+  
+  const probEven = frequencies.filter(f => f.digit % 2 === 0).reduce((sum, f) => sum + f.probability, 0);
 
-  return { frequencies, hottestDigit, coldestDigit };
+  return { frequencies, hottestDigit, coldestDigit, probEven };
 };
 
 
@@ -106,7 +109,7 @@ export const useVagalumeAlternante = (
     const alternances = relevantTrades.slice(1).filter((t, i) =>
       (relevantTrades[i].result! > 0) !== (t.result! > 0)
     ).length;
-
+    
     let streak = 0;
     if (relevantTrades.length > 0) {
       streak = 1;
@@ -114,6 +117,7 @@ export const useVagalumeAlternante = (
       for (let i = relevantTrades.length - 2; i >= 0; i--) {
         if ((relevantTrades[i].result! > 0) === lastOutcomeIsWin) streak++;
         else break;
+        lastOutcomeIsWin;
       }
     }
 
@@ -163,9 +167,10 @@ export const useVagalumeAlternante = (
     
     let suggestedContract: DigitContractType = 'DIGITDIFF';
     let suggestedDigit: number | undefined;
-    let confidence = 0.5;
+    let confidence = 0.5; // baseline 50%
     let shouldTrade = false;
 
+    // Lógica adaptativa por estado
     switch (vagalumeState) {
       case 'W1':
         if (analysis.coldestDigit !== undefined && analysis.frequencies[analysis.coldestDigit].probability <= config.stateW1_matchThreshold / 100) {
@@ -187,8 +192,14 @@ export const useVagalumeAlternante = (
 
       case 'W2':
       case 'L2':
-        suggestedContract = Math.random() > 0.5 ? 'DIGITEVEN' : 'DIGITODD';
-        confidence = 0.52;
+        // **LÓGICA APRIMORADA**
+        if (analysis.probEven > 0.51) { // Pares estão "quentes"
+          suggestedContract = 'DIGITODD'; // Aposta em "frio" (Ímpar)
+          confidence = 0.5 + (analysis.probEven - 0.5); // Confiança é proporcional ao desequilíbrio
+        } else { // Ímpares estão "quentes" ou está equilibrado
+          suggestedContract = 'DIGITEVEN'; // Aposta em "frio" (Par)
+          confidence = 0.5 + (0.5 - analysis.probEven);
+        }
         shouldTrade = true;
         break;
     }

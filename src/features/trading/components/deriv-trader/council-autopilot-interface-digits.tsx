@@ -114,6 +114,11 @@ const VagalumePanel: React.FC<{
   vagalumeConfig: any;
   setVagalumeConfig: (config: any) => void;
 }> = ({ pilotKey, pilotState, toggleAutopilot, vagalumeSignal, vagalumeConfig, setVagalumeConfig }) => {
+  
+  const description = vagalumeSignal?.state === 'W2' || vagalumeSignal?.state === 'L2'
+      ? "Reset: aposta em Par/Ímpar via regressão à média."
+      : "Explora a alternância W-L com base em dígitos quentes/frios.";
+
   if (!vagalumeSignal) {
     return (
       <PilotTabContent
@@ -132,7 +137,7 @@ const VagalumePanel: React.FC<{
     <PilotTabContent
         pilotKey={pilotKey}
         title="🪰 Vagalume Alternante"
-        description="Estratégia de meta-aprendizagem que explora a alternância W-L."
+        description={description}
         pilotState={pilotState}
         toggleAutopilot={toggleAutopilot}
     >
