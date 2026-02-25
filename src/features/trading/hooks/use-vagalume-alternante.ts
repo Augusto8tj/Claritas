@@ -161,6 +161,7 @@ export const useVagalumeAlternante = (
     
     const minTicks = (vagalumeState === 'W1' || vagalumeState === 'L1') ? 50 : 200;
     const requiredTicks = config.usePredictiveAnalysis ? minTicks + 1 : minTicks;
+    
     if (ticks.length < requiredTicks) return null;
 
     const analysis = getAdaptiveAnalysis(vagalumeState);
@@ -176,12 +177,12 @@ export const useVagalumeAlternante = (
 
     switch (vagalumeState) {
       case 'W1':
-        if (analysis.probEven < 0.49) { // Ímpar favorecido
+        if (analysis.probEven < 0.49) {
           const zScore = Math.abs((analysis.probEven - 0.5) / Math.sqrt(0.25 / windowSize));
           suggestedContract = 'DIGITODD';
           confidence = Math.min(0.95, 0.5 + (0.5 - analysis.probEven) + (zScore * 0.05));
           shouldTrade = confidence > 0.51;
-        } else if (analysis.probEven > 0.51) { // Par favorecido
+        } else if (analysis.probEven > 0.51) {
           const zScore = Math.abs((analysis.probEven - 0.5) / Math.sqrt(0.25 / windowSize));
           suggestedContract = 'DIGITEVEN';
           confidence = Math.min(0.95, 0.5 + (analysis.probEven - 0.5) + (zScore * 0.05));
@@ -190,10 +191,10 @@ export const useVagalumeAlternante = (
         break;
 
       case 'L1':
-        const probOver = analysis.frequencies.slice(5).reduce((sum, f) => sum + f.probability, 0);
+        const probOver = analysis.frequencies.slice(5, 10).reduce((sum, f) => sum + f.probability, 0);
         if (probOver > 0.51) {
           suggestedContract = 'DIGITOVER';
-          suggestedDigit = 4;
+          suggestedDigit = 5;
           confidence = 0.5 + (probOver - 0.5);
           shouldTrade = confidence > 0.51;
         } else if (probOver < 0.49) {
@@ -215,10 +216,10 @@ export const useVagalumeAlternante = (
           confidence = 0.5 + (0.5 - analysis.probEven);
           shouldTrade = true;
         } else {
-          const probOver = analysis.frequencies.slice(5).reduce((sum, f) => sum + f.probability, 0);
+          const probOver = analysis.frequencies.slice(5, 10).reduce((sum, f) => sum + f.probability, 0);
           if (probOver > 0.52) {
             suggestedContract = 'DIGITOVER';
-            suggestedDigit = 4;
+            suggestedDigit = 5;
             confidence = 0.52;
           } else {
             suggestedContract = 'DIGITUNDER';

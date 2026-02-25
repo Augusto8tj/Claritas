@@ -8,7 +8,10 @@ import { useToast } from '@/hooks/use-toast';
 import type { Operation, OperationInitiator, DurationUnit, TickData, Asset, ChartData, CandleData, TimePeriod, ChartType, TradeAnnotation, DurationLimits } from '@/lib/types';
 import { FirebaseErrorListener } from '@/components/firebase-error-listener';
 import { useAuth } from '@/features/auth/hooks/use-auth';
-import { saveLiveTickForDigits } from '@/services/digits-data-service'; // NOVO: Importação do serviço de dados
+import { saveLiveTickForDigits } from '@/services/digits-data-service';
+import { validateAndLogContract } from '@/features/trading/utils/contract-validator';
+import { timingMonitor } from '@/features/trading/utils/timing-monitor';
+
 
 // --- CONSTANTS ---
 const DERIV_DEMO_TOKEN_KEY = 'derivDemoApiToken';
@@ -18,7 +21,7 @@ const DERIV_DIGITS_LOG_KEY = 'derivDigitsOperationsLog_v5';
 const DERIV_APP_ID = process.env.NEXT_PUBLIC_DERIV_APP_ID || "1089";
 const MAX_TICKS = 1000;
 const marketNameMapping: Record<string, string> = { 'synthetic_index': 'Índices Sintéticos' };
-const TICK_SAVE_INTERVAL_MS = 5000; // NOVO: Salvar um tick a cada 5 segundos
+const TICK_SAVE_INTERVAL_MS = 5000;
 
 // --- TYPES ---
 type DigitContractType = 'DIGITMATCH' | 'DIGITDIFF' | 'DIGITOVER' | 'DIGITUNDER' | 'DIGITEVEN' | 'DIGITODD';
@@ -155,7 +158,7 @@ export function useDerivApiDigitsState() {
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const allowAutoReconnectRef = useRef(true);
   const reconnectInProgressRef = useRef(false);
-  const lastTickSaveTimestampRef = useRef<number>(0); // NOVO: Ref para throttle
+  const lastTickSaveTimestampRef = useRef<number>(0);
 
     const setAndPersistOperationsLog = useCallback((updater: React.SetStateAction<Operation[]>) => {
         setOperationsLog(prevLog => {
@@ -283,17 +286,53 @@ export function useDerivApiDigitsState() {
                        case 'proposal_open_contract':
                             const contract = response.proposal_open_contract;
                             if (!contract || !contract.contract_type?.startsWith('DIGIT')) return;
-                        
+                            
                             setAndPersistOperationsLog(prevLog => {
                                 const existingOpIndex = prevLog.findIndex(op => op.id === contract.contract_id);
                                 if (existingOpIndex !== -1 && prevLog[existingOpIndex]?.status === 'pending') {
                                     const updatedLog = [...prevLog];
                                     const op = updatedLog[existingOpIndex]!;
+                                    
                                     if (contract.is_sold === 1) {
-                                        const newStatus = contract.status === 'won' ? 'won' : 'lost';
-                                        const exitPrice = contract.exit_tick ? parseFloat(contract.exit_tick) : op.exitPrice;
-                                        updatedLog[existingOpIndex] = { ...op, status: newStatus, result: contract.profit, exitPrice: exitPrice, exitTimestamp: new Date(contract.sell_time * 1000).toISOString() };
-                                        if (wsRef.current?.readyState === WebSocket.OPEN) wsRef.current.send(JSON.stringify({"balance": 1}));
+                                        const exitPrice = contract.exit_tick ? parseFloat(contract.exit_tick) : op.entryPrice;
+                                        const apiStatus = contract.status === 'won' ? 'won' : 'lost';
+                                        
+                                        const validationLog = validateAndLogContract(
+                                            contract.contract_id,
+                                            op.contractType as string,
+                                            (op as any).last_digit_prediction,
+                                            exitPrice!,
+                                            contract.exit_tick_time || contract.sell_time,
+                                            apiStatus,
+                                            activeAsset?.pip ?? 2
+                                        );
+                                        
+                                        const localStatus = validationLog.localStatus;
+                                        
+                                        if (validationLog.isDivergent) {
+                                            toast({
+                                                title: '⚠️ Resultado Divergente',
+                                                description: `#${contract.contract_id}: API=${apiStatus}, Cálculo=${localStatus}. Dígito: ${validationLog.validation.lastDigit}`,
+                                                variant: 'destructive',
+                                                duration: 10000,
+                                            });
+                                        }
+                                        
+                                        const finalResult = localStatus === 'won' ? contract.profit : -op.stake;
+                                        
+                                        updatedLog[existingOpIndex] = { 
+                                            ...op, 
+                                            status: localStatus,
+                                            result: finalResult,
+                                            exitPrice: exitPrice,
+                                            exitTimestamp: new Date(contract.sell_time * 1000).toISOString(),
+                                            apiStatus: apiStatus,
+                                            validationLog: validationLog,
+                                        };
+                                        
+                                        if (wsRef.current?.readyState === WebSocket.OPEN) {
+                                            wsRef.current.send(JSON.stringify({"balance": 1}));
+                                        }
                                         return updatedLog;
                                     }
                                 }
@@ -305,7 +344,6 @@ export function useDerivApiDigitsState() {
                                 const tick = response.tick;
                                 const newTick = { epoch: tick.epoch, price: tick.quote };
 
-                                // NOVO: Salvar tick no Firestore (com throttle)
                                 const now = Date.now();
                                 if (user && activeSymbol && (now - lastTickSaveTimestampRef.current > TICK_SAVE_INTERVAL_MS)) {
                                     saveLiveTickForDigits(user.uid, activeSymbol, { timestamp: tick.epoch, price: tick.quote });
@@ -402,6 +440,8 @@ export function useDerivApiDigitsState() {
         duration: number, durationUnit: DurationUnit, initiator: OperationInitiator,
         last_digit?: number, strategy?: string
     ): Promise<TradeResult> => {
+      const executionMeasure = timingMonitor.startMeasurement();
+      
       try {
         if (!wsRef.current || !isConnected) throw new Error("A conexão com a API não está ativa.");
         const sanitizedStake = parseFloat(stake.toFixed(2));
@@ -421,16 +461,19 @@ export function useDerivApiDigitsState() {
             },
         };
         
-        // NOVO: Lógica Condicional para a Barreira
         if (['DIGITMATCH', 'DIGITDIFF', 'DIGITOVER', 'DIGITUNDER'].includes(contractType)) {
             if (last_digit === undefined || last_digit === null) {
                 throw new Error(`O dígito (barreira) é obrigatório para o contrato ${contractType}.`);
             }
             buyRequest.parameters.barrier = String(last_digit);
+            console.log(`📤 [${strategy || 'manual'}] Enviando ${contractType} com barrier=${last_digit}`);
+        } else {
+            console.log(`📤 [${strategy || 'manual'}] Enviando ${contractType} (sem barrier)`);
         }
-        // Contratos DIGITEVEN/DIGITODD não recebem o parâmetro 'barrier'.
         
         const buyResponse: any = await makeRequest(buyRequest);
+        const executionTime = executionMeasure.end();
+        
         if (buyResponse.error) throw new Error(buyResponse.error.message);
         
         const buyResult = buyResponse.buy;
@@ -445,17 +488,22 @@ export function useDerivApiDigitsState() {
             timestamp: new Date(purchaseTimeMs).toISOString(),
             duration: sanitizedDuration, durationUnit: durationUnit, initiator,
             entryPrice: buyResult.entry_tick_display_value ? parseFloat(buyResult.entry_tick_display_value) : 0,
-            isSellable: false, expirationTime: expirationTimeMs, contractType: contractType, last_digit_prediction: last_digit,
+            isSellable: false, expirationTime: expirationTimeMs, contractType: contractType, 
+            last_digit_prediction: last_digit,
             strategy: initiator === 'Piloto' ? strategy : undefined,
+            executionLatency: executionTime,
         };
+        
         setAndPersistOperationsLog(prevLog => [newOperation, ...prevLog]);
+        console.log(`✅ [${strategy || 'manual'}] #${buyResult.contract_id} executado em ${executionTime.toFixed(0)}ms`);
+        
         return { success: true, message: `Ordem executada.`, contractId: buyResult.contract_id };
       } catch (error) {
-         console.error("[Deriv Hook - Digits] Erro:", error);
+         console.error(`❌ [Deriv Hook - Digits] Erro:`, error);
          const message = error instanceof Error ? error.message : "Um erro desconhecido ocorreu.";
          return { success: false, message };
       }
-    }, [isConnected, makeRequest, setAndPersistOperationsLog]);
+    }, [isConnected, makeRequest, setAndPersistOperationsLog, toast]);
 
     const sellContract = useCallback(async (contractId: number): Promise<TradeResult> => {
         return { success: false, message: "Contratos de dígitos não podem ser vendidos." };

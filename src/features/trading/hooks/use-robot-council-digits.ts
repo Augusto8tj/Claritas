@@ -28,6 +28,7 @@ import { STRATEGY_DEFINITIONS, type GlobalRiskConfig, type MartingaleConfig, str
 import { loadHistoricalTicksForDigits } from '@/services/digits-data-service';
 import { useAuth } from '@/features/auth/hooks/use-auth';
 import { useVagalumeAlternante, type VagalumeConfig, type VagalumeSignal, type DigitContractType } from './use-vagalume-alternante';
+import { timingMonitor } from '@/features/trading/utils/timing-monitor';
 
 
 // ============================================================================
@@ -90,7 +91,8 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
   const [evenOddUnderdogThreshold, setEvenOddUnderdogThreshold] = useState(40);
   const [vagalumeConfig, setVagalumeConfig] = useState<VagalumeConfig>({
       maxStreak: 2, stateW1_matchThreshold: 8, stateL1_differsThreshold: 15,
-      resetMultiplier: 1.2, pauseAfterFailedResets: 2, kellyFraction: 0.25
+      resetMultiplier: 1.2, pauseAfterFailedResets: 2, kellyFraction: 0.25,
+      usePredictiveAnalysis: true,
   });
   
   // --- GESTÃO DE RISCO AVANÇADA (MARTINGALE) ---
@@ -301,12 +303,28 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
 
     let tradeExecutedThisCycle = false;
 
-    // --- HIERARQUIA DE EXECUÇÃO: Vagalume primeiro ---
     const vagalumePilot = pilots.vagalume;
-    if (vagalumePilot.isOn && vagalumePilot.status !== 'PAUSED' && vagalumePilot.activeContractId === null && vagalumeSignal) {
-        tradeExecutedThisCycle = true; // Vagalume sempre tem prioridade, mesmo que decida não operar
-
+    if (vagalumePilot.isOn && vagalumePilot.status === 'TRADING' && vagalumePilot.activeContractId === null && vagalumeSignal) {
         if (vagalumeSignal.shouldTrade) {
+            const measureExecution = timingMonitor.startMeasurement();
+            
+            const currentTickEpoch = priceTicks[priceTicks.length - 1]?.epoch || 0;
+            const tickAge = Date.now() - (currentTickEpoch * 1000);
+            
+            if (tickAge > 1500) {
+                console.warn(`⏸️ [Vagalume] Tick muito antigo (${tickAge}ms). Aguardando próximo tick.`);
+                timingMonitor.recordTiming('vagalume', { analysisTime: 0, executionTime: 0, totalLatency: 0, tickAge, }, true, 'Tick antigo');
+                executionRef.current = false;
+                return;
+            }
+            
+            if (!vagalumeConfig.usePredictiveAnalysis && vagalumeSignal.analysisWindowEnd !== currentTickEpoch) {
+                console.warn(`⏸️ [Vagalume] Novo tick chegou durante análise. Recalculando...`);
+                timingMonitor.recordTiming('vagalume', { analysisTime: 0, executionTime: 0, totalLatency: 0, tickAge, }, true, 'Novo tick durante análise');
+                executionRef.current = false;
+                return;
+            }
+            
             const confidenceForStake: ConfidenceLevel = vagalumeSignal.confidence > 0.8 ? 'MUITO_ALTA' : 'ALTA';
             const initialBankroll = sessionInitialBankroll ?? (accountBalance.balance ?? 1000);
             const currentBankroll = initialBankroll + dailyPnl;
@@ -320,20 +338,35 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
             if (!stakeDecision.shouldPause) {
                 const finalStake = stakeDecision.nextStake * vagalumeSignal.suggestedStakeMultiplier;
                 
-                executeTrade(vagalumeSignal.suggestedContract, finalStake, activeSymbol!, 1, 't', 'Piloto', vagalumeSignal.suggestedDigit, 'vagalume')
-                  .then(tradeResult => {
+                executeTrade(
+                    vagalumeSignal.suggestedContract, 
+                    finalStake, 
+                    activeSymbol!, 
+                    1, 
+                    't', 
+                    'Piloto', 
+                    vagalumeSignal.suggestedDigit, 
+                    'vagalume'
+                ).then(tradeResult => {
+                    const executionTime = measureExecution.end();
+                    timingMonitor.recordTiming('vagalume', { analysisTime: 0, executionTime, totalLatency: executionTime + tickAge, tickAge });
+                    
                     if (tradeResult.success && tradeResult.contractId) {
                       setPilots(prev => ({ ...prev, vagalume: { ...prev.vagalume, activeContractId: tradeResult.contractId! } }));
                     }
-                  });
+                });
+                tradeExecutedThisCycle = true;
                 lastExecutionTimestampRef.current = now;
             } else {
                 setPilots(prev => ({...prev, vagalume: {...prev.vagalume, status: 'CIRCUIT_BREAKER', currentTarget: stakeDecision.pauseReason || 'Limite de risco atingido'}}));
             }
         }
+        
+        if (vagalumePilot.isOn && vagalumeSignal) {
+          tradeExecutedThisCycle = true;
+        }
     }
     
-    // Se o Vagalume não executou um trade, avalia os outros
     if (!tradeExecutedThisCycle) {
         for (const [key, pilot] of activePilotEntries) {
           if (tradeExecutedThisCycle) break; 

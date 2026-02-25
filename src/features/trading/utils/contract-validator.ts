@@ -65,14 +65,14 @@ export const validateDigitContract = (
             break;
 
         case 'DIGITOVER':
-            const overBarrier = barrier ?? 4; // Corrigido para 4
+            const overBarrier = barrier ?? 5;
             isWin = lastDigit > overBarrier;
             expected = `> ${overBarrier}`;
             reasoning = `Dígito ${lastDigit} ${isWin ? '>' : '<='} ${overBarrier}`;
             break;
 
         case 'DIGITUNDER':
-            const underBarrier = barrier ?? 5; // Corrigido para 5
+            const underBarrier = barrier ?? 5;
             isWin = lastDigit < underBarrier;
             expected = `< ${underBarrier}`;
             reasoning = `Dígito ${lastDigit} ${isWin ? '<' : '>='} ${underBarrier}`;
