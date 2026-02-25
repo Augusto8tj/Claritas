@@ -22,7 +22,6 @@ import type { ConfidenceLevel } from '@/features/trading/services/digits-analysi
 import { 
     calibrateStrategyGridSearch, 
     STRATEGY_SEARCH_SPACES,
-    type CalibrationResult
 } from '@/features/trading/optimization/digits-calibration-engine';
 import { runDigitsBacktest, type BacktestSummary } from '@/features/trading/backtest/digits-backtest-engine';
 import { STRATEGY_DEFINITIONS, type GlobalRiskConfig, type MartingaleConfig, strategyLabels } from '@/app/deriv-trader-digits/strategies-config';
@@ -44,12 +43,18 @@ export interface PilotState {
     currentTarget: string | null;
     consecutiveLosses: number;
     accumulatedLoss: number;
-    tradeHistory: StakeManagerTradeResult[];
+    tradeHistory: Operation[];
     activeContractId: number | null; 
 }
 
 export interface StrategyBacktestResult extends BacktestSummary {
   strategyId: PilotType;
+}
+
+export interface CalibrationResult {
+  bestParams: any;
+  bestSummary: BacktestSummary;
+  initialSummary: BacktestSummary;
 }
 
 const BASE_STAKE = 0.35;
@@ -175,7 +180,7 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
   }, [signalQuality]);
 
   const dailyPnl = useMemo(() => {
-    return Object.values(pilots).flatMap(p => p.tradeHistory).reduce((sum, trade) => sum + trade.profit, 0);
+    return Object.values(pilots).flatMap(p => p.tradeHistory).reduce((sum, trade) => sum + (trade.result || -trade.stake), 0);
   }, [pilots]);
 
   const overUnderStats = useMemo(() => {
@@ -256,16 +261,10 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
 
         if (pilots[pilotKey as PilotType]) {
             const pilot = pilots[pilotKey as PilotType];
-            const newTradeResult: StakeManagerTradeResult = {
-                id: String(lastOp.id), timestamp: new Date(lastOp.timestamp).getTime(),
-                stake: lastOp.stake, profit: lastOp.result || -lastOp.stake,
-                contractType: (lastOp.contractType as 'DIGITDIFF' | 'DIGITMATCH'), 
-                signalConfidence: 'ALTA' 
-            };
             
-            const updatedHistory = [...pilot.tradeHistory, newTradeResult];
-            const newLosses = newTradeResult.profit < 0 ? pilot.consecutiveLosses + 1 : 0;
-            const newAccumulatedLoss = newTradeResult.profit < 0 ? pilot.accumulatedLoss + Math.abs(newTradeResult.profit) : 0;
+            const updatedHistory = [...pilot.tradeHistory, lastOp];
+            const newLosses = (lastOp.result || 0) < 0 ? pilot.consecutiveLosses + 1 : 0;
+            const newAccumulatedLoss = (lastOp.result || 0) < 0 ? pilot.accumulatedLoss + Math.abs(lastOp.result || -lastOp.stake) : 0;
             const newStatus: AutopilotStatus = newLosses >= maxLosses ? 'CIRCUIT_BREAKER' : 'COOLDOWN';
 
             setPilots(prev => ({

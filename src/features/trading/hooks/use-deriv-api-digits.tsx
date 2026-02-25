@@ -420,13 +420,15 @@ export function useDerivApiDigitsState() {
                 symbol: symbol,
             },
         };
-
-        if (contractType === 'DIGITMATCH' || contractType === 'DIGITDIFF' || contractType === 'DIGITOVER' || contractType === 'DIGITUNDER') {
+        
+        // NOVO: Lógica Condicional para a Barreira
+        if (['DIGITMATCH', 'DIGITDIFF', 'DIGITOVER', 'DIGITUNDER'].includes(contractType)) {
             if (last_digit === undefined || last_digit === null) {
-              throw new Error(`O dígito é necessário para o tipo de contrato ${contractType}.`);
+                throw new Error(`O dígito (barreira) é obrigatório para o contrato ${contractType}.`);
             }
             buyRequest.parameters.barrier = String(last_digit);
         }
+        // Contratos DIGITEVEN/DIGITODD não recebem o parâmetro 'barrier'.
         
         const buyResponse: any = await makeRequest(buyRequest);
         if (buyResponse.error) throw new Error(buyResponse.error.message);

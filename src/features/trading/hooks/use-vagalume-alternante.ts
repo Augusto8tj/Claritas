@@ -54,7 +54,7 @@ const calculateAdaptiveAnalysis = (
   const windowSize = state === 'W1' || state === 'L1' ? 50 : 200;
 
   const emptyResult = {
-    frequencies: Array.from({ length: 10 }, (_, i) => ({ digit: i, count: 0, probability: 0, zScore: 0 })),
+    frequencies: Array.from({ length: 10 }, (_, i) => ({ digit: i as any, count: 0, probability: 0, zScore: 0 })),
     hottestDigit: 0,
     coldestDigit: 0,
     probEven: 0.5,
@@ -71,13 +71,13 @@ const calculateAdaptiveAnalysis = (
 
   let hottestDigit = 0, coldestDigit = 0;
   let maxFreq = -1, minFreq = Infinity;
-
+  
   const frequencies: DigitFrequency[] = digitCounts.map((count, digit) => {
     if (count > maxFreq) { maxFreq = count; hottestDigit = digit; }
     if (count < minFreq) { minFreq = count; coldestDigit = digit; }
     const probability = count / windowSize;
     const zScore = (probability - 0.1) / Math.sqrt(0.1 * 0.9 / windowSize);
-    return { digit: digit as 0|1|2|3|4|5|6|7|8|9, count, probability, zScore };
+    return { digit: digit as any, count, probability, zScore };
   });
   
   const probEven = frequencies.filter(f => f.digit % 2 === 0).reduce((sum, f) => sum + f.probability, 0);
@@ -161,66 +161,88 @@ export const useVagalumeAlternante = (
   }, [ticks, decimalPlaces]);
 
   const signal = useMemo((): VagalumeSignal | null => {
-    if (vagalumeState === 'PAUSED' || ticks.length < 200) return null;
+    if (vagalumeState === 'PAUSED' || ticks.length < 50) return null;
 
     const analysis = getAdaptiveAnalysis(vagalumeState);
     const targetOutcome = vagalumeState.startsWith('W') ? 'WIN' : 'LOSS';
     
-    let suggestedContract: DigitContractType = 'DIGITDIFF';
+    let suggestedContract: DigitContractType = 'DIGITEVEN';
     let suggestedDigit: number | undefined;
     let confidence = 0.5;
     let shouldTrade = false;
 
     switch (vagalumeState) {
-      case 'W1':
-        if (analysis.coldestDigit !== undefined && analysis.frequencies[analysis.coldestDigit].probability <= config.stateW1_matchThreshold / 100) {
-          suggestedContract = 'DIGITMATCH';
-          suggestedDigit = analysis.coldestDigit;
-          confidence = Math.min(0.95, 0.5 + Math.abs(analysis.frequencies[analysis.coldestDigit].zScore) * 0.15);
-          shouldTrade = true;
-        }
-        break;
+        case 'W1':
+            // Meta: WIN → aposta em anomalia Par/Ímpar (natureza aleatória pura)
+            if (analysis.probEven < 0.48) { // Ímpar está favorecido
+                suggestedContract = 'DIGITODD';
+                confidence = 0.5 + (0.5 - analysis.probEven);
+                shouldTrade = confidence > 0.51;
+            } else if (analysis.probEven > 0.52) { // Par está favorecido
+                suggestedContract = 'DIGITEVEN';
+                confidence = 0.5 + (analysis.probEven - 0.5);
+                shouldTrade = confidence > 0.51;
+            }
+            suggestedDigit = undefined; // Par/Ímpar não usa dígito específico
+            break;
 
-      case 'L1':
-        if (analysis.hottestDigit !== undefined && analysis.frequencies[analysis.hottestDigit].probability >= config.stateL1_differsThreshold / 100) {
-          suggestedContract = 'DIGITDIFF';
-          suggestedDigit = analysis.hottestDigit;
-          confidence = Math.min(0.95, 0.5 + Math.abs(analysis.frequencies[analysis.hottestDigit].zScore) * 0.20);
-          shouldTrade = true;
-        }
-        break;
+        case 'L1':
+            // Meta: LOSS → Over/Under como fallback inteligente
+            const probOver = analysis.frequencies.slice(5, 10).reduce((sum, f) => sum + f.probability, 0);
+            if (probOver > 0.52) {
+                suggestedContract = 'DIGITOVER';
+                suggestedDigit = 5; // barrier
+                confidence = 0.5 + (probOver - 0.5);
+                shouldTrade = confidence > 0.51;
+            } else if (probOver < 0.48) {
+                suggestedContract = 'DIGITUNDER';
+                suggestedDigit = 5;
+                confidence = 0.5 + (0.5 - probOver);
+                shouldTrade = confidence > 0.51;
+            }
+            break;
 
-      case 'W2':
-      case 'L2':
-        // Reset: Aposta COM a anomalia estatística de Par/Ímpar
-        if (analysis.probEven > 0.55) { // se par está mais provável
-          suggestedContract = 'DIGITEVEN'; // Aposta em Par
-          confidence = 0.5 + (analysis.probEven - 0.5);
-          shouldTrade = true;
-        } else if (analysis.probEven < 0.45) { // se ímpar está mais provável (probEven < 45%)
-          suggestedContract = 'DIGITODD'; // Aposta em Ímpar
-          confidence = 0.5 + (0.5 - analysis.probEven);
-          shouldTrade = true;
-        } else {
-            shouldTrade = false; // Zona neutra, sem vantagem estatística clara
-        }
-        suggestedDigit = undefined;
-        break;
+        case 'W2':
+        case 'L2':
+            // Reset: Aposta COM a anomalia estatística (regressão à média)
+            if (analysis.probEven > 0.55) {
+                suggestedContract = 'DIGITEVEN';
+                confidence = 0.5 + (analysis.probEven - 0.5);
+                shouldTrade = true;
+            } else if (analysis.probEven < 0.45) {
+                suggestedContract = 'DIGITODD';
+                confidence = 0.5 + (0.5 - analysis.probEven);
+                shouldTrade = true;
+            } else {
+                // Fallback: Over/Under
+                const probOverFallback = analysis.frequencies.slice(5, 10).reduce((sum, f) => sum + f.probability, 0);
+                if (probOverFallback > 0.52) {
+                    suggestedContract = 'DIGITOVER';
+                    suggestedDigit = 5;
+                    confidence = 0.52;
+                } else {
+                    suggestedContract = 'DIGITUNDER';
+                    suggestedDigit = 5;
+                    confidence = 0.52;
+                }
+                shouldTrade = true;
+            }
+            break;
     }
-    
-    if (confidence < 0.51) shouldTrade = false;
 
-    const stakeMultiplier = (vagalumeState === 'W2' || vagalumeState === 'L2') && sequenceStats.alternanceRate > 80 ? config.resetMultiplier : 1.0;
+    const stakeMultiplier = (vagalumeState === 'W2' || vagalumeState === 'L2') && sequenceStats.alternanceRate > 80 
+        ? config.resetMultiplier 
+        : 1.0;
 
     return {
-      state: vagalumeState,
-      targetOutcome,
-      confidence,
-      suggestedContract,
-      suggestedDigit,
-      suggestedStakeMultiplier: stakeMultiplier,
-      sequenceStats,
-      shouldTrade,
+        state: vagalumeState,
+        targetOutcome,
+        confidence,
+        suggestedContract,
+        suggestedDigit,
+        suggestedStakeMultiplier: stakeMultiplier,
+        sequenceStats,
+        shouldTrade,
     };
   }, [vagalumeState, getAdaptiveAnalysis, config, sequenceStats]);
 
