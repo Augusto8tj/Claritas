@@ -77,7 +77,7 @@ const calculateAdaptiveAnalysis = (
     if (count < minFreq) { minFreq = count; coldestDigit = digit; }
     const probability = count / windowSize;
     const zScore = (probability - 0.1) / Math.sqrt(0.1 * 0.9 / windowSize);
-    return { digit: digit, count, probability, zScore };
+    return { digit: digit as 0|1|2|3|4|5|6|7|8|9, count, probability, zScore };
   });
   
   const probEven = frequencies.filter(f => f.digit % 2 === 0).reduce((sum, f) => sum + f.probability, 0);
@@ -115,9 +115,11 @@ export const useVagalumeAlternante = (
       streak = 1;
       const lastOutcomeIsWin = relevantTrades[relevantTrades.length - 1].result! > 0;
       for (let i = relevantTrades.length - 2; i >= 0; i--) {
-        if ((relevantTrades[i].result! > 0) === lastOutcomeIsWin) streak++;
-        else break;
-        lastOutcomeIsWin;
+        if ((relevantTrades[i].result! > 0) === lastOutcomeIsWin) {
+             streak++;
+        } else {
+            break;
+        }
       }
     }
 
@@ -129,7 +131,7 @@ export const useVagalumeAlternante = (
   }, [tradeHistory]);
 
   const onTradeCompleted = useCallback((lastTrade: Operation) => {
-    const isWin = lastTrade.result! > 0;
+    const isWin = (lastTrade.result || 0) > 0;
     
     setVagalumeState(prevState => {
       switch (prevState) {
@@ -170,7 +172,6 @@ export const useVagalumeAlternante = (
     let confidence = 0.5; // baseline 50%
     let shouldTrade = false;
 
-    // Lógica adaptativa por estado
     switch (vagalumeState) {
       case 'W1':
         if (analysis.coldestDigit !== undefined && analysis.frequencies[analysis.coldestDigit].probability <= config.stateW1_matchThreshold / 100) {
@@ -192,15 +193,16 @@ export const useVagalumeAlternante = (
 
       case 'W2':
       case 'L2':
-        // **LÓGICA APRIMORADA**
-        if (analysis.probEven > 0.51) { // Pares estão "quentes"
-          suggestedContract = 'DIGITODD'; // Aposta em "frio" (Ímpar)
-          confidence = 0.5 + (analysis.probEven - 0.5); // Confiança é proporcional ao desequilíbrio
-        } else { // Ímpares estão "quentes" ou está equilibrado
-          suggestedContract = 'DIGITEVEN'; // Aposta em "frio" (Par)
+        // **LÓGICA APRIMORADA** para Reset com Par/Ímpar
+        if (analysis.probEven > 0.51) {
+          suggestedContract = 'DIGITODD';
+          confidence = 0.5 + (analysis.probEven - 0.5);
+        } else {
+          suggestedContract = 'DIGITEVEN';
           confidence = 0.5 + (0.5 - analysis.probEven);
         }
         shouldTrade = true;
+        suggestedDigit = undefined; // Não precisa de dígito para Par/Ímpar
         break;
     }
     
