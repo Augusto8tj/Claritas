@@ -19,7 +19,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { BrainCircuit, Loader2, TrendingDown, TrendingUp } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
-import DigitsDashboard from "@/features/trading/components/deriv-trader/DigitsDashboard";
+import { DigitsDashboard } from "@/features/trading/components/deriv-trader/DigitsDashboard";
 import { DigitsOptimizationPanel } from "@/features/trading/components/deriv-trader/digits-backtest-panel";
 
 

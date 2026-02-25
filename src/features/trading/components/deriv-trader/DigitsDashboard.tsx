@@ -112,12 +112,12 @@ const StatsCard: React.FC<{ title: string, value: string | number, icon: React.R
     </div>
 );
 
-const DigitsDashboard: React.FC<DigitsDashboardProps> = ({ signalQuality, multiWindowAnalysis, vagalumeSignal }) => {
-    if (!signalQuality || !multiWindowAnalysis) {
+export function DigitsDashboard({ signalQuality, multiWindowAnalysis, vagalumeSignal }: DigitsDashboardProps) {
+    if (!multiWindowAnalysis) {
         return (
             <Card>
                 <CardHeader>
-                    <CardTitle>Dashboard Estatístico</CardTitle>
+                    <CardTitle className="font-headline">Dashboard de Análise Estatística</CardTitle>
                 </CardHeader>
                 <CardContent>
                     <div className="text-center text-muted-foreground py-8">
@@ -128,9 +128,9 @@ const DigitsDashboard: React.FC<DigitsDashboardProps> = ({ signalQuality, multiW
         );
     }
     
-    const { mainWindow } = signalQuality;
-    const { chiSquare, pValue, isSignificant } = mainWindow.chiSquare;
-    const targetFreq = mainWindow.frequencies.find(f => f.digit === signalQuality.targetDigit);
+    const { mainWindow, confidenceLevel, targetDigit } = signalQuality || {};
+    const { pValue, isSignificant } = mainWindow?.chiSquare || { pValue: 1, isSignificant: false };
+    const targetFreq = mainWindow?.frequencies.find(f => f.digit === targetDigit);
 
     return (
         <Card>
@@ -140,7 +140,7 @@ const DigitsDashboard: React.FC<DigitsDashboardProps> = ({ signalQuality, multiW
             </CardHeader>
             <CardContent className="space-y-4">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {signalQuality.confidenceLevel !== 'NULA' ? (
+                    {signalQuality && confidenceLevel !== 'NULA' ? (
                         <SignalCard signal={signalQuality} />
                     ) : (
                         <Card className="flex items-center justify-center text-muted-foreground text-center p-4">
@@ -182,6 +182,4 @@ const DigitsDashboard: React.FC<DigitsDashboardProps> = ({ signalQuality, multiW
             </CardContent>
         </Card>
     );
-};
-
-export default DigitsDashboard;
+}
