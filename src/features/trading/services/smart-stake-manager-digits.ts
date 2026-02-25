@@ -7,26 +7,18 @@
  * Este módulo é composto por funções puras, sem dependências de React ou UI.
  */
 
+import type { Operation } from '@/lib/types';
+import type { ConfidenceLevel } from '@/features/trading/services/digits-analysis';
+
 // ============================================================================
 // 1. INTERFACES E TIPOS DE DADOS
 // ============================================================================
 
-export type ConfidenceLevel = 'MUITO_ALTA' | 'ALTA' | 'MEDIA' | 'BAIXA' | 'NULA';
-
-export interface TradeResult {
-  id: string;
-  timestamp: number;
-  stake: number;
-  profit: number; // positivo para ganho, negativo para perda
-  contractType: 'DIGITDIFF' | 'DIGITMATCH';
-  signalConfidence: ConfidenceLevel;
-}
-
 export interface SmartMartingaleConfig {
-  isEnabled: boolean; // Flag para ligar/desligar o Martingale
+  isEnabled: boolean;
   baseStake: number;
   maxMartingaleLevels: number;
-  martingaleMultiplier: number;    // ex.: 1.3 a 1.5
+  martingaleMultiplier: number;
   useAntiMartingale: boolean;
   isSmart: boolean; 
 }
@@ -34,8 +26,8 @@ export interface SmartMartingaleConfig {
 export interface BankrollState {
   currentBankroll: number;
   initialBankroll: number;
-  maxDailyLoss: number;            // valor absoluto
-  dailyProfitTarget: number;       // valor absoluto
+  maxDailyLoss: number;
+  dailyProfitTarget: number;
 }
 
 export interface SmartStakeDecision {
@@ -48,10 +40,10 @@ export interface SmartStakeDecision {
 // 2. FUNÇÕES AUXILIARES INTERNAS
 // ============================================================================
 
-const countConsecutiveLosses = (tradeHistory: TradeResult[]): number => {
+const countConsecutiveLosses = (tradeHistory: Operation[]): number => {
   let consecutiveLosses = 0;
   for (let i = tradeHistory.length - 1; i >= 0; i--) {
-    if (tradeHistory[i].profit < 0) {
+    if ((tradeHistory[i].result ?? 0) < 0) {
       consecutiveLosses++;
     } else {
       break;
@@ -60,11 +52,12 @@ const countConsecutiveLosses = (tradeHistory: TradeResult[]): number => {
   return consecutiveLosses;
 };
 
-const sumConsecutiveLosses = (tradeHistory: TradeResult[]): number => {
+const sumConsecutiveLosses = (tradeHistory: Operation[]): number => {
   let accumulatedLoss = 0;
   for (let i = tradeHistory.length - 1; i >= 0; i--) {
-    if (tradeHistory[i].profit < 0) {
-      accumulatedLoss += Math.abs(tradeHistory[i].profit);
+    const trade = tradeHistory[i];
+    if ((trade.result ?? 0) < 0) {
+      accumulatedLoss += trade.stake; // A perda é o valor total da aposta
     } else {
       break;
     }
@@ -72,10 +65,10 @@ const sumConsecutiveLosses = (tradeHistory: TradeResult[]): number => {
   return accumulatedLoss;
 };
 
-const countConsecutiveWins = (tradeHistory: TradeResult[]): number => {
+const countConsecutiveWins = (tradeHistory: Operation[]): number => {
     let consecutiveWins = 0;
     for (let i = tradeHistory.length - 1; i >= 0; i--) {
-        if (tradeHistory[i].profit > 0) {
+        if ((tradeHistory[i].result ?? 0) > 0) {
             consecutiveWins++;
         } else {
             break;
@@ -89,7 +82,7 @@ const countConsecutiveWins = (tradeHistory: TradeResult[]): number => {
 // ============================================================================
 
 export function decideNextStake(
-  tradeHistory: TradeResult[],
+  tradeHistory: Operation[],
   config: SmartMartingaleConfig,
   bankrollState: BankrollState,
   latestSignalConfidence: ConfidenceLevel
@@ -117,7 +110,7 @@ export function decideNextStake(
   // --- 2. Lógica Principal ---
   const lastTrade = tradeHistory.length > 0 ? tradeHistory[tradeHistory.length - 1] : null;
 
-  if (!lastTrade || lastTrade.profit > 0) {
+  if (!lastTrade || (lastTrade.result ?? 0) > 0) {
     if (isEnabled && useAntiMartingale) {
         const wins = countConsecutiveWins(tradeHistory);
         if (wins >= 3) {
@@ -129,7 +122,6 @@ export function decideNextStake(
 
   // --- 3. Lógica de Martingale ---
   
-  // Se o Martingale estiver DESATIVADO, retorna o stake base após uma perda.
   if (!isEnabled) {
     return { nextStake: baseStake, shouldPause: false, pauseReason: 'Martingale desativado.' };
   }
@@ -144,7 +136,6 @@ export function decideNextStake(
     };
   }
 
-  // --- Bloco de Lógica Inteligente ---
   if (isSmart) {
       const isSignalStrongEnough = (latestSignalConfidence === 'ALTA' || latestSignalConfidence === 'MUITO_ALTA');
       if (!isSignalStrongEnough) {
@@ -152,7 +143,6 @@ export function decideNextStake(
       }
   }
 
-  // Se chegou aqui, ou é Martingale Normal, ou o Smart foi aprovado.
   const accumulatedLoss = sumConsecutiveLosses(tradeHistory);
   const payoutRatio = 0.95; // Para dígitos
 
@@ -161,13 +151,12 @@ export function decideNextStake(
   
   let nextStake = Math.max(simpleMartingaleStake, recoveryStake);
 
-  // Verificação de segurança: não apostar mais que 20% do capital atual
   const maxSafeStake = currentBankroll * 0.20;
   
   if (nextStake > maxSafeStake) {
     return {
       nextStake: baseStake,
-      shouldPause: true, // Pausa o piloto para proteger o capital
+      shouldPause: true,
       pauseReason: `Martingale vetado: próximo stake ($${nextStake.toFixed(2)}) excede 20% do capital.`,
     };
   }

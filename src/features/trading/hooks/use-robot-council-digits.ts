@@ -16,7 +16,6 @@ import {
     decideNextStake,
     type SmartMartingaleConfig,
     type BankrollState,
-    type TradeResult as StakeManagerTradeResult
 } from '@/features/trading/services/smart-stake-manager-digits';
 import type { ConfidenceLevel } from '@/features/trading/services/digits-analysis';
 import { 
@@ -96,7 +95,7 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
   });
   
   // --- GESTÃO DE RISCO AVANÇADA (MARTINGALE) ---
-  const [isMartingaleEnabled, setIsMartingaleEnabled] = useState(true);
+  const [isMartingaleEnabled, setIsMartingaleEnabled] = useState(false);
   const [isSmartMartingale, setIsSmartMartingale] = useState(true);
   const [martingaleRecoveryFactor, setMartingaleRecoveryFactor] = useState(1.3);
   const [cooldownTime, setCooldownTime] = useState(5);
@@ -303,6 +302,7 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
 
     let tradeExecutedThisCycle = false;
 
+    // --- Lógica de Execução do Vagalume com Proteção de Timing ---
     const vagalumePilot = pilots.vagalume;
     if (vagalumePilot.isOn && vagalumePilot.status === 'TRADING' && vagalumePilot.activeContractId === null && vagalumeSignal) {
         if (vagalumeSignal.shouldTrade) {
@@ -349,7 +349,13 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
                     'vagalume'
                 ).then(tradeResult => {
                     const executionTime = measureExecution.end();
-                    timingMonitor.recordTiming('vagalume', { analysisTime: 0, executionTime, totalLatency: executionTime + tickAge, tickAge });
+                    
+                    timingMonitor.recordTiming('vagalume', {
+                        analysisTime: 0,
+                        executionTime,
+                        totalLatency: executionTime + tickAge,
+                        tickAge,
+                    });
                     
                     if (tradeResult.success && tradeResult.contractId) {
                       setPilots(prev => ({ ...prev, vagalume: { ...prev.vagalume, activeContractId: tradeResult.contractId! } }));
@@ -362,8 +368,9 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
             }
         }
         
-        if (vagalumePilot.isOn && vagalumeSignal) {
-          tradeExecutedThisCycle = true;
+        // Bloqueia outros pilotos se Vagalume em modo reset
+        if (vagalumeSignal && (vagalumeSignal.state === 'W2' || vagalumeSignal.state === 'L2')) {
+            tradeExecutedThisCycle = true;
         }
     }
     
