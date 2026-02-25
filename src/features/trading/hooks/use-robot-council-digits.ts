@@ -28,7 +28,8 @@ import { runDigitsBacktest, type BacktestSummary } from '@/features/trading/back
 import { STRATEGY_DEFINITIONS, type GlobalRiskConfig, type MartingaleConfig, strategyLabels } from '@/app/deriv-trader-digits/strategies-config';
 import { loadHistoricalTicksForDigits } from '@/services/digits-data-service';
 import { useAuth } from '@/features/auth/hooks/use-auth';
-import { useVagalumeAlternante, type VagalumeConfig, type VagalumeSignal } from './use-vagalume-alternante';
+import { useVagalumeAlternante, type VagalumeConfig, type VagalumeSignal, type DigitContractType } from './use-vagalume-alternante';
+
 
 // ============================================================================
 // 1. TIPOS E INTERFACES
@@ -125,7 +126,7 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
 
   const { signal: vagalumeSignal, onTradeCompleted: onVagalumeTradeCompleted } = useVagalumeAlternante(
     priceTicks,
-    pilots.vagalume.tradeHistory,
+    pilots.vagalume.tradeHistory.map(t => ({...t, result: t.profit})), // Adapter para formato de Operation
     vagalumeConfig,
     accountBalance.balance ?? 1000,
     decimalPlaces
@@ -296,10 +297,45 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
 
     let tradeExecutedThisCycle = false;
 
+    // NOVO: Prioridade para o Vagalume
+    const vagalumePilot = pilots.vagalume;
+    if (vagalumePilot.isOn && vagalumePilot.status === 'TRADING' && vagalumePilot.activeContractId === null && vagalumeSignal?.shouldTrade) {
+      const confidenceForStake: ConfidenceLevel = vagalumeSignal.confidence > 0.8 ? 'MUITO_ALTA' : 'ALTA';
+      const initialBankroll = sessionInitialBankroll ?? (accountBalance.balance ?? 1000);
+      const currentBankroll = initialBankroll + dailyPnl;
+      const bankrollState: BankrollState = { currentBankroll, initialBankroll, maxDailyLoss: dailyBalance, dailyProfitTarget: dailyTarget };
+      const stakeConfig: SmartMartingaleConfig = { 
+          isEnabled: isMartingaleEnabled, baseStake: BASE_STAKE, maxMartingaleLevels: maxLosses, 
+          martingaleMultiplier: martingaleRecoveryFactor, useAntiMartingale: false, isSmart: isSmartMartingale,
+      };
+      const stakeDecision = decideNextStake(vagalumePilot.tradeHistory, stakeConfig, bankrollState, confidenceForStake);
+
+      if (!stakeDecision.shouldPause) {
+          const finalStake = stakeDecision.nextStake * vagalumeSignal.suggestedStakeMultiplier;
+          
+          executeTrade(vagalumeSignal.suggestedContract, finalStake, activeSymbol!, 1, 't', 'Piloto', vagalumeSignal.suggestedDigit, 'vagalume')
+            .then(tradeResult => {
+              if (tradeResult.success && tradeResult.contractId) {
+                setPilots(prev => ({
+                  ...prev,
+                  vagalume: { ...prev.vagalume, activeContractId: tradeResult.contractId! }
+                }));
+              }
+            });
+          tradeExecutedThisCycle = true;
+          lastExecutionTimestampRef.current = now;
+      } else {
+          setPilots(prev => ({...prev, vagalume: {...prev.vagalume, status: 'CIRCUIT_BREAKER', currentTarget: stakeDecision.pauseReason || 'Limite de risco atingido'}}));
+      }
+    }
+
+
     for (const [key, pilot] of activePilotEntries) {
       if (tradeExecutedThisCycle) break; 
       
       const pilotKey = key as PilotType;
+      if (pilotKey === 'vagalume') continue; // Já foi tratado com prioridade
+
       if (pilot.status !== 'TRADING' || pilot.activeContractId !== null) continue;
       
       const initialBankroll = sessionInitialBankroll ?? (accountBalance.balance ?? 1000);
@@ -371,18 +407,6 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
                 shouldExecute = true; confidenceForStake = 'ALTA'; executionParams = ['DIGITODD', undefined, pilotKey];
             }
             break;
-        case 'vagalume':
-          if (vagalumeSignal?.shouldTrade) {
-            shouldExecute = true;
-            confidenceForStake = vagalumeSignal.confidence > 0.8 ? 'MUITO_ALTA' : 'ALTA';
-            executionParams = [
-              vagalumeSignal.suggestedContract,
-              vagalumeSignal.suggestedDigit,
-              pilotKey,
-              vagalumeSignal.suggestedStakeMultiplier,
-            ];
-          }
-          break;
       }
 
       if (shouldExecute && executionParams) {
