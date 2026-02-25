@@ -5,13 +5,16 @@ import React from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { CheckCircle, XCircle, HelpCircle, BarChart2, TrendingUp, TrendingDown, Info, Sigma } from 'lucide-react';
+import { CheckCircle, XCircle, HelpCircle, BarChart2, TrendingUp, TrendingDown, Info, Sigma, Wand2, Target } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { SignalQuality, MultiWindowAnalysis } from '@/features/trading/hooks/use-robot-council-digits';
+import type { VagalumeSignal } from '@/features/trading/hooks/use-vagalume-alternante';
+import { Separator } from '@/components/ui/separator';
 
 interface DigitsDashboardProps {
   signalQuality: SignalQuality | null;
   multiWindowAnalysis: MultiWindowAnalysis | null;
+  vagalumeSignal: VagalumeSignal | null;
 }
 
 const confidenceColors: Record<string, string> = {
@@ -33,7 +36,7 @@ const SignalCard: React.FC<{ signal: SignalQuality }> = ({ signal }) => {
             isDiffers ? "border-red-500/50 bg-red-50/50" : "border-green-500/50 bg-green-50/50"
         )}>
             <CardHeader className="pb-2">
-                <CardDescription>Sinal de Trade Atual</CardDescription>
+                <CardDescription>Sinal (Contra-Tendência)</CardDescription>
                 <CardTitle className={cn("flex items-center gap-3 text-3xl font-bold", colorClass)}>
                     <Icon className="h-8 w-8" />
                     <span>{signal.contractType.replace('DIGIT', '')} {signal.targetDigit}</span>
@@ -48,6 +51,48 @@ const SignalCard: React.FC<{ signal: SignalQuality }> = ({ signal }) => {
     );
 };
 
+const VagalumeStatusCard: React.FC<{ signal: VagalumeSignal }> = ({ signal }) => {
+  return (
+    <Card className="border-purple-500/50 bg-purple-50/50">
+        <CardHeader className="pb-2">
+            <CardDescription className="flex items-center justify-between">
+                <span>Diário de Bordo: Vagalume</span>
+                 <Badge variant="outline" className="border-purple-500/50 bg-white text-purple-600">
+                    Estado: {signal.state}
+                </Badge>
+            </CardDescription>
+             <CardTitle className={cn("flex items-center gap-3 text-2xl font-bold text-purple-700")}>
+                <Wand2 className="h-7 w-7" />
+                <span>{signal.suggestedContract.replace('DIGIT', '')} {signal.suggestedDigit !== undefined ? signal.suggestedDigit : ''}</span>
+            </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+             <div className="text-xs space-y-1">
+                <div className="flex justify-between">
+                    <span>Objetivo do Estado:</span>
+                    <span className="font-semibold">{signal.targetOutcome}</span>
+                </div>
+                <div className="flex justify-between">
+                    <span>Confiança do Sinal:</span>
+                    <span className="font-mono">{(signal.confidence * 100).toFixed(1)}%</span>
+                </div>
+             </div>
+             <Separator/>
+             <div className="text-xs space-y-1">
+                <div className="flex justify-between">
+                    <span >Taxa de Alternância:</span>
+                    <span className="font-semibold">{signal.sequenceStats.alternanceRate.toFixed(0)}%</span>
+                </div>
+                 <div className="flex justify-between">
+                    <span>Sequência Atual:</span>
+                    <span className="font-semibold">{signal.sequenceStats.currentStreak}</span>
+                </div>
+             </div>
+        </CardContent>
+    </Card>
+  )
+}
+
 const StatsCard: React.FC<{ title: string, value: string | number, icon: React.ReactNode }> = ({ title, value, icon }) => (
     <div className="flex flex-col items-center justify-center p-3 rounded-lg border bg-background text-center">
         <div className="text-xs text-muted-foreground flex items-center gap-1.5">{icon}{title}</div>
@@ -55,7 +100,7 @@ const StatsCard: React.FC<{ title: string, value: string | number, icon: React.R
     </div>
 );
 
-const DigitsDashboard: React.FC<DigitsDashboardProps> = ({ signalQuality, multiWindowAnalysis }) => {
+const DigitsDashboard: React.FC<DigitsDashboardProps> = ({ signalQuality, multiWindowAnalysis, vagalumeSignal }) => {
     if (!signalQuality || !multiWindowAnalysis) {
         return (
             <Card>
@@ -71,7 +116,7 @@ const DigitsDashboard: React.FC<DigitsDashboardProps> = ({ signalQuality, multiW
         );
     }
     
-    const { mainWindow, multiWindowAnalysis: mwa } = signalQuality;
+    const { mainWindow } = signalQuality;
     const { chiSquare, pValue, isSignificant } = mainWindow.chiSquare;
     const targetFreq = mainWindow.frequencies.find(f => f.digit === signalQuality.targetDigit);
 
@@ -79,7 +124,7 @@ const DigitsDashboard: React.FC<DigitsDashboardProps> = ({ signalQuality, multiW
         <Card>
             <CardHeader>
                 <CardTitle className="font-headline">Dashboard de Análise Estatística</CardTitle>
-                <CardDescription>Visão em tempo real da qualidade do sinal e da saúde do mercado de dígitos.</CardDescription>
+                <CardDescription>Visão em tempo real da qualidade dos sinais e da saúde do mercado.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -90,31 +135,26 @@ const DigitsDashboard: React.FC<DigitsDashboardProps> = ({ signalQuality, multiW
                             <div>
                                 <HelpCircle className="h-8 w-8 mx-auto mb-2 opacity-50"/>
                                 <p className="font-semibold">Sinal Neutro</p>
-                                <p className="text-xs">Nenhum desvio estatístico significativo detectado.</p>
+                                <p className="text-xs">Nenhum desvio estatístico detectado.</p>
                             </div>
                         </Card>
                     )}
-
-                    <div className="space-y-3">
-                         <StatsCard 
-                            title="Consenso Multi-Janela" 
-                            value={mwa.consensusStrength.replace('_', ' ')} 
-                            icon={<BarChart2 className="h-4 w-4"/>} 
-                        />
-                        <div className="grid grid-cols-2 gap-3">
-                            <StatsCard 
-                                title="Z-Score (Alvo)" 
-                                value={targetFreq?.zScore.toFixed(2) || 'N/A'}
-                                icon={<Sigma className="h-4 w-4"/>}
-                            />
-                            <StatsCard 
-                                title="p-value (Qui²)" 
-                                value={pValue.toFixed(4)}
-                                icon={<CheckCircle className="h-4 w-4"/>}
-                            />
-                        </div>
-                    </div>
+                    {vagalumeSignal && <VagalumeStatusCard signal={vagalumeSignal} />}
                 </div>
+
+                <div className="grid grid-cols-2 gap-3 pt-2">
+                     <StatsCard 
+                        title="Consenso Multi-Janela" 
+                        value={multiWindowAnalysis.consensusStrength.replace('_', ' ')} 
+                        icon={<BarChart2 className="h-4 w-4"/>} 
+                    />
+                    <StatsCard 
+                        title="Z-Score (Alvo)" 
+                        value={targetFreq?.zScore.toFixed(2) || 'N/A'}
+                        icon={<Sigma className="h-4 w-4"/>}
+                    />
+                </div>
+
                  <Alert variant={isSignificant ? 'default' : 'destructive'} className={cn(isSignificant && 'bg-green-500/10 border-green-500/30 text-green-800')}>
                     <Info className="h-4 w-4" />
                     <AlertTitle className="font-bold">

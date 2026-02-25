@@ -169,6 +169,7 @@ function DerivTraderPageContentDigits() {
                     <DigitsDashboard 
                         signalQuality={robotCouncil.signalQuality}
                         multiWindowAnalysis={robotCouncil.multiWindowAnalysis}
+                        vagalumeSignal={robotCouncil.vagalumeSignal}
                     />
                     <DerivTraderInterfaceDigits symbol={activeSymbol || ""} />
                     <OperationsLogDigits operations={operationsLog} priceTicks={priceTicks} activeAsset={activeAsset} clearActiveContracts={clearActiveContracts} />
