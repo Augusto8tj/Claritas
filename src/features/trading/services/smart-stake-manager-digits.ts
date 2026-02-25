@@ -1,12 +1,6 @@
 // src/features/trading/services/smart-stake-manager-digits.ts
 'use client';
 
-/**
- * @fileOverview Módulo de Gerenciamento de Risco e Stake V2.1 para Trading de Dígitos.
- * Contém a lógica para "Martingale Inteligente" e gerenciamento de capital.
- * Esta versão remove o Critério de Kelly para um controle mais direto do stake.
- */
-
 import type { Operation } from '@/lib/types';
 import type { ConfidenceLevel } from '@/features/trading/services/digits-analysis';
 import type { DigitContractType } from '../hooks/use-vagalume-alternante';
@@ -20,7 +14,7 @@ export interface SmartMartingaleConfig {
   baseStake: number;
   maxMartingaleLevels: number;
   martingaleMultiplier: number;
-  useAntiMartingale: boolean; // Not used in this version, but kept for interface consistency
+  useAntiMartingale: boolean; 
   isSmart: boolean; 
 }
 
@@ -45,28 +39,37 @@ const countConsecutiveLosses = (tradeHistory: Operation[]): number => {
   let consecutiveLosses = 0;
   for (let i = tradeHistory.length - 1; i >= 0; i--) {
     const trade = tradeHistory[i];
-    // Considera uma perda se o resultado for negativo.
     if ((trade.result ?? 0) < 0) {
       consecutiveLosses++;
     } else {
-      // Para o contador na primeira vitória encontrada.
       break;
     }
   }
   return consecutiveLosses;
 };
 
+const PAYOUTS: Record<DigitContractType, number> = {
+  DIGITMATCH: 8.0, // Retorno líquido ~800%
+  DIGITDIFF: 0.10, // Retorno líquido ~10%
+  DIGITOVER: 0.95, // Retorno líquido ~95%
+  DIGITUNDER: 0.95,
+  DIGITEVEN: 0.95,
+  DIGITODD: 0.95,
+};
+
+const getPayoutRatio = (contractType: DigitContractType): number => {
+    return PAYOUTS[contractType] || 0.95;
+};
 
 // ============================================================================
-// 3. FUNÇÃO PRINCIPAL DE DECISÃO DE STAKE (VERSÃO 2.1)
+// 3. FUNÇÃO PRINCIPAL DE DECISÃO DE STAKE (VERSÃO 2.2 - Simplificada)
 // ============================================================================
 
 export function decideNextStake(
   tradeHistory: Operation[],
   config: SmartMartingaleConfig,
   bankrollState: BankrollState,
-  latestSignalConfidence: ConfidenceLevel
-  // contractType é mantido para compatibilidade de assinatura, mas não usado ativamente nesta versão
+  contractType: DigitContractType
 ): SmartStakeDecision {
   const { isEnabled, baseStake, maxMartingaleLevels, martingaleMultiplier, isSmart } = config;
   const { currentBankroll, initialBankroll, maxDailyLoss, dailyProfitTarget } = bankrollState;
@@ -82,33 +85,22 @@ export function decideNextStake(
 
   const consecutiveLosses = countConsecutiveLosses(tradeHistory);
   if (isEnabled && consecutiveLosses >= maxMartingaleLevels) {
-    return { nextStake: baseStake, shouldPause: true, pauseReason: `Limite de ${maxMartingaleLevels} perdas seguidas atingido. Resetando para stake base.` };
+    return { nextStake: baseStake, shouldPause: true, pauseReason: `Limite de ${maxMartingaleLevels} perdas seguidas atingido.` };
   }
-
-  // --- 2. Lógica de Stake ---
   
-  let nextStake = baseStake; // O padrão é sempre o stake base.
+  // --- 2. Lógica de Stake (Simplificada) ---
+  
+  let nextStake = baseStake; 
   const lastTrade = tradeHistory.length > 0 ? tradeHistory[tradeHistory.length - 1] : null;
 
-  // Aplica Martingale APENAS se estiver ativo E a última operação foi uma perda.
   if (isEnabled && lastTrade && (lastTrade.result ?? 0) < 0) {
-    // Martingale Inteligente: não aumenta a aposta em um sinal de baixa confiança
-    if (isSmart && (latestSignalConfidence === 'BAIXA' || latestSignalConfidence === 'NULA')) {
-      return { nextStake: baseStake, shouldPause: false };
-    }
-    
-    // Lógica Martingale simples: multiplica o stake *anterior* pelo fator.
     nextStake = lastTrade.stake * martingaleMultiplier;
   }
   
-  // --- 3. Proteção Final de Capital ---
-  const maxSafeStake = currentBankroll * 0.25; // Nunca arriscar mais de 25% da banca em um único trade.
+  const maxSafeStake = Math.max(baseStake, currentBankroll * 0.10);
   if (nextStake > maxSafeStake) {
-    return {
-      nextStake: baseStake,
-      shouldPause: true,
-      pauseReason: `Martingale vetado: próximo stake ($${nextStake.toFixed(2)}) excede 25% do capital. Resetando.`,
-    };
+      console.warn(`[StakeManager] Martingale stake ($${nextStake.toFixed(2)}) excedeu limite de segurança ($${maxSafeStake.toFixed(2)}). Resetando para stake base.`);
+      nextStake = baseStake;
   }
   
   return { nextStake: parseFloat(nextStake.toFixed(2)), shouldPause: false };
