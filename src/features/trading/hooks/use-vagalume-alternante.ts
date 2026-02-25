@@ -4,6 +4,7 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import type { Operation, TickData } from '@/lib/types';
 import type { DigitFrequency, WindowDigitStats } from '@/features/trading/services/digits-analysis';
+import { calculateDigitStatsForWindow } from '@/features/trading/services/digits-analysis';
 
 // ============================================================================
 // 1. TIPOS E INTERFACES
@@ -50,39 +51,23 @@ const calculateAdaptiveAnalysis = (
   ticks: TickData[],
   state: VagalumeState,
   decimalPlaces: number
-): { frequencies: DigitFrequency[]; hottestDigit: number; coldestDigit: number; probEven: number } => {
-  const windowSize = state === 'W1' || state === 'L1' ? 50 : 200;
-
-  const emptyResult = {
+): WindowDigitStats => {
+  const windowSize = (state === 'W1' || state === 'L1') ? 50 : 200;
+  
+  const emptyResult: WindowDigitStats = {
+    windowSize,
     frequencies: Array.from({ length: 10 }, (_, i) => ({ digit: i as any, count: 0, probability: 0, zScore: 0 })),
     hottestDigit: 0,
     coldestDigit: 0,
+    chiSquare: { chiSquare: 0, pValue: 1, isSignificant: false },
+    probOver4: 0.5,
+    probUnder5: 0.5,
     probEven: 0.5,
   };
 
   if (ticks.length < windowSize) return emptyResult;
   
-  const recentTicks = ticks.slice(-windowSize);
-  const digitCounts = new Array(10).fill(0);
-  recentTicks.forEach(tick => {
-    const lastDigit = getLastDigit(tick.price, decimalPlaces);
-    if (!isNaN(lastDigit)) digitCounts[lastDigit]++;
-  });
-
-  let hottestDigit = 0, coldestDigit = 0;
-  let maxFreq = -1, minFreq = Infinity;
-  
-  const frequencies: DigitFrequency[] = digitCounts.map((count, digit) => {
-    if (count > maxFreq) { maxFreq = count; hottestDigit = digit; }
-    if (count < minFreq) { minFreq = count; coldestDigit = digit; }
-    const probability = count / windowSize;
-    const zScore = (probability - 0.1) / Math.sqrt(0.1 * 0.9 / windowSize);
-    return { digit: digit as any, count, probability, zScore };
-  });
-  
-  const probEven = frequencies.filter(f => f.digit % 2 === 0).reduce((sum, f) => sum + f.probability, 0);
-
-  return { frequencies, hottestDigit, coldestDigit, probEven };
+  return calculateDigitStatsForWindow(ticks, windowSize, decimalPlaces);
 };
 
 
@@ -105,7 +90,7 @@ export const useVagalumeAlternante = (
       return { currentStreak: tradeHistory.length, alternanceRate: 0, totalTrades: tradeHistory.length };
     }
     const relevantTrades = tradeHistory.slice(-50);
-    const alternances = relevantTrades.slice(1).filter((t, i) =>
+    const alternances = relevantTrades.slice(1).filter((t, i) => 
       (relevantTrades[i].result! > 0) !== (t.result! > 0)
     ).length;
     
@@ -161,7 +146,9 @@ export const useVagalumeAlternante = (
   }, [ticks, decimalPlaces]);
 
   const signal = useMemo((): VagalumeSignal | null => {
-    if (vagalumeState === 'PAUSED' || ticks.length < 50) return null;
+    if (vagalumeState === 'PAUSED') return null;
+    if ((vagalumeState === 'W1' || vagalumeState === 'L1') && ticks.length < 50) return null;
+    if ((vagalumeState === 'W2' || vagalumeState === 'L2') && ticks.length < 200) return null;
 
     const analysis = getAdaptiveAnalysis(vagalumeState);
     const targetOutcome = vagalumeState.startsWith('W') ? 'WIN' : 'LOSS';
@@ -170,41 +157,40 @@ export const useVagalumeAlternante = (
     let suggestedDigit: number | undefined;
     let confidence = 0.5;
     let shouldTrade = false;
+    
+    const windowSize = (vagalumeState === 'W1' || vagalumeState === 'L1') ? 50 : 200;
 
     switch (vagalumeState) {
         case 'W1':
-            // Meta: WIN → aposta em anomalia Par/Ímpar (natureza aleatória pura)
-            if (analysis.probEven < 0.48) { // Ímpar está favorecido
-                suggestedContract = 'DIGITODD';
-                confidence = 0.5 + (0.5 - analysis.probEven);
-                shouldTrade = confidence > 0.51;
-            } else if (analysis.probEven > 0.52) { // Par está favorecido
-                suggestedContract = 'DIGITEVEN';
-                confidence = 0.5 + (analysis.probEven - 0.5);
-                shouldTrade = confidence > 0.51;
-            }
-            suggestedDigit = undefined; // Par/Ímpar não usa dígito específico
-            break;
+          if (analysis.probEven < 0.49) {
+            const zScore = Math.abs((analysis.probEven - 0.5) / Math.sqrt(0.25 / windowSize));
+            suggestedContract = 'DIGITODD';
+            confidence = 0.5 + (0.5 - analysis.probEven) + (zScore * 0.05);
+            shouldTrade = confidence > 0.51;
+          } else if (analysis.probEven > 0.51) {
+            const zScore = Math.abs((analysis.probEven - 0.5) / Math.sqrt(0.25 / windowSize));
+            suggestedContract = 'DIGITEVEN';
+            confidence = 0.5 + (analysis.probEven - 0.5) + (zScore * 0.05);
+            shouldTrade = confidence > 0.51;
+          }
+          break;
 
         case 'L1':
-            // Meta: LOSS → Over/Under como fallback inteligente
-            const probOver = analysis.frequencies.slice(5, 10).reduce((sum, f) => sum + f.probability, 0);
-            if (probOver > 0.52) {
-                suggestedContract = 'DIGITOVER';
-                suggestedDigit = 5; // barrier
-                confidence = 0.5 + (probOver - 0.5);
-                shouldTrade = confidence > 0.51;
-            } else if (probOver < 0.48) {
-                suggestedContract = 'DIGITUNDER';
-                suggestedDigit = 5;
-                confidence = 0.5 + (0.5 - probOver);
-                shouldTrade = confidence > 0.51;
-            }
-            break;
+          if (analysis.probOver4 > 0.51) {
+            suggestedContract = 'DIGITOVER';
+            suggestedDigit = 4;
+            confidence = 0.5 + (analysis.probOver4 - 0.5);
+            shouldTrade = confidence > 0.51;
+          } else if (analysis.probUnder5 > 0.51) {
+            suggestedContract = 'DIGITUNDER';
+            suggestedDigit = 5;
+            confidence = 0.5 + (analysis.probUnder5 - 0.5);
+            shouldTrade = confidence > 0.51;
+          }
+          break;
 
         case 'W2':
         case 'L2':
-            // Reset: Aposta COM a anomalia estatística (regressão à média)
             if (analysis.probEven > 0.55) {
                 suggestedContract = 'DIGITEVEN';
                 confidence = 0.5 + (analysis.probEven - 0.5);
@@ -214,11 +200,9 @@ export const useVagalumeAlternante = (
                 confidence = 0.5 + (0.5 - analysis.probEven);
                 shouldTrade = true;
             } else {
-                // Fallback: Over/Under
-                const probOverFallback = analysis.frequencies.slice(5, 10).reduce((sum, f) => sum + f.probability, 0);
-                if (probOverFallback > 0.52) {
+                if (analysis.probOver4 > 0.52) {
                     suggestedContract = 'DIGITOVER';
-                    suggestedDigit = 5;
+                    suggestedDigit = 4;
                     confidence = 0.52;
                 } else {
                     suggestedContract = 'DIGITUNDER';
@@ -244,7 +228,7 @@ export const useVagalumeAlternante = (
         sequenceStats,
         shouldTrade,
     };
-  }, [vagalumeState, getAdaptiveAnalysis, config, sequenceStats]);
+  }, [vagalumeState, getAdaptiveAnalysis, config, sequenceStats, ticks.length]);
 
   return { signal, onTradeCompleted };
 };

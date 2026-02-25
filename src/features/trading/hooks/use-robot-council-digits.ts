@@ -180,7 +180,11 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
   }, [signalQuality]);
 
   const dailyPnl = useMemo(() => {
-    return Object.values(pilots).flatMap(p => p.tradeHistory).reduce((sum, trade) => sum + (trade.result || -trade.stake), 0);
+    const allTrades = Object.values(pilots).flatMap(p => p.tradeHistory);
+    return allTrades.reduce((sum, trade) => {
+        const profit = trade.result || 0;
+        return sum + (profit > 0 ? profit : -trade.stake);
+    }, 0);
   }, [pilots]);
 
   const overUnderStats = useMemo(() => {
@@ -259,18 +263,17 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
             onVagalumeTradeCompleted(lastOp);
         }
 
-        if (pilots[pilotKey as PilotType]) {
-            const pilot = pilots[pilotKey as PilotType];
-            
-            const updatedHistory = [...pilot.tradeHistory, lastOp];
-            const newLosses = (lastOp.result || 0) < 0 ? pilot.consecutiveLosses + 1 : 0;
-            const newAccumulatedLoss = (lastOp.result || 0) < 0 ? pilot.accumulatedLoss + Math.abs(lastOp.result || -lastOp.stake) : 0;
+        const pilotToUpdate = pilots[pilotKey as PilotType];
+        if (pilotToUpdate) {
+            const updatedHistory = [...pilotToUpdate.tradeHistory, lastOp];
+            const newLosses = (lastOp.result || 0) < 0 ? pilotToUpdate.consecutiveLosses + 1 : 0;
+            const newAccumulatedLoss = (lastOp.result || 0) < 0 ? pilotToUpdate.accumulatedLoss + Math.abs(lastOp.result || -lastOp.stake) : 0;
             const newStatus: AutopilotStatus = newLosses >= maxLosses ? 'CIRCUIT_BREAKER' : 'COOLDOWN';
 
             setPilots(prev => ({
                 ...prev,
                 [pilotKey as PilotType]: {
-                    ...pilot, tradeHistory: updatedHistory, consecutiveLosses: newLosses,
+                    ...pilotToUpdate, tradeHistory: updatedHistory, consecutiveLosses: newLosses,
                     accumulatedLoss: newAccumulatedLoss, status: newStatus, activeContractId: null,
                 }
             }));
@@ -298,153 +301,150 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
 
     let tradeExecutedThisCycle = false;
 
-    // --- Lógica de Execução com Hierarquia ---
+    // --- HIERARQUIA DE EXECUÇÃO: Vagalume primeiro ---
     const vagalumePilot = pilots.vagalume;
-    if (vagalumePilot.isOn && vagalumePilot.status === 'TRADING' && vagalumePilot.activeContractId === null && vagalumeSignal) {
-      if (vagalumeSignal.shouldTrade) {
-          const confidenceForStake: ConfidenceLevel = vagalumeSignal.confidence > 0.8 ? 'MUITO_ALTA' : 'ALTA';
+    if (vagalumePilot.isOn && vagalumePilot.status !== 'PAUSED' && vagalumePilot.activeContractId === null && vagalumeSignal) {
+        tradeExecutedThisCycle = true; // Vagalume sempre tem prioridade, mesmo que decida não operar
+
+        if (vagalumeSignal.shouldTrade) {
+            const confidenceForStake: ConfidenceLevel = vagalumeSignal.confidence > 0.8 ? 'MUITO_ALTA' : 'ALTA';
+            const initialBankroll = sessionInitialBankroll ?? (accountBalance.balance ?? 1000);
+            const currentBankroll = initialBankroll + dailyPnl;
+            const bankrollState: BankrollState = { currentBankroll, initialBankroll, maxDailyLoss: dailyBalance, dailyProfitTarget: dailyTarget };
+            const stakeConfig: SmartMartingaleConfig = { 
+                isEnabled: isMartingaleEnabled, baseStake: BASE_STAKE, maxMartingaleLevels: maxLosses, 
+                martingaleMultiplier: martingaleRecoveryFactor, useAntiMartingale: false, isSmart: isSmartMartingale,
+            };
+            const stakeDecision = decideNextStake(vagalumePilot.tradeHistory, stakeConfig, bankrollState, confidenceForStake);
+
+            if (!stakeDecision.shouldPause) {
+                const finalStake = stakeDecision.nextStake * vagalumeSignal.suggestedStakeMultiplier;
+                
+                executeTrade(vagalumeSignal.suggestedContract, finalStake, activeSymbol!, 1, 't', 'Piloto', vagalumeSignal.suggestedDigit, 'vagalume')
+                  .then(tradeResult => {
+                    if (tradeResult.success && tradeResult.contractId) {
+                      setPilots(prev => ({ ...prev, vagalume: { ...prev.vagalume, activeContractId: tradeResult.contractId! } }));
+                    }
+                  });
+                lastExecutionTimestampRef.current = now;
+            } else {
+                setPilots(prev => ({...prev, vagalume: {...prev.vagalume, status: 'CIRCUIT_BREAKER', currentTarget: stakeDecision.pauseReason || 'Limite de risco atingido'}}));
+            }
+        }
+    }
+    
+    // Se o Vagalume não executou um trade, avalia os outros
+    if (!tradeExecutedThisCycle) {
+        for (const [key, pilot] of activePilotEntries) {
+          if (tradeExecutedThisCycle) break; 
+          
+          const pilotKey = key as PilotType;
+          if (pilotKey === 'vagalume') continue;
+
+          if (pilot.status !== 'TRADING' || pilot.activeContractId !== null) continue;
+          
           const initialBankroll = sessionInitialBankroll ?? (accountBalance.balance ?? 1000);
           const currentBankroll = initialBankroll + dailyPnl;
+          
           const bankrollState: BankrollState = { currentBankroll, initialBankroll, maxDailyLoss: dailyBalance, dailyProfitTarget: dailyTarget };
-          const stakeConfig: SmartMartingaleConfig = { 
-              isEnabled: isMartingaleEnabled, baseStake: BASE_STAKE, maxMartingaleLevels: maxLosses, 
-              martingaleMultiplier: martingaleRecoveryFactor, useAntiMartingale: false, isSmart: isSmartMartingale,
-          };
-          const stakeDecision = decideNextStake(vagalumePilot.tradeHistory, stakeConfig, bankrollState, confidenceForStake);
+          
+          let shouldExecute = false;
+          let executionParams: [DigitContractType, number?, string?, number?] | null = null;
+          let confidenceForStake: ConfidenceLevel = 'NULA';
+          
+          switch (pilotKey) {
+            case 'matchesDiffers':
+              if (shouldTrade && councilDecision.differs !== null) {
+                  shouldExecute = true;
+                  confidenceForStake = signalQuality!.confidenceLevel;
+                  executionParams = ['DIGITDIFF', councilDecision.differs, pilotKey];
+              }
+              break;
+            case 'overUnder':
+              if (overUnderStats.probOver4 > overUnderThreshold / 100) {
+                  shouldExecute = true;
+                  confidenceForStake = overUnderStats.probOver4 > 0.8 ? 'MUITO_ALTA' : 'ALTA';
+                  executionParams = ['DIGITOVER', 4, pilotKey];
+              } else if (overUnderStats.probUnder5 > overUnderThreshold / 100) {
+                  shouldExecute = true;
+                  confidenceForStake = overUnderStats.probUnder5 > 0.8 ? 'MUITO_ALTA' : 'ALTA';
+                  executionParams = ['DIGITUNDER', 5, pilotKey];
+              }
+              break;
+            case 'evenOdd':
+               if (evenOddStats.probEven > evenOddThreshold / 100) {
+                  shouldExecute = true;
+                  confidenceForStake = evenOddStats.probEven > 0.8 ? 'MUITO_ALTA' : 'ALTA';
+                  executionParams = ['DIGITEVEN', undefined, pilotKey];
+               } else if ((1 - evenOddStats.probEven) > evenOddThreshold / 100) {
+                  shouldExecute = true;
+                  confidenceForStake = (1 - evenOddStats.probEven) > 0.8 ? 'MUITO_ALTA' : 'ALTA';
+                  executionParams = ['DIGITODD', undefined, pilotKey];
+               }
+               break;
+            case 'underdog':
+               const coldestDigitStat = underdogDigitStats.length > 0 ? [...underdogDigitStats].sort((a, b) => a.probability - b.probability)[0] : null;
+               if (coldestDigitStat && coldestDigitStat.probability <= (underdogThreshold / 100)) {
+                   shouldExecute = true;
+                   confidenceForStake = 'ALTA';
+                   executionParams = [isUnderdogInverse ? 'DIGITDIFF' : 'DIGITMATCH', coldestDigitStat.digit, pilotKey];
+               }
+               break;
+            case 'underdogOverUnder':
+               if (overUnderStats.probOver4 < overUnderUnderdogThreshold / 100) {
+                   shouldExecute = true; confidenceForStake = 'ALTA'; executionParams = ['DIGITOVER', 4, pilotKey];
+               } else if (overUnderStats.probUnder5 < overUnderUnderdogThreshold / 100) {
+                   shouldExecute = true; confidenceForStake = 'ALTA'; executionParams = ['DIGITUNDER', 5, pilotKey];
+               }
+               break;
+            case 'dynamicUnderdogOverUnder':
+                const underdogBlock = multiWindowAnalysis?.coldestConsensusDigit;
+                if (underdogBlock !== undefined) {
+                    shouldExecute = true; confidenceForStake = 'ALTA';
+                    if (underdogBlock > 4) executionParams = ['DIGITOVER', 4, pilotKey];
+                    else executionParams = ['DIGITUNDER', 5, pilotKey];
+                }
+                break;
+            case 'underdogEvenOdd':
+                if (evenOddStats.probEven < evenOddUnderdogThreshold / 100) {
+                    shouldExecute = true; confidenceForStake = 'ALTA'; executionParams = ['DIGITEVEN', undefined, pilotKey];
+                } else if (1 - evenOddStats.probEven < evenOddUnderdogThreshold / 100) {
+                    shouldExecute = true; confidenceForStake = 'ALTA'; executionParams = ['DIGITODD', undefined, pilotKey];
+                }
+                break;
+          }
 
-          if (!stakeDecision.shouldPause) {
-              const finalStake = stakeDecision.nextStake * vagalumeSignal.suggestedStakeMultiplier;
-              
-              executeTrade(vagalumeSignal.suggestedContract, finalStake, activeSymbol!, 1, 't', 'Piloto', vagalumeSignal.suggestedDigit, 'vagalume')
+          if (shouldExecute && executionParams) {
+              const stakeMultiplier = executionParams[3] as number | undefined ?? 1.0;
+              const pilotKeyForStake = executionParams[2] as PilotType;
+              const pilotForStake = pilots[pilotKeyForStake];
+              const stakeConfig: SmartMartingaleConfig = { 
+                  isEnabled: isMartingaleEnabled, baseStake: BASE_STAKE, maxMartingaleLevels: maxLosses, 
+                  martingaleMultiplier: martingaleRecoveryFactor, useAntiMartingale: false, isSmart: isSmartMartingale,
+              };
+              const stakeDecision = decideNextStake(pilotForStake.tradeHistory, stakeConfig, bankrollState, confidenceForStake);
+
+              if (stakeDecision.shouldPause) {
+                setPilots(prev => ({ ...prev, [pilotKeyForStake]: { ...prev[pilotKeyForStake], status: 'CIRCUIT_BREAKER', currentTarget: stakeDecision.pauseReason || 'Limite de risco atingido' }}));
+                continue;
+              }
+
+              const finalStake = stakeDecision.nextStake * stakeMultiplier;
+
+              executeTrade(executionParams[0], finalStake, activeSymbol!, 1, 't', 'Piloto', executionParams[1], executionParams[2])
                 .then(tradeResult => {
-                  if (tradeResult.success && tradeResult.contractId) {
-                    setPilots(prev => ({ ...prev, vagalume: { ...prev.vagalume, activeContractId: tradeResult.contractId! } }));
-                  }
+                    if (tradeResult.success && tradeResult.contractId) {
+                        setPilots(prev => ({
+                            ...prev,
+                            [pilotKeyForStake]: { ...prev[pilotKeyForStake], activeContractId: tradeResult.contractId! }
+                        }));
+                    }
                 });
               tradeExecutedThisCycle = true;
               lastExecutionTimestampRef.current = now;
-          } else {
-              setPilots(prev => ({...prev, vagalume: {...prev.vagalume, status: 'CIRCUIT_BREAKER', currentTarget: stakeDecision.pauseReason || 'Limite de risco atingido'}}));
+              break;
           }
-      }
-      
-      // Bloqueia outros pilotos se o Vagalume estiver em modo de reset, mesmo que não opere.
-      if (vagalumeSignal.state === 'W2' || vagalumeSignal.state === 'L2') {
-          tradeExecutedThisCycle = true;
-      }
-    }
-
-    for (const [key, pilot] of activePilotEntries) {
-      if (tradeExecutedThisCycle) break; 
-      
-      const pilotKey = key as PilotType;
-      if (pilotKey === 'vagalume') continue;
-
-      if (pilot.status !== 'TRADING' || pilot.activeContractId !== null) continue;
-      
-      const initialBankroll = sessionInitialBankroll ?? (accountBalance.balance ?? 1000);
-      const currentBankroll = initialBankroll + dailyPnl;
-      
-      const bankrollState: BankrollState = { currentBankroll, initialBankroll, maxDailyLoss: dailyBalance, dailyProfitTarget: dailyTarget };
-      
-      let shouldExecute = false;
-      let executionParams: [DigitContractType, number?, string?, number?] | null = null;
-      let confidenceForStake: ConfidenceLevel = 'NULA';
-      
-      switch (pilotKey) {
-        case 'matchesDiffers':
-          if (shouldTrade && councilDecision.differs !== null) {
-              shouldExecute = true;
-              confidenceForStake = signalQuality!.confidenceLevel;
-              executionParams = ['DIGITDIFF', councilDecision.differs, pilotKey];
-          }
-          break;
-        case 'overUnder':
-          if (overUnderStats.probOver4 > overUnderThreshold / 100) {
-              shouldExecute = true;
-              confidenceForStake = overUnderStats.probOver4 > 0.8 ? 'MUITO_ALTA' : 'ALTA';
-              executionParams = ['DIGITOVER', 4, pilotKey];
-          } else if (overUnderStats.probUnder5 > overUnderThreshold / 100) {
-              shouldExecute = true;
-              confidenceForStake = overUnderStats.probUnder5 > 0.8 ? 'MUITO_ALTA' : 'ALTA';
-              executionParams = ['DIGITUNDER', 5, pilotKey];
-          }
-          break;
-        case 'evenOdd':
-           if (evenOddStats.probEven > evenOddThreshold / 100) {
-              shouldExecute = true;
-              confidenceForStake = evenOddStats.probEven > 0.8 ? 'MUITO_ALTA' : 'ALTA';
-              executionParams = ['DIGITEVEN', undefined, pilotKey];
-           } else if ((1 - evenOddStats.probEven) > evenOddThreshold / 100) {
-              shouldExecute = true;
-              confidenceForStake = (1 - evenOddStats.probEven) > 0.8 ? 'MUITO_ALTA' : 'ALTA';
-              executionParams = ['DIGITODD', undefined, pilotKey];
-           }
-           break;
-        case 'underdog':
-           const coldestDigitStat = underdogDigitStats.length > 0 ? [...underdogDigitStats].sort((a, b) => a.probability - b.probability)[0] : null;
-           if (coldestDigitStat && coldestDigitStat.probability <= (underdogThreshold / 100)) {
-               shouldExecute = true;
-               confidenceForStake = 'ALTA';
-               executionParams = [isUnderdogInverse ? 'DIGITDIFF' : 'DIGITMATCH', coldestDigitStat.digit, pilotKey];
-           }
-           break;
-        case 'underdogOverUnder':
-           if (overUnderStats.probOver4 < overUnderUnderdogThreshold / 100) {
-               shouldExecute = true; confidenceForStake = 'ALTA'; executionParams = ['DIGITOVER', 4, pilotKey];
-           } else if (overUnderStats.probUnder5 < overUnderUnderdogThreshold / 100) {
-               shouldExecute = true; confidenceForStake = 'ALTA'; executionParams = ['DIGITUNDER', 5, pilotKey];
-           }
-           break;
-        case 'dynamicUnderdogOverUnder':
-            const underdogBlock = multiWindowAnalysis?.coldestConsensusDigit;
-            if (underdogBlock !== undefined) {
-                shouldExecute = true; confidenceForStake = 'ALTA';
-                if (underdogBlock > 4) executionParams = ['DIGITOVER', 4, pilotKey];
-                else executionParams = ['DIGITUNDER', 5, pilotKey];
-            }
-            break;
-        case 'underdogEvenOdd':
-            if (evenOddStats.probEven < evenOddUnderdogThreshold / 100) {
-                shouldExecute = true; confidenceForStake = 'ALTA'; executionParams = ['DIGITEVEN', undefined, pilotKey];
-            } else if (1 - evenOddStats.probEven < evenOddUnderdogThreshold / 100) {
-                shouldExecute = true; confidenceForStake = 'ALTA'; executionParams = ['DIGITODD', undefined, pilotKey];
-            }
-            break;
-      }
-
-      if (shouldExecute && executionParams) {
-          const stakeMultiplier = executionParams[3] as number | undefined ?? 1.0;
-          const pilotKeyForStake = executionParams[2] as PilotType;
-          const pilotForStake = pilots[pilotKeyForStake];
-          const stakeConfig: SmartMartingaleConfig = { 
-              isEnabled: isMartingaleEnabled, baseStake: BASE_STAKE, maxMartingaleLevels: maxLosses, 
-              martingaleMultiplier: martingaleRecoveryFactor, useAntiMartingale: false, isSmart: isSmartMartingale,
-          };
-          const stakeDecision = decideNextStake(pilotForStake.tradeHistory, stakeConfig, bankrollState, confidenceForStake);
-
-          if (stakeDecision.shouldPause) {
-            setPilots(prev => ({ ...prev, [pilotKeyForStake]: { ...prev[pilotKeyForStake], status: 'CIRCUIT_BREAKER', currentTarget: stakeDecision.pauseReason || 'Limite de risco atingido' }}));
-            continue;
-          }
-
-          const finalStake = stakeDecision.nextStake * stakeMultiplier;
-
-          executeTrade(executionParams[0], finalStake, activeSymbol!, 1, 't', 'Piloto', executionParams[1], executionParams[2])
-            .then(tradeResult => {
-                if (tradeResult.success && tradeResult.contractId) {
-                    setPilots(prev => ({
-                        ...prev,
-                        [pilotKeyForStake]: { ...prev[pilotKeyForStake], activeContractId: tradeResult.contractId! }
-                    }));
-                }
-            });
-          tradeExecutedThisCycle = true;
-      }
-    }
-    
-    if (tradeExecutedThisCycle) {
-      lastExecutionTimestampRef.current = now;
+        }
     }
     
     executionRef.current = false;
