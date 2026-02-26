@@ -1,43 +1,59 @@
 // src/features/trading/hooks/use-vagalume-alternante.ts
 'use client';
 
+/**
+ * @fileOverview Vagalume V3.0 - Híbrido: Repetition Trigger + Contextual Alternator
+ *
+ * Esta é uma implementação totalmente nova que abandona a lógica de W/L (Gambler's Fallacy)
+ * e adota uma abordagem híbrida e matematicamente mais robusta.
+ *
+ * ESTRATÉGIA PRIMÁRIA: Repetition Trigger
+ * - Detecta sequências de N dígitos idênticos.
+ * - Dispara um trade 'DIGITDIFF' de alta confiança.
+ *
+ * ESTRATÉGIA SECUNDÁRIA: Contextual Alternator
+ * - Opera apenas quando não há sequência de repetição.
+ * - Analisa o regime de mercado usando 'digit-indicators'.
+ * - Se o mercado for 'RANGING', procura oportunidades em 'DIGITEVEN'/'DIGITODD'.
+ * - PAUSA em mercados 'CHAOTIC' ou 'TRENDING'.
+ */
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import type { Operation, TickData } from '@/lib/types';
-import type { DigitFrequency, WindowDigitStats } from '@/features/trading/services/digits-analysis';
-import { calculateDigitStatsForWindow } from '@/features/trading/services/digits-analysis';
-import { timingMonitor } from '@/features/trading/utils/timing-monitor';
-import { calculateAdvancedSignalScore, type AdvancedSignalScore } from '@/features/trading/services/digit-indicators';
+import { calculateAdvancedSignalScore, type AdvancedSignalScore } from '../services/digit-indicators';
+import { detectRepetitionSequence } from '../services/repetition-detector';
+import { calculateDigitStatsForWindow } from '../services/digits-analysis';
 
 // ============================================================================
 // 1. TIPOS E INTERFACES
 // ============================================================================
 
-export type VagalumeState = 'W1' | 'L1' | 'W2' | 'L2' | 'PAUSED';
+export type VagalumeState = 'IDLE' | 'SEQUENCE_DETECTED' | 'CONTEXT_ANALYSIS' | 'PAUSED';
 export type DigitContractType = 'DIGITMATCH' | 'DIGITDIFF' | 'DIGITEVEN' | 'DIGITODD' | 'DIGITOVER' | 'DIGITUNDER';
 
 export interface VagalumeConfig {
+  minSequenceLength: number; // Mínimo de repetições para ativar o Trigger
+  usePredictiveAnalysis: boolean;
+  // Configs legadas mantidas para evitar quebra de tipo, mas não usadas na lógica principal
   maxStreak: number;
   stateW1_matchThreshold: number;
   stateL1_differsThreshold: number;
   resetMultiplier: number;
   pauseAfterFailedResets: number;
   kellyFraction: number;
-  usePredictiveAnalysis: boolean;
 }
 
 export interface VagalumeSignal {
   state: VagalumeState;
-  targetOutcome: 'WIN' | 'LOSS';
+  activeStrategy: 'Repetition Trigger' | 'Contextual Alternator' | 'None';
   confidence: number;
   suggestedContract: DigitContractType;
   suggestedDigit?: number;
   suggestedStakeMultiplier: number;
-  sequenceStats: {
-    currentStreak: number;
-    alternanceRate: number;
-    totalTrades: number;
-  };
   shouldTrade: boolean;
+  reason: string;
+  // Campos legados para compatibilidade
+  targetOutcome: 'WIN' | 'LOSS';
+  sequenceStats: { currentStreak: number; alternanceRate: number; totalTrades: number };
   lastTickEpoch: number;
   analysisWindowEnd: number;
   advancedScore?: AdvancedSignalScore;
@@ -45,46 +61,7 @@ export interface VagalumeSignal {
 }
 
 // ============================================================================
-// 2. FUNÇÕES AUXILIARES
-// ============================================================================
-
-const calculateAdaptiveAnalysis = (
-  ticks: TickData[],
-  state: VagalumeState,
-  decimalPlaces: number,
-  usePredictiveAnalysis: boolean = true
-): WindowDigitStats & { analyzedEpoch: number } => {
-  const windowSize = (state === 'W1' || state === 'L1') ? 50 : 200;
-  
-  const emptyResult: WindowDigitStats & { analyzedEpoch: number } = {
-    windowSize,
-    frequencies: Array.from({ length: 10 }, (_, i) => ({ 
-      digit: i as any, count: 0, probability: 0, zScore: 0 
-    })),
-    hottestDigit: 0,
-    coldestDigit: 0,
-    chiSquare: { chiSquare: 0, pValue: 1, isSignificant: false },
-    probOver4: 0.5,
-    probUnder5: 0.5,
-    probEven: 0.5,
-    analyzedEpoch: 0,
-  };
-
-  const minTicks = usePredictiveAnalysis ? windowSize + 1 : windowSize;
-  if (ticks.length < minTicks) return emptyResult;
-  
-  const ticksToAnalyze = usePredictiveAnalysis 
-    ? ticks.slice(-(windowSize + 1), -1)
-    : ticks.slice(-windowSize);
-  
-  const stats = calculateDigitStatsForWindow(ticksToAnalyze, windowSize, decimalPlaces);
-  const analyzedEpoch = ticksToAnalyze[ticksToAnalyze.length - 1]?.epoch || 0;
-  
-  return { ...stats, analyzedEpoch };
-};
-
-// ============================================================================
-// 3. HOOK PRINCIPAL
+// 2. HOOK PRINCIPAL
 // ============================================================================
 
 export const useVagalumeAlternante = (
@@ -94,185 +71,101 @@ export const useVagalumeAlternante = (
   bankroll: number,
   decimalPlaces: number
 ): { signal: VagalumeSignal | null, onTradeCompleted: (tradeResult: Operation) => void } => {
-  const [vagalumeState, setVagalumeState] = useState<VagalumeState>('W1');
-  const [failedResets, setFailedResets] = useState(0);
+  const [vagalumeState, setVagalumeState] = useState<VagalumeState>('IDLE');
+  const [pauseReason, setPauseReason] = useState<string | null>(null);
 
-  const sequenceStats = useMemo(() => {
-    if (tradeHistory.length < 2) {
-      return { currentStreak: tradeHistory.length, alternanceRate: 0, totalTrades: tradeHistory.length };
-    }
-    const relevantTrades = tradeHistory.slice(-50);
-    const alternances = relevantTrades.slice(1).filter((t, i) => 
-      (relevantTrades[i].result! > 0) !== (t.result! > 0)
-    ).length;
-    
-    let streak = 0;
-    if (relevantTrades.length > 0) {
-      streak = 1;
-      const lastOutcomeIsWin = relevantTrades[relevantTrades.length - 1].result! > 0;
-      for (let i = relevantTrades.length - 2; i >= 0; i--) {
-        if ((relevantTrades[i].result! > 0) === lastOutcomeIsWin) {
-          streak++;
-        } else {
-          break;
-        }
-      }
-    }
-
-    return {
-      currentStreak: streak,
-      alternanceRate: (alternances / (relevantTrades.length - 1)) * 100,
-      totalTrades: relevantTrades.length
-    };
-  }, [tradeHistory]);
-
+  // O callback onTradeCompleted agora apenas loga, a lógica não depende mais dele.
   const onTradeCompleted = useCallback((lastTrade: Operation) => {
-    const isWin = (lastTrade.result || 0) > 0;
-    
-    setVagalumeState(prevState => {
-      switch (prevState) {
-        case 'W1': return isWin ? 'L1' : 'W1';
-        case 'L1': return isWin ? 'W1' : 'W2';
-        case 'W2':
-          if (isWin) { setFailedResets(prev => prev + 1); return 'L1'; }
-          setFailedResets(0); return 'W1';
-        case 'L2':
-          if (!isWin) { setFailedResets(prev => prev + 1); return 'W1'; }
-          setFailedResets(0); return 'L1';
-        case 'PAUSED':
-          if (sequenceStats.alternanceRate > 70) { setFailedResets(0); return 'W1'; }
-          return 'PAUSED';
-        default: return prevState;
-      }
-    });
-  }, [sequenceStats.alternanceRate]);
-
-  useEffect(() => {
-    if (failedResets >= config.pauseAfterFailedResets && sequenceStats.alternanceRate < 60) {
-      setVagalumeState('PAUSED');
-    }
-  }, [failedResets, sequenceStats.alternanceRate, config.pauseAfterFailedResets]);
-
-  const getAdaptiveAnalysis = useCallback((state: VagalumeState) => {
-    return calculateAdaptiveAnalysis(ticks, state, decimalPlaces, config.usePredictiveAnalysis);
-  }, [ticks, decimalPlaces, config.usePredictiveAnalysis]);
+    console.log(`[Vagalume V3] Trade concluído: ${lastTrade.result > 0 ? 'WIN' : 'LOSS'}`);
+  }, []);
 
   const signal = useMemo((): VagalumeSignal | null => {
-    const measure = timingMonitor.startMeasurement();
-    
-    if (vagalumeState === 'PAUSED') return null;
-    
-    const minTicks = (vagalumeState === 'W1' || vagalumeState === 'L1') ? 50 : 200;
-    const requiredTicks = config.usePredictiveAnalysis ? minTicks + 1 : minTicks;
-    
-    if (ticks.length < requiredTicks) return null;
-
-    const analysis = getAdaptiveAnalysis(vagalumeState);
-    const targetOutcome = vagalumeState.startsWith('W') ? 'WIN' : 'LOSS';
-    
-    let suggestedContract: DigitContractType = 'DIGITEVEN';
-    let suggestedDigit: number | undefined;
-    let confidence = 0.5;
-    let shouldTrade = false;
-    
-    const windowSize = (vagalumeState === 'W1' || vagalumeState === 'L1') ? 50 : 200;
-    const lastTickEpoch = ticks[ticks.length - 1]?.epoch || 0;
-
-    switch (vagalumeState) {
-      case 'W1':
-        if (analysis.probEven < 0.49) {
-          const zScore = Math.abs((analysis.probEven - 0.5) / Math.sqrt(0.25 / windowSize));
-          suggestedContract = 'DIGITODD';
-          confidence = Math.min(0.95, 0.5 + (0.5 - analysis.probEven) + (zScore * 0.05));
-          shouldTrade = confidence > 0.51;
-        } else if (analysis.probEven > 0.51) {
-          const zScore = Math.abs((analysis.probEven - 0.5) / Math.sqrt(0.25 / windowSize));
-          suggestedContract = 'DIGITEVEN';
-          confidence = Math.min(0.95, 0.5 + (analysis.probEven - 0.5) + (zScore * 0.05));
-          shouldTrade = confidence > 0.51;
-        }
-        break;
-
-      case 'L1':
-        if (analysis.probOver4 > 0.51) {
-          suggestedContract = 'DIGITOVER';
-          suggestedDigit = 4;
-          confidence = 0.5 + (analysis.probOver4 - 0.5);
-          shouldTrade = confidence > 0.51;
-        } else if (analysis.probUnder5 > 0.51) {
-          suggestedContract = 'DIGITUNDER';
-          suggestedDigit = 5;
-          confidence = 0.5 + (analysis.probUnder5 - 0.5);
-          shouldTrade = confidence > 0.51;
-        }
-        break;
-
-      case 'W2':
-      case 'L2':
-        if (analysis.probEven > 0.55) {
-          suggestedContract = 'DIGITEVEN';
-          confidence = 0.5 + (analysis.probEven - 0.5);
-          shouldTrade = true;
-        } else if (analysis.probEven < 0.45) {
-          suggestedContract = 'DIGITODD';
-          confidence = 0.5 + (0.5 - analysis.probEven);
-          shouldTrade = true;
-        } else {
-          if (analysis.probOver4 > 0.52) {
-            suggestedContract = 'DIGITOVER';
-            suggestedDigit = 4;
-          } else {
-            suggestedContract = 'DIGITUNDER';
-            suggestedDigit = 5;
-          }
-          confidence = 0.52;
-          shouldTrade = true;
-        }
-        break;
+    // --- 1. Cláusulas de Guarda ---
+    const minTicksRequired = Math.max(config.minSequenceLength, 100);
+    if (ticks.length < minTicksRequired) {
+      return null;
     }
 
-    const stakeMultiplier = (vagalumeState === 'W2' || vagalumeState === 'L2') && sequenceStats.alternanceRate > 80 
-      ? config.resetMultiplier 
-      : 1.0;
+    // --- 2. Detecção de Sequência (Estratégia Primária) ---
+    const sequence = detectRepetitionSequence(ticks, decimalPlaces, config.minSequenceLength, 6);
     
-    const advancedScore = calculateAdvancedSignalScore(ticks, confidence, decimalPlaces);
-    
-    let adjustedConfidence = confidence;
-    if (advancedScore.regime.type === 'RANGING') {
-      adjustedConfidence = Math.min(0.95, confidence * 1.10);
-    } else if (advancedScore.regime.type === 'CHAOTIC') {
-      adjustedConfidence = Math.max(0.50, confidence * 0.80);
-    }
-
-    const shouldTradeAdvanced = 
-      shouldTrade && 
-      (advancedScore.recommendation === 'STRONG_BUY' || advancedScore.recommendation === 'BUY');
+    if (sequence) {
+      setVagalumeState('SEQUENCE_DETECTED');
       
-    const analysisTime = measure.end();
-    const tickAge = Date.now() - (lastTickEpoch * 1000);
-    
-    timingMonitor.recordTiming('vagalume', {
-      analysisTime: analysisTime + advancedScore.analysisTime,
-      executionTime: 0,
-      totalLatency: analysisTime + advancedScore.analysisTime,
-      tickAge,
-    });
+      // A confiança aumenta com o comprimento da sequência
+      const baseConfidence = 0.90 + (sequence.length - config.minSequenceLength) * 0.02;
+      const confidence = Math.min(0.98, baseConfidence);
+      
+      return {
+        state: 'SEQUENCE_DETECTED',
+        activeStrategy: 'Repetition Trigger',
+        confidence,
+        suggestedContract: 'DIGITDIFF',
+        suggestedDigit: sequence.digit,
+        suggestedStakeMultiplier: 1.0, // Stake padrão para alta confiança
+        shouldTrade: true,
+        reason: `Sequência de ${sequence.length}x dígito ${sequence.digit} detectada.`,
+        // Campos legados
+        targetOutcome: 'WIN',
+        sequenceStats: { currentStreak: 0, alternanceRate: 0, totalTrades: 0 },
+        lastTickEpoch: ticks[ticks.length - 1].epoch,
+        analysisWindowEnd: ticks[ticks.length - 1].epoch,
+        adjustedConfidence: confidence,
+      };
+    }
 
-    return {
-      state: vagalumeState,
-      targetOutcome,
-      confidence: adjustedConfidence,
-      suggestedContract,
-      suggestedDigit,
-      suggestedStakeMultiplier: stakeMultiplier,
-      sequenceStats,
-      shouldTrade: shouldTradeAdvanced,
-      lastTickEpoch,
-      analysisWindowEnd: analysis.analyzedEpoch,
-      advancedScore,
-      adjustedConfidence,
-    };
-  }, [vagalumeState, getAdaptiveAnalysis, config, sequenceStats, ticks]);
+    // --- 3. Análise de Contexto (Estratégia Secundária) ---
+    setVagalumeState('CONTEXT_ANALYSIS');
+    const analysisTicks = config.usePredictiveAnalysis ? ticks.slice(-101, -1) : ticks.slice(-100);
+    const advancedScore = calculateAdvancedSignalScore(analysisTicks, 0.5, decimalPlaces);
+
+    if (advancedScore.regime.type === 'CHAOTIC' || advancedScore.regime.type === 'TRENDING') {
+      setPauseReason(`Pausado em regime ${advancedScore.regime.type}`);
+      return null; // PAUSA em mercados não laterais
+    }
+
+    // Apenas opera em RANGING
+    if (advancedScore.regime.type === 'RANGING') {
+      const { probEven } = calculateDigitStatsForWindow(analysisTicks, 100, decimalPlaces);
+      
+      const threshold = 0.55; // Limiar de confiança para operar
+      let confidence = 0.5;
+      let contract: DigitContractType | null = null;
+
+      if (probEven > threshold) {
+        contract = 'DIGITEVEN';
+        confidence = probEven;
+      } else if ((1 - probEven) > threshold) {
+        contract = 'DIGITODD';
+        confidence = 1 - probEven;
+      }
+
+      if (contract) {
+        return {
+          state: 'CONTEXT_ANALYSIS',
+          activeStrategy: 'Contextual Alternator',
+          confidence,
+          suggestedContract: contract,
+          suggestedDigit: undefined,
+          suggestedStakeMultiplier: 1.0,
+          shouldTrade: true,
+          reason: `Regime RANGING. Prob. ${contract.replace('DIGIT', '')} = ${(confidence * 100).toFixed(1)}%`,
+          // Campos legados
+          targetOutcome: 'WIN',
+          sequenceStats: { currentStreak: 0, alternanceRate: 0, totalTrades: 0 },
+          lastTickEpoch: ticks[ticks.length - 1].epoch,
+          analysisWindowEnd: analysisTicks[analysisTicks.length - 1]?.epoch || 0,
+          advancedScore,
+          adjustedConfidence: confidence,
+        };
+      }
+    }
+
+    // Se nenhuma condição for atendida, não faz nada
+    setPauseReason('Aguardando oportunidade (Repetição ou Ranging).');
+    return null;
+
+  }, [ticks, config, decimalPlaces]);
 
   return { signal, onTradeCompleted };
 };
