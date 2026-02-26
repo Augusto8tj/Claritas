@@ -27,7 +27,19 @@ const confidenceColors: Record<string, string> = {
     'NULA': 'bg-muted text-muted-foreground',
 };
 
-const SignalCard: React.FC<{ signal: SignalQuality }> = ({ signal }) => {
+const SignalCard: React.FC<{ signal: SignalQuality | null }> = ({ signal }) => {
+    if (!signal || signal.confidenceLevel === 'NULA') {
+        return (
+            <Card className="flex items-center justify-center text-muted-foreground text-center p-4 border-dashed">
+                <div>
+                    <HelpCircle className="h-8 w-8 mx-auto mb-2 opacity-50"/>
+                    <p className="font-semibold">Sinal Neutro</p>
+                    <p className="text-xs">Nenhum desvio estatístico detectado.</p>
+                </div>
+            </Card>
+        );
+    }
+    
     const isDiffers = signal.contractType === 'DIGITDIFF';
     const Icon = isDiffers ? TrendingDown : TrendingUp;
     const colorClass = isDiffers ? 'text-red-600' : 'text-green-600';
@@ -130,7 +142,7 @@ export function DigitsDashboard({ signalQuality, multiWindowAnalysis, vagalumeSi
         );
     }
     
-    const { mainWindow, confidenceLevel, targetDigit } = signalQuality || {};
+    const { mainWindow, targetDigit } = signalQuality || {};
     const { pValue, isSignificant } = mainWindow?.chiSquare || { pValue: 1, isSignificant: false };
     const targetFreq = mainWindow?.frequencies.find(f => f.digit === targetDigit);
 
@@ -142,25 +154,13 @@ export function DigitsDashboard({ signalQuality, multiWindowAnalysis, vagalumeSi
             </CardHeader>
             <CardContent className="space-y-4">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {signalQuality && confidenceLevel !== 'NULA' ? (
-                        <SignalCard signal={signalQuality} />
-                    ) : (
-                        <Card className="flex items-center justify-center text-muted-foreground text-center p-4">
-                            <div>
-                                <HelpCircle className="h-8 w-8 mx-auto mb-2 opacity-50"/>
-                                <p className="font-semibold">Sinal Neutro</p>
-                                <p className="text-xs">Nenhum desvio estatístico detectado.</p>
-                            </div>
-                        </Card>
-                    )}
+                    <SignalCard signal={signalQuality} />
                     <VagalumeStatusCard signal={vagalumeSignal} />
                 </div>
                 
-                {vagalumeSignal && (
-                  <div className="mt-4">
-                    <VagalumeAdvancedDashboard signal={vagalumeSignal} />
-                  </div>
-                )}
+                <div className="mt-4">
+                  <VagalumeAdvancedDashboard signal={vagalumeSignal} />
+                </div>
 
                 <div className="grid grid-cols-2 gap-3 pt-2">
                      <StatsCard 
