@@ -52,7 +52,7 @@ export interface VagalumeSignal {
   suggestedStakeMultiplier: number;
   shouldTrade: boolean;
   reason: string;
-  // Campos legados
+  // Campos legados mantidos para compatibilidade, mas com lógica simplificada
   targetOutcome: 'WIN' | 'LOSS';
   sequenceStats: { currentStreak: number; alternanceRate: number; totalTrades: number };
   lastTickEpoch: number;
@@ -72,12 +72,11 @@ export const useVagalumeAlternante = (
   bankroll: number,
   decimalPlaces: number
 ): { signal: VagalumeSignal | null, onTradeCompleted: (tradeResult: Operation) => void } => {
-  const [vagalumeState, setVagalumeState] = useState<VagalumeState>('IDLE');
   const [pauseReason, setPauseReason] = useState<string | null>(null);
 
-  // O callback onTradeCompleted agora apenas loga, a lógica não depende mais dele.
   const onTradeCompleted = useCallback((lastTrade: Operation) => {
-    console.log(`[Vagalume V3] Trade concluído: ${lastTrade.result > 0 ? 'WIN' : 'LOSS'}`);
+    // A lógica de estado W/L foi removida, então este callback é apenas para log.
+    console.log(`[Vagalume V3] Trade concluído: ${lastTrade.result! > 0 ? 'WIN' : 'LOSS'}`);
   }, []);
 
   const signal = useMemo((): VagalumeSignal | null => {
@@ -87,26 +86,23 @@ export const useVagalumeAlternante = (
       return null;
     }
 
-    // --- 2. Detecção de Sequência (Estratégia Primária) ---
+    // --- 2. ESTRATÉGIA PRIMÁRIA: "Repetition Trigger" ---
     const sequence = detectRepetitionSequence(ticks, decimalPlaces, config.minSequenceLength, 6);
     
     if (sequence) {
-      setVagalumeState('SEQUENCE_DETECTED');
-      
-      // A confiança aumenta com o comprimento da sequência
+      // A confiança aumenta com o comprimento da sequência, pois a anomalia é maior
       const baseConfidence = 0.90 + (sequence.length - config.minSequenceLength) * 0.02;
       const confidence = Math.min(0.98, baseConfidence);
       
       return {
         state: 'SEQUENCE_DETECTED',
         activeStrategy: 'Repetition Trigger',
-        confidence,
+        confidence: confidence,
         suggestedContract: 'DIGITDIFF',
         suggestedDigit: sequence.digit,
-        suggestedStakeMultiplier: 1.0, // Stake padrão para alta confiança
+        suggestedStakeMultiplier: 1.0, // Stake padrão para esta aposta de alta probabilidade
         shouldTrade: true,
         reason: `Sequência de ${sequence.length}x dígito ${sequence.digit} detectada.`,
-        // Campos legados
         targetOutcome: 'WIN',
         sequenceStats: { currentStreak: 0, alternanceRate: 0, totalTrades: 0 },
         lastTickEpoch: ticks[ticks.length - 1]?.epoch || 0,
@@ -115,55 +111,55 @@ export const useVagalumeAlternante = (
       };
     }
 
-    // --- 3. Análise de Contexto (Estratégia Secundária) ---
-    setVagalumeState('CONTEXT_ANALYSIS');
+    // --- 3. ESTRATÉGIA SECUNDÁRIA: "Contextual Alternator" ---
+    // Só é executada se não houver uma sequência de repetição
     const analysisTicks = config.usePredictiveAnalysis ? ticks.slice(-101, -1) : ticks.slice(-100);
     const advancedScore = calculateAdvancedSignalScore(analysisTicks, 0.5, decimalPlaces);
 
-    if (advancedScore.regime.type === 'CHAOTIC' || advancedScore.regime.type === 'TRENDING') {
+    if (advancedScore.regime.type !== 'RANGING') {
       setPauseReason(`Pausado em regime ${advancedScore.regime.type}`);
-      return null; // PAUSA em mercados não laterais
+      return null; // PAUSA em mercados que não estão lateralizados
+    }
+    
+    if (advancedScore.recommendation === 'AVOID' || advancedScore.recommendation === 'NEUTRAL') {
+      setPauseReason(`Evitando trade. Recomendação: ${advancedScore.recommendation}`);
+      return null;
     }
 
-    // Apenas opera em RANGING
-    if (advancedScore.regime.type === 'RANGING') {
-      const { probEven } = calculateDigitStatsForWindow(analysisTicks, 100, decimalPlaces);
-      
-      const threshold = 0.55; // Limiar de confiança para operar
-      let confidence = 0.5;
-      let contract: DigitContractType | null = null;
+    const { probEven } = calculateDigitStatsForWindow(analysisTicks, 100, decimalPlaces);
+    
+    const threshold = 0.55; // Exigir uma vantagem estatística mínima de 5%
+    let confidence = 0.5;
+    let contract: DigitContractType | null = null;
 
-      if (probEven > threshold) {
-        contract = 'DIGITEVEN';
-        confidence = probEven;
-      } else if ((1 - probEven) > threshold) {
-        contract = 'DIGITODD';
-        confidence = 1 - probEven;
-      }
-
-      if (contract) {
-        return {
-          state: 'CONTEXT_ANALYSIS',
-          activeStrategy: 'Contextual Alternator',
-          confidence,
-          suggestedContract: contract,
-          suggestedDigit: undefined,
-          suggestedStakeMultiplier: 1.0,
-          shouldTrade: true,
-          reason: `Regime RANGING. Prob. ${contract.replace('DIGIT', '')} = ${(confidence * 100).toFixed(1)}%`,
-          // Campos legados
-          targetOutcome: 'WIN',
-          sequenceStats: { currentStreak: 0, alternanceRate: 0, totalTrades: 0 },
-          lastTickEpoch: ticks[ticks.length - 1]?.epoch || 0,
-          analysisWindowEnd: analysisTicks[analysisTicks.length - 1]?.epoch || 0,
-          advancedScore,
-          adjustedConfidence: confidence,
-        };
-      }
+    if (probEven > threshold) {
+      contract = 'DIGITEVEN';
+      confidence = probEven;
+    } else if ((1 - probEven) > threshold) {
+      contract = 'DIGITODD';
+      confidence = 1 - probEven;
     }
 
-    // Se nenhuma condição for atendida, não faz nada
-    setPauseReason('Aguardando oportunidade (Repetição ou Ranging).');
+    if (contract) {
+      return {
+        state: 'CONTEXT_ANALYSIS',
+        activeStrategy: 'Contextual Alternator',
+        confidence: confidence,
+        suggestedContract: contract,
+        suggestedDigit: undefined,
+        suggestedStakeMultiplier: 1.0,
+        shouldTrade: true,
+        reason: `Regime RANGING. Prob. ${contract.replace('DIGIT', '')} = ${(confidence * 100).toFixed(1)}%`,
+        targetOutcome: 'WIN',
+        sequenceStats: { currentStreak: 0, alternanceRate: 0, totalTrades: 0 },
+        lastTickEpoch: ticks[ticks.length - 1]?.epoch || 0,
+        analysisWindowEnd: analysisTicks[analysisTicks.length - 1]?.epoch || 0,
+        advancedScore,
+        adjustedConfidence: confidence,
+      };
+    }
+    
+    setPauseReason('Aguardando oportunidade (Repetição ou Ranging com Vantagem).');
     return null;
 
   }, [ticks, config, decimalPlaces]);
