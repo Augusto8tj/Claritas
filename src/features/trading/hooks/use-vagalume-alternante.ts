@@ -22,6 +22,7 @@ import type { Operation, TickData } from '@/lib/types';
 import { calculateAdvancedSignalScore, type AdvancedSignalScore } from '../services/digit-indicators';
 import { detectRepetitionSequence } from '../services/repetition-detector';
 import { calculateDigitStatsForWindow } from '../services/digits-analysis';
+import { timingMonitor } from '../utils/timing-monitor';
 
 // ============================================================================
 // 1. TIPOS E INTERFACES
@@ -51,7 +52,7 @@ export interface VagalumeSignal {
   suggestedStakeMultiplier: number;
   shouldTrade: boolean;
   reason: string;
-  // Campos legados para compatibilidade
+  // Campos legados
   targetOutcome: 'WIN' | 'LOSS';
   sequenceStats: { currentStreak: number; alternanceRate: number; totalTrades: number };
   lastTickEpoch: number;
@@ -108,8 +109,8 @@ export const useVagalumeAlternante = (
         // Campos legados
         targetOutcome: 'WIN',
         sequenceStats: { currentStreak: 0, alternanceRate: 0, totalTrades: 0 },
-        lastTickEpoch: ticks[ticks.length - 1].epoch,
-        analysisWindowEnd: ticks[ticks.length - 1].epoch,
+        lastTickEpoch: ticks[ticks.length - 1]?.epoch || 0,
+        analysisWindowEnd: ticks[ticks.length - 1]?.epoch || 0,
         adjustedConfidence: confidence,
       };
     }
@@ -153,7 +154,7 @@ export const useVagalumeAlternante = (
           // Campos legados
           targetOutcome: 'WIN',
           sequenceStats: { currentStreak: 0, alternanceRate: 0, totalTrades: 0 },
-          lastTickEpoch: ticks[ticks.length - 1].epoch,
+          lastTickEpoch: ticks[ticks.length - 1]?.epoch || 0,
           analysisWindowEnd: analysisTicks[analysisTicks.length - 1]?.epoch || 0,
           advancedScore,
           adjustedConfidence: confidence,
