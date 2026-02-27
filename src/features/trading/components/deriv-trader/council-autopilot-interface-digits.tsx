@@ -245,9 +245,10 @@ export const DigitsAutopilotManager: React.FC<DigitsAutopilotManagerProps> = (pr
                     <TabsTrigger value="standard" className="text-xs sm:text-sm"><Bot className="h-4 w-4 mr-1.5"/>Pilotos de Estratégia</TabsTrigger>
                     <TabsTrigger value="risk" className="text-xs sm:text-sm"><Settings className="h-4 w-4 mr-1.5"/>Gestão de Risco</TabsTrigger>
                 </TabsList>
-                <TabsContent value="standard" className="pt-4 space-y-4">
+                <TabsContent value="standard" className="pt-4 space-y-6">
+                    {/* ESTRATÉGIAS PRINCIPAIS */}
                     <div className="space-y-2">
-                        <Label className="text-sm font-semibold text-muted-foreground">Estratégias Padrão</Label>
+                        <Label className="text-sm font-semibold text-muted-foreground">Estratégias Principais</Label>
                         <Tabs defaultValue="matchesDiffers" className="w-full">
                             <TabsList className="grid w-full grid-cols-3">
                                 <TabsTrigger value="matchesDiffers" className="text-xs sm:text-sm"><HelpCircle className="h-4 w-4 mr-1.5"/>Difere</TabsTrigger>
@@ -311,14 +312,15 @@ export const DigitsAutopilotManager: React.FC<DigitsAutopilotManagerProps> = (pr
                         </Tabs>
                     </div>
 
+                    {/* ESTRATÉGIAS DE AZARÃO (UNDERDOG) */}
                     <div className="space-y-2">
-                        <Label className="text-sm font-semibold text-muted-foreground">Estratégias Avançadas</Label>
-                        <Tabs defaultValue="vagalume" className="w-full">
+                        <Label className="text-sm font-semibold text-muted-foreground">Estratégias de Azarão (Underdog)</Label>
+                        <Tabs defaultValue="underdog" className="w-full">
                             <TabsList className="grid w-full grid-cols-4">
-                                <TabsTrigger value="underdog" className="text-xs sm:text-sm"><Trophy className="h-4 w-4 mr-1.5"/>Azarão</TabsTrigger>
-                                <TabsTrigger value="underdogOverUnder" className="text-xs sm:text-sm"><Trophy className="h-4 w-4 mr-1.5"/>A/A Fixo</TabsTrigger>
-                                <TabsTrigger value="dynamicUnderdogOverUnder" className="text-xs sm:text-sm"><Trophy className="h-4 w-4 mr-1.5"/>A/A Dinâmico</TabsTrigger>
-                                <TabsTrigger value="vagalume" className="text-xs sm:text-sm"><Wand2 className="h-4 w-4 mr-1.5"/>Vagalume</TabsTrigger>
+                                <TabsTrigger value="underdog" className="text-xs sm:text-sm"><Trophy className="h-4 w-4 mr-1.5"/>Dígito Frio</TabsTrigger>
+                                <TabsTrigger value="underdogOverUnder" className="text-xs sm:text-sm"><Trophy className="h-4 w-4 mr-1.5"/>Bloco A/A</TabsTrigger>
+                                <TabsTrigger value="underdogEvenOdd" className="text-xs sm:text-sm"><Trophy className="h-4 w-4 mr-1.5"/>Bloco P/I</TabsTrigger>
+                                <TabsTrigger value="dynamicUnderdogOverUnder" className="text-xs sm:text-sm"><Trophy className="h-4 w-4 mr-1.5"/>Bloco Dinâmico</TabsTrigger>
                             </TabsList>
                             <TabsContent value="underdog" className="pt-4">
                                 <PilotTabContent
@@ -359,7 +361,7 @@ export const DigitsAutopilotManager: React.FC<DigitsAutopilotManagerProps> = (pr
                             <TabsContent value="underdogOverUnder" className="pt-4">
                                 <PilotTabContent
                                     pilotKey="underdogOverUnder"
-                                    title="Piloto Azarão Acima/Abaixo (Fixo)"
+                                    title="Piloto Azarão Acima/Abaixo"
                                     description="Aposta no bloco (0-4 ou 5-9) que está estatisticamente 'atrasado'."
                                     pilotState={pilots.underdogOverUnder}
                                     toggleAutopilot={toggleAutopilot}
@@ -374,7 +376,30 @@ export const DigitsAutopilotManager: React.FC<DigitsAutopilotManagerProps> = (pr
                                                 value={[overUnderUnderdogThreshold]}
                                                 onValueChange={(value) => setOverUnderUnderdogThreshold(value[0])}
                                             />
-                                            <p className="text-xs text-muted-foreground">Ambos os pilotos A/A Azarão usarão este limiar para operar.</p>
+                                            <p className="text-xs text-muted-foreground">Operar no bloco A/A se sua frequência cair abaixo deste valor.</p>
+                                        </div>
+                                    </div>
+                                </PilotTabContent>
+                            </TabsContent>
+                             <TabsContent value="underdogEvenOdd" className="pt-4">
+                                <PilotTabContent
+                                    pilotKey="underdogEvenOdd"
+                                    title="Piloto Azarão Par/Ímpar"
+                                    description="Aposta no bloco (Par ou Ímpar) que está estatisticamente 'atrasado'."
+                                    pilotState={pilots.underdogEvenOdd}
+                                    toggleAutopilot={toggleAutopilot}
+                                >
+                                    <div className="space-y-4 pt-4 mt-4 border-t">
+                                        <h4 className="text-xs font-semibold text-muted-foreground">Configuração Fina (Azarão P/I)</h4>
+                                        <div className="space-y-2">
+                                            <Label htmlFor="underdog-eo-threshold">Limiar de Frequência de Bloco ({evenOddUnderdogThreshold.toFixed(1)}%)</Label>
+                                            <Slider
+                                                id="underdog-eo-threshold"
+                                                min={30} max={48} step={1}
+                                                value={[evenOddUnderdogThreshold]}
+                                                onValueChange={(value) => setEvenOddUnderdogThreshold(value[0])}
+                                            />
+                                            <p className="text-xs text-muted-foreground">Operar no bloco P/I se sua frequência cair abaixo deste valor.</p>
                                         </div>
                                     </div>
                                 </PilotTabContent>
@@ -388,7 +413,17 @@ export const DigitsAutopilotManager: React.FC<DigitsAutopilotManagerProps> = (pr
                                     toggleAutopilot={toggleAutopilot}
                                 />
                             </TabsContent>
-                            <TabsContent value="vagalume" className="pt-4">
+                        </Tabs>
+                    </div>
+
+                    {/* META-ESTRATÉGIAS */}
+                    <div className="space-y-2">
+                        <Label className="text-sm font-semibold text-muted-foreground">Meta-Estratégias</Label>
+                        <Tabs defaultValue="vagalume" className="w-full">
+                           <TabsList className="grid w-full grid-cols-1">
+                                <TabsTrigger value="vagalume" className="text-xs sm:text-sm"><Wand2 className="h-4 w-4 mr-1.5"/>Vagalume Híbrido</TabsTrigger>
+                            </TabsList>
+                             <TabsContent value="vagalume" className="pt-4">
                                 <VagalumePanel
                                     pilotKey="vagalume"
                                     pilotState={pilots.vagalume}
@@ -401,6 +436,8 @@ export const DigitsAutopilotManager: React.FC<DigitsAutopilotManagerProps> = (pr
                         </Tabs>
                     </div>
                 </TabsContent>
+
+                {/* GESTÃO DE RISCO */}
                 <TabsContent value="risk" className="pt-4 space-y-6">
                     <div className="grid grid-cols-2 gap-4">
                         <div className="space-y-2">
@@ -446,9 +483,9 @@ export const DigitsAutopilotManager: React.FC<DigitsAutopilotManagerProps> = (pr
                     <div className="flex items-center justify-between rounded-lg border p-3 shadow-sm">
                         <Label htmlFor="smart-martingale-switch" className="flex flex-col space-y-1">
                             <span>Ativar Martingale Inteligente</span>
-                            <span className="font-normal text-xs text-muted-foreground">Só aumenta a aposta se o próximo sinal for de alta confiança.</span>
+                            <span className="font-normal text-xs text-muted-foreground">Usa Kelly Criterion para ajustar o stake com base na confiança do sinal.</span>
                         </Label>
-                        <Switch id="smart-martingale-switch" checked={isSmartMartingale} onCheckedChange={setIsSmartMartingale} disabled={!isMartingaleEnabled} />
+                        <Switch id="smart-martingale-switch" checked={isSmartMartingale} onCheckedChange={setIsSmartMartingale} />
                     </div>
                     <div className="space-y-2">
                         <Label htmlFor="martingale-recovery-slider" className={cn(!isMartingaleEnabled && "text-muted-foreground/50")}>Fator de Recuperação ({martingaleRecoveryFactor.toFixed(1)}x)</Label>
