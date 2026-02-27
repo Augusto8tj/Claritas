@@ -34,6 +34,7 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { DigitsOptimizationPanel } from "./digits-backtest-panel";
+import { strategyLabels } from "@/app/deriv-trader-digits/strategies-config";
 
 
 interface DigitsAutopilotManagerProps extends ReturnType<typeof useRobotCouncilDigits> {}
@@ -115,57 +116,51 @@ const VagalumePanel: React.FC<{
   setVagalumeConfig: (config: any) => void;
 }> = ({ pilotKey, pilotState, toggleAutopilot, vagalumeSignal, vagalumeConfig, setVagalumeConfig }) => {
   
-  const description = vagalumeSignal?.state === 'W2' || vagalumeSignal?.state === 'L2'
-      ? "Reset: aposta em Par/Ímpar via regressão à média."
-      : "Explora a alternância W-L com base em dígitos quentes/frios.";
-
-  if (!vagalumeSignal) {
-    return (
-      <PilotTabContent
-        pilotKey={pilotKey}
-        title="🪰 Vagalume Alternante"
-        description="Estratégia de meta-aprendizagem que explora a alternância W-L."
-        pilotState={pilotState}
-        toggleAutopilot={toggleAutopilot}
-      >
-        <div className="text-center text-muted-foreground p-4">Aguardando dados...</div>
-      </PilotTabContent>
-    );
-  }
+  const description = vagalumeSignal
+      ? (vagalumeSignal.state === 'W2' || vagalumeSignal.state === 'L2'
+          ? "Reset: aposta em Par/Ímpar via regressão à média."
+          : "Explora a alternância W-L com base em dígitos quentes/frios.")
+      : "Estratégia de meta-aprendizagem que explora a alternância W-L.";
 
   return (
     <PilotTabContent
-        pilotKey={pilotKey}
-        title="🪰 Vagalume Alternante"
-        description={description}
-        pilotState={pilotState}
-        toggleAutopilot={toggleAutopilot}
+      pilotKey={pilotKey}
+      title="🪰 Vagalume Alternante"
+      description={description}
+      pilotState={pilotState}
+      toggleAutopilot={toggleAutopilot}
     >
-      <div className="grid grid-cols-3 gap-2 text-center text-xs mt-2">
-        <div className="p-2 border rounded-lg bg-muted/50">
-            <p className="text-muted-foreground">Estado FSM</p>
-            <p className="font-bold text-primary">{vagalumeSignal.state}</p>
-        </div>
-        <div className="p-2 border rounded-lg bg-muted/50">
-            <p className="text-muted-foreground">Alvo</p>
-            <p className="font-bold text-primary">{vagalumeSignal.targetOutcome}</p>
-        </div>
-        <div className="p-2 border rounded-lg bg-muted/50">
-            <p className="text-muted-foreground">Alternância</p>
-            <p className="font-bold text-primary">{vagalumeSignal.sequenceStats.alternanceRate.toFixed(0)}%</p>
-        </div>
-      </div>
-      <div className="space-y-4 pt-4 mt-4 border-t">
-          <h4 className="text-xs font-semibold text-muted-foreground">Configuração Fina (Vagalume)</h4>
-           <div className="space-y-2">
-                <Label htmlFor="vagalume-w1-threshold">Limiar 'MATCH' (W1) - ({vagalumeConfig.stateW1_matchThreshold}%)</Label>
-                <Slider id="vagalume-w1-threshold" min={2} max={10} step={0.5} value={[vagalumeConfig.stateW1_matchThreshold]} onValueChange={v => setVagalumeConfig({ ...vagalumeConfig, stateW1_matchThreshold: v[0]})} />
-           </div>
-            <div className="space-y-2">
-                <Label htmlFor="vagalume-l1-threshold">Limiar 'DIFFERS' (L1) - ({vagalumeConfig.stateL1_differsThreshold}%)</Label>
-                <Slider id="vagalume-l1-threshold" min={12} max={25} step={1} value={[vagalumeConfig.stateL1_differsThreshold]} onValueChange={v => setVagalumeConfig({ ...vagalumeConfig, stateL1_differsThreshold: v[0]})} />
-           </div>
-      </div>
+      {vagalumeSignal ? (
+        <>
+          <div className="grid grid-cols-3 gap-2 text-center text-xs mt-2">
+            <div className="p-2 border rounded-lg bg-muted/50">
+                <p className="text-muted-foreground">Estado FSM</p>
+                <p className="font-bold text-primary">{vagalumeSignal.state}</p>
+            </div>
+            <div className="p-2 border rounded-lg bg-muted/50">
+                <p className="text-muted-foreground">Alvo</p>
+                <p className="font-bold text-primary">{vagalumeSignal.targetOutcome}</p>
+            </div>
+            <div className="p-2 border rounded-lg bg-muted/50">
+                <p className="text-muted-foreground">Alternância</p>
+                <p className="font-bold text-primary">{vagalumeSignal.sequenceStats.alternanceRate.toFixed(0)}%</p>
+            </div>
+          </div>
+          <div className="space-y-4 pt-4 mt-4 border-t">
+              <h4 className="text-xs font-semibold text-muted-foreground">Configuração Fina (Vagalume)</h4>
+               <div className="space-y-2">
+                    <Label htmlFor="vagalume-w1-threshold">Limiar 'MATCH' (W1) - ({vagalumeConfig.stateW1_matchThreshold}%)</Label>
+                    <Slider id="vagalume-w1-threshold" min={2} max={10} step={0.5} value={[vagalumeConfig.stateW1_matchThreshold]} onValueChange={v => setVagalumeConfig({ ...vagalumeConfig, stateW1_matchThreshold: v[0]})} />
+               </div>
+                <div className="space-y-2">
+                    <Label htmlFor="vagalume-l1-threshold">Limiar 'DIFFERS' (L1) - ({vagalumeConfig.stateL1_differsThreshold}%)</Label>
+                    <Slider id="vagalume-l1-threshold" min={12} max={25} step={1} value={[vagalumeConfig.stateL1_differsThreshold]} onValueChange={v => setVagalumeConfig({ ...vagalumeConfig, stateL1_differsThreshold: v[0]})} />
+               </div>
+          </div>
+        </>
+      ) : (
+        <div className="text-center text-muted-foreground p-4">Aguardando dados...</div>
+      )}
     </PilotTabContent>
   );
 };
@@ -208,7 +203,18 @@ export const DigitsAutopilotManager: React.FC<DigitsAutopilotManagerProps> = (pr
     resetSession,
     vagalumeSignal,
     vagalumeConfig,
-    setVagalumeConfig
+    setVagalumeConfig,
+    // Backtesting props
+    backtestTicks,
+    isDataLoading,
+    loadDataForBacktest,
+    backtestResults,
+    isBacktesting,
+    runBacktestForAllStrategies,
+    calibrationResults,
+    isCalibrating,
+    runCalibration,
+    applyCalibration,
  } = props;
 
   return (
