@@ -59,6 +59,7 @@ const PAYOUTS: Record<DigitContractType, number> = {
 };
 
 const getPayoutRatio = (contractType: DigitContractType): number => {
+    // Retorna 0.95 se o tipo não for encontrado, para segurança
     return PAYOUTS[contractType] || 0.95;
 };
 
@@ -69,14 +70,17 @@ function calculateKellyStake(
   bankroll: number,
   kellyFraction: number = 0.25
 ): number {
+  if (confidence <= 0.5) return 0;
+  
   const p = confidence;
   const q = 1 - p;
   const b = payoutOdds;
 
-  const kellyFull = (b * p - q) / b;
+  // Se a vantagem for nula ou negativa, não apostar.
+  const edge = (b * p) - q;
+  if (edge <= 0) return 0;
 
-  if (kellyFull <= 0) return 0;
-
+  const kellyFull = edge / b;
   const kellyFractional = kellyFull * kellyFraction;
   const stake = kellyFractional * bankroll;
 
@@ -85,7 +89,7 @@ function calculateKellyStake(
 
 
 // ============================================================================
-// 3. FUNÇÃO PRINCIPAL DE DECISÃO DE STAKE (V3.0 - Kelly + Martingale)
+// 3. FUNÇÃO PRINCIPAL DE DECISÃO DE STAKE (V3.1 - Martingale Preciso)
 // ============================================================================
 
 export function decideNextStake(
@@ -95,7 +99,7 @@ export function decideNextStake(
   contractType: DigitContractType,
   confidence: number = 0.55
 ): SmartStakeDecision {
-  const { isEnabled, baseStake, maxMartingaleLevels, martingaleMultiplier, isSmart } = config;
+  const { isEnabled, baseStake, maxMartingaleLevels, isSmart } = config;
   const { currentBankroll, initialBankroll, maxDailyLoss, dailyProfitTarget } = bankrollState;
 
   // --- 1. Circuit Breakers (Proteções de Risco) ---
@@ -126,28 +130,38 @@ export function decideNextStake(
   
   // --- 2. Lógica de Stake ---
   let nextStake = baseStake; 
-  const lastTrade = tradeHistory.length > 0 ? tradeHistory[tradeHistory.length - 1] : null;
-
+  
   // MODO 1: KELLY CRITERION (se isSmart = true)
-  if (isSmart && confidence > 0.5) {
+  if (isSmart) {
     const payoutOdds = getPayoutRatio(contractType);
-    const kellyStake = calculateKellyStake(confidence, payoutOdds, currentBankroll, 0.25);
+    const kellyStake = calculateKellyStake(confidence, payoutOdds, currentBankroll);
     
     if (kellyStake > baseStake) {
       nextStake = kellyStake;
     }
   }
 
-  // MODO 2: MARTINGALE (se perda recente)
-  if (isEnabled && lastTrade && (lastTrade.result ?? 0) < 0) {
-    const martingaleStake = lastTrade.stake * martingaleMultiplier;
-    if (martingaleStake > nextStake) {
-      nextStake = martingaleStake;
+  // MODO 2: MARTINGALE PRECISO (se em sequência de perdas)
+  if (isEnabled && consecutiveLosses > 0) {
+    const lossesToRecover = tradeHistory
+      .slice(-consecutiveLosses)
+      .reduce((sum, trade) => sum + trade.stake, 0);
+
+    const payoutRatio = getPayoutRatio(contractType);
+
+    if (payoutRatio > 0) {
+      // Fórmula: Próximo_Stake = (Total_Perdido + Lucro_Desejado) / Taxa_De_Pagamento
+      const requiredStake = (lossesToRecover + baseStake) / payoutRatio;
+      
+      // A lógica de Martingale só se aplica se o stake calculado for maior que o stake atual (seja base ou Kelly)
+      if (requiredStake > nextStake) {
+        nextStake = requiredStake;
+      }
     }
   }
   
   // --- 3. PROTEÇÃO DE LIMITE ---
-  const maxSafeStake = Math.max(baseStake, currentBankroll * 0.10); // Nunca arriscar mais de 10%
+  const maxSafeStake = Math.max(baseStake, currentBankroll * 0.10); // Nunca arriscar mais de 10% do capital atual
   if (nextStake > maxSafeStake) {
     nextStake = baseStake;
   }
