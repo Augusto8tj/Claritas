@@ -97,6 +97,12 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
       pauseAfterFailedResets: 2,
       kellyFraction: 0.25,
       usePredictiveAnalysis: true,
+      minSequenceLength: 3,
+      allowedContracts: {
+        MATCHDIFFERS: true,
+        EVENODD: true,
+        OVERUNDER: true,
+      }
   });
   
   // --- GESTÃO DE RISCO AVANÇADA (MARTINGALE) ---

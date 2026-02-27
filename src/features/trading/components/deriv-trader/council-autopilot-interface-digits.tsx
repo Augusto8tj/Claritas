@@ -15,7 +15,7 @@ import { Switch } from "@/components/ui/switch";
 import { Separator } from "@/components/ui/separator";
 import { Input } from "@/components/ui/input";
 import type { useRobotCouncilDigits, PilotType, PilotState } from "@/features/trading/hooks/use-robot-council-digits";
-import { useVagalumeAlternante, type VagalumeConfig, type VagalumeSignal } from '@/features/trading/hooks/use-vagalume-alternante';
+import { useVagalumeAlternante, type VagalumeConfig, type VagalumeSignal, type DigitContractType } from '@/features/trading/hooks/use-vagalume-alternante';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
@@ -112,55 +112,64 @@ const VagalumePanel: React.FC<{
   pilotState: PilotState;
   toggleAutopilot: (type: 'vagalume') => void;
   vagalumeSignal: VagalumeSignal | null;
-  vagalumeConfig: any;
-  setVagalumeConfig: (config: any) => void;
+  vagalumeConfig: VagalumeConfig;
+  setVagalumeConfig: (config: VagalumeConfig) => void;
 }> = ({ pilotKey, pilotState, toggleAutopilot, vagalumeSignal, vagalumeConfig, setVagalumeConfig }) => {
   
-  const description = vagalumeSignal
-      ? (vagalumeSignal.state === 'W2' || vagalumeSignal.state === 'L2'
-          ? "Reset: aposta em Par/Ímpar via regressão à média."
-          : "Explora a alternância W-L com base em dígitos quentes/frios.")
-      : "Estratégia de meta-aprendizagem que explora a alternância W-L.";
+  const handleContractToggle = (contractType: keyof VagalumeConfig['allowedContracts'], checked: boolean) => {
+    setVagalumeConfig({
+        ...vagalumeConfig,
+        allowedContracts: {
+            ...vagalumeConfig.allowedContracts,
+            [contractType]: checked,
+        },
+    });
+  };
 
   return (
     <PilotTabContent
       pilotKey={pilotKey}
-      title="🪰 Vagalume Alternante"
-      description={description}
+      title="🪰 Vagalume Híbrido"
+      description={vagalumeSignal?.reason || "Bot Híbrido: Repetição + Contexto."}
       pilotState={pilotState}
       toggleAutopilot={toggleAutopilot}
     >
-      {vagalumeSignal ? (
-        <>
-          <div className="grid grid-cols-3 gap-2 text-center text-xs mt-2">
-            <div className="p-2 border rounded-lg bg-muted/50">
-                <p className="text-muted-foreground">Estado FSM</p>
-                <p className="font-bold text-primary">{vagalumeSignal.state}</p>
-            </div>
-            <div className="p-2 border rounded-lg bg-muted/50">
-                <p className="text-muted-foreground">Alvo</p>
-                <p className="font-bold text-primary">{vagalumeSignal.targetOutcome}</p>
-            </div>
-            <div className="p-2 border rounded-lg bg-muted/50">
-                <p className="text-muted-foreground">Alternância</p>
-                <p className="font-bold text-primary">{vagalumeSignal.sequenceStats.alternanceRate.toFixed(0)}%</p>
-            </div>
-          </div>
-          <div className="space-y-4 pt-4 mt-4 border-t">
-              <h4 className="text-xs font-semibold text-muted-foreground">Configuração Fina (Vagalume)</h4>
-               <div className="space-y-2">
-                    <Label htmlFor="vagalume-w1-threshold">Limiar 'MATCH' (W1) - ({vagalumeConfig.stateW1_matchThreshold}%)</Label>
-                    <Slider id="vagalume-w1-threshold" min={2} max={10} step={0.5} value={[vagalumeConfig.stateW1_matchThreshold]} onValueChange={v => setVagalumeConfig({ ...vagalumeConfig, stateW1_matchThreshold: v[0]})} />
-               </div>
-                <div className="space-y-2">
-                    <Label htmlFor="vagalume-l1-threshold">Limiar 'DIFFERS' (L1) - ({vagalumeConfig.stateL1_differsThreshold}%)</Label>
-                    <Slider id="vagalume-l1-threshold" min={12} max={25} step={1} value={[vagalumeConfig.stateL1_differsThreshold]} onValueChange={v => setVagalumeConfig({ ...vagalumeConfig, stateL1_differsThreshold: v[0]})} />
-               </div>
-          </div>
-        </>
-      ) : (
-        <div className="text-center text-muted-foreground p-4">Aguardando dados...</div>
-      )}
+      <div className="space-y-4 pt-4 mt-4 border-t">
+        <h4 className="text-xs font-semibold text-muted-foreground">Contratos Permitidos</h4>
+        <div className="flex items-center justify-between rounded-lg border p-3">
+          <Label htmlFor="vagalume-matchdiffers" className="flex flex-col space-y-1 flex-1 pr-4">
+            <span>Combina / Difere</span>
+            <span className="font-normal text-xs text-muted-foreground">Ativa o "Repetition Trigger" (alta confiança).</span>
+          </Label>
+          <Switch
+            id="vagalume-matchdiffers"
+            checked={vagalumeConfig.allowedContracts.MATCHDIFFERS}
+            onCheckedChange={(c) => handleContractToggle('MATCHDIFFERS', c)}
+          />
+        </div>
+        <div className="flex items-center justify-between rounded-lg border p-3">
+          <Label htmlFor="vagalume-evenodd" className="flex flex-col space-y-1 flex-1 pr-4">
+            <span>Par / Ímpar</span>
+            <span className="font-normal text-xs text-muted-foreground">Opera em mercados laterais (ranging).</span>
+          </Label>
+          <Switch
+            id="vagalume-evenodd"
+            checked={vagalumeConfig.allowedContracts.EVENODD}
+            onCheckedChange={(c) => handleContractToggle('EVENODD', c)}
+          />
+        </div>
+        <div className="flex items-center justify-between rounded-lg border p-3">
+          <Label htmlFor="vagalume-overunder" className="flex flex-col space-y-1 flex-1 pr-4">
+            <span>Acima / Abaixo</span>
+             <span className="font-normal text-xs text-muted-foreground">Opera em mercados laterais (ranging).</span>
+          </Label>
+          <Switch
+            id="vagalume-overunder"
+            checked={vagalumeConfig.allowedContracts.OVERUNDER}
+            onCheckedChange={(c) => handleContractToggle('OVERUNDER', c)}
+          />
+        </div>
+      </div>
     </PilotTabContent>
   );
 };
@@ -304,7 +313,7 @@ export const DigitsAutopilotManager: React.FC<DigitsAutopilotManagerProps> = (pr
 
                     <div className="space-y-2">
                         <Label className="text-sm font-semibold text-muted-foreground">Estratégias Avançadas</Label>
-                        <Tabs defaultValue="underdog" className="w-full">
+                        <Tabs defaultValue="vagalume" className="w-full">
                             <TabsList className="grid w-full grid-cols-4">
                                 <TabsTrigger value="underdog" className="text-xs sm:text-sm"><Trophy className="h-4 w-4 mr-1.5"/>Azarão</TabsTrigger>
                                 <TabsTrigger value="underdogOverUnder" className="text-xs sm:text-sm"><Trophy className="h-4 w-4 mr-1.5"/>A/A Fixo</TabsTrigger>
