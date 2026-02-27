@@ -31,7 +31,8 @@ O coração do sistema é o "Funil de Decisão" que ocorre a cada tick de preço
 | `src/features/trading/services/hf-strike-logic.ts`    | **A Biblioteca de Estratégias.** Contém as funções matemáticas puras para cada um dos 7 especialistas. Cada função recebe os indicadores de mercado e retorna um `StrikeZone` (sinal) ou `null`.                               |
 | `src/features/trading/services/indicator-service.ts`  | **O Motor de Cálculo.** Uma biblioteca otimizada que calcula mais de 25 indicadores técnicos (RSI, MACD, Bandas de Bollinger, etc.) a partir dos dados de velas.                                                                |
 | `src/features/trading/backtest/hf-backtest-engine.ts` | **O Simulador.** Um motor de backtesting avançado que pode rodar as estratégias sobre dados históricos para validar performance, realizar análise "Walk-Forward" e simulações de "Monte Carlo".                                    |
-| `src/features/trading/optimization/auto-calibrator.ts`| **O Otimizador Genético.** O componente mais avançado. Usa o backtester para ajustar automaticamente os parâmetros de cada especialista, garantindo que eles se adaptem a novas condições de mercado para atingir metas de frequência. |
+| `src/features/trading/optimization/auto-calibrator.ts`| **O Engenheiro-Chefe Autônomo.** Utiliza o `hf-backtest-engine` para ajustar automaticamente os parâmetros de cada especialista, garantindo que eles se adaptem a novas condições de mercado para atingir metas de frequência e qualidade. |
+
 
 ### 2.2. O Funil de Decisão (A Mecânica Interna)
 
@@ -69,7 +70,40 @@ Em resumo, são preditores estatísticos rápidos, focados no "agora", que usam 
 
 ---
 
-## 3. Guia dos Componentes da Interface
+## 3. O Calibrador Automático: A Otimização Iterativa
+
+O componente `HFAutoCalibrator` é o "engenheiro-chefe" do sistema. Ele não usa um modelo complexo de machine learning, mas sim uma abordagem de otimização pragmática e eficaz chamada **"Hill Climbing" (Subida de Encosta)** para encontrar parâmetros robustos para cada especialista.
+
+### 3.1. Filosofia de Design
+
+O objetivo não é apenas maximizar o lucro, mas sim garantir que cada estratégia seja **operacional e eficiente** sob as condições de mercado recentes. Ele equilibra dois objetivos:
+
+1.  **Atingir a Frequência Alvo:** Garantir que a estratégia gere um número mínimo de sinais, conforme definido pelo usuário na UI. Uma estratégia que nunca opera é inútil.
+2.  **Maximizar a Qualidade do Sinal:** Uma vez que a frequência é atingida, o foco muda para encontrar os parâmetros que geram o maior **Sharpe Ratio** (retorno ajustado ao risco).
+
+### 3.2. O Ciclo de Otimização (Passo a Passo)
+
+O processo é executado para cada uma das 7 estratégias, uma de cada vez:
+
+1.  **Backtest Inicial:** O calibrador primeiro executa um backtest usando os **parâmetros atuais** da estratégia para estabelecer uma linha de base: "Com esta configuração, tivemos X trades e um Sharpe Ratio de Y".
+
+2.  **Perturbação Inteligente:** O sistema então faz uma pequena e controlada alteração em um dos parâmetros da estratégia (ex: diminui o `rsiThreshold` de 32 para 31, ou aumenta a `tolerance` das Bandas de Bollinger em 0.5%).
+
+3.  **Novo Backtest:** Com os parâmetros "perturbados", um novo backtest completo é executado.
+
+4.  **A Decisão (O Coração da Lógica):** O sistema compara o novo resultado com o melhor resultado encontrado até agora e decide se aceita a mudança, seguindo uma lógica de duas fases:
+    *   **Fase 1: "Encontrar Atividade" (Frequência Abaixo do Alvo):** Se a estratégia está gerando menos trades do que o "Target de Frequência" definido, o sistema aceitará **qualquer** nova configuração que **aumente o número de trades**, mesmo que o Sharpe Ratio piore ligeiramente. A prioridade é fazer a estratégia operar.
+    *   **Fase 2: "Refinar Qualidade" (Frequência no Alvo):** Uma vez que o número de trades atinge ou ultrapassa o alvo, o critério de aceitação muda. O sistema só aceitará uma nova configuração se ela **melhorar o Sharpe Ratio**, mantendo o número de trades acima do alvo. A prioridade agora é a eficiência.
+
+5.  **Iteração:** O processo de "perturbação -> backtest -> decisão" é repetido por um número fixo de iterações (`maxIterations`), explorando gradualmente o espaço de parâmetros em busca de uma configuração melhor.
+
+6.  **Resultado Final:** Ao final das iterações, o calibrador armazena o melhor conjunto de parâmetros encontrado para aquela estratégia.
+
+Esta abordagem pragmática garante que as estratégias se adaptem ao comportamento recente do mercado, evitando ficarem "presas" em parâmetros que já não são eficazes e garantindo que elas operem com a frequência e a qualidade desejadas pelo operador.
+
+---
+
+## 4. Guia dos Componentes da Interface
 
 A página `hf-strike-zone` é composta por painéis modulares, cada um com uma função específica.
 
@@ -82,7 +116,7 @@ A página `hf-strike-zone` é composta por painéis modulares, cada um com uma f
 | `HFConfigPanel`                           | **O Painel do Comandante.** Permite ligar/desligar a automação, definir o limiar de confiança, o número mínimo de especialistas para consenso e outras regras gerais de risco.                                   |
 | `HFStrategyTuningPanel`                   | **A Oficina Mecânica.** Um painel de acordeão que permite o **ajuste fino e manual** dos parâmetros internos de cada especialista (ex: quão sensível o RSI deve ser, qual a força do ADX para definir tendência). |
 | `BacktestPanel`                           | **O Simulador / Máquina do Tempo.** Uma ferramenta de análise institucional que permite rodar as estratégias em milhares de dados históricos, com análises avançadas como "Walk-Forward" e "Monte Carlo".     |
-| `HFAutoCalibrator`                        | **O Engenheiro-Chefe Autônomo.** A funcionalidade mais avançada. Usa o Backtester para **ajustar automaticamente** os parâmetros do "Ajuste Fino" para que cada estratégia atinja uma meta de frequência de trades definida pelo usuário. |
+| `HFAutoCalibrator`                        | **O Engenheiro-Chefe Autônomo.** A interface para acionar o processo de otimização descrito na secção 3. Define o alvo de frequência e inicia o ciclo de calibração.                                            |
 | `HFExecutionLog`                          | **O Diário de Bordo.** Um log detalhado de cada operação executada pelo sistema HF Strike Zone, permitindo análise pós-trade e exportação para CSV.                                                        |
 
 Essa combinação de componentes cria um ciclo de feedback completo: **Observar** (`MarketChart`, `StrategySignalMonitor`) -> **Decidir** (`HFSignalCard`) -> **Executar** -> **Analisar** (`HFStatsOverview`, `BacktestPanel`) -> **Otimizar** (`HFStrategyTuningPanel`, `HFAutoCalibrator`).
