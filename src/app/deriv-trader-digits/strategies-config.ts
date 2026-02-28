@@ -177,4 +177,7 @@ export const DEFAULT_GLOBAL_RISK_CONFIG: GlobalRiskConfig = {
 export const DEFAULT_MARTINGALE_CONFIG: MartingaleConfig = {
     isEnabled: true,
     isSmart: true,
-    recovery
+    recoveryFactor: 1.3,
+    maxLosses: 5,
+    cooldownTime: 5,
+};
