@@ -196,4 +196,6 @@ export function DigitsDashboard({ signalQuality, multiWindowAnalysis, vagalumeSi
                     </AlertDescription>
                 </Alert>
             </CardContent>
-        </Card
+        </Card>
+    );
+}
