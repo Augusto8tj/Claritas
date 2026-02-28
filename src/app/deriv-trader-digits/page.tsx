@@ -21,6 +21,9 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { cn } from "@/lib/utils";
 import { DigitsDashboard } from "@/features/trading/components/deriv-trader/DigitsDashboard";
 import { DigitsOptimizationPanel } from "@/features/trading/components/deriv-trader/digits-backtest-panel";
+import { useSherlockHolmes } from "@/features/trading/hooks/use-sherlock-holmes";
+import { SherlockAutopilot } from "@/features/trading/components/deriv-trader/SherlockAutopilot";
+import { SherlockHolmesDashboard } from "@/features/trading/components/deriv-trader/SherlockHolmesDashboard";
 
 
 const getDecimalPlaces = (pipSize: number | undefined): number => {
@@ -154,6 +157,7 @@ function DerivTraderPageContentDigits() {
     const stakeValue = form.watch('stake');
 
     const robotCouncil = useRobotCouncilDigits(activeSymbol, priceTicks, activeAsset, stakeValue);
+    const sherlock = useSherlockHolmes(priceTicks, getDecimalPlaces(activeAsset?.pip));
     
     return (
         <div className="flex-1 space-y-4 p-4 sm:p-8 pt-6">
@@ -171,16 +175,18 @@ function DerivTraderPageContentDigits() {
                     <CurrentPriceDisplay />
                     <DerivTraderInterfaceDigits symbol={activeSymbol || ""} />
                     <OperationsLogDigits operations={operationsLog} priceTicks={priceTicks} activeAsset={activeAsset} clearActiveContracts={clearActiveContracts} />
-                    <DigitsDashboard 
-                        signalQuality={robotCouncil.signalQuality}
-                        multiWindowAnalysis={robotCouncil.multiWindowAnalysis}
-                        vagalumeSignal={robotCouncil.vagalumeSignal}
-                    />
                 </div>
 
                 <div className="lg:col-span-3 space-y-6">
                     <DigitStatsChart priceTicks={priceTicks} pip={activeAsset?.pip} />
                     <DigitsAutopilotManager {...robotCouncil} />
+                    <DigitsDashboard 
+                        signalQuality={robotCouncil.signalQuality}
+                        multiWindowAnalysis={robotCouncil.multiWindowAnalysis}
+                        vagalumeSignal={robotCouncil.vagalumeSignal}
+                    />
+                    <SherlockAutopilot sherlock={sherlock} />
+                    <SherlockHolmesDashboard analysis={sherlock.analysis} />
                     <DigitsOptimizationPanel {...robotCouncil} />
                 </div>
             </div>
