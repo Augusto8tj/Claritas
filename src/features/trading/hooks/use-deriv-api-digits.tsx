@@ -1,4 +1,3 @@
-
 // src/features/trading/hooks/use-deriv-api-digits.tsx
 'use client';
 
@@ -11,6 +10,7 @@ import { useAuth } from '@/features/auth/hooks/use-auth';
 import { saveLiveTickForDigits } from '@/services/digits-data-service';
 import { validateAndLogContract } from '@/features/trading/utils/contract-validator';
 import { timingMonitor } from '@/features/trading/utils/timing-monitor';
+import { globalLatencyMonitor } from '../utils/latency-monitor';
 
 
 // --- CONSTANTS ---
@@ -85,6 +85,7 @@ export interface DerivApiContextTypeDigits {
     duration: number,
     durationUnit: DurationUnit,
     initiator: OperationInitiator,
+    tickEpoch: number, // NOVO para latência
     last_digit?: number,
     strategy?: string
   ) => Promise<TradeResult>;
@@ -287,6 +288,11 @@ export function useDerivApiDigitsState() {
                             const contract = response.proposal_open_contract;
                             if (!contract || !contract.contract_type?.startsWith('DIGIT')) return;
                             
+                            // AQUI registamos a latência total do ciclo
+                            if (contract.is_sold === 1) {
+                                globalLatencyMonitor.recordFullCycle(contract.contract_id, contract.sell_time);
+                            }
+
                             setAndPersistOperationsLog(prevLog => {
                                 const existingOpIndex = prevLog.findIndex(op => op.id === contract.contract_id);
                                 if (existingOpIndex !== -1 && prevLog[existingOpIndex]?.status === 'pending') {
@@ -438,6 +444,7 @@ export function useDerivApiDigitsState() {
     const executeTrade = useCallback(async (
         contractType: DigitContractType, stake: number, symbol: string,
         duration: number, durationUnit: DurationUnit, initiator: OperationInitiator,
+        tickEpoch: number,
         last_digit?: number, strategy?: string
     ): Promise<TradeResult> => {
       const executionMeasure = timingMonitor.startMeasurement();
@@ -466,17 +473,22 @@ export function useDerivApiDigitsState() {
                 throw new Error(`O dígito (barreira) é obrigatório para o contrato ${contractType}.`);
             }
             buyRequest.parameters.barrier = String(last_digit);
-            console.log(`📤 [${strategy || 'manual'}] Enviando ${contractType} com barrier=${last_digit}`);
-        } else {
-            console.log(`📤 [${strategy || 'manual'}] Enviando ${contractType} (sem barrier)`);
         }
         
         const buyResponse: any = await makeRequest(buyRequest);
-        const executionTime = executionMeasure.end();
+        const executionTime = measureExecution.end();
         
         if (buyResponse.error) throw new Error(buyResponse.error.message);
         
         const buyResult = buyResponse.buy;
+        const contractId = buyResult.contract_id;
+        if (!contractId) {
+            throw new Error("Falha na compra do contrato, ID não retornado.");
+        }
+
+        // Registrar início do ciclo de latência
+        globalLatencyMonitor.startTrade(contractId, tickEpoch);
+        
         const purchaseTimeMs = (buyResult.purchase_time || Math.floor(Date.now() / 1000)) * 1000;
         const expirationTimeMs = buyResult.expiry_time * 1000;
         const direction = (contractType.includes('MATCH') || contractType.includes('EVEN') || contractType.includes('OVER')) ? 'rise' : 'fall';
@@ -495,7 +507,6 @@ export function useDerivApiDigitsState() {
         };
         
         setAndPersistOperationsLog(prevLog => [newOperation, ...prevLog]);
-        console.log(`✅ [${strategy || 'manual'}] #${buyResult.contract_id} executado em ${executionTime.toFixed(0)}ms`);
         
         return { success: true, message: `Ordem executada.`, contractId: buyResult.contract_id };
       } catch (error) {

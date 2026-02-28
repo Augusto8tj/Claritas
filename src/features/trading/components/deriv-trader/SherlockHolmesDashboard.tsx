@@ -4,11 +4,11 @@
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
-import { SherlockHolmesAnalysis } from '@/features/trading/hooks/use-sherlock-holmes';
+import { SherlockAnalysis } from '@/features/trading/hooks/use-robot-council-digits';
 import { BrainCircuit } from 'lucide-react';
 
 interface SherlockHolmesDashboardProps {
-  analysis: SherlockHolmesAnalysis | null;
+  analysis: SherlockAnalysis | null;
 }
 
 export function SherlockHolmesDashboard({ analysis }: SherlockHolmesDashboardProps) {
@@ -26,7 +26,7 @@ export function SherlockHolmesDashboard({ analysis }: SherlockHolmesDashboardPro
     );
   }
 
-  const { lastDigit, probabilities, recommendedBlock, blockProbability } = analysis;
+  const { lastDigit, probabilities, recommendedBlock, blockProbability, compensationSteps } = analysis;
 
   return (
     <Card>
@@ -35,8 +35,11 @@ export function SherlockHolmesDashboard({ analysis }: SherlockHolmesDashboardPro
           <BrainCircuit className="h-5 w-5 text-amber-600" />
           Análise de Sherlock Holmes
         </CardTitle>
-        <CardDescription>
-          Probabilidades do próximo dígito, dado que o último foi <span className="font-bold text-primary">{lastDigit}</span>.
+        <CardDescription className="flex justify-between items-center">
+          <span>
+            Dado que o último dígito foi <span className="font-bold text-primary">{lastDigit}</span>...
+          </span>
+          <Badge variant="outline">Compensação: {compensationSteps} tick(s)</Badge>
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">

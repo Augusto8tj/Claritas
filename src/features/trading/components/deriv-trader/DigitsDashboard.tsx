@@ -12,11 +12,14 @@ import type { VagalumeSignal } from '@/features/trading/hooks/use-vagalume-alter
 import { Separator } from '@/components/ui/separator';
 import { Progress } from '@/components/ui/progress';
 import { VagalumeAdvancedDashboard } from './VagalumeAdvancedDashboard';
+import { LatencyMonitorDashboard } from './LatencyMonitorDashboard';
+import type { LatencyMetrics } from '../../utils/latency-monitor';
 
 interface DigitsDashboardProps {
   signalQuality: SignalQuality | null;
   multiWindowAnalysis: MultiWindowAnalysis | null;
   vagalumeSignal: VagalumeSignal | null;
+  latencyMetrics: LatencyMetrics | null;
 }
 
 const confidenceColors: Record<string, string> = {
@@ -126,7 +129,7 @@ const StatsCard: React.FC<{ title: string, value: string | number, icon: React.R
     </div>
 );
 
-export function DigitsDashboard({ signalQuality, multiWindowAnalysis, vagalumeSignal }: DigitsDashboardProps) {
+export function DigitsDashboard({ signalQuality, multiWindowAnalysis, vagalumeSignal, latencyMetrics }: DigitsDashboardProps) {
     if (!multiWindowAnalysis) {
         return (
             <Card>
@@ -157,6 +160,8 @@ export function DigitsDashboard({ signalQuality, multiWindowAnalysis, vagalumeSi
                     <SignalCard signal={signalQuality} />
                     <VagalumeStatusCard signal={vagalumeSignal} />
                 </div>
+
+                <LatencyMonitorDashboard metrics={latencyMetrics} />
                 
                 <div className="mt-4">
                   <VagalumeAdvancedDashboard signal={vagalumeSignal} />

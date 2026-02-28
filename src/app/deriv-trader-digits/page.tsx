@@ -21,8 +21,6 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { cn } from "@/lib/utils";
 import { DigitsDashboard } from "@/features/trading/components/deriv-trader/DigitsDashboard";
 import { DigitsOptimizationPanel } from "@/features/trading/components/deriv-trader/digits-backtest-panel";
-import { useSherlockHolmes } from "@/features/trading/hooks/use-sherlock-holmes";
-import { SherlockAutopilot } from "@/features/trading/components/deriv-trader/SherlockAutopilot";
 import { SherlockHolmesDashboard } from "@/features/trading/components/deriv-trader/SherlockHolmesDashboard";
 
 
@@ -157,7 +155,6 @@ function DerivTraderPageContentDigits() {
     const stakeValue = form.watch('stake');
 
     const robotCouncil = useRobotCouncilDigits(activeSymbol, priceTicks, activeAsset, stakeValue);
-    const sherlock = useSherlockHolmes(priceTicks, getDecimalPlaces(activeAsset?.pip));
     
     return (
         <div className="flex-1 space-y-4 p-4 sm:p-8 pt-6">
@@ -184,9 +181,9 @@ function DerivTraderPageContentDigits() {
                         signalQuality={robotCouncil.signalQuality}
                         multiWindowAnalysis={robotCouncil.multiWindowAnalysis}
                         vagalumeSignal={robotCouncil.vagalumeSignal}
+                        latencyMetrics={robotCouncil.latencyMetrics}
                     />
-                    <SherlockAutopilot sherlock={sherlock} />
-                    <SherlockHolmesDashboard analysis={sherlock.analysis} />
+                    <SherlockHolmesDashboard analysis={robotCouncil.sherlockAnalysis} />
                     <DigitsOptimizationPanel {...robotCouncil} />
                 </div>
             </div>
