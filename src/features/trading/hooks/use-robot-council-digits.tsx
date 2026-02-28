@@ -30,8 +30,8 @@ import { loadHistoricalTicksForDigits } from '@/services/digits-data-service';
 import { useAuth } from '@/features/auth/hooks/use-auth';
 import { useVagalumeAlternante, type VagalumeConfig, type VagalumeSignal, type DigitContractType } from './use-vagalume-alternante';
 import { timingMonitor } from '@/features/trading/utils/timing-monitor';
-import { globalLatencyMonitor, LatencyMetrics } from '@/features/trading/utils/latency-monitor';
-import { buildTransitionMatrix, predictNTicksAhead, BlockProbs } from '@/features/trading/services/sherlock-multi-step';
+import { globalLatencyMonitor, LatencyMetrics } from '../utils/latency-monitor';
+import { buildTransitionMatrix, predictNTicksAhead, BlockProbs } from '../services/sherlock-multi-step';
 
 // ============================================================================
 // 1. TIPOS E INTERFACES
@@ -717,10 +717,3 @@ const getDecimalPlaces = (pipSize: number | undefined): number => {
     }
     return 0;
 };
-```
-- src/features/trading/components/deriv-trader/SherlockHolmesDashboard.tsx
-- src/features/trading/components/deriv-trader/council-autopilot-interface-digits.tsx
-- src/app/deriv-trader-digits/page.tsx
-- docs/deriv-trader-digits-architecture.md
-- src/app/deriv-trader-digits/strategies-config.ts
-- src/features/trading/components/deriv-trader/DigitsDashboard.tsx
