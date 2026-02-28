@@ -476,7 +476,7 @@ export function useDerivApiDigitsState() {
         }
         
         const buyResponse: any = await makeRequest(buyRequest);
-        const executionTime = measureExecution.end();
+        const executionTime = executionMeasure.end();
         
         if (buyResponse.error) throw new Error(buyResponse.error.message);
         
