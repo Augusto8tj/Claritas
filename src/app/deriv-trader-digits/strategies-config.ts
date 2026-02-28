@@ -13,7 +13,7 @@
 // ============================================================================
 
 // O `PilotType` deve corresponder exatamente às chaves do estado `pilots` no hook `useRobotCouncilDigits`.
-export type PilotType = 'matchesDiffers' | 'overUnder' | 'evenOdd' | 'underdog' | 'underdogOverUnder' | 'dynamicUnderdogOverUnder' | 'underdogEvenOdd' | 'vagalume';
+export type PilotType = 'matchesDiffers' | 'overUnder' | 'evenOdd' | 'underdog' | 'underdogOverUnder' | 'dynamicUnderdogOverUnder' | 'underdogEvenOdd' | 'vagalume' | 'sherlock';
 
 export type DigitContractType =
   | 'DIGITMATCH'
@@ -39,6 +39,7 @@ export interface DigitStrategyDefinition {
     | 'underdogThreshold'
     | 'overUnderUnderdogThreshold'
     | 'evenOddUnderdogThreshold'
+    | 'sherlockThreshold' // Adicionado para Sherlock
     | null; // Usado para estratégias que não possuem um limiar de usuário direto.
   // Mapeia outros parâmetros de configuração específicos da estratégia.
   otherParams?: {
@@ -122,6 +123,14 @@ export const STRATEGY_DEFINITIONS: DigitStrategyDefinition[] = [
     contractTypes: ['MULTI'], // Indica que pode usar vários tipos de contrato
     paramKey: null, // Parâmetros gerenciados por seu próprio hook
   },
+   // 9. Sherlock Holmes Preditivo
+  {
+    id: 'sherlock',
+    name: 'Sherlock Preditivo',
+    description: 'Usa um Modelo de Markov para prever o próximo bloco de dígitos, compensando a latência.',
+    contractTypes: ['DIGITEVEN', 'DIGITODD', 'DIGITOVER', 'DIGITUNDER'],
+    paramKey: 'sherlockThreshold',
+  },
 ];
 
 // Adicionado para mapear IDs de estratégia a nomes legíveis para a UI.
@@ -168,7 +177,4 @@ export const DEFAULT_GLOBAL_RISK_CONFIG: GlobalRiskConfig = {
 export const DEFAULT_MARTINGALE_CONFIG: MartingaleConfig = {
     isEnabled: true,
     isSmart: true,
-    recoveryFactor: 1.3,
-    maxLosses: 5,
-    cooldownTime: 5,
-};
+    recovery

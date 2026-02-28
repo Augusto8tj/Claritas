@@ -282,7 +282,7 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
         }
         
         setTimeout(() => {
-            toast({ title: `Piloto ${strategyLabels[pilotType] || 'Vagalume'} ${newIsOnState ? 'Ativado' : 'Desativado'}` });
+            toast({ title: `Piloto ${strategyLabels[pilotType] || 'Sherlock'} ${newIsOnState ? 'Ativado' : 'Desativado'}` });
         }, 0);
 
         return {
@@ -315,7 +315,7 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
     if (lastOp && lastOp.id !== lastProcessedOpIdRef.current && lastOp.status !== 'pending') {
       lastProcessedOpIdRef.current = lastOp.id;
       
-      const pilotKey = lastOp.strategy as PilotType | undefined;
+      const pilotKey = lastOp.strategy as PilotType | 'vagalume' | undefined;
 
       if (pilotKey) {
         if (pilotKey === 'vagalume') {
@@ -397,7 +397,7 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
     // --- EXECUÇÃO DOS OUTROS PILOTOS (se nenhum trade foi feito ainda) ---
     if (!tradeExecutedThisCycle) {
         for (const [key, pilot] of activePilotEntries) {
-          if (pilot.status !== 'TRADING' || pilot.activeContractId !== null || key === 'sherlock') continue;
+          if (pilot.status !== 'TRADING' || pilot.activeContractId !== null || key === 'sherlock' || key === 'vagalume') continue;
           
           const pilotKey = key as PilotType;
           const initialBankroll = sessionInitialBankroll ?? (accountBalance.balance ?? 1000);
@@ -492,9 +492,18 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
               }
 
               const finalStake = stakeDecision.nextStake;
-
-              executeTrade(executionParams[0], finalStake, activeSymbol!, 1, 't', 'Piloto', priceTicks[priceTicks.length - 1].epoch, executionParams[1], executionParams[2])
-                .then(tradeResult => {
+              
+              executeTrade(
+                  executionParams[0], // contractType
+                  finalStake,
+                  activeSymbol!,
+                  1, // duration
+                  't', // durationUnit
+                  'Piloto', // initiator
+                  priceTicks[priceTicks.length - 1].epoch, // CORREÇÃO: tickEpoch adicionado
+                  executionParams[1], // last_digit
+                  executionParams[2]  // strategy
+              ).then(tradeResult => {
                     if (tradeResult.success && tradeResult.contractId) {
                         setPilots(prev => ({
                             ...prev,

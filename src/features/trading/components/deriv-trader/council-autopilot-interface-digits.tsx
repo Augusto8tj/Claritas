@@ -9,7 +9,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Bot, Binary, TrendingUp, HelpCircle, Trophy, Settings, AlertTriangle, ShieldCheck, Power, Clock, Repeat, TestTube, Wand2 } from "lucide-react";
+import { Bot, Binary, TrendingUp, HelpCircle, Trophy, Settings, AlertTriangle, ShieldCheck, Power, Clock, Repeat, TestTube, Wand2, BrainCircuit } from "lucide-react";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Separator } from "@/components/ui/separator";
@@ -40,11 +40,11 @@ import { strategyLabels } from "@/app/deriv-trader-digits/strategies-config";
 interface DigitsAutopilotManagerProps extends ReturnType<typeof useRobotCouncilDigits> {}
 
 const PilotTabContent: React.FC<{
-    pilotKey: PilotType | 'vagalume';
+    pilotKey: PilotType;
     title: string;
     description: string;
     pilotState: PilotState;
-    toggleAutopilot: (type: PilotType | 'vagalume') => void;
+    toggleAutopilot: (type: PilotType) => void;
     children?: React.ReactNode; // Para adicionar os sliders
 }> = ({ pilotKey, title, description, pilotState, toggleAutopilot, children }) => {
     const { isOn, status, currentTarget, consecutiveLosses, accumulatedLoss } = pilotState;
@@ -132,7 +132,7 @@ const VagalumePanel: React.FC<{
       title="🪰 Vagalume Híbrido"
       description={vagalumeSignal?.reason || "Bot Híbrido: Repetição + Contexto."}
       pilotState={pilotState}
-      toggleAutopilot={toggleAutopilot}
+      toggleAutopilot={toggleAutopilot as any}
     >
       <div className="space-y-4 pt-4 mt-4 border-t">
         <h4 className="text-xs font-semibold text-muted-foreground">Contratos Permitidos</h4>
@@ -197,6 +197,8 @@ export const DigitsAutopilotManager: React.FC<DigitsAutopilotManagerProps> = (pr
     setOverUnderUnderdogThreshold,
     evenOddUnderdogThreshold,
     setEvenOddUnderdogThreshold,
+    sherlockThreshold,
+    setSherlockThreshold,
     isMartingaleEnabled,
     setIsMartingaleEnabled,
     isSmartMartingale,
@@ -213,7 +215,6 @@ export const DigitsAutopilotManager: React.FC<DigitsAutopilotManagerProps> = (pr
     vagalumeSignal,
     vagalumeConfig,
     setVagalumeConfig,
-    // Backtesting props
     backtestTicks,
     isDataLoading,
     loadDataForBacktest,
@@ -241,14 +242,15 @@ export const DigitsAutopilotManager: React.FC<DigitsAutopilotManagerProps> = (pr
         
         <div className="space-y-2">
             <Tabs defaultValue="standard" className="w-full">
-                <TabsList className="grid w-full grid-cols-2">
-                    <TabsTrigger value="standard" className="text-xs sm:text-sm"><Bot className="h-4 w-4 mr-1.5"/>Pilotos de Estratégia</TabsTrigger>
-                    <TabsTrigger value="risk" className="text-xs sm:text-sm"><Settings className="h-4 w-4 mr-1.5"/>Gestão de Risco</TabsTrigger>
+                <TabsList className="grid w-full grid-cols-3">
+                    <TabsTrigger value="standard" className="text-xs sm:text-sm"><Bot className="h-4 w-4 mr-1.5"/>Estratégia</TabsTrigger>
+                    <TabsTrigger value="experts" className="text-xs sm:text-sm"><BrainCircuit className="h-4 w-4 mr-1.5"/>Especialistas</TabsTrigger>
+                    <TabsTrigger value="risk" className="text-xs sm:text-sm"><Settings className="h-4 w-4 mr-1.5"/>Risco</TabsTrigger>
                 </TabsList>
                 <TabsContent value="standard" className="pt-4 space-y-6">
                     {/* ESTRATÉGIAS PRINCIPAIS */}
                     <div className="space-y-2">
-                        <Label className="text-sm font-semibold text-muted-foreground">Estratégias Principais</Label>
+                        <Label className="text-sm font-semibold text-muted-foreground">Estratégias de Frequência</Label>
                         <Tabs defaultValue="matchesDiffers" className="w-full">
                             <TabsList className="grid w-full grid-cols-3">
                                 <TabsTrigger value="matchesDiffers" className="text-xs sm:text-sm"><HelpCircle className="h-4 w-4 mr-1.5"/>Difere</TabsTrigger>
@@ -415,13 +417,13 @@ export const DigitsAutopilotManager: React.FC<DigitsAutopilotManagerProps> = (pr
                             </TabsContent>
                         </Tabs>
                     </div>
+                </TabsContent>
 
-                    {/* META-ESTRATÉGIAS */}
-                    <div className="space-y-2">
-                        <Label className="text-sm font-semibold text-muted-foreground">Meta-Estratégias</Label>
-                        <Tabs defaultValue="vagalume" className="w-full">
-                           <TabsList className="grid w-full grid-cols-1">
+                <TabsContent value="experts" className="pt-4 space-y-6">
+                     <Tabs defaultValue="vagalume" className="w-full">
+                           <TabsList className="grid w-full grid-cols-2">
                                 <TabsTrigger value="vagalume" className="text-xs sm:text-sm"><Wand2 className="h-4 w-4 mr-1.5"/>Vagalume Híbrido</TabsTrigger>
+                                <TabsTrigger value="sherlock" className="text-xs sm:text-sm"><BrainCircuit className="h-4 w-4 mr-1.5"/>Sherlock Preditivo</TabsTrigger>
                             </TabsList>
                              <TabsContent value="vagalume" className="pt-4">
                                 <VagalumePanel
@@ -433,8 +435,25 @@ export const DigitsAutopilotManager: React.FC<DigitsAutopilotManagerProps> = (pr
                                     setVagalumeConfig={setVagalumeConfig}
                                 />
                             </TabsContent>
+                             <TabsContent value="sherlock" className="pt-4">
+                                <PilotTabContent
+                                    pilotKey="sherlock"
+                                    title="🕵️ Sherlock Holmes"
+                                    description="Usa análise preditiva para apostar em blocos de dígitos, compensando a latência da rede."
+                                    pilotState={pilots.sherlock}
+                                    toggleAutopilot={toggleAutopilot}
+                                >
+                                    <div className="space-y-4 pt-4 mt-4 border-t">
+                                        <h4 className="text-xs font-semibold text-muted-foreground">Configuração do Sherlock</h4>
+                                        <div className="space-y-2">
+                                            <Label htmlFor="sherlock-threshold">Limiar de Confiança do Bloco ({sherlockThreshold.toFixed(1)}%)</Label>
+                                            <Slider id="sherlock-threshold" min={51} max={80} step={1} value={[sherlockThreshold]} onValueChange={v => setSherlockThreshold(v[0])} />
+                                            <p className="text-xs text-muted-foreground">O Sherlock só irá operar se a probabilidade do bloco recomendado for maior que este valor.</p>
+                                        </div>
+                                    </div>
+                                </PilotTabContent>
+                            </TabsContent>
                         </Tabs>
-                    </div>
                 </TabsContent>
 
                 {/* GESTÃO DE RISCO */}
