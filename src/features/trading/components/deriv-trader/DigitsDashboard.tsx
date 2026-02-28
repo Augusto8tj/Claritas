@@ -5,21 +5,23 @@ import React from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { CheckCircle, XCircle, HelpCircle, BarChart2, TrendingUp, TrendingDown, Info, Sigma, Wand2, Target, Loader2 } from 'lucide-react';
+import { CheckCircle, XCircle, HelpCircle, BarChart2, TrendingUp, TrendingDown, Info, Sigma, Wand2, Target, Loader2, BrainCircuit } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import type { SignalQuality, MultiWindowAnalysis } from '@/features/trading/hooks/use-robot-council-digits';
+import type { SignalQuality, MultiWindowAnalysis, SherlockAnalysis } from '@/features/trading/hooks/use-robot-council-digits';
 import type { VagalumeSignal } from '@/features/trading/hooks/use-vagalume-alternante';
 import { Separator } from '@/components/ui/separator';
 import { Progress } from '@/components/ui/progress';
 import { VagalumeAdvancedDashboard } from './VagalumeAdvancedDashboard';
 import { LatencyMonitorDashboard } from './LatencyMonitorDashboard';
 import type { LatencyMetrics } from '../../utils/latency-monitor';
+import { SherlockHolmesDashboard } from './SherlockHolmesDashboard';
 
 interface DigitsDashboardProps {
   signalQuality: SignalQuality | null;
   multiWindowAnalysis: MultiWindowAnalysis | null;
   vagalumeSignal: VagalumeSignal | null;
   latencyMetrics: LatencyMetrics | null;
+  sherlockAnalysis: SherlockAnalysis | null;
 }
 
 const confidenceColors: Record<string, string> = {
@@ -129,7 +131,7 @@ const StatsCard: React.FC<{ title: string, value: string | number, icon: React.R
     </div>
 );
 
-export function DigitsDashboard({ signalQuality, multiWindowAnalysis, vagalumeSignal, latencyMetrics }: DigitsDashboardProps) {
+export function DigitsDashboard({ signalQuality, multiWindowAnalysis, vagalumeSignal, latencyMetrics, sherlockAnalysis }: DigitsDashboardProps) {
     if (!multiWindowAnalysis) {
         return (
             <Card>
@@ -160,7 +162,8 @@ export function DigitsDashboard({ signalQuality, multiWindowAnalysis, vagalumeSi
                     <SignalCard signal={signalQuality} />
                     <VagalumeStatusCard signal={vagalumeSignal} />
                 </div>
-
+                
+                <SherlockHolmesDashboard analysis={sherlockAnalysis} />
                 <LatencyMonitorDashboard metrics={latencyMetrics} />
                 
                 <div className="mt-4">
@@ -193,6 +196,4 @@ export function DigitsDashboard({ signalQuality, multiWindowAnalysis, vagalumeSi
                     </AlertDescription>
                 </Alert>
             </CardContent>
-        </Card>
-    );
-}
+        </Card

@@ -21,7 +21,6 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { cn } from "@/lib/utils";
 import { DigitsDashboard } from "@/features/trading/components/deriv-trader/DigitsDashboard";
 import { DigitsOptimizationPanel } from "@/features/trading/components/deriv-trader/digits-backtest-panel";
-import { SherlockHolmesDashboard } from "@/features/trading/components/deriv-trader/SherlockHolmesDashboard";
 
 
 const getDecimalPlaces = (pipSize: number | undefined): number => {
@@ -182,8 +181,8 @@ function DerivTraderPageContentDigits() {
                         multiWindowAnalysis={robotCouncil.multiWindowAnalysis}
                         vagalumeSignal={robotCouncil.vagalumeSignal}
                         latencyMetrics={robotCouncil.latencyMetrics}
+                        sherlockAnalysis={robotCouncil.sherlockAnalysis}
                     />
-                    <SherlockHolmesDashboard analysis={robotCouncil.sherlockAnalysis} />
                     <DigitsOptimizationPanel {...robotCouncil} />
                 </div>
             </div>
