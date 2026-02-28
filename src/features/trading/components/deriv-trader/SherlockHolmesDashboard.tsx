@@ -5,7 +5,7 @@ import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/com
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { SherlockHolmesAnalysis } from '@/features/trading/hooks/use-sherlock-holmes';
-import { Detective } from 'lucide-react';
+import { BrainCircuit } from 'lucide-react';
 
 interface SherlockHolmesDashboardProps {
   analysis: SherlockHolmesAnalysis | null;
@@ -17,7 +17,7 @@ export function SherlockHolmesDashboard({ analysis }: SherlockHolmesDashboardPro
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <Detective className="h-5 w-5 text-amber-600" />
+            <BrainCircuit className="h-5 w-5 text-amber-600" />
             Sherlock Holmes
           </CardTitle>
           <CardDescription>Aguardando dados suficientes (500 ticks) para iniciar a investigação...</CardDescription>
@@ -32,7 +32,7 @@ export function SherlockHolmesDashboard({ analysis }: SherlockHolmesDashboardPro
     <Card>
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
-          <Detective className="h-5 w-5 text-amber-600" />
+          <BrainCircuit className="h-5 w-5 text-amber-600" />
           Análise de Sherlock Holmes
         </CardTitle>
         <CardDescription>

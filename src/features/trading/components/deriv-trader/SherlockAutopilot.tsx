@@ -8,7 +8,7 @@ import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Slider } from '@/components/ui/slider';
 import { Badge } from '@/components/ui/badge';
-import { Detective, Loader2 } from 'lucide-react';
+import { BrainCircuit, Loader2 } from 'lucide-react';
 import { useSherlockHolmes, SherlockSignal, SherlockAnalysis } from '@/features/trading/hooks/use-sherlock-holmes';
 import { useDerivApiDigits } from '@/features/trading/hooks/use-deriv-api-digits';
 import { useFormContext } from 'react-hook-form';
@@ -100,7 +100,7 @@ export function SherlockAutopilot({ sherlock }: SherlockAutopilotProps) {
     <Card>
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
-          <Detective className="h-5 w-5 text-primary" />
+          <BrainCircuit className="h-5 w-5 text-primary" />
           Piloto Especialista (Sherlock Holmes)
         </CardTitle>
         <CardDescription>
