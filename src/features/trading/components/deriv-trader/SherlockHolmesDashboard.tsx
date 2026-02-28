@@ -28,6 +28,9 @@ export function SherlockHolmesDashboard({ analysis }: SherlockHolmesDashboardPro
 
   const { lastDigit, probabilities, recommendedBlock, blockProbability, compensationSteps } = analysis;
 
+  // FIX: Create a sorted copy of the probabilities array.
+  const sortedProbabilities = [...probabilities].sort((a, b) => b.probability - a.probability);
+
   return (
     <Card>
       <CardHeader>
@@ -55,7 +58,8 @@ export function SherlockHolmesDashboard({ analysis }: SherlockHolmesDashboardPro
                     </span>
                 </div>
             </div>
-            {probabilities.slice(0, 2).map((prob, index) => (
+            {/* FIX: Use the sorted array to show the top 2 most probable digits. */}
+            {sortedProbabilities.slice(0, 2).map((prob, index) => (
                 <div key={prob.digit} className="p-3 border rounded-lg bg-muted/50 text-center">
                     <p className="text-xs text-muted-foreground">{index === 0 ? 'Mais Provável' : '2º Mais Provável'}</p>
                     <div className="flex items-center justify-center gap-2 mt-1">
@@ -69,7 +73,8 @@ export function SherlockHolmesDashboard({ analysis }: SherlockHolmesDashboardPro
         </div>
         
         <div className="space-y-3 pt-3">
-          {probabilities.map(p => (
+          {/* FIX: Render the full list sorted by probability. */}
+          {sortedProbabilities.map(p => (
             <div key={p.digit} className="grid grid-cols-[20px_1fr_50px] items-center gap-3 text-sm">
               <span className="font-mono font-bold text-primary">{p.digit}</span>
               <Progress value={p.probability * 100} className="h-2" />
