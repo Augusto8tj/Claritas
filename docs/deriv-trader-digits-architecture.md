@@ -39,27 +39,27 @@ Este hook é a espinha dorsal da comunicação, focado apenas no essencial para 
     *   **Estado `priceTicks`:** Mantém um array com os últimos 1000 ticks de preço recebidos, que é a "matéria-prima" para toda a análise.
     *   **Execução Especializada:** Expõe a função `executeTrade`, construída para enviar os tipos de contrato específicos de dígitos: `DIGITMATCH`, `DIGITDIFF`, entre outros.
 
-### 2.2. O Cérebro Estatístico: `use-robot-council-digits.ts` e `use-sherlock-holmes.ts`
+### 2.2. O Cérebro Estatístico: `use-robot-council-digits.ts`
 
-**a) O Cérebro Principal (`use-robot-council-digits.ts`):**
+Este é o motor de análise e decisão do piloto automático. Ele contém a lógica tanto para as estratégias de frequência quanto para o novo especialista preditivo "Sherlock Holmes".
 
-*   **Responsabilidade Principal:** Analisar a distribuição de frequência dos dígitos e tomar decisões de trading com base na regressão à média.
+*   **Responsabilidade Principal:** Analisar a distribuição de frequência e as sequências de dígitos para tomar decisões de trading.
 *   **Ciclo de Decisão (a cada novo tick):**
     1.  **Análise de Frequência:** A cada novo tick, o hook recalcula as `digitStats`. Ele analisa os últimos 1000 ticks e conta a ocorrência de cada dígito final (0 a 9).
     2.  **Cálculo de Probabilidade:** Converte estas contagens em probabilidades percentuais.
-    3.  **Decisão do Conselho (`councilDecision`):**
+    3.  **Decisão do Conselho (Pilotos de Frequência):**
         *   Identifica o dígito **mais provável** (maior frequência). Se a sua probabilidade ultrapassar o `consensusThreshold` (limiar de consenso) definido pelo utilizador, o sistema emite um sinal de `differs` para esse dígito.
         *   Identifica o dígito **menos provável** (menor frequência) para uma potencial aposta de `matches`.
-    4.  **Execução Automática:** Um `useEffect` observa as decisões dos pilotos. Se um sinal válido (`differs`, `matches`, etc.) é emitido e um piloto está ligado, ele chama a função `executeTrade` com os parâmetros corretos.
-
-**b) O Especialista Preditivo (`use-sherlock-holmes.ts`):**
-
-*   **Responsabilidade Principal:** Analisar as probabilidades condicionais e tomar decisões baseadas em padrões sequenciais.
-*   **Ciclo de Decisão:**
-    1.  **Construção da Matriz de Transição:** Analisa os últimos 500 ticks para determinar a frequência com que o dígito `Y` aparece após o dígito `X`.
-    2.  **Cálculo de Probabilidade Condicional:** Dado o último dígito que acabou de sair, ele calcula a probabilidade de cada um dos 10 dígitos ser o próximo.
-    3.  **Análise de Bloco:** Em vez de apostar no dígito individual mais provável, ele agrega as probabilidades em blocos (Par/Ímpar, Acima/Abaixo de 5).
-    4.  **Decisão de Trade:** Se a probabilidade de um bloco (ex: "Par") for significativamente alta (acima do limiar de confiança do Sherlock), ele gera um sinal para um contrato de bloco (`DIGITEVEN`), que possui um payout mais favorável.
+    4.  **Análise Preditiva (Sherlock Holmes):** Em paralelo, uma lógica dedicada executa o seguinte:
+        *   **Construção da Matriz de Transição:** Analisa os últimos 500 ticks para determinar a frequência com que o dígito `Y` aparece após o dígito `X`.
+        *   **Cálculo de Probabilidade Condicional:** Dado o último dígito que acabou de sair, ele calcula a probabilidade de cada um dos 10 dígitos ser o próximo.
+        *   **Análise de Bloco:** Em vez de apostar no dígito individual mais provável, ele agrega as probabilidades em blocos (Par/Ímpar, Acima/Abaixo de 5).
+        *   **Decisão do Sherlock:** Se a probabilidade de um bloco (ex: "Par") for significativamente alta (acima do `sherlockThreshold`), ele gera um sinal para um contrato de bloco (`DIGITEVEN`).
+    5.  **Execução Automática e Gestão de Risco:**
+        *   Um `useEffect` principal observa os sinais de todos os pilotos ativos (de frequência e do Sherlock).
+        *   Se um sinal válido é emitido e o piloto correspondente está ligado, ele chama o serviço `decideNextStake`.
+        *   O `decideNextStake` analisa o histórico de perdas daquele piloto específico, aplica a lógica de Martingale (se ativada) e retorna o valor final da aposta.
+        *   O sistema então chama a função `executeTrade` com os parâmetros corretos.
 
 ### 2.3. A Interface do Utilizador (UI): `deriv-trader-digits/page.tsx` e Componentes
 
@@ -67,10 +67,8 @@ Esta camada visualiza a análise estatística e permite a interação manual ou 
 
 *   **`deriv-trader-digits/page.tsx`**: O orquestrador principal que une os hooks e componentes.
 *   **`deriv-trader-interface-digits.tsx`**: O painel de negociação manual, onde o utilizador seleciona um dígito (0-9) e pode executar trades de "Combina", "Difere", "Acima/Abaixo" e "Par/Ímpar".
-*   **`council-autopilot-interface-digits.tsx`**: O painel de controlo para os pilotos baseados em frequência.
-*   **`SherlockAutopilot.tsx`**: O novo painel de controlo dedicado ao bot Sherlock.
-*   **`SherlockHolmesDashboard.tsx`**: O novo dashboard que exibe as análises e probabilidades condicionais do Sherlock.
-*   **`DigitsDashboard.tsx`**: O dashboard que mostra os sinais dos bots baseados em frequência.
+*   **`council-autopilot-interface-digits.tsx`**: O painel de controlo centralizado para **todos** os pilotos, incluindo os de frequência e o novo especialista "Sherlock".
+*   **`DigitsDashboard.tsx`**: O dashboard que agora exibe tanto os sinais dos bots baseados em frequência quanto as análises e probabilidades condicionais do Sherlock.
 *   **`digit-stats-chart.tsx`**: Um gráfico de barras que mostra a frequência visual de cada um dos 10 dígitos nos últimos 1000 ticks.
 *   **`operations-log-digits.tsx`**: Exibe o histórico de operações de dígitos da sessão, mostrando o resultado e o P&L.
 
@@ -90,4 +88,4 @@ A chave para a lucratividade não é prever o futuro, mas sim **arbitrar a difer
     *   **Lógica:** Todos esses dígitos são pares. A probabilidade de o próximo dígito ser par é de 65%.
     *   **O Trade:** A corretora oferece um payout de ~95% para um contrato `DIGITEVEN`. Estamos a apostar num evento com 65% de chance de ocorrer para um retorno de quase 1 para 1, o que representa uma expectativa de valor (EV) massivamente positiva.
 
-Em resumo, **o sistema não prevê o preço, ele mede a distorção estatística atual e a compara com os retornos oferecidos, procurando e executando apenas as apostas que têm uma expectativa matemática positiva.**
+Em resumo, **o sistema não prevê o preço, ele mede a distorção estatística atual e a compara com os retornos oferecidos, procurando e executando apenas as apostas que têm uma expectativa matemática positiva.** É uma forma pura de trading quantitativo.
