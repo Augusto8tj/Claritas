@@ -74,4 +74,9 @@ export function SherlockHolmesDashboard({ analysis }: SherlockHolmesDashboardPro
                 {(p.probability * 100).toFixed(1)}%
               </span>
             </div>
-          
+          ))}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
