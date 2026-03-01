@@ -642,3 +642,4 @@ export const DigitsAutopilotManager: React.FC<DigitsAutopilotManagerProps> = (pr
     </Card>
   );
 }
+```
