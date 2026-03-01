@@ -224,7 +224,16 @@ const SherlockPanel: React.FC<{
   compensationDisabled: boolean;
   setCompensationDisabled: (value: boolean) => void;
 }> = ({ pilotKey, pilotState, toggleAutopilot, threshold, setThreshold, lookback, setLookback, compensationDisabled, setCompensationDisabled }) => {
-  return (
+    const { isOn, status, currentTarget, consecutiveLosses, accumulatedLoss } = pilotState;
+
+    const statusInfo = {
+        'PAUSED': { text: 'Pausado', color: 'bg-gray-500' },
+        'TRADING': { text: 'Operando', color: 'bg-green-500' },
+        'COOLDOWN': { text: `Cooldown (${currentTarget})`, color: 'bg-orange-500' }, 
+        'CIRCUIT_BREAKER': { text: 'Pausa de Risco', color: 'bg-red-500' },
+    };
+
+    return (
     <PilotTabContent
       pilotKey={pilotKey}
       title="🕵️ Sherlock Holmes Preditivo"
@@ -233,6 +242,29 @@ const SherlockPanel: React.FC<{
       toggleAutopilot={toggleAutopilot}
     >
       <div className="space-y-6 pt-4 mt-4 border-t">
+         {isOn && (
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-3 text-center text-xs">
+                <div className="p-2 border rounded-lg bg-muted/50">
+                    <p className="text-muted-foreground font-semibold mb-1">Status</p>
+                    <Badge variant="outline" className="flex items-center justify-center gap-1.5">
+                        <div className={cn("h-2 w-2 rounded-full", statusInfo[status]?.color || 'bg-gray-500')}></div>
+                        {statusInfo[status]?.text || status}
+                    </Badge>
+                </div>
+                 <div className="p-2 border rounded-lg bg-muted/50 col-span-2 md:col-span-1">
+                    <p className="text-muted-foreground font-semibold mb-1">Perdas Seguidas</p>
+                    <p className="font-bold text-sm text-red-600">
+                       {consecutiveLosses} {accumulatedLoss > 0 && `($${accumulatedLoss.toFixed(2)})`}
+                    </p>
+                </div>
+                 {status === 'CIRCUIT_BREAKER' && (
+                     <div className="text-xs text-destructive flex items-center gap-2 p-2 rounded-md bg-destructive/10 col-span-full">
+                        <AlertTriangle className="h-4 w-4" />
+                        <span>{currentTarget}</span>
+                     </div>
+                )}
+            </div>
+        )}
         <h4 className="text-xs font-semibold text-muted-foreground">Configuração do Sherlock</h4>
         <div className="space-y-2">
           <Label htmlFor="sherlock-threshold">Limiar de Confiança do Bloco ({threshold.toFixed(0)}%)</Label>
@@ -263,6 +295,7 @@ const SherlockPanel: React.FC<{
     </PilotTabContent>
   );
 };
+
 
 export const DigitsAutopilotManager: React.FC<DigitsAutopilotManagerProps> = (props) => {
   const { 
@@ -642,4 +675,3 @@ export const DigitsAutopilotManager: React.FC<DigitsAutopilotManagerProps> = (pr
     </Card>
   );
 }
-```
