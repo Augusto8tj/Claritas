@@ -16,11 +16,11 @@ Ao contrário das outras plataformas que se focam na direção do preço (subida
     *   **"Difere" (Digit Differ):** Se um dígito apareceu com uma frequência estatisticamente *alta* recentemente (está "quente"), a probabilidade de o próximo tick NÃO terminar nesse dígito aumenta.
     *   **"Combina" (Digit Match):** Se um dígito apareceu com uma frequência estatisticamente *baixa* (está "atrasado" ou "frio"), a probabilidade de ele aparecer no próximo tick aumenta, seguindo a tendência de regressão à média.
 
-4.  **NOVO - Análise Preditiva (Sherlock Holmes):**
-    *   **Lógica de Markov:** Um novo especialista, apelidado de "Sherlock Holmes", analisa a **probabilidade condicional** dos dígitos. Ele responde à pergunta: "Dado que o último dígito foi X, qual a probabilidade de o próximo ser Y?".
-    *   **Matriz de Transição:** O Sherlock constrói uma matriz em tempo real que mapeia a frequência com que cada dígito segue outro, com base nos últimos 500 ticks.
-    *   **Trade de Bloco:** Para aumentar a robustez, em vez de apostar num único dígito de alta probabilidade (o que tem um payout baixo), ele analisa as propriedades do bloco de dígitos mais prováveis. Se a maioria dos dígitos prováveis for par, ele aposta em `DIGITEVEN`, que tem um payout mais alto, aumentando a expectativa de valor da estratégia.
-
+4.  **NOVO - Análise Preditiva (Sherlock Holmes) com Compensação de Latência:**
+    *   **O Desafio do Delay:** Para contratos de 1 tick, um delay de 150-300ms entre a análise e a execução significa que estamos a apostar no resultado de um tick que **já aconteceu**.
+    *   **A Solução Preditiva:** O Sherlock Holmes agora mede a latência média do sistema. Se a latência for, por exemplo, de 250ms, ele sabe que precisa prever não o próximo tick, mas o tick que ocorrerá daqui a 2 ou 3 ticks.
+    *   **Matriz de Transição Multi-Passo:** Ele usa o poder dos **Modelos de Markov** para calcular a probabilidade dos dígitos N passos no futuro, compensando ativamente o delay do sistema e apostando no futuro que realmente importa.
+    *   **Trade de Bloco:** A sua lógica de trade permanece a mesma: ele analisa as propriedades do bloco de dígitos mais prováveis *no futuro previsto* e aposta no contrato de bloco (ex: `DIGITEVEN`) com a maior expectativa de valor.
 
 ---
 
@@ -30,62 +30,50 @@ A plataforma é sustentada por um conjunto de ficheiros dedicados que trabalham 
 
 ### 2.1. Camada de Conexão e Dados: `use-deriv-api-digits.tsx`
 
-Este hook é a espinha dorsal da comunicação, focado apenas no essencial para esta estratégia.
+Este hook é a espinha dorsal da comunicação, agora com instrumentação para medir a latência.
 
-*   **Responsabilidade Principal:** Gerir a conexão WebSocket com a API da Deriv e fornecer um fluxo de dados de ticks em tempo real.
+*   **Responsabilidade Principal:** Gerir a conexão WebSocket e fornecer um fluxo de dados de ticks em tempo real.
 *   **Funções Chave:**
     *   **Conexão Focada:** Estabelece e mantém a conexão, autenticando o token do utilizador.
-    *   **Stream de Ticks:** Subscreve *apenas* ao stream de `ticks` para o ativo selecionado. Não precisa de dados de velas (OHLC), o que a torna mais leve.
-    *   **Estado `priceTicks`:** Mantém um array com os últimos 1000 ticks de preço recebidos, que é a "matéria-prima" para toda a análise.
-    *   **Execução Especializada:** Expõe a função `executeTrade`, construída para enviar os tipos de contrato específicos de dígitos: `DIGITMATCH`, `DIGITDIFF`, entre outros.
+    *   **Stream de Ticks:** Subscreve *apenas* ao stream de `ticks` para o ativo selecionado.
+    *   **Instrumentação de Latência:** Agora regista o timestamp exato em que uma ordem é enviada e quando o resultado (`proposal_open_contract`) é recebido, alimentando o `globalLatencyMonitor` com dados do mundo real.
 
-### 2.2. O Cérebro Estatístico: `use-robot-council-digits.ts`
+### 2.2. O Cérebro Estatístico: `use-robot-council-digits.tsx`
 
-Este é o motor de análise e decisão do piloto automático. Ele contém a lógica tanto para as estratégias de frequência quanto para o novo especialista preditivo "Sherlock Holmes".
+Este é o motor de análise e decisão do piloto automático, agora unificado para gerir todas as estratégias, incluindo a do Sherlock Holmes.
 
-*   **Responsabilidade Principal:** Analisar a distribuição de frequência e as sequências de dígitos para tomar decisões de trading.
+*   **Responsabilidade Principal:** Gerir os pilotos, analisar a distribuição de frequência, as sequências de dígitos e **aplicar a compensação de latência** para tomar decisões.
 *   **Ciclo de Decisão (a cada novo tick):**
-    1.  **Análise de Frequência:** A cada novo tick, o hook recalcula as `digitStats`. Ele analisa os últimos 1000 ticks e conta a ocorrência de cada dígito final (0 a 9).
-    2.  **Cálculo de Probabilidade:** Converte estas contagens em probabilidades percentuais.
-    3.  **Decisão do Conselho (Pilotos de Frequência):**
-        *   Identifica o dígito **mais provável** (maior frequência). Se a sua probabilidade ultrapassar o `consensusThreshold` (limiar de consenso) definido pelo utilizador, o sistema emite um sinal de `differs` para esse dígito.
-        *   Identifica o dígito **menos provável** (menor frequência) para uma potencial aposta de `matches`.
-    4.  **Análise Preditiva (Sherlock Holmes):** Em paralelo, uma lógica dedicada executa o seguinte:
-        *   **Construção da Matriz de Transição:** Analisa os últimos 500 ticks para determinar a frequência com que o dígito `Y` aparece após o dígito `X`.
-        *   **Cálculo de Probabilidade Condicional:** Dado o último dígito que acabou de sair, ele calcula a probabilidade de cada um dos 10 dígitos ser o próximo.
-        *   **Análise de Bloco:** Em vez de apostar no dígito individual mais provável, ele agrega as probabilidades em blocos (Par/Ímpar, Acima/Abaixo de 5).
-        *   **Decisão do Sherlock:** Se a probabilidade de um bloco (ex: "Par") for significativamente alta (acima do `sherlockThreshold`), ele gera um sinal para um contrato de bloco (`DIGITEVEN`).
-    5.  **Execução Automática e Gestão de Risco:**
-        *   Um `useEffect` principal observa os sinais de todos os pilotos ativos (de frequência e do Sherlock).
-        *   Se um sinal válido é emitido e o piloto correspondente está ligado, ele chama o serviço `decideNextStake`.
-        *   O `decideNextStake` analisa o histórico de perdas daquele piloto específico, aplica a lógica de Martingale (se ativada) e retorna o valor final da aposta.
-        *   O sistema então chama a função `executeTrade` com os parâmetros corretos.
+    1.  **Análise de Frequência:** Recalcula as `digitStats` (frequência, z-score, etc.) e o consenso multi-janela.
+    2.  **Monitorização de Latência:** Consulta o `globalLatencyMonitor` para obter a latência média e calcular o `compensationSteps` (quantos ticks no futuro prever).
+    3.  **Análise Preditiva (Sherlock Holmes):**
+        *   **NOVO - Janela Configurável:** Usa o `sherlockLookback` (100 a 1000 ticks) definido pelo utilizador para construir a matriz de transição.
+        *   Chama `predictNTicksAhead`, passando o `compensationSteps` (que pode ser desativado pelo utilizador), para obter as probabilidades dos dígitos **N ticks no futuro**.
+        *   Agrega as probabilidades futuras em blocos (Par/Ímpar, Acima/Abaixo).
+        *   Gera um `sherlockSignal` se a probabilidade de um bloco exceder o `sherlockThreshold`.
+    4.  **Decisão e Execução:**
+        *   Um `useEffect` principal observa os sinais de **todos** os pilotos ativos.
+        *   Se um sinal válido é emitido, ele chama o `decideNextStake`.
+        *   O `decideNextStake` analisa o histórico de perdas daquele piloto específico, aplica a lógica de Martingale e retorna o valor final da aposta.
+        *   O sistema então chama a função `executeTrade`, agora com o `tickEpoch` para iniciar a medição de latência.
 
-### 2.3. A Interface do Utilizador (UI): `deriv-trader-digits/page.tsx` e Componentes
+### 2.3. Serviços e Utilitários
 
-Esta camada visualiza a análise estatística e permite a interação manual ou automática.
+*   **`src/features/trading/utils/latency-monitor.ts`:** Um monitor singleton que rastreia os tempos de ciclo de cada trade para calcular a latência média, P95 e o número de passos de compensação necessários.
+*   **`src/features/trading/services/sherlock-multi-step.ts`:** Contém a lógica matemática pura para a predição multi-passo, incluindo `buildTransitionMatrix` e `predictNTicksAhead`.
 
-*   **`deriv-trader-digits/page.tsx`**: O orquestrador principal que une os hooks e componentes.
-*   **`deriv-trader-interface-digits.tsx`**: O painel de negociação manual, onde o utilizador seleciona um dígito (0-9) e pode executar trades de "Combina", "Difere", "Acima/Abaixo" e "Par/Ímpar".
-*   **`council-autopilot-interface-digits.tsx`**: O painel de controlo centralizado para **todos** os pilotos, incluindo os de frequência e o novo especialista "Sherlock".
-*   **`DigitsDashboard.tsx`**: O dashboard que agora exibe tanto os sinais dos bots baseados em frequência quanto as análises e probabilidades condicionais do Sherlock.
-*   **`digit-stats-chart.tsx`**: Um gráfico de barras que mostra a frequência visual de cada um dos 10 dígitos nos últimos 1000 ticks.
-*   **`operations-log-digits.tsx`**: Exibe o histórico de operações de dígitos da sessão, mostrando o resultado e o P&L.
+### 2.4. A Interface do Utilizador (UI)
+
+*   **`src/app/deriv-trader-digits/page.tsx`**: O orquestrador que une todos os hooks e componentes.
+*   **`src/features/trading/components/deriv-trader/council-autopilot-interface-digits.tsx`**: O painel de controlo centralizado para todos os pilotos. Agora contém:
+    *   Uma aba **"Especialistas"** onde se encontram os controlos para o **Vagalume** e o **Sherlock Holmes**.
+    *   **NOVO - Controlos Avançados do Sherlock:** Sliders para ajustar o **"Limiar de Confiança"** e a **"Janela de Análise"** (lookback), e um interruptor para **ativar/desativar a Compensação de Latência**.
+*   **`src/features/trading/components/deriv-trader/DigitsDashboard.tsx`**: O dashboard principal agora integra e exibe:
+    *   **`LatencyMonitorDashboard`:** Um novo painel que mostra as métricas de latência em tempo real.
+    *   **`SherlockHolmesDashboard`:** O painel que exibe as probabilidades e recomendações do Sherlock, agora com a indicação dos `compensationSteps` que está a usar.
 
 ---
 
-## 3. Como Pode Ser Lucrativo no Caos? A Vantagem Estatística
+## 3. A Vantagem Preditiva: Antecipando o Futuro
 
-A chave para a lucratividade não é prever o futuro, mas sim **arbitrar a diferença entre a probabilidade estatística (seja ela geral ou condicional) e o payout (retorno) oferecido pela corretora**.
-
-*   **Estratégia de Frequência ("Difere"):**
-    *   **Cenário:** O dígito '7' está "quente", aparecendo 18% das vezes.
-    *   **Lógica:** A probabilidade estatística de o próximo dígito **NÃO** ser '7' é de 82%.
-    *   **O Trade:** A corretora oferece um payout de ~10%. Embora o retorno seja baixo, a nossa probabilidade de ganhar (82%) é muito maior do que a probabilidade implícita no payout. Operamos com uma vantagem estatística a nosso favor.
-
-*   **Estratégia Preditiva (Sherlock):**
-    *   **Cenário:** O último dígito foi `3`. A análise do Sherlock mostra que, historicamente, após um `3`, os dígitos `8, 6, 2, 4` aparecem com uma frequência combinada de 65%.
-    *   **Lógica:** Todos esses dígitos são pares. A probabilidade de o próximo dígito ser par é de 65%.
-    *   **O Trade:** A corretora oferece um payout de ~95% para um contrato `DIGITEVEN`. Estamos a apostar num evento com 65% de chance de ocorrer para um retorno de quase 1 para 1, o que representa uma expectativa de valor (EV) massivamente positiva.
-
-Em resumo, **o sistema não prevê o preço, ele mede a distorção estatística atual e a compara com os retornos oferecidos, procurando e executando apenas as apostas que têm uma expectativa matemática positiva.** É uma forma pura de trading quantitativo.
+O sistema não prevê o futuro com uma bola de cristal, mas sim **compensa a demora do presente**. Ao medir a sua própria lentidão, ele ajusta a sua mira para o ponto no tempo onde a "bala" (a ordem) realmente irá aterrar, aumentando drasticamente a probabilidade de acerto para operações de curtíssimo prazo. É a diferença entre atirar onde o alvo está e atirar para onde o alvo **estará**.

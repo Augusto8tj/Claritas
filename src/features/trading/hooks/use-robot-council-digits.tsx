@@ -99,6 +99,9 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
   const [overUnderUnderdogThreshold, setOverUnderUnderdogThreshold] = useState(40);
   const [evenOddUnderdogThreshold, setEvenOddUnderdogThreshold] = useState(40);
   const [sherlockThreshold, setSherlockThreshold] = useState(60);
+  const [sherlockLookback, setSherlockLookback] = useState(500);
+  const [disableSherlockCompensation, setDisableSherlockCompensation] = useState(false);
+
   const [vagalumeConfig, setVagalumeConfig] = useState<VagalumeConfig>({
       maxStreak: 2,
       stateW1_matchThreshold: 8,
@@ -195,10 +198,12 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
   }, [multiWindowAnalysis, analysisResults.mainWindowStats]);
   
   const sherlockAnalysis = useMemo((): SherlockAnalysis | null => {
-      if (priceTicks.length < 500) return null;
-      const ticksForMatrix = priceTicks.slice(-500);
+      if (priceTicks.length < sherlockLookback) return null;
+      
+      const ticksForMatrix = priceTicks.slice(-sherlockLookback);
       const metrics = globalLatencyMonitor.getMetrics();
-      const compensationSteps = metrics.compensationSteps;
+      
+      const compensationSteps = disableSherlockCompensation ? 0 : metrics.compensationSteps;
       
       const { transitionMatrix, lastDigit } = buildTransitionMatrix(ticksForMatrix, decimalPlaces);
       const prediction = predictNTicksAhead(lastDigit, transitionMatrix, compensationSteps);
@@ -212,7 +217,7 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
           blockProbability: bestBlock[1],
           compensationSteps,
       };
-  }, [priceTicks, decimalPlaces]);
+  }, [priceTicks, decimalPlaces, sherlockLookback, disableSherlockCompensation]);
 
   const shouldTrade = useMemo(() => {
     if (!signalQuality) return false;
@@ -282,7 +287,7 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
         }
         
         setTimeout(() => {
-            toast({ title: `Piloto ${strategyLabels[pilotType] || 'Sherlock'} ${newIsOnState ? 'Ativado' : 'Desativado'}` });
+            toast({ title: `Piloto ${strategyLabels[pilotType] || 'Desconhecido'} ${newIsOnState ? 'Ativado' : 'Desativado'}` });
         }, 0);
 
         return {
@@ -364,8 +369,6 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
     const sherlockPilot = pilots.sherlock;
     if (sherlockPilot.isOn && sherlockPilot.status === 'TRADING' && sherlockPilot.activeContractId === null && sherlockAnalysis) {
         if (sherlockAnalysis.blockProbability * 100 > sherlockThreshold) {
-            tradeExecutedThisCycle = true;
-            lastExecutionTimestampRef.current = now;
             
             let contract: DigitContractType | null = null;
             let digit: number | undefined;
@@ -383,6 +386,8 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
                 const stakeDecision = decideNextStake(sherlockPilot.tradeHistory, stakeConfig, bankrollState, contract, sherlockAnalysis.blockProbability);
 
                 if (!stakeDecision.shouldPause) {
+                    tradeExecutedThisCycle = true;
+                    lastExecutionTimestampRef.current = now;
                     executeTrade(contract, stakeDecision.nextStake, activeSymbol!, 1, 't', 'Piloto', priceTicks[priceTicks.length - 1].epoch, digit, 'sherlock')
                         .then(tradeResult => {
                             if (tradeResult.success && tradeResult.contractId) {
@@ -500,7 +505,7 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
                   1, // duration
                   't', // durationUnit
                   'Piloto', // initiator
-                  priceTicks[priceTicks.length - 1].epoch, // CORREÇÃO: tickEpoch adicionado
+                  priceTicks[priceTicks.length - 1].epoch,
                   executionParams[1], // last_digit
                   executionParams[2]  // strategy
               ).then(tradeResult => {
@@ -524,7 +529,8 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
       dailyBalance, dailyTarget, maxLosses, martingaleRecoveryFactor, sessionInitialBankroll, accountBalance.balance, dailyPnl,
       overUnderStats, evenOddStats, overUnderThreshold, evenOddThreshold, underdogThreshold, isUnderdogInverse, overUnderUnderdogThreshold, evenOddUnderdogThreshold,
       executionCooldown, isMartingaleEnabled, isSmartMartingale, analysisResults.mainWindowStats, multiWindowAnalysis, digitStats,
-      cooldownTime, consensusThreshold, underdogDigitStats, onVagalumeTradeCompleted, vagalumeConfig, vagalumeSignal, sherlockAnalysis, sherlockThreshold
+      cooldownTime, consensusThreshold, underdogDigitStats, onVagalumeTradeCompleted, vagalumeConfig, vagalumeSignal, sherlockAnalysis, sherlockThreshold,
+      disableSherlockCompensation, sherlockLookback
   ]);
   
   // --- FUNÇÕES DE OTIMIZAÇÃO E APLICAÇÃO ---
@@ -677,6 +683,8 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
     overUnderUnderdogThreshold, setOverUnderUnderdogThreshold,
     evenOddUnderdogThreshold, setEvenOddUnderdogThreshold,
     sherlockThreshold, setSherlockThreshold,
+    sherlockLookback, setSherlockLookback,
+    disableSherlockCompensation, setDisableSherlockCompensation,
     isMartingaleEnabled, setIsMartingaleEnabled,
     isSmartMartingale, setIsSmartMartingale,
     martingaleRecoveryFactor, setMartingaleRecoveryFactor,

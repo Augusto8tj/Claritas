@@ -14,7 +14,7 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Separator } from "@/components/ui/separator";
 import { Input } from "@/components/ui/input";
-import type { useRobotCouncilDigits, PilotType, PilotState } from "@/features/trading/hooks/use-robot-council-digits";
+import type { useRobotCouncilDigits, PilotType, PilotState } from '@/features/trading/hooks/use-robot-council-digits';
 import { useVagalumeAlternante, type VagalumeConfig, type VagalumeSignal, type DigitContractType } from '@/features/trading/hooks/use-vagalume-alternante';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
@@ -174,6 +174,56 @@ const VagalumePanel: React.FC<{
   );
 };
 
+const SherlockPanel: React.FC<{
+  pilotKey: 'sherlock';
+  pilotState: PilotState;
+  toggleAutopilot: (type: 'sherlock') => void;
+  threshold: number;
+  setThreshold: (value: number) => void;
+  lookback: number;
+  setLookback: (value: number) => void;
+  compensationDisabled: boolean;
+  setCompensationDisabled: (value: boolean) => void;
+}> = ({ pilotKey, pilotState, toggleAutopilot, threshold, setThreshold, lookback, setLookback, compensationDisabled, setCompensationDisabled }) => {
+  return (
+    <PilotTabContent
+      pilotKey={pilotKey}
+      title="🕵️ Sherlock Holmes Preditivo"
+      description="Usa análise de Markov para prever blocos de dígitos, compensando o delay da rede."
+      pilotState={pilotState}
+      toggleAutopilot={toggleAutopilot}
+    >
+      <div className="space-y-6 pt-4 mt-4 border-t">
+        <h4 className="text-xs font-semibold text-muted-foreground">Configuração do Sherlock</h4>
+        <div className="space-y-2">
+          <Label htmlFor="sherlock-threshold">Limiar de Confiança do Bloco ({threshold.toFixed(0)}%)</Label>
+          <Slider id="sherlock-threshold" min={51} max={85} step={1} value={[threshold]} onValueChange={v => setThreshold(v[0])} />
+          <p className="text-xs text-muted-foreground">O Sherlock só irá operar se a probabilidade do bloco recomendado for maior que este valor.</p>
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="sherlock-lookback">Janela de Análise Histórica ({lookback} ticks)</Label>
+          <Slider id="sherlock-lookback" min={100} max={1000} step={50} value={[lookback]} onValueChange={v => setLookback(v[0])} />
+          <p className="text-xs text-muted-foreground">Número de ticks para construir a matriz de probabilidade. Menos = mais reativo, Mais = mais estável.</p>
+        </div>
+
+        <div className="flex items-center justify-between rounded-lg border p-3">
+          <Label htmlFor="sherlock-compensation" className="flex flex-col space-y-1 flex-1 pr-4">
+            <span>Compensação de Latência</span>
+            <span className="font-normal text-xs text-muted-foreground">
+              Desativar força a previsão do próximo tick, ignorando o delay da rede.
+            </span>
+          </Label>
+          <Switch
+            id="sherlock-compensation"
+            checked={!compensationDisabled}
+            onCheckedChange={(checked) => setCompensationDisabled(!checked)}
+          />
+        </div>
+      </div>
+    </PilotTabContent>
+  );
+};
 
 export const DigitsAutopilotManager: React.FC<DigitsAutopilotManagerProps> = (props) => {
   const { 
@@ -197,8 +247,12 @@ export const DigitsAutopilotManager: React.FC<DigitsAutopilotManagerProps> = (pr
     setOverUnderUnderdogThreshold,
     evenOddUnderdogThreshold,
     setEvenOddUnderdogThreshold,
-    sherlockThreshold,
+    sherlockThreshold, 
     setSherlockThreshold,
+    sherlockLookback, 
+    setSherlockLookback,
+    disableSherlockCompensation, 
+    setDisableSherlockCompensation,
     isMartingaleEnabled,
     setIsMartingaleEnabled,
     isSmartMartingale,
@@ -436,22 +490,17 @@ export const DigitsAutopilotManager: React.FC<DigitsAutopilotManagerProps> = (pr
                                 />
                             </TabsContent>
                              <TabsContent value="sherlock" className="pt-4">
-                                <PilotTabContent
+                                <SherlockPanel
                                     pilotKey="sherlock"
-                                    title="🕵️ Sherlock Holmes"
-                                    description="Usa análise preditiva para apostar em blocos de dígitos, compensando a latência da rede."
                                     pilotState={pilots.sherlock}
                                     toggleAutopilot={toggleAutopilot}
-                                >
-                                    <div className="space-y-4 pt-4 mt-4 border-t">
-                                        <h4 className="text-xs font-semibold text-muted-foreground">Configuração do Sherlock</h4>
-                                        <div className="space-y-2">
-                                            <Label htmlFor="sherlock-threshold">Limiar de Confiança do Bloco ({sherlockThreshold.toFixed(1)}%)</Label>
-                                            <Slider id="sherlock-threshold" min={51} max={80} step={1} value={[sherlockThreshold]} onValueChange={v => setSherlockThreshold(v[0])} />
-                                            <p className="text-xs text-muted-foreground">O Sherlock só irá operar se a probabilidade do bloco recomendado for maior que este valor.</p>
-                                        </div>
-                                    </div>
-                                </PilotTabContent>
+                                    threshold={sherlockThreshold}
+                                    setThreshold={setSherlockThreshold}
+                                    lookback={sherlockLookback}
+                                    setLookback={setSherlockLookback}
+                                    compensationDisabled={disableSherlockCompensation}
+                                    setCompensationDisabled={setDisableSherlockCompensation}
+                                />
                             </TabsContent>
                         </Tabs>
                 </TabsContent>
