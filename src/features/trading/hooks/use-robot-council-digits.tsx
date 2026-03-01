@@ -105,13 +105,14 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
   const [vagalumeConfig, setVagalumeConfig] = useState<VagalumeConfig>({
       minSequenceLength: 3,
       usePredictiveAnalysis: true,
-      contextualThreshold: 0.55,
+      contextualThreshold: 55, // Agora um número inteiro de 0-100
+      requireRangingRegime: true, // Novo controle
       allowedContracts: {
         MATCHDIFFERS: true,
         EVENODD: true,
         OVERUNDER: true,
       },
-      // Campos legados
+      // Campos legados para compatibilidade
       maxStreak: 2,
       stateW1_matchThreshold: 8,
       stateL1_differsThreshold: 15,
@@ -367,9 +368,87 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
 
     let tradeExecutedThisCycle = false;
 
+    // --- EXECUÇÃO DO VAGALUME ---
+    const vagalumePilot = pilots.vagalume;
+    if (vagalumePilot.isOn && vagalumePilot.status === 'TRADING' && vagalumePilot.activeContractId === null && vagalumeSignal) {
+      if (vagalumeSignal.shouldTrade) {
+          const measureExecution = timingMonitor.startMeasurement();
+          
+          const currentTickEpoch = priceTicks[priceTicks.length - 1]?.epoch || 0;
+          const tickAge = Date.now() - (currentTickEpoch * 1000);
+          
+          if (tickAge > 1500) {
+              console.warn(`⏸️ [Vagalume] Tick muito antigo (${tickAge}ms). Aguardando próximo tick.`);
+              timingMonitor.recordTiming('vagalume', { analysisTime: 0, executionTime: 0, totalLatency: 0, tickAge, }, true, 'Tick antigo');
+              executionRef.current = false;
+              return;
+          }
+          
+          if (!vagalumeConfig.usePredictiveAnalysis && vagalumeSignal.analysisWindowEnd !== currentTickEpoch) {
+              console.warn(`⏸️ [Vagalume] Novo tick chegou durante análise. Recalculando...`);
+              timingMonitor.recordTiming('vagalume', { analysisTime: 0, executionTime: 0, totalLatency: 0, tickAge, }, true, 'Novo tick durante análise');
+              executionRef.current = false;
+              return;
+          }
+          
+          const initialBankroll = sessionInitialBankroll ?? (accountBalance.balance ?? 1000);
+          const currentBankroll = initialBankroll + dailyPnl;
+          const bankrollState: BankrollState = { currentBankroll, initialBankroll, maxDailyLoss: dailyBalance, dailyProfitTarget: dailyTarget };
+          const stakeConfig: SmartMartingaleConfig = { 
+              isEnabled: isMartingaleEnabled, 
+              baseStake: BASE_STAKE, 
+              maxMartingaleLevels: maxLosses, 
+              martingaleMultiplier: martingaleRecoveryFactor, 
+              useAntiMartingale: false, 
+              isSmart: false,
+          };
+          const stakeDecision = decideNextStake(vagalumePilot.tradeHistory, stakeConfig, bankrollState, vagalumeSignal.suggestedContract, vagalumeSignal.adjustedConfidence);
+
+          if (!stakeDecision.shouldPause) {
+              const finalStake = stakeDecision.nextStake * vagalumeSignal.suggestedStakeMultiplier;
+              
+              executeTrade(
+                  vagalumeSignal.suggestedContract, 
+                  finalStake, 
+                  activeSymbol!, 
+                  1, 
+                  't', 
+                  'Piloto', 
+                  currentTickEpoch,
+                  vagalumeSignal.suggestedDigit, 
+                  'vagalume'
+              ).then(tradeResult => {
+                  const executionTime = measureExecution.end();
+                  const analysisTime = vagalumeSignal.advancedScore?.analysisTime || 0;
+                  timingMonitor.recordTiming('vagalume', {
+                      analysisTime,
+                      executionTime,
+                      totalLatency: executionTime + tickAge,
+                      tickAge,
+                  });
+                  
+                  if (tradeResult.success && tradeResult.contractId) {
+                    setPilots(prev => ({ 
+                        ...prev, 
+                        vagalume: { 
+                            ...prev.vagalume, 
+                            activeContractId: tradeResult.contractId! 
+                        } 
+                    }));
+                  }
+              });
+              
+              tradeExecutedThisCycle = true;
+              lastExecutionTimestampRef.current = now;
+          } else {
+              setPilots(prev => ({ ...prev, vagalume: { ...prev.vagalume, status: 'CIRCUIT_BREAKER', currentTarget: stakeDecision.pauseReason || 'Limite de risco atingido' }}));
+          }
+      }
+    }
+    
     // --- EXECUÇÃO DO SHERLOCK ---
     const sherlockPilot = pilots.sherlock;
-    if (sherlockPilot.isOn && sherlockPilot.status === 'TRADING' && sherlockPilot.activeContractId === null && sherlockAnalysis) {
+    if (!tradeExecutedThisCycle && sherlockPilot.isOn && sherlockPilot.status === 'TRADING' && sherlockPilot.activeContractId === null && sherlockAnalysis) {
         if (sherlockAnalysis.blockProbability * 100 > sherlockThreshold) {
             
             let contract: DigitContractType | null = null;
@@ -412,7 +491,7 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
           const bankrollState: BankrollState = { currentBankroll, initialBankroll, maxDailyLoss: dailyBalance, dailyProfitTarget: dailyTarget };
           
           let shouldExecute = false;
-          let executionParams: [DigitContractType, number?, string?] | null = null;
+          let executionParams: [DigitContractType, number, string] | null = null;
           let contractTypeForStake: DigitContractType = 'DIGITDIFF';
           
           switch (pilotKey) {
@@ -437,11 +516,11 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
             case 'evenOdd':
                if (evenOddStats.probEven > evenOddThreshold / 100) {
                   shouldExecute = true;
-                  executionParams = ['DIGITEVEN', undefined, pilotKey];
+                  executionParams = ['DIGITEVEN', 0, pilotKey];
                   contractTypeForStake = 'DIGITEVEN';
                } else if ((1 - evenOddStats.probEven) > evenOddThreshold / 100) {
                   shouldExecute = true;
-                  executionParams = ['DIGITODD', undefined, pilotKey];
+                  executionParams = ['DIGITODD', 0, pilotKey];
                   contractTypeForStake = 'DIGITODD';
                }
                break;
@@ -476,9 +555,9 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
                 break;
             case 'underdogEvenOdd':
                 if (evenOddStats.probEven < evenOddUnderdogThreshold / 100) {
-                    shouldExecute = true; executionParams = ['DIGITEVEN', undefined, pilotKey]; contractTypeForStake = 'DIGITEVEN';
+                    shouldExecute = true; executionParams = ['DIGITEVEN', 0, pilotKey]; contractTypeForStake = 'DIGITEVEN';
                 } else if (1 - evenOddStats.probEven < evenOddUnderdogThreshold / 100) {
-                    shouldExecute = true; executionParams = ['DIGITODD', undefined, pilotKey]; contractTypeForStake = 'DIGITODD';
+                    shouldExecute = true; executionParams = ['DIGITODD', 0, pilotKey]; contractTypeForStake = 'DIGITODD';
                 }
                 break;
           }
@@ -532,7 +611,7 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
       overUnderStats, evenOddStats, overUnderThreshold, evenOddThreshold, underdogThreshold, isUnderdogInverse, overUnderUnderdogThreshold, evenOddUnderdogThreshold,
       executionCooldown, isMartingaleEnabled, isSmartMartingale, analysisResults.mainWindowStats, multiWindowAnalysis, digitStats,
       cooldownTime, consensusThreshold, underdogDigitStats, onVagalumeTradeCompleted, vagalumeConfig, vagalumeSignal, sherlockAnalysis, sherlockThreshold,
-      disableSherlockCompensation, sherlockLookback
+      disableSherlockCompensation, sherlockLookback, user
   ]);
   
   // --- FUNÇÕES DE OTIMIZAÇÃO E APLICAÇÃO ---

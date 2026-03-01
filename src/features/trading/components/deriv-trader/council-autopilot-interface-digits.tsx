@@ -113,17 +113,18 @@ const VagalumePanel: React.FC<{
   toggleAutopilot: (type: 'vagalume') => void;
   vagalumeSignal: VagalumeSignal | null;
   vagalumeConfig: VagalumeConfig;
-  setVagalumeConfig: (config: VagalumeConfig) => void;
+  setVagalumeConfig: (updater: (config: VagalumeConfig) => VagalumeConfig) => void;
 }> = ({ pilotKey, pilotState, toggleAutopilot, vagalumeSignal, vagalumeConfig, setVagalumeConfig }) => {
   
   const handleContractToggle = (contractType: keyof VagalumeConfig['allowedContracts'], checked: boolean) => {
-    setVagalumeConfig({
-        ...vagalumeConfig,
-        allowedContracts: {
-            ...vagalumeConfig.allowedContracts,
-            [contractType]: checked,
-        },
-    });
+    setVagalumeConfig(prev => ({
+        ...prev,
+        allowedContracts: { ...prev.allowedContracts, [contractType]: checked },
+    }));
+  };
+  
+  const handleConfigChange = (key: keyof VagalumeConfig, value: any) => {
+      setVagalumeConfig(prev => ({ ...prev, [key]: value }));
   };
 
   return (
@@ -139,23 +140,35 @@ const VagalumePanel: React.FC<{
         
         <div className="space-y-2">
           <Label htmlFor="vagalume-sequence-length">Comprimento Mínimo da Sequência ({vagalumeConfig.minSequenceLength})</Label>
-          <Slider id="vagalume-sequence-length" min={0} max={8} step={1} value={[vagalumeConfig.minSequenceLength]} onValueChange={v => setVagalumeConfig({...vagalumeConfig, minSequenceLength: v[0]})} />
+          <Slider id="vagalume-sequence-length" min={0} max={8} step={1} value={[vagalumeConfig.minSequenceLength]} onValueChange={v => handleConfigChange('minSequenceLength', v[0])} />
         </div>
 
         <div className="space-y-2">
-          <Label htmlFor="vagalume-threshold">Limiar de Confiança Contextual ({ (vagalumeConfig.contextualThreshold * 100).toFixed(0) }%)</Label>
-          <Slider id="vagalume-threshold" min={0.51} max={0.75} step={0.01} value={[vagalumeConfig.contextualThreshold]} onValueChange={v => setVagalumeConfig({...vagalumeConfig, contextualThreshold: v[0]})} />
+          <Label htmlFor="vagalume-threshold">Limiar de Confiança Contextual ({vagalumeConfig.contextualThreshold}%)</Label>
+          <Slider id="vagalume-threshold" min={51} max={75} step={1} value={[vagalumeConfig.contextualThreshold]} onValueChange={v => handleConfigChange('contextualThreshold', v[0])} />
         </div>
         
         <div className="flex items-center justify-between rounded-lg border p-3">
           <Label htmlFor="vagalume-predictive" className="flex flex-col space-y-1 flex-1 pr-4">
-            <span>Análise Preditiva (Compensação de Latência)</span>
-            <span className="font-normal text-xs text-muted-foreground">Analisa o estado ANTES do último tick para prever o próximo.</span>
+            <span>Análise Preditiva (Latência)</span>
+            <span className="font-normal text-xs text-muted-foreground">Usa o estado anterior ao último tick para prever o próximo.</span>
           </Label>
           <Switch
             id="vagalume-predictive"
             checked={vagalumeConfig.usePredictiveAnalysis}
-            onCheckedChange={(checked) => setVagalumeConfig({...vagalumeConfig, usePredictiveAnalysis: checked})}
+            onCheckedChange={(checked) => handleConfigChange('usePredictiveAnalysis', checked)}
+          />
+        </div>
+        
+        <div className="flex items-center justify-between rounded-lg border p-3">
+          <Label htmlFor="vagalume-regime" className="flex flex-col space-y-1 flex-1 pr-4">
+            <span>Exigir Regime Ranging</span>
+            <span className="font-normal text-xs text-muted-foreground">Se desativado, o bot contextual opera em qualquer regime.</span>
+          </Label>
+          <Switch
+            id="vagalume-regime"
+            checked={vagalumeConfig.requireRangingRegime}
+            onCheckedChange={(checked) => handleConfigChange('requireRangingRegime', checked)}
           />
         </div>
 
@@ -175,7 +188,7 @@ const VagalumePanel: React.FC<{
         <div className="flex items-center justify-between rounded-lg border p-3">
           <Label htmlFor="vagalume-evenodd" className="flex flex-col space-y-1 flex-1 pr-4">
             <span>Par / Ímpar (Contextual)</span>
-            <span className="font-normal text-xs text-muted-foreground">Opera em mercados laterais (ranging).</span>
+            <span className="font-normal text-xs text-muted-foreground">Opera em mercados com desequilíbrio Par/Ímpar.</span>
           </Label>
           <Switch
             id="vagalume-evenodd"
@@ -186,7 +199,7 @@ const VagalumePanel: React.FC<{
         <div className="flex items-center justify-between rounded-lg border p-3">
           <Label htmlFor="vagalume-overunder" className="flex flex-col space-y-1 flex-1 pr-4">
             <span>Acima / Abaixo (Contextual)</span>
-             <span className="font-normal text-xs text-muted-foreground">Opera em mercados laterais (ranging).</span>
+             <span className="font-normal text-xs text-muted-foreground">Opera em mercados com desequilíbrio Acima/Abaixo.</span>
           </Label>
           <Switch
             id="vagalume-overunder"
@@ -198,6 +211,7 @@ const VagalumePanel: React.FC<{
     </PilotTabContent>
   );
 };
+
 
 const SherlockPanel: React.FC<{
   pilotKey: 'sherlock';

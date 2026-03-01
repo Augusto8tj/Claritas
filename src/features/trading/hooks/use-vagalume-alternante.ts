@@ -25,7 +25,8 @@ export type DigitContractType = 'DIGITMATCH' | 'DIGITDIFF' | 'DIGITEVEN' | 'DIGI
 export interface VagalumeConfig {
   minSequenceLength: number;
   usePredictiveAnalysis: boolean;
-  contextualThreshold: number; // NOVO: Limiar para estratégias de bloco (Par/Ímpar, A/A)
+  contextualThreshold: number; 
+  requireRangingRegime: boolean; // NOVO: Controle sobre o filtro de regime
   allowedContracts: {
     MATCHDIFFERS: boolean;
     EVENODD: boolean;
@@ -106,8 +107,9 @@ export const useVagalumeAlternante = (
     const analysisTicks = config.usePredictiveAnalysis ? ticks.slice(-101, -1) : ticks.slice(-100);
     const advancedScore = calculateAdvancedSignalScore(analysisTicks, 0.5, decimalPlaces);
 
-    if (advancedScore.regime.type !== 'RANGING') {
-      setPauseReason(`Pausado em regime ${advancedScore.regime.type}`);
+    // ✅ CORRIGIDO: Usa a nova configuração para decidir se deve filtrar
+    if (config.requireRangingRegime && advancedScore.regime.type !== 'RANGING') {
+      setPauseReason(`Pausado em regime ${advancedScore.regime.type}. Desative o filtro de regime para operar.`);
       return null;
     }
     
@@ -118,7 +120,7 @@ export const useVagalumeAlternante = (
 
     const { probEven, probOver4, probUnder5 } = calculateDigitStatsForWindow(analysisTicks, 100, decimalPlaces);
     
-    // ✅ NOVO: Usa o threshold configurável pelo usuário
+    // ✅ CORRIGIDO: Usa o threshold configurável pelo usuário
     const threshold = config.contextualThreshold / 100;
     
     if (config.allowedContracts.EVENODD) {
@@ -131,7 +133,7 @@ export const useVagalumeAlternante = (
           confidence,
           suggestedContract: contract,
           shouldTrade: true,
-          reason: `Regime RANGING. Prob. ${contract.replace('DIGIT', '')} = ${(confidence * 100).toFixed(1)}%`,
+          reason: `Regime ${advancedScore.regime.type}. Prob. ${contract.replace('DIGIT', '')} = ${(confidence * 100).toFixed(1)}%`,
           targetOutcome: 'WIN',
           sequenceStats: { currentStreak: 0, alternanceRate: 0, totalTrades: 0 },
           lastTickEpoch: ticks[ticks.length - 1]?.epoch || 0,
@@ -155,7 +157,7 @@ export const useVagalumeAlternante = (
           suggestedContract: contract,
           suggestedDigit,
           shouldTrade: true,
-          reason: `Regime RANGING. Prob. ${contract.replace('DIGIT', '')} > ${suggestedDigit} = ${(confidence * 100).toFixed(1)}%`,
+          reason: `Regime ${advancedScore.regime.type}. Prob. ${contract.replace('DIGIT', '')} > ${suggestedDigit} = ${(confidence * 100).toFixed(1)}%`,
           targetOutcome: 'WIN',
           sequenceStats: { currentStreak: 0, alternanceRate: 0, totalTrades: 0 },
           lastTickEpoch: ticks[ticks.length - 1]?.epoch || 0,
@@ -167,7 +169,7 @@ export const useVagalumeAlternante = (
       }
     }
     
-    setPauseReason('Aguardando oportunidade (Repetição ou Vantagem em Ranging).');
+    setPauseReason('Aguardando oportunidade (Repetição ou Vantagem em Bloco).');
     return null;
 
   }, [ticks, config, decimalPlaces]);
