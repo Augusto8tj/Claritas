@@ -134,12 +134,37 @@ const VagalumePanel: React.FC<{
       pilotState={pilotState}
       toggleAutopilot={toggleAutopilot as any}
     >
-      <div className="space-y-4 pt-4 mt-4 border-t">
+      <div className="space-y-6 pt-4 mt-4 border-t">
+        <h4 className="text-xs font-semibold text-muted-foreground">Configuração Fina do Vagalume</h4>
+        
+        <div className="space-y-2">
+          <Label htmlFor="vagalume-sequence-length">Comprimento Mínimo da Sequência ({vagalumeConfig.minSequenceLength})</Label>
+          <Slider id="vagalume-sequence-length" min={2} max={4} step={1} value={[vagalumeConfig.minSequenceLength]} onValueChange={v => setVagalumeConfig({...vagalumeConfig, minSequenceLength: v[0]})} />
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="vagalume-threshold">Limiar de Confiança Contextual ({ (vagalumeConfig.contextualThreshold * 100).toFixed(0) }%)</Label>
+          <Slider id="vagalume-threshold" min={0.51} max={0.75} step={0.01} value={[vagalumeConfig.contextualThreshold]} onValueChange={v => setVagalumeConfig({...vagalumeConfig, contextualThreshold: v[0]})} />
+        </div>
+        
+        <div className="flex items-center justify-between rounded-lg border p-3">
+          <Label htmlFor="vagalume-predictive" className="flex flex-col space-y-1 flex-1 pr-4">
+            <span>Análise Preditiva (Compensação de Latência)</span>
+            <span className="font-normal text-xs text-muted-foreground">Analisa o estado ANTES do último tick para prever o próximo.</span>
+          </Label>
+          <Switch
+            id="vagalume-predictive"
+            checked={vagalumeConfig.usePredictiveAnalysis}
+            onCheckedChange={(checked) => setVagalumeConfig({...vagalumeConfig, usePredictiveAnalysis: checked})}
+          />
+        </div>
+
+        <Separator/>
         <h4 className="text-xs font-semibold text-muted-foreground">Contratos Permitidos</h4>
         <div className="flex items-center justify-between rounded-lg border p-3">
           <Label htmlFor="vagalume-matchdiffers" className="flex flex-col space-y-1 flex-1 pr-4">
-            <span>Combina / Difere</span>
-            <span className="font-normal text-xs text-muted-foreground">Ativa o "Repetition Trigger" (alta confiança).</span>
+            <span>Combina / Difere (Repetição)</span>
+            <span className="font-normal text-xs text-muted-foreground">Ativa o "Repetition Trigger" de alta confiança.</span>
           </Label>
           <Switch
             id="vagalume-matchdiffers"
@@ -149,7 +174,7 @@ const VagalumePanel: React.FC<{
         </div>
         <div className="flex items-center justify-between rounded-lg border p-3">
           <Label htmlFor="vagalume-evenodd" className="flex flex-col space-y-1 flex-1 pr-4">
-            <span>Par / Ímpar</span>
+            <span>Par / Ímpar (Contextual)</span>
             <span className="font-normal text-xs text-muted-foreground">Opera em mercados laterais (ranging).</span>
           </Label>
           <Switch
@@ -160,7 +185,7 @@ const VagalumePanel: React.FC<{
         </div>
         <div className="flex items-center justify-between rounded-lg border p-3">
           <Label htmlFor="vagalume-overunder" className="flex flex-col space-y-1 flex-1 pr-4">
-            <span>Acima / Abaixo</span>
+            <span>Acima / Abaixo (Contextual)</span>
              <span className="font-normal text-xs text-muted-foreground">Opera em mercados laterais (ranging).</span>
           </Label>
           <Switch

@@ -103,19 +103,21 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
   const [disableSherlockCompensation, setDisableSherlockCompensation] = useState(false);
 
   const [vagalumeConfig, setVagalumeConfig] = useState<VagalumeConfig>({
+      minSequenceLength: 3,
+      usePredictiveAnalysis: true,
+      contextualThreshold: 0.55,
+      allowedContracts: {
+        MATCHDIFFERS: true,
+        EVENODD: true,
+        OVERUNDER: true,
+      },
+      // Campos legados
       maxStreak: 2,
       stateW1_matchThreshold: 8,
       stateL1_differsThreshold: 15,
       resetMultiplier: 1.2,
       pauseAfterFailedResets: 2,
       kellyFraction: 0.25,
-      usePredictiveAnalysis: true,
-      minSequenceLength: 3,
-      allowedContracts: {
-        MATCHDIFFERS: true,
-        EVENODD: true,
-        OVERUNDER: true,
-      }
   });
   
   // --- GESTÃO DE RISCO AVANÇADA (MARTINGALE) ---

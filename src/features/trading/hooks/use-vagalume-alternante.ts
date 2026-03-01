@@ -2,20 +2,11 @@
 'use client';
 
 /**
- * @fileOverview Vagalume V3.1 - Híbrido: Repetition Trigger + Contextual Alternator
+ * @fileOverview Vagalume V3.2 - Híbrido: Repetition Trigger + Contextual Alternator (Totalmente Configurável)
  *
- * Esta é uma implementação totalmente nova que abandona a lógica de W/L (Gambler's Fallacy)
- * e adota uma abordagem híbrida e matematicamente mais robusta.
- *
- * ESTRATÉGIA PRIMÁRIA: Repetition Trigger
- * - Detecta sequências de N dígitos idênticos.
- * - Dispara um trade 'DIGITDIFF' de alta confiança.
- *
- * ESTRATÉGIA SECUNDÁRIA: Contextual Alternator
- * - Opera apenas quando não há sequência de repetição.
- * - Analisa o regime de mercado usando 'digit-indicators'.
- * - Se o mercado for 'RANGING', procura oportunidades em 'DIGITEVEN'/'DIGITODD' ou 'OVER/UNDER'.
- * - PAUSA em mercados 'CHAOTIC' ou 'TRENDING'.
+ * Esta versão agora aceita um objeto de configuração completo, permitindo
+ * que o usuário ajuste dinamicamente seus parâmetros de sensibilidade e
+ * estratégia através da interface.
  */
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import type { Operation, TickData } from '@/lib/types';
@@ -34,6 +25,7 @@ export type DigitContractType = 'DIGITMATCH' | 'DIGITDIFF' | 'DIGITEVEN' | 'DIGI
 export interface VagalumeConfig {
   minSequenceLength: number;
   usePredictiveAnalysis: boolean;
+  contextualThreshold: number; // NOVO: Limiar para estratégias de bloco (Par/Ímpar, A/A)
   allowedContracts: {
     MATCHDIFFERS: boolean;
     EVENODD: boolean;
@@ -80,7 +72,7 @@ export const useVagalumeAlternante = (
 
   const onTradeCompleted = useCallback((lastTrade: Operation) => {
     // A lógica de estado W/L foi removida, então este callback é apenas para log.
-    console.log(`[Vagalume V3] Trade concluído: ${lastTrade.result! > 0 ? 'WIN' : 'LOSS'}`);
+    console.log(`[Vagalume V3.2] Trade concluído: ${lastTrade.result! > 0 ? 'WIN' : 'LOSS'}`);
   }, []);
 
   const signal = useMemo((): VagalumeSignal | null => {
@@ -126,7 +118,8 @@ export const useVagalumeAlternante = (
 
     const { probEven, probOver4, probUnder5 } = calculateDigitStatsForWindow(analysisTicks, 100, decimalPlaces);
     
-    const threshold = 0.55;
+    // ✅ NOVO: Usa o threshold configurável pelo usuário
+    const threshold = config.contextualThreshold / 100;
     
     if (config.allowedContracts.EVENODD) {
       if (probEven > threshold || (1 - probEven) > threshold) {
