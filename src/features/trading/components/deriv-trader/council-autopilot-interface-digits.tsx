@@ -139,7 +139,7 @@ const VagalumePanel: React.FC<{
         
         <div className="space-y-2">
           <Label htmlFor="vagalume-sequence-length">Comprimento Mínimo da Sequência ({vagalumeConfig.minSequenceLength})</Label>
-          <Slider id="vagalume-sequence-length" min={2} max={4} step={1} value={[vagalumeConfig.minSequenceLength]} onValueChange={v => setVagalumeConfig({...vagalumeConfig, minSequenceLength: v[0]})} />
+          <Slider id="vagalume-sequence-length" min={0} max={8} step={1} value={[vagalumeConfig.minSequenceLength]} onValueChange={v => setVagalumeConfig({...vagalumeConfig, minSequenceLength: v[0]})} />
         </div>
 
         <div className="space-y-2">
