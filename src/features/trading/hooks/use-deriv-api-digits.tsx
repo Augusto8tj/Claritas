@@ -10,7 +10,7 @@ import { useAuth } from '@/features/auth/hooks/use-auth';
 import { saveLiveTickForDigits } from '@/services/digits-data-service';
 import { validateAndLogContract } from '@/features/trading/utils/contract-validator';
 import { timingMonitor } from '@/features/trading/utils/timing-monitor';
-import { globalLatencyMonitor } from '../utils/latency-monitor';
+import { globalLatencyMonitor, LatencyMetrics } from '../utils/latency-monitor';
 
 
 // --- CONSTANTS ---
@@ -288,7 +288,6 @@ export function useDerivApiDigitsState() {
                             const contract = response.proposal_open_contract;
                             if (!contract || !contract.contract_type?.startsWith('DIGIT')) return;
                             
-                            // AQUI registamos a latência total do ciclo
                             if (contract.is_sold === 1) {
                                 globalLatencyMonitor.recordFullCycle(contract.contract_id, contract.sell_time);
                             }
@@ -300,14 +299,21 @@ export function useDerivApiDigitsState() {
                                     const op = updatedLog[existingOpIndex]!;
                                     
                                     if (contract.is_sold === 1) {
-                                        const exitPrice = contract.exit_tick ? parseFloat(contract.exit_tick) : op.entryPrice;
+                                        const exitPriceStr = contract.exit_tick_display_value || (contract.exit_tick !== undefined ? String(contract.exit_tick) : undefined);
+                                        if (exitPriceStr === undefined) {
+                                            console.error(`Divergência: Não foi possível determinar o preço de saída para o contrato #${contract.contract_id}.`, contract);
+                                            const newStatus = contract.status === 'won' ? 'won' : 'lost';
+                                            updatedLog[existingOpIndex] = { ...op, status: newStatus, result: contract.profit, exitTimestamp: new Date(contract.sell_time * 1000).toISOString() };
+                                            return updatedLog;
+                                        }
+                                        const exitPrice = parseFloat(exitPriceStr);
                                         const apiStatus = contract.status === 'won' ? 'won' : 'lost';
                                         
                                         const validationLog = validateAndLogContract(
                                             contract.contract_id,
                                             op.contractType as string,
                                             (op as any).last_digit_prediction,
-                                            exitPrice!,
+                                            exitPrice,
                                             contract.exit_tick_time || contract.sell_time,
                                             apiStatus,
                                             activeAsset?.pip ?? 2
@@ -486,7 +492,6 @@ export function useDerivApiDigitsState() {
             throw new Error("Falha na compra do contrato, ID não retornado.");
         }
 
-        // Registrar início do ciclo de latência
         globalLatencyMonitor.startTrade(contractId, tickEpoch);
         
         const purchaseTimeMs = (buyResult.purchase_time || Math.floor(Date.now() / 1000)) * 1000;
