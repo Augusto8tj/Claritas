@@ -101,6 +101,7 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
   const [sherlockThreshold, setSherlockThreshold] = useState(60);
   const [sherlockLookback, setSherlockLookback] = useState(500);
   const [disableSherlockCompensation, setDisableSherlockCompensation] = useState(false);
+  const [sherlockWinRateThreshold, setSherlockWinRateThreshold] = useState(45);
 
   const [vagalumeConfig, setVagalumeConfig] = useState<VagalumeConfig>({
       minSequenceLength: 3,
@@ -454,14 +455,23 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
     
     // --- EXECUÇÃO DO SHERLOCK ---
     const sherlockPilot = pilots.sherlock;
-    console.log('🕵️ Sherlock Debug:', {
-        isOn: sherlockPilot.isOn,
-        status: sherlockPilot.status,
-        activeContractId: sherlockPilot.activeContractId,
-        blockProb: sherlockAnalysis?.blockProbability,
-    });
+    
+    const sherlockHistory = sherlockPilot.tradeHistory;
+    const sherlockSessionWinRate = sherlockHistory.length > 0 ? (sherlockHistory.filter(t => t.result && t.result > 0).length / sherlockHistory.length) * 100 : 100;
+    
+    let canSherlockTrade = true;
+    let sherlockPauseReason = '';
+
+    if (sherlockHistory.length >= 10 && sherlockSessionWinRate < sherlockWinRateThreshold) {
+        canSherlockTrade = false;
+        sherlockPauseReason = `Win Rate (${sherlockSessionWinRate.toFixed(1)}%) abaixo do limiar de ${sherlockWinRateThreshold}%`;
+    }
+
     if (!tradeExecutedThisCycle && sherlockPilot.isOn && sherlockPilot.status === 'TRADING' && sherlockPilot.activeContractId === null && sherlockAnalysis) {
-        if (sherlockAnalysis.blockProbability * 100 > sherlockThreshold) {
+
+        if (!canSherlockTrade) {
+             setPilots(prev => ({ ...prev, sherlock: { ...prev.sherlock, status: 'CIRCUIT_BREAKER', currentTarget: sherlockPauseReason }}));
+        } else if (sherlockAnalysis.blockProbability * 100 > sherlockThreshold) {
             
             let contract: DigitContractType | null = null;
             let digit: number | undefined;
@@ -479,10 +489,14 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
                 const stakeDecision = decideNextStake(sherlockPilot.tradeHistory, stakeConfig, bankrollState, contract, sherlockAnalysis.blockProbability);
 
                 if (!stakeDecision.shouldPause) {
+                    const tradeStartTime = performance.now();
                     tradeExecutedThisCycle = true;
                     lastExecutionTimestampRef.current = now;
                     executeTrade(contract, stakeDecision.nextStake, activeSymbol!, 1, 't', 'Piloto', priceTicks[priceTicks.length - 1].epoch, digit, 'sherlock')
                         .then(tradeResult => {
+                            const totalLatency = performance.now() - tradeStartTime;
+                            globalLatencyMonitor.recordFullCycle(totalLatency);
+                            console.log(`⏱️ [Sherlock] Latency: ${totalLatency.toFixed(0)}ms`);
                             if (tradeResult.success && tradeResult.contractId) {
                                 setPilots(prev => ({ ...prev, sherlock: { ...prev.sherlock, activeContractId: tradeResult.contractId! }}));
                             }
@@ -625,7 +639,7 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
       overUnderStats, evenOddStats, overUnderThreshold, evenOddThreshold, underdogThreshold, isUnderdogInverse, overUnderUnderdogThreshold, evenOddUnderdogThreshold,
       executionCooldown, isMartingaleEnabled, isSmartMartingale, analysisResults.mainWindowStats, multiWindowAnalysis, digitStats,
       cooldownTime, consensusThreshold, underdogDigitStats, onVagalumeTradeCompleted, vagalumeConfig, vagalumeSignal, sherlockAnalysis, sherlockThreshold,
-      disableSherlockCompensation, sherlockLookback, user
+      disableSherlockCompensation, sherlockLookback, user, sherlockWinRateThreshold
   ]);
   
   // --- FUNÇÕES DE OTIMIZAÇÃO E APLICAÇÃO ---
@@ -780,6 +794,7 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
     sherlockThreshold, setSherlockThreshold,
     sherlockLookback, setSherlockLookback,
     disableSherlockCompensation, setDisableSherlockCompensation,
+    sherlockWinRateThreshold, setSherlockWinRateThreshold,
     isMartingaleEnabled, setIsMartingaleEnabled,
     isSmartMartingale, setIsSmartMartingale,
     martingaleRecoveryFactor, setMartingaleRecoveryFactor,

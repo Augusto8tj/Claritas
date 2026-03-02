@@ -223,7 +223,15 @@ const SherlockPanel: React.FC<{
   setLookback: (value: number) => void;
   compensationDisabled: boolean;
   setCompensationDisabled: (value: boolean) => void;
-}> = ({ pilotKey, pilotState, toggleAutopilot, threshold, setThreshold, lookback, setLookback, compensationDisabled, setCompensationDisabled }) => {
+  winRateThreshold: number;
+  setWinRateThreshold: (value: number) => void;
+}> = ({ 
+  pilotKey, pilotState, toggleAutopilot, 
+  threshold, setThreshold, 
+  lookback, setLookback, 
+  compensationDisabled, setCompensationDisabled,
+  winRateThreshold, setWinRateThreshold,
+}) => {
     const { isOn, status, currentTarget, consecutiveLosses, accumulatedLoss } = pilotState;
 
     const statusInfo = {
@@ -277,6 +285,12 @@ const SherlockPanel: React.FC<{
           <Slider id="sherlock-lookback" min={100} max={1000} step={50} value={[lookback]} onValueChange={v => setLookback(v[0])} />
           <p className="text-xs text-muted-foreground">Número de ticks para construir a matriz de probabilidade. Menos = mais reativo, Mais = mais estável.</p>
         </div>
+        
+        <div className="space-y-2">
+          <Label htmlFor="sherlock-winrate-threshold">Limiar de Win Rate da Sessão ({winRateThreshold.toFixed(0)}%)</Label>
+          <Slider id="sherlock-winrate-threshold" min={1} max={100} step={1} value={[winRateThreshold]} onValueChange={v => setWinRateThreshold(v[0])} />
+          <p className="text-xs text-muted-foreground">Pausa o Sherlock se a taxa de acerto da sessão cair abaixo deste valor (requer 10+ trades).</p>
+        </div>
 
         <div className="flex items-center justify-between rounded-lg border p-3">
           <Label htmlFor="sherlock-compensation" className="flex flex-col space-y-1 flex-1 pr-4">
@@ -325,6 +339,8 @@ export const DigitsAutopilotManager: React.FC<DigitsAutopilotManagerProps> = (pr
     setSherlockLookback,
     disableSherlockCompensation, 
     setDisableSherlockCompensation,
+    sherlockWinRateThreshold,
+    setSherlockWinRateThreshold,
     isMartingaleEnabled,
     setIsMartingaleEnabled,
     isSmartMartingale,
@@ -546,7 +562,7 @@ export const DigitsAutopilotManager: React.FC<DigitsAutopilotManagerProps> = (pr
                 </TabsContent>
 
                 <TabsContent value="experts" className="pt-4 space-y-6">
-                     <Tabs defaultValue="vagalume" className="w-full">
+                     <Tabs defaultValue="sherlock" className="w-full">
                            <TabsList className="grid w-full grid-cols-2">
                                 <TabsTrigger value="vagalume" className="text-xs sm:text-sm"><Wand2 className="h-4 w-4 mr-1.5"/>Vagalume Híbrido</TabsTrigger>
                                 <TabsTrigger value="sherlock" className="text-xs sm:text-sm"><BrainCircuit className="h-4 w-4 mr-1.5"/>Sherlock Preditivo</TabsTrigger>
@@ -572,6 +588,8 @@ export const DigitsAutopilotManager: React.FC<DigitsAutopilotManagerProps> = (pr
                                     setLookback={setSherlockLookback}
                                     compensationDisabled={disableSherlockCompensation}
                                     setCompensationDisabled={setDisableSherlockCompensation}
+                                    winRateThreshold={sherlockWinRateThreshold}
+                                    setWinRateThreshold={setSherlockWinRateThreshold}
                                 />
                             </TabsContent>
                         </Tabs>
@@ -674,4 +692,4 @@ export const DigitsAutopilotManager: React.FC<DigitsAutopilotManagerProps> = (pr
       </CardContent>
     </Card>
   );
-}
+};
