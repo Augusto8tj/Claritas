@@ -209,7 +209,7 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
       
       const compensationSteps = disableSherlockCompensation 
         ? 0 
-        : Math.min(metrics.compensationSteps, 2);
+        : Math.min(Math.ceil(metrics.avgLatency / 1000), 3);
       
       const { transitionMatrix, lastDigit } = buildTransitionMatrix(ticksForMatrix, decimalPlaces);
       const prediction = predictNTicksAhead(lastDigit, transitionMatrix, compensationSteps);
@@ -316,6 +316,9 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
   }, []);
   
   useEffect(() => {
+    const cycleStart = performance.now();
+    console.log(`🔄 Cycle Start: ${cycleStart.toFixed(0)}ms`);
+
     if (executionRef.current) return;
     const activePilotEntries = Object.entries(pilots).filter(([, p]) => p.isOn);
     if (activePilotEntries.length === 0) return;
@@ -456,22 +459,22 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
     // --- EXECUÇÃO DO SHERLOCK ---
     const sherlockPilot = pilots.sherlock;
     
+    // --- CORREÇÃO: Lógica do Disjuntor do Sherlock movida para cá ---
     const sherlockHistory = sherlockPilot.tradeHistory;
     const sherlockSessionWinRate = sherlockHistory.length > 0 ? (sherlockHistory.filter(t => t.result && t.result > 0).length / sherlockHistory.length) * 100 : 100;
     
-    let canSherlockTrade = true;
-    let sherlockPauseReason = '';
+    const sherlockShouldBePaused = sherlockHistory.length >= 10 && sherlockSessionWinRate < sherlockWinRateThreshold;
+    const sherlockPauseReason = `Win rate da sessão (${sherlockSessionWinRate.toFixed(1)}%) abaixo do limiar de ${sherlockWinRateThreshold}%.`;
 
-    if (sherlockHistory.length >= 10 && sherlockSessionWinRate < sherlockWinRateThreshold) {
-        canSherlockTrade = false;
-        sherlockPauseReason = `Win Rate (${sherlockSessionWinRate.toFixed(1)}%) abaixo do limiar de ${sherlockWinRateThreshold}%`;
+    if (sherlockShouldBePaused && sherlockPilot.status !== 'CIRCUIT_BREAKER') {
+        setPilots(prev => ({ ...prev, sherlock: { ...prev.sherlock, status: 'CIRCUIT_BREAKER', currentTarget: sherlockPauseReason }}));
+    } else if (!sherlockShouldBePaused && sherlockPilot.status === 'CIRCUIT_BREAKER') {
+        setPilots(prev => ({ ...prev, sherlock: { ...prev.sherlock, status: 'TRADING', currentTarget: 'Reativado por ajuste de limiar.' }}));
     }
 
     if (!tradeExecutedThisCycle && sherlockPilot.isOn && sherlockPilot.status === 'TRADING' && sherlockPilot.activeContractId === null && sherlockAnalysis) {
 
-        if (!canSherlockTrade) {
-             setPilots(prev => ({ ...prev, sherlock: { ...prev.sherlock, status: 'CIRCUIT_BREAKER', currentTarget: sherlockPauseReason }}));
-        } else if (sherlockAnalysis.blockProbability * 100 > sherlockThreshold) {
+        if (sherlockAnalysis.blockProbability * 100 > sherlockThreshold) {
             
             let contract: DigitContractType | null = null;
             let digit: number | undefined;
@@ -497,6 +500,7 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
                             const totalLatency = performance.now() - tradeStartTime;
                             globalLatencyMonitor.recordFullCycle(totalLatency);
                             console.log(`⏱️ [Sherlock] Latency: ${totalLatency.toFixed(0)}ms`);
+
                             if (tradeResult.success && tradeResult.contractId) {
                                 setPilots(prev => ({ ...prev, sherlock: { ...prev.sherlock, activeContractId: tradeResult.contractId! }}));
                             }
