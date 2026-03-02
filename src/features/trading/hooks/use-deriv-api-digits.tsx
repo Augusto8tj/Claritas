@@ -289,7 +289,7 @@ export function useDerivApiDigitsState() {
                             if (!contract || !contract.contract_type?.startsWith('DIGIT')) return;
                             
                             if (contract.is_sold === 1) {
-                                globalLatencyMonitor.recordFullCycle(contract.contract_id, contract.sell_time);
+                                globalLatencyMonitor.recordFullCycle(contract.contract_id);
                             }
 
                             setAndPersistOperationsLog(prevLog => {
@@ -300,12 +300,14 @@ export function useDerivApiDigitsState() {
                                     
                                     if (contract.is_sold === 1) {
                                         const exitPriceStr = contract.exit_tick_display_value || (contract.exit_tick !== undefined ? String(contract.exit_tick) : undefined);
+                                        
+                                        // CORREÇÃO: Tratar preço de saída inválido
                                         if (exitPriceStr === undefined) {
                                             console.error(`Divergência: Não foi possível determinar o preço de saída para o contrato #${contract.contract_id}.`, contract);
-                                            const newStatus = contract.status === 'won' ? 'won' : 'lost';
-                                            updatedLog[existingOpIndex] = { ...op, status: newStatus, result: contract.profit, exitTimestamp: new Date(contract.sell_time * 1000).toISOString() };
+                                            updatedLog[existingOpIndex] = { ...op, status: 'lost', result: -op.stake, exitTimestamp: new Date().toISOString() };
                                             return updatedLog;
                                         }
+
                                         const exitPrice = parseFloat(exitPriceStr);
                                         const apiStatus = contract.status === 'won' ? 'won' : 'lost';
                                         
@@ -491,8 +493,6 @@ export function useDerivApiDigitsState() {
         if (!contractId) {
             throw new Error("Falha na compra do contrato, ID não retornado.");
         }
-
-        globalLatencyMonitor.startTrade(contractId, tickEpoch);
         
         const purchaseTimeMs = (buyResult.purchase_time || Math.floor(Date.now() / 1000)) * 1000;
         const expirationTimeMs = buyResult.expiry_time * 1000;
