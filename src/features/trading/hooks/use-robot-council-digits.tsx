@@ -106,7 +106,7 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
       minSequenceLength: 3,
       usePredictiveAnalysis: true,
       contextualThreshold: 55, // Agora um número inteiro de 0-100
-      requireRangingRegime: true, // Novo controle
+      requireRangingRegime: true, // NOVO: Controle sobre o filtro de regime
       allowedContracts: {
         MATCHDIFFERS: true,
         EVENODD: true,
@@ -206,7 +206,9 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
       const ticksForMatrix = priceTicks.slice(-sherlockLookback);
       const metrics = globalLatencyMonitor.getMetrics();
       
-      const compensationSteps = disableSherlockCompensation ? 0 : metrics.compensationSteps;
+      const compensationSteps = disableSherlockCompensation 
+        ? 0 
+        : Math.min(metrics.compensationSteps, 2);
       
       const { transitionMatrix, lastDigit } = buildTransitionMatrix(ticksForMatrix, decimalPlaces);
       const prediction = predictNTicksAhead(lastDigit, transitionMatrix, compensationSteps);
@@ -323,7 +325,7 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
     if (lastOp && lastOp.id !== lastProcessedOpIdRef.current && lastOp.status !== 'pending') {
       lastProcessedOpIdRef.current = lastOp.id;
       
-      const pilotKey = lastOp.strategy as PilotType | 'vagalume' | undefined;
+      const pilotKey = lastOp.strategy as PilotType | undefined;
 
       if (pilotKey) {
         if (pilotKey === 'vagalume') {
@@ -340,8 +342,12 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
             setPilots(prev => ({
                 ...prev,
                 [pilotKey as PilotType]: {
-                    ...pilotToUpdate, tradeHistory: updatedHistory, consecutiveLosses: newLosses,
-                    accumulatedLoss: newAccumulatedLoss, status: newStatus, activeContractId: null,
+                    ...pilotToUpdate, 
+                    tradeHistory: updatedHistory, 
+                    consecutiveLosses: newLosses,
+                    accumulatedLoss: newAccumulatedLoss, 
+                    status: newStatus, 
+                    activeContractId: null,
                 }
             }));
 
@@ -350,7 +356,7 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
                 setPilots(prev => {
                   const currentPilot = prev[pilotKey as PilotType];
                   if (currentPilot?.status === 'COOLDOWN') {
-                    return { ...prev, [pilotKey as PilotType]: { ...currentPilot, status: 'TRADING' } };
+                    return { ...prev, [pilotKey as PilotType]: { ...currentPilot, status: 'TRADING', currentTarget: `Pausa de ${cooldownTime}s terminada` } };
                   }
                   return prev;
                 });
@@ -448,6 +454,12 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
     
     // --- EXECUÇÃO DO SHERLOCK ---
     const sherlockPilot = pilots.sherlock;
+    console.log('🕵️ Sherlock Debug:', {
+        isOn: sherlockPilot.isOn,
+        status: sherlockPilot.status,
+        activeContractId: sherlockPilot.activeContractId,
+        blockProb: sherlockAnalysis?.blockProbability,
+    });
     if (!tradeExecutedThisCycle && sherlockPilot.isOn && sherlockPilot.status === 'TRADING' && sherlockPilot.activeContractId === null && sherlockAnalysis) {
         if (sherlockAnalysis.blockProbability * 100 > sherlockThreshold) {
             
@@ -475,6 +487,8 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
                                 setPilots(prev => ({ ...prev, sherlock: { ...prev.sherlock, activeContractId: tradeResult.contractId! }}));
                             }
                         });
+                } else {
+                     setPilots(prev => ({ ...prev, sherlock: { ...prev.sherlock, status: 'CIRCUIT_BREAKER', currentTarget: stakeDecision.pauseReason || 'Limite de risco atingido' }}));
                 }
             }
         }
@@ -491,7 +505,7 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
           const bankrollState: BankrollState = { currentBankroll, initialBankroll, maxDailyLoss: dailyBalance, dailyProfitTarget: dailyTarget };
           
           let shouldExecute = false;
-          let executionParams: [DigitContractType, number, string] | null = null;
+          let executionParams: [DigitContractType, number | undefined, string] | null = null;
           let contractTypeForStake: DigitContractType = 'DIGITDIFF';
           
           switch (pilotKey) {
@@ -516,11 +530,11 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
             case 'evenOdd':
                if (evenOddStats.probEven > evenOddThreshold / 100) {
                   shouldExecute = true;
-                  executionParams = ['DIGITEVEN', 0, pilotKey];
+                  executionParams = ['DIGITEVEN', undefined, pilotKey];
                   contractTypeForStake = 'DIGITEVEN';
                } else if ((1 - evenOddStats.probEven) > evenOddThreshold / 100) {
                   shouldExecute = true;
-                  executionParams = ['DIGITODD', 0, pilotKey];
+                  executionParams = ['DIGITODD', undefined, pilotKey];
                   contractTypeForStake = 'DIGITODD';
                }
                break;
@@ -555,9 +569,9 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
                 break;
             case 'underdogEvenOdd':
                 if (evenOddStats.probEven < evenOddUnderdogThreshold / 100) {
-                    shouldExecute = true; executionParams = ['DIGITEVEN', 0, pilotKey]; contractTypeForStake = 'DIGITEVEN';
+                    shouldExecute = true; executionParams = ['DIGITEVEN', undefined, pilotKey]; contractTypeForStake = 'DIGITEVEN';
                 } else if (1 - evenOddStats.probEven < evenOddUnderdogThreshold / 100) {
-                    shouldExecute = true; executionParams = ['DIGITODD', 0, pilotKey]; contractTypeForStake = 'DIGITODD';
+                    shouldExecute = true; executionParams = ['DIGITODD', undefined, pilotKey]; contractTypeForStake = 'DIGITODD';
                 }
                 break;
           }
