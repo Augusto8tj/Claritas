@@ -48,6 +48,7 @@ export interface PilotState {
     accumulatedLoss: number;
     tradeHistory: Operation[];
     activeContractId: number | null; 
+    isMartingaleEnabled: boolean;
 }
 
 export interface SherlockAnalysis {
@@ -76,6 +77,7 @@ const createInitialPilotState = (): PilotState => ({
     accumulatedLoss: 0,
     tradeHistory: [],
     activeContractId: null,
+    isMartingaleEnabled: true,
 });
 
 // ============================================================================
@@ -122,7 +124,6 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
   });
   
   // --- GESTÃO DE RISCO AVANÇADA (MARTINGALE & CONSENSO) ---
-  const [isMartingaleEnabled, setIsMartingaleEnabled] = useState(false);
   const [isSmartMartingale, setIsSmartMartingale] = useState(false);
   const [martingaleRecoveryInstallments, setMartingaleRecoveryInstallments] = useState(3);
   const [cooldownTime, setCooldownTime] = useState(5);
@@ -228,9 +229,9 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
   }, [priceTicks, decimalPlaces, sherlockLookback, disableSherlockCompensation]);
 
   const shouldTrade = useMemo(() => {
-      if (!multiWindowAnalysis) return false;
-      const { hottestScore } = multiWindowAnalysis;
-      return hottestScore > consensusThreshold;
+    if (!multiWindowAnalysis) return false;
+    const { hottestScore } = multiWindowAnalysis;
+    return hottestScore > consensusThreshold;
   }, [multiWindowAnalysis, consensusThreshold]);
   
 
@@ -309,6 +310,19 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
     });
   }, [sessionInitialBankroll, accountBalance.balance, toast]);
   
+  const togglePilotMartingale = useCallback((pilotKey: PilotType) => {
+    setPilots(prev => {
+        if (!prev[pilotKey]) return prev;
+        return {
+            ...prev,
+            [pilotKey]: {
+                ...prev[pilotKey],
+                isMartingaleEnabled: !prev[pilotKey].isMartingaleEnabled,
+            }
+        };
+    });
+  }, []);
+
   useEffect(() => {
     const interval = setInterval(() => {
         setLatencyMetrics(globalLatencyMonitor.getMetrics());
@@ -411,7 +425,7 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
           if (group.length >= minConsensus) {
             const avgConfidence = group.reduce((sum, s) => sum + s.confidence, 0) / group.length;
             const leadSignal = group[0]; 
-            const stakeConfig: SmartMartingaleConfig = { isEnabled: isMartingaleEnabled, baseStake: BASE_STAKE, maxMartingaleLevels: maxLosses, martingaleRecoveryInstallments: martingaleRecoveryInstallments, isSmart: isSmartMartingale };
+            const stakeConfig: SmartMartingaleConfig = { isEnabled: leadSignal.pilotKey ? pilots[leadSignal.pilotKey].isMartingaleEnabled : false, baseStake: BASE_STAKE, maxMartingaleLevels: maxLosses, martingaleRecoveryInstallments: martingaleRecoveryInstallments, isSmart: isSmartMartingale };
             const bankrollState: BankrollState = { currentBankroll: (sessionInitialBankroll ?? 100) + dailyPnl, initialBankroll: sessionInitialBankroll, maxDailyLoss: dailyBalance, dailyProfitTarget: dailyTarget };
             const stakeDecision = decideNextStake(pilots[leadSignal.pilotKey].tradeHistory, stakeConfig, bankrollState, leadSignal.contract, avgConfidence);
             
@@ -540,7 +554,7 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
               const pilotKeyForStake = executionParams[2] as PilotType;
               const pilotForStake = pilots[pilotKeyForStake];
               const stakeConfig: SmartMartingaleConfig = { 
-                  isEnabled: isMartingaleEnabled, baseStake: BASE_STAKE, maxMartingaleLevels: maxLosses, 
+                  isEnabled: pilotForStake.isMartingaleEnabled, baseStake: BASE_STAKE, maxMartingaleLevels: maxLosses, 
                   martingaleRecoveryInstallments: martingaleRecoveryInstallments, isSmart: isSmartMartingale,
               };
               const confidenceForStake = signalQuality?.confidenceLevel === 'MUITO_ALTA' ? 0.85 : signalQuality?.confidenceLevel === 'ALTA' ? 0.75 : signalQuality?.confidenceLevel === 'MEDIA' ? 0.65 : 0.55;
@@ -575,7 +589,7 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
       priceTicks, pilots, operationsLog, signalQuality, shouldTrade, councilDecision, executeTrade, activeSymbol, toast, 
       dailyBalance, dailyTarget, maxLosses, martingaleRecoveryInstallments, sessionInitialBankroll, accountBalance.balance, dailyPnl,
       overUnderStats, evenOddStats, overUnderThreshold, evenOddThreshold, underdogThreshold, isUnderdogInverse, overUnderUnderdogThreshold, evenOddUnderdogThreshold,
-      executionCooldown, isMartingaleEnabled, isSmartMartingale, analysisResults.mainWindowStats, multiWindowAnalysis, digitStats,
+      executionCooldown, isSmartMartingale, analysisResults.mainWindowStats, multiWindowAnalysis, digitStats,
       cooldownTime, consensusThreshold, underdogDigitStats, onVagalumeTradeCompleted, vagalumeConfig, vagalumeSignal,
       isConsensusMode, minConsensus, sherlockAnalysis, sherlockThreshold, sherlockWinRateThreshold
   ]);
@@ -602,7 +616,6 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
     sherlockLookback, setSherlockLookback,
     disableSherlockCompensation, setDisableSherlockCompensation,
     sherlockWinRateThreshold, setSherlockWinRateThreshold,
-    isMartingaleEnabled, setIsMartingaleEnabled,
     isSmartMartingale, setIsSmartMartingale,
     martingaleRecoveryInstallments, setMartingaleRecoveryInstallments,
     cooldownTime, setCooldownTime,
@@ -613,6 +626,7 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
     councilDecision,
     pilots,
     toggleAutopilot,
+    togglePilotMartingale,
     resetSession,
     multiWindowAnalysis,
     signalQuality,

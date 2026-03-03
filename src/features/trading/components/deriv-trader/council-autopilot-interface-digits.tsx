@@ -15,7 +15,6 @@ import { Switch } from "@/components/ui/switch";
 import { Separator } from "@/components/ui/separator";
 import { Input } from "@/components/ui/input";
 import type { useRobotCouncilDigits, PilotType, PilotState, StrategyBacktestResult, CalibrationResult } from '@/features/trading/hooks/use-robot-council-digits';
-import type { VagalumeConfig } from '@/features/trading/hooks/use-vagalume-alternante';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
@@ -253,8 +252,8 @@ const PilotControlRow: React.FC<PilotControlRowProps> = ({
 
 export const DigitsAutopilotManager: React.FC<DigitsAutopilotManagerProps> = (props) => {
   const { 
-    pilots, toggleAutopilot, dailyBalance, setDailyBalance, dailyTarget, setDailyTarget,
-    isMartingaleEnabled, setIsMartingaleEnabled, isSmartMartingale, setIsSmartMartingale,
+    pilots, toggleAutopilot, togglePilotMartingale, dailyBalance, setDailyBalance, dailyTarget, setDailyTarget,
+    isSmartMartingale, setIsSmartMartingale,
     martingaleRecoveryInstallments, setMartingaleRecoveryInstallments, cooldownTime, setCooldownTime,
     maxLosses, setMaxLosses, executionCooldown, setExecutionCooldown, resetSession,
     consensusThreshold, setConsensusThreshold, overUnderThreshold, setOverUnderThreshold,
@@ -269,95 +268,121 @@ export const DigitsAutopilotManager: React.FC<DigitsAutopilotManagerProps> = (pr
  } = props;
 
   const renderPilotParams = (pilotDef: typeof STRATEGY_DEFINITIONS[0]) => {
-      switch (pilotDef.id) {
-          case 'matchesDiffers':
-              return (
-                  <div className="space-y-2">
-                      <Label htmlFor="z-score-threshold">Limiar de Anormalidade (Z-Score) ({consensusThreshold.toFixed(1)})</Label>
-                      <Slider id="z-score-threshold" min={1.5} max={5.0} step={0.1} value={[consensusThreshold]} onValueChange={v => setConsensusThreshold(v[0])} />
-                      <p className="text-xs text-muted-foreground">Operar se o Z-score ponderado de um dígito exceder este valor.</p>
-                  </div>
-              );
-          case 'overUnder':
-              return (
-                  <div className="space-y-2">
-                      <Label htmlFor="ou-threshold">Limiar de Prob. de Bloco ({overUnderThreshold.toFixed(1)}%)</Label>
-                      <Slider id="ou-threshold" min={55} max={80} step={1} value={[overUnderThreshold]} onValueChange={v => setOverUnderThreshold(v[0])} />
-                  </div>
-              );
-          case 'evenOdd':
-               return (
-                  <div className="space-y-2">
-                      <Label htmlFor="eo-threshold">Limiar de Prob. de Bloco ({evenOddThreshold.toFixed(1)}%)</Label>
-                      <Slider id="eo-threshold" min={55} max={80} step={1} value={[evenOddThreshold]} onValueChange={v => setEvenOddThreshold(v[0])} />
-                  </div>
-              );
-          case 'underdog':
+      const pilotState = pilots[pilotDef.id];
+      if (!pilotState) return null;
+
+      const specificParams = (() => {
+        switch (pilotDef.id) {
+            case 'matchesDiffers':
                 return (
-                    <div className="space-y-4">
+                    <div className="space-y-2">
+                        <Label htmlFor="z-score-threshold">Limiar de Anormalidade (Z-Score) ({consensusThreshold.toFixed(1)})</Label>
+                        <Slider id="z-score-threshold" min={1.5} max={5.0} step={0.1} value={[consensusThreshold]} onValueChange={v => setConsensusThreshold(v[0])} />
+                        <p className="text-xs text-muted-foreground">Operar se o Z-score ponderado de um dígito exceder este valor.</p>
+                    </div>
+                );
+            case 'overUnder':
+                return (
+                    <div className="space-y-2">
+                        <Label htmlFor="ou-threshold">Limiar de Prob. de Bloco ({overUnderThreshold.toFixed(1)}%)</Label>
+                        <Slider id="ou-threshold" min={55} max={80} step={1} value={[overUnderThreshold]} onValueChange={v => setOverUnderThreshold(v[0])} />
+                    </div>
+                );
+            case 'evenOdd':
+                 return (
+                    <div className="space-y-2">
+                        <Label htmlFor="eo-threshold">Limiar de Prob. de Bloco ({evenOddThreshold.toFixed(1)}%)</Label>
+                        <Slider id="eo-threshold" min={55} max={80} step={1} value={[evenOddThreshold]} onValueChange={v => setEvenOddThreshold(v[0])} />
+                    </div>
+                );
+            case 'underdog':
+                  return (
+                      <div className="space-y-4">
+                          <div className="space-y-2">
+                              <Label htmlFor="underdog-threshold">Limiar de Frequência de Disparo ({underdogThreshold.toFixed(1)}%)</Label>
+                              <Slider id="underdog-threshold" min={1.0} max={10.0} step={0.5} value={[underdogThreshold]} onValueChange={v => setUnderdogThreshold(v[0])} />
+                          </div>
+                          <div className="flex items-center justify-between rounded-lg border p-3">
+                              <Label htmlFor="underdog-inverse-switch" className="flex flex-col space-y-1">
+                                  <span>Inverter Lógica (Apostar 'Difere')</span>
+                              </Label>
+                              <Switch id="underdog-inverse-switch" checked={isUnderdogInverse} onCheckedChange={setIsUnderdogInverse} />
+                          </div>
+                      </div>
+                  );
+            case 'underdogOverUnder':
+                return (
+                    <div className="space-y-2">
+                        <Label htmlFor="underdog-ou-threshold">Limiar de Frequência de Bloco ({overUnderUnderdogThreshold.toFixed(1)}%)</Label>
+                        <Slider id="underdog-ou-threshold" min={30} max={48} step={1} value={[overUnderUnderdogThreshold]} onValueChange={v => setOverUnderUnderdogThreshold(v[0])} />
+                    </div>
+                );
+            case 'underdogEvenOdd':
+                 return (
+                    <div className="space-y-2">
+                        <Label htmlFor="underdog-eo-threshold">Limiar de Frequência de Bloco ({evenOddUnderdogThreshold.toFixed(1)}%)</Label>
+                        <Slider id="underdog-eo-threshold" min={30} max={48} step={1} value={[evenOddUnderdogThreshold]} onValueChange={v => setEvenOddUnderdogThreshold(v[0])} />
+                    </div>
+                );
+            case 'sherlock':
+                return (
+                    <div className="space-y-6">
                         <div className="space-y-2">
-                            <Label htmlFor="underdog-threshold">Limiar de Frequência de Disparo ({underdogThreshold.toFixed(1)}%)</Label>
-                            <Slider id="underdog-threshold" min={1.0} max={10.0} step={0.5} value={[underdogThreshold]} onValueChange={v => setUnderdogThreshold(v[0])} />
+                          <Label htmlFor="sherlock-threshold">Limiar de Confiança do Bloco ({sherlockThreshold.toFixed(0)}%)</Label>
+                          <Slider id="sherlock-threshold" min={51} max={85} step={1} value={[sherlockThreshold]} onValueChange={setSherlockThreshold} />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="sherlock-lookback">Janela de Análise Histórica ({sherlockLookback} ticks)</Label>
+                          <Slider id="sherlock-lookback" min={100} max={1000} step={50} value={[sherlockLookback]} onValueChange={setSherlockLookback} />
+                        </div>
+                         <div className="space-y-2">
+                            <Label htmlFor="sherlock-winrate-threshold">Limiar de Win Rate da Sessão ({sherlockWinRateThreshold.toFixed(0)}%)</Label>
+                            <Slider id="sherlock-winrate-threshold" min={1} max={100} step={1} value={[sherlockWinRateThreshold]} onValueChange={v => setSherlockWinRateThreshold(v[0])} />
                         </div>
                         <div className="flex items-center justify-between rounded-lg border p-3">
-                            <Label htmlFor="underdog-inverse-switch" className="flex flex-col space-y-1">
-                                <span>Inverter Lógica (Apostar 'Difere')</span>
-                            </Label>
-                            <Switch id="underdog-inverse-switch" checked={isUnderdogInverse} onCheckedChange={setIsUnderdogInverse} />
+                          <Label htmlFor="sherlock-compensation" className="text-sm">Compensação de Latência</Label>
+                          <Switch id="sherlock-compensation" checked={!disableSherlockCompensation} onCheckedChange={(checked) => setDisableSherlockCompensation(!checked)} />
                         </div>
                     </div>
                 );
-          case 'underdogOverUnder':
-              return (
-                  <div className="space-y-2">
-                      <Label htmlFor="underdog-ou-threshold">Limiar de Frequência de Bloco ({overUnderUnderdogThreshold.toFixed(1)}%)</Label>
-                      <Slider id="underdog-ou-threshold" min={30} max={48} step={1} value={[overUnderUnderdogThreshold]} onValueChange={v => setOverUnderUnderdogThreshold(v[0])} />
-                  </div>
-              );
-          case 'underdogEvenOdd':
-               return (
-                  <div className="space-y-2">
-                      <Label htmlFor="underdog-eo-threshold">Limiar de Frequência de Bloco ({evenOddUnderdogThreshold.toFixed(1)}%)</Label>
-                      <Slider id="underdog-eo-threshold" min={30} max={48} step={1} value={[evenOddUnderdogThreshold]} onValueChange={v => setEvenOddUnderdogThreshold(v[0])} />
-                  </div>
-              );
-          case 'sherlock':
-              return (
-                  <div className="space-y-6">
-                      <div className="space-y-2">
-                        <Label htmlFor="sherlock-threshold">Limiar de Confiança do Bloco ({sherlockThreshold.toFixed(0)}%)</Label>
-                        <Slider id="sherlock-threshold" min={51} max={85} step={1} value={[sherlockThreshold]} onValueChange={setSherlockThreshold} />
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="sherlock-lookback">Janela de Análise Histórica ({sherlockLookback} ticks)</Label>
-                        <Slider id="sherlock-lookback" min={100} max={1000} step={50} value={[sherlockLookback]} onValueChange={setSherlockLookback} />
-                      </div>
-                       <div className="space-y-2">
-                          <Label htmlFor="sherlock-winrate-threshold">Limiar de Win Rate da Sessão ({sherlockWinRateThreshold.toFixed(0)}%)</Label>
-                          <Slider id="sherlock-winrate-threshold" min={1} max={100} step={1} value={[sherlockWinRateThreshold]} onValueChange={v => setSherlockWinRateThreshold(v[0])} />
-                      </div>
-                      <div className="flex items-center justify-between rounded-lg border p-3">
-                        <Label htmlFor="sherlock-compensation" className="text-sm">Compensação de Latência</Label>
-                        <Switch id="sherlock-compensation" checked={!disableSherlockCompensation} onCheckedChange={(checked) => setDisableSherlockCompensation(!checked)} />
-                      </div>
-                  </div>
-              );
-          case 'vagalume':
-              return (
-                   <div className="space-y-6">
-                      <div className="space-y-2">
-                        <Label htmlFor="vagalume-threshold">Limiar de Confiança Contextual ({vagalumeConfig.contextualThreshold}%)</Label>
-                        <Slider id="vagalume-threshold" min={51} max={75} step={1} value={[vagalumeConfig.contextualThreshold]} onValueChange={v => setVagalumeConfig(c => ({...c, contextualThreshold: v[0]}))} />
-                      </div>
-                       <div className="flex items-center justify-between rounded-lg border p-3">
-                        <Label htmlFor="vagalume-predictive" className="text-sm">Análise Preditiva (Latência)</Label>
-                        <Switch id="vagalume-predictive" checked={vagalumeConfig.usePredictiveAnalysis} onCheckedChange={(c) => setVagalumeConfig(cfg => ({...cfg, usePredictiveAnalysis: c}))} />
-                      </div>
-                   </div>
-              );
-          default:
-              return null;
-      }
+            case 'vagalume':
+                return (
+                     <div className="space-y-6">
+                        <div className="space-y-2">
+                          <Label htmlFor="vagalume-threshold">Limiar de Confiança Contextual ({vagalumeConfig.contextualThreshold}%)</Label>
+                          <Slider id="vagalume-threshold" min={51} max={75} step={1} value={[vagalumeConfig.contextualThreshold]} onValueChange={v => setVagalumeConfig(c => ({...c, contextualThreshold: v[0]}))} />
+                        </div>
+                         <div className="flex items-center justify-between rounded-lg border p-3">
+                          <Label htmlFor="vagalume-predictive" className="text-sm">Análise Preditiva (Latência)</Label>
+                          <Switch id="vagalume-predictive" checked={vagalumeConfig.usePredictiveAnalysis} onCheckedChange={(c) => setVagalumeConfig(cfg => ({...cfg, usePredictiveAnalysis: c}))} />
+                        </div>
+                     </div>
+                );
+            default:
+                return null;
+        }
+      })();
+      
+      return (
+        <div className="space-y-4">
+            {specificParams}
+            <Separator />
+            <div className="flex items-center justify-between rounded-lg border p-3 shadow-sm bg-background/50">
+                <Label htmlFor={`${pilotDef.id}-martingale-switch`} className="flex flex-col space-y-1">
+                    <span>Ativar Martingale</span>
+                    <span className="font-normal leading-snug text-muted-foreground text-xs">
+                        Aumenta a aposta após perdas para recuperação.
+                    </span>
+                </Label>
+                <Switch
+                    id={`${pilotDef.id}-martingale-switch`}
+                    checked={pilotState.isMartingaleEnabled}
+                    onCheckedChange={() => togglePilotMartingale(pilotDef.id)}
+                    disabled={!pilotState.isOn}
+                />
+            </div>
+        </div>
+      );
   };
 
   return (
@@ -443,11 +468,7 @@ export const DigitsAutopilotManager: React.FC<DigitsAutopilotManagerProps> = (pr
                 
                  <Separator />
                 <div className="flex items-center justify-between rounded-lg border p-3">
-                    <Label htmlFor="martingale-switch">Ativar Martingale</Label>
-                    <Switch id="martingale-switch" checked={isMartingaleEnabled} onCheckedChange={setIsMartingaleEnabled} />
-                </div>
-                <div className="flex items-center justify-between rounded-lg border p-3">
-                    <Label htmlFor="smart-martingale-switch">Martingale Inteligente (Kelly)</Label>
+                    <Label htmlFor="smart-martingale-switch">Ativar Kelly Criterion</Label>
                     <Switch id="smart-martingale-switch" checked={isSmartMartingale} onCheckedChange={setIsSmartMartingale} />
                 </div>
                 <div className="space-y-2">
