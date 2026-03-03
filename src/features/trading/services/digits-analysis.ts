@@ -1,5 +1,4 @@
 // src/features/trading/services/digits-analysis.ts
-'use client';
 
 import type { TickData } from '@/lib/types';
 
@@ -202,7 +201,7 @@ export function determineSignalQuality(
   multiWindowAnalysis: MultiWindowAnalysis,
   mainWindow: WindowDigitStats
 ): SignalQuality | null {
-  const { consensusStrength, consensusHottestDigit, consensusColdestDigit, hottestScore } = multiWindowAnalysis;
+  const { consensusStrength, consensusHottestDigit, coldestScore, hottestScore, consensusColdestDigit } = multiWindowAnalysis;
   const { isSignificant } = mainWindow.chiSquare;
 
   let targetDigit: Digit | null = null;
@@ -210,7 +209,7 @@ export function determineSignalQuality(
   let baseConfidence: ConfidenceLevel = 'NULA';
 
   // Usa o dígito com o maior score absoluto para o sinal
-  if (consensusHottestDigit !== null && hottestScore > Math.abs(multiWindowAnalysis.coldestScore)) {
+  if (consensusHottestDigit !== null && hottestScore > Math.abs(coldestScore)) {
     targetDigit = consensusHottestDigit;
     contractType = 'DIGITDIFF';
     baseConfidence = consensusStrength;
