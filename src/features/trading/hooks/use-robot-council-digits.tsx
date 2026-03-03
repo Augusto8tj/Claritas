@@ -91,7 +91,7 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
   // --- CONFIGURAÇÕES DE RISCO E ESTRATÉGIA (ESTADO LOCAL) ---
   const [dailyBalance, setDailyBalance] = useState(10);
   const [dailyTarget, setDailyTarget] = useState(5);
-  const [consensusThreshold, setConsensusThreshold] = useState(25);
+  const [consensusThreshold, setConsensusThreshold] = useState(4.0); // ✅ NOVO: Ajustado para o Z-Score
   const [overUnderThreshold, setOverUnderThreshold] = useState(65);
   const [evenOddThreshold, setEvenOddThreshold] = useState(65);
   const [underdogThreshold, setUnderdogThreshold] = useState(5.0);
@@ -225,20 +225,21 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
       };
   }, [priceTicks, decimalPlaces, sherlockLookback, disableSherlockCompensation]);
 
+  // ✅ NOVO: 'shouldTrade' agora é baseado no score ponderado.
   const shouldTrade = useMemo(() => {
-    if (!signalQuality) return false;
-    const { confidenceLevel, mainWindow } = signalQuality;
-    const isConfident = confidenceLevel === 'ALTA' || confidenceLevel === 'MUITO_ALTA';
-    return isConfident && mainWindow.chiSquare.isSignificant;
-  }, [signalQuality]);
+    if (!multiWindowAnalysis) return false;
+    const { hottestScore, consensusStrength } = multiWindowAnalysis;
+    return hottestScore > consensusThreshold && (consensusStrength === 'ALTA' || consensusStrength === 'MUITO_ALTA');
+  }, [multiWindowAnalysis, consensusThreshold]);
+  
 
   const councilDecision = useMemo(() => {
-    if (!signalQuality) return { differs: null, matches: null };
+    if (!multiWindowAnalysis) return { differs: null, matches: null };
     return {
-      differs: signalQuality.contractType === 'DIGITDIFF' ? signalQuality.targetDigit : null,
-      matches: signalQuality.contractType === 'DIGITMATCH' ? signalQuality.targetDigit : null,
+      differs: multiWindowAnalysis.consensusHottestDigit,
+      matches: multiWindowAnalysis.consensusColdestDigit,
     };
-  }, [signalQuality]);
+  }, [multiWindowAnalysis]);
 
   const dailyPnl = useMemo(() => {
     const allTrades = Object.values(pilots).flatMap(p => p.tradeHistory);
@@ -317,8 +318,7 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
   
   useEffect(() => {
     const cycleStart = performance.now();
-    console.log(`🔄 Cycle Start: ${cycleStart.toFixed(0)}ms`);
-
+    
     if (executionRef.current) return;
     const activePilotEntries = Object.entries(pilots).filter(([, p]) => p.isOn);
     if (activePilotEntries.length === 0) return;
@@ -351,7 +351,7 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
                     consecutiveLosses: newLosses,
                     accumulatedLoss: newAccumulatedLoss, 
                     status: newStatus, 
-                    activeContractId: null,
+                    activeContractId: null, // ✅ RESET SEMPRE
                 }
             }));
 
@@ -378,93 +378,13 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
 
     let tradeExecutedThisCycle = false;
 
-    // --- EXECUÇÃO DO VAGALUME ---
-    const vagalumePilot = pilots.vagalume;
-    if (vagalumePilot.isOn && vagalumePilot.status === 'TRADING' && vagalumePilot.activeContractId === null && vagalumeSignal) {
-      if (vagalumeSignal.shouldTrade) {
-          const measureExecution = timingMonitor.startMeasurement();
-          
-          const currentTickEpoch = priceTicks[priceTicks.length - 1]?.epoch || 0;
-          const tickAge = Date.now() - (currentTickEpoch * 1000);
-          
-          if (tickAge > 1500) {
-              console.warn(`⏸️ [Vagalume] Tick muito antigo (${tickAge}ms). Aguardando próximo tick.`);
-              timingMonitor.recordTiming('vagalume', { analysisTime: 0, executionTime: 0, totalLatency: 0, tickAge, }, true, 'Tick antigo');
-              executionRef.current = false;
-              return;
-          }
-          
-          if (!vagalumeConfig.usePredictiveAnalysis && vagalumeSignal.analysisWindowEnd !== currentTickEpoch) {
-              console.warn(`⏸️ [Vagalume] Novo tick chegou durante análise. Recalculando...`);
-              timingMonitor.recordTiming('vagalume', { analysisTime: 0, executionTime: 0, totalLatency: 0, tickAge, }, true, 'Novo tick durante análise');
-              executionRef.current = false;
-              return;
-          }
-          
-          const initialBankroll = sessionInitialBankroll ?? (accountBalance.balance ?? 1000);
-          const currentBankroll = initialBankroll + dailyPnl;
-          const bankrollState: BankrollState = { currentBankroll, initialBankroll, maxDailyLoss: dailyBalance, dailyProfitTarget: dailyTarget };
-          const stakeConfig: SmartMartingaleConfig = { 
-              isEnabled: isMartingaleEnabled, 
-              baseStake: BASE_STAKE, 
-              maxMartingaleLevels: maxLosses, 
-              martingaleMultiplier: martingaleRecoveryFactor, 
-              useAntiMartingale: false, 
-              isSmart: false,
-          };
-          const stakeDecision = decideNextStake(vagalumePilot.tradeHistory, stakeConfig, bankrollState, vagalumeSignal.suggestedContract, vagalumeSignal.adjustedConfidence);
-
-          if (!stakeDecision.shouldPause) {
-              const finalStake = stakeDecision.nextStake * vagalumeSignal.suggestedStakeMultiplier;
-              
-              executeTrade(
-                  vagalumeSignal.suggestedContract, 
-                  finalStake, 
-                  activeSymbol!, 
-                  1, 
-                  't', 
-                  'Piloto', 
-                  currentTickEpoch,
-                  vagalumeSignal.suggestedDigit, 
-                  'vagalume'
-              ).then(tradeResult => {
-                  const executionTime = measureExecution.end();
-                  const analysisTime = vagalumeSignal.advancedScore?.analysisTime || 0;
-                  timingMonitor.recordTiming('vagalume', {
-                      analysisTime,
-                      executionTime,
-                      totalLatency: executionTime + tickAge,
-                      tickAge,
-                  });
-                  
-                  if (tradeResult.success && tradeResult.contractId) {
-                    setPilots(prev => ({ 
-                        ...prev, 
-                        vagalume: { 
-                            ...prev.vagalume, 
-                            activeContractId: tradeResult.contractId! 
-                        } 
-                    }));
-                  }
-              });
-              
-              tradeExecutedThisCycle = true;
-              lastExecutionTimestampRef.current = now;
-          } else {
-              setPilots(prev => ({ ...prev, vagalume: { ...prev.vagalume, status: 'CIRCUIT_BREAKER', currentTarget: stakeDecision.pauseReason || 'Limite de risco atingido' }}));
-          }
-      }
-    }
-    
-    // --- EXECUÇÃO DO SHERLOCK ---
     const sherlockPilot = pilots.sherlock;
     
-    // --- CORREÇÃO: Lógica do Disjuntor do Sherlock movida para cá ---
     const sherlockHistory = sherlockPilot.tradeHistory;
     const sherlockSessionWinRate = sherlockHistory.length > 0 ? (sherlockHistory.filter(t => t.result && t.result > 0).length / sherlockHistory.length) * 100 : 100;
     
     const sherlockShouldBePaused = sherlockHistory.length >= 10 && sherlockSessionWinRate < sherlockWinRateThreshold;
-    const sherlockPauseReason = `Win rate da sessão (${sherlockSessionWinRate.toFixed(1)}%) abaixo do limiar de ${sherlockWinRateThreshold}%.`;
+    const sherlockPauseReason = `Win rate da sessão (${sherlockSessionWinRate.toFixed(1)}%) abaixo de ${sherlockWinRateThreshold}%.`;
 
     if (sherlockShouldBePaused && sherlockPilot.status !== 'CIRCUIT_BREAKER') {
         setPilots(prev => ({ ...prev, sherlock: { ...prev.sherlock, status: 'CIRCUIT_BREAKER', currentTarget: sherlockPauseReason }}));
@@ -473,9 +393,8 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
     }
 
     if (!tradeExecutedThisCycle && sherlockPilot.isOn && sherlockPilot.status === 'TRADING' && sherlockPilot.activeContractId === null && sherlockAnalysis) {
-
+        
         if (sherlockAnalysis.blockProbability * 100 > sherlockThreshold) {
-            
             let contract: DigitContractType | null = null;
             let digit: number | undefined;
 
@@ -499,8 +418,7 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
                         .then(tradeResult => {
                             const totalLatency = performance.now() - tradeStartTime;
                             globalLatencyMonitor.recordFullCycle(totalLatency);
-                            console.log(`⏱️ [Sherlock] Latency: ${totalLatency.toFixed(0)}ms`);
-
+                            
                             if (tradeResult.success && tradeResult.contractId) {
                                 setPilots(prev => ({ ...prev, sherlock: { ...prev.sherlock, activeContractId: tradeResult.contractId! }}));
                             }
@@ -572,8 +490,8 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
                }
                break;
             case 'dynamicUnderdogOverUnder':
-                const underdogBlock = multiWindowAnalysis?.coldestConsensusDigit;
-                if (underdogBlock !== undefined) {
+                const underdogBlock = multiWindowAnalysis?.consensusColdestDigit;
+                if (underdogBlock !== undefined && underdogBlock !== null) {
                     shouldExecute = true;
                     if (underdogBlock > 4) {
                       executionParams = ['DIGITUNDER', 5, pilotKey];

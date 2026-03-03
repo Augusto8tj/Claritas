@@ -35,10 +35,13 @@ export interface WindowDigitStats {
 
 export type ConfidenceLevel = 'MUITO_ALTA' | 'ALTA' | 'MEDIA' | 'BAIXA' | 'NULA';
 
+// ✅ NOVO: A interface agora inclui um score ponderado
 export interface MultiWindowAnalysis {
   windows: WindowDigitStats[];
-  hottestConsensusDigit?: Digit;
-  coldestConsensusDigit?: Digit;
+  consensusHottestDigit: Digit | null;
+  consensusColdestDigit: Digit | null;
+  hottestScore: number;
+  coldestScore: number;
   consensusStrength: ConfidenceLevel;
 }
 
@@ -142,42 +145,55 @@ export function calculateDigitStatsForWindow(ticks: TickData[], windowSize: numb
 }
 
 /**
- * Analisa o consenso entre diferentes janelas de tempo.
+ * Analisa o consenso entre diferentes janelas de tempo usando Z-score ponderado.
  */
 export function getMultiWindowAnalysis(windowsStats: WindowDigitStats[]): MultiWindowAnalysis {
-  const hottestCounts: Record<number, number> = {};
-  const coldestCounts: Record<number, number> = {};
+  const scores = Array(10).fill(0);
 
+  // ✅ NOVO: Z-score ponderado pelo tamanho da janela
   windowsStats.forEach(stat => {
-    hottestCounts[stat.hottestDigit] = (hottestCounts[stat.hottestDigit] || 0) + 1;
-    coldestCounts[stat.coldestDigit] = (coldestCounts[stat.coldestDigit] || 0) + 1;
+    stat.frequencies.forEach(freq => {
+      // O logaritmo dá mais peso a janelas maiores, mas de forma decrescente
+      const weight = Math.log(stat.windowSize + 1);
+      scores[freq.digit] += freq.zScore * weight;
+    });
   });
 
-  const getConsensusDigit = (counts: Record<number, number>): Digit | undefined => {
-    const sorted = Object.entries(counts).sort(([, a], [, b]) => b - a);
-    return sorted.length > 0 ? parseInt(sorted[0][0], 10) as Digit : undefined;
-  };
+  let hottestScore = -Infinity;
+  let coldestScore = Infinity;
+  let consensusHottestDigit: Digit | null = null;
+  let consensusColdestDigit: Digit | null = null;
 
-  const hottestConsensusDigit = getConsensusDigit(hottestCounts);
-  const coldestConsensusDigit = getConsensusDigit(coldestCounts);
+  scores.forEach((score, digit) => {
+    if (score > hottestScore) {
+      hottestScore = score;
+      consensusHottestDigit = digit as Digit;
+    }
+    if (score < coldestScore) {
+      coldestScore = score;
+      consensusColdestDigit = digit as Digit;
+    }
+  });
+
+  const maxAbsoluteScore = Math.max(Math.abs(hottestScore), Math.abs(coldestScore));
   
-  const hottestStrength = hottestConsensusDigit !== undefined ? hottestCounts[hottestConsensusDigit] : 0;
-  const coldestStrength = coldestConsensusDigit !== undefined ? coldestCounts[coldestConsensusDigit] : 0;
-
-  const strength = Math.max(hottestStrength, coldestStrength);
-
   let consensusStrength: ConfidenceLevel = 'NULA';
-  if (strength >= 3) consensusStrength = 'MUITO_ALTA';
-  else if (strength === 2) consensusStrength = 'ALTA';
-  else if (strength === 1) consensusStrength = 'MEDIA';
+  // ✅ NOVO: A força é baseada no score, não numa contagem de votos
+  if (maxAbsoluteScore > 15) consensusStrength = 'MUITO_ALTA';
+  else if (maxAbsoluteScore > 8) consensusStrength = 'ALTA';
+  else if (maxAbsoluteScore > 4) consensusStrength = 'MEDIA';
+  else if (maxAbsoluteScore > 1.5) consensusStrength = 'BAIXA';
 
   return {
     windows: windowsStats,
-    hottestConsensusDigit,
-    coldestConsensusDigit,
+    consensusHottestDigit,
+    consensusColdestDigit,
+    hottestScore,
+    coldestScore,
     consensusStrength,
   };
 }
+
 
 /**
  * Determina a qualidade geral do sinal com base em todas as análises.
@@ -186,21 +202,23 @@ export function determineSignalQuality(
   multiWindowAnalysis: MultiWindowAnalysis,
   mainWindow: WindowDigitStats
 ): SignalQuality | null {
-  const { consensusStrength, hottestConsensusDigit, coldestConsensusDigit } = multiWindowAnalysis;
+  const { consensusStrength, consensusHottestDigit, consensusColdestDigit, hottestScore } = multiWindowAnalysis;
   const { isSignificant } = mainWindow.chiSquare;
 
   let targetDigit: Digit | null = null;
   let contractType: 'DIGITDIFF' | 'DIGITMATCH' | null = null;
   let baseConfidence: ConfidenceLevel = 'NULA';
 
-  if (hottestConsensusDigit !== undefined && (consensusStrength === 'ALTA' || consensusStrength === 'MUITO_ALTA')) {
-    targetDigit = hottestConsensusDigit;
+  // Usa o dígito com o maior score absoluto para o sinal
+  if (consensusHottestDigit !== null && hottestScore > Math.abs(multiWindowAnalysis.coldestScore)) {
+    targetDigit = consensusHottestDigit;
     contractType = 'DIGITDIFF';
     baseConfidence = consensusStrength;
-  } else if (coldestConsensusDigit !== undefined && consensusStrength === 'MUITO_ALTA') { // Mais rigoroso para 'MATCH'
+  } else if (coldestConsensusDigit !== null) {
     targetDigit = coldestConsensusDigit;
     contractType = 'DIGITMATCH';
-    baseConfidence = 'ALTA'; // 'MATCH' é inerentemente mais arriscado
+    // É mais rigoroso para 'MATCH'
+    baseConfidence = consensusStrength === 'MUITO_ALTA' ? 'ALTA' : consensusStrength === 'ALTA' ? 'MEDIA' : 'BAIXA';
   }
 
   if (targetDigit === null || contractType === null) return null;
