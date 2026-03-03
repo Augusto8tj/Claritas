@@ -10,7 +10,6 @@ import { useAuth } from '@/features/auth/hooks/use-auth';
 import { saveLiveTickForDigits } from '@/services/digits-data-service';
 import { validateAndLogContract } from '@/features/trading/utils/contract-validator';
 import { timingMonitor } from '@/features/trading/utils/timing-monitor';
-import { globalLatencyMonitor, LatencyMetrics } from '../utils/latency-monitor';
 
 
 // --- CONSTANTS ---
@@ -85,7 +84,6 @@ export interface DerivApiContextTypeDigits {
     duration: number,
     durationUnit: DurationUnit,
     initiator: OperationInitiator,
-    tickEpoch: number,
     last_digit?: number,
     strategy?: string
   ) => Promise<TradeResult>;
@@ -288,10 +286,6 @@ export function useDerivApiDigitsState() {
                             const contract = response.proposal_open_contract;
                             if (!contract || !contract.contract_type?.startsWith('DIGIT')) return;
                             
-                            if (contract.is_sold === 1) {
-                                globalLatencyMonitor.recordFullCycle(contract.contract_id, contract.sell_time || contract.exit_tick_time);
-                            }
-
                             setAndPersistOperationsLog(prevLog => {
                                 const existingOpIndex = prevLog.findIndex(op => op.id === contract.contract_id);
                                 if (existingOpIndex !== -1 && prevLog[existingOpIndex]?.status === 'pending') {
@@ -464,7 +458,6 @@ export function useDerivApiDigitsState() {
     const executeTrade = useCallback(async (
         contractType: DigitContractType, stake: number, symbol: string,
         duration: number, durationUnit: DurationUnit, initiator: OperationInitiator,
-        tickEpoch: number,
         last_digit?: number, strategy?: string
     ): Promise<TradeResult> => {
       try {
@@ -473,7 +466,7 @@ export function useDerivApiDigitsState() {
         const sanitizedDuration = Math.round(duration);
 
         const buyRequest: any = {
-            buy: 1,
+            buy: "1",
             price: sanitizedStake,
             parameters: {
                 amount: sanitizedStake,
