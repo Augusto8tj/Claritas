@@ -444,7 +444,8 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
           if (group.length >= minConsensus) {
             const avgConfidence = group.reduce((sum, s) => sum + s.confidence, 0) / group.length;
             const leadSignal = group[0]; 
-            const stakeConfig: SmartMartingaleConfig = { isEnabled: leadSignal.pilotKey ? pilots[leadSignal.pilotKey].isMartingaleEnabled : false, baseStake: BASE_STAKE, maxMartingaleLevels: maxLosses, martingaleRecoveryInstallments: pilot.martingaleRecoveryInstallments, isSmart: isSmartMartingale };
+            const pilotForStake = pilots[leadSignal.pilotKey];
+            const stakeConfig: SmartMartingaleConfig = { isEnabled: pilotForStake.isMartingaleEnabled, baseStake: BASE_STAKE, maxMartingaleLevels: maxLosses, martingaleRecoveryInstallments: pilotForStake.martingaleRecoveryInstallments, isSmart: isSmartMartingale };
             const bankrollState: BankrollState = { currentBankroll: (sessionInitialBankroll ?? 100) + dailyPnl, initialBankroll: sessionInitialBankroll, maxDailyLoss: dailyBalance, dailyProfitTarget: dailyTarget };
             const stakeDecision = decideNextStake(pilots[leadSignal.pilotKey].tradeHistory, stakeConfig, bankrollState, leadSignal.contract, avgConfidence);
             
