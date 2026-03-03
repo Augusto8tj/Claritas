@@ -85,7 +85,7 @@ export interface DerivApiContextTypeDigits {
     duration: number,
     durationUnit: DurationUnit,
     initiator: OperationInitiator,
-    tickEpoch: number, // NOVO para latência
+    tickEpoch: number,
     last_digit?: number,
     strategy?: string
   ) => Promise<TradeResult>;
@@ -289,7 +289,7 @@ export function useDerivApiDigitsState() {
                             if (!contract || !contract.contract_type?.startsWith('DIGIT')) return;
                             
                             if (contract.is_sold === 1) {
-                                globalLatencyMonitor.recordFullCycle(contract.contract_id);
+                                // A chamada foi movida para o robot council para precisão.
                             }
 
                             setAndPersistOperationsLog(prevLog => {
@@ -301,7 +301,6 @@ export function useDerivApiDigitsState() {
                                     if (contract.is_sold === 1) {
                                         const exitPriceStr = contract.exit_tick_display_value || (contract.exit_tick !== undefined ? String(contract.exit_tick) : undefined);
                                         
-                                        // CORREÇÃO: Tratar preço de saída inválido
                                         if (exitPriceStr === undefined) {
                                             console.error(`Divergência: Não foi possível determinar o preço de saída para o contrato #${contract.contract_id}.`, contract);
                                             updatedLog[existingOpIndex] = { ...op, status: 'lost', result: -op.stake, exitTimestamp: new Date().toISOString() };
@@ -309,6 +308,13 @@ export function useDerivApiDigitsState() {
                                         }
 
                                         const exitPrice = parseFloat(exitPriceStr);
+
+                                        if (isNaN(exitPrice)) {
+                                            console.error(`Divergência: Preço de saída inválido (NaN) para o contrato #${contract.contract_id}.`, contract);
+                                            updatedLog[existingOpIndex] = { ...op, status: 'lost', result: -op.stake, exitTimestamp: new Date().toISOString(), exitPrice: NaN };
+                                            return updatedLog;
+                                        }
+
                                         const apiStatus = contract.status === 'won' ? 'won' : 'lost';
                                         
                                         const validationLog = validateAndLogContract(
@@ -455,8 +461,6 @@ export function useDerivApiDigitsState() {
         tickEpoch: number,
         last_digit?: number, strategy?: string
     ): Promise<TradeResult> => {
-      const executionMeasure = timingMonitor.startMeasurement();
-      
       try {
         if (!wsRef.current || !isConnected) throw new Error("A conexão com a API não está ativa.");
         const sanitizedStake = parseFloat(stake.toFixed(2));
@@ -484,7 +488,6 @@ export function useDerivApiDigitsState() {
         }
         
         const buyResponse: any = await makeRequest(buyRequest);
-        const executionTime = executionMeasure.end();
         
         if (buyResponse.error) throw new Error(buyResponse.error.message);
         
@@ -508,7 +511,6 @@ export function useDerivApiDigitsState() {
             isSellable: false, expirationTime: expirationTimeMs, contractType: contractType, 
             last_digit_prediction: last_digit,
             strategy: initiator === 'Piloto' ? strategy : undefined,
-            executionLatency: executionTime,
         };
         
         setAndPersistOperationsLog(prevLog => [newOperation, ...prevLog]);
@@ -548,14 +550,17 @@ export function useDerivApiDigitsState() {
             const subResponse: any = await makeRequest(subRequest);
             if (subResponse.error) {
                 if (subResponse.error.code !== 'AlreadySubscribed') {
-                    throw new Error(subResponse.error.message);
+                    setChartError(`Falha na subscrição de dados: ${subResponse.error.message}`);
                 } else {
                     console.warn(`[Digits] Data already subscribed for ${symbol}.`);
                 }
+                activeSubscriptionIdRef.current = null;
+            } else {
+                activeSubscriptionIdRef.current = subResponse.subscription?.id || null;
             }
-            activeSubscriptionIdRef.current = subResponse.subscription?.id || null;
         } catch (error: any) {
             console.error(`[Market Data - Digits] Error for ${symbol}:`, error);
+            setChartError(error.message || 'Falha ao carregar dados do mercado.');
         } finally {
             setIsChartLoading(false);
         }
