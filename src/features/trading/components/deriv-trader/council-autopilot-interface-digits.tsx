@@ -14,7 +14,7 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Separator } from "@/components/ui/separator";
 import { Input } from "@/components/ui/input";
-import type { useRobotCouncilDigits, PilotType, PilotState, StrategyBacktestResult, CalibrationResult } from '@/features/trading/hooks/use-robot-council-digits';
+import type { useRobotCouncilDigits } from '@/features/trading/hooks/use-robot-council-digits';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
@@ -261,7 +261,7 @@ const PilotControlRow: React.FC<PilotControlRowProps> = ({
                     <Label htmlFor={`${pilotDef.id}-martingale-switch`} className="flex flex-col space-y-1">
                         <span>Ativar Martingale</span>
                         <span className="font-normal leading-snug text-muted-foreground text-xs">
-                            Aumenta aposta após perdas.
+                            Aumenta a aposta após perdas para recuperação.
                         </span>
                     </Label>
                     <Switch
@@ -327,7 +327,7 @@ export function DigitsAutopilotManager(props: DigitsAutopilotManagerProps) {
                     <div className="space-y-2">
                         <Label htmlFor="ou-zscore-threshold">Limiar de Z-Score de Bloco ({overUnderThreshold.toFixed(1)})</Label>
                         <Slider id="ou-zscore-threshold" min={1.0} max={4.0} step={0.1} value={[overUnderThreshold]} onValueChange={v => setOverUnderThreshold(v[0])} />
-                        <p className="text-xs text-muted-foreground">Opera quando a probabilidade do bloco se desvia significativamente do esperado (50%). Z-Score > 2 é estatisticamente significativo.</p>
+                        <p className="text-xs text-muted-foreground">Opera quando a probabilidade do bloco se desvia significativamente do esperado (50%). Z-Score {'>'} 2 é estatisticamente significativo.</p>
                     </div>
                 );
             case 'evenOdd':
@@ -418,10 +418,10 @@ export function DigitsAutopilotManager(props: DigitsAutopilotManagerProps) {
       <CardHeader>
         <CardTitle className="font-headline flex items-center gap-2">
             <Bot className="h-5 w-5 text-primary" />
-            Mesa de Comando (Digits)
+            Mesa de Comando de Estratégias
         </CardTitle>
         <CardDescription>
-          Controle os pilotos automáticos, a gestão de risco e as otimizações.
+          Controle os pilotos, a gestão de risco e as otimizações.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
