@@ -9,7 +9,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Bot, TestTube, Settings, Repeat, Wand2, BrainCircuit, SlidersHorizontal, ChevronsUpDown, UploadCloud, Loader2, ArrowRight, Database, Users } from "lucide-react";
+import { Bot, TestTube, Settings, Repeat, Wand2, BrainCircuit, SlidersHorizontal, ChevronsUpDown, UploadCloud, Loader2, ArrowRight, Database, Users, AlertTriangle } from "lucide-react";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Separator } from "@/components/ui/separator";
