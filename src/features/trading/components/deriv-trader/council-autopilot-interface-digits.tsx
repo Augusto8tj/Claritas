@@ -1,7 +1,7 @@
 // src/features/trading/components/deriv-trader/council-autopilot-interface-digits.tsx
 'use client';
 
-import React from "react";
+import React, { useState } from "react";
 import {
   Card,
   CardContent,
@@ -9,13 +9,13 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Bot, Binary, TrendingUp, HelpCircle, Trophy, Settings, AlertTriangle, ShieldCheck, Power, Clock, Repeat, TestTube, Wand2, BrainCircuit, SlidersHorizontal, ChevronsUpDown } from "lucide-react";
+import { Bot, TestTube, Settings, Repeat, Wand2, BrainCircuit, SlidersHorizontal, ChevronsUpDown, UploadCloud, Loader2, ArrowRight, Database } from "lucide-react";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Separator } from "@/components/ui/separator";
 import { Input } from "@/components/ui/input";
 import type { useRobotCouncilDigits, PilotType, PilotState, StrategyBacktestResult, CalibrationResult } from '@/features/trading/hooks/use-robot-council-digits';
-import { useVagalumeAlternante, type VagalumeConfig, type VagalumeSignal, type DigitContractType } from '@/features/trading/hooks/use-vagalume-alternante';
+import type { VagalumeConfig } from '@/features/trading/hooks/use-vagalume-alternante';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
@@ -34,7 +34,141 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { STRATEGY_DEFINITIONS, strategyLabels } from '@/app/deriv-trader-digits/strategies-config';
-import { DigitsOptimizationPanel } from './digits-backtest-panel';
+import type { TickData } from "@/lib/types";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { ScrollArea } from "@/components/ui/scroll-area";
+
+
+interface DigitsOptimizationPanelProps {
+  backtestTicks: TickData[];
+  isDataLoading: boolean;
+  loadDataForBacktest: () => Promise<void>;
+  backtestResults: Record<string, StrategyBacktestResult> | null;
+  isBacktesting: boolean;
+  runBacktestForAllStrategies: () => void;
+  calibrationResults: Record<string, CalibrationResult> | null;
+  isCalibrating: boolean;
+  runCalibration: () => Promise<void>;
+  applyCalibration: () => void;
+}
+
+const DigitsOptimizationPanel: React.FC<DigitsOptimizationPanelProps> = ({
+  backtestTicks, isDataLoading, loadDataForBacktest,
+  backtestResults, isBacktesting, runBacktestForAllStrategies,
+  calibrationResults, isCalibrating, runCalibration, applyCalibration
+}) => {
+  return (
+    <div className="space-y-6">
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Database className="h-5 w-5" />
+            Passo 1: Carregar Dados Históricos
+          </CardTitle>
+          <CardDescription>
+            Busque até 5000 ticks salvos para usar nas simulações.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Button onClick={loadDataForBacktest} disabled={isDataLoading} className="w-full">
+            {isDataLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <UploadCloud className="mr-2 h-4 w-4" />}
+            {isDataLoading ? 'A carregar...' : `Carregar Dados (${backtestTicks.length} ticks disponíveis)`}
+          </Button>
+        </CardContent>
+      </Card>
+      
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <TestTube className="h-5 w-5" />
+            Passo 2: Backtest Rápido
+          </CardTitle>
+          <CardDescription>
+            Simule todas as estratégias com os parâmetros atuais nos últimos 1000 ticks.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <Button onClick={runBacktestForAllStrategies} disabled={isBacktesting || backtestTicks.length < 1000} className="w-full">
+            {isBacktesting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <TestTube className="mr-2 h-4 w-4" />}
+            Rodar Backtest
+          </Button>
+          {backtestResults && (
+            <ScrollArea className="h-64">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Estratégia</TableHead>
+                    <TableHead className="text-center">WR</TableHead>
+                    <TableHead className="text-right">P&L</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {Object.values(backtestResults).sort((a,b) => b.totalProfit - a.totalProfit).map(res => (
+                    <TableRow key={res.strategyId}>
+                      <TableCell className="text-xs font-medium">{strategyLabels[res.strategyId] || res.strategyId}</TableCell>
+                      <TableCell className={cn("text-center font-mono text-xs", res.winrate > 51 ? 'text-green-600' : 'text-red-600')}>{res.winrate.toFixed(1)}%</TableCell>
+                      <TableCell className={cn("text-right font-mono text-xs", res.totalProfit > 0 ? 'text-green-600' : 'text-red-600')}>${res.totalProfit.toFixed(2)}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </ScrollArea>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <BrainCircuit className="h-5 w-5" />
+            Passo 3: Calibração Automática
+          </CardTitle>
+          <CardDescription>
+            Execute uma busca "Grid Search" para encontrar os melhores parâmetros e aplique-os.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <Button onClick={runCalibration} disabled={isCalibrating || backtestTicks.length < 5000} className="w-full">
+            {isCalibrating ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <BrainCircuit className="mr-2 h-4 w-4" />}
+            Encontrar Parâmetros Ótimos
+          </Button>
+          {calibrationResults && (
+            <>
+              <div className="space-y-2">
+                <Label>Resultados da Otimização:</Label>
+                <ScrollArea className="h-48 border rounded-md">
+                   <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Estratégia</TableHead>
+                          <TableHead>Trades</TableHead>
+                          <TableHead>P&L</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                          {Object.values(calibrationResults).map(res => (
+                              <TableRow key={res.bestSummary.strategyId}>
+                                <TableCell className="text-xs">{strategyLabels[res.bestSummary.strategyId]}</TableCell>
+                                <TableCell className="text-xs font-mono">{res.initialSummary.totalTrades} → {res.bestSummary.totalTrades}</TableCell>
+                                <TableCell className="text-xs font-mono">{res.initialSummary.totalProfit.toFixed(2)} → <span className="font-bold text-primary">{res.bestSummary.totalProfit.toFixed(2)}</span></TableCell>
+                              </TableRow>
+                          ))}
+                      </TableBody>
+                   </Table>
+                </ScrollArea>
+              </div>
+              <Button onClick={applyCalibration} className="w-full">
+                <Check className="mr-2 h-4 w-4"/>
+                Aplicar Parâmetros Otimizados
+              </Button>
+            </>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+};
+
 
 // ============================================================================
 // 1. TIPOS E INTERFACES
