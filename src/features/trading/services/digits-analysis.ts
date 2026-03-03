@@ -214,8 +214,8 @@ export function determineSignalQuality(
     targetDigit = consensusHottestDigit;
     contractType = 'DIGITDIFF';
     baseConfidence = consensusStrength;
-  } else if (coldestConsensusDigit !== null) {
-    targetDigit = coldestConsensusDigit;
+  } else if (consensusColdestDigit !== null) {
+    targetDigit = consensusColdestDigit;
     contractType = 'DIGITMATCH';
     // É mais rigoroso para 'MATCH'
     baseConfidence = consensusStrength === 'MUITO_ALTA' ? 'ALTA' : consensusStrength === 'ALTA' ? 'MEDIA' : 'BAIXA';
