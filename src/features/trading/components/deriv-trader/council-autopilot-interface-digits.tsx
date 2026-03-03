@@ -9,12 +9,12 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Bot, Binary, TrendingUp, HelpCircle, Trophy, Settings, AlertTriangle, ShieldCheck, Power, Clock, Repeat, TestTube, Wand2, BrainCircuit } from "lucide-react";
+import { Bot, Binary, TrendingUp, HelpCircle, Trophy, Settings, AlertTriangle, ShieldCheck, Power, Clock, Repeat, TestTube, Wand2, BrainCircuit, SlidersHorizontal, ChevronsUpDown } from "lucide-react";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Separator } from "@/components/ui/separator";
 import { Input } from "@/components/ui/input";
-import type { useRobotCouncilDigits, PilotType, PilotState } from '@/features/trading/hooks/use-robot-council-digits';
+import type { useRobotCouncilDigits, PilotType, PilotState, StrategyBacktestResult, CalibrationResult } from '@/features/trading/hooks/use-robot-council-digits';
 import { useVagalumeAlternante, type VagalumeConfig, type VagalumeSignal, type DigitContractType } from '@/features/trading/hooks/use-vagalume-alternante';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
@@ -33,662 +33,304 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { DigitsOptimizationPanel } from "./digits-backtest-panel";
-import { strategyLabels } from "@/app/deriv-trader-digits/strategies-config";
+import { STRATEGY_DEFINITIONS, strategyLabels } from '@/app/deriv-trader-digits/strategies-config';
+import { DigitsOptimizationPanel } from './digits-backtest-panel';
 
+// ============================================================================
+// 1. TIPOS E INTERFACES
+// ============================================================================
 
 interface DigitsAutopilotManagerProps extends ReturnType<typeof useRobotCouncilDigits> {}
 
-const PilotTabContent: React.FC<{
-    pilotKey: PilotType;
-    title: string;
-    description: string;
+interface PilotControlRowProps {
+    pilotDef: (typeof STRATEGY_DEFINITIONS)[0];
     pilotState: PilotState;
     toggleAutopilot: (type: PilotType) => void;
-    children?: React.ReactNode; // Para adicionar os sliders
-}> = ({ pilotKey, title, description, pilotState, toggleAutopilot, children }) => {
-    const { isOn, status, currentTarget, consecutiveLosses, accumulatedLoss } = pilotState;
+    children?: React.ReactNode;
+}
+
+// ============================================================================
+// 2. COMPONENTES AUXILIARES (UI)
+// ============================================================================
+
+const PilotControlRow: React.FC<PilotControlRowProps> = ({
+    pilotDef,
+    pilotState,
+    toggleAutopilot,
+    children,
+}) => {
+    const { isOn, status, currentTarget, consecutiveLosses } = pilotState;
 
     const statusInfo = {
         'PAUSED': { text: 'Pausado', color: 'bg-gray-500' },
-        'TRADING': { text: 'Operando', color: 'bg-green-500' },
-        'COOLDOWN': { text: 'Cooldown Pós-Perda', color: 'bg-orange-500' },
+        'TRADING': { text: 'Ativo', color: 'bg-green-500' },
+        'COOLDOWN': { text: `Cooldown (${currentTarget})`, color: 'bg-orange-500' },
         'CIRCUIT_BREAKER': { text: 'Pausa de Risco', color: 'bg-red-500' },
     };
 
     return (
-        <div className="space-y-4">
-            <div className="flex items-center justify-between rounded-lg border p-3">
-                <div>
-                    <Label htmlFor={`${pilotKey}-switch`} className="font-semibold">{title}</Label>
-                    <p className="text-xs text-muted-foreground">{description}</p>
+        <div className="rounded-lg border p-4 space-y-4">
+            <div className="flex items-start justify-between">
+                <div className="flex-1 pr-4">
+                    <Label htmlFor={`${pilotDef.id}-switch`} className="font-semibold">{pilotDef.name}</Label>
+                    <p className="text-xs text-muted-foreground">{pilotDef.description}</p>
                 </div>
-                 <Switch
-                    id={`${pilotKey}-switch`}
+                <Switch
+                    id={`${pilotDef.id}-switch`}
                     checked={isOn}
-                    onCheckedChange={() => toggleAutopilot(pilotKey)}
+                    onCheckedChange={() => toggleAutopilot(pilotDef.id)}
                     className="data-[state=checked]:bg-green-600"
                 />
             </div>
 
             {isOn && (
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-3 text-center text-xs">
-                    <div className="p-2 border rounded-lg bg-muted/50">
-                        <p className="text-muted-foreground font-semibold mb-1">Status</p>
-                        <Badge variant="outline" className="flex items-center justify-center gap-1.5">
-                            <div className={cn("h-2 w-2 rounded-full", statusInfo[status]?.color || 'bg-gray-500')}></div>
-                            {statusInfo[status]?.text || status}
-                        </Badge>
-                    </div>
-                     <div className="p-2 border rounded-lg bg-muted/50">
-                        <p className="text-muted-foreground font-semibold mb-1">
-                            Alvo Atual
-                        </p>
-                        <p className="font-bold text-sm truncate" title={currentTarget || ''}>
-                            {currentTarget || 'Aguardando...'}
-                        </p>
-                    </div>
-                     <div className="p-2 border rounded-lg bg-muted/50 col-span-2 md:col-span-1">
-                        <p className="text-muted-foreground font-semibold mb-1">Perdas Seguidas</p>
-                        <p className="font-bold text-sm text-red-600">
-                           {consecutiveLosses} {accumulatedLoss > 0 && `($${accumulatedLoss.toFixed(2)})`}
-                        </p>
-                    </div>
+                <div className="flex items-center justify-between text-xs text-muted-foreground border-t pt-3">
+                    <Badge variant="outline" className="flex items-center gap-1.5">
+                        <div className={cn("h-2 w-2 rounded-full", statusInfo[status]?.color || 'bg-gray-500')}></div>
+                        {statusInfo[status]?.text || status}
+                    </Badge>
+                     <Badge variant="destructive" className={cn(consecutiveLosses > 0 ? "flex" : "hidden", "items-center gap-1")}>
+                        <AlertTriangle className="h-3 w-3"/>
+                        {consecutiveLosses} Perdas
+                    </Badge>
                 </div>
             )}
-             {status === 'CIRCUIT_BREAKER' && (
-                 <div className="text-xs text-destructive flex items-center gap-2 p-2 rounded-md bg-destructive/10">
-                    <AlertTriangle className="h-4 w-4" />
-                    <span>{currentTarget}</span>
-                 </div>
+             {children && (
+                <Collapsible>
+                    <CollapsibleTrigger asChild>
+                        <Button variant="ghost" size="sm" className="w-full justify-start text-xs text-muted-foreground gap-2 h-8">
+                            <SlidersHorizontal className="h-4 w-4"/>
+                            Ajuste Fino
+                            <ChevronsUpDown className="h-3 w-3 ml-auto"/>
+                        </Button>
+                    </CollapsibleTrigger>
+                    <CollapsibleContent className="pt-4 space-y-4">
+                         {children}
+                    </CollapsibleContent>
+                </Collapsible>
             )}
-            {children}
         </div>
     );
 };
 
-const VagalumePanel: React.FC<{
-  pilotKey: 'vagalume';
-  pilotState: PilotState;
-  toggleAutopilot: (type: 'vagalume') => void;
-  vagalumeSignal: VagalumeSignal | null;
-  vagalumeConfig: VagalumeConfig;
-  setVagalumeConfig: (updater: (config: VagalumeConfig) => VagalumeConfig) => void;
-}> = ({ pilotKey, pilotState, toggleAutopilot, vagalumeSignal, vagalumeConfig, setVagalumeConfig }) => {
-  
-  const handleContractToggle = (contractType: keyof VagalumeConfig['allowedContracts'], checked: boolean) => {
-    setVagalumeConfig(prev => ({
-        ...prev,
-        allowedContracts: { ...prev.allowedContracts, [contractType]: checked },
-    }));
-  };
-  
-  const handleConfigChange = (key: keyof VagalumeConfig, value: any) => {
-      setVagalumeConfig(prev => ({ ...prev, [key]: value }));
-  };
-
-  return (
-    <PilotTabContent
-      pilotKey={pilotKey}
-      title="🪰 Vagalume Híbrido"
-      description={vagalumeSignal?.reason || "Bot Híbrido: Repetição + Contexto."}
-      pilotState={pilotState}
-      toggleAutopilot={toggleAutopilot as any}
-    >
-      <div className="space-y-6 pt-4 mt-4 border-t">
-        <h4 className="text-xs font-semibold text-muted-foreground">Configuração Fina do Vagalume</h4>
-        
-        <div className="space-y-2">
-          <Label htmlFor="vagalume-sequence-length">Comprimento Mínimo da Sequência ({vagalumeConfig.minSequenceLength})</Label>
-          <Slider id="vagalume-sequence-length" min={0} max={8} step={1} value={[vagalumeConfig.minSequenceLength]} onValueChange={v => handleConfigChange('minSequenceLength', v[0])} />
-        </div>
-
-        <div className="space-y-2">
-          <Label htmlFor="vagalume-threshold">Limiar de Confiança Contextual ({vagalumeConfig.contextualThreshold}%)</Label>
-          <Slider id="vagalume-threshold" min={51} max={75} step={1} value={[vagalumeConfig.contextualThreshold]} onValueChange={v => handleConfigChange('contextualThreshold', v[0])} />
-        </div>
-        
-        <div className="flex items-center justify-between rounded-lg border p-3">
-          <Label htmlFor="vagalume-predictive" className="flex flex-col space-y-1 flex-1 pr-4">
-            <span>Análise Preditiva (Latência)</span>
-            <span className="font-normal text-xs text-muted-foreground">Usa o estado anterior ao último tick para prever o próximo.</span>
-          </Label>
-          <Switch
-            id="vagalume-predictive"
-            checked={vagalumeConfig.usePredictiveAnalysis}
-            onCheckedChange={(checked) => handleConfigChange('usePredictiveAnalysis', checked)}
-          />
-        </div>
-        
-        <div className="flex items-center justify-between rounded-lg border p-3">
-          <Label htmlFor="vagalume-regime" className="flex flex-col space-y-1 flex-1 pr-4">
-            <span>Exigir Regime Ranging</span>
-            <span className="font-normal text-xs text-muted-foreground">Se desativado, o bot contextual opera em qualquer regime.</span>
-          </Label>
-          <Switch
-            id="vagalume-regime"
-            checked={vagalumeConfig.requireRangingRegime}
-            onCheckedChange={(checked) => handleConfigChange('requireRangingRegime', checked)}
-          />
-        </div>
-
-        <Separator/>
-        <h4 className="text-xs font-semibold text-muted-foreground">Contratos Permitidos</h4>
-        <div className="flex items-center justify-between rounded-lg border p-3">
-          <Label htmlFor="vagalume-matchdiffers" className="flex flex-col space-y-1 flex-1 pr-4">
-            <span>Combina / Difere (Repetição)</span>
-            <span className="font-normal text-xs text-muted-foreground">Ativa o "Repetition Trigger" de alta confiança.</span>
-          </Label>
-          <Switch
-            id="vagalume-matchdiffers"
-            checked={vagalumeConfig.allowedContracts.MATCHDIFFERS}
-            onCheckedChange={(c) => handleContractToggle('MATCHDIFFERS', c)}
-          />
-        </div>
-        <div className="flex items-center justify-between rounded-lg border p-3">
-          <Label htmlFor="vagalume-evenodd" className="flex flex-col space-y-1 flex-1 pr-4">
-            <span>Par / Ímpar (Contextual)</span>
-            <span className="font-normal text-xs text-muted-foreground">Opera em mercados com desequilíbrio Par/Ímpar.</span>
-          </Label>
-          <Switch
-            id="vagalume-evenodd"
-            checked={vagalumeConfig.allowedContracts.EVENODD}
-            onCheckedChange={(c) => handleContractToggle('EVENODD', c)}
-          />
-        </div>
-        <div className="flex items-center justify-between rounded-lg border p-3">
-          <Label htmlFor="vagalume-overunder" className="flex flex-col space-y-1 flex-1 pr-4">
-            <span>Acima / Abaixo (Contextual)</span>
-             <span className="font-normal text-xs text-muted-foreground">Opera em mercados com desequilíbrio Acima/Abaixo.</span>
-          </Label>
-          <Switch
-            id="vagalume-overunder"
-            checked={vagalumeConfig.allowedContracts.OVERUNDER}
-            onCheckedChange={(c) => handleContractToggle('OVERUNDER', c)}
-          />
-        </div>
-      </div>
-    </PilotTabContent>
-  );
-};
-
-
-const SherlockPanel: React.FC<{
-  pilotKey: 'sherlock';
-  pilotState: PilotState;
-  toggleAutopilot: (type: 'sherlock') => void;
-  threshold: number;
-  setThreshold: (value: number) => void;
-  lookback: number;
-  setLookback: (value: number) => void;
-  compensationDisabled: boolean;
-  setCompensationDisabled: (value: boolean) => void;
-  winRateThreshold: number;
-  setWinRateThreshold: (value: number) => void;
-}> = ({ 
-  pilotKey, pilotState, toggleAutopilot, 
-  threshold, setThreshold, 
-  lookback, setLookback, 
-  compensationDisabled, setCompensationDisabled,
-  winRateThreshold, setWinRateThreshold,
-}) => {
-    const { isOn, status, currentTarget, consecutiveLosses, accumulatedLoss } = pilotState;
-
-    const statusInfo = {
-        'PAUSED': { text: 'Pausado', color: 'bg-gray-500' },
-        'TRADING': { text: 'Operando', color: 'bg-green-500' },
-        'COOLDOWN': { text: `Cooldown (${currentTarget})`, color: 'bg-orange-500' }, 
-        'CIRCUIT_BREAKER': { text: 'Pausa de Risco', color: 'bg-red-500' },
-    };
-
-    return (
-    <PilotTabContent
-      pilotKey={pilotKey}
-      title="🕵️ Sherlock Holmes Preditivo"
-      description="Usa análise de Markov para prever blocos de dígitos, compensando o delay da rede."
-      pilotState={pilotState}
-      toggleAutopilot={toggleAutopilot}
-    >
-      <div className="space-y-6 pt-4 mt-4 border-t">
-         {isOn && (
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-3 text-center text-xs">
-                <div className="p-2 border rounded-lg bg-muted/50">
-                    <p className="text-muted-foreground font-semibold mb-1">Status</p>
-                    <Badge variant="outline" className="flex items-center justify-center gap-1.5">
-                        <div className={cn("h-2 w-2 rounded-full", statusInfo[status]?.color || 'bg-gray-500')}></div>
-                        {statusInfo[status]?.text || status}
-                    </Badge>
-                </div>
-                 <div className="p-2 border rounded-lg bg-muted/50 col-span-2 md:col-span-1">
-                    <p className="text-muted-foreground font-semibold mb-1">Perdas Seguidas</p>
-                    <p className="font-bold text-sm text-red-600">
-                       {consecutiveLosses} {accumulatedLoss > 0 && `($${accumulatedLoss.toFixed(2)})`}
-                    </p>
-                </div>
-                 {status === 'CIRCUIT_BREAKER' && (
-                     <div className="text-xs text-destructive flex items-center gap-2 p-2 rounded-md bg-destructive/10 col-span-full">
-                        <AlertTriangle className="h-4 w-4" />
-                        <span>{currentTarget}</span>
-                     </div>
-                )}
-            </div>
-        )}
-        <h4 className="text-xs font-semibold text-muted-foreground">Configuração do Sherlock</h4>
-        <div className="space-y-2">
-          <Label htmlFor="sherlock-threshold">Limiar de Confiança do Bloco ({threshold.toFixed(0)}%)</Label>
-          <Slider id="sherlock-threshold" min={51} max={85} step={1} value={[threshold]} onValueChange={v => setThreshold(v[0])} />
-          <p className="text-xs text-muted-foreground">O Sherlock só irá operar se a probabilidade do bloco recomendado for maior que este valor.</p>
-        </div>
-
-        <div className="space-y-2">
-          <Label htmlFor="sherlock-lookback">Janela de Análise Histórica ({lookback} ticks)</Label>
-          <Slider id="sherlock-lookback" min={100} max={1000} step={50} value={[lookback]} onValueChange={v => setLookback(v[0])} />
-          <p className="text-xs text-muted-foreground">Número de ticks para construir a matriz de probabilidade. Menos = mais reativo, Mais = mais estável.</p>
-        </div>
-        
-        <div className="space-y-2">
-          <Label htmlFor="sherlock-winrate-threshold">Limiar de Win Rate da Sessão ({winRateThreshold.toFixed(0)}%)</Label>
-          <Slider id="sherlock-winrate-threshold" min={1} max={100} step={1} value={[winRateThreshold]} onValueChange={v => setWinRateThreshold(v[0])} />
-          <p className="text-xs text-muted-foreground">Pausa o Sherlock se a taxa de acerto da sessão cair abaixo deste valor (requer 10+ trades).</p>
-        </div>
-
-        <div className="flex items-center justify-between rounded-lg border p-3">
-          <Label htmlFor="sherlock-compensation" className="flex flex-col space-y-1 flex-1 pr-4">
-            <span>Compensação de Latência</span>
-            <span className="font-normal text-xs text-muted-foreground">
-              Desativar força a previsão do próximo tick, ignorando o delay da rede.
-            </span>
-          </Label>
-          <Switch
-            id="sherlock-compensation"
-            checked={!compensationDisabled}
-            onCheckedChange={(checked) => setCompensationDisabled(!checked)}
-          />
-        </div>
-      </div>
-    </PilotTabContent>
-  );
-};
-
+// ============================================================================
+// 3. COMPONENTE PRINCIPAL (MANAGER)
+// ============================================================================
 
 export const DigitsAutopilotManager: React.FC<DigitsAutopilotManagerProps> = (props) => {
   const { 
-    pilots,
-    toggleAutopilot,
-    dailyBalance,
-    setDailyBalance,
-    dailyTarget,
-    setDailyTarget,
-    consensusThreshold,
-    setConsensusThreshold,
-    overUnderThreshold,
-    setOverUnderThreshold,
-    evenOddThreshold,
-    setEvenOddThreshold,
-    underdogThreshold,
-    setUnderdogThreshold,
-    isUnderdogInverse,
-    setIsUnderdogInverse,
-    overUnderUnderdogThreshold,
-    setOverUnderUnderdogThreshold,
-    evenOddUnderdogThreshold,
-    setEvenOddUnderdogThreshold,
-    sherlockThreshold, 
-    setSherlockThreshold,
-    sherlockLookback, 
-    setSherlockLookback,
-    disableSherlockCompensation, 
-    setDisableSherlockCompensation,
-    sherlockWinRateThreshold,
-    setSherlockWinRateThreshold,
-    isMartingaleEnabled,
-    setIsMartingaleEnabled,
-    isSmartMartingale,
-    setIsSmartMartingale,
-    martingaleRecoveryFactor,
-    setMartingaleRecoveryFactor,
-    cooldownTime,
-    setCooldownTime,
-    maxLosses,
-    setMaxLosses,
-    executionCooldown,
-    setExecutionCooldown,
-    resetSession,
-    vagalumeSignal,
-    vagalumeConfig,
-    setVagalumeConfig,
-    backtestTicks,
-    isDataLoading,
-    loadDataForBacktest,
-    backtestResults,
-    isBacktesting,
-    runBacktestForAllStrategies,
-    calibrationResults,
-    isCalibrating,
-    runCalibration,
-    applyCalibration,
+    pilots, toggleAutopilot, dailyBalance, setDailyBalance, dailyTarget, setDailyTarget,
+    isMartingaleEnabled, setIsMartingaleEnabled, isSmartMartingale, setIsSmartMartingale,
+    martingaleRecoveryFactor, setMartingaleRecoveryFactor, cooldownTime, setCooldownTime,
+    maxLosses, setMaxLosses, executionCooldown, setExecutionCooldown, resetSession,
+    // Props para os sliders
+    consensusThreshold, setConsensusThreshold, overUnderThreshold, setOverUnderThreshold,
+    evenOddThreshold, setEvenOddThreshold, underdogThreshold, setUnderdogThreshold,
+    isUnderdogInverse, setIsUnderdogInverse, overUnderUnderdogThreshold, setOverUnderUnderdogThreshold,
+    evenOddUnderdogThreshold, setEvenOddUnderdogThreshold, sherlockThreshold, setSherlockThreshold,
+    sherlockLookback, setSherlockLookback, disableSherlockCompensation, setDisableSherlockCompensation,
+    sherlockWinRateThreshold, setSherlockWinRateThreshold, vagalumeConfig, setVagalumeConfig,
+    // Props para o painel de otimização
+    backtestTicks, isDataLoading, loadDataForBacktest, backtestResults, isBacktesting,
+    runBacktestForAllStrategies, calibrationResults, isCalibrating, runCalibration, applyCalibration
  } = props;
+
+  const renderPilotParams = (pilotDef: typeof STRATEGY_DEFINITIONS[0]) => {
+      switch (pilotDef.id) {
+          case 'matchesDiffers':
+              return (
+                  <div className="space-y-2">
+                      <Label htmlFor="z-score-threshold">Limiar de Anormalidade (Z-Score) ({consensusThreshold.toFixed(1)})</Label>
+                      <Slider id="z-score-threshold" min={1.5} max={5.0} step={0.1} value={[consensusThreshold]} onValueChange={v => setConsensusThreshold(v[0])} />
+                      <p className="text-xs text-muted-foreground">Operar se o Z-score ponderado de um dígito exceder este valor.</p>
+                  </div>
+              );
+          case 'overUnder':
+              return (
+                  <div className="space-y-2">
+                      <Label htmlFor="ou-threshold">Limiar de Prob. de Bloco ({overUnderThreshold.toFixed(1)}%)</Label>
+                      <Slider id="ou-threshold" min={55} max={80} step={1} value={[overUnderThreshold]} onValueChange={v => setOverUnderThreshold(v[0])} />
+                  </div>
+              );
+          case 'evenOdd':
+               return (
+                  <div className="space-y-2">
+                      <Label htmlFor="eo-threshold">Limiar de Prob. de Bloco ({evenOddThreshold.toFixed(1)}%)</Label>
+                      <Slider id="eo-threshold" min={55} max={80} step={1} value={[evenOddThreshold]} onValueChange={v => setEvenOddThreshold(v[0])} />
+                  </div>
+              );
+          case 'underdog':
+                return (
+                    <div className="space-y-4">
+                        <div className="space-y-2">
+                            <Label htmlFor="underdog-threshold">Limiar de Frequência de Disparo ({underdogThreshold.toFixed(1)}%)</Label>
+                            <Slider id="underdog-threshold" min={1.0} max={10.0} step={0.5} value={[underdogThreshold]} onValueChange={v => setUnderdogThreshold(v[0])} />
+                        </div>
+                        <div className="flex items-center justify-between rounded-lg border p-3">
+                            <Label htmlFor="underdog-inverse-switch" className="flex flex-col space-y-1">
+                                <span>Inverter Lógica (Apostar 'Difere')</span>
+                            </Label>
+                            <Switch id="underdog-inverse-switch" checked={isUnderdogInverse} onCheckedChange={setIsUnderdogInverse} />
+                        </div>
+                    </div>
+                );
+          case 'underdogOverUnder':
+              return (
+                  <div className="space-y-2">
+                      <Label htmlFor="underdog-ou-threshold">Limiar de Frequência de Bloco ({overUnderUnderdogThreshold.toFixed(1)}%)</Label>
+                      <Slider id="underdog-ou-threshold" min={30} max={48} step={1} value={[overUnderUnderdogThreshold]} onValueChange={v => setOverUnderUnderdogThreshold(v[0])} />
+                  </div>
+              );
+          case 'underdogEvenOdd':
+               return (
+                  <div className="space-y-2">
+                      <Label htmlFor="underdog-eo-threshold">Limiar de Frequência de Bloco ({evenOddUnderdogThreshold.toFixed(1)}%)</Label>
+                      <Slider id="underdog-eo-threshold" min={30} max={48} step={1} value={[evenOddUnderdogThreshold]} onValueChange={v => setEvenOddUnderdogThreshold(v[0])} />
+                  </div>
+              );
+          case 'sherlock':
+              return (
+                  <div className="space-y-6">
+                      <div className="space-y-2">
+                        <Label htmlFor="sherlock-threshold">Limiar de Confiança do Bloco ({sherlockThreshold.toFixed(0)}%)</Label>
+                        <Slider id="sherlock-threshold" min={51} max={85} step={1} value={[sherlockThreshold]} onValueChange={setSherlockThreshold} />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="sherlock-lookback">Janela de Análise Histórica ({sherlockLookback} ticks)</Label>
+                        <Slider id="sherlock-lookback" min={100} max={1000} step={50} value={[sherlockLookback]} onValueChange={setSherlockLookback} />
+                      </div>
+                       <div className="space-y-2">
+                          <Label htmlFor="sherlock-winrate-threshold">Limiar de Win Rate da Sessão ({sherlockWinRateThreshold.toFixed(0)}%)</Label>
+                          <Slider id="sherlock-winrate-threshold" min={1} max={100} step={1} value={[sherlockWinRateThreshold]} onValueChange={v => setSherlockWinRateThreshold(v[0])} />
+                      </div>
+                      <div className="flex items-center justify-between rounded-lg border p-3">
+                        <Label htmlFor="sherlock-compensation" className="text-sm">Compensação de Latência</Label>
+                        <Switch id="sherlock-compensation" checked={!disableSherlockCompensation} onCheckedChange={(checked) => setDisableSherlockCompensation(!checked)} />
+                      </div>
+                  </div>
+              );
+          case 'vagalume':
+              return (
+                   <div className="space-y-6">
+                      <div className="space-y-2">
+                        <Label htmlFor="vagalume-threshold">Limiar de Confiança Contextual ({vagalumeConfig.contextualThreshold}%)</Label>
+                        <Slider id="vagalume-threshold" min={51} max={75} step={1} value={[vagalumeConfig.contextualThreshold]} onValueChange={v => setVagalumeConfig(c => ({...c, contextualThreshold: v[0]}))} />
+                      </div>
+                       <div className="flex items-center justify-between rounded-lg border p-3">
+                        <Label htmlFor="vagalume-predictive" className="text-sm">Análise Preditiva (Latência)</Label>
+                        <Switch id="vagalume-predictive" checked={vagalumeConfig.usePredictiveAnalysis} onCheckedChange={(c) => setVagalumeConfig(cfg => ({...cfg, usePredictiveAnalysis: c}))} />
+                      </div>
+                   </div>
+              );
+          default:
+              return null;
+      }
+  };
 
   return (
     <Card>
       <CardHeader>
         <CardTitle className="font-headline flex items-center gap-2">
             <Bot className="h-5 w-5 text-primary" />
-            Pilotos Automáticos (Digits)
+            Mesa de Comando (Digits)
         </CardTitle>
         <CardDescription>
-          Controle os especialistas que operam com base na frequência estatística de cada tipo de contrato.
+          Controle os pilotos automáticos, a gestão de risco e as otimizações.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
-        
-        <div className="space-y-2">
-            <Tabs defaultValue="standard" className="w-full">
-                <TabsList className="grid w-full grid-cols-3">
-                    <TabsTrigger value="standard" className="text-xs sm:text-sm"><Bot className="h-4 w-4 mr-1.5"/>Estratégia</TabsTrigger>
-                    <TabsTrigger value="experts" className="text-xs sm:text-sm"><BrainCircuit className="h-4 w-4 mr-1.5"/>Especialistas</TabsTrigger>
-                    <TabsTrigger value="risk" className="text-xs sm:text-sm"><Settings className="h-4 w-4 mr-1.5"/>Risco</TabsTrigger>
-                </TabsList>
-                <TabsContent value="standard" className="pt-4 space-y-6">
-                    {/* ESTRATÉGIAS PRINCIPAIS */}
-                    <div className="space-y-2">
-                        <Label className="text-sm font-semibold text-muted-foreground">Estratégias de Frequência</Label>
-                        <Tabs defaultValue="matchesDiffers" className="w-full">
-                            <TabsList className="grid w-full grid-cols-3">
-                                <TabsTrigger value="matchesDiffers" className="text-xs sm:text-sm"><HelpCircle className="h-4 w-4 mr-1.5"/>Difere</TabsTrigger>
-                                <TabsTrigger value="overUnder" className="text-xs sm:text-sm"><TrendingUp className="h-4 w-4 mr-1.5"/>Acima/Abaixo</TabsTrigger>
-                                <TabsTrigger value="evenOdd" className="text-xs sm:text-sm"><Binary className="h-4 w-4 mr-1.5"/>Par/Ímpar</TabsTrigger>
-                            </TabsList>
-                            <TabsContent value="matchesDiffers" className="pt-4">
-                                <PilotTabContent
-                                    pilotKey="matchesDiffers"
-                                    title="Piloto Contra-Tendência"
-                                    description="Opera 'Difere' no dígito mais frequente, apostando na regressão à média."
-                                    pilotState={pilots.matchesDiffers}
-                                    toggleAutopilot={toggleAutopilot}
-                                >
-                                    <div className="space-y-4 pt-4 mt-4 border-t">
-                                        <h4 className="text-xs font-semibold text-muted-foreground">Configuração Fina</h4>
-                                        <div className="space-y-2">
-                                            <Label htmlFor="consensus-threshold">Limiar de Prob. de Disparo ({consensusThreshold.toFixed(1)}%)</Label>
-                                            <Slider id="consensus-threshold" min={15} max={40} step={1} value={[consensusThreshold]} onValueChange={v => setConsensusThreshold(v[0])} />
-                                            <p className="text-xs text-muted-foreground">Operar 'Difere' se a prob. do dígito mais provável exceder este valor.</p>
-                                        </div>
-                                    </div>
-                                </PilotTabContent>
-                            </TabsContent>
-                            <TabsContent value="overUnder" className="pt-4">
-                                <PilotTabContent
-                                    pilotKey="overUnder"
-                                    title="Piloto Acima/Abaixo (Padrão)"
-                                    description="Analisa a probabilidade do dígito final ser maior ou menor que uma barreira."
-                                    pilotState={pilots.overUnder}
-                                    toggleAutopilot={toggleAutopilot}
-                                >
-                                    <div className="space-y-4 pt-4 mt-4 border-t">
-                                        <h4 className="text-xs font-semibold text-muted-foreground">Configuração Fina</h4>
-                                        <div className="space-y-2">
-                                            <Label htmlFor="ou-threshold">Limiar de Prob. de Bloco ({overUnderThreshold.toFixed(1)}%)</Label>
-                                            <Slider id="ou-threshold" min={55} max={80} step={1} value={[overUnderThreshold]} onValueChange={v => setOverUnderThreshold(v[0])} />
-                                            <p className="text-xs text-muted-foreground">Operar se a prob. do bloco (0-4 ou 5-9) exceder este valor.</p>
-                                        </div>
-                                    </div>
-                                </PilotTabContent>
-                            </TabsContent>
-                            <TabsContent value="evenOdd" className="pt-4">
-                                <PilotTabContent
-                                    pilotKey="evenOdd"
-                                    title="Piloto Par/Ímpar"
-                                    description="Opera na probabilidade do dígito final ser par ou ímpar."
-                                    pilotState={pilots.evenOdd}
-                                    toggleAutopilot={toggleAutopilot}
-                                >
-                                    <div className="space-y-4 pt-4 mt-4 border-t">
-                                        <h4 className="text-xs font-semibold text-muted-foreground">Configuração Fina</h4>
-                                        <div className="space-y-2">
-                                            <Label htmlFor="eo-threshold">Limiar de Prob. de Bloco ({evenOddThreshold.toFixed(1)}%)</Label>
-                                            <Slider id="eo-threshold" min={55} max={80} step={1} value={[evenOddThreshold]} onValueChange={v => setEvenOddThreshold(v[0])} />
-                                            <p className="text-xs text-muted-foreground">Operar se a prob. do bloco (Par ou Ímpar) exceder este valor.</p>
-                                        </div>
-                                    </div>
-                                </PilotTabContent>
-                            </TabsContent>
-                        </Tabs>
-                    </div>
+        <Tabs defaultValue="pilots" className="w-full">
+            <TabsList className="grid w-full grid-cols-3">
+                <TabsTrigger value="pilots" className="text-xs sm:text-sm"><Bot className="h-4 w-4 mr-1.5"/>Pilotos</TabsTrigger>
+                <TabsTrigger value="optimization" className="text-xs sm:text-sm"><TestTube className="h-4 w-4 mr-1.5"/>Otimização</TabsTrigger>
+                <TabsTrigger value="risk" className="text-xs sm:text-sm"><Settings className="h-4 w-4 mr-1.5"/>Risco</TabsTrigger>
+            </TabsList>
+            <TabsContent value="pilots" className="pt-6 space-y-4">
+                {STRATEGY_DEFINITIONS.map(def => (
+                    <PilotControlRow
+                        key={def.id}
+                        pilotDef={def}
+                        pilotState={pilots[def.id]}
+                        toggleAutopilot={toggleAutopilot}
+                    >
+                        {renderPilotParams(def)}
+                    </PilotControlRow>
+                ))}
+            </TabsContent>
 
-                    {/* ESTRATÉGIAS DE AZARÃO (UNDERDOG) */}
-                    <div className="space-y-2">
-                        <Label className="text-sm font-semibold text-muted-foreground">Estratégias de Azarão (Underdog)</Label>
-                        <Tabs defaultValue="underdog" className="w-full">
-                            <TabsList className="grid w-full grid-cols-4">
-                                <TabsTrigger value="underdog" className="text-xs sm:text-sm"><Trophy className="h-4 w-4 mr-1.5"/>Dígito Frio</TabsTrigger>
-                                <TabsTrigger value="underdogOverUnder" className="text-xs sm:text-sm"><Trophy className="h-4 w-4 mr-1.5"/>Bloco A/A</TabsTrigger>
-                                <TabsTrigger value="underdogEvenOdd" className="text-xs sm:text-sm"><Trophy className="h-4 w-4 mr-1.5"/>Bloco P/I</TabsTrigger>
-                                <TabsTrigger value="dynamicUnderdogOverUnder" className="text-xs sm:text-sm"><Trophy className="h-4 w-4 mr-1.5"/>Bloco Dinâmico</TabsTrigger>
-                            </TabsList>
-                            <TabsContent value="underdog" className="pt-4">
-                                <PilotTabContent
-                                    pilotKey="underdog"
-                                    title="Piloto Caçador de Azarão"
-                                    description="Aposta 'Combina' no dígito menos frequente, explorando a regressão à média."
-                                    pilotState={pilots.underdog}
-                                    toggleAutopilot={toggleAutopilot}
-                                >
-                                    <div className="space-y-4 pt-4 mt-4 border-t">
-                                        <h4 className="text-xs font-semibold text-muted-foreground">Configuração Fina (Azarão)</h4>
-                                        <div className="space-y-2">
-                                            <Label htmlFor="underdog-threshold">Limiar de Frequência de Disparo ({underdogThreshold.toFixed(1)}%)</Label>
-                                            <Slider
-                                                id="underdog-threshold"
-                                                min={1.0} max={10.0} step={0.5}
-                                                value={[underdogThreshold]}
-                                                onValueChange={(value) => setUnderdogThreshold(value[0])}
-                                            />
-                                            <p className="text-xs text-muted-foreground">Operar 'Combina' se a frequência de um dígito cair abaixo deste valor.</p>
-                                        </div>
-                                        <div className="flex items-center justify-between rounded-lg border p-3">
-                                            <Label htmlFor="underdog-inverse-switch" className="flex flex-col space-y-1">
-                                                <span>Inverter Lógica</span>
-                                                <span className="font-normal text-xs text-muted-foreground">
-                                                    Apostar 'Difere' no dígito menos frequente (alto risco).
-                                                </span>
-                                            </Label>
-                                            <Switch
-                                                id="underdog-inverse-switch"
-                                                checked={isUnderdogInverse}
-                                                onCheckedChange={setIsUnderdogInverse}
-                                            />
-                                        </div>
-                                    </div>
-                                </PilotTabContent>
-                            </TabsContent>
-                            <TabsContent value="underdogOverUnder" className="pt-4">
-                                <PilotTabContent
-                                    pilotKey="underdogOverUnder"
-                                    title="Piloto Azarão Acima/Abaixo"
-                                    description="Aposta no bloco (0-4 ou 5-9) que está estatisticamente 'atrasado'."
-                                    pilotState={pilots.underdogOverUnder}
-                                    toggleAutopilot={toggleAutopilot}
-                                >
-                                    <div className="space-y-4 pt-4 mt-4 border-t">
-                                        <h4 className="text-xs font-semibold text-muted-foreground">Configuração Fina (Azarão A/A)</h4>
-                                        <div className="space-y-2">
-                                            <Label htmlFor="underdog-ou-threshold">Limiar de Frequência de Bloco ({overUnderUnderdogThreshold.toFixed(1)}%)</Label>
-                                            <Slider
-                                                id="underdog-ou-threshold"
-                                                min={30} max={48} step={1}
-                                                value={[overUnderUnderdogThreshold]}
-                                                onValueChange={(value) => setOverUnderUnderdogThreshold(value[0])}
-                                            />
-                                            <p className="text-xs text-muted-foreground">Operar no bloco A/A se sua frequência cair abaixo deste valor.</p>
-                                        </div>
-                                    </div>
-                                </PilotTabContent>
-                            </TabsContent>
-                             <TabsContent value="underdogEvenOdd" className="pt-4">
-                                <PilotTabContent
-                                    pilotKey="underdogEvenOdd"
-                                    title="Piloto Azarão Par/Ímpar"
-                                    description="Aposta no bloco (Par ou Ímpar) que está estatisticamente 'atrasado'."
-                                    pilotState={pilots.underdogEvenOdd}
-                                    toggleAutopilot={toggleAutopilot}
-                                >
-                                    <div className="space-y-4 pt-4 mt-4 border-t">
-                                        <h4 className="text-xs font-semibold text-muted-foreground">Configuração Fina (Azarão P/I)</h4>
-                                        <div className="space-y-2">
-                                            <Label htmlFor="underdog-eo-threshold">Limiar de Frequência de Bloco ({evenOddUnderdogThreshold.toFixed(1)}%)</Label>
-                                            <Slider
-                                                id="underdog-eo-threshold"
-                                                min={30} max={48} step={1}
-                                                value={[evenOddUnderdogThreshold]}
-                                                onValueChange={(value) => setEvenOddUnderdogThreshold(value[0])}
-                                            />
-                                            <p className="text-xs text-muted-foreground">Operar no bloco P/I se sua frequência cair abaixo deste valor.</p>
-                                        </div>
-                                    </div>
-                                </PilotTabContent>
-                            </TabsContent>
-                            <TabsContent value="dynamicUnderdogOverUnder" className="pt-4">
-                                <PilotTabContent
-                                    pilotKey="dynamicUnderdogOverUnder"
-                                    title="Piloto Azarão Acima/Abaixo (Dinâmico)"
-                                    description="Analisa a composição dos 5 dígitos menos prováveis para apostar no bloco oposto."
-                                    pilotState={pilots.dynamicUnderdogOverUnder}
-                                    toggleAutopilot={toggleAutopilot}
-                                />
-                            </TabsContent>
-                        </Tabs>
-                    </div>
-                </TabsContent>
+            <TabsContent value="optimization" className="pt-4">
+                <DigitsOptimizationPanel
+                    backtestTicks={backtestTicks}
+                    isDataLoading={isDataLoading}
+                    loadDataForBacktest={loadDataForBacktest}
+                    backtestResults={backtestResults}
+                    isBacktesting={isBacktesting}
+                    runBacktestForAllStrategies={runBacktestForAllStrategies}
+                    calibrationResults={calibrationResults}
+                    isCalibrating={isCalibrating}
+                    runCalibration={runCalibration}
+                    applyCalibration={applyCalibration}
+                />
+            </TabsContent>
 
-                <TabsContent value="experts" className="pt-4 space-y-6">
-                     <Tabs defaultValue="sherlock" className="w-full">
-                           <TabsList className="grid w-full grid-cols-2">
-                                <TabsTrigger value="vagalume" className="text-xs sm:text-sm"><Wand2 className="h-4 w-4 mr-1.5"/>Vagalume Híbrido</TabsTrigger>
-                                <TabsTrigger value="sherlock" className="text-xs sm:text-sm"><BrainCircuit className="h-4 w-4 mr-1.5"/>Sherlock Preditivo</TabsTrigger>
-                            </TabsList>
-                             <TabsContent value="vagalume" className="pt-4">
-                                <VagalumePanel
-                                    pilotKey="vagalume"
-                                    pilotState={pilots.vagalume}
-                                    toggleAutopilot={toggleAutopilot}
-                                    vagalumeSignal={vagalumeSignal}
-                                    vagalumeConfig={vagalumeConfig}
-                                    setVagalumeConfig={setVagalumeConfig}
-                                />
-                            </TabsContent>
-                             <TabsContent value="sherlock" className="pt-4">
-                                <SherlockPanel
-                                    pilotKey="sherlock"
-                                    pilotState={pilots.sherlock}
-                                    toggleAutopilot={toggleAutopilot}
-                                    threshold={sherlockThreshold}
-                                    setThreshold={setSherlockThreshold}
-                                    lookback={sherlockLookback}
-                                    setLookback={setSherlockLookback}
-                                    compensationDisabled={disableSherlockCompensation}
-                                    setCompensationDisabled={setDisableSherlockCompensation}
-                                    winRateThreshold={sherlockWinRateThreshold}
-                                    setWinRateThreshold={setSherlockWinRateThreshold}
-                                />
-                            </TabsContent>
-                        </Tabs>
-                </TabsContent>
-
-                {/* GESTÃO DE RISCO */}
-                <TabsContent value="risk" className="pt-4 space-y-6">
-                    <div className="grid grid-cols-2 gap-4">
-                        <div className="space-y-2">
-                            <Label htmlFor="council-daily-balance-digits">Banca do Dia (USD)</Label>
-                            <Input 
-                                id="council-daily-balance-digits"
-                                type="number"
-                                value={dailyBalance}
-                                onChange={(e) => setDailyBalance(Number(e.target.value))}
-                                placeholder="Ex: 10"
-                            />
-                        </div>
-                        <div className="space-y-2">
-                            <Label htmlFor="council-daily-target-digits">Alvo de Lucro (USD)</Label>
-                            <Input 
-                                id="council-daily-target-digits"
-                                type="number"
-                                value={dailyTarget}
-                                onChange={(e) => setDailyTarget(Number(e.target.value))}
-                                placeholder="Ex: 5"
-                            />
-                        </div>
-                    </div>
-                     <Separator />
+            <TabsContent value="risk" className="pt-6 space-y-6">
+                 <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-2">
-                        <Label htmlFor="execution-cooldown-slider">Intervalo Mínimo Entre Ordens ({executionCooldown}s)</Label>
-                        <Slider
-                            id="execution-cooldown-slider"
-                            min={0} max={10} step={1}
-                            value={[executionCooldown]}
-                            onValueChange={(value) => setExecutionCooldown(value[0])}
-                        />
-                        <p className="text-xs text-muted-foreground pt-1">Define um cooldown global entre o envio de ordens para evitar disparos muito rápidos e respeitar limites da API.</p>
-                    </div>
-                     <Separator />
-                    <div className="flex items-center justify-between rounded-lg border p-3 shadow-sm">
-                        <Label htmlFor="martingale-switch" className="flex flex-col space-y-1">
-                            <span>Ativar Martingale</span>
-                            <span className="font-normal text-xs text-muted-foreground">Aumenta a aposta após uma perda para acelerar a recuperação.</span>
-                        </Label>
-                        <Switch id="martingale-switch" checked={isMartingaleEnabled} onCheckedChange={setIsMartingaleEnabled} />
-                    </div>
-                    <div className="flex items-center justify-between rounded-lg border p-3 shadow-sm">
-                        <Label htmlFor="smart-martingale-switch" className="flex flex-col space-y-1">
-                            <span>Ativar Martingale Inteligente</span>
-                            <span className="font-normal text-xs text-muted-foreground">Usa Kelly Criterion para ajustar o stake com base na confiança do sinal.</span>
-                        </Label>
-                        <Switch id="smart-martingale-switch" checked={isSmartMartingale} onCheckedChange={setIsSmartMartingale} />
+                        <Label htmlFor="council-daily-balance-digits">Banca do Dia (USD)</Label>
+                        <Input id="council-daily-balance-digits" type="number" value={dailyBalance} onChange={e => setDailyBalance(Number(e.target.value))} />
                     </div>
                     <div className="space-y-2">
-                        <Label htmlFor="martingale-recovery-slider" className={cn(!isMartingaleEnabled && "text-muted-foreground/50")}>Fator de Recuperação ({martingaleRecoveryFactor.toFixed(1)}x)</Label>
-                        <Slider
-                            id="martingale-recovery-slider" min={1.1} max={2.5} step={0.1}
-                            value={[martingaleRecoveryFactor]}
-                            onValueChange={(value) => setMartingaleRecoveryFactor(value[0])}
-                            disabled={!isMartingaleEnabled}
-                        />
-                        <p className={cn("text-xs text-muted-foreground", !isMartingaleEnabled && "opacity-50")}>Define a agressividade para recuperar perdas. Cuidado com valores altos.</p>
+                        <Label htmlFor="council-daily-target-digits">Alvo de Lucro (USD)</Label>
+                        <Input id="council-daily-target-digits" type="number" value={dailyTarget} onChange={e => setDailyTarget(Number(e.target.value))} />
                     </div>
-                    <div className="space-y-2">
-                        <Label htmlFor="cooldown-slider">Cooldown Pós-Perda ({cooldownTime}s)</Label>
-                        <Slider id="cooldown-slider" min={0} max={60} step={1} value={[cooldownTime]} onValueChange={(value) => setCooldownTime(value[0])} />
-                    </div>
-                    <div className="space-y-2">
-                        <Label htmlFor="max-losses-slider">Limite de Perdas Seguidas ({maxLosses})</Label>
-                        <Slider id="max-losses-slider" min={3} max={40} step={1} value={[maxLosses]} onValueChange={(value) => setMaxLosses(value[0])} />
-                    </div>
-                    <Separator />
-                    <div className="space-y-2">
-                        <Label>Reiniciar Sessão</Label>
-                        <AlertDialog>
-                            <AlertDialogTrigger asChild>
-                                <Button variant="destructive" className="w-full">
-                                    <Repeat className="mr-2 h-4 w-4" />
-                                    Reiniciar P&L e Histórico da Sessão
-                                </Button>
-                            </AlertDialogTrigger>
-                            <AlertDialogContent>
-                                <AlertDialogHeader>
-                                    <AlertDialogTitle>Tem a certeza?</AlertDialogTitle>
-                                    <AlertDialogDescription>Esta ação irá apagar o histórico de lucros/perdas e o estado de Martingale de todos os pilotos de dígitos para a sessão atual. As ordens na corretora não serão afetadas.</AlertDialogDescription>
-                                </AlertDialogHeader>
-                                <AlertDialogFooter>
-                                    <AlertDialogCancel>Cancelar</AlertDialogCancel>
-                                    <AlertDialogAction onClick={resetSession}>Sim, Reiniciar</AlertDialogAction>
-                                </AlertDialogFooter>
-                            </AlertDialogContent>
-                        </AlertDialog>
-                        <p className="text-xs text-muted-foreground pt-1">Use isto para resetar o cálculo de P&L diário e o estado do Martingale sem ter que recarregar a página.</p>
-                    </div>
-                </TabsContent>
-            </Tabs>
-        </div>
+                </div>
+                 <Separator />
+                <div className="space-y-2">
+                    <Label htmlFor="execution-cooldown-slider">Intervalo Mínimo Entre Ordens ({executionCooldown}s)</Label>
+                    <Slider id="execution-cooldown-slider" min={0} max={10} step={1} value={[executionCooldown]} onValueChange={v => setExecutionCooldown(v[0])} />
+                </div>
+                 <Separator />
+                <div className="flex items-center justify-between rounded-lg border p-3">
+                    <Label htmlFor="martingale-switch">Ativar Martingale</Label>
+                    <Switch id="martingale-switch" checked={isMartingaleEnabled} onCheckedChange={setIsMartingaleEnabled} />
+                </div>
+                <div className="flex items-center justify-between rounded-lg border p-3">
+                    <Label htmlFor="smart-martingale-switch">Martingale Inteligente (Kelly)</Label>
+                    <Switch id="smart-martingale-switch" checked={isSmartMartingale} onCheckedChange={setIsSmartMartingale} />
+                </div>
+                <div className="space-y-2">
+                    <Label htmlFor="martingale-recovery-slider">Fator de Recuperação ({martingaleRecoveryFactor.toFixed(1)}x)</Label>
+                    <Slider id="martingale-recovery-slider" min={1.1} max={2.5} step={0.1} value={[martingaleRecoveryFactor]} onValueChange={v => setMartingaleRecoveryFactor(v[0])} />
+                </div>
+                <div className="space-y-2">
+                    <Label htmlFor="cooldown-slider">Cooldown Pós-Perda ({cooldownTime}s)</Label>
+                    <Slider id="cooldown-slider" min={0} max={60} step={1} value={[cooldownTime]} onValueChange={v => setCooldownTime(v[0])} />
+                </div>
+                <div className="space-y-2">
+                    <Label htmlFor="max-losses-slider">Limite de Perdas Seguidas ({maxLosses})</Label>
+                    <Slider id="max-losses-slider" min={3} max={40} step={1} value={[maxLosses]} onValueChange={v => setMaxLosses(v[0])} />
+                </div>
+                <Separator />
+                <AlertDialog>
+                    <AlertDialogTrigger asChild>
+                        <Button variant="destructive" className="w-full">
+                            <Repeat className="mr-2 h-4 w-4" />
+                            Reiniciar Sessão de Pilotos
+                        </Button>
+                    </AlertDialogTrigger>
+                    <AlertDialogContent>
+                        <AlertDialogHeader>
+                            <AlertDialogTitle>Tem a certeza?</AlertDialogTitle>
+                            <AlertDialogDescription>Esta ação irá apagar o histórico de lucros/perdas e o estado de Martingale de todos os pilotos de dígitos para a sessão atual.</AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                            <AlertDialogAction onClick={resetSession}>Sim, Reiniciar</AlertDialogAction>
+                        </AlertDialogFooter>
+                    </AlertDialogContent>
+                </AlertDialog>
+            </TabsContent>
+        </Tabs>
       </CardContent>
     </Card>
   );
