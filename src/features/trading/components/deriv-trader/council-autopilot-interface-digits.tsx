@@ -9,7 +9,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Bot, TestTube, Settings, Repeat, Wand2, BrainCircuit, SlidersHorizontal, ChevronsUpDown, UploadCloud, Loader2, ArrowRight, Database } from "lucide-react";
+import { Bot, TestTube, Settings, Repeat, Wand2, BrainCircuit, SlidersHorizontal, ChevronsUpDown, UploadCloud, Loader2, ArrowRight, Database, Users } from "lucide-react";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Separator } from "@/components/ui/separator";
@@ -266,7 +266,9 @@ export const DigitsAutopilotManager: React.FC<DigitsAutopilotManagerProps> = (pr
     sherlockWinRateThreshold, setSherlockWinRateThreshold, vagalumeConfig, setVagalumeConfig,
     // Props para o painel de otimização
     backtestTicks, isDataLoading, loadDataForBacktest, backtestResults, isBacktesting,
-    runBacktestForAllStrategies, calibrationResults, isCalibrating, runCalibration, applyCalibration
+    runBacktestForAllStrategies, calibrationResults, isCalibrating, runCalibration, applyCalibration,
+    // Props para o Modo Consenso
+    isConsensusMode, setIsConsensusMode, minConsensus, setMinConsensus
  } = props;
 
   const renderPilotParams = (pilotDef: typeof STRATEGY_DEFINITIONS[0]) => {
@@ -423,6 +425,26 @@ export const DigitsAutopilotManager: React.FC<DigitsAutopilotManagerProps> = (pr
                     <Label htmlFor="execution-cooldown-slider">Intervalo Mínimo Entre Ordens ({executionCooldown}s)</Label>
                     <Slider id="execution-cooldown-slider" min={0} max={10} step={1} value={[executionCooldown]} onValueChange={v => setExecutionCooldown(v[0])} />
                 </div>
+                 <Separator />
+                 
+                {/* --- NOVO: MODO CONSENSO --- */}
+                <div className="space-y-4 pt-4 border-t">
+                    <div className="flex items-center justify-between rounded-lg border p-3 shadow-sm">
+                        <Label htmlFor="consensus-mode-switch" className="flex flex-col space-y-1 flex-1 pr-4">
+                            <span>Modo Consenso</span>
+                            <span className="font-normal text-xs text-muted-foreground">Exigir acordo entre múltiplos pilotos para operar.</span>
+                        </Label>
+                        <Switch id="consensus-mode-switch" checked={isConsensusMode} onCheckedChange={setIsConsensusMode} />
+                    </div>
+                    {isConsensusMode && (
+                        <div className="space-y-2 pl-2">
+                            <Label htmlFor="min-consensus-slider">Limiar de Consenso ({minConsensus} pilotos)</Label>
+                            <Slider id="min-consensus-slider" min={2} max={5} step={1} value={[minConsensus]} onValueChange={v => setMinConsensus(v[0])} />
+                            <p className="text-xs text-muted-foreground pt-1">Número mínimo de pilotos que devem concordar para executar um trade.</p>
+                        </div>
+                    )}
+                </div>
+                
                  <Separator />
                 <div className="flex items-center justify-between rounded-lg border p-3">
                     <Label htmlFor="martingale-switch">Ativar Martingale</Label>
