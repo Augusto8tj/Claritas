@@ -289,7 +289,7 @@ export function useDerivApiDigitsState() {
                             if (!contract || !contract.contract_type?.startsWith('DIGIT')) return;
                             
                             if (contract.is_sold === 1) {
-                                // A chamada foi movida para o robot council para precisão.
+                                globalLatencyMonitor.recordFullCycle(contract.contract_id, contract.sell_time || contract.exit_tick_time);
                             }
 
                             setAndPersistOperationsLog(prevLog => {
@@ -299,18 +299,24 @@ export function useDerivApiDigitsState() {
                                     const op = updatedLog[existingOpIndex]!;
                                     
                                     if (contract.is_sold === 1) {
-                                        const exitPriceStr = contract.exit_tick_display_value || (contract.exit_tick !== undefined ? String(contract.exit_tick) : undefined);
-                                        
+                                        // ✅ ROBUST EXIT PRICE LOGIC
+                                        let exitPriceStr: string | undefined = undefined;
+                                        if (contract.exit_tick_display_value !== undefined && contract.exit_tick_display_value !== null) {
+                                            exitPriceStr = String(contract.exit_tick_display_value);
+                                        } else if (contract.exit_tick !== undefined && contract.exit_tick !== null) {
+                                            exitPriceStr = String(contract.exit_tick);
+                                        }
+
                                         if (exitPriceStr === undefined) {
                                             console.error(`Divergência: Não foi possível determinar o preço de saída para o contrato #${contract.contract_id}.`, contract);
                                             updatedLog[existingOpIndex] = { ...op, status: 'lost', result: -op.stake, exitTimestamp: new Date().toISOString() };
                                             return updatedLog;
                                         }
-
+                                        
                                         const exitPrice = parseFloat(exitPriceStr);
 
                                         if (isNaN(exitPrice)) {
-                                            console.error(`Divergência: Preço de saída inválido (NaN) para o contrato #${contract.contract_id}.`, contract);
+                                            console.error(`Divergência: Preço de saída inválido (NaN) para o contrato #${contract.contract_id}. String de origem: '${exitPriceStr}'`, contract);
                                             updatedLog[existingOpIndex] = { ...op, status: 'lost', result: -op.stake, exitTimestamp: new Date().toISOString(), exitPrice: NaN };
                                             return updatedLog;
                                         }
