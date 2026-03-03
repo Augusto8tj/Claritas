@@ -9,7 +9,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Bot, TestTube, Settings, Repeat, Wand2, BrainCircuit, SlidersHorizontal, ChevronsUpDown, UploadCloud, Loader2, ArrowRight, Database, Users, AlertTriangle, Check } from "lucide-react";
+import { Bot, TestTube, Settings, Repeat, Wand2, BrainCircuit, SlidersHorizontal, ChevronsUpDown, UploadCloud, Loader2, ArrowRight, Database, Users, AlertTriangle, Check, Wallet, Info } from "lucide-react";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Separator } from "@/components/ui/separator";
@@ -36,6 +36,7 @@ import { STRATEGY_DEFINITIONS, strategyLabels } from '@/app/deriv-trader-digits/
 import type { TickData } from "@/lib/types";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Alert } from "@/components/ui/alert";
 
 
 interface DigitsOptimizationPanelProps {
@@ -179,6 +180,7 @@ interface PilotControlRowProps {
     pilotDef: (typeof STRATEGY_DEFINITIONS)[0];
     pilotState: PilotState;
     toggleAutopilot: (type: PilotType) => void;
+    togglePilotMartingale: (type: PilotType) => void;
     children?: React.ReactNode;
 }
 
@@ -190,6 +192,7 @@ const PilotControlRow: React.FC<PilotControlRowProps> = ({
     pilotDef,
     pilotState,
     toggleAutopilot,
+    togglePilotMartingale,
     children,
 }) => {
     const { isOn, status, currentTarget, consecutiveLosses } = pilotState;
@@ -242,6 +245,20 @@ const PilotControlRow: React.FC<PilotControlRowProps> = ({
                     </CollapsibleContent>
                 </Collapsible>
             )}
+            
+            <div className="flex items-center justify-between rounded-lg border p-3 shadow-sm bg-background/50">
+                <Label htmlFor={`${pilotDef.id}-martingale-switch`} className="flex flex-col space-y-1">
+                    <span>Ativar Martingale</span>
+                    <span className="font-normal leading-snug text-muted-foreground text-xs">
+                        Aumenta a aposta após perdas para recuperação.
+                    </span>
+                </Label>
+                <Switch
+                    id={`${pilotDef.id}-martingale-switch`}
+                    checked={pilotState.isMartingaleEnabled}
+                    onCheckedChange={() => togglePilotMartingale(pilotDef.id)}
+                />
+            </div>
         </div>
     );
 };
@@ -250,7 +267,7 @@ const PilotControlRow: React.FC<PilotControlRowProps> = ({
 // 3. COMPONENTE PRINCIPAL (MANAGER)
 // ============================================================================
 
-export const DigitsAutopilotManager: React.FC<DigitsAutopilotManagerProps> = (props) => {
+export function DigitsAutopilotManager(props: DigitsAutopilotManagerProps) {
   const { 
     pilots, toggleAutopilot, togglePilotMartingale, dailyBalance, setDailyBalance, dailyTarget, setDailyTarget,
     isSmartMartingale, setIsSmartMartingale,
@@ -367,18 +384,16 @@ export const DigitsAutopilotManager: React.FC<DigitsAutopilotManagerProps> = (pr
         <div className="space-y-4">
             {specificParams}
             <Separator />
-            <div className="flex items-center justify-between rounded-lg border p-3 shadow-sm bg-background/50">
-                <Label htmlFor={`${pilotDef.id}-martingale-switch`} className="flex flex-col space-y-1">
-                    <span>Ativar Martingale</span>
-                    <span className="font-normal leading-snug text-muted-foreground text-xs">
-                        Aumenta a aposta após perdas para recuperação.
-                    </span>
-                </Label>
-                <Switch
-                    id={`${pilotDef.id}-martingale-switch`}
-                    checked={pilotState.isMartingaleEnabled}
-                    onCheckedChange={() => togglePilotMartingale(pilotDef.id)}
-                    disabled={!pilotState.isOn}
+            <div className="space-y-2">
+                <Label htmlFor={`${pilotDef.id}-recovery-slider`}>Parcelas de Recuperação ({pilotState.isMartingaleEnabled ? 'Ativo' : 'Inativo'})</Label>
+                <Slider
+                    id={`${pilotDef.id}-recovery-slider`}
+                    min={1}
+                    max={10}
+                    step={1}
+                    value={[martingaleRecoveryInstallments]} // Needs individual state
+                    onValueChange={(v) => console.log('TODO: Set individual installments')} // Needs individual state setter
+                    disabled={!pilotState.isMartingaleEnabled}
                 />
             </div>
         </div>
@@ -399,7 +414,7 @@ export const DigitsAutopilotManager: React.FC<DigitsAutopilotManagerProps> = (pr
       <CardContent className="space-y-6">
         <Tabs defaultValue="pilots" className="w-full">
             <TabsList className="grid w-full grid-cols-3">
-                <TabsTrigger value="pilots" className="text-xs sm:text-sm"><Bot className="h-4 w-4 mr-1.5"/>Pilotos</TabsTrigger>
+                <TabsTrigger value="pilots" className="text-xs sm:text-sm"><Users className="h-4 w-4 mr-1.5"/>Pilotos</TabsTrigger>
                 <TabsTrigger value="optimization" className="text-xs sm:text-sm"><TestTube className="h-4 w-4 mr-1.5"/>Otimização</TabsTrigger>
                 <TabsTrigger value="risk" className="text-xs sm:text-sm"><Settings className="h-4 w-4 mr-1.5"/>Risco</TabsTrigger>
             </TabsList>
@@ -410,6 +425,7 @@ export const DigitsAutopilotManager: React.FC<DigitsAutopilotManagerProps> = (pr
                         pilotDef={def}
                         pilotState={pilots[def.id]}
                         toggleAutopilot={toggleAutopilot}
+                        togglePilotMartingale={togglePilotMartingale}
                     >
                         {renderPilotParams(def)}
                     </PilotControlRow>
@@ -467,15 +483,12 @@ export const DigitsAutopilotManager: React.FC<DigitsAutopilotManagerProps> = (pr
                 </div>
                 
                  <Separator />
-                <div className="flex items-center justify-between rounded-lg border p-3">
-                    <Label htmlFor="smart-martingale-switch">Ativar Kelly Criterion</Label>
-                    <Switch id="smart-martingale-switch" checked={isSmartMartingale} onCheckedChange={setIsSmartMartingale} />
-                </div>
-                <div className="space-y-2">
-                    <Label htmlFor="martingale-installments-slider">Parcelas de Recuperação ({martingaleRecoveryInstallments})</Label>
-                    <Slider id="martingale-installments-slider" min={1} max={10} step={1} value={[martingaleRecoveryInstallments]} onValueChange={v => setMartingaleRecoveryInstallments(v[0])} />
-                    <p className="text-xs text-muted-foreground">Número de trades para diluir a recuperação de uma perda.</p>
-                </div>
+                 <Alert>
+                    <Info className="h-4 w-4"/>
+                    <CardDescription>
+                        A gestão de Martingale foi movida para o controle individual de cada piloto no separador "Pilotos".
+                    </CardDescription>
+                 </Alert>
                 <div className="space-y-2">
                     <Label htmlFor="cooldown-slider">Cooldown Pós-Perda ({cooldownTime}s)</Label>
                     <Slider id="cooldown-slider" min={0} max={60} step={1} value={[cooldownTime]} onValueChange={v => setCooldownTime(v[0])} />
@@ -508,4 +521,4 @@ export const DigitsAutopilotManager: React.FC<DigitsAutopilotManagerProps> = (pr
       </CardContent>
     </Card>
   );
-};
+}
