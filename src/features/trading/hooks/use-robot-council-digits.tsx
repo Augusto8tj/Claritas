@@ -228,11 +228,11 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
       };
   }, [priceTicks, decimalPlaces, sherlockLookback, disableSherlockCompensation]);
 
-  // ✅ NOVO: 'shouldTrade' agora é baseado no score ponderado.
+  // ✅ CORRIGIDO: Lógica de trade simplificada para usar apenas o threshold do slider
   const shouldTrade = useMemo(() => {
-    if (!multiWindowAnalysis) return false;
-    const { hottestScore, consensusStrength } = multiWindowAnalysis;
-    return hottestScore > consensusThreshold && (consensusStrength === 'ALTA' || consensusStrength === 'MUITO_ALTA');
+      if (!multiWindowAnalysis) return false;
+      const { hottestScore } = multiWindowAnalysis;
+      return hottestScore > consensusThreshold;
   }, [multiWindowAnalysis, consensusThreshold]);
   
 
@@ -332,7 +332,7 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
     if (lastOp && lastOp.id !== lastProcessedOpIdRef.current && lastOp.status !== 'pending') {
       lastProcessedOpIdRef.current = lastOp.id;
       
-      const pilotKey = lastOp.strategy as PilotType | undefined;
+      const pilotKey = lastOp.strategy as PilotType | 'vagalume' | undefined;
 
       if (pilotKey) {
         if (pilotKey === 'vagalume') {
@@ -425,7 +425,7 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
             const stakeDecision = decideNextStake(pilots[leadSignal.pilotKey].tradeHistory, stakeConfig, bankrollState, leadSignal.contract, avgConfidence);
             
             if (!stakeDecision.shouldPause) {
-                executeTrade(leadSignal.contract, stakeDecision.nextStake, activeSymbol!, 1, 't', 'Piloto', priceTicks[priceTicks.length - 1].epoch, leadSignal.digit, `consensus:${group.map(s => s.pilotKey).join(',')}`);
+                executeTrade(leadSignal.contract, stakeDecision.nextStake, activeSymbol!, 1, 't', 'Piloto', leadSignal.digit, `consensus:${group.map(s => s.pilotKey).join(',')}`);
                 tradeExecutedThisCycle = true;
                 lastExecutionTimestampRef.current = now;
                 
@@ -444,15 +444,151 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
 
     } else {
         // --- MODO COMPETIÇÃO (LÓGICA EXISTENTE) ---
-        // (A lógica de iteração sobre os pilotos e execução do primeiro sinal válido permanece aqui)
-        // ... (código existente foi omitido por brevidade, mas está aqui)
-    }
+        for (const [key, pilot] of activePilotEntries) {
+          if (tradeExecutedThisCycle) break;
+          if (pilot.status !== 'TRADING' || pilot.activeContractId !== null) continue;
+          
+          const pilotKey = key as PilotType;
 
+          const initialBankroll = sessionInitialBankroll ?? (accountBalance.balance ?? 1000);
+          const currentBankroll = initialBankroll + dailyPnl;
+          const bankrollState: BankrollState = { currentBankroll, initialBankroll, maxDailyLoss: dailyBalance, dailyProfitTarget: dailyTarget };
+          
+          let shouldExecute = false;
+          let executionParams: [DigitContractType, number?, string?] | null = null;
+          let contractTypeForStake: DigitContractType = 'DIGITDIFF';
+          
+          switch (pilotKey) {
+            case 'matchesDiffers':
+              if (shouldTrade && councilDecision.differs !== null) {
+                  shouldExecute = true;
+                  executionParams = ['DIGITDIFF', councilDecision.differs, pilotKey];
+                  contractTypeForStake = 'DIGITDIFF';
+              }
+              break;
+            case 'overUnder':
+              if (overUnderStats.probOver4 > overUnderThreshold / 100) {
+                  shouldExecute = true;
+                  executionParams = ['DIGITOVER', 4, pilotKey];
+                  contractTypeForStake = 'DIGITOVER';
+              } else if (overUnderStats.probUnder5 > overUnderThreshold / 100) {
+                  shouldExecute = true;
+                  executionParams = ['DIGITUNDER', 5, pilotKey];
+                  contractTypeForStake = 'DIGITUNDER';
+              }
+              break;
+            case 'evenOdd':
+               if (evenOddStats.probEven > evenOddThreshold / 100) {
+                  shouldExecute = true;
+                  executionParams = ['DIGITEVEN', undefined, pilotKey];
+                  contractTypeForStake = 'DIGITEVEN';
+               } else if ((1 - evenOddStats.probEven) > evenOddThreshold / 100) {
+                  shouldExecute = true;
+                  executionParams = ['DIGITODD', undefined, pilotKey];
+                  contractTypeForStake = 'DIGITODD';
+               }
+               break;
+            case 'underdog':
+               const coldestDigitStat = underdogDigitStats.length > 0 ? [...underdogDigitStats].sort((a, b) => a.probability - b.probability)[0] : null;
+               if (coldestDigitStat && coldestDigitStat.probability <= (underdogThreshold / 100)) {
+                   shouldExecute = true;
+                   contractTypeForStake = isUnderdogInverse ? 'DIGITDIFF' : 'DIGITMATCH';
+                   executionParams = [contractTypeForStake, coldestDigitStat.digit, pilotKey];
+               }
+               break;
+            case 'underdogOverUnder':
+               if (overUnderStats.probOver4 < overUnderUnderdogThreshold / 100) {
+                   shouldExecute = true; executionParams = ['DIGITOVER', 4, pilotKey]; contractTypeForStake = 'DIGITOVER';
+               } else if (overUnderStats.probUnder5 < overUnderUnderdogThreshold / 100) {
+                   shouldExecute = true; executionParams = ['DIGITUNDER', 5, pilotKey]; contractTypeForStake = 'DIGITUNDER';
+               }
+               break;
+            case 'dynamicUnderdogOverUnder':
+                const underdogBlock = multiWindowAnalysis?.coldestConsensusDigit;
+                if (underdogBlock !== undefined) {
+                    shouldExecute = true;
+                    if (underdogBlock > 4) {
+                      executionParams = ['DIGITUNDER', 5, pilotKey];
+                      contractTypeForStake = 'DIGITUNDER';
+                    }
+                    else {
+                      executionParams = ['DIGITOVER', 4, pilotKey];
+                      contractTypeForStake = 'DIGITOVER';
+                    }
+                }
+                break;
+            case 'underdogEvenOdd':
+                if (evenOddStats.probEven < evenOddUnderdogThreshold / 100) {
+                    shouldExecute = true; executionParams = ['DIGITEVEN', undefined, pilotKey]; contractTypeForStake = 'DIGITEVEN';
+                } else if (1 - evenOddStats.probEven < evenOddUnderdogThreshold / 100) {
+                    shouldExecute = true; executionParams = ['DIGITODD', undefined, pilotKey]; contractTypeForStake = 'DIGITODD';
+                }
+                break;
+            case 'vagalume':
+                if(vagalumeSignal && vagalumeSignal.shouldTrade) {
+                    shouldExecute = true;
+                    executionParams = [vagalumeSignal.suggestedContract, vagalumeSignal.suggestedDigit, pilotKey];
+                    contractTypeForStake = vagalumeSignal.suggestedContract;
+                }
+                break;
+            case 'sherlock':
+                if(sherlockAnalysis && (sherlockAnalysis.blockProbability * 100) > sherlockThreshold) {
+                    const wins = pilot.tradeHistory.filter(t => t.result && t.result > 0).length;
+                    const winRate = pilot.tradeHistory.length > 0 ? (wins / pilot.tradeHistory.length) * 100 : 100;
+
+                    if (winRate > sherlockWinRateThreshold) {
+                        shouldExecute = true;
+                        if(sherlockAnalysis.recommendedBlock === 'even') { executionParams = ['DIGITEVEN', undefined, pilotKey]; contractTypeForStake = 'DIGITEVEN'; }
+                        else if (sherlockAnalysis.recommendedBlock === 'odd') { executionParams = ['DIGITODD', undefined, pilotKey]; contractTypeForStake = 'DIGITODD'; }
+                        else if (sherlockAnalysis.recommendedBlock === 'above4') { executionParams = ['DIGITOVER', 4, pilotKey]; contractTypeForStake = 'DIGITOVER'; }
+                        else if (sherlockAnalysis.recommendedBlock === 'below5') { executionParams = ['DIGITUNDER', 5, pilotKey]; contractTypeForStake = 'DIGITUNDER'; }
+                    }
+                }
+                break;
+          }
+
+          if (shouldExecute && executionParams) {
+              const pilotKeyForStake = executionParams[2] as PilotType;
+              const pilotForStake = pilots[pilotKeyForStake];
+              const stakeConfig: SmartMartingaleConfig = { 
+                  isEnabled: isMartingaleEnabled, baseStake: BASE_STAKE, maxMartingaleLevels: maxLosses, 
+                  martingaleMultiplier: martingaleRecoveryFactor, useAntiMartingale: false, isSmart: isSmartMartingale,
+              };
+              const confidenceForStake = signalQuality?.confidenceLevel === 'MUITO_ALTA' ? 0.85 : signalQuality?.confidenceLevel === 'ALTA' ? 0.75 : signalQuality?.confidenceLevel === 'MEDIA' ? 0.65 : 0.55;
+              const stakeDecision = decideNextStake(pilotForStake.tradeHistory, stakeConfig, bankrollState, contractTypeForStake, confidenceForStake);
+
+              if (stakeDecision.shouldPause) {
+                setPilots(prev => ({ ...prev, [pilotKeyForStake]: { ...prev[pilotKeyForStake], status: 'CIRCUIT_BREAKER', currentTarget: stakeDecision.pauseReason || 'Limite de risco atingido' }}));
+                continue;
+              }
+
+              const finalStake = stakeDecision.nextStake;
+              const currentTickEpoch = priceTicks.length > 0 ? priceTicks[priceTicks.length - 1].epoch : 0;
+              
+              executeTrade(executionParams[0], finalStake, activeSymbol!, 1, 't', 'Piloto', executionParams[1], executionParams[2])
+                .then(tradeResult => {
+                    if (tradeResult.success && tradeResult.contractId) {
+                        setPilots(prev => ({
+                            ...prev,
+                            [pilotKeyForStake]: { ...prev[pilotKeyForStake], activeContractId: tradeResult.contractId! }
+                        }));
+                    }
+                });
+              tradeExecutedThisCycle = true;
+              lastExecutionTimestampRef.current = now;
+              break;
+          }
+        }
+    }
+    
     executionRef.current = false;
   }, [
-      // Todas as dependências existentes mais as novas
-      isConsensusMode, minConsensus,
-      // ... (dependências existentes)
+      priceTicks, pilots, operationsLog, signalQuality, shouldTrade, councilDecision, executeTrade, activeSymbol, toast, 
+      dailyBalance, dailyTarget, maxLosses, martingaleRecoveryFactor, sessionInitialBankroll, accountBalance.balance, dailyPnl,
+      overUnderStats, evenOddStats, overUnderThreshold, evenOddThreshold, underdogThreshold, isUnderdogInverse, overUnderUnderdogThreshold, evenOddUnderdogThreshold,
+      executionCooldown, isMartingaleEnabled, isSmartMartingale, analysisResults.mainWindowStats, multiWindowAnalysis, digitStats,
+      cooldownTime, consensusThreshold, underdogDigitStats, onVagalumeTradeCompleted, vagalumeConfig, vagalumeSignal,
+      isConsensusMode, minConsensus, sherlockAnalysis, sherlockThreshold, sherlockWinRateThreshold
   ]);
   
   // --- FUNÇÕES DE OTIMIZAÇÃO E APLICAÇÃO (sem alterações) ---
