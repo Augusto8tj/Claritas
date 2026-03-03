@@ -71,7 +71,7 @@ export function ApiStatusIndicatorV2() {
 
   useEffect(() => {
     checkIa();
-  }, [checkIa]);
+  }, []);
 
   const derivStatus: Status = isConnecting ? 'loading' : isConnected ? 'success' : 'error';
 
