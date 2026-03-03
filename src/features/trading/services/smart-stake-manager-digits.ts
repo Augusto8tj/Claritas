@@ -13,7 +13,7 @@ export interface SmartMartingaleConfig {
   isEnabled: boolean;
   baseStake: number;
   maxMartingaleLevels: number;
-  martingaleMultiplier: number; // This will be deprecated by the new logic, but kept for compatibility
+  martingaleRecoveryInstallments: number; // NOVO: Número de parcelas para recuperação
   useAntiMartingale: boolean; 
   isSmart: boolean; 
 }
@@ -29,6 +29,7 @@ export interface SmartStakeDecision {
   nextStake: number;
   shouldPause: boolean;
   pauseReason?: string;
+  reasoning: string[]; // NOVO: Para explicar a decisão
 }
 
 // ============================================================================
@@ -39,45 +40,40 @@ const countConsecutiveLosses = (tradeHistory: Operation[]): number => {
   let consecutiveLosses = 0;
   for (let i = tradeHistory.length - 1; i >= 0; i--) {
     const trade = tradeHistory[i];
-    // A loss is when the result is negative. It includes the stake.
     if ((trade.result ?? 0) < 0) {
       consecutiveLosses++;
     } else {
-      break; // Stop at the first win
+      break;
     }
   }
   return consecutiveLosses;
 };
 
-// Payouts Corrigidos e Centralizados
 const PAYOUTS: Record<DigitContractType, number> = {
-  DIGITMATCH: 9.5,   // ~950% return on stake
-  DIGITDIFF: 0.11,   // ~11% return on stake
-  DIGITOVER: 0.95,   // ~95% return on stake
+  DIGITMATCH: 9.5,
+  DIGITDIFF: 0.11,
+  DIGITOVER: 0.95,
   DIGITUNDER: 0.95,
   DIGITEVEN: 0.95,
   DIGITODD: 0.95,
 };
 
 const getPayoutRatio = (contractType: DigitContractType): number => {
-    // Retorna 0.95 se o tipo não for encontrado, para segurança
     return PAYOUTS[contractType] || 0.95;
 };
 
-// Kelly Criterion Adaptativo
 function calculateKellyStake(
   confidence: number,
   payoutOdds: number,
   bankroll: number,
-  kellyFraction: number = 0.25 // Quarter Kelly
+  kellyFraction: number = 0.25
 ): number {
   if (confidence <= 0.5) return 0;
   
   const p = confidence;
   const q = 1 - p;
-  const b = payoutOdds; // Odds, ex: 0.95 para um contrato que paga 95%
+  const b = payoutOdds;
 
-  // Se a vantagem for nula ou negativa, não apostar.
   const edge = (b * p) - q;
   if (edge <= 0) return 0;
 
@@ -90,7 +86,7 @@ function calculateKellyStake(
 
 
 // ============================================================================
-// 3. FUNÇÃO PRINCIPAL DE DECISÃO DE STAKE (V3.1 - Martingale Preciso)
+// 3. FUNÇÃO PRINCIPAL DE DECISÃO DE STAKE (V3.2 - RECUPERAÇÃO GRADUAL)
 // ============================================================================
 
 export function decideNextStake(
@@ -100,77 +96,76 @@ export function decideNextStake(
   contractType: DigitContractType,
   confidence: number = 0.55
 ): SmartStakeDecision {
-  const { isEnabled, baseStake, maxMartingaleLevels, isSmart } = config;
+  const { isEnabled, baseStake, maxMartingaleLevels, isSmart, martingaleRecoveryInstallments } = config;
   const { currentBankroll, initialBankroll, maxDailyLoss, dailyProfitTarget } = bankrollState;
+  const reasoning: string[] = [];
 
   // --- 1. Circuit Breakers (Proteções de Risco) ---
   const dailyPnl = currentBankroll - (initialBankroll ?? currentBankroll);
   if (dailyPnl <= -maxDailyLoss) {
-    return { nextStake: baseStake, shouldPause: true, pauseReason: `Stop Loss diário de $${maxDailyLoss.toFixed(2)} atingido.` };
+    return { nextStake: baseStake, shouldPause: true, pauseReason: `Stop Loss diário de $${maxDailyLoss.toFixed(2)} atingido.`, reasoning: ['Limite de perda diária atingido.'] };
   }
   if (dailyPnl >= dailyProfitTarget) {
-    return { nextStake: baseStake, shouldPause: true, pauseReason: `Meta de lucro diária de $${dailyProfitTarget.toFixed(2)} atingida.` };
+    return { nextStake: baseStake, shouldPause: true, pauseReason: `Meta de lucro diária de $${dailyProfitTarget.toFixed(2)} atingida.`, reasoning: ['Meta de lucro diária atingida.'] };
   }
   
   const consecutiveLosses = countConsecutiveLosses(tradeHistory);
   const totalTrades = tradeHistory.length;
   if(totalTrades > 5) {
       const winRate = tradeHistory.filter(t => (t.result ?? 0) > 0).length / totalTrades;
-      if (consecutiveLosses >= 3 && winRate < 0.45) { // Se WR for baixa após perdas, pausa.
+      if (consecutiveLosses >= 3 && winRate < 0.45) {
           return {
               nextStake: baseStake,
               shouldPause: true,
-              pauseReason: `Win rate da sessão (${(winRate * 100).toFixed(1)}%) abaixo de 45%. Pausando para revisão.`
+              pauseReason: `Win rate da sessão (${(winRate * 100).toFixed(1)}%) abaixo de 45%. Pausando para revisão.`,
+              reasoning: ['Baixo win rate após sequência de perdas.']
           };
       }
   }
 
   if (isEnabled && consecutiveLosses >= maxMartingaleLevels) {
-    return { nextStake: baseStake, shouldPause: true, pauseReason: `Limite de ${maxMartingaleLevels} perdas seguidas atingido.` };
+    return { nextStake: baseStake, shouldPause: true, pauseReason: `Limite de ${maxMartingaleLevels} perdas seguidas atingido.`, reasoning: [`Atingido o limite de ${maxMartingaleLevels} perdas consecutivas.`] };
   }
   
   // --- 2. Lógica de Stake ---
   let nextStake = baseStake; 
+  reasoning.push(`Aposta Base: $${baseStake.toFixed(2)}.`);
   
-  // MODO 1: KELLY CRITERION (se isSmart = true)
-  if (isSmart) {
-    // ✅ CORRIGIDO: Usa o payout do contrato atual para o Kelly Criterion
-    const payoutOdds = getPayoutRatio(contractType);
-    const kellyStake = calculateKellyStake(confidence, payoutOdds, currentBankroll);
-    
-    // Usa o Kelly Stake se for maior que a base, indicando uma vantagem clara.
-    if (kellyStake > baseStake) {
-      nextStake = kellyStake;
-    }
-  }
-
-  // MODO 2: MARTINGALE PRECISO (se em sequência de perdas)
+  // MODO 1: RECUPERAÇÃO GRADUAL (se em sequência de perdas)
   if (isEnabled && consecutiveLosses > 0) {
     const lossesToRecover = tradeHistory
       .slice(-consecutiveLosses)
-      .reduce((sum, trade) => sum + trade.stake, 0); // Soma o stake perdido, não o resultado
+      .reduce((sum, trade) => sum + trade.stake, 0);
 
     const payoutRatio = getPayoutRatio(contractType);
 
     if (payoutRatio > 0) {
-      // Fórmula: Próximo_Stake = (Total_Perdido + Lucro_Desejado) / Taxa_De_Pagamento
-      // Lucro desejado é a aposta base, para recuperar e ter um pequeno lucro.
-      const requiredStake = (lossesToRecover + baseStake) / payoutRatio;
+      // Para recuperar X em N parcelas, o lucro extra por trade deve ser X/N.
+      // O stake extra necessário para esse lucro é (X/N) / payoutRatio.
+      const recoveryAddon = (lossesToRecover / martingaleRecoveryInstallments) / payoutRatio;
       
-      // A lógica de Martingale só se aplica se o stake calculado for maior que o stake atual (seja base ou Kelly)
-      if (requiredStake > nextStake) {
-        nextStake = requiredStake;
-      }
+      nextStake += recoveryAddon;
+      reasoning.push(`Recuperação Gradual: +$${recoveryAddon.toFixed(2)} para recuperar $${lossesToRecover.toFixed(2)} em ${martingaleRecoveryInstallments}x.`);
+    }
+  }
+  // MODO 2: KELLY CRITERION (se isSmart e não em recuperação)
+  else if (isSmart) {
+    const payoutOdds = getPayoutRatio(contractType);
+    const kellyStake = calculateKellyStake(confidence, payoutOdds, currentBankroll);
+    
+    if (kellyStake > baseStake) {
+      nextStake = kellyStake;
+      reasoning.pop(); // Remove aposta base
+      reasoning.push(`Kelly Stake (Vantagem Detectada): $${kellyStake.toFixed(2)}.`);
     }
   }
   
   // --- 3. PROTEÇÃO DE LIMITE ---
-  // Nunca arriscar mais de 10% do capital atual em uma única aposta.
   const maxSafeStake = Math.max(baseStake, currentBankroll * 0.10); 
   if (nextStake > maxSafeStake) {
-    // Se o stake calculado for muito alto, volta para a aposta base como medida de segurança.
+    reasoning.push(`⚠️ Stake de $${nextStake.toFixed(2)} excede o limite de segurança ($${maxSafeStake.toFixed(2)}). Reduzindo para aposta base.`);
     nextStake = baseStake;
   }
   
-  return { nextStake: parseFloat(nextStake.toFixed(2)), shouldPause: false };
+  return { nextStake: parseFloat(nextStake.toFixed(2)), shouldPause: false, reasoning };
 }

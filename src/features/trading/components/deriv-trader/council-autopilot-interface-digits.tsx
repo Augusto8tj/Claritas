@@ -9,7 +9,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Bot, TestTube, Settings, Repeat, Wand2, BrainCircuit, SlidersHorizontal, ChevronsUpDown, UploadCloud, Loader2, ArrowRight, Database, Users, AlertTriangle } from "lucide-react";
+import { Bot, TestTube, Settings, Repeat, Wand2, BrainCircuit, SlidersHorizontal, ChevronsUpDown, UploadCloud, Loader2, ArrowRight, Database, Users, AlertTriangle, Check } from "lucide-react";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Separator } from "@/components/ui/separator";
@@ -255,19 +255,16 @@ export const DigitsAutopilotManager: React.FC<DigitsAutopilotManagerProps> = (pr
   const { 
     pilots, toggleAutopilot, dailyBalance, setDailyBalance, dailyTarget, setDailyTarget,
     isMartingaleEnabled, setIsMartingaleEnabled, isSmartMartingale, setIsSmartMartingale,
-    martingaleRecoveryFactor, setMartingaleRecoveryFactor, cooldownTime, setCooldownTime,
+    martingaleRecoveryInstallments, setMartingaleRecoveryInstallments, cooldownTime, setCooldownTime,
     maxLosses, setMaxLosses, executionCooldown, setExecutionCooldown, resetSession,
-    // Props para os sliders
     consensusThreshold, setConsensusThreshold, overUnderThreshold, setOverUnderThreshold,
     evenOddThreshold, setEvenOddThreshold, underdogThreshold, setUnderdogThreshold,
     isUnderdogInverse, setIsUnderdogInverse, overUnderUnderdogThreshold, setOverUnderUnderdogThreshold,
     evenOddUnderdogThreshold, setEvenOddUnderdogThreshold, sherlockThreshold, setSherlockThreshold,
     sherlockLookback, setSherlockLookback, disableSherlockCompensation, setDisableSherlockCompensation,
     sherlockWinRateThreshold, setSherlockWinRateThreshold, vagalumeConfig, setVagalumeConfig,
-    // Props para o painel de otimização
     backtestTicks, isDataLoading, loadDataForBacktest, backtestResults, isBacktesting,
     runBacktestForAllStrategies, calibrationResults, isCalibrating, runCalibration, applyCalibration,
-    // Props para o Modo Consenso
     isConsensusMode, setIsConsensusMode, minConsensus, setMinConsensus
  } = props;
 
@@ -426,8 +423,7 @@ export const DigitsAutopilotManager: React.FC<DigitsAutopilotManagerProps> = (pr
                     <Slider id="execution-cooldown-slider" min={0} max={10} step={1} value={[executionCooldown]} onValueChange={v => setExecutionCooldown(v[0])} />
                 </div>
                  <Separator />
-                 
-                {/* --- NOVO: MODO CONSENSO --- */}
+                
                 <div className="space-y-4 pt-4 border-t">
                     <div className="flex items-center justify-between rounded-lg border p-3 shadow-sm">
                         <Label htmlFor="consensus-mode-switch" className="flex flex-col space-y-1 flex-1 pr-4">
@@ -455,8 +451,9 @@ export const DigitsAutopilotManager: React.FC<DigitsAutopilotManagerProps> = (pr
                     <Switch id="smart-martingale-switch" checked={isSmartMartingale} onCheckedChange={setIsSmartMartingale} />
                 </div>
                 <div className="space-y-2">
-                    <Label htmlFor="martingale-recovery-slider">Fator de Recuperação ({martingaleRecoveryFactor.toFixed(1)}x)</Label>
-                    <Slider id="martingale-recovery-slider" min={1.1} max={2.5} step={0.1} value={[martingaleRecoveryFactor]} onValueChange={v => setMartingaleRecoveryFactor(v[0])} />
+                    <Label htmlFor="martingale-installments-slider">Parcelas de Recuperação ({martingaleRecoveryInstallments})</Label>
+                    <Slider id="martingale-installments-slider" min={1} max={10} step={1} value={[martingaleRecoveryInstallments]} onValueChange={v => setMartingaleRecoveryInstallments(v[0])} />
+                    <p className="text-xs text-muted-foreground">Número de trades para diluir a recuperação de uma perda.</p>
                 </div>
                 <div className="space-y-2">
                     <Label htmlFor="cooldown-slider">Cooldown Pós-Perda ({cooldownTime}s)</Label>

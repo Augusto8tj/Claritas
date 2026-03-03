@@ -91,7 +91,7 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
   // --- CONFIGURAÇÕES DE RISCO E ESTRATÉGIA (ESTADO LOCAL) ---
   const [dailyBalance, setDailyBalance] = useState(10);
   const [dailyTarget, setDailyTarget] = useState(5);
-  const [consensusThreshold, setConsensusThreshold] = useState(4.0); // ✅ NOVO: Ajustado para o Z-Score
+  const [consensusThreshold, setConsensusThreshold] = useState(4.0);
   const [overUnderThreshold, setOverUnderThreshold] = useState(65);
   const [evenOddThreshold, setEvenOddThreshold] = useState(65);
   const [underdogThreshold, setUnderdogThreshold] = useState(5.0);
@@ -106,14 +106,13 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
   const [vagalumeConfig, setVagalumeConfig] = useState<VagalumeConfig>({
       minSequenceLength: 3,
       usePredictiveAnalysis: true,
-      contextualThreshold: 55, // Agora um número inteiro de 0-100
-      requireRangingRegime: true, // NOVO: Controle sobre o filtro de regime
+      contextualThreshold: 55,
+      requireRangingRegime: true,
       allowedContracts: {
         MATCHDIFFERS: true,
         EVENODD: true,
         OVERUNDER: true,
       },
-      // Campos legados para compatibilidade
       maxStreak: 2,
       stateW1_matchThreshold: 8,
       stateL1_differsThreshold: 15,
@@ -125,7 +124,7 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
   // --- GESTÃO DE RISCO AVANÇADA (MARTINGALE & CONSENSO) ---
   const [isMartingaleEnabled, setIsMartingaleEnabled] = useState(false);
   const [isSmartMartingale, setIsSmartMartingale] = useState(false);
-  const [martingaleRecoveryFactor, setMartingaleRecoveryFactor] = useState(1.3);
+  const [martingaleRecoveryInstallments, setMartingaleRecoveryInstallments] = useState(3);
   const [cooldownTime, setCooldownTime] = useState(5);
   const [maxLosses, setMaxLosses] = useState(5);
   
@@ -228,7 +227,6 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
       };
   }, [priceTicks, decimalPlaces, sherlockLookback, disableSherlockCompensation]);
 
-  // ✅ CORRIGIDO: Lógica de trade simplificada para usar apenas o threshold do slider
   const shouldTrade = useMemo(() => {
       if (!multiWindowAnalysis) return false;
       const { hottestScore } = multiWindowAnalysis;
@@ -312,7 +310,6 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
   }, [sessionInitialBankroll, accountBalance.balance, toast]);
   
   useEffect(() => {
-    // Update latency metrics for UI
     const interval = setInterval(() => {
         setLatencyMetrics(globalLatencyMonitor.getMetrics());
     }, 2000);
@@ -349,12 +346,12 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
             setPilots(prev => ({
                 ...prev,
                 [pilotKey as PilotType]: {
-                    ...pilotToUpdate, 
+                    ...prev[pilotKey as PilotType], 
                     tradeHistory: updatedHistory, 
                     consecutiveLosses: newLosses,
                     accumulatedLoss: newAccumulatedLoss, 
                     status: newStatus, 
-                    activeContractId: null, // ✅ RESET SEMPRE
+                    activeContractId: null,
                 }
             }));
 
@@ -381,10 +378,7 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
 
     let tradeExecutedThisCycle = false;
     
-    // --- LÓGICA PRINCIPAL DE EXECUÇÃO: COMPETIÇÃO vs CONSENSO ---
-    
     if (isConsensusMode) {
-        // --- NOVO: MODO CONSENSO ---
         const activePilots = activePilotEntries.map(([key]) => key as PilotType);
         const signals: Array<{ pilotKey: PilotType, contract: DigitContractType, digit?: number, confidence: number }> = [];
 
@@ -392,7 +386,6 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
           const pilot = pilots[pilotKey];
           if (pilot.status !== 'TRADING' || pilot.activeContractId !== null) continue;
 
-          // Gera o sinal para cada piloto ativo
           let signalData: { contract: DigitContractType | null, digit?: number, confidence: number } = { contract: null, confidence: 0 };
           
           if (pilotKey === 'sherlock' && sherlockAnalysis && (sherlockAnalysis.blockProbability * 100) > sherlockThreshold) {
@@ -406,7 +399,6 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
           }
         }
         
-        // Agrupa os sinais por contrato e dígito
         const groupedSignals: Record<string, typeof signals> = {};
         signals.forEach(s => {
           const key = `${s.contract}-${s.digit ?? 'x'}`;
@@ -414,13 +406,12 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
           groupedSignals[key].push(s);
         });
 
-        // Encontra o primeiro grupo que atinge o consenso
         for (const key in groupedSignals) {
           const group = groupedSignals[key];
           if (group.length >= minConsensus) {
             const avgConfidence = group.reduce((sum, s) => sum + s.confidence, 0) / group.length;
-            const leadSignal = group[0]; // Usa o primeiro para os detalhes
-            const stakeConfig: SmartMartingaleConfig = { isEnabled: isMartingaleEnabled, baseStake: BASE_STAKE, maxMartingaleLevels: maxLosses, martingaleMultiplier: martingaleRecoveryFactor, useAntiMartingale: false, isSmart: isSmartMartingale };
+            const leadSignal = group[0]; 
+            const stakeConfig: SmartMartingaleConfig = { isEnabled: isMartingaleEnabled, baseStake: BASE_STAKE, maxMartingaleLevels: maxLosses, martingaleRecoveryInstallments: martingaleRecoveryInstallments, isSmart: isSmartMartingale };
             const bankrollState: BankrollState = { currentBankroll: (sessionInitialBankroll ?? 100) + dailyPnl, initialBankroll: sessionInitialBankroll, maxDailyLoss: dailyBalance, dailyProfitTarget: dailyTarget };
             const stakeDecision = decideNextStake(pilots[leadSignal.pilotKey].tradeHistory, stakeConfig, bankrollState, leadSignal.contract, avgConfidence);
             
@@ -429,21 +420,19 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
                 tradeExecutedThisCycle = true;
                 lastExecutionTimestampRef.current = now;
                 
-                // Marca todos os pilotos participantes como tendo um trade ativo
                 setPilots(prev => {
                     const newPilots = { ...prev };
                     group.forEach(s => {
-                        newPilots[s.pilotKey] = { ...newPilots[s.pilotKey], activeContractId: -1 }; // Placeholder ID
+                        newPilots[s.pilotKey] = { ...newPilots[s.pilotKey], activeContractId: -1 };
                     });
                     return newPilots;
                 });
-                break; // Executa apenas um trade de consenso por ciclo
+                break;
             }
           }
         }
 
     } else {
-        // --- MODO COMPETIÇÃO (LÓGICA EXISTENTE) ---
         for (const [key, pilot] of activePilotEntries) {
           if (tradeExecutedThisCycle) break;
           if (pilot.status !== 'TRADING' || pilot.activeContractId !== null) continue;
@@ -552,7 +541,7 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
               const pilotForStake = pilots[pilotKeyForStake];
               const stakeConfig: SmartMartingaleConfig = { 
                   isEnabled: isMartingaleEnabled, baseStake: BASE_STAKE, maxMartingaleLevels: maxLosses, 
-                  martingaleMultiplier: martingaleRecoveryFactor, useAntiMartingale: false, isSmart: isSmartMartingale,
+                  martingaleRecoveryInstallments: martingaleRecoveryInstallments, isSmart: isSmartMartingale,
               };
               const confidenceForStake = signalQuality?.confidenceLevel === 'MUITO_ALTA' ? 0.85 : signalQuality?.confidenceLevel === 'ALTA' ? 0.75 : signalQuality?.confidenceLevel === 'MEDIA' ? 0.65 : 0.55;
               const stakeDecision = decideNextStake(pilotForStake.tradeHistory, stakeConfig, bankrollState, contractTypeForStake, confidenceForStake);
@@ -584,7 +573,7 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
     executionRef.current = false;
   }, [
       priceTicks, pilots, operationsLog, signalQuality, shouldTrade, councilDecision, executeTrade, activeSymbol, toast, 
-      dailyBalance, dailyTarget, maxLosses, martingaleRecoveryFactor, sessionInitialBankroll, accountBalance.balance, dailyPnl,
+      dailyBalance, dailyTarget, maxLosses, martingaleRecoveryInstallments, sessionInitialBankroll, accountBalance.balance, dailyPnl,
       overUnderStats, evenOddStats, overUnderThreshold, evenOddThreshold, underdogThreshold, isUnderdogInverse, overUnderUnderdogThreshold, evenOddUnderdogThreshold,
       executionCooldown, isMartingaleEnabled, isSmartMartingale, analysisResults.mainWindowStats, multiWindowAnalysis, digitStats,
       cooldownTime, consensusThreshold, underdogDigitStats, onVagalumeTradeCompleted, vagalumeConfig, vagalumeSignal,
@@ -615,7 +604,7 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
     sherlockWinRateThreshold, setSherlockWinRateThreshold,
     isMartingaleEnabled, setIsMartingaleEnabled,
     isSmartMartingale, setIsSmartMartingale,
-    martingaleRecoveryFactor, setMartingaleRecoveryFactor,
+    martingaleRecoveryInstallments, setMartingaleRecoveryInstallments,
     cooldownTime, setCooldownTime,
     maxLosses, setMaxLosses,
     executionCooldown, setExecutionCooldown,
