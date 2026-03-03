@@ -20,7 +20,6 @@ import { BrainCircuit, Loader2, TrendingDown, TrendingUp } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import { DigitsDashboard } from "@/features/trading/components/deriv-trader/DigitsDashboard";
-import { DigitsOptimizationPanel } from "@/features/trading/components/deriv-trader/digits-backtest-panel";
 
 
 const getDecimalPlaces = (pipSize: number | undefined): number => {
@@ -183,7 +182,6 @@ function DerivTraderPageContentDigits() {
                         latencyMetrics={robotCouncil.latencyMetrics}
                         sherlockAnalysis={robotCouncil.sherlockAnalysis}
                     />
-                    <DigitsOptimizationPanel {...robotCouncil} />
                 </div>
             </div>
         </div>
