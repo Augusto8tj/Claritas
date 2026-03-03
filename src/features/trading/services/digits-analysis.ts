@@ -30,6 +30,8 @@ export interface WindowDigitStats {
   probOver4: number;
   probUnder5: number;
   probEven: number;
+  zScoreOver4: number;
+  zScoreEven: number;
 }
 
 export type ConfidenceLevel = 'MUITO_ALTA' | 'ALTA' | 'MEDIA' | 'BAIXA' | 'NULA';
@@ -131,6 +133,21 @@ export function calculateDigitStatsForWindow(ticks: TickData[], windowSize: numb
   const probUnder5 = frequencies.filter(f => f.digit < 5).reduce((sum, f) => sum + f.probability, 0);
   const probEven = frequencies.filter(f => f.digit % 2 === 0).reduce((sum, f) => sum + f.probability, 0);
 
+  const expectedBlockCount = totalTicks * 0.5;
+  const stdDevBlock = Math.sqrt(totalTicks * 0.5 * 0.5);
+
+  let zScoreOver4 = 0;
+  if (stdDevBlock > 0) {
+    const observedOver4Count = probOver4 * totalTicks;
+    zScoreOver4 = (observedOver4Count - expectedBlockCount) / stdDevBlock;
+  }
+  
+  let zScoreEven = 0;
+  if (stdDevBlock > 0) {
+    const observedEvenCount = probEven * totalTicks;
+    zScoreEven = (observedEvenCount - expectedBlockCount) / stdDevBlock;
+  }
+
   return {
     windowSize,
     frequencies,
@@ -140,6 +157,8 @@ export function calculateDigitStatsForWindow(ticks: TickData[], windowSize: numb
     probOver4,
     probUnder5,
     probEven,
+    zScoreOver4,
+    zScoreEven,
   };
 }
 
@@ -178,9 +197,9 @@ export function getMultiWindowAnalysis(windowsStats: WindowDigitStats[]): MultiW
   
   let consensusStrength: ConfidenceLevel = 'NULA';
   // ✅ NOVO: A força é baseada no score, não numa contagem de votos
-  if (maxAbsoluteScore > 15) consensusStrength = 'MUITO_ALTA';
-  else if (maxAbsoluteScore > 8) consensusStrength = 'ALTA';
-  else if (maxAbsoluteScore > 4) consensusStrength = 'MEDIA';
+  if (maxAbsoluteScore > 8) consensusStrength = 'MUITO_ALTA';
+  else if (maxAbsoluteScore > 4) consensusStrength = 'ALTA';
+  else if (maxAbsoluteScore > 2) consensusStrength = 'MEDIA';
   else if (maxAbsoluteScore > 1.5) consensusStrength = 'BAIXA';
 
   return {

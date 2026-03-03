@@ -181,6 +181,7 @@ interface PilotControlRowProps {
     pilotState: PilotState;
     toggleAutopilot: (type: PilotType) => void;
     togglePilotMartingale: (type: PilotType) => void;
+    setPilotMartingaleInstallments: (type: PilotType, value: number) => void;
     children?: React.ReactNode;
 }
 
@@ -193,6 +194,7 @@ const PilotControlRow: React.FC<PilotControlRowProps> = ({
     pilotState,
     toggleAutopilot,
     togglePilotMartingale,
+    setPilotMartingaleInstallments,
     children,
 }) => {
     const { isOn, status, currentTarget, consecutiveLosses } = pilotState;
@@ -246,19 +248,41 @@ const PilotControlRow: React.FC<PilotControlRowProps> = ({
                 </Collapsible>
             )}
             
-            <div className="flex items-center justify-between rounded-lg border p-3 shadow-sm bg-background/50">
-                <Label htmlFor={`${pilotDef.id}-martingale-switch`} className="flex flex-col space-y-1">
-                    <span>Ativar Martingale</span>
-                    <span className="font-normal leading-snug text-muted-foreground text-xs">
-                        Aumenta a aposta após perdas para recuperação.
-                    </span>
-                </Label>
-                <Switch
-                    id={`${pilotDef.id}-martingale-switch`}
-                    checked={pilotState.isMartingaleEnabled}
-                    onCheckedChange={() => togglePilotMartingale(pilotDef.id)}
-                />
-            </div>
+            <Collapsible>
+              <CollapsibleTrigger asChild>
+                  <Button variant="ghost" size="sm" className="w-full justify-start text-xs text-muted-foreground gap-2 h-8">
+                      <Wallet className="h-4 w-4"/>
+                      Gestão de Risco (Martingale)
+                      <ChevronsUpDown className="h-3 w-3 ml-auto"/>
+                  </Button>
+              </CollapsibleTrigger>
+              <CollapsibleContent className="pt-4 space-y-4">
+                <div className="flex items-center justify-between rounded-lg border p-3 shadow-sm bg-background/50">
+                    <Label htmlFor={`${pilotDef.id}-martingale-switch`} className="flex flex-col space-y-1">
+                        <span>Ativar Martingale</span>
+                        <span className="font-normal leading-snug text-muted-foreground text-xs">
+                            Aumenta aposta após perdas.
+                        </span>
+                    </Label>
+                    <Switch
+                        id={`${pilotDef.id}-martingale-switch`}
+                        checked={pilotState.isMartingaleEnabled}
+                        onCheckedChange={() => togglePilotMartingale(pilotDef.id)}
+                    />
+                </div>
+                 {pilotState.isMartingaleEnabled && (
+                    <div className="space-y-2 pl-2">
+                        <Label htmlFor={`${pilotDef.id}-installments-slider`}>Parcelas de Recuperação ({pilotState.martingaleRecoveryInstallments})</Label>
+                        <Slider
+                            id={`${pilotDef.id}-installments-slider`}
+                            min={1} max={10} step={1}
+                            value={[pilotState.martingaleRecoveryInstallments]}
+                            onValueChange={(v) => setPilotMartingaleInstallments(pilotDef.id, v[0])}
+                        />
+                    </div>
+                )}
+              </CollapsibleContent>
+            </Collapsible>
         </div>
     );
 };
@@ -269,9 +293,9 @@ const PilotControlRow: React.FC<PilotControlRowProps> = ({
 
 export function DigitsAutopilotManager(props: DigitsAutopilotManagerProps) {
   const { 
-    pilots, toggleAutopilot, togglePilotMartingale, dailyBalance, setDailyBalance, dailyTarget, setDailyTarget,
+    pilots, toggleAutopilot, togglePilotMartingale, setPilotMartingaleInstallments, dailyBalance, setDailyBalance, dailyTarget, setDailyTarget,
     isSmartMartingale, setIsSmartMartingale,
-    martingaleRecoveryInstallments, setMartingaleRecoveryInstallments, cooldownTime, setCooldownTime,
+    cooldownTime, setCooldownTime,
     maxLosses, setMaxLosses, executionCooldown, setExecutionCooldown, resetSession,
     consensusThreshold, setConsensusThreshold, overUnderThreshold, setOverUnderThreshold,
     evenOddThreshold, setEvenOddThreshold, underdogThreshold, setUnderdogThreshold,
@@ -293,23 +317,25 @@ export function DigitsAutopilotManager(props: DigitsAutopilotManagerProps) {
             case 'matchesDiffers':
                 return (
                     <div className="space-y-2">
-                        <Label htmlFor="z-score-threshold">Limiar de Anormalidade (Z-Score) ({consensusThreshold.toFixed(1)})</Label>
-                        <Slider id="z-score-threshold" min={1.5} max={5.0} step={0.1} value={[consensusThreshold]} onValueChange={v => setConsensusThreshold(v[0])} />
+                        <Label htmlFor="z-score-threshold">Limiar de Anormalidade (Z-Score Ponderado) ({consensusThreshold.toFixed(1)})</Label>
+                        <Slider id="z-score-threshold" min={1.5} max={8.0} step={0.1} value={[consensusThreshold]} onValueChange={v => setConsensusThreshold(v[0])} />
                         <p className="text-xs text-muted-foreground">Operar se o Z-score ponderado de um dígito exceder este valor.</p>
                     </div>
                 );
             case 'overUnder':
                 return (
                     <div className="space-y-2">
-                        <Label htmlFor="ou-threshold">Limiar de Prob. de Bloco ({overUnderThreshold.toFixed(1)}%)</Label>
-                        <Slider id="ou-threshold" min={55} max={80} step={1} value={[overUnderThreshold]} onValueChange={v => setOverUnderThreshold(v[0])} />
+                        <Label htmlFor="ou-zscore-threshold">Limiar de Z-Score de Bloco ({overUnderThreshold.toFixed(1)})</Label>
+                        <Slider id="ou-zscore-threshold" min={1.0} max={4.0} step={0.1} value={[overUnderThreshold]} onValueChange={v => setOverUnderThreshold(v[0])} />
+                        <p className="text-xs text-muted-foreground">Opera quando a probabilidade do bloco se desvia significativamente do esperado (50%). Z-Score > 2 é estatisticamente significativo.</p>
                     </div>
                 );
             case 'evenOdd':
                  return (
                     <div className="space-y-2">
-                        <Label htmlFor="eo-threshold">Limiar de Prob. de Bloco ({evenOddThreshold.toFixed(1)}%)</Label>
-                        <Slider id="eo-threshold" min={55} max={80} step={1} value={[evenOddThreshold]} onValueChange={v => setEvenOddThreshold(v[0])} />
+                        <Label htmlFor="eo-zscore-threshold">Limiar de Z-Score de Bloco ({evenOddThreshold.toFixed(1)})</Label>
+                        <Slider id="eo-zscore-threshold" min={1.0} max={4.0} step={0.1} value={[evenOddThreshold]} onValueChange={v => setEvenOddThreshold(v[0])} />
+                        <p className="text-xs text-muted-foreground">Mesma lógica do Acima/Abaixo, mas para blocos Par/Ímpar.</p>
                     </div>
                 );
             case 'underdog':
@@ -383,19 +409,6 @@ export function DigitsAutopilotManager(props: DigitsAutopilotManagerProps) {
       return (
         <div className="space-y-4">
             {specificParams}
-            <Separator />
-            <div className="space-y-2">
-                <Label htmlFor={`${pilotDef.id}-recovery-slider`}>Parcelas de Recuperação ({pilotState.isMartingaleEnabled ? 'Ativo' : 'Inativo'})</Label>
-                <Slider
-                    id={`${pilotDef.id}-recovery-slider`}
-                    min={1}
-                    max={10}
-                    step={1}
-                    value={[martingaleRecoveryInstallments]} // Needs individual state
-                    onValueChange={(v) => console.log('TODO: Set individual installments')} // Needs individual state setter
-                    disabled={!pilotState.isMartingaleEnabled}
-                />
-            </div>
         </div>
       );
   };
@@ -426,6 +439,7 @@ export function DigitsAutopilotManager(props: DigitsAutopilotManagerProps) {
                         pilotState={pilots[def.id]}
                         toggleAutopilot={toggleAutopilot}
                         togglePilotMartingale={togglePilotMartingale}
+                        setPilotMartingaleInstallments={setPilotMartingaleInstallments}
                     >
                         {renderPilotParams(def)}
                     </PilotControlRow>
