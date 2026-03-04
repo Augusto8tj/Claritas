@@ -451,11 +451,11 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
           } else if (pilotKey === 'matchesDiffers' && shouldTrade && councilDecision.differs !== null) {
               signalData = { contract: 'DIGITDIFF', digit: councilDecision.differs, confidence: 0.7 };
           } else if (pilotKey === 'evenOdd') {
-              if (evenOddStats.zScoreEven < -evenOddThreshold) signalData = { contract: 'DIGITEVEN', confidence: 0.65 };
-              else if (evenOddStats.zScoreEven > evenOddThreshold) signalData = { contract: 'DIGITODD', confidence: 0.65 };
+              if (evenOddStats.zScoreEven > evenOddThreshold) signalData = { contract: 'DIGITEVEN', confidence: 0.65 };
+              else if (evenOddStats.zScoreEven < -evenOddThreshold) signalData = { contract: 'DIGITODD', confidence: 0.65 };
           } else if (pilotKey === 'overUnder') {
-              if (overUnderStats.zScoreOver4 < -overUnderThreshold) signalData = { contract: 'DIGITOVER', digit: 4, confidence: 0.65 };
-              else if (overUnderStats.zScoreOver4 > overUnderThreshold) signalData = { contract: 'DIGITUNDER', digit: 5, confidence: 0.65 };
+              if (overUnderStats.zScoreOver4 > overUnderThreshold) signalData = { contract: 'DIGITOVER', digit: 4, confidence: 0.65 };
+              else if (overUnderStats.zScoreOver4 < -overUnderThreshold) signalData = { contract: 'DIGITUNDER', digit: 5, confidence: 0.65 };
           } else if (pilotKey === 'vagalume' && vagalumeSignal?.shouldTrade) {
               signalData = { contract: vagalumeSignal.suggestedContract, digit: vagalumeSignal.suggestedDigit, confidence: vagalumeSignal.confidence || 0.6 };
           }
@@ -478,7 +478,7 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
             const avgConfidence = group.reduce((sum, s) => sum + s.confidence, 0) / group.length;
             const leadSignal = group[0];
             const pilotForStake = pilots[leadSignal.pilotKey];
-            const stakeConfig: SmartMartingaleConfig = { isEnabled: pilotForStake.isMartingaleEnabled, baseStake: BASE_STAKE, maxMartingaleLevels: maxLosses, martingaleRecoveryInstallments: pilotForStake.martingaleRecoveryInstallments, isSmart: isSmartMartingale };
+            const stakeConfig: SmartMartingaleConfig = { isEnabled: pilotForStake.isMartingaleEnabled, baseStake: BASE_STAKE, maxMartingaleLevels: maxLosses, martingaleRecoveryInstallments: pilotForStake.martingaleRecoveryInstallments, isSmart: false };
             const bankrollState: BankrollState = { currentBankroll: (sessionInitialBankroll ?? 100) + dailyPnl, initialBankroll: sessionInitialBankroll, maxDailyLoss: dailyBalance, dailyProfitTarget: dailyTarget };
             const stakeDecision = decideNextStake(pilots[leadSignal.pilotKey].tradeHistory, stakeConfig, bankrollState, leadSignal.contract, avgConfidence);
             
@@ -505,6 +505,7 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
           if (pilot.status !== 'TRADING' || pilot.activeContractId !== null) continue;
           
           const pilotKey = key as PilotType;
+          if (pilotKey === 'vagalume') continue; // Vagalume só opera em modo consenso agora
 
           const initialBankroll = sessionInitialBankroll ?? (accountBalance.balance ?? 1000);
           const currentBankroll = initialBankroll + dailyPnl;
@@ -523,22 +524,22 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
               }
               break;
             case 'overUnder':
-              if (overUnderStats.zScoreOver4 < -overUnderThreshold) {
+              if (overUnderStats.zScoreOver4 > overUnderThreshold) {
                   shouldExecute = true;
                   executionParams = ['DIGITOVER', 4, pilotKey];
                   contractTypeForStake = 'DIGITOVER';
-              } else if (overUnderStats.zScoreOver4 > overUnderThreshold) {
+              } else if (overUnderStats.zScoreOver4 < -overUnderThreshold) {
                   shouldExecute = true;
                   executionParams = ['DIGITUNDER', 5, pilotKey];
                   contractTypeForStake = 'DIGITUNDER';
               }
               break;
             case 'evenOdd':
-               if (evenOddStats.zScoreEven < -evenOddThreshold) {
+               if (evenOddStats.zScoreEven > evenOddThreshold) {
                   shouldExecute = true;
                   executionParams = ['DIGITEVEN', undefined, pilotKey];
                   contractTypeForStake = 'DIGITEVEN';
-               } else if (evenOddStats.zScoreEven > evenOddThreshold) {
+               } else if (evenOddStats.zScoreEven < -evenOddThreshold) {
                   shouldExecute = true;
                   executionParams = ['DIGITODD', undefined, pilotKey];
                   contractTypeForStake = 'DIGITODD';
@@ -581,6 +582,7 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
                 }
                 break;
             case 'vagalume':
+                // Vagalume's turn, if it has a signal
                 if(vagalumeSignal && vagalumeSignal.shouldTrade) {
                     shouldExecute = true;
                     executionParams = [vagalumeSignal.suggestedContract, vagalumeSignal.suggestedDigit, pilotKey];
@@ -649,12 +651,143 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
   
   // --- FUNÇÕES DE OTIMIZAÇÃO E APLICAÇÃO (sem alterações) ---
 
-  const loadDataForBacktest = useCallback(async () => { /* ... */ }, [user, activeSymbol, toast]);
-  const runBacktestForAllStrategies = useCallback(() => { /* ... */ }, [/* ... */]);
-  const runCalibration = useCallback(async () => { /* ... */ }, [/* ... */]);
-  const applyCalibration = useCallback(() => { /* ... */ }, [calibrationResults, toast]);
+  const loadDataForBacktest = useCallback(async () => {
+    if (!user || !activeSymbol) return;
+    setIsDataLoading(true);
+    setBacktestTicks([]);
+    try {
+        const ticks = await loadHistoricalTicksForDigits(user.uid, activeSymbol, { limit: 5000 });
+        if (ticks.length < 1000) {
+            toast({ title: "Dados Insuficientes", description: `Apenas ${ticks.length} ticks encontrados. Deixe o app aberto para coletar mais.`, variant: "destructive" });
+        } else {
+            toast({ title: "Dados Carregados!", description: `${ticks.length} ticks históricos prontos para análise.`});
+        }
+        setBacktestTicks(ticks);
+    } catch(e) {
+        toast({ title: "Erro ao Carregar Dados", description: (e as Error).message, variant: "destructive" });
+    } finally {
+        setIsDataLoading(false);
+    }
+  }, [user, activeSymbol, toast]);
 
+  const runBacktestForAllStrategies = useCallback(() => {
+    if (backtestTicks.length < 1000) {
+      toast({ title: "Dados Insuficientes", description: `Carregue pelo menos 1000 ticks para rodar o backtest.`, variant: "destructive" });
+      return;
+    }
+    
+    setIsBacktesting(true);
+    setBacktestResults(null);
+    toast({ title: "Iniciando Backtest Rápido...", description: "Simulando estratégias com os parâmetros atuais." });
 
+    setTimeout(() => {
+        const ticksForBacktest = backtestTicks.slice(-1000);
+        const results: Record<string, StrategyBacktestResult> = {};
+        const currentParams = {
+            consensusThreshold, overUnderThreshold, evenOddThreshold, underdogThreshold,
+            isUnderdogInverse, overUnderUnderdogThreshold, evenOddUnderdogThreshold,
+        };
+        
+        STRATEGY_DEFINITIONS.forEach(strategyDef => {
+            if (strategyDef.id === 'vagalume') return;
+            try {
+                const { summary } = runDigitsBacktest(ticksForBacktest, {
+                    strategy: strategyDef,
+                    initialBankroll: 100,
+                    stakePerTrade: 1,
+                    maxTrades: 200,
+                    paramsOverride: currentParams,
+                }, decimalPlaces);
+                results[strategyDef.id] = { ...summary, strategyId: strategyDef.id };
+            } catch (e) {
+                console.error(`Backtest para ${strategyDef.name} falhou:`, e);
+            }
+        });
+
+        setBacktestResults(results);
+        setIsBacktesting(false);
+        toast({ title: "Backtest Concluído!" });
+    }, 50); 
+  }, [backtestTicks, toast, consensusThreshold, overUnderThreshold, evenOddThreshold, underdogThreshold, isUnderdogInverse, overUnderUnderdogThreshold, evenOddUnderdogThreshold, decimalPlaces]);
+
+  const runCalibration = useCallback(async () => {
+    if (isCalibrating) return;
+    if (backtestTicks.length < 5000) {
+      toast({ title: "Dados Insuficientes", description: "A calibração requer 5000 ticks. Carregue mais dados.", variant: "destructive" });
+      return;
+    }
+    
+    setIsCalibrating(true);
+    setCalibrationResults(null);
+    toast({ title: "Iniciando Calibração...", description: "Testando centenas de parâmetros, isso pode levar um momento." });
+
+    setTimeout(async () => {
+      try {
+        const ticks = backtestTicks.slice(-5000);
+        const results: Record<string, CalibrationResult> = {};
+        
+        for (const strategyDef of STRATEGY_DEFINITIONS) {
+          if (strategyDef.id === 'vagalume') continue;
+          const searchSpaces = STRATEGY_SEARCH_SPACES[strategyDef.id];
+          if (!searchSpaces || searchSpaces.length === 0) continue;
+          
+          const calibrationConfig = {
+            strategyDef,
+            searchSpaces,
+            backtestConfigBase: { initialBankroll: 100, stakePerTrade: 1, maxTrades: 500 }
+          };
+          
+          const result = calibrateStrategyGridSearch(ticks, calibrationConfig, decimalPlaces);
+          results[strategyDef.id] = result;
+        }
+
+        setCalibrationResults(results);
+        toast({ title: "Calibração Concluída!", description: "Parâmetros otimizados estão prontos para serem aplicados." });
+      } catch (error) {
+        toast({ title: "Erro na Calibração", description: (error as Error).message, variant: "destructive" });
+      } finally {
+        setIsCalibrating(false);
+      }
+    }, 50);
+
+  }, [isCalibrating, backtestTicks, toast, decimalPlaces]);
+
+  const applyCalibration = useCallback(() => {
+    if (!calibrationResults) {
+        toast({ title: "Nenhum Resultado", description: "Execute a calibração primeiro.", variant: "destructive" });
+        return;
+    }
+
+    let appliedCount = 0;
+    for (const key in calibrationResults) {
+        const result = calibrationResults[key];
+        const strategyDef = STRATEGY_DEFINITIONS.find(def => def.id === result.bestSummary.strategyId);
+
+        if (strategyDef && strategyDef.paramKey) {
+            const paramValue = result.bestParams[strategyDef.paramKey];
+            if (paramValue !== undefined) {
+                switch(strategyDef.paramKey) {
+                    case 'consensusThreshold': setConsensusThreshold(paramValue as number); break;
+                    case 'overUnderThreshold': setOverUnderThreshold(paramValue as number); break;
+                    case 'evenOddThreshold': setEvenOddThreshold(paramValue as number); break;
+                    case 'underdogThreshold': setUnderdogThreshold(paramValue as number); break;
+                    case 'overUnderUnderdogThreshold': setOverUnderUnderdogThreshold(paramValue as number); break;
+                    case 'evenOddUnderdogThreshold': setEvenOddUnderdogThreshold(paramValue as number); break;
+                    case 'sherlockThreshold': setSherlockThreshold(paramValue as number); break;
+                }
+                appliedCount++;
+            }
+        }
+        if (strategyDef?.otherParams?.isInverseKey) {
+            const paramValue = result.bestParams[strategyDef.otherParams.isInverseKey];
+            if (paramValue !== undefined) {
+                setIsUnderdogInverse(paramValue as boolean);
+            }
+        }
+    }
+    toast({ title: "Parâmetros Aplicados!", description: `${appliedCount} ajustes foram aplicados aos pilotos automáticos.` });
+  }, [calibrationResults, toast, setConsensusThreshold, setOverUnderThreshold, setEvenOddThreshold, setUnderdogThreshold, setIsUnderdogInverse, setOverUnderUnderdogThreshold, setEvenOddUnderdogThreshold, setSherlockThreshold]);
+  
   return {
     dailyBalance, setDailyBalance,
     dailyTarget, setDailyTarget,
