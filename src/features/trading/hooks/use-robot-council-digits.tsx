@@ -505,7 +505,7 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
           if (pilot.status !== 'TRADING' || pilot.activeContractId !== null) continue;
           
           const pilotKey = key as PilotType;
-          if (pilotKey === 'vagalume') continue; // Vagalume só opera em modo consenso agora
+          if (pilotKey === 'vagalume') continue;
 
           const initialBankroll = sessionInitialBankroll ?? (accountBalance.balance ?? 1000);
           const currentBankroll = initialBankroll + dailyPnl;
@@ -524,27 +524,27 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
               }
               break;
             case 'overUnder':
-              if (overUnderStats.zScoreOver4 > overUnderThreshold) {
-                  shouldExecute = true;
-                  executionParams = ['DIGITOVER', 4, pilotKey];
-                  contractTypeForStake = 'DIGITOVER';
-              } else if (overUnderStats.zScoreOver4 < -overUnderThreshold) {
-                  shouldExecute = true;
-                  executionParams = ['DIGITUNDER', 5, pilotKey];
-                  contractTypeForStake = 'DIGITUNDER';
-              }
-              break;
+                if (overUnderStats.zScoreOver4 > overUnderThreshold) {
+                    shouldExecute = true;
+                    executionParams = ['DIGITOVER', 4, pilotKey];
+                    contractTypeForStake = 'DIGITOVER';
+                } else if (overUnderStats.zScoreOver4 < -overUnderThreshold) {
+                    shouldExecute = true;
+                    executionParams = ['DIGITUNDER', 5, pilotKey];
+                    contractTypeForStake = 'DIGITUNDER';
+                }
+                break;
             case 'evenOdd':
-               if (evenOddStats.zScoreEven > evenOddThreshold) {
-                  shouldExecute = true;
-                  executionParams = ['DIGITEVEN', undefined, pilotKey];
-                  contractTypeForStake = 'DIGITEVEN';
-               } else if (evenOddStats.zScoreEven < -evenOddThreshold) {
-                  shouldExecute = true;
-                  executionParams = ['DIGITODD', undefined, pilotKey];
-                  contractTypeForStake = 'DIGITODD';
-               }
-               break;
+                if (evenOddStats.zScoreEven > evenOddThreshold) {
+                    shouldExecute = true; 
+                    executionParams = ['DIGITEVEN', undefined, pilotKey]; 
+                    contractTypeForStake = 'DIGITEVEN';
+                } else if (evenOddStats.zScoreEven < -evenOddThreshold) {
+                    shouldExecute = true; 
+                    executionParams = ['DIGITODD', undefined, pilotKey]; 
+                    contractTypeForStake = 'DIGITODD';
+                }
+                break;
             case 'underdog':
                const coldestDigitStat = underdogDigitStats.length > 0 ? [...underdogDigitStats].sort((a, b) => a.probability - b.probability)[0] : null;
                if (coldestDigitStat && coldestDigitStat.probability <= (underdogThreshold / 100)) {
@@ -786,7 +786,7 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
         }
     }
     toast({ title: "Parâmetros Aplicados!", description: `${appliedCount} ajustes foram aplicados aos pilotos automáticos.` });
-  }, [calibrationResults, toast, setConsensusThreshold, setOverUnderThreshold, setEvenOddThreshold, setUnderdogThreshold, setIsUnderdogInverse, setOverUnderUnderdogThreshold, setEvenOddUnderdogThreshold, setSherlockThreshold]);
+  }, [calibrationResults, toast]);
   
   return {
     dailyBalance, setDailyBalance,
@@ -845,14 +845,14 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
 
 const getDecimalPlaces = (pipSize: number | undefined): number => {
     if (pipSize === undefined || pipSize === null || pipSize <= 0) {
-        return 2;
+        return 2; 
     }
     if (Math.floor(pipSize) === pipSize && pipSize >= 1) {
         return 0;
     }
-    const priceString = String(pipSize);
-    if (priceString.includes('.')) {
-        return priceString.split('.')[1].length;
+    const pipString = String(pipSize);
+    if (pipString.includes('.')) {
+        return pipString.split('.')[1].length;
     }
     return 0;
 };
