@@ -365,18 +365,18 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
       const pilotKey = lastOp.strategy as PilotType | 'vagalume' | undefined;
 
       const isConsensusStrategy = lastOp.strategy?.startsWith('consensus:');
-      if (isConsensusStrategy) {
-          const consensusPilots = lastOp.strategy.replace('consensus:', '').split(',');
-          setPilots(prev => {
-              const updated = { ...prev };
-              consensusPilots.forEach(pk => {
-                  if (updated[pk as PilotType] && updated[pk as PilotType].activeContractId !== null) {
-                      updated[pk as PilotType] = { ...updated[pk as PilotType], activeContractId: null };
-                  }
-              });
-              return updated;
-          });
-      }
+        if (isConsensusStrategy) {
+            const consensusPilots = lastOp.strategy.replace('consensus:', '').split(',');
+            setPilots(prev => {
+                const updated = { ...prev };
+                consensusPilots.forEach(pk => {
+                    if (updated[pk as PilotType] && updated[pk as PilotType].activeContractId !== null) {
+                        updated[pk as PilotType] = { ...updated[pk as PilotType], activeContractId: null };
+                    }
+                });
+                return updated;
+            });
+        }
       else if (pilotKey) {
         if (pilotKey === 'vagalume') {
             onVagalumeTradeCompleted(lastOp);
@@ -439,26 +439,26 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
 
           let signalData: { contract: DigitContractType | null, digit?: number, confidence: number } = { contract: null, confidence: 0 };
           
-          if (pilotKey === 'sherlock' && sherlockAnalysis && (sherlockAnalysis.blockProbability * 100) > sherlockThreshold) {
-              const wins = pilot.tradeHistory.filter(t => t.result && t.result > 0).length;
-              const winRate = pilot.tradeHistory.length > 0 ? (wins / pilot.tradeHistory.length) * 100 : 100;
-              if (winRate > sherlockWinRateThreshold) {
-                  if (sherlockAnalysis.recommendedBlock === 'even') signalData = { contract: 'DIGITEVEN', confidence: sherlockAnalysis.blockProbability };
-                  else if (sherlockAnalysis.recommendedBlock === 'odd') signalData = { contract: 'DIGITODD', confidence: sherlockAnalysis.blockProbability };
-                  else if (sherlockAnalysis.recommendedBlock === 'above4') signalData = { contract: 'DIGITOVER', digit: 4, confidence: sherlockAnalysis.blockProbability };
-                  else if (sherlockAnalysis.recommendedBlock === 'below5') signalData = { contract: 'DIGITUNDER', digit: 5, confidence: sherlockAnalysis.blockProbability };
-              }
-          } else if (pilotKey === 'matchesDiffers' && shouldTrade && councilDecision.differs !== null) {
-              signalData = { contract: 'DIGITDIFF', digit: councilDecision.differs, confidence: 0.7 };
-          } else if (pilotKey === 'evenOdd') {
-              if (evenOddStats.zScoreEven > evenOddThreshold) signalData = { contract: 'DIGITEVEN', confidence: 0.65 };
-              else if (evenOddStats.zScoreEven < -evenOddThreshold) signalData = { contract: 'DIGITODD', confidence: 0.65 };
-          } else if (pilotKey === 'overUnder') {
-              if (overUnderStats.zScoreOver4 > overUnderThreshold) signalData = { contract: 'DIGITOVER', digit: 4, confidence: 0.65 };
-              else if (overUnderStats.zScoreOver4 < -overUnderThreshold) signalData = { contract: 'DIGITUNDER', digit: 5, confidence: 0.65 };
-          } else if (pilotKey === 'vagalume' && vagalumeSignal?.shouldTrade) {
-              signalData = { contract: vagalumeSignal.suggestedContract, digit: vagalumeSignal.suggestedDigit, confidence: vagalumeSignal.confidence || 0.6 };
-          }
+           if (pilotKey === 'sherlock' && sherlockAnalysis && (sherlockAnalysis.blockProbability * 100) > sherlockThreshold) {
+                const wins = pilot.tradeHistory.filter(t => t.result && t.result > 0).length;
+                const winRate = pilot.tradeHistory.length > 0 ? (wins / pilot.tradeHistory.length) * 100 : 100;
+                if (winRate > sherlockWinRateThreshold) {
+                    if (sherlockAnalysis.recommendedBlock === 'even') signalData = { contract: 'DIGITEVEN', confidence: sherlockAnalysis.blockProbability };
+                    else if (sherlockAnalysis.recommendedBlock === 'odd') signalData = { contract: 'DIGITODD', confidence: sherlockAnalysis.blockProbability };
+                    else if (sherlockAnalysis.recommendedBlock === 'above4') signalData = { contract: 'DIGITOVER', digit: 4, confidence: sherlockAnalysis.blockProbability };
+                    else if (sherlockAnalysis.recommendedBlock === 'below5') signalData = { contract: 'DIGITUNDER', digit: 5, confidence: sherlockAnalysis.blockProbability };
+                }
+            } else if (pilotKey === 'matchesDiffers' && shouldTrade && councilDecision.differs !== null) {
+                signalData = { contract: 'DIGITDIFF', digit: councilDecision.differs, confidence: 0.7 };
+            } else if (pilotKey === 'evenOdd') {
+                if (evenOddStats.zScoreEven > evenOddThreshold) signalData = { contract: 'DIGITEVEN', confidence: 0.65 };
+                else if (evenOddStats.zScoreEven < -evenOddThreshold) signalData = { contract: 'DIGITODD', confidence: 0.65 };
+            } else if (pilotKey === 'overUnder') {
+                if (overUnderStats.zScoreOver4 > overUnderThreshold) signalData = { contract: 'DIGITOVER', digit: 4, confidence: 0.65 };
+                else if (overUnderStats.zScoreOver4 < -overUnderThreshold) signalData = { contract: 'DIGITUNDER', digit: 5, confidence: 0.65 };
+            } else if (pilotKey === 'vagalume' && vagalumeSignal?.shouldTrade) {
+                signalData = { contract: vagalumeSignal.suggestedContract, digit: vagalumeSignal.suggestedDigit, confidence: vagalumeSignal.confidence || 0.6 };
+            }
 
           if (signalData.contract) {
             signals.push({ pilotKey, contract: signalData.contract, digit: signalData.digit, confidence: signalData.confidence });
@@ -505,7 +505,6 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
           if (pilot.status !== 'TRADING' || pilot.activeContractId !== null) continue;
           
           const pilotKey = key as PilotType;
-          if (pilotKey === 'vagalume') continue;
 
           const initialBankroll = sessionInitialBankroll ?? (accountBalance.balance ?? 1000);
           const currentBankroll = initialBankroll + dailyPnl;
@@ -582,7 +581,6 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
                 }
                 break;
             case 'vagalume':
-                // Vagalume's turn, if it has a signal
                 if(vagalumeSignal && vagalumeSignal.shouldTrade) {
                     shouldExecute = true;
                     executionParams = [vagalumeSignal.suggestedContract, vagalumeSignal.suggestedDigit, pilotKey];
@@ -623,7 +621,7 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
               const finalStake = stakeDecision.nextStake;
               const currentTickEpoch = priceTicks.length > 0 ? priceTicks[priceTicks.length - 1].epoch : 0;
               
-              executeTrade(executionParams[0], finalStake, activeSymbol!, 1, 't', 'Piloto', executionParams[1], executionParams[2])
+              executeTrade(executionParams[0], finalStake, activeSymbol, 1, 't', 'Piloto', executionParams[1], executionParams[2])
                 .then(tradeResult => {
                     if (tradeResult.success && tradeResult.contractId) {
                         setPilots(prev => ({
@@ -689,7 +687,7 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
         };
         
         STRATEGY_DEFINITIONS.forEach(strategyDef => {
-            if (strategyDef.id === 'vagalume') return;
+            if (strategyDef.id === 'vagalume' || strategyDef.id === 'sherlock') return;
             try {
                 const { summary } = runDigitsBacktest(ticksForBacktest, {
                     strategy: strategyDef,
@@ -727,7 +725,7 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
         const results: Record<string, CalibrationResult> = {};
         
         for (const strategyDef of STRATEGY_DEFINITIONS) {
-          if (strategyDef.id === 'vagalume') continue;
+          if (strategyDef.id === 'vagalume' || strategyDef.id === 'sherlock') continue;
           const searchSpaces = STRATEGY_SEARCH_SPACES[strategyDef.id];
           if (!searchSpaces || searchSpaces.length === 0) continue;
           
@@ -850,9 +848,9 @@ const getDecimalPlaces = (pipSize: number | undefined): number => {
     if (Math.floor(pipSize) === pipSize && pipSize >= 1) {
         return 0;
     }
-    const pipString = String(pipSize);
-    if (pipString.includes('.')) {
-        return pipString.split('.')[1].length;
+    const priceString = String(pipSize);
+    if (priceString.includes('.')) {
+        return priceString.split('.')[1].length;
     }
     return 0;
 };
