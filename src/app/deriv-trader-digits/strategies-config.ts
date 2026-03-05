@@ -60,7 +60,7 @@ export const STRATEGY_DEFINITIONS: DigitStrategyDefinition[] = [
   {
     id: 'matchesDiffers',
     name: 'Contra-Tendência (Difere)',
-    description: "Aposta 'Difere' no dígito mais frequente, assumindo uma regressão à média. Usa um consenso de múltiplas janelas de tempo.",
+    description: "Aposta 'Difere' no dígito com maior Z-Score, indicando um desvio estatístico. Usa um consenso de múltiplas janelas de tempo.",
     contractTypes: ['DIGITDIFF'],
     paramKey: 'consensusThreshold',
   },
@@ -68,7 +68,7 @@ export const STRATEGY_DEFINITIONS: DigitStrategyDefinition[] = [
   {
     id: 'overUnder',
     name: 'Acima/Abaixo (Padrão)',
-    description: "Analisa a probabilidade combinada dos dígitos serem maiores que 4 ou menores que 5.",
+    description: "Analisa o desvio estatístico (Z-Score) do bloco de dígitos acima de 4 ou abaixo de 5.",
     contractTypes: ['DIGITOVER', 'DIGITUNDER'],
     paramKey: 'overUnderThreshold',
   },
@@ -76,7 +76,7 @@ export const STRATEGY_DEFINITIONS: DigitStrategyDefinition[] = [
   {
     id: 'evenOdd',
     name: 'Par/Ímpar (Padrão)',
-    description: "Analisa a probabilidade combinada do próximo dígito ser par ou ímpar.",
+    description: "Analisa o desvio estatístico (Z-Score) do bloco de dígitos pares ou ímpares.",
     contractTypes: ['DIGITEVEN', 'DIGITODD'],
     paramKey: 'evenOddThreshold',
   },
@@ -118,8 +118,8 @@ export const STRATEGY_DEFINITIONS: DigitStrategyDefinition[] = [
   // 8. Nova estratégia Vagalume
   {
     id: 'vagalume',
-    name: 'Vagalume Alternante',
-    description: 'Estratégia de meta-aprendizagem que explora a alternância de vitória/derrota (W-L-W-L).',
+    name: 'Vagalume Híbrido',
+    description: 'Combina detecção de sequências e análise contextual para operar em blocos ou contra repetições.',
     contractTypes: ['MULTI'], // Indica que pode usar vários tipos de contrato
     paramKey: null, // Parâmetros gerenciados por seu próprio hook
   },

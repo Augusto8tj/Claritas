@@ -99,6 +99,7 @@ export const useVagalumeAlternante = (
           sequenceStats: { currentStreak: 0, alternanceRate: 0, totalTrades: 0 },
           lastTickEpoch: ticks[ticks.length - 1]?.epoch || 0,
           analysisWindowEnd: ticks[ticks.length - 1]?.epoch || 0,
+          advancedScore: undefined,
           adjustedConfidence: confidence,
         };
       }

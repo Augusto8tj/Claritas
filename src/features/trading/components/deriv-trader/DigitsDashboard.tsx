@@ -15,6 +15,8 @@ import { VagalumeAdvancedDashboard } from './VagalumeAdvancedDashboard';
 import { LatencyMonitorDashboard } from './LatencyMonitorDashboard';
 import type { LatencyMetrics } from '../../utils/latency-monitor';
 import { SherlockHolmesDashboard } from './SherlockHolmesDashboard';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
+
 
 interface DigitsDashboardProps {
   signalQuality: SignalQuality | null;
@@ -77,7 +79,7 @@ const VagalumeStatusCard: React.FC<{ signal: VagalumeSignal | null }> = ({ signa
                 <div className="text-center">
                     <Loader2 className="h-6 w-6 mx-auto mb-2 animate-spin opacity-50" />
                     <p className="font-semibold text-sm">Vagalume Aguardando</p>
-                    <p className="text-xs">Analisando padrão de W/L...</p>
+                    <p className="text-xs">Analisando padrão...</p>
                 </div>
             </Card>
         );
@@ -89,7 +91,7 @@ const VagalumeStatusCard: React.FC<{ signal: VagalumeSignal | null }> = ({ signa
             <CardDescription className="flex items-center justify-between">
                 <span>Diário de Bordo: Vagalume</span>
                  <Badge variant="outline" className="border-purple-500/50 bg-white text-purple-600">
-                    Estado: {signal.state}
+                    Estratégia: {signal.activeStrategy}
                 </Badge>
             </CardDescription>
              <CardTitle className={cn("flex items-center gap-3 text-2xl font-bold text-purple-700")}>
@@ -100,25 +102,22 @@ const VagalumeStatusCard: React.FC<{ signal: VagalumeSignal | null }> = ({ signa
         <CardContent className="space-y-3">
              <div className="text-xs space-y-1">
                 <div className="flex justify-between">
-                    <span>Objetivo do Estado:</span>
-                    <span className="font-semibold">{signal.targetOutcome}</span>
-                </div>
-                <div className="flex justify-between">
                     <span>Confiança do Sinal:</span>
                     <span className="font-mono">{(signal.confidence * 100).toFixed(1)}%</span>
                 </div>
-             </div>
-             <Separator/>
-             <div className="text-xs space-y-1">
-                <div className="flex justify-between">
-                    <span >Taxa de Alternância:</span>
-                    <span className="font-semibold">{signal.sequenceStats.alternanceRate.toFixed(0)}%</span>
-                </div>
                  <div className="flex justify-between">
-                    <span>Sequência Atual:</span>
-                    <span className="font-semibold">{signal.sequenceStats.currentStreak}</span>
+                    <span>Confiança Ajustada (Regime):</span>
+                    <span className="font-mono font-bold">{(signal.adjustedConfidence * 100).toFixed(1)}%</span>
                 </div>
              </div>
+             <Collapsible>
+                 <CollapsibleTrigger asChild>
+                     <Button variant="link" size="sm" className="h-auto p-0 text-xs text-purple-600">Ver análise avançada</Button>
+                 </CollapsibleTrigger>
+                 <CollapsibleContent>
+                    <VagalumeAdvancedDashboard signal={vagalumeSignal} />
+                 </CollapsibleContent>
+             </Collapsible>
         </CardContent>
     </Card>
   )
@@ -166,10 +165,6 @@ export function DigitsDashboard({ signalQuality, multiWindowAnalysis, vagalumeSi
                 <SherlockHolmesDashboard analysis={sherlockAnalysis} />
                 <LatencyMonitorDashboard metrics={latencyMetrics} />
                 
-                <div className="mt-4">
-                  <VagalumeAdvancedDashboard signal={vagalumeSignal} />
-                </div>
-
                 <div className="grid grid-cols-2 gap-3 pt-2">
                      <StatsCard 
                         title="Consenso Multi-Janela" 
