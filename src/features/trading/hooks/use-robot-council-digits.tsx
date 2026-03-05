@@ -18,9 +18,7 @@ import {
     type SmartMartingaleConfig,
     type BankrollState,
 } from '@/features/trading/services/smart-stake-manager-digits';
-import { calculateAdvancedSignalScore } from '@/features/trading/services/digit-indicators';
-import type { ConfidenceLevel } from '@/features/trading/services/digits-analysis';
-import { 
+import {
     calibrateStrategyGridSearch, 
     STRATEGY_SEARCH_SPACES,
 } from '@/features/trading/optimization/digits-calibration-engine';
@@ -29,7 +27,6 @@ import { STRATEGY_DEFINITIONS, type GlobalRiskConfig, type MartingaleConfig, str
 import { loadHistoricalTicksForDigits } from '@/services/digits-data-service';
 import { useAuth } from '@/features/auth/hooks/use-auth';
 import { useVagalumeAlternante, type VagalumeConfig, type VagalumeSignal, type DigitContractType } from './use-vagalume-alternante';
-import { timingMonitor } from '@/features/trading/utils/timing-monitor';
 import { globalLatencyMonitor, LatencyMetrics } from '../utils/latency-monitor';
 import { buildTransitionMatrix, predictNTicksAhead, BlockProbs } from '../services/sherlock-multi-step';
 
@@ -119,13 +116,13 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
       minSequenceLength: 3,
       usePredictiveAnalysis: true,
       contextualThreshold: 55,
-      requireRangingRegime: true, // NOVO: Controle sobre o filtro de regime
+      requireRangingRegime: true,
       allowedContracts: {
         MATCHDIFFERS: true,
         EVENODD: true,
         OVERUNDER: true,
       },
-      // Campos legados para compatibilidade
+      // Campos legados
       maxStreak: 2,
       stateW1_matchThreshold: 8,
       stateL1_differsThreshold: 15,
@@ -174,7 +171,11 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
   const lastProcessedOpIdRef = useRef<number | null>(null);
   const decimalPlaces = useMemo(() => getDecimalPlaces(activeAsset?.pip), [activeAsset]);
 
-  const { signal: vagalumeSignal, onTradeCompleted: onVagalumeTradeCompleted } = useVagalumeAlternante(
+  const { 
+    signal: vagalumeSignal, 
+    onTradeCompleted: onVagalumeTradeCompleted,
+    pauseReason: vagalumePauseReason
+  } = useVagalumeAlternante(
     priceTicks,
     pilots.vagalume.tradeHistory,
     vagalumeConfig,
@@ -184,45 +185,28 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
 
   // --- ANÁLISE ESTATÍSTICA ---
   const analysisResults = useMemo(() => {
-    // Usar o MAIOR lookback entre todos os pilotos ativos
     const maxLookback = Math.max(
-        matchesDiffersLookback, 
-        overUnderLookback, 
-        evenOddLookback,
-        underdogOverUnderLookback,
-        dynamicUnderdogOverUnderLookback,
-        underdogEvenOddLookback
+        matchesDiffersLookback, overUnderLookback, evenOddLookback,
+        underdogOverUnderLookback, dynamicUnderdogOverUnderLookback, underdogEvenOddLookback
     );
-    
-    const windowSizes = [50, 200, maxLookback].filter((v, i, a) => a.indexOf(v) === i); // Unique values
-    if (!priceTicks || priceTicks.length < 50) {
-        return { windowsStats: [], mainWindowStats: null };
-    }
-    
+    const windowSizes = [50, 200, maxLookback].filter((v, i, a) => a.indexOf(v) === i); 
+    if (!priceTicks || priceTicks.length < 50) return { windowsStats: [], mainWindowStats: null };
     const windowsStats = windowSizes.map(size => {
         if(priceTicks.length < size) return null;
         return calculateDigitStatsForWindow(priceTicks, size, decimalPlaces);
     }).filter(w => w !== null) as WindowDigitStats[];
-
-    const mainWindowStats = windowsStats[windowsStats.length - 1]; // Usa a maior janela disponível
+    const mainWindowStats = windowsStats[windowsStats.length - 1]; 
     return { windowsStats, mainWindowStats };
-}, [priceTicks, decimalPlaces, matchesDiffersLookback, overUnderLookback, evenOddLookback, underdogOverUnderLookback, dynamicUnderdogOverUnderLookback, underdogEvenOddLookback]);
+  }, [priceTicks, decimalPlaces, matchesDiffersLookback, overUnderLookback, evenOddLookback, underdogOverUnderLookback, dynamicUnderdogOverUnderLookback, underdogEvenOddLookback]);
 
   const sherlockAnalysis = useMemo((): SherlockAnalysis | null => {
       if (priceTicks.length < sherlockLookback) return null;
-      
       const ticksForMatrix = priceTicks.slice(-sherlockLookback);
       const metrics = globalLatencyMonitor.getMetrics();
-      
-      const compensationSteps = disableSherlockCompensation 
-        ? 0 
-        : Math.min(Math.max(Math.ceil(metrics.avgLatency / 1000), 1), 2);
-      
+      const compensationSteps = disableSherlockCompensation ? 0 : Math.min(Math.max(Math.ceil(metrics.avgLatency / 1000), 1), 2);
       const { transitionMatrix, lastDigit } = buildTransitionMatrix(ticksForMatrix, decimalPlaces);
       const prediction = predictNTicksAhead(lastDigit, transitionMatrix, compensationSteps);
-      
       const bestBlock = Object.entries(prediction.blockProbs).sort(([, a], [, b]) => b - a)[0];
-      
       return {
           lastDigit,
           probabilities: prediction.digitProbs.map((p, i) => ({ digit: i, probability: p })),
@@ -232,43 +216,21 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
       };
   }, [priceTicks, decimalPlaces, sherlockLookback, disableSherlockCompensation]);
 
-  // Análise específica para Matches/Differs (usa seu próprio lookback)
   const matchesDiffersStats = useMemo(() => {
     if (!priceTicks || priceTicks.length < matchesDiffersLookback) return null;
-    const stats = calculateDigitStatsForWindow(priceTicks, matchesDiffersLookback, decimalPlaces);
-    return {
-        windowSize: matchesDiffersLookback,
-        frequencies: stats.frequencies,
-        probOver4: stats.probOver4,
-        probUnder5: stats.probUnder5,
-        probEven: stats.probEven,
-        zScoreOver4: stats.zScoreOver4,
-        zScoreEven: stats.zScoreEven
-    };
+    return calculateDigitStatsForWindow(priceTicks, matchesDiffersLookback, decimalPlaces);
   }, [priceTicks, decimalPlaces, matchesDiffersLookback]);
 
-  // Análise específica para Over/Under
   const overUnderSpecificStats = useMemo(() => {
       if (!priceTicks || priceTicks.length < overUnderLookback) return null;
-      const stats = calculateDigitStatsForWindow(priceTicks, overUnderLookback, decimalPlaces);
-      return {
-          probOver4: stats.probOver4,
-          probUnder5: stats.probUnder5,
-          zScoreOver4: stats.zScoreOver4,
-      };
+      return calculateDigitStatsForWindow(priceTicks, overUnderLookback, decimalPlaces);
   }, [priceTicks, decimalPlaces, overUnderLookback]);
 
-  // Análise específica para Even/Odd
   const evenOddSpecificStats = useMemo(() => {
       if (!priceTicks || priceTicks.length < evenOddLookback) return null;
-      const stats = calculateDigitStatsForWindow(priceTicks, evenOddLookback, decimalPlaces);
-      return {
-          probEven: stats.probEven,
-          zScoreEven: stats.zScoreEven,
-      };
+      return calculateDigitStatsForWindow(priceTicks, evenOddLookback, decimalPlaces);
   }, [priceTicks, decimalPlaces, evenOddLookback]);
 
-  // Análise específica para Underdog
   const underdogSpecificStats = useMemo(() => {
       if (!priceTicks || priceTicks.length < underdogLookback) return [];
       return calculateDigitStatsForWindow(priceTicks, underdogLookback, decimalPlaces).frequencies;
@@ -324,7 +286,6 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
     };
   }, [analysisResults.mainWindowStats]);
 
-  // --- LÓGICA DE EXECUÇÃO E ATUALIZAÇÃO ---
   const resetSession = useCallback(() => {
     setPilots({
       matchesDiffers: createInitialPilotState(),
@@ -405,8 +366,6 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
   }, []);
   
   useEffect(() => {
-    const cycleStart = performance.now();
-    
     if (executionRef.current) return;
     const activePilotEntries = Object.entries(pilots).filter(([, p]) => p.isOn);
     if (activePilotEntries.length === 0) return;
@@ -586,18 +545,19 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
           
           switch (pilotKey) {
             case 'matchesDiffers':
-              if (shouldTrade && councilDecision.differs !== null) {
+              const hottest = matchesDiffersStats?.frequencies.sort((a,b) => b.zScore - a.zScore)[0];
+              if (hottest && hottest.zScore > consensusThreshold) {
                   shouldExecute = true;
-                  executionParams = ['DIGITDIFF', councilDecision.differs, pilotKey];
+                  executionParams = ['DIGITDIFF', hottest.digit, pilotKey];
                   contractTypeForStake = 'DIGITDIFF';
                   setPilots(prev => {
-                      const newTarget = `🎯 DIFFERS ${councilDecision.differs} (Score: ${multiWindowAnalysis?.hottestScore.toFixed(2)})`;
+                      const newTarget = `🎯 DIFFERS ${hottest.digit} (Z-Score: ${hottest.zScore.toFixed(2)})`;
                       if (prev.matchesDiffers.currentTarget === newTarget) return prev;
                       return { ...prev, matchesDiffers: { ...prev.matchesDiffers, currentTarget: newTarget }};
                   });
               } else {
                   setPilots(prev => {
-                      const newTarget = multiWindowAnalysis ? `⏳ Aguardando (Score: ${multiWindowAnalysis.hottestScore.toFixed(2)} < ${consensusThreshold})` : '📊 Coletando dados...';
+                      const newTarget = hottest ? `⏳ Aguardando (Z-Score: ${hottest.zScore.toFixed(2)} < ${consensusThreshold.toFixed(1)})` : '📊 Coletando dados...';
                       if (prev.matchesDiffers.currentTarget === newTarget) return prev;
                       return { ...prev, matchesDiffers: { ...prev.matchesDiffers, currentTarget: newTarget }};
                   });
@@ -627,7 +587,7 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
                   setPilots(prev => {
                       const newTarget = `⏳ Aguardando (|z|: ${Math.abs(useOverUnderStats.zScoreOver4).toFixed(2)} < ${overUnderThreshold})`;
                       if (prev.overUnder.currentTarget === newTarget) return prev;
-                      return {...prev, overUnder: {...prev.overUnder, currentTarget: newTarget }};
+                      return {...prev, overUnder: {...prev.overUnder, currentTarget: newTarget}};
                   });
               }
               break;
@@ -760,7 +720,7 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
                     });
                 } else {
                     setPilots(prev => {
-                        const newTarget = '⏳ Analisando padrão W/L...';
+                        const newTarget = `⏳ ${vagalumePauseReason || 'Analisando contexto...'}`;
                         if (prev.vagalume.currentTarget === newTarget) return prev;
                         return {...prev, vagalume: {...prev.vagalume, currentTarget: newTarget}};
                     });
@@ -810,7 +770,6 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
               }
 
               const finalStake = stakeDecision.nextStake;
-              const currentTickEpoch = priceTicks.length > 0 ? priceTicks[priceTicks.length - 1].epoch : 0;
               
               executeTrade(executionParams[0], finalStake, activeSymbol, 1, 't', 'Piloto', executionParams[1], executionParams[2])
                 .then(tradeResult => {
@@ -834,7 +793,7 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
       dailyBalance, dailyTarget, maxLosses, sessionInitialBankroll, accountBalance.balance, dailyPnl,
       overUnderStats, evenOddStats, overUnderThreshold, evenOddThreshold, underdogThreshold, isUnderdogInverse, overUnderUnderdogThreshold, evenOddUnderdogThreshold,
       executionCooldown, isSmartMartingale, analysisResults.mainWindowStats, multiWindowAnalysis,
-      cooldownTime, consensusThreshold, onVagalumeTradeCompleted, vagalumeConfig, vagalumeSignal,
+      cooldownTime, consensusThreshold, onVagalumeTradeCompleted, vagalumeConfig, vagalumeSignal, vagalumePauseReason,
       isConsensusMode, minConsensus, sherlockAnalysis, sherlockThreshold, sherlockWinRateThreshold,
       matchesDiffersLookback, overUnderLookback, evenOddLookback, underdogLookback, underdogOverUnderLookback, dynamicUnderdogOverUnderLookback, underdogEvenOddLookback,
       matchesDiffersStats, overUnderSpecificStats, evenOddSpecificStats, underdogSpecificStats
