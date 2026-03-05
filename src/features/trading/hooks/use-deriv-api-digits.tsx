@@ -5,7 +5,7 @@ import React, { createContext, useContext, useState, useEffect, useCallback, use
 import type { TradeResult } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
 import type { Operation, OperationInitiator, DurationUnit, TickData, Asset, ChartData, CandleData, TimePeriod, ChartType, TradeAnnotation, DurationLimits } from '@/lib/types';
-import { FirebaseErrorListener } from '@/components/firebase-error-listener';
+import { FirebaseErrorListener } from '@/components/FirebaseErrorListener';
 import { useAuth } from '@/features/auth/hooks/use-auth';
 import { saveLiveTickForDigits } from '@/services/digits-data-service';
 import { validateAndLogContract } from '@/features/trading/utils/contract-validator';
@@ -486,6 +486,8 @@ export function useDerivApiDigitsState() {
             buyRequest.parameters.barrier = String(last_digit);
         }
         
+        const currentTickEpoch = priceTicks[priceTicks.length-1]?.epoch;
+        
         const buyResponse: any = await makeRequest(buyRequest);
         
         if (buyResponse.error) throw new Error(buyResponse.error.message);
@@ -494,6 +496,10 @@ export function useDerivApiDigitsState() {
         const contractId = buyResult.contract_id;
         if (!contractId) {
             throw new Error("Falha na compra do contrato, ID não retornado.");
+        }
+        
+        if (initiator === 'Piloto') {
+            timingMonitor.startTrade(contractId, currentTickEpoch);
         }
         
         const purchaseTimeMs = (buyResult.purchase_time || Math.floor(Date.now() / 1000)) * 1000;
@@ -520,7 +526,7 @@ export function useDerivApiDigitsState() {
          const message = error instanceof Error ? error.message : "Um erro desconhecido ocorreu.";
          return { success: false, message };
       }
-    }, [isConnected, makeRequest, setAndPersistOperationsLog, toast]);
+    }, [isConnected, makeRequest, setAndPersistOperationsLog, toast, priceTicks]);
 
     const sellContract = useCallback(async (contractId: number): Promise<TradeResult> => {
         return { success: false, message: "Contratos de dígitos não podem ser vendidos." };
