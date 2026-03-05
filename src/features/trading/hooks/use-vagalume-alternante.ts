@@ -109,7 +109,9 @@ export const useVagalumeAlternante = (
     }
 
     // --- ESTRATÉGIA 2 (FALLBACK): CONTEXTUAL ALTERNATOR ---
-    const analysisTicks = config.usePredictiveAnalysis ? ticks.slice(-101, -1) : ticks.slice(-100);
+    // ✅ CORREÇÃO: Removida a lógica `usePredictiveAnalysis` que usava dados antigos.
+    // Agora sempre analisa os 100 ticks mais recentes para ser reativo.
+    const analysisTicks = ticks.slice(-100);
     const advancedScore = calculateAdvancedSignalScore(analysisTicks, 0.5, decimalPlaces);
 
     if (config.requireRangingRegime && advancedScore.regime.type !== 'RANGING') {
