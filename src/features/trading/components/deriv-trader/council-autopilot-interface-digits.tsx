@@ -38,6 +38,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Alert } from "@/components/ui/alert";
 import type { CalibrationResult, StrategyBacktestResult } from "../../hooks/use-robot-council-digits";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 
 interface DigitsOptimizationPanelProps {
@@ -436,6 +437,28 @@ export function DigitsAutopilotManager(props: DigitsAutopilotManagerProps) {
                         <div className="space-y-2">
                           <Label htmlFor="vagalume-threshold">Limiar de Confiança Contextual ({vagalumeConfig.contextualThreshold}%)</Label>
                           <Slider id="vagalume-threshold" min={51} max={75} step={1} value={[vagalumeConfig.contextualThreshold]} onValueChange={v => setVagalumeConfig(c => ({...c, contextualThreshold: v[0]}))} />
+                           <p className="text-xs text-muted-foreground pt-1">
+                              Define a confiança mínima para o "Contextual Alternator" operar em blocos (Par/Ímpar, etc).
+                          </p>
+                        </div>
+                        <div className="space-y-2">
+                            <Label htmlFor="vagalume-min-sequence">Comprimento Mínimo da Sequência (Repetição)</Label>
+                            <Select
+                                value={String(vagalumeConfig.minSequenceLength)}
+                                onValueChange={(value) => setVagalumeConfig(c => ({ ...c, minSequenceLength: parseInt(value, 10) }))}
+                            >
+                                <SelectTrigger id="vagalume-min-sequence">
+                                    <SelectValue placeholder="Selecione..." />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="2">2 Dígitos Iguais</SelectItem>
+                                    <SelectItem value="3">3 Dígitos Iguais</SelectItem>
+                                    <SelectItem value="4">4 Dígitos Iguais</SelectItem>
+                                </SelectContent>
+                            </Select>
+                            <p className="text-xs text-muted-foreground pt-1">
+                                Define o gatilho para a estratégia de "Repetition Trigger". Menos dígitos = mais sinais, menor confiança.
+                            </p>
                         </div>
                         <div className="space-y-3 pt-4 border-t">
                             <Label>Contratos Permitidos</Label>
