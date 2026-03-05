@@ -116,7 +116,7 @@ const VagalumeStatusCard: React.FC<{ signal: VagalumeSignal | null }> = ({ signa
                      <Button variant="link" size="sm" className="h-auto p-0 text-xs text-purple-600">Ver análise avançada</Button>
                  </CollapsibleTrigger>
                  <CollapsibleContent>
-                    <VagalumeAdvancedDashboard signal={vagalumeSignal} />
+                    <VagalumeAdvancedDashboard signal={signal} />
                  </CollapsibleContent>
              </Collapsible>
         </CardContent>
