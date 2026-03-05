@@ -18,7 +18,9 @@ import {
     type SmartMartingaleConfig,
     type BankrollState,
 } from '@/features/trading/services/smart-stake-manager-digits';
-import {
+import { calculateAdvancedSignalScore } from '@/features/trading/services/digit-indicators';
+import type { ConfidenceLevel } from '@/features/trading/services/digits-analysis';
+import { 
     calibrateStrategyGridSearch, 
     STRATEGY_SEARCH_SPACES,
 } from '@/features/trading/optimization/digits-calibration-engine';
@@ -190,7 +192,9 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
         underdogOverUnderLookback, dynamicUnderdogOverUnderLookback, underdogEvenOddLookback
     );
     const windowSizes = [50, 200, maxLookback].filter((v, i, a) => a.indexOf(v) === i); 
-    if (!priceTicks || priceTicks.length < 50) return { windowsStats: [], mainWindowStats: null };
+    if (!priceTicks || priceTicks.length < 50) {
+      return { windowsStats: [], mainWindowStats: null };
+    }
     const windowsStats = windowSizes.map(size => {
         if(priceTicks.length < size) return null;
         return calculateDigitStatsForWindow(priceTicks, size, decimalPlaces);
@@ -809,7 +813,7 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
       priceTicks, pilots, operationsLog, signalQuality, shouldTrade, councilDecision, executeTrade, activeSymbol, toast, 
       dailyBalance, dailyTarget, maxLosses, sessionInitialBankroll, accountBalance.balance, dailyPnl,
       overUnderStats, evenOddStats, overUnderThreshold, evenOddThreshold, underdogThreshold, isUnderdogInverse, overUnderUnderdogThreshold, evenOddUnderdogThreshold,
-      executionCooldown, isSmartMartingale, analysisResults.mainWindowStats, multiWindowAnalysis, digitStats,
+      executionCooldown, isSmartMartingale, analysisResults.mainWindowStats, multiWindowAnalysis,
       cooldownTime, consensusThreshold, onVagalumeTradeCompleted, vagalumeConfig, vagalumeSignal, vagalumePauseReason,
       isConsensusMode, minConsensus, sherlockAnalysis, sherlockThreshold, sherlockWinRateThreshold,
       matchesDiffersLookback, overUnderLookback, evenOddLookback, underdogLookback, underdogOverUnderLookback, dynamicUnderdogOverUnderLookback, underdogEvenOddLookback,
