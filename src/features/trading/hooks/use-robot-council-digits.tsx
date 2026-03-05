@@ -217,7 +217,7 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
       
       const compensationSteps = disableSherlockCompensation 
         ? 0 
-        : Math.min(Math.max(Math.ceil(metrics.avgLatency / 1000), 1), 2);
+        : Math.min(Math.max(Math.ceil(metrics.avgLatency / 100), 1), 2);
       
       const { transitionMatrix, lastDigit } = buildTransitionMatrix(ticksForMatrix, decimalPlaces);
       const prediction = predictNTicksAhead(lastDigit, transitionMatrix, compensationSteps);
@@ -447,8 +447,8 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
                 newLosses >= maxLosses 
                     ? 'CIRCUIT_BREAKER'
                     : (lastOp.result ?? 0) < 0 
-                        ? 'COOLDOWN'
-                        : 'TRADING';
+                        ? 'COOLDOWN'  // Só entra em cooldown se PERDEU
+                        : 'TRADING';  // Volta a operar imediatamente se GANHOU
 
             setPilots(prev => ({
                 ...prev,
@@ -588,9 +588,17 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
                   shouldExecute = true;
                   executionParams = ['DIGITDIFF', councilDecision.differs, pilotKey];
                   contractTypeForStake = 'DIGITDIFF';
-                  setPilots(prev => ({ ...prev, matchesDiffers: { ...prev.matchesDiffers, currentTarget: `🎯 DIFFERS ${councilDecision.differs} (Score: ${multiWindowAnalysis?.hottestScore.toFixed(2)})` } }));
+                  setPilots(prev => {
+                      const newTarget = `🎯 DIFFERS ${councilDecision.differs} (Score: ${multiWindowAnalysis?.hottestScore.toFixed(2)})`;
+                      if (prev.matchesDiffers.currentTarget === newTarget) return prev;
+                      return { ...prev, matchesDiffers: { ...prev.matchesDiffers, currentTarget: newTarget }};
+                  });
               } else {
-                  setPilots(prev => ({ ...prev, matchesDiffers: { ...prev.matchesDiffers, currentTarget: multiWindowAnalysis ? `⏳ Aguardando (Score: ${multiWindowAnalysis.hottestScore.toFixed(2)} < ${consensusThreshold})` : '📊 Coletando dados...' } }));
+                  setPilots(prev => {
+                      const newTarget = multiWindowAnalysis ? `⏳ Aguardando (Score: ${multiWindowAnalysis.hottestScore.toFixed(2)} < ${consensusThreshold})` : '📊 Coletando dados...';
+                      if (prev.matchesDiffers.currentTarget === newTarget) return prev;
+                      return { ...prev, matchesDiffers: { ...prev.matchesDiffers, currentTarget: newTarget }};
+                  });
               }
               break;
             case 'overUnder':
@@ -599,30 +607,54 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
                   shouldExecute = true;
                   executionParams = ['DIGITOVER', 4, pilotKey];
                   contractTypeForStake = 'DIGITOVER';
-                  setPilots(prev => ({...prev, overUnder: {...prev.overUnder, currentTarget: `🔺 OVER 4 (z-score: ${useOverUnderStats.zScoreOver4.toFixed(2)})`}}));
+                  setPilots(prev => {
+                      const newTarget = `🔺 OVER 4 (z-score: ${useOverUnderStats.zScoreOver4.toFixed(2)})`;
+                      if (prev.overUnder.currentTarget === newTarget) return prev;
+                      return {...prev, overUnder: {...prev.overUnder, currentTarget: newTarget }};
+                  });
               } else if (useOverUnderStats.zScoreOver4 < -overUnderThreshold) {
                   shouldExecute = true;
                   executionParams = ['DIGITUNDER', 5, pilotKey];
                   contractTypeForStake = 'DIGITUNDER';
-                  setPilots(prev => ({...prev, overUnder: {...prev.overUnder, currentTarget: `🔻 UNDER 5 (z-score: ${useOverUnderStats.zScoreOver4.toFixed(2)})`}}));
+                  setPilots(prev => {
+                      const newTarget = `🔻 UNDER 5 (z-score: ${useOverUnderStats.zScoreOver4.toFixed(2)})`;
+                      if (prev.overUnder.currentTarget === newTarget) return prev;
+                      return {...prev, overUnder: {...prev.overUnder, currentTarget: newTarget }};
+                  });
               } else {
-                  setPilots(prev => ({...prev, overUnder: {...prev.overUnder, currentTarget: `⏳ Aguardando (|z|: ${Math.abs(useOverUnderStats.zScoreOver4).toFixed(2)} < ${overUnderThreshold})`}}));
+                  setPilots(prev => {
+                      const newTarget = `⏳ Aguardando (|z|: ${Math.abs(useOverUnderStats.zScoreOver4).toFixed(2)} < ${overUnderThreshold})`;
+                      if (prev.overUnder.currentTarget === newTarget) return prev;
+                      return {...prev, overUnder: {...prev.overUnder, currentTarget: newTarget }};
+                  });
               }
               break;
             case 'evenOdd':
                 const useEvenOddStats = evenOddSpecificStats || evenOddStats;
                 if (useEvenOddStats.zScoreEven > evenOddThreshold) {
-                    shouldExecute = true;
-                    executionParams = ['DIGITEVEN', undefined, pilotKey];
+                    shouldExecute = true; 
+                    executionParams = ['DIGITEVEN', undefined, pilotKey]; 
                     contractTypeForStake = 'DIGITEVEN';
-                    setPilots(prev => ({...prev, evenOdd: {...prev.evenOdd, currentTarget: `🔢 PAR (z-score: ${useEvenOddStats.zScoreEven.toFixed(2)})`}}));
+                    setPilots(prev => {
+                        const newTarget = `🔢 PAR (z-score: ${useEvenOddStats.zScoreEven.toFixed(2)})`;
+                        if (prev.evenOdd.currentTarget === newTarget) return prev;
+                        return {...prev, evenOdd: {...prev.evenOdd, currentTarget: newTarget }};
+                    });
                 } else if (useEvenOddStats.zScoreEven < -evenOddThreshold) {
-                    shouldExecute = true;
-                    executionParams = ['DIGITODD', undefined, pilotKey];
+                    shouldExecute = true; 
+                    executionParams = ['DIGITODD', undefined, pilotKey]; 
                     contractTypeForStake = 'DIGITODD';
-                    setPilots(prev => ({...prev, evenOdd: {...prev.evenOdd, currentTarget: `🔢 ÍMPAR (z-score: ${useEvenOddStats.zScoreEven.toFixed(2)})`}}));
+                    setPilots(prev => {
+                        const newTarget = `🔢 ÍMPAR (z-score: ${useEvenOddStats.zScoreEven.toFixed(2)})`;
+                        if (prev.evenOdd.currentTarget === newTarget) return prev;
+                        return {...prev, evenOdd: {...prev.evenOdd, currentTarget: newTarget}};
+                    });
                 } else {
-                    setPilots(prev => ({...prev, evenOdd: {...prev.evenOdd, currentTarget: `⏳ Aguardando (|z|: ${Math.abs(useEvenOddStats.zScoreEven).toFixed(2)} < ${evenOddThreshold})`}}));
+                    setPilots(prev => {
+                        const newTarget = `⏳ Aguardando (|z|: ${Math.abs(useEvenOddStats.zScoreEven).toFixed(2)} < ${evenOddThreshold})`;
+                        if (prev.evenOdd.currentTarget === newTarget) return prev;
+                        return {...prev, evenOdd: {...prev.evenOdd, currentTarget: newTarget}};
+                    });
                 }
                 break;
             case 'underdog':
@@ -634,21 +666,41 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
                    shouldExecute = true;
                    contractTypeForStake = isUnderdogInverse ? 'DIGITDIFF' : 'DIGITMATCH';
                    executionParams = [contractTypeForStake, coldestDigitStat.digit, pilotKey];
-                   setPilots(prev => ({ ...prev, underdog: { ...prev.underdog, currentTarget: `🎲 ${isUnderdogInverse ? 'DIFFERS' : 'MATCH'} ${coldestDigitStat.digit} (${(coldestDigitStat.probability * 100).toFixed(1)}%)` } }));
+                   setPilots(prev => {
+                       const newTarget = `🎲 ${isUnderdogInverse ? 'DIFFERS' : 'MATCH'} ${coldestDigitStat.digit} (${(coldestDigitStat.probability * 100).toFixed(1)}%)`;
+                       if (prev.underdog.currentTarget === newTarget) return prev;
+                       return {...prev, underdog: {...prev.underdog, currentTarget: newTarget}};
+                   });
                } else {
-                   setPilots(prev => ({ ...prev, underdog: { ...prev.underdog, currentTarget: coldestDigitStat ? `⏳ Aguardando (Min: ${(coldestDigitStat.probability * 100).toFixed(1)}% > ${underdogThreshold}%)` : '📊 Coletando dados...' } }));
+                   setPilots(prev => {
+                       const newTarget = coldestDigitStat ? `⏳ Aguardando (Min: ${(coldestDigitStat.probability * 100).toFixed(1)}% > ${underdogThreshold}%)` : '📊 Coletando dados...';
+                       if (prev.underdog.currentTarget === newTarget) return prev;
+                       return {...prev, underdog: {...prev.underdog, currentTarget: newTarget}};
+                   });
                }
                break;
             case 'underdogOverUnder':
                const uouLookbackStats = calculateDigitStatsForWindow(priceTicks, underdogOverUnderLookback, decimalPlaces);
                if (uouLookbackStats.probOver4 < overUnderUnderdogThreshold / 100) {
                    shouldExecute = true; executionParams = ['DIGITOVER', 4, pilotKey]; contractTypeForStake = 'DIGITOVER';
-                   setPilots(prev => ({...prev, underdogOverUnder: {...prev.underdogOverUnder, currentTarget: `🔺 OVER 4 (${(uouLookbackStats.probOver4*100).toFixed(1)}% < ${overUnderUnderdogThreshold}%)`}}));
+                   setPilots(prev => {
+                       const newTarget = `🔺 OVER 4 (${(uouLookbackStats.probOver4*100).toFixed(1)}% < ${overUnderUnderdogThreshold}%)`;
+                       if (prev.underdogOverUnder.currentTarget === newTarget) return prev;
+                       return {...prev, underdogOverUnder: {...prev.underdogOverUnder, currentTarget: newTarget}};
+                   });
                } else if (uouLookbackStats.probUnder5 < overUnderUnderdogThreshold / 100) {
                    shouldExecute = true; executionParams = ['DIGITUNDER', 5, pilotKey]; contractTypeForStake = 'DIGITUNDER';
-                   setPilots(prev => ({...prev, underdogOverUnder: {...prev.underdogOverUnder, currentTarget: `🔻 UNDER 5 (${(uouLookbackStats.probUnder5*100).toFixed(1)}% < ${overUnderUnderdogThreshold}%)`}}));
+                   setPilots(prev => {
+                       const newTarget = `🔻 UNDER 5 (${(uouLookbackStats.probUnder5*100).toFixed(1)}% < ${overUnderUnderdogThreshold}%)`;
+                       if (prev.underdogOverUnder.currentTarget === newTarget) return prev;
+                       return {...prev, underdogOverUnder: {...prev.underdogOverUnder, currentTarget: newTarget}};
+                   });
                } else {
-                   setPilots(prev => ({...prev, underdogOverUnder: {...prev.underdogOverUnder, currentTarget: `⏳ Aguardando`}}));
+                   setPilots(prev => {
+                       const newTarget = `⏳ Aguardando`;
+                       if (prev.underdogOverUnder.currentTarget === newTarget) return prev;
+                       return {...prev, underdogOverUnder: {...prev.underdogOverUnder, currentTarget: newTarget}};
+                   });
                }
                break;
             case 'dynamicUnderdogOverUnder':
@@ -657,21 +709,41 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
                     const digit = multiWindowAnalysis.coldestConsensusDigit;
                     if (digit > 4) { executionParams = ['DIGITUNDER', 5, pilotKey]; contractTypeForStake = 'DIGITUNDER'; }
                     else { executionParams = ['DIGITOVER', 4, pilotKey]; contractTypeForStake = 'DIGITOVER'; }
-                    setPilots(prev => ({...prev, dynamicUnderdogOverUnder: {...prev.dynamicUnderdogOverUnder, currentTarget: `🎯 Bloco Oposto ao Azarão ${digit}`}}));
+                    setPilots(prev => {
+                        const newTarget = `🎯 Bloco Oposto ao Azarão ${digit}`;
+                        if (prev.dynamicUnderdogOverUnder.currentTarget === newTarget) return prev;
+                        return {...prev, dynamicUnderdogOverUnder: {...prev.dynamicUnderdogOverUnder, currentTarget: newTarget}};
+                    });
                 } else {
-                    setPilots(prev => ({...prev, dynamicUnderdogOverUnder: {...prev.dynamicUnderdogOverUnder, currentTarget: '⏳ Aguardando Consenso de Azarão'}}));
+                    setPilots(prev => {
+                        const newTarget = '⏳ Aguardando Consenso de Azarão';
+                        if (prev.dynamicUnderdogOverUnder.currentTarget === newTarget) return prev;
+                        return {...prev, dynamicUnderdogOverUnder: {...prev.dynamicUnderdogOverUnder, currentTarget: newTarget}};
+                    });
                 }
                 break;
             case 'underdogEvenOdd':
                 const uoeLookbackStats = calculateDigitStatsForWindow(priceTicks, underdogEvenOddLookback, decimalPlaces);
                 if (uoeLookbackStats.probEven < evenOddUnderdogThreshold / 100) {
                     shouldExecute = true; executionParams = ['DIGITEVEN', undefined, pilotKey]; contractTypeForStake = 'DIGITEVEN';
-                    setPilots(prev => ({...prev, underdogEvenOdd: {...prev.underdogEvenOdd, currentTarget: `🔢 PAR (${(uoeLookbackStats.probEven*100).toFixed(1)}% < ${evenOddUnderdogThreshold}%)`}}));
+                    setPilots(prev => {
+                        const newTarget = `🔢 PAR (${(uoeLookbackStats.probEven*100).toFixed(1)}% < ${evenOddUnderdogThreshold}%)`;
+                        if (prev.underdogEvenOdd.currentTarget === newTarget) return prev;
+                        return {...prev, underdogEvenOdd: {...prev.underdogEvenOdd, currentTarget: newTarget}};
+                    });
                 } else if (1 - uoeLookbackStats.probEven < evenOddUnderdogThreshold / 100) {
                     shouldExecute = true; executionParams = ['DIGITODD', undefined, pilotKey]; contractTypeForStake = 'DIGITODD';
-                    setPilots(prev => ({...prev, underdogEvenOdd: {...prev.underdogEvenOdd, currentTarget: `🔢 ÍMPAR (${((1-uoeLookbackStats.probEven)*100).toFixed(1)}% < ${evenOddUnderdogThreshold}%)`}}));
+                    setPilots(prev => {
+                        const newTarget = `🔢 ÍMPAR (${((1-uoeLookbackStats.probEven)*100).toFixed(1)}% < ${evenOddUnderdogThreshold}%)`;
+                        if (prev.underdogEvenOdd.currentTarget === newTarget) return prev;
+                        return {...prev, underdogEvenOdd: {...prev.underdogEvenOdd, currentTarget: newTarget}};
+                    });
                 } else {
-                    setPilots(prev => ({...prev, underdogEvenOdd: {...prev.underdogEvenOdd, currentTarget: `⏳ Aguardando`}}));
+                    setPilots(prev => {
+                        const newTarget = `⏳ Aguardando`;
+                        if (prev.underdogEvenOdd.currentTarget === newTarget) return prev;
+                        return {...prev, underdogEvenOdd: {...prev.underdogEvenOdd, currentTarget: newTarget}};
+                    });
                 }
                 break;
             case 'vagalume':
@@ -679,16 +751,30 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
                     shouldExecute = true;
                     executionParams = [vagalumeSignal.suggestedContract, vagalumeSignal.suggestedDigit, pilotKey];
                     contractTypeForStake = vagalumeSignal.suggestedContract;
-                    setPilots(prev => ({...prev, vagalume: {...prev.vagalume, currentTarget: `✨ ${vagalumeSignal.reason}`}}));
+                    setPilots(prev => {
+                        const newTarget = `✨ ${vagalumeSignal.reason}`;
+                        if (prev.vagalume.currentTarget === newTarget) return prev;
+                        return {...prev, vagalume: {...prev.vagalume, currentTarget: newTarget}};
+                    });
                 } else {
-                    setPilots(prev => ({...prev, vagalume: {...prev.vagalume, currentTarget: '⏳ Analisando padrão W/L...'}}));
+                    setPilots(prev => {
+                        const newTarget = '⏳ Analisando padrão W/L...';
+                        if (prev.vagalume.currentTarget === newTarget) return prev;
+                        return {...prev, vagalume: {...prev.vagalume, currentTarget: newTarget}};
+                    });
                 }
                 break;
             case 'sherlock':
                 if(sherlockAnalysis && (sherlockAnalysis.blockProbability * 100) > sherlockThreshold) {
                     const wins = pilot.tradeHistory.filter(t => t.result && t.result > 0).length;
                     const winRate = pilot.tradeHistory.length > 0 ? (wins / pilot.tradeHistory.length) * 100 : 100;
-                    setPilots(prev => ({...prev, sherlock: {...prev.sherlock, currentTarget: `🕵️ ${sherlockAnalysis.recommendedBlock.toUpperCase()} (${(sherlockAnalysis.blockProbability*100).toFixed(1)}%). WR: ${winRate.toFixed(0)}%`}}));
+                    
+                    setPilots(prev => {
+                        const newTarget = `🕵️ ${sherlockAnalysis.recommendedBlock.toUpperCase()} (${(sherlockAnalysis.blockProbability*100).toFixed(1)}%). WR: ${winRate.toFixed(0)}%`;
+                        if (prev.sherlock.currentTarget === newTarget) return prev;
+                        return {...prev, sherlock: {...prev.sherlock, currentTarget: newTarget}};
+                    });
+
                     if (winRate > sherlockWinRateThreshold) {
                         shouldExecute = true;
                         if(sherlockAnalysis.recommendedBlock === 'even') { executionParams = ['DIGITEVEN', undefined, pilotKey]; contractTypeForStake = 'DIGITEVEN'; }
@@ -697,7 +783,11 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
                         else if (sherlockAnalysis.recommendedBlock === 'below5') { executionParams = ['DIGITUNDER', 5, pilotKey]; contractTypeForStake = 'DIGITUNDER'; }
                     }
                 } else {
-                    setPilots(prev => ({...prev, sherlock: {...prev.sherlock, currentTarget: `⏳ Aguardando P(bloco) > ${sherlockThreshold}%`}}));
+                    setPilots(prev => {
+                        const newTarget = `⏳ Aguardando P(bloco) > ${sherlockThreshold}%`;
+                        if (prev.sherlock.currentTarget === newTarget) return prev;
+                        return {...prev, sherlock: {...prev.sherlock, currentTarget: newTarget}};
+                    });
                 }
                 break;
           }
