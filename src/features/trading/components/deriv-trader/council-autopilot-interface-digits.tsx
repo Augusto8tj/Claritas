@@ -261,16 +261,16 @@ const PilotControlRow: React.FC<PilotControlRowProps> = ({
               <CollapsibleTrigger asChild>
                   <Button variant="ghost" size="sm" className="w-full justify-start text-xs text-muted-foreground gap-2 h-8">
                       <Wallet className="h-4 w-4"/>
-                      Gestão de Risco (Martingale)
+                      Gestão de Risco (Recuperação)
                       <ChevronsUpDown className="h-3 w-3 ml-auto"/>
                   </Button>
               </CollapsibleTrigger>
               <CollapsibleContent className="pt-4 space-y-4">
                 <div className="flex items-center justify-between rounded-lg border p-3 shadow-sm bg-background/50">
                     <Label htmlFor={`${pilotDef.id}-martingale-switch`} className="flex flex-col space-y-1">
-                        <span>Ativar Martingale</span>
+                        <span>Ativar Recuperação Gradual</span>
                         <span className="font-normal leading-snug text-muted-foreground text-xs">
-                            Aumenta a aposta após perdas para recuperação.
+                            Aumenta a aposta após perdas para recuperar o valor em parcelas.
                         </span>
                     </Label>
                     <Switch
@@ -288,6 +288,9 @@ const PilotControlRow: React.FC<PilotControlRowProps> = ({
                             value={[pilotState.martingaleRecoveryInstallments]}
                             onValueChange={(v) => setPilotMartingaleInstallments(pilotDef.id, v[0])}
                         />
+                         <p className="text-xs text-muted-foreground pt-1">
+                            O valor total perdido na sequência será dividido por este número de parcelas. Cada trade subsequente tentará recuperar uma parcela, diluindo o risco. Se uma nova perda ocorrer, as parcelas podem ser dobradas.
+                        </p>
                     </div>
                 )}
               </CollapsibleContent>
@@ -604,7 +607,7 @@ export function DigitsAutopilotManager(props: DigitsAutopilotManagerProps) {
                  <Alert>
                     <Info className="h-4 w-4"/>
                     <CardDescription>
-                        A gestão de Martingale foi movida para o controle individual de cada piloto no separador "Pilotos".
+                        A gestão de recuperação (Martingale) foi movida para o controle individual de cada piloto no separador "Pilotos".
                     </CardDescription>
                  </Alert>
                 <div className="space-y-2">

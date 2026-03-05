@@ -122,7 +122,7 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
         EVENODD: true,
         OVERUNDER: true,
       },
-      // Campos legados
+      // Campos legados mantidos para evitar quebras de tipo, mas não são mais usados na lógica principal.
       maxStreak: 2,
       stateW1_matchThreshold: 8,
       stateL1_differsThreshold: 15,
@@ -403,6 +403,21 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
             const newLosses = (lastOp.result ?? 0) < 0 ? pilotToUpdate.consecutiveLosses + 1 : 0;
             const newAccumulatedLoss = (lastOp.result ?? 0) < 0 ? pilotToUpdate.accumulatedLoss + Math.abs(lastOp.result || -lastOp.stake) : 0;
             
+            let newInstallments = pilotToUpdate.martingaleRecoveryInstallments;
+            const defaultInstallments = createInitialPilotState().martingaleRecoveryInstallments;
+
+            if ((lastOp.result ?? 0) < 0 && pilotToUpdate.consecutiveLosses > 0) {
+                newInstallments = Math.min(10, newInstallments * 2);
+                toast({
+                    title: `🛡️ Risco Diluído para ${strategyLabels[pilotKey as PilotType]}`,
+                    description: `Parcelas de recuperação aumentadas para ${newInstallments}.`,
+                    variant: 'destructive',
+                    duration: 7000,
+                });
+            } else if ((lastOp.result ?? 0) >= 0) {
+                newInstallments = defaultInstallments;
+            }
+
             const newStatus: AutopilotStatus = 
                 newLosses >= maxLosses 
                     ? 'CIRCUIT_BREAKER'
@@ -419,6 +434,7 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
                     accumulatedLoss: newAccumulatedLoss, 
                     status: newStatus, 
                     activeContractId: null,
+                    martingaleRecoveryInstallments: newInstallments,
                 }
             }));
 
@@ -534,6 +550,7 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
           if (pilot.status !== 'TRADING' || pilot.activeContractId !== null) continue;
           
           const pilotKey = key as PilotType;
+          if (pilotKey === 'vagalume') continue;
 
           const initialBankroll = sessionInitialBankroll ?? (accountBalance.balance ?? 1000);
           const currentBankroll = initialBankroll + dailyPnl;
@@ -792,7 +809,7 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
       priceTicks, pilots, operationsLog, signalQuality, shouldTrade, councilDecision, executeTrade, activeSymbol, toast, 
       dailyBalance, dailyTarget, maxLosses, sessionInitialBankroll, accountBalance.balance, dailyPnl,
       overUnderStats, evenOddStats, overUnderThreshold, evenOddThreshold, underdogThreshold, isUnderdogInverse, overUnderUnderdogThreshold, evenOddUnderdogThreshold,
-      executionCooldown, isSmartMartingale, analysisResults.mainWindowStats, multiWindowAnalysis,
+      executionCooldown, isSmartMartingale, analysisResults.mainWindowStats, multiWindowAnalysis, digitStats,
       cooldownTime, consensusThreshold, onVagalumeTradeCompleted, vagalumeConfig, vagalumeSignal, vagalumePauseReason,
       isConsensusMode, minConsensus, sherlockAnalysis, sherlockThreshold, sherlockWinRateThreshold,
       matchesDiffersLookback, overUnderLookback, evenOddLookback, underdogLookback, underdogOverUnderLookback, dynamicUnderdogOverUnderLookback, underdogEvenOddLookback,

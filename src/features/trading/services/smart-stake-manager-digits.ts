@@ -133,19 +133,23 @@ export function decideNextStake(
   
   // MODO 1: RECUPERAÇÃO GRADUAL (se em sequência de perdas)
   if (isEnabled && consecutiveLosses > 0) {
+    // 1. Achar o montante total a recuperar (soma dos stakes perdidos)
     const lossesToRecover = tradeHistory
       .slice(-consecutiveLosses)
       .reduce((sum, trade) => sum + trade.stake, 0);
 
     const payoutRatio = getPayoutRatio(contractType);
 
-    if (payoutRatio > 0) {
-      // Para recuperar X em N parcelas, o lucro extra por trade deve ser X/N.
-      // O stake extra necessário para esse lucro é (X/N) / payoutRatio.
-      const recoveryAddon = (lossesToRecover / martingaleRecoveryInstallments) / payoutRatio;
+    if (payoutRatio > 0 && martingaleRecoveryInstallments > 0) {
+      // 2. Calcular o lucro extra necessário por trade para recuperar em N parcelas
+      const requiredExtraProfitPerTrade = lossesToRecover / martingaleRecoveryInstallments;
       
-      nextStake += recoveryAddon;
-      reasoning.push(`Recuperação Gradual: +$${recoveryAddon.toFixed(2)} para recuperar $${lossesToRecover.toFixed(2)} em ${martingaleRecoveryInstallments}x.`);
+      // 3. Calcular o stake adicional para gerar esse lucro
+      // Lucro = StakeAdicional * PayoutRatio. Logo, StakeAdicional = Lucro / PayoutRatio
+      const stakeAddon = requiredExtraProfitPerTrade / payoutRatio;
+      
+      nextStake += stakeAddon;
+      reasoning.push(`Recuperação Gradual: +$${stakeAddon.toFixed(2)} para recuperar $${lossesToRecover.toFixed(2)} em ${martingaleRecoveryInstallments}x.`);
     }
   }
   // MODO 2: KELLY CRITERION (se isSmart e não em recuperação)
