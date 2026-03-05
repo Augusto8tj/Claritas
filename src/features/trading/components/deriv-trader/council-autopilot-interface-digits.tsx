@@ -188,6 +188,7 @@ interface PilotControlRowProps {
 // ============================================================================
 // 2. COMPONENTES AUXILIARES (UI)
 // ============================================================================
+type PilotState = ReturnType<typeof useRobotCouncilDigits>['pilots'][keyof ReturnType<typeof useRobotCouncilDigits>['pilots']];
 
 const PilotControlRow: React.FC<PilotControlRowProps> = ({
     pilotDef,
@@ -202,7 +203,7 @@ const PilotControlRow: React.FC<PilotControlRowProps> = ({
     const statusInfo = {
         'PAUSED': { text: 'Pausado', color: 'bg-gray-500' },
         'TRADING': { text: 'Ativo', color: 'bg-green-500' },
-        'COOLDOWN': { text: `Cooldown (${currentTarget})`, color: 'bg-orange-500' },
+        'COOLDOWN': { text: `Cooldown`, color: 'bg-orange-500' },
         'CIRCUIT_BREAKER': { text: 'Pausa de Risco', color: 'bg-red-500' },
     };
 
@@ -222,16 +223,22 @@ const PilotControlRow: React.FC<PilotControlRowProps> = ({
             </div>
 
             {isOn && (
-                <div className="flex items-center justify-between text-xs text-muted-foreground border-t pt-3">
-                    <Badge variant="outline" className="flex items-center gap-1.5">
-                        <div className={cn("h-2 w-2 rounded-full", statusInfo[status]?.color || 'bg-gray-500')}></div>
-                        {statusInfo[status]?.text || status}
-                    </Badge>
-                     <Badge variant="destructive" className={cn(consecutiveLosses > 0 ? "flex" : "hidden", "items-center gap-1")}>
-                        <AlertTriangle className="h-3 w-3"/>
-                        {consecutiveLosses} Perdas
-                    </Badge>
-                </div>
+                <>
+                    <div className="flex items-center justify-between text-xs text-muted-foreground border-t pt-3">
+                        <Badge variant="outline" className="flex items-center gap-1.5">
+                            <div className={cn("h-2 w-2 rounded-full", statusInfo[status]?.color || 'bg-gray-500')}></div>
+                            {statusInfo[status]?.text || status}
+                        </Badge>
+                         <Badge variant="destructive" className={cn(consecutiveLosses > 0 ? "flex" : "hidden", "items-center gap-1")}>
+                            <AlertTriangle className="h-3 w-3"/>
+                            {consecutiveLosses} Perdas
+                        </Badge>
+                    </div>
+                    <div className="text-xs text-muted-foreground mt-2 flex items-center gap-2 border-t pt-2">
+                        <Info className="h-3 w-3 shrink-0"/>
+                        <span className="truncate" title={currentTarget || ''}>{currentTarget || 'Aguardando sinal...'}</span>
+                    </div>
+                </>
             )}
              {children && (
                 <Collapsible>
@@ -287,6 +294,20 @@ const PilotControlRow: React.FC<PilotControlRowProps> = ({
     );
 };
 
+const LookbackSlider = ({ title, value, setValue, min, max, step }: { title: string, value: number, setValue: (v: number) => void, min: number, max: number, step: number }) => (
+  <div className="space-y-2">
+    <Label htmlFor={`${title}-slider`}>{title} ({value} ticks)</Label>
+    <Slider
+      id={`${title}-slider`}
+      min={min}
+      max={max}
+      step={step}
+      value={[value]}
+      onValueChange={v => setValue(v[0])}
+    />
+  </div>
+);
+
 // ============================================================================
 // 3. COMPONENTE PRINCIPAL (MANAGER)
 // ============================================================================
@@ -294,7 +315,7 @@ const PilotControlRow: React.FC<PilotControlRowProps> = ({
 export function DigitsAutopilotManager(props: DigitsAutopilotManagerProps) {
   const { 
     pilots, toggleAutopilot, togglePilotMartingale, setPilotMartingaleInstallments, dailyBalance, setDailyBalance, dailyTarget, setDailyTarget,
-    isSmartMartingale, setIsSmartMartingale,
+    isSmartMartingale,
     cooldownTime, setCooldownTime,
     maxLosses, setMaxLosses, executionCooldown, setExecutionCooldown, resetSession,
     consensusThreshold, setConsensusThreshold, overUnderThreshold, setOverUnderThreshold,
@@ -305,12 +326,32 @@ export function DigitsAutopilotManager(props: DigitsAutopilotManagerProps) {
     sherlockWinRateThreshold, setSherlockWinRateThreshold, vagalumeConfig, setVagalumeConfig,
     backtestTicks, isDataLoading, loadDataForBacktest, backtestResults, isBacktesting,
     runBacktestForAllStrategies, calibrationResults, isCalibrating, runCalibration, applyCalibration,
-    isConsensusMode, setIsConsensusMode, minConsensus, setMinConsensus
+    isConsensusMode, setIsConsensusMode, minConsensus, setMinConsensus,
+    matchesDiffersLookback, setMatchesDiffersLookback,
+    overUnderLookback, setOverUnderLookback,
+    evenOddLookback, setEvenOddLookback,
+    underdogLookback, setUnderdogLookback,
+    underdogOverUnderLookback, setUnderdogOverUnderLookback,
+    dynamicUnderdogOverUnderLookback, setDynamicUnderdogOverUnderLookback,
+    underdogEvenOddLookback, setUnderdogEvenOddLookback
  } = props;
 
   const renderPilotParams = (pilotDef: typeof STRATEGY_DEFINITIONS[0]) => {
       const pilotState = pilots[pilotDef.id];
       if (!pilotState) return null;
+
+      const lookbackControl = (() => {
+        switch(pilotDef.id) {
+          case 'matchesDiffers': return <LookbackSlider title="Janela de Análise" value={matchesDiffersLookback} setValue={setMatchesDiffersLookback} min={500} max={2000} step={100} />;
+          case 'overUnder': return <LookbackSlider title="Janela de Análise" value={overUnderLookback} setValue={setOverUnderLookback} min={500} max={2000} step={100} />;
+          case 'evenOdd': return <LookbackSlider title="Janela de Análise" value={evenOddLookback} setValue={setEvenOddLookback} min={500} max={2000} step={100} />;
+          case 'underdog': return <LookbackSlider title="Janela de Análise" value={underdogLookback} setValue={setUnderdogLookback} min={50} max={500} step={25} />;
+          case 'underdogOverUnder': return <LookbackSlider title="Janela de Análise" value={underdogOverUnderLookback} setValue={setUnderdogOverUnderLookback} min={500} max={2000} step={100} />;
+          case 'dynamicUnderdogOverUnder': return <LookbackSlider title="Janela de Análise" value={dynamicUnderdogOverUnderLookback} setValue={setDynamicUnderdogOverUnderLookback} min={500} max={2000} step={100} />;
+          case 'underdogEvenOdd': return <LookbackSlider title="Janela de Análise" value={underdogEvenOddLookback} setValue={setUnderdogEvenOddLookback} min={500} max={2000} step={100} />;
+          default: return null;
+        }
+      })();
 
       const specificParams = (() => {
         switch (pilotDef.id) {
@@ -399,6 +440,10 @@ export function DigitsAutopilotManager(props: DigitsAutopilotManagerProps) {
                           <Label htmlFor="vagalume-predictive" className="text-sm">Análise Preditiva (Latência)</Label>
                           <Switch id="vagalume-predictive" checked={vagalumeConfig.usePredictiveAnalysis} onCheckedChange={(c) => setVagalumeConfig(cfg => ({...cfg, usePredictiveAnalysis: c}))} />
                         </div>
+                         <div className="flex items-center justify-between rounded-lg border p-3">
+                          <Label htmlFor="vagalume-ranging" className="text-sm">Exigir Regime Lateral</Label>
+                          <Switch id="vagalume-ranging" checked={vagalumeConfig.requireRangingRegime} onCheckedChange={(c) => setVagalumeConfig(cfg => ({...cfg, requireRangingRegime: c}))} />
+                        </div>
                      </div>
                 );
             default:
@@ -409,6 +454,8 @@ export function DigitsAutopilotManager(props: DigitsAutopilotManagerProps) {
       return (
         <div className="space-y-4">
             {specificParams}
+            {lookbackControl && <Separator />}
+            {lookbackControl}
         </div>
       );
   };
@@ -440,6 +487,7 @@ export function DigitsAutopilotManager(props: DigitsAutopilotManagerProps) {
                         toggleAutopilot={toggleAutopilot}
                         togglePilotMartingale={togglePilotMartingale}
                         setPilotMartingaleInstallments={setPilotMartingaleInstallments}
+                        currentTarget={pilots[def.id]?.currentTarget || null}
                     >
                         {renderPilotParams(def)}
                     </PilotControlRow>
