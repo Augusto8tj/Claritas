@@ -206,8 +206,7 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
 
     const mainWindowStats = windowsStats[windowsStats.length - 1]; // Usa a maior janela disponível
     return { windowsStats, mainWindowStats };
-  }, [priceTicks, decimalPlaces, matchesDiffersLookback, overUnderLookback, evenOddLookback, underdogOverUnderLookback, dynamicUnderdogOverUnderLookback, underdogEvenOddLookback]);
-
+}, [priceTicks, decimalPlaces, matchesDiffersLookback, overUnderLookback, evenOddLookback, underdogOverUnderLookback, dynamicUnderdogOverUnderLookback, underdogEvenOddLookback]);
 
   const sherlockAnalysis = useMemo((): SherlockAnalysis | null => {
       if (priceTicks.length < sherlockLookback) return null;
@@ -217,7 +216,7 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
       
       const compensationSteps = disableSherlockCompensation 
         ? 0 
-        : Math.min(Math.max(Math.ceil(metrics.avgLatency / 100), 1), 2);
+        : Math.min(Math.max(Math.ceil(metrics.avgLatency / 1000), 1), 2);
       
       const { transitionMatrix, lastDigit } = buildTransitionMatrix(ticksForMatrix, decimalPlaces);
       const prediction = predictNTicksAhead(lastDigit, transitionMatrix, compensationSteps);
@@ -235,15 +234,17 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
 
   // Análise específica para Matches/Differs (usa seu próprio lookback)
   const matchesDiffersStats = useMemo(() => {
-      if (!priceTicks || priceTicks.length < matchesDiffersLookback) return null;
-      const stats = calculateDigitStatsForWindow(priceTicks, matchesDiffersLookback, decimalPlaces);
-      return {
-          windowSize: matchesDiffersLookback,
-          frequencies: stats.frequencies,
-          probOver4: stats.probOver4,
-          probUnder5: stats.probUnder5,
-          probEven: stats.probEven,
-      };
+    if (!priceTicks || priceTicks.length < matchesDiffersLookback) return null;
+    const stats = calculateDigitStatsForWindow(priceTicks, matchesDiffersLookback, decimalPlaces);
+    return {
+        windowSize: matchesDiffersLookback,
+        frequencies: stats.frequencies,
+        probOver4: stats.probOver4,
+        probUnder5: stats.probUnder5,
+        probEven: stats.probEven,
+        zScoreOver4: stats.zScoreOver4,
+        zScoreEven: stats.zScoreEven
+    };
   }, [priceTicks, decimalPlaces, matchesDiffersLookback]);
 
   // Análise específica para Over/Under
@@ -447,8 +448,8 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
                 newLosses >= maxLosses 
                     ? 'CIRCUIT_BREAKER'
                     : (lastOp.result ?? 0) < 0 
-                        ? 'COOLDOWN'  // Só entra em cooldown se PERDEU
-                        : 'TRADING';  // Volta a operar imediatamente se GANHOU
+                        ? 'COOLDOWN'
+                        : 'TRADING';
 
             setPilots(prev => ({
                 ...prev,
@@ -467,7 +468,9 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
                 setPilots(prev => {
                   const currentPilot = prev[pilotKey as PilotType];
                   if (currentPilot?.status === 'COOLDOWN') {
-                    return { ...prev, [pilotKey as PilotType]: { ...currentPilot, status: 'TRADING', currentTarget: `Pausa de ${cooldownTime}s terminada` } };
+                    const newTarget = `Pausa de ${cooldownTime}s terminada`;
+                    if (currentPilot.currentTarget === newTarget) return prev;
+                    return { ...prev, [pilotKey as PilotType]: { ...currentPilot, status: 'TRADING', currentTarget: newTarget } };
                   }
                   return prev;
                 });
@@ -572,7 +575,6 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
           if (pilot.status !== 'TRADING' || pilot.activeContractId !== null) continue;
           
           const pilotKey = key as PilotType;
-          if (pilotKey === 'vagalume') continue;
 
           const initialBankroll = sessionInitialBankroll ?? (accountBalance.balance ?? 1000);
           const currentBankroll = initialBankroll + dailyPnl;
@@ -658,10 +660,10 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
                 }
                 break;
             case 'underdog':
-               const useUnderdogStats = underdogSpecificStats.length > 0 ? underdogSpecificStats : [];
-               const coldestDigitStat = useUnderdogStats.length > 0 
-                   ? [...useUnderdogStats].sort((a, b) => a.probability - b.probability)[0] 
+               const coldestDigitStat = underdogSpecificStats.length > 0 
+                   ? [...underdogSpecificStats].sort((a, b) => a.probability - b.probability)[0] 
                    : null;
+               
                if (coldestDigitStat && coldestDigitStat.probability <= (underdogThreshold / 100)) {
                    shouldExecute = true;
                    contractTypeForStake = isUnderdogInverse ? 'DIGITDIFF' : 'DIGITMATCH';
@@ -704,7 +706,7 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
                }
                break;
             case 'dynamicUnderdogOverUnder':
-                if (multiWindowAnalysis?.coldestConsensusDigit !== undefined) {
+                if (multiWindowAnalysis?.coldestConsensusDigit !== undefined && multiWindowAnalysis?.coldestConsensusDigit !== null) {
                     shouldExecute = true;
                     const digit = multiWindowAnalysis.coldestConsensusDigit;
                     if (digit > 4) { executionParams = ['DIGITUNDER', 5, pilotKey]; contractTypeForStake = 'DIGITUNDER'; }
