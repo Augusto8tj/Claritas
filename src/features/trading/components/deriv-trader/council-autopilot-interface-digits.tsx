@@ -418,11 +418,11 @@ export function DigitsAutopilotManager(props: DigitsAutopilotManagerProps) {
                     <div className="space-y-6">
                         <div className="space-y-2">
                           <Label htmlFor="sherlock-threshold">Limiar de Confiança do Bloco ({sherlockThreshold}%)</Label>
-                          <Slider id="sherlock-threshold" min={51} max={85} step={1} value={[sherlockThreshold]} onValueChange={(v) => setSherlockThreshold(v[0])} />
+                          <Slider id="sherlock-threshold" min={51} max={85} step={1} value={[sherlockThreshold]} onValueChange={v => setSherlockThreshold(v[0])} />
                         </div>
                         <div className="space-y-2">
                           <Label htmlFor="sherlock-lookback">Janela de Análise Histórica ({sherlockLookback} ticks)</Label>
-                          <Slider id="sherlock-lookback" min={100} max={1000} step={50} value={[sherlockLookback]} onValueChange={(v) => setSherlockLookback(v[0])} />
+                          <Slider id="sherlock-lookback" min={100} max={1000} step={50} value={[sherlockLookback]} onValueChange={v => setSherlockLookback(v[0])} />
                         </div>
                          <div className="space-y-2">
                             <Label htmlFor="sherlock-winrate-threshold">Limiar de Win Rate da Sessão ({sherlockWinRateThreshold.toFixed(0)}%)</Label>
@@ -454,9 +454,11 @@ export function DigitsAutopilotManager(props: DigitsAutopilotManagerProps) {
                                     <SelectValue placeholder="Selecione..." />
                                 </SelectTrigger>
                                 <SelectContent>
+                                    <SelectItem value="1">1 Dígito (Experimental)</SelectItem>
                                     <SelectItem value="2">2 Dígitos Iguais</SelectItem>
                                     <SelectItem value="3">3 Dígitos Iguais</SelectItem>
                                     <SelectItem value="4">4 Dígitos Iguais</SelectItem>
+                                    <SelectItem value="5">5 Dígitos Iguais</SelectItem>
                                 </SelectContent>
                             </Select>
                             <p className="text-xs text-muted-foreground pt-1">
