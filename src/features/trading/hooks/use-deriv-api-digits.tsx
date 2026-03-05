@@ -9,7 +9,7 @@ import { FirebaseErrorListener } from '@/components/FirebaseErrorListener';
 import { useAuth } from '@/features/auth/hooks/use-auth';
 import { saveLiveTickForDigits } from '@/services/digits-data-service';
 import { validateAndLogContract } from '@/features/trading/utils/contract-validator';
-import { timingMonitor } from '@/features/trading/utils/timing-monitor';
+import { globalLatencyMonitor } from '../utils/latency-monitor';
 
 
 // --- CONSTANTS ---
@@ -286,6 +286,11 @@ export function useDerivApiDigitsState() {
                             const contract = response.proposal_open_contract;
                             if (!contract || !contract.contract_type?.startsWith('DIGIT')) return;
                             
+                            // START LATENCY RECORDING
+                            if (contract.contract_id) {
+                                globalLatencyMonitor.recordFullCycle(contract.contract_id, contract.sell_time || contract.exit_tick_time);
+                            }
+
                             setAndPersistOperationsLog(prevLog => {
                                 const existingOpIndex = prevLog.findIndex(op => op.id === contract.contract_id);
                                 if (existingOpIndex !== -1 && prevLog[existingOpIndex]?.status === 'pending') {
@@ -486,7 +491,7 @@ export function useDerivApiDigitsState() {
             buyRequest.parameters.barrier = String(last_digit);
         }
         
-        const currentTickEpoch = priceTicks[priceTicks.length-1]?.epoch;
+        const currentTickEpoch = priceTicks.length > 0 ? priceTicks[priceTicks.length-1].epoch : 0;
         
         const buyResponse: any = await makeRequest(buyRequest);
         
@@ -499,7 +504,7 @@ export function useDerivApiDigitsState() {
         }
         
         if (initiator === 'Piloto') {
-            timingMonitor.startTrade(contractId, currentTickEpoch);
+            globalLatencyMonitor.startTrade(contractId, currentTickEpoch);
         }
         
         const purchaseTimeMs = (buyResult.purchase_time || Math.floor(Date.now() / 1000)) * 1000;
