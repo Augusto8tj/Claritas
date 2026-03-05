@@ -51,14 +51,14 @@ const getContractDisplayName = (contractType?: string) => {
 };
 
 const StatCard = ({ title, value, subtext, colorClass }: { title: string, value: string, subtext?: string, colorClass?: string }) => (
-    <div className="p-3 border rounded-lg bg-background shadow-sm text-center">
-        <p className="text-xs text-muted-foreground">{title}</p>
-        <p className={cn("text-xl font-bold", colorClass)}>{value}</p>
-        {subtext && <p className="text-[11px] text-muted-foreground mt-0.5">{subtext}</p>}
+    <div className="p-2 sm:p-3 border rounded-lg bg-background shadow-sm text-center flex flex-col justify-center">
+        <p className="text-xs text-muted-foreground truncate">{title}</p>
+        <p className={cn("text-lg sm:text-xl font-bold leading-tight", colorClass)}>{value}</p>
+        {subtext && <p className="text-[10px] md:text-[11px] text-muted-foreground mt-0.5">{subtext}</p>}
     </div>
 );
 
-export function OperationsLogDigits({ operations, activeAsset, clearActiveContracts }: OperationsLogDigitsProps) {
+export function OperationsLogDigits({ operations, priceTicks, activeAsset, clearActiveContracts }: OperationsLogDigitsProps) {
     const stats = useMemo(() => {
         const finishedOps = operations.filter(op => op.status !== 'pending');
         
@@ -115,21 +115,21 @@ export function OperationsLogDigits({ operations, activeAsset, clearActiveContra
     return (
         <Card className="h-full flex flex-col">
             <CardHeader>
-                <div className="flex justify-between items-start">
+                <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-2">
                     <div>
-                        <CardTitle className="font-headline">Dashboard de Dígitos</CardTitle>
+                        <CardTitle className="font-headline text-xl lg:text-2xl">Dashboard de Dígitos</CardTitle>
                         <CardDescription>
                             Análise de desempenho da sua sessão atual.
                         </CardDescription>
                     </div>
                      {operations.length > 0 && (
-                        <Button variant="ghost" size="icon" onClick={clearActiveContracts}>
-                            <Trash2 className="h-4 w-4" />
-                            <span className="sr-only">Limpar log</span>
+                        <Button variant="outline" size="sm" onClick={clearActiveContracts} className="w-full sm:w-auto">
+                            <Trash2 className="h-4 w-4 mr-2" />
+                            Limpar Log
                         </Button>
                     )}
                 </div>
-                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3 pt-4">
+                 <div className="grid grid-cols-2 md:grid-cols-4 gap-2 pt-4">
                     <StatCard 
                         title="Resultado Total" 
                         value={stats.pnl.toLocaleString('pt-BR', { style: 'currency', currency: 'USD' })}
