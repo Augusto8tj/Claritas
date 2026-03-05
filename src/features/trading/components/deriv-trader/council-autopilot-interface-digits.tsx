@@ -37,6 +37,7 @@ import type { TickData } from "@/lib/types";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Alert } from "@/components/ui/alert";
+import type { CalibrationResult, StrategyBacktestResult } from "../../hooks/use-robot-council-digits";
 
 
 interface DigitsOptimizationPanelProps {
@@ -412,7 +413,7 @@ export function DigitsAutopilotManager(props: DigitsAutopilotManagerProps) {
                 return (
                     <div className="space-y-6">
                         <div className="space-y-2">
-                          <Label htmlFor="sherlock-threshold">Limiar de Confiança do Bloco ({sherlockThreshold.toFixed(0)}%)</Label>
+                          <Label htmlFor="sherlock-threshold">Limiar de Confiança do Bloco ({sherlockThreshold}%)</Label>
                           <Slider id="sherlock-threshold" min={51} max={85} step={1} value={[sherlockThreshold]} onValueChange={(v) => setSherlockThreshold(v[0])} />
                         </div>
                         <div className="space-y-2">
@@ -435,6 +436,39 @@ export function DigitsAutopilotManager(props: DigitsAutopilotManagerProps) {
                         <div className="space-y-2">
                           <Label htmlFor="vagalume-threshold">Limiar de Confiança Contextual ({vagalumeConfig.contextualThreshold}%)</Label>
                           <Slider id="vagalume-threshold" min={51} max={75} step={1} value={[vagalumeConfig.contextualThreshold]} onValueChange={v => setVagalumeConfig(c => ({...c, contextualThreshold: v[0]}))} />
+                        </div>
+                        <div className="space-y-3 pt-4 border-t">
+                            <Label>Contratos Permitidos</Label>
+                            <div className="flex items-center space-x-2">
+                                <Switch
+                                    id="vagalume-matchdiffers"
+                                    checked={vagalumeConfig.allowedContracts.MATCHDIFFERS}
+                                    onCheckedChange={(checked) => setVagalumeConfig(c => ({ ...c, allowedContracts: { ...c.allowedContracts, MATCHDIFFERS: !!checked } }))}
+                                />
+                                <Label htmlFor="vagalume-matchdiffers" className="text-sm font-normal">
+                                    Combina/Difere (Repetição)
+                                </Label>
+                            </div>
+                            <div className="flex items-center space-x-2">
+                                <Switch
+                                    id="vagalume-evenodd"
+                                    checked={vagalumeConfig.allowedContracts.EVENODD}
+                                    onCheckedChange={(checked) => setVagalumeConfig(c => ({ ...c, allowedContracts: { ...c.allowedContracts, EVENODD: !!checked } }))}
+                                />
+                                <Label htmlFor="vagalume-evenodd" className="text-sm font-normal">
+                                    Par/Ímpar (Contextual)
+                                </Label>
+                            </div>
+                            <div className="flex items-center space-x-2">
+                                <Switch
+                                    id="vagalume-overunder"
+                                    checked={vagalumeConfig.allowedContracts.OVERUNDER}
+                                    onCheckedChange={(checked) => setVagalumeConfig(c => ({ ...c, allowedContracts: { ...c.allowedContracts, OVERUNDER: !!checked } }))}
+                                />
+                                <Label htmlFor="vagalume-overunder" className="text-sm font-normal">
+                                    Acima/Abaixo (Contextual)
+                                </Label>
+                            </div>
                         </div>
                          <div className="flex items-center justify-between rounded-lg border p-3">
                           <Label htmlFor="vagalume-predictive" className="text-sm">Análise Preditiva (Latência)</Label>
