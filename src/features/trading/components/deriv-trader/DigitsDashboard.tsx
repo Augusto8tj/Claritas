@@ -5,6 +5,7 @@ import React from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Button } from '@/components/ui/button';
 import { CheckCircle, XCircle, HelpCircle, BarChart2, TrendingUp, TrendingDown, Info, Sigma, Wand2, Target, Loader2, BrainCircuit } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { SignalQuality, MultiWindowAnalysis, SherlockAnalysis } from '@/features/trading/hooks/use-robot-council-digits';
