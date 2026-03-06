@@ -442,33 +442,19 @@ export function DigitsAutopilotManager(props: DigitsAutopilotManagerProps) {
                 return (
                      <div className="space-y-6">
                         <div className="space-y-2">
-                          <Label htmlFor="vagalume-context-threshold">Limiar de Confiança Contextual ({vagalumeConfig.contextualThreshold}%)</Label>
+                          <Label htmlFor="vagalume-zscore-threshold">Limiar de Z-Score (Blocos)</Label>
                           <Slider
-                            id="vagalume-context-threshold"
-                            min={51}
-                            max={75}
-                            step={1}
-                            value={[vagalumeConfig.contextualThreshold]}
-                            onValueChange={(v) => setVagalumeConfig(c => ({...c, contextualThreshold: v[0]}))}
+                            id="vagalume-zscore-threshold"
+                            min={1.0}
+                            max={2.5}
+                            step={0.1}
+                            value={[vagalumeConfig.zScoreThreshold]}
+                            onValueChange={(v) => setVagalumeConfig(c => ({...c, zScoreThreshold: v[0]}))}
                           />
                           <p className="text-xs text-muted-foreground pt-1">
-                              Define a confiança mínima para o "Contextual Alternator" operar em blocos (Par/Ímpar, etc).
+                              Define o desvio estatístico mínimo para operar em blocos (Par/Ímpar, etc.).
+                              Valor atual: {vagalumeConfig.zScoreThreshold.toFixed(1)}σ (~{getConfidence(vagalumeConfig.zScoreThreshold)}% de confiança).
                           </p>
-                        </div>
-                         <div className="space-y-2">
-                            <Label htmlFor="vagalume-zscore-threshold">Limiar de Z-Score (Blocos)</Label>
-                            <Slider
-                                id="vagalume-zscore-threshold"
-                                min={1.0}
-                                max={2.5}
-                                step={0.1}
-                                value={[vagalumeConfig.zScoreThreshold]}
-                                onValueChange={(v) => setVagalumeConfig(c => ({...c, zScoreThreshold: v[0]}))}
-                            />
-                            <p className="text-xs text-muted-foreground pt-1">
-                                Define o desvio estatístico mínimo para operar em blocos (Par/Ímpar, etc.).
-                                Valor atual: {vagalumeConfig.zScoreThreshold.toFixed(1)}σ (~{getConfidence(vagalumeConfig.zScoreThreshold)}% de confiança).
-                            </p>
                         </div>
                         <div className="space-y-2">
                             <Label htmlFor="vagalume-min-sequence">Comprimento Mínimo da Sequência (Repetição)</Label>
@@ -492,7 +478,7 @@ export function DigitsAutopilotManager(props: DigitsAutopilotManagerProps) {
                             </p>
                         </div>
                         <div className="space-y-3 pt-4 border-t">
-                            <Label>Contratos Permitidos (Contextual)</Label>
+                            <Label>Contratos Permitidos</Label>
                             <div className="flex items-center space-x-2">
                                 <Switch
                                     id="vagalume-matchdiffers"
