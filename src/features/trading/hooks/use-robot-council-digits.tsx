@@ -118,6 +118,7 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
       minSequenceLength: 1,
       usePredictiveAnalysis: true,
       contextualThreshold: 55,
+      zScoreThreshold: 1.5,
       requireRangingRegime: true,
       allowedContracts: {
         MATCHDIFFERS: true,
@@ -862,7 +863,7 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
     
     executionRef.current = false;
   }, [
-      priceTicks, pilots, operationsLog, signalQuality, shouldTrade, councilDecision, executeTrade, activeSymbol, toast, 
+      priceTicks, pilots, operationsLog, shouldTrade, councilDecision, executeTrade, activeSymbol, toast, 
       dailyBalance, dailyTarget, maxLosses, sessionInitialBankroll, accountBalance.balance, dailyPnl,
       overUnderStats, evenOddStats, overUnderThreshold, evenOddThreshold, underdogThreshold, isUnderdogInverse, overUnderUnderdogThreshold, evenOddUnderdogThreshold,
       executionCooldown, isSmartMartingale, analysisResults.mainWindowStats, multiWindowAnalysis,

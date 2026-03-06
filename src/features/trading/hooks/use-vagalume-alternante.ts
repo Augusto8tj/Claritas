@@ -23,7 +23,8 @@ export type DigitContractType = 'DIGITMATCH' | 'DIGITDIFF' | 'DIGITEVEN' | 'DIGI
 export interface VagalumeConfig {
   minSequenceLength: number;
   usePredictiveAnalysis: boolean;
-  contextualThreshold: number; 
+  contextualThreshold: number;
+  zScoreThreshold: number;
   requireRangingRegime: boolean;
   allowedContracts: {
     MATCHDIFFERS: boolean;
@@ -124,7 +125,7 @@ export const useVagalumeAlternante = (
     
     // PASSO 1: Calcular estatísticas com Z-Score
     const stats = calculateDigitStatsForWindow(analysisTicks, 100, decimalPlaces);
-    const zScoreThreshold = 1.5; // ~86% confiança estatística (ajustável via config)
+    const zScoreThreshold = config.zScoreThreshold || 1.5;
 
     // PASSO 2: Par/Ímpar com Z-Score
     if (config.allowedContracts.EVENODD) {
