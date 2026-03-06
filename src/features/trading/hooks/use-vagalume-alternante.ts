@@ -83,7 +83,9 @@ export const useVagalumeAlternante = (
     }
     
     // --- ESTRATÉGIA 1 (PRIORIDADE): REPETITION TRIGGER ---
-    if (config.allowedContracts.MATCHDIFFERS) {
+    // ✅ CORREÇÃO: Apenas procurar sequências se o comprimento mínimo for > 1.
+    // Se for 1, a intenção é usar apenas o modo contextual.
+    if (config.allowedContracts.MATCHDIFFERS && config.minSequenceLength > 1) {
       const sequence = detectRepetitionSequence(ticks, decimalPlaces, config.minSequenceLength, 6);
       if (sequence) {
         const baseConfidence = 0.90 + (sequence.length - config.minSequenceLength) * 0.02;
@@ -109,8 +111,6 @@ export const useVagalumeAlternante = (
     }
 
     // --- ESTRATÉGIA 2 (FALLBACK): CONTEXTUAL ALTERNATOR ---
-    // ✅ CORREÇÃO: Removida a lógica `usePredictiveAnalysis` que usava dados antigos.
-    // Agora sempre analisa os 100 ticks mais recentes para ser reativo.
     const analysisTicks = ticks.slice(-100);
     const advancedScore = calculateAdvancedSignalScore(analysisTicks, 0.5, decimalPlaces);
 
