@@ -115,7 +115,7 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
   const [underdogEvenOddLookback, setUnderdogEvenOddLookback] = useState(1000);
 
   const [vagalumeConfig, setVagalumeConfig] = useState<VagalumeConfig>({
-      minSequenceLength: 3,
+      minSequenceLength: 1,
       usePredictiveAnalysis: true,
       contextualThreshold: 55,
       requireRangingRegime: true,
@@ -554,7 +554,6 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
           if (pilot.status !== 'TRADING' || pilot.activeContractId !== null) continue;
           
           const pilotKey = key as PilotType;
-          if (pilotKey === 'vagalume') continue;
 
           const initialBankroll = sessionInitialBankroll ?? (accountBalance.balance ?? 1000);
           const currentBankroll = initialBankroll + dailyPnl;
@@ -730,14 +729,23 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
                 }
                 break;
             case 'vagalume':
-                if(vagalumeSignal && vagalumeSignal.shouldTrade) {
+                if (vagalumeConfig.minSequenceLength > 1 && vagalumeSignal?.activeStrategy === 'Repetition Trigger' && vagalumeSignal.shouldTrade) {
                     shouldExecute = true;
                     executionParams = [vagalumeSignal.suggestedContract, vagalumeSignal.suggestedDigit, pilotKey];
                     contractTypeForStake = vagalumeSignal.suggestedContract;
                     setPilots(prev => {
                         const newTarget = `✨ ${vagalumeSignal.reason}`;
                         if (prev.vagalume.currentTarget === newTarget) return prev;
-                        return {...prev, vagalume: {...prev.vagalume, currentTarget: newTarget}};
+                        return { ...prev, vagalume: { ...prev.vagalume, currentTarget: newTarget } };
+                    });
+                } else if (vagalumeConfig.minSequenceLength === 1 && vagalumeSignal?.activeStrategy === 'Contextual Alternator' && vagalumeSignal.shouldTrade) {
+                    shouldExecute = true;
+                    executionParams = [vagalumeSignal.suggestedContract, vagalumeSignal.suggestedDigit, pilotKey];
+                    contractTypeForStake = vagalumeSignal.suggestedContract;
+                    setPilots(prev => {
+                        const newTarget = `✨ ${vagalumeSignal.reason}`;
+                        if (prev.vagalume.currentTarget === newTarget) return prev;
+                        return { ...prev, vagalume: { ...prev.vagalume, currentTarget: newTarget } };
                     });
                 } else {
                     setPilots(prev => {
