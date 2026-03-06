@@ -83,8 +83,6 @@ export const useVagalumeAlternante = (
     }
     
     // --- ESTRATÉGIA 1 (PRIORIDADE): REPETITION TRIGGER ---
-    // ✅ CORREÇÃO: Apenas procurar sequências se o comprimento mínimo for > 1.
-    // Se for 1, a intenção é usar apenas o modo contextual.
     if (config.allowedContracts.MATCHDIFFERS && config.minSequenceLength > 1) {
       const sequence = detectRepetitionSequence(ticks, decimalPlaces, config.minSequenceLength, 6);
       if (sequence) {
@@ -124,57 +122,64 @@ export const useVagalumeAlternante = (
       return null;
     }
     
-    const { probEven, probOver4, probUnder5 } = calculateDigitStatsForWindow(analysisTicks, 100, decimalPlaces);
-    const threshold = config.contextualThreshold / 100;
-    
-    // Análise de Par/Ímpar
+    // PASSO 1: Calcular estatísticas com Z-Score
+    const stats = calculateDigitStatsForWindow(analysisTicks, 100, decimalPlaces);
+    const zScoreThreshold = 1.5; // ~86% confiança estatística (ajustável via config)
+
+    // PASSO 2: Par/Ímpar com Z-Score
     if (config.allowedContracts.EVENODD) {
-      if (probEven > threshold || (1 - probEven) > threshold) {
-        const contract: DigitContractType = probEven > threshold ? 'DIGITEVEN' : 'DIGITODD';
-        const confidence = probEven > threshold ? probEven : (1 - probEven);
-        setPauseReason(null);
-        return {
-          state: 'CONTEXT_ANALYSIS',
-          activeStrategy: 'Contextual Alternator',
-          confidence,
-          suggestedContract: contract,
-          shouldTrade: true,
-          reason: `Vantagem em bloco ${contract.replace('DIGIT', '')} (${(confidence * 100).toFixed(1)}%)`,
-          targetOutcome: 'WIN',
-          sequenceStats: { currentStreak: 0, alternanceRate: 0, totalTrades: 0 },
-          lastTickEpoch: ticks[ticks.length - 1]?.epoch || 0,
-          analysisWindowEnd: analysisTicks[analysisTicks.length - 1]?.epoch || 0,
-          advancedScore,
-          adjustedConfidence: confidence,
-          suggestedStakeMultiplier: 1.0
-        };
-      }
+        if (Math.abs(stats.zScoreEven) > zScoreThreshold) {
+            const contract: DigitContractType = stats.zScoreEven > zScoreThreshold 
+                ? 'DIGITEVEN' 
+                : 'DIGITODD';
+            const confidence = Math.min(0.95, 0.60 + Math.abs(stats.zScoreEven) * 0.10);
+            
+            setPauseReason(null);
+            return {
+                state: 'CONTEXT_ANALYSIS',
+                activeStrategy: 'Contextual Alternator',
+                confidence,
+                suggestedContract: contract,
+                shouldTrade: true,
+                reason: `Vantagem ${contract === 'DIGITEVEN' ? 'PAR' : 'ÍMPAR'} (z: ${Math.abs(stats.zScoreEven).toFixed(2)})`,
+                targetOutcome: 'WIN',
+                sequenceStats: { currentStreak: 0, alternanceRate: 0, totalTrades: 0 },
+                lastTickEpoch: ticks[ticks.length - 1]?.epoch || 0,
+                analysisWindowEnd: analysisTicks[analysisTicks.length - 1]?.epoch || 0,
+                advancedScore,
+                adjustedConfidence: confidence,
+                suggestedStakeMultiplier: 1.0
+            };
+        }
     }
     
-    // Análise de Acima/Abaixo
+    // PASSO 3: Acima/Abaixo com Z-Score
     if (config.allowedContracts.OVERUNDER) {
-      if (probOver4 > threshold || probUnder5 > threshold) {
-        const contract: DigitContractType = probOver4 > threshold ? 'DIGITOVER' : 'DIGITUNDER';
-        const suggestedDigit = probOver4 > threshold ? 4 : 5;
-        const confidence = probOver4 > threshold ? probOver4 : probUnder5;
-        setPauseReason(null);
-        return {
-          state: 'CONTEXT_ANALYSIS',
-          activeStrategy: 'Contextual Alternator',
-          confidence,
-          suggestedContract: contract,
-          suggestedDigit,
-          shouldTrade: true,
-          reason: `Vantagem em bloco ${contract.replace('DIGIT', '')} > ${suggestedDigit} (${(confidence * 100).toFixed(1)}%)`,
-          targetOutcome: 'WIN',
-          sequenceStats: { currentStreak: 0, alternanceRate: 0, totalTrades: 0 },
-          lastTickEpoch: ticks[ticks.length - 1]?.epoch || 0,
-          analysisWindowEnd: analysisTicks[analysisTicks.length - 1]?.epoch || 0,
-          advancedScore,
-          adjustedConfidence: confidence,
-          suggestedStakeMultiplier: 1.0
-        };
-      }
+        if (Math.abs(stats.zScoreOver4) > zScoreThreshold) {
+            const contract: DigitContractType = stats.zScoreOver4 > zScoreThreshold 
+                ? 'DIGITOVER' 
+                : 'DIGITUNDER';
+            const suggestedDigit = stats.zScoreOver4 > zScoreThreshold ? 4 : 5;
+            const confidence = Math.min(0.95, 0.60 + Math.abs(stats.zScoreOver4) * 0.10);
+            
+            setPauseReason(null);
+            return {
+                state: 'CONTEXT_ANALYSIS',
+                activeStrategy: 'Contextual Alternator',
+                confidence,
+                suggestedContract: contract,
+                suggestedDigit,
+                shouldTrade: true,
+                reason: `Vantagem ${contract.replace('DIGIT', '')} ${suggestedDigit} (z: ${Math.abs(stats.zScoreOver4).toFixed(2)})`,
+                targetOutcome: 'WIN',
+                sequenceStats: { currentStreak: 0, alternanceRate: 0, totalTrades: 0 },
+                lastTickEpoch: ticks[ticks.length - 1]?.epoch || 0,
+                analysisWindowEnd: analysisTicks[analysisTicks.length - 1]?.epoch || 0,
+                advancedScore,
+                adjustedConfidence: confidence,
+                suggestedStakeMultiplier: 1.0
+            };
+        }
     }
     
     setPauseReason('Aguardando oportunidade (Repetição ou Vantagem em Bloco).');
