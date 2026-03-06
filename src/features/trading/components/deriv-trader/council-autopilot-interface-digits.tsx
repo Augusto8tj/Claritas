@@ -406,15 +406,33 @@ export function DigitsAutopilotManager(props: DigitsAutopilotManagerProps) {
             case 'underdogOverUnder':
                 return (
                     <div className="space-y-2">
-                        <Label htmlFor="underdog-ou-threshold">Limiar de Frequência de Bloco ({overUnderUnderdogThreshold.toFixed(1)}%)</Label>
-                        <Slider id="underdog-ou-threshold" min={30} max={48} step={1} value={[overUnderUnderdogThreshold]} onValueChange={v => setOverUnderUnderdogThreshold(v[0])} />
+                        <Label htmlFor="underdog-ou-z-threshold">Limiar de Desvio (Z-Score)</Label>
+                        <div className="flex items-center gap-4">
+                            <Slider
+                                id="underdog-ou-z-threshold"
+                                min={1.0} max={3.0} step={0.1}
+                                value={[overUnderUnderdogThreshold]}
+                                onValueChange={v => setOverUnderUnderdogThreshold(v[0])}
+                            />
+                            <span className="font-mono text-primary font-bold w-16 text-center">{overUnderUnderdogThreshold.toFixed(1)}σ</span>
+                        </div>
+                        <p className="text-xs text-muted-foreground pt-1">Aposta no bloco (Acima/Abaixo) que está estatisticamente 'atrasado'.</p>
                     </div>
                 );
             case 'underdogEvenOdd':
                  return (
                     <div className="space-y-2">
-                        <Label htmlFor="underdog-eo-threshold">Limiar de Frequência de Bloco ({evenOddUnderdogThreshold.toFixed(1)}%)</Label>
-                        <Slider id="underdog-eo-threshold" min={30} max={48} step={1} value={[evenOddUnderdogThreshold]} onValueChange={v => setEvenOddUnderdogThreshold(v[0])} />
+                        <Label htmlFor="underdog-eo-z-threshold">Limiar de Desvio (Z-Score)</Label>
+                         <div className="flex items-center gap-4">
+                            <Slider
+                                id="underdog-eo-z-threshold"
+                                min={1.0} max={3.0} step={0.1}
+                                value={[evenOddUnderdogThreshold]}
+                                onValueChange={v => setEvenOddUnderdogThreshold(v[0])}
+                            />
+                            <span className="font-mono text-primary font-bold w-16 text-center">{evenOddUnderdogThreshold.toFixed(1)}σ</span>
+                        </div>
+                        <p className="text-xs text-muted-foreground pt-1">Aposta no bloco (Par/Ímpar) que está estatisticamente 'atrasado'.</p>
                     </div>
                 );
             case 'sherlock':
@@ -439,26 +457,23 @@ export function DigitsAutopilotManager(props: DigitsAutopilotManagerProps) {
                     </div>
                 );
             case 'vagalume':
-                return (
+                 return (
                      <div className="space-y-6">
-                        <div className="space-y-2">
-                          <Label htmlFor="vagalume-zscore-threshold">Limiar de Z-Score (Blocos)</Label>
-                          <Slider
-                            id="vagalume-zscore-threshold"
-                            min={1.0}
-                            max={2.5}
-                            step={0.1}
-                            value={[vagalumeConfig.zScoreThreshold]}
-                            onValueChange={(v) => setVagalumeConfig(c => ({...c, zScoreThreshold: v[0]}))}
-                          />
-                          <p className="text-xs text-muted-foreground pt-1">
-                              Define o desvio estatístico mínimo para operar em blocos (Par/Ímpar, etc.).
-                              Valor atual: {vagalumeConfig.zScoreThreshold.toFixed(1)}σ (~{getConfidence(vagalumeConfig.zScoreThreshold)}% de confiança).
-                          </p>
-                        </div>
-                        <div className="space-y-2">
+                         <div className="space-y-2">
+                            <Label htmlFor="vagalume-zscore-threshold">Limiar de Desvio Contextual (Z-Score)</Label>
+                            <div className="flex items-center gap-4">
+                                <Slider
+                                    id="vagalume-zscore-threshold"
+                                    min={1.0} max={2.5} step={0.1}
+                                    value={[vagalumeConfig.zScoreThreshold]}
+                                    onValueChange={(v) => setVagalumeConfig(c => ({...c, zScoreThreshold: v[0]}))}
+                                />
+                                <span className="font-mono text-primary font-bold w-24 text-center">{vagalumeConfig.zScoreThreshold.toFixed(1)}σ (~{getConfidence(vagalumeConfig.zScoreThreshold)}%)</span>
+                            </div>
+                         </div>
+                         <div className="space-y-2">
                             <Label htmlFor="vagalume-min-sequence">Comprimento Mínimo da Sequência (Repetição)</Label>
-                            <Select
+                             <Select
                                 value={String(vagalumeConfig.minSequenceLength)}
                                 onValueChange={(value) => setVagalumeConfig(c => ({ ...c, minSequenceLength: parseInt(value, 10) }))}
                             >
@@ -474,9 +489,9 @@ export function DigitsAutopilotManager(props: DigitsAutopilotManagerProps) {
                                 </SelectContent>
                             </Select>
                             <p className="text-xs text-muted-foreground pt-1">
-                                Selecione "1" para usar apenas o modo contextual.
+                                Selecione "1" para usar apenas o modo contextual, ignorando sequências.
                             </p>
-                        </div>
+                         </div>
                         <div className="space-y-3 pt-4 border-t">
                             <Label>Contratos Permitidos</Label>
                             <div className="flex items-center space-x-2">

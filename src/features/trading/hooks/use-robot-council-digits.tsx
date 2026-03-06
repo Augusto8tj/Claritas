@@ -100,8 +100,8 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
   const [evenOddThreshold, setEvenOddThreshold] = useState(2.0);
   const [underdogThreshold, setUnderdogThreshold] = useState(5.0);
   const [isUnderdogInverse, setIsUnderdogInverse] = useState(false);
-  const [overUnderUnderdogThreshold, setOverUnderUnderdogThreshold] = useState(40);
-  const [evenOddUnderdogThreshold, setEvenOddUnderdogThreshold] = useState(40);
+  const [overUnderUnderdogThreshold, setOverUnderUnderdogThreshold] = useState(1.5);
+  const [evenOddUnderdogThreshold, setEvenOddUnderdogThreshold] = useState(1.5);
   const [sherlockThreshold, setSherlockThreshold] = useState(52);
   const [sherlockLookback, setSherlockLookback] = useState(500);
   const [disableSherlockCompensation, setDisableSherlockCompensation] = useState(false);
@@ -126,13 +126,6 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
         EVENODD: true,
         OVERUNDER: true,
       },
-      // Campos legados mantidos para evitar quebras de tipo, mas não são mais usados na lógica principal.
-      maxStreak: 2,
-      stateW1_matchThreshold: 8,
-      stateL1_differsThreshold: 15,
-      resetMultiplier: 1.2,
-      pauseAfterFailedResets: 2,
-      kellyFraction: 0.25,
   });
   
   // --- GESTÃO DE RISCO AVANÇADA (MARTINGALE & CONSENSO) ---
@@ -202,7 +195,8 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
         if(priceTicks.length < size) return null;
         return calculateDigitStatsForWindow(priceTicks, size, decimalPlaces);
     }).filter(w => w !== null) as WindowDigitStats[];
-    const mainWindowStats = windowsStats[windowsStats.length - 1]; 
+
+    const mainWindowStats = windowsStats.length > 0 ? windowsStats[windowsStats.length - 1] : null; 
     return { windowsStats, mainWindowStats };
   }, [priceTicks, decimalPlaces, matchesDiffersLookback, overUnderLookback, evenOddLookback, underdogOverUnderLookback, dynamicUnderdogOverUnderLookback, underdogEvenOddLookback]);
 
@@ -422,10 +416,9 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
 
             if (isLoss) {
                 newLosses = pilotToUpdate.consecutiveLosses + 1;
-                // Adiciona o stake perdido ao montante acumulado a recuperar
                 newAccumulatedLoss = oldAccumulatedLoss + lastOp.stake;
 
-                if (pilotToUpdate.consecutiveLosses > 0) { // Se já estávamos numa sequência de perdas...
+                if (pilotToUpdate.consecutiveLosses > 0) { 
                     newInstallments = Math.min(10, pilotToUpdate.martingaleRecoveryInstallments * 2);
                      toast({
                         title: `🛡️ Risco Diluído para ${strategyLabels[pilotKey as PilotType]}`,
@@ -434,13 +427,10 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
                         duration: 7000,
                     });
                 }
-            } else { // É uma VITÓRIA
-                newLosses = 0; // A vitória quebra a sequência de perdas CONSECUTIVAS
-                
-                // Reduz o montante a ser recuperado pelo lucro obtido
+            } else {
+                newLosses = 0;
                 newAccumulatedLoss = Math.max(0, oldAccumulatedLoss - profit);
                 
-                // Se a recuperação estiver completa, reseta as parcelas.
                 if (newAccumulatedLoss === 0 && oldAccumulatedLoss > 0) {
                     newInstallments = defaultInstallments;
                     toast({
@@ -583,25 +573,7 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
           if (pilot.status !== 'TRADING' || pilot.activeContractId !== null) continue;
           
           const pilotKey = key as PilotType;
-          if (pilotKey === 'vagalume' && vagalumeConfig.minSequenceLength > 1) {
-            const sequence = detectRepetitionSequence(priceTicks, decimalPlaces, vagalumeConfig.minSequenceLength, 6);
-            if (sequence) {
-              const confidence = 0.90 + (sequence.length - vagalumeConfig.minSequenceLength) * 0.02;
-              const bankrollState: BankrollState = { currentBankroll: (sessionInitialBankroll ?? 100) + dailyPnl, initialBankroll: sessionInitialBankroll, maxDailyLoss: dailyBalance, dailyProfitTarget: dailyTarget };
-              const stakeConfig: SmartMartingaleConfig = { isEnabled: pilot.isMartingaleEnabled, baseStake: BASE_STAKE, maxMartingaleLevels: maxLosses, martingaleRecoveryInstallments: pilot.martingaleRecoveryInstallments, isSmart: isSmartMartingale };
-              const stakeDecision = decideNextStake(pilot.tradeHistory, stakeConfig, bankrollState, 'DIGITDIFF', confidence, pilot.accumulatedLoss, pilot.consecutiveLosses);
-              if (!stakeDecision.shouldPause) {
-                executeTrade('DIGITDIFF', stakeDecision.nextStake, activeSymbol, 1, 't', 'Piloto', sequence.digit, 'vagalume');
-                tradeExecutedThisCycle = true;
-                lastExecutionTimestampRef.current = now;
-                break;
-              } else {
-                setPilots(prev => ({...prev, vagalume: {...prev.vagalume, status: 'CIRCUIT_BREAKER', currentTarget: stakeDecision.pauseReason }}));
-                continue;
-              }
-            }
-          }
-
+          
           const initialBankroll = sessionInitialBankroll ?? (accountBalance.balance ?? 1000);
           const currentBankroll = initialBankroll + dailyPnl;
           const bankrollState: BankrollState = { currentBankroll, initialBankroll, maxDailyLoss: dailyBalance, dailyProfitTarget: dailyTarget };
@@ -708,30 +680,32 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
                    });
                }
                break;
-            case 'underdogOverUnder':
-               const uouLookbackStats = calculateDigitStatsForWindow(priceTicks, underdogOverUnderLookback, decimalPlaces);
-               if (uouLookbackStats.probOver4 < overUnderUnderdogThreshold / 100) {
-                   shouldExecute = true; executionParams = ['DIGITOVER', 4, pilotKey]; contractTypeForStake = 'DIGITOVER';
-                   setPilots(prev => {
-                       const newTarget = `🔺 OVER 4 (${(uouLookbackStats.probOver4*100).toFixed(1)}% < ${overUnderUnderdogThreshold}%)`;
+            case 'underdogOverUnder': {
+                const uouLookbackStats = calculateDigitStatsForWindow(priceTicks, underdogOverUnderLookback, decimalPlaces);
+                const zScoreThreshold = overUnderUnderdogThreshold; // Repurposing the threshold state
+                if (uouLookbackStats.zScoreOver4 < -zScoreThreshold) {
+                    shouldExecute = true; executionParams = ['DIGITOVER', 4, pilotKey]; contractTypeForStake = 'DIGITOVER';
+                    setPilots(prev => {
+                        const newTarget = `🔺 OVER 4 'atrasado' (z: ${uouLookbackStats.zScoreOver4.toFixed(2)})`;
+                        if (prev.underdogOverUnder.currentTarget === newTarget) return prev;
+                        return {...prev, underdogOverUnder: {...prev.underdogOverUnder, currentTarget: newTarget}};
+                    });
+                } else if (uouLookbackStats.zScoreOver4 > zScoreThreshold) {
+                    shouldExecute = true; executionParams = ['DIGITUNDER', 5, pilotKey]; contractTypeForStake = 'DIGITUNDER';
+                     setPilots(prev => {
+                        const newTarget = `🔻 UNDER 5 'atrasado' (z: ${uouLookbackStats.zScoreOver4.toFixed(2)})`;
+                        if (prev.underdogOverUnder.currentTarget === newTarget) return prev;
+                        return {...prev, underdogOverUnder: {...prev.underdogOverUnder, currentTarget: newTarget}};
+                    });
+                } else {
+                    setPilots(prev => {
+                       const newTarget = `⏳ Aguardando desvio > ${zScoreThreshold.toFixed(1)}σ`;
                        if (prev.underdogOverUnder.currentTarget === newTarget) return prev;
                        return {...prev, underdogOverUnder: {...prev.underdogOverUnder, currentTarget: newTarget}};
                    });
-               } else if (uouLookbackStats.probUnder5 < overUnderUnderdogThreshold / 100) {
-                   shouldExecute = true; executionParams = ['DIGITUNDER', 5, pilotKey]; contractTypeForStake = 'DIGITUNDER';
-                   setPilots(prev => {
-                       const newTarget = `🔻 UNDER 5 (${(uouLookbackStats.probUnder5*100).toFixed(1)}% < ${overUnderUnderdogThreshold}%)`;
-                       if (prev.underdogOverUnder.currentTarget === newTarget) return prev;
-                       return {...prev, underdogOverUnder: {...prev.underdogOverUnder, currentTarget: newTarget}};
-                   });
-               } else {
-                   setPilots(prev => {
-                       const newTarget = `⏳ Aguardando`;
-                       if (prev.underdogOverUnder.currentTarget === newTarget) return prev;
-                       return {...prev, underdogOverUnder: {...prev.underdogOverUnder, currentTarget: newTarget}};
-                   });
-               }
-               break;
+                }
+                break;
+            }
             case 'dynamicUnderdogOverUnder':
                 if (multiWindowAnalysis?.coldestConsensusDigit !== undefined && multiWindowAnalysis?.coldestConsensusDigit !== null) {
                     shouldExecute = true;
@@ -751,30 +725,34 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
                     });
                 }
                 break;
-            case 'underdogEvenOdd':
+            case 'underdogEvenOdd': {
                 const uoeLookbackStats = calculateDigitStatsForWindow(priceTicks, underdogEvenOddLookback, decimalPlaces);
-                if (uoeLookbackStats.probEven < evenOddUnderdogThreshold / 100) {
+                const zScoreThreshold = evenOddUnderdogThreshold; // Repurposing the threshold state
+                
+                if (uoeLookbackStats.zScoreEven < -zScoreThreshold) {
                     shouldExecute = true; executionParams = ['DIGITEVEN', undefined, pilotKey]; contractTypeForStake = 'DIGITEVEN';
                     setPilots(prev => {
-                        const newTarget = `🔢 PAR (${(uoeLookbackStats.probEven*100).toFixed(1)}% < ${evenOddUnderdogThreshold}%)`;
+                        const newTarget = `🔢 PAR 'atrasado' (z: ${uoeLookbackStats.zScoreEven.toFixed(2)})`;
                         if (prev.underdogEvenOdd.currentTarget === newTarget) return prev;
                         return {...prev, underdogEvenOdd: {...prev.underdogEvenOdd, currentTarget: newTarget}};
                     });
-                } else if (1 - uoeLookbackStats.probEven < evenOddUnderdogThreshold / 100) {
+                } 
+                else if (uoeLookbackStats.zScoreEven > zScoreThreshold) {
                     shouldExecute = true; executionParams = ['DIGITODD', undefined, pilotKey]; contractTypeForStake = 'DIGITODD';
                     setPilots(prev => {
-                        const newTarget = `🔢 ÍMPAR (${((1-uoeLookbackStats.probEven)*100).toFixed(1)}% < ${evenOddUnderdogThreshold}%)`;
+                        const newTarget = `🔢 ÍMPAR 'atrasado' (z: ${uoeLookbackStats.zScoreEven.toFixed(2)})`;
                         if (prev.underdogEvenOdd.currentTarget === newTarget) return prev;
                         return {...prev, underdogEvenOdd: {...prev.underdogEvenOdd, currentTarget: newTarget}};
                     });
                 } else {
                     setPilots(prev => {
-                        const newTarget = `⏳ Aguardando`;
-                        if (prev.underdogEvenOdd.currentTarget === newTarget) return prev;
-                        return {...prev, underdogEvenOdd: {...prev.underdogEvenOdd, currentTarget: newTarget}};
-                    });
+                       const newTarget = `⏳ Aguardando desvio > ${zScoreThreshold.toFixed(1)}σ`;
+                       if (prev.underdogEvenOdd.currentTarget === newTarget) return prev;
+                       return {...prev, underdogEvenOdd: {...prev.underdogEvenOdd, currentTarget: newTarget}};
+                   });
                 }
                 break;
+            }
             case 'vagalume':
                 if (vagalumeSignal?.shouldTrade) {
                     shouldExecute = true;
