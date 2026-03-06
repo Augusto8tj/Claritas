@@ -104,7 +104,7 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
   const [sherlockThreshold, setSherlockThreshold] = useState(60);
   const [sherlockLookback, setSherlockLookback] = useState(500);
   const [disableSherlockCompensation, setDisableSherlockCompensation] = useState(false);
-  const [sherlockWinRateThreshold, setSherlockWinRateThreshold] = useState(45);
+  const [sherlockWinRateThreshold, setSherlockWinRateThreshold] = useState(52);
   
   const [matchesDiffersLookback, setMatchesDiffersLookback] = useState(1000);
   const [overUnderLookback, setOverUnderLookback] = useState(1000);
@@ -207,7 +207,9 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
       if (priceTicks.length < sherlockLookback) return null;
       const ticksForMatrix = priceTicks.slice(-sherlockLookback);
       const metrics = globalLatencyMonitor.getMetrics();
-      const compensationSteps = disableSherlockCompensation ? 0 : Math.min(Math.max(Math.ceil(metrics.avgLatency / 1000), 1), 2);
+      const compensationSteps = disableSherlockCompensation 
+        ? 0 
+        : Math.min(Math.max(Math.ceil(metrics.avgLatency / 100), 1), 2);
       const { transitionMatrix, lastDigit } = buildTransitionMatrix(ticksForMatrix, decimalPlaces);
       const prediction = predictNTicksAhead(lastDigit, transitionMatrix, compensationSteps);
       const bestBlock = Object.entries(prediction.blockProbs).sort(([, a], [, b]) => b - a)[0];
@@ -578,6 +580,24 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
           if (pilot.status !== 'TRADING' || pilot.activeContractId !== null) continue;
           
           const pilotKey = key as PilotType;
+          if (pilotKey === 'vagalume' && vagalumeConfig.minSequenceLength > 1) {
+            const sequence = detectRepetitionSequence(priceTicks, decimalPlaces, vagalumeConfig.minSequenceLength, 6);
+            if (sequence) {
+              const confidence = 0.90 + (sequence.length - vagalumeConfig.minSequenceLength) * 0.02;
+              const bankrollState: BankrollState = { currentBankroll: (sessionInitialBankroll ?? 100) + dailyPnl, initialBankroll: sessionInitialBankroll, maxDailyLoss: dailyBalance, dailyProfitTarget: dailyTarget };
+              const stakeConfig: SmartMartingaleConfig = { isEnabled: pilot.isMartingaleEnabled, baseStake: BASE_STAKE, maxMartingaleLevels: maxLosses, martingaleRecoveryInstallments: pilot.martingaleRecoveryInstallments, isSmart: isSmartMartingale };
+              const stakeDecision = decideNextStake(pilot.tradeHistory, stakeConfig, bankrollState, 'DIGITDIFF', confidence, pilot.accumulatedLoss, pilot.consecutiveLosses);
+              if (!stakeDecision.shouldPause) {
+                executeTrade('DIGITDIFF', stakeDecision.nextStake, activeSymbol, 1, 't', 'Piloto', sequence.digit, 'vagalume');
+                tradeExecutedThisCycle = true;
+                lastExecutionTimestampRef.current = now;
+                break;
+              } else {
+                setPilots(prev => ({...prev, vagalume: {...prev.vagalume, status: 'CIRCUIT_BREAKER', currentTarget: stakeDecision.pauseReason }}));
+                continue;
+              }
+            }
+          }
 
           const initialBankroll = sessionInitialBankroll ?? (accountBalance.balance ?? 1000);
           const currentBankroll = initialBankroll + dailyPnl;
@@ -753,7 +773,7 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
                 }
                 break;
             case 'vagalume':
-                if (vagalumeSignal?.shouldTrade) {
+                if (vagalumeConfig.minSequenceLength === 1 && vagalumeSignal?.shouldTrade) {
                     shouldExecute = true;
                     executionParams = [vagalumeSignal.suggestedContract, vagalumeSignal.suggestedDigit, pilotKey];
                     contractTypeForStake = vagalumeSignal.suggestedContract;
@@ -764,7 +784,7 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
                     });
                 } else {
                     setPilots(prev => {
-                        const newTarget = `⏳ ${vagalumePauseReason || 'Analisando contexto...'}`;
+                        const newTarget = `⏳ ${vagalumePauseReason || 'Aguardando contexto...'}`;
                         if (prev.vagalume.currentTarget === newTarget) return prev;
                         return {...prev, vagalume: {...prev.vagalume, currentTarget: newTarget}};
                     });
@@ -802,11 +822,8 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
               const pilotKeyForStake = executionParams[2] as PilotType;
               const pilotForStake = pilots[pilotKeyForStake];
               const stakeConfig: SmartMartingaleConfig = { 
-                  isEnabled: pilotForStake.isMartingaleEnabled, 
-                  baseStake: BASE_STAKE, 
-                  maxMartingaleLevels: maxLosses, 
-                  martingaleRecoveryInstallments: pilotForStake.martingaleRecoveryInstallments, 
-                  isSmart: isSmartMartingale,
+                  isEnabled: pilotForStake.isMartingaleEnabled, baseStake: BASE_STAKE, maxMartingaleLevels: maxLosses, 
+                  martingaleRecoveryInstallments: pilotForStake.martingaleRecoveryInstallments, isSmart: isSmartMartingale,
               };
               const confidenceForStake = signalQuality?.confidenceLevel === 'MUITO_ALTA' ? 0.85 : signalQuality?.confidenceLevel === 'ALTA' ? 0.75 : signalQuality?.confidenceLevel === 'MEDIA' ? 0.65 : 0.55;
               
