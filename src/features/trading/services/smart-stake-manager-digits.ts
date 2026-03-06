@@ -13,7 +13,8 @@ export interface SmartMartingaleConfig {
   isEnabled: boolean;
   baseStake: number;
   maxMartingaleLevels: number;
-  martingaleRecoveryInstallments: number; // NOVO: Número de parcelas para recuperação
+  martingaleRecoveryInstallments: number; // Número de parcelas para recuperação
+  // O martingaleMultiplier foi removido, pois a lógica agora é baseada em parcelas
   useAntiMartingale: boolean; 
   isSmart: boolean; 
 }
@@ -29,7 +30,7 @@ export interface SmartStakeDecision {
   nextStake: number;
   shouldPause: boolean;
   pauseReason?: string;
-  reasoning: string[]; // NOVO: Para explicar a decisão
+  reasoning: string[];
 }
 
 // ============================================================================
@@ -94,7 +95,9 @@ export function decideNextStake(
   config: SmartMartingaleConfig,
   bankrollState: BankrollState,
   contractType: DigitContractType,
-  confidence: number = 0.55
+  confidence: number = 0.55,
+  accumulatedLoss: number,
+  consecutiveLosses: number
 ): SmartStakeDecision {
   const { isEnabled, baseStake, maxMartingaleLevels, isSmart, martingaleRecoveryInstallments } = config;
   const { currentBankroll, initialBankroll, maxDailyLoss, dailyProfitTarget } = bankrollState;
@@ -109,7 +112,6 @@ export function decideNextStake(
     return { nextStake: baseStake, shouldPause: true, pauseReason: `Meta de lucro diária de $${dailyProfitTarget.toFixed(2)} atingida.`, reasoning: ['Meta de lucro diária atingida.'] };
   }
   
-  const consecutiveLosses = countConsecutiveLosses(tradeHistory);
   const totalTrades = tradeHistory.length;
   if(totalTrades > 5) {
       const winRate = tradeHistory.filter(t => (t.result ?? 0) > 0).length / totalTrades;
@@ -131,35 +133,26 @@ export function decideNextStake(
   let nextStake = baseStake; 
   reasoning.push(`Aposta Base: $${baseStake.toFixed(2)}.`);
   
-  // MODO 1: RECUPERAÇÃO GRADUAL (se em sequência de perdas)
-  if (isEnabled && consecutiveLosses > 0) {
-    // 1. Achar o montante total a recuperar (soma dos stakes perdidos)
-    const lossesToRecover = tradeHistory
-      .slice(-consecutiveLosses)
-      .reduce((sum, trade) => sum + trade.stake, 0);
-
+  // MODO 1: RECUPERAÇÃO GRADUAL
+  if (isEnabled && accumulatedLoss > 0) {
     const payoutRatio = getPayoutRatio(contractType);
 
     if (payoutRatio > 0 && martingaleRecoveryInstallments > 0) {
-      // 2. Calcular o lucro extra necessário por trade para recuperar em N parcelas
-      const requiredExtraProfitPerTrade = lossesToRecover / martingaleRecoveryInstallments;
-      
-      // 3. Calcular o stake adicional para gerar esse lucro
-      // Lucro = StakeAdicional * PayoutRatio. Logo, StakeAdicional = Lucro / PayoutRatio
+      const requiredExtraProfitPerTrade = accumulatedLoss / martingaleRecoveryInstallments;
       const stakeAddon = requiredExtraProfitPerTrade / payoutRatio;
       
       nextStake += stakeAddon;
-      reasoning.push(`Recuperação Gradual: +$${stakeAddon.toFixed(2)} para recuperar $${lossesToRecover.toFixed(2)} em ${martingaleRecoveryInstallments}x.`);
+      reasoning.push(`Recuperação Gradual: +$${stakeAddon.toFixed(2)} para recuperar $${accumulatedLoss.toFixed(2)} em ${martingaleRecoveryInstallments}x.`);
     }
   }
   // MODO 2: KELLY CRITERION (se isSmart e não em recuperação)
-  else if (isSmart) {
+  else if (config.isSmart) {
     const payoutOdds = getPayoutRatio(contractType);
     const kellyStake = calculateKellyStake(confidence, payoutOdds, currentBankroll);
     
     if (kellyStake > baseStake) {
       nextStake = kellyStake;
-      reasoning.pop(); // Remove aposta base
+      reasoning.pop();
       reasoning.push(`Kelly Stake (Vantagem Detectada): $${kellyStake.toFixed(2)}.`);
     }
   }

@@ -404,28 +404,52 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
         const pilotToUpdate = pilots[pilotKey as PilotType];
         if (pilotToUpdate) {
             const updatedHistory = [...pilotToUpdate.tradeHistory, lastOp];
-            const newLosses = (lastOp.result ?? 0) < 0 ? pilotToUpdate.consecutiveLosses + 1 : 0;
-            const newAccumulatedLoss = (lastOp.result ?? 0) < 0 ? pilotToUpdate.accumulatedLoss + Math.abs(lastOp.result || -lastOp.stake) : 0;
             
-            let newInstallments = pilotToUpdate.martingaleRecoveryInstallments;
+            const profit = lastOp.result ?? 0;
+            const isLoss = profit < 0;
+
+            const oldAccumulatedLoss = pilotToUpdate.accumulatedLoss;
+            let newLosses: number;
+            let newAccumulatedLoss: number;
+            let newInstallments: number = pilotToUpdate.martingaleRecoveryInstallments;
+
             const defaultInstallments = createInitialPilotState().martingaleRecoveryInstallments;
 
-            if ((lastOp.result ?? 0) < 0 && pilotToUpdate.consecutiveLosses > 0) {
-                newInstallments = Math.min(10, newInstallments * 2);
-                toast({
-                    title: `🛡️ Risco Diluído para ${strategyLabels[pilotKey as PilotType]}`,
-                    description: `Parcelas de recuperação aumentadas para ${newInstallments}.`,
-                    variant: 'destructive',
-                    duration: 7000,
-                });
-            } else if ((lastOp.result ?? 0) >= 0) {
-                newInstallments = defaultInstallments;
+            if (isLoss) {
+                newLosses = pilotToUpdate.consecutiveLosses + 1;
+                // Adiciona o stake perdido ao montante acumulado a recuperar
+                newAccumulatedLoss = oldAccumulatedLoss + lastOp.stake;
+
+                if (pilotToUpdate.consecutiveLosses > 0) { // Se já estávamos numa sequência de perdas...
+                    newInstallments = Math.min(10, pilotToUpdate.martingaleRecoveryInstallments * 2);
+                     toast({
+                        title: `🛡️ Risco Diluído para ${strategyLabels[pilotKey as PilotType]}`,
+                        description: `Parcelas de recuperação aumentadas para ${newInstallments} após nova perda.`,
+                        variant: 'destructive',
+                        duration: 7000,
+                    });
+                }
+            } else { // É uma VITÓRIA
+                newLosses = 0; // A vitória quebra a sequência de perdas CONSECUTIVAS
+                
+                // Reduz o montante a ser recuperado pelo lucro obtido
+                newAccumulatedLoss = Math.max(0, oldAccumulatedLoss - profit);
+                
+                // Se a recuperação estiver completa, reseta as parcelas.
+                if (newAccumulatedLoss === 0 && oldAccumulatedLoss > 0) {
+                    newInstallments = defaultInstallments;
+                    toast({
+                        title: `✅ Recuperação Concluída para ${strategyLabels[pilotKey as PilotType]}`,
+                        description: 'O montante de perdas foi recuperado com sucesso.',
+                        duration: 7000,
+                    });
+                }
             }
 
             const newStatus: AutopilotStatus = 
                 newLosses >= maxLosses 
                     ? 'CIRCUIT_BREAKER'
-                    : (lastOp.result ?? 0) < 0 
+                    : isLoss
                         ? 'COOLDOWN'
                         : 'TRADING';
 
@@ -529,7 +553,7 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
             const pilotForStake = pilots[leadSignal.pilotKey];
             const stakeConfig: SmartMartingaleConfig = { isEnabled: pilotForStake.isMartingaleEnabled, baseStake: BASE_STAKE, maxMartingaleLevels: maxLosses, martingaleRecoveryInstallments: pilotForStake.martingaleRecoveryInstallments, isSmart: false };
             const bankrollState: BankrollState = { currentBankroll: (sessionInitialBankroll ?? 100) + dailyPnl, initialBankroll: sessionInitialBankroll, maxDailyLoss: dailyBalance, dailyProfitTarget: dailyTarget };
-            const stakeDecision = decideNextStake(pilots[leadSignal.pilotKey].tradeHistory, stakeConfig, bankrollState, leadSignal.contract, avgConfidence);
+            const stakeDecision = decideNextStake(pilots[leadSignal.pilotKey].tradeHistory, stakeConfig, bankrollState, leadSignal.contract, avgConfidence, pilotForStake.accumulatedLoss, pilotForStake.consecutiveLosses);
             
             if (!stakeDecision.shouldPause) {
                 executeTrade(leadSignal.contract, stakeDecision.nextStake, activeSymbol, 1, 't', 'Piloto', leadSignal.digit, `consensus:${group.map(s => s.pilotKey).join(',')}`)
@@ -729,16 +753,7 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
                 }
                 break;
             case 'vagalume':
-                if (vagalumeConfig.minSequenceLength > 1 && vagalumeSignal?.activeStrategy === 'Repetition Trigger' && vagalumeSignal.shouldTrade) {
-                    shouldExecute = true;
-                    executionParams = [vagalumeSignal.suggestedContract, vagalumeSignal.suggestedDigit, pilotKey];
-                    contractTypeForStake = vagalumeSignal.suggestedContract;
-                    setPilots(prev => {
-                        const newTarget = `✨ ${vagalumeSignal.reason}`;
-                        if (prev.vagalume.currentTarget === newTarget) return prev;
-                        return { ...prev, vagalume: { ...prev.vagalume, currentTarget: newTarget } };
-                    });
-                } else if (vagalumeConfig.minSequenceLength === 1 && vagalumeSignal?.activeStrategy === 'Contextual Alternator' && vagalumeSignal.shouldTrade) {
+                if (vagalumeSignal?.shouldTrade) {
                     shouldExecute = true;
                     executionParams = [vagalumeSignal.suggestedContract, vagalumeSignal.suggestedDigit, pilotKey];
                     contractTypeForStake = vagalumeSignal.suggestedContract;
@@ -787,11 +802,23 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
               const pilotKeyForStake = executionParams[2] as PilotType;
               const pilotForStake = pilots[pilotKeyForStake];
               const stakeConfig: SmartMartingaleConfig = { 
-                  isEnabled: pilotForStake.isMartingaleEnabled, baseStake: BASE_STAKE, maxMartingaleLevels: maxLosses, 
-                  martingaleRecoveryInstallments: pilotForStake.martingaleRecoveryInstallments, isSmart: isSmartMartingale,
+                  isEnabled: pilotForStake.isMartingaleEnabled, 
+                  baseStake: BASE_STAKE, 
+                  maxMartingaleLevels: maxLosses, 
+                  martingaleRecoveryInstallments: pilotForStake.martingaleRecoveryInstallments, 
+                  isSmart: isSmartMartingale,
               };
               const confidenceForStake = signalQuality?.confidenceLevel === 'MUITO_ALTA' ? 0.85 : signalQuality?.confidenceLevel === 'ALTA' ? 0.75 : signalQuality?.confidenceLevel === 'MEDIA' ? 0.65 : 0.55;
-              const stakeDecision = decideNextStake(pilotForStake.tradeHistory, stakeConfig, bankrollState, contractTypeForStake, confidenceForStake);
+              
+              const stakeDecision = decideNextStake(
+                pilotForStake.tradeHistory, 
+                stakeConfig, 
+                bankrollState, 
+                contractTypeForStake, 
+                confidenceForStake,
+                pilotForStake.accumulatedLoss,
+                pilotForStake.consecutiveLosses,
+              );
 
               if (stakeDecision.shouldPause) {
                 setPilots(prev => ({ ...prev, [pilotKeyForStake]: { ...prev[pilotKeyForStake], status: 'CIRCUIT_BREAKER', currentTarget: stakeDecision.pauseReason || 'Limite de risco atingido' }}));
