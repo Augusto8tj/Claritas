@@ -128,16 +128,17 @@ export const validateAndLogContract = (
     };
 
     if (isDivergent) {
-        console.error('🚨 DIVERGÊNCIA DETECTADA!', {
-            contractId,
-            contractType,
-            barrier,
+        const logPayload = {
+            contractId: contractId,
+            contractType: contractType,
+            barrier: barrier,
             exitPrice: exitPrice.toFixed(decimalPlaces),
             lastDigit: validation.lastDigit,
             apiSays: apiStatus,
             mathSays: localStatus,
             reasoning: validation.reasoning,
-        });
+        };
+        console.error('🚨 DIVERGÊNCIA DETECTADA!', JSON.stringify(logPayload, null, 2));
     } else {
         console.log('✅ Validação OK:', {
             contractId,
