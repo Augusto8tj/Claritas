@@ -439,8 +439,15 @@ export function DigitsAutopilotManager(props: DigitsAutopilotManagerProps) {
                      <div className="space-y-6">
                         <div className="space-y-2">
                           <Label htmlFor="vagalume-threshold">Limiar de Confiança Contextual ({vagalumeConfig.contextualThreshold}%)</Label>
-                          <Slider id="vagalume-threshold" min={51} max={75} step={1} value={[vagalumeConfig.contextualThreshold]} onValueChange={v => setVagalumeConfig(c => ({...c, contextualThreshold: v[0]}))} />
-                           <p className="text-xs text-muted-foreground pt-1">
+                          <Slider
+                            id="vagalume-threshold"
+                            min={51}
+                            max={75}
+                            step={1}
+                            value={[vagalumeConfig.contextualThreshold]}
+                            onValueChange={(v) => setVagalumeConfig(c => ({...c, contextualThreshold: v[0]}))}
+                          />
+                          <p className="text-xs text-muted-foreground pt-1">
                               Define a confiança mínima para o "Contextual Alternator" operar em blocos (Par/Ímpar, etc).
                           </p>
                         </div>
@@ -454,7 +461,7 @@ export function DigitsAutopilotManager(props: DigitsAutopilotManagerProps) {
                                     <SelectValue placeholder="Selecione..." />
                                 </SelectTrigger>
                                 <SelectContent>
-                                    <SelectItem value="1">1 Dígito (Experimental)</SelectItem>
+                                    <SelectItem value="1">1 Dígito (Apenas Contextual)</SelectItem>
                                     <SelectItem value="2">2 Dígitos Iguais</SelectItem>
                                     <SelectItem value="3">3 Dígitos Iguais</SelectItem>
                                     <SelectItem value="4">4 Dígitos Iguais</SelectItem>
@@ -462,11 +469,11 @@ export function DigitsAutopilotManager(props: DigitsAutopilotManagerProps) {
                                 </SelectContent>
                             </Select>
                             <p className="text-xs text-muted-foreground pt-1">
-                                Define o gatilho para a estratégia de "Repetition Trigger". Menos dígitos = mais sinais, menor confiança.
+                                Define o gatilho para a estratégia de "Repetition Trigger". Selecione "1" para usar apenas o modo contextual.
                             </p>
                         </div>
                         <div className="space-y-3 pt-4 border-t">
-                            <Label>Contratos Permitidos</Label>
+                            <Label>Contratos Permitidos (Contextual)</Label>
                             <div className="flex items-center space-x-2">
                                 <Switch
                                     id="vagalume-matchdiffers"
