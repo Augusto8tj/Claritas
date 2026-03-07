@@ -96,8 +96,8 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
   const [dailyBalance, setDailyBalance] = useState(10);
   const [dailyTarget, setDailyTarget] = useState(5);
   const [consensusThreshold, setConsensusThreshold] = useState(4.0);
-  const [overUnderThreshold, setOverUnderThreshold] = useState(2.0);
-  const [evenOddThreshold, setEvenOddThreshold] = useState(2.0);
+  const [overUnderThreshold, setOverUnderThreshold] = useState(1.5);
+  const [evenOddThreshold, setEvenOddThreshold] = useState(1.5);
   const [underdogThreshold, setUnderdogThreshold] = useState(5.0);
   const [isUnderdogInverse, setIsUnderdogInverse] = useState(false);
   const [overUnderUnderdogThreshold, setOverUnderUnderdogThreshold] = useState(1.5);
@@ -504,7 +504,7 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
           if (pilotKey === 'sherlock' && sherlockAnalysis && (sherlockAnalysis.blockProbability * 100) > sherlockThreshold) {
             const wins = pilot.tradeHistory.filter(t => t.result && t.result > 0).length;
             const winRate = pilot.tradeHistory.length > 0 ? (wins / pilot.tradeHistory.length) * 100 : 100;
-            if (winRate > sherlockWinRateThreshold) {
+            if (pilot.tradeHistory.length < 20 || winRate > sherlockWinRateThreshold) {
                 if (sherlockAnalysis.recommendedBlock === 'even') signalData = { contract: 'DIGITEVEN', confidence: sherlockAnalysis.blockProbability };
                 else if (sherlockAnalysis.recommendedBlock === 'odd') signalData = { contract: 'DIGITODD', confidence: sherlockAnalysis.blockProbability };
                 else if (sherlockAnalysis.recommendedBlock === 'above4') signalData = { contract: 'DIGITOVER', digit: 4, confidence: sherlockAnalysis.blockProbability };
@@ -774,7 +774,8 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
             case 'sherlock':
                 if(sherlockAnalysis && (sherlockAnalysis.blockProbability * 100) > sherlockThreshold) {
                     const wins = pilot.tradeHistory.filter(t => t.result && t.result > 0).length;
-                    const winRate = pilot.tradeHistory.length > 0 ? (wins / pilot.tradeHistory.length) * 100 : 100;
+                    const totalTrades = pilot.tradeHistory.length;
+                    const winRate = totalTrades > 0 ? (wins / totalTrades) * 100 : 100;
                     
                     setPilots(prev => {
                         const newTarget = `🕵️ ${sherlockAnalysis.recommendedBlock.toUpperCase()} (${(sherlockAnalysis.blockProbability*100).toFixed(1)}%). WR: ${winRate.toFixed(0)}%`;
@@ -782,7 +783,7 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
                         return {...prev, sherlock: {...prev.sherlock, currentTarget: newTarget}};
                     });
 
-                    if (winRate > sherlockWinRateThreshold) {
+                    if (totalTrades < 20 || winRate > sherlockWinRateThreshold) {
                         shouldExecute = true;
                         if(sherlockAnalysis.recommendedBlock === 'even') { executionParams = ['DIGITEVEN', undefined, pilotKey]; contractTypeForStake = 'DIGITEVEN'; }
                         else if (sherlockAnalysis.recommendedBlock === 'odd') { executionParams = ['DIGITODD', undefined, pilotKey]; contractTypeForStake = 'DIGITODD'; }
