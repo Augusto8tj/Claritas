@@ -5,7 +5,7 @@ import { createContext, useContext, useState, useEffect, type ReactNode, useCall
 import type { TradeResult } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
 import type { Operation, OperationInitiator, DurationUnit, ChartType, TimePeriod, ChartData, CandleData, TradeAnnotation, TickData, DurationLimits, Asset } from '@/lib/types';
-import { FirebaseErrorListener } from '@/components/firebase-error-listener';
+import { FirebaseErrorListener } from '@/components/FirebaseErrorListener';
 
 
 const DERIV_DEMO_TOKEN_KEY = 'derivDemoApiToken';
@@ -381,7 +381,7 @@ const subscribeToMarketData = useCallback(async (symbol: string) => {
 
     try {
         const contractsRes: any = await makeRequest({ contracts_for: symbol });
-        if(contractsRes.error) throw new Error(contractsRes.error.message);
+        if (contractsRes.error) throw new Error(contractsRes.error.message);
         const tradingPeriod = contractsRes.contracts_for?.trading_period;
         const riseFallPeriod = tradingPeriod?.rise_fall;
 
