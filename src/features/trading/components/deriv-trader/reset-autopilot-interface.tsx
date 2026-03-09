@@ -11,7 +11,7 @@ import {
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
-import { Bot, Power, TrendingUp, TrendingDown, HelpCircle, Activity, BarChart3, Shield, Settings, Repeat, AlertTriangle } from "lucide-react";
+import { Bot, Power, TrendingUp, TrendingDown, HelpCircle, Activity, BarChart3, Shield, Settings, Repeat, AlertTriangle, SlidersHorizontal, ChevronsUpDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { useResetCallPutStrategy } from "../../hooks/use-reset-call-put-strategy";
 import { Separator } from "@/components/ui/separator";
@@ -39,6 +39,12 @@ export function ResetAutopilotInterface({
     isPausedByRisk,
     currentStake,
     resetRiskSession,
+    adxThreshold,
+    setAdxThreshold,
+    rsiThreshold,
+    setRsiThreshold,
+    atrMultiplier,
+    setAtrMultiplier
 }: ResetAutopilotInterfaceProps) {
   
   const statusInfo = {
@@ -124,12 +130,59 @@ export function ResetAutopilotInterface({
                 </div>
             </div>
         )}
-
+        
         <Collapsible className="mt-4 pt-4 border-t">
+            <CollapsibleTrigger asChild>
+                <Button variant="outline" className="w-full justify-start gap-2 text-muted-foreground">
+                    <SlidersHorizontal className="h-4 w-4" />
+                    Ajustes da Estratégia
+                    <ChevronUpDown className="h-4 w-4 ml-auto" />
+                </Button>
+            </CollapsibleTrigger>
+            <CollapsibleContent className="space-y-6 pt-4">
+                <div className="space-y-2">
+                    <Label htmlFor="adx-threshold-slider">Limiar de Tendência ADX ({adxThreshold})</Label>
+                    <Slider
+                        id="adx-threshold-slider"
+                        min={15} max={40} step={1}
+                        value={[adxThreshold]}
+                        onValueChange={v => setAdxThreshold(v[0])}
+                        disabled={isAutopilotOn}
+                    />
+                    <p className="text-xs text-muted-foreground pt-1">Define a força mínima da tendência para o piloto operar. Valores menores = mais sinais.</p>
+                </div>
+                <div className="space-y-2">
+                    <Label htmlFor="rsi-threshold-slider">Nível de Confirmação RSI ({rsiThreshold})</Label>
+                    <Slider
+                        id="rsi-threshold-slider"
+                        min={40} max={60} step={1}
+                        value={[rsiThreshold]}
+                        onValueChange={v => setRsiThreshold(v[0])}
+                        disabled={isAutopilotOn}
+                    />
+                    <p className="text-xs text-muted-foreground pt-1">Nível que o RSI deve cruzar para confirmar o momentum na direção da tendência.</p>
+                </div>
+                <div className="space-y-2">
+                    <Label htmlFor="atr-multiplier-slider">Multiplicador ATR da Barreira ({atrMultiplier.toFixed(1)}x)</Label>
+                    <Slider
+                        id="atr-multiplier-slider"
+                        min={1.0} max={5.0} step={0.1}
+                        value={[atrMultiplier]}
+                        onValueChange={v => setAtrMultiplier(v[0])}
+                        disabled={isAutopilotOn}
+                    />
+                    <p className="text-xs text-muted-foreground pt-1">Ajusta o quão longe a barreira de reset é colocada. Valores maiores = mais "espaço".</p>
+                </div>
+            </CollapsibleContent>
+        </Collapsible>
+
+
+        <Collapsible>
             <CollapsibleTrigger asChild>
                 <Button variant="ghost" className="w-full justify-start gap-2 text-muted-foreground">
                     <Settings className="h-4 w-4" />
                     Gerenciamento de Risco
+                    <ChevronUpDown className="h-4 w-4 ml-auto" />
                 </Button>
             </CollapsibleTrigger>
             <CollapsibleContent className="space-y-6 pt-4">

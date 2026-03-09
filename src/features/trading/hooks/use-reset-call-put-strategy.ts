@@ -13,10 +13,6 @@ import { getCouncilStrategies } from '@/features/trading/services/council-strate
 type BotStatus = 'PAUSED' | 'MONITORING' | 'SIGNAL_FOUND' | 'EXECUTING' | 'RISK_PAUSE';
 type TrendDirection = 'UP' | 'DOWN' | 'NONE';
 
-const ADX_TREND_THRESHOLD = 25;
-const RSI_MOMENTUM_THRESHOLD = 50;
-const ATR_MULTIPLIER_FOR_RESET = 2.5;
-
 export function useResetCallPutStrategy(
     activeSymbol: string | null,
     botCandleData: CandleData[],
@@ -38,6 +34,12 @@ export function useResetCallPutStrategy(
     const [consecutiveLosses, setConsecutiveLosses] = useState(0);
     const [nextStake, setNextStake] = useState(form.getValues('stake'));
     const lastProcessedOpId = useRef<number | null>(null);
+    
+    // --- Novos Estados para Ajustes Finos ---
+    const [adxThreshold, setAdxThreshold] = useState(25);
+    const [rsiThreshold, setRsiThreshold] = useState(50);
+    const [atrMultiplier, setAtrMultiplier] = useState(2.5);
+
 
     const toggleAutopilot = useCallback(() => {
         setIsAutopilotOn(prevState => !prevState);
@@ -104,20 +106,20 @@ export function useResetCallPutStrategy(
             const currentPrice = botCandleData[botCandleData.length - 1].close;
 
             let currentTrend: TrendDirection = 'NONE';
-            if (adx && adx > ADX_TREND_THRESHOLD && pdi && ndi) {
+            if (adx && adx > adxThreshold && pdi && ndi) {
                 currentTrend = pdi > ndi ? 'UP' : 'DOWN';
             }
             setTrend(currentTrend);
 
             if (atr) {
-                const barrierValue = atr * ATR_MULTIPLIER_FOR_RESET;
+                const barrierValue = atr * atrMultiplier;
                 setCalculatedBarrier(`+${barrierValue.toFixed(4)}`);
             }
 
             let signal: 'call' | 'put' | null = null;
-            if (currentTrend === 'UP' && rsi && rsi > RSI_MOMENTUM_THRESHOLD) {
+            if (currentTrend === 'UP' && rsi && rsi > rsiThreshold) {
                 signal = 'call';
-            } else if (currentTrend === 'DOWN' && rsi && rsi < RSI_MOMENTUM_THRESHOLD) {
+            } else if (currentTrend === 'DOWN' && rsi && rsi < (100 - rsiThreshold)) {
                 signal = 'put';
             }
 
@@ -131,6 +133,8 @@ export function useResetCallPutStrategy(
                     stakeToUse,
                     activeSymbol,
                     signal === 'call' ? `-${calculatedBarrier.substring(1)}` : calculatedBarrier,
+                    form.getValues('duration'),
+                    form.getValues('duration_unit'),
                     'Piloto'
                 ).then(result => {
                     if (result.success) {
@@ -144,7 +148,7 @@ export function useResetCallPutStrategy(
         }, 2000); // Cooldown entre as análises
 
         return () => clearTimeout(executionLogic);
-    }, [isAutopilotOn, isConnected, activeSymbol, indicators, botCandleData, executeTrade, form, toast, calculatedBarrier, nextStake, botStatus]);
+    }, [isAutopilotOn, isConnected, activeSymbol, indicators, botCandleData, executeTrade, form, toast, calculatedBarrier, nextStake, botStatus, adxThreshold, rsiThreshold, atrMultiplier]);
     
     return {
         isAutopilotOn,
@@ -152,7 +156,6 @@ export function useResetCallPutStrategy(
         botStatus,
         trend,
         calculatedBarrier,
-        // Novas props de gestão de risco
         isMartingaleEnabled,
         setIsMartingaleEnabled,
         martingaleMultiplier,
@@ -163,5 +166,12 @@ export function useResetCallPutStrategy(
         isPausedByRisk: botStatus === 'RISK_PAUSE',
         currentStake: nextStake,
         resetRiskSession,
+        // Novos estados e setters
+        adxThreshold,
+        setAdxThreshold,
+        rsiThreshold,
+        setRsiThreshold,
+        atrMultiplier,
+        setAtrMultiplier,
     };
 }
