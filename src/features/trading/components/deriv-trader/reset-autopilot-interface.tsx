@@ -143,7 +143,7 @@ export function ResetAutopilotInterface({
         
         <Collapsible className="mt-4 pt-4 border-t">
             <CollapsibleTrigger asChild>
-                <Button variant="outline" className="w-full justify-start gap-2 text-muted-foreground">
+                <Button variant="ghost" className="w-full justify-start gap-2 text-muted-foreground">
                     <SlidersHorizontal className="h-4 w-4" />
                     Ajustes da Estratégia
                     <ChevronsUpDown className="h-4 w-4 ml-auto" />
@@ -157,7 +157,6 @@ export function ResetAutopilotInterface({
                         min={15} max={40} step={1}
                         value={[adxThreshold]}
                         onValueChange={v => setAdxThreshold(v[0])}
-                        disabled={isAutopilotOn}
                     />
                     <p className="text-xs text-muted-foreground pt-1">Define a força mínima da tendência para o piloto operar. Valores menores = mais sinais.</p>
                 </div>
@@ -168,7 +167,6 @@ export function ResetAutopilotInterface({
                         min={40} max={60} step={1}
                         value={[rsiThreshold]}
                         onValueChange={v => setRsiThreshold(v[0])}
-                        disabled={isAutopilotOn}
                     />
                     <p className="text-xs text-muted-foreground pt-1">Nível que o RSI deve cruzar para confirmar o momentum na direção da tendência.</p>
                 </div>
@@ -179,7 +177,6 @@ export function ResetAutopilotInterface({
                         min={1.0} max={5.0} step={0.1}
                         value={[atrMultiplier]}
                         onValueChange={v => setAtrMultiplier(v[0])}
-                        disabled={isAutopilotOn}
                     />
                     <p className="text-xs text-muted-foreground pt-1">Ajusta o quão longe a barreira de reset é colocada. Valores maiores = mais "espaço".</p>
                 </div>
@@ -201,17 +198,17 @@ export function ResetAutopilotInterface({
                         <span>Ativar Martingale</span>
                         <span className="font-normal text-xs text-muted-foreground">Aumenta a aposta após perdas para recuperar o valor.</span>
                     </Label>
-                    <Switch id="martingale-switch" checked={isMartingaleEnabled} onCheckedChange={setIsMartingaleEnabled} disabled={isAutopilotOn} />
+                    <Switch id="martingale-switch" checked={isMartingaleEnabled} onCheckedChange={setIsMartingaleEnabled} />
                 </div>
                 {isMartingaleEnabled && (
                     <div className="space-y-4 pl-2">
                         <div className="space-y-2">
                             <Label>Multiplicador ({martingaleMultiplier.toFixed(2)}x)</Label>
-                            <Slider min={1.1} max={3.0} step={0.1} value={[martingaleMultiplier]} onValueChange={v => setMartingaleMultiplier(v[0])} disabled={isAutopilotOn} />
+                            <Slider min={1.1} max={3.0} step={0.1} value={[martingaleMultiplier]} onValueChange={v => setMartingaleMultiplier(v[0])} />
                         </div>
                         <div className="space-y-2">
                             <Label>Máximo de Perdas Seguidas ({maxConsecutiveLosses})</Label>
-                            <Slider min={2} max={10} step={1} value={[maxConsecutiveLosses]} onValueChange={v => setMaxConsecutiveLosses(v[0])} disabled={isAutopilotOn} />
+                            <Slider min={2} max={10} step={1} value={[maxConsecutiveLosses]} onValueChange={v => setMaxConsecutiveLosses(v[0])} />
                         </div>
                     </div>
                 )}
