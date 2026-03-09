@@ -346,7 +346,7 @@ export const DerivApiProviderReset = ({ children }: { children: ReactNode }) => 
           initiator,
           entryPrice: parseFloat(buyResult.entry_spot_display_value),
           contractType,
-          reset_barrier_offset,
+          reset_barrier_offset, // Let's log this too
           duration: sanitizedDuration,
           durationUnit
       };
