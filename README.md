@@ -116,7 +116,24 @@ O Claritas Copilot não é um único sistema, mas um conjunto de ecossistemas de
 
 ---
 
-### 7. Análise de Volatilidade (`/volatility-analysis`)
+### 7. Deriv Reset Call/Put (`/deriv-trader-reset`)
+
+**A Segunda Chance na Tendência.** Uma plataforma que usa os contratos "Reset" para mitigar o risco de *pullbacks* em mercados de tendência.
+
+*   **Princípios de Funcionamento:**
+    *   **Seguir a Tendência Macro:** Identifica a tendência principal e só opera a seu favor.
+    *   **Barreira de Reset Dinâmica (ATR):** A barreira que redefine o preço de entrada é calculada com base na volatilidade atual (ATR), dando mais espaço em mercados voláteis e menos em mercados calmos.
+    *   **Entrada por Confirmação de Momentum:** Aguarda um sinal do RSI para entrar na operação após um pequeno recuo.
+    *   **Documento de Arquitetura:** `docs/deriv-trader-reset-architecture.md`
+
+*   **Ficheiros Chave:**
+    *   **Página:** `src/app/deriv-trader-reset/page.tsx`
+    *   **API Hook:** `src/features/trading/hooks/use-deriv-api-reset.tsx`
+    *   **Cérebro Cognitivo:** `src/features/trading/hooks/use-reset-call-put-strategy.ts`
+
+---
+
+### 8. Análise de Volatilidade (`/volatility-analysis`)
 
 **O Laboratório Preditivo.** Um ambiente de análise quantitativa avançado que usa um comitê de especialistas de IA para prever movimentos de preço.
 

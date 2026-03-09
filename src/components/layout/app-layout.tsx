@@ -29,7 +29,8 @@ import {
   BarChartHorizontal,
   Calculator,
   Crosshair,
-  Zap
+  Zap,
+  RefreshCw, // Importando o ícone
 } from "lucide-react";
 import {
   Sidebar,
@@ -98,6 +99,11 @@ const navItems = [
     href: "/hf-strike-zone",
     icon: Zap,
     label: "HF Strike Zone",
+  },
+  {
+    href: "/deriv-trader-reset", // NOVO LINK
+    icon: RefreshCw,
+    label: "Deriv Reset",
   },
   {
     href: "/deriv-trader-accumulators",
@@ -287,7 +293,11 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   const pageTitle = navItems.find(item => item.href === pathname)?.label || 'Claritas Copilot';
 
   if (!user) {
-    return <main>{children}</main>;
+    return (
+      <main className="flex min-h-screen items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </main>
+    );
   }
 
   return (
