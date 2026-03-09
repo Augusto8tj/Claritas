@@ -19,7 +19,17 @@ import { Slider } from "@/components/ui/slider";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Button } from "@/components/ui/button";
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 
 interface ResetAutopilotInterfaceProps extends ReturnType<typeof useResetCallPutStrategy> {}
 
@@ -136,7 +146,7 @@ export function ResetAutopilotInterface({
                 <Button variant="outline" className="w-full justify-start gap-2 text-muted-foreground">
                     <SlidersHorizontal className="h-4 w-4" />
                     Ajustes da Estratégia
-                    <ChevronUpDown className="h-4 w-4 ml-auto" />
+                    <ChevronsUpDown className="h-4 w-4 ml-auto" />
                 </Button>
             </CollapsibleTrigger>
             <CollapsibleContent className="space-y-6 pt-4">
@@ -182,7 +192,7 @@ export function ResetAutopilotInterface({
                 <Button variant="ghost" className="w-full justify-start gap-2 text-muted-foreground">
                     <Settings className="h-4 w-4" />
                     Gerenciamento de Risco
-                    <ChevronUpDown className="h-4 w-4 ml-auto" />
+                    <ChevronsUpDown className="h-4 w-4 ml-auto" />
                 </Button>
             </CollapsibleTrigger>
             <CollapsibleContent className="space-y-6 pt-4">
