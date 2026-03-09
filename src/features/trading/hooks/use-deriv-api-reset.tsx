@@ -229,7 +229,7 @@ export const DerivApiProviderReset = ({ children }: { children: ReactNode }) => 
     setIsLoading(false);
   }, []);
 
-   useEffect(() => {
+  useEffect(() => {
     if (toastQueue.length > 0) {
       toastQueue.forEach(t => toast(t));
       setToastQueue([]);
@@ -298,7 +298,7 @@ export const DerivApiProviderReset = ({ children }: { children: ReactNode }) => 
       } catch (error) { throw error; }
     }, [makeRequest]);
 
-  const executeTrade = useCallback(async (
+    const executeTrade = useCallback(async (
     contractType: 'RESETCALL' | 'RESETPUT',
     stake: number,
     symbol: string,
@@ -522,7 +522,6 @@ export const DerivApiProviderReset = ({ children }: { children: ReactNode }) => 
                 const assetsRes: any = await makeRequest({ active_symbols: 'full', product_type: 'basic' });
                 if (assetsRes.error) throw new Error(assetsRes.error.message);
                 const filteredSymbols = assetsRes.active_symbols.filter((s: any) => 
-                    (s.market === 'synthetic_index' || s.market === 'forex') &&
                     s.available_contracts?.some((c:any) => c.contract_type === 'RESETCALL')
                 );
                 const groupedAssets: { [key: string]: Asset[] } = {};
