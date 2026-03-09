@@ -313,29 +313,28 @@ export const DerivApiProviderReset = ({ children }: { children: ReactNode }) => 
       const sanitizedStake = parseFloat(stake.toFixed(2));
       const sanitizedDuration = Math.round(duration);
 
-      const proposalRequest = {
-          proposal: 1,
-          contract_type: contractType,
-          symbol,
-          amount: sanitizedStake,
-          basis: "stake",
-          currency: "USD",
-          duration: sanitizedDuration,
-          duration_unit: durationUnit,
-          reset_barrier_offset: reset_barrier_offset,
+      const buyRequest = {
+          buy: "1",
+          price: sanitizedStake,
+          parameters: {
+              amount: sanitizedStake,
+              basis: "stake",
+              contract_type: contractType,
+              currency: "USD",
+              duration: sanitizedDuration,
+              duration_unit: durationUnit,
+              symbol: symbol,
+              reset_barrier_offset: reset_barrier_offset,
+          }
       };
       
-      const proposalResponse: any = await makeRequest(proposalRequest);
+      const buyResponse: any = await makeRequest(buyRequest);
 
-      if (proposalResponse.error) throw new Error(proposalResponse.error.message);
-      const proposal = proposalResponse.proposal;
-      if (!proposal || !proposal.id) throw new Error("Falha ao obter uma proposta de negociação.");
-      
-      const buyResponse: any = await makeRequest({ buy: proposal.id, price: proposal.ask_price });
       if (buyResponse.error) throw new Error(buyResponse.error.message);
+      
       const buyResult = buyResponse.buy;
       const contractId = buyResult.contract_id;
-      if (!contractId) throw new Error("Falha na compra do contrato.");
+      if (!contractId) throw new Error("Falha na compra do contrato, ID não retornado.");
       
       const newOperation: any = {
           id: contractId,
@@ -351,6 +350,7 @@ export const DerivApiProviderReset = ({ children }: { children: ReactNode }) => 
           duration: sanitizedDuration,
           durationUnit
       };
+      
       setAndPersistOperationsLog(prev => [newOperation, ...prev]);
       return { success: true, message: `Contrato ${contractType} executado.`, contractId };
     } catch (error) {
