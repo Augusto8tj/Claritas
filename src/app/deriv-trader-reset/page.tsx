@@ -141,6 +141,8 @@ export default function DerivResetPage() {
     resolver: zodResolver(resetSchema),
     defaultValues: {
       stake: 1.00,
+      duration: 1,
+      duration_unit: 'm',
       reset_barrier_offset: '+0.0'
     },
   });

@@ -20,22 +20,35 @@ import {
   FormLabel,
   FormMessage,
 } from "@/components/ui/form";
-import { ArrowDown, ArrowUp, Loader2 } from "lucide-react";
+import { ArrowDown, ArrowUp, Loader2, Minus, Plus } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Input } from "@/components/ui/input";
 import type { OperationInitiator } from "@/lib/types";
-import type { ResetFormValues } from "./deriv-trader-interface-reset.types";
+import type { ResetFormValues, DurationUnit } from "./deriv-trader-interface-reset.types";
 import { useDerivApiReset } from "@/features/trading/hooks/use-deriv-api-reset";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Separator } from "@/components/ui/separator";
 
 interface DerivTraderInterfaceProps {
   symbol: string;
 }
 
+const durationUnitLabels: Record<DurationUnit, string> = {
+  m: "Minutos",
+  h: "Horas",
+  d: "Dias",
+  s: "Segundos",
+  t: "Ticks"
+};
+
 export default function DerivTraderInterfaceReset({ symbol }: DerivTraderInterfaceProps) {
   const { toast } = useToast();
   const [loading, setLoading] = useState<'call' | 'put' | null>(null);
-  const { isConnected, executeTrade } = useDerivApiReset();
+  const { isConnected, executeTrade, durationLimits } = useDerivApiReset();
   const form = useFormContext<ResetFormValues>();
+  const durationUnit = form.watch('duration_unit');
+
 
   const handleTrade = async (tradeDirection: 'call' | 'put') => {
     const isValid = await form.trigger();
@@ -65,6 +78,8 @@ export default function DerivTraderInterfaceReset({ symbol }: DerivTraderInterfa
         data.stake,
         symbol,
         data.reset_barrier_offset,
+        data.duration,
+        data.duration_unit,
         'Manual' as OperationInitiator
     );
     
@@ -127,6 +142,66 @@ export default function DerivTraderInterfaceReset({ symbol }: DerivTraderInterfa
                 </FormItem>
               )}
             />
+
+            <Separator />
+            
+            <Tabs defaultValue="duration" className="w-full">
+              <TabsList className="grid w-full grid-cols-2">
+                  <TabsTrigger value="duration">Duração</TabsTrigger>
+                  <TabsTrigger value="endtime" disabled>Hora de término</TabsTrigger>
+              </TabsList>
+              <TabsContent value="duration" className="pt-2">
+                  <div className="flex gap-2">
+                      <FormField
+                          control={form.control}
+                          name="duration_unit"
+                          render={({ field }) => (
+                              <FormItem className="w-2/5">
+                                  <Select onValueChange={(value) => field.onChange(value as DurationUnit)} value={field.value}>
+                                      <FormControl>
+                                          <SelectTrigger>
+                                              <SelectValue placeholder="Unidade" />
+                                          </SelectTrigger>
+                                      </FormControl>
+                                      <SelectContent>
+                                          {Object.entries(durationUnitLabels).map(([value, label]) => (
+                                              <SelectItem 
+                                                  key={value} 
+                                                  value={value} 
+                                                  disabled={!durationLimits || !durationLimits[value as DurationUnit]}
+                                              >
+                                                  {label}
+                                              </SelectItem>
+                                          ))}
+                                      </SelectContent>
+                                  </Select>
+                              </FormItem>
+                          )}
+                      />
+                      <FormField
+                          control={form.control}
+                          name="duration"
+                          render={({ field }) => (
+                          <FormItem className="w-3/5">
+                              <div className="flex items-center justify-center gap-0.5">
+                                  <div className="relative flex-1">
+                                      <FormControl>
+                                          <Input 
+                                              type="number"
+                                              {...field}
+                                              onChange={e => field.onChange(parseInt(e.target.value) || 0)}
+                                              className="font-semibold text-lg text-center"
+                                          />
+                                      </FormControl>
+                                  </div>
+                              </div>
+                              <FormMessage />
+                          </FormItem>
+                          )}
+                      />
+                  </div>
+              </TabsContent>
+            </Tabs>
           </form>
         </Form>
         
