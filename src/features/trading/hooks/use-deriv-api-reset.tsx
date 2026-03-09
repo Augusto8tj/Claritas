@@ -110,6 +110,13 @@ const getGranularityForTimePeriod = (timePeriod: TimePeriod): number => {
 
 const MAX_DATA_POINTS = 5000;
 const isCandle = (d: ChartData): d is CandleData => d != null && 'close' in d;
+const getDisplayPrice = (d: ChartData | null): number => {
+    if (!d) return 0;
+    const price = isCandle(d) ? d.close : d.price;
+    // Garante que o valor é um número finito.
+    return Number.isFinite(price) ? price : 0;
+};
+
 
 const addDataPoint = (prevData: ChartData[], newPoint: ChartData): ChartData[] => {
     let data = [...prevData];
@@ -232,27 +239,50 @@ export const DerivApiProviderReset = ({ children }: { children: ReactNode }) => 
   const activeToken = accountType === 'demo' ? demoToken : realToken;
 
   const makeRequest = useCallback(<T,>(request: object, noResponse = false): Promise<T> => {
-    return new Promise((resolve, reject) => {
+    return new Promise((resolve) => {
         const ws = wsRef.current;
         if (!ws || ws.readyState !== WebSocket.OPEN) {
-            return reject(new Error("WebSocket não está conectado."));
+            return resolve({ error: { message: "WebSocket não está conectado. Verifique o token e a conexão." } } as any);
         }
+  
         const req_id = Date.now() + Math.floor(Math.random() * 1000000);
         const payload = { ...request, req_id };
+        
         if (!noResponse) {
             const timeoutId = setTimeout(() => {
                 if (promisesRef.current.has(String(req_id))) {
-                    promisesRef.current.get(String(req_id))?.reject(new Error(`API request timed out (60s).`));
+                    const promise = promisesRef.current.get(String(req_id));
+                    promise?.resolve({ error: { message: `O pedido à API expirou (60s). O token pode ser inválido ou a rede está lenta.` } } as any);
                     promisesRef.current.delete(String(req_id));
                 }
             }, 60000);
+            
             promisesRef.current.set(String(req_id), {
-                resolve: (value: any) => { clearTimeout(timeoutId); resolve(value); },
-                reject: (reason: any) => { clearTimeout(timeoutId); reject(reason); }
+                resolve: (value: any) => {
+                    clearTimeout(timeoutId);
+                    resolve(value);
+                },
+                reject: (reason: any) => {
+                    clearTimeout(timeoutId);
+                    resolve({ error: { message: reason?.message || 'Erro interno na Promise.' } } as any);
+                }
             });
         }
-        ws.send(JSON.stringify(payload));
-        if (noResponse) resolve({} as T);
+        
+        try {
+            ws.send(JSON.stringify(payload));
+        } catch (sendError) {
+            console.error('[makeRequest] Send failed:', sendError);
+            if (!noResponse && promisesRef.current.has(String(req_id))) {
+                const promise = promisesRef.current.get(String(req_id));
+                promise?.resolve({ error: { message: 'Falha ao enviar pedido via WebSocket.' } } as any);
+                promisesRef.current.delete(String(req_id));
+            }
+        }
+        
+        if (noResponse) {
+            resolve({} as T);
+        }
     });
   }, []);
   
@@ -279,17 +309,23 @@ export const DerivApiProviderReset = ({ children }: { children: ReactNode }) => 
   ): Promise<TradeResult> => {
     try {
       if (!wsRef.current || !isConnected) throw new Error("A conexão com a API da Deriv não está ativa.");
-      const proposalResponse: any = await makeRequest({
+      
+      const sanitizedStake = parseFloat(stake.toFixed(2));
+      const sanitizedDuration = Math.round(duration);
+
+      const proposalRequest = {
           proposal: 1,
           contract_type: contractType,
           symbol,
-          amount: stake,
+          amount: sanitizedStake,
           basis: "stake",
           currency: "USD",
-          duration,
+          duration: sanitizedDuration,
           duration_unit: durationUnit,
-          reset_barrier_offset,
-      });
+          reset_barrier_offset: reset_barrier_offset,
+      };
+      
+      const proposalResponse: any = await makeRequest(proposalRequest);
 
       if (proposalResponse.error) throw new Error(proposalResponse.error.message);
       const proposal = proposalResponse.proposal;
@@ -305,19 +341,20 @@ export const DerivApiProviderReset = ({ children }: { children: ReactNode }) => 
           id: contractId,
           asset: symbol,
           direction: contractType === 'RESETCALL' ? 'rise' : 'fall',
-          stake,
+          stake: sanitizedStake,
           status: 'pending',
           timestamp: new Date().toISOString(),
           initiator,
           entryPrice: parseFloat(buyResult.entry_spot_display_value),
           contractType,
           reset_barrier_offset,
-          duration,
+          duration: sanitizedDuration,
           durationUnit
       };
       setAndPersistOperationsLog(prev => [newOperation, ...prev]);
       return { success: true, message: `Contrato ${contractType} executado.`, contractId };
     } catch (error) {
+       console.error("[Deriv Hook - Reset] Erro na execução:", error);
        const message = error instanceof Error ? error.message : "Um erro desconhecido ocorreu.";
        return { success: false, message };
     }
@@ -352,29 +389,29 @@ export const DerivApiProviderReset = ({ children }: { children: ReactNode }) => 
         const availableContracts = contractsRes.contracts_for?.available || [];
         const resetContracts = availableContracts.filter((c:any) => c.contract_type === 'RESETCALL' || c.contract_type === 'RESETPUT');
         
-        const newLimits: DurationLimits = { t: null, s: null, m: {min:1, max:1}, h: {min:1, max:24}, d: {min:1, max:365} };
+        const newLimits: DurationLimits = { t: null, s: null, m: null, h: null, d: null };
+        
         if (resetContracts.length > 0) {
-            // Assume that duration limits are the same for CALL and PUT
             const sampleContract = resetContracts[0];
-            if(sampleContract.min_contract_duration) {
-                const parseDuration = (dStr: string): { value: number; unit: DurationUnit } | null => {
-                    const match = dStr.match(/^(\d+)([tsmhd])$/);
-                    if (!match) return null;
-                    return { value: parseInt(match[1], 10), unit: match[2] as DurationUnit };
-                };
-                
-                const minParsed = parseDuration(sampleContract.min_contract_duration);
-                const maxParsed = parseDuration(sampleContract.max_contract_duration);
+            const parseDuration = (dStr: string): { value: number; unit: DurationUnit } | null => {
+                const match = dStr.match(/^(\d+)([tsmhd])$/);
+                if (!match) return null;
+                return { value: parseInt(match[1], 10), unit: match[2] as DurationUnit };
+            };
+            
+            const minParsed = parseDuration(sampleContract.min_contract_duration);
+            const maxParsed = parseDuration(sampleContract.max_contract_duration);
 
-                if (minParsed) {
-                    if (!newLimits[minParsed.unit]) newLimits[minParsed.unit] = { min: 0, max: 0 };
-                    newLimits[minParsed.unit]!.min = minParsed.value;
-                }
-                 if (maxParsed) {
-                    if (!newLimits[maxParsed.unit]) newLimits[maxParsed.unit] = { min: 0, max: 0 };
-                    newLimits[maxParsed.unit]!.max = maxParsed.value;
-                }
+            if (minParsed && (!newLimits[minParsed.unit] || newLimits[minParsed.unit]!.min > minParsed.value)) {
+                if (!newLimits[minParsed.unit]) newLimits[minParsed.unit] = { min: 0, max: Infinity };
+                newLimits[minParsed.unit]!.min = minParsed.value;
             }
+            if (maxParsed && (!newLimits[maxParsed.unit] || newLimits[maxParsed.unit]!.max < maxParsed.value)) {
+                if (!newLimits[maxParsed.unit]) newLimits[maxParsed.unit] = { min: 0, max: Infinity };
+                newLimits[maxParsed.unit]!.max = maxParsed.value;
+            }
+        } else {
+           console.warn(`Nenhum contrato RESET encontrado para ${symbol}`);
         }
         setDurationLimits(newLimits);
 
@@ -462,7 +499,7 @@ export const DerivApiProviderReset = ({ children }: { children: ReactNode }) => 
                         break;
                     case 'ohlc':
                          const candle = response.ohlc;
-                         const newCandle: CandleData = { epoch: candle.open_time, open: parseFloat(candle.open), high: parseFloat(candle.high), low: parseFloat(candle.low), close: parseFloat(candle.close), volume: candle.tick_count };
+                         const newCandle: CandleData = { epoch: candle.open_time, open: parseFloat(candle.open), high: parseFloat(candle.high), low: parseFloat(candle.low), close: parseFloat(candle.close) };
                          if (response.subscription?.id === botSubscriptionIdRef.current) {
                              setBotCandleData(prev => addDataPoint(prev, newCandle) as CandleData[]);
                          }
@@ -484,7 +521,10 @@ export const DerivApiProviderReset = ({ children }: { children: ReactNode }) => 
                 startConnectionMonitor();
                 const assetsRes: any = await makeRequest({ active_symbols: 'full', product_type: 'basic' });
                 if (assetsRes.error) throw new Error(assetsRes.error.message);
-                const filteredSymbols = assetsRes.active_symbols.filter((s: any) => s.market === 'synthetic_index' || s.market === 'forex');
+                const filteredSymbols = assetsRes.active_symbols.filter((s: any) => 
+                    (s.market === 'synthetic_index' || s.market === 'forex') &&
+                    s.available_contracts?.some((c:any) => c.contract_type === 'RESETCALL')
+                );
                 const groupedAssets: { [key: string]: Asset[] } = {};
                 filteredSymbols.forEach((s: any) => {
                     const groupName = marketNameMapping[s.market] || 'Outros';
