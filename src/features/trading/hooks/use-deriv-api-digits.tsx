@@ -407,12 +407,19 @@ export function useDerivApiDigitsState() {
                     startConnectionMonitor();
                     const assetsRes: any = await makeRequest({ active_symbols: 'full', product_type: 'basic' });
                     if (assetsRes.error) throw new Error(assetsRes.error.message);
-                    const filteredSymbols = assetsRes.active_symbols.filter((s: any) => 
-                        s.market === 'synthetic_index'
-                    );
+                    
+                    const filteredSymbols = assetsRes.active_symbols.filter((s: any) => {
+                        if (!s.available_contracts) return false;
+                        return s.available_contracts.some((c: any) => c.contract_category === 'digits');
+                    });
+
                     const groupedAssets: { [key: string]: Asset[] } = {};
                     filteredSymbols.forEach((s: any) => {
-                        const groupName = marketNameMapping[s.market] || 'Outros';
+                        const marketKey = (s.market === 'synthetic_index' && s.submarket === 'basket_index') 
+                            ? 'basket_index' 
+                            : s.market;
+                        const groupName = marketNameMapping[marketKey] || 'Outros';
+
                         if (!groupedAssets[groupName]) groupedAssets[groupName] = [];
                         groupedAssets[groupName].push({ value: s.symbol, label: s.display_name, marketIsOpen: s.exchange_is_open === 1, submarket: s.submarket, market: s.market, minDuration: '5t', pip: s.pip });
                     });
