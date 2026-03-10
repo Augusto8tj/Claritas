@@ -40,6 +40,10 @@ export function useResetCallPutStrategy(
     const [rsiThreshold, setRsiThreshold] = useState(50);
     const [atrMultiplier, setAtrMultiplier] = useState(2.5);
 
+    // --- Refs para controle de estado e cooldown ---
+    const prevRsiRef = useRef<number | null>(null);
+    const executionCooldownRef = useRef<number>(0);
+
 
     const toggleAutopilot = useCallback(() => {
         setIsAutopilotOn(prevState => !prevState);
@@ -100,6 +104,9 @@ export function useResetCallPutStrategy(
         }
 
         const executionLogic = setTimeout(() => {
+            const now = Date.now();
+            if (now < executionCooldownRef.current) return;
+
             setBotStatus('MONITORING');
 
             const { adx, pdi, ndi, rsi, atr } = indicators;
@@ -117,11 +124,17 @@ export function useResetCallPutStrategy(
             }
 
             let signal: 'call' | 'put' | null = null;
-            if (currentTrend === 'UP' && rsi && rsi > rsiThreshold) {
-                signal = 'call';
-            } else if (currentTrend === 'DOWN' && rsi && rsi < (100 - rsiThreshold)) {
-                signal = 'put';
+            const lastRsi = prevRsiRef.current;
+            
+            if (rsi !== null && lastRsi !== null) {
+                if (currentTrend === 'UP' && rsi > rsiThreshold && lastRsi <= rsiThreshold) {
+                    signal = 'call';
+                } else if (currentTrend === 'DOWN' && rsi < rsiThreshold && lastRsi >= rsiThreshold) {
+                    signal = 'put';
+                }
             }
+            
+            prevRsiRef.current = rsi;
 
             if (signal) {
                 setBotStatus('SIGNAL_FOUND');
@@ -138,6 +151,7 @@ export function useResetCallPutStrategy(
                     'Piloto'
                 ).then(result => {
                     if (result.success) {
+                        executionCooldownRef.current = Date.now() + 5000; // 5s cooldown
                         toast({ title: `🤖 Piloto: ${signal === 'call' ? 'Reset Call' : 'Reset Put'} Executado!`, description: `Stake: $${stakeToUse}`});
                     } else {
                         toast({ title: "❌ Piloto Falhou", description: result.message, variant: 'destructive' });
@@ -166,7 +180,6 @@ export function useResetCallPutStrategy(
         isPausedByRisk: botStatus === 'RISK_PAUSE',
         currentStake: nextStake,
         resetRiskSession,
-        // Novos estados e setters
         adxThreshold,
         setAdxThreshold,
         rsiThreshold,
