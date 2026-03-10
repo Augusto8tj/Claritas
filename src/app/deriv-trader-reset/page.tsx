@@ -9,7 +9,7 @@ import { AssetSelectorReset } from "@/features/trading/components/deriv-trader/a
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { MarketChart } from "@/features/trading/components/deriv-trader/market-chart";
 import { Button } from "@/components/ui/button";
-import { Trash2, ChevronsUpDown, SlidersHorizontal } from "lucide-react";
+import { Trash2 } from "lucide-react";
 import { DerivApiProviderReset, useDerivApiReset } from "@/features/trading/hooks/use-deriv-api-reset";
 import { Skeleton } from "@/components/ui/skeleton";
 import OperationsLogReset from "@/features/trading/components/deriv-trader/operations-log-reset";
