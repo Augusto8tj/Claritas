@@ -113,7 +113,6 @@ const isCandle = (d: ChartData): d is CandleData => d != null && 'close' in d;
 const getDisplayPrice = (d: ChartData | null): number => {
     if (!d) return 0;
     const price = isCandle(d) ? d.close : d.price;
-    // Garante que o valor é um número finito.
     return Number.isFinite(price) ? price : 0;
 };
 
@@ -309,54 +308,62 @@ export const DerivApiProviderReset = ({ children }: { children: ReactNode }) => 
   ): Promise<TradeResult> => {
     try {
       if (!wsRef.current || !isConnected) throw new Error("A conexão com a API da Deriv não está ativa.");
-      
+
       const sanitizedStake = parseFloat(stake.toFixed(2));
       const sanitizedDuration = Math.round(duration);
 
-      const buyRequest = {
-          buy: "1",
-          price: sanitizedStake,
-          parameters: {
-              amount: sanitizedStake,
-              basis: "stake",
-              contract_type: contractType,
-              currency: "USD",
-              duration: sanitizedDuration,
-              duration_unit: durationUnit,
-              symbol: symbol,
-              reset_barrier_offset: reset_barrier_offset,
-          }
+      // STEP 1: Make a proposal request with all parameters
+      const proposalRequest = {
+        proposal: 1,
+        amount: sanitizedStake,
+        basis: "stake",
+        contract_type: contractType,
+        currency: "USD",
+        duration: sanitizedDuration,
+        duration_unit: durationUnit,
+        symbol: symbol,
+        reset_barrier_offset: reset_barrier_offset,
       };
-      
-      const buyResponse: any = await makeRequest(buyRequest);
+
+      const proposalResponse: any = await makeRequest(proposalRequest);
+
+      if (proposalResponse.error) throw new Error(proposalResponse.error.message);
+
+      const proposal = proposalResponse.proposal;
+      if (!proposal || !proposal.id) {
+        throw new Error("Falha ao obter uma proposta de negociação da API.");
+      }
+
+      // STEP 2: Use the proposal ID to make the buy request
+      const buyResponse: any = await makeRequest({ "buy": proposal.id, "price": proposal.ask_price });
 
       if (buyResponse.error) throw new Error(buyResponse.error.message);
-      
+
       const buyResult = buyResponse.buy;
       const contractId = buyResult.contract_id;
       if (!contractId) throw new Error("Falha na compra do contrato, ID não retornado.");
-      
+
       const newOperation: any = {
-          id: contractId,
-          asset: symbol,
-          direction: contractType === 'RESETCALL' ? 'rise' : 'fall',
-          stake: sanitizedStake,
-          status: 'pending',
-          timestamp: new Date().toISOString(),
-          initiator,
-          entryPrice: parseFloat(buyResult.entry_spot_display_value),
-          contractType,
-          reset_barrier_offset, // Let's log this too
-          duration: sanitizedDuration,
-          durationUnit
+        id: contractId,
+        asset: symbol,
+        direction: contractType === 'RESETCALL' ? 'rise' : 'fall',
+        stake: sanitizedStake,
+        status: 'pending',
+        timestamp: new Date().toISOString(),
+        initiator,
+        entryPrice: parseFloat(buyResult.entry_spot_display_value),
+        contractType,
+        reset_barrier_offset,
+        duration: sanitizedDuration,
+        durationUnit
       };
-      
+
       setAndPersistOperationsLog(prev => [newOperation, ...prev]);
       return { success: true, message: `Contrato ${contractType} executado.`, contractId };
     } catch (error) {
-       console.error("[Deriv Hook - Reset] Erro na execução:", error);
-       const message = error instanceof Error ? error.message : "Um erro desconhecido ocorreu.";
-       return { success: false, message };
+      console.error("[Deriv Hook - Reset] Erro na execução:", error);
+      const message = error instanceof Error ? error.message : "Um erro desconhecido ocorreu.";
+      return { success: false, message };
     }
   }, [isConnected, makeRequest, setAndPersistOperationsLog]);
 
@@ -386,19 +393,19 @@ export const DerivApiProviderReset = ({ children }: { children: ReactNode }) => 
     try {
         const contractsRes: any = await makeRequest({ contracts_for: symbol });
         if (contractsRes.error) throw new Error(contractsRes.error.message);
-        const availableContracts = contractsRes.contracts_for?.available || [];
-        const resetContracts = availableContracts.filter((c:any) => c.contract_type === 'RESETCALL' || c.contract_type === 'RESETPUT');
         
         const newLimits: DurationLimits = { t: null, s: null, m: null, h: null, d: null };
+        const availableContracts = contractsRes.contracts_for?.available || [];
+        const resetContracts = availableContracts.filter((c:any) => c.contract_type === 'RESETCALL' || c.contract_type === 'RESETPUT');
+
+        const parseDuration = (dStr: string): { value: number; unit: DurationUnit } | null => {
+            const match = dStr.match(/^(\d+)([tsmhd])$/);
+            if (!match) return null;
+            return { value: parseInt(match[1], 10), unit: match[2] as DurationUnit };
+        };
         
         if (resetContracts.length > 0) {
             const sampleContract = resetContracts[0];
-            const parseDuration = (dStr: string): { value: number; unit: DurationUnit } | null => {
-                const match = dStr.match(/^(\d+)([tsmhd])$/);
-                if (!match) return null;
-                return { value: parseInt(match[1], 10), unit: match[2] as DurationUnit };
-            };
-            
             const minParsed = parseDuration(sampleContract.min_contract_duration);
             const maxParsed = parseDuration(sampleContract.max_contract_duration);
 
