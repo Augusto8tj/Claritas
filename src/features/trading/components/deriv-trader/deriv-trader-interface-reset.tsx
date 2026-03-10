@@ -1,7 +1,7 @@
 // src/features/trading/components/deriv-trader/deriv-trader-interface-reset.tsx
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useFormContext } from "react-hook-form";
 import {
   Card,
@@ -20,7 +20,7 @@ import {
   FormLabel,
   FormMessage,
 } from "@/components/ui/form";
-import { ArrowDown, ArrowUp, Loader2, Minus, Plus } from "lucide-react";
+import { ArrowDown, ArrowUp, Loader2, Minus, Plus, Wand2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Input } from "@/components/ui/input";
 import type { OperationInitiator } from "@/lib/types";
@@ -32,6 +32,7 @@ import { Separator } from "@/components/ui/separator";
 
 interface DerivTraderInterfaceProps {
   symbol: string;
+  suggestedBarrier: string;
 }
 
 const durationUnitLabels: Record<DurationUnit, string> = {
@@ -42,13 +43,18 @@ const durationUnitLabels: Record<DurationUnit, string> = {
   t: "Ticks"
 };
 
-export default function DerivTraderInterfaceReset({ symbol }: DerivTraderInterfaceProps) {
+export default function DerivTraderInterfaceReset({ symbol, suggestedBarrier }: DerivTraderInterfaceProps) {
   const { toast } = useToast();
   const [loading, setLoading] = useState<'call' | 'put' | null>(null);
   const { isConnected, executeTrade, durationLimits } = useDerivApiReset();
   const form = useFormContext<ResetFormValues>();
   const durationUnit = form.watch('duration_unit');
 
+  useEffect(() => {
+    if (suggestedBarrier) {
+      form.setValue('reset_barrier_offset', suggestedBarrier);
+    }
+  }, [suggestedBarrier, form]);
 
   const handleTrade = async (tradeDirection: 'call' | 'put') => {
     const isValid = await form.trigger();
@@ -73,11 +79,16 @@ export default function DerivTraderInterfaceReset({ symbol }: DerivTraderInterfa
     const data = form.getValues();
     const contractType = tradeDirection === 'call' ? 'RESETCALL' : 'RESETPUT';
     
+    // CORREÇÃO: A barreira do CALL deve ser negativa
+    const barrier = tradeDirection === 'call' 
+      ? (data.reset_barrier_offset.startsWith('-') ? data.reset_barrier_offset : `-${data.reset_barrier_offset}`)
+      : (data.reset_barrier_offset.startsWith('+') ? data.reset_barrier_offset : `+${data.reset_barrier_offset}`);
+
     const result = await executeTrade(
         contractType,
         data.stake,
         symbol,
-        data.reset_barrier_offset,
+        barrier,
         data.duration,
         data.duration_unit,
         'Manual' as OperationInitiator
@@ -132,11 +143,22 @@ export default function DerivTraderInterfaceReset({ symbol }: DerivTraderInterfa
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>Offset da Barreira de Reset</FormLabel>
-                  <FormControl>
-                      <Input type="text" placeholder="+0.1234" {...field} />
-                  </FormControl>
+                  <div className="flex items-center gap-2">
+                    <FormControl>
+                        <Input type="text" placeholder="+0.1234" {...field} />
+                    </FormControl>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="icon"
+                      onClick={() => form.setValue('reset_barrier_offset', suggestedBarrier)}
+                      title="Usar barreira sugerida pela IA"
+                    >
+                      <Wand2 className="h-4 w-4" />
+                    </Button>
+                  </div>
                   <FormDescription className="text-xs">
-                    Ex: "+0.05" ou "-1.2". O sinal é obrigatório.
+                    A IA sugere <span className="font-bold text-primary">{suggestedBarrier}</span> baseado na volatilidade.
                   </FormDescription>
                   <FormMessage />
                 </FormItem>

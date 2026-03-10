@@ -8,8 +8,6 @@ import DerivTraderInterfaceReset from "@/features/trading/components/deriv-trade
 import { AssetSelectorReset } from "@/features/trading/components/deriv-trader/asset-selector-reset";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { MarketChart } from "@/features/trading/components/deriv-trader/market-chart";
-import { Button } from "@/components/ui/button";
-import { Trash2 } from "lucide-react";
 import { DerivApiProviderReset, useDerivApiReset } from "@/features/trading/hooks/use-deriv-api-reset";
 import { Skeleton } from "@/components/ui/skeleton";
 import OperationsLogReset from "@/features/trading/components/deriv-trader/operations-log-reset";
@@ -18,7 +16,6 @@ import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { ApiStatusIndicatorReset } from "@/features/trading/components/deriv-trader/ApiStatusIndicatorReset";
 import { useResetCallPutStrategy } from "@/features/trading/hooks/use-reset-call-put-strategy";
 import { ResetAutopilotInterface } from "@/features/trading/components/deriv-trader/reset-autopilot-interface";
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 
 function Header() {
@@ -114,17 +111,21 @@ function MainContent() {
     const strategy = useResetCallPutStrategy(activeSymbol, botCandleData, accountBalance.balance);
     
     return (
-        <div className="mt-6 grid grid-cols-1 lg:grid-cols-5 gap-6">
-            <div className="lg:col-span-2 space-y-6">
-                 <DerivTraderInterfaceReset symbol={activeSymbol || ""} />
+        <div className="mt-6 grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div className="space-y-6">
+                 <DerivTraderInterfaceReset 
+                    symbol={activeSymbol || ""} 
+                    suggestedBarrier={strategy.calculatedBarrier} 
+                 />
+                 <OperationsLogReset operations={operationsLog} sellContract={sellContract} clearActiveContracts={clearActiveContracts} />
             </div>
-            <div className="lg:col-span-3 space-y-6">
+            <div className="space-y-6">
                 <ResetAutopilotInterface {...strategy} />
-                <OperationsLogReset operations={operationsLog} sellContract={sellContract} clearActiveContracts={clearActiveContracts} />
             </div>
         </div>
     );
 };
+
 
 function DerivResetPageContent() {
     return (
