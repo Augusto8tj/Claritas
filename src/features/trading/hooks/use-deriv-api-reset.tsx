@@ -312,25 +312,30 @@ export const DerivApiProviderReset = ({ children }: { children: ReactNode }) => 
       const sanitizedStake = parseFloat(stake.toFixed(2));
       const sanitizedDuration = Math.round(duration);
 
-      const buyRequest: any = {
-        buy: "1",
-        price: sanitizedStake,
-        parameters: {
-            amount: sanitizedStake,
-            basis: 'stake',
-            contract_type: contractType,
-            currency: 'USD',
-            duration: sanitizedDuration,
-            duration_unit: durationUnit,
-            symbol: symbol,
-            reset_barrier_offset: reset_barrier_offset,
-        },
+      const proposalRequest: any = {
+        proposal: 1,
+        amount: sanitizedStake,
+        basis: 'stake',
+        contract_type: contractType,
+        currency: 'USD',
+        duration: sanitizedDuration,
+        duration_unit: durationUnit,
+        symbol: symbol,
+        reset_barrier_offset: reset_barrier_offset,
       };
 
-      const buyResponse: any = await makeRequest(buyRequest);
+      const proposalResponse: any = await makeRequest(proposalRequest);
 
-      if (buyResponse.error) throw new Error(buyResponse.error.message);
+      if (proposalResponse.error) throw new Error(proposalResponse.error.message);
       
+      const proposal = proposalResponse.proposal;
+      if (!proposal || !proposal.id) {
+        throw new Error("Falha ao obter uma proposta de negociação.");
+      }
+
+      const buyResponse: any = await makeRequest({ "buy": proposal.id, "price": proposal.ask_price });
+      if (buyResponse.error) throw new Error(buyResponse.error.message);
+
       const buyResult = buyResponse.buy;
       const contractId = buyResult.contract_id;
       if (!contractId) throw new Error("Falha na compra do contrato, ID não retornado.");
@@ -613,3 +618,237 @@ export function useDerivApiReset() {
   }
   return context;
 }
+```
+- src/features/trading/hooks/use-reset-call-put-strategy.ts:
+```ts
+// src/features/trading/hooks/use-reset-call-put-strategy.ts
+'use client';
+
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { useDerivApiReset } from './use-deriv-api-reset';
+import { useToast } from '@/hooks/use-toast';
+import type { CandleData, Operation } from '@/lib/types';
+import { useFormContext } from 'react-hook-form';
+import type { ResetFormValues } from '../components/deriv-trader/deriv-trader-interface-reset.types';
+import { calculateAllIndicators, type Indicators } from '@/features/trading/services/indicator-service';
+import { getCouncilStrategies } from '@/features/trading/services/council-strategies';
+
+type BotStatus = 'PAUSED' | 'MONITORING' | 'SIGNAL_FOUND' | 'EXECUTING' | 'RISK_PAUSE';
+type TrendDirection = 'UP' | 'DOWN' | 'NONE';
+export type SignalStrength = 'STRONG' | 'MEDIUM' | 'WEAK' | 'NONE';
+export type ResetMode = 'CLASSIC' | 'HARVESTING';
+
+export function useResetCallPutStrategy(
+    activeSymbol: string | null,
+    botCandleData: CandleData[],
+    accountBalance: number | null
+) {
+    const { executeTrade, isConnected, operationsLog } = useDerivApiReset();
+    const { toast } = useToast();
+    const form = useFormContext<ResetFormValues>();
+
+    const [isAutopilotOn, setIsAutopilotOn] = useState(false);
+    const [botStatus, setBotStatus] = useState<BotStatus>('PAUSED');
+    const [trend, setTrend] = useState<TrendDirection>('NONE');
+    const [calculatedBarrier, setCalculatedBarrier] = useState('+0.0');
+
+    // --- Gestão de Risco ---
+    const [isMartingaleEnabled, setIsMartingaleEnabled] = useState(true);
+    const [martingaleMultiplier, setMartingaleMultiplier] = useState(1.8);
+    const [maxConsecutiveLosses, setMaxConsecutiveLosses] = useState(5);
+    const [consecutiveLosses, setConsecutiveLosses] = useState(0);
+    const [nextStake, setNextStake] = useState(form.getValues('stake'));
+    const lastProcessedOpId = useRef<number | null>(null);
+
+    // --- Parâmetros de Estratégia ---
+    const [adxThreshold, setAdxThreshold] = useState(25);
+    const [atrMultiplier, setAtrMultiplier] = useState(2.5);
+    const [useAdaptiveDuration, setUseAdaptiveDuration] = useState(false);
+    const [resetMode, setResetMode] = useState<ResetMode>('CLASSIC');
+    const [minConfirmations, setMinConfirmations] = useState(2);
+
+    // --- Estado de Sinal (para UI) ---
+    const [signalStrength, setSignalStrength] = useState<SignalStrength>('NONE');
+    const [confirmationCount, setConfirmationCount] = useState(0);
+    const [currentRsi, setCurrentRsi] = useState<number | null>(null);
+    const [currentAdx, setCurrentAdx] = useState<number | null>(null);
+
+    const prevRsiRef = useRef<number | null>(null);
+    const executionCooldownRef = useRef<number>(0);
+
+    const toggleAutopilot = useCallback(() => {
+        setIsAutopilotOn(prev => !prev);
+    }, []);
+
+    const resetRiskSession = useCallback(() => {
+        setConsecutiveLosses(0);
+        setNextStake(form.getValues('stake'));
+        setBotStatus('MONITORING');
+        lastProcessedOpId.current = null;
+        toast({ title: "Sessão de Risco Reiniciada", description: "Contador e aposta resetados." });
+    }, [form, toast]);
+
+    const indicators = useMemo((): Indicators | null => {
+        if (botCandleData.length < 100) return null;
+        return calculateAllIndicators(botCandleData, getCouncilStrategies(), '15m', { duration: 15, unit: 'm' });
+    }, [botCandleData]);
+
+    // --- Processar resultado do último trade ---
+    useEffect(() => {
+        const lastOp = operationsLog.find(
+            op => op.initiator === 'Piloto' && op.status !== 'pending' && op.id !== lastProcessedOpId.current
+        );
+        if (!lastOp) return;
+        lastProcessedOpId.current = lastOp.id;
+
+        if (lastOp.status === 'lost') {
+            const newLossCount = consecutiveLosses + 1;
+            setConsecutiveLosses(newLossCount);
+            if (newLossCount >= maxConsecutiveLosses) {
+                setBotStatus('RISK_PAUSE');
+                toast({ title: '🛑 Piloto Pausado por Risco', description: `${maxConsecutiveLosses} perdas consecutivas atingidas.`, variant: 'destructive' });
+            } else if (isMartingaleEnabled) {
+                const newStake = parseFloat((nextStake * martingaleMultiplier).toFixed(2));
+                setNextStake(newStake);
+                toast({ title: '⚠️ Martingale Ativado', description: `Próxima aposta: $${newStake}` });
+            }
+        } else {
+            setConsecutiveLosses(0);
+            setNextStake(form.getValues('stake'));
+        }
+    }, [operationsLog, consecutiveLosses, maxConsecutiveLosses, isMartingaleEnabled, nextStake, martingaleMultiplier, form, toast]);
+
+    // --- Duração Adaptativa ---
+    const getAdaptiveDuration = useCallback((): number => {
+        if (!useAdaptiveDuration || !indicators?.atr) return form.getValues('duration');
+        const basePrice = botCandleData[botCandleData.length - 1]?.close || 1;
+        const atrPercent = (indicators.atr / basePrice) * 100;
+        if (atrPercent > 1.5) return 1;
+        if (atrPercent > 0.8) return 2;
+        return 5;
+    }, [useAdaptiveDuration, indicators, botCandleData, form]);
+
+    // --- Lógica Principal ---
+    useEffect(() => {
+        if (!isAutopilotOn || !isConnected || !activeSymbol || !indicators || botStatus === 'RISK_PAUSE') {
+            if (!isAutopilotOn) setBotStatus('PAUSED');
+            return;
+        }
+
+        const executionLogic = setTimeout(() => {
+            const now = Date.now();
+            if (now < executionCooldownRef.current) return;
+
+            setBotStatus('MONITORING');
+
+            const { adx, pdi, ndi, rsi, atr } = indicators;
+            const lastCandle = botCandleData[botCandleData.length - 1];
+            const prevCandle = botCandleData[botCandleData.length - 2];
+
+            setCurrentRsi(rsi ?? null);
+            setCurrentAdx(adx ?? null);
+
+            let currentTrend: TrendDirection = 'NONE';
+            if (adx && adx > adxThreshold && pdi && ndi) {
+                currentTrend = pdi > ndi ? 'UP' : 'DOWN';
+            }
+            setTrend(currentTrend);
+            
+            const barrierOffset = atr ? `+${(atr * atrMultiplier).toFixed(4)}` : '+0.0';
+            setCalculatedBarrier(barrierOffset);
+
+            let signal: 'call' | 'put' | null = null;
+            const rsiValue = rsi ?? 50;
+            const prevRsiValue = prevRsiRef.current ?? 50;
+
+            if (resetMode === 'CLASSIC') {
+                if (currentTrend === 'UP' && rsiValue < 40 && prevRsiValue >= 40) signal = 'call';
+                else if (currentTrend === 'DOWN' && rsiValue > 60 && prevRsiValue <= 60) signal = 'put';
+            } else if (resetMode === 'HARVESTING') {
+                if (rsiValue > 65) signal = 'put';
+                else if (rsiValue < 35) signal = 'call';
+            }
+
+            prevRsiRef.current = rsiValue;
+            
+            let confirmations = 0;
+            if (signal === 'call') {
+                if (rsiValue < 50) confirmations++;
+                if (adx && adx > 30) confirmations++;
+                if (pdi && ndi && pdi > ndi) confirmations++;
+                if (lastCandle && lastCandle.close > lastCandle.open) confirmations++;
+            } else if (signal === 'put') {
+                if (rsiValue > 50) confirmations++;
+                if (adx && adx > 30) confirmations++;
+                if (pdi && ndi && ndi > pdi) confirmations++;
+                if (lastCandle && lastCandle.close < lastCandle.open) confirmations++;
+            }
+
+            setConfirmationCount(confirmations);
+            let strength: SignalStrength = 'NONE';
+            if (signal) {
+                if (confirmations >= 3) strength = 'STRONG';
+                else if (confirmations >= 2) strength = 'MEDIUM';
+                else strength = 'WEAK';
+            }
+            setSignalStrength(strength);
+
+            if (signal && confirmations >= minConfirmations) {
+                setBotStatus('SIGNAL_FOUND');
+                const stakeToUse = nextStake;
+                const duration = getAdaptiveDuration();
+
+                executeTrade(
+                    signal === 'call' ? 'RESETCALL' : 'RESETPUT',
+                    stakeToUse,
+                    activeSymbol,
+                    barrierOffset, // Envia sempre o offset positivo
+                    duration,
+                    form.getValues('duration_unit'),
+                    'Piloto'
+                ).then(result => {
+                    if (result.success) {
+                        executionCooldownRef.current = Date.now() + 8000;
+                        toast({ title: `🤖 ${signal === 'call' ? '📈 Reset CALL' : '📉 Reset PUT'} Executado!`, description: `Stake: $${stakeToUse} | Força: ${strength} (${confirmations}/4)` });
+                    } else {
+                        toast({ title: "❌ Falhou", description: result.message, variant: 'destructive' });
+                    }
+                    setBotStatus('MONITORING');
+                });
+            }
+        }, 2000);
+
+        return () => clearTimeout(executionLogic);
+    }, [
+        isAutopilotOn, isConnected, activeSymbol, indicators, botCandleData,
+        executeTrade, form, toast, calculatedBarrier, nextStake, botStatus,
+        adxThreshold, atrMultiplier, resetMode, minConfirmations, getAdaptiveDuration
+    ]);
+    
+    return {
+        isAutopilotOn,
+        toggleAutopilot,
+        botStatus,
+        trend,
+        calculatedBarrier,
+        isMartingaleEnabled, setIsMartingaleEnabled,
+        martingaleMultiplier, setMartingaleMultiplier,
+        maxConsecutiveLosses, setMaxConsecutiveLosses,
+        consecutiveLosses,
+        isPausedByRisk: botStatus === 'RISK_PAUSE',
+        currentStake: nextStake,
+        resetRiskSession,
+        adxThreshold, setAdxThreshold,
+        atrMultiplier, setAtrMultiplier,
+        signalStrength,
+        confirmationCount,
+        currentRsi,
+        currentAdx,
+        useAdaptiveDuration, setUseAdaptiveDuration,
+        resetMode, setResetMode,
+        minConfirmations, setMinConfirmations,
+        rsiThreshold: 50,
+        setRsiThreshold: (_: number) => {},
+    };
+}
+```
