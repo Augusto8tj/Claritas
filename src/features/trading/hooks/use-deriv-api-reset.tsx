@@ -307,57 +307,63 @@ export const DerivApiProviderReset = ({ children }: { children: ReactNode }) => 
     initiator: OperationInitiator = 'Manual'
   ): Promise<TradeResult> => {
     try {
-      if (!wsRef.current || !isConnected) throw new Error("A conexão com a API da Deriv não está ativa.");
+        if (!wsRef.current || !isConnected) throw new Error("A conexão com a API da Deriv não está ativa.");
 
-      const sanitizedStake = parseFloat(stake.toFixed(2));
-      const sanitizedDuration = Math.round(duration);
+        const sanitizedStake = parseFloat(stake.toFixed(2));
+        const sanitizedDuration = Math.round(duration);
 
-      const buyRequest: any = {
-          buy: "1",
-          price: sanitizedStake,
-          parameters: {
-              amount: sanitizedStake,
-              basis: 'stake',
-              contract_type: contractType,
-              currency: 'USD',
-              duration: sanitizedDuration,
-              duration_unit: durationUnit,
-              symbol: symbol,
-              reset_barrier_offset: reset_barrier_offset,
-          }
-      };
+        // Processo de 2 etapas: Cotação e depois Compra
+        const proposalRequest = {
+            proposal: 1,
+            contract_type: contractType,
+            symbol: symbol,
+            duration: sanitizedDuration,
+            duration_unit: durationUnit,
+            currency: 'USD',
+            amount: sanitizedStake,
+            basis: 'stake',
+            reset_barrier_offset: reset_barrier_offset,
+        };
 
-      const buyResponse: any = await makeRequest(buyRequest);
-
-      if (buyResponse.error) throw new Error(buyResponse.error.message);
+        const proposalResponse: any = await makeRequest(proposalRequest);
+        if (proposalResponse.error) throw new Error(proposalResponse.error.message);
       
-      const buyResult = buyResponse.buy;
-      const contractId = buyResult.contract_id;
-      if (!contractId) throw new Error("Falha na compra do contrato, ID não retornado.");
+        const proposal = proposalResponse.proposal;
+        if (!proposal || !proposal.id) {
+            throw new Error("Falha ao obter uma proposta de negociação da API.");
+        }
+        
+        const buyResponse: any = await makeRequest({ "buy": proposal.id, "price": proposal.ask_price });
+        if(buyResponse.error) throw new Error(buyResponse.error.message);
 
-      const newOperation: any = {
-        id: contractId,
-        asset: symbol,
-        direction: contractType === 'RESETCALL' ? 'rise' : 'fall',
-        stake: sanitizedStake,
-        status: 'pending',
-        timestamp: new Date().toISOString(),
-        initiator,
-        entryPrice: parseFloat(buyResult.entry_spot_display_value),
-        contractType,
-        reset_barrier_offset,
-        duration: sanitizedDuration,
-        durationUnit
-      };
+        const buyResult = buyResponse.buy;
+        const contractId = buyResult.contract_id;
+        if (!contractId) throw new Error("Falha na compra do contrato, ID não retornado.");
 
-      setAndPersistOperationsLog(prev => [newOperation, ...prev]);
-      return { success: true, message: `Contrato ${contractType} executado.`, contractId };
+        const newOperation: any = {
+            id: contractId,
+            asset: symbol,
+            direction: contractType === 'RESETCALL' ? 'rise' : 'fall',
+            stake: sanitizedStake,
+            status: 'pending',
+            timestamp: new Date().toISOString(),
+            initiator,
+            entryPrice: parseFloat(buyResult.entry_spot_display_value),
+            contractType,
+            reset_barrier_offset,
+            duration: sanitizedDuration,
+            durationUnit
+        };
+
+        setAndPersistOperationsLog(prev => [newOperation, ...prev]);
+        return { success: true, message: `Contrato ${contractType} executado.`, contractId };
     } catch (error) {
-      console.error("[Deriv Hook - Reset] Erro na execução:", error);
-      const message = error instanceof Error ? error.message : "Um erro desconhecido ocorreu.";
-      return { success: false, message };
+        console.error("[Deriv Hook - Reset] Erro na execução:", error);
+        const message = error instanceof Error ? error.message : "Um erro desconhecido ocorreu.";
+        return { success: false, message };
     }
-  }, [isConnected, makeRequest, setAndPersistOperationsLog]);
+}, [isConnected, makeRequest, setAndPersistOperationsLog]);
+
 
   const sellContract = useCallback(async (contractId: number): Promise<TradeResult> => {
     return { success: false, message: "Contratos de Reset não podem ser vendidos." };
@@ -520,21 +526,27 @@ export const DerivApiProviderReset = ({ children }: { children: ReactNode }) => 
                 startConnectionMonitor();
                 const assetsRes: any = await makeRequest({ active_symbols: 'full', product_type: 'basic' });
                 if (assetsRes.error) throw new Error(assetsRes.error.message);
-                const filteredSymbols = assetsRes.active_symbols.filter((s: any) => 
-                    s.available_contracts?.some((c:any) => c.contract_type === 'RESETCALL')
-                );
+                
+                const allSymbols = assetsRes.active_symbols;
+
                 const groupedAssets: { [key: string]: Asset[] } = {};
-                filteredSymbols.forEach((s: any) => {
+                allSymbols.forEach((s: any) => {
                     const groupName = marketNameMapping[s.market] || 'Outros';
                     if (!groupedAssets[groupName]) groupedAssets[groupName] = [];
                     groupedAssets[groupName].push({ value: s.symbol, label: s.display_name, marketIsOpen: s.exchange_is_open === 1, submarket: s.submarket, market: s.market, minDuration: s.min_contract_duration || '1m' });
                 });
-                setAssetGroups(Object.keys(groupedAssets).map(label => ({ label, options: groupedAssets[label] })));
+
+                setAssetGroups(Object.keys(groupedAssets)
+                    .map(label => ({ 
+                        label, 
+                        options: groupedAssets[label].sort((a, b) => a.label.localeCompare(b.label)) 
+                    }))
+                    .sort((a, b) => a.label.localeCompare(b.label)));
+                    
                 setIsAssetsLoading(false);
 
-                // Initialize with the first available asset if none is selected
-                if (!activeSymbol && filteredSymbols.length > 0) {
-                    setActiveSymbol(filteredSymbols[0].symbol);
+                if (!activeSymbol && allSymbols.length > 0) {
+                     setActiveSymbol(allSymbols[0].symbol);
                 }
 
             } catch (error: any) {
