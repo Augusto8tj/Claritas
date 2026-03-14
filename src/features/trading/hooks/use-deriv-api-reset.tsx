@@ -145,7 +145,7 @@ export const DerivApiProviderReset = ({ children }: { children: ReactNode }) => 
   const [toastQueue, setToastQueue] = useState<any[]>([]);
   const [tradeAnnotations, setTradeAnnotations] = useState<TradeAnnotation[]>([]);
 
-  const [activeSymbol, setActiveSymbol] = useState<string | null>('R_75');
+  const [activeSymbol, setActiveSymbol] = useState<string | null>(null);
   const [chartData, setChartData] = useState<ChartData[]>([]);
   const [botCandleData, setBotCandleData] = useState<CandleData[]>([]);
   const [priceTicks, setPriceTicks] = useState<TickData[]>([]); 
@@ -297,7 +297,7 @@ export const DerivApiProviderReset = ({ children }: { children: ReactNode }) => 
       } catch (error) { throw error; }
     }, [makeRequest]);
 
-    const executeTrade = useCallback(async (
+  const executeTrade = useCallback(async (
     contractType: 'RESETCALL' | 'RESETPUT',
     stake: number,
     symbol: string,
@@ -312,33 +312,25 @@ export const DerivApiProviderReset = ({ children }: { children: ReactNode }) => 
       const sanitizedStake = parseFloat(stake.toFixed(2));
       const sanitizedDuration = Math.round(duration);
 
-      // STEP 1: Make a proposal request with all parameters
-      const proposalRequest = {
-        proposal: 1,
-        amount: sanitizedStake,
-        basis: "stake",
-        contract_type: contractType,
-        currency: "USD",
-        duration: sanitizedDuration,
-        duration_unit: durationUnit,
-        symbol: symbol,
-        reset_barrier_offset: reset_barrier_offset,
+      const buyRequest: any = {
+        buy: "1",
+        price: sanitizedStake,
+        parameters: {
+            amount: sanitizedStake,
+            basis: 'stake',
+            contract_type: contractType,
+            currency: 'USD',
+            duration: sanitizedDuration,
+            duration_unit: durationUnit,
+            symbol: symbol,
+            reset_barrier_offset: reset_barrier_offset,
+        },
       };
 
-      const proposalResponse: any = await makeRequest(proposalRequest);
-
-      if (proposalResponse.error) throw new Error(proposalResponse.error.message);
-
-      const proposal = proposalResponse.proposal;
-      if (!proposal || !proposal.id) {
-        throw new Error("Falha ao obter uma proposta de negociação da API.");
-      }
-
-      // STEP 2: Use the proposal ID to make the buy request
-      const buyResponse: any = await makeRequest({ "buy": proposal.id, "price": proposal.ask_price });
+      const buyResponse: any = await makeRequest(buyRequest);
 
       if (buyResponse.error) throw new Error(buyResponse.error.message);
-
+      
       const buyResult = buyResponse.buy;
       const contractId = buyResult.contract_id;
       if (!contractId) throw new Error("Falha na compra do contrato, ID não retornado.");
@@ -539,6 +531,12 @@ export const DerivApiProviderReset = ({ children }: { children: ReactNode }) => 
                 });
                 setAssetGroups(Object.keys(groupedAssets).map(label => ({ label, options: groupedAssets[label] })));
                 setIsAssetsLoading(false);
+
+                // Initialize with the first available asset if none is selected
+                if (!activeSymbol && filteredSymbols.length > 0) {
+                    setActiveSymbol(filteredSymbols[0].symbol);
+                }
+
             } catch (error: any) {
                 setConnectionError(`Falha na autorização: ${error.message}`);
                 setIsConnected(false); setIsConnecting(false); setIsAssetsLoading(false);
