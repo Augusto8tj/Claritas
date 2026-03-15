@@ -19,7 +19,10 @@ const DERIV_ACCOUNT_TYPE_KEY = 'derivAccountType';
 const DERIV_DIGITS_LOG_KEY = 'derivDigitsOperationsLog_v5';
 const DERIV_APP_ID = process.env.NEXT_PUBLIC_DERIV_APP_ID || "1089";
 const MAX_TICKS = 1000;
-const marketNameMapping: Record<string, string> = { 'synthetic_index': 'Índices Sintéticos' };
+const marketNameMapping: Record<string, string> = { 
+    'synthetic_index': 'Índices Sintéticos',
+    'basket_index': 'Índices de Cesta' 
+};
 const TICK_SAVE_INTERVAL_MS = 5000;
 
 // --- TYPES ---
