@@ -4,7 +4,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useDerivApiReset } from './use-deriv-api-reset';
 import { useToast } from '@/hooks/use-toast';
-import type { CandleData, Operation } from '@/lib/types';
+import type { CandleData } from '@/lib/types';
 import { useFormContext } from 'react-hook-form';
 import type { ResetFormValues } from '../components/deriv-trader/deriv-trader-interface-reset.types';
 import { calculateAllIndicators, type Indicators } from '@/features/trading/services/indicator-service';
@@ -38,8 +38,8 @@ export function useResetCallPutStrategy(
     const lastProcessedOpId = useRef<number | null>(null);
 
     // --- Parâmetros de Estratégia ---
-    const [adxThreshold, setAdxThreshold] = useState(20); // ✅ Reduzido de 25→20 para candles de 1m
-    const [atrMultiplier, setAtrMultiplier] = useState(1.5); // ✅ Reduzido de 2.5→1.5 para ATR de 1m
+    const [adxThreshold, setAdxThreshold] = useState(20);
+    const [atrMultiplier, setAtrMultiplier] = useState(1.5);
     const [useAdaptiveDuration, setUseAdaptiveDuration] = useState(false);
     const [resetMode, setResetMode] = useState<ResetMode>('CLASSIC');
     const [minConfirmations, setMinConfirmations] = useState(2);
@@ -64,16 +64,26 @@ export function useResetCallPutStrategy(
         toast({ title: "Sessão de Risco Reiniciada", description: "Contador e aposta resetados." });
     }, [form, toast]);
 
-    // ✅ FIX BUG #2: Usar '1m' em vez de '15m' para combinar com botCandleData
     const indicators = useMemo((): Indicators | null => {
         if (botCandleData.length < 100) return null;
         return calculateAllIndicators(
             botCandleData,
             getCouncilStrategies(),
-            '1m',                       // ✅ CORRIGIDO: era '15m'
-            { duration: 1, unit: 'm' }  // ✅ CORRIGIDO: era { duration: 15, unit: 'm' }
+            '1m',
+            { duration: 1, unit: 'm' }
         );
     }, [botCandleData]);
+
+    // Efeito dedicado para calcular a barreira, independentemente do estado do piloto
+    useEffect(() => {
+        if (indicators?.atr) {
+            const barrierOffset = `+${(indicators.atr * atrMultiplier).toFixed(5)}`;
+            setCalculatedBarrier(barrierOffset);
+        } else {
+            setCalculatedBarrier('+0.0'); // Valor padrão ou de carregamento
+        }
+    }, [indicators, atrMultiplier]);
+
 
     // --- Processar resultado do último trade ---
     useEffect(() => {
@@ -105,13 +115,12 @@ export function useResetCallPutStrategy(
         if (!useAdaptiveDuration || !indicators?.atr) return form.getValues('duration');
         const basePrice = botCandleData[botCandleData.length - 1]?.close || 1;
         const atrPercent = (indicators.atr / basePrice) * 100;
-        // Para candles de 1m, ATR é menor — ajustar thresholds
         if (atrPercent > 0.3) return 1;
         if (atrPercent > 0.15) return 2;
         return 5;
     }, [useAdaptiveDuration, indicators, botCandleData, form]);
 
-    // --- Lógica Principal ---
+    // --- Lógica Principal (Autopilot) ---
     useEffect(() => {
         if (!isAutopilotOn || !isConnected || !activeSymbol || !indicators || botStatus === 'RISK_PAUSE') {
             if (!isAutopilotOn) setBotStatus('PAUSED');
@@ -122,7 +131,6 @@ export function useResetCallPutStrategy(
             const now = Date.now();
             if (now < executionCooldownRef.current) return;
 
-            // ✅ FIX BUG #3: Não executar se já estiver em SIGNAL_FOUND/EXECUTING
             if (botStatus === 'SIGNAL_FOUND' || botStatus === 'EXECUTING') return;
 
             setBotStatus('MONITORING');
@@ -134,30 +142,21 @@ export function useResetCallPutStrategy(
             setCurrentRsi(rsi ?? null);
             setCurrentAdx(adx ?? null);
 
-            // --- TENDÊNCIA via ADX ---
             let currentTrend: TrendDirection = 'NONE';
             if (adx && adx > adxThreshold && pdi && ndi) {
                 currentTrend = pdi > ndi ? 'UP' : 'DOWN';
             }
             setTrend(currentTrend);
-
-            // ✅ FIX BUG #1: barrierOffset SEMPRE positivo — é distância, não direção
-            const barrierOffset = atr
-                ? `+${(atr * atrMultiplier).toFixed(5)}`
-                : '+0.0';
-            setCalculatedBarrier(barrierOffset);
-
-            // --- GERAÇÃO DE SINAL ---
+            
             let signal: 'call' | 'put' | null = null;
 
             if (resetMode === 'CLASSIC') {
                 if (rsi !== null) {
                     if (currentTrend === 'UP') {
-                        if (rsi < 40) signal = 'call'; // pullback em uptrend
+                        if (rsi < 40) signal = 'call';
                     } else if (currentTrend === 'DOWN') {
-                        if (rsi > 60) signal = 'put'; // pullback em downtrend
+                        if (rsi > 60) signal = 'put';
                     } else {
-                        // Sem tendência: reversão clássica
                         if (rsi < 30) signal = 'call';
                         else if (rsi > 70) signal = 'put';
                     }
@@ -174,7 +173,6 @@ export function useResetCallPutStrategy(
                 }
             }
 
-            // --- CONFIRMAÇÕES ---
             let confirmations = 0;
             if (signal === 'call') {
                 if (rsi !== null && rsi < 50) confirmations++;
@@ -198,13 +196,12 @@ export function useResetCallPutStrategy(
             }
             setSignalStrength(strength);
 
-            // --- EXECUÇÃO ---
             if (signal && confirmations >= minConfirmations) {
                 setBotStatus('SIGNAL_FOUND');
                 const stakeToUse = nextStake;
                 const duration = getAdaptiveDuration();
 
-                console.log(`[Reset Piloto] ${signal.toUpperCase()} | RSI=${rsi?.toFixed(1)} | ADX=${adx?.toFixed(1)} | ATR=${atr?.toFixed(5)} | Barrier=${barrierOffset} | ${strength} (${confirmations}/4)`);
+                console.log(`[Reset Piloto] ${signal.toUpperCase()} | RSI=${rsi?.toFixed(1)} | ADX=${adx?.toFixed(1)} | ATR=${atr?.toFixed(5)} | Barrier=${calculatedBarrier} | ${strength} (${confirmations}/4)`);
 
                 try {
                     setBotStatus('EXECUTING');
@@ -212,7 +209,7 @@ export function useResetCallPutStrategy(
                         signal === 'call' ? 'RESETCALL' : 'RESETPUT',
                         stakeToUse,
                         activeSymbol,
-                        barrierOffset, // ✅ FIX BUG #1: sempre positivo, nunca invertido
+                        calculatedBarrier,
                         duration,
                         form.getValues('duration_unit'),
                         'Piloto'
@@ -221,17 +218,15 @@ export function useResetCallPutStrategy(
                         executionCooldownRef.current = Date.now() + 8000;
                         toast({
                             title: `🤖 ${signal === 'call' ? '📈 Reset CALL' : '📉 Reset PUT'} Executado!`,
-                            description: `Stake: $${stakeToUse} | Barreira: ${barrierOffset} | ${strength} (${confirmations}/4)`,
+                            description: `Stake: $${stakeToUse} | Barreira: ${calculatedBarrier} | ${strength} (${confirmations}/4)`,
                         });
                     } else {
                         toast({ title: "❌ Falhou", description: result.message, variant: 'destructive' });
                     }
                 } catch (err) {
-                    // ✅ FIX BUG #3: capturar erros para não travar status
                     const msg = err instanceof Error ? err.message : 'Erro desconhecido';
                     toast({ title: "❌ Erro Inesperado", description: msg, variant: 'destructive' });
                 } finally {
-                    // ✅ FIX BUG #3: sempre voltar para MONITORING
                     setBotStatus('MONITORING');
                 }
             }
@@ -241,32 +236,40 @@ export function useResetCallPutStrategy(
     }, [
         isAutopilotOn, isConnected, activeSymbol, indicators, botCandleData,
         executeTrade, form, toast, nextStake, botStatus,
-        adxThreshold, atrMultiplier, resetMode, minConfirmations, getAdaptiveDuration
+        adxThreshold, atrMultiplier, resetMode, minConfirmations, getAdaptiveDuration,
+        calculatedBarrier
     ]);
-    
+
     return {
         isAutopilotOn,
         toggleAutopilot,
         botStatus,
         trend,
         calculatedBarrier,
-        isMartingaleEnabled, setIsMartingaleEnabled,
-        martingaleMultiplier, setMartingaleMultiplier,
-        maxConsecutiveLosses, setMaxConsecutiveLosses,
+        isMartingaleEnabled,
+        setIsMartingaleEnabled,
+        martingaleMultiplier,
+        setMartingaleMultiplier,
+        maxConsecutiveLosses,
+        setMaxConsecutiveLosses,
         consecutiveLosses,
         isPausedByRisk: botStatus === 'RISK_PAUSE',
         currentStake: nextStake,
         resetRiskSession,
-        adxThreshold, setAdxThreshold,
-        atrMultiplier, setAtrMultiplier,
+        adxThreshold,
+        setAdxThreshold,
+        atrMultiplier,
+        setAtrMultiplier,
         signalStrength,
         confirmationCount,
         currentRsi,
         currentAdx,
-        useAdaptiveDuration, setUseAdaptiveDuration,
-        resetMode, setResetMode,
-        minConfirmations, setMinConfirmations,
-        // Legacy (mantido para compatibilidade)
+        useAdaptiveDuration,
+        setUseAdaptiveDuration,
+        resetMode,
+        setResetMode,
+        minConfirmations,
+        setMinConfirmations,
         rsiThreshold: 50,
         setRsiThreshold: (_: number) => {},
     };
