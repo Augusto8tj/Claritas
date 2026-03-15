@@ -312,28 +312,22 @@ export const DerivApiProviderReset = ({ children }: { children: ReactNode }) => 
         const sanitizedStake = parseFloat(stake.toFixed(2));
         const sanitizedDuration = Math.round(duration);
 
-        // Processo de 2 etapas: Cotação e depois Compra
-        const proposalRequest = {
-            proposal: 1,
-            contract_type: contractType,
-            symbol: symbol,
-            duration: sanitizedDuration,
-            duration_unit: durationUnit,
-            currency: 'USD',
-            amount: sanitizedStake,
-            basis: 'stake',
-            reset_barrier_offset: reset_barrier_offset,
+        const buyRequest = {
+            buy: 1,
+            price: sanitizedStake,
+            parameters: {
+                amount: sanitizedStake,
+                basis: 'stake',
+                contract_type: contractType,
+                currency: 'USD',
+                duration: sanitizedDuration,
+                duration_unit: durationUnit,
+                symbol: symbol,
+                reset_barrier_offset: reset_barrier_offset
+            }
         };
 
-        const proposalResponse: any = await makeRequest(proposalRequest);
-        if (proposalResponse.error) throw new Error(proposalResponse.error.message);
-      
-        const proposal = proposalResponse.proposal;
-        if (!proposal || !proposal.id) {
-            throw new Error("Falha ao obter uma proposta de negociação da API.");
-        }
-        
-        const buyResponse: any = await makeRequest({ "buy": proposal.id, "price": proposal.ask_price });
+        const buyResponse: any = await makeRequest(buyRequest);
         if(buyResponse.error) throw new Error(buyResponse.error.message);
 
         const buyResult = buyResponse.buy;
@@ -527,6 +521,7 @@ export const DerivApiProviderReset = ({ children }: { children: ReactNode }) => 
                 const assetsRes: any = await makeRequest({ active_symbols: 'full', product_type: 'basic' });
                 if (assetsRes.error) throw new Error(assetsRes.error.message);
                 
+                // ✅ FIX BUG #2: Lista não estava sendo populada
                 const allSymbols = assetsRes.active_symbols;
 
                 const groupedAssets: { [key: string]: Asset[] } = {};
@@ -545,6 +540,7 @@ export const DerivApiProviderReset = ({ children }: { children: ReactNode }) => 
                     
                 setIsAssetsLoading(false);
 
+                // ✅ FIX BUG #2: Definir ativo padrão
                 if (!activeSymbol && allSymbols.length > 0) {
                      setActiveSymbol(allSymbols[0].symbol);
                 }
