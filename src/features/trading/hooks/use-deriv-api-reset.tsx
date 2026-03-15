@@ -301,7 +301,7 @@ export const DerivApiProviderReset = ({ children }: { children: ReactNode }) => 
     contractType: 'RESETCALL' | 'RESETPUT',
     stake: number,
     symbol: string,
-    reset_barrier_offset: string,
+    barrierOffset: string,
     duration: number,
     durationUnit: DurationUnit,
     initiator: OperationInitiator = 'Manual'
@@ -311,9 +311,10 @@ export const DerivApiProviderReset = ({ children }: { children: ReactNode }) => 
 
         const sanitizedStake = parseFloat(stake.toFixed(2));
         const sanitizedDuration = Math.round(duration);
-
+        
+        // ✅ CORREÇÃO: Usar compra direta em uma única etapa
         const buyRequest = {
-            buy: 1,
+            buy: "1",
             price: sanitizedStake,
             parameters: {
                 amount: sanitizedStake,
@@ -323,7 +324,7 @@ export const DerivApiProviderReset = ({ children }: { children: ReactNode }) => 
                 duration: sanitizedDuration,
                 duration_unit: durationUnit,
                 symbol: symbol,
-                reset_barrier_offset: reset_barrier_offset
+                reset_barrier_offset: barrierOffset,
             }
         };
 
@@ -344,7 +345,7 @@ export const DerivApiProviderReset = ({ children }: { children: ReactNode }) => 
             initiator,
             entryPrice: parseFloat(buyResult.entry_spot_display_value),
             contractType,
-            reset_barrier_offset,
+            reset_barrier_offset: barrierOffset,
             duration: sanitizedDuration,
             durationUnit
         };
@@ -521,7 +522,6 @@ export const DerivApiProviderReset = ({ children }: { children: ReactNode }) => 
                 const assetsRes: any = await makeRequest({ active_symbols: 'full', product_type: 'basic' });
                 if (assetsRes.error) throw new Error(assetsRes.error.message);
                 
-                // ✅ FIX BUG #2: Lista não estava sendo populada
                 const allSymbols = assetsRes.active_symbols;
 
                 const groupedAssets: { [key: string]: Asset[] } = {};
@@ -540,7 +540,6 @@ export const DerivApiProviderReset = ({ children }: { children: ReactNode }) => 
                     
                 setIsAssetsLoading(false);
 
-                // ✅ FIX BUG #2: Definir ativo padrão
                 if (!activeSymbol && allSymbols.length > 0) {
                      setActiveSymbol(allSymbols[0].symbol);
                 }
