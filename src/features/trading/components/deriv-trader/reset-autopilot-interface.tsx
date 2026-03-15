@@ -13,7 +13,7 @@ import {
   ChevronsUpDown, Zap, Target, Clock
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import type { useResetCallPutStrategy, SignalStrength, ResetMode } from "../../hooks/use-reset-call-put-strategy";
+import type { useResetCallPutStrategy } from "../../hooks/use-reset-call-put-strategy";
 import { Separator } from "@/components/ui/separator";
 import { Slider } from "@/components/ui/slider";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -36,10 +36,7 @@ export function ResetAutopilotInterface({
     consecutiveLosses, isPausedByRisk, currentStake, resetRiskSession,
     adxThreshold, setAdxThreshold, atrMultiplier, setAtrMultiplier,
     // Novos props
-    signalStrength,
-    confirmationCount,
-    currentRsi,
-    currentAdx,
+    signalStrength, confirmationCount, currentRsi, currentAdx,
     useAdaptiveDuration, setUseAdaptiveDuration,
     resetMode, setResetMode,
     minConfirmations, setMinConfirmations,
