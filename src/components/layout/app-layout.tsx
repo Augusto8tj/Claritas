@@ -30,7 +30,7 @@ import {
   Calculator,
   Crosshair,
   Zap,
-  RefreshCw, // Importando o ícone
+  RefreshCw,
 } from "lucide-react";
 import {
   Sidebar,
@@ -49,7 +49,6 @@ import {
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Logo } from "@/components/icons";
 import { UserNav } from "@/components/auth/user-nav";
-import { useAuth } from "@/features/auth/hooks/use-auth";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useSidebar } from "@/components/ui/sidebar";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
@@ -286,19 +285,15 @@ function SidebarContent({children}: {children: React.ReactNode}) {
 
 
 export function AppLayout({ children }: { children: React.ReactNode }) {
-  const { user } = useAuth();
   const pathname = usePathname();
   const isMobile = useIsMobile();
   
   const pageTitle = navItems.find(item => item.href === pathname)?.label || 'Claritas Copilot';
 
-  if (!user) {
-    return (
-      <main className="flex min-h-screen items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin text-primary" />
-      </main>
-    );
-  }
+  // The AuthProvider and AuthGuard already handle the main loading state.
+  // This layout should just render its structure, assuming the AuthGuard
+  // has already determined it's safe to display. The previous `if (!user)`
+  // block was redundant and caused the ReferenceError.
 
   return (
     <SidebarProvider>
