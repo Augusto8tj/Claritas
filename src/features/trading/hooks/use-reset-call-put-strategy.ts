@@ -4,7 +4,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useDerivApiReset, type AllContractTypes } from './use-deriv-api-reset';
 import { useToast } from '@/hooks/use-toast';
-import type { CandleData, DurationUnit } from '@/lib/types';
+import type { CandleData, DurationUnit, Operation } from '@/lib/types';
 import { useFormContext } from 'react-hook-form';
 import type { ResetFormValues } from '../components/deriv-trader/deriv-trader-interface-reset.types';
 import { calculateAllIndicators, type Indicators } from '@/features/trading/services/indicator-service';
@@ -45,10 +45,10 @@ export function useResetCallPutStrategy(
     const lastProcessedOpId = useRef<number | null>(null);
 
     // --- Parâmetros de Estratégia ---
-    const [adxThreshold, setAdxThreshold] = useState(20); 
+    const [adxThreshold, setAdxThreshold] = useState(15); 
     const [atrMultiplier, setAtrMultiplier] = useState(1.5); 
     const [useAdaptiveDuration, setUseAdaptiveDuration] = useState(false);
-    const [minConfirmations, setMinConfirmations] = useState(2);
+    const [minConfirmations, setMinConfirmations] = useState(1);
 
     // --- Estado de Sinal (para UI) ---
     const [signalStrength, setSignalStrength] = useState<SignalStrength>('NONE');
@@ -140,7 +140,6 @@ export function useResetCallPutStrategy(
 
             const { adx, pdi, ndi, rsi, atr } = indicators;
             const lastCandle = botCandleData[botCandleData.length - 1];
-            const prevCandle = botCandleData[botCandleData.length - 2];
 
             setCurrentRsi(rsi ?? null);
             setCurrentAdx(adx ?? null);
@@ -152,36 +151,22 @@ export function useResetCallPutStrategy(
             setTrend(currentTrend);
             
             let signal: 'call' | 'put' | null = null;
-
-            if (autopilotMode === 'classic') {
-                if (rsi !== null) {
-                    if (currentTrend === 'UP' && rsi < 40) signal = 'call';
-                    else if (currentTrend === 'DOWN' && rsi > 60) signal = 'put';
-                    else if (currentTrend === 'NONE') {
-                         if (rsi < 30) signal = 'call';
-                         else if (rsi > 70) signal = 'put';
-                    }
-                }
-            } else if (autopilotMode === 'harvesting') {
-                if (rsi !== null && lastCandle && prevCandle) {
-                    const lastBodySize = Math.abs(lastCandle.close - lastCandle.open);
-                    const prevBodySize = Math.abs(prevCandle.close - prevCandle.open);
-                    const isInsideBar = prevBodySize > 0 && lastBodySize < prevBodySize * 0.5;
-                    if (isInsideBar) {
-                        if (rsi > 65 && lastCandle.close < lastCandle.open) signal = 'put';
-                        else if (rsi < 35 && lastCandle.close > lastCandle.open) signal = 'call';
-                    }
+            if (rsi !== null) {
+                if (currentTrend === 'UP' && rsi < 75) {
+                    signal = 'call';
+                } else if (currentTrend === 'DOWN' && rsi > 25) {
+                    signal = 'put';
                 }
             }
 
             let confirmations = 0;
             if (signal === 'call') {
-                if (rsi !== null && rsi < 50) confirmations++;
+                if (rsi !== null && rsi > 50) confirmations++;
                 if (adx && adx > adxThreshold) confirmations++;
                 if (pdi && ndi && pdi > ndi) confirmations++;
                 if (lastCandle && lastCandle.close > lastCandle.open) confirmations++;
             } else if (signal === 'put') {
-                if (rsi !== null && rsi > 50) confirmations++;
+                if (rsi !== null && rsi < 50) confirmations++;
                 if (adx && adx > adxThreshold) confirmations++;
                 if (pdi && ndi && ndi > pdi) confirmations++;
                 if (lastCandle && lastCandle.close < lastCandle.open) confirmations++;
@@ -193,7 +178,7 @@ export function useResetCallPutStrategy(
             if (signal) {
                 if (confirmations >= 3) strength = 'STRONG';
                 else if (confirmations >= 2) strength = 'MEDIUM';
-                else strength = 'WEAK';
+                else if (confirmations >= 1) strength = 'WEAK';
             }
             setSignalStrength(strength);
 
@@ -293,10 +278,5 @@ export function useResetCallPutStrategy(
         setAutopilotDuration,
         autopilotDurationUnit,
         setAutopilotDurationUnit,
-        // Legacy, kept for compatibility if any other component uses it
-        resetMode: autopilotMode,
-        setResetMode: setAutopilotMode,
-        rsiThreshold: 50,
-        setRsiThreshold: (_: number) => {},
     };
 }
