@@ -58,6 +58,21 @@ export default function DerivTraderInterfaceReset({ symbol, suggestedBarrier }: 
     }
   }, [suggestedBarrier, form, mode]);
 
+  useEffect(() => {
+    if (durationLimits) {
+      const limits = durationLimits[durationUnit];
+      if (limits) {
+        const currentDuration = form.getValues('duration');
+        const newDuration = Math.max(limits.min, Math.min(currentDuration, limits.max));
+        if (newDuration !== currentDuration) {
+          form.setValue('duration', newDuration);
+          form.trigger('duration');
+        }
+      }
+    }
+  }, [durationUnit, durationLimits, form]);
+
+
   const handleTrade = async (direction: 'call' | 'put') => {
     const isValid = await form.trigger();
     if (!isValid) {
@@ -242,16 +257,14 @@ export default function DerivTraderInterfaceReset({ symbol, suggestedBarrier }: 
                           render={({ field }) => (
                           <FormItem className="w-3/5">
                               <div className="flex items-center justify-center gap-0.5">
-                                  <div className="relative flex-1">
-                                      <FormControl>
-                                          <Input 
-                                              type="number"
-                                              {...field}
-                                              onChange={e => field.onChange(parseInt(e.target.value) || 0)}
-                                              className="font-semibold text-lg text-center"
-                                          />
-                                      </FormControl>
-                                  </div>
+                                  <FormControl>
+                                      <Input 
+                                          type="number"
+                                          {...field}
+                                          onChange={e => field.onChange(parseInt(e.target.value) || 0)}
+                                          className="font-semibold text-lg text-center"
+                                      />
+                                  </FormControl>
                               </div>
                               <FormMessage />
                           </FormItem>
