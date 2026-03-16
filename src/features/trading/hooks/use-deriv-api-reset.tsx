@@ -299,87 +299,92 @@ export const DerivApiProviderReset = ({ children }: { children: ReactNode }) => 
       } catch (error) { throw error; }
     }, [makeRequest]);
 
-  const executeTrade = useCallback(async (
-    contractType: AllContractTypes,
-    stake: number,
-    symbol: string,
-    barrierOffset: string,
-    duration: number,
-    durationUnit: DurationUnit,
-    initiator: OperationInitiator = 'Manual'
-  ): Promise<TradeResult> => {
-    try {
-      if (!wsRef.current || !isConnected) {
-        throw new Error("A conexão com a API da Deriv não está ativa.");
+  const executeTrade = useCallback(
+    async (
+      contractType: AllContractTypes,
+      stake: number,
+      symbol: string,
+      barrierOffset: string,
+      duration: number,
+      durationUnit: DurationUnit,
+      initiator: OperationInitiator = 'Manual',
+    ): Promise<TradeResult> => {
+      try {
+        if (!wsRef.current || !isConnected) {
+          throw new Error("A conexão com a API da Deriv não está ativa.");
+        }
+        
+        const sanitizedStake = parseFloat(stake.toFixed(2));
+        const sanitizedDuration = Math.round(duration);
+
+        const proposalRequest: any = {
+          proposal: 1,
+          amount: sanitizedStake,
+          basis: 'stake',
+          contract_type: contractType,
+          currency: accountBalance.currency || 'USD',
+          duration: sanitizedDuration,
+          duration_unit: durationUnit,
+          symbol: symbol,
+        };
+
+        // Apenas envia a barreira para contratos que não são de 'Reset'
+        if (!['RESETCALL', 'RESETPUT'].includes(contractType)) {
+          proposalRequest.barrier = barrierOffset;
+        }
+        
+        console.log("[Deriv API Reset] Enviando proposta:", proposalRequest);
+        const proposalResponse: any = await makeRequest(proposalRequest);
+        
+        if (proposalResponse.error) {
+          const errorMessage = proposalResponse.error.message || JSON.stringify(proposalResponse.error);
+          console.error("[Deriv API Reset] Erro na Proposta:", errorMessage, proposalResponse);
+          throw new Error(`Erro na Proposta: ${errorMessage}`);
+        }
+
+        const proposal = proposalResponse.proposal;
+        if (!proposal || !proposal.id) {
+          throw new Error("Falha ao obter uma proposta de negociação da API.");
+        }
+
+        const buyRequest = { buy: proposal.id, price: sanitizedStake };
+        const buyResponse: any = await makeRequest(buyRequest);
+
+        if (buyResponse.error) {
+          const errorMessage = buyResponse.error.message || JSON.stringify(buyResponse.error);
+          console.error("[Deriv API Reset] Erro na Compra:", errorMessage, buyResponse);
+          throw new Error(`Erro na Compra: ${errorMessage}`);
+        }
+
+        const buyResult = buyResponse.buy;
+        const contractId = buyResult.contract_id;
+        if (!contractId) throw new Error("Falha na compra do contrato, ID não retornado.");
+
+        const newOperation: Operation = {
+          id: contractId,
+          asset: symbol,
+          direction: (contractType.includes('CALL') || contractType.includes('ONETOUCH')) ? 'rise' : 'fall',
+          stake: sanitizedStake,
+          status: 'pending',
+          timestamp: new Date(buyResult.purchase_time * 1000).toISOString(),
+          initiator,
+          entryPrice: parseFloat(buyResult.entry_spot_display_value),
+          contractType,
+          reset_barrier_offset: barrierOffset,
+          duration: sanitizedDuration,
+          durationUnit
+        };
+
+        setAndPersistOperationsLog(prev => [newOperation, ...prev]);
+        return { success: true, message: `Contrato ${contractType} executado.`, contractId, entryPrice: newOperation.entryPrice };
+      } catch (error: any) {
+        console.error("[Deriv Hook - Reset] Erro na execução:", error);
+        const message = error instanceof Error ? error.message : "Um erro desconhecido ocorreu.";
+        toast({ title: 'Erro de Execução', description: message, variant: 'destructive' });
+        return { success: false, message };
       }
-
-      const sanitizedStake = parseFloat(stake.toFixed(2));
-      const sanitizedDuration = Math.round(duration);
-
-      const proposalRequest: any = {
-        proposal: 1,
-        amount: sanitizedStake,
-        basis: 'stake',
-        contract_type: contractType,
-        currency: accountBalance.currency || 'USD',
-        duration: sanitizedDuration,
-        duration_unit: durationUnit,
-        symbol: symbol,
-      };
-
-      if (!['RESETCALL', 'RESETPUT'].includes(contractType)) {
-        proposalRequest.barrier = barrierOffset;
-      }
-      
-      console.log("[Deriv API Reset] Enviando proposta:", proposalRequest);
-      const proposalResponse: any = await makeRequest(proposalRequest);
-      
-      if (proposalResponse.error) {
-        console.error("[Deriv API Reset] Erro na Proposta:", proposalResponse);
-        throw new Error(`Erro na Proposta: ${proposalResponse.error.message}`);
-      }
-
-      const proposal = proposalResponse.proposal;
-      if (!proposal || !proposal.id) {
-        throw new Error("Falha ao obter uma proposta de negociação da API.");
-      }
-
-      const buyRequest = { buy: proposal.id, price: proposal.ask_price };
-      const buyResponse: any = await makeRequest(buyRequest);
-
-      if (buyResponse.error) {
-        console.error("[Deriv API Reset] Erro na Compra:", buyResponse);
-        throw new Error(`Erro na Compra: ${buyResponse.error.message}`);
-      }
-
-      const buyResult = buyResponse.buy;
-      const contractId = buyResult.contract_id;
-      if (!contractId) throw new Error("Falha na compra do contrato, ID não retornado.");
-
-      const newOperation: Operation = {
-        id: contractId,
-        asset: symbol,
-        direction: (contractType.includes('CALL') || contractType.includes('ONETOUCH')) ? 'rise' : 'fall',
-        stake: sanitizedStake,
-        status: 'pending',
-        timestamp: new Date(buyResult.purchase_time * 1000).toISOString(),
-        initiator,
-        entryPrice: parseFloat(buyResult.entry_spot_display_value),
-        contractType,
-        reset_barrier_offset: barrierOffset,
-        duration: sanitizedDuration,
-        durationUnit
-      };
-
-      setAndPersistOperationsLog(prev => [newOperation, ...prev]);
-      return { success: true, message: `Contrato ${contractType} executado.`, contractId, entryPrice: newOperation.entryPrice };
-    } catch (error: any) {
-      console.error("[Deriv Hook - Reset] Erro na execução:", error);
-      const message = error instanceof Error ? error.message : "Um erro desconhecido ocorreu.";
-      toast({ title: 'Erro de Execução', description: message, variant: 'destructive' });
-      return { success: false, message };
-    }
-  }, [isConnected, makeRequest, setAndPersistOperationsLog, toast, accountBalance.currency]);
+    }, [isConnected, makeRequest, setAndPersistOperationsLog, toast, accountBalance.currency]
+  );
 
 
   const sellContract = useCallback(async (contractId: number): Promise<TradeResult> => {
