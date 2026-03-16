@@ -301,7 +301,7 @@ export const DerivApiProviderReset = ({ children }: { children: ReactNode }) => 
     contractType: 'RESETCALL' | 'RESETPUT',
     stake: number,
     symbol: string,
-    barrierOffset: string,
+    reset_barrier_offset: string,
     duration: number,
     durationUnit: DurationUnit,
     initiator: OperationInitiator = 'Manual'
@@ -311,21 +311,32 @@ export const DerivApiProviderReset = ({ children }: { children: ReactNode }) => 
 
         const sanitizedStake = parseFloat(stake.toFixed(2));
         const sanitizedDuration = Math.round(duration);
-        
-        // ✅ CORREÇÃO: Usar compra direta em uma única etapa
-        const buyRequest = {
-            buy: "1",
-            price: sanitizedStake,
-            parameters: {
-                amount: sanitizedStake,
-                basis: 'stake',
-                contract_type: contractType,
-                currency: 'USD',
-                duration: sanitizedDuration,
-                duration_unit: durationUnit,
-                symbol: symbol,
-                reset_barrier_offset: barrierOffset,
-            }
+
+        // PASSO 1: Obter a Proposta (Proposal)
+        const proposalRequest = {
+            proposal: 1,
+            amount: sanitizedStake,
+            basis: 'stake',
+            contract_type: contractType,
+            currency: 'USD',
+            duration: sanitizedDuration,
+            duration_unit: durationUnit,
+            symbol: symbol,
+            reset_barrier_offset: reset_barrier_offset,
+        };
+
+        const proposalResponse: any = await makeRequest(proposalRequest);
+        if (proposalResponse.error) throw new Error(proposalResponse.error.message);
+      
+        const proposal = proposalResponse.proposal;
+        if (!proposal || !proposal.id) {
+          throw new Error("Falha ao obter uma proposta de negociação da API. A resposta não continha um ID.");
+        }
+
+        // PASSO 2: Comprar (Buy) a Proposta
+        const buyRequest = { 
+            "buy": proposal.id, 
+            "price": proposal.ask_price 
         };
 
         const buyResponse: any = await makeRequest(buyRequest);
@@ -335,6 +346,7 @@ export const DerivApiProviderReset = ({ children }: { children: ReactNode }) => 
         const contractId = buyResult.contract_id;
         if (!contractId) throw new Error("Falha na compra do contrato, ID não retornado.");
 
+        // Lógica de log...
         const newOperation: any = {
             id: contractId,
             asset: symbol,
@@ -345,7 +357,7 @@ export const DerivApiProviderReset = ({ children }: { children: ReactNode }) => 
             initiator,
             entryPrice: parseFloat(buyResult.entry_spot_display_value),
             contractType,
-            reset_barrier_offset: barrierOffset,
+            reset_barrier_offset: reset_barrier_offset,
             duration: sanitizedDuration,
             durationUnit
         };
@@ -539,7 +551,8 @@ export const DerivApiProviderReset = ({ children }: { children: ReactNode }) => 
                     .sort((a, b) => a.label.localeCompare(b.label)));
                     
                 setIsAssetsLoading(false);
-
+                
+                // ✅ CORRIGIDO: Define o primeiro ativo da lista se nenhum estiver selecionado
                 if (!activeSymbol && allSymbols.length > 0) {
                      setActiveSymbol(allSymbols[0].symbol);
                 }
