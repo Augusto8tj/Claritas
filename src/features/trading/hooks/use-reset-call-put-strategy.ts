@@ -38,8 +38,8 @@ export function useResetCallPutStrategy(
     const lastProcessedOpId = useRef<number | null>(null);
 
     // --- Parâmetros de Estratégia ---
-    const [adxThreshold, setAdxThreshold] = useState(20);
-    const [atrMultiplier, setAtrMultiplier] = useState(1.5);
+    const [adxThreshold, setAdxThreshold] = useState(20); 
+    const [atrMultiplier, setAtrMultiplier] = useState(1.5); 
     const [useAdaptiveDuration, setUseAdaptiveDuration] = useState(false);
     const [resetMode, setResetMode] = useState<ResetMode>('CLASSIC');
     const [minConfirmations, setMinConfirmations] = useState(2);
@@ -77,10 +77,12 @@ export function useResetCallPutStrategy(
     // Efeito dedicado para calcular a barreira, independentemente do estado do piloto
     useEffect(() => {
         if (indicators?.atr) {
-            const barrierOffset = `+${(indicators.atr * atrMultiplier).toFixed(5)}`;
+            const barrierOffsetValue = indicators.atr * atrMultiplier;
+            // ✅ CORRIGIDO: Limita a 2 casas decimais para ser compatível com a API.
+            const barrierOffset = `+${barrierOffsetValue.toFixed(2)}`;
             setCalculatedBarrier(barrierOffset);
         } else {
-            setCalculatedBarrier('+0.0'); // Valor padrão ou de carregamento
+            setCalculatedBarrier('+0.00'); // Valor padrão
         }
     }, [indicators, atrMultiplier]);
 
@@ -209,7 +211,7 @@ export function useResetCallPutStrategy(
                         signal === 'call' ? 'RESETCALL' : 'RESETPUT',
                         stakeToUse,
                         activeSymbol,
-                        '', // Barreira não é enviada para Reset
+                        calculatedBarrier,
                         duration,
                         form.getValues('duration_unit'),
                         'Piloto'
@@ -218,7 +220,7 @@ export function useResetCallPutStrategy(
                         executionCooldownRef.current = Date.now() + 8000;
                         toast({
                             title: `🤖 ${signal === 'call' ? '📈 Reset CALL' : '📉 Reset PUT'} Executado!`,
-                            description: `Stake: $${stakeToUse} | ${strength} (${confirmations}/4)`,
+                            description: `Stake: $${stakeToUse} | Barreira: ${calculatedBarrier} | ${strength} (${confirmations}/4)`,
                         });
                     } else {
                         toast({ title: "❌ Falhou", description: result.message, variant: 'destructive' });
@@ -270,6 +272,7 @@ export function useResetCallPutStrategy(
         setResetMode,
         minConfirmations,
         setMinConfirmations,
+        // Legacy
         rsiThreshold: 50,
         setRsiThreshold: (_: number) => {},
     };

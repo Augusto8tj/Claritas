@@ -9,11 +9,12 @@ export const resetSchema = z.object({
 }).refine((data) => {
     // A validação só se aplica se uma barreira for fornecida.
     if (data.barrierOffset && data.barrierOffset.length > 0) {
-        return /^[+-]\d+(\.\d+)?$/.test(data.barrierOffset);
+        // Permite '+' ou '-' seguido por números, opcionalmente com um ponto e 1 ou 2 casas decimais.
+        return /^[+-]\d+(\.\d{1,2})?$/.test(data.barrierOffset);
     }
     return true;
 }, {
-    message: "O offset deve começar com '+' ou '-' e ser um número válido (ex: '+0.05').",
+    message: "O offset deve começar com '+' ou '-' e ter no máximo 2 casas decimais (ex: '+0.50').",
     path: ["barrierOffset"],
 });
 
