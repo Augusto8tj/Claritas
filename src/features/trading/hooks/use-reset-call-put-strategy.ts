@@ -209,7 +209,7 @@ export function useResetCallPutStrategy(
                         signal === 'call' ? 'RESETCALL' : 'RESETPUT',
                         stakeToUse,
                         activeSymbol,
-                        calculatedBarrier,
+                        '', // Barreira não é enviada para Reset
                         duration,
                         form.getValues('duration_unit'),
                         'Piloto'
@@ -218,7 +218,7 @@ export function useResetCallPutStrategy(
                         executionCooldownRef.current = Date.now() + 8000;
                         toast({
                             title: `🤖 ${signal === 'call' ? '📈 Reset CALL' : '📉 Reset PUT'} Executado!`,
-                            description: `Stake: $${stakeToUse} | Barreira: ${calculatedBarrier} | ${strength} (${confirmations}/4)`,
+                            description: `Stake: $${stakeToUse} | ${strength} (${confirmations}/4)`,
                         });
                     } else {
                         toast({ title: "❌ Falhou", description: result.message, variant: 'destructive' });

@@ -25,7 +25,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Input } from "@/components/ui/input";
 import type { OperationInitiator } from "@/lib/types";
 import type { ResetFormValues, DurationUnit } from "./deriv-trader-interface-reset.types";
-import { useDerivApiReset } from "@/features/trading/hooks/use-deriv-api-reset";
+import { useDerivApiReset, AllContractTypes } from "@/features/trading/hooks/use-deriv-api-reset";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
@@ -49,14 +49,16 @@ export default function DerivTraderInterfaceReset({ symbol, suggestedBarrier }: 
   const { isConnected, executeTrade, durationLimits } = useDerivApiReset();
   const form = useFormContext<ResetFormValues>();
   const durationUnit = form.watch('duration_unit');
+  const [mode, setMode] = useState<'reset' | 'high_low' | 'touch'>('reset');
 
   useEffect(() => {
-    if (suggestedBarrier) {
-      form.setValue('reset_barrier_offset', suggestedBarrier);
+    // Apenas aplica a barreira sugerida no modo reset, que não tem input manual
+    if (mode === 'reset' && suggestedBarrier) {
+      form.setValue('barrierOffset', suggestedBarrier);
     }
-  }, [suggestedBarrier, form]);
+  }, [suggestedBarrier, form, mode]);
 
-  const handleTrade = async (tradeDirection: 'call' | 'put') => {
+  const handleTrade = async (direction: 'call' | 'put') => {
     const isValid = await form.trigger();
     if (!isValid) {
       toast({
@@ -75,20 +77,34 @@ export default function DerivTraderInterfaceReset({ symbol, suggestedBarrier }: 
       return;
     }
 
-    setLoading(tradeDirection);
+    setLoading(direction);
     const data = form.getValues();
-    const contractType = tradeDirection === 'call' ? 'RESETCALL' : 'RESETPUT';
-    
-    // CORREÇÃO: A barreira do CALL deve ser negativa
-    const barrier = tradeDirection === 'call' 
-      ? (data.reset_barrier_offset.startsWith('-') ? data.reset_barrier_offset : `-${data.reset_barrier_offset}`)
-      : (data.reset_barrier_offset.startsWith('+') ? data.reset_barrier_offset : `+${data.reset_barrier_offset}`);
 
+    let contractType: AllContractTypes;
+    switch (mode) {
+      case 'reset':
+        contractType = direction === 'call' ? 'RESETCALL' : 'RESETPUT';
+        break;
+      case 'high_low':
+        contractType = direction === 'call' ? 'CALL' : 'PUT';
+        break;
+      case 'touch':
+        contractType = direction === 'call' ? 'ONETOUCH' : 'NOTOUCH';
+        break;
+      default:
+        toast({ variant: "destructive", title: "Modo inválido" });
+        setLoading(null);
+        return;
+    }
+    
+    // Para Reset, o offset é calculado mas não enviado. Para outros, usa-se o valor do formulário.
+    const barrierToSend = mode === 'reset' ? '' : (data.barrierOffset || '');
+    
     const result = await executeTrade(
         contractType,
         data.stake,
         symbol,
-        barrier,
+        barrierToSend,
         data.duration,
         data.duration_unit,
         'Manual' as OperationInitiator
@@ -112,15 +128,29 @@ export default function DerivTraderInterfaceReset({ symbol, suggestedBarrier }: 
 
   const isButtonDisabled = !!loading || !isConnected;
 
+  const buttonLabels = {
+    reset: { call: "Reset Call", put: "Reset Put" },
+    high_low: { call: "Higher", put: "Lower" },
+    touch: { call: "Touch", put: "No Touch" }
+  };
+
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="font-headline">Negociar Reset Call/Put</CardTitle>
+        <CardTitle className="font-headline">Central de Negociação</CardTitle>
         <CardDescription>
-          Abra posições com uma barreira de reset para uma segunda chance.
+          Execute contratos de Reset, Higher/Lower e Touch/No Touch.
         </CardDescription>
       </CardHeader>
       <CardContent className="p-4 space-y-6">
+        <Tabs value={mode} onValueChange={(v) => setMode(v as any)} className="w-full">
+          <TabsList className="grid w-full grid-cols-3">
+            <TabsTrigger value="reset">Reset</TabsTrigger>
+            <TabsTrigger value="high_low">Higher/Lower</TabsTrigger>
+            <TabsTrigger value="touch">Touch/No Touch</TabsTrigger>
+          </TabsList>
+        </Tabs>
+
         <Form {...form}>
           <form className="space-y-6">
              <FormField
@@ -137,33 +167,39 @@ export default function DerivTraderInterfaceReset({ symbol, suggestedBarrier }: 
               )}
             />
             
-            <FormField
-              control={form.control}
-              name="reset_barrier_offset"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Offset da Barreira de Reset</FormLabel>
-                  <div className="flex items-center gap-2">
-                    <FormControl>
-                        <Input type="text" placeholder="+0.1234" {...field} />
-                    </FormControl>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="icon"
-                      onClick={() => form.setValue('reset_barrier_offset', suggestedBarrier)}
-                      title="Usar barreira sugerida pela IA"
-                    >
-                      <Wand2 className="h-4 w-4" />
-                    </Button>
-                  </div>
-                  <FormDescription className="text-xs">
-                    A IA sugere <span className="font-bold text-primary">{suggestedBarrier}</span> baseado na volatilidade.
-                  </FormDescription>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
+            {mode !== 'reset' ? (
+                <FormField
+                control={form.control}
+                name="barrierOffset"
+                render={({ field }) => (
+                    <FormItem>
+                    <FormLabel>Offset da Barreira</FormLabel>
+                    <div className="flex items-center gap-2">
+                        <FormControl>
+                            <Input type="text" placeholder="+0.1234" {...field} />
+                        </FormControl>
+                        <Button
+                        type="button"
+                        variant="outline"
+                        size="icon"
+                        onClick={() => form.setValue('barrierOffset', suggestedBarrier)}
+                        title="Usar barreira sugerida pela IA"
+                        >
+                        <Wand2 className="h-4 w-4" />
+                        </Button>
+                    </div>
+                    <FormDescription className="text-xs">
+                        A IA sugere <span className="font-bold text-primary">{suggestedBarrier}</span> baseado na volatilidade.
+                    </FormDescription>
+                    <FormMessage />
+                    </FormItem>
+                )}
+                />
+            ) : (
+                <div className="text-sm p-3 bg-muted/50 rounded-md border text-muted-foreground">
+                    <p>Barreira de Reset é automática. A IA sugere <span className="font-bold text-primary">{suggestedBarrier}</span> como um offset ideal para outros tipos de contrato, baseado na volatilidade atual.</p>
+                </div>
+            )}
 
             <Separator />
             
@@ -235,7 +271,7 @@ export default function DerivTraderInterfaceReset({ symbol, suggestedBarrier }: 
                 disabled={isButtonDisabled}
             >
                 {loading === "call" ? <Loader2 className="h-5 w-5 animate-spin" /> : <ArrowUp className="h-5 w-5" />}
-                <span className="font-semibold text-base">Reset Call</span>
+                <span className="font-semibold text-base">{buttonLabels[mode].call}</span>
             </Button>
             <Button
                 variant="outline"
@@ -244,7 +280,7 @@ export default function DerivTraderInterfaceReset({ symbol, suggestedBarrier }: 
                 disabled={isButtonDisabled}
             >
                 {loading === "put" ? <Loader2 className="h-5 w-5 animate-spin" /> : <ArrowDown className="h-5 w-5" />}
-                <span className="font-semibold text-base">Reset Put</span>
+                <span className="font-semibold text-base">{buttonLabels[mode].put}</span>
             </Button>
         </div>
       </CardContent>

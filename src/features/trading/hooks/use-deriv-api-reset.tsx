@@ -14,6 +14,8 @@ const DERIV_RESET_LOG_KEY = 'derivResetOperationsLog_v1';
 const DERIV_APP_ID = process.env.NEXT_PUBLIC_DERIV_APP_ID || "1089";
 
 export type AccountType = 'demo' | 'real';
+export type AllContractTypes = 'RESETCALL' | 'RESETPUT' | 'CALL' | 'PUT' | 'ONETOUCH' | 'NOTOUCH';
+
 
 export interface AccountBalance {
   balance: number | null;
@@ -73,10 +75,10 @@ interface DerivApiContextType {
   disconnect: (type: AccountType) => void;
   reconnect: () => Promise<boolean>;
   executeTrade: (
-    contractType: 'RESETCALL' | 'RESETPUT',
+    contractType: AllContractTypes,
     stake: number,
     symbol: string,
-    reset_barrier_offset: string,
+    barrierOffset: string,
     duration: number,
     durationUnit: DurationUnit,
     initiator?: OperationInitiator,
@@ -298,77 +300,86 @@ export const DerivApiProviderReset = ({ children }: { children: ReactNode }) => 
     }, [makeRequest]);
 
   const executeTrade = useCallback(async (
-    contractType: 'RESETCALL' | 'RESETPUT',
+    contractType: AllContractTypes,
     stake: number,
     symbol: string,
-    reset_barrier_offset: string, // Recebido para log, mas não enviado
+    barrierOffset: string,
     duration: number,
     durationUnit: DurationUnit,
     initiator: OperationInitiator = 'Manual'
   ): Promise<TradeResult> => {
     try {
-        if (!wsRef.current || !isConnected) throw new Error("A conexão com a API da Deriv não está ativa.");
+      if (!wsRef.current || !isConnected) {
+        throw new Error("A conexão com a API da Deriv não está ativa.");
+      }
 
-        const sanitizedStake = parseFloat(stake.toFixed(2));
-        const sanitizedDuration = Math.round(duration);
+      const sanitizedStake = parseFloat(stake.toFixed(2));
+      const sanitizedDuration = Math.round(duration);
 
-        // PASSO 1: Obter a Proposta (Proposal)
-        const proposalRequest = {
-            proposal: 1,
-            amount: sanitizedStake,
-            basis: 'stake',
-            contract_type: contractType,
-            currency: 'USD',
-            duration: sanitizedDuration,
-            duration_unit: durationUnit,
-            symbol: symbol,
-            // A CHAVE ESTÁ AQUI: O offset é enviado na proposta, não na compra.
-            reset_barrier_offset: reset_barrier_offset
-        };
+      const proposalRequest: any = {
+        proposal: 1,
+        amount: sanitizedStake,
+        basis: 'stake',
+        contract_type: contractType,
+        currency: accountBalance.currency || 'USD',
+        duration: sanitizedDuration,
+        duration_unit: durationUnit,
+        symbol: symbol,
+      };
 
-        const proposalResponse: any = await makeRequest(proposalRequest);
-        if (proposalResponse.error) throw new Error(`Erro na Proposta: ${proposalResponse.error.message}`);
+      if (!['RESETCALL', 'RESETPUT'].includes(contractType)) {
+        proposalRequest.barrier = barrierOffset;
+      }
       
-        const proposal = proposalResponse.proposal;
-        if (!proposal || !proposal.id) {
-          throw new Error("Falha ao obter uma proposta de negociação da API. A resposta não continha um ID.");
-        }
+      console.log("[Deriv API Reset] Enviando proposta:", proposalRequest);
+      const proposalResponse: any = await makeRequest(proposalRequest);
+      
+      if (proposalResponse.error) {
+        console.error("[Deriv API Reset] Erro na Proposta:", proposalResponse);
+        throw new Error(`Erro na Proposta: ${proposalResponse.error.message}`);
+      }
 
-        // PASSO 2: Comprar (Buy) a Proposta
-        const buyRequest = { "buy": proposal.id, "price": proposal.ask_price };
+      const proposal = proposalResponse.proposal;
+      if (!proposal || !proposal.id) {
+        throw new Error("Falha ao obter uma proposta de negociação da API.");
+      }
 
-        const buyResponse: any = await makeRequest(buyRequest);
-        if(buyResponse.error) throw new Error(`Erro na Compra: ${buyResponse.error.message}`);
+      const buyRequest = { buy: proposal.id, price: proposal.ask_price };
+      const buyResponse: any = await makeRequest(buyRequest);
 
-        const buyResult = buyResponse.buy;
-        const contractId = buyResult.contract_id;
-        if (!contractId) throw new Error("Falha na compra do contrato, ID não retornado.");
+      if (buyResponse.error) {
+        console.error("[Deriv API Reset] Erro na Compra:", buyResponse);
+        throw new Error(`Erro na Compra: ${buyResponse.error.message}`);
+      }
 
-        // Lógica de log...
-        const newOperation: any = {
-            id: contractId,
-            asset: symbol,
-            direction: contractType === 'RESETCALL' ? 'rise' : 'fall',
-            stake: sanitizedStake,
-            status: 'pending',
-            timestamp: new Date().toISOString(),
-            initiator,
-            entryPrice: parseFloat(buyResult.entry_spot_display_value),
-            contractType,
-            reset_barrier_offset: reset_barrier_offset,
-            duration: sanitizedDuration,
-            durationUnit
-        };
+      const buyResult = buyResponse.buy;
+      const contractId = buyResult.contract_id;
+      if (!contractId) throw new Error("Falha na compra do contrato, ID não retornado.");
 
-        setAndPersistOperationsLog(prev => [newOperation, ...prev]);
-        return { success: true, message: `Contrato ${contractType} executado.`, contractId: contractId, entryPrice: newOperation.entryPrice };
-    } catch (error) {
-        console.error("[Deriv Hook - Reset] Erro na execução:", error);
-        const message = error instanceof Error ? error.message : "Um erro desconhecido ocorreu.";
-        toast({ title: 'Erro de Execução', description: message, variant: 'destructive' });
-        return { success: false, message };
+      const newOperation: Operation = {
+        id: contractId,
+        asset: symbol,
+        direction: (contractType.includes('CALL') || contractType.includes('ONETOUCH')) ? 'rise' : 'fall',
+        stake: sanitizedStake,
+        status: 'pending',
+        timestamp: new Date(buyResult.purchase_time * 1000).toISOString(),
+        initiator,
+        entryPrice: parseFloat(buyResult.entry_spot_display_value),
+        contractType,
+        reset_barrier_offset: barrierOffset,
+        duration: sanitizedDuration,
+        durationUnit
+      };
+
+      setAndPersistOperationsLog(prev => [newOperation, ...prev]);
+      return { success: true, message: `Contrato ${contractType} executado.`, contractId, entryPrice: newOperation.entryPrice };
+    } catch (error: any) {
+      console.error("[Deriv Hook - Reset] Erro na execução:", error);
+      const message = error instanceof Error ? error.message : "Um erro desconhecido ocorreu.";
+      toast({ title: 'Erro de Execução', description: message, variant: 'destructive' });
+      return { success: false, message };
     }
-}, [isConnected, makeRequest, setAndPersistOperationsLog, toast]);
+  }, [isConnected, makeRequest, setAndPersistOperationsLog, toast, accountBalance.currency]);
 
 
   const sellContract = useCallback(async (contractId: number): Promise<TradeResult> => {
@@ -400,7 +411,11 @@ export const DerivApiProviderReset = ({ children }: { children: ReactNode }) => 
         
         const newLimits: DurationLimits = { t: null, s: null, m: null, h: null, d: null };
         const availableContracts = contractsRes.contracts_for?.available || [];
-        const resetContracts = availableContracts.filter((c:any) => c.contract_type === 'RESETCALL' || c.contract_type === 'RESETPUT');
+        const relevantContracts = availableContracts.filter((c:any) => 
+            c.contract_type === 'RESETCALL' || c.contract_type === 'RESETPUT' ||
+            c.contract_type === 'CALL' || c.contract_type === 'PUT' ||
+            c.contract_type === 'ONETOUCH' || c.contract_type === 'NOTOUCH'
+        );
 
         const parseDuration = (dStr: string): { value: number; unit: DurationUnit } | null => {
             const match = dStr.match(/^(\d+)([tsmhd])$/);
@@ -408,21 +423,26 @@ export const DerivApiProviderReset = ({ children }: { children: ReactNode }) => 
             return { value: parseInt(match[1], 10), unit: match[2] as DurationUnit };
         };
         
-        if (resetContracts.length > 0) {
-            const sampleContract = resetContracts[0];
-            const minParsed = parseDuration(sampleContract.min_contract_duration);
-            const maxParsed = parseDuration(sampleContract.max_contract_duration);
+        if (relevantContracts.length > 0) {
+            relevantContracts.forEach(contract => {
+                const minParsed = parseDuration(contract.min_contract_duration);
+                const maxParsed = parseDuration(contract.max_contract_duration);
 
-            if (minParsed && (!newLimits[minParsed.unit] || newLimits[minParsed.unit]!.min > minParsed.value)) {
-                if (!newLimits[minParsed.unit]) newLimits[minParsed.unit] = { min: 0, max: Infinity };
-                newLimits[minParsed.unit]!.min = minParsed.value;
-            }
-            if (maxParsed && (!newLimits[maxParsed.unit] || newLimits[maxParsed.unit]!.max < maxParsed.value)) {
-                if (!newLimits[maxParsed.unit]) newLimits[maxParsed.unit] = { min: 0, max: Infinity };
-                newLimits[maxParsed.unit]!.max = maxParsed.value;
-            }
+                if (minParsed) {
+                    if (!newLimits[minParsed.unit] || newLimits[minParsed.unit]!.min > minParsed.value) {
+                        if (!newLimits[minParsed.unit]) newLimits[minParsed.unit] = { min: Infinity, max: 0 };
+                        newLimits[minParsed.unit]!.min = minParsed.value;
+                    }
+                }
+                if (maxParsed) {
+                     if (!newLimits[maxParsed.unit] || newLimits[maxParsed.unit]!.max < maxParsed.value) {
+                        if (!newLimits[maxParsed.unit]) newLimits[maxParsed.unit] = { min: Infinity, max: 0 };
+                        newLimits[maxParsed.unit]!.max = maxParsed.value;
+                    }
+                }
+            });
         } else {
-           console.warn(`Nenhum contrato RESET encontrado para ${symbol}`);
+           console.warn(`Nenhum contrato relevante encontrado para ${symbol}`);
         }
         setDurationLimits(newLimits);
 
