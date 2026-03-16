@@ -301,7 +301,7 @@ export const DerivApiProviderReset = ({ children }: { children: ReactNode }) => 
     contractType: 'RESETCALL' | 'RESETPUT',
     stake: number,
     symbol: string,
-    reset_barrier_offset: string,
+    reset_barrier_offset: string, // Recebido para log, mas não enviado
     duration: number,
     durationUnit: DurationUnit,
     initiator: OperationInitiator = 'Manual'
@@ -322,11 +322,12 @@ export const DerivApiProviderReset = ({ children }: { children: ReactNode }) => 
             duration: sanitizedDuration,
             duration_unit: durationUnit,
             symbol: symbol,
-            reset_barrier_offset: reset_barrier_offset,
+            // A CHAVE ESTÁ AQUI: O offset é enviado na proposta, não na compra.
+            reset_barrier_offset: reset_barrier_offset
         };
 
         const proposalResponse: any = await makeRequest(proposalRequest);
-        if (proposalResponse.error) throw new Error(proposalResponse.error.message);
+        if (proposalResponse.error) throw new Error(`Erro na Proposta: ${proposalResponse.error.message}`);
       
         const proposal = proposalResponse.proposal;
         if (!proposal || !proposal.id) {
@@ -334,13 +335,10 @@ export const DerivApiProviderReset = ({ children }: { children: ReactNode }) => 
         }
 
         // PASSO 2: Comprar (Buy) a Proposta
-        const buyRequest = { 
-            "buy": proposal.id, 
-            "price": proposal.ask_price 
-        };
+        const buyRequest = { "buy": proposal.id, "price": proposal.ask_price };
 
         const buyResponse: any = await makeRequest(buyRequest);
-        if(buyResponse.error) throw new Error(buyResponse.error.message);
+        if(buyResponse.error) throw new Error(`Erro na Compra: ${buyResponse.error.message}`);
 
         const buyResult = buyResponse.buy;
         const contractId = buyResult.contract_id;
@@ -363,13 +361,14 @@ export const DerivApiProviderReset = ({ children }: { children: ReactNode }) => 
         };
 
         setAndPersistOperationsLog(prev => [newOperation, ...prev]);
-        return { success: true, message: `Contrato ${contractType} executado.`, contractId };
+        return { success: true, message: `Contrato ${contractType} executado.`, contractId: contractId, entryPrice: newOperation.entryPrice };
     } catch (error) {
         console.error("[Deriv Hook - Reset] Erro na execução:", error);
         const message = error instanceof Error ? error.message : "Um erro desconhecido ocorreu.";
+        toast({ title: 'Erro de Execução', description: message, variant: 'destructive' });
         return { success: false, message };
     }
-}, [isConnected, makeRequest, setAndPersistOperationsLog]);
+}, [isConnected, makeRequest, setAndPersistOperationsLog, toast]);
 
 
   const sellContract = useCallback(async (contractId: number): Promise<TradeResult> => {
@@ -534,7 +533,7 @@ export const DerivApiProviderReset = ({ children }: { children: ReactNode }) => 
                 const assetsRes: any = await makeRequest({ active_symbols: 'full', product_type: 'basic' });
                 if (assetsRes.error) throw new Error(assetsRes.error.message);
                 
-                const allSymbols = assetsRes.active_symbols;
+                const allSymbols = assetsRes.active_symbols.filter((s:any) => s.market === 'forex' || s.market === 'synthetic_index');
 
                 const groupedAssets: { [key: string]: Asset[] } = {};
                 allSymbols.forEach((s: any) => {
@@ -552,7 +551,6 @@ export const DerivApiProviderReset = ({ children }: { children: ReactNode }) => 
                     
                 setIsAssetsLoading(false);
                 
-                // ✅ CORRIGIDO: Define o primeiro ativo da lista se nenhum estiver selecionado
                 if (!activeSymbol && allSymbols.length > 0) {
                      setActiveSymbol(allSymbols[0].symbol);
                 }
@@ -568,7 +566,7 @@ export const DerivApiProviderReset = ({ children }: { children: ReactNode }) => 
     };
     connect();
     return () => { if (wsRef.current) wsRef.current.close(); };
-  }, [activeToken, isLoading, triggerReconnect]);
+  }, [activeToken, isLoading, triggerReconnect, makeRequest, getHistoricalData, startConnectionMonitor]);
 
   useEffect(() => {
     if (isConnected && activeSymbol) {
