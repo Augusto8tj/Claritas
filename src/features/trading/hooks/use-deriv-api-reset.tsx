@@ -171,9 +171,10 @@ export const DerivApiProviderReset = ({ children }: { children: ReactNode }) => 
   const [triggerReconnect, setTriggerReconnect] = useState(0);
   
   const pingIntervalRef = useRef<NodeJS.Timeout | null>(null);
-  const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(false);
+  const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const reconnectInProgressRef = useRef(false);
   const allowAutoReconnectRef = useRef(true);
+  const recentlyCreatedContractsRef = useRef<Set<number>>(new Set());
   
     const setAndPersistOperationsLog = useCallback((updater: React.SetStateAction<Operation[]>) => {
         setOperationsLog(prevLog => {
@@ -349,21 +350,24 @@ export const DerivApiProviderReset = ({ children }: { children: ReactNode }) => 
         const buyResponse: any = await makeRequest(buyRequest);
 
         if (buyResponse.error) {
-          const errorMessage = buyResponse.error.message || JSON.stringify(buyResponse.error);
-          console.error("[Deriv API Reset] Erro na Compra:", errorMessage, buyResponse);
-          throw new Error(`Erro na Compra: ${errorMessage}`);
+           const errorMessage = buyResponse.error.message || JSON.stringify(buyResponse.error);
+           console.error("[Deriv API Reset] Erro na Compra:", errorMessage, buyResponse);
+           throw new Error(`Erro na Compra: ${errorMessage}`);
         }
 
         const buyResult = buyResponse.buy;
         const contractId = buyResult.contract_id;
         if (!contractId) throw new Error("Falha na compra do contrato, ID não retornado.");
 
-        // ✅ CORRIGIDO: Lógica robusta para obter o preço de entrada
-        const latestTick = priceTicks.length > 0 ? priceTicks[priceTicks.length - 1].price : 0;
-        const entryPrice = buyResult.entry_tick_display_value
-          ? parseFloat(buyResult.entry_tick_display_value)
-          : (buyResult.entry_spot_display_value ? parseFloat(buyResult.entry_spot_display_value) : latestTick);
+        recentlyCreatedContractsRef.current.add(contractId);
+        setTimeout(() => {
+            recentlyCreatedContractsRef.current.delete(contractId);
+        }, 5000); 
 
+        const latestTick = priceTicks.length > 0 ? priceTicks[priceTicks.length - 1].price : 0;
+        const entryPrice = buyResult.entry_tick_display_value 
+            ? parseFloat(buyResult.entry_tick_display_value) 
+            : (buyResult.entry_spot_display_value ? parseFloat(buyResult.entry_spot_display_value) : latestTick);
 
         const newOperation: Operation = {
           id: contractId,
@@ -534,7 +538,8 @@ export const DerivApiProviderReset = ({ children }: { children: ReactNode }) => 
         
                         setAndPersistOperationsLog(prevLog => {
                             const existingOpIndex = prevLog.findIndex(op => op.id === contract.contract_id);
-                            
+                            const isSold = contract.is_sold === 1;
+
                             if (existingOpIndex !== -1) {
                                 const updatedLog = [...prevLog];
                                 const op = updatedLog[existingOpIndex];
@@ -542,8 +547,6 @@ export const DerivApiProviderReset = ({ children }: { children: ReactNode }) => 
                                 if (op.status !== 'pending') {
                                     return prevLog;
                                 }
-                                
-                                const isSold = contract.is_sold === 1;
         
                                 if (isSold) {
                                     const newStatus = contract.profit >= 0 ? 'won' : 'lost';
@@ -574,6 +577,34 @@ export const DerivApiProviderReset = ({ children }: { children: ReactNode }) => 
                                     };
                                     return updatedLog;
                                 }
+                            } else if (!isSold) {
+                                if (recentlyCreatedContractsRef.current.has(contract.contract_id)) {
+                                    return prevLog;
+                                }
+
+                                const direction = (contract.contract_type || '').includes('CALL') || (contract.contract_type || '').includes('ONETOUCH') ? 'rise' : 'fall';
+                                const purchaseTime = contract.purchase_time || Math.floor(Date.now() / 1000);
+                                
+                                const durationInSeconds = contract.date_expiry ? (contract.date_expiry - purchaseTime) : 0;
+                                const durationUnit: DurationUnit = 's';
+            
+                                const newOperation: Operation = {
+                                    id: contract.contract_id,
+                                    asset: contract.symbol,
+                                    direction: direction,
+                                    stake: contract.buy_price || 0,
+                                    status: 'pending',
+                                    result: contract.profit,
+                                    timestamp: new Date(purchaseTime * 1000).toISOString(),
+                                    initiator: 'Manual',
+                                    entryPrice: parseFloat(contract.entry_spot_display_value || contract.entry_tick_display_value || '0'),
+                                    isSellable: contract.is_sellable === 1,
+                                    expirationTime: contract.date_expiry ? contract.date_expiry * 1000 : undefined,
+                                    duration: durationInSeconds,
+                                    durationUnit: durationUnit,
+                                    contractType: contract.contract_type,
+                                };
+                                return [newOperation, ...prevLog];
                             }
                             
                             return prevLog;
