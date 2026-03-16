@@ -171,7 +171,7 @@ export const DerivApiProviderReset = ({ children }: { children: ReactNode }) => 
   const [triggerReconnect, setTriggerReconnect] = useState(0);
   
   const pingIntervalRef = useRef<NodeJS.Timeout | null>(null);
-  const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(false);
   const reconnectInProgressRef = useRef(false);
   const allowAutoReconnectRef = useRef(true);
   
@@ -328,8 +328,7 @@ export const DerivApiProviderReset = ({ children }: { children: ReactNode }) => 
           symbol: symbol,
         };
 
-        // Apenas envia a barreira para contratos que não são de 'Reset'
-        if (!['RESETCALL', 'RESETPUT'].includes(contractType)) {
+        if (!['RESETCALL', 'RESETPUT'].includes(contractType) && barrierOffset) {
           proposalRequest.barrier = barrierOffset;
         }
         
@@ -379,9 +378,8 @@ export const DerivApiProviderReset = ({ children }: { children: ReactNode }) => 
         return { success: true, message: `Contrato ${contractType} executado.`, contractId, entryPrice: newOperation.entryPrice };
       } catch (error: any) {
         console.error("[Deriv Hook - Reset] Erro na execução:", error);
-        const message = error instanceof Error ? error.message : "Um erro desconhecido ocorreu.";
-        toast({ title: 'Erro de Execução', description: message, variant: 'destructive' });
-        return { success: false, message };
+        toast({ title: 'Erro de Execução', description: error.message, variant: 'destructive' });
+        return { success: false, message: error.message };
       }
     }, [isConnected, makeRequest, setAndPersistOperationsLog, toast, accountBalance.currency]
   );
@@ -523,7 +521,58 @@ export const DerivApiProviderReset = ({ children }: { children: ReactNode }) => 
                     case 'proposal_open_contract':
                         const contract = response.proposal_open_contract;
                         if (!contract) return;
-                        setAndPersistOperationsLog(prev => prev.map(op => op.id === contract.contract_id ? { ...op, status: contract.status, result: contract.profit, exitPrice: parseFloat(contract.sell_spot || contract.exit_tick_display_value || '0'), exitTimestamp: new Date(contract.sell_time * 1000).toISOString() } : op));
+        
+                        const relevantTypes = ['RESETCALL', 'RESETPUT', 'CALL', 'PUT', 'ONETOUCH', 'NOTOUCH'];
+                        if (!relevantTypes.includes(contract.contract_type)) {
+                            return;
+                        }
+        
+                        setAndPersistOperationsLog(prevLog => {
+                            const existingOpIndex = prevLog.findIndex(op => op.id === contract.contract_id);
+                            
+                            if (existingOpIndex !== -1) {
+                                const updatedLog = [...prevLog];
+                                const op = updatedLog[existingOpIndex];
+        
+                                if (op.status !== 'pending') {
+                                    return prevLog;
+                                }
+                                
+                                const isSold = contract.is_sold === 1;
+        
+                                if (isSold) {
+                                    const newStatus = contract.profit >= 0 ? 'won' : 'lost';
+                                    const exitPrice = contract.exit_tick_display_value 
+                                        ? parseFloat(contract.exit_tick_display_value) 
+                                        : (contract.sell_spot ? parseFloat(contract.sell_spot) : op.exitPrice);
+                                    
+                                    const exitTimeEpoch = contract.sell_time || contract.exit_tick_time;
+                                    const exitTimestamp = exitTimeEpoch ? new Date(exitTimeEpoch * 1000).toISOString() : new Date().toISOString();
+        
+                                    updatedLog[existingOpIndex] = {
+                                        ...op,
+                                        status: newStatus,
+                                        result: contract.profit,
+                                        exitPrice: exitPrice,
+                                        exitTimestamp: exitTimestamp,
+                                    };
+                                    
+                                    if (wsRef.current?.readyState === WebSocket.OPEN) {
+                                        wsRef.current.send(JSON.stringify({"balance": 1}));
+                                    }
+        
+                                    return updatedLog;
+                                } else {
+                                    updatedLog[existingOpIndex] = {
+                                        ...op,
+                                        result: contract.profit
+                                    };
+                                    return updatedLog;
+                                }
+                            }
+                            
+                            return prevLog;
+                        });
                         break;
                     case 'tick':
                          if (response.subscription?.id === activeSubscriptionIdRef.current) {
