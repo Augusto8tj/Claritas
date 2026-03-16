@@ -13,7 +13,7 @@ import {
   ChevronsUpDown, Zap, Target, Clock
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import type { useResetCallPutStrategy } from "../../hooks/use-reset-call-put-strategy";
+import type { useResetCallPutStrategy, AutopilotMode } from "../../hooks/use-reset-call-put-strategy";
 import { Separator } from "@/components/ui/separator";
 import { Slider } from "@/components/ui/slider";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -24,7 +24,10 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader,
   AlertDialogTitle, AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import type { DurationUnit } from '../../../../lib/types';
+
 
 interface ResetAutopilotInterfaceProps extends ReturnType<typeof useResetCallPutStrategy> {}
 
@@ -35,11 +38,13 @@ export function ResetAutopilotInterface({
     maxConsecutiveLosses, setMaxConsecutiveLosses,
     consecutiveLosses, isPausedByRisk, currentStake, resetRiskSession,
     adxThreshold, setAdxThreshold, atrMultiplier, setAtrMultiplier,
-    // Novos props
     signalStrength, confirmationCount, currentRsi, currentAdx,
     useAdaptiveDuration, setUseAdaptiveDuration,
-    resetMode, setResetMode,
     minConfirmations, setMinConfirmations,
+    autopilotMode, setAutopilotMode,
+    autopilotBarrier, setAutopilotBarrier,
+    autopilotDuration, setAutopilotDuration,
+    autopilotDurationUnit, setAutopilotDurationUnit
 }: ResetAutopilotInterfaceProps) {
 
   const statusInfo = {
@@ -109,31 +114,6 @@ export function ResetAutopilotInterface({
           </Alert>
         )}
 
-        {/* --- MODO DE ESTRATÉGIA --- */}
-        <div className="space-y-2">
-          <Label className="flex items-center gap-2 text-sm font-semibold">
-            <Target className="h-4 w-4" /> Modo de Estratégia
-          </Label>
-          <ToggleGroup
-            type="single"
-            value={resetMode}
-            onValueChange={(v: any) => v && setResetMode(v)}
-            className="w-full"
-          >
-            <ToggleGroupItem value="CLASSIC" className="flex-1 text-xs">
-              📊 Clássico (Zona RSI)
-            </ToggleGroupItem>
-            <ToggleGroupItem value="HARVESTING" className="flex-1 text-xs">
-              🌾 Harvesting (Reset)
-            </ToggleGroupItem>
-          </ToggleGroup>
-          <p className="text-xs text-muted-foreground pt-1">
-            {resetMode === 'CLASSIC'
-              ? 'Opera em zonas de sobrevenda/sobrecompra na direção da tendência.'
-              : 'Aproveita o mecanismo de reset entrando em padrões de reversão.'}
-          </p>
-        </div>
-
         {/* --- PAINEL DE STATUS (quando ativo) --- */}
         {isAutopilotOn && (
           <div className="space-y-3">
@@ -174,15 +154,6 @@ export function ResetAutopilotInterface({
                 <p className={cn("text-lg font-bold", rsiColor)}>
                   {currentRsi !== null ? currentRsi.toFixed(1) : '—'}
                 </p>
-                <p className="text-[10px] text-muted-foreground">
-                  {currentRsi !== null
-                    ? currentRsi > 70 ? 'Sobrecomprado'
-                    : currentRsi < 30 ? 'Sobrevendido'
-                    : currentRsi > 60 ? 'Alta'
-                    : currentRsi < 40 ? 'Baixa'
-                    : 'Neutro'
-                    : ''}
-                </p>
               </div>
 
               <div className="p-3 border rounded-lg bg-muted/50 text-center">
@@ -192,13 +163,6 @@ export function ResetAutopilotInterface({
                   currentAdx !== null && currentAdx > 25 ? 'text-yellow-500' : 'text-muted-foreground'
                 )}>
                   {currentAdx !== null ? currentAdx.toFixed(1) : '—'}
-                </p>
-                <p className="text-[10px] text-muted-foreground">
-                  {currentAdx !== null
-                    ? currentAdx > 40 ? 'Forte'
-                    : currentAdx > 25 ? 'Moderada'
-                    : 'Fraca'
-                    : ''}
                 </p>
               </div>
             </div>
@@ -214,7 +178,6 @@ export function ResetAutopilotInterface({
                   {strengthConfig[signalStrength].label}
                 </Badge>
               </div>
-              {/* Barra de confirmações */}
               <div className="mt-2 flex gap-1">
                 {[0, 1, 2, 3].map(i => (
                   <div
@@ -237,7 +200,7 @@ export function ResetAutopilotInterface({
                 <p className="text-xs text-muted-foreground font-semibold mb-1 flex items-center justify-center gap-1">
                   <Shield className="h-3 w-3" /> Barreira
                 </p>
-                <p className="font-bold text-sm">{calculatedBarrier}</p>
+                <p className="font-bold text-sm">{autopilotMode !== 'reset' ? autopilotBarrier : calculatedBarrier}</p>
               </div>
               <div className="p-3 border rounded-lg bg-muted/50 text-center">
                 <p className="text-xs text-muted-foreground font-semibold mb-1">Próx. Aposta</p>
@@ -253,6 +216,72 @@ export function ResetAutopilotInterface({
             <Separator />
           </div>
         )}
+        
+        {/* --- CONFIGURAÇÕES DO PILOTO --- */}
+        <Collapsible>
+          <CollapsibleTrigger asChild>
+            <Button variant="ghost" className="w-full justify-start gap-2 text-muted-foreground">
+              <Settings className="h-4 w-4" />
+              Configurações do Piloto
+              <ChevronsUpDown className="h-4 w-4 ml-auto" />
+            </Button>
+          </CollapsibleTrigger>
+          <CollapsibleContent className="space-y-6 pt-4">
+              <div className="space-y-2">
+                  <Label>Modo de Contrato do Piloto</Label>
+                  <Select value={autopilotMode} onValueChange={(v) => setAutopilotMode(v as any)} disabled={isAutopilotOn}>
+                      <SelectTrigger>
+                          <SelectValue placeholder="Selecione o modo" />
+                      </SelectTrigger>
+                      <SelectContent>
+                          <SelectItem value="reset">Reset Call/Put</SelectItem>
+                          <SelectItem value="high_low">Higher/Lower</SelectItem>
+                          <SelectItem value="touch">Touch/No Touch</SelectItem>
+                      </SelectContent>
+                  </Select>
+              </div>
+
+              {autopilotMode !== 'reset' && (
+                  <div className="space-y-2">
+                      <Label htmlFor="autopilot-barrier">Offset de Barreira do Piloto</Label>
+                      <Input
+                          id="autopilot-barrier"
+                          value={autopilotBarrier}
+                          onChange={e => setAutopilotBarrier(e.target.value)}
+                          placeholder="+0.12"
+                          disabled={isAutopilotOn}
+                      />
+                  </div>
+              )}
+              
+              <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                      <Label htmlFor="autopilot-duration">Duração do Piloto</Label>
+                      <Input
+                          id="autopilot-duration"
+                          type="number"
+                          value={autopilotDuration}
+                          onChange={e => setAutopilotDuration(parseInt(e.target.value, 10))}
+                          disabled={isAutopilotOn}
+                      />
+                  </div>
+                  <div className="space-y-2">
+                      <Label>Unidade</Label>
+                      <Select value={autopilotDurationUnit} onValueChange={(v) => setAutopilotDurationUnit(v as any)} disabled={isAutopilotOn}>
+                          <SelectTrigger>
+                              <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                              <SelectItem value="t">Ticks</SelectItem>
+                              <SelectItem value="s">Segundos</SelectItem>
+                              <SelectItem value="m">Minutos</SelectItem>
+                              <SelectItem value="h">Horas</SelectItem>
+                          </SelectContent>
+                      </Select>
+                  </div>
+              </div>
+          </CollapsibleContent>
+        </Collapsible>
 
         {/* --- AJUSTES DA ESTRATÉGIA --- */}
         <Collapsible>

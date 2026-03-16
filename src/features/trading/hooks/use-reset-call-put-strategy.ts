@@ -2,9 +2,9 @@
 'use client';
 
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { useDerivApiReset } from './use-deriv-api-reset';
+import { useDerivApiReset, type AllContractTypes } from './use-deriv-api-reset';
 import { useToast } from '@/hooks/use-toast';
-import type { CandleData } from '@/lib/types';
+import type { CandleData, DurationUnit } from '@/lib/types';
 import { useFormContext } from 'react-hook-form';
 import type { ResetFormValues } from '../components/deriv-trader/deriv-trader-interface-reset.types';
 import { calculateAllIndicators, type Indicators } from '@/features/trading/services/indicator-service';
@@ -13,7 +13,8 @@ import { getCouncilStrategies } from '@/features/trading/services/council-strate
 type BotStatus = 'PAUSED' | 'MONITORING' | 'SIGNAL_FOUND' | 'EXECUTING' | 'RISK_PAUSE';
 type TrendDirection = 'UP' | 'DOWN' | 'NONE';
 export type SignalStrength = 'STRONG' | 'MEDIUM' | 'WEAK' | 'NONE';
-export type ResetMode = 'CLASSIC' | 'HARVESTING';
+export type AutopilotMode = 'reset' | 'high_low' | 'touch';
+
 
 export function useResetCallPutStrategy(
     activeSymbol: string | null,
@@ -27,7 +28,13 @@ export function useResetCallPutStrategy(
     const [isAutopilotOn, setIsAutopilotOn] = useState(false);
     const [botStatus, setBotStatus] = useState<BotStatus>('PAUSED');
     const [trend, setTrend] = useState<TrendDirection>('NONE');
-    const [calculatedBarrier, setCalculatedBarrier] = useState('+0.0');
+    const [calculatedBarrier, setCalculatedBarrier] = useState('+0.00');
+
+    // --- Autopilot Strategy Config ---
+    const [autopilotMode, setAutopilotMode] = useState<AutopilotMode>('reset');
+    const [autopilotBarrier, setAutopilotBarrier] = useState('+0.20');
+    const [autopilotDuration, setAutopilotDuration] = useState(5);
+    const [autopilotDurationUnit, setAutopilotDurationUnit] = useState<DurationUnit>('m');
 
     // --- Gestão de Risco ---
     const [isMartingaleEnabled, setIsMartingaleEnabled] = useState(true);
@@ -41,7 +48,6 @@ export function useResetCallPutStrategy(
     const [adxThreshold, setAdxThreshold] = useState(20); 
     const [atrMultiplier, setAtrMultiplier] = useState(1.5); 
     const [useAdaptiveDuration, setUseAdaptiveDuration] = useState(false);
-    const [resetMode, setResetMode] = useState<ResetMode>('CLASSIC');
     const [minConfirmations, setMinConfirmations] = useState(2);
 
     // --- Estado de Sinal (para UI) ---
@@ -74,20 +80,17 @@ export function useResetCallPutStrategy(
         );
     }, [botCandleData]);
 
-    // Efeito dedicado para calcular a barreira, independentemente do estado do piloto
     useEffect(() => {
         if (indicators?.atr) {
             const barrierOffsetValue = indicators.atr * atrMultiplier;
-            // ✅ CORRIGIDO: Limita a 2 casas decimais para ser compatível com a API.
             const barrierOffset = `+${barrierOffsetValue.toFixed(2)}`;
             setCalculatedBarrier(barrierOffset);
         } else {
-            setCalculatedBarrier('+0.00'); // Valor padrão
+            setCalculatedBarrier('+0.00');
         }
     }, [indicators, atrMultiplier]);
 
 
-    // --- Processar resultado do último trade ---
     useEffect(() => {
         const lastOp = operationsLog.find(
             op => op.initiator === 'Piloto' && op.status !== 'pending' && op.id !== lastProcessedOpId.current
@@ -112,17 +115,15 @@ export function useResetCallPutStrategy(
         }
     }, [operationsLog, consecutiveLosses, maxConsecutiveLosses, isMartingaleEnabled, nextStake, martingaleMultiplier, form, toast]);
 
-    // --- Duração Adaptativa ---
     const getAdaptiveDuration = useCallback((): number => {
-        if (!useAdaptiveDuration || !indicators?.atr) return form.getValues('duration');
+        if (!useAdaptiveDuration || !indicators?.atr) return autopilotDuration;
         const basePrice = botCandleData[botCandleData.length - 1]?.close || 1;
         const atrPercent = (indicators.atr / basePrice) * 100;
-        if (atrPercent > 0.3) return 1;
-        if (atrPercent > 0.15) return 2;
-        return 5;
-    }, [useAdaptiveDuration, indicators, botCandleData, form]);
+        if (atrPercent > 0.3) return Math.max(1, Math.floor(autopilotDuration * 0.75));
+        if (atrPercent > 0.15) return autopilotDuration;
+        return Math.ceil(autopilotDuration * 1.25);
+    }, [useAdaptiveDuration, indicators, botCandleData, autopilotDuration]);
 
-    // --- Lógica Principal (Autopilot) ---
     useEffect(() => {
         if (!isAutopilotOn || !isConnected || !activeSymbol || !indicators || botStatus === 'RISK_PAUSE') {
             if (!isAutopilotOn) setBotStatus('PAUSED');
@@ -152,18 +153,16 @@ export function useResetCallPutStrategy(
             
             let signal: 'call' | 'put' | null = null;
 
-            if (resetMode === 'CLASSIC') {
+            if (autopilotMode === 'classic') {
                 if (rsi !== null) {
-                    if (currentTrend === 'UP') {
-                        if (rsi < 40) signal = 'call';
-                    } else if (currentTrend === 'DOWN') {
-                        if (rsi > 60) signal = 'put';
-                    } else {
-                        if (rsi < 30) signal = 'call';
-                        else if (rsi > 70) signal = 'put';
+                    if (currentTrend === 'UP' && rsi < 40) signal = 'call';
+                    else if (currentTrend === 'DOWN' && rsi > 60) signal = 'put';
+                    else if (currentTrend === 'NONE') {
+                         if (rsi < 30) signal = 'call';
+                         else if (rsi > 70) signal = 'put';
                     }
                 }
-            } else if (resetMode === 'HARVESTING') {
+            } else if (autopilotMode === 'harvesting') {
                 if (rsi !== null && lastCandle && prevCandle) {
                     const lastBodySize = Math.abs(lastCandle.close - lastCandle.open);
                     const prevBodySize = Math.abs(prevCandle.close - prevCandle.open);
@@ -204,23 +203,39 @@ export function useResetCallPutStrategy(
                 const duration = getAdaptiveDuration();
 
                 console.log(`[Reset Piloto] ${signal.toUpperCase()} | RSI=${rsi?.toFixed(1)} | ADX=${adx?.toFixed(1)} | ATR=${atr?.toFixed(5)} | Barrier=${calculatedBarrier} | ${strength} (${confirmations}/4)`);
+                
+                let contractType: AllContractTypes;
+                switch(autopilotMode) {
+                    case 'high_low':
+                        contractType = signal === 'call' ? 'CALL' : 'PUT';
+                        break;
+                    case 'touch':
+                        contractType = signal === 'call' ? 'ONETOUCH' : 'NOTOUCH';
+                        break;
+                    case 'reset':
+                    default:
+                        contractType = signal === 'call' ? 'RESETCALL' : 'RESETPUT';
+                        break;
+                }
+                const barrierToSend = autopilotMode === 'reset' ? '' : autopilotBarrier;
+                const durationUnitToSend = autopilotDurationUnit;
 
                 try {
                     setBotStatus('EXECUTING');
                     const result = await executeTrade(
-                        signal === 'call' ? 'RESETCALL' : 'RESETPUT',
+                        contractType,
                         stakeToUse,
                         activeSymbol,
-                        calculatedBarrier,
+                        barrierToSend,
                         duration,
-                        form.getValues('duration_unit'),
+                        durationUnitToSend,
                         'Piloto'
                     );
                     if (result.success) {
                         executionCooldownRef.current = Date.now() + 8000;
                         toast({
-                            title: `🤖 ${signal === 'call' ? '📈 Reset CALL' : '📉 Reset PUT'} Executado!`,
-                            description: `Stake: $${stakeToUse} | Barreira: ${calculatedBarrier} | ${strength} (${confirmations}/4)`,
+                            title: `🤖 ${signal === 'call' ? '📈 Compra' : '📉 Venda'} Executada!`,
+                            description: `Contrato: ${contractType} | Stake: $${stakeToUse} | ${strength} (${confirmations}/4)`,
                         });
                     } else {
                         toast({ title: "❌ Falhou", description: result.message, variant: 'destructive' });
@@ -238,8 +253,8 @@ export function useResetCallPutStrategy(
     }, [
         isAutopilotOn, isConnected, activeSymbol, indicators, botCandleData,
         executeTrade, form, toast, nextStake, botStatus,
-        adxThreshold, atrMultiplier, resetMode, minConfirmations, getAdaptiveDuration,
-        calculatedBarrier
+        adxThreshold, atrMultiplier, minConfirmations, getAdaptiveDuration,
+        calculatedBarrier, autopilotMode, autopilotBarrier, autopilotDuration, autopilotDurationUnit
     ]);
 
     return {
@@ -268,11 +283,19 @@ export function useResetCallPutStrategy(
         currentAdx,
         useAdaptiveDuration,
         setUseAdaptiveDuration,
-        resetMode,
-        setResetMode,
         minConfirmations,
         setMinConfirmations,
-        // Legacy
+        autopilotMode,
+        setAutopilotMode,
+        autopilotBarrier,
+        setAutopilotBarrier,
+        autopilotDuration,
+        setAutopilotDuration,
+        autopilotDurationUnit,
+        setAutopilotDurationUnit,
+        // Legacy, kept for compatibility if any other component uses it
+        resetMode: autopilotMode,
+        setResetMode: setAutopilotMode,
         rsiThreshold: 50,
         setRsiThreshold: (_: number) => {},
     };
