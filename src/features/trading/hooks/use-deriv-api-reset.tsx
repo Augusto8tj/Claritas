@@ -332,7 +332,6 @@ export const DerivApiProviderReset = ({ children }: { children: ReactNode }) => 
           proposalRequest.barrier = barrierOffset;
         }
         
-        console.log("[Deriv API Reset] Enviando proposta:", proposalRequest);
         const proposalResponse: any = await makeRequest(proposalRequest);
         
         if (proposalResponse.error) {
@@ -359,6 +358,13 @@ export const DerivApiProviderReset = ({ children }: { children: ReactNode }) => 
         const contractId = buyResult.contract_id;
         if (!contractId) throw new Error("Falha na compra do contrato, ID não retornado.");
 
+        // ✅ CORRIGIDO: Lógica robusta para obter o preço de entrada
+        const latestTick = priceTicks.length > 0 ? priceTicks[priceTicks.length - 1].price : 0;
+        const entryPrice = buyResult.entry_tick_display_value
+          ? parseFloat(buyResult.entry_tick_display_value)
+          : (buyResult.entry_spot_display_value ? parseFloat(buyResult.entry_spot_display_value) : latestTick);
+
+
         const newOperation: Operation = {
           id: contractId,
           asset: symbol,
@@ -367,9 +373,8 @@ export const DerivApiProviderReset = ({ children }: { children: ReactNode }) => 
           status: 'pending',
           timestamp: new Date(buyResult.purchase_time * 1000).toISOString(),
           initiator,
-          entryPrice: parseFloat(buyResult.entry_spot_display_value),
+          entryPrice: entryPrice,
           contractType,
-          reset_barrier_offset: barrierOffset,
           duration: sanitizedDuration,
           durationUnit
         };
@@ -381,7 +386,7 @@ export const DerivApiProviderReset = ({ children }: { children: ReactNode }) => 
         toast({ title: 'Erro de Execução', description: error.message, variant: 'destructive' });
         return { success: false, message: error.message };
       }
-    }, [isConnected, makeRequest, setAndPersistOperationsLog, toast, accountBalance.currency]
+    }, [isConnected, makeRequest, setAndPersistOperationsLog, toast, accountBalance.currency, priceTicks]
   );
 
 
