@@ -1,79 +1,79 @@
-# Claritas Copilot - Arquitetura Técnica: Deriv Digits
+# Claritas Copilot - Arquitetura Técnica: Deriv Digits (Preditivo V2)
 
-Este documento detalha a arquitetura da plataforma **Deriv Digits**, um ecossistema de trading focado em **arbitragem estatística** sobre o último dígito de preços de ativos, como o "Volatility 10 (1s) Index".
-
----
-
-## 1. Filosofia de Design: O Caçador de Probabilidades
-
-Ao contrário das outras plataformas que se focam na direção do preço (subida/queda), a "Digits" opera num paradigma diferente:
-
-1.  **O Alvo é o Dígito, Não a Direção:** O sistema não se importa se o preço sobe ou desce. A sua única preocupação é prever o **último dígito** do preço do ativo (ex: em 123.4**5**, o último dígito é 5).
-
-2.  **Foco em Mercados Puros (Sintéticos):** A estratégia é otimizada para os **Índices Sintéticos de Volatilidade**. Como estes índices são gerados por um algoritmo de números aleatórios criptograficamente seguro, eles estão livres de "ruído" de eventos económicos (notícias, relatórios, etc.). Isto torna a análise estatística da distribuição dos dígitos mais pura e teoricamente mais fiável.
-
-3.  **Aposta na Regressão à Média:** O sistema opera com base em duas hipóteses simples fundamentadas na **Lei dos Grandes Números**:
-    *   **"Difere" (Digit Differ):** Se um dígito apareceu com uma frequência estatisticamente *alta* recentemente (está "quente"), a probabilidade de o próximo tick NÃO terminar nesse dígito aumenta.
-    *   **"Combina" (Digit Match):** Se um dígito apareceu com uma frequência estatisticamente *baixa* (está "atrasado" ou "frio"), a probabilidade de ele aparecer no próximo tick aumenta, seguindo a tendência de regressão à média.
-
-4.  **NOVO - Análise Preditiva (Sherlock Holmes) com Compensação de Latência:**
-    *   **O Desafio do Delay:** Para contratos de 1 tick, um delay de 150-300ms entre a análise e a execução significa que estamos a apostar no resultado de um tick que **já aconteceu**.
-    *   **A Solução Preditiva:** O Sherlock Holmes agora mede a latência média do sistema. Se a latência for, por exemplo, de 250ms, ele sabe que precisa prever não o próximo tick, mas o tick que ocorrerá daqui a 2 ou 3 ticks.
-    *   **Matriz de Transição Multi-Passo:** Ele usa o poder dos **Modelos de Markov** para calcular a probabilidade dos dígitos N passos no futuro, compensando ativamente o delay do sistema e apostando no futuro que realmente importa.
-    *   **Trade de Bloco:** A sua lógica de trade permanece a mesma: ele analisa as propriedades do bloco de dígitos mais prováveis *no futuro previsto* e aposta no contrato de bloco (ex: `DIGITEVEN`) com a maior expectativa de valor.
+Este documento detalha a arquitetura da plataforma **Deriv Digits V2**, um ecossistema de trading que evoluiu de um simples analisador de frequência para um **motor preditivo com compensação de latência**, focado em arbitragem estatística do último dígito de preços.
 
 ---
 
-## 2. Como Funciona? A Arquitetura em Camadas
+## 1. Filosofia de Design: O Caçador Preditivo de Probabilidades
 
-A plataforma é sustentada por um conjunto de ficheiros dedicados que trabalham em conjunto.
+A V2 abandona a análise reativa e adota uma abordagem preditiva, reconhecendo que, em operações de alta frequência (1-5 ticks), a latência da rede é o principal adversário.
+
+**Princípios Fundamentais:**
+
+1.  **O Alvo é o Dígito, Não a Direção:** O sistema continua a focar-se exclusivamente em prever o **último dígito** do preço, ignorando a direção do mercado.
+
+2.  **Foco em Mercados Puros (Sintéticos):** A estratégia permanece otimizada para os **Índices Sintéticos de Volatilidade**, onde a análise estatística é mais pura.
+
+3.  **Aposta na Regressão à Média:** O sistema ainda usa a **Lei dos Grandes Números** como base, operando em desvios estatísticos da distribuição esperada de 10% para cada dígito.
+
+4.  **NOVO: A Vantagem Sherlock Holmes - Negociar o Futuro, Não o Passado:**
+    *   **O Problema Crítico da Latência:** Para contratos de 1 tick, um delay de 250ms significa que estamos a apostar num resultado de um tick que **já aconteceu**. É como atirar num alvo em movimento mirando onde ele *estava*.
+    *   **A Solução Preditiva:** O sistema agora mede ativamente a sua própria latência e a usa para prever o futuro.
+        1.  **Medição Contínua:** O hook `use-deriv-api-digits.tsx` mede o tempo de ciclo de cada trade.
+        2.  **Cálculo de Compensação:** Se a latência média for de 250ms e cada tick dura 100ms, o sistema calcula que precisa prever **3 ticks no futuro**.
+        3.  **Predição Multi-Passo (Modelos de Markov):** O cérebro (`use-robot-council-digits.tsx`) constrói uma **matriz de transição de Markov** e a multiplica por si mesma N vezes (`compensationSteps`) para obter as probabilidades dos dígitos **exatamente no momento em que a ordem será executada**.
+    *   **A Analogia:** É a diferença entre atirar onde o alvo está e atirar para **onde o alvo estará**.
+
+---
+
+## 2. Como Funciona? A Arquitetura em Camadas (V2)
 
 ### 2.1. Camada de Conexão e Dados: `use-deriv-api-digits.tsx`
 
-Este hook é a espinha dorsal da comunicação, agora com instrumentação para medir a latência.
+Este hook foi promovido para um componente crítico de medição.
 
-*   **Responsabilidade Principal:** Gerir a conexão WebSocket e fornecer um fluxo de dados de ticks em tempo real.
+*   **Responsabilidade Principal:** Gerir a conexão, fornecer o fluxo de ticks e **medir a latência do ciclo completo de cada trade**.
 *   **Funções Chave:**
-    *   **Conexão Focada:** Estabelece e mantém a conexão, autenticando o token do utilizador.
-    *   **Stream de Ticks:** Subscreve *apenas* ao stream de `ticks` para o ativo selecionado.
-    *   **Instrumentação de Latência:** Agora regista o timestamp exato em que uma ordem é enviada e quando o resultado (`proposal_open_contract`) é recebido, alimentando o `globalLatencyMonitor` com dados do mundo real.
+    *   **Conexão Robusta:** Mantém a conexão com a API da Deriv.
+    *   **Stream de Ticks:** Fornece a "matéria-prima" para a análise.
+    *   **Instrumentação de Latência:** Usa o `globalLatencyMonitor` para registar o tempo entre o envio da ordem e a receção do resultado, alimentando o cérebro preditivo.
 
-### 2.2. O Cérebro Estatístico: `use-robot-council-digits.tsx`
+### 2.2. O Cérebro Preditivo: `use-robot-council-digits.tsx`
 
-Este é o motor de análise e decisão do piloto automático, agora unificado para gerir todas as estratégias, incluindo a do Sherlock Holmes.
+Este é o motor unificado de análise e decisão.
 
-*   **Responsabilidade Principal:** Gerir os pilotos, analisar a distribuição de frequência, as sequências de dígitos e **aplicar a compensação de latência** para tomar decisões.
+*   **Responsabilidade Principal:** Gerir todos os pilotos, aplicar a compensação de latência e tomar decisões de trading.
 *   **Ciclo de Decisão (a cada novo tick):**
-    1.  **Análise de Frequência:** Recalcula as `digitStats` (frequência, z-score, etc.) e o consenso multi-janela.
-    2.  **Monitorização de Latência:** Consulta o `globalLatencyMonitor` para obter a latência média e calcular o `compensationSteps` (quantos ticks no futuro prever).
+    1.  **Análise de Frequência:** Recalcula as estatísticas de base (Z-Score, etc.).
+    2.  **Monitorização de Latência:** Consulta o `globalLatencyMonitor` para obter a latência média e calcular o `compensationSteps`.
     3.  **Análise Preditiva (Sherlock Holmes):**
-        *   **NOVO - Janela Configurável:** Usa o `sherlockLookback` (100 a 1000 ticks) definido pelo utilizador para construir a matriz de transição.
-        *   Chama `predictNTicksAhead`, passando o `compensationSteps` (que pode ser desativado pelo utilizador), para obter as probabilidades dos dígitos **N ticks no futuro**.
-        *   Agrega as probabilidades futuras em blocos (Par/Ímpar, Acima/Abaixo).
-        *   Gera um `sherlockSignal` se a probabilidade de um bloco exceder o `sherlockThreshold`.
+        *   Usa uma janela configurável (ex: últimos 500 ticks) para construir a matriz de transição de Markov.
+        *   Chama a função `predictNTicksAhead`, passando os `compensationSteps`, para obter as probabilidades dos dígitos **N ticks no futuro**.
+        *   Agrega estas probabilidades futuras em blocos (Par/Ímpar, Acima/Abaixo).
+        *   Gera um `sherlockSignal` se a probabilidade de um bloco futuro exceder o limiar de confiança.
     4.  **Decisão e Execução:**
-        *   Um `useEffect` principal observa os sinais de **todos** os pilotos ativos.
-        *   Se um sinal válido é emitido, ele chama o `decideNextStake`.
-        *   O `decideNextStake` analisa o histórico de perdas daquele piloto específico, aplica a lógica de Martingale e retorna o valor final da aposta.
-        *   O sistema então chama a função `executeTrade`, agora com o `tickEpoch` para iniciar a medição de latência.
+        *   Um `useEffect` principal observa os sinais de **todos** os pilotos (frequência e preditivos).
+        *   Se um sinal válido é emitido, ele calcula o valor da aposta com base no histórico de perdas daquele piloto específico (lógica de Martingale).
+        *   Envia a ordem de execução para a camada de API.
 
-### 2.3. Serviços e Utilitários
+### 2.3. Serviços e Utilitários Dedicados
 
-*   **`src/features/trading/utils/latency-monitor.ts`:** Um monitor singleton que rastreia os tempos de ciclo de cada trade para calcular a latência média, P95 e o número de passos de compensação necessários.
-*   **`src/features/trading/services/sherlock-multi-step.ts`:** Contém a lógica matemática pura para a predição multi-passo, incluindo `buildTransitionMatrix` e `predictNTicksAhead`.
+*   **`src/features/trading/utils/latency-monitor.ts`:** Um monitor singleton que calcula a latência média, P95 e os passos de compensação necessários.
+*   **`src/features/trading/services/sherlock-multi-step.ts`:** A biblioteca matemática para a predição multi-passo, incluindo a construção da matriz de transição e a multiplicação de matrizes.
 
 ### 2.4. A Interface do Utilizador (UI)
 
-*   **`src/app/deriv-trader-digits/page.tsx`**: O orquestrador que une todos os hooks e componentes.
-*   **`src/features/trading/components/deriv-trader/council-autopilot-interface-digits.tsx`**: O painel de controlo centralizado para todos os pilotos. Agora contém:
-    *   Uma aba **"Especialistas"** onde se encontram os controlos para o **Vagalume** e o **Sherlock Holmes**.
-    *   **NOVO - Controlos Avançados do Sherlock:** Sliders para ajustar o **"Limiar de Confiança"** e a **"Janela de Análise"** (lookback), e um interruptor para **ativar/desativar a Compensação de Latência**.
-*   **`src/features/trading/components/deriv-trader/DigitsDashboard.tsx`**: O dashboard principal agora integra e exibe:
+A UI foi redesenhada para dar controlo total sobre as novas capacidades.
+
+*   **`council-autopilot-interface-digits.tsx`**: Painel de controlo centralizado que agora inclui:
+    *   Uma aba **"Especialistas"** onde se encontram os controlos para o **Vagalume** (detetor de sequências) e o **Sherlock Holmes** (preditivo).
+    *   **Controlos Avançados do Sherlock:** Sliders para ajustar o **"Limiar de Confiança"** e a **"Janela de Análise"**, e um interruptor para **ativar/desativar a Compensação de Latência**.
+*   **`DigitsDashboard.tsx`**: O dashboard principal agora integra e exibe:
     *   **`LatencyMonitorDashboard`:** Um novo painel que mostra as métricas de latência em tempo real.
     *   **`SherlockHolmesDashboard`:** O painel que exibe as probabilidades e recomendações do Sherlock, agora com a indicação dos `compensationSteps` que está a usar.
 
 ---
 
-## 3. A Vantagem Preditiva: Antecipando o Futuro
+## 3. Conclusão: Uma Vantagem Decisiva
 
-O sistema não prevê o futuro com uma bola de cristal, mas sim **compensa a demora do presente**. Ao medir a sua própria lentidão, ele ajusta a sua mira para o ponto no tempo onde a "bala" (a ordem) realmente irá aterrar, aumentando drasticamente a probabilidade de acerto para operações de curtíssimo prazo. É a diferença entre atirar onde o alvo está e atirar para onde o alvo **estará**.
+Ao medir e compensar a sua própria lentidão, a plataforma Deriv Digits V2 não está mais a reagir ao passado, mas sim a **antecipar ativamente o futuro mais provável**, transformando a latência de um inimigo numa vantagem estratégica.
