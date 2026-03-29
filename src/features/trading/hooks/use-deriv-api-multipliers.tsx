@@ -374,18 +374,25 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
             limit_order: {}
         };
         
-        if (takeProfit !== undefined) {
+        if (takeProfit !== undefined && Number.isFinite(takeProfit)) {
             updateRequest.limit_order.take_profit = parseFloat(takeProfit.toFixed(2));
         }
         
-        if (stopLoss !== undefined) {
+        if (stopLoss !== undefined && Number.isFinite(stopLoss)) {
             updateRequest.limit_order.stop_loss = parseFloat(stopLoss.toFixed(2));
+        }
+        
+        // Se nenhum limite válido foi adicionado, não envia o pedido.
+        if (Object.keys(updateRequest.limit_order).length === 0) {
+             return { success: true, message: "Nenhum limite de risco válido para atualizar." };
         }
 
         const response: any = await makeRequest(updateRequest);
         
         if (response.error) {
-             throw new Error(response.error.message);
+            const errorMessage = response.error.message || `Erro desconhecido da API: ${JSON.stringify(response.error)}`;
+            console.error(`[Deriv Hook] Erro ao atualizar contrato #${contractId}:`, errorMessage, response.error);
+            throw new Error(errorMessage);
         }
 
         const updateResult = response.contract_update;
@@ -412,9 +419,8 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
             throw new Error("A resposta da API não continha os dados de atualização esperados.");
         }
 
-    } catch (error) {
-        console.error(`[Deriv Hook] Erro ao atualizar contrato #${contractId}:`, error);
-        const message = error instanceof Error ? error.message : "Um erro desconhecido ocorreu.";
+    } catch (error: any) {
+        const message = error.message || "Um erro desconhecido ocorreu ao atualizar o contrato.";
         return { success: false, message };
     }
   }, [isConnected, makeRequest, setAndPersistOperationsLog]);
@@ -433,9 +439,9 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
       if (!wsRef.current || !isConnected) {
         throw new Error("A conexão com a API da Deriv não está ativa.");
       }
-
+      
       const sanitizedStake = parseFloat(stake.toFixed(2));
-
+      
       const buyRequest: any = {
         buy: "1",
         price: sanitizedStake,
@@ -478,7 +484,7 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
               variant: 'default',
             }]);
           }
-        }, 500);
+        }, 1500); // AUMENTADO PARA 1.5 SEGUNDOS
       }
       
       const latestTick = priceTicks.length > 0 ? priceTicks[priceTicks.length - 1].price : 0;
@@ -546,7 +552,27 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
         const sellResponse: any = await makeRequest({ "sell": contractId, "price": 0 });
 
         if (sellResponse.error) {
-            throw new Error(sellResponse.error.message);
+            const message = sellResponse.error.message || JSON.stringify(sellResponse.error);
+            
+            if (message.toLowerCase().includes("contract has expired") || message.toLowerCase().includes("contract is already closed")) {
+                console.warn(`[Deriv Hook] Tentativa de vender contrato #${contractId} que já estava fechado.`);
+                sellingContractsRef.current.delete(contractId);
+                setAndPersistOperationsLog(prevLog => prevLog.map(op => 
+                    op.id === contractId && op.status === 'pending'
+                      ? { ...op, status: 'lost', result: -op.stake, exitTimestamp: new Date().toISOString() }
+                      : op
+                ));
+                return { success: true, message: "Contrato já estava fechado no servidor." };
+            }
+            
+            if (message.toLowerCase().includes("cannot be sold at entry tick")) {
+                console.warn(`[Deriv Hook] Tentativa de venda no tick de entrada para #${contractId}. A lógica tentará novamente.`);
+                sellingContractsRef.current.delete(contractId);
+                return { success: false, message: "Aguardando próximo tick para vender." };
+            }
+
+            console.error(`[Deriv Hook] Erro na API de venda para o contrato #${contractId}:`, message, sellResponse.error);
+            throw new Error(message);
         }
 
         const sellResult = sellResponse.sell;
@@ -554,7 +580,7 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
             return { success: true, message: `Ordem de venda para o contrato ${contractId} enviada.` };
         } else {
             sellingContractsRef.current.delete(contractId);
-            throw new Error("A resposta da API não continha os dados de venda esperados.");
+            throw new Error("A resposta da API para a venda estava incompleta.");
         }
     } catch (error) {
         console.error("[Deriv Hook] Erro ao vender o contrato de multiplicador:", error);
@@ -562,7 +588,7 @@ export const DerivApiProviderMultipliers = ({ children }: { children: ReactNode 
         const message = error instanceof Error ? error.message : "Um erro desconhecido ocorreu ao vender o contrato.";
         return { success: false, message };
     }
-  }, [isConnected, makeRequest]);
+  }, [isConnected, makeRequest, setAndPersistOperationsLog]);
   
   const subscribeToMarketData = useCallback(async (symbol: string) => {
     if (wsRef.current?.readyState !== WebSocket.OPEN) return;
