@@ -409,49 +409,54 @@ export const DerivApiProviderAccumulators = ({ children }: { children: ReactNode
 
   const sellContract = useCallback(async (contractId: number): Promise<TradeResult> => {
     if (!wsRef.current || !isConnected) {
-      return { success: false, message: "A conexão com a API da Deriv não está ativa." };
+        return { success: false, message: "A conexão com a API da Deriv não está ativa." };
     }
     if (sellingContractsRef.current.has(contractId)) {
-      return { success: false, message: `A venda do contrato #${contractId} já está em andamento.` };
+        return { success: false, message: `A venda do contrato #${contractId} já está em andamento.` };
     }
-  
+
     sellingContractsRef.current.add(contractId);
-  
+
     try {
-      const sellResponse: any = await makeRequest({ sell: contractId, price: 0 });
-  
-      if (sellResponse.error) {
-        const message = sellResponse.error.message || `Erro desconhecido da API: ${JSON.stringify(sellResponse.error)}`;
-        
-        if (message.toLowerCase().includes("contract has expired") || message.toLowerCase().includes("contract is already closed")) {
-          console.warn(`[Deriv Hook] Tentativa de vender contrato #${contractId} que já estava fechado.`);
-          sellingContractsRef.current.delete(contractId);
-          setAndPersistOperationsLog(prevLog => prevLog.map(op => 
-            op.id === contractId && op.status === 'pending'
-              ? { ...op, status: 'lost', result: -op.stake, exitTimestamp: new Date().toISOString() }
-              : op
-          ));
-          return { success: true, message: "Contrato já estava fechado no servidor." };
+        const sellResponse: any = await makeRequest({ sell: contractId, price: 0 });
+
+        if (sellResponse.error) {
+            const message = sellResponse.error.message || `Erro desconhecido da API: ${JSON.stringify(sellResponse.error)}`;
+            
+            if (message.toLowerCase().includes("contract has expired") || message.toLowerCase().includes("contract is already closed")) {
+                console.warn(`[Deriv Hook] Tentativa de vender contrato #${contractId} que já estava fechado.`);
+                sellingContractsRef.current.delete(contractId);
+                setAndPersistOperationsLog(prevLog => prevLog.map(op => 
+                    op.id === contractId && op.status === 'pending'
+                      ? { ...op, status: 'lost', result: -op.stake, exitTimestamp: new Date().toISOString() }
+                      : op
+                ));
+                return { success: true, message: "Contrato já estava fechado no servidor." };
+            }
+            
+            if (message.toLowerCase().includes("cannot be sold at entry tick")) {
+                console.warn(`[Deriv Hook] Tentativa de venda no tick de entrada para #${contractId}. A lógica tentará novamente.`);
+                sellingContractsRef.current.delete(contractId);
+                return { success: false, message: "Aguardando próximo tick para vender." };
+            }
+
+            console.error(`[Deriv Hook] Erro na API de venda para o contrato #${contractId}:`, message, sellResponse.error);
+            sellingContractsRef.current.delete(contractId);
+            return { success: false, message };
         }
-        
-        console.error(`[Deriv Hook] Erro na API de venda para o contrato #${contractId}:`, message, sellResponse.error);
-        
-        sellingContractsRef.current.delete(contractId);
-        return { success: false, message };
-      }
-  
-      const sellResult = sellResponse.sell;
-      if (sellResult) {
-        return { success: true, message: `Ordem de venda para o contrato ${contractId} enviada.` };
-      } else {
-        sellingContractsRef.current.delete(contractId);
-        return { success: false, message: "A resposta da API para a venda estava incompleta." };
-      }
+
+        const sellResult = sellResponse.sell;
+        if (sellResult) {
+            return { success: true, message: `Ordem de venda para o contrato ${contractId} enviada.` };
+        } else {
+            sellingContractsRef.current.delete(contractId);
+            return { success: false, message: "A resposta da API para a venda estava incompleta." };
+        }
     } catch (error: any) {
-      const message = error.message || "Ocorreu um erro de rede ao tentar vender o contrato.";
-      sellingContractsRef.current.delete(contractId);
-      console.error("[Deriv Hook] Exceção ao vender o contrato:", error);
-      return { success: false, message };
+        const message = error.message || "Ocorreu um erro de rede ao tentar vender o contrato.";
+        sellingContractsRef.current.delete(contractId);
+        console.error("[Deriv Hook] Exceção ao vender o contrato:", error);
+        return { success: false, message };
     }
   }, [isConnected, makeRequest, setAndPersistOperationsLog]);
   
@@ -695,7 +700,7 @@ export const DerivApiProviderAccumulators = ({ children }: { children: ReactNode
                              setPriceTicks(prev => {
                                 const newTickFromCandle = { epoch: newCandle.epoch, price: newCandle.close };
                                 const newTicks = [...prev, newTickFromCandle];
-                                if (newTicks.length > MAX_DATA_POINTS) return newTicks.slice(1);
+                                if (newTicks.length > MAX_DATA_POINTS) return newTicks.slice(newTicks.length - MAX_DATA_POINTS);
                                 return newTicks;
                              });
                     
