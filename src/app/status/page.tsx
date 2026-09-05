@@ -1,3 +1,4 @@
+
 'use client';
 
 import { HealthCheckCard } from "@/features/status/components/health-check-card";
@@ -22,7 +23,7 @@ type CheckResult = {
 function StatusPageContent() {
   const [serverChecks, setServerChecks] = useState<{ gemini: CheckResult | null, firestore: CheckResult | null }>({ gemini: null, firestore: null });
   const [loading, setLoading] = useState(true);
-  const [systemUptime, setSystemUptime] = useState("99.99%");
+  const [systemUptime] = useState("99.99%");
 
   useEffect(() => {
     async function runServerChecks() {
@@ -40,6 +41,7 @@ function StatusPageContent() {
 
   return (
     <div className="flex-1 space-y-6 p-4 sm:p-8 pt-6">
+      {/* HEADER DINÂMICO */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h1 className="text-3xl font-bold tracking-tight font-headline flex items-center gap-2">
@@ -61,6 +63,7 @@ function StatusPageContent() {
         </div>
       </div>
 
+      {/* MÉTRICAS DE PERFORMANCE RÁPIDA */}
       <div className="grid gap-6 md:grid-cols-3">
         <Card className="border-primary/20 bg-primary/5">
             <CardHeader className="pb-2">
@@ -112,6 +115,7 @@ function StatusPageContent() {
         </Card>
       </div>
 
+      {/* CARDS DE SAÚDE PRINCIPAIS */}
       <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
         <HealthCheckCard
           serviceName="API Gemini (IA)"
@@ -144,12 +148,14 @@ function StatusPageContent() {
         />
       </div>
 
+      {/* FERRAMENTAS DE DIAGNÓSTICO */}
       <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
         <DerivConnectionCard />
         <ListModelsCard />
         <FirestoreWriteTestCard />
       </div>
 
+      {/* NOTA TÉCNICA */}
       <Alert className="bg-muted border-none shadow-none">
           <AlertCircle className="h-4 w-4" />
           <AlertTitle className="font-bold text-xs uppercase">Nota Técnica</AlertTitle>
