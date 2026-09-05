@@ -1,4 +1,3 @@
-// /src/app/status/page.tsx
 'use client';
 
 import { HealthCheckCard } from "@/features/status/components/health-check-card";
@@ -13,6 +12,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { cn } from "@/lib/utils";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 
 type CheckResult = {
   success: boolean;
