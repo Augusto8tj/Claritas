@@ -1,7 +1,7 @@
 // /src/components/settings/api-keys-card.tsx
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useForm, type SubmitHandler } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -13,7 +13,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Loader2, Link as LinkIcon, CheckCircle, XCircle } from "lucide-react";
+import { Loader2, Link as LinkIcon, CheckCircle, XCircle, ShieldCheck, AlertCircle } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import {
   Form,
@@ -27,6 +27,7 @@ import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useDerivApiV2 as useDerivApi, type AccountType } from "@/features/trading/hooks/use-deriv-api-v2";
 import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
 
 const derivSchema = z.object({
   demoToken: z.string().optional(),
@@ -39,10 +40,17 @@ const geminiSchema = z.object({
 });
 type GeminiFormValues = z.infer<typeof geminiSchema>;
 
+/**
+ * Validador para o novo formato de token PAT da Deriv.
+ * Deve começar com 'pat_' e ter uma estrutura alfanumérica longa.
+ */
+const isValidDerivPatFormat = (token: string) => {
+    return /^pat_[a-zA-Z0-9]{40,}$/.test(token.trim());
+};
+
 export function ApiKeysCard() {
   const { demoToken, realToken, setTokens, disconnect } = useDerivApi();
   const [loading, setLoading] = useState<AccountType | 'gemini' | null>(null);
-  const [geminiApiKey, setGeminiApiKey] = useState(''); // This would be loaded from server in a real secure app
   const { toast } = useToast();
 
   const derivForm = useForm<DerivFormValues>({
@@ -58,62 +66,87 @@ export function ApiKeysCard() {
     defaultValues: { apiKey: "" },
   });
 
+  // Observa mudanças nos inputs para validação em tempo real
+  const watchedDemo = derivForm.watch("demoToken") || "";
+  const watchedReal = derivForm.watch("realToken") || "";
+
   const handleDerivSubmit = async (type: AccountType) => {
     setLoading(type);
     const token = derivForm.getValues(type === 'demo' ? 'demoToken' : 'realToken');
+    
     if (!token) {
         toast({ variant: "destructive", title: "Erro", description: `O campo de token ${type} está vazio.` });
         setLoading(null);
         return;
     }
 
-    // A validação agora é mais simples: apenas salvamos o token.
-    // A verificação real acontecerá quando o aplicativo tentar usar o token (por exemplo, ao buscar o saldo).
+    if (!isValidDerivPatFormat(token)) {
+        toast({ 
+            variant: "destructive", 
+            title: "Formato Inválido", 
+            description: "O token deve começar com 'pat_' seguido de pelo menos 40 caracteres." 
+        });
+        setLoading(null);
+        return;
+    }
+
     if (type === 'demo') {
         setTokens({ demo: token });
     } else {
         setTokens({ real: token });
     }
     
-    // Simula um pequeno atraso para feedback do usuário
-    await new Promise(res => setTimeout(res, 500));
+    await new Promise(res => setTimeout(res, 800));
 
     setLoading(null);
-    toast({ title: "Token Salvo", description: `Seu token da conta ${type} foi salvo no navegador.` });
+    toast({ title: "Token PAT Guardado", description: `Credencial de conta ${type} configurada com sucesso.` });
   };
 
   const handleGeminiSubmit: SubmitHandler<GeminiFormValues> = async (data) => {
     setLoading('gemini');
-    // In a real app, you would save this key securely on the server-side.
-    // For this demo, we'll just validate and give feedback.
-    setGeminiApiKey(data.apiKey);
-    
-    // As we can't save it securely on the client, we just inform the user to set it in .env
     await new Promise(res => setTimeout(res, 500));
     setLoading(null);
 
     toast({
-        title: "Chave da IA",
-        description: "Para usar esta chave, por favor, defina-a na variável de ambiente GEMINI_API_KEY no seu arquivo .env e reinicie o servidor."
+        title: "Instrução de Configuração",
+        description: "Para activar a IA, defina GEMINI_API_KEY no ficheiro .env e reinicie o servidor."
     });
   };
 
   const handleDisconnect = (type: AccountType) => {
     disconnect(type);
     derivForm.setValue(type === 'demo' ? 'demoToken' : 'realToken', "");
-    toast({ title: "Desconectado", description: `A conexão com a conta ${type} foi removida.` });
+    toast({ title: "Desconectado", description: `A credencial da conta ${type} foi removida do browser.` });
   };
   
+  const TokenFormatIndicator = ({ token }: { token: string }) => {
+    if (!token) return null;
+    const isValid = isValidDerivPatFormat(token);
+    return (
+        <div className="mt-1 flex items-center gap-1.5">
+            {isValid ? (
+                <Badge variant="outline" className="bg-green-500/10 text-green-600 border-green-500/20 text-[10px] h-5">
+                    <ShieldCheck className="mr-1 h-3 w-3" /> FORMATO PAT CORRECTO
+                </Badge>
+            ) : (
+                <Badge variant="outline" className="bg-destructive/10 text-destructive border-destructive/20 text-[10px] h-5">
+                    <AlertCircle className="mr-1 h-3 w-3" /> FORMATO INVÁLIDO
+                </Badge>
+            )}
+        </div>
+    );
+  };
+
   const ConnectionStatus = ({ isConnected, onDisconnectClick }: { isConnected: boolean, onDisconnectClick: () => void }) => {
     if (!isConnected) return null;
     return (
-         <Alert className="border-green-500/50 bg-green-500/10 text-green-700">
+         <Alert className="border-green-500/50 bg-green-500/5 text-green-700 py-3">
             <CheckCircle className="h-4 w-4 !text-green-600" />
-            <AlertTitle>Token Salvo</AlertTitle>
-            <AlertDescription className="flex justify-between items-center">
-                O token está salvo no seu navegador.
-                <Button variant="ghost" size="sm" className="text-green-700 hover:text-green-800 hover:bg-green-500/20" onClick={onDisconnectClick}>
-                    <XCircle className="mr-2 h-4 w-4" /> Desconectar
+            <AlertTitle className="text-xs font-bold uppercase tracking-wider">Credencial Activa</AlertTitle>
+            <AlertDescription className="flex justify-between items-center text-xs">
+                Token PAT armazenado de forma segura no browser.
+                <Button variant="ghost" size="sm" className="h-7 text-destructive hover:text-destructive hover:bg-destructive/10" onClick={onDisconnectClick}>
+                    <XCircle className="mr-2 h-3 w-3" /> Remover
                 </Button>
             </AlertDescription>
         </Alert>
@@ -125,24 +158,25 @@ export function ApiKeysCard() {
       <CardHeader>
         <CardTitle className="font-headline">Conexões de API</CardTitle>
         <CardDescription>
-          Gerencie suas chaves de API para a Corretora Deriv e para a IA do Google.
+          Gerencie as suas credenciais para a Corretora Deriv e para a IA.
         </CardDescription>
       </CardHeader>
       <CardContent>
         <Tabs defaultValue="broker">
           <TabsList className="grid w-full grid-cols-2">
-            <TabsTrigger value="broker">Corretora</TabsTrigger>
+            <TabsTrigger value="broker">Corretora (Deriv)</TabsTrigger>
             <TabsTrigger value="ai">Inteligência Artificial</TabsTrigger>
           </TabsList>
 
           <TabsContent value="broker" className="pt-4">
             <Form {...derivForm}>
-              <div className="space-y-6">
-                <div>
-                  <h3 className="text-lg font-medium">Conta Demo</h3>
-                  <p className="text-sm text-muted-foreground mb-4">
-                    Use para testar estratégias sem arriscar dinheiro real.
-                  </p>
+              <div className="space-y-8">
+                {/* CONTA DEMO */}
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-sm font-bold uppercase tracking-tight text-primary">Conta Demo (Virtual)</h3>
+                    <Badge variant="outline" className="text-[10px]">RECOMENDADO PARA TESTES</Badge>
+                  </div>
                    <ConnectionStatus isConnected={!!demoToken} onDisconnectClick={() => handleDisconnect('demo')} />
                    {!demoToken && (
                      <FormField
@@ -150,26 +184,43 @@ export function ApiKeysCard() {
                         name="demoToken"
                         render={({ field }) => (
                         <FormItem>
-                            <FormLabel>Token da Conta Demo</FormLabel>
+                            <FormLabel className="text-xs">Token de API (PAT)</FormLabel>
                             <FormControl>
-                            <div className="flex gap-2">
-                                <Input type="password" placeholder="Cole seu token de API aqui" {...field} />
-                                <Button type="button" onClick={() => handleDerivSubmit('demo')} disabled={loading === 'demo'} className="min-w-[120px]">
-                                    {loading === 'demo' ? <Loader2 className="animate-spin" /> : <><LinkIcon className="mr-2"/>Salvar</>}
-                                </Button>
+                            <div className="flex flex-col gap-2">
+                                <div className="flex gap-2">
+                                    <Input 
+                                        type="password" 
+                                        placeholder="pat_d2df2ff2..." 
+                                        className="font-mono text-xs"
+                                        {...field} 
+                                    />
+                                    <Button 
+                                        type="button" 
+                                        onClick={() => handleDerivSubmit('demo')} 
+                                        disabled={loading === 'demo'} 
+                                        className="min-w-[100px]"
+                                    >
+                                        {loading === 'demo' ? <Loader2 className="h-4 w-4 animate-spin" /> : 'CONECTAR'}
+                                    </Button>
+                                </div>
+                                <TokenFormatIndicator token={watchedDemo} />
                             </div>
                             </FormControl>
-                            <FormMessage />
+                            <FormMessage className="text-[10px]" />
                         </FormItem>
                         )}
                     />
                    )}
                 </div>
-                 <div>
-                  <h3 className="text-lg font-medium">Conta Real</h3>
-                  <p className="text-sm text-muted-foreground mb-4">
-                    Use para negociações reais. Tenha cuidado, as operações são de verdade.
-                  </p>
+
+                 <Separator />
+
+                 {/* CONTA REAL */}
+                 <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-sm font-bold uppercase tracking-tight text-destructive">Conta Real (Live)</h3>
+                    <Badge variant="destructive" className="text-[10px]">RISCO REAL</Badge>
+                  </div>
                    <ConnectionStatus isConnected={!!realToken} onDisconnectClick={() => handleDisconnect('real')} />
                     {!realToken && (
                     <FormField
@@ -177,16 +228,30 @@ export function ApiKeysCard() {
                         name="realToken"
                         render={({ field }) => (
                         <FormItem>
-                            <FormLabel>Token da Conta Real</FormLabel>
+                            <FormLabel className="text-xs">Token de API (PAT)</FormLabel>
                             <FormControl>
-                            <div className="flex gap-2">
-                                <Input type="password" placeholder="Cole seu token de API aqui" {...field} />
-                                <Button type="button" onClick={() => handleDerivSubmit('real')} disabled={loading === 'real'} className="min-w-[120px]">
-                                     {loading === 'real' ? <Loader2 className="animate-spin" /> : <><LinkIcon className="mr-2"/>Salvar</>}
-                                </Button>
+                            <div className="flex flex-col gap-2">
+                                <div className="flex gap-2">
+                                    <Input 
+                                        type="password" 
+                                        placeholder="pat_d2df2ff2..." 
+                                        className="font-mono text-xs"
+                                        {...field} 
+                                    />
+                                    <Button 
+                                        type="button" 
+                                        variant="destructive"
+                                        onClick={() => handleDerivSubmit('real')} 
+                                        disabled={loading === 'real'} 
+                                        className="min-w-[100px]"
+                                    >
+                                        {loading === 'real' ? <Loader2 className="h-4 w-4 animate-spin" /> : 'CONECTAR'}
+                                    </Button>
+                                </div>
+                                <TokenFormatIndicator token={watchedReal} />
                             </div>
                             </FormControl>
-                            <FormMessage />
+                            <FormMessage className="text-[10px]" />
                         </FormItem>
                         )}
                     />
@@ -199,31 +264,25 @@ export function ApiKeysCard() {
           <TabsContent value="ai" className="pt-4">
             <Form {...geminiForm}>
               <form onSubmit={geminiForm.handleSubmit(handleGeminiSubmit)} className="space-y-4">
-                <p className="text-sm text-muted-foreground">
-                    Para que a IA funcione, você precisa de uma chave de API do Google AI Studio. 
-                    Configure esta chave no seu arquivo <code>.env</code> na raiz do projeto.
-                </p>
-                <Alert>
-                    <AlertTitle>Arquivo .env</AlertTitle>
-                    <AlertDescription>
-                        <code>GEMINI_API_KEY="SUA_CHAVE_AQUI"</code>
-                    </AlertDescription>
-                </Alert>
+                <div className="bg-muted/30 p-4 rounded-lg border border-dashed text-xs space-y-2">
+                    <p>O Claritas utiliza o modelo <b>Gemini 2.5 Flash</b> para processamento de linguagem natural e visão computacional.</p>
+                    <p>A chave deve ser configurada no ambiente do servidor (App Hosting) ou ficheiro .env local.</p>
+                </div>
                 <FormField
                   control={geminiForm.control}
                   name="apiKey"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Chave de API do Google Gemini</FormLabel>
+                      <FormLabel className="text-xs">Google Gemini API Key</FormLabel>
                       <FormControl>
-                         <Input type="password" placeholder="Cole sua chave aqui para validação" {...field} />
+                         <Input type="password" placeholder="AIzaSyBw..." className="font-mono text-xs" {...field} />
                       </FormControl>
-                       <FormMessage />
+                       <FormMessage className="text-[10px]" />
                     </FormItem>
                   )}
                 />
-                 <Button type="submit" disabled={loading === 'gemini'} className="min-w-[120px]">
-                    {loading === 'gemini' ? <Loader2 className="animate-spin" /> : 'Informar e Validar'}
+                 <Button type="submit" disabled={loading === 'gemini'} className="w-full text-xs">
+                    {loading === 'gemini' ? <Loader2 className="h-4 w-4 animate-spin" /> : 'VALIDAR DISPONIBILIDADE'}
                 </Button>
               </form>
             </Form>
