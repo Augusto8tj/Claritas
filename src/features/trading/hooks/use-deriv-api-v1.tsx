@@ -1,3 +1,4 @@
+
 // /src/features/trading/hooks/use-deriv-api-v1.tsx
 'use client';
 
@@ -138,15 +139,15 @@ const getDurationInSeconds = (duration: number, unit: DurationUnit): number => {
         case 'm': return duration * 60;
         case 'h': return duration * 3600;
         case 'd': return duration * 86400;
-        default: return duration * 2;
+        default: return duration;
     }
 };
 
 const isCandle = (d: ChartData): d is CandleData => d != null && 'close' in d;
 
 export const DerivApiProviderV1 = ({ children }: { children: ReactNode }) => {
-  const [demoToken, setDemoToken] = useState<string | null>('ljUGk6wbLSrtEDo');
-  const [realToken, setRealToken] = useState<string | null>('GU5MwbX1kwvSoyw');
+  const [demoToken, setDemoToken] = useState<string | null>('pat_d2df2ff2027411214c07f1ce13961948d64554282475ea77b5343b288575d504');
+  const [realToken, setRealToken] = useState<string | null>('pat_d2df2ff2027411214c07f1ce13961948d64554282475ea77b5343b288575d504');
   const [accountType, setAccountTypeState] = useState<AccountType>('demo');
   const [accountBalance, setAccountBalance] = useState<AccountBalance>({ balance: null, currency: null, loading: true });
   const [isLoading, setIsLoading] = useState(true);

@@ -1,3 +1,4 @@
+
 // src/features/trading/hooks/use-deriv-api-v3.tsx
 'use client';
 
@@ -148,8 +149,8 @@ const getDurationInSeconds = (duration: number, unit: DurationUnit): number => {
 
 
 export const DerivApiProviderV3 = ({ children }: { children: ReactNode }) => {
-  const [demoToken, setDemoToken] = useState<string | null>('ljUGk6wbLSrtEDo');
-  const [realToken, setRealToken] = useState<string | null>('GU5MwbX1kwvSoyw');
+  const [demoToken, setDemoToken] = useState<string | null>('pat_d2df2ff2027411214c07f1ce13961948d64554282475ea77b5343b288575d504');
+  const [realToken, setRealToken] = useState<string | null>('pat_d2df2ff2027411214c07f1ce13961948d64554282475ea77b5343b288575d504');
   const [accountType, setAccountTypeState] = useState<AccountType>('demo');
   const [accountBalance, setAccountBalance] = useState<AccountBalance>({ balance: null, currency: null, loading: true });
   const [isLoading, setIsLoading] = useState(true);
@@ -1008,6 +1009,7 @@ export const DerivApiProviderV3 = ({ children }: { children: ReactNode }) => {
     chartError,
     chartType,
     setChartType,
+    timePeriod,
     setTimePeriod,
     dataVersion,
     executeTrade,
@@ -1020,8 +1022,8 @@ export const DerivApiProviderV3 = ({ children }: { children: ReactNode }) => {
       isConnected, isConnecting, connectionError, demoToken, realToken, activeToken, accountType, 
       setAccountType, setTokens, disconnect, reconnect, accountBalance, operationsLog, assetGroups, 
       isAssetsLoading, activeSymbol, setActiveSymbol, chartData, priceTicks, isChartLoading, 
-      chartError, chartType, setChartType, timePeriod, dataVersion, executeTrade, 
-      sellContract, getHistoricalData, clearActiveContracts, tradeAnnotations, durationLimits
+      chartError, chartType, setChartType, timePeriod, executeTrade, sellContract, 
+      clearActiveContracts, tradeAnnotations, durationLimits, getHistoricalData
   ]);
 
   return (

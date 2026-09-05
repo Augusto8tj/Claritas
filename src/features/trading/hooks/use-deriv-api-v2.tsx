@@ -1,3 +1,4 @@
+
 // /src/features/trading/hooks/use-deriv-api-v2.tsx
 'use client';
 
@@ -158,8 +159,8 @@ const getDurationInSeconds = (duration: number, unit: DurationUnit, symbol?: str
 
 
 export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
-  const [demoToken, setDemoToken] = useState<string | null>('ljUGk6wbLSrtEDo');
-  const [realToken, setRealToken] = useState<string | null>('GU5MwbX1kwvSoyw');
+  const [demoToken, setDemoToken] = useState<string | null>('pat_d2df2ff2027411214c07f1ce13961948d64554282475ea77b5343b288575d504');
+  const [realToken, setRealToken] = useState<string | null>('pat_d2df2ff2027411214c07f1ce13961948d64554282475ea77b5343b288575d504');
   const [accountType, setAccountTypeState] = useState<AccountType>('demo');
   const [accountBalance, setAccountBalance] = useState<AccountBalance>({ balance: null, currency: null, loading: true });
   const [isLoading, setIsLoading] = useState(true);
@@ -824,10 +825,6 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
                             status: 'pending',
                             result: contract.profit,
                             timestamp: new Date(purchaseTime * 1000).toISOString(),
-                            initiator: 'Manual',
-                            entryPrice: parseFloat(contract.entry_spot_display_value || contract.entry_tick_display_value || '0'),
-                            isSellable: contract.is_sellable === 1,
-                            expirationTime: contract.date_expiry ? contract.date_expiry * 1000 : undefined,
                             duration: durationInSeconds,
                             durationUnit: durationUnit,
                             multiplier: contract.multiplier,
@@ -946,10 +943,7 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
         });
         
         setAssetGroups(Object.keys(groupedAssets)
-            .map(label => ({ 
-                label, 
-                options: groupedAssets[label].sort((a, b) => a.label.localeCompare(b.label)) 
-            }))
+            .map(label => ({ label, options: groupedAssets[label].sort((a, b) => a.label.localeCompare(b.label)) }))
             .sort((a, b) => a.label.localeCompare(b.label)));
         setIsAssetsLoading(false);
 
