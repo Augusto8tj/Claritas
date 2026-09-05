@@ -5,15 +5,21 @@ import { ListModelsCard } from "@/features/status/components/list-models-card";
 import { DerivConnectionCard } from "@/features/status/components/deriv-connection-card";
 import { FirestoreWriteTestCard } from "@/features/status/components/firestore-write-test-card";
 import { DerivApiProviderV2 } from '@/features/trading/hooks/use-deriv-api-v2';
-import { BrainCircuit, Link, Database, Activity, Gauge, AlertCircle, ShieldCheck } from "lucide-react";
-import { useState, useEffect } from "react";
+import { 
+    BrainCircuit, Link, Database, Activity, Gauge, 
+    AlertCircle, ShieldCheck, RefreshCw, Server, 
+    Network, ShieldAlert, Cpu
+} from "lucide-react";
+import { useState, useEffect, useCallback } from "react";
 import { checkGeminiConnection, checkFirestoreConnection } from "@/app/actions";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { cn } from "@/lib/utils";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Separator } from "@/components/ui/separator";
+import { Button } from "@/components/ui/button";
+import { useToast } from "@/hooks/use-toast";
 
 type CheckResult = {
   success: boolean;
@@ -21,61 +27,94 @@ type CheckResult = {
 };
 
 function StatusPageContent() {
+  const { toast } = useToast();
   const [serverChecks, setServerChecks] = useState<{ gemini: CheckResult | null, firestore: CheckResult | null }>({ gemini: null, firestore: null });
   const [loading, setLoading] = useState(true);
   const [systemUptime] = useState("99.99%");
 
-  useEffect(() => {
-    async function runServerChecks() {
-      const [geminiResult, firestoreResult] = await Promise.all([
-        checkGeminiConnection(),
-        checkFirestoreConnection()
-      ]);
-      setServerChecks({ gemini: geminiResult, firestore: firestoreResult });
-      setLoading(false);
-    }
-    runServerChecks();
+  const runServerChecks = useCallback(async () => {
+    setLoading(true);
+    const [geminiResult, firestoreResult] = await Promise.all([
+      checkGeminiConnection(),
+      checkFirestoreConnection()
+    ]);
+    setServerChecks({ gemini: geminiResult, firestore: firestoreResult });
+    setLoading(false);
   }, []);
+
+  useEffect(() => {
+    runServerChecks();
+  }, [runServerChecks]);
+
+  // Função para limpar o localStorage e forçar o uso do novo token no código
+  const handleResetCredentials = () => {
+    localStorage.removeItem('derivDemoApiToken');
+    localStorage.removeItem('derivRealApiToken');
+    localStorage.removeItem('derivAccountType');
+    
+    toast({
+        title: "Cache Limpo",
+        description: "Credenciais locais removidas. A página irá recarregar para aplicar o novo token PAT.",
+    });
+    
+    setTimeout(() => {
+        window.location.reload();
+    }, 1500);
+  };
 
   const allSystemsOperational = serverChecks.gemini?.success && serverChecks.firestore?.success;
 
   return (
-    <div className="flex-1 space-y-8 p-4 sm:p-8 pt-6">
-      {/* HEADER DE COMANDO */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight font-headline flex items-center gap-2">
-            <Activity className="h-8 w-8 text-primary" />
-            Centro de Diagnóstico
-          </h1>
-          <p className="text-muted-foreground">
-            Monitorização em tempo real da infraestrutura Claritas Copilot.
-          </p>
+    <div className="flex-1 space-y-8 p-4 sm:p-8 pt-6 bg-slate-50/30 dark:bg-transparent">
+      {/* HEADER DE COMANDO PROFISSIONAL */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 bg-white dark:bg-card p-6 rounded-xl border shadow-sm">
+        <div className="flex items-center gap-4">
+          <div className="bg-primary/10 p-3 rounded-lg">
+             <Activity className="h-8 w-8 text-primary" />
+          </div>
+          <div>
+            <h1 className="text-3xl font-bold tracking-tight font-headline">
+              Centro de Diagnóstico
+            </h1>
+            <p className="text-sm text-muted-foreground flex items-center gap-2">
+              <Server className="h-3 w-3" /> Monitorização de Infraestrutura e Redes
+            </p>
+          </div>
         </div>
-        <div className="flex items-center gap-3">
-            <Badge variant={allSystemsOperational ? "default" : "destructive"} className={cn("px-4 py-1 text-sm font-bold", allSystemsOperational && "bg-green-500 hover:bg-green-600")}>
+        
+        <div className="flex items-center gap-4">
+            <div className="text-right hidden sm:block">
+                <p className="text-[10px] text-muted-foreground uppercase font-bold tracking-widest">Disponibilidade Global</p>
+                <div className="flex items-center gap-2 justify-end">
+                    <div className="h-2 w-2 rounded-full bg-green-500 animate-pulse" />
+                    <p className="text-lg font-mono font-bold text-primary">{systemUptime}</p>
+                </div>
+            </div>
+            <Separator orientation="vertical" className="h-10 hidden sm:block" />
+            <Badge variant={allSystemsOperational ? "default" : "destructive"} className={cn("px-4 py-2 text-sm font-bold shadow-sm", allSystemsOperational && "bg-green-500 hover:bg-green-600")}>
                 {loading ? "A ANALISAR..." : allSystemsOperational ? "SISTEMAS OPERACIONAIS" : "INCIDENTE DETECTADO"}
             </Badge>
-            <div className="text-right hidden sm:block">
-                <p className="text-[10px] text-muted-foreground uppercase font-bold">Uptime Global</p>
-                <p className="text-sm font-mono font-bold text-primary">{systemUptime}</p>
-            </div>
         </div>
       </div>
 
-      {/* SEÇÃO 1: STATUS DE SERVIÇOS CRÍTICOS (A PRIORIDADE) */}
+      {/* SEÇÃO 1: STATUS DE SERVIÇOS CRÍTICOS */}
       <div className="space-y-4">
-        <div className="flex items-center gap-2 text-sm font-bold uppercase tracking-wider text-muted-foreground">
-            <ShieldCheck className="h-4 w-4" /> Integridade dos Nós de Serviço
+        <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2 text-sm font-bold uppercase tracking-wider text-muted-foreground">
+                <ShieldCheck className="h-4 w-4" /> Integridade dos Nós de Serviço
+            </div>
+            <Button variant="ghost" size="sm" onClick={runServerChecks} disabled={loading} className="text-xs h-8">
+                <RefreshCw className={cn("h-3 w-3 mr-2", loading && "animate-spin")} /> Atualizar
+            </Button>
         </div>
         <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
             <HealthCheckCard
                 serviceName="API Gemini (IA)"
                 icon={<BrainCircuit className="h-6 w-6 text-primary" />}
                 checkResult={serverChecks.gemini || undefined}
-                description="Motor cognitivo para chatbots e análises preditivas."
-                successMessage="Modelos Gemini 2.5 respondendo."
-                failureMessage="Falha na chave de API ou cota esgotada."
+                description="Motor cognitivo para análise preditiva."
+                successMessage="Modelos Gemini 2.5 ativos."
+                failureMessage="Falha na chave ou cota excedida."
                 configurePath="/settings"
             />
             
@@ -83,9 +122,9 @@ function StatusPageContent() {
                 isClientSide
                 serviceName="API Deriv (Core)"
                 icon={<Link className="h-6 w-6 text-primary" />}
-                description="Fluxo WebSocket para negociação e ticks."
-                successMessage="Handshake WebSocket realizado."
-                failureMessage="Token PAT inválido ou erro de handshake."
+                description="Fluxo WebSocket para negociação real."
+                successMessage="Handshake WebSocket OK."
+                failureMessage="Token PAT inválido ou expirado."
                 configurePath="/settings"
             />
 
@@ -93,67 +132,65 @@ function StatusPageContent() {
                 serviceName="Firebase Firestore"
                 icon={<Database className="h-6 w-6 text-primary" />}
                 checkResult={serverChecks.firestore || undefined}
-                description="Persistência de dados e regras de segurança."
+                description="Persistência e segurança de dados."
                 successMessage="Segurança baseada em regras ativa."
-                failureMessage="Acesso negado ou erro no SDK."
+                failureMessage="Erro de acesso ao SDK."
                 configurePath="/help"
             />
         </div>
       </div>
 
-      <Separator />
-
-      {/* SEÇÃO 2: MÉTRICAS DE PERFORMANCE TÉCNICA */}
+      {/* SEÇÃO 2: MÉTRICAS DE PERFORMANCE (KPIs) */}
       <div className="space-y-4">
         <div className="flex items-center gap-2 text-sm font-bold uppercase tracking-wider text-muted-foreground">
             <Gauge className="h-4 w-4" /> Indicadores de Performance (KPIs)
         </div>
         <div className="grid gap-6 md:grid-cols-3">
-            <Card className="border-primary/20 bg-primary/5">
+            <Card className="border-blue-500/20 bg-blue-500/5">
                 <CardHeader className="pb-2">
-                    <CardTitle className="text-xs font-bold flex items-center gap-2 uppercase">
-                        <Gauge className="h-3 w-3" /> Latência de Rede
+                    <CardTitle className="text-xs font-bold flex items-center gap-2 uppercase text-blue-700">
+                        <Network className="h-3 w-3" /> Latência de Rede
                     </CardTitle>
                 </CardHeader>
                 <CardContent>
                     <div className="space-y-2">
                         <div className="flex justify-between text-xs">
                             <span className="text-muted-foreground">Gateway Deriv (Avg)</span>
-                            <span className="font-mono font-bold text-primary">124ms</span>
+                            <span className="font-mono font-bold text-blue-700">124ms</span>
                         </div>
-                        <Progress value={85} className="h-1" />
+                        <Progress value={85} className="h-1 bg-blue-200" />
                     </div>
                 </CardContent>
             </Card>
             <Card className="border-purple-500/20 bg-purple-500/5">
                 <CardHeader className="pb-2">
-                    <CardTitle className="text-xs font-bold flex items-center gap-2 uppercase">
-                        <BrainCircuit className="h-3 w-3" /> Taxa de Ingestão IA
+                    <CardTitle className="text-xs font-bold flex items-center gap-2 uppercase text-purple-700">
+                        <Cpu className="h-3 w-3" /> Carga de Processamento IA
                     </CardTitle>
                 </CardHeader>
                 <CardContent>
                     <div className="space-y-2">
                         <div className="flex justify-between text-xs">
-                            <span className="text-muted-foreground">Tokens/Min (Gemini)</span>
-                            <span className="font-mono font-bold text-purple-600">8.4k / 10k</span>
+                            <span className="text-muted-foreground">Tokens por Minuto</span>
+                            <span className="font-mono font-bold text-purple-700">8.4k / 10k</span>
                         </div>
-                        <Progress value={84} className="h-1" />
+                        <Progress value={84} className="h-1 bg-purple-200" />
                     </div>
                 </CardContent>
             </Card>
-            <Card className="border-amber-500/20 bg-amber-500/5">
+            <Card className="border-green-500/20 bg-green-500/5">
                 <CardHeader className="pb-2">
-                    <CardTitle className="text-xs font-bold flex items-center gap-2 uppercase">
-                        <Database className="h-3 w-3" /> Integridade Firestore
+                    <CardTitle className="text-xs font-bold flex items-center gap-2 uppercase text-green-700">
+                        <Database className="h-3 w-3" /> Sincronização
                     </CardTitle>
                 </CardHeader>
                 <CardContent>
                     <div className="space-y-2">
                         <div className="flex justify-between text-xs">
-                            <span className="text-muted-foreground">Sincronização de Dados</span>
-                            <span className="font-mono font-bold text-green-600">Sync OK</span>
+                            <span className="text-muted-foreground">Estado do Firestore</span>
+                            <span className="font-mono font-bold text-green-700">Sync Online</span>
                         </div>
-                        <Progress value={100} className="h-1" />
+                        <Progress value={100} className="h-1 bg-green-200" />
                     </div>
                 </CardContent>
             </Card>
@@ -162,24 +199,44 @@ function StatusPageContent() {
 
       <Separator />
 
-      {/* SEÇÃO 3: FERRAMENTAS DE DIAGNÓSTICO ATIVO */}
+      {/* SEÇÃO 3: FERRAMENTAS DE INTERVENÇÃO */}
       <div className="space-y-4">
         <div className="flex items-center gap-2 text-sm font-bold uppercase tracking-wider text-muted-foreground">
-            <Settings className="h-4 w-4" /> Troubleshooting e Intervenção
+            <ShieldAlert className="h-4 w-4" /> Ferramentas de Intervenção
         </div>
         <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+            {/* NOVO: Card de Reset de Cache */}
+            <Card className="border-amber-500/20 bg-amber-500/5">
+                <CardHeader>
+                    <CardTitle className="text-lg flex items-center gap-2 text-amber-800">
+                        <RefreshCw className="h-5 w-5" /> Resetar Credenciais Locais
+                    </CardTitle>
+                    <CardDescription>
+                        Limpa o cache de tokens do browser. Use isto se o novo token PAT não estiver a ser reconhecido.
+                    </CardDescription>
+                </CardHeader>
+                <CardContent>
+                    <Button 
+                        variant="outline" 
+                        className="w-full border-amber-500/50 text-amber-800 hover:bg-amber-500/10"
+                        onClick={handleResetCredentials}
+                    >
+                        Executar Limpeza de Cache
+                    </Button>
+                </CardContent>
+            </Card>
+
             <DerivConnectionCard />
             <ListModelsCard />
-            <FirestoreWriteTestCard />
         </div>
       </div>
 
-      {/* NOTA TÉCNICA NA BASE */}
+      {/* NOTA TÉCNICA FINAL */}
       <Alert className="bg-muted/50 border-dashed shadow-none">
           <AlertCircle className="h-4 w-4" />
-          <AlertTitle className="font-bold text-xs uppercase">Arquitetura de Segurança 2025</AlertTitle>
+          <AlertTitle className="font-bold text-xs uppercase">Arquitetura de Segurança PAT</AlertTitle>
           <AlertDescription className="text-[11px] text-muted-foreground">
-              O sistema opera exclusivamente com o padrão <b>PAT (Personal Access Token)</b>. Todas as ligações são protegidas por encriptação TLS 1.3. Os diagnósticos acima são realizados localmente para garantir a privacidade dos seus dados.
+              O sistema Claritas Copilot utiliza tokens <b>PAT (Personal Access Token)</b> para autenticação WebSocket segura. Se encontrar erros de "Token Invalid", certifique-se de que o seu token começa com o prefixo <code>pat_</code> e que as permissões de <b>Read</b> e <b>Trade</b> estão ativas no painel da Deriv.
           </AlertDescription>
       </Alert>
     </div>
@@ -192,24 +249,4 @@ export default function StatusPage() {
             <StatusPageContent />
         </DerivApiProviderV2>
     );
-}
-
-function Settings(props: React.SVGProps<SVGSVGElement>) {
-  return (
-    <svg
-      {...props}
-      xmlns="http://www.w3.org/2000/svg"
-      width="24"
-      height="24"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" />
-      <circle cx="12" cy="12" r="3" />
-    </svg>
-  )
 }
