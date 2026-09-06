@@ -1,5 +1,3 @@
-
-// /src/app/status/page.tsx
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
@@ -8,7 +6,7 @@ import {
     Activity, ShieldCheck, ShieldAlert, Cpu, Database, 
     Network, Server, Clock, ChevronDown, ChevronUp, 
     Terminal, Lock, Key, Globe, Search, Play, CheckCircle2,
-    XCircle, Info
+    XCircle, Info, Loader2
 } from "lucide-react";
 import { checkGeminiConnection, checkFirestoreConnection, checkDerivConnection } from "@/app/actions";
 import { Badge } from "@/components/ui/badge";
@@ -17,6 +15,7 @@ import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/hooks/use-toast";
+import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
 
 type ServiceStatus = 'operational' | 'degraded' | 'critical' | 'loading';
 
@@ -254,7 +253,7 @@ export default function StatusPage() {
                                         onClick={handleTestToken}
                                         disabled={isTestingToken || !testToken}
                                     >
-                                        {isTestingToken ? <Loader2 className="animate-spin" /> : "Validar"}
+                                        {isTestingToken ? <Loader2 className="h-4 w-4 animate-spin" /> : "Validar"}
                                     </Button>
                                 </div>
                                 {testResult && (
@@ -347,7 +346,3 @@ export default function StatusPage() {
         </div>
     );
 }
-
-const Loader2 = ({ className }: { className?: string }) => (
-    <Activity className={cn("animate-spin", className)} />
-);

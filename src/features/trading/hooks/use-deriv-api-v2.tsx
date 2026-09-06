@@ -1,8 +1,8 @@
-
-// /src/features/trading/hooks/use-deriv-api-v2.tsx
+// src/features/trading/hooks/use-deriv-api-v2.tsx
 'use client';
 
 // ESTE ARQUIVO É UMA CÓPIA DEDICADA PARA O SISTEMA V2.5
+// ATUALIZADO COM INSTRUMENTAÇÃO DE DIAGNÓSTICO OPERACIONAL
 
 import { createContext, useContext, useState, useEffect, type ReactNode, useCallback, useRef, useMemo } from 'react';
 import type { TradeResult } from '@/lib/types';
@@ -67,6 +67,7 @@ export interface DerivApiContextTypeV2 {
   assetGroups: AssetGroup[];
   isAssetsLoading: boolean;
   
+  // Data for consumers
   activeSymbol: string | null;
   setActiveSymbol: (symbol: string | null) => void;
   chartData: ChartData[];
@@ -100,10 +101,10 @@ export interface DerivApiContextTypeV2 {
   tradeAnnotations: TradeAnnotation[];
   durationLimits: DurationLimits | null;
 
-  // Novos campos para Diagnóstico Avançado
+  // Campos para Diagnóstico Avançado
   connectionEvents: ConnectionEvent[];
   rawErrorCode: string | null;
-  tokenSource: 'localStorage' | 'env' | 'none';
+  tokenSource: 'localStorage' | 'none';
   maskedToken: string | null;
   appId: string;
   hookVersion: string;
@@ -117,7 +118,7 @@ const marketNameMapping: Record<string, string> = {
     'commodities': 'Matérias-Primas',
     'stock_index': 'Índices de Ações',
     'cryptocurrency': 'Criptomoedas',
-    'basket_index': 'Cestas de Moedas e Matérias-Primas'
+    'basket_index': 'Cestas'
 };
 
 const getGranularityForTimePeriod = (timePeriod: TimePeriod): number => {
@@ -137,7 +138,6 @@ const getGranularityForTimePeriod = (timePeriod: TimePeriod): number => {
 }
 
 const MAX_DATA_POINTS = 5000;
-
 const isCandle = (d: ChartData): d is CandleData => d != null && 'close' in d;
 
 const addDataPoint = (prevData: ChartData[], newPoint: ChartData): ChartData[] => {
@@ -165,7 +165,6 @@ const getDurationInSeconds = (duration: number, unit: DurationUnit, symbol?: str
         default: return duration * 2;
     }
 };
-
 
 export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
   const [demoToken, setDemoToken] = useState<string | null>(null);
@@ -208,10 +207,10 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
   const allowAutoReconnectRef = useRef(true);
   const reconnectInProgressRef = useRef(false);
 
-  // Campos de Diagnóstico
+  // Estados de Diagnóstico Operacional
   const [connectionEvents, setConnectionEvents] = useState<ConnectionEvent[]>([]);
   const [rawErrorCode, setRawErrorCode] = useState<string | null>(null);
-  const [tokenSource, setTokenSource] = useState<'localStorage' | 'env' | 'none'>('none');
+  const [tokenSource, setTokenSource] = useState<'localStorage' | 'none'>('none');
 
   const addEvent = useCallback((message: string, type: ConnectionEvent['type'] = 'info') => {
     setConnectionEvents(prev => [{
@@ -225,27 +224,27 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
     const token = accountType === 'demo' ? demoToken : realToken;
     if (!token) return null;
     if (token.length < 15) return "****";
-    return `${token.substring(0, 12)}...${token.substring(token.length - 6)}`;
+    return `${token.substring(0, 8)}...${token.substring(token.length - 6)}`;
   }, [demoToken, realToken, accountType]);
 
   const recentlyCreatedContractsRef = useRef<Set<number>>(new Set());
 
-    const setAndPersistOperationsLog = useCallback((updater: React.SetStateAction<Operation[]>) => {
-        setOperationsLog(prevLog => {
-            const newLogWithPotentialDuplicates = typeof updater === 'function' ? updater(prevLog) : updater;
-            const uniqueOpsMap = new Map<number, Operation>();
-            for(const op of newLogWithPotentialDuplicates) {
-                if(op && op.id) uniqueOpsMap.set(op.id, op);
-            }
-            const newLog = Array.from(uniqueOpsMap.values());
-            try {
-                localStorage.setItem(DERIV_V2_LOG_KEY, JSON.stringify(newLog));
-            } catch (error) {
-                console.error("Failed to save V2 operations log to localStorage:", error);
-            }
-            return newLog;
-        });
-    }, []);
+  const setAndPersistOperationsLog = useCallback((updater: React.SetStateAction<Operation[]>) => {
+    setOperationsLog(prevLog => {
+      const newLogWithPotentialDuplicates = typeof updater === 'function' ? updater(prevLog) : updater;
+      const uniqueOpsMap = new Map<number, Operation>();
+      for(const op of newLogWithPotentialDuplicates) {
+          if(op && op.id) uniqueOpsMap.set(op.id, op);
+      }
+      const newLog = Array.from(uniqueOpsMap.values());
+      try {
+          localStorage.setItem(DERIV_V2_LOG_KEY, JSON.stringify(newLog));
+      } catch (error) {
+          console.error("Failed to save V2 operations log to localStorage:", error);
+      }
+      return newLog;
+    });
+  }, []);
   
   useEffect(() => {
     chartTypeRef.current = chartType;
@@ -319,6 +318,14 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
   
   const activeToken = accountType === 'demo' ? demoToken : realToken;
 
+  useEffect(() => {
+    if (toastQueue.length > 0) {
+      toastQueue.forEach(t => toast(t));
+      setToastQueue([]);
+    }
+  }, [toastQueue, toast]);
+
+
   const makeRequest = useCallback(<T,>(request: object, noResponse = false): Promise<T> => {
     return new Promise((resolve) => {
         const ws = wsRef.current;
@@ -355,17 +362,17 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
     });
   }, []); 
 
-    const getHistoricalData = useCallback(async (symbol: string, style: 'ticks' | 'candles', count: number, period?: TimePeriod): Promise<ApiHistoricalData[]> => {
-        const request: any = { ticks_history: symbol, end: "latest", count, adjust_start_time: 1, style };
-        if (style === 'candles' && period) request.granularity = getGranularityForTimePeriod(period);
-        try {
-            const response: any = await makeRequest(request);
-            if (response.error) throw new Error(response.error.message);
-            if (response.history) return response.history.times.map((time: number, index: number) => ({ epoch: time, price: response.history.prices[index], volume: 1 }));
-            if (response.candles) return response.candles.map((c: any) => ({ epoch: c.epoch, open: parseFloat(c.open), high: parseFloat(c.high), low: parseFloat(c.low), close: parseFloat(c.close), volume: c.tick_count || 1 }));
-            return [];
-        } catch (error) { throw error; }
-    }, [makeRequest]);
+  const getHistoricalData = useCallback(async (symbol: string, style: 'ticks' | 'candles', count: number, period?: TimePeriod): Promise<ApiHistoricalData[]> => {
+      const request: any = { ticks_history: symbol, end: "latest", count, adjust_start_time: 1, style };
+      if (style === 'candles' && period) request.granularity = getGranularityForTimePeriod(period);
+      try {
+          const response: any = await makeRequest(request);
+          if (response.error) throw new Error(response.error.message);
+          if (response.history) return response.history.times.map((time: number, index: number) => ({ epoch: time, price: response.history.prices[index], volume: 1 }));
+          if (response.candles) return response.candles.map((c: any) => ({ epoch: c.epoch, open: parseFloat(c.open), high: parseFloat(c.high), low: parseFloat(c.low), close: parseFloat(c.close), volume: c.tick_count || 1 }));
+          return [];
+      } catch (error) { throw error; }
+  }, [makeRequest]);
     
   const subscribeToStreams = useCallback(async (symbol: string) => {
     try {
@@ -462,7 +469,10 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
     if (!wsRef.current || !isConnected) return { success: false, message: "Sem conexão." };
     try {
         const sellResponse: any = await makeRequest({ "sell": contractId });
-        if (sellResponse.error) throw new Error(sellResponse.error.message);
+        if (sellResponse.error) {
+           const errMsg = sellResponse.error.message || JSON.stringify(sellResponse.error);
+           throw new Error(errMsg);
+        }
         return { success: true, message: "Venda enviada." };
     } catch (error: any) {
         return { success: false, message: error.message };
@@ -490,7 +500,10 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
                         setRawErrorCode(response.error.code);
                         addEvent(`Erro na API (${response.error.code}): ${response.error.message}`, 'error');
                         promise?.reject(new Error(response.error.message));
-                    } else promise?.resolve(response);
+                    } else {
+                        addEvent(`Resposta recebida para req_id ${reqId}`, 'success');
+                        promise?.resolve(response);
+                    }
                     promisesRef.current.delete(String(reqId));
                     return;
                 }
@@ -559,6 +572,7 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
               setAssetGroups(Object.keys(groupedAssets).map(label => ({ label, options: groupedAssets[label].sort((a, b) => a.label.localeCompare(b.label)) })).sort((a, b) => a.label.localeCompare(b.label)));
               setIsAssetsLoading(false);
           } catch (error: any) {
+              addEvent(`Falha crítica: ${error.message}`, 'error');
               setConnectionError(error.message); setIsConnected(false); setIsConnecting(false); setIsAssetsLoading(false);
               allowAutoReconnectRef.current = false; if (ws.readyState === WebSocket.OPEN) ws.close();
           }
@@ -582,7 +596,7 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
       if (pingIntervalRef.current) clearInterval(pingIntervalRef.current);
       if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
     };
-  }, [activeToken, isLoading, triggerReconnect, user]);
+  }, [activeToken, isLoading, triggerReconnect, user, addEvent, makeRequest]);
 
   useEffect(() => { if (isConnected && activeSymbol) subscribeToStreams(activeSymbol); }, [isConnected, activeSymbol, subscribeToStreams]);
   
