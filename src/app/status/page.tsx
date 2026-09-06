@@ -1,13 +1,12 @@
-// /src/app/status/page.tsx
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { useDerivApiV2 } from '@/features/trading/hooks/use-deriv-api-v2';
+import { useDerivApiV2, DerivApiProviderV2 } from '@/features/trading/hooks/use-deriv-api-v2';
 import { 
     Activity, ShieldCheck, ShieldAlert, Cpu, Database, 
     Network, Server, Clock, ChevronDown, ChevronUp, 
     Terminal, Lock, Key, Globe, Search, Play, CheckCircle2,
-    XCircle, Info, Loader2
+    XCircle, Info, Loader2, AlertCircle, RefreshCw
 } from "lucide-react";
 import { checkGeminiConnection, checkFirestoreConnection, checkDerivConnection } from "@/app/actions";
 import { Badge } from "@/components/ui/badge";
@@ -82,7 +81,7 @@ const ServiceItem = ({ name, status, icon, children, isOpen, onToggle }: Service
     );
 };
 
-export default function StatusPage() {
+function StatusPageContent() {
     const { 
         isConnected, isConnecting, connectionError, activeToken, 
         connectionEvents, rawErrorCode, tokenSource, maskedToken, 
@@ -348,3 +347,10 @@ export default function StatusPage() {
     );
 }
 
+export default function StatusPage() {
+    return (
+        <DerivApiProviderV2>
+            <StatusPageContent />
+        </DerivApiProviderV2>
+    );
+}

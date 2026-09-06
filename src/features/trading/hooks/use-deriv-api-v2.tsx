@@ -1,8 +1,7 @@
-// src/features/trading/hooks/use-deriv-api-v2.tsx
 'use client';
 
 // ESTE ARQUIVO É UMA CÓPIA DEDICADA PARA O SISTEMA V2.5
-// ATUALIZADO COM INSTRUMENTAÇÃO DE DIAGNÓSTICO OPERACIONAL
+// RESTAURADO COM CÓDIGO CANÔNICO E INSTRUMENTAÇÃO DE DIAGNÓSTICO
 
 import { createContext, useContext, useState, useEffect, type ReactNode, useCallback, useRef, useMemo } from 'react';
 import type { TradeResult } from '@/lib/types';
@@ -138,6 +137,7 @@ const getGranularityForTimePeriod = (timePeriod: TimePeriod): number => {
 }
 
 const MAX_DATA_POINTS = 5000;
+
 const isCandle = (d: ChartData): d is CandleData => d != null && 'close' in d;
 
 const addDataPoint = (prevData: ChartData[], newPoint: ChartData): ChartData[] => {
@@ -165,6 +165,7 @@ const getDurationInSeconds = (duration: number, unit: DurationUnit, symbol?: str
         default: return duration * 2;
     }
 };
+
 
 export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
   const [demoToken, setDemoToken] = useState<string | null>(null);
@@ -229,7 +230,7 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
 
   const recentlyCreatedContractsRef = useRef<Set<number>>(new Set());
 
-  const setAndPersistOperationsLog = useCallback((updater: React.SetStateAction<Operation[]>) => {
+    const setAndPersistOperationsLog = useCallback((updater: React.SetStateAction<Operation[]>) => {
     setOperationsLog(prevLog => {
       const newLogWithPotentialDuplicates = typeof updater === 'function' ? updater(prevLog) : updater;
       const uniqueOpsMap = new Map<number, Operation>();
