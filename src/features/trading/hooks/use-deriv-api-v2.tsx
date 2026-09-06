@@ -604,15 +604,23 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
     ws: wsRef.current, isConnected, isConnecting, connectionError, demoToken, realToken, activeToken, accountType,
     setAccountType: (type) => { localStorage.setItem(DERIV_ACCOUNT_TYPE_KEY, type); setAccountTypeState(type); allowAutoReconnectRef.current = true; setTriggerReconnect(c => c + 1); },
     setTokens: (t) => { 
-        if (t.demo) { setDemoToken(t.demo.trim()); localStorage.setItem(DERIV_DEMO_TOKEN_KEY, t.demo.trim()); } 
-        if (t.real) { setRealToken(t.real.trim()); localStorage.setItem(DERIV_REAL_TOKEN_KEY, t.real.trim()); } 
+        if (t.demo) { 
+            const trimmed = t.demo.trim();
+            setDemoToken(trimmed); 
+            localStorage.setItem(DERIV_DEMO_TOKEN_KEY, trimmed); 
+        } 
+        if (t.real) { 
+            const trimmed = t.real.trim();
+            setRealToken(trimmed); 
+            localStorage.setItem(DERIV_REAL_TOKEN_KEY, trimmed); 
+        } 
         allowAutoReconnectRef.current = true; setTriggerReconnect(c => c + 1); 
     },
     disconnect: (type) => { if (type === 'demo') { localStorage.removeItem(DERIV_DEMO_TOKEN_KEY); setDemoToken(null); } else { localStorage.removeItem(DERIV_REAL_TOKEN_KEY); setRealToken(null); } },
     reconnect: async () => { setTriggerReconnect(c => c + 1); return new Promise(resolve => setTimeout(() => resolve(isConnected), 5000)); },
     accountBalance, operationsLog, assetGroups, isAssetsLoading, activeSymbol, setActiveSymbol, chartData, botCandleData, priceTicks, isChartLoading, chartError, chartType, setChartType, timePeriod, setTimePeriod, dataVersion, executeTrade, sellContract, getHistoricalData, clearActiveContracts: () => { setAndPersistOperationsLog([]); setTradeAnnotations([]); }, tradeAnnotations, durationLimits,
     connectionEvents, rawErrorCode, tokenSource, maskedToken, appId: DERIV_APP_ID, hookVersion: 'use-deriv-api-v2.tsx'
-  }), [isConnected, isConnecting, connectionError, demoToken, realToken, activeToken, accountType, accountBalance, operationsLog, assetGroups, isAssetsLoading, activeSymbol, chartData, botCandleData, priceTicks, isChartLoading, chartError, chartType, timePeriod, dataVersion, executeTrade, sellContract, getHistoricalData, tradeAnnotations, durationLimits, connectionEvents, rawErrorCode, tokenSource, maskedToken]);
+  }), [isConnected, isConnecting, connectionError, demoToken, realToken, activeToken, accountType, accountBalance, operationsLog, assetGroups, isAssetsLoading, activeSymbol, chartData, botCandleData, priceTicks, isChartLoading, chartError, chartType, timePeriod, dataVersion, executeTrade, sellContract, getHistoricalData, tradeAnnotations, durationLimits, connectionEvents, rawErrorCode, tokenSource, maskedToken, setAndPersistOperationsLog, setActiveSymbol, setChartType, setTimePeriod]);
 
   return <DerivApiContextV2.Provider value={contextValue}><FirebaseErrorListener />{children}</DerivApiContextV2.Provider>;
 }
