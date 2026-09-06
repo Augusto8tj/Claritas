@@ -1,4 +1,3 @@
-
 // /src/features/trading/hooks/use-deriv-api-v2.tsx
 'use client';
 
@@ -1045,12 +1044,14 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
   const setTokens = useCallback((tokens: { demo?: string; real?: string }) => {
     try {
       if (tokens.demo) {
-        localStorage.setItem(DERIV_DEMO_TOKEN_KEY, tokens.demo);
-        setDemoToken(tokens.demo);
+        const trimmed = tokens.demo.trim();
+        localStorage.setItem(DERIV_DEMO_TOKEN_KEY, trimmed);
+        setDemoToken(trimmed);
       }
       if (tokens.real) {
-        localStorage.setItem(DERIV_REAL_TOKEN_KEY, tokens.real);
-        setRealToken(tokens.real);
+        const trimmed = tokens.real.trim();
+        localStorage.setItem(DERIV_REAL_TOKEN_KEY, trimmed);
+        setRealToken(trimmed);
       }
       allowAutoReconnectRef.current = true;
       setTriggerReconnect(c => c + 1);

@@ -70,9 +70,9 @@ export function ApiKeysCard() {
     // A validação agora é mais simples: apenas salvamos o token.
     // A verificação real acontecerá quando o aplicativo tentar usar o token (por exemplo, ao buscar o saldo).
     if (type === 'demo') {
-        setTokens({ demo: token });
+        setTokens({ demo: token.trim() });
     } else {
-        setTokens({ real: token });
+        setTokens({ real: token.trim() });
     }
     
     // Simula um pequeno atraso para feedback do usuário
