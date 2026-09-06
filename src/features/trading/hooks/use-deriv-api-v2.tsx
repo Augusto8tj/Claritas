@@ -159,8 +159,8 @@ const getDurationInSeconds = (duration: number, unit: DurationUnit, symbol?: str
 
 
 export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
-  const [demoToken, setDemoToken] = useState<string | null>('pat_d2df2ff2027411214c07f1ce13961948d64554282475ea77b5343b288575d504');
-  const [realToken, setRealToken] = useState<string | null>('pat_d2df2ff2027411214c07f1ce13961948d64554282475ea77b5343b288575d504');
+  const [demoToken, setDemoToken] = useState<string | null>(null);
+  const [realToken, setRealToken] = useState<string | null>(null);
   const [accountType, setAccountTypeState] = useState<AccountType>('demo');
   const [accountBalance, setAccountBalance] = useState<AccountBalance>({ balance: null, currency: null, loading: true });
   const [isLoading, setIsLoading] = useState(true);
