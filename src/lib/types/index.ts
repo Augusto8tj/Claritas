@@ -18,7 +18,11 @@ import type {
     ExecutionModel as ExecutionModelT,
     InstitutionalBacktestResult as InstitutionalBacktestResultT,
     WalkForwardResult as WalkForwardResultT,
-    MonteCarloResult as MonteCarloResultT
+    MonteCarloResult as MonteCarloResultT,
+    TradeAnnotation as TradeAnnotationT,
+    PredictiveTradeLog as PredictiveTradeLogT,
+    DurationLimits as DurationLimitsT,
+    StrategyType as StrategyTypeT,
 } from './trading.types';
 import { OperationSchema } from './trading.types';
 import type { AssetAnalysisInput as AssetAnalysisInputT, AssetAnalysisOutput as AssetAnalysisOutputT } from '@/ai/flows/asset-analysis.types';
@@ -86,10 +90,10 @@ export type ChartData = TickData | CandleData;
 
 export type DurationUnit = DurationUnitT;
 
-export type DurationLimits = Record<DurationUnit, { min: number; max: number }>;
+export type DurationLimits = DurationLimitsT;
 
 export type OperationStatus = 'pending' | 'won' | 'lost';
-export type OperationInitiator = 'Manual' | 'Piloto' | 'Conselho' | 'HF_Strike';
+export type OperationInitiator = 'Manual' | 'Piloto' | 'Conselho' | 'HF_Strike' | 'Repetition Trigger' | 'Vagalume';
 
 export interface Operation {
   id: number;
@@ -136,6 +140,9 @@ export type ExecutionModel = ExecutionModelT;
 export type InstitutionalBacktestResult = InstitutionalBacktestResultT;
 export type WalkForwardResult = WalkForwardResultT;
 export type MonteCarloResult = MonteCarloResultT;
+export type TradeAnnotation = TradeAnnotationT;
+export type PredictiveTradeLog = PredictiveTradeLogT;
+export type StrategyType = StrategyTypeT;
 
 
 // =================================================================
@@ -190,7 +197,7 @@ export type OperationAnalysisOutput = z.infer<typeof OperationAnalysisOutputSche
 export const baseRiseFallSchema = z.object({
   stake: z.coerce.number().min(0.35, "O valor mínimo é $0.35."),
   duration: z.coerce.number().min(1, "A duração deve ser de pelo menos 1."),
-  duration_unit: z.enum(['t', 's', 'm', 'h', 'd']),
+  duration_unit: DurationUnitSchema,
   allowEquals: z.boolean().default(false),
 });
 export const riseFallSchema = baseRiseFallSchema.refine(

@@ -1,4 +1,3 @@
-
 // src/features/trading/hooks/use-deriv-api-reset.tsx
 'use client';
 
@@ -437,7 +436,7 @@ export const DerivApiProviderReset = ({ children }: { children: ReactNode }) => 
         };
         
         if (relevantContracts.length > 0) {
-            relevantContracts.forEach(contract => {
+            relevantContracts.forEach((contract: any) => {
                 const minParsed = parseDuration(contract.min_contract_duration);
                 const maxParsed = parseDuration(contract.max_contract_duration);
 
@@ -615,7 +614,7 @@ export const DerivApiProviderReset = ({ children }: { children: ReactNode }) => 
                          if (response.subscription?.id === activeSubscriptionIdRef.current) {
                             const newTick = { epoch: response.tick.epoch, price: response.tick.quote };
                             if (chartTypeRef.current === 'Area') setChartData(prev => addDataPoint(prev, newTick));
-                            setPriceTicks(prev => addDataPoint(prev, newTick));
+                            setPriceTicks(prev => addDataPoint(prev, newTick) as TickData[]);
                             setDataVersion(v => v + 1);
                          }
                         break;

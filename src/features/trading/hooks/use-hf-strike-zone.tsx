@@ -2,7 +2,7 @@
 'use client';
 
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import type { TickData, CandleData, TimePeriod, Operation, DurationUnit } from '@/lib/types';
+import type { TickData, CandleData, TimePeriod, Operation, DurationUnit, EnsembleSignal } from '@/lib/types';
 import { calculateAllIndicators, type Indicators } from '@/features/trading/services/indicator-service';
 import { getCouncilStrategies } from '../services/council-strategies';
 import { useAuth } from '@/features/auth/hooks/use-auth';
@@ -32,8 +32,7 @@ import {
 } from '../services/hf-strike-logic';
 import type { HFConfig } from '@/features/trading/components/hf-trader/hf-config-panel';
 import { saveHFTradeLog } from '@/services/hf-data-service';
-import { runSingleStrategyBacktest, runAllStrategiesBacktest } from '../backtest/hf-backtest-engine';
-import { getOptimalDuration, analyzeOptimalDuration, resetGBMCache } from '../services/gbm-calibrator';
+import { getOptimalDuration, resetGBMCache } from '../services/gbm-calibrator';
 import { TRADER_CONFIG } from '@/features/trading/config/trader-config';
 import { runAutoCalibration, type AutoCalibrationResults } from '../optimization/auto-calibrator';
 import { useStochasticModels } from './use-stochastic-models';
@@ -54,23 +53,19 @@ export interface StrategyParams {
   BOLLINGER_SQUEEZE: SqueezeParams;
   VOLUME_ABSORPTION: AbsorptionParams;
   MICROSTRUCTURE_SCALP: ScalpParams;
-  RANDOM_WALK?: any; // Add this to make it a valid key
+  GBM_20S?: any;
+  GBM_40S?: any;
+  RANDOM_WALK?: any;
 }
 
 const RANDOM_ASSET_PARAMS = getRandomAssetParams();
 
-// Helper: retorna duração aproximada de 1 tick em segundos para o ativo
 const getTickDurationSeconds = (symbol: string | null): number => {
-  if (!symbol) return 2; // padrão seguro
-  // Ativos 1HZ: 1 tick por segundo
+  if (!symbol) return 2;
   if (symbol.startsWith('1HZ')) return 1;
-  // Ativos R_ (Volatility Index): ~2s por tick
   if (symbol.startsWith('R_')) return 2;
-  // Crash/Boom: tick a cada poucos segundos
   if (symbol.startsWith('CRASH') || symbol.startsWith('BOOM')) return 2;
-  // Step Index: 1 tick por segundo
   if (symbol.startsWith('STPIDX')) return 1;
-  // Padrão
   return 2;
 };
 
@@ -92,10 +87,8 @@ export function useHFStrikeZone(
   const rsiStateRef = useRef({ prev: 50 });
   const initialStrategies = useMemo(() => getCouncilStrategies('standard'), []);
   
-  const lastBacktestRun = useRef<number>(0);
   const [lastCalibrationTime, setLastCalibrationTime] = useState(0);
 
-  // Integração do Cérebro Preditivo
   const { projectionExperts } = useStochasticModels(
     botCandleData, 
     priceTicks, 
@@ -105,17 +98,12 @@ export function useHFStrikeZone(
   
   const [marketRegime, setMarketRegime] = useState<RegimeCharacteristics | null>(null);
   const [activeStrikeZone, setActiveStrikeZone] = useState<StrikeZone | null>(null);
-  const riskManager = useMemo(() => new AdvancedRiskManager({ maxDailyLoss: dailyBalance, maxDrawdown: 30, maxConcurrentTrades: 3, maxExposurePerAsset: 25, kellyFraction: 0.25 }, 1000), []);
-  
-  // Sincronizar dailyBalance quando mudar (ex: usuário recarrega saldo)
-  useEffect(() => {
-      riskManager.updateConfig({ maxDailyLoss: dailyBalance });
-  }, [dailyBalance, riskManager]);
+  const riskManager = useMemo(() => new AdvancedRiskManager({ maxDailyLoss: dailyBalance, maxDrawdown: 30, maxConcurrentTrades: 3, maxExposurePerAsset: 25, kellyFraction: 0.25 }, 1000), [dailyBalance]);
   
   const [positionSizing, setPositionSizing] = useState<PositionSizeRecommendation | null>(null);
   const [allSignals, setAllSignals] = useState<(StrikeZone | null)[]>([]);
   const strategyCountRef = useRef<Record<StrategyType, number>>({ 
-      HF_MEAN_REVERSION: 0, STD_TREND_FOLLOW: 0, BOLLINGER_SQUEEZE: 0, VOLUME_ABSORPTION: 0, MICROSTRUCTURE_SCALP: 0, GBM_20S: 0, GBM_40S: 0, RANDOM_WALK: 0
+      HF_MEAN_REVERSION: 0, STD_TREND_FOLLOW: 0, BOLLINGER_SQUEEZE: 0, VOLUME_ABSORPTION: 0, MICROSTRUCTURE_SCALP: 0, GBM_20S: 0, GBM_40S: 0, RANDOM_WALK: 0, ENSEMBLE: 0
   });
   const [strategyCounts, setStrategyCounts] = useState<Record<StrategyType, number>>(strategyCountRef.current);
   
@@ -141,7 +129,7 @@ export function useHFStrikeZone(
     } else {
         setStrategyParams(prev => ({
             ...prev,
-            [strategy]: { ...prev[strategy], ...params }
+            [strategy]: { ...(prev as any)[strategy], ...params }
         }));
     }
   }, []);
@@ -188,9 +176,9 @@ export function useHFStrikeZone(
                       return;
                   }
                   
-                  const result = results[key as StrategyType];
+                  const result = (results as any)[key];
                   if (result && result.success) {
-                      newParams[key as StrategyType] = result.finalParams;
+                      (newParams as any)[key] = result.finalParams;
                       updatedCount++;
                   }
               });
@@ -242,8 +230,8 @@ export function useHFStrikeZone(
   const lastSignalCountClearTimeRef = useRef<number>(Date.now());
   useEffect(() => {
     const now = Date.now();
-    if (now - lastSignalCountClearTimeRef.current > 30 * 60 * 1000) { // Reset every 30 minutes
-      strategyCountRef.current = { HF_MEAN_REVERSION: 0, STD_TREND_FOLLOW: 0, BOLLINGER_SQUEEZE: 0, VOLUME_ABSORPTION: 0, MICROSTRUCTURE_SCALP: 0, GBM_20S: 0, GBM_40S: 0, RANDOM_WALK: 0 };
+    if (now - lastSignalCountClearTimeRef.current > 30 * 60 * 1000) { 
+      strategyCountRef.current = { HF_MEAN_REVERSION: 0, STD_TREND_FOLLOW: 0, BOLLINGER_SQUEEZE: 0, VOLUME_ABSORPTION: 0, MICROSTRUCTURE_SCALP: 0, GBM_20S: 0, GBM_40S: 0, RANDOM_WALK: 0, ENSEMBLE: 0 };
       lastSignalCountClearTimeRef.current = now;
     }
   }, [dataVersion]);
@@ -437,11 +425,16 @@ export function useHFStrikeZone(
           setActiveStrikeZone(consensusSignal);
     
           if (consensusSignal) {
-            const pseudoSignal = {
-              expectedWinRate: 0.5 + (consensusSignal.confidence - 50) / 100 * 0.4,
+            const ensembleSignal: EnsembleSignal = {
+              direction: consensusSignal.type === 'LONG_ENTRY' ? 'LONG' : 'SHORT',
               confidence: consensusSignal.confidence,
+              participants: ensembleParticipants.map(p => ({ strategy: p, vote: consensusSignal!.type === 'LONG_ENTRY' ? 'LONG' : 'SHORT', weight: 1.0, confidence: consensusSignal!.confidence })),
+              reasoning: consensusSignal.triggers.join(', '),
+              expectedWinRate: 0.5 + (consensusSignal.confidence - 50) / 100 * 0.4,
+              suggestedStake: manualStake || 1.0,
             };
-            let sizing = riskManager.calculatePositionSize(pseudoSignal, riskManager.currentCapital);
+
+            let sizing = riskManager.calculatePositionSize(ensembleSignal, riskManager.currentCapital);
             let finalStake = sizing.recommendedStake;
     
             if (manualStake && manualStake > 0) {
@@ -486,16 +479,6 @@ export function useHFStrikeZone(
                 const durationInTicks = Math.ceil(calculatedDurationInSeconds / tickDurSec);
                 const clampedTicks = Math.max(durationLimits.t!.min, Math.min(durationInTicks, durationLimits.t!.max));
                 finalDuration = clampedTicks;
-                const executedSeconds = clampedTicks * tickDurSec;
-                const mismatchFactor = calculatedDurationInSeconds / executedSeconds;
-                if (mismatchFactor > 3) {
-                  console.warn(
-                    `[DURATION_MISMATCH] Duração calculada ${calculatedDurationInSeconds.toFixed(0)}s ` +
-                    `não suportada pelo ativo. Enviando ${clampedTicks}t ≈ ${executedSeconds}s ` +
-                    `(mismatch ${mismatchFactor.toFixed(1)}x). ` +
-                    `Considere calibrar especialistas para durações <= ${(durationLimits.t!.max * tickDurSec).toFixed(0)}s.`
-                  );
-                }
               } else if (canUseMinutes) {
                 durationUnit = 'm';
                 const durationInMinutes = Math.ceil(calculatedDurationInSeconds / 60);
@@ -524,7 +507,11 @@ export function useHFStrikeZone(
                     execution: { contractId: String(tradeResult.contractId), entryPrice: tradeResult.entryPrice!, status: 'pending', executedAt: new Date().toISOString() },
                     marketRegime: regime.regime,
                     ensembleParticipants: ensembleParticipants,
-                    positionSize: sizing,
+                    positionSize: {
+                      recommended: sizing.recommendedStake,
+                      actual: finalStake,
+                      reasoning: sizing.reasoning
+                    },
                     riskMetrics: { sharpeContribution: sizing.sharpeContribution, portfolioExposure: 0 }
                 });
               } else {

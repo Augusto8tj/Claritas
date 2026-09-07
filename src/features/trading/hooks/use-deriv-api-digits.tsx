@@ -1,4 +1,3 @@
-
 // src/features/trading/hooks/use-deriv-api-digits.tsx
 'use client';
 
@@ -379,7 +378,7 @@ export function useDerivApiDigitsState() {
                                     lastTickSaveTimestampRef.current = now;
                                 }
 
-                                setPriceTicks(prev => addDataPoint(prev, newTick));
+                                setPriceTicks(prev => addDataPoint(prev, newTick) as TickData[]);
                                 if (chartTypeRef.current === 'Area') {
                                     setChartData(prev => addDataPoint(prev, newTick));
                                 }
@@ -391,7 +390,7 @@ export function useDerivApiDigitsState() {
                                 const candle = response.ohlc;
                                 const newCandle: CandleData = { epoch: candle.open_time, open: parseFloat(candle.open), high: parseFloat(candle.high), low: parseFloat(candle.low), close: parseFloat(candle.close) };
                                 setChartData(prev => addDataPoint(prev, newCandle));
-                                setPriceTicks(prev => addDataPoint(prev, { epoch: newCandle.epoch, price: newCandle.close }));
+                                setPriceTicks(prev => addDataPoint(prev, { epoch: newCandle.epoch, price: newCandle.close }) as TickData[]);
                                 setDataVersion(v => v + 1);
                              }
                              break;

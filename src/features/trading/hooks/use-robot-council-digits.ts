@@ -90,19 +90,23 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
   const [overUnderUnderdogThreshold, setOverUnderUnderdogThreshold] = useState(40);
   const [evenOddUnderdogThreshold, setEvenOddUnderdogThreshold] = useState(40);
   const [vagalumeConfig, setVagalumeConfig] = useState<VagalumeConfig>({
+      minSequenceLength: 1,
+      usePredictiveAnalysis: true,
+      contextualThreshold: 55,
+      zScoreThreshold: 1.5,
+      requireRangingRegime: true,
+      allowedContracts: {
+        MATCHDIFFERS: true,
+        EVENODD: true,
+        OVERUNDER: true,
+      },
+      // Campos legados mantidos para evitar quebras
       maxStreak: 2,
       stateW1_matchThreshold: 8,
       stateL1_differsThreshold: 15,
       resetMultiplier: 1.2,
       pauseAfterFailedResets: 2,
       kellyFraction: 0.25,
-      usePredictiveAnalysis: true,
-      minSequenceLength: 3,
-      allowedContracts: {
-        MATCHDIFFERS: true,
-        EVENODD: true,
-        OVERUNDER: true,
-      }
   });
   
   // --- GESTÃO DE RISCO AVANÇADA (MARTINGALE) ---
@@ -239,7 +243,7 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
 
   const toggleAutopilot = useCallback((pilotType: PilotType | 'vagalume') => {
     setPilots(prev => {
-        const pilot = prev[pilotType];
+        const pilot = prev[pilotType as PilotType];
         if (!pilot) return prev;
         const newIsOnState = !pilot.isOn;
 
@@ -280,7 +284,7 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
             onVagalumeTradeCompleted(lastOp);
         }
 
-        const pilotToUpdate = pilots[pilotKey as PilotType];
+        const pilotToUpdate = (pilots as any)[pilotKey];
         if (pilotToUpdate) {
             const updatedHistory = [...pilotToUpdate.tradeHistory, lastOp];
             const newLosses = (lastOp.result ?? 0) < 0 ? pilotToUpdate.consecutiveLosses + 1 : 0;
@@ -321,25 +325,6 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
     const vagalumePilot = pilots.vagalume;
     if (vagalumePilot.isOn && vagalumePilot.status === 'TRADING' && vagalumePilot.activeContractId === null && vagalumeSignal) {
       if (vagalumeSignal.shouldTrade) {
-          const measureExecution = timingMonitor.startMeasurement();
-          
-          const currentTickEpoch = priceTicks[priceTicks.length - 1]?.epoch || 0;
-          const tickAge = Date.now() - (currentTickEpoch * 1000);
-          
-          if (tickAge > 1500) {
-              console.warn(`⏸️ [Vagalume] Tick muito antigo (${tickAge}ms). Aguardando próximo tick.`);
-              timingMonitor.recordTiming('vagalume', { analysisTime: 0, executionTime: 0, totalLatency: 0, tickAge, }, true, 'Tick antigo');
-              executionRef.current = false;
-              return;
-          }
-          
-          if (!vagalumeConfig.usePredictiveAnalysis && vagalumeSignal.analysisWindowEnd !== currentTickEpoch) {
-              console.warn(`⏸️ [Vagalume] Novo tick chegou durante análise. Recalculando...`);
-              timingMonitor.recordTiming('vagalume', { analysisTime: 0, executionTime: 0, totalLatency: 0, tickAge, }, true, 'Novo tick durante análise');
-              executionRef.current = false;
-              return;
-          }
-          
           const initialBankroll = sessionInitialBankroll ?? (accountBalance.balance ?? 1000);
           const currentBankroll = initialBankroll + dailyPnl;
           const bankrollState: BankrollState = { currentBankroll, initialBankroll, maxDailyLoss: dailyBalance, dailyProfitTarget: dailyTarget };
@@ -347,11 +332,11 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
               isEnabled: isMartingaleEnabled, 
               baseStake: BASE_STAKE, 
               maxMartingaleLevels: maxLosses, 
-              martingaleMultiplier: martingaleRecoveryFactor, 
+              martingaleRecoveryInstallments: 3, 
               useAntiMartingale: false, 
               isSmart: false,
           };
-          const stakeDecision = decideNextStake(vagalumePilot.tradeHistory, stakeConfig, bankrollState, vagalumeSignal.suggestedContract, vagalumeSignal.adjustedConfidence);
+          const stakeDecision = decideNextStake(vagalumePilot.tradeHistory, stakeConfig, bankrollState, vagalumeSignal.suggestedContract, vagalumeSignal.adjustedConfidence, vagalumePilot.accumulatedLoss, vagalumePilot.consecutiveLosses);
 
           if (!stakeDecision.shouldPause) {
               const finalStake = stakeDecision.nextStake * vagalumeSignal.suggestedStakeMultiplier;
@@ -366,15 +351,6 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
                   vagalumeSignal.suggestedDigit, 
                   'vagalume'
               ).then(tradeResult => {
-                  const executionTime = measureExecution.end();
-                  const analysisTime = vagalumeSignal.advancedScore?.analysisTime || 0;
-                  timingMonitor.recordTiming('vagalume', {
-                      analysisTime,
-                      executionTime,
-                      totalLatency: executionTime + tickAge,
-                      tickAge,
-                  });
-                  
                   if (tradeResult.success && tradeResult.contractId) {
                     setPilots(prev => ({ 
                         ...prev, 
@@ -457,7 +433,7 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
                }
                break;
             case 'dynamicUnderdogOverUnder':
-                const underdogBlock = multiWindowAnalysis?.coldestConsensusDigit;
+                const underdogBlock = (multiWindowAnalysis as any)?.consensusColdestDigit;
                 if (underdogBlock !== undefined) {
                     shouldExecute = true;
                     if (underdogBlock > 4) {
@@ -484,10 +460,10 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
               const pilotForStake = pilots[pilotKeyForStake];
               const stakeConfig: SmartMartingaleConfig = { 
                   isEnabled: isMartingaleEnabled, baseStake: BASE_STAKE, maxMartingaleLevels: maxLosses, 
-                  martingaleMultiplier: martingaleRecoveryFactor, useAntiMartingale: false, isSmart: isSmartMartingale,
+                  martingaleRecoveryInstallments: 3, useAntiMartingale: false, isSmart: isSmartMartingale,
               };
               const confidenceForStake = signalQuality?.confidenceLevel === 'MUITO_ALTA' ? 0.85 : signalQuality?.confidenceLevel === 'ALTA' ? 0.75 : signalQuality?.confidenceLevel === 'MEDIA' ? 0.65 : 0.55;
-              const stakeDecision = decideNextStake(pilotForStake.tradeHistory, stakeConfig, bankrollState, contractTypeForStake, confidenceForStake);
+              const stakeDecision = decideNextStake(pilotForStake.tradeHistory, stakeConfig, bankrollState, contractTypeForStake, confidenceForStake, pilotForStake.accumulatedLoss, pilotForStake.consecutiveLosses);
 
               if (stakeDecision.shouldPause) {
                 setPilots(prev => ({ ...prev, [pilotKeyForStake]: { ...prev[pilotKeyForStake], status: 'CIRCUIT_BREAKER', currentTarget: stakeDecision.pauseReason || 'Limite de risco atingido' }}));
@@ -515,7 +491,7 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
     executionRef.current = false;
   }, [
       priceTicks, pilots, operationsLog, signalQuality, shouldTrade, councilDecision, executeTrade, activeSymbol, toast, 
-      dailyBalance, dailyTarget, maxLosses, martingaleRecoveryFactor, sessionInitialBankroll, accountBalance.balance, dailyPnl,
+      dailyBalance, dailyTarget, maxLosses, sessionInitialBankroll, accountBalance.balance, dailyPnl,
       overUnderStats, evenOddStats, overUnderThreshold, evenOddThreshold, underdogThreshold, isUnderdogInverse, overUnderUnderdogThreshold, evenOddUnderdogThreshold,
       executionCooldown, isMartingaleEnabled, isSmartMartingale, analysisResults.mainWindowStats, multiWindowAnalysis, digitStats,
       cooldownTime, consensusThreshold, underdogDigitStats, onVagalumeTradeCompleted, vagalumeConfig, vagalumeSignal
@@ -534,7 +510,7 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
         } else {
             toast({ title: "Dados Carregados!", description: `${ticks.length} ticks históricos prontos para análise.`});
         }
-        setBacktestTicks(ticks);
+        setBacktestTicks(ticks.map(t => ({ epoch: t.timestamp, price: t.price })));
     } catch(e) {
         toast({ title: "Erro ao Carregar Dados", description: (e as Error).message, variant: "destructive" });
     } finally {
@@ -570,7 +546,7 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
                     maxTrades: 200,
                     paramsOverride: currentParams,
                 }, decimalPlaces);
-                results[strategyDef.id] = { ...summary, strategyId: strategyDef.id };
+                results[strategyDef.id] = { ...summary, strategyId: strategyDef.id as any };
             } catch (e) {
                 console.error(`Backtest para ${strategyDef.name} falhou:`, e);
             }

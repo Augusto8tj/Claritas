@@ -1,7 +1,7 @@
+// src/features/trading/hooks/use-deriv-api-v2.tsx
 'use client';
 
 // ESTE ARQUIVO É UMA CÓPIA DEDICADA PARA O SISTEMA V2.5
-// RESTAURADO COM CÓDIGO CANÔNICO E INSTRUMENTAÇÃO DE DIAGNÓSTICO
 
 import { createContext, useContext, useState, useEffect, type ReactNode, useCallback, useRef, useMemo } from 'react';
 import type { TradeResult } from '@/lib/types';
@@ -181,7 +181,7 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
   
   const [toastQueue, setToastQueue] = useState<any[]>([]);
 
-  const [activeSymbol, setActiveSymbol] = useState<string | null>('1HZ10V');
+  const [activeSymbol, setActiveSymbol] = useState<string | null>(null);
   const [chartData, setChartData] = useState<ChartData[]>([]);
   const [botCandleData, setBotCandleData] = useState<CandleData[]>([]);
   const [priceTicks, setPriceTicks] = useState<TickData[]>([]); 
@@ -208,7 +208,7 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
   const allowAutoReconnectRef = useRef(true);
   const reconnectInProgressRef = useRef(false);
 
-  // Estados de Diagnóstico Operacional
+  // Diagnóstico
   const [connectionEvents, setConnectionEvents] = useState<ConnectionEvent[]>([]);
   const [rawErrorCode, setRawErrorCode] = useState<string | null>(null);
   const [tokenSource, setTokenSource] = useState<'localStorage' | 'none'>('none');
@@ -532,7 +532,8 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
                         break;
                     case 'tick':
                         if (response.tick?.symbol === activeSymbol) {
-                            const newTick = { epoch: response.tick.epoch, price: response.tick.quote };
+                            const tick = response.tick;
+                            const newTick = { epoch: tick.epoch, price: tick.quote };
                             if (chartTypeRef.current === 'Area') setChartData(prev => addDataPoint(prev, newTick));
                             setPriceTicks(prev => addDataPoint(prev, newTick) as TickData[]);
                             setDataVersion(v => v + 1);
@@ -619,9 +620,9 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
     },
     disconnect: (type) => { if (type === 'demo') { localStorage.removeItem(DERIV_DEMO_TOKEN_KEY); setDemoToken(null); } else { localStorage.removeItem(DERIV_REAL_TOKEN_KEY); setRealToken(null); } },
     reconnect: async () => { setTriggerReconnect(c => c + 1); return new Promise(resolve => setTimeout(() => resolve(isConnected), 5000)); },
-    accountBalance, operationsLog, assetGroups, isAssetsLoading, activeSymbol, setActiveSymbol, chartData, botCandleData, priceTicks, isChartLoading, chartError, chartType, setChartType, timePeriod, setTimePeriod, dataVersion, executeTrade, sellContract, getHistoricalData, clearActiveContracts: () => { setAndPersistOperationsLog([]); setTradeAnnotations([]); }, tradeAnnotations, durationLimits,
+    accountBalance, operationsLog, assetGroups, isAssetsLoading, activeSymbol, setActiveSymbol: (s) => setActiveSymbol(s), chartData, botCandleData, priceTicks, isChartLoading, chartError, chartType, setChartType: (t) => setChartType(t), timePeriod, setTimePeriod: (tp) => setTimePeriod(typedTp => tp), dataVersion, executeTrade, sellContract, getHistoricalData, clearActiveContracts: () => { setAndPersistOperationsLog([]); setTradeAnnotations([]); }, tradeAnnotations, durationLimits,
     connectionEvents, rawErrorCode, tokenSource, maskedToken, appId: DERIV_APP_ID, hookVersion: 'use-deriv-api-v2.tsx'
-  }), [isConnected, isConnecting, connectionError, demoToken, realToken, activeToken, accountType, accountBalance, operationsLog, assetGroups, isAssetsLoading, activeSymbol, chartData, botCandleData, priceTicks, isChartLoading, chartError, chartType, timePeriod, dataVersion, executeTrade, sellContract, getHistoricalData, tradeAnnotations, durationLimits, connectionEvents, rawErrorCode, tokenSource, maskedToken, setAndPersistOperationsLog, setActiveSymbol, setChartType, setTimePeriod]);
+  }), [isConnected, isConnecting, connectionError, demoToken, realToken, activeToken, accountType, accountBalance, operationsLog, assetGroups, isAssetsLoading, activeSymbol, chartData, botCandleData, priceTicks, isChartLoading, chartError, chartType, timePeriod, dataVersion, executeTrade, sellContract, getHistoricalData, tradeAnnotations, durationLimits, connectionEvents, rawErrorCode, tokenSource, maskedToken, setAndPersistOperationsLog]);
 
   return <DerivApiContextV2.Provider value={contextValue}><FirebaseErrorListener />{children}</DerivApiContextV2.Provider>;
 }

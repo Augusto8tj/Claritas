@@ -16,7 +16,9 @@ export type StrategyType =
   | 'VOLUME_ABSORPTION'
   | 'MICROSTRUCTURE_SCALP'
   | 'GBM_20S'
-  | 'GBM_40S';
+  | 'GBM_40S'
+  | 'RANDOM_WALK'
+  | 'ENSEMBLE';
   
 export interface MicrostructureFeatures {
   spreadPercentage: number;
@@ -30,6 +32,22 @@ export interface MicrostructureFeatures {
   isSpike: boolean;
   pressure: 'buy' | 'sell' | 'neutral';
   analysis: string;
+}
+
+export interface TradeAnnotation {
+  id: string;
+  contractId: string;
+  entryTime: number;
+  entryPrice: number;
+  exitTime?: number;
+  exitPrice?: number;
+  direction: 'rise' | 'fall';
+  status: 'pending' | 'won' | 'lost';
+  stake: number;
+  symbol: string;
+  profit?: number;
+  expirationTime?: number;
+  contractType: 'option' | 'multiplier' | 'accumulator';
 }
 
 export const OperationSchema = z.object({
@@ -378,7 +396,7 @@ export const baseRiseFallSchema = z.object({
   allowEquals: z.boolean().default(false),
 });
 
-// --- NOVAS INTERFACES PARA BACKTESTING INSTITUCIONAL ---
+export type DurationLimits = Record<DurationUnit, { min: number; max: number } | null>;
 
 export interface ExecutionModel {
   spread: number;
