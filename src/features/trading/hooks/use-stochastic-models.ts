@@ -240,7 +240,7 @@ export function useStochasticModels(
             const history = assertivenessHistoryRef.current[h.name] || [];
             return { 
                 name: h.name, vote: expertVotes[h.name] || 'HOLD', wilson: bayesianConfidenceInterval(stats.wins, stats.total),
-                rawWinRate: stats.total > 0 ? (stats.wins / stats.total) * 100 : 50, // Default to 50 if no trades
+                rawWinRate: stats.total > 0 ? (stats.wins / stats.total) * 100 : 50, 
                 hits: stats.wins, total: stats.total, ...stats, lastResult: history[history.length - 1]
             };
         });

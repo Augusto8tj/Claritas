@@ -54,7 +54,9 @@ export type StrategyType =
   | 'VOLUME_ABSORPTION'
   | 'MICROSTRUCTURE_SCALP'
   | 'GBM_20S'
-  | 'GBM_40S';
+  | 'GBM_40S'
+  | 'RANDOM_WALK'
+  | 'ENSEMBLE';
   
 export const strategyMetadata: Record<StrategyType, { label: string; description: string; isHF: boolean; }> = {
   HF_MEAN_REVERSION: { label: 'Alta Frequência (Reversão)', description: 'Otimizado para reversão à média em 15-45s.', isHF: true },
@@ -64,6 +66,8 @@ export const strategyMetadata: Record<StrategyType, { label: string; description
   MICROSTRUCTURE_SCALP: { label: 'Scalping de Fluxo', description: 'Opera o fluxo de ordens para trades de 5 ticks.', isHF: true },
   GBM_20S: { label: 'Preditivo (GBM 20s)', description: 'Usa Movimento Browniano Geométrico para prever o preço em 20s.', isHF: true },
   GBM_40S: { label: 'Preditivo (GBM 40s)', description: 'Usa Movimento Browniano Geométrico para prever o preço em 40s.', isHF: true },
+  RANDOM_WALK: { label: 'Random Walk', description: 'Estratégia para ativos com comportamento aleatório.', isHF: true },
+  ENSEMBLE: { label: 'Consenso de Especialistas', description: 'Fusão de múltiplos sinais técnicos.', isHF: true },
 };
 
 export interface StrikeZone {
@@ -94,6 +98,10 @@ export interface StrategyParams {
   BOLLINGER_SQUEEZE: SqueezeParams;
   VOLUME_ABSORPTION: AbsorptionParams;
   MICROSTRUCTURE_SCALP: ScalpParams;
+  RANDOM_WALK?: any;
+  GBM_20S?: any;
+  GBM_40S?: any;
+  ENSEMBLE?: any;
 }
 
 
@@ -140,8 +148,8 @@ function runMonteCarloPrediction(
 
 function createGBMDetector(
   duration: 20 | 40,
-): (candles: CandleData[], indicators: Indicators, currentPrice: number, otherSignals: StrikeZone[], params?: { gbmConfidenceThreshold: number }) => StrikeZone | null {
-  return (candles: CandleData[], indicators: Indicators, currentPrice: number, otherSignals: StrikeZone[], params: { gbmConfidenceThreshold: number } = { gbmConfidenceThreshold: 15 }): StrikeZone | null => {
+): (candles: CandleData[], indicators: Indicators, currentPrice: number, otherSignals: StrikeZone[], params?: { gbmConfidenceThreshold: number; expertProjection?: any }) => StrikeZone | null {
+  return (candles: CandleData[], indicators: Indicators, currentPrice: number, otherSignals: StrikeZone[], params: { gbmConfidenceThreshold: number; expertProjection?: any } = { gbmConfidenceThreshold: 15 }): StrikeZone | null => {
     const strategyType = `GBM_${duration}S` as StrategyType;
     
     if (!currentPrice || candles.length < 20) {
@@ -576,7 +584,7 @@ export function detectRandomWalkZone(
     confidence: 50,
     triggers: ['🎲 Random Walk Strategy', `RSI: ${rsi.toFixed(1)}`],
     entry: { price: currentPrice, timestamp: Date.now() },
-    strategy: 'MICROSTRUCTURE_SCALP',
+    strategy: 'RANDOM_WALK',
     targets: {
       takeProfit: type === 'LONG_ENTRY' ? currentPrice + atr * 2.0 : currentPrice - atr * 2.0,
       stopLoss: type === 'LONG_ENTRY' ? currentPrice - atr * 1.0 : currentPrice + atr * 1.0,

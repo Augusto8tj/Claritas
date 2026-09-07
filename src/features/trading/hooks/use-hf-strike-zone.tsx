@@ -53,9 +53,9 @@ export interface StrategyParams {
   BOLLINGER_SQUEEZE: SqueezeParams;
   VOLUME_ABSORPTION: AbsorptionParams;
   MICROSTRUCTURE_SCALP: ScalpParams;
+  RANDOM_WALK?: any;
   GBM_20S?: any;
   GBM_40S?: any;
-  RANDOM_WALK?: any;
   ENSEMBLE?: any;
 }
 
@@ -430,7 +430,7 @@ export function useHFStrikeZone(
               direction: consensusSignal.type === 'LONG_ENTRY' ? 'LONG' : 'SHORT',
               confidence: consensusSignal.confidence,
               participants: ensembleParticipants.map(p => ({ 
-                strategy: p, 
+                strategy: p as StrategyType, 
                 vote: (consensusSignal!.type === 'LONG_ENTRY' ? 'LONG' : 'SHORT') as "LONG" | "SHORT" | "NEUTRAL", 
                 weight: 1.0, 
                 confidence: consensusSignal!.confidence 

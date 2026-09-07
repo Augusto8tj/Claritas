@@ -66,6 +66,10 @@ export interface CouncilState {
         maxDrawdown: number;
         dailyPnL: number;
     };
+    supervisionStatus: {
+        status: 'inactive' | 'approved' | 'veto';
+        message: string;
+    };
     bayesianVotes: Record<string, BayesianVote>;
     dashboardData: DashboardData | null;
     effectiveThreshold: number;
@@ -114,7 +118,7 @@ const durationToSeconds = (duration: number, unit: DurationUnit): number => {
     case 'm': return duration * 60;
     case 'h': return duration * 3600;
     case 'd': return duration * 86400;
-    default: return duration;
+    default: return duration * 2;
   }
 };
 
@@ -289,6 +293,7 @@ export function useRobotCouncilV3(
     microstructure: null,
     consensusDecision: { direction: 'HOLD', probability: 0.5, stake: 0 },
     portfolioStats: { totalExposure: 0, maxExposure: 0, currentDrawdown: 0, maxDrawdown: 0, dailyPnL: 0 },
+    supervisionStatus: { status: 'inactive', message: 'Aguardando...' },
     bayesianVotes: {},
     dashboardData: null,
     effectiveThreshold: 0,
@@ -299,7 +304,7 @@ export function useRobotCouncilV3(
     },
     robotPerformance: [],
     consensusReached: false,
-    consensusSum: { rise: number, fall: number },
+    consensusSum: { rise: 0, fall: 0 },
     totalWeight: 0,
   });
 
@@ -759,7 +764,7 @@ export function useRobotCouncilV3(
                     const canUseTicks = durationLimits.t && durationLimits.t.min !== null;
                     const canUseSeconds = durationLimits.s && durationLimits.s.min !== null;
 
-                    if (canUseTicks && durationLimits.t && adjustedDuration <= (durationLimits.t.max * 2)) {
+                    if (canUseTicks && durationLimits.t && weightedAvgDuration <= (durationLimits.t.max * 2)) {
                         finalDurationUnit = 't';
                         const durationInTicks = Math.round(weightedAvgDuration / 2);
                         finalDuration = Math.max(durationLimits.t.min, Math.min(durationInTicks, durationLimits.t.max));
@@ -840,7 +845,7 @@ export function useRobotCouncilV3(
 
   }, [
     isCouncilAutopilotOn, isConnected, activeSymbol, validCandles, priceTicks, 
-    strategyCouncil, timePeriod, confidenceFactor, isMeritocracyOn, consensusSensitivity, dailyBalance, sessionStartTime, user, durationRange, executeTrade, evolveTrigger, durationLimits, sellContract, toast, tradeDecisionLog, isDynamicExitOn, memoizedIndicators
+    strategyCouncil, timePeriod, confidenceFactor, isMeritocracyOn, consensusSensitivity, dailyBalance, sessionStartTime, user, durationRange, executeTrade, evolveTrigger, durationLimits, sellContract, toast, tradeDecisionLog, isDynamicExitOn, memoizedIndicators, operationsLog
   ]);
 
   useEffect(() => {
@@ -858,7 +863,6 @@ export function useRobotCouncilV3(
     dissolveCouncil,
     isFetchingCouncil,
     strategyCouncil,
-    robotPerformance,
     evolutionHistory,
     isEvolving,
     evolutionProgress,

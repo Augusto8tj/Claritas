@@ -218,7 +218,7 @@ export function useDerivApiDigitsState() {
         const response: any = await makeRequest(request);
         if (response.error) throw new Error(response.error.message);
         if (response.history) return response.history.times.map((time: number, index: number) => ({ epoch: time, price: response.history.prices[index] }));
-        if (response.candles) return response.candles.map((c: any) => ({ epoch: c.epoch, open: c.open, high: c.high, low: c.low, close: c.close }));
+        if (response.candles) return response.candles.map((c: any) => ({ epoch: c.epoch, open: parseFloat(c.open), high: parseFloat(c.high), low: parseFloat(c.low), close: parseFloat(c.close) }));
         return [];
       } catch (error) { throw error; }
     }, [makeRequest]);
@@ -354,7 +354,6 @@ export function useDerivApiDigitsState() {
                                             result: finalResult,
                                             exitPrice: exitPrice,
                                             exitTimestamp: new Date(contract.sell_time * 1000).toISOString(),
-                                            status: localStatus === 'won' ? 'won' : 'lost',
                                             validationLog: validationLog,
                                         };
                                         

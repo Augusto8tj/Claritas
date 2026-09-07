@@ -11,7 +11,7 @@
  *    - MIN_REAL_CONFIDENCE (confidenceFactor) em 70.
  * 
  * 2. PONDERAÇÃO EXPONENCIAL:
- *    - O peso de um robô agora cresce exponencialmente com seu Sharpe Ratio.
+ *    - O peso de um robô agora grows exponencialmente com seu Sharpe Ratio.
  *    - Robôs com Sharpe negativo são severamente penalizados.
  *    - Robôs não testados têm influência mínima.
  * 
@@ -200,37 +200,6 @@ const calculateTechnicalVote = (
     suggestedStake = baseStake * (1 + (newConfidence / 100)); 
   };
   
-  // Helper for confidence interpolation
-  const interpolateConfidence = (
-    value: number, 
-    weakThreshold: number, 
-    strongThreshold: number, 
-    weakConfidence: number, 
-    strongConfidence: number,
-    isRise: boolean
-  ): number => {
-    if (isRise) { // For RISE signals, lower values are better
-        if (value >= weakThreshold) return 0;
-        if (value <= strongThreshold) {
-            const overshoot = strongThreshold - value;
-            // Agressivamente aumenta a confiança para sinais extremos
-            return Math.min(100, strongConfidence + overshoot * 4); 
-        }
-        const range = weakThreshold - strongThreshold;
-        const progress = (weakThreshold - value) / range;
-        return weakConfidence + (strongConfidence - weakConfidence) * progress;
-    } else { // For FALL signals, higher values are better
-        if (value <= weakThreshold) return 0;
-        if (value >= strongThreshold) {
-            const overshoot = value - strongThreshold;
-            return Math.min(100, strongConfidence + overshoot * 4);
-        }
-        const range = strongThreshold - weakThreshold;
-        const progress = (value - weakThreshold) / range;
-        return weakConfidence + (strongConfidence - weakConfidence) * progress;
-    }
-  };
-
   const { 
     rsi, stoch, macd, bb, ma, adx, pdi, ndi, stochRSI, mfi, rvi, 
     ao: awesomeOscillator, trix, roc, psar: parabolicSAR, ichimoku, kama, donchian, chandelier, 
@@ -238,22 +207,16 @@ const calculateTechnicalVote = (
   } = indicators;
 
   try {
-      if ((robot.strategyType === 'RSI' || robot.strategyType === 'STOCHASTIC' || robot.strategyType === 'STOCH_RSI') && indicators[robot.strategyType.toLowerCase() as keyof Indicators]) {
-        const value = indicators[robot.strategyType.toLowerCase() as keyof Indicators] as number;
-        const { 
-            strongBuyThreshold: sbt, weakBuyThreshold: wbt,
-            strongSellThreshold: sst, weakSellThreshold: wst,
-            strongConfidence: sc, weakConfidence: wc
-        } = robot;
-        
-        const riseConfidence = interpolateConfidence(value, wbt!, sbt!, wc, sc, true);
-        const fallConfidence = interpolateConfidence(value, wst!, sst!, wc, sc, false);
-        
-        if (riseConfidence > fallConfidence) {
-            setVote('RISE', riseConfidence, `${robot.strategyType}(${value.toFixed(1)}) em zona de compra`);
-        } else if (fallConfidence > riseConfidence) {
-            setVote('FALL', fallConfidence, `${robot.strategyType}(${value.toFixed(1)}) em zona de venda`);
-        }
+      if (robot.strategyType === 'RSI' && isValid(rsi)) {
+        if (rsi <= robot.strongBuyThreshold!) setVote('RISE', 93, `RSI Extremo Baixo`);
+        else if (rsi <= robot.weakBuyThreshold!) setVote('RISE', 45, `RSI Baixo`);
+        else if (rsi >= robot.strongSellThreshold!) setVote('FALL', 93, `RSI Extremo Alto`);
+        else if (rsi >= robot.weakSellThreshold!) setVote('FALL', 45, `RSI Alto`);
+      }
+      
+      else if (robot.strategyType === 'STOCHASTIC' && isValid(stoch)) {
+        if (stoch <= robot.strongBuyThreshold!) setVote('RISE', 80, `Stoch Sobrevenda`);
+        else if (stoch >= robot.strongSellThreshold!) setVote('FALL', 80, `Stoch Sobrecompra`);
       }
       
       else if (robot.strategyType === 'MACD_CROSS' && isValid(macd?.macd) && isValid(macd?.signal)) {
@@ -287,7 +250,7 @@ const calculateTechnicalVote = (
           if (lowerShadow > body) setVote('RISE', 60, 'Rejeição de Fundo');
           else setVote('FALL', 40, 'Pressão Vendedora');
       }
-      
+
       else if (robot.strategyType === 'STOCH_RSI' && isValid(stochRSI)) {
           if (stochRSI < 0.2) setVote('RISE', 70, 'StochRSI Sobrevenda');
           else if (stochRSI > 0.8) setVote('FALL', 70, 'StochRSI Sobrecompra');
@@ -338,7 +301,7 @@ export function useRobotCouncilV2(
   } = useStrategyEvolution(initialStrategiesForMode, activeSymbol || '');
   
   const executionIdRef = useRef(0);
-  const processedRealTradesRef = useRef<Set<number>>(new Set());
+  const processedRealTradesRef.current = new Set();
   
   const [strategyCouncil, setStrategyCouncil] = useState<RobotStrategy[]>([]);
   const [isCouncilAutopilotOn, setIsCouncilAutopilotOn] = useState(false);
@@ -366,7 +329,7 @@ export function useRobotCouncilV2(
     },
     robotPerformance: [],
     consensusReached: false,
-    consensusSum: { rise: number, fall: number},
+    consensusSum: { rise: 0, fall: 0 },
     totalWeight: 0,
   });
 
@@ -442,8 +405,6 @@ export function useRobotCouncilV2(
     setIsFetchingCouncil(true);
     await new Promise((r) => setTimeout(r, 500));
     
-    // As estratégias já são inicializadas com base no modo pelo useMemo + useStrategyEvolution
-    // Apenas precisamos garantir que o `resetArena` use as estratégias corretas
     setStrategyCouncil(evolvedStrategies as RobotStrategy[]);
     resetArenaPerformance();
     
@@ -835,7 +796,7 @@ export function useRobotCouncilV2(
                     const canUseTicks = durationLimits.t && durationLimits.t.min !== null;
                     const canUseSeconds = durationLimits.s && durationLimits.s.min !== null;
 
-                    if (canUseTicks && durationLimits.t && adjustedDuration <= (durationLimits.t.max * 2)) {
+                    if (canUseTicks && durationLimits.t && weightedAvgDuration <= (durationLimits.t.max * 2)) {
                         finalDurationUnit = 't';
                         const durationInTicks = Math.round(weightedAvgDuration / 2);
                         finalDuration = Math.max(durationLimits.t.min, Math.min(durationInTicks, durationLimits.t.max));
