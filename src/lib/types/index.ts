@@ -1,5 +1,17 @@
 // /src/lib/types/index.ts
 import { z } from 'zod';
+import { 
+    RobotStrategySchema,
+    RobotVoteSchema,
+    EnhancedRobotPerformanceSchema,
+    TradeDecisionLogSchema,
+    AssetProfileV1Schema,
+    OperationSchema,
+    PredictiveTradeLogSchema,
+    IndicatorsSchema,
+    DurationUnitSchema,
+} from './trading.types';
+
 import type { 
     RobotStrategy as RobotStrategyT, 
     RobotVote as RobotVoteT, 
@@ -23,12 +35,8 @@ import type {
     PredictiveTradeLog as PredictiveTradeLogT,
     DurationLimits as DurationLimitsT,
     StrategyType as StrategyTypeT,
+    EnsembleSignal as EnsembleSignalT,
 } from './trading.types';
-import { OperationSchema } from './trading.types';
-import type { AssetAnalysisInput as AssetAnalysisInputT, AssetAnalysisOutput as AssetAnalysisOutputT } from '@/ai/flows/asset-analysis.types';
-import { IndicatorsSchema } from './trading.types';
-import { AssetAnalysisInputSchema, AssetAnalysisOutputSchema } from '@/ai/flows/asset-analysis.types';
-
 
 // =================================================================
 // Financial Types
@@ -89,7 +97,6 @@ export type CandleData = {
 export type ChartData = TickData | CandleData;
 
 export type DurationUnit = DurationUnitT;
-
 export type DurationLimits = DurationLimitsT;
 
 export type OperationStatus = 'pending' | 'won' | 'lost';
@@ -101,16 +108,16 @@ export interface Operation {
   direction: 'rise' | 'fall';
   stake: number;
   status: OperationStatus;
-  result?: number; // Profit or loss amount
-  timestamp: string; // ISO format
-  exitTimestamp?: string; // ISO format for when the contract was closed
+  result?: number; 
+  timestamp: string; 
+  exitTimestamp?: string; 
   duration: number;
   durationUnit: DurationUnit;
   initiator: OperationInitiator;
   entryPrice?: number;
   exitPrice?: number;
   isSellable?: boolean;
-  expirationTime?: number; // Expiration time in milliseconds
+  expirationTime?: number; 
   multiplier?: number;
   contractType?: string;
   takeProfit?: number;
@@ -118,7 +125,6 @@ export interface Operation {
   trailingStop?: number;
   strategy?: string;
 }
-
 
 // =================================================================
 // Re-exporting trading types for central access
@@ -143,15 +149,11 @@ export type MonteCarloResult = MonteCarloResultT;
 export type TradeAnnotation = TradeAnnotationT;
 export type PredictiveTradeLog = PredictiveTradeLogT;
 export type StrategyType = StrategyTypeT;
-
+export type EnsembleSignal = EnsembleSignalT;
 
 // =================================================================
 // Trading AI Flow Types
 // =================================================================
-
-// Re-exporting types from their source file
-export type AssetAnalysisInput = AssetAnalysisInputT;
-export type AssetAnalysisOutput = AssetAnalysisOutputT;
 
 // From financial-chatbot.types.ts
 const MessageSchema = z.object({
@@ -180,7 +182,6 @@ export const MqlAnalyzerOutputSchema = z.object({
 });
 export type MqlAnalyzerOutput = z.infer<typeof MqlAnalyzerOutputSchema>;
 
-
 // From operation-analysis.types.ts
 export const OperationAnalysisInputSchema = z.object({
   operations: z.array(OperationSchema).describe('An array of trading operations from the current session.'),
@@ -192,7 +193,6 @@ export const OperationAnalysisOutputSchema = z.object({
 });
 export type OperationAnalysisOutput = z.infer<typeof OperationAnalysisOutputSchema>;
 
-
 // From deriv-trader-interface.types.ts
 export const baseRiseFallSchema = z.object({
   stake: z.coerce.number().min(0.35, "O valor mínimo é $0.35."),
@@ -200,6 +200,7 @@ export const baseRiseFallSchema = z.object({
   duration_unit: DurationUnitSchema,
   allowEquals: z.boolean().default(false),
 });
+
 export const riseFallSchema = baseRiseFallSchema.refine(
   (data) => {
     if (data.duration_unit === 's') {
@@ -226,7 +227,6 @@ export const riseFallSchema = baseRiseFallSchema.refine(
 
 export type RiseFallFormValues = z.infer<typeof riseFallSchema>;
 
-
 // =================================================================
 // Goal Image Generation Types
 // =================================================================
@@ -240,4 +240,4 @@ export const GenerateGoalImageOutputSchema = z.object({
 });
 export type GenerateGoalImageOutput = z.infer<typeof GenerateGoalImageOutputSchema>;
 
-export { IndicatorsSchema, AssetAnalysisInputSchema, AssetAnalysisOutputSchema, OperationSchema };
+export { IndicatorsSchema, OperationSchema };
