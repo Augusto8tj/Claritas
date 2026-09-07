@@ -269,7 +269,7 @@ export function useRobotCouncilV3(
     tradeCounts,
     resetEvolutionHistory,
     deleteSingleEvolution,
-  } = useStrategyEvolutionV3(initialCouncilStrategies);
+  } = useStrategyEvolutionV3(initialCouncilStrategies, activeSymbol || '');
   
   const executionIdRef = useRef(0);
   const processedRealTradesRef = useRef<Set<number>>(new Set());
@@ -299,7 +299,7 @@ export function useRobotCouncilV3(
     },
     robotPerformance: [],
     consensusReached: false,
-    consensusSum: { rise: 0, fall: 0 },
+    consensusSum: { rise: number, fall: number },
     totalWeight: 0,
   });
 
@@ -756,20 +756,20 @@ export function useRobotCouncilV3(
                 const defaultUnit: DurationUnit = 's';
 
                 if (durationLimits) {
-                    const canUseTicks = durationLimits.t && durationLimits.t.min > 0;
-                    const canUseSeconds = durationLimits.s && durationLimits.s.min > 0;
+                    const canUseTicks = durationLimits.t && durationLimits.t.min !== null;
+                    const canUseSeconds = durationLimits.s && durationLimits.s.min !== null;
 
-                    if (canUseTicks && weightedAvgDuration <= (durationLimits.t.max * 2)) {
+                    if (canUseTicks && durationLimits.t && adjustedDuration <= (durationLimits.t.max * 2)) {
                         finalDurationUnit = 't';
                         const durationInTicks = Math.round(weightedAvgDuration / 2);
                         finalDuration = Math.max(durationLimits.t.min, Math.min(durationInTicks, durationLimits.t.max));
                     } 
-                    else if (canUseSeconds) {
+                    else if (canUseSeconds && durationLimits.s) {
                         finalDurationUnit = 's';
                         finalDuration = Math.round(weightedAvgDuration);
                         finalDuration = Math.max(durationLimits.s.min, Math.min(finalDuration, durationLimits.s.max));
                     }
-                    else if (canUseTicks) {
+                    else if (canUseTicks && durationLimits.t) {
                         finalDurationUnit = 't';
                         const durationInTicks = Math.round(weightedAvgDuration / 2);
                         finalDuration = Math.max(durationLimits.t.min, Math.min(durationInTicks, durationLimits.t.max));
@@ -892,15 +892,8 @@ export function useRobotCouncilV3(
     setStopLossThreshold,
     resetArenaPerformance,
     tradeDecisionLog,
-    supervisionStatus: { status: 'approved', message: 'Sistema Operacional v3.0' },
     evolveTrigger,
     resetEvolutionHistory,
     deleteSingleEvolution,
   };
-}
-
-function markLogAsProcessed(logs: TradeDecisionLog[], contractId: number): TradeDecisionLog[] {
-    return logs.map(log => 
-        log.contractId === contractId ? { ...log, processed: true } : log
-    );
 }

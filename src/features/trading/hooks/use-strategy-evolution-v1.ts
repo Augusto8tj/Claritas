@@ -2,12 +2,12 @@
 'use client';
 
 import { useState, useCallback, useRef, useEffect } from 'react';
-import type { RobotStrategy, RobotPerformance } from '@/lib/types';
+import type { RobotStrategy, RobotPerformance, MarketRegime } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/features/auth/hooks/use-auth';
 import { saveEvolutionHistory, loadEvolutionHistory, clearEvolutionHistory } from '@/services/financial-data-service';
 import { initialCouncilStrategies } from '@/features/trading/services/council-strategies';
-import type { EvolutionEvent as EvolutionEventV2 } from './use-strategy-evolution-v2'; // Import the richer type
+import type { EvolutionEvent as EvolutionEventV2 } from './use-strategy-evolution-v2';
 
 // ============================================================================
 // PARÂMETROS DA EVOLUÇÃO
@@ -17,7 +17,6 @@ const ELITE_COUNT = 5;
 const WORST_COUNT = 5;
 const MIN_TRADES_FOR_ANALYSIS = 5;
 
-// Corrected EvolutionEvent to be compatible with V2
 export interface EvolutionEvent {
     timestamp: Date;
     elitePerformers: Pick<RobotPerformance, 'id' | 'strategyType' | 'totalProfit' | 'wins' | 'losses'>[];
@@ -32,16 +31,10 @@ export interface EvolutionEvent {
     }[];
 }
 
-
 // ============================================================================
 // FUNÇÕES DE MUTAÇÃO INTELIGENTE
 // ============================================================================
 
-/**
- * Analisa o histórico de perdas de um robô para identificar fraquezas.
- * @param robot O robô a ser analisado.
- * @returns Um objeto com o padrão de fraqueza e uma sugestão de correção.
- */
 function analyzeRobotFailures(
   robot: RobotPerformance,
 ): {
@@ -54,10 +47,11 @@ function analyzeRobotFailures(
     return { weaknessPattern: 'Dados insuficientes', suggestedFix: {} };
   }
   
-  // 1. Analisa em que REGIMES o robô perde mais
   const lossesByTrend: Record<string, number> = {};
   losses.forEach(loss => {
-    const trend = loss.regime?.trend || 'NEUTRAL';
+    // CORREÇÃO: regime pode ser string ou objeto, tratamos com segurança
+    const regimeVal = typeof loss.regime === 'object' ? (loss.regime as any).trend : loss.regime;
+    const trend = regimeVal || 'NEUTRAL';
     lossesByTrend[trend] = (lossesByTrend[trend] || 0) + 1;
   });
   
@@ -75,25 +69,16 @@ function analyzeRobotFailures(
      const isRangeStrategy = ['RSI', 'STOCHASTIC', 'BOLLINGER_BANDS'].includes(robot.strategyType);
 
      if (worstTrend === 'NEUTRAL' && isTrendStrategy && robot.strategy.period) {
-         suggestedFix.period = Math.round(robot.strategy.period * 1.2); // Torna a média mais lenta
+         suggestedFix.period = Math.round(robot.strategy.period * 1.2);
      }
      else if ((worstTrend === 'STRONG_UP' || worstTrend === 'STRONG_DOWN') && isRangeStrategy && robot.strategy.period) {
-         suggestedFix.period = Math.round(robot.strategy.period * 0.8); // Torna o oscilador mais rápido
+         suggestedFix.period = Math.round(robot.strategy.period * 0.8);
      }
   }
 
-  return {
-    weaknessPattern,
-    suggestedFix
-  };
+  return { weaknessPattern, suggestedFix };
 }
 
-/**
- * Cria uma mutação de um robô, aplicando correções e alguma aleatoriedade.
- * @param eliteRobot O robô "pai".
- * @param suggestedFix Correções baseadas na análise do robô substituído.
- * @returns Uma nova estratégia com parâmetros alterados.
- */
 const mutateStrategy = (
     eliteRobot: RobotStrategy,
     suggestedFix: Partial<RobotStrategy> = {}
@@ -101,7 +86,7 @@ const mutateStrategy = (
     const newStrategy = { ...eliteRobot, ...suggestedFix };
     const changedParams: string[] = Object.keys(suggestedFix);
     
-    const mutationFactor = 1 + (Math.random() - 0.5) * 0.1; // +/- 5%
+    const mutationFactor = 1 + (Math.random() - 0.5) * 0.1;
     const smallChange = Math.random() > 0.5 ? 1 : -1;
 
     if (newStrategy.period && !changedParams.includes('period')) {
@@ -137,26 +122,29 @@ export function useStrategyEvolutionV1(assetSymbol: string | null) {
             setEvolutionHistory([]);
             setEvolvedStrategies(initialCouncilStrategies);
             return;
-        };
+        }
         
         loadEvolutionHistory(user.uid, 'v1', assetSymbol).then(history => {
             if (history && history.length > 0) {
-                // The loaded history is of type V2, we cast it to V1.
-                // This might cause issues if V1 components expect different properties.
-                // For now, we assume a compatible structure for display.
                 const compatibleHistory = history.map(h => ({
                     timestamp: h.timestamp,
-                    elitePerformers: h.elitePerformers,
+                    elitePerformers: h.elitePerformers.map(p => ({
+                        id: p.id,
+                        strategyType: p.strategyType,
+                        totalProfit: p.totalProfit,
+                        wins: p.wins,
+                        losses: p.losses
+                    })),
                     mutations: h.mutations.map(m => ({
-                        replacedBotId: m.robotId,
-                        replacedBotType: m.robotType,
+                        robotId: m.robotId,
+                        robotType: m.robotType,
                         parentId: m.parentId,
                         parentType: m.parentType,
                         diagnosis: m.diagnosis,
                         prescription: m.prescription,
                         mutatedGenes: m.mutatedGenes,
                     }))
-                }))
+                }));
                 setEvolutionHistory(compatibleHistory as EvolutionEvent[]);
             } else {
                 setEvolutionHistory([]);
@@ -173,7 +161,7 @@ export function useStrategyEvolutionV1(assetSymbol: string | null) {
             return; 
         }
 
-        console.log(`[Evolution V1] Limite de ${EVOLUTION_TRIGGER_THRESHOLD} trades atingido para ${assetSymbol}. A iniciar ciclo de evolução...`);
+        console.log(`[Evolution V1] Limite de trades atingido.`);
         tradeCountRef.current = 0; 
 
         const sortedPerformance = [...performanceData].sort((a, b) => (b.sharpeRatio || -99) - (a.sharpeRatio || -99));
@@ -181,15 +169,9 @@ export function useStrategyEvolutionV1(assetSymbol: string | null) {
         const elitePerformers = sortedPerformance.slice(0, ELITE_COUNT);
         const worstPerformers = sortedPerformance.slice(-WORST_COUNT);
 
-        if (elitePerformers.length === 0 || worstPerformers.length === 0) {
-            console.warn("[Evolution V1] Não há dados de desempenho suficientes para a evolução.");
-            return;
-        }
+        if (elitePerformers.length === 0 || worstPerformers.length === 0) return;
 
-        toast({
-            title: "🧬 Evolução Genética Inteligente!",
-            description: "Analisando falhas e aplicando mutações direcionadas aos robôs.",
-        });
+        toast({ title: "🧬 Evolução Genética V1", description: "Otimizando conselho com base no desempenho." });
 
         const newEvent: EvolutionEvent = {
             timestamp: new Date(),
@@ -198,81 +180,59 @@ export function useStrategyEvolutionV1(assetSymbol: string | null) {
         };
         
         let strategiesChanged = false;
-        const newStrategiesMap = new Map(evolvedStrategies.map((s, i) => [initialCouncilStrategies[i].id, s]));
+        const currentStrategies = [...evolvedStrategies];
 
-        worstPerformers.forEach((worst, index) => {
+        worstPerformers.forEach((worst) => {
             if ((worst.wins || 0) + (worst.losses || 0) < MIN_TRADES_FOR_ANALYSIS) return;
 
-            const eliteParent = elitePerformers[index % elitePerformers.length];
+            const eliteParent = elitePerformers[Math.floor(Math.random() * elitePerformers.length)];
             const failureAnalysis = analyzeRobotFailures(worst);
             
             const { strategy: newStrategyParams, parameters: mutatedGenes } = mutateStrategy(eliteParent.strategy, failureAnalysis.suggestedFix);
             
-            const newJustification = `Gen mutado de ${eliteParent.strategyType}. Causa: ${failureAnalysis.weaknessPattern}`;
+            const newJustification = `Mutação Genética de ${eliteParent.strategyType}. Causa: ${failureAnalysis.weaknessPattern}`;
             
-            const worstBotInitialData = initialCouncilStrategies.find(s => s.id === worst.id);
-            if(worstBotInitialData) {
-              const fullNewStrategy = {
-                  ...worstBotInitialData,
+            const worstIndex = evolvedStrategies.findIndex(s => (s as any).strategyType === worst.strategyType);
+            if (worstIndex !== -1) {
+              currentStrategies[worstIndex] = {
+                  ...currentStrategies[worstIndex],
                   ...newStrategyParams,
                   justification: newJustification,
               };
-              
-              const currentStrategiesArray = Array.from(newStrategiesMap.values());
-              const worstIndex = currentStrategiesArray.findIndex(s => (s as any).id === worst.id);
-              if (worstIndex !== -1) {
-                  newStrategiesMap.set(worst.id, fullNewStrategy);
-                  strategiesChanged = true;
+              strategiesChanged = true;
 
-                  newEvent.mutations.push({
-                      robotId: worst.id,
-                      robotType: worst.strategyType,
-                      parentId: eliteParent.id,
-                      parentType: eliteParent.strategyType,
-                      diagnosis: failureAnalysis.weaknessPattern,
-                      prescription: Object.keys(failureAnalysis.suggestedFix).length > 0 ? 'Correção Direcionada' : 'Mutação Aleatória',
-                      mutatedGenes: mutatedGenes,
-                  });
-
-                  console.log(`[Evolution V1] Robô ${worst.id} (${worst.strategyType}) substituído. Análise: ${failureAnalysis.weaknessPattern}`);
-              }
+              newEvent.mutations.push({
+                  robotId: worst.id,
+                  robotType: worst.strategyType,
+                  parentId: eliteParent.id,
+                  parentType: eliteParent.strategyType,
+                  diagnosis: failureAnalysis.weaknessPattern,
+                  prescription: 'Ajuste de Parâmetros',
+                  mutatedGenes: mutatedGenes,
+              });
             }
         });
 
         if (strategiesChanged) {
-            setEvolvedStrategies(Array.from(newStrategiesMap.values()));
+            setEvolvedStrategies(currentStrategies);
             setEvolutionHistory(prev => {
                 const newHistory = [newEvent, ...prev];
                 if(user && assetSymbol) {
-                    const historyV2Format = newHistory.map(h => ({ ...h, generation: 0, trigger: 'virtual', tradeCount: EVOLUTION_TRIGGER_THRESHOLD, populationStats: { avgSharpe: 0, avgWinRate: 0, totalProfit: 0, bestRegimes: [] } } as EvolutionEventV2));
+                    const historyV2Format = newHistory.map(h => ({
+                        generation: 0,
+                        timestamp: h.timestamp,
+                        elitePerformers: h.elitePerformers.map(p => ({ ...p, sharpeRatio: 0 })),
+                        mutations: h.mutations.map(m => ({ ...m, expectedImprovement: 'N/A' })),
+                        trigger: 'virtual',
+                        tradeCount: EVOLUTION_TRIGGER_THRESHOLD,
+                        populationStats: { avgSharpe: 0, avgWinRate: 0, totalProfit: 0, bestRegimes: [] }
+                    } as EvolutionEventV2));
                     saveEvolutionHistory(user.uid, historyV2Format, 'v1', assetSymbol);
                 }
                 return newHistory;
             });
         }
-    }, [evolvedStrategies, toast, user, assetSymbol, evolutionHistory]);
+    }, [evolvedStrategies, toast, user, assetSymbol]);
 
-    const resetEvolutionHistoryForAsset = useCallback(async () => {
-        if (!user || !assetSymbol) {
-            toast({ title: 'Erro', description: 'Nenhum usuário ou ativo selecionado.', variant: 'destructive'});
-            return;
-        }
-        try {
-            await clearEvolutionHistory(user.uid, 'v1', assetSymbol);
-            setEvolutionHistory([]); // Limpa o estado local
-            setEvolvedStrategies(initialCouncilStrategies); // Reseta as estratégias para o padrão
-            tradeCountRef.current = 0;
-            toast({ title: `Evolução para ${assetSymbol} Resetada`, description: 'O sistema recomeçará a aprender com as estratégias padrão.'});
-        } catch (error) {
-            console.error("Failed to reset evolution history:", error);
-            toast({ title: 'Erro ao Resetar', description: 'Não foi possível apagar o histórico de evolução.', variant: 'destructive'});
-        }
-    }, [user, assetSymbol, toast]);
-
-    return {
-        evolvedStrategies,
-        evolveTrigger,
-        evolutionHistory,
-        resetEvolutionHistoryForAsset,
-    };
+    return { evolvedStrategies, evolveTrigger, evolutionHistory, resetEvolutionHistoryForAsset: () => assetSymbol && user && clearEvolutionHistory(user.uid, 'v1', assetSymbol) };
 }

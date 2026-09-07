@@ -239,7 +239,11 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
     loadRobotPerformance(user.uid, 'v1')
       .then(storedPerformance => {
         if (storedPerformance) {
-            const perfWithHistory = storedPerformance.map(p => ({ ...p, tradeHistory: p.tradeHistory || [], status: p.status || 'Probation' }));
+            const perfWithHistory = storedPerformance.map(p => ({ 
+              ...p, 
+              tradeHistory: p.tradeHistory || [], 
+              status: (p.status === 'Certified' ? 'Certified' : 'Probation') as 'Probation' | 'Certified' 
+            }));
             setRobotPerformance(perfWithHistory as RobotPerformance[]);
         }
       })
@@ -336,7 +340,18 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
         await new Promise(r => setTimeout(r, 500));
         setStrategyCouncil(evolvedStrategies as RobotStrategy[]);
         if (robotPerformance.length === 0) {
-          const initialPerformance = (evolvedStrategies as RobotStrategy[]).map(robot => ({ id: robot.id, strategyType: robot.strategyType, strategy: robot, wins: 0, losses: 0, totalProfit: 0, winRate: 0, sharpeRatio: 0, tradeHistory: [], status: 'Probation' }));
+          const initialPerformance: RobotPerformance[] = (evolvedStrategies as RobotStrategy[]).map(robot => ({ 
+            id: robot.id, 
+            strategyType: robot.strategyType, 
+            strategy: robot, 
+            wins: 0, 
+            losses: 0, 
+            totalProfit: 0, 
+            winRate: 0, 
+            sharpeRatio: 0, 
+            tradeHistory: [], 
+            status: 'Probation' as const 
+          }));
           setRobotPerformance(initialPerformance);
           await saveRobotPerformance(user.uid, initialPerformance, 'v1');
         }
@@ -426,7 +441,7 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
         return;
     };
 
-    const performanceMap = new Map(robotPerformance.map(p => [p.id, { ...p, tradeHistory: p.tradeHistory || [], status: p.status || 'Probation' }]));
+    const performanceMap = new Map(robotPerformance.map(p => [p.id, { ...p, tradeHistory: p.tradeHistory || [], status: (p.status === 'Certified' ? 'Certified' : 'Probation') as 'Probation' | 'Certified' }]));
     let performanceChanged = false;
     
     const currentRegime = detectMarketRegime(currentIndicators);
@@ -684,17 +699,17 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
                 const canUseTicks = durationLimits.t && durationLimits.t.min > 0;
                 const canUseSeconds = durationLimits.s && durationLimits.s.min > 0;
 
-                if (canUseTicks && adjustedDuration <= (durationLimits.t.max * 2)) {
+                if (canUseTicks && durationLimits.t && adjustedDuration <= (durationLimits.t.max * 2)) {
                     finalUnit = 't';
                     const durationInTicks = Math.round(adjustedDuration / 2);
                     finalDuration = Math.max(durationLimits.t.min, Math.min(durationInTicks, durationLimits.t.max));
                 } 
-                else if (canUseSeconds) {
+                else if (canUseSeconds && durationLimits.s) {
                     finalUnit = 's';
                     finalDuration = Math.round(adjustedDuration);
                     finalDuration = Math.max(durationLimits.s.min, Math.min(finalDuration, durationLimits.s.max));
                 }
-                else if (canUseTicks) { // Fallback para ticks se for a única opção
+                else if (canUseTicks && durationLimits.t) { // Fallback para ticks se for a única opção
                     finalUnit = 't';
                     const durationInTicks = Math.round(adjustedDuration / 2);
                     finalDuration = Math.max(durationLimits.t.min, Math.min(durationInTicks, durationLimits.t.max));

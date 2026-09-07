@@ -56,6 +56,7 @@ export interface StrategyParams {
   GBM_20S?: any;
   GBM_40S?: any;
   RANDOM_WALK?: any;
+  ENSEMBLE?: any;
 }
 
 const RANDOM_ASSET_PARAMS = getRandomAssetParams();
@@ -475,10 +476,10 @@ export function useHFStrikeZone(
               const canUseTicks = !!(durationLimits.t && durationLimits.t.min > 0);
               const canUseMinutes = !!(durationLimits.m && durationLimits.m.min > 0);
               
-              if (canUseSeconds && calculatedDurationInSeconds >= durationLimits.s!.min) {
+              if (canUseSeconds && durationLimits.s && calculatedDurationInSeconds >= durationLimits.s.min) {
                 durationUnit = 's';
-                finalDuration = Math.round(Math.max(calculatedDurationInSeconds, durationLimits.s!.min));
-                finalDuration = Math.min(finalDuration, durationLimits.s!.max);
+                finalDuration = Math.round(Math.max(calculatedDurationInSeconds, durationLimits.s.min));
+                finalDuration = Math.min(finalDuration, durationLimits.s.max);
               } else if (canUseTicks) {
                 durationUnit = 't';
                 const durationInTicks = Math.ceil(calculatedDurationInSeconds / tickDurSec);
