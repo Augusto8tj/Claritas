@@ -21,18 +21,18 @@
  *    - Penalização por entropia: stake é reduzido se o consenso for incerto.
  */
 
-import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { useDerivApiV2 } from './use-deriv-api-v2';
+import { useState, useEffect, useCallback, useRef, useMemo, useContext } from 'react';
+import { useDerivApiV2 as useDerivApi, DerivApiContextV2 } from './use-deriv-api-v2';
 import { useToast } from '@/hooks/use-toast';
 import type { 
   RobotStrategy, DurationUnit, TickData, CandleData,
   RobotVote as RobotVoteType, MarketRegime, MicrostructureFeatures,
   BayesianVote as BayesianVoteType, EnhancedRobotPerformance as EnhancedRobotPerformanceType,
-  TimePeriod, TradeDecisionLog,
+  TimePeriod, TradeDecisionLog, Operation
 } from '@/lib/types';
 import { calculateAllIndicators, type Indicators } from '@/features/trading/services/indicator-service';
 import { useAuth } from '@/features/auth/hooks/use-auth';
-import { saveRobotPerformance, loadRobotPerformance, saveTradeDecision, saveEvolutionHistory, clearEvolutionHistory, deleteEvolutionEvent } from '@/services/financial-data-service';
+import { saveRobotPerformance, saveTradeDecision } from '@/services/financial-data-service';
 import { useStrategyEvolution } from './use-strategy-evolution-v2';
 import { getCouncilStrategies, type TradingMode } from '@/features/trading/services/council-strategies';
 import {
@@ -97,7 +97,7 @@ export interface CouncilState {
     consensusReached: boolean;
     consensusSum: { rise: number, fall: number};
     totalWeight: number;
-    virtualTradeCount: number; // NOVO: Gatilho de renderização
+    virtualTradeCount: number; 
 }
 
 export interface DashboardData {
@@ -168,7 +168,6 @@ const calculateTechnicalVote = (
   let confidence = 0;
   let reason = 'Aguardando...';
   
-  // INICIALIZAÇÃO com valores padrão da estratégia
   let dynamicDuration = robot.optimalDuration;
   let dynamicUnit = robot.optimalDurationUnit;
   
@@ -194,16 +193,13 @@ const calculateTechnicalVote = (
   const setVote = (newVote: 'RISE' | 'FALL', newConfidence: number, newReason: string) => {
     if (newConfidence <= 0) return;
     vote = newVote;
-    // Cap confidence at 100
     confidence = Math.min(100, Math.max(0, newConfidence));
     reason = newReason;
     suggestedStake = baseStake * (1 + (newConfidence / 100)); 
   };
   
   const { 
-    rsi, stoch, macd, bb, ma, adx, pdi, ndi, stochRSI, mfi, rvi, 
-    ao: awesomeOscillator, trix, roc, psar: parabolicSAR, ichimoku, kama, donchian, chandelier, 
-    vwap, obv, zScore 
+    rsi, stoch, macd, bb, adx, pdi, ndi, stochRSI, trix, ichimoku 
   } = indicators;
 
   try {
@@ -235,7 +231,7 @@ const calculateTechnicalVote = (
       }
 
       else if (robot.strategyType === 'TRIX' && isValid(trix)) {
-          if(trix > indicators.trixPrev!) setVote('RISE', 55, 'TRIX Acelerando');
+          if(trix > (indicators.trixPrev ?? 0)) setVote('RISE', 55, 'TRIX Acelerando');
           else setVote('FALL', 55, 'TRIX Desacelerando');
       }
 
@@ -279,7 +275,7 @@ export function useRobotCouncilV2(
   chartData: CandleData[],
   dataVersion: number
 ) {
-  const { operationsLog, executeTrade, timePeriod, isConnected, durationLimits, sellContract } = useDerivApiV2();
+  const { operationsLog, executeTrade, timePeriod, isConnected, durationLimits, sellContract } = useDerivApi();
   const { user, loading: isAuthLoading } = useAuth();
   const { toast } = useToast();
   
@@ -309,7 +305,6 @@ export function useRobotCouncilV2(
   const [tradeDecisionLog, setTradeDecisionLog] = useState<TradeDecisionLog[]>([]);
   const [sessionStartTime, setSessionStartTime] = useState<number | null>(null);
 
-  // NOVO: Gatilho de renderização para a UI
   const [virtualTradeCount, setVirtualTradeCount] = useState(0);
 
   const [councilState, setCouncilState] = useState<Omit<CouncilState, 'virtualTradeCount'>>({
@@ -325,7 +320,7 @@ export function useRobotCouncilV2(
     councilConfidence: 0,
     systemMetrics: {
         activeVirtualTrades: 0, totalVirtualTrades: 0, decisionLogCount: 0, activeRobotsCount: 0,
-        memoryUsageMB: 0, isExecuting: boolean = false, lastCleanup: Date.now(), orphanedTradesRemoved: 0, sessionDuration: 0,
+        memoryUsageMB: 0, isExecuting: false, lastCleanup: Date.now(), orphanedTradesRemoved: 0, sessionDuration: 0,
     },
     robotPerformance: [],
     consensusReached: false,
@@ -338,15 +333,10 @@ export function useRobotCouncilV2(
   const virtualTradesRef = useRef<VirtualTrade[]>([]);
   
   const lastRegimeRef = useRef<MarketRegime>('ranging');
-  
-  // Cache para o Regime de Mercado
   const regimeCacheRef = useRef<{ result: RegimeDetectionResult; timestamp: number } | null>(null);
-  
-  // NOVO: Histórico para Meta-Regime
   const regimeHistoryRef = useRef<MarketRegime[]>([]);
   const MAX_REGIME_HISTORY = 50;
 
-  // Configurações
   const [dailyBalance, setDailyBalance] = useState(10); 
   const [dailyTarget, setDailyTarget] = useState(5);
   const [isDynamicConsensusOn, setIsDynamicConsensusOn] = useState(true);
@@ -377,7 +367,6 @@ export function useRobotCouncilV2(
           monteCarloScore: 0, lastUpdated: Date.now(), tradeHistory: []
         };
     });
-    console.log(`[Arena Reset] ${initialPerformance.length} robôs inicializados com tradeHistory vazio`);
     robotPerformanceRef.current = initialPerformance;
     setRobotPerformance(initialPerformance);
     virtualTradesRef.current = [];
@@ -450,13 +439,13 @@ export function useRobotCouncilV2(
         }
         
         if (isDynamicExitOn) {
-            const activeCouncilContracts = operationsLog.filter(op => 
+            const activeCouncilContracts = operationsLog.filter((op: Operation) => 
                 op.status === 'pending' && 
                 op.initiator === 'Conselho' &&
                 op.durationUnit !== 't'
             );
 
-            activeCouncilContracts.forEach(contract => {
+            activeCouncilContracts.forEach((contract: Operation) => {
                 if (councilExecutionRef.current.sellingContracts.has(contract.id)) return;
 
                 const chandelier = currentIndicators.chandelier;
@@ -465,7 +454,6 @@ export function useRobotCouncilV2(
                 let shouldSell = false;
                 let reason = '';
 
-                // 1. Chandelier Exit (Stop de Volatilidade)
                 if (exitPrice) {
                     if (contract.direction === 'rise' && currentTick.price < exitPrice) {
                         shouldSell = true;
@@ -476,7 +464,6 @@ export function useRobotCouncilV2(
                     }
                 }
 
-                // 2. Mudança de Regime (Stop de Contexto)
                 const tradeLog = tradeDecisionLog.find(l => l.contractId === contract.id);
                 if (tradeLog) {
                     const entryRegime = tradeLog.context.marketRegime;
@@ -574,7 +561,7 @@ export function useRobotCouncilV2(
             }
         }
         
-        const lastRealOperation = operationsLog.find(op => 
+        const lastRealOperation = operationsLog.find((op: Operation) => 
             op.status !== 'pending' && 
             op.initiator === 'Conselho' && 
             !processedRealTradesRef.current.has(op.id)
@@ -757,6 +744,7 @@ export function useRobotCouncilV2(
                 orphanedTradesRemoved: prev.systemMetrics.orphanedTradesRemoved + removedOrphanedCount,
                 lastCleanup: removedOrphanedCount > 0 ? Date.now() : prev.systemMetrics.lastCleanup,
                 memoryUsageMB,
+                isExecuting: false
             },
             robotPerformance: [...robotPerformanceRef.current],
             consensusReached,
@@ -767,7 +755,7 @@ export function useRobotCouncilV2(
         
         setVirtualTradeCount(virtualTradesRef.current.length);
 
-        const openCouncilTrade = operationsLog.find(op => op.initiator === 'Conselho' && op.status === 'pending');
+        const openCouncilTrade = operationsLog.find((op: Operation) => op.initiator === 'Conselho' && op.status === 'pending');
         if (openCouncilTrade) {
             councilExecutionRef.current.isExecuting = false;
             return;

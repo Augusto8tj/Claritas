@@ -169,9 +169,9 @@ export function useStochasticModels(
         }
 
         const atr = calculateATR(candleData, 14);
-        const avgATR = calculateATR(candleData, 50); // baseline
+        const avgATR = calculateATR(candleData, 50); 
         const bbWidth = calculateBBWidth(candleData, 20, 2);
-        const avgBBWidth = calculateBBWidth(candleData.slice(0, -20), 20, 2); // baseline
+        const avgBBWidth = calculateBBWidth(candleData.slice(0, -20), 20, 2); 
 
         let regimeType: 'LOW' | 'NORMAL' | 'HIGH' = 'NORMAL';
         if (atr > avgATR * 1.5 || bbWidth > avgBBWidth * 1.3) regimeType = 'HIGH';
@@ -180,7 +180,7 @@ export function useStochasticModels(
 
         const lastPriceValue = prices[prices.length - 1];
         const lastTime = candleData[candleData.length - 1].epoch;
-        const newFuturePaths: Record<string, any[]> = {}, newAssertivenessData: Record<string, any> = {}, horizonsToUpdateStats = new Set<string>(), newVotes: Record<string, any> = {};
+        const horizonsToUpdateStats = new Set<string>(), newVotes: Record<string, any> = {};
 
         horizons.forEach(h => {
             const predictionsToProcess = pendingPredictionsRef.current[h.name] || [];
@@ -195,7 +195,6 @@ export function useStochasticModels(
                         adaptiveDriftRef.current[h.name] = (adaptiveDriftRef.current[h.name] * getDecayFactor(h.name)) + (ADAPTIVE_DRIFT_LEARNING_RATE * errorEmaRef.current[h.name]);
                         const isWin = (pred.predictedEndPrice > pred.startPrice) === (actualEndPrice > pred.startPrice);
                         assertivenessHistoryRef.current[h.name] = [...(assertivenessHistoryRef.current[h.name] || []), isWin].slice(-ASSERTIVENESS_HISTORY_LIMIT);
-                        newAssertivenessData[h.name] = { lastResult: isWin };
                         horizonsToUpdateStats.add(h.name);
                     }
                 } else updatedPending.push(pred);
@@ -222,7 +221,7 @@ export function useStochasticModels(
                 const newStats = { ...prev };
                 horizonsToUpdateStats.forEach(h => {
                     const history = assertivenessHistoryRef.current[h] || [];
-                    const { lastResult } = newAssertivenessData[h];
+                    const lastResult = history[history.length - 1];
                     let { consecutiveLosses, consecutiveWins, status, totalSuspensions } = prev[h];
                     if (status === 'permanently_disabled') { newStats[h] = prev[h]; return; }
                     if (lastResult) { consecutiveWins++; consecutiveLosses = 0; if (status === 'suspended' && consecutiveWins >= CONSECUTIVE_WIN_REACTIVATION) status = (totalSuspensions < MAX_SUSPENSIONS_ALLOWED) ? 'active' : 'permanently_disabled'; }
@@ -241,14 +240,13 @@ export function useStochasticModels(
             return { 
                 name: h.name, vote: expertVotes[h.name] || 'HOLD', wilson: bayesianConfidenceInterval(stats.wins, stats.total),
                 rawWinRate: stats.total > 0 ? (stats.wins / stats.total) * 100 : 50, 
-                hits: stats.wins, total: stats.total, ...stats, lastResult: history[history.length - 1]
+                hits: stats.wins, ...stats, lastResult: history[history.length - 1]
             };
         });
     }, [horizons, assertivenessStats, expertVotes]);
 
     const getEffectiveVote = useCallback((expert: ExpertProjection | undefined): 'RISE' | 'FALL' | 'HOLD' => {
         if (!expert || expert.vote === 'HOLD' || expert.status !== 'active') return 'HOLD';
-        // CORREÇÃO: Usar um limiar de 10 trades para o intervalo de confiança Bayesiano
         if (expert.total < 10) return 'HOLD';
         if (expert.wilson.lower > 0.5) return expert.vote;
         if (expert.wilson.upper < 0.5) return expert.vote === 'RISE' ? 'FALL' : (expert.vote === 'FALL' ? 'RISE' : 'HOLD');
@@ -264,7 +262,7 @@ export function useStochasticModels(
                 const confidence = p.wilson.lower > 0.5 ? p.wilson.lower - 0.5 : 0.5 - p.wilson.upper;
                 if (confidence > maxConfidence) {
                     maxConfidence = confidence;
-                    bestSignal = { horizon: p.name, direction: effectiveVote, certaintyScore: (p.wilson.lower > 0.5 ? p.wilson.lower - 0.5 : 0.5 - p.wilson.upper) * 200, rawWinRate: p.rawWinRate };
+                    bestSignal = { horizon: p.name, direction: effectiveVote, certaintyScore: confidence * 200, rawWinRate: p.rawWinRate };
                 }
             }
         });

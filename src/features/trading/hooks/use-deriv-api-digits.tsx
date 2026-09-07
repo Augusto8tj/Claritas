@@ -520,7 +520,7 @@ export function useDerivApiDigitsState() {
         const expirationTimeMs = buyResult.expiry_time * 1000;
         const direction = (contractType.includes('MATCH') || contractType.includes('EVEN') || contractType.includes('OVER')) ? 'rise' : 'fall';
 
-        const newOperation: any = {
+        const newOperation: Operation = {
             id: buyResult.contract_id, asset: symbol,
             direction: direction,
             stake: sanitizedStake, status: 'pending',
@@ -528,7 +528,6 @@ export function useDerivApiDigitsState() {
             duration: sanitizedDuration, durationUnit: durationUnit, initiator,
             entryPrice: buyResult.entry_tick_display_value ? parseFloat(buyResult.entry_tick_display_value) : 0,
             isSellable: false, expirationTime: expirationTimeMs, contractType: contractType, 
-            last_digit_prediction: last_digit,
             strategy: initiator === 'Piloto' ? strategy : undefined,
         };
         
