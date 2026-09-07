@@ -301,7 +301,7 @@ export function useRobotCouncilV2(
   } = useStrategyEvolution(initialStrategiesForMode, activeSymbol || '');
   
   const executionIdRef = useRef(0);
-  const processedRealTradesRef.current = new Set();
+  const processedRealTradesRef = useRef<Set<number>>(new Set());
   
   const [strategyCouncil, setStrategyCouncil] = useState<RobotStrategy[]>([]);
   const [isCouncilAutopilotOn, setIsCouncilAutopilotOn] = useState(false);
@@ -325,7 +325,7 @@ export function useRobotCouncilV2(
     councilConfidence: 0,
     systemMetrics: {
         activeVirtualTrades: 0, totalVirtualTrades: 0, decisionLogCount: 0, activeRobotsCount: 0,
-        memoryUsageMB: 0, isExecuting: false, lastCleanup: Date.now(), orphanedTradesRemoved: 0, sessionDuration: 0,
+        memoryUsageMB: 0, isExecuting: boolean = false, lastCleanup: Date.now(), orphanedTradesRemoved: 0, sessionDuration: 0,
     },
     robotPerformance: [],
     consensusReached: false,
@@ -934,4 +934,12 @@ export function useRobotCouncilV2(
     tradingMode,
     setTradingMode,
   };
+}
+
+export function useDerivApiV2() {
+  const context = useContext(DerivApiContextV2);
+  if (context === undefined) {
+    throw new Error('useDerivApiV2 must be used within a DerivApiProviderV2');
+  }
+  return context;
 }
