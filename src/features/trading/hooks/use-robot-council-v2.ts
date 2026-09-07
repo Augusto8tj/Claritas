@@ -32,7 +32,7 @@ import type {
 } from '@/lib/types';
 import { calculateAllIndicators, type Indicators } from '@/features/trading/services/indicator-service';
 import { useAuth } from '@/features/auth/hooks/use-auth';
-import { saveRobotPerformance, saveTradeDecision } from '@/services/financial-data-service';
+import { saveRobotPerformance, loadRobotPerformance, saveTradeDecision } from '@/services/financial-data-service';
 import { useStrategyEvolution } from './use-strategy-evolution-v2';
 import { getCouncilStrategies, type TradingMode } from '@/features/trading/services/council-strategies';
 import {
@@ -249,7 +249,7 @@ const calculateTechnicalVote = (
 
       else if (robot.strategyType === 'STOCH_RSI' && isValid(stochRSI)) {
           if (stochRSI < 0.2) setVote('RISE', 70, 'StochRSI Sobrevenda');
-          else if (stochRSI > 0.8) setVote('FALL', 70, 'StochRSI Sobrecompra');
+          else if (stochRSI < 0.8) setVote('FALL', 70, 'StochRSI Sobrecompra');
       }
       
       else if (isValid(rsi)) {
@@ -376,10 +376,10 @@ export function useRobotCouncilV2(
   useEffect(() => {
     if (!user || isAuthLoading || !activeSymbol) return;
     
-    loadRobotPerformance(user.uid, 'v2').then((stored) => {
+    loadRobotPerformance(user.uid, 'v2').then((stored: EnhancedRobotPerformance[] | null) => {
         if (stored && stored.length > 0) {
-            robotPerformanceRef.current = stored as EnhancedRobotPerformance[];
-            setRobotPerformance(stored as EnhancedRobotPerformance[]);
+            robotPerformanceRef.current = stored;
+            setRobotPerformance(stored);
         } else {
             resetArenaPerformance();
         }

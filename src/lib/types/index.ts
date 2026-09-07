@@ -124,6 +124,9 @@ export interface Operation {
   stopLoss?: number;
   trailingStop?: number;
   strategy?: string;
+  apiStatus?: 'won' | 'lost';
+  validationLog?: any;
+  executionLatency?: number;
 }
 
 // =================================================================
@@ -197,14 +200,14 @@ export type OperationAnalysisOutput = z.infer<typeof OperationAnalysisOutputSche
 export const baseRiseFallSchema = z.object({
   stake: z.coerce.number().min(0.35, "O valor mínimo é $0.35."),
   duration: z.coerce.number().min(1, "A duração deve ser de pelo menos 1."),
-  duration_unit: DurationUnitSchema,
+  duration_unit: z.enum(['t', 's', 'm', 'h', 'd']),
   allowEquals: z.boolean().default(false),
 });
 
 export const riseFallSchema = baseRiseFallSchema.refine(
   (data) => {
     if (data.duration_unit === 's') {
-      return data.duration >= 15;
+      return (data as any).duration >= 15;
     }
     return true;
   },
@@ -215,7 +218,7 @@ export const riseFallSchema = baseRiseFallSchema.refine(
 ).refine(
   (data) => {
     if (data.duration_unit === 't') {
-      return data.duration <= 10;
+      return (data as any).duration <= 10;
     }
     return true;
   },
