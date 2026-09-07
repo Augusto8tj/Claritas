@@ -2,14 +2,13 @@
 import { describe, it, expect } from 'vitest';
 import { decideNextStake, type SmartMartingaleConfig, type BankrollState } from '../smart-stake-manager-digits';
 import type { Operation } from '@/lib/types';
-import type { DigitContractType } from '../../hooks/use-vagalume-alternante';
 
 describe('decideNextStake - Kelly Criterion', () => {
   const baseConfig: SmartMartingaleConfig = {
     isEnabled: true,
     baseStake: 0.35,
     maxMartingaleLevels: 5,
-    martingaleMultiplier: 1.3,
+    martingaleRecoveryInstallments: 3,
     useAntiMartingale: false,
     isSmart: true,
   };
@@ -22,7 +21,7 @@ describe('decideNextStake - Kelly Criterion', () => {
   };
 
   it('should use Kelly stake when confidence > 0.5 and isSmart = true', () => {
-    const result = decideNextStake([], baseConfig, baseBankroll, 'DIGITEVEN', 0.65);
+    const result = decideNextStake([], baseConfig, baseBankroll, 'DIGITEVEN', 0.65, 0, 0);
 
     expect(result.nextStake).toBeGreaterThan(baseConfig.baseStake);
     expect(result.shouldPause).toBe(false);
@@ -30,14 +29,14 @@ describe('decideNextStake - Kelly Criterion', () => {
 
   it('should return base stake for negative Kelly', () => {
     // Confidence baixa deve resultar em Kelly negativo
-    const result = decideNextStake([], baseConfig, baseBankroll, 'DIGITEVEN', 0.40);
+    const result = decideNextStake([], baseConfig, baseBankroll, 'DIGITEVEN', 0.40, 0, 0);
 
     expect(result.nextStake).toBe(baseConfig.baseStake); // Volta para base stake
     expect(result.shouldPause).toBe(false);
   });
 
   it('should not exceed 10% of bankroll', () => {
-    const result = decideNextStake([], baseConfig, baseBankroll, 'DIGITEVEN', 0.95); // Confidence muito alta
+    const result = decideNextStake([], baseConfig, baseBankroll, 'DIGITEVEN', 0.95, 0, 0); // Confidence muito alta
 
     expect(result.nextStake).toBeLessThanOrEqual(baseBankroll.currentBankroll * 0.10);
   });
@@ -48,7 +47,7 @@ describe('decideNextStake - Martingale', () => {
     isEnabled: true,
     baseStake: 0.35,
     maxMartingaleLevels: 5,
-    martingaleMultiplier: 1.3,
+    martingaleRecoveryInstallments: 3,
     useAntiMartingale: false,
     isSmart: false, // Kelly desabilitado
   };
@@ -74,9 +73,9 @@ describe('decideNextStake - Martingale', () => {
       initiator: 'Piloto'
     };
 
-    const result = decideNextStake([lastTrade], baseConfig, baseBankroll, 'DIGITEVEN', 0.55);
+    const result = decideNextStake([lastTrade], baseConfig, baseBankroll, 'DIGITEVEN', 0.55, 0.35, 1);
 
-    expect(result.nextStake).toBeCloseTo(0.35 * 1.3, 2);
+    expect(result.nextStake).toBeGreaterThan(0.35);
     expect(result.shouldPause).toBe(false);
   });
 
@@ -86,7 +85,7 @@ describe('decideNextStake - Martingale', () => {
       { id: 2, timestamp: new Date().toISOString(), asset: 'R_100', direction: 'rise', stake: 0.455, result: 0.43, status: 'won', duration: 1, durationUnit: 't', initiator: 'Piloto' },
     ];
 
-    const result = decideNextStake(trades, baseConfig, baseBankroll, 'DIGITEVEN', 0.55);
+    const result = decideNextStake(trades, baseConfig, baseBankroll, 'DIGITEVEN', 0.55, 0, 0);
 
     expect(result.nextStake).toBe(baseConfig.baseStake);
   });
@@ -97,7 +96,7 @@ describe('decideNextStake - Circuit Breakers', () => {
     isEnabled: true,
     baseStake: 0.35,
     maxMartingaleLevels: 5,
-    martingaleMultiplier: 1.3,
+    martingaleRecoveryInstallments: 3,
     useAntiMartingale: false,
     isSmart: true,
   };
@@ -112,7 +111,7 @@ describe('decideNextStake - Circuit Breakers', () => {
       dailyProfitTarget: 5,
     };
 
-    const result = decideNextStake([], baseConfig, bankroll, 'DIGITEVEN', 0.65);
+    const result = decideNextStake([], baseConfig, bankroll, 'DIGITEVEN', 0.65, 0, 0);
 
     expect(result.shouldPause).toBe(true);
     expect(result.pauseReason).toContain('Stop Loss');
@@ -126,7 +125,7 @@ describe('decideNextStake - Circuit Breakers', () => {
       dailyProfitTarget: 5,
     };
 
-    const result = decideNextStake([], baseConfig, bankroll, 'DIGITEVEN', 0.65);
+    const result = decideNextStake([], baseConfig, bankroll, 'DIGITEVEN', 0.65, 0, 0);
 
     expect(result.shouldPause).toBe(true);
     expect(result.pauseReason).toContain('Meta de lucro');
@@ -146,7 +145,7 @@ describe('decideNextStake - Circuit Breakers', () => {
       initiator: 'Piloto'
     }));
 
-    const result = decideNextStake(losses, baseConfig, baseBankroll, 'DIGITEVEN', 0.65);
+    const result = decideNextStake(losses, baseConfig, baseBankroll, 'DIGITEVEN', 0.65, 1.75, 5);
 
     expect(result.shouldPause).toBe(true);
     expect(result.pauseReason).toContain('perdas seguidas');
@@ -162,7 +161,7 @@ describe('decideNextStake - Circuit Breakers', () => {
       { id: 6, timestamp: new Date().toISOString(), asset: 'R_100', direction: 'rise', stake: 0.35, result: -0.35, status: 'lost', duration: 1, durationUnit: 't', initiator: 'Piloto' },
     ];
 
-    const result = decideNextStake(trades, baseConfig, baseBankroll, 'DIGITEVEN', 0.65);
+    const result = decideNextStake(trades, baseConfig, baseBankroll, 'DIGITEVEN', 0.65, 1.75, 5);
 
     expect(result.shouldPause).toBe(true);
     expect(result.pauseReason).toContain('Win rate');

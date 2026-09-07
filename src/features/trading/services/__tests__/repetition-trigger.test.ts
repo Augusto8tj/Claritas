@@ -43,11 +43,11 @@ describe('Vagalume V3.0 - Advanced Features', () => {
 
   describe('Kelly Criterion', () => {
     it('calculates stake correctly', () => {
-      const config: SmartMartingaleConfig = { isEnabled: true, baseStake: 0.35, maxMartingaleLevels: 5, martingaleMultiplier: 1.3, useAntiMartingale: false, isSmart: true };
+      const config: SmartMartingaleConfig = { isEnabled: true, baseStake: 0.35, maxMartingaleLevels: 5, martingaleRecoveryInstallments: 3, useAntiMartingale: false, isSmart: true };
       const bankroll: BankrollState = { currentBankroll: 100, initialBankroll: 100, maxDailyLoss: 10, dailyProfitTarget: 5 };
       const confidence = 0.65; // 65% chance de ganhar
       
-      const result = decideNextStake([], config, bankroll, 'DIGITEVEN', confidence);
+      const result = decideNextStake([], config, bankroll, 'DIGITEVEN', confidence, 0, 0);
       
       expect(result.nextStake).toBeGreaterThan(0.35); // Deve ser maior que o base
       expect(result.nextStake).toBeLessThan(10); // Nunca > 10% do bankroll
@@ -81,14 +81,14 @@ describe('Vagalume V3.0 - Advanced Features', () => {
 
   describe('Circuit Breakers', () => {
     it('pauses for low win rate', () => {
-        const config: SmartMartingaleConfig = { isEnabled: true, baseStake: 0.35, maxMartingaleLevels: 5, martingaleMultiplier: 1.3, useAntiMartingale: false, isSmart: true };
+        const config: SmartMartingaleConfig = { isEnabled: true, baseStake: 0.35, maxMartingaleLevels: 5, martingaleRecoveryInstallments: 3, useAntiMartingale: false, isSmart: true };
         const bankroll: BankrollState = { currentBankroll: 95, initialBankroll: 100, maxDailyLoss: 10, dailyProfitTarget: 5 };
         const tradeHistory: any[] = [
-            { result: 0.33 }, { result: -0.35 }, { result: -0.35 },
-            { result: 0.33 }, { result: -0.35 }, { result: -0.35 },
+            { result: 0.33, status: 'won' }, { result: -0.35, status: 'lost' }, { result: -0.35, status: 'lost' },
+            { result: 0.33, status: 'won' }, { result: -0.35, status: 'lost' }, { result: -0.35, status: 'lost' },
         ]; // Win Rate = 33%
 
-        const result = decideNextStake(tradeHistory, config, bankroll, 'DIGITEVEN', 0.65);
+        const result = decideNextStake(tradeHistory, config, bankroll, 'DIGITEVEN', 0.65, 0.70, 2);
         expect(result.shouldPause).toBe(true);
         expect(result.pauseReason).toContain('Win rate');
     });

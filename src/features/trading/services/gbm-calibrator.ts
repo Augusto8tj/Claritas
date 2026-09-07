@@ -114,10 +114,19 @@ export function resetGBMCache(): void {
 
 // --- Part B: Optimal Duration Discovery ---
 
-// This type definition must match the one in hf-backtest-engine.ts
-interface TradeResult extends BaseTradeResult {
+/**
+ * Interface interna para trades de backtest.
+ * Diferencia-se do TradeResult da API (que indica sucesso de execução)
+ * por conter o desfecho (win/loss) e a estratégia usada.
+ */
+interface BacktestTrade {
+  result: 'win' | 'loss';
   durationInCandles: number;
   strategy: StrategyType;
+  pnl: number;
+  exitIndex: number;
+  exitPrice: number;
+  strikeZone: any;
 }
 
 export interface OptimalDuration {
@@ -133,9 +142,9 @@ const MIN_TRADES_FOR_OPTIMAL_CHOICE = 5;
 
 const DEFAULT_DURATIONS: Record<StrategyType, number> = {
   HF_MEAN_REVERSION: 20,
-  STD_TREND_FOLLOW: 60,       // CORRIGIDO: 180 -> 60
+  STD_TREND_FOLLOW: 60,
   BOLLINGER_SQUEEZE: 30,
-  VOLUME_ABSORPTION: 45,      // CORRIGIDO: 120 -> 45
+  VOLUME_ABSORPTION: 45,
   MICROSTRUCTURE_SCALP: 10,
   GBM_20S: 20,
   GBM_40S: 40,
@@ -158,7 +167,7 @@ function getClosestBucket(seconds: number): number {
  * @param candleDurationSeconds - The duration of each candle in seconds.
  */
 export function analyzeOptimalDuration(
-  trades: TradeResult[],
+  trades: BacktestTrade[],
   candleDurationSeconds: number
 ): Map<StrategyType, OptimalDuration> {
   const analysisByStrategy = new Map<StrategyType, { winRateByDuration: Record<number, { wins: number; total: number }> }>();
@@ -261,14 +270,14 @@ export function updateOptimalDuration(
     history.shift();
   }
   
-  const tempTrades: TradeResult[] = history.map((h) => ({
+  const tempTrades: BacktestTrade[] = history.map((h) => ({
     result: h.result,
     durationInCandles: h.duration / candleDurationSeconds,
     strategy: strategy,
     pnl: 0,
     exitIndex: 0,
     exitPrice: 0,
-    strikeZone: {} as any, // Cast to any to satisfy the type, as it's not needed for this analysis
+    strikeZone: {} as any, 
   }));
 
   analyzeOptimalDuration(tempTrades, candleDurationSeconds);
@@ -289,5 +298,3 @@ export function getOptimalDurationSummary(): Record<StrategyType, { optimal: num
     }
     return summary as Record<StrategyType, { optimal: number; winRate: number; sampleSize: number }>;
 }
-
-    

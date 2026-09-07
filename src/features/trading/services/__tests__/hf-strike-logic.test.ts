@@ -6,7 +6,6 @@ import {
   detectBollingerSqueezeZone,
   detectVolumeAbsorptionZone,
   detectMicrostructureScalpZone,
-  type StrikeZone,
 } from '../hf-strike-logic';
 import type { Indicators } from '../indicator-service';
 import type { CandleData, TickData } from '@/lib/types';
@@ -52,7 +51,7 @@ const mockIndicators: Indicators = {
 const meanReversionParams = { rsiThreshold: 32, tolerance: 0.0015 };
 const trendFollowParams = { adxStrength: 22, rsiMomentum: 52 };
 const squeezeParams = { bbwThreshold: 1.0, breakoutMargin: 0.02 };
-const absorptionParams = { climaxMultiplier: 2.0, absorptionFactor: 0.6 };
+const absorptionParams = { climaxMultiplier: 2.0, absorptionFactor: 0.6, atrMultiplier: 1.2 };
 const scalpParams = { velocityThreshold: 1.5 };
 
 // ============================================================================
@@ -96,7 +95,7 @@ describe('HF Strike Logic - HF Mean Reversion', () => {
 
   it('should return null when indicators are missing', () => {
     const indicators: Partial<Indicators> = {
-      bb: null,
+      bb: { upper: null, middle: null, lower: null },
       rsi: null,
     };
     
