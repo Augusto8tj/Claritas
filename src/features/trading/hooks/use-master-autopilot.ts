@@ -170,7 +170,7 @@ export function useMasterAutopilot() {
   const { user } = useAuth();
   const { toast } = useToast();
 
-  const { projectionExperts, strongestSignal, stats, adaptiveDrifts, meanReversionSignal, volatilityRegime } = useStochasticModels(botCandleData, priceTicks, operationsLog);
+  const { projectionExperts, strongestSignal, stats, adaptiveDrifts, meanReversionSignal, volatilityRegime } = useStochasticModels(botCandleData, priceTicks, operationsLog, null);
 
   const [isAutopilotOn, setIsAutopilotOn] = useState(false);
   const [contractType, setContractType] = useState<ContractType>('Rise/Fall');
@@ -178,7 +178,7 @@ export function useMasterAutopilot() {
   const [dailyTarget, setDailyTarget] = useState(20.0);
   const [riskManager, setRiskManager] = useState<RiskManagerStatus>({
     mode: 'Normal',
-    thresholds: { /* ... */ },
+    thresholds: {},
     lastAdjustmentReason: 'N/A'
   });
   const [signalQuality, setSignalQuality] = useState<SignalQuality | null>(null);
@@ -234,8 +234,6 @@ export function useMasterAutopilot() {
 
     if (tradeResult.success && tradeResult.contractId && currentUser) {
         toast({ title: `🤖 Autopilot: Ordem ${initiator} ${signal.direction}!`, description: `Stake: $${kellyStake.toFixed(2)}. Duração: ${duration}${durationUnit}.`});
-        
-        // Log logic...
     }
     return { duration, unit: durationUnit };
   }, [activeSymbol, executeRiseFallTrade, toast, kellyStake]);
@@ -256,7 +254,7 @@ export function useMasterAutopilot() {
     } else {
         finalSignal = {
             ...strongestSignal,
-            direction: strongestSignal.direction,
+            direction: strongestSignal.direction as 'RISE' | 'FALL' | 'HOLD',
             source: 'GBM'
         };
     }
@@ -302,12 +300,11 @@ export function useMasterAutopilot() {
       ...prev,
       isReady: true,
       trigger: {
-        signal: shouldTrade ? finalSignal.direction : 'HOLD',
+        signal: shouldTrade ? finalSignal!.direction : 'HOLD',
         reason,
-        triggeredBy: finalSignal.source === 'GBM' ? [finalSignal.horizon] : ['MeanReversion']
+        triggeredBy: finalSignal!.source === 'GBM' ? [finalSignal!.horizon] : ['MeanReversion']
       },
       finalSignal,
-      // indicators and microstructure would be updated here too
       projectionExperts,
     }));
 
@@ -317,9 +314,8 @@ export function useMasterAutopilot() {
     executeTradeAction, dailyBalance
   ]);
 
-  const executeManualTrigger = () => { /* ... */ };
+  const executeManualTrigger = () => { /* Stub */ };
   
-  // Stubs para as funções de ajuste de threshold
   const setGlobalAssertivenessThreshold = (value: number) => { console.log("Set global threshold:", value); };
   const setIndividualThreshold = (horizon: string, value: number) => { console.log(`Set ${horizon} threshold:`, value); };
     
@@ -330,7 +326,6 @@ export function useMasterAutopilot() {
     setIsNeighborConfirmationEnabled, isTripleConfirmationEnabled, setIsTripleConfirmationEnabled,
     isMacroTrendCheckEnabled, setIsMacroTrendCheckEnabled, highFrequencyThreshold,
     setHighFrequencyThreshold, allowMultiplePositions, setAllowMultiplePositions,
-    // Novos estados para UI
     signalQuality,
     volatilityRegime,
     kellyStake

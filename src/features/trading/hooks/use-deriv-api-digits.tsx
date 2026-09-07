@@ -354,7 +354,7 @@ export function useDerivApiDigitsState() {
                                             result: finalResult,
                                             exitPrice: exitPrice,
                                             exitTimestamp: new Date(contract.sell_time * 1000).toISOString(),
-                                            apiStatus: apiStatus,
+                                            status: localStatus === 'won' ? 'won' : 'lost',
                                             validationLog: validationLog,
                                         };
                                         
@@ -558,7 +558,7 @@ export function useDerivApiDigitsState() {
             const history = await getHistoricalData(symbol, historyStyle, MAX_TICKS, timePeriodRef.current);
             setChartData(history as ChartData[]);
             if (historyStyle === 'ticks') setPriceTicks(history as TickData[]);
-            else setPriceTicks(history.map(c => ({ epoch: c.epoch, price: c.close || 0 })));
+            else setPriceTicks(history.map(c => ({ epoch: c.epoch, price: c.close || 0 })) as TickData[]);
             setDataVersion(v => v + 1);
 
             let subRequest: any;

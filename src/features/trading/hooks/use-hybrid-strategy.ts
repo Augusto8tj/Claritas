@@ -68,7 +68,7 @@ export function useHybridStrategy(
     const vagalumeSignal = vagalumeBot.signal;
     
     // Ambos pausados
-    if (triggerBot.isPaused && vagalumeBot.isPaused) {
+    if (triggerBot.isPaused && !!vagalumeBot.pauseReason) {
       setHybridSignal({
         activeStrategy: 'none',
         signal: null,
@@ -108,7 +108,7 @@ export function useHybridStrategy(
           selectedStrategy = 'trigger';
           selectedSignal = triggerSignal;
           reason = `Repetition Trigger: ${triggerSignal.sequence.length}x dígito ${triggerSignal.sequence.digit}`;
-        } else if (vagalumeSignal && !vagalumeBot.isPaused) {
+        } else if (vagalumeSignal && !vagalumeBot.pauseReason) {
           selectedStrategy = 'vagalume';
           selectedSignal = vagalumeSignal;
           reason = `Vagalume (fallback): Estado ${vagalumeSignal.state}`;
@@ -117,7 +117,7 @@ export function useHybridStrategy(
       
       case 'vagalume_first':
         // SEMPRE prioriza Vagalume se disponível
-        if (vagalumeSignal && !vagalumeBot.isPaused) {
+        if (vagalumeSignal && !vagalumeBot.pauseReason) {
           selectedStrategy = 'vagalume';
           selectedSignal = vagalumeSignal;
           reason = `Vagalume: Estado ${vagalumeSignal.state}`;
@@ -137,7 +137,7 @@ export function useHybridStrategy(
           selectedStrategy = 'trigger';
           selectedSignal = triggerSignal;
           reason = `Trigger selecionado (${(triggerConf * 100).toFixed(1)}% vs ${(vagalumeConf * 100).toFixed(1)}%)`;
-        } else if (vagalumeSignal && !vagalumeBot.isPaused) {
+        } else if (vagalumeSignal && !vagalumeBot.pauseReason) {
           selectedStrategy = 'vagalume';
           selectedSignal = vagalumeSignal;
           reason = `Vagalume selecionado (${(vagalumeConf * 100).toFixed(1)}% vs ${(triggerConf * 100).toFixed(1)}%)`;
@@ -159,7 +159,7 @@ export function useHybridStrategy(
             selectedStrategy = 'trigger';
             selectedSignal = triggerSignal;
             reason = `Trigger selecionado por performance (${(triggerWinRate * 100).toFixed(0)}% WR)`;
-        } else if (vagalumeSignal && !vagalumeBot.isPaused) {
+        } else if (vagalumeSignal && !vagalumeBot.pauseReason) {
             selectedStrategy = 'vagalume';
             selectedSignal = vagalumeSignal;
             reason = `Vagalume selecionado por performance (${(vagalumeWinRate * 100).toFixed(0)}% WR)`;
@@ -180,6 +180,7 @@ export function useHybridStrategy(
     triggerBot.signal,
     triggerBot.isPaused,
     vagalumeBot.signal,
+    vagalumeBot.pauseReason,
     config,
     tradeHistory,
   ]);

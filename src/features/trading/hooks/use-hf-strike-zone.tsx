@@ -1,4 +1,4 @@
-// src/features/trading/hooks/use-hf-strike-zone.tsx
+// /src/features/trading/hooks/use-hf-strike-zone.tsx
 'use client';
 
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
@@ -38,7 +38,7 @@ import { runAutoCalibration, type AutoCalibrationResults } from '../optimization
 import { useStochasticModels } from './use-stochastic-models';
 
 
-export type { StrikeZone } from '../services/hf-strike-logic';
+export type { StrikeZone, StrategyType };
 
 interface SessionConfig {
     dailyBalance: number;
@@ -428,7 +428,12 @@ export function useHFStrikeZone(
             const ensembleSignal: EnsembleSignal = {
               direction: consensusSignal.type === 'LONG_ENTRY' ? 'LONG' : 'SHORT',
               confidence: consensusSignal.confidence,
-              participants: ensembleParticipants.map(p => ({ strategy: p, vote: consensusSignal!.type === 'LONG_ENTRY' ? 'LONG' : 'SHORT', weight: 1.0, confidence: consensusSignal!.confidence })),
+              participants: ensembleParticipants.map(p => ({ 
+                strategy: p, 
+                vote: (consensusSignal!.type === 'LONG_ENTRY' ? 'LONG' : 'SHORT') as "LONG" | "SHORT" | "NEUTRAL", 
+                weight: 1.0, 
+                confidence: consensusSignal!.confidence 
+              })),
               reasoning: consensusSignal.triggers.join(', '),
               expectedWinRate: 0.5 + (consensusSignal.confidence - 50) / 100 * 0.4,
               suggestedStake: manualStake || 1.0,
@@ -470,7 +475,7 @@ export function useHFStrikeZone(
               const canUseTicks = !!(durationLimits.t && durationLimits.t.min > 0);
               const canUseMinutes = !!(durationLimits.m && durationLimits.m.min > 0);
               
-              if (canUseSeconds && calculatedDurationInSeconds >= durationLimits.s.min) {
+              if (canUseSeconds && calculatedDurationInSeconds >= durationLimits.s!.min) {
                 durationUnit = 's';
                 finalDuration = Math.round(Math.max(calculatedDurationInSeconds, durationLimits.s!.min));
                 finalDuration = Math.min(finalDuration, durationLimits.s!.max);
