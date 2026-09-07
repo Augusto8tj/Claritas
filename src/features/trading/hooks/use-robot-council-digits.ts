@@ -31,13 +31,26 @@ import { loadHistoricalTicksForDigits } from '@/services/digits-data-service';
 import { useAuth } from '@/features/auth/hooks/use-auth';
 import { useVagalumeAlternante, type VagalumeConfig, type VagalumeSignal, type DigitContractType } from './use-vagalume-alternante';
 import { timingMonitor } from '@/features/trading/utils/timing-monitor';
+import { globalLatencyMonitor, type LatencyMetrics } from '../utils/latency-monitor';
+import { buildTransitionMatrix, predictNTicksAhead, type BlockProbs } from '../services/sherlock-multi-step';
 
 
 // ============================================================================
 // 1. TIPOS E INTERFACES EXPORTADOS
 // ============================================================================
 
-export type PilotType = 'matchesDiffers' | 'overUnder' | 'evenOdd' | 'underdog' | 'underdogOverUnder' | 'dynamicUnderdogOverUnder' | 'underdogEvenOdd' | 'vagalume' | 'sherlock';
+export type { SignalQuality, MultiWindowAnalysis };
+
+export type DigitStats = DigitFrequency;
+
+export interface SherlockAnalysis {
+  lastDigit: number;
+  probabilities: { digit: number, probability: number }[];
+  recommendedBlock: keyof BlockProbs;
+  blockProbability: number;
+  compensationSteps: number;
+}
+
 export type AutopilotStatus = 'PAUSED' | 'TRADING' | 'COOLDOWN' | 'CIRCUIT_BREAKER';
 
 export interface PilotState {
@@ -51,18 +64,6 @@ export interface PilotState {
     isMartingaleEnabled: boolean;
     martingaleRecoveryInstallments: number;
 }
-
-export type { SignalQuality, MultiWindowAnalysis };
-
-export interface SherlockAnalysis {
-  lastDigit: number;
-  probabilities: { digit: number, probability: number }[];
-  recommendedBlock: string;
-  blockProbability: number;
-  compensationSteps: number;
-}
-
-export type DigitStats = DigitFrequency;
 
 export interface StrategyBacktestResult extends BacktestSummary {
   strategyId: PilotType;
@@ -106,6 +107,22 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
   const [isUnderdogInverse, setIsUnderdogInverse] = useState(false);
   const [overUnderUnderdogThreshold, setOverUnderUnderdogThreshold] = useState(40);
   const [evenOddUnderdogThreshold, setEvenOddUnderdogThreshold] = useState(40);
+  
+  // Sherlock Params
+  const [sherlockThreshold, setSherlockThreshold] = useState(52);
+  const [sherlockLookback, setSherlockLookback] = useState(500);
+  const [disableSherlockCompensation, setDisableSherlockCompensation] = useState(false);
+  const [sherlockWinRateThreshold, setSherlockWinRateThreshold] = useState(52);
+
+  // Lookback Params
+  const [matchesDiffersLookback, setMatchesDiffersLookback] = useState(1000);
+  const [overUnderLookback, setOverUnderLookback] = useState(1000);
+  const [evenOddLookback, setEvenOddLookback] = useState(1000);
+  const [underdogLookback, setUnderdogLookback] = useState(100);
+  const [underdogOverUnderLookback, setUnderdogOverUnderLookback] = useState(1000);
+  const [dynamicUnderdogOverUnderLookback, setDynamicUnderdogOverUnderLookback] = useState(1000);
+  const [underdogEvenOddLookback, setUnderdogEvenOddLookback] = useState(1000);
+
   const [vagalumeConfig, setVagalumeConfig] = useState<VagalumeConfig>({
       minSequenceLength: 1,
       usePredictiveAnalysis: true,
@@ -136,6 +153,9 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
   const [executionCooldown, setExecutionCooldown] = useState(1);
   const lastExecutionTimestampRef = useRef(0);
 
+  const [isConsensusMode, setIsConsensusMode] = useState(false);
+  const [minConsensus, setMinConsensus] = useState(2);
+
   const [sessionInitialBankroll, setSessionInitialBankroll] = useState<number | null>(null);
 
   // --- OTIMIZAÇÃO E BACKTESTING ---
@@ -145,6 +165,9 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
   const [isBacktesting, setIsBacktesting] = useState(false);
   const [calibrationResults, setCalibrationResults] = useState<Record<string, CalibrationResult> | null>(null);
   const [isCalibrating, setIsCalibrating] = useState(false);
+
+  // Latency
+  const [latencyMetrics, setLatencyMetrics] = useState<LatencyMetrics | null>(null);
 
 
   const [pilots, setPilots] = useState<Record<PilotType, PilotState>>({
@@ -218,6 +241,25 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
     };
   }, [signalQuality]);
 
+  const sherlockAnalysis = useMemo((): SherlockAnalysis | null => {
+      if (priceTicks.length < sherlockLookback) return null;
+      const ticksForMatrix = priceTicks.slice(-sherlockLookback);
+      const metrics = globalLatencyMonitor.getMetrics();
+      const compensationSteps = disableSherlockCompensation 
+        ? 0 
+        : Math.min(Math.max(Math.ceil(metrics.avgLatency / 100), 1), 2);
+      const { transitionMatrix, lastDigit } = buildTransitionMatrix(ticksForMatrix, decimalPlaces);
+      const prediction = predictNTicksAhead(lastDigit, transitionMatrix, compensationSteps);
+      const bestBlock = Object.entries(prediction.blockProbs).sort(([, a], [, b]) => b - a)[0];
+      return {
+          lastDigit,
+          probabilities: prediction.digitProbs.map((p, i) => ({ digit: i, probability: p })),
+          recommendedBlock: bestBlock[0] as keyof BlockProbs,
+          blockProbability: bestBlock[1],
+          compensationSteps,
+      };
+  }, [priceTicks, decimalPlaces, sherlockLookback, disableSherlockCompensation]);
+
   const dailyPnl = useMemo(() => {
     const allTrades = Object.values(pilots).flatMap(p => p.tradeHistory);
     return allTrades.reduce((sum, trade) => {
@@ -260,9 +302,9 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
     });
   }, [accountBalance.balance, toast]);
 
-  const toggleAutopilot = useCallback((pilotType: PilotType | 'vagalume') => {
+  const toggleAutopilot = useCallback((pilotType: PilotType) => {
     setPilots(prev => {
-        const pilot = prev[pilotType as PilotType];
+        const pilot = prev[pilotType];
         if (!pilot) return prev;
         const newIsOnState = !pilot.isOn;
 
@@ -285,6 +327,32 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
     });
   }, [sessionInitialBankroll, accountBalance.balance, toast]);
   
+  const togglePilotMartingale = useCallback((pilotKey: PilotType) => {
+    setPilots(prev => {
+        if (!prev[pilotKey]) return prev;
+        return {
+            ...prev,
+            [pilotKey]: {
+                ...prev[pilotKey],
+                isMartingaleEnabled: !prev[pilotKey].isMartingaleEnabled,
+            }
+        };
+    });
+  }, []);
+
+  const setPilotMartingaleInstallments = useCallback((pilotKey: PilotType, installments: number) => {
+      setPilots(prev => {
+          if (!prev[pilotKey]) return prev;
+          return {
+              ...prev,
+              [pilotKey]: {
+                  ...prev[pilotKey],
+                  martingaleRecoveryInstallments: installments,
+              }
+          }
+      })
+  }, []);
+
   useEffect(() => {
     if (executionRef.current) return;
     const activePilotEntries = Object.entries(pilots).filter(([, p]) => p.isOn);
@@ -676,6 +744,8 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
     councilDecision,
     pilots,
     toggleAutopilot,
+    togglePilotMartingale,
+    setPilotMartingaleInstallments,
     resetSession,
     multiWindowAnalysis,
     signalQuality,
@@ -695,6 +765,23 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
     isCalibrating,
     runCalibration,
     applyCalibration,
+    // Metrics
+    latencyMetrics,
+    sherlockAnalysis,
+    // Form params
+    isConsensusMode, setIsConsensusMode,
+    minConsensus, setMinConsensus,
+    matchesDiffersLookback, setMatchesDiffersLookback,
+    overUnderLookback, setOverUnderLookback,
+    evenOddLookback, setEvenOddLookback,
+    underdogLookback, setUnderdogLookback,
+    underdogOverUnderLookback, setUnderdogOverUnderLookback,
+    dynamicUnderdogOverUnderLookback, setDynamicUnderdogOverUnderLookback,
+    underdogEvenOddLookback, setUnderdogEvenOddLookback,
+    sherlockThreshold, setSherlockThreshold,
+    sherlockLookback, setSherlockLookback,
+    disableSherlockCompensation, setDisableSherlockCompensation,
+    sherlockWinRateThreshold, setSherlockWinRateThreshold,
   };
 }
 

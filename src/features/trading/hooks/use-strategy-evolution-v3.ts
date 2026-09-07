@@ -42,6 +42,7 @@ const MIN_TRADES_FOR_ANALYSIS = EVOLUTION_CONFIG.MIN_TRADES_FOR_DEEP_ANALYSIS;
 export interface EvolutionEvent {
   generation: number;
   timestamp: Date;
+  totalTrades: number;
   elitePerformers: Pick<RobotPerformance, 'id' | 'strategyType' | 'totalProfit' | 'wins' | 'losses' | 'sharpeRatio'>[];
   mutations: {
     robotId: string;
@@ -218,6 +219,7 @@ export function useStrategyEvolutionV3(initialStrategies: RobotStrategy[], asset
       const newEvent: EvolutionEvent = {
         generation: newGeneration,
         timestamp: new Date(),
+        totalTrades: processedTradeCount,
         elitePerformers: elitePerformers.map(({ id, strategyType, totalProfit, wins, losses, sharpeRatio }) => ({
           id, strategyType, totalProfit: totalProfit || 0, wins: wins || 0, losses: losses || 0, sharpeRatio: sharpeRatio || 0
         })),

@@ -144,7 +144,7 @@ export default function DerivResetPage() {
       stake: 1.00,
       duration: 1,
       duration_unit: 'm',
-      reset_barrier_offset: '+0.0'
+      barrierOffset: '+0.0'
     },
   });
 
@@ -153,6 +153,6 @@ export default function DerivResetPage() {
         <FormProvider {...form}>
             <DerivResetPageContent />
         </FormProvider>
-    </DerivApiProviderReset>
+  </DerivApiProviderReset>
   );
 }
