@@ -11,7 +11,9 @@ import {
     type MultiWindowAnalysis,
     type SignalQuality,
     calculateDigitStatsForWindow,
-    type WindowDigitStats
+    type WindowDigitStats,
+    type Digit,
+    type DigitFrequency
 } from '@/features/trading/services/digits-analysis';
 import {
     decideNextStake,
@@ -34,7 +36,7 @@ import { buildTransitionMatrix, predictNTicksAhead, BlockProbs } from '../servic
 import { detectRepetitionSequence } from '../services/repetition-detector';
 
 // ============================================================================
-// 1. TIPOS E INTERFACES
+// 1. TIPOS E INTERFACES EXPORTADOS
 // ============================================================================
 
 export type PilotType = 'matchesDiffers' | 'overUnder' | 'evenOdd' | 'underdog' | 'underdogOverUnder' | 'dynamicUnderdogOverUnder' | 'underdogEvenOdd' | 'vagalume' | 'sherlock';
@@ -59,6 +61,10 @@ export interface SherlockAnalysis {
   blockProbability: number;
   compensationSteps: number;
 }
+
+export type DigitStats = DigitFrequency;
+
+export type { SignalQuality, MultiWindowAnalysis };
 
 export interface StrategyBacktestResult extends BacktestSummary {
   strategyId: PilotType;
@@ -502,7 +508,7 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
           let signalData: { contract: DigitContractType | null, digit?: number, confidence: number } = { contract: null, confidence: 0 };
           
           if (pilotKey === 'sherlock' && sherlockAnalysis && (sherlockAnalysis.blockProbability * 100) > sherlockThreshold) {
-            const wins = pilot.tradeHistory.filter(t => t.result && t.result > 0).length;
+            const wins = pilot.tradeHistory.filter(t => (t.result || 0) > 0).length;
             const winRate = pilot.tradeHistory.length > 0 ? (wins / pilot.tradeHistory.length) * 100 : 100;
             if (pilot.tradeHistory.length < 20 || winRate > sherlockWinRateThreshold) {
                 if (sherlockAnalysis.recommendedBlock === 'even') signalData = { contract: 'DIGITEVEN', confidence: sherlockAnalysis.blockProbability };
@@ -707,9 +713,9 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
                 break;
             }
             case 'dynamicUnderdogOverUnder':
-                if (multiWindowAnalysis?.coldestConsensusDigit !== undefined && multiWindowAnalysis?.coldestConsensusDigit !== null) {
+                if (multiWindowAnalysis?.consensusColdestDigit !== undefined && multiWindowAnalysis?.consensusColdestDigit !== null) {
                     shouldExecute = true;
-                    const digit = multiWindowAnalysis.coldestConsensusDigit;
+                    const digit = multiWindowAnalysis.consensusColdestDigit;
                     if (digit > 4) { executionParams = ['DIGITUNDER', 5, pilotKey]; contractTypeForStake = 'DIGITUNDER'; }
                     else { executionParams = ['DIGITOVER', 4, pilotKey]; contractTypeForStake = 'DIGITOVER'; }
                     setPilots(prev => {
@@ -773,7 +779,7 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
                 break;
             case 'sherlock':
                 if(sherlockAnalysis && (sherlockAnalysis.blockProbability * 100) > sherlockThreshold) {
-                    const wins = pilot.tradeHistory.filter(t => t.result && t.result > 0).length;
+                    const wins = pilot.tradeHistory.filter(t => (t.result || 0) > 0).length;
                     const totalTrades = pilot.tradeHistory.length;
                     const winRate = totalTrades > 0 ? (wins / totalTrades) * 100 : 100;
                     
@@ -844,7 +850,7 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
     
     executionRef.current = false;
   }, [
-      priceTicks, pilots, operationsLog, shouldTrade, councilDecision, executeTrade, activeSymbol, toast, 
+      priceTicks, pilots, operationsLog, signalQuality, shouldTrade, councilDecision, executeTrade, activeSymbol, toast, 
       dailyBalance, dailyTarget, maxLosses, sessionInitialBankroll, accountBalance.balance, dailyPnl,
       overUnderStats, evenOddStats, overUnderThreshold, evenOddThreshold, underdogThreshold, isUnderdogInverse, overUnderUnderdogThreshold, evenOddUnderdogThreshold,
       executionCooldown, isSmartMartingale, analysisResults.mainWindowStats, multiWindowAnalysis,
@@ -867,7 +873,7 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
         } else {
             toast({ title: "Dados Carregados!", description: `${ticks.length} ticks históricos prontos para análise.`});
         }
-        setBacktestTicks(ticks);
+        setBacktestTicks(ticks.map(t => ({ epoch: t.timestamp, price: t.price })));
     } catch(e) {
         toast({ title: "Erro ao Carregar Dados", description: (e as Error).message, variant: "destructive" });
     } finally {
@@ -903,7 +909,7 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
                     maxTrades: 200,
                     paramsOverride: currentParams,
                 }, decimalPlaces);
-                results[strategyDef.id] = { ...summary, strategyId: strategyDef.id };
+                results[strategyDef.id] = { ...summary, strategyId: strategyDef.id as any };
             } catch (e) {
                 console.error(`Backtest para ${strategyDef.name} falhou:`, e);
             }
@@ -978,7 +984,6 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
                     case 'underdogThreshold': setUnderdogThreshold(paramValue as number); break;
                     case 'overUnderUnderdogThreshold': setOverUnderUnderdogThreshold(paramValue as number); break;
                     case 'evenOddUnderdogThreshold': setEvenOddUnderdogThreshold(paramValue as number); break;
-                    case 'sherlockThreshold': setSherlockThreshold(paramValue as number); break;
                 }
                 appliedCount++;
             }
@@ -1022,11 +1027,11 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
     multiWindowAnalysis,
     signalQuality,
     shouldTrade,
+    // Vagalume
     vagalumeSignal,
     vagalumeConfig,
     setVagalumeConfig,
-    sherlockAnalysis,
-    latencyMetrics,
+    // Backtesting & Calibration
     backtestTicks,
     isDataLoading,
     loadDataForBacktest,
@@ -1048,6 +1053,8 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
     underdogOverUnderLookback, setUnderdogOverUnderLookback,
     dynamicUnderdogOverUnderLookback, setDynamicUnderdogOverUnderLookback,
     underdogEvenOddLookback, setUnderdogEvenOddLookback,
+    sherlockAnalysis,
+    latencyMetrics
   };
 }
 
@@ -1058,9 +1065,9 @@ const getDecimalPlaces = (pipSize: number | undefined): number => {
     if (Math.floor(pipSize) === pipSize && pipSize >= 1) {
         return 0;
     }
-    const priceString = String(pipSize);
-    if (priceString.includes('.')) {
-        return priceString.split('.')[1].length;
+    const pipString = String(pipSize);
+    if (pipString.includes('.')) {
+        return pipString.split('.')[1].length;
     }
     return 0;
 };

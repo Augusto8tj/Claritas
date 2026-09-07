@@ -1,6 +1,6 @@
 // src/features/trading/backtest/hf-backtest-engine.ts
 // ✅ VERSION FULLY REWRITTEN TO INSTITUTIONAL STANDARD
-import type { CandleData, TickData, ExecutionModel, InstitutionalBacktestResult, TradeResult as BaseTradeResult, WalkForwardResult, MonteCarloResult } from '@/lib/types';
+import type { CandleData, TickData, ExecutionModel, InstitutionalBacktestResult, TradeResult as BaseTradeResult, WalkForwardResult, MonteCarloResult, DurationUnit } from '@/lib/types';
 import type { HFConfig } from '@/features/trading/components/hf-trader/hf-config-panel';
 import { 
     detectHFMeanReversionZone, 
@@ -14,7 +14,6 @@ import {
     type StrikeZone,
     StrategyType,
     strategyMetadata,
-    type StrategyParams,
 } from '@/features/trading/services/hf-strike-logic';
 import { calculateAllIndicators, type Indicators } from '@/features/trading/services/indicator-service';
 import { getCouncilStrategies } from '@/features/trading/services/council-strategies';
@@ -26,6 +25,10 @@ import { analyzeOptimalDuration } from '../services/gbm-calibrator';
 // ============================================================================
 interface TradeResult extends BaseTradeResult {
   durationInCandles: number;
+  pnl: number;
+  result: 'win' | 'loss';
+  strikeZone: StrikeZone;
+  strategy: StrategyType;
 }
 
 const executionModels: Record<string, ExecutionModel> = {
@@ -287,25 +290,14 @@ export function runSingleStrategyBacktest(
     const trades: TradeResult[] = [];
     let i = 100;
     let prevRsi = 50;
-    const timePeriodForIndicators = strategyMetadata[strategy]?.isHF ? '1m' : '15m';
+    const timePeriodForIndicators = '1m';
     const initialStrategies = getCouncilStrategies('standard');
     const execModel = executionModels[assetSymbol] || executionModels.default;
 
-    let indicatorUpdateCounter = 0;
-    let cachedIndicators: Indicators | null = null;
-
     while (i < historicalData.length - 30) {
         const windowCandles = historicalData.slice(0, i + 1);
+        const indicators = calculateAllIndicators(windowCandles, initialStrategies, timePeriodForIndicators, { duration: 15, unit: 's' });
         
-        const shouldUpdate = strategyMetadata[strategy]?.isHF 
-          ? true 
-          : (indicatorUpdateCounter++ % 5 === 0);
-        
-        if (shouldUpdate || !cachedIndicators) {
-            cachedIndicators = calculateAllIndicators(windowCandles, initialStrategies, timePeriodForIndicators, { duration: 15, unit: 's' });
-        }
-        const indicators = cachedIndicators;
-
         if (!indicators) { i++; continue; }
         
         const currentPrice = windowCandles[windowCandles.length - 1].close;
@@ -340,7 +332,7 @@ export function runSingleStrategyBacktest(
       
         if (strikeZone && strikeZone.confidence >= config.minConfidence && !strikeZone.triggers.some(t => t.startsWith('VETO'))) {
             const outcome = simulateTradeOutcome(i, strikeZone, historicalData, strategy, BACKTEST_STAKE, execModel);
-            trades.push({ ...outcome, strikeZone, strategy });
+            trades.push({ ...outcome, success: true, message: 'Simulated', strikeZone, strategy });
             i = outcome.exitIndex;
         } else {
             i++;
@@ -368,10 +360,12 @@ export function runAllStrategiesBacktest(
   historicalData: CandleData[],
   config: HFConfig,
   assetSymbol: string,
-  params: StrategyParams
+  params: any
 ): Record<string, InstitutionalBacktestResult> & { _optimalDurations?: any } {
   
-  const allStrategies: StrategyType[] = Object.keys(strategyMetadata) as StrategyType[];
+  const allStrategies: StrategyType[] = [
+    'HF_MEAN_REVERSION', 'STD_TREND_FOLLOW', 'BOLLINGER_SQUEEZE', 'VOLUME_ABSORPTION', 'MICROSTRUCTURE_SCALP', 'GBM_20S', 'GBM_40S'
+  ];
   const allResults: Partial<Record<StrategyType, InstitutionalBacktestResult>> = {};
 
   for (const strategy of allStrategies) {
@@ -405,7 +399,7 @@ export function runWalkForwardAnalysis(
   config: HFConfig,
   strategy: StrategyType,
   assetSymbol: string,
-  params: StrategyParams,
+  params: any,
   folds: number = 3
 ): WalkForwardResult[] {
   const foldSize = Math.floor(historicalData.length / (folds + 1));
