@@ -2,9 +2,8 @@
 'use client';
 
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef, useMemo, type ReactNode } from 'react';
-import type { TradeResult } from '@/lib/types';
+import type { TradeResult, Operation, OperationInitiator, DurationUnit, TickData, Asset, ChartData, CandleData, TimePeriod, ChartType, TradeAnnotation, DurationLimits } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
-import type { Operation, OperationInitiator, DurationUnit, TickData, Asset, ChartData, CandleData, TimePeriod, ChartType, TradeAnnotation, DurationLimits } from '@/lib/types';
 import { FirebaseErrorListener } from '@/components/FirebaseErrorListener';
 import { useAuth } from '@/features/auth/hooks/use-auth';
 import { saveLiveTickForDigits } from '@/services/digits-data-service';
@@ -539,7 +538,7 @@ export function useDerivApiDigitsState() {
          const message = error instanceof Error ? error.message : "Um erro desconhecido ocorreu.";
          return { success: false, message };
       }
-    }, [isConnected, makeRequest, setAndPersistOperationsLog, toast, priceTicks]);
+    }, [isConnected, makeRequest, setAndPersistOperationsLog, priceTicks]);
 
     const sellContract = useCallback(async (contractId: number): Promise<TradeResult> => {
         return { success: false, message: "Contratos de dígitos não podem ser vendidos." };
@@ -626,7 +625,7 @@ export function useDerivApiDigitsState() {
     const activeAsset = useMemo(() => {
         if (!activeSymbol || assetGroups.length === 0) return null;
         for (const group of assetGroups) {
-            const asset = group.options.find(a => a.value === activeSymbol);
+            const asset = group.options.find(a => a.value === selectedAsset);
             if (asset) return asset;
         }
         return null;

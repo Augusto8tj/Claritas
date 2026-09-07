@@ -3,22 +3,6 @@
 
 /**
  * 🧠 DERIV TRADER V2.5 - CÉREBRO COGNITIVO (VERSÃO MESTRE OTIMIZADA)
- * =================================================================================
- * Otimizações de Prioridade 1 implementadas:
- * 
- * 1. THRESHOLDS ALINHADOS:
- *    - MIN_PAPER_CONFIDENCE ajustado para 60 para treino realista.
- *    - MIN_REAL_CONFIDENCE (confidenceFactor) em 70.
- * 
- * 2. PONDERAÇÃO EXPONENCIAL:
- *    - O peso de um robô agora grows exponencialmente com seu Sharpe Ratio.
- *    - Robôs com Sharpe negativo são severamente penalizados.
- *    - Robôs não testados têm influência mínima.
- * 
- * 3. KELLY CRITERION AVANÇADO:
- *    - A probabilidade de consenso é ajustada pela confiança do regime de mercado.
- *    - Boost de 30% para sinais de altíssima convicção.
- *    - Penalização por entropia: stake é reduzido se o consenso for incerto.
  */
 
 import { useState, useEffect, useCallback, useRef, useMemo, useContext } from 'react';
@@ -95,9 +79,8 @@ export interface CouncilState {
     systemMetrics: SystemMetrics;
     robotPerformance: EnhancedRobotPerformance[];
     consensusReached: boolean;
-    consensusSum: { rise: number, fall: number};
+    consensusSum: { rise: number, fall: number };
     totalWeight: number;
-    virtualTradeCount: number; 
 }
 
 export interface DashboardData {
@@ -249,7 +232,7 @@ const calculateTechnicalVote = (
 
       else if (robot.strategyType === 'STOCH_RSI' && isValid(stochRSI)) {
           if (stochRSI < 0.2) setVote('RISE', 70, 'StochRSI Sobrevenda');
-          else if (stochRSI < 0.8) setVote('FALL', 70, 'StochRSI Sobrecompra');
+          else if (stochRSI > 0.8) setVote('FALL', 70, 'StochRSI Sobrecompra');
       }
       
       else if (isValid(rsi)) {
@@ -305,9 +288,7 @@ export function useRobotCouncilV2(
   const [tradeDecisionLog, setTradeDecisionLog] = useState<TradeDecisionLog[]>([]);
   const [sessionStartTime, setSessionStartTime] = useState<number | null>(null);
 
-  const [virtualTradeCount, setVirtualTradeCount] = useState(0);
-
-  const [councilState, setCouncilState] = useState<Omit<CouncilState, 'virtualTradeCount'>>({
+  const [councilState, setCouncilState] = useState<CouncilState>({
     indicators: null,
     currentRegime: { regime: 'ranging', confidence: 0, probabilities: { trending_bull: 0.2, trending_bear: 0.2, ranging: 0.4, high_volatility: 0.1, breakout: 0.1 } },
     microstructure: null,
@@ -370,7 +351,6 @@ export function useRobotCouncilV2(
     robotPerformanceRef.current = initialPerformance;
     setRobotPerformance(initialPerformance);
     virtualTradesRef.current = [];
-    setVirtualTradeCount(0);
   }, [strategyCouncil]);
 
   useEffect(() => {
@@ -753,8 +733,6 @@ export function useRobotCouncilV2(
             effectiveThreshold: calculatedEffectiveThreshold
         }));
         
-        setVirtualTradeCount(virtualTradesRef.current.length);
-
         const openCouncilTrade = operationsLog.find((op: Operation) => op.initiator === 'Conselho' && op.status === 'pending');
         if (openCouncilTrade) {
             councilExecutionRef.current.isExecuting = false;
@@ -891,7 +869,6 @@ export function useRobotCouncilV2(
     tradeCounts,
     virtualTradesRef,
     ...councilState,
-    virtualTradeCount, 
     dailyBalance,
     setDailyBalance,
     dailyTarget,

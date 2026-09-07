@@ -36,6 +36,7 @@ import type {
     DurationLimits as DurationLimitsT,
     StrategyType as StrategyTypeT,
     EnsembleSignal as EnsembleSignalT,
+    AssetAnalysisInput as AssetAnalysisInputT,
 } from './trading.types';
 
 // =================================================================
@@ -153,6 +154,7 @@ export type TradeAnnotation = TradeAnnotationT;
 export type PredictiveTradeLog = PredictiveTradeLogT;
 export type StrategyType = StrategyTypeT;
 export type EnsembleSignal = EnsembleSignalT;
+export type AssetAnalysisInput = AssetAnalysisInputT;
 
 // =================================================================
 // Trading AI Flow Types
@@ -200,7 +202,7 @@ export type OperationAnalysisOutput = z.infer<typeof OperationAnalysisOutputSche
 export const baseRiseFallSchema = z.object({
   stake: z.coerce.number().min(0.35, "O valor mínimo é $0.35."),
   duration: z.coerce.number().min(1, "A duração deve ser de pelo menos 1."),
-  duration_unit: z.enum(['t', 's', 'm', 'h', 'd']),
+  duration_unit: DurationUnitSchema,
   allowEquals: z.boolean().default(false),
 });
 

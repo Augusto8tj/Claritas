@@ -9,7 +9,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useDerivApiV1 } from './use-deriv-api-v1';
 import { useToast } from '@/hooks/use-toast';
-import type { RobotStrategy, ChartData, TickData, CandleData, DurationUnit, RobotVote as RobotVoteType, CouncilVotes, RobotPerformance as RobotPerformanceType, Operation, TradeDecisionLog, VirtualTradeLog, AssetProfileV1, TradeHistoryEvent } from '@/lib/types';
+import type { RobotStrategy, ChartData, TickData, CandleData, DurationUnit, RobotVote as RobotVoteType, CouncilVotes, RobotPerformance as RobotPerformanceType, Operation, TradeDecisionLog, VirtualTradeLog, AssetProfileV1, TradeHistoryEvent, EnhancedRobotPerformance } from '@/lib/types';
 import type { RiseFallFormValues } from '@/features/trading/components/deriv-trader/deriv-trader-interface-v1.types';
 import { useFormContext } from 'react-hook-form';
 import type { Indicators } from '@/features/trading/services/indicator-service';
@@ -91,12 +91,6 @@ const detectMarketRegime = (indicators: Indicators | null): MarketRegimeV1 => {
     }
     return 'RANGING';
 };
-
-const formatValue = (value: number | null | undefined, precision = 4) => {
-    if (value === null || value === undefined || isNaN(value)) return '...';
-    return value.toFixed(precision);
-};
-
 
 const calculateRobotVote = (
     robot: RobotStrategy,
@@ -281,7 +275,7 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
       winRate: 0,
       sharpeRatio: 0,
       tradeHistory: [],
-      status: 'Probation',
+      status: 'Probation' as const,
     }));
     setRobotPerformance(initialPerformance);
     virtualTradesRef.current = [];
@@ -485,7 +479,7 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
             }
         });
         
-        const updatedPerformance = Array.from(performanceMap.values());
+        const updatedPerformance = Array.from(performanceMap.values()) as RobotPerformance[];
         setRobotPerformance(updatedPerformance);
         hasPendingChangesRef.current = true;
         evolveTrigger(updatedPerformance);
@@ -696,8 +690,8 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
             const defaultUnit: DurationUnit = 's';
 
             if (durationLimits) {
-                const canUseTicks = durationLimits.t && durationLimits.t.min > 0;
-                const canUseSeconds = durationLimits.s && durationLimits.s.min > 0;
+                const canUseTicks = durationLimits.t && durationLimits.t.min !== null;
+                const canUseSeconds = durationLimits.s && durationLimits.s.min !== null;
 
                 if (canUseTicks && durationLimits.t && adjustedDuration <= (durationLimits.t.max * 2)) {
                     finalUnit = 't';
@@ -715,12 +709,10 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
                     finalDuration = Math.max(durationLimits.t.min, Math.min(durationInTicks, durationLimits.t.max));
                 }
                 else {
-                    console.warn(`[Council V1] Nenhuma unidade de duração suportada. Usando fallback: ${defaultDuration}${defaultUnit}.`);
                     finalUnit = defaultUnit;
                     finalDuration = defaultDuration;
                 }
             } else {
-                 console.warn(`[Council V1] Limites de duração não disponíveis. Usando fallback: ${defaultDuration}${defaultUnit}.`);
                 finalUnit = defaultUnit;
                 finalDuration = defaultDuration;
             }
@@ -843,6 +835,6 @@ export function useRobotCouncilV1(activeSymbol: string | null, priceTicks: TickD
     assetProfile,
     isAssetProfileLoading,
     analyzeAndSaveLearnings,
-    hallOfFameStatus, // Exposto para a UI
+    hallOfFameStatus, 
   };
 }

@@ -82,7 +82,7 @@ export function useHFStrikeZone(
   const { user } = useAuth();
   const { toast } = useToast();
   const { executeTrade, durationLimits, isConnected, dataVersion, getHistoricalData } = useDerivApiV2();
-  const { enabled, minConfidence, autoExecute, maxConcurrentTrades, martingaleMultiplier, maxConsecutiveLosses, cooldownSeconds, preferredDuration, minConsensusSignals } = config;
+  const { enabled, minConfidence, autoExecute, maxConcurrentTrades, martingaleMultiplier, maxConsecutiveLosses, cooldownSeconds } = config;
   const { dailyBalance, dailyTarget, operationsLog, manualStake } = sessionConfig;
   
   const rsiStateRef = useRef({ prev: 50 });
@@ -104,7 +104,15 @@ export function useHFStrikeZone(
   const [positionSizing, setPositionSizing] = useState<PositionSizeRecommendation | null>(null);
   const [allSignals, setAllSignals] = useState<(StrikeZone | null)[]>([]);
   const strategyCountRef = useRef<Record<StrategyType, number>>({ 
-      HF_MEAN_REVERSION: 0, STD_TREND_FOLLOW: 0, BOLLINGER_SQUEEZE: 0, VOLUME_ABSORPTION: 0, MICROSTRUCTURE_SCALP: 0, GBM_20S: 0, GBM_40S: 0, RANDOM_WALK: 0, ENSEMBLE: 0
+      HF_MEAN_REVERSION: 0, 
+      STD_TREND_FOLLOW: 0, 
+      BOLLINGER_SQUEEZE: 0, 
+      VOLUME_ABSORPTION: 0, 
+      MICROSTRUCTURE_SCALP: 0, 
+      GBM_20S: 0, 
+      GBM_40S: 0, 
+      RANDOM_WALK: 0, 
+      ENSEMBLE: 0
   });
   const [strategyCounts, setStrategyCounts] = useState<Record<StrategyType, number>>(strategyCountRef.current);
   
@@ -472,9 +480,9 @@ export function useHFStrikeZone(
               let durationUnit: DurationUnit;
               const calculatedDurationInSeconds = consensusSignal.duration;
               
-              const canUseSeconds = !!(durationLimits.s && durationLimits.s.min > 0);
-              const canUseTicks = !!(durationLimits.t && durationLimits.t.min > 0);
-              const canUseMinutes = !!(durationLimits.m && durationLimits.m.min > 0);
+              const canUseSeconds = !!(durationLimits.s && durationLimits.s.min !== null);
+              const canUseTicks = !!(durationLimits.t && durationLimits.t.min !== null);
+              const canUseMinutes = !!(durationLimits.m && durationLimits.m.min !== null);
               
               if (canUseSeconds && durationLimits.s && calculatedDurationInSeconds >= durationLimits.s.min) {
                 durationUnit = 's';

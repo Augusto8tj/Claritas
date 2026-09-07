@@ -10,13 +10,13 @@ import type {
   RobotStrategy, DurationUnit, TickData, CandleData,
   RobotVote as RobotVoteType, MarketRegime, MicrostructureFeatures,
   BayesianVote as BayesianVoteType, EnhancedRobotPerformance as EnhancedRobotPerformanceType,
-  TimePeriod, TradeDecisionLog,
+  TimePeriod, TradeDecisionLog, Operation
 } from '@/lib/types';
 import { calculateAllIndicators, type Indicators } from '@/features/trading/services/indicator-service';
 import { useAuth } from '@/features/auth/hooks/use-auth';
 import { saveRobotPerformanceV3, loadRobotPerformanceV3, saveTradeDecisionV3 } from '@/services/financial-data-service-v3';
 import { useStrategyEvolutionV3 } from './use-strategy-evolution-v3';
-import { initialCouncilStrategies } from '@/features/trading/services/council-strategies';
+import { getCouncilStrategies } from '@/features/trading/services/council-strategies';
 import {
   detectMarketRegime, calculateKellyStake, bayesianUpdate,
   extractMicrostructureFeatures, calculatePerformanceMetrics,
@@ -79,7 +79,6 @@ export interface CouncilState {
     consensusReached: boolean;
     consensusSum: { rise: number, fall: number };
     totalWeight: number;
-    virtualTradeCount: number; // NOVO: Gatilho de renderização
 }
 
 export interface DashboardData {
@@ -273,7 +272,7 @@ export function useRobotCouncilV3(
     tradeCounts,
     resetEvolutionHistory,
     deleteSingleEvolution,
-  } = useStrategyEvolutionV3(initialCouncilStrategies, activeSymbol || '');
+  } = useStrategyEvolutionV3(getCouncilStrategies('standard'), activeSymbol || '');
   
   const executionIdRef = useRef(0);
   const processedRealTradesRef = useRef<Set<number>>(new Set());
@@ -287,7 +286,7 @@ export function useRobotCouncilV3(
   // NOVO: Gatilho de renderização para a UI
   const [virtualTradeCount, setVirtualTradeCount] = useState(0);
 
-  const [councilState, setCouncilState] = useState<Omit<CouncilState, 'virtualTradeCount'>>({
+  const [councilState, setCouncilState] = useState<CouncilState>({
     indicators: null,
     currentRegime: { regime: 'ranging', confidence: 0, probabilities: { trending_bull: 0.2, trending_bear: 0.2, ranging: 0.4, high_volatility: 0.1, breakout: 0.1 } },
     microstructure: null,
@@ -352,7 +351,6 @@ export function useRobotCouncilV3(
           monteCarloScore: 0, lastUpdated: Date.now(), tradeHistory: []
         };
     });
-    console.log(`[Arena Reset] ${initialPerformance.length} robôs inicializados com tradeHistory vazio`);
     robotPerformanceRef.current = initialPerformance;
     setRobotPerformance(initialPerformance);
     virtualTradesRef.current = [];
@@ -731,6 +729,7 @@ export function useRobotCouncilV3(
                 orphanedTradesRemoved: prev.systemMetrics.orphanedTradesRemoved + removedOrphanedCount,
                 lastCleanup: removedOrphanedCount > 0 ? Date.now() : prev.systemMetrics.lastCleanup,
                 memoryUsageMB,
+                isExecuting: false
             },
             robotPerformance: [...robotPerformanceRef.current],
             consensusReached,

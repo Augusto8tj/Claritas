@@ -347,4 +347,94 @@ export const AssetProfileV1Schema = z.object({
 });
 export type AssetProfileV1 = z.infer<typeof AssetProfileV1Schema>;
 
-export type { Operation } from './index';
+export interface TradeResult {
+  success: boolean;
+  message: string;
+  contractId?: number;
+  entryPrice?: number;
+}
+
+export interface DurationLimits {
+  t: { min: number; max: number } | null;
+  s: { min: number; max: number } | null;
+  m: { min: number; max: number } | null;
+  h: { min: number; max: number } | null;
+  d: { min: number; max: number } | null;
+}
+
+export interface ExecutionModel {
+  spread: number;
+  slippage: number;
+  rejectionRate: number;
+  latencyMs: number;
+}
+
+export interface InstitutionalBacktestResult {
+  totalTrades: number;
+  winRate: number;
+  totalPnl: number;
+  trades: any[];
+  metrics: {
+    sharpeRatio: number;
+    sortinoRatio: number;
+    calmarRatio: number;
+    maxDrawdown: number;
+    maxDrawdownDuration: number;
+    volatility: number;
+    profitFactor: number;
+    expectancy: number;
+    avgWin: number;
+    avgLoss: number;
+    largestWin: number;
+    largestLoss: number;
+    consecutiveWins: number;
+    consecutiveLosses: number;
+    winStreakAvg: number;
+    lossStreakAvg: number;
+    avgTradeDuration: number;
+    avgHoldingTimeMinutes: number;
+    tradesPerDay: number;
+    avgSpreadCost: number;
+    avgSlippage: number;
+    rejectionRate: number;
+  };
+  equityCurve: any[];
+  monthlyPerformance: any[];
+  note?: string;
+}
+
+export interface WalkForwardResult {
+  inSample: InstitutionalBacktestResult;
+  outOfSample: InstitutionalBacktestResult;
+  degradation: {
+    sharpeRatio: number;
+    winRate: number;
+    profitFactor: number;
+  };
+  isRobust: boolean;
+}
+
+export interface MonteCarloResult {
+  scenarios: InstitutionalBacktestResult[];
+  statistics: {
+    meanSharpe: number;
+    stdDevSharpe: number;
+    percentile5: number;
+    percentile50: number;
+    percentile95: number;
+  };
+  probabilityOfProfit: number;
+  valueAtRisk95: number;
+}
+
+export interface AssetAnalysisInput {
+  symbol: string;
+  historicalData: any[];
+  balance: number;
+  dailyBalance: number;
+  currency: string;
+  stake: number;
+  duration: number;
+  durationUnit: string;
+  recentTrades: any[];
+}

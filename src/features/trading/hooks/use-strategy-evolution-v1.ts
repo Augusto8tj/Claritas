@@ -2,7 +2,7 @@
 'use client';
 
 import { useState, useCallback, useRef, useEffect } from 'react';
-import type { RobotStrategy, RobotPerformance, MarketRegime } from '@/lib/types';
+import type { RobotStrategy, RobotPerformance, EnhancedRobotPerformance } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/features/auth/hooks/use-auth';
 import { saveEvolutionHistory, loadEvolutionHistory, clearEvolutionHistory } from '@/services/financial-data-service';
@@ -19,7 +19,7 @@ const MIN_TRADES_FOR_ANALYSIS = 5;
 
 export interface EvolutionEvent {
     timestamp: Date;
-    elitePerformers: Pick<RobotPerformance, 'id' | 'strategyType' | 'totalProfit' | 'wins' | 'losses'>[];
+    elitePerformers: Pick<EnhancedRobotPerformance, 'id' | 'strategyType' | 'sharpeRatio' | 'wins' | 'losses' | 'totalProfit'>[];
     mutations: {
         robotId: string;
         robotType: string;
@@ -49,9 +49,8 @@ function analyzeRobotFailures(
   
   const lossesByTrend: Record<string, number> = {};
   losses.forEach(loss => {
-    // CORREÇÃO: regime pode ser string ou objeto, tratamos com segurança
-    const regimeVal = typeof loss.regime === 'object' ? (loss.regime as any).trend : loss.regime;
-    const trend = regimeVal || 'NEUTRAL';
+    // regime agora é garantido como string no histórico
+    const trend = loss.regime || 'NEUTRAL';
     lossesByTrend[trend] = (lossesByTrend[trend] || 0) + 1;
   });
   
@@ -131,6 +130,7 @@ export function useStrategyEvolutionV1(assetSymbol: string | null) {
                     elitePerformers: h.elitePerformers.map(p => ({
                         id: p.id,
                         strategyType: p.strategyType,
+                        sharpeRatio: p.sharpeRatio,
                         totalProfit: p.totalProfit,
                         wins: p.wins,
                         losses: p.losses
@@ -161,7 +161,6 @@ export function useStrategyEvolutionV1(assetSymbol: string | null) {
             return; 
         }
 
-        console.log(`[Evolution V1] Limite de trades atingido.`);
         tradeCountRef.current = 0; 
 
         const sortedPerformance = [...performanceData].sort((a, b) => (b.sharpeRatio || -99) - (a.sharpeRatio || -99));
@@ -175,7 +174,14 @@ export function useStrategyEvolutionV1(assetSymbol: string | null) {
 
         const newEvent: EvolutionEvent = {
             timestamp: new Date(),
-            elitePerformers: elitePerformers.map(({ id, strategyType, totalProfit, wins, losses }) => ({ id, strategyType, totalProfit: totalProfit || 0, wins: wins || 0, losses: losses || 0 })),
+            elitePerformers: elitePerformers.map(p => ({ 
+              id: p.id, 
+              strategyType: p.strategyType, 
+              sharpeRatio: p.sharpeRatio || 0,
+              totalProfit: p.totalProfit || 0, 
+              wins: p.wins || 0, 
+              losses: p.losses || 0 
+            })),
             mutations: [],
         };
         
@@ -221,12 +227,22 @@ export function useStrategyEvolutionV1(assetSymbol: string | null) {
                     const historyV2Format = newHistory.map(h => ({
                         generation: 0,
                         timestamp: h.timestamp,
-                        elitePerformers: h.elitePerformers.map(p => ({ ...p, sharpeRatio: 0 })),
-                        mutations: h.mutations.map(m => ({ ...m, expectedImprovement: 'N/A' })),
-                        trigger: 'virtual',
+                        elitePerformers: h.elitePerformers.map(p => ({ 
+                          id: p.id, 
+                          strategyType: p.strategyType, 
+                          totalProfit: p.totalProfit, 
+                          wins: p.wins, 
+                          losses: p.losses, 
+                          sharpeRatio: p.sharpeRatio 
+                        })),
+                        mutations: h.mutations.map(m => ({ 
+                          ...m, 
+                          expectedImprovement: 'N/A' 
+                        })),
+                        trigger: 'virtual' as const,
                         tradeCount: EVOLUTION_TRIGGER_THRESHOLD,
                         populationStats: { avgSharpe: 0, avgWinRate: 0, totalProfit: 0, bestRegimes: [] }
-                    } as EvolutionEventV2));
+                    }));
                     saveEvolutionHistory(user.uid, historyV2Format, 'v1', assetSymbol);
                 }
                 return newHistory;
