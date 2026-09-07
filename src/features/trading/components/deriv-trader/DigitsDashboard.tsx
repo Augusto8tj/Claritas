@@ -80,7 +80,7 @@ const VagalumeStatusCard: React.FC<{ signal: VagalumeSignal | null }> = ({ signa
                 <div className="text-center">
                     <Loader2 className="h-6 w-6 mx-auto mb-2 animate-spin opacity-50" />
                     <p className="font-semibold text-sm">Vagalume Aguardando</p>
-                    <p className="text-xs">Analisando padrão...</p>
+                    <p className="text-xs">Analizando padrão...</p>
                 </div>
             </Card>
         );
@@ -149,7 +149,7 @@ export function DigitsDashboard({ signalQuality, multiWindowAnalysis, vagalumeSi
     
     const { mainWindow, targetDigit } = signalQuality || {};
     const { pValue, isSignificant } = mainWindow?.chiSquare || { pValue: 1, isSignificant: false };
-    const targetFreq = mainWindow?.frequencies.find(f => f.digit === targetDigit);
+    const targetFreq = mainWindow?.frequencies.find((f: any) => f.digit === targetDigit);
 
     return (
         <Card>

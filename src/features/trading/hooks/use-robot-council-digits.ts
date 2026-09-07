@@ -11,7 +11,8 @@ import {
     type MultiWindowAnalysis,
     type SignalQuality,
     calculateDigitStatsForWindow,
-    type WindowDigitStats
+    type WindowDigitStats,
+    type DigitFrequency
 } from '@/features/trading/services/digits-analysis';
 import {
     decideNextStake,
@@ -33,10 +34,10 @@ import { timingMonitor } from '@/features/trading/utils/timing-monitor';
 
 
 // ============================================================================
-// 1. TIPOS E INTERFACES
+// 1. TIPOS E INTERFACES EXPORTADOS
 // ============================================================================
 
-export type PilotType = 'matchesDiffers' | 'overUnder' | 'evenOdd' | 'underdog' | 'underdogOverUnder' | 'dynamicUnderdogOverUnder' | 'underdogEvenOdd' | 'vagalume';
+export type PilotType = 'matchesDiffers' | 'overUnder' | 'evenOdd' | 'underdog' | 'underdogOverUnder' | 'dynamicUnderdogOverUnder' | 'underdogEvenOdd' | 'vagalume' | 'sherlock';
 export type AutopilotStatus = 'PAUSED' | 'TRADING' | 'COOLDOWN' | 'CIRCUIT_BREAKER';
 
 export interface PilotState {
@@ -47,7 +48,21 @@ export interface PilotState {
     accumulatedLoss: number;
     tradeHistory: Operation[];
     activeContractId: number | null; 
+    isMartingaleEnabled: boolean;
+    martingaleRecoveryInstallments: number;
 }
+
+export type { SignalQuality, MultiWindowAnalysis };
+
+export interface SherlockAnalysis {
+  lastDigit: number;
+  probabilities: { digit: number, probability: number }[];
+  recommendedBlock: string;
+  blockProbability: number;
+  compensationSteps: number;
+}
+
+export type DigitStats = DigitFrequency;
 
 export interface StrategyBacktestResult extends BacktestSummary {
   strategyId: PilotType;
@@ -67,6 +82,8 @@ const createInitialPilotState = (): PilotState => ({
     accumulatedLoss: 0,
     tradeHistory: [],
     activeContractId: null,
+    isMartingaleEnabled: true,
+    martingaleRecoveryInstallments: 3,
 });
 
 // ============================================================================
@@ -139,6 +156,7 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
     dynamicUnderdogOverUnder: createInitialPilotState(),
     underdogEvenOdd: createInitialPilotState(),
     vagalume: createInitialPilotState(),
+    sherlock: createInitialPilotState(),
   });
   
   const executionRef = useRef(false);
@@ -232,6 +250,7 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
       dynamicUnderdogOverUnder: createInitialPilotState(),
       underdogEvenOdd: createInitialPilotState(),
       vagalume: createInitialPilotState(),
+      sherlock: createInitialPilotState(),
     });
     setSessionInitialBankroll(accountBalance.balance ?? 1000);
     lastProcessedOpIdRef.current = null;
@@ -493,7 +512,7 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
       priceTicks, pilots, operationsLog, signalQuality, shouldTrade, councilDecision, executeTrade, activeSymbol, toast, 
       dailyBalance, dailyTarget, maxLosses, sessionInitialBankroll, accountBalance.balance, dailyPnl,
       overUnderStats, evenOddStats, overUnderThreshold, evenOddThreshold, underdogThreshold, isUnderdogInverse, overUnderUnderdogThreshold, evenOddUnderdogThreshold,
-      executionCooldown, isMartingaleEnabled, isSmartMartingale, analysisResults.mainWindowStats, multiWindowAnalysis, digitStats,
+      executionCooldown, isMartingaleEnabled, isSmartMartingale, analysisResults.mainWindowStats, multiWindowAnalysis,
       cooldownTime, consensusThreshold, underdogDigitStats, onVagalumeTradeCompleted, vagalumeConfig, vagalumeSignal
   ]);
   

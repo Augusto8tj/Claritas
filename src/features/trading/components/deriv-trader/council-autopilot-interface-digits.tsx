@@ -14,7 +14,7 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Separator } from "@/components/ui/separator";
 import { Input } from "@/components/ui/input";
-import type { useRobotCouncilDigits } from '@/features/trading/hooks/use-robot-council-digits';
+import type { useRobotCouncilDigits, PilotType, PilotState } from '@/features/trading/hooks/use-robot-council-digits';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
@@ -107,7 +107,7 @@ const DigitsOptimizationPanel: React.FC<DigitsOptimizationPanelProps> = ({
                 <TableBody>
                   {Object.values(backtestResults).sort((a,b) => b.totalProfit - a.totalProfit).map(res => (
                     <TableRow key={res.strategyId}>
-                      <TableCell className="text-xs font-medium">{strategyLabels[res.strategyId] || res.strategyId}</TableCell>
+                      <TableCell className="text-xs font-medium">{strategyLabels[res.strategyId as string] || res.strategyId}</TableCell>
                       <TableCell className={cn("text-center font-mono text-xs", res.winrate > 51 ? 'text-green-600' : 'text-red-600')}>{res.winrate.toFixed(1)}%</TableCell>
                       <TableCell className={cn("text-right font-mono text-xs", res.totalProfit > 0 ? 'text-green-600' : 'text-red-600')}>${res.totalProfit.toFixed(2)}</TableCell>
                     </TableRow>
@@ -150,7 +150,7 @@ const DigitsOptimizationPanel: React.FC<DigitsOptimizationPanelProps> = ({
                       <TableBody>
                           {Object.values(calibrationResults).map(res => (
                               <TableRow key={res.bestSummary.strategyId}>
-                                <TableCell className="text-xs">{strategyLabels[res.bestSummary.strategyId]}</TableCell>
+                                <TableCell className="text-xs">{strategyLabels[res.bestSummary.strategyId as string] || res.bestSummary.strategyId}</TableCell>
                                 <TableCell className="text-xs font-mono">{res.initialSummary.totalTrades} → {res.bestSummary.totalTrades}</TableCell>
                                 <TableCell className="text-xs font-mono">{res.initialSummary.totalProfit.toFixed(2)} → <span className="font-bold text-primary">{res.bestSummary.totalProfit.toFixed(2)}</span></TableCell>
                               </TableRow>
@@ -190,7 +190,6 @@ interface PilotControlRowProps {
 // ============================================================================
 // 2. COMPONENTES AUXILIARES (UI)
 // ============================================================================
-type PilotState = ReturnType<typeof useRobotCouncilDigits>['pilots'][keyof ReturnType<typeof useRobotCouncilDigits>['pilots']];
 
 const getConfidence = (z: number) => {
     return (100 - (100 * Math.exp(-0.5 * z * z))).toFixed(0);
@@ -232,7 +231,7 @@ const PilotControlRow: React.FC<PilotControlRowProps> = ({
                 <>
                     <div className="flex items-center justify-between text-xs text-muted-foreground border-t pt-3">
                         <Badge variant="outline" className="flex items-center gap-1.5">
-                            <div className={cn("h-2 w-2 rounded-full", statusInfo[status]?.color || 'bg-gray-500')}></div>
+                            <div className={cn("h-2.5 w-2.5 rounded-full", statusInfo[status]?.color || 'bg-gray-500')}></div>
                             {statusInfo[status]?.text || status}
                         </Badge>
                          <Badge variant="destructive" className={cn(consecutiveLosses > 0 ? "flex" : "hidden", "items-center gap-1")}>
@@ -572,7 +571,7 @@ export function DigitsAutopilotManager(props: DigitsAutopilotManagerProps) {
                     <PilotControlRow
                         key={def.id}
                         pilotDef={def}
-                        pilotState={pilots[def.id]}
+                        pilotState={pilots[def.id as PilotType]}
                         toggleAutopilot={toggleAutopilot}
                         togglePilotMartingale={togglePilotMartingale}
                         setPilotMartingaleInstallments={setPilotMartingaleInstallments}

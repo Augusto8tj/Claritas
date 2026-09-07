@@ -170,10 +170,10 @@ function createGBMDetector(
     
     const rawConfidence = Math.abs(probUp - 0.5) * 200;
     
-    const statusMessage = rawConfidence >= params.gbmConfidenceThreshold ? 'SINAL GERADO ✅' : 'MONITORANDO (sem convicção suficiente)';
+    const statusMessage = rawConfidence >= (params.gbmConfidenceThreshold || 15) ? 'SINAL GERADO ✅' : 'MONITORANDO (sem convicção suficiente)';
     console.log(`[${strategyType}] Monte Carlo: P(up)=${(probUp*100).toFixed(1)}%, Conf=${rawConfidence.toFixed(1)}% | ${statusMessage}`);
 
-    if (rawConfidence < params.gbmConfidenceThreshold) {
+    if (rawConfidence < (params.gbmConfidenceThreshold || 15)) {
       recordVeto(strategyType, `Convicção insuficiente (${rawConfidence.toFixed(1)}% < ${params.gbmConfidenceThreshold}%)`);
       return null;
     }
