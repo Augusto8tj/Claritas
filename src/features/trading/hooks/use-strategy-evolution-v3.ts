@@ -146,11 +146,22 @@ export function useStrategyEvolutionV3(initialStrategies: RobotStrategy[], asset
     loadEvolutionHistory(user.uid, 'v3', assetSymbol)
       .then(history => {
         if (history.length > 0) {
-          const mappedHistory = history.map(h => ({
-            ...h,
-            totalTrades: h.totalTrades || h.tradeCount || 0,
-            timestamp: h.timestamp instanceof Date ? h.timestamp : new Date(h.timestamp)
-          }));
+          const mappedHistory = history.map(h => {
+            const legacy = h as any;
+            return {
+              ...h,
+              totalTrades: legacy.totalTrades || legacy.tradeCount || 0,
+              timestamp: h.timestamp instanceof Date ? h.timestamp : new Date(h.timestamp),
+              elitePerformers: (h.elitePerformers || []).map((p: any) => ({
+                id: p.id,
+                strategyType: p.strategyType,
+                sharpeRatio: p.sharpeRatio || 0,
+                winRate: p.winRate || 50,
+                totalProfit: p.totalProfit || 0,
+                effectiveRegimes: p.effectiveRegimes || []
+              }))
+            };
+          });
           setEvolutionHistory(mappedHistory as EvolutionEvent[]);
           setCurrentGeneration(mappedHistory[0]?.generation || 0);
         }
@@ -340,7 +351,7 @@ export function useStrategyEvolutionV3(initialStrategies: RobotStrategy[], asset
         setEvolutionProgress(0);
       }, 1000);
     }
-  }, [evolvedStrategies, evolutionHistory, currentGeneration, user, toast, assetSymbol]);
+  }, [evolvedStrategies, currentGeneration, user, toast, assetSymbol]);
 
   const resetEvolutionHistory = useCallback(async () => {
     if (!user || !assetSymbol) return;

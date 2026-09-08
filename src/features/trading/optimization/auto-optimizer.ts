@@ -31,7 +31,6 @@ async function fetchRecentTrades(userId: string, count: number): Promise<HFTrade
     return getHFTradeLogs(userId, count);
 }
 async function saveOptimizationResult(userId: string, result: any): Promise<void> {}
-async function applyOptimizations(changes: any[]): Promise<void> {}
 
 
 export class AutoOptimizer {
@@ -43,6 +42,12 @@ export class AutoOptimizer {
     this.config = config;
   }
   
+  private async applyOptimizations(changes: any[]): Promise<void> {
+    console.log('[Auto-Optimizer] Aplicando otimizações:', changes);
+    // Dummy implementation
+    return Promise.resolve();
+  }
+
   async runOptimizationCycle(): Promise<OptimizationResult | null> {
     if (!this.config.enabled) return null;
     
@@ -68,9 +73,9 @@ export class AutoOptimizer {
     }
     
     const underperformingStrategies = currentMetrics.strategyBreakdown
-      .filter(s => s.winRate < 45 && s.trades > 10);
+      .filter((s: any) => s.winRate < 45 && s.trades > 10);
     
-    underperformingStrategies.forEach(strategy => {
+    underperformingStrategies.forEach((strategy: any) => {
       improvements.push({
         parameter: `strategy_${strategy.strategy}_enabled`,
         oldValue: true,

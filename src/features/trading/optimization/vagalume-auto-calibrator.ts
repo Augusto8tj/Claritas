@@ -1,7 +1,7 @@
 // src/features/trading/optimization/vagalume-auto-calibrator.ts
 'use client';
 
-import type { TickData, Operation } from '@/lib/types';
+import type { TickData } from '@/lib/types';
 import type { VagalumeConfig } from '../hooks/use-vagalume-alternante';
 import { calculateDigitStatsForWindow } from '../services/digits-analysis';
 import { calculateAdvancedSignalScore } from '../services/digit-indicators';
@@ -72,7 +72,7 @@ function simulateVagalume(
     let confidence = 0.5;
     let shouldTrade = false;
     
-    switch (vagalumeState) {
+    switch (vagalumeState as string) {
       case 'W1':
         if (analysis.probEven < 0.49) {
           suggestedContract = 'DIGITODD';
@@ -125,7 +125,7 @@ function simulateVagalume(
     if (advancedScore.regime.type === 'RANGING') adjustedConfidence *= 1.10;
     else if (advancedScore.regime.type === 'CHAOTIC') adjustedConfidence *= 0.80;
     
-    const isW2L2 = (vagalumeState === 'W2' || vagalumeState === 'L2');
+    const isW2L2 = (vagalumeState === 'W2' || (vagalumeState as string) === 'L2');
     const stakeMultiplier = isW2L2 ? config.resetMultiplier : 1.0;
     const finalStake = baseStake * stakeMultiplier;
 
@@ -153,7 +153,7 @@ function simulateVagalume(
       state: vagalumeState,
     });
 
-    switch (vagalumeState) {
+    switch (vagalumeState as string) {
       case 'W1': vagalumeState = isWin ? 'L1' : 'W1'; break;
       case 'L1': vagalumeState = isWin ? 'W1' : 'W2'; break;
       case 'W2':
