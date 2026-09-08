@@ -108,7 +108,7 @@ function IsolatedMarketChartV1() {
         chartType, setChartType, timePeriod, setTimePeriod, tradeAnnotations
     } = useDerivApiV1();
     
-    const { indicators: councilIndicators } = useRobotCouncilV1(activeSymbol, [], chartData, 0);
+    const { indicators: councilIndicators } = useRobotCouncilV1(activeSymbol, [], chartData);
 
     return (
         <>
@@ -142,7 +142,7 @@ function IsolatedMarketChartV1() {
 
 function MainContentV1() {
     const { activeSymbol, priceTicks, operationsLog, sellContract, chartData } = useDerivApiV1();
-    const robotCouncil = useRobotCouncilV1(activeSymbol, priceTicks, chartData, 0);
+    const robotCouncil = useRobotCouncilV1(activeSymbol, priceTicks, chartData);
     
     return (
         <div className="mt-6">

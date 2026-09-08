@@ -36,7 +36,7 @@ import { cn } from '@/lib/utils'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { TradeLegend } from './trade-legend'
-import type { Indicators } from '@/services/indicator-service';
+import type { Indicators } from '@/features/trading/services/indicator-service';
 
 
 interface MarketChartProps {
@@ -51,6 +51,7 @@ interface MarketChartProps {
   operations: Operation[]
   indicators: Indicators | null,
   tradeAnnotations: TradeAnnotation[];
+  supplyDemandZones?: any;
 }
 
 const Y_AXIS_WIDTH = 80

@@ -389,7 +389,7 @@ function StochasticLab({
 
       await new Promise(resolve => setTimeout(resolve, 50));
       
-      const result = runStochasticBacktest(historicalData, {
+      const result = runStochasticBacktest(historicalData as unknown as ChartData[], {
           horizons: horizonsConfigForBacktest
       });
       
@@ -532,7 +532,7 @@ function StochasticLab({
                         <AccordionItem value="audit">
                             <AccordionTrigger className="text-base font-semibold px-1">Log de Auditoria Preditiva</AccordionTrigger>
                             <AccordionContent className="pt-2">
-                               <PredictiveLogViewer logs={predictiveLogs} onDeleteLog={onDeletePredictiveLog} deletingPredictiveLogId={deletingPredictiveLogId} />
+                               <PredictiveLogViewer logs={predictiveLogs} onDeleteLog={handleDeletePredictiveLog} deletingLogId={deletingPredictiveLogId} />
                             </AccordionContent>
                         </AccordionItem>
                         <AccordionItem value="backtest">
@@ -645,7 +645,7 @@ function PageContent() {
         if (historicalData.length < 500) {
             throw new Error("Dados históricos insuficientes para o aquecimento.");
         }
-        const result = runStochasticBacktest(historicalData, { horizons: horizonsConfigForBacktest });
+        const result = runStochasticBacktest(historicalData as unknown as ChartData[], { horizons: horizonsConfigForBacktest });
         setInitialPerformance(result);
         toast({ title: "Cérebro Preditivo Aquecido", description: "Confiança inicial calibrada com dados históricos." });
     } catch (e: any) {
@@ -724,7 +724,7 @@ function PageContent() {
   const handleSyncDuration = () => {
     const { finalSignal } = autopilot.masterState;
     if (!finalSignal || finalSignal.horizon === 'N/A' || !durationLimits) {
-      toast({ variant: 'destructive', title: 'Nenhum Sinal Forte', description: 'Aguarde um sinal preditivo forte para sincronizar.' });
+      toast({ variant: 'destructive', title: 'Nenhum Sinal Forte', description: 'Aguardu um sinal preditivo forte para sincronizar.' });
       return;
     }
 

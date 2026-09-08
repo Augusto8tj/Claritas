@@ -100,5 +100,3 @@ export function HFSignalCard({ signal, onExecute, isExecuting, consecutiveLosses
     </Card>
   );
 }
-
-    

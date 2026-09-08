@@ -1,5 +1,4 @@
-// src/features/trading/hooks/use-strategy-evolution-v3.ts
-'use client';
+'use server';
 
 /**
  * 🧬 SISTEMA DE EVOLUÇÃO GENÉTICA V3.0 - VERSÃO COMPLETA E CORRIGIDA
@@ -43,7 +42,14 @@ export interface EvolutionEvent {
   generation: number;
   timestamp: Date;
   totalTrades: number;
-  elitePerformers: Pick<RobotPerformance, 'id' | 'strategyType' | 'totalProfit' | 'wins' | 'losses' | 'sharpeRatio'>[];
+  elitePerformers: {
+    id: string;
+    strategyType: string;
+    sharpeRatio: number;
+    winRate: number;
+    totalProfit: number;
+    effectiveRegimes: string[];
+  }[];
   mutations: {
     robotId: string;
     robotType: string;
@@ -220,8 +226,8 @@ export function useStrategyEvolutionV3(initialStrategies: RobotStrategy[], asset
         generation: newGeneration,
         timestamp: new Date(),
         totalTrades: processedTradeCount,
-        elitePerformers: elitePerformers.map(({ id, strategyType, totalProfit, wins, losses, sharpeRatio }) => ({
-          id, strategyType, totalProfit: totalProfit || 0, wins: wins || 0, losses: losses || 0, sharpeRatio: sharpeRatio || 0
+        elitePerformers: elitePerformers.map(({ id, strategyType, totalProfit, wins, losses, sharpeRatio, winRate, effectiveRegimes }) => ({
+          id, strategyType, totalProfit: totalProfit || 0, wins: wins || 0, losses: losses || 0, sharpeRatio: sharpeRatio || 0, winRate: winRate || 50, effectiveRegimes: effectiveRegimes || []
         })),
         mutations: [],
         trigger: tradeType,

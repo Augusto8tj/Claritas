@@ -38,10 +38,6 @@ export function StrikeZoneCard({ zone, previousZones, strategy, onExecute, isExe
       const now = Date.now();
       const remaining = Math.max(0, Math.floor((expiryTime - now) / 1000));
       setTimeLeft(remaining);
-      
-      if (remaining === 0 && interval) {
-        clearInterval(interval);
-      }
     };
     
     updateTimer();

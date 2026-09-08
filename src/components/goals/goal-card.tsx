@@ -27,7 +27,7 @@ import {
 } from "@/components/ui/alert-dialog"
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
-import { deleteGoal } from "@/app/actions/financial-data-actions";
+import { deleteGoal } from "@/services/financial-data-service";
 import { useAuth } from "@/features/auth/hooks/use-auth";
 
 interface GoalCardProps {
@@ -47,21 +47,21 @@ export function GoalCard({ goal, onGoalDeleted }: GoalCardProps) {
       return;
     }
     setIsDeleting(true);
-    const result = await deleteGoal(user.uid, goal.id);
-    setIsDeleting(false);
-
-    if (result.success) {
-      toast({
-        title: "Meta Deletada",
-        description: `A meta "${goal.name}" foi removida.`,
-      });
-      onGoalDeleted(goal.id);
-    } else {
-      toast({
-        variant: "destructive",
-        title: "Erro ao Deletar",
-        description: result.error || "Não foi possível deletar a meta.",
-      });
+    try {
+        await deleteGoal(user.uid, goal.id);
+        setIsDeleting(false);
+        toast({
+            title: "Meta Deletada",
+            description: `A meta "${goal.name}" foi removida.`,
+        });
+        onGoalDeleted(goal.id);
+    } catch (error: any) {
+        setIsDeleting(false);
+        toast({
+            variant: "destructive",
+            title: "Erro ao Deletar",
+            description: error.message || "Não foi possível deletar a meta.",
+        });
     }
   };
 

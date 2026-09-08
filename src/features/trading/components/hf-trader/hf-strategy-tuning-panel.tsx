@@ -25,6 +25,7 @@ interface HFStrategyTuningPanelProps {
   params: StrategyParams;
   gbmConfidenceThreshold: number;
   onParamChange: (strategy: StrategyType | 'GBM', newParams: any) => void;
+  calibrationMeta?: any;
 }
 
 interface StrategyTuningItemProps {
@@ -61,7 +62,7 @@ const StrategyTuningItem: React.FC<StrategyTuningItemProps> = ({
             max={max}
             step={step}
             value={[value ?? 0]}
-            onValueChange={([val]) => onValueChange(val)}
+            onValueChange={(val) => onValueChange(val[0])}
         />
         <p className="text-xs text-muted-foreground pt-1">{description}</p>
     </div>

@@ -46,6 +46,12 @@ export type ApiHistoricalData = {
     volume?: number;
 };
 
+export interface ConnectionEvent {
+    timestamp: string;
+    message: string;
+    type: 'success' | 'error' | 'warning' | 'info';
+}
+
 export interface DerivApiContextTypeV2 {
   ws: WebSocket | null;
   isConnected: boolean;
@@ -93,6 +99,14 @@ export interface DerivApiContextTypeV2 {
   clearActiveContracts: () => void;
   tradeAnnotations: TradeAnnotation[];
   durationLimits: DurationLimits | null;
+
+  // Diagnostics props for Status Page
+  connectionEvents: ConnectionEvent[];
+  rawErrorCode: string | null;
+  tokenSource: 'local' | 'default';
+  maskedToken: string | null;
+  appId: string;
+  hookVersion: string;
 }
 
 export const DerivApiContextV2 = createContext<DerivApiContextTypeV2 | undefined>(undefined);
@@ -187,6 +201,11 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
   const [dataVersion, setDataVersion] = useState(0); 
   const [durationLimits, setDurationLimits] = useState<DurationLimits | null>(null);
 
+  // Diagnostics State
+  const [connectionEvents, setConnectionEvents] = useState<ConnectionEvent[]>([]);
+  const [rawErrorCode, setRawErrorCode] = useState<string | null>(null);
+  const [tokenSource, setTokenSource] = useState<'local' | 'default'>('default');
+
   const wsRef = useRef<WebSocket | null>(null);
   const [isConnected, setIsConnected] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
@@ -200,6 +219,10 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
 
   // NOVO: Ref para rastrear contratos recém-criados e evitar race conditions
   const recentlyCreatedContractsRef = useRef<Set<number>>(new Set());
+
+    const addEvent = useCallback((message: string, type: ConnectionEvent['type'] = 'info') => {
+        setConnectionEvents(prev => [{ timestamp: new Date().toLocaleTimeString(), message, type }, ...prev].slice(0, 50));
+    }, []);
 
     const setAndPersistOperationsLog = useCallback((updater: React.SetStateAction<Operation[]>) => {
         setOperationsLog(prevLog => {
@@ -237,8 +260,14 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
       const storedAccountType = localStorage.getItem(DERIV_ACCOUNT_TYPE_KEY) as AccountType | null;
       const storedLog = localStorage.getItem(DERIV_V2_LOG_KEY);
 
-      if (storedDemoToken) setDemoToken(storedDemoToken);
-      if (storedRealToken) setRealToken(storedRealToken);
+      if (storedDemoToken) {
+          setDemoToken(storedDemoToken);
+          setTokenSource('local');
+      }
+      if (storedRealToken) {
+          setRealToken(storedRealToken);
+          setTokenSource('local');
+      }
       if (storedAccountType) setAccountTypeState(storedAccountType);
       if (storedLog) {
         const parsedLog = JSON.parse(storedLog);
@@ -275,7 +304,6 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
         if (op.status === 'pending' && op.expirationTime && now > op.expirationTime) {
           hasChanges = true;
           updateTradeAnnotation(String(op.id), { status: 'lost', profit: -op.stake });
-          // CORREÇÃO: Adicionar o exitTimestamp na expiração por timer
           return { ...op, status: 'lost' as const, result: -op.stake, exitTimestamp: new Date().toISOString() };
         }
         return op;
@@ -284,7 +312,7 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
       if (hasChanges) {
         setAndPersistOperationsLog(updatedOps);
       }
-    }, 2000); // Check every 2 seconds
+    }, 2000);
 
     return () => clearInterval(interval);
   }, [operationsLog, updateTradeAnnotation, setAndPersistOperationsLog]);
@@ -404,16 +432,9 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
         const contractsRes: any = await makeRequest({ contracts_for: symbol });
         if (contractsRes.error) throw new Error(contractsRes.error.message);
 
-        // ✅ CORRIGIDO: Extrair limites de duração de contracts_for.available[]
-        // O campo trading_period.rise_fall NÃO existe para índices sintéticos (1HZ10V, etc.)
-        // Os limites reais estão em available[].min_contract_duration / max_contract_duration
-        
         const available: any[] = contractsRes.contracts_for?.available || [];
-        
-        // Inicializar com null (sem dado = unidade não suportada)
         const newLimits: DurationLimits = { t: null, s: null, m: null, h: null, d: null };
         
-        // Helper para parsear strings de duração como "1t", "10t", "15s", "1h"
         const parseDuration = (dStr: string): { value: number; unit: DurationUnit } | null => {
           if (!dStr) return null;
           const match = dStr.match(/^(\d+)([tsmhd])$/);
@@ -421,13 +442,11 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
           return { value: parseInt(match[1], 10), unit: match[2] as DurationUnit };
         };
         
-        // Filtrar apenas contratos Rise/Fall (CALL e PUT)
         const riseFallContracts = available.filter(
           (c: any) => c.contract_type === 'CALL' || c.contract_type === 'PUT'
         );
         
         if (riseFallContracts.length > 0) {
-          // Para cada contrato Rise/Fall, extrair min e max durations
           for (const contract of riseFallContracts) {
             const minParsed = parseDuration(contract.min_contract_duration);
             const maxParsed = parseDuration(contract.max_contract_duration);
@@ -437,10 +456,8 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
               const existing = newLimits[unit];
               
               if (!existing) {
-                // Primeira vez para esta unidade
                 newLimits[unit] = { min: minParsed.value, max: maxParsed.value };
               } else {
-                // Se já existe, pegar o range mais amplo (menor min, maior max)
                 newLimits[unit] = {
                   min: Math.min(existing.min, minParsed.value),
                   max: Math.max(existing.max, maxParsed.value),
@@ -450,15 +467,11 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
           }
         }
         
-        // Fallback de segurança: se NENHUM limite de segundos/ticks foi encontrado
-        // para um índice sintético (que deveria sempre ter), usar os defaults.
         if ((newLimits.s === null || newLimits.t === null) && symbol?.includes('1HZ')) {
-            console.warn(`[DurationLimits] Limites de s/t não encontrados para ${symbol}. Aplicando defaults de segurança.`);
             if (newLimits.t === null) newLimits.t = { min: 1, max: 10 };
             if (newLimits.s === null) newLimits.s = { min: 15, max: 3600 };
         }
         
-        console.log(`[DurationLimits] Limites para ${symbol}:`, JSON.stringify(newLimits));
         setDurationLimits(newLimits);
 
         const currentChartType = chartTypeRef.current;
@@ -480,8 +493,6 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
         if (botSubResponse.error) {
             if (botSubResponse.error.code !== 'AlreadySubscribed') {
                 throw new Error(`Bot Sub: ${botSubResponse.error.message}`);
-            } else {
-                console.warn(`[Deriv WS V2] Bot data already subscribed for ${symbol}.`);
             }
         }
         if(botSubResponse.subscription?.id) botSubscriptionIdRef.current = botSubResponse.subscription.id;
@@ -524,8 +535,6 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
         if (uiSubResponse.error) {
              if (uiSubResponse.error.code !== 'AlreadySubscribed') {
                 setChartError(`UI Sub: ${uiSubResponse.error.message}`);
-            } else {
-                 console.warn(`[Deriv WS V2] UI data already subscribed for ${symbol}.`);
             }
         } else if(uiSubResponse.subscription?.id) {
             activeSubscriptionIdRef.current = uiSubResponse.subscription.id;
@@ -616,11 +625,9 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
           };
           setAndPersistOperationsLog(prevLog => [newOperation, ...prevLog]);
 
-          const entryTime = buyResult.purchase_time;
-          
           addTradeAnnotation({
               contractId: String(buyResult.contract_id),
-              entryTime: entryTime,
+              entryTime: buyResult.purchase_time,
               entryPrice: entryPrice,
               direction: tradeDirection,
               status: 'pending',
@@ -633,7 +640,7 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
           return {
             success: true,
             message: `Ordem do tipo "${contractType}" para ${symbol} no valor de ${sanitizedStake} USD executada com sucesso.`,
-            contractId: contractId,
+            contractId: buyResult.contract_id,
             entryPrice,
           };
         } catch (error) {
@@ -694,6 +701,7 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
     
     const connect = () => {
         setIsConnecting(true);
+        addEvent('Iniciando conexão...', 'info');
         setConnectionError(null);
         setIsAssetsLoading(true);
       
@@ -729,10 +737,12 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
         }
 
         if (response.error && response.error.message) {
+             setRawErrorCode(response.error.code || 'UNKNOWN_ERROR');
              if (response.error.code !== 'AlreadySubscribed' && 
                  response.error.code !== 'SellNotAvailable' && 
                  response.error.code !== 'ContractSellNotAvailable') {
               console.error(`[Deriv WS] Error:`, response.error.message);
+              addEvent(response.error.message, 'error');
             }
              return;
         }
@@ -758,7 +768,6 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
                     const isSold = contract.is_sold === 1;
                     
                     if (existingOpIndex !== -1) {
-                        // UPDATE EXISTING OPERATION
                         const updatedLog = [...prevLog];
                         const op = updatedLog[existingOpIndex];
                         
@@ -772,12 +781,11 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
                                 
                                 if (op.initiator === 'Piloto' && user) {
                                     const logId = `pred_log_${contract.contract_id}`;
-                                    const predictiveLogUpdate = {
+                                    savePredictiveTradeLog(user.uid, {
                                         id: logId,
                                         result: newStatus,
                                         pnl: contract.profit,
-                                    };
-                                    savePredictiveTradeLog(user.uid, predictiveLogUpdate);
+                                    });
                                 }
 
                                 updateTradeAnnotation(String(contract.contract_id), { 
@@ -787,13 +795,11 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
                                     exitTime: contract.sell_time 
                                 });
                                 
-                                const toastMessage = {
+                                setToastQueue(prev => [...prev, {
                                     title: `Posição Fechada (${op.asset})`,
                                     description: `Resultado: ${contract.currency} ${contract.profit.toFixed(2)}`,
                                     variant: newStatus === 'won' ? 'default' : 'destructive',
-                                };
-                                
-                                setToastQueue(prev => [...prev, toastMessage]);
+                                }]);
             
                                 if (wsRef.current?.readyState === WebSocket.OPEN) {
                                     wsRef.current.send(JSON.stringify({"balance": 1}));
@@ -828,6 +834,7 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
                             durationUnit: durationUnit,
                             multiplier: contract.multiplier,
                             contractType: contract.contract_type,
+                            initiator: 'Manual',
                         };
                         
                         addTradeAnnotation({
@@ -913,10 +920,10 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
 
         const authResponse: any = await makeRequest({ authorize: activeToken });
         if (authResponse.error) throw new Error(authResponse.error.message);
-
         setIsConnected(true);
         setIsConnecting(false);
         setConnectionError(null);
+        addEvent('Handshake estabelecido.', 'success');
         
         ws.send(JSON.stringify({ "proposal_open_contract": 1, "subscribe": 1 }));
         ws.send(JSON.stringify({ "balance": 1, "subscribe": 1 }));
@@ -952,11 +959,12 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
         
         let errorMessage = error instanceof Error ? error.message : 'Erro desconhecido ao conectar';
         setConnectionError(`Falha na autorização: ${errorMessage}`);
+        addEvent(`Erro: ${errorMessage}`, 'error');
         setIsConnected(false);
         setIsConnecting(false);
         setIsAssetsLoading(false);
         setAccountBalance({ balance: null, currency: null, loading: false });
-        allowAutoReconnectRef.current = false; // PREVENT RECONNECT LOOP
+        allowAutoReconnectRef.current = false;
         if (ws.readyState === WebSocket.OPEN) ws.close();
     }
 };
@@ -980,6 +988,7 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
             reconnectInProgressRef.current = true;
             console.warn(`[WS] Fechado inesperadamente. Código: ${event.code}. Tentando reconectar...`);
             setConnectionError(`Conexão perdida. Reconectando...`);
+            addEvent(`Conexão fechada (${event.code}). Reconectando...`, 'warning');
             
             if (reconnectTimeoutRef.current) {
                 clearTimeout(reconnectTimeoutRef.current);
@@ -1021,7 +1030,7 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
       }
       reconnectInProgressRef.current = false;
     };
-  }, [activeToken, isLoading, triggerReconnect, user]);
+  }, [activeToken, isLoading, triggerReconnect, user, addEvent]);
 
   
   useEffect(() => {
@@ -1035,7 +1044,7 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
         localStorage.setItem(DERIV_ACCOUNT_TYPE_KEY, type);
         setAccountTypeState(type);
         allowAutoReconnectRef.current = true;
-        setTriggerReconnect(c => c + 1); // Trigger a full reconnect
+        setTriggerReconnect(c => c + 1);
     } catch (error) {
         console.error("Failed to save account type to localStorage:", error);
     }
@@ -1047,11 +1056,13 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
         const trimmed = tokens.demo.trim();
         localStorage.setItem(DERIV_DEMO_TOKEN_KEY, trimmed);
         setDemoToken(trimmed);
+        setTokenSource('local');
       }
       if (tokens.real) {
         const trimmed = tokens.real.trim();
         localStorage.setItem(DERIV_REAL_TOKEN_KEY, trimmed);
         setRealToken(trimmed);
+        setTokenSource('local');
       }
       allowAutoReconnectRef.current = true;
       setTriggerReconnect(c => c + 1);
@@ -1105,6 +1116,11 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
     setTradeAnnotations([]);
   }, [setAndPersistOperationsLog]);
 
+  const maskedToken = useMemo(() => {
+    if (!activeToken) return null;
+    return `${activeToken.substring(0, 4)}...${activeToken.substring(activeToken.length - 4)}`;
+  }, [activeToken]);
+
   const contextValue: DerivApiContextTypeV2 = useMemo(() => ({
     ws: wsRef.current,
     isConnected,
@@ -1131,6 +1147,7 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
     chartError,
     chartType,
     setChartType,
+    timePeriod,
     setTimePeriod,
     dataVersion,
     executeTrade,
@@ -1139,12 +1156,19 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
     clearActiveContracts,
     tradeAnnotations,
     durationLimits,
+    connectionEvents,
+    rawErrorCode,
+    tokenSource,
+    maskedToken,
+    appId: DERIV_APP_ID,
+    hookVersion: 'v2.5.0-diagnostics'
   }), [
       isConnected, isConnecting, connectionError, demoToken, realToken, activeToken, accountType, 
       setAccountType, setTokens, disconnect, reconnect, accountBalance, operationsLog, assetGroups, 
       isAssetsLoading, activeSymbol, setActiveSymbol, chartData, botCandleData, priceTicks, 
       isChartLoading, chartError, chartType, timePeriod, dataVersion, executeTrade, 
-      sellContract, getHistoricalData, clearActiveContracts, tradeAnnotations, durationLimits
+      sellContract, getHistoricalData, clearActiveContracts, tradeAnnotations, durationLimits,
+      connectionEvents, rawErrorCode, tokenSource, maskedToken
   ]);
 
   return (
