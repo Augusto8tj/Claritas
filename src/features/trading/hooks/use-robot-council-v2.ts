@@ -1,11 +1,12 @@
+// src/features/trading/hooks/use-robot-council-v2.ts
 'use client';
 
 /**
  * 🧠 DERIV TRADER V2.5 - CÉREBRO COGNITIVO (VERSÃO MESTRE OTIMIZADA)
  */
 
-import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { useDerivApiV2 as useDerivApi } from './use-deriv-api-v2';
+import { useState, useEffect, useCallback, useRef, useMemo, useContext } from 'react';
+import { useDerivApiV2 as useDerivApi, DerivApiContextV2 } from './use-deriv-api-v2';
 import { useToast } from '@/hooks/use-toast';
 import type { 
   RobotStrategy, DurationUnit, TickData, CandleData,
@@ -304,7 +305,7 @@ export function useRobotCouncilV2(
     },
     robotPerformance: [],
     consensusReached: false,
-    consensusSum: { rise: number, fall: number },
+    consensusSum: { rise: 0, fall: 0 },
     totalWeight: 0,
   });
 
