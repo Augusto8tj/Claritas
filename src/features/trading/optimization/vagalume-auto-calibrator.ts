@@ -125,7 +125,8 @@ function simulateVagalume(
     if (advancedScore.regime.type === 'RANGING') adjustedConfidence *= 1.10;
     else if (advancedScore.regime.type === 'CHAOTIC') adjustedConfidence *= 0.80;
     
-    const stakeMultiplier = (vagalumeState === 'W2' || vagalumeState === 'L2') ? config.resetMultiplier : 1.0;
+    const isW2L2 = (vagalumeState === 'W2' || vagalumeState === 'L2');
+    const stakeMultiplier = isW2L2 ? config.resetMultiplier : 1.0;
     const finalStake = baseStake * stakeMultiplier;
 
     const nextTick = ticks[i + 1];

@@ -148,7 +148,8 @@ export function useStrategyEvolutionV3(initialStrategies: RobotStrategy[], asset
         if (history.length > 0) {
           const mappedHistory = history.map(h => ({
             ...h,
-            totalTrades: (h as any).totalTrades || h.tradeCount || 0
+            totalTrades: h.totalTrades || h.tradeCount || 0,
+            timestamp: h.timestamp instanceof Date ? h.timestamp : new Date(h.timestamp)
           }));
           setEvolutionHistory(mappedHistory as EvolutionEvent[]);
           setCurrentGeneration(mappedHistory[0]?.generation || 0);

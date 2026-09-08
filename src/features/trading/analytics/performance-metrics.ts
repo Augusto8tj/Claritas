@@ -1,10 +1,44 @@
 // src/features/trading/analytics/performance-metrics.ts
+'use client';
 
-// THIS FILE IS DEPRECATED as of v5.6.
-// The logic for calculating session-based metrics has been moved into the
-// `hf-stats-overview.tsx` component and the `use-hf-strike-zone.tsx` hook
-// to operate on real-time data instead of historical Firestore data.
-// This file is kept temporarily to avoid breaking potential imports, but
-// should be removed in a future cleanup.
+import type { Operation } from '@/lib/types';
 
-export {};
+export interface InstitutionalMetrics {
+  totalTrades: number;
+  wins: number;
+  losses: number;
+  winRate: number;
+  totalPnL: number;
+  sharpeRatio: number;
+  maxDrawdown: number;
+  profitFactor: number;
+  strategyBreakdown: {
+    strategy: string;
+    trades: number;
+    winRate: number;
+    pnl: number;
+  }[];
+}
+
+/**
+ * Calcula métricas de desempenho para o otimizador automático.
+ */
+export async function calculateInstitutionalMetrics(
+  userId: string,
+  startDate: Date,
+  endDate: Date
+): Promise<InstitutionalMetrics> {
+  // Placeholder implementation to satisfy dependencies.
+  // In a real scenario, this would fetch from Firestore.
+  return {
+    totalTrades: 0,
+    wins: 0,
+    losses: 0,
+    winRate: 0,
+    totalPnL: 0,
+    sharpeRatio: 0,
+    maxDrawdown: 0,
+    profitFactor: 0,
+    strategyBreakdown: []
+  };
+}
