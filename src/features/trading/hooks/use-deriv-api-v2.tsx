@@ -1,4 +1,3 @@
-// /src/features/trading/hooks/use-deriv-api-v2.tsx
 'use client';
 
 // ESTE ARQUIVO É UMA CÓPIA DEDICADA PARA O SISTEMA V2.5
@@ -109,7 +108,7 @@ export interface DerivApiContextTypeV2 {
   hookVersion: string;
 }
 
-const DerivApiContextV2 = createContext<DerivApiContextTypeV2 | undefined>(undefined);
+export const DerivApiContextV2 = createContext<DerivApiContextTypeV2 | undefined>(undefined);
 
 const marketNameMapping: Record<string, string> = {
     'synthetic_index': 'Índices Sintéticos',
@@ -153,10 +152,6 @@ const addDataPoint = (prevData: ChartData[], newPoint: ChartData): ChartData[] =
     return data;
 };
 
-// Nota: esta função é usada apenas para calcular expirationTime no log,
-// não afeta a duração real enviada à API.
-// Para 1HZ10V: 1 tick ≈ 1s. Para outros ativos sintéticos: 1 tick ≈ 2s.
-// Usamos 1.5s como média segura para ativos 1HZ e 2s para os demais.
 const getDurationInSeconds = (duration: number, unit: DurationUnit, symbol?: string): number => {
     switch (unit) {
         case 't':
@@ -282,7 +277,10 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
   }, []);
 
   const addTradeAnnotation = useCallback((annotation: Omit<TradeAnnotation, 'id'>) => {
-    const newAnnotation: TradeAnnotation = { ...annotation, id: `annotation-${annotation.contractId}` };
+    const newAnnotation: TradeAnnotation = {
+      ...annotation,
+      id: `annotation-${annotation.contractId}`,
+    };
     setTradeAnnotations(prev => [...prev, newAnnotation]);
   }, []);
 
@@ -574,7 +572,7 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
           
           const buyResponse: any = await makeRequest({ "buy": proposal.id, "price": proposal.ask_price });
           if(buyResponse.error) throw new Error(buyResponse.error.message);
-          const buyResult = buyRes.buy;
+          const buyResult = buyResponse.buy;
           
           const contractId = buyResult.contract_id;
           if (!contractId) {
@@ -754,6 +752,7 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
                     const isSold = contract.is_sold === 1;
                     
                     if (existingOpIndex !== -1) {
+                        // UPDATE EXISTING OPERATION
                         const updatedLog = [...prevLog];
                         const op = updatedLog[existingOpIndex];
                         
@@ -766,11 +765,13 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
                                 updatedLog[existingOpIndex] = { ...op, status: newStatus, result: contract.profit, exitPrice: exitPrice, exitTimestamp: sellTime };
                                 
                                 if (op.initiator === 'Piloto' && user) {
-                                    savePredictiveTradeLog(user.uid, {
-                                        id: `pred_log_${contract.contract_id}`,
+                                    const logId = `pred_log_${contract.contract_id}`;
+                                    const predictiveLogUpdate = {
+                                        id: logId,
                                         result: newStatus,
                                         pnl: contract.profit,
-                                    });
+                                    };
+                                    savePredictiveTradeLog(user.uid, predictiveLogUpdate);
                                 }
 
                                 updateTradeAnnotation(String(contract.contract_id), { 
@@ -821,6 +822,7 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
                             durationUnit: durationUnit,
                             multiplier: contract.multiplier,
                             contractType: contract.contract_type,
+                            initiator: 'Manual',
                         };
                         
                         addTradeAnnotation({
