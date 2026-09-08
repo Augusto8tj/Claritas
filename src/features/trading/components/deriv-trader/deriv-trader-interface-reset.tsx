@@ -60,7 +60,7 @@ export default function DerivTraderInterfaceReset({ symbol, suggestedBarrier }: 
 
   useEffect(() => {
     if (durationLimits) {
-      const limits = durationLimits[durationUnit];
+      const limits = (durationLimits as any)[durationUnit];
       if (limits) {
         const currentDuration = form.getValues('duration');
         const newDuration = Math.max(limits.min, Math.min(currentDuration, limits.max));
@@ -241,7 +241,7 @@ export default function DerivTraderInterfaceReset({ symbol, suggestedBarrier }: 
                                               <SelectItem 
                                                   key={value} 
                                                   value={value} 
-                                                  disabled={!durationLimits || !durationLimits[value as DurationUnit]}
+                                                  disabled={!durationLimits || !(durationLimits as any)[value]}
                                               >
                                                   {label}
                                               </SelectItem>

@@ -21,7 +21,7 @@ import type { RobotStrategy, DurationUnit } from '@/lib/types';
 import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
 import type { useRobotCouncilV1 } from "@/features/trading/hooks/use-robot-council-v1";
-import type { Indicators } from '@/services/indicator-service';
+import type { Indicators } from '@/features/trading/services/indicator-service';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -210,10 +210,8 @@ export const CouncilAutopilotInterfaceV1: React.FC<CouncilAutopilotInterfaceV1Pr
                 const lastVWAP = indicators.vwap && indicators.vwap.length > 0 ? indicators.vwap[indicators.vwap.length - 1] : null;
                 return <p>VWAP Atual: <strong>{formatValue(lastVWAP)}</strong></p>;
             case 'DONCHIAN_CHANNELS':
-                if (!indicators.donchianChannels || indicators.donchianChannels.length === 0) return <p>Canais: <strong>...</strong></p>;
-                const lastChannel = indicators.donchianChannels[indicators.donchianChannels.length - 1];
-                if (!lastChannel) return <p>Canais: <strong>...</strong></p>;
-                return <p>Canais: <strong>{formatValue(lastChannel.lower)} / {formatValue(lastChannel.upper)}</strong></p>;
+                if (!indicators.donchian || indicators.donchian.upper === null) return <p>Canais: <strong>...</strong></p>;
+                return <p>Canais: <strong>{formatValue(indicators.donchian.lower)} / {formatValue(indicators.donchian.upper)}</strong></p>;
             case 'CHANDELIER_EXIT':
                  if (!indicators.chandelier) return <p>Saída: <strong>...</strong></p>;
                  return <p>Saída Chandelier: <strong>{formatValue(indicators.chandelier.exitLong)}</strong></p>;

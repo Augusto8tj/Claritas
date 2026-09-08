@@ -14,7 +14,7 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Separator } from "@/components/ui/separator";
 import { Input } from "@/components/ui/input";
-import type { useRobotCouncilDigits, PilotType, PilotState } from '@/features/trading/hooks/use-robot-council-digits';
+import type { useRobotCouncilDigits, PilotType, PilotState, CalibrationResult, StrategyBacktestResult } from '@/features/trading/hooks/use-robot-council-digits';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
@@ -37,7 +37,6 @@ import type { TickData } from "@/lib/types";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Alert } from "@/components/ui/alert";
-import type { CalibrationResult, StrategyBacktestResult } from "../../hooks/use-robot-council-digits";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 
@@ -150,7 +149,7 @@ const DigitsOptimizationPanel: React.FC<DigitsOptimizationPanelProps> = ({
                       <TableBody>
                           {Object.values(calibrationResults).map(res => (
                               <TableRow key={res.bestSummary.strategyId}>
-                                <TableCell className="text-xs">{strategyLabels[res.bestSummary.strategyId as string] || res.bestSummary.strategyId}</TableCell>
+                                <TableCell className="text-xs">{strategyLabels[res.bestSummary.strategyId as string] || "N/A"}</TableCell>
                                 <TableCell className="text-xs font-mono">{res.initialSummary.totalTrades} → {res.bestSummary.totalTrades}</TableCell>
                                 <TableCell className="text-xs font-mono">{res.initialSummary.totalProfit.toFixed(2)} → <span className="font-bold text-primary">{res.bestSummary.totalProfit.toFixed(2)}</span></TableCell>
                               </TableRow>
@@ -222,7 +221,7 @@ const PilotControlRow: React.FC<PilotControlRowProps> = ({
                 <Switch
                     id={`${pilotDef.id}-switch`}
                     checked={isOn}
-                    onCheckedChange={() => toggleAutopilot(pilotDef.id)}
+                    onCheckedChange={() => toggleAutopilot(pilotDef.id as PilotType)}
                     className="data-[state=checked]:bg-green-600"
                 />
             </div>
@@ -279,7 +278,7 @@ const PilotControlRow: React.FC<PilotControlRowProps> = ({
                     <Switch
                         id={`${pilotDef.id}-martingale-switch`}
                         checked={pilotState.isMartingaleEnabled}
-                        onCheckedChange={() => togglePilotMartingale(pilotDef.id)}
+                        onCheckedChange={() => togglePilotMartingale(pilotDef.id as PilotType)}
                     />
                 </div>
                  {pilotState.isMartingaleEnabled && (
@@ -289,7 +288,7 @@ const PilotControlRow: React.FC<PilotControlRowProps> = ({
                             id={`${pilotDef.id}-installments-slider`}
                             min={1} max={10} step={1}
                             value={[pilotState.martingaleRecoveryInstallments]}
-                            onValueChange={(v) => setPilotMartingaleInstallments(pilotDef.id, v[0])}
+                            onValueChange={(v) => setPilotMartingaleInstallments(pilotDef.id as PilotType, v[0])}
                         />
                          <p className="text-xs text-muted-foreground pt-1">
                             O valor total perdido na sequência será dividido por este número de parcelas. Cada trade subsequente tentará recuperar uma parcela, diluindo o risco. Se uma nova perda ocorrer, as parcelas podem ser dobradas.
@@ -323,7 +322,6 @@ const LookbackSlider = ({ title, value, setValue, min, max, step }: { title: str
 export function DigitsAutopilotManager(props: DigitsAutopilotManagerProps) {
   const { 
     pilots, toggleAutopilot, togglePilotMartingale, setPilotMartingaleInstallments, dailyBalance, setDailyBalance, dailyTarget, setDailyTarget,
-    isSmartMartingale,
     cooldownTime, setCooldownTime,
     maxLosses, setMaxLosses, executionCooldown, setExecutionCooldown, resetSession,
     consensusThreshold, setConsensusThreshold, overUnderThreshold, setOverUnderThreshold,
@@ -345,7 +343,7 @@ export function DigitsAutopilotManager(props: DigitsAutopilotManagerProps) {
  } = props;
 
   const renderPilotParams = (pilotDef: typeof STRATEGY_DEFINITIONS[0]) => {
-      const pilotState = pilots[pilotDef.id];
+      const pilotState = pilots[pilotDef.id as PilotType];
       if (!pilotState) return null;
 
       const lookbackControl = (() => {
@@ -411,7 +409,7 @@ export function DigitsAutopilotManager(props: DigitsAutopilotManagerProps) {
                                 id="underdog-ou-z-threshold"
                                 min={1.0} max={3.0} step={0.1}
                                 value={[overUnderUnderdogThreshold]}
-                                onValueChange={v => setOverUnderUnderdogThreshold(v[0])}
+                                onValueChange={(v) => setOverUnderUnderdogThreshold(v[0])}
                             />
                             <span className="font-mono text-primary font-bold w-16 text-center">{overUnderUnderdogThreshold.toFixed(1)}σ</span>
                         </div>
@@ -427,7 +425,7 @@ export function DigitsAutopilotManager(props: DigitsAutopilotManagerProps) {
                                 id="underdog-eo-z-threshold"
                                 min={1.0} max={3.0} step={0.1}
                                 value={[evenOddUnderdogThreshold]}
-                                onValueChange={v => setEvenOddUnderdogThreshold(v[0])}
+                                onValueChange={(v) => setEvenOddUnderdogThreshold(v[0])}
                             />
                             <span className="font-mono text-primary font-bold w-16 text-center">{evenOddUnderdogThreshold.toFixed(1)}σ</span>
                         </div>

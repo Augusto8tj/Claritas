@@ -57,10 +57,10 @@ export function EvolutionLabV1({ history, activeSymbol }: EvolutionLabV1Props) {
                     <h4 className="text-sm font-semibold mb-2 flex items-center gap-2"><ChevronsRight className="h-4 w-4 text-purple-500"/>Mutações</h4>
                      <div className="space-y-2 text-xs">
                         {event.mutations.map(m => (
-                            <div key={m.replacedBotId} className="flex items-center gap-2 rounded bg-muted/50 p-1.5 px-2">
-                                <span className="line-through text-red-500">{m.replacedBotType}</span>
+                            <div key={m.robotId} className="flex items-center gap-2 rounded bg-muted/50 p-1.5 px-2">
+                                <span className="line-through text-red-500">{m.robotType}</span>
                                 <TrendingUp className="h-3 w-3 text-muted-foreground" />
-                                <span className="font-semibold text-green-600">{m.parentBotType}</span>
+                                <span className="font-semibold text-green-600">{m.parentType}</span>
                             </div>
                         ))}
                      </div>

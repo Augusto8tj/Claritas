@@ -51,6 +51,7 @@ export interface SherlockAnalysis {
   compensationSteps: number;
 }
 
+export type PilotType = 'matchesDiffers' | 'overUnder' | 'evenOdd' | 'underdog' | 'underdogOverUnder' | 'dynamicUnderdogOverUnder' | 'underdogEvenOdd' | 'vagalume' | 'sherlock';
 export type AutopilotStatus = 'PAUSED' | 'TRADING' | 'COOLDOWN' | 'CIRCUIT_BREAKER';
 
 export interface PilotState {
@@ -243,16 +244,15 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
 
   const sherlockAnalysis = useMemo((): SherlockAnalysis | null => {
       if (priceTicks.length < sherlockLookback) return null;
-      const ticksForMatrix = priceTicks.slice(-sherlockLookback);
+      const ticksForMatrix = buildTransitionMatrix(priceTicks.slice(-sherlockLookback), decimalPlaces);
       const metrics = globalLatencyMonitor.getMetrics();
       const compensationSteps = disableSherlockCompensation 
         ? 0 
         : Math.min(Math.max(Math.ceil(metrics.avgLatency / 100), 1), 2);
-      const { transitionMatrix, lastDigit } = buildTransitionMatrix(ticksForMatrix, decimalPlaces);
-      const prediction = predictNTicksAhead(lastDigit, transitionMatrix, compensationSteps);
+      const prediction = predictNTicksAhead(ticksForMatrix.lastDigit, ticksForMatrix.transitionMatrix, compensationSteps);
       const bestBlock = Object.entries(prediction.blockProbs).sort(([, a], [, b]) => b - a)[0];
       return {
-          lastDigit,
+          lastDigit: ticksForMatrix.lastDigit,
           probabilities: prediction.digitProbs.map((p, i) => ({ digit: i, probability: p })),
           recommendedBlock: bestBlock[0] as keyof BlockProbs,
           blockProbability: bestBlock[1],

@@ -11,7 +11,7 @@ import {
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import type { Operation, OperationInitiator } from "@/lib/types";
-import { Bot, User, Users, MoveRight, Clock, Trash2, ArrowUp, ArrowDown } from "lucide-react";
+import { Bot, User, Users, MoveRight, Clock, Trash2, ArrowUp, ArrowDown, Zap, Repeat, Wand2 } from "lucide-react";
 import { useMemo } from "react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Button } from "@/components/ui/button";
@@ -26,6 +26,9 @@ const initiatorIcons: Record<OperationInitiator, React.ReactNode> = {
     Manual: <User className="h-3 w-3" />,
     Piloto: <Bot className="h-3 w-3" />,
     Conselho: <Users className="h-3 w-3" />,
+    HF_Strike: <Zap className="h-3 w-3" />,
+    "Repetition Trigger": <Repeat className="h-3 w-3" />,
+    Vagalume: <Wand2 className="h-3 w-3" />
 };
 
 const formatTime = (isoString: string | undefined): string => {

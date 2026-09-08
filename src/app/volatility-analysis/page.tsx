@@ -208,7 +208,7 @@ const ProjectionExpertsPanel = ({ experts, adaptiveDrifts, className }: { expert
             </CardTitle>
             <div className="space-y-2">
                 {experts.map((expert) => {
-                    const { name, wilson, rawWinRate, hits, total, status } = expert;
+                    const { name, rawWinRate, hits, total, status } = expert;
                     const effectiveDirection = getEffectiveVote(expert);
                     const drift = adaptiveDrifts[name] || 0;
                     const driftColor = drift > 0.00001 ? 'text-green-500' : drift < -0.00001 ? 'text-red-500' : 'text-gray-400';
@@ -389,7 +389,7 @@ function StochasticLab({
 
       await new Promise(resolve => setTimeout(resolve, 50));
       
-      const result = runStochasticBacktest(historicalData as unknown as ChartData[], {
+      const result = runStochasticBacktest(historicalData as any[], {
           horizons: horizonsConfigForBacktest
       });
       
@@ -532,7 +532,7 @@ function StochasticLab({
                         <AccordionItem value="audit">
                             <AccordionTrigger className="text-base font-semibold px-1">Log de Auditoria Preditiva</AccordionTrigger>
                             <AccordionContent className="pt-2">
-                               <PredictiveLogViewer logs={predictiveLogs} onDeleteLog={handleDeletePredictiveLog} deletingLogId={deletingPredictiveLogId} />
+                               <PredictiveLogViewer logs={predictiveLogs} onDeleteLog={onDeletePredictiveLog} />
                             </AccordionContent>
                         </AccordionItem>
                         <AccordionItem value="backtest">
@@ -571,7 +571,7 @@ function StochasticLab({
                         </AccordionItem>
                     </Accordion>
                 </div>
-            </ScrollArea>
+          </ScrollArea>
         </CardContent>
     </Card>
   );
@@ -645,7 +645,7 @@ function PageContent() {
         if (historicalData.length < 500) {
             throw new Error("Dados históricos insuficientes para o aquecimento.");
         }
-        const result = runStochasticBacktest(historicalData as unknown as ChartData[], { horizons: horizonsConfigForBacktest });
+        const result = runStochasticBacktest(historicalData as any[], { horizons: horizonsConfigForBacktest });
         setInitialPerformance(result);
         toast({ title: "Cérebro Preditivo Aquecido", description: "Confiança inicial calibrada com dados históricos." });
     } catch (e: any) {
@@ -701,7 +701,7 @@ function PageContent() {
     }
   }, [user]);
 
-  const handleDeletePredictiveLog = async (logId: string) => {
+  const onDeletePredictiveLog = async (logId: string) => {
     if (!user) return;
     setDeletingPredictiveLogId(logId);
     try {
@@ -765,7 +765,7 @@ function PageContent() {
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
         <StochasticLab 
           predictiveLogs={predictiveLogs}
-          onDeletePredictiveLog={handleDeletePredictiveLog}
+          onDeletePredictiveLog={onDeletePredictiveLog}
           deletingPredictiveLogId={deletingPredictiveLogId}
           operationsLog={operationsLog}
           activeSymbol={activeSymbol}
