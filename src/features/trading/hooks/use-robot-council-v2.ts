@@ -843,8 +843,7 @@ export function useRobotCouncilV2(
 
   }, [
     isCouncilAutopilotOn, isConnected, activeSymbol, validCandles, priceTicks, 
-    strategyCouncil, timePeriod, confidenceFactor, isMeritocracyOn, consensusSensitivity, dailyBalance, sessionStartTime, user, durationRange, executeTrade, evolveTrigger, durationLimits, sellContract, toast, tradeDecisionLog, isDynamicExitOn, memoizedIndicators, operationsLog
-  ]);
+    strategyCouncil, timePeriod, confidenceFactor, isMeritocracyOn, consensusSensitivity, dailyBalance, sessionStartTime, user, durationRange, executeTrade, evolveTrigger, durationLimits, sellContract, toast, tradeDecisionLog, isDynamicExitOn, memoizedIndicators, operationsLog]);
 
   useEffect(() => {
     if (!isCouncilAutopilotOn) return;

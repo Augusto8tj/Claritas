@@ -215,7 +215,7 @@ const calculateTechnicalVote = (
       }
 
       else if (robot.strategyType === 'TRIX' && isValid(trix)) {
-          if(trix > indicators.trixPrev!) setVote('RISE', 55, 'TRIX Acelerando');
+          if(trix > (indicators.trixPrev || 0)) setVote('RISE', 55, 'TRIX Acelerando');
           else setVote('FALL', 55, 'TRIX Desacelerando');
       }
 
@@ -844,8 +844,7 @@ export function useRobotCouncilV3(
 
   }, [
     isCouncilAutopilotOn, isConnected, activeSymbol, validCandles, priceTicks, 
-    strategyCouncil, timePeriod, confidenceFactor, isMeritocracyOn, consensusSensitivity, dailyBalance, sessionStartTime, user, durationRange, executeTrade, evolveTrigger, durationLimits, sellContract, toast, tradeDecisionLog, isDynamicExitOn, memoizedIndicators, operationsLog
-  ]);
+    strategyCouncil, timePeriod, confidenceFactor, isMeritocracyOn, consensusSensitivity, dailyBalance, sessionStartTime, user, durationRange, executeTrade, evolveTrigger, durationLimits, sellContract, toast, tradeDecisionLog, isDynamicExitOn, memoizedIndicators, operationsLog]);
 
   useEffect(() => {
     if (!isCouncilAutopilotOn) return;

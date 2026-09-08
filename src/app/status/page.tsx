@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { useDerivApiV2, DerivApiProviderV2 } from '@/features/trading/hooks/use-deriv-api-v2';
+import { useDerivApiV2, DerivApiProviderV2, type ConnectionEvent } from '@/features/trading/hooks/use-deriv-api-v2';
 import { 
     Activity, ShieldCheck, ShieldAlert, Cpu, Database, 
     Network, Server, Clock, ChevronDown, ChevronUp, 
@@ -175,7 +175,6 @@ function StatusPageContent() {
                         onToggle={() => toggleService('deriv')}
                     >
                         <div className="space-y-6">
-                            {/* Audit de Credencial */}
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                 <div className="bg-[#161B22] p-3 rounded-md border border-[#30363D]">
                                     <div className="flex items-center gap-2 mb-2 text-[#E6EDF3]">
@@ -206,14 +205,13 @@ function StatusPageContent() {
                                 </div>
                             </div>
 
-                            {/* Timeline de Eventos */}
                             <div className="space-y-2">
                                 <span className="text-xs font-bold uppercase text-[#E6EDF3] flex items-center gap-2">
                                     <Clock className="h-3 w-3" /> WebSocket Event Timeline
                                 </span>
                                 <div className="bg-[#0D1117] border border-[#30363D] rounded-md p-3 max-h-48 overflow-y-auto">
-                                    {connectionEvents.length > 0 ? (
-                                        connectionEvents.map((ev, i) => (
+                                    {connectionEvents && connectionEvents.length > 0 ? (
+                                        connectionEvents.map((ev: ConnectionEvent, i: number) => (
                                             <div key={i} className="flex gap-3 mb-2 last:mb-0 border-l border-[#30363D] pl-3 relative">
                                                 <div className={cn("absolute -left-[5px] top-1 h-2 w-2 rounded-full", 
                                                     ev.type === 'success' ? 'bg-[#3FB950]' : 
@@ -233,7 +231,6 @@ function StatusPageContent() {
                                 </div>
                             </div>
 
-                            {/* Sandbox de Teste */}
                             <div className="space-y-3 bg-[#161B22]/50 p-4 rounded-lg border border-dashed border-[#30363D]">
                                 <span className="text-xs font-bold uppercase text-[#E6EDF3] flex items-center gap-2">
                                     <Search className="h-3 w-3" /> Sandbox: Testar novo token (sem salvar)
@@ -279,7 +276,6 @@ function StatusPageContent() {
                         </div>
                     </ServiceItem>
 
-                    {/* API GEMINI */}
                     <ServiceItem 
                         id="gemini"
                         name="Google Gemini IA (Neuro-Motor)" 
@@ -303,7 +299,6 @@ function StatusPageContent() {
                         </div>
                     </ServiceItem>
 
-                    {/* FIREBASE FIRESTORE */}
                     <ServiceItem 
                         id="firestore"
                         name="Firebase Firestore (Data Persistence)" 
@@ -326,10 +321,8 @@ function StatusPageContent() {
                             </div>
                         </div>
                     </ServiceItem>
-
                 </div>
 
-                {/* NOTA TÉCNICA FINAL */}
                 <div className="bg-[#161B22] border border-[#30363D] rounded-lg p-6 flex gap-4">
                     <Terminal className="h-6 w-6 text-[#8B949E] shrink-0" />
                     <div className="space-y-2">
@@ -341,7 +334,6 @@ function StatusPageContent() {
                         </p>
                     </div>
                 </div>
-
             </div>
         </div>
     );
