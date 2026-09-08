@@ -19,7 +19,7 @@ import {
     type SmartMartingaleConfig,
     type BankrollState,
 } from '@/features/trading/services/smart-stake-manager-digits';
-import { calculateAdvancedSignalScore } from '@/features/trading/services/digit-indicators';
+import { calculateAdvancedSignalScore, type AdvancedSignalScore } from '@/features/trading/services/digit-indicators';
 import type { ConfidenceLevel } from '@/features/trading/services/digits-analysis';
 import { 
     calibrateStrategyGridSearch, 
@@ -187,7 +187,7 @@ export function useRobotCouncilDigits(activeSymbol: string | null, priceTicks: T
   const lastProcessedOpIdRef = useRef<number | null>(null);
   const decimalPlaces = useMemo(() => getDecimalPlaces(activeAsset?.pip), [activeAsset]);
 
-  const { signal: vagalumeSignal, onTradeCompleted: onVagalumeTradeCompleted } = useVagalumeAlternante(
+  const { signal: vagalumeSignal, onTradeCompleted: onVagalumeTradeCompleted, pauseReason: vagalumePauseReason } = useVagalumeAlternante(
     priceTicks,
     pilots.vagalume.tradeHistory,
     vagalumeConfig,

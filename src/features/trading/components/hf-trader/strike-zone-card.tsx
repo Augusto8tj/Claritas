@@ -61,7 +61,7 @@ export function StrikeZoneCard({ zone, previousZones, strategy, onExecute, isExe
 
   if (!zone || zone.type === 'NEUTRAL') {
     const isVeto = zone?.triggers?.some(t => t.startsWith('VETO'));
-    const vetoReason = (isVeto && zone) ? zone.triggers[0] : null;
+    const vetoReason = isVeto ? zone?.triggers[0] : null;
 
     return (
       <Card className="border-2 border-dashed border-muted">

@@ -10,14 +10,14 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Loader2, Users, Bot, Info, BrainCircuit, CheckCircle, XCircle, HelpCircle, CandlestickChart, Activity, Waves, Cloud, BarChart, TrendingUp, Award, Wand, Trash2, ShieldCheck, ShieldX, Group, ArrowUpCircle, ArrowDownCircle, LayoutGrid, Power, PowerOff, Clock, Repeat } from "lucide-react";
+import { Loader2, Users, Bot, Info, BrainCircuit, CheckCircle, XCircle, HelpCircle, CandlestickChart, Activity, Waves, Cloud, BarChart, TrendingUp, Award, Wand, Trash2, ShieldCheck, ShieldX, Group, ArrowUpCircle, ArrowDownCircle, LayoutGrid, Power, PowerOff, Clock, Repeat, Zap, Wand2 } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { useToast } from "@/hooks/use-toast";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
-import type { RobotStrategy, DurationUnit } from '@/lib/types';
+import type { RobotStrategy, DurationUnit, OperationInitiator } from '@/lib/types';
 import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
 import type { useRobotCouncilV1 } from "@/features/trading/hooks/use-robot-council-v1";
@@ -32,7 +32,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
   AlertDialogTrigger,
-} from "@/components/ui/alert-dialog";
+} from "@/components/ui/dialog";
 
 const indicatorIcons: { [key: string]: React.ReactNode } = {
     RSI: <BrainCircuit className="h-4 w-4" />,
@@ -64,6 +64,15 @@ const voteIcons: { [key: string]: React.ReactNode } = {
     FALL: <XCircle className="h-4 w-4 text-red-500" />,
     HOLD: <HelpCircle className="h-4 w-4 text-yellow-500" />,
 }
+
+const initiatorIcons: Record<OperationInitiator, React.ReactNode> = {
+    Manual: <User className="h-3 w-3" />,
+    Piloto: <Bot className="h-3 w-3" />,
+    Conselho: <Users className="h-3 w-3" />,
+    HF_Strike: <Zap className="h-3 w-3" />,
+    "Repetition Trigger": <Repeat className="h-3 w-3" />,
+    Vagalume: <Wand2 className="h-3 w-3" />
+};
 
 const durationUnitLabels: Record<string, string> = {
   t: "Ticks",
@@ -210,7 +219,7 @@ export const CouncilAutopilotInterfaceV1: React.FC<CouncilAutopilotInterfaceV1Pr
                 const lastVWAP = indicators.vwap && indicators.vwap.length > 0 ? indicators.vwap[indicators.vwap.length - 1] : null;
                 return <p>VWAP Atual: <strong>{formatValue(lastVWAP)}</strong></p>;
             case 'DONCHIAN_CHANNELS':
-                if (!indicators.donchian || indicators.donchian.upper === null) return <p>Canais: <strong>...</strong></p>;
+                if (!indicators.donchian) return <p>Canais: <strong>...</strong></p>;
                 return <p>Canais: <strong>{formatValue(indicators.donchian.lower)} / {formatValue(indicators.donchian.upper)}</strong></p>;
             case 'CHANDELIER_EXIT':
                  if (!indicators.chandelier) return <p>Saída: <strong>...</strong></p>;
