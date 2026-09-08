@@ -82,7 +82,7 @@ export function useHFStrikeZone(
   const { user } = useAuth();
   const { toast } = useToast();
   const { executeTrade, durationLimits, isConnected, dataVersion, getHistoricalData } = useDerivApiV2();
-  const { enabled, minConfidence, autoExecute, maxConcurrentTrades, martingaleMultiplier, maxConsecutiveLosses, cooldownSeconds } = config;
+  const { enabled, minConfidence, autoExecute, maxConcurrentTrades, martingaleMultiplier, maxConsecutiveLosses, cooldownSeconds, minConsensusSignals } = config;
   const { dailyBalance, dailyTarget, operationsLog, manualStake } = sessionConfig;
   
   const rsiStateRef = useRef({ prev: 50 });
@@ -328,11 +328,8 @@ export function useHFStrikeZone(
               detectRandomWalkZone(candles, indicators, currentPrice),
           ];
 
-          const gbmExpert20s = projectionExperts.find(e => e.name === '20s');
-          const gbmExpert40s = projectionExperts.find(e => e.name === '40s');
-
-          const gbm20sSignal = detectGBM20sZone(candles, indicators, currentPrice, [], { gbmConfidenceThreshold, expertProjection: gbmExpert20s });
-          const gbm40sSignal = detectGBM40sZone(candles, indicators, currentPrice, [], { gbmConfidenceThreshold, expertProjection: gbmExpert40s });
+          const gbm20sSignal = detectGBM20sZone(candles, indicators, currentPrice, [], { gbmConfidenceThreshold });
+          const gbm40sSignal = detectGBM40sZone(candles, indicators, currentPrice, [], { gbmConfidenceThreshold });
           
           const tickDurSec = getTickDurationSeconds(activeSymbol);
           const maxExecutableSeconds = durationLimits

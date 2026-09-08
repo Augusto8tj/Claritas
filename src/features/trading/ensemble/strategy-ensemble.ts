@@ -38,7 +38,6 @@ async function calculateExpectedWinRate(
   currentIndicators: Indicators
 ): Promise<number> {
   // Placeholder: In a real system, this would query a DB of historical trades
-  // and find trades under similar market conditions (e.g., ADX range, volatility).
   return 0.62; // 62%
 }
 
@@ -50,15 +49,24 @@ export async function getEnsembleSignal(
   prevRsi: number, // Pass prevRsi for trend following logic
   currentBalance: number // Pass current balance for Kelly Criterion
 ): Promise<EnsembleSignal> {
-  const currentPrice = priceTicks[priceTicks.length - 1].price;
+  const currentPrice = priceTicks[priceTicks.length - 1]?.price || 0;
   
-  const signals = await Promise.all([
-    detectHFMeanReversionZone(indicators, currentPrice),
-    detectStandardTrendZone(indicators, currentPrice, prevRsi),
-    detectBollingerSqueezeZone(indicators, currentPrice),
-    detectVolumeAbsorptionZone(candles, indicators),
-    detectMicrostructureScalpZone(priceTicks, candles, indicators, currentPrice),
-  ]);
+  // Default parameters for strategies
+  const params = {
+    HF_MEAN_REVERSION: { rsiThreshold: 32, tolerance: 0.0015 },
+    STD_TREND_FOLLOW: { adxStrength: 22, rsiMomentum: 52 },
+    BOLLINGER_SQUEEZE: { bbwThreshold: 1.0, breakoutMargin: 0.02 },
+    VOLUME_ABSORPTION: { climaxMultiplier: 2.0, absorptionFactor: 0.6, atrMultiplier: 1.2 },
+    MICROSTRUCTURE_SCALP: { velocityThreshold: 1.5 }
+  };
+
+  const signals = [
+    detectHFMeanReversionZone(indicators, currentPrice, params.HF_MEAN_REVERSION),
+    detectStandardTrendZone(indicators, currentPrice, prevRsi, params.STD_TREND_FOLLOW),
+    detectBollingerSqueezeZone(indicators, currentPrice, params.BOLLINGER_SQUEEZE),
+    detectVolumeAbsorptionZone(candles, indicators, params.VOLUME_ABSORPTION),
+    detectMicrostructureScalpZone(priceTicks, candles, indicators, currentPrice, params.MICROSTRUCTURE_SCALP),
+  ];
   
   const activeSignals = signals.map((s, i) => ({ signal: s, strategy: STRATEGIES_ORDER[i] })).filter(item => item.signal && item.signal.type !== 'NEUTRAL');
   
@@ -71,7 +79,7 @@ export async function getEnsembleSignal(
     const strategyWeight = weightInfo?.weight || 1 / activeSignals.length;
     return {
       strategy: strategy,
-      vote: signal!.type === 'LONG_ENTRY' ? 'LONG' : 'SHORT',
+      vote: (signal!.type === 'LONG_ENTRY' ? 'LONG' : 'SHORT') as 'LONG' | 'SHORT',
       weight: strategyWeight,
       confidence: signal!.confidence,
     };
@@ -91,7 +99,7 @@ export async function getEnsembleSignal(
     return { direction: 'NEUTRAL', confidence: 0, participants: weightedVotes, reasoning: 'Consenso fraco.', expectedWinRate: 0, suggestedStake: 0 };
   }
   
-  const direction = longScore > shortScore ? 'LONG' : 'SHORT';
+  const direction: 'LONG' | 'SHORT' = longScore > shortScore ? 'LONG' : 'SHORT';
   const confidence = Math.max(longScore, shortScore);
   
   const expectedWinRate = await calculateExpectedWinRate(

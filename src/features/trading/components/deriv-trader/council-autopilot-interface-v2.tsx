@@ -20,7 +20,7 @@ import type { useRobotCouncilV2 } from "@/features/trading/hooks/use-robot-counc
 import { Slider } from "@/components/ui/slider";
 import { cn } from "@/lib/utils";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
-import type { TradingMode } from '@/services/council-strategies';
+import type { TradingMode } from '../../services/council-strategies';
 
 interface CouncilAutopilotInterfaceV2Props extends ReturnType<typeof useRobotCouncilV2> {}
 

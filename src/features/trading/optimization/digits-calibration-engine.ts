@@ -95,7 +95,7 @@ function* generateParamCombinations(searchSpaces: ParamSearchSpace[]): Generator
   }
   const keys = searchSpaces.map(s => s.paramKey);
   const valueArrays = searchSpaces.map(s => s.values);
-  function* recurse(index: number, currentParams: StrategyParams) {
+  function* recurse(index: number, currentParams: StrategyParams): Generator<StrategyParams> {
     if (index === searchSpaces.length) {
       yield currentParams;
       return;

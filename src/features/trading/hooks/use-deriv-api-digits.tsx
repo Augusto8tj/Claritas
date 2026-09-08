@@ -625,7 +625,7 @@ export function useDerivApiDigitsState() {
     const activeAsset = useMemo(() => {
         if (!activeSymbol || assetGroups.length === 0) return null;
         for (const group of assetGroups) {
-            const asset = group.options.find(a => a.value === selectedAsset);
+            const asset = group.options.find(a => a.value === activeSymbol);
             if (asset) return asset;
         }
         return null;

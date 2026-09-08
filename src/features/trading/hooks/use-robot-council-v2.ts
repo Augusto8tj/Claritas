@@ -356,10 +356,10 @@ export function useRobotCouncilV2(
   useEffect(() => {
     if (!user || isAuthLoading || !activeSymbol) return;
     
-    loadRobotPerformance(user.uid, 'v2').then((stored: EnhancedRobotPerformance[] | null) => {
-        if (stored && stored.length > 0) {
-            robotPerformanceRef.current = stored;
-            setRobotPerformance(stored);
+    loadRobotPerformance(user.uid, 'v2').then((stored) => {
+        if (stored && Array.isArray(stored)) {
+            robotPerformanceRef.current = stored as EnhancedRobotPerformance[];
+            setRobotPerformance(stored as EnhancedRobotPerformance[]);
         } else {
             resetArenaPerformance();
         }
@@ -419,13 +419,13 @@ export function useRobotCouncilV2(
         }
         
         if (isDynamicExitOn) {
-            const activeCouncilContracts = operationsLog.filter((op: Operation) => 
+            const activeCouncilContracts = operationsLog.filter(op => 
                 op.status === 'pending' && 
                 op.initiator === 'Conselho' &&
                 op.durationUnit !== 't'
             );
 
-            activeCouncilContracts.forEach((contract: Operation) => {
+            activeCouncilContracts.forEach(contract => {
                 if (councilExecutionRef.current.sellingContracts.has(contract.id)) return;
 
                 const chandelier = currentIndicators.chandelier;
@@ -541,7 +541,7 @@ export function useRobotCouncilV2(
             }
         }
         
-        const lastRealOperation = operationsLog.find((op: Operation) => 
+        const lastRealOperation = operationsLog.find(op => 
             op.status !== 'pending' && 
             op.initiator === 'Conselho' && 
             !processedRealTradesRef.current.has(op.id)
@@ -733,7 +733,7 @@ export function useRobotCouncilV2(
             effectiveThreshold: calculatedEffectiveThreshold
         }));
         
-        const openCouncilTrade = operationsLog.find((op: Operation) => op.initiator === 'Conselho' && op.status === 'pending');
+        const openCouncilTrade = operationsLog.find(op => op.initiator === 'Conselho' && op.status === 'pending');
         if (openCouncilTrade) {
             councilExecutionRef.current.isExecuting = false;
             return;

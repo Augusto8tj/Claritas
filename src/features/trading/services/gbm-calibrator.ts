@@ -116,8 +116,6 @@ export function resetGBMCache(): void {
 
 /**
  * Interface interna para trades de backtest.
- * Diferencia-se do TradeResult da API (que indica sucesso de execução)
- * por conter o desfecho (win/loss) e a estratégia usada.
  */
 interface BacktestTrade {
   result: 'win' | 'loss';
@@ -148,6 +146,8 @@ const DEFAULT_DURATIONS: Record<StrategyType, number> = {
   MICROSTRUCTURE_SCALP: 10,
   GBM_20S: 20,
   GBM_40S: 40,
+  RANDOM_WALK: 60,
+  ENSEMBLE: 30
 };
 
 // Module-level storage for optimal durations

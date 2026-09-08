@@ -5,7 +5,6 @@ import type { TickData, Operation } from '@/lib/types';
 import type { VagalumeConfig } from '../hooks/use-vagalume-alternante';
 import { calculateDigitStatsForWindow } from '../services/digits-analysis';
 import { calculateAdvancedSignalScore } from '../services/digit-indicators';
-import { DigitContractType } from '../hooks/use-vagalume-alternante';
 
 // ============================================================================
 // 1. TIPOS E INTERFACES
@@ -261,6 +260,11 @@ export function autoCalibrate(
   for (const resetMult of parameterSpace.resetMultiplier) {
     for (const pauseAfter of parameterSpace.pauseAfterFailedResets) {
       const config: VagalumeConfig = {
+        minSequenceLength: baseConfig.minSequenceLength || 1,
+        zScoreThreshold: baseConfig.zScoreThreshold || 1.5,
+        contextualThreshold: baseConfig.contextualThreshold || 55,
+        requireRangingRegime: baseConfig.requireRangingRegime ?? true,
+        allowedContracts: baseConfig.allowedContracts || { MATCHDIFFERS: true, EVENODD: true, OVERUNDER: true },
         maxStreak: 2,
         stateW1_matchThreshold: 8,
         stateL1_differsThreshold: 15,
@@ -268,7 +272,6 @@ export function autoCalibrate(
         pauseAfterFailedResets: pauseAfter,
         kellyFraction: 0.25,
         usePredictiveAnalysis: true,
-        ...baseConfig,
       };
 
       const { metrics } = simulateVagalume(ticks, config, decimalPlaces);

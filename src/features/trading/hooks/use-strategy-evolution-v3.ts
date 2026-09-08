@@ -1,17 +1,7 @@
-'use server';
+'use client';
 
 /**
  * 🧬 SISTEMA DE EVOLUÇÃO GENÉTICA V3.0 - VERSÃO COMPLETA E CORRIGIDA
- * ==================================================================
- * 
- * CORREÇÕES IMPLEMENTADAS:
- * 1. ✅ Contagem dual: 10 trades virtuais OU 1 trade real acionam evolução
- * 2. ✅ Persistência automática no Firestore após cada geração
- * 3. ✅ Estados de UI completos (isEvolving, progress, generation)
- * 4. ✅ Interface compatível com use-robot-council-v2.ts
- * 5. ✅ Funções de gerenciamento (reset, delete)
- * 6. ✅ Campo generation em EvolutionEvent
- * 7. ✅ Análise de causa-raiz direcionada por regime
  */
 
 import { useState, useCallback, useRef, useEffect } from 'react';
@@ -156,8 +146,12 @@ export function useStrategyEvolutionV3(initialStrategies: RobotStrategy[], asset
     loadEvolutionHistory(user.uid, 'v3', assetSymbol)
       .then(history => {
         if (history.length > 0) {
-          setEvolutionHistory(history);
-          setCurrentGeneration(history[0]?.generation || 0);
+          const mappedHistory = history.map(h => ({
+            ...h,
+            totalTrades: (h as any).totalTrades || h.tradeCount || 0
+          }));
+          setEvolutionHistory(mappedHistory as EvolutionEvent[]);
+          setCurrentGeneration(mappedHistory[0]?.generation || 0);
         }
       })
       .catch(err => {
@@ -217,7 +211,7 @@ export function useStrategyEvolutionV3(initialStrategies: RobotStrategy[], asset
       const newGeneration = currentGeneration + 1;
       const populationStats = performanceData.reduce((acc, p) => {
             acc.totalSharpe += p.sharpeRatio || 0;
-            acc.totalWinRate += p.winRate || 0;
+            acc.totalWinRate += (p as any).winRate || 50;
             acc.totalProfit += p.totalProfit || 0;
             return acc;
         }, { totalSharpe: 0, totalWinRate: 0, totalProfit: 0 });
@@ -226,8 +220,9 @@ export function useStrategyEvolutionV3(initialStrategies: RobotStrategy[], asset
         generation: newGeneration,
         timestamp: new Date(),
         totalTrades: processedTradeCount,
-        elitePerformers: elitePerformers.map(({ id, strategyType, totalProfit, wins, losses, sharpeRatio, winRate, effectiveRegimes }) => ({
-          id, strategyType, totalProfit: totalProfit || 0, wins: wins || 0, losses: losses || 0, sharpeRatio: sharpeRatio || 0, winRate: winRate || 50, effectiveRegimes: effectiveRegimes || []
+        elitePerformers: elitePerformers.map(({ id, strategyType, totalProfit, wins, losses, sharpeRatio }) => ({
+          id, strategyType, totalProfit: totalProfit || 0, wins: wins || 0, losses: losses || 0, sharpeRatio: sharpeRatio || 0,
+          winRate: (wins / (wins + losses || 1)) * 100, effectiveRegimes: []
         })),
         mutations: [],
         trigger: tradeType,
@@ -247,7 +242,7 @@ export function useStrategyEvolutionV3(initialStrategies: RobotStrategy[], asset
 
       worstPerformers.forEach((worst, index) => {
         const eliteParent = elitePerformers[index % elitePerformers.length];
-        const worstIndex = currentStrategies.findIndex(s => (s as RobotStrategy).id === worst.id);
+        const worstIndex = currentStrategies.findIndex(s => s.id === worst.id);
         if (worstIndex === -1) return;
 
         const regimeTrades = (worst.tradeHistory || []).reduce((acc, trade) => {
@@ -310,7 +305,7 @@ export function useStrategyEvolutionV3(initialStrategies: RobotStrategy[], asset
         setEvolutionHistory(prevHistory => {
             const updatedHistory = [newEvent, ...prevHistory];
             if (user) {
-              saveEvolutionHistory(user.uid, updatedHistory, 'v3', assetSymbol).catch(error => {
+              saveEvolutionHistory(user.uid, updatedHistory as any[], 'v3', assetSymbol).catch(error => {
                   console.error("❌ [EvolutionV3] Falha ao gravar histórico:", error);
                   toast({
                       title: "⚠️ Erro de Persistência",

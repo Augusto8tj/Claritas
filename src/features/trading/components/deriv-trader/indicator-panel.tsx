@@ -3,7 +3,7 @@
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import type { ChartData, CandleData } from '@/lib/types';
-import type { Indicators } from '@/services/indicator-service';
+import type { Indicators } from '../../services/indicator-service';
 import { Gauge } from 'lucide-react';
 
 interface IndicatorPanelProps {
