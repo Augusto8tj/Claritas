@@ -35,13 +35,14 @@ export const TradeLegend: React.FC<TradeLegendProps> = ({
     const wins = symbolAnnotations.filter(ann => ann.status === 'won').length;
     const losses = symbolAnnotations.filter(ann => ann.status === 'lost').length;
     
+    // Ensure numeric summation to avoid string concatenation if API returns strings
     const totalProfit = symbolAnnotations
         .filter(ann => ann.status === 'won')
-        .reduce((sum, ann) => sum + (ann.profit || 0), 0);
+        .reduce((sum, ann) => sum + (Number(ann.profit) || 0), 0);
         
     const totalLoss = symbolAnnotations
         .filter(ann => ann.status === 'lost')
-        .reduce((sum, ann) => sum + (ann.profit || 0), 0);
+        .reduce((sum, ann) => sum + (Number(ann.profit) || 0), 0);
 
     const totalNet = totalProfit + totalLoss;
     const totalTrades = wins + losses;
@@ -85,19 +86,19 @@ export const TradeLegend: React.FC<TradeLegendProps> = ({
             <div className="flex justify-between items-center">
                 <span>Ganhos Totais:</span>
                 <span className="font-semibold" style={{ color: bullColor }}>
-                    ${summary.totalProfit.toFixed(2)}
+                    ${Number(summary.totalProfit).toFixed(2)}
                 </span>
             </div>
             <div className="flex justify-between items-center">
                 <span>Perdas Totais:</span>
                 <span className="font-semibold" style={{ color: bearColor }}>
-                    ${Math.abs(summary.totalLoss).toFixed(2)}
+                    ${Math.abs(Number(summary.totalLoss)).toFixed(2)}
                 </span>
             </div>
             <div className="flex justify-between items-center font-bold border-t pt-1" style={{ borderColor: lineColor }}>
                 <span>Resultado Líquido:</span>
                 <span style={{ color: summary.totalNet >= 0 ? bullColor : bearColor }}>
-                    {summary.totalNet >= 0 ? '+' : '-'}${Math.abs(summary.totalNet).toFixed(2)}
+                    {summary.totalNet >= 0 ? '+' : '-'}${Math.abs(Number(summary.totalNet)).toFixed(2)}
                 </span>
             </div>
         </div>
