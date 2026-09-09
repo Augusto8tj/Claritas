@@ -1,4 +1,3 @@
-
 // Service module for financial data operations.
 'use client';
 
