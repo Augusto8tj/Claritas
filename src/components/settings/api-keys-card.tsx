@@ -13,7 +13,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Loader2, Link as LinkIcon, CheckCircle, XCircle, ShieldCheck, AlertCircle, Laptop, Globe, RefreshCw, Info, Key, Zap, Brain } from "lucide-react";
+import { Loader2, CheckCircle, Globe, RefreshCw, Info, Key, Zap, Laptop, ShieldCheck, BarChart3, Medal } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import {
   Form,
@@ -31,8 +31,10 @@ import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { checkOllamaConnection, checkGeminiConnection } from "@/app/actions";
+import { checkOllamaConnection, checkGeminiConnection, runOllamaBenchmark } from "@/app/actions";
 import { cn } from "@/lib/utils";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Progress } from "@/components/ui/progress";
 
 const derivSchema = z.object({
   demoToken: z.string().optional(),
@@ -55,14 +57,23 @@ type DerivFormValues = z.infer<typeof derivSchema>;
 type OllamaFormValues = z.infer<typeof ollamaSchema>;
 type GeminiFormValues = z.infer<typeof geminiSchema>;
 
+interface BenchmarkResult {
+    model: string;
+    tps: number;
+    totalTime: number;
+    evalTime: number;
+    status: 'pending' | 'success' | 'error';
+}
+
 const isValidDerivPatFormat = (token: string) => {
     return /^pat_[a-zA-Z0-9]{40,}$/.test(token.trim());
 };
 
 export function ApiKeysCard() {
   const { demoToken, realToken, setTokens } = useDerivApi();
-  const [loading, setLoading] = useState<AccountType | 'ollama' | 'fetching_models' | 'gemini' | null>(null);
+  const [loading, setLoading] = useState<AccountType | 'ollama' | 'fetching_models' | 'gemini' | 'benchmark' | null>(null);
   const [availableModels, setAvailableModels] = useState<Array<{ name: string; size: number; details: any }>>([]);
+  const [benchmarks, setBenchmarks] = useState<Record<string, BenchmarkResult>>({});
   const { toast } = useToast();
 
   const derivForm = useForm<DerivFormValues>({
@@ -135,13 +146,66 @@ export function ApiKeysCard() {
       const data = await response.json();
       const models = data.models || [];
       setAvailableModels(models);
-      if (models.length > 0 && !config.model) ollamaForm.setValue('model', models[0].name);
+      if (models.length > 0 && !ollamaForm.getValues('model')) ollamaForm.setValue('model', models[0].name);
       toast({ title: "Modelos Sincronizados", description: `${models.length} modelos encontrados no Ollama.` });
     } catch (e: any) {
       toast({ variant: "destructive", title: "Erro de Conexão", description: e.message });
     } finally {
       setLoading(null);
     }
+  };
+
+  const handleStartBenchmark = async () => {
+      if (availableModels.length === 0) {
+          toast({ title: "Nenhum modelo", description: "Sincronize os modelos primeiro.", variant: "destructive" });
+          return;
+      }
+
+      setLoading('benchmark');
+      const configBase = ollamaForm.getValues();
+      const newBenchmarks: Record<string, BenchmarkResult> = {};
+      
+      // Inicializa status pending
+      availableModels.forEach(m => {
+          newBenchmarks[m.name] = { model: m.name, tps: 0, totalTime: 0, evalTime: 0, status: 'pending' };
+      });
+      setBenchmarks(newBenchmarks);
+
+      for (const model of availableModels) {
+          try {
+              // Teste Duplo (Média) conforme sugerido no protótipo
+              let totalTPS = 0;
+              let totalTime = 0;
+              
+              for (let i = 1; i <= 2; i++) {
+                  const res = await runOllamaBenchmark({ ...configBase, model: model.name });
+                  if (res.success && res.metrics) {
+                      totalTPS += res.metrics.tokensPerSecond;
+                      totalTime += res.metrics.totalTimeMs;
+                  } else {
+                      throw new Error(res.error || 'Falha no benchmark');
+                  }
+              }
+
+              setBenchmarks(prev => ({
+                  ...prev,
+                  [model.name]: {
+                      model: model.name,
+                      tps: totalTPS / 2,
+                      totalTime: totalTime / 2,
+                      evalTime: 0, // Not strictly needed for average summary
+                      status: 'success'
+                  }
+              }));
+          } catch (e) {
+              setBenchmarks(prev => ({
+                  ...prev,
+                  [model.name]: { ...prev[model.name], status: 'error' }
+              }));
+          }
+      }
+      setLoading(null);
+      toast({ title: "Benchmark Concluído", description: "O ranking de modelos foi atualizado." });
   };
 
   const handleOllamaSubmit: SubmitHandler<OllamaFormValues> = async (data) => {
@@ -172,6 +236,10 @@ export function ApiKeysCard() {
       setLoading(null);
     }
   };
+
+  const benchmarkRanking = Object.values(benchmarks)
+    .filter(b => b.status === 'success')
+    .sort((a, b) => b.tps - a.tps);
 
   return (
     <Card>
@@ -230,7 +298,7 @@ export function ApiKeysCard() {
               <AlertTitle className="text-xs font-bold uppercase">Guia de Performance Local</AlertTitle>
               <AlertDescription className="text-[11px] leading-relaxed mt-1">
                 Para o Claritas, modelos entre <strong>7B e 8B</strong> (como Llama 3 ou Mistral) oferecem o melhor equilíbrio. 
-                Se o seu notebook não possui GPU dedicada, prefira modelos menores como <strong>Phi-3 (3B)</strong> ou <strong>Gemma (2B)</strong> para respostas instantâneas.
+                Use o <strong>Benchmark Lab</strong> abaixo para encontrar o modelo mais veloz para o seu notebook.
               </AlertDescription>
             </Alert>
 
@@ -327,10 +395,70 @@ export function ApiKeysCard() {
                 </div>
 
                 <Button type="submit" className="w-full" disabled={loading === 'ollama'}>
-                  {loading === 'ollama' ? <Loader2 className="h-4 w-4 animate-spin"/> : 'Validar e Salvar Configuração Local'}
+                  {loading === 'ollama' ? <Loader2 className="h-4 w-4 animate-spin"/> : 'Salvar Configuração Local'}
                 </Button>
               </form>
             </Form>
+
+            <Separator />
+
+            {/* BENCHMARK LAB SECTION */}
+            <div className="space-y-4 pt-2">
+                <div className="flex items-center justify-between">
+                    <h4 className="text-sm font-bold flex items-center gap-2">
+                        <BarChart3 className="h-4 w-4 text-primary" />
+                        Laboratório de Benchmark & Ranking
+                    </h4>
+                    <Button 
+                        size="sm" 
+                        variant="secondary" 
+                        onClick={handleStartBenchmark} 
+                        disabled={loading === 'benchmark' || availableModels.length === 0}
+                    >
+                        {loading === 'benchmark' ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <PlayCircle className="mr-2 h-4 w-4" />}
+                        {loading === 'benchmark' ? 'Testando...' : 'Iniciar Bateria de Testes'}
+                    </Button>
+                </div>
+
+                {benchmarkRanking.length > 0 && (
+                    <div className="rounded-md border bg-muted/20">
+                        <Table>
+                            <TableHeader>
+                                <TableRow>
+                                    <TableHead className="text-[10px] uppercase">Rank</TableHead>
+                                    <TableHead className="text-[10px] uppercase">Modelo</TableHead>
+                                    <TableHead className="text-center text-[10px] uppercase">Velocidade</TableHead>
+                                    <TableHead className="text-right text-[10px] uppercase">Tempo Médio</TableHead>
+                                </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                                {benchmarkRanking.map((b, idx) => (
+                                    <TableRow key={b.model} className={cn(idx === 0 && "bg-primary/5")}>
+                                        <TableCell className="text-center">
+                                            {idx === 0 ? <Medal className="h-4 w-4 text-amber-500" /> : <span className="text-xs font-bold text-muted-foreground">{idx + 1}º</span>}
+                                        </TableCell>
+                                        <TableCell className="text-xs font-medium">{b.model}</TableCell>
+                                        <TableCell className="text-center">
+                                            <div className="flex flex-col items-center">
+                                                <span className="text-xs font-bold text-primary">{b.tps.toFixed(1)} tok/s</span>
+                                                <Progress value={Math.min(100, (b.tps / 50) * 100)} className="h-1 w-16 mt-1" />
+                                            </div>
+                                        </TableCell>
+                                        <TableCell className="text-right text-xs font-mono">{(b.totalTime / 1000).toFixed(2)}s</TableCell>
+                                    </TableRow>
+                                ))}
+                            </TableBody>
+                        </Table>
+                    </div>
+                )}
+
+                {loading === 'benchmark' && (
+                    <div className="p-4 text-center space-y-2 border border-dashed rounded-lg">
+                        <Loader2 className="h-6 w-6 animate-spin mx-auto text-primary" />
+                        <p className="text-xs text-muted-foreground">Executando bateria de testes duplos em cada modelo para média de performance...</p>
+                    </div>
+                )}
+            </div>
           </TabsContent>
 
           <TabsContent value="ai" className="pt-4 space-y-4">
@@ -369,3 +497,6 @@ export function ApiKeysCard() {
     </Card>
   );
 }
+
+// Helper icons needed but not imported
+import { PlayCircle } from "lucide-react";

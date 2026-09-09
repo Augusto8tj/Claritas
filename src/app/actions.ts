@@ -74,7 +74,7 @@ export async function getChatbotInsightsResponse(data: FinancialChatbotInsightsI
 /**
  * Interface para chamadas ao Ollama Studio Local
  */
-export async function getOllamaResponse(config: OllamaConfig, query: string, history: any[]): Promise<{ success?: string; error?: string }> {
+export async function getOllamaResponse(config: OllamaConfig, query: string, history: any[]): Promise<{ success?: string; error?: string; metadata?: any }> {
   try {
     const url = config.baseUrl.replace(/\/+$/, '') + '/api/chat';
     const authHeader = config.apiKey?.startsWith('Bearer ') ? config.apiKey : `Bearer ${config.apiKey}`;
@@ -107,11 +107,48 @@ export async function getOllamaResponse(config: OllamaConfig, query: string, his
     }
 
     const data = await response.json();
-    return { success: data.message?.content || "(Sem resposta do Ollama)" };
+    return { 
+      success: data.message?.content || "(Sem resposta do Ollama)",
+      metadata: data
+    };
   } catch (e: any) {
     console.error("[Action Error] getOllamaResponse:", e);
     return { error: e.message || "Erro ao conectar com Ollama Local." };
   }
+}
+
+/**
+ * Executa um teste de benchmark em um modelo específico
+ */
+export async function runOllamaBenchmark(config: OllamaConfig): Promise<{ success: boolean; error?: string; metrics?: any }> {
+    const testQuery = "Explique brevemente a importância do planejamento financeiro em 2 frases.";
+    
+    try {
+        const result = await getOllamaResponse(config, testQuery, []);
+        
+        if (result.error) throw new Error(result.error);
+        
+        const data = result.metadata;
+        const totalDuration = Number(data?.total_duration);
+        const evalDuration = Number(data?.eval_duration);
+        const evalCount = Number(data?.eval_count);
+        
+        const evalTimeMs = evalDuration / 1e6;
+        const tokensPerSecond = (evalCount && evalTimeMs > 0) ? evalCount / (evalTimeMs / 1000) : 0;
+
+        return {
+            success: true,
+            metrics: {
+                tokensPerSecond,
+                totalTimeMs: totalDuration / 1e6,
+                evalTimeMs,
+                evalCount,
+                model: config.model
+            }
+        };
+    } catch (e: any) {
+        return { success: false, error: e.message };
+    }
 }
 
 export async function checkOllamaConnection(config: OllamaConfig): Promise<{ success: boolean; error?: string; modelCount?: number }> {
