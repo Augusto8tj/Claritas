@@ -66,7 +66,13 @@ export function useAIQuantTerminal(
         const wins = finishedTrades.filter(op => op.status === 'won').length;
         const total = finishedTrades.length;
         const winRate = total > 0 ? (wins / total) * 100 : 100;
-        const pnl = finishedTrades.reduce((acc, op) => acc + (op.result || 0), 0);
+        
+        // Garantia de cálculo numérico para evitar TypeErrors
+        const pnl = finishedTrades.reduce((acc, op) => {
+            const val = Number(op.result) || 0;
+            return acc + val;
+        }, 0);
+        
         return { pnl, winRate, total };
     }, [operationsLog]);
 
@@ -235,8 +241,8 @@ export function useAIQuantTerminal(
             - Ativo: ${activeSymbol}
             - Preço: ${currentPrice?.toFixed(4) || 'N/A'}
             - Modo Operacional: ${isAutoMode ? 'AUTOPILOT (Totalmente Automatizado)' : 'SENTINELA (Aguardando sua autorização)'}
-            - Gestão Financeira: Stake de $${stakeValue.toFixed(2)} | Alvo de Lucro: $${profitTarget.toFixed(2)}
-            - Performance Sessão: P&L: $${sessionStats.pnl.toFixed(2)} | Win Rate: ${sessionStats.winRate.toFixed(1)}%
+            - Gestão Financeira: Stake de $${Number(stakeValue).toFixed(2)} | Alvo de Lucro: $${Number(profitTarget).toFixed(2)}
+            - Performance Sessão: P&L: $${Number(sessionStats.pnl).toFixed(2)} | Win Rate: ${Number(sessionStats.winRate).toFixed(1)}%
             - Telemetria: Ciclo de análise a cada ${analysisInterval}s (Próxima decisão em ${timeToNextAnalysis}s)
             - Último Veredito: ${lastDecision ? `${lastDecision.action} (${lastDecision.confidence}%) - ${lastDecision.reasoning}` : 'Nenhum ciclo concluído'}
             - Indicadores Técnicos: RSI: ${indicators?.rsi?.toFixed(2) || 'N/A'}, ADX: ${indicators?.adx?.toFixed(1) || 'N/A'}, BBW: ${indicators?.bbw?.toFixed(3) || 'N/A'}
@@ -312,6 +318,6 @@ export function useAIQuantTerminal(
         chatMessages,
         isChatLoading,
         sendMessage,
-        executeManualDecision: () => lastDecision && executeTradeAction(lastDecision)
+        executeManualDecision: () => lastDecision && executeTradeAction('Manual', lastDecision, user)
     };
 }
