@@ -45,19 +45,18 @@ const MetricCard = ({
 export function HFStatsOverview({ operations, strategyCounts }: HFStatsOverviewProps) {
     const sessionStats = useMemo(() => {
         const finishedTrades = operations.filter(op => op.status !== 'pending');
-        const wins = finishedTrades.filter(t => t.result && t.result > 0);
+        const wins = finishedTrades.filter(t => t.result && Number(t.result) > 0);
         
-        // CORREÇÃO: A lógica agora soma diretamente o `result`, que já é negativo para perdas.
-        const totalPnl = finishedTrades.reduce((sum, t) => sum + (t.result || 0), 0);
-
-        const winRate = finishedTrades.length > 0 ? (wins.length / finishedTrades.length) * 100 : 0;
+        // Garante que a soma seja numérica convertendo explicitamente cada resultado
+        const totalPnl = finishedTrades.reduce((sum, t) => sum + (Number(t.result) || 0), 0);
+        const totalTradesCount = finishedTrades.length;
+        const winRate = totalTradesCount > 0 ? (wins.length / totalTradesCount) * 100 : 0;
         
         const perStrategy = (Object.keys(strategyMetadata) as StrategyType[]).map(key => {
             const tradesForStrategy = finishedTrades.filter(op => op.strategy?.includes(key));
-            const winsForStrategy = tradesForStrategy.filter(t => t.result && t.result > 0);
+            const winsForStrategy = tradesForStrategy.filter(t => t.result && Number(t.result) > 0);
             
-            // CORREÇÃO: A mesma lógica de soma direta é aplicada aqui.
-            const pnlForStrategy = tradesForStrategy.reduce((sum, t) => sum + (t.result || 0), 0);
+            const pnlForStrategy = tradesForStrategy.reduce((sum, t) => sum + (Number(t.result) || 0), 0);
             const tradeCount = tradesForStrategy.length;
             
             return {
@@ -71,7 +70,7 @@ export function HFStatsOverview({ operations, strategyCounts }: HFStatsOverviewP
         }).sort((a,b) => b.signals - a.signals);
 
         return {
-            totalTrades: finishedTrades.length,
+            totalTrades: totalTradesCount,
             totalPnl,
             winRate,
             perStrategy,
@@ -100,8 +99,12 @@ export function HFStatsOverview({ operations, strategyCounts }: HFStatsOverviewP
       </CardHeader>
       <CardContent className="space-y-6">
         <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-4 gap-4">
-          <MetricCard label="P&L Total" value={`$${sessionStats.totalPnl.toFixed(2)}`} trend={sessionStats.totalPnl > 0 ? 'up' : sessionStats.totalPnl < 0 ? 'down' : 'neutral'} />
-          <MetricCard label="Win Rate" value={`${sessionStats.winRate.toFixed(1)}%`} />
+          <MetricCard 
+            label="P&L Total" 
+            value={`$${(Number(sessionStats.totalPnl) || 0).toFixed(2)}`} 
+            trend={sessionStats.totalPnl > 0 ? 'up' : sessionStats.totalPnl < 0 ? 'down' : 'neutral'} 
+          />
+          <MetricCard label="Win Rate" value={`${(Number(sessionStats.winRate) || 0).toFixed(1)}%`} />
           <MetricCard label="Trades Executados" value={sessionStats.totalTrades} />
           <MetricCard label="Total Sinais Gerados" value={Object.values(strategyCounts).reduce((a,b)=>a+b, 0)} />
         </div>
@@ -132,7 +135,7 @@ export function HFStatsOverview({ operations, strategyCounts }: HFStatsOverviewP
                             {s.trades > 0 ? `${s.winRate.toFixed(0)}%` : '-'}
                         </TableCell>
                         <TableCell className={cn("text-right font-mono font-bold", s.pnl > 0 ? 'text-green-600' : s.pnl < 0 ? 'text-red-600' : 'text-muted-foreground')}>
-                          {s.pnl.toFixed(2)}
+                          {(Number(s.pnl) || 0).toFixed(2)}
                         </TableCell>
                     </TableRow>
                     ))}
