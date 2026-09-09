@@ -2,7 +2,7 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { useDerivApiV2, type ConnectionEvent } from '@/features/trading/hooks/use-deriv-api-v2';
+import { useDerivApiV2, DerivApiProviderV2, type ConnectionEvent } from '@/features/trading/hooks/use-deriv-api-v2';
 import { 
     Activity, ShieldCheck, ShieldAlert, Cpu, Database, 
     Network, Server, Clock, ChevronDown, ChevronUp, 
@@ -80,7 +80,7 @@ const ServiceItem = ({ name, status, icon, children, isOpen, onToggle }: Service
     );
 };
 
-export default function StatusPage() {
+function StatusPageContent() {
     const { 
         isConnected, isConnecting, connectionError, activeToken, 
         connectionEvents, rawErrorCode, tokenSource, maskedToken, 
@@ -205,7 +205,7 @@ export default function StatusPage() {
                                 </span>
                                 <div className="bg-[#0D1117] border border-[#30363D] rounded-md p-3 max-h-48 overflow-y-auto">
                                     {connectionEvents && connectionEvents.length > 0 ? (
-                                        connectionEvents.map((ev, i) => (
+                                        connectionEvents.map((ev: ConnectionEvent, i: number) => (
                                             <div key={i} className="flex gap-3 mb-2 last:mb-0 border-l border-[#30363D] pl-3 relative">
                                                 <div className={cn("absolute -left-[5px] top-1 h-2 w-2 rounded-full", 
                                                     ev.type === 'success' ? 'bg-[#3FB950]' : 
@@ -291,4 +291,12 @@ export default function StatusPage() {
             </div>
         </div>
     );
+}
+
+export default function StatusPage() {
+  return (
+    <DerivApiProviderV2>
+      <StatusPageContent />
+    </DerivApiProviderV2>
+  );
 }

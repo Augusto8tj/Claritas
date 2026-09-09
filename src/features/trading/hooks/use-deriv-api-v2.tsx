@@ -1,4 +1,4 @@
-// src/features/trading/hooks/use-deriv-api-v2.tsx
+// /src/features/trading/hooks/use-deriv-api-v2.tsx
 'use client';
 
 // ESTE ARQUIVO É UMA CÓPIA DEDICADA PARA O SISTEMA V2.5
@@ -291,6 +291,7 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
       ));
   }, []);
 
+  // Client-side timer to check for expired contracts
   useEffect(() => {
     const interval = setInterval(() => {
       const now = Date.now();
@@ -677,7 +678,6 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
         setConnectionError(null);
         setIsAssetsLoading(true);
 
-        // --- MIGRATION: OPTIONS API OTP HANDSHAKE ---
         const accountId = ACCOUNT_IDS[accountType];
         const otpResult = await getDerivWebSocketUrl(activeToken.trim(), accountId);
         
@@ -772,7 +772,8 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
                         break;
                     case 'tick':
                         if (response.tick?.symbol === activeSymbol) {
-                            const newTick = { epoch: response.tick.epoch, price: response.tick.quote };
+                            const tick = response.tick;
+                            const newTick = { epoch: tick.epoch, price: tick.quote };
                             if (chartTypeRef.current === 'Area') setChartData(prev => addDataPoint(prev, newTick));
                             setPriceTicks(prev => {
                                 const newTicks = [...prev, newTick];
@@ -807,7 +808,7 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
               setIsConnected(true);
               setIsConnecting(false);
               setConnectionError(null);
-              addEvent('Conexão estabelecida e autenticada.', 'success');
+              addEvent('Conexão estabelecida e autenticada via OTP.', 'success');
               
               ws.send(JSON.stringify({ "proposal_open_contract": 1, "subscribe": 1 }));
               ws.send(JSON.stringify({ "balance": 1, "subscribe": 1 }));
