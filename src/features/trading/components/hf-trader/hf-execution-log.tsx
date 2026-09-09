@@ -61,8 +61,10 @@ export function HFExecutionLog({ operations, clearActiveContracts }: HFExecution
     const summary = useMemo(() => {
         const finishedTrades = filteredOps.filter(op => op.status !== 'pending');
         const pnl = finishedTrades.reduce((sum, op) => {
-            if (op.status === 'lost') return sum - op.stake;
-            return sum + (op.result || 0);
+            const stakeVal = Number(op.stake) || 0;
+            const resultVal = Number(op.result) || 0;
+            if (op.status === 'lost') return sum - stakeVal;
+            return sum + resultVal;
         }, 0);
         return { pnl };
     }, [filteredOps]);
@@ -74,9 +76,9 @@ export function HFExecutionLog({ operations, clearActiveContracts }: HFExecution
             op.asset,
             `"${op.strategy || 'N/A'}"`,
             op.direction,
-            op.stake,
+            Number(op.stake),
             `${op.duration}${op.durationUnit}`,
-            op.result || 0,
+            Number(op.result || 0),
             op.status
         ]);
         
@@ -186,7 +188,7 @@ export function HFExecutionLog({ operations, clearActiveContracts }: HFExecution
                                                         </Tooltip>
                                                     </TooltipProvider>
                                                 )}
-                                                <p className="text-muted-foreground">Entrada: ${op.stake.toFixed(2)}</p>
+                                                <p className="text-muted-foreground">Entrada: ${Number(op.stake).toFixed(2)}</p>
                                             </div>
                                              <div className="text-right">
                                                 <p className="text-muted-foreground">{new Date(op.timestamp).toLocaleDateString('pt-BR')}</p>
@@ -204,7 +206,9 @@ export function HFExecutionLog({ operations, clearActiveContracts }: HFExecution
                                                     'font-mono',
                                                     op.status === 'won' && 'bg-green-100 text-green-800 border-green-200'
                                                 )}>
-                                                    {op.result! >= 0 ? `+${op.result?.toFixed(2)}` : (op.result || -op.stake).toFixed(2)} USD
+                                                    {op.status === 'won' 
+                                                        ? `+${Number(op.result).toFixed(2)}` 
+                                                        : `${(Number(op.result) || -Number(op.stake)).toFixed(2)}`} USD
                                                 </Badge>
                                             )}
                                         </div>
