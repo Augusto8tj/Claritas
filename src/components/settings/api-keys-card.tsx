@@ -13,7 +13,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Loader2, CheckCircle, Globe, RefreshCw, Info, Key, Zap, Laptop, ShieldCheck, BarChart3, Medal } from "lucide-react";
+import { Loader2, CheckCircle, Globe, RefreshCw, Info, Key, Zap, Laptop, ShieldCheck, BarChart3, Medal, BrainCircuit, History, Target, FileText, PlayCircle } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import {
   Form,
@@ -35,6 +35,9 @@ import { checkOllamaConnection, checkGeminiConnection, runOllamaBenchmark } from
 import { cn } from "@/lib/utils";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Progress } from "@/components/ui/progress";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { saveOllamaBenchmark, getOllamaBenchmarkHistory } from "@/services/financial-data-service";
+import { useAuth } from "@/features/auth/hooks/use-auth";
 
 const derivSchema = z.object({
   demoToken: z.string().optional(),
@@ -61,7 +64,9 @@ interface BenchmarkResult {
     model: string;
     tps: number;
     totalTime: number;
-    evalTime: number;
+    intelligenceScore: number;
+    contextScore: number;
+    powerScore: number;
     status: 'pending' | 'success' | 'error';
 }
 
@@ -70,10 +75,12 @@ const isValidDerivPatFormat = (token: string) => {
 };
 
 export function ApiKeysCard() {
+  const { user } = useAuth();
   const { demoToken, realToken, setTokens } = useDerivApi();
   const [loading, setLoading] = useState<AccountType | 'ollama' | 'fetching_models' | 'gemini' | 'benchmark' | null>(null);
   const [availableModels, setAvailableModels] = useState<Array<{ name: string; size: number; details: any }>>([]);
   const [benchmarks, setBenchmarks] = useState<Record<string, BenchmarkResult>>({});
+  const [benchHistory, setBenchHistory] = useState<any[]>([]);
   const { toast } = useToast();
 
   const derivForm = useForm<DerivFormValues>({
@@ -98,7 +105,7 @@ export function ApiKeysCard() {
   const geminiForm = useForm<GeminiFormValues>({
     resolver: zodResolver(geminiSchema),
     defaultValues: {
-      apiKey: "",
+      apiKey: localStorage.getItem('geminiApiKey') || "",
     },
   });
 
@@ -110,12 +117,11 @@ export function ApiKeysCard() {
         ollamaForm.reset(parsed);
       } catch (e) {}
     }
-
-    const savedGemini = localStorage.getItem('geminiApiKey');
-    if (savedGemini) {
-      geminiForm.reset({ apiKey: savedGemini });
+    
+    if (user) {
+        getOllamaBenchmarkHistory(user.uid).then(setBenchHistory);
     }
-  }, [ollamaForm, geminiForm]);
+  }, [ollamaForm, user]);
 
   const handleDerivSubmit = async (type: AccountType) => {
     setLoading(type);
@@ -165,38 +171,45 @@ export function ApiKeysCard() {
       const configBase = ollamaForm.getValues();
       const newBenchmarks: Record<string, BenchmarkResult> = {};
       
-      // Inicializa status pending
       availableModels.forEach(m => {
-          newBenchmarks[m.name] = { model: m.name, tps: 0, totalTime: 0, evalTime: 0, status: 'pending' };
+          newBenchmarks[m.name] = { model: m.name, tps: 0, totalTime: 0, intelligenceScore: 0, contextScore: 0, powerScore: 0, status: 'pending' };
       });
       setBenchmarks(newBenchmarks);
 
       for (const model of availableModels) {
           try {
-              // Teste Duplo (Média) conforme sugerido no protótipo
-              let totalTPS = 0;
-              let totalTime = 0;
+              // FASE 1: VELOCIDADE (SPEED)
+              const speedRes = await runOllamaBenchmark({ ...configBase, model: model.name }, 'speed');
               
-              for (let i = 1; i <= 2; i++) {
-                  const res = await runOllamaBenchmark({ ...configBase, model: model.name });
-                  if (res.success && res.metrics) {
-                      totalTPS += res.metrics.tokensPerSecond;
-                      totalTime += res.metrics.totalTimeMs;
-                  } else {
-                      throw new Error(res.error || 'Falha no benchmark');
-                  }
-              }
+              // FASE 2: INTELIGÊNCIA FINANCEIRA (QI)
+              const intelRes = await runOllamaBenchmark({ ...configBase, model: model.name }, 'intelligence');
+              
+              // FASE 3: RESILIÊNCIA DE CONTEXTO
+              const contextRes = await runOllamaBenchmark({ ...configBase, model: model.name }, 'context');
 
-              setBenchmarks(prev => ({
-                  ...prev,
-                  [model.name]: {
-                      model: model.name,
-                      tps: totalTPS / 2,
-                      totalTime: totalTime / 2,
-                      evalTime: 0, // Not strictly needed for average summary
-                      status: 'success'
-                  }
-              }));
+              const tps = speedRes.metrics?.tokensPerSecond || 0;
+              const iq = intelRes.metrics?.score || 0;
+              const ctx = contextRes.metrics?.score || 0;
+              
+              // Power Score Ponderado: 40% IQ, 30% Contexto, 30% Velocidade (normalizada p/ 50 TPS)
+              const normalizedSpeed = Math.min(100, (tps / 50) * 100);
+              const powerScore = (iq * 0.4) + (ctx * 0.3) + (normalizedSpeed * 0.3);
+
+              const result: BenchmarkResult = {
+                  model: model.name,
+                  tps,
+                  totalTime: speedRes.metrics?.totalTimeMs || 0,
+                  intelligenceScore: iq,
+                  contextScore: ctx,
+                  powerScore,
+                  status: 'success'
+              };
+
+              setBenchmarks(prev => ({ ...prev, [model.name]: result }));
+              
+              if (user) {
+                  await saveOllamaBenchmark(user.uid, result);
+              }
           } catch (e) {
               setBenchmarks(prev => ({
                   ...prev,
@@ -205,7 +218,8 @@ export function ApiKeysCard() {
           }
       }
       setLoading(null);
-      toast({ title: "Benchmark Concluído", description: "O ranking de modelos foi atualizado." });
+      if (user) getOllamaBenchmarkHistory(user.uid).then(setBenchHistory);
+      toast({ title: "Auditoria Concluída", description: "O Power Ranking foi atualizado." });
   };
 
   const handleOllamaSubmit: SubmitHandler<OllamaFormValues> = async (data) => {
@@ -239,13 +253,13 @@ export function ApiKeysCard() {
 
   const benchmarkRanking = Object.values(benchmarks)
     .filter(b => b.status === 'success')
-    .sort((a, b) => b.tps - a.tps);
+    .sort((a, b) => b.powerScore - a.powerScore);
 
   return (
     <Card>
       <CardHeader>
         <CardTitle className="font-headline">Conexões de API</CardTitle>
-        <CardDescription>Gerencie as suas credenciais para a Corretora Deriv e para as IAs.</CardDescription>
+        <CardDescription>Gerencie as suas credenciais para a Corretora Deriv e para as IAs locais ou na nuvem.</CardDescription>
       </CardHeader>
       <CardContent>
         <Tabs defaultValue="broker">
@@ -293,172 +307,196 @@ export function ApiKeysCard() {
           </TabsContent>
 
           <TabsContent value="ollama" className="pt-4 space-y-4">
-            <Alert className="bg-primary/5 border-primary/20">
-              <Zap className="h-4 w-4 text-primary" />
-              <AlertTitle className="text-xs font-bold uppercase">Guia de Performance Local</AlertTitle>
-              <AlertDescription className="text-[11px] leading-relaxed mt-1">
-                Para o Claritas, modelos entre <strong>7B e 8B</strong> (como Llama 3 ou Mistral) oferecem o melhor equilíbrio. 
-                Use o <strong>Benchmark Lab</strong> abaixo para encontrar o modelo mais veloz para o seu notebook.
-              </AlertDescription>
-            </Alert>
+            <Tabs defaultValue="config">
+                <TabsList className="bg-muted/50 p-1 mb-4 h-9">
+                    <TabsTrigger value="config" className="text-xs">Configuração</TabsTrigger>
+                    <TabsTrigger value="benchmark" className="text-xs">Benchmark Lab</TabsTrigger>
+                    <TabsTrigger value="history" className="text-xs">Histórico</TabsTrigger>
+                </TabsList>
 
-            <Form {...ollamaForm}>
-              <form onSubmit={ollamaForm.handleSubmit(handleOllamaSubmit)} className="space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <FormField
-                    control={ollamaForm.control}
-                    name="baseUrl"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel className="text-xs">Gateway URL (Ngrok)</FormLabel>
-                        <FormControl><Input placeholder="https://..." {...field}/></FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={ollamaForm.control}
-                    name="apiKey"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel className="text-xs">Token Secreto</FormLabel>
-                        <FormControl><Input type="password" {...field}/></FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                </div>
+                <TabsContent value="config" className="space-y-4">
+                    <Form {...ollamaForm}>
+                    <form onSubmit={ollamaForm.handleSubmit(handleOllamaSubmit)} className="space-y-4">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <FormField
+                            control={ollamaForm.control}
+                            name="baseUrl"
+                            render={({ field }) => (
+                            <FormItem>
+                                <FormLabel className="text-xs">Gateway URL (Ngrok)</FormLabel>
+                                <FormControl><Input placeholder="https://..." {...field}/></FormControl>
+                                <FormMessage />
+                            </FormItem>
+                            )}
+                        />
+                        <FormField
+                            control={ollamaForm.control}
+                            name="apiKey"
+                            render={({ field }) => (
+                            <FormItem>
+                                <FormLabel className="text-xs">Token Secreto</FormLabel>
+                                <FormControl><Input type="password" {...field}/></FormControl>
+                                <FormMessage />
+                            </FormItem>
+                            )}
+                        />
+                        </div>
 
-                <div className="flex items-end gap-2">
-                  <FormField
-                    control={ollamaForm.control}
-                    name="model"
-                    render={({ field }) => (
-                      <FormItem className="flex-1">
-                        <FormLabel className="text-xs">Modelo Ativo</FormLabel>
-                        <Select onValueChange={field.onChange} value={field.value}>
-                          <FormControl>
-                            <SelectTrigger>
-                              <SelectValue placeholder={availableModels.length > 0 ? "Selecione..." : "Clique em Atualizar"} />
-                            </SelectTrigger>
-                          </FormControl>
-                          <SelectContent>
-                            {availableModels.map(m => {
-                                const sizeGB = (m.size / (1024 ** 3)).toFixed(1);
-                                return (
-                                    <SelectItem key={m.name} value={m.name}>
-                                        <div className="flex items-center justify-between w-full gap-4">
-                                            <span>{m.name}</span>
-                                            <Badge variant="outline" className="text-[9px] h-4">{sizeGB} GB</Badge>
-                                        </div>
-                                    </SelectItem>
-                                )
-                            })}
-                          </SelectContent>
-                        </Select>
-                      </FormItem>
-                    )}
-                  />
-                  <Button type="button" variant="outline" size="icon" onClick={fetchOllamaModels} disabled={loading === 'fetching_models'}>
-                    {loading === 'fetching_models' ? <Loader2 className="h-4 w-4 animate-spin"/> : <RefreshCw className="h-4 w-4"/>}
-                  </Button>
-                </div>
+                        <div className="flex items-end gap-2">
+                        <FormField
+                            control={ollamaForm.control}
+                            name="model"
+                            render={({ field }) => (
+                            <FormItem className="flex-1">
+                                <FormLabel className="text-xs">Modelo Ativo</FormLabel>
+                                <Select onValueChange={field.onChange} value={field.value}>
+                                <FormControl>
+                                    <SelectTrigger>
+                                    <SelectValue placeholder={availableModels.length > 0 ? "Selecione..." : "Clique em Atualizar"} />
+                                    </SelectTrigger>
+                                </FormControl>
+                                <SelectContent>
+                                    {availableModels.map(m => {
+                                        const sizeGB = (m.size / (1024 ** 3)).toFixed(1);
+                                        return (
+                                            <SelectItem key={m.name} value={m.name}>
+                                                <div className="flex items-center justify-between w-full gap-4">
+                                                    <span>{m.name}</span>
+                                                    <Badge variant="outline" className="text-[9px] h-4">{sizeGB} GB</Badge>
+                                                </div>
+                                            </SelectItem>
+                                        )
+                                    })}
+                                </SelectContent>
+                                </Select>
+                            </FormItem>
+                            )}
+                        />
+                        <Button type="button" variant="outline" size="icon" onClick={fetchOllamaModels} disabled={loading === 'fetching_models'}>
+                            {loading === 'fetching_models' ? <Loader2 className="h-4 w-4 animate-spin"/> : <RefreshCw className="h-4 w-4"/>}
+                        </Button>
+                        </div>
 
-                <div className="grid grid-cols-2 gap-4">
-                    <FormField
-                      control={ollamaForm.control}
-                      name="keepAlive"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel className="text-xs">Permanência em VRAM</FormLabel>
-                          <Select onValueChange={field.onChange} value={field.value}>
-                            <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
-                            <SelectContent>
-                              <SelectItem value="5m">5 Minutos</SelectItem>
-                              <SelectItem value="-1">Indefinido (Sempre Quente)</SelectItem>
-                              <SelectItem value="0">Descarregar Imediatamente</SelectItem>
-                            </SelectContent>
-                          </Select>
-                        </FormItem>
-                      )}
-                    />
-                    <FormField
-                      control={ollamaForm.control}
-                      name="temperature"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel className="text-xs">Temperatura: {field.value}</FormLabel>
-                          <FormControl><Input type="range" min="0" max="1" step="0.1" {...field}/></FormControl>
-                        </FormItem>
-                      )}
-                    />
-                </div>
+                        <div className="grid grid-cols-2 gap-4">
+                            <FormField
+                            control={ollamaForm.control}
+                            name="keepAlive"
+                            render={({ field }) => (
+                                <FormItem>
+                                <FormLabel className="text-xs">Permanência em VRAM</FormLabel>
+                                <Select onValueChange={field.onChange} value={field.value}>
+                                    <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
+                                    <SelectContent>
+                                    <SelectItem value="5m">5 Minutos</SelectItem>
+                                    <SelectItem value="-1">Indefinido (Sempre Quente)</SelectItem>
+                                    <SelectItem value="0">Descarregar Imediatamente</SelectItem>
+                                    </SelectContent>
+                                </Select>
+                                </FormItem>
+                            )}
+                            />
+                            <FormField
+                            control={ollamaForm.control}
+                            name="temperature"
+                            render={({ field }) => (
+                                <FormItem>
+                                <FormLabel className="text-xs">Temperatura: {field.value}</FormLabel>
+                                <FormControl><Input type="range" min="0" max="1" step="0.1" {...field}/></FormControl>
+                                </FormItem>
+                            )}
+                            />
+                        </div>
 
-                <Button type="submit" className="w-full" disabled={loading === 'ollama'}>
-                  {loading === 'ollama' ? <Loader2 className="h-4 w-4 animate-spin"/> : 'Salvar Configuração Local'}
-                </Button>
-              </form>
-            </Form>
+                        <Button type="submit" className="w-full" disabled={loading === 'ollama'}>
+                        {loading === 'ollama' ? <Loader2 className="h-4 w-4 animate-spin"/> : 'Salvar Configuração Local'}
+                        </Button>
+                    </form>
+                    </Form>
+                </TabsContent>
 
-            <Separator />
+                <TabsContent value="benchmark" className="space-y-4">
+                    <div className="flex items-center justify-between">
+                        <h4 className="text-sm font-bold flex items-center gap-2">
+                            <BrainCircuit className="h-4 w-4 text-primary" />
+                            Laboratório de Auditoria Institucional
+                        </h4>
+                        <Button 
+                            size="sm" 
+                            variant="secondary" 
+                            onClick={handleStartBenchmark} 
+                            disabled={loading === 'benchmark' || availableModels.length === 0}
+                        >
+                            {loading === 'benchmark' ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <PlayCircle className="mr-2 h-4 w-4" />}
+                            {loading === 'benchmark' ? 'Auditoria em Curso...' : 'Iniciar Bateria Completa'}
+                        </Button>
+                    </div>
 
-            {/* BENCHMARK LAB SECTION */}
-            <div className="space-y-4 pt-2">
-                <div className="flex items-center justify-between">
-                    <h4 className="text-sm font-bold flex items-center gap-2">
-                        <BarChart3 className="h-4 w-4 text-primary" />
-                        Laboratório de Benchmark & Ranking
-                    </h4>
-                    <Button 
-                        size="sm" 
-                        variant="secondary" 
-                        onClick={handleStartBenchmark} 
-                        disabled={loading === 'benchmark' || availableModels.length === 0}
-                    >
-                        {loading === 'benchmark' ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <PlayCircle className="mr-2 h-4 w-4" />}
-                        {loading === 'benchmark' ? 'Testando...' : 'Iniciar Bateria de Testes'}
-                    </Button>
-                </div>
-
-                {benchmarkRanking.length > 0 && (
-                    <div className="rounded-md border bg-muted/20">
-                        <Table>
-                            <TableHeader>
-                                <TableRow>
-                                    <TableHead className="text-[10px] uppercase">Rank</TableHead>
-                                    <TableHead className="text-[10px] uppercase">Modelo</TableHead>
-                                    <TableHead className="text-center text-[10px] uppercase">Velocidade</TableHead>
-                                    <TableHead className="text-right text-[10px] uppercase">Tempo Médio</TableHead>
-                                </TableRow>
-                            </TableHeader>
-                            <TableBody>
-                                {benchmarkRanking.map((b, idx) => (
-                                    <TableRow key={b.model} className={cn(idx === 0 && "bg-primary/5")}>
-                                        <TableCell className="text-center">
-                                            {idx === 0 ? <Medal className="h-4 w-4 text-amber-500" /> : <span className="text-xs font-bold text-muted-foreground">{idx + 1}º</span>}
-                                        </TableCell>
-                                        <TableCell className="text-xs font-medium">{b.model}</TableCell>
-                                        <TableCell className="text-center">
-                                            <div className="flex flex-col items-center">
-                                                <span className="text-xs font-bold text-primary">{b.tps.toFixed(1)} tok/s</span>
-                                                <Progress value={Math.min(100, (b.tps / 50) * 100)} className="h-1 w-16 mt-1" />
-                                            </div>
-                                        </TableCell>
-                                        <TableCell className="text-right text-xs font-mono">{(b.totalTime / 1000).toFixed(2)}s</TableCell>
+                    {benchmarkRanking.length > 0 && (
+                        <div className="rounded-md border bg-muted/20">
+                            <Table>
+                                <TableHeader>
+                                    <TableRow>
+                                        <TableHead className="text-[10px] uppercase">Rank</TableHead>
+                                        <TableHead className="text-[10px] uppercase">Modelo</TableHead>
+                                        <TableHead className="text-center text-[10px] uppercase">QI Financeiro</TableHead>
+                                        <TableHead className="text-center text-[10px] uppercase">Contexto</TableHead>
+                                        <TableHead className="text-right text-[10px] uppercase">Power Score</TableHead>
                                     </TableRow>
-                                ))}
-                            </TableBody>
-                        </Table>
-                    </div>
-                )}
+                                </TableHeader>
+                                <TableBody>
+                                    {benchmarkRanking.map((b, idx) => (
+                                        <TableRow key={b.model} className={cn(idx === 0 && "bg-primary/5")}>
+                                            <TableCell className="text-center">
+                                                {idx === 0 ? <Medal className="h-4 w-4 text-amber-500" /> : <span className="text-xs font-bold text-muted-foreground">{idx + 1}º</span>}
+                                            </TableCell>
+                                            <TableCell className="text-xs font-medium">
+                                                {b.model}
+                                                <div className="text-[9px] text-muted-foreground">{b.tps.toFixed(1)} tok/s</div>
+                                            </TableCell>
+                                            <TableCell className="text-center">
+                                                <div className="flex flex-col items-center">
+                                                    <span className="text-xs font-bold">{b.intelligenceScore.toFixed(0)}</span>
+                                                    <Progress value={b.intelligenceScore} className="h-1 w-12 mt-1" />
+                                                </div>
+                                            </TableCell>
+                                            <TableCell className="text-center">
+                                                <div className="flex flex-col items-center">
+                                                    <span className="text-xs font-bold">{b.contextScore.toFixed(0)}</span>
+                                                    <Progress value={b.contextScore} className="h-1 w-12 mt-1" />
+                                                </div>
+                                            </TableCell>
+                                            <TableCell className="text-right text-xs font-bold text-primary">{b.powerScore.toFixed(1)}</TableCell>
+                                        </TableRow>
+                                    ))}
+                                </TableBody>
+                            </Table>
+                        </div>
+                    )}
+                </TabsContent>
 
-                {loading === 'benchmark' && (
-                    <div className="p-4 text-center space-y-2 border border-dashed rounded-lg">
-                        <Loader2 className="h-6 w-6 animate-spin mx-auto text-primary" />
-                        <p className="text-xs text-muted-foreground">Executando bateria de testes duplos em cada modelo para média de performance...</p>
-                    </div>
-                )}
-            </div>
+                <TabsContent value="history">
+                    <ScrollArea className="h-64 border rounded-md p-2 bg-muted/20">
+                        {benchHistory.length === 0 ? (
+                            <p className="text-center text-xs text-muted-foreground py-8">Nenhuma auditoria realizada ainda.</p>
+                        ) : (
+                            <div className="space-y-2">
+                                {benchHistory.map((h, i) => (
+                                    <div key={i} className="flex items-center justify-between p-2 rounded border bg-card text-[11px]">
+                                        <div>
+                                            <span className="font-bold">{h.model}</span>
+                                            <span className="text-muted-foreground ml-2">{new Date(h.timestamp).toLocaleDateString()}</span>
+                                        </div>
+                                        <div className="flex gap-4">
+                                            <span>QI: {h.intelligenceScore}</span>
+                                            <span className="font-bold text-primary">Score: {h.powerScore?.toFixed(1)}</span>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </ScrollArea>
+                </TabsContent>
+            </Tabs>
           </TabsContent>
 
           <TabsContent value="ai" className="pt-4 space-y-4">
@@ -497,6 +535,3 @@ export function ApiKeysCard() {
     </Card>
   );
 }
-
-// Helper icons needed but not imported
-import { PlayCircle } from "lucide-react";

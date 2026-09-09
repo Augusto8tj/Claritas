@@ -1,3 +1,4 @@
+
 // Service module for financial data operations.
 'use client';
 
@@ -23,7 +24,7 @@ export async function getTransactions(userId: string): Promise<Transaction[]> {
         return snapshot.docs.map(d => ({ id: d.id, ...d.data() } as Transaction));
     } catch (error) {
         console.error(`[Service Error] getTransactions for user ${userId} failed:`, error);
-        throw error; // Re-lança o erro para o chamador tratar
+        throw error;
     }
 }
 
@@ -31,15 +32,9 @@ export async function addTransaction(userId: string, data: Omit<Transaction, 'id
     if (!userId) {
         throw new Error("User not authenticated.");
     }
-    
-    // Adiciona o userId ao corpo do documento para cumprir a regra de segurança.
     const dataWithUser = { ...data, userId };
-
     const transactionsCol = collection(db, `users/${userId}/transactions`);
-    // A escrita agora é não-bloqueante e já lida com o erro de permissão internamente.
     addDocumentNonBlocking(transactionsCol, dataWithUser);
-    
-    // Retorna uma mensagem de sucesso otimista.
     return `Transação "${data.description}" de R$${data.amount.toFixed(2)} está a ser adicionada.`;
 }
 
@@ -53,8 +48,6 @@ export async function getFinancialSummary(userId: string): Promise<{ income: num
         const expenses = transactions.filter(t => t.type === 'expense').reduce((acc, t) => acc + t.amount, 0);
         return { income, expenses, balance: income - expenses };
     } catch (error) {
-        // Se getTransactions falhar, o erro será propagado.
-        // O chamador é responsável por tratar o estado de erro.
         console.error(`[Service Error] getFinancialSummary for user ${userId} failed:`, error);
         throw error;
     }
@@ -72,7 +65,7 @@ export async function getGoals(userId: string): Promise<Goal[]> {
         return snapshot.docs.map(d => ({ id: d.id, ...d.data() } as Goal));
     } catch (error) {
         console.error(`[Service Error] getGoals for user ${userId} failed:`, error);
-        throw error; // Re-lança o erro para o chamador tratar
+        throw error;
     }
 }
 
@@ -160,18 +153,14 @@ export async function updateBudgetLimit(userId: string, name: string, newLimit: 
     }
     const settingsDocRef = doc(db, `users/${userId}/settings`, 'budget');
     const dataToSet = { [`limits.${name}`]: newLimit };
-    
     setDocumentNonBlocking(settingsDocRef, dataToSet, { merge: true });
-    
     try {
         const transactions = await getTransactions(userId);
         const spent = transactions
             .filter(t => t.type === 'expense' && t.category === name)
             .reduce((sum, t) => sum + t.amount, 0);
-
         return { name, budgeted: newLimit, spent };
     } catch(error) {
-        // Se a leitura de transações falhar, ainda retornamos o budget atualizado sem o 'spent'
          return { name, budgeted: newLimit, spent: 0 };
     }
 }
@@ -187,32 +176,19 @@ export async function getExpenseCategories(userId: string): Promise<string[]> {
    }
 }
 
-// --- TRADING SERVICES (Version-Aware) ---
+// --- TRADING SERVICES ---
 
 type PerformanceData = RobotPerformance | EnhancedRobotPerformance;
 type Version = 'v1' | 'v2' | 'v3';
 
-export async function saveRobotPerformance(
-    userId: string, 
-    performance: PerformanceData[], 
-    version: Version
-): Promise<void> {
+export async function saveRobotPerformance(userId: string, performance: PerformanceData[], version: Version): Promise<void> {
     if (!userId) return;
     const docRef = doc(db, 'users', userId, `performance_${version}`, 'robot_council');
-    const sanitizedData = sanitizeForFirestore({
-        updatedAt: new Date().toISOString(),
-        robots: performance,
+    const sanitizedData = sanitizeForFirestore({ updatedAt: new Date().toISOString(), robots: performance });
+    setDoc(docRef, sanitizedData, { merge: true }).catch(async (serverError) => {
+        const permissionError = new FirestorePermissionError({ path: docRef.path, operation: 'write', requestResourceData: sanitizedData });
+        errorEmitter.emit('permission-error', permissionError);
     });
-    
-    setDoc(docRef, sanitizedData, { merge: true })
-        .catch(async (serverError) => {
-            const permissionError = new FirestorePermissionError({
-                path: docRef.path,
-                operation: 'write',
-                requestResourceData: sanitizedData,
-            });
-            errorEmitter.emit('permission-error', permissionError);
-        });
 };
 
 export async function loadRobotPerformance(userId: string, version: Version): Promise<PerformanceData[] | null> {
@@ -222,103 +198,64 @@ export async function loadRobotPerformance(userId: string, version: Version): Pr
     const docSnap = await getDoc(docRef);
     if (docSnap.exists()) {
       const data = docSnap.data();
-      return (data.robots || []).map((robot: any) => ({
-        ...robot,
-        tradeHistory: robot.tradeHistory || [],
-      }));
+      return (data.robots || []).map((robot: any) => ({ ...robot, tradeHistory: robot.tradeHistory || [] }));
     }
     return null;
   } catch (error) {
-    console.error(`[Service Error ${version}] loadRobotPerformance for user ${userId} failed:`, error);
     throw error;
   }
 };
 
 export async function getHallOfFameRobots(userId: string): Promise<RobotPerformance[]> {
   const performanceData = await loadRobotPerformance(userId, 'v1');
-  if (!performanceData) {
-    return [];
-  }
-
-  const PROMOTION_THRESHOLD_WINS = 3;
-  const PROMOTION_THRESHOLD_PROFIT = 4; // Em USD
-  const PROMOTION_THRESHOLD_SHARPE = 0.62;
-
-  return (performanceData as RobotPerformance[]).filter(
-    (p) =>
-      (p.wins || 0) >= PROMOTION_THRESHOLD_WINS &&
-      (p.totalProfit || 0) > PROMOTION_THRESHOLD_PROFIT &&
-      (p.sharpeRatio || 0) > PROMOTION_THRESHOLD_SHARPE
-  );
+  if (!performanceData) return [];
+  return (performanceData as RobotPerformance[]).filter((p) => (p.wins || 0) >= 3 && (p.totalProfit || 0) > 4 && (p.sharpeRatio || 0) > 0.62);
 }
 
 export async function saveTradeDecision(userId: string, log: TradeDecisionLog, version: 'v1' | 'v2' | 'v3' = 'v2') {
     if (!userId) return;
-    const collectionName = `decision_logs_${version}`;
-    const logCollectionRef = collection(db, 'users', userId, collectionName);
-    const logDocRef = doc(logCollectionRef, log.id);
+    const logDocRef = doc(db, 'users', userId, `decision_logs_${version}`, log.id);
     const sanitizedLog = sanitizeForFirestore(log);
     setDocumentNonBlocking(logDocRef, sanitizedLog, { merge: true });
 }
 
 export async function getTradeDecisionLogs(userId: string, version: 'v1' | 'v2' | 'v3' = 'v2'): Promise<TradeDecisionLog[]> {
-    if (!userId) {
-        return [];
-    }
-    const collectionName = `decision_logs_${version}`;
-    const logCollectionRef = collection(db, `users/${userId}/${collectionName}`);
-    const q = query(logCollectionRef, orderBy('timestamp', 'desc')); // Ordena por mais recente
+    if (!userId) return [];
+    const q = query(collection(db, `users/${userId}/decision_logs_${version}`), orderBy('timestamp', 'desc'));
     try {
         const snapshot = await getDocs(q);
         return snapshot.docs.map(d => d.data() as TradeDecisionLog);
     } catch (error) {
-        console.error(`[Service Error] getTradeDecisionLogs for user ${userId} (version ${version}) failed:`, error);
-        return []; // Retorna um array vazio em caso de erro para não quebrar a UI
+        return [];
     }
 }
 
-// --- Evolution History (Version-Aware & Asset-Specific) ---
+// --- Evolution History ---
 
 export async function saveEvolutionHistory(userId: string, history: EvolutionEvent[], version: Version, assetSymbol: string): Promise<void> {
     if (!userId || !history || !assetSymbol) return;
-
-    const collectionName = `evolution_${version}`;
-    const docRef = doc(db, 'users', userId, collectionName, assetSymbol);
-
+    const docRef = doc(db, 'users', userId, `evolution_${version}`, assetSymbol);
     try {
-        const historyForFirestore = history.map(event => ({
-            ...event,
-            timestamp: event.timestamp.toISOString(),
-        }));
-
+        const historyForFirestore = history.map(event => ({ ...event, timestamp: event.timestamp.toISOString() }));
         const sanitizedHistory = sanitizeForFirestore({ history: historyForFirestore });
-
         await setDoc(docRef, sanitizedHistory, { merge: true });
-
     } catch (error) {
-        console.error(`❌ [saveEvolutionHistory ${version}] Erro ao gravar no Firestore:`, error);
         throw new Error(`Falha ao salvar o histórico de evolução ${version}.`);
     }
 }
 
 export async function loadEvolutionHistory(userId: string, version: Version, assetSymbol: string): Promise<EvolutionEvent[]> {
     if (!userId || !assetSymbol) return [];
-    
-    const collectionName = `evolution_${version}`;
-    const docRef = doc(db, 'users', userId, collectionName, assetSymbol);
+    const docRef = doc(db, 'users', userId, `evolution_${version}`, assetSymbol);
     try {
         const docSnap = await getDoc(docRef);
         if (docSnap.exists()) {
             const data = docSnap.data();
-            const history = (data.history || []).map((event: any) => ({
-                ...event,
-                timestamp: new Date(event.timestamp)
-            }));
+            const history = (data.history || []).map((event: any) => ({ ...event, timestamp: new Date(event.timestamp) }));
             return history.sort((a: EvolutionEvent, b: EvolutionEvent) => b.timestamp.getTime() - a.timestamp.getTime());
         }
         return [];
     } catch (error) {
-        console.error(`[Service Error] loadEvolutionHistory ${version} for user ${userId} failed:`, error);
         return [];
     }
 }
@@ -331,34 +268,27 @@ export async function clearEvolutionHistory(userId: string, version: Version, as
 
 export async function deleteEvolutionEvent(userId: string, eventTimestamp: string, version: Version, assetSymbol: string): Promise<void> {
     if (!userId || !assetSymbol) return;
-    
     try {
         const currentHistory = await loadEvolutionHistory(userId, version, assetSymbol);
         const newHistory = currentHistory.filter(event => event.timestamp.toISOString() !== eventTimestamp);
-        
         if (newHistory.length < currentHistory.length) {
             await saveEvolutionHistory(userId, newHistory, version, assetSymbol);
         }
     } catch (error) {
-        console.error(`Falha ao deletar evento de evolução ${version}:`, error);
+        console.error("Falha ao deletar evento de evolução:", error);
     }
 }
 
-
-// --- Asset Strategy Profile (V1) ---
+// --- Asset Profile V1 ---
 
 export async function loadAssetProfileV1(userId: string, assetSymbol: string): Promise<AssetProfileV1 | null> {
   if (!userId || !assetSymbol) return null;
   const docRef = doc(db, 'users', userId, 'asset_profiles_v1', assetSymbol);
   try {
     const docSnap = await getDoc(docRef);
-    if (docSnap.exists()) {
-      return { id: docSnap.id, ...docSnap.data() } as AssetProfileV1;
-    }
+    if (docSnap.exists()) return { id: docSnap.id, ...docSnap.data() } as AssetProfileV1;
     return null;
   } catch (error) {
-    console.error(`[Service Error V1] loadAssetProfileV1 for ${assetSymbol} failed:`, error);
-    // Don't throw, just return null so the app can continue with defaults
     return null; 
   }
 }
@@ -366,113 +296,71 @@ export async function loadAssetProfileV1(userId: string, assetSymbol: string): P
 export async function saveAssetProfileV1(userId: string, profile: AssetProfileV1): Promise<void> {
   if (!userId || !profile.assetSymbol) return;
   const docRef = doc(db, 'users', userId, 'asset_profiles_v1', profile.assetSymbol);
-  const sanitizedProfile = sanitizeForFirestore(profile);
-  // Non-blocking write
-  setDocumentNonBlocking(docRef, sanitizedProfile, { merge: true });
+  setDocumentNonBlocking(docRef, sanitizeForFirestore(profile), { merge: true });
 }
 
-
-// --- Predictive Trade Log (v1) ---
+// --- Predictive Trade Log ---
 
 export async function savePredictiveTradeLog(userId: string, log: any) {
   if (!userId) return;
-  const logCollectionRef = collection(db, 'users', userId, 'predictive_logs_v1');
-  const logDocRef = doc(logCollectionRef, log.id);
-  const sanitizedLog = sanitizeForFirestore(log);
-  setDocumentNonBlocking(logDocRef, sanitizedLog, { merge: true });
+  const logDocRef = doc(db, 'users', userId, 'predictive_logs_v1', log.id);
+  setDocumentNonBlocking(logDocRef, sanitizeForFirestore(log), { merge: true });
 }
 
 export async function getPredictiveTradeLogs(userId: string): Promise<any[]> {
     if (!userId) return [];
-    const logCollectionRef = collection(db, `users/${userId}/predictive_logs_v1`);
-    const q = query(logCollectionRef, orderBy('timestamp', 'desc'));
+    const q = query(collection(db, `users/${userId}/predictive_logs_v1`), orderBy('timestamp', 'desc'));
     try {
         const snapshot = await getDocs(q);
         return snapshot.docs.map(d => d.data());
     } catch (error) {
-        console.error(`[Service Error] getPredictiveTradeLogs for user ${userId} failed:`, error);
         throw error;
     }
 }
 
 export const archiveOldLogs = async (userId: string): Promise<number> => {
     if (!userId) return 0;
-    
     const cutoffDate = new Date();
-    cutoffDate.setMonth(cutoffDate.getMonth() - 3); // Arquivar logs com mais de 3 meses
-    
+    cutoffDate.setMonth(cutoffDate.getMonth() - 3);
     const logsRef = collection(db, `users/${userId}/predictive_logs_v1`);
-    const oldLogsQuery = query(
-        logsRef,
-        where('timestamp', '<', cutoffDate.toISOString()),
-        limit(100) // Processar em lotes de 100 para evitar sobrecarga
-    );
-    
+    const oldLogsQuery = query(logsRef, where('timestamp', '<', cutoffDate.toISOString()), limit(100));
     try {
         const snapshot = await getDocs(oldLogsQuery);
-        if (snapshot.empty) {
-            return 0; // Nenhum log antigo para arquivar
-        }
-    
+        if (snapshot.empty) return 0;
         const archivePromises = snapshot.docs.map(async (logDoc) => {
             const archiveRef = doc(db, `users/${userId}/archived_logs_v1`, logDoc.id);
             await setDoc(archiveRef, logDoc.data());
             await deleteDoc(logDoc.ref);
         });
-        
         await Promise.all(archivePromises);
-        
-        console.log(`[Log Archiver] Successfully archived ${snapshot.size} old logs for user ${userId}.`);
         return snapshot.size;
     } catch (error) {
-        console.error(`[Log Archiver] Failed to archive logs for user ${userId}:`, error);
-        // Não lançar erro para não quebrar a aplicação, apenas logar.
         return 0;
     }
 };
 
-// --- Predictive Models Persistence ---
+// --- Models Persistence ---
 
-export interface PersistentModelState {
-  horizon: string;
-  bayesianModel: BayesianModel;
-  modelWeights: { w1: number; w2: number; w3: number };
-  lastUpdate: string;
-}
-
-export async function savePredictiveModels(userId: string, models: Record<string, PersistentModelState>): Promise<void> {
+export async function savePredictiveModels(userId: string, models: Record<string, any>): Promise<void> {
   if (!userId) return;
   const docRef = doc(db, 'users', userId, 'predictive_models', 'all_horizons');
-  const sanitizedData = sanitizeForFirestore({ ...models });
+  const data = sanitizeForFirestore({ ...models });
   try {
-    await setDoc(docRef, sanitizedData, { merge: true });
+    await setDoc(docRef, data, { merge: true });
   } catch (error) {
-    errorEmitter.emit('permission-error', new FirestorePermissionError({
-      path: docRef.path,
-      operation: 'write',
-      requestResourceData: sanitizedData,
-    }));
     console.error("Falha ao salvar modelos preditivos:", error);
   }
 };
 
-export async function loadPredictiveModels(userId: string): Promise<Record<string, PersistentModelState> | null> {
+export async function loadPredictiveModels(userId: string): Promise<Record<string, any> | null> {
   if (!userId) return null;
   const docRef = doc(db, 'users', userId, 'predictive_models', 'all_horizons');
   try {
     const docSnap = await getDoc(docRef);
-    if (docSnap.exists()) {
-      return docSnap.data() as Record<string, PersistentModelState>;
-    }
+    if (docSnap.exists()) return docSnap.data();
     return null;
   } catch (error) {
-    const permissionError = new FirestorePermissionError({
-      path: docRef.path,
-      operation: 'get',
-    });
-    errorEmitter.emit('permission-error', permissionError);
-    console.error(`[Service Error] loadPredictiveModels for user ${userId} failed:`, error);
-    throw permissionError;
+    throw error;
   }
 };
 
@@ -486,8 +374,35 @@ export async function saveBacktestRun(userId: string, asset: string, run: any) {
 
 export async function getBacktestRuns(userId: string, asset: string, limitN: number = 10) {
   if (!userId) throw new Error("User not authenticated.");
-  const collectionRef = collection(db, 'users', userId, 'backtests_v1', asset, 'runs');
-  const q = query(collectionRef, orderBy('timestamp', 'desc'), limit(limitN));
+  const q = query(collection(db, `users/${userId}/backtests_v1/${asset}/runs`), orderBy('timestamp', 'desc'), limit(limitN));
   const snapshot = await getDocs(q);
   return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+}
+
+// --- Ollama Benchmark (NOVO) ---
+
+export async function saveOllamaBenchmark(userId: string, result: any): Promise<void> {
+    if (!userId) return;
+    const docRef = doc(db, 'users', userId, 'ollama_benchmarks', `bench_${Date.now()}`);
+    const data = sanitizeForFirestore({
+        ...result,
+        timestamp: new Date().toISOString()
+    });
+    try {
+        await setDoc(docRef, data);
+    } catch (error) {
+        console.error("Falha ao salvar benchmark do Ollama:", error);
+    }
+}
+
+export async function getOllamaBenchmarkHistory(userId: string): Promise<any[]> {
+    if (!userId) return [];
+    const q = query(collection(db, `users/${userId}/ollama_benchmarks`), orderBy('timestamp', 'desc'));
+    try {
+        const snapshot = await getDocs(q);
+        return snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+    } catch (error) {
+        console.error("Falha ao buscar histórico de benchmarks:", error);
+        return [];
+    }
 }

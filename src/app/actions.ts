@@ -6,10 +6,8 @@ import {
   financialChatbotInsights,
 } from "@/ai/flows/financial-chatbot-insights";
 import type { FinancialChatbotInsightsInput, OllamaConfig } from "@/lib/types";
-import { getFinancialSummary } from "@/services/financial-data-service";
 import { auth, db } from "@/lib/firebase";
 import WebSocket from 'ws';
-import { getDoc, doc } from 'firebase/firestore';
 import { generateFinancialInsights } from "@/ai/flows/financial-insights-flow";
 
 const NEW_DERIV_APP_ID = "34lwuJiPbEzxjgEdnEhbX";
@@ -58,7 +56,6 @@ export async function getDerivWebSocketUrl(token: string, accountId: string): Pr
 
 export async function getChatbotInsightsResponse(data: FinancialChatbotInsightsInput & { userId: string, geminiKey?: string }) {
   try {
-    // Injeta a chave do cliente no ambiente do processo para esta execução de fluxo
     if (data.geminiKey) {
         process.env.GEMINI_API_KEY = data.geminiKey;
     }
@@ -118,13 +115,24 @@ export async function getOllamaResponse(config: OllamaConfig, query: string, his
 }
 
 /**
- * Executa um teste de benchmark em um modelo específico
+ * Executa uma bateria institucional de benchmark (Velocidade, QI Financeiro e Contexto)
  */
-export async function runOllamaBenchmark(config: OllamaConfig): Promise<{ success: boolean; error?: string; metrics?: any }> {
-    const testQuery = "Explique brevemente a importância do planejamento financeiro em 2 frases.";
+export async function runOllamaBenchmark(config: OllamaConfig, testType: 'speed' | 'intelligence' | 'context' = 'speed'): Promise<{ success: boolean; error?: string; metrics?: any }> {
+    let query = "";
+    
+    if (testType === 'speed') {
+        query = "Explique brevemente a importância do planejamento financeiro em 2 frases.";
+    } else if (testType === 'intelligence') {
+        query = `Analise a seguinte série de preços para o Volatility 100 Index: [102.5, 101.8, 103.2, 104.5, 103.8, 105.2, 106.1]. 
+        Determine a tendência e sugira uma operação. Responda estritamente em JSON: {"decision": "BUY"|"SELL", "confidence": number, "logic": "string"}`;
+    } else {
+        // Teste de Contexto: Geramos um prompt longo simulando um relatório
+        const longReport = "RELATÓRIO FINANCEIRO ANUAL CLARITAS\n".repeat(200);
+        query = `${longReport}\n\nPergunta de Stress: Qual o nome do projeto mencionado no início deste documento? Responda em uma palavra.`;
+    }
     
     try {
-        const result = await getOllamaResponse(config, testQuery, []);
+        const result = await getOllamaResponse(config, query, []);
         
         if (result.error) throw new Error(result.error);
         
@@ -136,6 +144,16 @@ export async function runOllamaBenchmark(config: OllamaConfig): Promise<{ succes
         const evalTimeMs = evalDuration / 1e6;
         const tokensPerSecond = (evalCount && evalTimeMs > 0) ? evalCount / (evalTimeMs / 1000) : 0;
 
+        // Avaliação qualitativa simples para o ranking
+        let score = 0;
+        if (testType === 'intelligence') {
+            const hasJson = result.success?.includes('{') && result.success?.includes('}');
+            score = hasJson ? 100 : 30;
+        } else if (testType === 'context') {
+            const correctWord = result.success?.toLowerCase().includes('claritas');
+            score = correctWord ? 100 : 20;
+        }
+
         return {
             success: true,
             metrics: {
@@ -143,7 +161,10 @@ export async function runOllamaBenchmark(config: OllamaConfig): Promise<{ succes
                 totalTimeMs: totalDuration / 1e6,
                 evalTimeMs,
                 evalCount,
-                model: config.model
+                model: config.model,
+                testType,
+                score,
+                rawResponse: result.success
             }
         };
     } catch (e: any) {
@@ -185,9 +206,8 @@ export async function getFinancialInsights(financialData: string, geminiKey?: st
   }
 }
 
-export async function sendFinancialSummaryEmail(userId: string, userEmail: string) {
+export async function sendFinancialSummaryEmail(userId: string, userEmail: string, summary: { income: number, expenses: number, balance: number }) {
   try {
-    const summary = await getFinancialSummary(userId);
     const emailSubject = "Seu Resumo Financeiro Semanal - Claritas Copilot";
     const emailBody = `
       Olá,
@@ -297,18 +317,4 @@ export async function checkDerivConnection(token: string, accountId: string): Pr
             cleanup();
         }, 15000); 
     });
-}
-
-export async function checkFirestoreConnection(): Promise<{ success: boolean; error?: string; }> {
-    try {
-        const unauthenticatedRef = doc(db, 'users', 'test-connection');
-        await getDoc(unauthenticatedRef);
-        return { success: false, error: "As regras de segurança podem não estar a proteger os dados corretamente." };
-    } catch (e: any) {
-        if (e.code === 'permission-denied') {
-            return { success: true };
-        }
-        console.error("[Health Check] Firestore error:", e);
-        return { success: false, error: e.message || "Ocorreu um erro desconhecido ao contatar o Firestore." };
-    }
 }
