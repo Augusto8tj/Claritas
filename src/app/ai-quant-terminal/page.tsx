@@ -12,7 +12,8 @@ import {
     BrainCircuit, Zap, ShieldCheck, Terminal as TerminalIcon, 
     Timer, LineChart, PlayCircle, 
     PauseCircle, Cpu, RefreshCw, MessageSquare, Send, 
-    Settings2, Activity, Brain, Wallet, Target
+    Settings2, Activity, Brain, Wallet, Target, History,
+    ArrowUpCircle, ArrowDownCircle, Clock
 } from "lucide-react";
 import { DerivApiProviderV2 as DerivApiProvider, useDerivApiV2 as useDerivApi } from "@/features/trading/hooks/use-deriv-api-v2";
 import { AssetSelectorV2 as AssetSelector } from "@/features/trading/components/deriv-trader/asset-selector-v2";
@@ -53,6 +54,9 @@ function TerminalContent() {
             setChatInput('');
         }
     };
+
+    // Filtra apenas os trades iniciados pelo Terminal Quant (Conselho)
+    const terminalTrades = operationsLog.filter(op => op.initiator === 'Conselho');
 
     return (
         <div className="flex-1 space-y-6 p-4 sm:p-8 pt-6 bg-background min-h-screen text-foreground transition-colors duration-300">
@@ -170,15 +174,69 @@ function TerminalContent() {
                             <div className="grid grid-cols-2 gap-3">
                                 <div className="p-3 rounded-lg bg-muted/20 border border-border text-center">
                                     <p className="text-[10px] text-muted-foreground uppercase font-bold">Sessão P&L</p>
-                                    <p className={cn("text-lg font-bold", quant.sessionStats.pnl >= 0 ? "text-green-600" : "text-destructive")}>
-                                        {formatCurrency(quant.sessionStats.pnl)}
+                                    <p className={cn("text-lg font-bold", Number(quant.sessionStats.pnl) >= 0 ? "text-green-600" : "text-destructive")}>
+                                        {formatCurrency(Number(quant.sessionStats.pnl))}
                                     </p>
                                 </div>
                                 <div className="p-3 rounded-lg bg-muted/20 border border-border text-center">
                                     <p className="text-[10px] text-muted-foreground uppercase font-bold">Win Rate</p>
-                                    <p className="text-lg font-bold">{quant.sessionStats.winRate.toFixed(1)}%</p>
+                                    <p className="text-lg font-bold">{Number(quant.sessionStats.winRate).toFixed(1)}%</p>
                                 </div>
                             </div>
+                        </CardContent>
+                    </Card>
+
+                    {/* HISTÓRICO DE TRADES DO TERMINAL */}
+                    <Card className="bg-card/50 border-border shadow-sm flex-1">
+                        <CardHeader className="pb-2">
+                            <CardTitle className="text-xs font-bold uppercase tracking-widest text-muted-foreground flex items-center gap-2">
+                                <History className="h-4 w-4 text-primary" /> Histórico de Trades
+                            </CardTitle>
+                        </CardHeader>
+                        <CardContent className="p-0">
+                            <ScrollArea className="h-64">
+                                <div className="divide-y divide-border">
+                                    {terminalTrades.length === 0 ? (
+                                        <div className="p-8 text-center text-muted-foreground opacity-40">
+                                            <Activity className="h-8 w-8 mx-auto mb-2" />
+                                            <p className="text-[10px] font-mono">Sem execuções registradas</p>
+                                        </div>
+                                    ) : (
+                                        terminalTrades.map((op) => (
+                                            <div key={op.id} className="p-3 hover:bg-muted/10 transition-colors">
+                                                <div className="flex items-center justify-between mb-1">
+                                                    <div className="flex items-center gap-2">
+                                                        {op.direction === 'rise' ? (
+                                                            <ArrowUpCircle className="h-3.5 w-3.5 text-green-600" />
+                                                        ) : (
+                                                            <ArrowDownCircle className="h-3.5 w-3.5 text-destructive" />
+                                                        )}
+                                                        <span className="text-[11px] font-bold uppercase">{op.direction}</span>
+                                                    </div>
+                                                    <Badge variant={op.status === 'won' ? 'default' : op.status === 'lost' ? 'destructive' : 'outline'} className="text-[9px] h-4 py-0">
+                                                        {op.status.toUpperCase()}
+                                                    </Badge>
+                                                </div>
+                                                <div className="flex justify-between text-[10px] font-mono">
+                                                    <div className="flex flex-col gap-0.5">
+                                                        <span className="text-muted-foreground">Stake: {formatCurrency(Number(op.stake))}</span>
+                                                        <span className={cn(
+                                                            "font-bold",
+                                                            (Number(op.result) || 0) >= 0 ? "text-green-600" : "text-destructive"
+                                                        )}>
+                                                            PnL: {formatCurrency(Number(op.result) || -Number(op.stake))}
+                                                        </span>
+                                                    </div>
+                                                    <div className="text-right text-muted-foreground flex flex-col gap-0.5">
+                                                        <span className="flex items-center justify-end gap-1"><Clock className="h-2.5 w-2.5" /> {new Date(op.timestamp).toLocaleTimeString()}</span>
+                                                        <span>{new Date(op.timestamp).toLocaleDateString()}</span>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        ))
+                                    )}
+                                </div>
+                            </ScrollArea>
                         </CardContent>
                     </Card>
                 </div>
