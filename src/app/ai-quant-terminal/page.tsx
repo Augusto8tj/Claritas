@@ -13,17 +13,19 @@ import {
     Timer, LineChart, PlayCircle, 
     PauseCircle, Cpu, RefreshCw, MessageSquare, Send, 
     Settings2, Activity, Brain, Wallet, Target, History,
-    ArrowUpCircle, ArrowDownCircle, Clock
+    ArrowUpCircle, ArrowDownCircle, Clock, ShieldAlert,
+    TrendingUp, BarChart3, Binary
 } from "lucide-react";
 import { DerivApiProviderV2 as DerivApiProvider, useDerivApiV2 as useDerivApi } from "@/features/trading/hooks/use-deriv-api-v2";
 import { AssetSelectorV2 as AssetSelector } from "@/features/trading/components/deriv-trader/asset-selector-v2";
 import { ApiStatusIndicatorV2 as ApiStatusIndicator } from "@/features/trading/components/deriv-trader/ApiStatusIndicatorV2";
 import { MarketChart } from "@/features/trading/components/deriv-trader/market-chart";
-import { useAIQuantTerminal } from "@/features/trading/hooks/use-ai-quant-terminal";
+import { useAIQuantTerminal, type StrategicProfile } from "@/features/trading/hooks/use-ai-quant-terminal";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import { Separator } from "@/components/ui/separator";
 import { useRobotCouncilV2 } from '@/features/trading/hooks/use-robot-council-v2';
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 
 function TerminalContent() {
     const { 
@@ -55,7 +57,6 @@ function TerminalContent() {
         }
     };
 
-    // Filtra apenas os trades iniciados pelo Terminal Quant (Conselho)
     const terminalTrades = operationsLog.filter(op => op.initiator === 'Conselho');
 
     return (
@@ -88,15 +89,31 @@ function TerminalContent() {
                     <Card className="bg-card/50 border-border shadow-sm">
                         <CardHeader className="pb-3">
                             <CardTitle className="text-sm font-bold uppercase tracking-widest text-muted-foreground flex items-center gap-2">
-                                <Zap className="h-4 w-4 text-yellow-500" /> Status do Motor
+                                <Zap className="h-4 w-4 text-yellow-500" /> Cockpit do Piloto
                             </CardTitle>
                         </CardHeader>
                         <CardContent className="space-y-4">
                             <div className="flex items-center justify-between p-3 rounded-lg bg-muted/30 border border-border">
-                                <span className="text-xs font-medium">Modo Operacional</span>
+                                <span className="text-xs font-medium">Estado do Sistema</span>
                                 <Badge className={cn("font-bold", quant.isAutoMode ? "bg-green-600 hover:bg-green-600" : "bg-blue-600 hover:bg-blue-600")}>
                                     {quant.isAutoMode ? 'AUTOPILOT' : 'SENTINELA'}
                                 </Badge>
+                            </div>
+
+                            {/* PERFIL ESTRATÉGICO */}
+                            <div className="space-y-2">
+                                <Label className="text-[10px] uppercase font-bold text-muted-foreground">Perfil de Risco</Label>
+                                <ToggleGroup 
+                                    type="single" 
+                                    value={quant.strategicProfile} 
+                                    onValueChange={(v: StrategicProfile) => v && quant.setStrategicProfile(v)}
+                                    className="grid grid-cols-3 gap-1"
+                                    disabled={quant.isAutoMode}
+                                >
+                                    <ToggleGroupItem value="conservative" className="text-[10px] h-7">CONSER</ToggleGroupItem>
+                                    <ToggleGroupItem value="balanced" className="text-[10px] h-7">BALANC</ToggleGroupItem>
+                                    <ToggleGroupItem value="aggressive" className="text-[10px] h-7 text-destructive">AGRESS</ToggleGroupItem>
+                                </ToggleGroup>
                             </div>
                             
                             {/* AJUSTE DINÂMICO DE TEMPO */}
@@ -117,7 +134,7 @@ function TerminalContent() {
 
                             <div className="space-y-2">
                                 <div className="flex justify-between text-xs text-muted-foreground">
-                                    <span>Próxima Janela de Decisão</span>
+                                    <span>Próxima Inferência</span>
                                     <span className="font-mono">{quant.timeToNextAnalysis}s</span>
                                 </div>
                                 <Progress value={(quant.timeToNextAnalysis / quant.analysisInterval) * 100} className="h-1" />
@@ -134,10 +151,11 @@ function TerminalContent() {
 
                     <Card className="bg-card/50 border-border shadow-sm">
                         <CardHeader className="pb-3">
-                            <CardTitle className="text-sm font-bold uppercase tracking-widest text-muted-foreground">Gestão & Performance</CardTitle>
+                            <CardTitle className="text-sm font-bold uppercase tracking-widest text-muted-foreground flex items-center gap-2">
+                                <Binary className="h-4 w-4" /> Gestão Financeira
+                            </CardTitle>
                         </CardHeader>
                         <CardContent className="space-y-4">
-                            {/* CONFIGURAÇÃO FINANCEIRA */}
                             <div className="grid grid-cols-2 gap-3">
                                 <div className="space-y-1.5">
                                     <Label className="text-[10px] uppercase font-bold text-muted-foreground flex items-center gap-1">
@@ -186,7 +204,6 @@ function TerminalContent() {
                         </CardContent>
                     </Card>
 
-                    {/* HISTÓRICO DE TRADES DO TERMINAL */}
                     <Card className="bg-card/50 border-border shadow-sm flex-1">
                         <CardHeader className="pb-2">
                             <CardTitle className="text-xs font-bold uppercase tracking-widest text-muted-foreground flex items-center gap-2">

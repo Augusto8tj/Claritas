@@ -5,7 +5,8 @@ import type { TickData, CandleData, OperationInitiator, DurationUnit } from '@/l
 import { useDerivApiV2 } from './use-deriv-api-v2';
 import { getOllamaResponse } from '@/app/actions';
 import { calculateAllIndicators } from '../services/indicator-service';
-import { getCouncilStrategies } from '../services/council-strategies';
+import { getCouncilStrategies } from '../strategies-config-v2'; // Corrigido para o caminho real se necessário, mas usaremos os padrões
+import { initialCouncilStrategies } from '../services/council-strategies';
 import { detectMarketRegime } from '../services/advanced-trading-services';
 import { useToast } from '@/hooks/use-toast';
 
@@ -29,6 +30,8 @@ interface ChatMessage {
     time: string;
 }
 
+export type StrategicProfile = 'conservative' | 'balanced' | 'aggressive';
+
 export function useAIQuantTerminal(
     activeSymbol: string | null,
     priceTicks: TickData[],
@@ -42,6 +45,7 @@ export function useAIQuantTerminal(
     const [lastDecision, setLastDecision] = useState<QuantDecision | null>(null);
     const [analysisInterval, setAnalysisInterval] = useState(120); 
     const [timeToNextAnalysis, setTimeToNextAnalysis] = useState(120);
+    const [strategicProfile, setStrategicProfile] = useState<StrategicProfile>('balanced');
     
     // ESTADOS FINANCEIROS
     const [stakeValue, setStakeValue] = useState(1.0);
@@ -61,16 +65,14 @@ export function useAIQuantTerminal(
     const sessionStats = useMemo(() => {
         const finishedTrades = operationsLog.filter(op => 
             op.status !== 'pending' && 
-            op.initiator === 'Conselho' // Filtra apenas trades deste terminal
+            op.initiator === 'Conselho'
         );
         const wins = finishedTrades.filter(op => op.status === 'won').length;
         const total = finishedTrades.length;
         const winRate = total > 0 ? (wins / total) * 100 : 100;
         
-        // Garantia de cálculo numérico para evitar TypeErrors
         const pnl = finishedTrades.reduce((acc, op) => {
-            const val = Number(op.result) || 0;
-            return acc + val;
+            return acc + (Number(op.result) || 0);
         }, 0);
         
         return { pnl, winRate, total };
@@ -104,7 +106,7 @@ export function useAIQuantTerminal(
 
         const result = await executeTrade(
             decision.action === 'RISE' ? 'CALL' : 'PUT',
-            stakeValue, 
+            Number(stakeValue), 
             activeSymbol,
             decision.action.toLowerCase() as 'rise' | 'fall',
             decision.duration,
@@ -116,7 +118,7 @@ export function useAIQuantTerminal(
         if (result.success) {
             toast({
                 title: "💎 Terminal Quant: Trade Enviado",
-                description: `Estratégia Neuro-Adaptativa: ${decision.action} ($${stakeValue})`
+                description: `Estratégia Neuro-Adaptativa: ${decision.action} ($${Number(stakeValue).toFixed(2)})`
             });
         }
     }, [activeSymbol, executeTrade, addLog, toast, stakeValue]);
@@ -136,11 +138,10 @@ export function useAIQuantTerminal(
         }
 
         executionLockRef.current = true;
-        addLog(`CIO iniciando auditoria estratégica para ${activeSymbol}...`);
+        addLog(`CIO iniciando auditoria estratégica (${strategicProfile}) para ${activeSymbol}...`);
 
         try {
-            const initialStrategies = getCouncilStrategies('standard');
-            const indicators = calculateAllIndicators(chartData, initialStrategies, '1m', { duration: 15, unit: 's' });
+            const indicators = calculateAllIndicators(chartData, initialCouncilStrategies, '1m', { duration: 15, unit: 's' });
             
             const regime = (indicators && chartData.length >= 30) 
                 ? detectMarketRegime(chartData, { 
@@ -157,13 +158,14 @@ export function useAIQuantTerminal(
                 symbol: activeSymbol,
                 price: priceTicks[priceTicks.length - 1]?.price,
                 regime: regime?.regime,
+                profile: strategicProfile,
                 indicators: {
                     rsi: indicators?.rsi?.toFixed(2),
                     adx: indicators?.adx?.toFixed(1),
                     bbw: indicators?.bbw?.toFixed(3),
                     macd_hist: indicators?.macd?.histogram?.toFixed(4)
                 },
-                recent_ohlc: chartData.slice(-5).map(c => ({ 
+                recent_ohlc: chartData.slice(-10).map(c => ({ 
                     c: c.close, 
                     h: c.high, 
                     l: c.low 
@@ -171,23 +173,23 @@ export function useAIQuantTerminal(
             };
 
             const prompt = `VOCÊ É O CHIEF INVESTMENT OFFICER (CIO) DO TERMINAL CLARITAS.
-            Sua missão: Lucro puro através de análise estocástica e high-frequency.
+            Perfil Estratégico Ativo: ${strategicProfile.toUpperCase()}
             
-            DADOS ATUAIS:
+            DADOS ATUAIS DO MERCADO:
             ${JSON.stringify(marketContext, null, 2)}
             
-            REGRAS:
-            - Seja matemático. Ignore emoções.
-            - Considere que RSI em 30 é compra APENAS se ADX < 20. Se ADX > 25, siga a tendência.
-            - Analise os últimos 5 candles para detectar micro-padrões de reversão.
+            SUA MISSÃO:
+            Analise a convergência técnica e estocástica. 
+            No perfil CONSERVADOR: Exija confluência total (Confiança > 85%).
+            No perfil AGRESSIVO: Aceite sinais de momentum rápido (Confiança > 55%).
             
             RETORNE APENAS JSON NESTE FORMATO:
             {
               "action": "RISE" | "FALL" | "HOLD",
               "confidence": 0-100,
-              "reasoning": "Breve explicação da convergência técnica",
-              "duration": 15,
-              "unit": "s"
+              "reasoning": "Explicação quantitativa curta",
+              "duration": 15-300,
+              "unit": "s" | "t"
             }`;
 
             const start = performance.now();
@@ -210,7 +212,9 @@ export function useAIQuantTerminal(
             addLog(`Veredito IA: ${decision.action} (${decision.confidence}%)`, 'decision');
             addLog(`Justificativa: ${decision.reasoning}`);
 
-            if (isAutoMode && decision.action !== 'HOLD' && decision.confidence >= 65) {
+            const minConfidence = strategicProfile === 'conservative' ? 85 : strategicProfile === 'balanced' ? 65 : 55;
+
+            if (isAutoMode && decision.action !== 'HOLD' && decision.confidence >= minConfidence) {
                 await executeTradeAction(decision);
             }
 
@@ -219,7 +223,7 @@ export function useAIQuantTerminal(
         } finally {
             executionLockRef.current = false;
         }
-    }, [activeSymbol, isConnected, chartData, priceTicks, isAutoMode, ollamaConfig, addLog, sessionStats.pnl, profitTarget, executeTradeAction, toast]);
+    }, [activeSymbol, isConnected, chartData, priceTicks, isAutoMode, ollamaConfig, addLog, sessionStats.pnl, profitTarget, executeTradeAction, toast, strategicProfile]);
 
     const sendMessage = async (content: string) => {
         if (!ollamaConfig || !content.trim()) return;
@@ -229,25 +233,18 @@ export function useAIQuantTerminal(
         setIsChatLoading(true);
 
         try {
-            // Geração de contexto rico para o CIO no Chat
-            const initialStrategies = getCouncilStrategies('standard');
-            const indicators = calculateAllIndicators(chartData, initialStrategies, '1m', { duration: 15, unit: 's' });
+            const indicators = calculateAllIndicators(chartData, initialCouncilStrategies, '1m', { duration: 15, unit: 's' });
             const currentPrice = priceTicks[priceTicks.length - 1]?.price;
 
             const systemPrompt = `Você é o Chief Investment Officer (CIO) do Terminal Claritas. 
-            Sua missão é atuar como consultor estratégico sênior. 
-
-            STATUS ATUAL DO TERMINAL:
+            STATUS ATUAL:
             - Ativo: ${activeSymbol}
             - Preço: ${currentPrice?.toFixed(4) || 'N/A'}
-            - Modo Operacional: ${isAutoMode ? 'AUTOPILOT (Totalmente Automatizado)' : 'SENTINELA (Aguardando sua autorização)'}
-            - Gestão Financeira: Stake de $${Number(stakeValue).toFixed(2)} | Alvo de Lucro: $${Number(profitTarget).toFixed(2)}
-            - Performance Sessão: P&L: $${Number(sessionStats.pnl).toFixed(2)} | Win Rate: ${Number(sessionStats.winRate).toFixed(1)}%
-            - Telemetria: Ciclo de análise a cada ${analysisInterval}s (Próxima decisão em ${timeToNextAnalysis}s)
-            - Último Veredito: ${lastDecision ? `${lastDecision.action} (${lastDecision.confidence}%) - ${lastDecision.reasoning}` : 'Nenhum ciclo concluído'}
-            - Indicadores Técnicos: RSI: ${indicators?.rsi?.toFixed(2) || 'N/A'}, ADX: ${indicators?.adx?.toFixed(1) || 'N/A'}, BBW: ${indicators?.bbw?.toFixed(3) || 'N/A'}
-
-            Responda de forma técnica, clara e baseada em dados. Use o contexto acima para fundamentar suas respostas. Se o usuário perguntar sobre o status ou pedir uma análise, use estes números reais.`;
+            - Perfil: ${strategicProfile}
+            - P&L Sessão: $${Number(sessionStats.pnl).toFixed(2)} | Win Rate: ${Number(sessionStats.winRate).toFixed(1)}%
+            - Último Veredito: ${lastDecision ? `${lastDecision.action} (${lastDecision.confidence}%)` : 'Nenhum'}
+            
+            Responda de forma técnica e fundamentada nos números acima.`;
 
             const history = chatMessages.map(m => ({ role: m.role, content: m.content }));
             
@@ -270,11 +267,10 @@ export function useAIQuantTerminal(
             console.error("Chat Error:", error);
             const errorMsg: ChatMessage = { 
                 role: 'assistant', 
-                content: `Erro ao contatar CIO: ${error.message || "Verifique se o Ollama está online."}`, 
+                content: `Erro ao contatar CIO: ${error.message}`, 
                 time: new Date().toLocaleTimeString() 
             };
             setChatMessages(prev => [...prev, errorMsg]);
-            toast({ title: "Erro no Chat", description: "Não foi possível contatar o CIO local.", variant: "destructive" });
         } finally {
             setIsChatLoading(false);
         }
@@ -295,7 +291,6 @@ export function useAIQuantTerminal(
         return () => clearInterval(interval);
     }, [runAnalysisCycle, analysisInterval]);
 
-    // Reseta o timer quando o intervalo muda
     useEffect(() => {
         setTimeToNextAnalysis(analysisInterval);
     }, [analysisInterval]);
@@ -308,6 +303,8 @@ export function useAIQuantTerminal(
         timeToNextAnalysis,
         analysisInterval,
         setAnalysisInterval,
+        strategicProfile,
+        setStrategicProfile,
         reasoningLog,
         telemetry,
         sessionStats,
@@ -318,6 +315,6 @@ export function useAIQuantTerminal(
         chatMessages,
         isChatLoading,
         sendMessage,
-        executeManualDecision: () => lastDecision && executeTradeAction('Manual', lastDecision, user)
+        executeManualDecision: () => lastDecision && executeTradeAction(lastDecision)
     };
 }
