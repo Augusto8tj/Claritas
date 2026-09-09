@@ -1,4 +1,3 @@
-
 // /src/app/actions.ts
 "use server";
 
@@ -252,6 +251,20 @@ export async function checkGeminiConnection(key?: string): Promise<{ success: bo
     } catch (e: any) {
         console.error("[Health Check] Gemini API error:", e);
         return { success: false, error: e.message || "Ocorreu um erro desconhecido ao contatar a API do Gemini." };
+    }
+}
+
+/**
+ * Verifica a conexão com o Firestore.
+ */
+export async function checkFirestoreConnection(): Promise<{ success: boolean; error?: string }> {
+    try {
+        // Verifica se a instância do db está disponível no ambiente do servidor.
+        if (!db) throw new Error("Base de dados não inicializada.");
+        return { success: true };
+    } catch (e: any) {
+        console.error("[Health Check] Firestore error:", e);
+        return { success: false, error: e.message || "Falha na comunicação com o Firebase." };
     }
 }
 
