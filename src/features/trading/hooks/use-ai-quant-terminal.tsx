@@ -98,7 +98,7 @@ export function useAIQuantTerminal(
 
         const result = await executeTrade(
             decision.action === 'RISE' ? 'CALL' : 'PUT',
-            stakeValue, // Usando o valor definido pelo usuário
+            stakeValue, 
             activeSymbol,
             decision.action.toLowerCase() as 'rise' | 'fall',
             decision.duration,
@@ -223,10 +223,32 @@ export function useAIQuantTerminal(
         setIsChatLoading(true);
 
         try {
-            const systemPrompt = "Você é o CIO do Terminal Claritas. Responda como um analista senior quantitativo, direto e matemático. Use dados se disponíveis.";
+            // Geração de contexto rico para o CIO no Chat
+            const initialStrategies = getCouncilStrategies('standard');
+            const indicators = calculateAllIndicators(chartData, initialStrategies, '1m', { duration: 15, unit: 's' });
+            const currentPrice = priceTicks[priceTicks.length - 1]?.price;
+
+            const systemPrompt = `Você é o Chief Investment Officer (CIO) do Terminal Claritas. 
+            Sua missão é atuar como consultor estratégico sênior. 
+
+            STATUS ATUAL DO TERMINAL:
+            - Ativo: ${activeSymbol}
+            - Preço: ${currentPrice?.toFixed(4) || 'N/A'}
+            - Modo Operacional: ${isAutoMode ? 'AUTOPILOT (Totalmente Automatizado)' : 'SENTINELA (Aguardando sua autorização)'}
+            - Gestão Financeira: Stake de $${stakeValue.toFixed(2)} | Alvo de Lucro: $${profitTarget.toFixed(2)}
+            - Performance Sessão: P&L: $${sessionStats.pnl.toFixed(2)} | Win Rate: ${sessionStats.winRate.toFixed(1)}%
+            - Telemetria: Ciclo de análise a cada ${analysisInterval}s (Próxima decisão em ${timeToNextAnalysis}s)
+            - Último Veredito: ${lastDecision ? `${lastDecision.action} (${lastDecision.confidence}%) - ${lastDecision.reasoning}` : 'Nenhum ciclo concluído'}
+            - Indicadores Técnicos: RSI: ${indicators?.rsi?.toFixed(2) || 'N/A'}, ADX: ${indicators?.adx?.toFixed(1) || 'N/A'}, BBW: ${indicators?.bbw?.toFixed(3) || 'N/A'}
+
+            Responda de forma técnica, clara e baseada em dados. Use o contexto acima para fundamentar suas respostas. Se o usuário perguntar sobre o status ou pedir uma análise, use estes números reais.`;
+
             const history = chatMessages.map(m => ({ role: m.role, content: m.content }));
             
-            const response = await getOllamaResponse(ollamaConfig, content, [{ role: 'system', content: systemPrompt }, ...history]);
+            const response = await getOllamaResponse(ollamaConfig, content, [
+                { role: 'system', content: systemPrompt }, 
+                ...history
+            ]);
             
             if (response.success) {
                 const assistantMsg: ChatMessage = { 
@@ -235,8 +257,17 @@ export function useAIQuantTerminal(
                     time: new Date().toLocaleTimeString() 
                 };
                 setChatMessages(prev => [...prev, assistantMsg]);
+            } else {
+                throw new Error(response.error || "Erro sem mensagem.");
             }
-        } catch (error) {
+        } catch (error: any) {
+            console.error("Chat Error:", error);
+            const errorMsg: ChatMessage = { 
+                role: 'assistant', 
+                content: `Erro ao contatar CIO: ${error.message || "Verifique se o Ollama está online."}`, 
+                time: new Date().toLocaleTimeString() 
+            };
+            setChatMessages(prev => [...prev, errorMsg]);
             toast({ title: "Erro no Chat", description: "Não foi possível contatar o CIO local.", variant: "destructive" });
         } finally {
             setIsChatLoading(false);
