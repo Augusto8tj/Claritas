@@ -1,7 +1,8 @@
+// src/app/status/page.tsx
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { useDerivApiV2, DerivApiProviderV2, type ConnectionEvent } from '@/features/trading/hooks/use-deriv-api-v2';
+import { useDerivApiV2, type ConnectionEvent } from '@/features/trading/hooks/use-deriv-api-v2';
 import { 
     Activity, ShieldCheck, ShieldAlert, Cpu, Database, 
     Network, Server, Clock, ChevronDown, ChevronUp, 
@@ -13,9 +14,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
-import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/hooks/use-toast";
-import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
 
 type ServiceStatus = 'operational' | 'degraded' | 'critical' | 'loading';
 
@@ -81,11 +80,11 @@ const ServiceItem = ({ name, status, icon, children, isOpen, onToggle }: Service
     );
 };
 
-function StatusPageContent() {
+export default function StatusPage() {
     const { 
         isConnected, isConnecting, connectionError, activeToken, 
         connectionEvents, rawErrorCode, tokenSource, maskedToken, 
-        appId, hookVersion, setTokens 
+        appId, hookVersion, accountType, setTokens 
     } = useDerivApiV2();
     
     const { toast } = useToast();
@@ -120,21 +119,24 @@ function StatusPageContent() {
     }, [checkAll]);
 
     const handleTestToken = async () => {
-        if (!testToken.startsWith('pat_')) {
-            setTestResult({ success: false, msg: 'Formato inválido. O token deve começar com pat_' });
+        if (!testToken) {
+            setTestResult({ success: false, msg: 'Insira um token para validar.' });
             return;
         }
         setIsTestingToken(true);
-        const res = await checkDerivConnection(testToken.trim());
+        // Usa o accountId fixo correspondente ao tipo selecionado
+        const testAccountId = accountType === 'demo' ? 'DOT93059550' : 'ROT91769363';
+        const res = await checkDerivConnection(testToken.trim(), testAccountId);
         setIsTestingToken(false);
-        setTestResult({ success: res.success, msg: res.error || 'Token válido!', assets: res.assetCount });
+        setTestResult({ success: res.success, msg: res.error || 'Handshake OTP e WebSocket OK!', assets: res.assetCount });
     };
 
     const applyTestedToken = () => {
-        setTokens({ demo: testToken.trim() });
+        if (accountType === 'demo') setTokens({ demo: testToken.trim() });
+        else setTokens({ real: testToken.trim() });
         setTestToken('');
         setTestResult(null);
-        toast({ title: "Token Aplicado", description: "O sistema está a reiniciar a ligação com a nova credencial." });
+        toast({ title: "Token Aplicado", description: "O sistema está a reiniciar a ligação com a nova credencial PAT." });
     };
 
     const toggleService = (id: string) => {
@@ -145,7 +147,6 @@ function StatusPageContent() {
         <div className="min-h-screen bg-[#0E1116] text-[#E6EDF3] p-4 sm:p-8 font-body">
             <div className="max-w-4xl mx-auto space-y-8">
                 
-                {/* HEADER OPERACIONAL */}
                 <div className="flex items-center justify-between border-b border-[#30363D] pb-6">
                     <div className="flex items-center gap-4">
                         <div className="bg-[#238636]/10 p-3 rounded-xl">
@@ -156,19 +157,12 @@ function StatusPageContent() {
                             <p className="text-[#8B949E] text-sm font-mono mt-1">Ref: {hookVersion}</p>
                         </div>
                     </div>
-                    <div className="text-right hidden sm:block">
-                        <p className="text-[10px] text-[#8B949E] font-bold uppercase tracking-widest mb-1">Last Update</p>
-                        <p className="font-mono text-[#E6EDF3] text-sm">{new Date().toLocaleTimeString('pt-BR')}</p>
-                    </div>
                 </div>
 
-                {/* LISTA DE SERVIÇOS */}
                 <div className="space-y-2">
-                    
-                    {/* API DERIV */}
                     <ServiceItem 
                         id="deriv"
-                        name="API Deriv (Core Engine)" 
+                        name="API Deriv (Options OTP Engine)" 
                         status={statuses.deriv} 
                         icon={<Globe className="h-5 w-5" />}
                         isOpen={openServices.deriv}
@@ -211,34 +205,34 @@ function StatusPageContent() {
                                 </span>
                                 <div className="bg-[#0D1117] border border-[#30363D] rounded-md p-3 max-h-48 overflow-y-auto">
                                     {connectionEvents && connectionEvents.length > 0 ? (
-                                        connectionEvents.map((ev: ConnectionEvent, i: number) => (
+                                        connectionEvents.map((ev, i) => (
                                             <div key={i} className="flex gap-3 mb-2 last:mb-0 border-l border-[#30363D] pl-3 relative">
                                                 <div className={cn("absolute -left-[5px] top-1 h-2 w-2 rounded-full", 
                                                     ev.type === 'success' ? 'bg-[#3FB950]' : 
                                                     ev.type === 'error' ? 'bg-[#F85149]' : 
                                                     ev.type === 'warning' ? 'bg-[#F0B429]' : 'bg-[#21262d]'
                                                 )} />
-                                                <span className="text-[#8B949E] whitespace-nowrap">{ev.timestamp}</span>
-                                                <span className={cn(
+                                                <span className="text-[#8B949E] whitespace-nowrap text-[10px]">{ev.timestamp}</span>
+                                                <span className={cn("text-[11px]",
                                                     ev.type === 'error' ? 'text-[#F85149]' : 
                                                     ev.type === 'success' ? 'text-[#3FB950]' : 'text-[#E6EDF3]'
                                                 )}>{ev.message}</span>
                                             </div>
                                         ))
                                     ) : (
-                                        <p className="text-center italic opacity-50 py-4">Nenhum evento registado nesta sessão.</p>
+                                        <p className="text-center italic opacity-50 py-4 text-xs">Nenhum evento registado.</p>
                                     )}
                                 </div>
                             </div>
 
                             <div className="space-y-3 bg-[#161B22]/50 p-4 rounded-lg border border-dashed border-[#30363D]">
                                 <span className="text-xs font-bold uppercase text-[#E6EDF3] flex items-center gap-2">
-                                    <Search className="h-3 w-3" /> Sandbox: Testar novo token (sem salvar)
+                                    <Search className="h-3 w-3" /> Sandbox: Testar novo fluxo OTP
                                 </span>
                                 <div className="flex gap-2">
                                     <Input 
                                         type="password"
-                                        placeholder="pat_..."
+                                        placeholder="Seu token de API..."
                                         className="font-mono bg-[#0D1117] border-[#30363D] text-[#3FB950] h-9"
                                         value={testToken}
                                         onChange={(e) => setTestToken(e.target.value)}
@@ -248,7 +242,7 @@ function StatusPageContent() {
                                         variant="outline" 
                                         className="h-9 border-[#30363D] hover:bg-[#21262d]"
                                         onClick={handleTestToken}
-                                        disabled={isTestingToken || !testToken}
+                                        disabled={isTestingToken}
                                     >
                                         {isTestingToken ? <Loader2 className="h-4 w-4 animate-spin" /> : "Validar"}
                                     </Button>
@@ -258,16 +252,12 @@ function StatusPageContent() {
                                         testResult.success ? "bg-[#238636]/10 border border-[#238636]/30 text-[#3FB950]" : "bg-[#f85149]/10 border border-[#f85149]/30 text-[#F85149]"
                                     )}>
                                         <div className="flex items-center gap-2">
-                                            {testResult.success ? <CheckCircle2 className="h-4 w-4" /> : <XCircle className="h-4 w-4" />}
-                                            <span>{testResult.msg} {testResult.assets ? `(${testResult.assets} ativos detetados)` : ''}</span>
+                                            {testResult.success ? <ShieldCheck className="h-4 w-4" /> : <AlertCircle className="h-4 w-4" />}
+                                            <span>{testResult.msg} {testResult.assets ? `(${testResult.assets} ativos)` : ''}</span>
                                         </div>
                                         {testResult.success && (
-                                            <Button 
-                                                size="sm" 
-                                                className="bg-[#238636] hover:bg-[#2ea043] text-white font-bold h-7"
-                                                onClick={applyTestedToken}
-                                            >
-                                                USAR ESTE TOKEN
+                                            <Button size="sm" className="bg-[#238636] hover:bg-[#2ea043] text-white h-7" onClick={applyTestedToken}>
+                                                APLICAR
                                             </Button>
                                         )}
                                     </div>
@@ -275,74 +265,30 @@ function StatusPageContent() {
                             </div>
                         </div>
                     </ServiceItem>
-
+                    
                     <ServiceItem 
                         id="gemini"
-                        name="Google Gemini IA (Neuro-Motor)" 
+                        name="Google Gemini IA" 
                         status={statuses.gemini} 
                         icon={<Cpu className="h-5 w-5" />}
                         isOpen={openServices.gemini}
                         onToggle={() => toggleService('gemini')}
                     >
-                        <div className="space-y-3">
-                            <div className="bg-[#161B22] p-3 rounded-md border border-[#30363D]">
-                                <div className="flex items-center gap-2 mb-2 text-[#E6EDF3]">
-                                    <Info className="h-3 w-3" /> <span className="text-xs font-bold uppercase">Service Metadata</span>
-                                </div>
-                                <div className="space-y-1 text-xs">
-                                    <p>Provider: Google AI Studio</p>
-                                    <p>Model: gemini-2.5-flash-lite</p>
-                                    <p>Endpoint: https://generativelanguage.googleapis.com</p>
-                                    <p className="mt-2 text-[#F0B429]">Nota: Verifique a quota de Tokens por Minuto (TPM) no console da Google se encontrar lentidão.</p>
-                                </div>
-                            </div>
-                        </div>
+                        <p>Neuro-motor gemini-2.5-flash operacional.</p>
                     </ServiceItem>
 
                     <ServiceItem 
                         id="firestore"
-                        name="Firebase Firestore (Data Persistence)" 
+                        name="Firebase Firestore" 
                         status={statuses.firestore} 
                         icon={<Database className="h-5 w-5" />}
                         isOpen={openServices.firestore}
                         onToggle={() => toggleService('firestore')}
                     >
-                        <div className="space-y-3">
-                            <div className="bg-[#161B22] p-3 rounded-md border border-[#30363D]">
-                                <div className="flex items-center gap-2 mb-2 text-[#E6EDF3]">
-                                    <Lock className="h-3 w-3" /> <span className="text-xs font-bold uppercase">Security Policies</span>
-                                </div>
-                                <div className="space-y-1 text-xs">
-                                    <p>Sync: REALTIME_ENABLED</p>
-                                    <p>Rules Version: 2</p>
-                                    <p>Auth Strategy: OWNER_UID_BASED</p>
-                                    <p className="mt-2 text-[#3FB950]">Status: Todas as subcoleções de utilizador estão isoladas e protegidas.</p>
-                                </div>
-                            </div>
-                        </div>
+                        <p>Sincronização persistente ativa.</p>
                     </ServiceItem>
-                </div>
-
-                <div className="bg-[#161B22] border border-[#30363D] rounded-lg p-6 flex gap-4">
-                    <Terminal className="h-6 w-6 text-[#8B949E] shrink-0" />
-                    <div className="space-y-2">
-                        <h4 className="text-sm font-bold text-[#E6EDF3]">Arquitetura de Segurança Deriv 2025</h4>
-                        <p className="text-xs text-[#8B949E] leading-relaxed">
-                            O sistema utiliza o protocolo <strong>Personal Access Token (PAT)</strong>. Para garantir a operacionalidade, 
-                            o seu token deve possuir os escopos <code>READ</code> e <code>TRADE</code> ativos. Gaps de conexão 
-                            superiores a 30 segundos disparam automaticamente o algoritmo de reconexão exponencial.
-                        </p>
-                    </div>
                 </div>
             </div>
         </div>
-    );
-}
-
-export default function StatusPage() {
-    return (
-        <DerivApiProviderV2>
-            <StatusPageContent />
-        </DerivApiProviderV2>
     );
 }

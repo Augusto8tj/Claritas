@@ -11,6 +11,49 @@ import WebSocket from 'ws';
 import { getDoc, doc } from 'firebase/firestore';
 import { generateFinancialInsights } from "@/ai/flows/financial-insights-flow";
 
+const NEW_DERIV_APP_ID = "34lwuJiPbEzxjgEdnEhbX";
+
+/**
+ * Obtém uma URL de WebSocket autenticada via OTP (novo fluxo Options API).
+ */
+export async function getDerivWebSocketUrl(token: string, accountId: string): Promise<{ success: boolean; url?: string; error?: string }> {
+  try {
+    const response = await fetch(`https://api.derivws.com/trading/v1/options/accounts/${accountId}/otp`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Deriv-App-ID': NEW_DERIV_APP_ID,
+        'Content-Type': 'application/json'
+      }
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      let parsedError;
+      try {
+        parsedError = JSON.parse(errorText);
+      } catch (e) {
+        parsedError = { message: errorText };
+      }
+      return { 
+        success: false, 
+        error: `Erro API Deriv (HTTP ${response.status}): ${parsedError.message || parsedError.error?.message || 'Falha ao obter OTP'}` 
+      };
+    }
+
+    const data = await response.json();
+    const url = data.data?.url || data.url;
+    
+    if (!url) {
+      return { success: false, error: "Resposta da API não contém a URL do WebSocket." };
+    }
+
+    return { success: true, url };
+  } catch (e: any) {
+    console.error("[Action Error] getDerivWebSocketUrl:", e);
+    return { success: false, error: e.message || "Erro de rede ao solicitar OTP." };
+  }
+}
 
 export async function getChatbotInsightsResponse(data: FinancialChatbotInsightsInput & { userId: string }) {
   try {
@@ -35,8 +78,6 @@ export async function getFinancialInsights(financialData: string): Promise<{ suc
 export async function sendFinancialSummaryEmail(userId: string, userEmail: string) {
   try {
     const summary = await getFinancialSummary(userId);
-    const insights = await getFinancialSummary(userId);
-
     const emailSubject = "Seu Resumo Financeiro Semanal - Claritas Copilot";
     const emailBody = `
       Olá,
@@ -47,8 +88,6 @@ export async function sendFinancialSummaryEmail(userId: string, userEmail: strin
       - Despesas Mensais: R$${summary.expenses.toFixed(2)}
       - Saldo: R$${summary.balance.toFixed(2)}
 
-      Continue acompanhando suas finanças!
-
       Atenciosamente,
       Equipe Claritas Copilot
     `;
@@ -57,7 +96,6 @@ export async function sendFinancialSummaryEmail(userId: string, userEmail: strin
     console.log("SIMULANDO ENVIO DE EMAIL");
     console.log(`Para: ${userEmail}`);
     console.log(`Assunto: ${emailSubject}`);
-    console.log("Corpo:", emailBody);
     console.log("===================================");
 
     return { success: `Email de teste enviado para o console.` };
@@ -87,14 +125,21 @@ export async function checkGeminiConnection(): Promise<{ success: boolean; error
     }
 }
 
-export async function checkDerivConnection(token: string): Promise<{ success: boolean; error?: string, assetCount?: number }> {
-    if (!token) {
-        return { success: false, error: "O token da API não foi fornecido." };
+/**
+ * Verifica a conexão com a Deriv usando o novo fluxo OTP.
+ */
+export async function checkDerivConnection(token: string, accountId: string): Promise<{ success: boolean; error?: string, assetCount?: number }> {
+    if (!token || !accountId) {
+        return { success: false, error: "Token ou AccountID não fornecidos." };
     }
-    const DERIV_APP_ID = process.env.NEXT_PUBLIC_DERIV_APP_ID || "1089";
+
+    const urlResult = await getDerivWebSocketUrl(token, accountId);
+    if (!urlResult.success) {
+        return { success: false, error: urlResult.error };
+    }
 
     return new Promise((resolve) => {
-        const ws = new WebSocket(`wss://ws.derivws.com/websockets/v3?app_id=${DERIV_APP_ID}`);
+        const ws = new WebSocket(urlResult.url!);
         let timeoutId: NodeJS.Timeout;
 
         const cleanup = () => {
@@ -104,28 +149,21 @@ export async function checkDerivConnection(token: string): Promise<{ success: bo
             }
         };
 
-        ws.onopen = () => {
-            ws.send(JSON.stringify({ "authorize": token, "req_id": 1 }));
-        };
+        ws.on('open', () => {
+            // No novo fluxo, a conexão já está autorizada. Pedimos ativos para validar.
+            ws.send(JSON.stringify({ active_symbols: 'brief', product_type: 'basic', "req_id": 2 }));
+        });
 
-        ws.onmessage = (event) => {
+        ws.on('message', (data) => {
             try {
-                const response = JSON.parse(event.data.toString());
+                const response = JSON.parse(data.toString());
                 if (response.error) {
                     resolve({ success: false, error: response.error.message });
                     cleanup();
                     return;
                 }
 
-                if (response.msg_type === 'authorize' && response.req_id === 1) {
-                    if (response.authorize) {
-                        // Successfully authorized, now request active symbols
-                        ws.send(JSON.stringify({ active_symbols: 'brief', product_type: 'basic', "req_id": 2 }));
-                    } else {
-                        resolve({ success: false, error: "Autorização falhou. Token inválido." });
-                        cleanup();
-                    }
-                } else if (response.msg_type === 'active_symbols' && response.req_id === 2) {
+                if (response.msg_type === 'active_symbols' && response.req_id === 2) {
                     resolve({ success: true, assetCount: response.active_symbols.length });
                     cleanup();
                 }
@@ -133,44 +171,34 @@ export async function checkDerivConnection(token: string): Promise<{ success: bo
                 resolve({ success: false, error: "Erro ao processar resposta da API." });
                 cleanup();
             }
-        };
+        });
 
-        ws.onerror = (error) => {
+        ws.on('error', (error) => {
             resolve({ success: false, error: `Erro de WebSocket: ${error.message}` });
             cleanup();
-        };
+        });
 
-        ws.onclose = (event) => {
-            if (!event.wasClean) {
-                 resolve({ success: false, error: "A conexão com a API da Deriv foi encerrada inesperadamente." });
-                 cleanup();
-            }
-        };
+        ws.on('close', () => {
+             resolve({ success: false, error: "A conexão com a API da Deriv foi encerrada durante o teste." });
+             cleanup();
+        });
 
         timeoutId = setTimeout(() => {
             resolve({ success: false, error: "Tempo de conexão esgotado." });
             cleanup();
-        }, 10000); // 10-second timeout
+        }, 15000); 
     });
 }
 
 export async function checkFirestoreConnection(): Promise<{ success: boolean; error?: string; }> {
     try {
-        // Tentamos aceder a um documento que não existe num caminho protegido por regras de autenticação.
-        // O objetivo não é ler os dados, mas sim confirmar que o pedido é processado pelo Firestore.
-        // Um erro de "permission-denied" é, para este teste, um SUCESSO, pois confirma que
-        // a conexão está ativa e as regras de segurança estão a ser aplicadas.
         const unauthenticatedRef = doc(db, 'users', 'test-connection');
         await getDoc(unauthenticatedRef);
-        
-        // Se chegarmos aqui sem um erro de permissão, algo está errado com as regras.
-        return { success: false, error: "As regras de segurança podem não estar a proteger os dados corretamente. Acesso não autenticado foi permitido." };
+        return { success: false, error: "As regras de segurança podem não estar a proteger os dados corretamente." };
     } catch (e: any) {
         if (e.code === 'permission-denied') {
-            // Este é o resultado esperado e significa que a conexão e as regras estão a funcionar.
             return { success: true };
         }
-        // Qualquer outro erro é uma falha na conexão.
         console.error("[Health Check] Firestore error:", e);
         return { success: false, error: e.message || "Ocorreu um erro desconhecido ao contatar o Firestore." };
     }
