@@ -1,17 +1,14 @@
-
 'use client';
 
-import React, { useState } from 'react';
+import React, { useMemo } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { 
     BrainCircuit, Zap, ShieldCheck, Terminal as TerminalIcon, 
-    Activity, Timer, BarChart3, LineChart, PlayCircle, 
-    PauseCircle, Database, Cpu, Laptop, CheckCircle2,
-    XCircle, AlertTriangle, RefreshCw
+    Timer, LineChart, PlayCircle, 
+    PauseCircle, Cpu, RefreshCw
 } from "lucide-react";
 import { DerivApiProviderV2 as DerivApiProvider, useDerivApiV2 as useDerivApi } from "@/features/trading/hooks/use-deriv-api-v2";
 import { AssetSelectorV2 as AssetSelector } from "@/features/trading/components/deriv-trader/asset-selector-v2";
@@ -21,14 +18,20 @@ import { useAIQuantTerminal } from "@/features/trading/hooks/use-ai-quant-termin
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import { Separator } from "@/components/ui/separator";
+import { useRobotCouncilV2 } from '@/features/trading/hooks/use-robot-council-v2';
 
 function TerminalContent() {
     const { 
         activeSymbol, setActiveSymbol, assetGroups, isAssetsLoading, 
-        chartData, isConnected, operationsLog, tradeAnnotations, priceTicks
+        chartData, botCandleData, isConnected, operationsLog, tradeAnnotations, priceTicks,
+        isChartLoading, chartError, chartType, setChartType, timePeriod, setTimePeriod, dataVersion
     } = useDerivApi();
 
-    const quant = useAIQuantTerminal(activeSymbol, priceTicks, chartData);
+    // O motor de IA utiliza botCandleData para garantir velas de 1m precisas para análise.
+    const quant = useAIQuantTerminal(activeSymbol, priceTicks, botCandleData);
+
+    // Calculamos os indicadores técnicos para exibição no gráfico
+    const { indicators: councilIndicators } = useRobotCouncilV2(activeSymbol, [], botCandleData, dataVersion);
 
     const formatCurrency = (val: number) => 
         new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(val);
@@ -111,7 +114,7 @@ function TerminalContent() {
 
                 {/* COLUNA CENTRAL: VISUALIZAÇÃO E DECISÃO */}
                 <div className="lg:col-span-2 space-y-6">
-                    <Card className="bg-slate-900/50 border-slate-800 h-[450px]">
+                    <Card className="bg-slate-900/50 border-slate-800 min-h-[450px]">
                         <CardHeader className="flex flex-row items-center justify-between">
                             <div>
                                 <CardTitle className="text-white flex items-center gap-2">
@@ -119,20 +122,20 @@ function TerminalContent() {
                                 </CardTitle>
                                 <CardDescription>Fluxo em tempo real processado para IA</CardDescription>
                             </div>
-                            <Badge variant="outline" className="border-slate-700 text-slate-400">120s Resolution</Badge>
+                            <Badge variant="outline" className="border-slate-700 text-slate-400">{timePeriod.toUpperCase()} Resolution</Badge>
                         </CardHeader>
                         <CardContent>
                             <MarketChart 
                                 activeSymbol={activeSymbol || ''}
                                 chartData={chartData}
-                                isChartLoading={false}
-                                chartError={null}
-                                chartType="Candle"
-                                setChartType={() => {}}
-                                timePeriod="1m"
-                                setTimePeriod={() => {}}
+                                isChartLoading={isChartLoading}
+                                chartError={chartError}
+                                chartType={chartType}
+                                setChartType={setChartType}
+                                timePeriod={timePeriod}
+                                setTimePeriod={setTimePeriod}
                                 operations={operationsLog}
-                                indicators={null}
+                                indicators={councilIndicators}
                                 tradeAnnotations={tradeAnnotations}
                             />
                         </CardContent>
@@ -160,7 +163,8 @@ function TerminalContent() {
                                             <span className="text-slate-600">[{log.time}]</span>{' '}
                                             <span className={cn(
                                                 log.type === 'decision' ? "text-primary font-bold" : 
-                                                log.type === 'execution' ? "text-green-500" : "text-slate-400"
+                                                log.type === 'execution' ? "text-green-500" : 
+                                                log.type === 'error' ? "text-red-500" : "text-slate-400"
                                             )}>
                                                 {log.message}
                                             </span>

@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
@@ -66,7 +65,7 @@ export function useAIQuantTerminal(
     }, []);
 
     const runAnalysisCycle = useCallback(async () => {
-        if (!activeSymbol || !isConnected || !ollamaConfig) return;
+        if (!activeSymbol || !isConnected || !ollamaConfig || chartData.length < 30) return;
         if (executionLockRef.current) return;
 
         executionLockRef.current = true;
@@ -76,7 +75,17 @@ export function useAIQuantTerminal(
             // 1. Preparar Contexto de Dados
             const initialStrategies = getCouncilStrategies('standard');
             const indicators = calculateAllIndicators(chartData, initialStrategies, '1m', { duration: 15, unit: 's' });
-            const regime = indicators ? detectMarketRegime(chartData, indicators, 'ranging') : null;
+            
+            const regime = (indicators && chartData.length >= 30) 
+                ? detectMarketRegime(chartData, { 
+                    adx: indicators.adx, 
+                    pdi: indicators.pdi, 
+                    ndi: indicators.ndi, 
+                    bbw: indicators.bbw, 
+                    roc: indicators.roc, 
+                    atr: indicators.atr 
+                }, 'ranging') 
+                : null;
 
             const marketContext = {
                 symbol: activeSymbol,
@@ -88,7 +97,11 @@ export function useAIQuantTerminal(
                     bbw: indicators?.bbw?.toFixed(3),
                     macd_hist: indicators?.macd?.histogram?.toFixed(4)
                 },
-                recent_ohlc: chartData.slice(-5).map(c => ({ c: c.close, h: c.high, l: c.low }))
+                recent_ohlc: chartData.slice(-5).map(c => ({ 
+                    c: c.close, 
+                    h: c.high, 
+                    l: c.low 
+                }))
             };
 
             // 2. Construir Prompt de CIO
@@ -160,7 +173,7 @@ export function useAIQuantTerminal(
             decision.action.toLowerCase() as 'rise' | 'fall',
             decision.duration,
             decision.unit as DurationUnit,
-            'Conselho' as OperationInitiator,
+            'Conselho',
             `Ollama_CIO: ${decision.reasoning}`
         );
 

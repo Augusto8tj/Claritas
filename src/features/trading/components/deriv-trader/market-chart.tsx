@@ -20,6 +20,7 @@ import type {
   TimePeriod,
   ChartType,
   TradeAnnotation,
+  TickData,
 } from '@/lib/types'
 import { THEMES } from './chart-parts/themes'
 import type { Operation } from '@/lib/types'
@@ -61,11 +62,13 @@ const MIN_CANDLE_WIDTH = 1
 const MAX_CANDLE_WIDTH = 20
 
 const isCandle = (d: ChartData): d is CandleData =>
-    'open' in d && d.open !== undefined;
+    d !== null && 'close' in d && d.close !== undefined;
 
-const getDisplayPrice = (d: ChartData | null) => {
+const getDisplayPrice = (d: ChartData | null): number => {
   if (!d) return 0;
-  return isCandle(d) ? d.close : d.price;
+  if (isCandle(d)) return d.close;
+  if ('price' in d) return d.price;
+  return 0;
 }
 
 
@@ -93,10 +96,10 @@ export function MarketChart({
   const colors = THEMES[chartTheme]
 
   const [visibleIndicators, setVisibleIndicators] = React.useState({
-    sma: false,
-    ema: false,
+    sma: true,
+    ema: true,
     vwap: false,
-    bb: false,
+    bb: true,
   })
 
   const [brushWindow, setBrushWindow] = React.useState({
@@ -153,10 +156,10 @@ export function MarketChart({
       return { sma: [], ema: [], vwap: [], bollingerBands: [] };
     }
     return {
-      sma: indicators.sma.slice(dataWindow.start, dataWindow.end),
-      ema: indicators.ema.slice(dataWindow.start, dataWindow.end),
-      vwap: indicators.vwap.slice(dataWindow.start, dataWindow.end),
-      bollingerBands: indicators.bollingerBands.slice(
+      sma: (indicators.sma || []).slice(dataWindow.start, dataWindow.end),
+      ema: (indicators.ema || []).slice(dataWindow.start, dataWindow.end),
+      vwap: (indicators.vwap || []).slice(dataWindow.start, dataWindow.end),
+      bollingerBands: (indicators.bollingerBands || []).slice(
         dataWindow.start,
         dataWindow.end
       ),
@@ -174,7 +177,7 @@ export function MarketChart({
       ctx.beginPath()
       let firstPoint = true
       indicatorData.forEach((val, i) => {
-        if (val === null) return
+        if (val === null || val === undefined || isNaN(val)) return
         const x = getX(i)
         const y = getY(val)
         if (firstPoint) {
@@ -199,10 +202,12 @@ export function MarketChart({
       getY: (price: number) => number,
       getX: (index: number) => number
     ) => {
+      if (!bbData || bbData.length === 0) return;
+      
       ctx.beginPath()
       let firstMiddle = true
       bbData.forEach((d, i) => {
-        if (!d) return
+        if (!d || !isValid(d.middle)) return
         const x = getX(i)
         const y = getY(d.middle)
         if (firstMiddle) {
@@ -224,7 +229,7 @@ export function MarketChart({
       let firstLower = true
 
       bbData.forEach((d, i) => {
-        if (!d) return
+        if (!d || !isValid(d.upper) || !isValid(d.lower)) return
         const x = getX(i)
         if (firstUpper) {
           upperPath.moveTo(x, getY(d.upper))
@@ -250,7 +255,7 @@ export function MarketChart({
       let firstFill = true
 
       bbData.forEach((d, i) => {
-        if (!d) return
+        if (!d || !isValid(d.upper)) return
         const x = getX(i)
         const y = getY(d.upper)
         if (firstFill) {
@@ -263,7 +268,7 @@ export function MarketChart({
 
       for (let i = bbData.length - 1; i >= 0; i--) {
         const d = bbData[i]
-        if (!d) continue
+        if (!d || !isValid(d.lower)) continue
         const x = getX(i)
         const y = getY(d.lower)
         fillPath.lineTo(x, y)
@@ -304,7 +309,7 @@ export function MarketChart({
       const pricePoints: (number | null)[] = []
       if (isCandle(d)) {
         pricePoints.push(d.low, d.high)
-      } else {
+      } else if ('price' in d) {
         pricePoints.push(d.price)
       }
 
@@ -315,10 +320,18 @@ export function MarketChart({
         pricePoints.push(slicedIndicators.bollingerBands[i]!.upper, slicedIndicators.bollingerBands[i]!.lower)
       }
     
-      const validPrices = pricePoints.filter(p => p !== null) as number[]
-      minPrice = Math.min(minPrice, ...validPrices)
-      maxPrice = Math.max(maxPrice, ...validPrices)
+      const validPrices = pricePoints.filter(p => p !== null && !isNaN(p!)) as number[]
+      if (validPrices.length > 0) {
+        minPrice = Math.min(minPrice, ...validPrices)
+        maxPrice = Math.max(maxPrice, ...validPrices)
+      }
     });
+
+    if (minPrice === Infinity) {
+        // Fallback para evitar travamentos
+        minPrice = lastPrice * 0.99;
+        maxPrice = lastPrice * 1.01;
+    }
 
     const priceRange = maxPrice - minPrice || 1
     const pricePadding = priceRange * 0.1
@@ -330,7 +343,7 @@ export function MarketChart({
       chartHeight -
       ((price - minPrice) / (maxPrice - minPrice)) * chartHeight
       
-    const getPrice = (y: number) =>
+    const getPriceCoord = (y: number) =>
       maxPrice - ((y - PADDING.top) / chartHeight) * (maxPrice - minPrice);
 
 
@@ -410,9 +423,10 @@ export function MarketChart({
     } else {
       ctx.beginPath()
       visibleData.forEach((d, i) => {
-        if ('price' in d) {
+        const price = getDisplayPrice(d);
+        if (price > 0) {
             const x = getX(i)
-            const y = getY(d.price)
+            const y = getY(price)
             if (i === 0) ctx.moveTo(x, y)
             else ctx.lineTo(x, y)
         }
@@ -622,8 +636,8 @@ export function MarketChart({
             ctx.font = 'bold 16px Arial';
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
-            const symbol = ann.status === 'won' ? '✓' : '✗';
-            ctx.fillText(symbol, flagWidth * 0.5, -poleHeight + flagHeight * 0.5);
+            const statusSymbol = ann.status === 'won' ? '✓' : '✗';
+            ctx.fillText(statusSymbol, flagWidth * 0.5, -poleHeight + flagHeight * 0.5);
             
             if (ann.profit !== undefined) {
                 const profitText = `${ann.profit >= 0 ? '+' : ''}$${Math.abs(ann.profit).toFixed(2)}`;
@@ -707,7 +721,7 @@ export function MarketChart({
         ctx.lineTo(width - PADDING.right, y);
         ctx.stroke();
         ctx.setLineDash([]);
-        const price = getPrice(y);
+        const price = getPriceCoord(y);
         ctx.fillStyle = colors.priceBg;
         ctx.fillRect(width - PADDING.right, y - 10, Y_AXIS_WIDTH, 20);
         ctx.fillStyle = colors.text;
@@ -775,6 +789,7 @@ export function MarketChart({
     slicedIndicators,
     visibleIndicators,
     mousePosition,
+    lastPrice
   ])
 
   const drawBrushChart = useCallback(() => {
@@ -799,12 +814,10 @@ export function MarketChart({
     let minPrice = Infinity
     let maxPrice = -Infinity
     rawData.forEach(d => {
-      if (isCandle(d)) {
-        minPrice = Math.min(minPrice, d.low)
-        maxPrice = Math.max(maxPrice, d.high)
-      } else if ('price' in d) {
-        minPrice = Math.min(minPrice, d.price)
-        maxPrice = Math.max(maxPrice, d.price)
+      const price = getDisplayPrice(d);
+      if (price > 0) {
+        minPrice = Math.min(minPrice, price)
+        maxPrice = Math.max(maxPrice, price)
       }
     })
 
@@ -817,10 +830,12 @@ export function MarketChart({
     ctx.beginPath()
     rawData.forEach((d, i) => {
         const price = getDisplayPrice(d);
-        const x = getX(i);
-        const y = getY(price);
-        if (i === 0) ctx.moveTo(x, y);
-        else ctx.lineTo(x, y);
+        if (price > 0) {
+            const x = getX(i);
+            const y = getY(price);
+            if (i === 0) ctx.moveTo(x, y);
+            else ctx.lineTo(x, y);
+        }
     });
     ctx.strokeStyle = colors.line
     ctx.lineWidth = 1
@@ -1145,4 +1160,8 @@ export function MarketChart({
       </div>
     </div>
   )
+}
+
+function isValid(n: any): n is number {
+    return typeof n === 'number' && !isNaN(n) && Number.isFinite(n);
 }
