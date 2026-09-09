@@ -1,3 +1,4 @@
+
 // /src/features/trading/hooks/use-deriv-api-v2.tsx
 'use client';
 
@@ -300,6 +301,7 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
         if (op.status === 'pending' && op.expirationTime && now > op.expirationTime) {
           hasChanges = true;
           updateTradeAnnotation(String(op.id), { status: 'lost', profit: -op.stake });
+          // CORREÇÃO: Adicionar o exitTimestamp na expiração por timer
           return { ...op, status: 'lost' as const, result: -op.stake, exitTimestamp: new Date().toISOString() };
         }
         return op;
@@ -816,7 +818,6 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
               
               startConnectionMonitor();
               
-              // ✅ CORRIGIDO: Removido 'product_type' para conformidade com o fluxo novo
               const assetsRes: any = await makeRequest({ active_symbols: 'full' });
               if (assetsRes.error) throw new Error(assetsRes.error.message);
               
@@ -826,7 +827,9 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
                   const groupName = marketNameMapping[marketKey] || 'Outros';
                   if (!groupedAssets[groupName]) groupedAssets[groupName] = [];
                   groupedAssets[groupName].push({
-                      value: symbol.symbol, label: symbol.display_name, marketIsOpen: symbol.exchange_is_open === 1,
+                      value: symbol.underlying_symbol, 
+                      label: symbol.underlying_symbol_name, 
+                      marketIsOpen: symbol.exchange_is_open === 1,
                       submarket: symbol.submarket, market: marketKey, minDuration: symbol.min_contract_duration ?? '5t', 
                   });
               });
@@ -909,3 +912,5 @@ export function useDerivApiV2() {
   if (context === undefined) throw new Error('useDerivApiV2 must be used within a DerivApiProviderV2');
   return context;
 }
+
+    
