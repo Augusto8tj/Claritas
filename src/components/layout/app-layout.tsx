@@ -1,4 +1,4 @@
-// /src/components/layout/app-layout.tsx
+
 'use client';
 
 import { usePathname } from "next/navigation";
@@ -31,6 +31,7 @@ import {
   Crosshair,
   Zap,
   RefreshCw,
+  Terminal,
 } from "lucide-react";
 import {
   Sidebar,
@@ -63,6 +64,11 @@ const navItems = [
     href: "/",
     icon: LayoutDashboard,
     label: "Painel",
+  },
+  {
+    href: "/ai-quant-terminal",
+    icon: Terminal,
+    label: "Terminal Quant IA",
   },
   {
     href: "/analysis",
@@ -100,7 +106,7 @@ const navItems = [
     label: "HF Strike Zone",
   },
   {
-    href: "/deriv-trader-reset", // NOVO LINK
+    href: "/deriv-trader-reset",
     icon: RefreshCw,
     label: "Deriv Reset",
   },
@@ -115,7 +121,7 @@ const navItems = [
     label: "Deriv Multipliers",
   },
    {
-    href: "/deriv-trader", // Link direto para a V1
+    href: "/deriv-trader", 
     icon: CandlestickChart,
     label: "Deriv Trader V1",
   },
@@ -289,11 +295,6 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   const isMobile = useIsMobile();
   
   const pageTitle = navItems.find(item => item.href === pathname)?.label || 'Claritas Copilot';
-
-  // The AuthProvider and AuthGuard already handle the main loading state.
-  // This layout should just render its structure, assuming the AuthGuard
-  // has already determined it's safe to display. The previous `if (!user)`
-  // block was redundant and caused the ReferenceError.
 
   return (
     <SidebarProvider>
