@@ -151,7 +151,8 @@ export async function checkDerivConnection(token: string, accountId: string): Pr
 
         ws.on('open', () => {
             // No novo fluxo, a conexão já está autorizada. Pedimos ativos para validar.
-            ws.send(JSON.stringify({ active_symbols: 'brief', product_type: 'basic', "req_id": 2 }));
+            // ✅ REMOVIDO 'product_type' para conformidade com a nova API
+            ws.send(JSON.stringify({ active_symbols: 'brief', "req_id": 2 }));
         });
 
         ws.on('message', (data) => {

@@ -790,6 +790,7 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
                                 epoch: candleData.open_time || candleData.epoch,
                                 open: parseFloat(candleData.open), high: parseFloat(candleData.high),
                                 low: parseFloat(candleData.low), close: parseFloat(candleData.close),
+                                volume: candleData.tick_count || 1,
                             };
                             if (response.subscription?.id === botSubscriptionIdRef.current) setBotCandleData(prev => addDataPoint(prev, newCandle) as CandleData[]);
                             if (response.subscription?.id === activeSubscriptionIdRef.current && chartTypeRef.current === 'Candle') setChartData(prev => addDataPoint(prev, newCandle));
@@ -815,7 +816,8 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
               
               startConnectionMonitor();
               
-              const assetsRes: any = await makeRequest({ active_symbols: 'full', product_type: 'basic' });
+              // ✅ CORRIGIDO: Removido 'product_type' para conformidade com o fluxo novo
+              const assetsRes: any = await makeRequest({ active_symbols: 'full' });
               if (assetsRes.error) throw new Error(assetsRes.error.message);
               
               const groupedAssets: { [key: string]: Asset[] } = {};
