@@ -1,3 +1,4 @@
+
 // /src/features/trading/hooks/use-hf-strike-zone.tsx
 'use client';
 
@@ -314,7 +315,10 @@ export function useHFStrikeZone(
           }
 
           const currentPrice = ticks.length > 0 ? ticks[ticks.length - 1].price : 0;
-          if (currentPrice === 0) return;
+          if (currentPrice === 0) {
+            executionLockRef.current = false;
+            return;
+          }
           
           const isRandom = getIsRandom(candles, indicators);
           const adaptiveParams = isRandom ? RANDOM_ASSET_PARAMS : strategyParams;
@@ -464,12 +468,14 @@ export function useHFStrikeZone(
     
             if (openCouncilTrades >= maxConcurrentTrades) {
                 setActiveStrikeZone(prev => prev ? { ...prev, triggers: [...prev.triggers, `VETO: Limite de ${maxConcurrentTrades} ordens ativas atingido.`] } : null);
+                executionLockRef.current = false;
                 return;
             }
     
-            if (autoExecute) {
+            if (autoExecute && isConnected) {
               if (!durationLimits) {
                   console.error("[HF-STRIKE] BUG: Tentativa de execução sem limites de duração definidos.");
+                  executionLockRef.current = false;
                   return;
               }
             
@@ -525,8 +531,9 @@ export function useHFStrikeZone(
                     },
                     riskMetrics: { sharpeContribution: sizing.sharpeContribution, portfolioExposure: 0 }
                 });
-              } else {
-                throw new Error(tradeResult.message);
+              } else if (!tradeResult.success) {
+                // If execution failed (likely connection), don't throw, just log and unlock.
+                console.warn(`[HF-STRIKE] Execução falhou: ${tradeResult.message}`);
               }
             }
           } else {
@@ -534,6 +541,8 @@ export function useHFStrikeZone(
           }
     
           if (indicators.rsi) rsiStateRef.current.prev = indicators.rsi;
+        } catch (err) {
+            console.error("[HF-STRIKE] Critical cycle error:", err);
         } finally {
           executionLockRef.current = false;
         }

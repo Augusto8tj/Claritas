@@ -1,5 +1,4 @@
 
-// /src/features/trading/hooks/use-deriv-api-v2.tsx
 'use client';
 
 // ESTE ARQUIVO É UMA CÓPIA DEDICADA PARA O SISTEMA V2.5
@@ -540,8 +539,9 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
         strategy?: string,
       ): Promise<TradeResult> => {
         try {
+          // CORREÇÃO: Em vez de throw Error, retornamos success false para evitar quebra da UI durante reconexão
           if (!wsRef.current || !isConnected) {
-            throw new Error("A conexão com a API da Deriv não está ativa.");
+            return { success: false, message: "A conexão com a API da Deriv não está ativa." };
           }
 
           const sanitizedStake = parseFloat(stake.toFixed(2));
@@ -912,5 +912,3 @@ export function useDerivApiV2() {
   if (context === undefined) throw new Error('useDerivApiV2 must be used within a DerivApiProviderV2');
   return context;
 }
-
-    
