@@ -14,7 +14,7 @@ import {
     PauseCircle, Cpu, RefreshCw, MessageSquare, Send, 
     Settings2, Activity, Brain, Wallet, Target, History,
     ArrowUpCircle, ArrowDownCircle, Clock, ShieldAlert,
-    TrendingUp, BarChart3, Binary
+    TrendingUp, BarChart3, Binary, Trash2
 } from "lucide-react";
 import { DerivApiProviderV2 as DerivApiProvider, useDerivApiV2 as useDerivApi } from "@/features/trading/hooks/use-deriv-api-v2";
 import { AssetSelectorV2 as AssetSelector } from "@/features/trading/components/deriv-trader/asset-selector-v2";
@@ -31,7 +31,8 @@ function TerminalContent() {
     const { 
         activeSymbol, setActiveSymbol, assetGroups, isAssetsLoading, 
         chartData, botCandleData, isConnected, operationsLog, tradeAnnotations, priceTicks,
-        isChartLoading, chartError, chartType, setChartType, timePeriod, setTimePeriod, dataVersion
+        isChartLoading, chartError, chartType, setChartType, timePeriod, setTimePeriod, dataVersion,
+        clearActiveContracts
     } = useDerivApi();
 
     const quant = useAIQuantTerminal(activeSymbol, priceTicks, botCandleData);
@@ -58,6 +59,16 @@ function TerminalContent() {
     };
 
     const terminalTrades = operationsLog.filter(op => op.initiator === 'Conselho');
+
+    const getDurationLabel = (unit: string) => {
+        const labels: Record<string, string> = {
+            t: 'Ticks',
+            s: 'Segundos',
+            m: 'Minutos',
+            h: 'Horas'
+        };
+        return labels[unit] || unit;
+    };
 
     return (
         <div className="flex-1 space-y-6 p-4 sm:p-8 pt-6 bg-background min-h-screen text-foreground transition-colors duration-300">
@@ -205,10 +216,21 @@ function TerminalContent() {
                     </Card>
 
                     <Card className="bg-card/50 border-border shadow-sm flex-1">
-                        <CardHeader className="pb-2">
+                        <CardHeader className="pb-2 flex flex-row items-center justify-between space-y-0">
                             <CardTitle className="text-xs font-bold uppercase tracking-widest text-muted-foreground flex items-center gap-2">
                                 <History className="h-4 w-4 text-primary" /> Histórico de Trades
                             </CardTitle>
+                            {terminalTrades.length > 0 && (
+                                <Button 
+                                    variant="ghost" 
+                                    size="icon" 
+                                    className="h-6 w-6 text-muted-foreground hover:text-destructive" 
+                                    onClick={clearActiveContracts}
+                                    title="Limpar Histórico"
+                                >
+                                    <Trash2 className="h-3.5 w-3.5" />
+                                </Button>
+                            )}
                         </CardHeader>
                         <CardContent className="p-0">
                             <ScrollArea className="h-64">
@@ -242,6 +264,9 @@ function TerminalContent() {
                                                             (Number(op.result) || 0) >= 0 ? "text-green-600" : "text-destructive"
                                                         )}>
                                                             PnL: {formatCurrency(Number(op.result) || -Number(op.stake))}
+                                                        </span>
+                                                        <span className="text-muted-foreground italic">
+                                                            Tempo: {op.duration} {getDurationLabel(op.durationUnit)}
                                                         </span>
                                                     </div>
                                                     <div className="text-right text-muted-foreground flex flex-col gap-0.5">
