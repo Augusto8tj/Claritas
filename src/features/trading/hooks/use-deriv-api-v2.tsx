@@ -1,4 +1,3 @@
-
 'use client';
 
 // ESTE ARQUIVO É UMA CÓPIA DEDICADA PARA O SISTEMA V2.5
@@ -752,7 +751,15 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
                                         }
 
                                         updateTradeAnnotation(String(contract.contract_id), { status: newStatus, profit: contract.profit, exitPrice, exitTime: contract.sell_time });
-                                        setToastQueue(prev => [...prev, { title: `Posição Fechada`, description: `P&L: ${contract.profit.toFixed(2)}`, variant: newStatus === 'won' ? 'default' : 'destructive' }]);
+                                        
+                                        // ✅ CORREÇÃO: Conversão segura de profit para número antes de chamar toFixed()
+                                        const profitVal = Number(contract.profit) || 0;
+                                        setToastQueue(prev => [...prev, { 
+                                            title: `Posição Fechada`, 
+                                            description: `P&L: ${profitVal.toFixed(2)}`, 
+                                            variant: newStatus === 'won' ? 'default' : 'destructive' 
+                                        }]);
+                                        
                                         if (wsRef.current?.readyState === WebSocket.OPEN) ws.send(JSON.stringify({"balance": 1}));
                                         return updatedLog;
                                     }
