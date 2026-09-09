@@ -13,7 +13,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Loader2, Link as LinkIcon, CheckCircle, XCircle, ShieldCheck, AlertCircle, Laptop, Globe, RefreshCw } from "lucide-react";
+import { Loader2, Link as LinkIcon, CheckCircle, XCircle, ShieldCheck, AlertCircle, Laptop, Globe, RefreshCw, Info } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import {
   Form,
