@@ -1,4 +1,3 @@
-
 'use client';
 
 import React, { useState, useRef, useEffect } from 'react';
@@ -8,11 +7,12 @@ import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Input } from "@/components/ui/input";
 import { Slider } from "@/components/ui/slider";
+import { Label } from "@/components/ui/label";
 import { 
     BrainCircuit, Zap, ShieldCheck, Terminal as TerminalIcon, 
     Timer, LineChart, PlayCircle, 
     PauseCircle, Cpu, RefreshCw, MessageSquare, Send, 
-    Settings2, Activity, Brain
+    Settings2, Activity, Brain, Wallet, Target
 } from "lucide-react";
 import { DerivApiProviderV2 as DerivApiProvider, useDerivApiV2 as useDerivApi } from "@/features/trading/hooks/use-deriv-api-v2";
 import { AssetSelectorV2 as AssetSelector } from "@/features/trading/components/deriv-trader/asset-selector-v2";
@@ -130,18 +130,54 @@ function TerminalContent() {
 
                     <Card className="bg-card/50 border-border shadow-sm">
                         <CardHeader className="pb-3">
-                            <CardTitle className="text-sm font-bold uppercase tracking-widest text-muted-foreground">Performance Quant</CardTitle>
+                            <CardTitle className="text-sm font-bold uppercase tracking-widest text-muted-foreground">Gestão & Performance</CardTitle>
                         </CardHeader>
-                        <CardContent className="grid grid-cols-2 gap-3">
-                            <div className="p-3 rounded-lg bg-muted/20 border border-border text-center">
-                                <p className="text-[10px] text-muted-foreground uppercase font-bold">Sessão P&L</p>
-                                <p className={cn("text-lg font-bold", quant.sessionStats.pnl >= 0 ? "text-green-600" : "text-destructive")}>
-                                    {formatCurrency(quant.sessionStats.pnl)}
-                                </p>
+                        <CardContent className="space-y-4">
+                            {/* CONFIGURAÇÃO FINANCEIRA */}
+                            <div className="grid grid-cols-2 gap-3">
+                                <div className="space-y-1.5">
+                                    <Label className="text-[10px] uppercase font-bold text-muted-foreground flex items-center gap-1">
+                                        <Wallet className="h-3 w-3" /> Stake (USD)
+                                    </Label>
+                                    <Input 
+                                        type="number" 
+                                        value={quant.stakeValue} 
+                                        onChange={(e) => quant.setStakeValue(Number(e.target.value))}
+                                        className="h-8 text-xs font-mono bg-background/50"
+                                        disabled={quant.isAutoMode}
+                                        step="0.5"
+                                        min="0.35"
+                                    />
+                                </div>
+                                <div className="space-y-1.5">
+                                    <Label className="text-[10px] uppercase font-bold text-muted-foreground flex items-center gap-1">
+                                        <Target className="h-3 w-3" /> Alvo Lucro
+                                    </Label>
+                                    <Input 
+                                        type="number" 
+                                        value={quant.profitTarget} 
+                                        onChange={(e) => quant.setProfitTarget(Number(e.target.value))}
+                                        className="h-8 text-xs font-mono bg-background/50"
+                                        disabled={quant.isAutoMode}
+                                        step="1"
+                                        min="1"
+                                    />
+                                </div>
                             </div>
-                            <div className="p-3 rounded-lg bg-muted/20 border border-border text-center">
-                                <p className="text-[10px] text-muted-foreground uppercase font-bold">Win Rate</p>
-                                <p className="text-lg font-bold">{quant.sessionStats.winRate.toFixed(1)}%</p>
+
+                            <Separator className="opacity-50" />
+
+                            <div className="grid grid-cols-2 gap-3">
+                                <div className="p-3 rounded-lg bg-muted/20 border border-border text-center">
+                                    <p className="text-[10px] text-muted-foreground uppercase font-bold">Sessão P&L</p>
+                                    <p className={cn("text-lg font-bold", quant.sessionStats.pnl >= 0 ? "text-green-600" : "text-destructive")}>
+                                        {formatCurrency(quant.sessionStats.pnl)}
+                                    </p>
+                                </div>
+                                <div className="p-3 rounded-lg bg-muted/20 border border-border text-center">
+                                    <p className="text-[10px] text-muted-foreground uppercase font-bold">Win Rate</p>
+                                    <p className="text-lg font-bold">{quant.sessionStats.winRate.toFixed(1)}%</p>
+                                </div>
                             </div>
                         </CardContent>
                     </Card>

@@ -34,17 +34,21 @@ export function useAIQuantTerminal(
     priceTicks: TickData[],
     chartData: CandleData[]
 ) {
-    const { isConnected, executeTrade, accountBalance } = useDerivApiV2();
+    const { isConnected, executeTrade, accountBalance, operationsLog } = useDerivApiV2();
     const { toast } = useToast();
 
-    // ESTADOS
+    // ESTADOS DE CONTROLE
     const [isAutoMode, setIsAutoMode] = useState(false);
     const [lastDecision, setLastDecision] = useState<QuantDecision | null>(null);
-    const [analysisInterval, setAnalysisInterval] = useState(120); // Valor ajustável
+    const [analysisInterval, setAnalysisInterval] = useState(120); 
     const [timeToNextAnalysis, setTimeToNextAnalysis] = useState(120);
+    
+    // ESTADOS FINANCEIROS
+    const [stakeValue, setStakeValue] = useState(1.0);
+    const [profitTarget, setProfitTarget] = useState(10.0);
+
     const [reasoningLog, setReasoningLog] = useState<ReasoningLog[]>([]);
     const [telemetry, setTelemetry] = useState({ latency: 0, tps: 0 });
-    const [sessionStats, setSessionStats] = useState({ pnl: 0, winRate: 100 });
     
     // CHAT E TESTE
     const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
@@ -52,6 +56,19 @@ export function useAIQuantTerminal(
 
     // REFS
     const executionLockRef = useRef(false);
+
+    // ESTATÍSTICAS DA SESSÃO
+    const sessionStats = useMemo(() => {
+        const finishedTrades = operationsLog.filter(op => 
+            op.status !== 'pending' && 
+            op.initiator === 'Conselho' // Filtra apenas trades deste terminal
+        );
+        const wins = finishedTrades.filter(op => op.status === 'won').length;
+        const total = finishedTrades.length;
+        const winRate = total > 0 ? (wins / total) * 100 : 100;
+        const pnl = finishedTrades.reduce((acc, op) => acc + (op.result || 0), 0);
+        return { pnl, winRate, total };
+    }, [operationsLog]);
 
     // CONFIGURAÇÃO DO OLLAMA
     const ollamaConfig = useMemo(() => {
@@ -74,9 +91,43 @@ export function useAIQuantTerminal(
         setReasoningLog(prev => [entry, ...prev].slice(0, 50));
     }, []);
 
+    const executeTradeAction = useCallback(async (decision: QuantDecision) => {
+        if (!activeSymbol) return;
+
+        addLog(`Executando Ordem ${decision.action} via CIO Autopilot...`, 'execution');
+
+        const result = await executeTrade(
+            decision.action === 'RISE' ? 'CALL' : 'PUT',
+            stakeValue, // Usando o valor definido pelo usuário
+            activeSymbol,
+            decision.action.toLowerCase() as 'rise' | 'fall',
+            decision.duration,
+            decision.unit as DurationUnit,
+            'Conselho',
+            `Ollama_CIO: ${decision.reasoning}`
+        );
+
+        if (result.success) {
+            toast({
+                title: "💎 Terminal Quant: Trade Enviado",
+                description: `Estratégia Neuro-Adaptativa: ${decision.action} ($${stakeValue})`
+            });
+        }
+    }, [activeSymbol, executeTrade, addLog, toast, stakeValue]);
+
     const runAnalysisCycle = useCallback(async () => {
         if (!activeSymbol || !isConnected || !ollamaConfig || chartData.length < 30) return;
         if (executionLockRef.current) return;
+
+        // Proteção: Meta de Lucro Atingida
+        if (sessionStats.pnl >= profitTarget) {
+            if (isAutoMode) {
+                addLog(`🎯 Meta de lucro de $${profitTarget} atingida. Pausando Autopilot.`, 'info');
+                setIsAutoMode(false);
+                toast({ title: "🏆 Meta Atingida", description: "O lucro alvo da sessão foi alcançado." });
+            }
+            return;
+        }
 
         executionLockRef.current = true;
         addLog(`CIO iniciando auditoria estratégica para ${activeSymbol}...`);
@@ -162,31 +213,7 @@ export function useAIQuantTerminal(
         } finally {
             executionLockRef.current = false;
         }
-    }, [activeSymbol, isConnected, chartData, priceTicks, isAutoMode, ollamaConfig, addLog]);
-
-    const executeTradeAction = useCallback(async (decision: QuantDecision) => {
-        if (!activeSymbol) return;
-
-        addLog(`Executando Ordem ${decision.action} via CIO Autopilot...`, 'execution');
-
-        const result = await executeTrade(
-            decision.action === 'RISE' ? 'CALL' : 'PUT',
-            1.0, 
-            activeSymbol,
-            decision.action.toLowerCase() as 'rise' | 'fall',
-            decision.duration,
-            decision.unit as DurationUnit,
-            'Conselho',
-            `Ollama_CIO: ${decision.reasoning}`
-        );
-
-        if (result.success) {
-            toast({
-                title: "💎 Terminal Quant: Trade Enviado",
-                description: `Estratégia Neuro-Adaptativa: ${decision.action}`
-            });
-        }
-    }, [activeSymbol, executeTrade, addLog, toast]);
+    }, [activeSymbol, isConnected, chartData, priceTicks, isAutoMode, ollamaConfig, addLog, sessionStats.pnl, profitTarget, executeTradeAction, toast]);
 
     const sendMessage = async (content: string) => {
         if (!ollamaConfig || !content.trim()) return;
@@ -222,7 +249,7 @@ export function useAIQuantTerminal(
             setTimeToNextAnalysis(prev => {
                 if (prev <= 1) {
                     runAnalysisCycle();
-                    return analysisInterval; // Usa o intervalo definido pelo usuário
+                    return analysisInterval; 
                 }
                 return prev - 1;
             });
@@ -247,6 +274,10 @@ export function useAIQuantTerminal(
         reasoningLog,
         telemetry,
         sessionStats,
+        stakeValue,
+        setStakeValue,
+        profitTarget,
+        setProfitTarget,
         chatMessages,
         isChatLoading,
         sendMessage,
