@@ -1,14 +1,17 @@
 'use client';
 
-import React, { useMemo } from 'react';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import React, { useState, useRef, useEffect } from 'react';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
+import { Input } from "@/components/ui/input";
+import { Slider } from "@/components/ui/slider";
 import { 
     BrainCircuit, Zap, ShieldCheck, Terminal as TerminalIcon, 
     Timer, LineChart, PlayCircle, 
-    PauseCircle, Cpu, RefreshCw
+    PauseCircle, Cpu, RefreshCw, MessageSquare, Send, 
+    Settings2, Activity
 } from "lucide-react";
 import { DerivApiProviderV2 as DerivApiProvider, useDerivApiV2 as useDerivApi } from "@/features/trading/hooks/use-deriv-api-v2";
 import { AssetSelectorV2 as AssetSelector } from "@/features/trading/components/deriv-trader/asset-selector-v2";
@@ -27,14 +30,28 @@ function TerminalContent() {
         isChartLoading, chartError, chartType, setChartType, timePeriod, setTimePeriod, dataVersion
     } = useDerivApi();
 
-    // O motor de IA utiliza botCandleData para garantir velas de 1m precisas para análise.
     const quant = useAIQuantTerminal(activeSymbol, priceTicks, botCandleData);
-
-    // Calculamos os indicadores técnicos para exibição no gráfico
     const { indicators: councilIndicators } = useRobotCouncilV2(activeSymbol, [], botCandleData, dataVersion);
+    
+    const [chatInput, setChatInput] = useState('');
+    const chatScrollRef = useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+        if (chatScrollRef.current) {
+            chatScrollRef.current.scrollIntoView({ behavior: 'smooth' });
+        }
+    }, [quant.chatMessages]);
 
     const formatCurrency = (val: number) => 
         new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(val);
+
+    const handleChatSubmit = (e: React.FormEvent) => {
+        e.preventDefault();
+        if (chatInput.trim()) {
+            quant.sendMessage(chatInput);
+            setChatInput('');
+        }
+    };
 
     return (
         <div className="flex-1 space-y-6 p-4 sm:p-8 pt-6 bg-[#0B0E14] min-h-screen text-slate-200">
@@ -76,12 +93,29 @@ function TerminalContent() {
                                     {quant.isAutoMode ? 'AUTOPILOT' : 'SENTINELA'}
                                 </Badge>
                             </div>
+                            
+                            {/* AJUSTE DINÂMICO DE TEMPO */}
+                            <div className="space-y-3 p-3 rounded-lg border border-slate-800 bg-black/20">
+                                <div className="flex justify-between items-center text-xs">
+                                    <span className="text-slate-400 flex items-center gap-1.5"><Timer className="h-3.5 w-3.5"/> Ciclo de Análise</span>
+                                    <span className="font-mono text-primary font-bold">{quant.analysisInterval}s</span>
+                                </div>
+                                <Slider 
+                                    value={[quant.analysisInterval]} 
+                                    min={30} 
+                                    max={600} 
+                                    step={30} 
+                                    onValueChange={(v) => quant.setAnalysisInterval(v[0])}
+                                    disabled={quant.isAutoMode}
+                                />
+                            </div>
+
                             <div className="space-y-2">
                                 <div className="flex justify-between text-xs text-slate-500">
                                     <span>Próxima Janela de Decisão</span>
                                     <span>{quant.timeToNextAnalysis}s</span>
                                 </div>
-                                <Progress value={(quant.timeToNextAnalysis / 120) * 100} className="h-1 bg-slate-800" />
+                                <Progress value={(quant.timeToNextAnalysis / quant.analysisInterval) * 100} className="h-1 bg-slate-800" />
                             </div>
                             <Button 
                                 onClick={quant.toggleAutoMode} 
@@ -141,38 +175,58 @@ function TerminalContent() {
                         </CardContent>
                     </Card>
 
-                    {/* TERMINAL DE PENSAMENTO DA IA */}
-                    <Card className="bg-[#05070A] border-slate-800 font-mono overflow-hidden">
-                        <div className="bg-slate-900/80 px-4 py-2 flex items-center justify-between border-b border-slate-800">
-                            <span className="text-[10px] font-bold text-slate-400 flex items-center gap-2">
-                                <TerminalIcon className="h-3 w-3" /> NEURO-REASONING LOG
-                            </span>
-                            <div className="flex gap-2">
-                                <div className="h-2 w-2 rounded-full bg-red-500/50" />
-                                <div className="h-2 w-2 rounded-full bg-yellow-500/50" />
-                                <div className="h-2 w-2 rounded-full bg-green-500/50" />
-                            </div>
-                        </div>
-                        <CardContent className="p-0">
-                            <ScrollArea className="h-64 p-4 text-xs leading-relaxed text-blue-400/80">
-                                {quant.reasoningLog.length === 0 ? (
-                                    <p className="animate-pulse">Aguardando próximo ciclo de inferência...</p>
-                                ) : (
-                                    quant.reasoningLog.map((log, i) => (
-                                        <div key={i} className="mb-2">
-                                            <span className="text-slate-600">[{log.time}]</span>{' '}
-                                            <span className={cn(
-                                                log.type === 'decision' ? "text-primary font-bold" : 
-                                                log.type === 'execution' ? "text-green-500" : 
-                                                log.type === 'error' ? "text-red-500" : "text-slate-400"
-                                            )}>
-                                                {log.message}
-                                            </span>
+                    {/* INTERAÇÃO COM O CIO (CHAT) */}
+                    <Card className="bg-[#0D1117] border-slate-800 h-[400px] flex flex-col">
+                        <CardHeader className="py-3 border-b border-slate-800">
+                            <CardTitle className="text-sm flex items-center gap-2">
+                                <MessageSquare className="h-4 w-4 text-primary" />
+                                Interface de Diálogo com o CIO
+                            </CardTitle>
+                            <CardDescription className="text-[10px]">Consulte o modelo local sobre a estratégia atual.</CardDescription>
+                        </CardHeader>
+                        <CardContent className="flex-1 overflow-hidden p-0 relative">
+                            <ScrollArea className="h-full p-4">
+                                <div className="space-y-4">
+                                    {quant.chatMessages.length === 0 && (
+                                        <div className="text-center py-10 opacity-30">
+                                            <Brain className="h-10 w-10 mx-auto mb-2"/>
+                                            <p className="text-xs font-mono">Aguardando seu comando estratégico...</p>
                                         </div>
-                                    ))
-                                )}
+                                    )}
+                                    {quant.chatMessages.map((msg, i) => (
+                                        <div key={i} className={cn(
+                                            "flex flex-col max-w-[85%] rounded-lg p-3 text-xs leading-relaxed",
+                                            msg.role === 'user' ? "bg-primary/20 ml-auto border border-primary/20" : "bg-slate-800 mr-auto border border-slate-700"
+                                        )}>
+                                            <span className="font-bold uppercase text-[9px] mb-1 opacity-50">
+                                                {msg.role === 'user' ? 'OPERADOR' : 'CIO'} • {msg.time}
+                                            </span>
+                                            <p className="font-mono">{msg.content}</p>
+                                        </div>
+                                    ))}
+                                    {quant.isChatLoading && (
+                                        <div className="flex items-center gap-2 text-xs text-primary animate-pulse font-mono">
+                                            <RefreshCw className="h-3 w-3 animate-spin"/> O CIO está processando a resposta...
+                                        </div>
+                                    )}
+                                    <div ref={chatScrollRef} />
+                                </div>
                             </ScrollArea>
                         </CardContent>
+                        <CardFooter className="p-3 border-t border-slate-800">
+                            <form onSubmit={handleChatSubmit} className="flex w-full gap-2">
+                                <Input 
+                                    value={chatInput}
+                                    onChange={(e) => setChatInput(e.target.value)}
+                                    placeholder="Pergunte ao CIO..."
+                                    className="bg-black/40 border-slate-800 h-9 text-xs"
+                                    disabled={quant.isChatLoading}
+                                />
+                                <Button type="submit" size="icon" className="h-9 w-9" disabled={quant.isChatLoading || !chatInput.trim()}>
+                                    <Send className="h-4 w-4" />
+                                </Button>
+                            </form>
+                        </CardFooter>
                     </Card>
                 </div>
 
@@ -242,6 +296,35 @@ function TerminalContent() {
                                     <Badge variant="outline" className="text-[9px] border-slate-700">V1: OK</Badge>
                                 </div>
                             </div>
+                        </CardContent>
+                    </Card>
+                    
+                    {/* LOG DE RACIOCÍNIO - AGORA NO FINAL DA COLUNA */}
+                    <Card className="bg-[#05070A] border-slate-800 font-mono overflow-hidden">
+                        <div className="bg-slate-900/80 px-4 py-2 flex items-center justify-between border-b border-slate-800">
+                            <span className="text-[10px] font-bold text-slate-400 flex items-center gap-2">
+                                <TerminalIcon className="h-3 w-3" /> REASONING LOG
+                            </span>
+                        </div>
+                        <CardContent className="p-0">
+                            <ScrollArea className="h-48 p-4 text-[10px] leading-relaxed text-blue-400/80">
+                                {quant.reasoningLog.length === 0 ? (
+                                    <p className="animate-pulse">Aguardando auditoria...</p>
+                                ) : (
+                                    quant.reasoningLog.map((log, i) => (
+                                        <div key={i} className="mb-1">
+                                            <span className="text-slate-600">[{log.time}]</span>{' '}
+                                            <span className={cn(
+                                                log.type === 'decision' ? "text-primary font-bold" : 
+                                                log.type === 'execution' ? "text-green-500" : 
+                                                log.type === 'error' ? "text-red-500" : "text-slate-400"
+                                            )}>
+                                                {log.message}
+                                            </span>
+                                        </div>
+                                    ))
+                                )}
+                            </ScrollArea>
                         </CardContent>
                     </Card>
                 </div>
