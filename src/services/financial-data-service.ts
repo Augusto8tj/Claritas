@@ -1,3 +1,4 @@
+
 // Service module for financial data operations.
 'use client';
 
@@ -8,7 +9,6 @@ import { addDocumentNonBlocking, deleteDocumentNonBlocking, setDocumentNonBlocki
 import { EvolutionEvent } from '@/features/trading/hooks/use-strategy-evolution-v2';
 import { sanitizeForFirestore } from './utils/sanitize-for-firestore';
 import { errorEmitter, FirestorePermissionError } from '@/firebase';
-import { BayesianModel } from '@/features/trading/services/bayesian-confidence';
 
 
 // --- Transactions ---
@@ -378,7 +378,7 @@ export async function getBacktestRuns(userId: string, asset: string, limitN: num
   return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 }
 
-// --- Ollama Benchmark (NOVO) ---
+// --- Ollama Benchmark ---
 
 export async function saveOllamaBenchmark(userId: string, result: any): Promise<void> {
     if (!userId) return;

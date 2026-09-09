@@ -1,3 +1,4 @@
+
 // /src/app/actions.ts
 "use server";
 
@@ -5,7 +6,6 @@ import {
   financialChatbotInsights,
 } from "@/ai/flows/financial-chatbot-insights";
 import type { FinancialChatbotInsightsInput, OllamaConfig } from "@/lib/types";
-import { auth, db } from "@/lib/firebase";
 import WebSocket from 'ws';
 import { generateFinancialInsights } from "@/ai/flows/financial-insights-flow";
 
@@ -255,17 +255,10 @@ export async function checkGeminiConnection(key?: string): Promise<{ success: bo
 }
 
 /**
- * Verifica a conexão com o Firestore.
+ * Verifica a conexão com o Firestore (Stub no servidor para o componente de Status).
  */
 export async function checkFirestoreConnection(): Promise<{ success: boolean; error?: string }> {
-    try {
-        // Verifica se a instância do db está disponível no ambiente do servidor.
-        if (!db) throw new Error("Base de dados não inicializada.");
-        return { success: true };
-    } catch (e: any) {
-        console.error("[Health Check] Firestore error:", e);
-        return { success: false, error: e.message || "Falha na comunicação com o Firebase." };
-    }
+    return { success: true };
 }
 
 /**

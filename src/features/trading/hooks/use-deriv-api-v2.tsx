@@ -300,7 +300,6 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
         if (op.status === 'pending' && op.expirationTime && now > op.expirationTime) {
           hasChanges = true;
           updateTradeAnnotation(String(op.id), { status: 'lost', profit: -op.stake });
-          // CORREÇÃO: Adicionar o exitTimestamp na expiração por timer
           return { ...op, status: 'lost' as const, result: -op.stake, exitTimestamp: new Date().toISOString() };
         }
         return op;
@@ -539,7 +538,6 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
         strategy?: string,
       ): Promise<TradeResult> => {
         try {
-          // CORREÇÃO: Em vez de throw Error, retornamos success false para evitar quebra da UI durante reconexão
           if (!wsRef.current || !isConnected) {
             return { success: false, message: "A conexão com a API da Deriv não está ativa." };
           }
@@ -547,6 +545,7 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
           const sanitizedStake = parseFloat(stake.toFixed(2));
           const sanitizedDuration = Math.round(duration);
 
+          // ✅ CORREÇÃO: No motor de Options API (v1), a chave do ativo deve ser 'underlying_symbol'
           const proposalResponse: any = await makeRequest({ 
               "proposal": 1,
               "amount": sanitizedStake,
@@ -555,7 +554,7 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
               "currency": "USD",
               "duration": sanitizedDuration,
               "duration_unit": durationUnit,
-              "symbol": symbol,
+              "underlying_symbol": symbol, 
           });
           if (proposalResponse.error) throw new Error(proposalResponse.error.message);
 
