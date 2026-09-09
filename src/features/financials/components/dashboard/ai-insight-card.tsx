@@ -1,3 +1,4 @@
+
 // /src/features/financials/components/dashboard/ai-insight-card.tsx
 'use client';
 
@@ -29,11 +30,18 @@ export function AIInsightCard() {
       const summary = await getFinancialSummary(user.uid);
       const financialDataString = `Renda: ${summary.income.toFixed(2)}, Despesas: ${summary.expenses.toFixed(2)}, Saldo: ${summary.balance.toFixed(2)}`;
       
-      // 2. Call server action with data
-      const result = await getFinancialInsights(financialDataString);
+      // 2. Get custom key from localStorage if it exists
+      const savedGeminiKey = localStorage.getItem('geminiApiKey');
+
+      // 3. Call server action with data and optional key
+      const result = await getFinancialInsights(financialDataString, savedGeminiKey || undefined);
 
       if (result.error) {
-        throw new Error(result.error);
+        // Garantir que passamos uma string amigável para o erro
+        const errorMessage = typeof result.error === 'string' 
+            ? result.error 
+            : (result.error.message || "Erro na geração de insights");
+        throw new Error(errorMessage);
       }
       
       setInsights(result.success || []);

@@ -23,7 +23,7 @@ export async function getDerivWebSocketUrl(token: string, accountId: string): Pr
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${token}`,
-        'Deriv-App-ID': NEW_DERiv_APP_ID,
+        'Deriv-App-ID': NEW_DERIV_APP_ID,
         'Content-Type': 'application/json'
       }
     });
@@ -59,7 +59,6 @@ export async function getDerivWebSocketUrl(token: string, accountId: string): Pr
 export async function getChatbotInsightsResponse(data: FinancialChatbotInsightsInput & { userId: string, geminiKey?: string }) {
   try {
     // Injeta a chave do cliente no ambiente do processo para esta execução de fluxo
-    // Nota: Em um ambiente de produção real com muitos usuários, isso precisaria ser mais isolado.
     if (data.geminiKey) {
         process.env.GEMINI_API_KEY = data.geminiKey;
     }
@@ -136,8 +135,11 @@ export async function checkOllamaConnection(config: OllamaConfig): Promise<{ suc
     }
 }
 
-export async function getFinancialInsights(financialData: string): Promise<{ success?: string[]; error?: any }> {
+export async function getFinancialInsights(financialData: string, geminiKey?: string): Promise<{ success?: string[]; error?: any }> {
   try {
+    if (geminiKey) {
+        process.env.GEMINI_API_KEY = geminiKey;
+    }
     const insights = await generateFinancialInsights(financialData);
     return { success: insights };
   } catch (e: any) {
