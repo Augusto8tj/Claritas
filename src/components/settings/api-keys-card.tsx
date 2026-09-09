@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useState, useEffect } from "react";
@@ -12,7 +13,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Loader2, Link as LinkIcon, CheckCircle, XCircle, ShieldCheck, AlertCircle, Laptop, Globe, RefreshCw, Info, Key } from "lucide-react";
+import { Loader2, Link as LinkIcon, CheckCircle, XCircle, ShieldCheck, AlertCircle, Laptop, Globe, RefreshCw, Info, Key, Zap, Brain } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import {
   Form,
@@ -31,6 +32,7 @@ import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { checkOllamaConnection, checkGeminiConnection } from "@/app/actions";
+import { cn } from "@/lib/utils";
 
 const derivSchema = z.object({
   demoToken: z.string().optional(),
@@ -60,7 +62,7 @@ const isValidDerivPatFormat = (token: string) => {
 export function ApiKeysCard() {
   const { demoToken, realToken, setTokens } = useDerivApi();
   const [loading, setLoading] = useState<AccountType | 'ollama' | 'fetching_models' | 'gemini' | null>(null);
-  const [availableModels, setAvailableModels] = useState<string[]>([]);
+  const [availableModels, setAvailableModels] = useState<Array<{ name: string; size: number; details: any }>>([]);
   const { toast } = useToast();
 
   const derivForm = useForm<DerivFormValues>({
@@ -131,9 +133,9 @@ export function ApiKeysCard() {
       });
       if (!response.ok) throw new Error("Falha ao buscar modelos");
       const data = await response.json();
-      const models = data.models?.map((m: any) => m.name) || [];
+      const models = data.models || [];
       setAvailableModels(models);
-      if (models.length > 0 && !config.model) ollamaForm.setValue('model', models[0]);
+      if (models.length > 0 && !config.model) ollamaForm.setValue('model', models[0].name);
       toast({ title: "Modelos Sincronizados", description: `${models.length} modelos encontrados no Ollama.` });
     } catch (e: any) {
       toast({ variant: "destructive", title: "Erro de Conexão", description: e.message });
@@ -223,6 +225,15 @@ export function ApiKeysCard() {
           </TabsContent>
 
           <TabsContent value="ollama" className="pt-4 space-y-4">
+            <Alert className="bg-primary/5 border-primary/20">
+              <Zap className="h-4 w-4 text-primary" />
+              <AlertTitle className="text-xs font-bold uppercase">Guia de Performance Local</AlertTitle>
+              <AlertDescription className="text-[11px] leading-relaxed mt-1">
+                Para o Claritas, modelos entre <strong>7B e 8B</strong> (como Llama 3 ou Mistral) oferecem o melhor equilíbrio. 
+                Se o seu notebook não possui GPU dedicada, prefira modelos menores como <strong>Phi-3 (3B)</strong> ou <strong>Gemma (2B)</strong> para respostas instantâneas.
+              </AlertDescription>
+            </Alert>
+
             <Form {...ollamaForm}>
               <form onSubmit={ollamaForm.handleSubmit(handleOllamaSubmit)} className="space-y-4">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -264,7 +275,17 @@ export function ApiKeysCard() {
                             </SelectTrigger>
                           </FormControl>
                           <SelectContent>
-                            {availableModels.map(m => <SelectItem key={m} value={m}>{m}</SelectItem>)}
+                            {availableModels.map(m => {
+                                const sizeGB = (m.size / (1024 ** 3)).toFixed(1);
+                                return (
+                                    <SelectItem key={m.name} value={m.name}>
+                                        <div className="flex items-center justify-between w-full gap-4">
+                                            <span>{m.name}</span>
+                                            <Badge variant="outline" className="text-[9px] h-4">{sizeGB} GB</Badge>
+                                        </div>
+                                    </SelectItem>
+                                )
+                            })}
                           </SelectContent>
                         </Select>
                       </FormItem>
