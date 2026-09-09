@@ -1,4 +1,4 @@
-// /src/components/settings/api-keys-card.tsx
+
 "use client";
 
 import { useState, useEffect } from "react";
@@ -13,7 +13,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Loader2, Link as LinkIcon, CheckCircle, XCircle, ShieldCheck, AlertCircle, Laptop, Globe, RefreshCw, Info } from "lucide-react";
+import { Loader2, Link as LinkIcon, CheckCircle, XCircle, ShieldCheck, AlertCircle, Laptop, Globe, RefreshCw, Info, Key } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import {
   Form,
@@ -30,7 +30,7 @@ import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { checkOllamaConnection } from "@/app/actions";
+import { checkOllamaConnection, checkGeminiConnection } from "@/app/actions";
 
 const derivSchema = z.object({
   demoToken: z.string().optional(),
@@ -45,16 +45,21 @@ const ollamaSchema = z.object({
   keepAlive: z.string(),
 });
 
+const geminiSchema = z.object({
+  apiKey: z.string().min(10, "A chave de API parece muito curta."),
+});
+
 type DerivFormValues = z.infer<typeof derivSchema>;
 type OllamaFormValues = z.infer<typeof ollamaSchema>;
+type GeminiFormValues = z.infer<typeof geminiSchema>;
 
 const isValidDerivPatFormat = (token: string) => {
     return /^pat_[a-zA-Z0-9]{40,}$/.test(token.trim());
 };
 
 export function ApiKeysCard() {
-  const { demoToken, realToken, setTokens, disconnect } = useDerivApi();
-  const [loading, setLoading] = useState<AccountType | 'ollama' | 'fetching_models' | null>(null);
+  const { demoToken, realToken, setTokens } = useDerivApi();
+  const [loading, setLoading] = useState<AccountType | 'ollama' | 'fetching_models' | 'gemini' | null>(null);
   const [availableModels, setAvailableModels] = useState<string[]>([]);
   const { toast } = useToast();
 
@@ -77,15 +82,27 @@ export function ApiKeysCard() {
     },
   });
 
+  const geminiForm = useForm<GeminiFormValues>({
+    resolver: zodResolver(geminiSchema),
+    defaultValues: {
+      apiKey: "",
+    },
+  });
+
   useEffect(() => {
-    const saved = localStorage.getItem('ollamaConfig');
-    if (saved) {
+    const savedOllama = localStorage.getItem('ollamaConfig');
+    if (savedOllama) {
       try {
-        const parsed = JSON.parse(saved);
+        const parsed = JSON.parse(savedOllama);
         ollamaForm.reset(parsed);
       } catch (e) {}
     }
-  }, [ollamaForm]);
+
+    const savedGemini = localStorage.getItem('geminiApiKey');
+    if (savedGemini) {
+      geminiForm.reset({ apiKey: savedGemini });
+    }
+  }, [ollamaForm, geminiForm]);
 
   const handleDerivSubmit = async (type: AccountType) => {
     setLoading(type);
@@ -137,6 +154,23 @@ export function ApiKeysCard() {
     }
   };
 
+  const handleGeminiSubmit: SubmitHandler<GeminiFormValues> = async (data) => {
+    setLoading('gemini');
+    try {
+      const res = await checkGeminiConnection(data.apiKey);
+      if (res.success) {
+        localStorage.setItem('geminiApiKey', data.apiKey);
+        toast({ title: "Gemini Configurado!", description: "Chave de API validada e salva no navegador." });
+      } else {
+        throw new Error(res.error || "Erro ao validar chave.");
+      }
+    } catch (e: any) {
+      toast({ variant: "destructive", title: "Erro de Validação", description: e.message });
+    } finally {
+      setLoading(null);
+    }
+  };
+
   return (
     <Card>
       <CardHeader>
@@ -148,7 +182,7 @@ export function ApiKeysCard() {
           <TabsList className="grid w-full grid-cols-3">
             <TabsTrigger value="broker"><Globe className="w-4 h-4 mr-2"/>Corretora</TabsTrigger>
             <TabsTrigger value="ollama"><Laptop className="w-4 h-4 mr-2"/>IA Local (Ollama)</TabsTrigger>
-            <TabsTrigger value="ai">IA Cloud (Gemini)</TabsTrigger>
+            <TabsTrigger value="ai"><Key className="w-4 h-4 mr-2"/>IA Cloud (Gemini)</TabsTrigger>
           </TabsList>
 
           <TabsContent value="broker" className="pt-4 space-y-6">
@@ -278,11 +312,34 @@ export function ApiKeysCard() {
             </Form>
           </TabsContent>
 
-          <TabsContent value="ai" className="pt-4">
-             <Alert className="bg-muted/50 border-dashed">
+          <TabsContent value="ai" className="pt-4 space-y-4">
+             <Form {...geminiForm}>
+                <form onSubmit={geminiForm.handleSubmit(handleGeminiSubmit)} className="space-y-4">
+                    <FormField
+                      control={geminiForm.control}
+                      name="apiKey"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel className="text-xs">Gemini API Key</FormLabel>
+                          <FormControl><Input type="password" placeholder="Cole sua chave aqui..." {...field}/></FormControl>
+                          <FormDescription className="text-[10px]">
+                            A chave será salva no navegador e substituirá a do servidor para esta sessão.
+                          </FormDescription>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <Button type="submit" className="w-full" disabled={loading === 'gemini'}>
+                        {loading === 'gemini' ? <Loader2 className="h-4 w-4 animate-spin"/> : <ShieldCheck className="mr-2 h-4 w-4"/>}
+                        Validar e Ativar Chave Cloud
+                    </Button>
+                </form>
+             </Form>
+
+             <Alert className="bg-muted/50 border-dashed mt-4">
                 <Info className="h-4 w-4" />
                 <AlertDescription className="text-xs">
-                  A IA Cloud (Gemini) deve ser configurada via variável de ambiente <code>GEMINI_API_KEY</code> no servidor para máxima segurança.
+                  Para configuração permanente, defina <code>GEMINI_API_KEY</code> no arquivo <code>.env</code> do servidor.
                 </AlertDescription>
              </Alert>
           </TabsContent>

@@ -1,3 +1,4 @@
+
 // /src/app/actions.ts
 "use server";
 
@@ -22,7 +23,7 @@ export async function getDerivWebSocketUrl(token: string, accountId: string): Pr
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${token}`,
-        'Deriv-App-ID': NEW_DERIV_APP_ID,
+        'Deriv-App-ID': NEW_DERiv_APP_ID,
         'Content-Type': 'application/json'
       }
     });
@@ -55,8 +56,14 @@ export async function getDerivWebSocketUrl(token: string, accountId: string): Pr
   }
 }
 
-export async function getChatbotInsightsResponse(data: FinancialChatbotInsightsInput & { userId: string }) {
+export async function getChatbotInsightsResponse(data: FinancialChatbotInsightsInput & { userId: string, geminiKey?: string }) {
   try {
+    // Injeta a chave do cliente no ambiente do processo para esta execução de fluxo
+    // Nota: Em um ambiente de produção real com muitos usuários, isso precisaria ser mais isolado.
+    if (data.geminiKey) {
+        process.env.GEMINI_API_KEY = data.geminiKey;
+    }
+    
     const result = await financialChatbotInsights(data);
     return { success: result.response };
   } catch (e: any) {
@@ -169,10 +176,10 @@ export async function sendFinancialSummaryEmail(userId: string, userEmail: strin
   }
 }
 
-export async function checkGeminiConnection(): Promise<{ success: boolean; error?: string, models?: any[] }> {
-    const apiKey = process.env.GEMINI_API_KEY;
+export async function checkGeminiConnection(key?: string): Promise<{ success: boolean; error?: string, models?: any[] }> {
+    const apiKey = key || process.env.GEMINI_API_KEY;
     if (!apiKey) {
-        return { success: false, error: "A variável de ambiente GEMINI_API_KEY não está definida." };
+        return { success: false, error: "Chave de API não configurada." };
     }
 
     try {

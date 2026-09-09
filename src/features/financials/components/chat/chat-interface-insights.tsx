@@ -1,3 +1,4 @@
+
 // /src/features/financials/components/chat/chat-interface-insights.tsx
 "use client";
 
@@ -74,10 +75,12 @@ export function ChatInterfaceInsights() {
 
     try {
         if (provider === 'gemini') {
+            const savedGeminiKey = localStorage.getItem('geminiApiKey');
             const response = await getChatbotInsightsResponse({ 
               history, 
               query: data.query,
               userId: user.uid,
+              geminiKey: savedGeminiKey || undefined,
             });
             
             if (response.success) {

@@ -1,3 +1,4 @@
+
 // src/app/status/page.tsx
 'use client';
 
@@ -83,13 +84,13 @@ const ServiceItem = ({ name, status, icon, children, isOpen, onToggle }: Service
 
 function StatusPageContent() {
     const { 
-        isConnected, isConnecting, connectionError, activeToken, 
+        isConnected, isConnecting, activeToken, 
         connectionEvents, rawErrorCode, tokenSource, maskedToken, 
         appId, hookVersion, accountType, setTokens 
     } = useDerivApiV2();
     
     const { toast } = useToast();
-    const [openServices, setOpenServices] = useState<Record<string, boolean>>({ deriv: true, ollama: true });
+    const [openServices, setOpenServices] = useState<Record<string, boolean>>({ deriv: true, ollama: true, gemini: true });
     const [statuses, setStatuses] = useState<Record<string, ServiceStatus>>({
         deriv: 'loading',
         gemini: 'loading',
@@ -116,8 +117,9 @@ function StatusPageContent() {
             ollamaUrl = config.baseUrl;
         }
 
+        const savedGeminiKey = localStorage.getItem('geminiApiKey');
         const [gemini, firestore] = await Promise.all([
-            checkGeminiConnection(),
+            checkGeminiConnection(savedGeminiKey || undefined),
             checkFirestoreConnection()
         ]);
 
@@ -141,8 +143,8 @@ function StatusPageContent() {
             return;
         }
         setIsTestingToken(true);
-        const testAccountId = accountType === 'demo' ? 'DOT93059550' : 'ROT91769363';
-        const res = await checkDerivConnection(testToken.trim(), testAccountId);
+        const accountId = accountType === 'demo' ? 'DOT93059550' : 'ROT91769363';
+        const res = await checkDerivConnection(testToken.trim(), accountId);
         setIsTestingToken(false);
         setTestResult({ success: res.success, msg: res.error || 'Handshake OTP e WebSocket OK!', assets: res.assetCount });
     };
@@ -305,7 +307,14 @@ function StatusPageContent() {
                         isOpen={openServices.gemini}
                         onToggle={() => toggleService('gemini')}
                     >
-                        <p>Neuro-motor gemini-2.5-flash operacional.</p>
+                        <div className="space-y-2">
+                            <p>Neuro-motor gemini-2.5-flash operacional.</p>
+                            <div className="flex items-center gap-2 mt-2">
+                                <Badge variant="outline" className={cn(localStorage.getItem('geminiApiKey') ? "border-green-500 text-green-500" : "border-amber-500 text-amber-500")}>
+                                    {localStorage.getItem('geminiApiKey') ? "Chave Personalizada Ativa" : "Usando Chave do Servidor"}
+                                </Badge>
+                            </div>
+                        </div>
                     </ServiceItem>
 
                     <ServiceItem 
