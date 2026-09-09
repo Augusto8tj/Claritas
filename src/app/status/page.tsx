@@ -7,14 +7,15 @@ import {
     Activity, ShieldCheck, ShieldAlert, Cpu, Database, 
     Network, Server, Clock, ChevronDown, ChevronUp, 
     Terminal, Lock, Key, Globe, Search, Play, CheckCircle2,
-    XCircle, Info, Loader2, AlertCircle, RefreshCw
+    XCircle, Info, Loader2, AlertCircle, RefreshCw, Laptop
 } from "lucide-react";
-import { checkGeminiConnection, checkFirestoreConnection, checkDerivConnection } from "@/app/actions";
+import { checkGeminiConnection, checkFirestoreConnection, checkDerivConnection, checkOllamaConnection } from "@/app/actions";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
+import type { OllamaConfig } from '@/lib/types';
 
 type ServiceStatus = 'operational' | 'degraded' | 'critical' | 'loading';
 
@@ -88,29 +89,45 @@ function StatusPageContent() {
     } = useDerivApiV2();
     
     const { toast } = useToast();
-    const [openServices, setOpenServices] = useState<Record<string, boolean>>({ deriv: true });
+    const [openServices, setOpenServices] = useState<Record<string, boolean>>({ deriv: true, ollama: true });
     const [statuses, setStatuses] = useState<Record<string, ServiceStatus>>({
         deriv: 'loading',
         gemini: 'loading',
-        firestore: 'loading'
+        firestore: 'loading',
+        ollama: 'loading'
     });
     
     const [testToken, setTestToken] = useState('');
     const [isTestingToken, setIsTestingToken] = useState(false);
     const [testResult, setTestResult] = useState<{ success: boolean; msg: string; assets?: number } | null>(null);
 
+    const [ollamaInfo, setOllamaInfo] = useState<{ modelCount: number; url: string } | null>(null);
+
     const checkAll = useCallback(async () => {
-        setStatuses(prev => ({ ...prev, gemini: 'loading', firestore: 'loading' }));
+        setStatuses(prev => ({ ...prev, gemini: 'loading', firestore: 'loading', ollama: 'loading' }));
         
+        const ollamaConfigRaw = localStorage.getItem('ollamaConfig');
+        let ollamaRes = { success: false, modelCount: 0 };
+        let ollamaUrl = 'N/D';
+
+        if (ollamaConfigRaw) {
+            const config = JSON.parse(ollamaConfigRaw) as OllamaConfig;
+            ollamaRes = await checkOllamaConnection(config);
+            ollamaUrl = config.baseUrl;
+        }
+
         const [gemini, firestore] = await Promise.all([
             checkGeminiConnection(),
             checkFirestoreConnection()
         ]);
 
+        setOllamaInfo({ modelCount: ollamaRes.modelCount || 0, url: ollamaUrl });
+
         setStatuses({
             deriv: isConnecting ? 'loading' : isConnected ? 'operational' : 'critical',
             gemini: gemini.success ? 'operational' : 'critical',
-            firestore: firestore.success ? 'operational' : 'critical'
+            firestore: firestore.success ? 'operational' : 'critical',
+            ollama: ollamaRes.success ? 'operational' : 'critical'
         });
     }, [isConnected, isConnecting]);
 
@@ -124,7 +141,6 @@ function StatusPageContent() {
             return;
         }
         setIsTestingToken(true);
-        // Usa o accountId fixo correspondente ao tipo selecionado
         const testAccountId = accountType === 'demo' ? 'DOT93059550' : 'ROT91769363';
         const res = await checkDerivConnection(testToken.trim(), testAccountId);
         setIsTestingToken(false);
@@ -136,7 +152,7 @@ function StatusPageContent() {
         else setTokens({ real: testToken.trim() });
         setTestToken('');
         setTestResult(null);
-        toast({ title: "Token Aplicado", description: "O sistema está a reiniciar a ligação com a nova credencial PAT." });
+        toast({ title: "Token Aplicado" });
     };
 
     const toggleService = (id: string) => {
@@ -266,6 +282,21 @@ function StatusPageContent() {
                         </div>
                     </ServiceItem>
                     
+                    <ServiceItem 
+                        id="ollama"
+                        name="IA Local (Ollama Studio)" 
+                        status={statuses.ollama} 
+                        icon={<Laptop className="h-5 w-5" />}
+                        isOpen={openServices.ollama}
+                        onToggle={() => toggleService('ollama')}
+                    >
+                        <div className="space-y-2">
+                            <p>Handshake com Gateway Local: <strong>{ollamaInfo?.url}</strong></p>
+                            <p>Modelos Sincronizados na VRAM: <strong>{ollamaInfo?.modelCount}</strong></p>
+                            <p className="text-[11px] opacity-70">O sistema utiliza o endpoint /api/chat para processamento local.</p>
+                        </div>
+                    </ServiceItem>
+
                     <ServiceItem 
                         id="gemini"
                         name="Google Gemini IA" 

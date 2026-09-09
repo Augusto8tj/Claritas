@@ -4,7 +4,7 @@
 import {
   financialChatbotInsights,
 } from "@/ai/flows/financial-chatbot-insights";
-import type { FinancialChatbotInsightsInput } from "@/lib/types";
+import type { FinancialChatbotInsightsInput, OllamaConfig } from "@/lib/types";
 import { getFinancialSummary } from "@/services/financial-data-service";
 import { auth, db } from "@/lib/firebase";
 import WebSocket from 'ws';
@@ -63,6 +63,70 @@ export async function getChatbotInsightsResponse(data: FinancialChatbotInsightsI
     console.error("[Action Error] getChatbotInsightsResponse:", e);
     return { error: e.message || "Desculpe, não consegui processar isso. Por favor, tente novamente." };
   }
+}
+
+/**
+ * Interface para chamadas ao Ollama Studio Local
+ */
+export async function getOllamaResponse(config: OllamaConfig, query: string, history: any[]): Promise<{ success?: string; error?: string }> {
+  try {
+    const url = config.baseUrl.replace(/\/+$/, '') + '/api/chat';
+    const authHeader = config.apiKey?.startsWith('Bearer ') ? config.apiKey : `Bearer ${config.apiKey}`;
+
+    const headers = {
+      'Authorization': authHeader,
+      'Content-Type': 'application/json',
+      'ngrok-skip-browser-warning': 'true'
+    };
+
+    const payload = {
+      model: config.model,
+      messages: [...history, { role: 'user', content: query }],
+      stream: false,
+      keep_alive: config.keepAlive === "-1" ? -1 : config.keepAlive,
+      options: {
+        temperature: config.temperature
+      }
+    };
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: headers,
+      body: JSON.stringify(payload),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Ollama Error: ${errorText}`);
+    }
+
+    const data = await response.json();
+    return { success: data.message?.content || "(Sem resposta do Ollama)" };
+  } catch (e: any) {
+    console.error("[Action Error] getOllamaResponse:", e);
+    return { error: e.message || "Erro ao conectar com Ollama Local." };
+  }
+}
+
+export async function checkOllamaConnection(config: OllamaConfig): Promise<{ success: boolean; error?: string; modelCount?: number }> {
+    try {
+        const url = config.baseUrl.replace(/\/+$/, '') + '/api/tags';
+        const authHeader = config.apiKey?.startsWith('Bearer ') ? config.apiKey : `Bearer ${config.apiKey}`;
+
+        const response = await fetch(url, {
+            method: 'GET',
+            headers: {
+                'Authorization': authHeader,
+                'ngrok-skip-browser-warning': 'true'
+            }
+        });
+
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const data = await response.json();
+        return { success: true, modelCount: data.models?.length || 0 };
+    } catch (e: any) {
+        return { success: false, error: e.message };
+    }
 }
 
 export async function getFinancialInsights(financialData: string): Promise<{ success?: string[]; error?: any }> {
@@ -150,8 +214,6 @@ export async function checkDerivConnection(token: string, accountId: string): Pr
         };
 
         ws.on('open', () => {
-            // No novo fluxo, a conexão já está autorizada. Pedimos ativos para validar.
-            // ✅ REMOVIDO 'product_type' para conformidade com a nova API
             ws.send(JSON.stringify({ active_symbols: 'brief', "req_id": 2 }));
         });
 

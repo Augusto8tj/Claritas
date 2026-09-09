@@ -67,6 +67,17 @@ export type Transaction = {
 };
 
 // =================================================================
+// Ollama / Local IA Types
+// =================================================================
+export interface OllamaConfig {
+  baseUrl: string;
+  apiKey?: string;
+  model: string;
+  temperature: number;
+  keepAlive: string;
+}
+
+// =================================================================
 // Chart & Trading Hook Types
 // =================================================================
 export interface Asset {
@@ -162,7 +173,7 @@ export type AssetAnalysisInput = AssetAnalysisInputT;
 
 // From financial-chatbot.types.ts
 const MessageSchema = z.object({
-  role: z.enum(['user', 'model']),
+  role: z.enum(['user', 'model', 'assistant', 'system']),
   content: z.string(),
 });
 export const financialChatbotInsightsInputSchema = z.object({
