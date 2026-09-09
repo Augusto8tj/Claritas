@@ -1,3 +1,4 @@
+
 'use client';
 
 // ESTE ARQUIVO É UMA CÓPIA DEDICADA PARA O SISTEMA V2.5
@@ -245,6 +246,20 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
             return newLog;
         });
     }, []);
+
+    const addTradeAnnotation = useCallback((annotation: Omit<TradeAnnotation, 'id'>) => {
+    const newAnnotation: TradeAnnotation = {
+      ...annotation,
+      id: `annotation-${annotation.contractId}`,
+    };
+    setTradeAnnotations(prev => [...prev, newAnnotation]);
+  }, []);
+
+  const updateTradeAnnotation = useCallback((contractId: string, updates: Partial<TradeAnnotation>) => {
+      setTradeAnnotations(prev => prev.map(ann => 
+        ann.contractId === contractId ? { ...ann, ...updates } : ann
+      ));
+  }, []);
   
   useEffect(() => {
     chartTypeRef.current = chartType;
@@ -276,20 +291,6 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
     setIsLoading(false);
   }, []);
 
-  const addTradeAnnotation = useCallback((annotation: Omit<TradeAnnotation, 'id'>) => {
-    const newAnnotation: TradeAnnotation = {
-      ...annotation,
-      id: `annotation-${annotation.contractId}`,
-    };
-    setTradeAnnotations(prev => [...prev, newAnnotation]);
-  }, []);
-
-  const updateTradeAnnotation = useCallback((contractId: string, updates: Partial<TradeAnnotation>) => {
-      setTradeAnnotations(prev => prev.map(ann => 
-        ann.contractId === contractId ? { ...ann, ...updates } : ann
-      ));
-  }, []);
-
   // Client-side timer to check for expired contracts
   useEffect(() => {
     const interval = setInterval(() => {
@@ -313,6 +314,14 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
   }, [operationsLog, updateTradeAnnotation, setAndPersistOperationsLog]);
   
   const activeToken = accountType === 'demo' ? demoToken : realToken;
+
+  useEffect(() => {
+    if (toastQueue.length > 0) {
+      toastQueue.forEach(t => toast(t));
+      setToastQueue([]);
+    }
+  }, [toastQueue, toast]);
+
 
   const makeRequest = useCallback(<T,>(request: object, noResponse = false): Promise<T> => {
     return new Promise((resolve) => {
@@ -742,17 +751,26 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
                                 if (op.status === 'pending') {
                                     if (isSold) {
                                         const newStatus = contract.profit >= 0 ? 'won' : 'lost';
+                                        
+                                        // ✅ CAPTURA ROBUSTA DE PREÇO E TEMPO DE SAÍDA
                                         const exitPrice = contract.exit_tick_display_value ? parseFloat(contract.exit_tick_display_value) : contract.sell_spot ? parseFloat(contract.sell_spot) : op.exitPrice;
-                                        const sellTime = contract.sell_time ? new Date(contract.sell_time * 1000).toISOString() : new Date().toISOString();
-                                        updatedLog[existingOpIndex] = { ...op, status: newStatus, result: contract.profit, exitPrice, exitTimestamp: sellTime };
+                                        const exitTimeEpoch = contract.sell_time || contract.exit_tick_time;
+                                        const sellTimeStr = exitTimeEpoch ? new Date(exitTimeEpoch * 1000).toISOString() : new Date().toISOString();
+                                        
+                                        updatedLog[existingOpIndex] = { ...op, status: newStatus, result: contract.profit, exitPrice, exitTimestamp: sellTimeStr };
                                         
                                         if (op.initiator === 'Piloto' && user) {
                                             savePredictiveTradeLog(user.uid, { id: `pred_log_${contract.contract_id}`, result: newStatus, pnl: contract.profit });
                                         }
 
-                                        updateTradeAnnotation(String(contract.contract_id), { status: newStatus, profit: contract.profit, exitPrice, exitTime: contract.sell_time });
+                                        // ✅ ATUALIZA ANOTAÇÃO NO GRÁFICO (CHAVE PARA FINALIZAR VISUALIZAÇÃO)
+                                        updateTradeAnnotation(String(contract.contract_id), { 
+                                            status: newStatus, 
+                                            profit: contract.profit, 
+                                            exitPrice, 
+                                            exitTime: exitTimeEpoch 
+                                        });
                                         
-                                        // ✅ CORREÇÃO: Conversão segura de profit para número antes de chamar toFixed()
                                         const profitVal = Number(contract.profit) || 0;
                                         setToastQueue(prev => [...prev, { 
                                             title: `Posição Fechada`, 
@@ -765,17 +783,48 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
                                     }
                                 }
                                 return prevLog;
-                            } else if (!isSold) {
+                            } else {
+                                // NOVO CONTRATO NÃO ENCONTRADO NO LOG (TRADES MUITO RÁPIDOS)
                                 if (recentlyCreatedContractsRef.current.has(contract.contract_id)) return prevLog;
+                                
                                 const direction = (contract.contract_type || '').includes('CALL') ? 'rise' : 'fall';
                                 const purchaseTime = contract.purchase_time || Math.floor(Date.now() / 1000);
+                                
                                 const newOp: Operation = {
-                                    id: contract.contract_id, asset: contract.symbol, direction, stake: contract.buy_price || 0,
-                                    status: 'pending', timestamp: new Date(purchaseTime * 1000).toISOString(), duration: 0, durationUnit: 's', initiator: 'Manual',
+                                    id: contract.contract_id, 
+                                    asset: contract.symbol, 
+                                    direction, 
+                                    stake: contract.buy_price || 0,
+                                    status: isSold ? (contract.profit >= 0 ? 'won' : 'lost') : 'pending', 
+                                    timestamp: new Date(purchaseTime * 1000).toISOString(), 
+                                    duration: 0, 
+                                    durationUnit: 's', 
+                                    initiator: 'Manual',
+                                    result: isSold ? contract.profit : undefined
                                 };
+                                
+                                // Se for o primeiro evento e já estiver vendido, finaliza anotação
+                                if (isSold) {
+                                    const exitEpoch = contract.sell_time || contract.exit_tick_time;
+                                    const exitPrice = contract.exit_tick_display_value ? parseFloat(contract.exit_tick_display_value) : contract.sell_spot ? parseFloat(contract.sell_spot) : 0;
+                                    
+                                    addTradeAnnotation({
+                                        contractId: String(contract.contract_id),
+                                        entryTime: purchaseTime,
+                                        entryPrice: parseFloat(contract.entry_spot || '0'),
+                                        direction,
+                                        status: contract.profit >= 0 ? 'won' : 'lost',
+                                        stake: contract.buy_price || 0,
+                                        symbol: contract.symbol,
+                                        exitTime: exitEpoch,
+                                        exitPrice: exitPrice,
+                                        profit: contract.profit,
+                                        contractType: 'option'
+                                    });
+                                }
+
                                 return [newOp, ...prevLog];
                             }
-                            return prevLog;
                         });
                         break;
                     case 'tick':
@@ -879,7 +928,7 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
       if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
       reconnectInProgressRef.current = false;
     };
-  }, [activeToken, isLoading, triggerReconnect, user, addEvent, accountType, makeRequest, startConnectionMonitor, setAndPersistOperationsLog, updateTradeAnnotation]);
+  }, [activeToken, isLoading, triggerReconnect, user, addEvent, accountType, makeRequest, startConnectionMonitor, setAndPersistOperationsLog, updateTradeAnnotation, addTradeAnnotation]);
 
   
   useEffect(() => {

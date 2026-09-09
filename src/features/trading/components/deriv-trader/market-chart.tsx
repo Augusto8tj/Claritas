@@ -1,3 +1,4 @@
+
 // src/components/deriv-trader/market-chart.tsx
 'use client'
 
@@ -479,7 +480,7 @@ export function MarketChart({
         }
     });
 
-    if (entryDataIndex === -1 || minEntryDiff > 300) return;
+    if (entryDataIndex === -1 || minEntryDiff > 600) return;
 
     const entryX = getX(entryDataIndex);
     const entryY = getY(ann.entryPrice);
@@ -589,7 +590,7 @@ export function MarketChart({
             }
         });
 
-        if (exitDataIndex !== -1 && minExitDiff <= 300) {
+        if (exitDataIndex !== -1 && minExitDiff <= 600) {
             const exitX = getX(exitDataIndex);
             const exitY = getY(ann.exitPrice);
 
@@ -640,7 +641,8 @@ export function MarketChart({
             ctx.fillText(statusSymbol, flagWidth * 0.5, -poleHeight + flagHeight * 0.5);
             
             if (ann.profit !== undefined) {
-                const profitText = `${ann.profit >= 0 ? '+' : ''}$${Math.abs(ann.profit).toFixed(2)}`;
+                const profitVal = Number(ann.profit) || 0;
+                const profitText = `${profitVal >= 0 ? '+' : ''}$${Math.abs(profitVal).toFixed(2)}`;
                 ctx.font = 'bold 13px Arial';
                 ctx.textAlign = 'left';
                 const textMetrics = ctx.measureText(profitText);
