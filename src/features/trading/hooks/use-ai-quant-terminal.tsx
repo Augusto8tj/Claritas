@@ -76,10 +76,14 @@ export function useAIQuantTerminal(
             return acc + (Number(op.result) || 0);
         }, 0);
         
-        return { pnl, winRate, total };
+        return { 
+          pnl: Number(pnl) || 0, 
+          winRate: Number(winRate) || 0, 
+          total: Number(total) || 0 
+        };
     }, [operationsLog, activeSymbol]);
 
-    // NOVO: Memória de Performance Recente para o CIO
+    // MEMÓRIA: Snapshot de Performance Recente para o CIO
     const recentPerformanceSummary = useMemo(() => {
         return operationsLog
             .filter(op => op.initiator === 'Conselho' && op.asset === activeSymbol && op.status !== 'pending')
@@ -90,7 +94,7 @@ export function useAIQuantTerminal(
                 pnl: op.result?.toFixed(2),
                 entry: op.entryPrice?.toFixed(4),
                 exit: op.exitPrice?.toFixed(4),
-                reasoning: op.strategy // Onde salvamos o raciocínio anterior
+                reasoning: op.strategy 
             }));
     }, [operationsLog, activeSymbol]);
 
@@ -193,7 +197,7 @@ export function useAIQuantTerminal(
             DADOS ATUAIS DO MERCADO:
             ${JSON.stringify(marketContext, null, 2)}
             
-            RETORNE APENAS JSON NESTE FORMATO:
+            RETORNE APENAS JSON NESTE FORMATO (sem markdown):
             {
               "action": "RISE" | "FALL" | "HOLD",
               "confidence": 0-100,
@@ -208,8 +212,8 @@ export function useAIQuantTerminal(
 
             if (response.error) throw new Error(response.error);
 
-            // Parsing resiliente
-            const rawContent = response.success || "";
+            // Parsing resiliente (remove blocos de código se a IA os incluir)
+            const rawContent = (response.success || "").replace(/```json|```/g, "").trim();
             const jsonMatch = rawContent.match(/\{.*\}/s);
             if (!jsonMatch) throw new Error("IA retornou formato inválido.");
             
@@ -244,14 +248,12 @@ export function useAIQuantTerminal(
         setIsChatLoading(true);
 
         try {
-            const indicators = calculateAllIndicators(chartData, initialCouncilStrategies, '1m', { duration: 15, unit: 's' });
-            const currentPrice = priceTicks[priceTicks.length - 1]?.price;
-
             const systemPrompt = `Você é o Chief Investment Officer (CIO) do Terminal Claritas. 
             CONTEXTO OPERACIONAL:
-            - Ativo: ${activeSymbol} | Preço: ${currentPrice?.toFixed(4)}
-            - Perfil: ${strategicProfile} | P&L Ativo: $${Number(sessionStats.pnl).toFixed(2)}
-            - Último Veredito: ${lastDecision ? lastDecision.action : 'Nenhum'}
+            - Ativo: ${activeSymbol}
+            - Perfil: ${strategicProfile}
+            - P&L Ativo: $${sessionStats.pnl.toFixed(2)}
+            - Win Rate: ${sessionStats.winRate.toFixed(1)}%
             - Memória de Trades Recentes: ${JSON.stringify(recentPerformanceSummary)}
             
             Instrução: Responda de forma técnica. Use a memória de trades para explicar por que ganhamos ou perdemos as últimas operações se questionado.`;

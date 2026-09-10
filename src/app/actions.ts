@@ -68,9 +68,12 @@ export async function getChatbotInsightsResponse(data: FinancialChatbotInsightsI
 }
 
 /**
- * Interface para chamadas ao Ollama Studio Local
+ * Interface para chamadas ao Ollama Studio Local com timeout e tratamento de erro robusto.
  */
 export async function getOllamaResponse(config: OllamaConfig, query: string, history: any[]): Promise<{ success?: string; error?: string; metadata?: any }> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 60000); // 60s timeout
+
   try {
     const url = config.baseUrl.replace(/\/+$/, '') + '/api/chat';
     const authHeader = config.apiKey?.startsWith('Bearer ') ? config.apiKey : `Bearer ${config.apiKey}`;
@@ -95,11 +98,14 @@ export async function getOllamaResponse(config: OllamaConfig, query: string, his
       method: 'POST',
       headers: headers,
       body: JSON.stringify(payload),
+      signal: controller.signal
     });
+
+    clearTimeout(timeoutId);
 
     if (!response.ok) {
       const errorText = await response.text();
-      throw new Error(`Ollama Error: ${errorText}`);
+      return { error: `Erro na IA Local (Ollama): ${errorText}` };
     }
 
     const data = await response.json();
@@ -108,8 +114,10 @@ export async function getOllamaResponse(config: OllamaConfig, query: string, his
       metadata: data
     };
   } catch (e: any) {
+    clearTimeout(timeoutId);
     console.error("[Action Error] getOllamaResponse:", e);
-    return { error: e.message || "Erro ao conectar com Ollama Local." };
+    const isTimeout = e.name === 'AbortError';
+    return { error: isTimeout ? "A IA demorou muito a responder (Timeout)." : "Falha ao conectar com o gateway da IA Local." };
   }
 }
 
@@ -125,7 +133,6 @@ export async function runOllamaBenchmark(config: OllamaConfig, testType: 'speed'
         query = `Analise a seguinte série de preços para o Volatility 100 Index: [102.5, 101.8, 103.2, 104.5, 103.8, 105.2, 106.1]. 
         Determine a tendência e sugira uma operação. Responda estritamente em JSON: {"decision": "BUY"|"SELL", "confidence": number, "logic": "string"}`;
     } else {
-        // Teste de Contexto: Geramos um prompt longo simulando um relatório
         const longReport = "RELATÓRIO FINANCEIRO ANUAL CLARITAS\n".repeat(200);
         query = `${longReport}\n\nPergunta de Stress: Qual o nome do projeto mencionado no início deste documento? Responda em uma palavra.`;
     }
@@ -143,7 +150,6 @@ export async function runOllamaBenchmark(config: OllamaConfig, testType: 'speed'
         const evalTimeMs = evalDuration / 1e6;
         const tokensPerSecond = (evalCount && evalTimeMs > 0) ? evalCount / (evalTimeMs / 1000) : 0;
 
-        // Avaliação qualitativa simples para o ranking
         let score = 0;
         if (testType === 'intelligence') {
             const hasJson = result.success?.includes('{') && result.success?.includes('}');
