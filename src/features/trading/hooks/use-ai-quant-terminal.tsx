@@ -122,15 +122,25 @@ export function useAIQuantTerminal(
     const executeTradeAction = useCallback(async (decision: QuantDecision) => {
         if (!activeSymbol) return;
 
-        addLog(`Executando Ordem ${decision.action} via CIO Autopilot...`, 'execution');
+        // ✅ SANITIZAÇÃO DE DURAÇÃO (Respeitando limites rígidos da Deriv)
+        let finalDuration = decision.duration;
+        const finalUnit = (decision.unit || 's') as DurationUnit;
+
+        if (finalUnit === 't') {
+            finalDuration = Math.max(1, Math.min(10, decision.duration)); // Limite: 1-10 ticks
+        } else if (finalUnit === 's') {
+            finalDuration = Math.max(15, Math.min(300, decision.duration)); // Limite: Min 15s
+        }
+
+        addLog(`Executando Ordem ${decision.action} (${finalDuration}${finalUnit})...`, 'execution');
 
         const result = await executeTrade(
             decision.action === 'RISE' ? 'CALL' : 'PUT',
             Number(stakeValue), 
             activeSymbol,
             decision.action.toLowerCase() as 'rise' | 'fall',
-            decision.duration,
-            decision.unit as DurationUnit,
+            finalDuration,
+            finalUnit,
             'Conselho',
             `Ollama_CIO: ${decision.reasoning}`
         );
@@ -179,7 +189,7 @@ export function useAIQuantTerminal(
                 price: priceTicks[priceTicks.length - 1]?.price,
                 regime: regime?.regime,
                 profile: strategicProfile,
-                recent_performance: recentPerformanceSummary, // MEMÓRIA INJETADA
+                recent_performance: recentPerformanceSummary,
                 indicators: {
                     rsi: indicators?.rsi?.toFixed(2),
                     adx: indicators?.adx?.toFixed(1),
@@ -197,14 +207,18 @@ export function useAIQuantTerminal(
             DADOS ATUAIS DO MERCADO:
             ${JSON.stringify(marketContext, null, 2)}
             
-            RETORNE APENAS JSON NESTE FORMATO (sem markdown):
+            RETORNE APENAS JSON NESTE FORMATO:
             {
               "action": "RISE" | "FALL" | "HOLD",
               "confidence": 0-100,
-              "reasoning": "Explicação curta (aprox 15 palavras) incluindo o porquê baseado no desempenho anterior se houver",
-              "duration": 15-300,
+              "reasoning": "Breve justificativa técnica",
+              "duration": número,
               "unit": "s" | "t"
-            }`;
+            }
+            
+            REGRAS DE DURAÇÃO:
+            - Se unit for "t" (ticks), duration DEVE ser entre 1 e 10.
+            - Se unit for "s" (segundos), duration DEVE ser entre 15 e 300.`;
 
             const start = performance.now();
             const response = await getOllamaResponse(ollamaConfig, prompt, []);
@@ -212,7 +226,7 @@ export function useAIQuantTerminal(
 
             if (response.error) throw new Error(response.error);
 
-            // Parsing resiliente (remove blocos de código se a IA os incluir)
+            // Parsing resiliente
             const rawContent = (response.success || "").replace(/```json|```/g, "").trim();
             const jsonMatch = rawContent.match(/\{.*\}/s);
             if (!jsonMatch) throw new Error("IA retornou formato inválido.");
