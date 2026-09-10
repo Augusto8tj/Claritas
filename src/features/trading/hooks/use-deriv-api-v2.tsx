@@ -769,6 +769,7 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
                                                 savePredictiveTradeLog(user.uid, { id: `pred_log_${contract.contract_id}`, result: newStatus, pnl: contract.profit });
                                             }
                                             
+                                            // ✅ CORREÇÃO CRÍTICA: Força a finalização visual no gráfico
                                             updateTradeAnnotation(String(contract.contract_id), { 
                                                 status: newStatus, 
                                                 profit: contract.profit, 

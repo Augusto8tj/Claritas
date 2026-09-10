@@ -1,11 +1,11 @@
+
 'use client';
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import type { TickData, CandleData, OperationInitiator, DurationUnit } from '@/lib/types';
+import type { TickData, CandleData, OperationInitiator, DurationUnit, Operation } from '@/lib/types';
 import { useDerivApiV2 } from './use-deriv-api-v2';
 import { getOllamaResponse } from '@/app/actions';
 import { calculateAllIndicators } from '../services/indicator-service';
-import { getCouncilStrategies } from '../strategies-config-v2'; // Corrigido para o caminho real se necessário, mas usaremos os padrões
 import { initialCouncilStrategies } from '../services/council-strategies';
 import { detectMarketRegime } from '../services/advanced-trading-services';
 import { useToast } from '@/hooks/use-toast';
@@ -37,7 +37,7 @@ export function useAIQuantTerminal(
     priceTicks: TickData[],
     chartData: CandleData[]
 ) {
-    const { isConnected, executeTrade, accountBalance, operationsLog } = useDerivApiV2();
+    const { isConnected, executeTrade, operationsLog } = useDerivApiV2();
     const { toast } = useToast();
 
     // ESTADOS DE CONTROLE
@@ -61,11 +61,12 @@ export function useAIQuantTerminal(
     // REFS
     const executionLockRef = useRef(false);
 
-    // ESTATÍSTICAS DA SESSÃO
+    // ESTATÍSTICAS DA SESSÃO (Segmentadas por Ativo)
     const sessionStats = useMemo(() => {
         const finishedTrades = operationsLog.filter(op => 
             op.status !== 'pending' && 
-            op.initiator === 'Conselho'
+            op.initiator === 'Conselho' &&
+            op.asset === activeSymbol
         );
         const wins = finishedTrades.filter(op => op.status === 'won').length;
         const total = finishedTrades.length;
@@ -76,7 +77,22 @@ export function useAIQuantTerminal(
         }, 0);
         
         return { pnl, winRate, total };
-    }, [operationsLog]);
+    }, [operationsLog, activeSymbol]);
+
+    // NOVO: Memória de Performance Recente para o CIO
+    const recentPerformanceSummary = useMemo(() => {
+        return operationsLog
+            .filter(op => op.initiator === 'Conselho' && op.asset === activeSymbol && op.status !== 'pending')
+            .slice(0, 5)
+            .map(op => ({
+                dir: op.direction,
+                res: op.status,
+                pnl: op.result?.toFixed(2),
+                entry: op.entryPrice?.toFixed(4),
+                exit: op.exitPrice?.toFixed(4),
+                reasoning: op.strategy // Onde salvamos o raciocínio anterior
+            }));
+    }, [operationsLog, activeSymbol]);
 
     // CONFIGURAÇÃO DO OLLAMA
     const ollamaConfig = useMemo(() => {
@@ -159,35 +175,29 @@ export function useAIQuantTerminal(
                 price: priceTicks[priceTicks.length - 1]?.price,
                 regime: regime?.regime,
                 profile: strategicProfile,
+                recent_performance: recentPerformanceSummary, // MEMÓRIA INJETADA
                 indicators: {
                     rsi: indicators?.rsi?.toFixed(2),
                     adx: indicators?.adx?.toFixed(1),
                     bbw: indicators?.bbw?.toFixed(3),
                     macd_hist: indicators?.macd?.histogram?.toFixed(4)
-                },
-                recent_ohlc: chartData.slice(-10).map(c => ({ 
-                    c: c.close, 
-                    h: c.high, 
-                    l: c.low 
-                }))
+                }
             };
 
             const prompt = `VOCÊ É O CHIEF INVESTMENT OFFICER (CIO) DO TERMINAL CLARITAS.
             Perfil Estratégico Ativo: ${strategicProfile.toUpperCase()}
             
+            MISSÃO: Analise o mercado e o desempenho recente.
+            Se houver falhas recentes, entenda se o mercado mudou de regime.
+            
             DADOS ATUAIS DO MERCADO:
             ${JSON.stringify(marketContext, null, 2)}
-            
-            SUA MISSÃO:
-            Analise a convergência técnica e estocástica. 
-            No perfil CONSERVADOR: Exija confluência total (Confiança > 85%).
-            No perfil AGRESSIVO: Aceite sinais de momentum rápido (Confiança > 55%).
             
             RETORNE APENAS JSON NESTE FORMATO:
             {
               "action": "RISE" | "FALL" | "HOLD",
               "confidence": 0-100,
-              "reasoning": "Explicação quantitativa curta",
+              "reasoning": "Explicação curta (aprox 15 palavras) incluindo o porquê baseado no desempenho anterior se houver",
               "duration": 15-300,
               "unit": "s" | "t"
             }`;
@@ -198,6 +208,7 @@ export function useAIQuantTerminal(
 
             if (response.error) throw new Error(response.error);
 
+            // Parsing resiliente
             const rawContent = response.success || "";
             const jsonMatch = rawContent.match(/\{.*\}/s);
             if (!jsonMatch) throw new Error("IA retornou formato inválido.");
@@ -223,7 +234,7 @@ export function useAIQuantTerminal(
         } finally {
             executionLockRef.current = false;
         }
-    }, [activeSymbol, isConnected, chartData, priceTicks, isAutoMode, ollamaConfig, addLog, sessionStats.pnl, profitTarget, executeTradeAction, toast, strategicProfile]);
+    }, [activeSymbol, isConnected, chartData, priceTicks, isAutoMode, ollamaConfig, addLog, sessionStats.pnl, profitTarget, executeTradeAction, toast, strategicProfile, recentPerformanceSummary]);
 
     const sendMessage = async (content: string) => {
         if (!ollamaConfig || !content.trim()) return;
@@ -237,14 +248,13 @@ export function useAIQuantTerminal(
             const currentPrice = priceTicks[priceTicks.length - 1]?.price;
 
             const systemPrompt = `Você é o Chief Investment Officer (CIO) do Terminal Claritas. 
-            STATUS ATUAL:
-            - Ativo: ${activeSymbol}
-            - Preço: ${currentPrice?.toFixed(4) || 'N/A'}
-            - Perfil: ${strategicProfile}
-            - P&L Sessão: $${Number(sessionStats.pnl).toFixed(2)} | Win Rate: ${Number(sessionStats.winRate).toFixed(1)}%
-            - Último Veredito: ${lastDecision ? `${lastDecision.action} (${lastDecision.confidence}%)` : 'Nenhum'}
+            CONTEXTO OPERACIONAL:
+            - Ativo: ${activeSymbol} | Preço: ${currentPrice?.toFixed(4)}
+            - Perfil: ${strategicProfile} | P&L Ativo: $${Number(sessionStats.pnl).toFixed(2)}
+            - Último Veredito: ${lastDecision ? lastDecision.action : 'Nenhum'}
+            - Memória de Trades Recentes: ${JSON.stringify(recentPerformanceSummary)}
             
-            Responda de forma técnica e fundamentada nos números acima.`;
+            Instrução: Responda de forma técnica. Use a memória de trades para explicar por que ganhamos ou perdemos as últimas operações se questionado.`;
 
             const history = chatMessages.map(m => ({ role: m.role, content: m.content }));
             

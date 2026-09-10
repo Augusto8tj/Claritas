@@ -1,6 +1,7 @@
+
 'use client';
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -58,7 +59,10 @@ function TerminalContent() {
         }
     };
 
-    const terminalTrades = operationsLog.filter(op => op.initiator === 'Conselho');
+    // Histórico filtrado pelo ativo ativo
+    const filteredTerminalTrades = useMemo(() => {
+        return operationsLog.filter(op => op.initiator === 'Conselho' && op.asset === activeSymbol);
+    }, [operationsLog, activeSymbol]);
 
     const getDurationLabel = (unit: string) => {
         const labels: Record<string, string> = {
@@ -163,7 +167,7 @@ function TerminalContent() {
                     <Card className="bg-card/50 border-border shadow-sm">
                         <CardHeader className="pb-3">
                             <CardTitle className="text-sm font-bold uppercase tracking-widest text-muted-foreground flex items-center gap-2">
-                                <Binary className="h-4 w-4" /> Gestão Financeira
+                                <Binary className="h-4 w-4" /> Gestão Financeira ({activeSymbol})
                             </CardTitle>
                         </CardHeader>
                         <CardContent className="space-y-4">
@@ -218,9 +222,9 @@ function TerminalContent() {
                     <Card className="bg-card/50 border-border shadow-sm flex-1">
                         <CardHeader className="pb-2 flex flex-row items-center justify-between space-y-0">
                             <CardTitle className="text-xs font-bold uppercase tracking-widest text-muted-foreground flex items-center gap-2">
-                                <History className="h-4 w-4 text-primary" /> Histórico de Trades
+                                <History className="h-4 w-4 text-primary" /> Histórico: {activeSymbol}
                             </CardTitle>
-                            {terminalTrades.length > 0 && (
+                            {filteredTerminalTrades.length > 0 && (
                                 <Button 
                                     variant="ghost" 
                                     size="icon" 
@@ -235,13 +239,13 @@ function TerminalContent() {
                         <CardContent className="p-0">
                             <ScrollArea className="h-64">
                                 <div className="divide-y divide-border">
-                                    {terminalTrades.length === 0 ? (
+                                    {filteredTerminalTrades.length === 0 ? (
                                         <div className="p-8 text-center text-muted-foreground opacity-40">
                                             <Activity className="h-8 w-8 mx-auto mb-2" />
-                                            <p className="text-[10px] font-mono">Sem execuções registradas</p>
+                                            <p className="text-[10px] font-mono">Sem execuções para este ativo</p>
                                         </div>
                                     ) : (
-                                        terminalTrades.map((op) => (
+                                        filteredTerminalTrades.map((op) => (
                                             <div key={op.id} className="p-3 hover:bg-muted/10 transition-colors">
                                                 <div className="flex items-center justify-between mb-1">
                                                     <div className="flex items-center gap-2">
