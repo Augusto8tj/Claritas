@@ -219,6 +219,8 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
   const reconnectInProgressRef = useRef(false);
 
   const recentlyCreatedContractsRef = useRef<Set<number>>(new Set());
+  const activeSubscriptionIdRef = useRef<string | null>(null);
+  const botSubscriptionIdRef = useRef<string | null>(null);
 
     useEffect(() => {
         operationsLogRef.current = operationsLog;
@@ -773,7 +775,6 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
                                                 savePredictiveTradeLog(user.uid, { id: `pred_log_${contract.contract_id}`, result: newStatus, pnl: contract.profit });
                                             }
                                             
-                                            // ✅ CORREÇÃO CRÍTICA: Força a finalização visual no gráfico
                                             updateTradeAnnotation(String(contract.contract_id), { 
                                                 status: newStatus, 
                                                 profit: contract.profit, 
@@ -955,17 +956,7 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
   const contextValue: DerivApiContextTypeV2 = useMemo(() => ({
     ws: wsRef.current, isConnected, isConnecting, connectionError, demoToken, realToken, activeToken,
     accountType, setAccountType: (type) => { localStorage.setItem(DERIV_ACCOUNT_TYPE_KEY, type); setAccountTypeState(type); setTriggerReconnect(c => c + 1); },
-    setTokens: (t) => { 
-        if(t.demo) {
-            localStorage.setItem(DERIV_DEMO_TOKEN_KEY, t.demo);
-            setDemoToken(t.demo);
-        }
-        if(t.real) {
-            localStorage.setItem(DERIV_REAL_TOKEN_KEY, t.real);
-            setRealToken(t.real);
-        }
-        setTriggerReconnect(c => c + 1); 
-    },
+    setTokens: (t) => { if(t.demo) { localStorage.setItem(DERIV_DEMO_TOKEN_KEY, t.demo); setDemoToken(t.demo); } if(t.real) { localStorage.setItem(DERIV_REAL_TOKEN_KEY, t.real); setRealToken(t.real); } setTriggerReconnect(c => c + 1); },
     disconnect: (type) => { if(type === 'demo') localStorage.removeItem(DERIV_DEMO_TOKEN_KEY); else localStorage.removeItem(DERIV_REAL_TOKEN_KEY); setTriggerReconnect(c => c + 1); },
     reconnect: async () => { setTriggerReconnect(c => c + 1); return true; },
     accountBalance, operationsLog, assetGroups, isAssetsLoading, activeSymbol, setActiveSymbol, 
