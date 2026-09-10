@@ -91,6 +91,7 @@ export const OperationSchema = z.object({
   apiStatus: z.enum(['won', 'lost']).optional(),
   validationLog: z.any().optional(),
   executionLatency: z.number().optional(),
+  resolvedBy: z.enum(['api', 'timeout']).optional(),
 });
 
 export const RobotStrategySchema = z.object({
@@ -222,6 +223,7 @@ export const IndicatorsSchema = z.object({
   psar: z.number().nullable(),
   ichimoku: z.object({
     tenkan: z.number().nullable(),
+    confirmado: z.boolean().optional(),
     kijun: z.number().nullable(),
     spanA: z.number().nullable(),
     spanB: z.number().nullable(),

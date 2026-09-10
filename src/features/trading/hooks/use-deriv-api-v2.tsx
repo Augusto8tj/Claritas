@@ -1,4 +1,3 @@
-
 'use client';
 
 // ESTE ARQUIVO É UMA CÓPIA DEDICADA PARA O SISTEMA V2.5
@@ -199,8 +198,6 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
   const chartTypeRef = useRef(chartType);
   const [timePeriod, setTimePeriod] = useState<TimePeriod>('1m');
   const timePeriodRef = useRef(timePeriod);
-  const activeSubscriptionIdRef = useRef<string | null>(null);
-  const botSubscriptionIdRef = useRef<string | null>(null);
   const [tradeAnnotations, setTradeAnnotations] = useState<TradeAnnotation[]>([]);
   const [dataVersion, setDataVersion] = useState(0); 
   const [durationLimits, setDurationLimits] = useState<DurationLimits | null>(null);
@@ -296,16 +293,23 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
   useEffect(() => {
     const interval = setInterval(() => {
       const now = Date.now();
+      const GRACE_MS = 8000; // espera a API confirmar antes de assumir "lost" por timeout
       let hasChanges = false;
       
       const updatedOps = operationsLogRef.current.map(op => {
-        if (op.status === 'pending' && op.expirationTime && now > op.expirationTime) {
+        if (op.status === 'pending' && op.expirationTime && now > op.expirationTime + GRACE_MS) {
           hasChanges = true;
+          const fallbackExitEpoch = Math.floor(now / 1000);
           // Trigger side effect outside of the map/updater logic
           setTimeout(() => {
-              updateTradeAnnotation(String(op.id), { status: 'lost', profit: -op.stake });
+              updateTradeAnnotation(String(op.id), { 
+                status: 'lost', 
+                profit: -op.stake,
+                exitTime: fallbackExitEpoch,
+                exitPrice: op.entryPrice,
+              });
           }, 0);
-          return { ...op, status: 'lost' as const, result: -op.stake, exitTimestamp: new Date().toISOString() };
+          return { ...op, status: 'lost' as const, result: -op.stake, exitTimestamp: new Date().toISOString(), resolvedBy: 'timeout' as const };
         }
         return op;
       });
@@ -639,7 +643,7 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
           };
         } catch (error) {
            console.error("[Deriv Hook] Erro na execução:", error);
-           const message = error instanceof Error ? error.message : "Erro desconhecido.";
+           const message = error instanceof Error ? error.message : "Um erro desconhecido.";
            return { success: false, message };
         }
       }, [isConnected, makeRequest, addTradeAnnotation, priceTicks, setAndPersistOperationsLog]);
@@ -754,7 +758,7 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
                             if (existingOpIndex !== -1) {
                                 const updatedLog = [...prevLog];
                                 const op = updatedLog[existingOpIndex];
-                                if (op.status === 'pending') {
+                                if (op.status === 'pending' || op.resolvedBy === 'timeout') {
                                     if (isSold) {
                                         const newStatus = contract.profit >= 0 ? 'won' : 'lost';
                                         
@@ -789,7 +793,7 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
                                             }
                                         }, 0);
                                         
-                                        updatedLog[existingOpIndex] = { ...op, status: newStatus, result: contract.profit, exitPrice, exitTimestamp: sellTimeStr };
+                                        updatedLog[existingOpIndex] = { ...op, status: newStatus, result: contract.profit, exitPrice, exitTimestamp: sellTimeStr, resolvedBy: 'api' };
                                         return updatedLog;
                                     }
                                 }
@@ -951,13 +955,23 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
   const contextValue: DerivApiContextTypeV2 = useMemo(() => ({
     ws: wsRef.current, isConnected, isConnecting, connectionError, demoToken, realToken, activeToken,
     accountType, setAccountType: (type) => { localStorage.setItem(DERIV_ACCOUNT_TYPE_KEY, type); setAccountTypeState(type); setTriggerReconnect(c => c + 1); },
-    setTokens: (t) => { if(t.demo) localStorage.setItem(DERIV_DEMO_TOKEN_KEY, t.demo); if(t.real) localStorage.setItem(DERIV_REAL_TOKEN_KEY, t.real); setTriggerReconnect(c => c + 1); },
+    setTokens: (t) => { 
+        if(t.demo) {
+            localStorage.setItem(DERIV_DEMO_TOKEN_KEY, t.demo);
+            setDemoToken(t.demo);
+        }
+        if(t.real) {
+            localStorage.setItem(DERIV_REAL_TOKEN_KEY, t.real);
+            setRealToken(t.real);
+        }
+        setTriggerReconnect(c => c + 1); 
+    },
     disconnect: (type) => { if(type === 'demo') localStorage.removeItem(DERIV_DEMO_TOKEN_KEY); else localStorage.removeItem(DERIV_REAL_TOKEN_KEY); setTriggerReconnect(c => c + 1); },
     reconnect: async () => { setTriggerReconnect(c => c + 1); return true; },
     accountBalance, operationsLog, assetGroups, isAssetsLoading, activeSymbol, setActiveSymbol, 
     chartData, botCandleData, priceTicks, isChartLoading, chartError, chartType, setChartType, 
     timePeriod, setTimePeriod, dataVersion, executeTrade, sellContract, getHistoricalData, 
-    clearActiveContracts: () => setAndPersistOperationsLog([]), tradeAnnotations, durationLimits,
+    clearActiveContracts: () => { setAndPersistOperationsLog([]); setTradeAnnotations([]); }, tradeAnnotations, durationLimits,
     connectionEvents, rawErrorCode, tokenSource, maskedToken, appId: DERIV_APP_ID, hookVersion: 'v2.5.0-otp'
   }), [
       isConnected, isConnecting, connectionError, demoToken, realToken, activeToken, accountType, accountBalance, operationsLog, assetGroups, 

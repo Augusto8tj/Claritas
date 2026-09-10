@@ -139,6 +139,7 @@ export interface Operation {
   apiStatus?: 'won' | 'lost';
   validationLog?: any;
   executionLatency?: number;
+  resolvedBy?: 'api' | 'timeout';
 }
 
 // =================================================================
