@@ -155,7 +155,7 @@ const addDataPoint = (prevData: ChartData[], newPoint: ChartData): ChartData[] =
     }
     data.push(newPoint);
     if (data.length > MAX_DATA_POINTS) {
-        return data.slice(1);
+        return data.slice(data.length - MAX_DATA_POINTS);
     }
     return data;
 };
@@ -181,6 +181,7 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
   const [accountBalance, setAccountBalance] = useState<AccountBalance>({ balance: null, currency: null, loading: true });
   const [isLoading, setIsLoading] = useState(true);
   const [operationsLog, setOperationsLog] = useState<Operation[]>([]);
+  const operationsLogRef = useRef(operationsLog);
   const [assetGroups, setAssetGroups] = useState<AssetGroup[]>([]);
   const [isAssetsLoading, setIsAssetsLoading] = useState(true);
   const { toast } = useToast();
@@ -222,6 +223,10 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
 
   const recentlyCreatedContractsRef = useRef<Set<number>>(new Set());
 
+    useEffect(() => {
+        operationsLogRef.current = operationsLog;
+    }, [operationsLog]);
+
     const addEvent = useCallback((message: string, type: ConnectionEvent['type'] = 'info') => {
         setConnectionEvents(prev => [{ timestamp: new Date().toLocaleTimeString(), message, type }, ...prev].slice(0, 50));
     }, []);
@@ -229,15 +234,11 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
     const setAndPersistOperationsLog = useCallback((updater: React.SetStateAction<Operation[]>) => {
         setOperationsLog(prevLog => {
             const newLogWithPotentialDuplicates = typeof updater === 'function' ? updater(prevLog) : updater;
-            
             const uniqueOpsMap = new Map<number, Operation>();
             for(const op of newLogWithPotentialDuplicates) {
-                if(op && op.id) {
-                    uniqueOpsMap.set(op.id, op);
-                }
+                if(op && op.id) uniqueOpsMap.set(op.id, op);
             }
             const newLog = Array.from(uniqueOpsMap.values());
-            
             try {
                 localStorage.setItem(DERIV_V2_LOG_KEY, JSON.stringify(newLog));
             } catch (error) {
@@ -296,10 +297,14 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
     const interval = setInterval(() => {
       const now = Date.now();
       let hasChanges = false;
-      const updatedOps = operationsLog.map(op => {
+      
+      const updatedOps = operationsLogRef.current.map(op => {
         if (op.status === 'pending' && op.expirationTime && now > op.expirationTime) {
           hasChanges = true;
-          updateTradeAnnotation(String(op.id), { status: 'lost', profit: -op.stake });
+          // Trigger side effect outside of the map/updater logic
+          setTimeout(() => {
+              updateTradeAnnotation(String(op.id), { status: 'lost', profit: -op.stake });
+          }, 0);
           return { ...op, status: 'lost' as const, result: -op.stake, exitTimestamp: new Date().toISOString() };
         }
         return op;
@@ -311,7 +316,7 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
     }, 2000);
 
     return () => clearInterval(interval);
-  }, [operationsLog, updateTradeAnnotation, setAndPersistOperationsLog]);
+  }, [updateTradeAnnotation, setAndPersistOperationsLog]);
   
   const activeToken = accountType === 'demo' ? demoToken : realToken;
 
@@ -337,7 +342,7 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
             const timeoutId = setTimeout(() => {
                 if (promisesRef.current.has(String(req_id))) {
                     const promise = promisesRef.current.get(String(req_id));
-                    promise?.resolve({ error: { message: `O pedido à API expirou.` } } as any);
+                    promise?.resolve({ error: { message: `O pedido à API expirou.`, code: 'Timeout' } } as any);
                     promisesRef.current.delete(String(req_id));
                 }
             }, 60000);
@@ -349,7 +354,7 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
                 },
                 reject: (reason: any) => {
                     clearTimeout(timeoutId);
-                    resolve({ error: { message: reason?.message || 'Erro interno na Promise.' } } as any);
+                    resolve({ error: { message: reason?.message || 'Erro interno na Promise.', code: 'InternalError' } } as any);
                 }
             });
         }
@@ -553,7 +558,6 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
           const sanitizedStake = parseFloat(stake.toFixed(2));
           const sanitizedDuration = Math.round(duration);
 
-          // ✅ CORREÇÃO: No motor de Options API (v1), a chave do ativo deve ser 'underlying_symbol'
           const proposalResponse: any = await makeRequest({ 
               "proposal": 1,
               "amount": sanitizedStake,
@@ -645,7 +649,7 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
         return { success: false, message: "A conexão não está ativa." };
     }
 
-    const contract = operationsLog.find(op => op.id === contractId);
+    const contract = operationsLogRef.current.find(op => op.id === contractId);
     if (contract && contract.expirationTime) {
       const remainingTime = contract.expirationTime - Date.now();
       if (remainingTime < 1000) { 
@@ -660,7 +664,7 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
     } catch (error: any) {
         return { success: false, message: error.message };
     }
-  }, [isConnected, makeRequest, operationsLog]);
+  }, [isConnected, makeRequest]);
   
   const startConnectionMonitor = useCallback(() => {
     if (pingIntervalRef.current) clearInterval(pingIntervalRef.current);
@@ -718,7 +722,7 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
                     const promise = promisesRef.current.get(String(reqId));
                     if (promise) {
                         if (response.error) {
-                            promise.reject(new Error(response.error.message));
+                            promise.resolve(response); // Resolve com erro para o chamador tratar
                         } else {
                             promise.resolve(response);
                         }
@@ -728,8 +732,10 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
                 }
 
                 if (response.error && response.error.message) {
-                    setRawErrorCode(response.error.code || 'UNKNOWN');
-                    addEvent(`Erro: ${response.error.message}`, 'error');
+                    if (response.error.code !== 'AlreadySubscribed') {
+                        setRawErrorCode(response.error.code || 'UNKNOWN');
+                        addEvent(`Erro: ${response.error.message}`, 'error');
+                    }
                     return;
                 }
 
@@ -757,34 +763,37 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
                                         const exitTimeEpoch = contract.sell_time || contract.exit_tick_time;
                                         const sellTimeStr = exitTimeEpoch ? new Date(exitTimeEpoch * 1000).toISOString() : new Date().toISOString();
                                         
-                                        updatedLog[existingOpIndex] = { ...op, status: newStatus, result: contract.profit, exitPrice, exitTimestamp: sellTimeStr };
-                                        
-                                        if (op.initiator === 'Piloto' && user) {
-                                            savePredictiveTradeLog(user.uid, { id: `pred_log_${contract.contract_id}`, result: newStatus, pnl: contract.profit });
-                                        }
+                                        // SIDE EFFECTS OUTSIDE OF UPDATER
+                                        setTimeout(() => {
+                                            if (op.initiator === 'Piloto' && user) {
+                                                savePredictiveTradeLog(user.uid, { id: `pred_log_${contract.contract_id}`, result: newStatus, pnl: contract.profit });
+                                            }
+                                            
+                                            updateTradeAnnotation(String(contract.contract_id), { 
+                                                status: newStatus, 
+                                                profit: contract.profit, 
+                                                exitPrice, 
+                                                exitTime: exitTimeEpoch 
+                                            });
+                                            
+                                            const profitVal = Number(contract.profit) || 0;
+                                            setToastQueue(prev => [...prev, { 
+                                                title: `Posição Fechada`, 
+                                                description: `P&L: ${profitVal.toFixed(2)}`, 
+                                                variant: newStatus === 'won' ? 'default' : 'destructive' 
+                                            }]);
 
-                                        // ✅ ATUALIZA ANOTAÇÃO NO GRÁFICO (CHAVE PARA FINALIZAR VISUALIZAÇÃO)
-                                        updateTradeAnnotation(String(contract.contract_id), { 
-                                            status: newStatus, 
-                                            profit: contract.profit, 
-                                            exitPrice, 
-                                            exitTime: exitTimeEpoch 
-                                        });
+                                            if (wsRef.current?.readyState === WebSocket.OPEN) {
+                                                wsRef.current.send(JSON.stringify({"balance": 1}));
+                                            }
+                                        }, 0);
                                         
-                                        const profitVal = Number(contract.profit) || 0;
-                                        setToastQueue(prev => [...prev, { 
-                                            title: `Posição Fechada`, 
-                                            description: `P&L: ${profitVal.toFixed(2)}`, 
-                                            variant: newStatus === 'won' ? 'default' : 'destructive' 
-                                        }]);
-                                        
-                                        if (wsRef.current?.readyState === WebSocket.OPEN) ws.send(JSON.stringify({"balance": 1}));
+                                        updatedLog[existingOpIndex] = { ...op, status: newStatus, result: contract.profit, exitPrice, exitTimestamp: sellTimeStr };
                                         return updatedLog;
                                     }
                                 }
                                 return prevLog;
                             } else {
-                                // NOVO CONTRATO NÃO ENCONTRADO NO LOG (TRADES MUITO RÁPIDOS)
                                 if (recentlyCreatedContractsRef.current.has(contract.contract_id)) return prevLog;
                                 
                                 const direction = (contract.contract_type || '').includes('CALL') ? 'rise' : 'fall';
@@ -803,24 +812,25 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
                                     result: isSold ? contract.profit : undefined
                                 };
                                 
-                                // Se for o primeiro evento e já estiver vendido, finaliza anotação
                                 if (isSold) {
                                     const exitEpoch = contract.sell_time || contract.exit_tick_time;
                                     const exitPrice = contract.exit_tick_display_value ? parseFloat(contract.exit_tick_display_value) : contract.sell_spot ? parseFloat(contract.sell_spot) : 0;
                                     
-                                    addTradeAnnotation({
-                                        contractId: String(contract.contract_id),
-                                        entryTime: purchaseTime,
-                                        entryPrice: parseFloat(contract.entry_spot || '0'),
-                                        direction,
-                                        status: contract.profit >= 0 ? 'won' : 'lost',
-                                        stake: contract.buy_price || 0,
-                                        symbol: contract.symbol,
-                                        exitTime: exitEpoch,
-                                        exitPrice: exitPrice,
-                                        profit: contract.profit,
-                                        contractType: 'option'
-                                    });
+                                    setTimeout(() => {
+                                        addTradeAnnotation({
+                                            contractId: String(contract.contract_id),
+                                            entryTime: purchaseTime,
+                                            entryPrice: parseFloat(contract.entry_spot || '0'),
+                                            direction,
+                                            status: contract.profit >= 0 ? 'won' : 'lost',
+                                            stake: contract.buy_price || 0,
+                                            symbol: contract.symbol,
+                                            exitTime: exitEpoch,
+                                            exitPrice: exitPrice,
+                                            profit: contract.profit,
+                                            contractType: 'option'
+                                        });
+                                    }, 0);
                                 }
 
                                 return [newOp, ...prevLog];
@@ -951,7 +961,7 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
   }), [
       isConnected, isConnecting, connectionError, demoToken, realToken, activeToken, accountType, accountBalance, operationsLog, assetGroups, 
       isAssetsLoading, activeSymbol, chartData, botCandleData, priceTicks, isChartLoading, chartError, chartType, timePeriod, dataVersion, 
-      executeTrade, sellContract, getHistoricalData, tradeAnnotations, durationLimits, connectionEvents, rawErrorCode, tokenSource, maskedToken
+      executeTrade, sellContract, getHistoricalData, tradeAnnotations, durationLimits, connectionEvents, rawErrorCode, tokenSource, maskedToken, setAndPersistOperationsLog, setActiveSymbol
   ]);
 
   return (
