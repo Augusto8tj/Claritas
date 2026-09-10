@@ -1,4 +1,3 @@
-
 'use client';
 
 import React, { useState, useRef, useEffect, useMemo } from 'react';
@@ -198,6 +197,34 @@ function TerminalContent() {
                                         disabled={quant.isAutoMode}
                                         step="1"
                                         min="1"
+                                    />
+                                </div>
+                                <div className="space-y-1.5">
+                                    <Label className="text-[10px] uppercase font-bold text-muted-foreground flex items-center gap-1">
+                                        <ShieldAlert className="h-3 w-3" /> Máx. Perdas
+                                    </Label>
+                                    <Input 
+                                        type="number" 
+                                        value={quant.maxConsecutiveLosses} 
+                                        onChange={(e) => quant.setMaxConsecutiveLosses(Number(e.target.value))}
+                                        className="h-8 text-xs font-mono bg-background/50"
+                                        disabled={quant.isAutoMode}
+                                        step="1"
+                                        min="1"
+                                    />
+                                </div>
+                                <div className="space-y-1.5">
+                                    <Label className="text-[10px] uppercase font-bold text-muted-foreground flex items-center gap-1">
+                                        <ShieldAlert className="h-3 w-3" /> Perda Máx. Dia
+                                    </Label>
+                                    <Input 
+                                        type="number" 
+                                        value={quant.maxDailyLoss} 
+                                        onChange={(e) => quant.setMaxDailyLoss(Number(e.target.value))}
+                                        className="h-8 text-xs font-mono bg-background/50"
+                                        disabled={quant.isAutoMode}
+                                        step="1"
+                                        max="0"
                                     />
                                 </div>
                             </div>

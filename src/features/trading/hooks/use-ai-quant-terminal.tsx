@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
@@ -47,9 +46,11 @@ export function useAIQuantTerminal(
     const [timeToNextAnalysis, setTimeToNextAnalysis] = useState(120);
     const [strategicProfile, setStrategicProfile] = useState<StrategicProfile>('balanced');
     
-    // ESTADOS FINANCEIROS
+    // ESTADOS FINANCEIROS E CIRCUIT BREAKER
     const [stakeValue, setStakeValue] = useState(1.0);
     const [profitTarget, setProfitTarget] = useState(10.0);
+    const [maxConsecutiveLosses, setMaxConsecutiveLosses] = useState(3);
+    const [maxDailyLoss, setMaxDailyLoss] = useState(-20.0);
 
     const [reasoningLog, setReasoningLog] = useState<ReasoningLog[]>([]);
     const [telemetry, setTelemetry] = useState({ latency: 0, tps: 0 });
@@ -157,6 +158,29 @@ export function useAIQuantTerminal(
         if (!activeSymbol || !isConnected || !ollamaConfig || chartData.length < 30) return;
         if (executionLockRef.current) return;
 
+        // 🛑 MELHORIA 1: Circuit Breaker (Verificação de Perdas)
+        const recentResults = recentPerformanceSummary.map(t => t.res);
+        const lastLosses = recentResults.slice(0, maxConsecutiveLosses);
+        const hitLossStreak = lastLosses.length === maxConsecutiveLosses && 
+                               lastLosses.every(r => r === 'lost');
+        const hitDailyLossLimit = sessionStats.pnl <= maxDailyLoss;
+
+        if (hitLossStreak || hitDailyLossLimit) {
+            if (isAutoMode) {
+                const reason = hitLossStreak 
+                  ? `${maxConsecutiveLosses} perdas consecutivas detectadas` 
+                  : `Perda máxima diária de $${Math.abs(maxDailyLoss)} atingida`;
+                addLog(`🛑 Circuit breaker: ${reason}. Pausando Autopilot.`, 'error');
+                setIsAutoMode(false);
+                toast({ 
+                  title: "🛑 Circuit Breaker Acionado", 
+                  description: reason, 
+                  variant: 'destructive' 
+                });
+            }
+            return;
+        }
+
         // Proteção: Meta de Lucro Atingida
         if (sessionStats.pnl >= profitTarget) {
             if (isAutoMode) {
@@ -191,7 +215,7 @@ export function useAIQuantTerminal(
                 profile: strategicProfile,
                 recent_performance: recentPerformanceSummary,
                 indicators: {
-                    rsi: indicators?.rsi?.toFixed(2),
+                    roi: indicators?.rsi?.toFixed(2),
                     adx: indicators?.adx?.toFixed(1),
                     bbw: indicators?.bbw?.toFixed(3),
                     macd_hist: indicators?.macd?.histogram?.toFixed(4)
@@ -252,7 +276,7 @@ export function useAIQuantTerminal(
         } finally {
             executionLockRef.current = false;
         }
-    }, [activeSymbol, isConnected, chartData, priceTicks, isAutoMode, ollamaConfig, addLog, sessionStats.pnl, profitTarget, executeTradeAction, toast, strategicProfile, recentPerformanceSummary]);
+    }, [activeSymbol, isConnected, chartData, priceTicks, isAutoMode, ollamaConfig, addLog, sessionStats.pnl, profitTarget, executeTradeAction, toast, strategicProfile, recentPerformanceSummary, maxConsecutiveLosses, maxDailyLoss]);
 
     const sendMessage = async (content: string) => {
         if (!ollamaConfig || !content.trim()) return;
@@ -338,6 +362,10 @@ export function useAIQuantTerminal(
         setStakeValue,
         profitTarget,
         setProfitTarget,
+        maxConsecutiveLosses,
+        setMaxConsecutiveLosses,
+        maxDailyLoss,
+        setMaxDailyLoss,
         chatMessages,
         isChatLoading,
         sendMessage,
