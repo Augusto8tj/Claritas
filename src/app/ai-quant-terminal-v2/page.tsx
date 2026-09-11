@@ -12,10 +12,10 @@ import {
     BrainCircuit, Zap, ShieldCheck, Terminal as TerminalIcon, 
     Timer, LineChart, PlayCircle, 
     PauseCircle, Cpu, RefreshCw, MessageSquare, Send, 
-    Settings2, Activity, Brain, Wallet, Target, History,
+    Activity, Brain, Wallet, Target, History,
     ArrowUpCircle, ArrowDownCircle, Clock, ShieldAlert,
-    TrendingUp, BarChart3, Binary, Trash2, Microscope, Radar,
-    TrendingDown, AlertCircle, Minus
+    TrendingUp, Binary, Trash2, Microscope, Radar,
+    TrendingDown, Minus
 } from "lucide-react";
 import { DerivApiProviderV2 as DerivApiProvider, useDerivApiV2 as useDerivApi } from "@/features/trading/hooks/use-deriv-api-v2";
 import { AssetSelectorV2 as AssetSelector } from "@/features/trading/components/deriv-trader/asset-selector-v2";
@@ -71,6 +71,11 @@ function TerminalContentV2() {
             setChatInput('');
         }
     };
+
+    // HISTÓRICO SEGMENTADO: Filtra apenas as operações do ativo selecionado (Pedido do usuário)
+    const filteredTerminalTrades = useMemo(() => {
+        return operationsLog.filter(op => op.initiator === 'Conselho' && op.asset === activeSymbol);
+    }, [operationsLog, activeSymbol]);
 
     return (
         <div className="flex-1 space-y-6 p-4 sm:p-8 pt-6 bg-background min-h-screen text-foreground">
@@ -180,7 +185,6 @@ function TerminalContentV2() {
                                     onValueChange={(v) => quant.setConfidenceThreshold(v[0])}
                                     disabled={quant.isAutoMode}
                                 />
-                                <p className="text-[9px] text-muted-foreground italic">Mínimo para execução automática no Radar.</p>
                             </div>
 
                             <div className="space-y-2">
@@ -210,7 +214,7 @@ function TerminalContentV2() {
                     <Card className="bg-card/50 border-border shadow-sm">
                         <CardHeader className="pb-3">
                             <CardTitle className="text-sm font-bold uppercase tracking-widest text-muted-foreground flex items-center gap-2">
-                                <Binary className="h-4 w-4" /> Gestão de Risco & Breakers
+                                <Binary className="h-4 w-4" /> Gestão de Risco ({activeSymbol})
                             </CardTitle>
                         </CardHeader>
                         <CardContent className="space-y-4">
@@ -223,43 +227,65 @@ function TerminalContentV2() {
                                     <Label className="text-[10px] uppercase font-bold text-muted-foreground">Alvo Lucro</Label>
                                     <Input type="number" value={quant.profitTarget} onChange={(e) => quant.setProfitTarget(Number(e.target.value))} className="h-8 text-xs font-mono bg-background/50" disabled={quant.isAutoMode} />
                                 </div>
-                                <div className="space-y-1.5">
-                                    <Label className="text-[10px] uppercase font-bold text-muted-foreground">Máx. Perdas</Label>
-                                    <Input type="number" value={quant.maxConsecutiveLosses} onChange={(e) => quant.setMaxConsecutiveLosses(Number(e.target.value))} className="h-8 text-xs font-mono bg-background/50" disabled={quant.isAutoMode} />
+                            </div>
+                            <Separator className="opacity-50" />
+                            <div className="grid grid-cols-2 gap-3">
+                                <div className="p-3 rounded-lg bg-muted/20 border border-border text-center">
+                                    <p className="text-[10px] text-muted-foreground uppercase font-bold">P&L Ativo</p>
+                                    <p className={cn("text-lg font-bold", sessionStats.pnl >= 0 ? "text-green-600" : "text-destructive")}>
+                                        {formatCurrency(sessionStats.pnl)}
+                                    </p>
                                 </div>
-                                <div className="space-y-1.5">
-                                    <Label className="text-[10px] uppercase font-bold text-muted-foreground">Stop Diário</Label>
-                                    <Input type="number" value={quant.maxDailyLoss} onChange={(e) => quant.setMaxDailyLoss(Number(e.target.value))} className="h-8 text-xs font-mono bg-background/50" disabled={quant.isAutoMode} />
+                                <div className="p-3 rounded-lg bg-muted/20 border border-border text-center">
+                                    <p className="text-[10px] text-muted-foreground uppercase font-bold">Win Rate</p>
+                                    <p className="text-lg font-bold">
+                                      {sessionStats.winRate === null ? '—' : `${sessionStats.winRate.toFixed(1)}%`}
+                                    </p>
                                 </div>
                             </div>
                         </CardContent>
                     </Card>
 
-                    <Card className="bg-muted/30 border-border font-mono overflow-hidden">
-                        <div className="bg-card/50 px-4 py-2 flex items-center justify-between border-b border-border">
-                            <span className="text-[10px] font-bold text-muted-foreground flex items-center gap-2">
-                                <TerminalIcon className="h-3 w-3" /> REASONING LOG
-                            </span>
-                        </div>
+                    <Card className="bg-card/50 border-border shadow-sm flex-1">
+                        <CardHeader className="pb-2 flex flex-row items-center justify-between space-y-0">
+                            <CardTitle className="text-xs font-bold uppercase tracking-widest text-muted-foreground flex items-center gap-2">
+                                <History className="h-4 w-4 text-primary" /> Histórico: {activeSymbol}
+                            </CardTitle>
+                        </CardHeader>
                         <CardContent className="p-0">
-                            <ScrollArea className="h-64 p-4 text-[10px] leading-relaxed">
-                                {reasoningLog.length === 0 ? (
-                                    <p className="animate-pulse text-muted-foreground">Aguardando varredura...</p>
-                                ) : (
-                                    reasoningLog.map((log, i) => (
-                                        <div key={i} className="mb-1">
-                                            <span className="text-muted-foreground/60">[{log.time}]</span>{' '}
-                                            <span className={cn(
-                                                "font-medium",
-                                                log.type === 'decision' ? "text-primary" : 
-                                                log.type === 'execution' ? "text-green-600" : 
-                                                log.type === 'radar' ? "text-blue-500" : "text-muted-foreground"
-                                            )}>
-                                                {log.message}
-                                            </span>
+                            <ScrollArea className="h-64">
+                                <div className="divide-y divide-border">
+                                    {filteredTerminalTrades.length === 0 ? (
+                                        <div className="p-8 text-center text-muted-foreground opacity-40">
+                                            <Activity className="h-8 w-8 mx-auto mb-2" />
+                                            <p className="text-[10px] font-mono">Sem trades em {activeSymbol}</p>
                                         </div>
-                                    ))
-                                )}
+                                    ) : (
+                                        filteredTerminalTrades.map((op) => (
+                                            <div key={op.id} className="p-3 hover:bg-muted/10 transition-colors">
+                                                <div className="flex items-center justify-between mb-1">
+                                                    <div className="flex items-center gap-2">
+                                                        {op.direction === 'rise' ? (
+                                                            <ArrowUpCircle className="h-3.5 w-3.5 text-green-600" />
+                                                        ) : (
+                                                            <ArrowDownCircle className="h-3.5 w-3.5 text-destructive" />
+                                                        )}
+                                                        <span className="text-[11px] font-bold uppercase">{op.direction}</span>
+                                                    </div>
+                                                    <Badge variant={op.status === 'won' ? 'default' : op.status === 'lost' ? 'destructive' : 'outline'} className="text-[9px] h-4 py-0">
+                                                        {op.status.toUpperCase()}
+                                                    </Badge>
+                                                </div>
+                                                <div className="flex justify-between text-[10px] font-mono">
+                                                    <span className={cn((op.result || 0) >= 0 ? "text-green-600" : "text-destructive")}>
+                                                        Result: {formatCurrency(op.result || -op.stake)}
+                                                    </span>
+                                                    <span className="text-muted-foreground">{new Date(op.timestamp).toLocaleTimeString()}</span>
+                                                </div>
+                                            </div>
+                                        ))
+                                    )}
+                                </div>
                             </ScrollArea>
                         </CardContent>
                     </Card>
@@ -390,13 +416,36 @@ function TerminalContentV2() {
                                 <span className="text-muted-foreground">Tokens/Sec:</span>
                                 <span className="font-mono font-bold">{telemetry.tps}</span>
                             </div>
-                            <Separator className="bg-border" />
-                            <div className="p-2 rounded bg-muted/20 border border-border">
-                                <p className="text-[9px] uppercase font-bold text-muted-foreground mb-1">Status da Sessão (P&L)</p>
-                                <p className={cn("text-lg font-bold font-mono", sessionStats.pnl >= 0 ? "text-green-600" : "text-destructive")}>
-                                    {formatCurrency(sessionStats.pnl)}
-                                </p>
-                            </div>
+                        </CardContent>
+                    </Card>
+
+                    {/* LOG DE RACIOCÍNIO */}
+                    <Card className="bg-muted/30 border-border font-mono overflow-hidden">
+                        <div className="bg-card/50 px-4 py-2 flex items-center justify-between border-b border-border">
+                            <span className="text-[10px] font-bold text-muted-foreground flex items-center gap-2">
+                                <TerminalIcon className="h-3 w-3" /> REASONING LOG
+                            </span>
+                        </div>
+                        <CardContent className="p-0">
+                            <ScrollArea className="h-64 p-4 text-[10px] leading-relaxed">
+                                {reasoningLog.length === 0 ? (
+                                    <p className="animate-pulse text-muted-foreground">Aguardando varredura...</p>
+                                ) : (
+                                    reasoningLog.map((log, i) => (
+                                        <div key={i} className="mb-1">
+                                            <span className="text-muted-foreground/60">[{log.time}]</span>{' '}
+                                            <span className={cn(
+                                                "font-medium",
+                                                log.type === 'decision' ? "text-primary" : 
+                                                log.type === 'execution' ? "text-green-600" : 
+                                                log.type === 'radar' ? "text-blue-500" : "text-muted-foreground"
+                                            )}>
+                                                {log.message}
+                                            </span>
+                                        </div>
+                                    ))
+                                )}
+                            </ScrollArea>
                         </CardContent>
                     </Card>
                 </div>
