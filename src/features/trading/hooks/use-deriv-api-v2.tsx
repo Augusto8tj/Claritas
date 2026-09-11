@@ -822,39 +822,49 @@ export function useDerivApiV2State() {
               reconnectInProgressRef.current = false;
               if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
               
+              // AUTH FIRST
+              const authRes: any = await makeRequest({ "authorize": activeToken });
+              if (authRes.error) throw new Error(authRes.error.message);
+
               setIsConnected(true);
               setIsConnecting(false);
               setConnectionError(null);
               addEvent('Conexão estabelecida e autenticada via OTP.', 'success');
               
-              ws.send(JSON.stringify({ "authorize": activeToken }));
               ws.send(JSON.stringify({ "proposal_open_contract": 1, "subscribe": 1 }));
               ws.send(JSON.stringify({ "balance": 1, "subscribe": 1 }));
               
               startConnectionMonitor();
               
-              const assetsRes: any = await makeRequest({ active_symbols: 'full' });
-              if (assetsRes.error) throw new Error(assetsRes.error.message);
-              
-              const groupedAssets: { [key: string]: Asset[] } = {};
-              assetsRes.active_symbols.forEach((symbol: any) => {
-                  const marketKey = (symbol.market === 'synthetic_index' && symbol.submarket === 'basket_index') ? 'basket_index' : symbol.market;
-                  const groupName = marketNameMapping[marketKey] || 'Outros';
-                  if (!groupedAssets[groupName]) groupedAssets[groupName] = [];
-                  groupedAssets[groupName].push({
-                      value: symbol.symbol, 
-                      label: symbol.display_name, 
-                      marketIsOpen: symbol.exchange_is_open === 1,
-                      submarket: symbol.submarket, market: marketKey, minDuration: symbol.min_contract_duration ?? '5t', 
+              try {
+                  const assetsRes: any = await makeRequest({ active_symbols: 'full' });
+                  if (assetsRes.error) throw new Error(assetsRes.error.message);
+                  
+                  const groupedAssets: { [key: string]: Asset[] } = {};
+                  assetsRes.active_symbols.forEach((symbol: any) => {
+                      const marketKey = (symbol.market === 'synthetic_index' && symbol.submarket === 'basket_index') ? 'basket_index' : symbol.market;
+                      const groupName = marketNameMapping[marketKey] || 'Outros';
+                      if (!groupedAssets[groupName]) groupedAssets[groupName] = [];
+                      groupedAssets[groupName].push({
+                          value: symbol.symbol, 
+                          label: symbol.display_name, 
+                          marketIsOpen: symbol.exchange_is_open === 1,
+                          submarket: symbol.submarket, market: marketKey, minDuration: symbol.min_contract_duration ?? '5t', 
+                      });
                   });
-              });
-              
-              setAssetGroups(Object.keys(groupedAssets)
-                  .map(label => ({ label, options: groupedAssets[label].sort((a, b) => a.label.localeCompare(b.label)) }))
-                  .sort((a, b) => a.label.localeCompare(b.label)));
-              setIsAssetsLoading(false);
+                  
+                  setAssetGroups(Object.keys(groupedAssets)
+                      .map(label => ({ label, options: groupedAssets[label].sort((a, b) => a.label.localeCompare(b.label)) }))
+                      .sort((a, b) => a.label.localeCompare(b.label)));
+                  setIsAssetsLoading(false);
+              } catch (assetErr: any) {
+                  console.warn("Falha parcial ao buscar lista de ativos, mas conexão permanece ativa.");
+                  setIsAssetsLoading(false);
+              }
+      
           } catch (error: any) {
-              addEvent(`Falha no setup: ${error.message}`, 'error');
+              addEvent(`Falha na autorização: ${error.message}`, 'error');
+              setConnectionError(error.message);
               setIsConnected(false); setIsConnecting(false);
           }
       };

@@ -5,6 +5,7 @@
 /**
  * @fileOverview TERMINAL QUANT V2.5 - RADAR COM GESTÃO DE RISCO E TOTALIZADOR GLOBAL
  * CORREÇÃO: Contador de análise desacoplado e funções de perfil estratégico implementadas.
+ * CIO agora recebe o Saldo Real e P&L Global para gestão de risco de tesouraria.
  */
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';

@@ -418,7 +418,7 @@ function TerminalContentV2() {
                                 </div>
                             </ScrollArea>
                         </CardContent>
-                        <CardFooter className="p-3 border-t border-border">
+                        <CardFooter className="p-4 border-t border-border">
                             <form onSubmit={handleChatSubmit} className="flex w-full gap-2">
                                 <Input 
                                     value={chatInput}
