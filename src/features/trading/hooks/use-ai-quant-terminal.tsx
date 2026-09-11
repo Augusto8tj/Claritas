@@ -50,7 +50,7 @@ export function useAIQuantTerminal(
     const [timeToNextAnalysis, setTimeToNextAnalysis] = useState(120);
     const [strategicProfile, setStrategicProfile] = useState<StrategicProfile>('balanced');
     
-    // ESTADOS FINANCEIROS E CIRCUIT BREAKER
+    // ESTADOS FINANCEIROS E CIRCUIT BREAKER (MELHORIA 1)
     const [stakeValue, setStakeValue] = useState(1.0);
     const [profitTarget, setProfitTarget] = useState(10.0);
     const [maxConsecutiveLosses, setMaxConsecutiveLosses] = useState(3);
@@ -103,13 +103,14 @@ export function useAIQuantTerminal(
             }));
     }, [operationsLog, activeSymbol]);
 
-    // CONFIGURAÇÃO DO OLLAMA
+    // CONFIGURAÇÃO DO OLLAMA (MELHORIA 5: Credenciais via env)
     const ollamaConfig = useMemo(() => {
         if (typeof window === 'undefined') return null;
         const saved = localStorage.getItem('ollamaConfig');
-        return saved ? JSON.parse(saved) : {
-            baseUrl: "https://boxlike-barrack-silencer.ngrok-free.dev",
-            apiKey: "augusto123",
+        if (saved) return JSON.parse(saved);
+        return {
+            baseUrl: process.env.NEXT_PUBLIC_OLLAMA_BASE_URL || "",
+            apiKey: process.env.NEXT_PUBLIC_OLLAMA_API_KEY || "",
             model: "llama3",
             temperature: 0.2
         };
@@ -162,7 +163,7 @@ export function useAIQuantTerminal(
         if (!activeSymbol || !isConnected || !ollamaConfig || chartData.length < 30) return;
         if (executionLockRef.current) return;
 
-        // 🛑 CIRCUIT BREAKER (Verificação de Perdas)
+        // 🛑 CIRCUIT BREAKER (MELHORIA 1)
         const recentResults = recentPerformanceSummary.map(t => t.res);
         const lastLosses = recentResults.slice(0, maxConsecutiveLosses);
         const hitLossStreak = lastLosses.length === maxConsecutiveLosses && 
@@ -267,7 +268,7 @@ export function useAIQuantTerminal(
             
             const decision: QuantDecision = JSON.parse(jsonMatch[0]);
 
-            // 🛡️ Validação estrita da resposta do LLM
+            // 🛡️ Validação estrita da resposta do LLM (MELHORIA 2)
             if (!['RISE', 'FALL', 'HOLD'].includes(decision.action)) {
                 throw new Error(`Ação inválida retornada pela IA: ${decision.action}`);
             }
