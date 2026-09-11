@@ -256,6 +256,21 @@ export function useAIQuantTerminal(
             if (!jsonMatch) throw new Error("IA retornou formato inválido.");
             
             const decision: QuantDecision = JSON.parse(jsonMatch[0]);
+
+            // 🛡️ MELHORIA 2: Validação estrita da resposta do LLM
+            if (!['RISE', 'FALL', 'HOLD'].includes(decision.action)) {
+                throw new Error(`Ação inválida retornada pela IA: ${decision.action}`);
+            }
+            if (typeof decision.confidence !== 'number' || decision.confidence < 0 || decision.confidence > 100) {
+                throw new Error(`Confiança fora do intervalo válido: ${decision.confidence}`);
+            }
+            if (decision.unit && !['t', 's', 'm'].includes(decision.unit)) {
+                throw new Error(`Unidade de duração inválida: ${decision.unit}`);
+            }
+            if (typeof decision.duration !== 'number' || decision.duration <= 0) {
+                throw new Error(`Duração inválida: ${decision.duration}`);
+            }
+
             setLastDecision(decision);
             
             const tokens = response.metadata?.eval_count || 0;

@@ -201,7 +201,7 @@ function TerminalContent() {
                                 </div>
                                 <div className="space-y-1.5">
                                     <Label className="text-[10px] uppercase font-bold text-muted-foreground flex items-center gap-1">
-                                        <ShieldAlert className="h-3 w-3" /> Máx. Perdas
+                                        <ShieldAlert className="h-3 w-3" /> Máx. Perdas Seguidas
                                     </Label>
                                     <Input 
                                         type="number" 
@@ -215,7 +215,7 @@ function TerminalContent() {
                                 </div>
                                 <div className="space-y-1.5">
                                     <Label className="text-[10px] uppercase font-bold text-muted-foreground flex items-center gap-1">
-                                        <ShieldAlert className="h-3 w-3" /> Perda Máx. Dia
+                                        <ShieldAlert className="h-3 w-3" /> Perda Máx. Diária
                                     </Label>
                                     <Input 
                                         type="number" 
