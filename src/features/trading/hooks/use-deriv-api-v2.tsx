@@ -360,6 +360,7 @@ export function useDerivApiV2State() {
         
         activeSubscriptionIdRef.current = null;
         botSubscriptionIdRef.current = null;
+        activeSymbolRef.current = symbol; // Garante que a ref esteja atualizada
 
         setIsChartLoading(true);
         setChartError(null);
@@ -885,8 +886,8 @@ export function useDerivApiV2State() {
 
   
   useEffect(() => {
-    if (isConnected && activeSymbol) subscribeToStreams(activeSymbol);
-  }, [isConnected, activeSymbol, subscribeToStreams]);
+    if (isConnected && activeSymbol && !isConnecting) subscribeToStreams(activeSymbol);
+  }, [isConnected, isConnecting, activeSymbol, subscribeToStreams]);
 
   const maskedToken = useMemo(() => activeToken ? `${activeToken.substring(0, 8)}...` : null, [activeToken]);
 

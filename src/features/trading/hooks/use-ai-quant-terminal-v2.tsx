@@ -131,6 +131,13 @@ export function useAIQuantTerminalV2(
         setReasoningLog(prev => [{ time: new Date().toLocaleTimeString(), message, type }, ...prev].slice(0, 50));
     }, []);
 
+    const handleSetStrategicProfile = useCallback((profile: StrategicProfile) => {
+        setStrategicProfile(profile);
+        const newThreshold = profile === 'conservative' ? 85 : profile === 'balanced' ? 65 : 55;
+        setConfidenceThreshold(newThreshold);
+        addLog(`Perfil estratégico alterado para ${profile.toUpperCase()}. Limiar ajustado para ${newThreshold}%.`);
+    }, [addLog]);
+
     const preQualifyAsset = useCallback((data: CandleData[]): { qualified: boolean, reason: string } => {
         if (data.length < 30) return { qualified: false, reason: "Dados insuficientes" };
         const indicators = calculateAllIndicators(data, initialCouncilStrategies, '1m', { duration: 15, unit: 's' });

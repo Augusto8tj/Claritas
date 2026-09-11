@@ -50,7 +50,6 @@ function TerminalContentV2() {
     const quant = useAIQuantTerminalV2(activeSymbol, priceTicks, botCandleData);
     const { indicators: councilIndicators } = useRobotCouncilV2(activeSymbol, [], botCandleData, dataVersion);
     
-    // Destructuring all needed variables to avoid ReferenceErrors
     const { 
         lastDecision,
         timeToNextAnalysis,
