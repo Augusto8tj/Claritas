@@ -1,4 +1,3 @@
-
 'use client';
 
 import React, { useState, useRef, useEffect, useMemo } from 'react';
@@ -16,7 +15,7 @@ import {
     Settings2, Activity, Brain, Wallet, Target, History,
     ArrowUpCircle, ArrowDownCircle, Clock, ShieldAlert,
     TrendingUp, BarChart3, Binary, Trash2, Microscope, Radar,
-    TrendingDown, AlertCircle
+    TrendingDown, AlertCircle, Minus
 } from "lucide-react";
 import { DerivApiProviderV2 as DerivApiProvider, useDerivApiV2 as useDerivApi } from "@/features/trading/hooks/use-deriv-api-v2";
 import { AssetSelectorV2 as AssetSelector } from "@/features/trading/components/deriv-trader/asset-selector-v2";
@@ -50,7 +49,7 @@ function TerminalContentV2() {
     const quant = useAIQuantTerminalV2(activeSymbol, priceTicks, botCandleData);
     const { indicators: councilIndicators } = useRobotCouncilV2(activeSymbol, [], botCandleData, dataVersion);
     
-    const { chatMessages, isChatLoading, reasoningLog, telemetry, radarStatus } = quant;
+    const { chatMessages, isChatLoading, reasoningLog, telemetry, radarStatus, sessionStats } = quant;
 
     const [chatInput, setChatInput] = useState('');
     const [showRealAccountConfirm, setShowRealAccountConfirm] = useState(false);

@@ -1,4 +1,3 @@
-
 'use client';
 
 /**
@@ -15,7 +14,7 @@ import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import type { TickData, CandleData, OperationInitiator, DurationUnit, Operation, MarketRegime } from '@/lib/types';
 import { useDerivApiV2 } from './use-deriv-api-v2';
 import { getOllamaResponse } from '@/app/actions';
-import { calculateAllIndicators, type Indicators } from '../services/indicator-service';
+import { calculateAllIndicators } from '../services/indicator-service';
 import { initialCouncilStrategies } from '../services/council-strategies';
 import { detectMarketRegime } from '../services/advanced-trading-services';
 import { useToast } from '@/hooks/use-toast';
@@ -157,7 +156,14 @@ export function useAIQuantTerminalV2(
             }));
 
             const indicators = calculateAllIndicators(currentData, initialCouncilStrategies, '1m', { duration: 15, unit: 's' });
-            const regime = indicators ? detectMarketRegime(currentData, indicators, 'ranging') : null;
+            const regime = indicators ? detectMarketRegime(currentData, {
+                adx: indicators.adx,
+                pdi: indicators.pdi,
+                ndi: indicators.ndi,
+                bbw: indicators.bbw,
+                roc: indicators.roc,
+                atr: indicators.atr
+            }, 'ranging') : null;
 
             const prompt = `VOCÊ É O CIO DO RADAR QUANT CLARITAS.
             ATIVO ANALISADO: ${symbol} (${isBackground ? 'VARREDURA RADAR' : 'FOCO PRINCIPAL'})
@@ -217,7 +223,7 @@ export function useAIQuantTerminalV2(
 
     // ESCALONADOR DO RADAR
     const runRadarScan = useCallback(async () => {
-        if (executionLockRef.current || isEvolving) return;
+        if (executionLockRef.current) return;
 
         const symbol = RADAR_SYMBOLS[radarPointerRef.current];
         if (symbol === activeSymbol) {
@@ -251,7 +257,7 @@ export function useAIQuantTerminalV2(
         }
 
         radarPointerRef.current = (radarPointerRef.current + 1) % RADAR_SYMBOLS.length;
-    }, [activeSymbol, getHistoricalData, preQualifyAsset, runInference, addLog, isEvolving]);
+    }, [activeSymbol, getHistoricalData, preQualifyAsset, runInference, addLog]);
 
     // CICLO DE ANÁLISE PRINCIPAL (FOCO NO ATIVO ATUAL)
     const runActiveCycle = useCallback(async () => {
