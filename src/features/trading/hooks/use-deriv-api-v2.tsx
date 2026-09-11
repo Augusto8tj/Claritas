@@ -1,3 +1,4 @@
+
 // src/features/trading/hooks/use-deriv-api-v2.tsx
 'use client';
 
@@ -261,7 +262,7 @@ export function useDerivApiV2State() {
     return new Promise((resolve) => {
         const ws = wsRef.current;
         if (!ws || ws.readyState !== WebSocket.OPEN) {
-            return resolve({ error: { message: "WebSocket não está conectado." } } as any);
+            return resolve({ error: { message: "WebSocket não está conectado.", code: 'NotConnected' } } as any);
         }
         
         const req_id = Date.now() + Math.floor(Math.random() * 1000000);
@@ -360,7 +361,7 @@ export function useDerivApiV2State() {
         
         activeSubscriptionIdRef.current = null;
         botSubscriptionIdRef.current = null;
-        activeSymbolRef.current = symbol; // Garante que a ref esteja atualizada
+        activeSymbolRef.current = symbol;
 
         setIsChartLoading(true);
         setChartError(null);
@@ -413,9 +414,8 @@ export function useDerivApiV2State() {
         
         setDurationLimits(newLimits);
 
-        const currentChartType = chartTypeRef.current;
-        const currentTimePeriod = timePeriodRef.current;
-        
+        if (wsRef.current?.readyState !== WebSocket.OPEN) return;
+
         const botHistory = await getHistoricalData(symbol, 'candles', 1000, '1m');
         setBotCandleData(botHistory as CandleData[]);
         
@@ -432,6 +432,10 @@ export function useDerivApiV2State() {
         if (botSubResponse.error && botSubResponse.error.code !== 'AlreadySubscribed') throw new Error(`Bot Sub: ${botSubResponse.error.message}`);
         if(botSubResponse.subscription?.id) botSubscriptionIdRef.current = botSubResponse.subscription.id;
         
+        if (wsRef.current?.readyState !== WebSocket.OPEN) return;
+
+        const currentChartType = chartTypeRef.current;
+        const currentTimePeriod = timePeriodRef.current;
         const historyStyle = currentChartType === 'Candle' ? 'candles' : 'ticks';
         const uiHistory = await getHistoricalData(symbol, historyStyle, 1000, currentTimePeriod);
         
@@ -447,6 +451,8 @@ export function useDerivApiV2State() {
             setPriceTicks(uiHistory as TickData[]);
         }
         setDataVersion(v => v + 1);
+
+        if (wsRef.current?.readyState !== WebSocket.OPEN) return;
 
         let uiSubRequest: any;
         if (currentChartType === 'Candle') {
@@ -836,8 +842,8 @@ export function useDerivApiV2State() {
                   const groupName = marketNameMapping[marketKey] || 'Outros';
                   if (!groupedAssets[groupName]) groupedAssets[groupName] = [];
                   groupedAssets[groupName].push({
-                      value: symbol.underlying_symbol, 
-                      label: symbol.underlying_symbol_name, 
+                      value: symbol.symbol, 
+                      label: symbol.display_name, 
                       marketIsOpen: symbol.exchange_is_open === 1,
                       submarket: symbol.submarket, market: marketKey, minDuration: symbol.min_contract_duration ?? '5t', 
                   });

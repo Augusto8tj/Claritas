@@ -1,9 +1,10 @@
+
 // src/features/trading/hooks/use-ai-quant-terminal-v2.tsx
 'use client';
 
 /**
  * @fileOverview TERMINAL QUANT V2.5 - RADAR COM GESTÃO DE RISCO E TOTALIZADOR GLOBAL
- * CORREÇÃO: Contador de análise desacoplado do fluxo de dados para evitar congelamento.
+ * CORREÇÃO: Contador de análise desacoplado e funções de perfil estratégico implementadas.
  */
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
@@ -119,12 +120,7 @@ export function useAIQuantTerminalV2(
         if (typeof window === 'undefined') return null;
         const saved = localStorage.getItem('ollamaConfig');
         if (saved) return JSON.parse(saved);
-        return {
-            baseUrl: process.env.NEXT_PUBLIC_OLLAMA_BASE_URL || "",
-            apiKey: process.env.NEXT_PUBLIC_OLLAMA_API_KEY || "",
-            model: "llama3",
-            temperature: 0.2
-        };
+        return null;
     }, []);
 
     const addLog = useCallback((message: string, type: ReasoningLog['type'] = 'info') => {
@@ -309,7 +305,6 @@ export function useAIQuantTerminalV2(
         }
     }, [activeSymbol, isConnected, chartData, runInference, isAutoMode, confidenceThreshold, stakeValue, executeTrade, addLog, operationsLog]);
 
-    // REFS PARA O INTERVALO (FIX CONTADOR PARADO)
     const activeCycleRef = useRef(runActiveCycle);
     const radarScanRef = useRef(runRadarScan);
     const analysisIntervalRef = useRef(analysisInterval);
@@ -327,7 +322,6 @@ export function useAIQuantTerminalV2(
                     activeCycleRef.current();
                     return analysisIntervalRef.current;
                 }
-                // Varredura de radar a cada 15 segundos
                 if (prev % 15 === 0) {
                     radarScanRef.current();
                 }
@@ -335,7 +329,7 @@ export function useAIQuantTerminalV2(
             });
         }, 1000);
         return () => clearInterval(interval);
-    }, []); // Dependência vazia para o timer não reiniciar com ticks de preço
+    }, []);
 
     useEffect(() => {
         setTimeToNextAnalysis(analysisInterval);
