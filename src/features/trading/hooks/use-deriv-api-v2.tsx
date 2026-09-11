@@ -135,6 +135,8 @@ const getGranularityForTimePeriod = (timePeriod: TimePeriod): number => {
 
 const MAX_DATA_POINTS = 5000;
 
+const isCandle = (d: ChartData): d is CandleData => d != null && 'close' in d;
+
 const addDataPoint = (prevData: ChartData[], newPoint: ChartData): ChartData[] => {
     let data = [...prevData];
     if (isCandle(newPoint) && data.length > 0 && data[data.length - 1].epoch === newPoint.epoch) {
@@ -210,6 +212,8 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
   const recentlyCreatedContractsRef = useRef<Set<number>>(new Set());
   const activeSubscriptionIdRef = useRef<string | null>(null);
   const botSubscriptionIdRef = useRef<string | null>(null);
+
+  const activeToken = accountType === 'demo' ? demoToken : realToken;
 
   useEffect(() => {
     activeSymbolRef.current = activeSymbol;
