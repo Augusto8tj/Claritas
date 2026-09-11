@@ -6,6 +6,7 @@ import type { TradeResult, Operation, OperationInitiator, DurationUnit, ChartTyp
 import { FirebaseErrorListener } from '@/components/FirebaseErrorListener';
 import { useAuth } from '@/features/auth/hooks/use-auth';
 import { getDerivWebSocketUrl } from '@/app/actions';
+import { useToast } from '@/hooks/use-toast';
 
 const DERIV_DEMO_TOKEN_KEY = 'derivDemoApiToken';
 const DERIV_REAL_TOKEN_KEY = 'derivRealApiToken';
