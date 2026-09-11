@@ -22,7 +22,7 @@ import { initialCouncilStrategies } from '../services/council-strategies';
 import { detectMarketRegime } from '../services/advanced-trading-services';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/features/auth/hooks/use-auth';
-import { saveCouncilDecisionLog } from '@/services/financial-data-service';
+import { saveCouncilDecisionLog, getTransactions, getTradeDecisionLogs } from '@/services/financial-data-service';
 
 interface QuantDecision {
     action: 'RISE' | 'FALL' | 'HOLD';
@@ -337,22 +337,45 @@ export function useAIQuantTerminal(
     }, [activeSymbol, isConnected, chartData, priceTicks, isAutoMode, ollamaConfig, addLog, sessionStats.pnl, profitTarget, executeTradeAction, toast, strategicProfile, recentPerformanceSummary, maxConsecutiveLosses, maxDailyLoss, user]);
 
     const sendMessage = async (content: string) => {
-        if (!ollamaConfig || !content.trim()) return;
+        if (!ollamaConfig || !content.trim() || !user) return;
 
         const userMsg: ChatMessage = { role: 'user', content, time: new Date().toLocaleTimeString() };
         setChatMessages(prev => [...prev, userMsg]);
         setIsChatLoading(true);
 
         try {
+            // BUSCAR DADOS REAIS DO FIREBASE PARA CONTEXTO
+            const [transactions, decisionLogs] = await Promise.all([
+                getTransactions(user.uid),
+                getTradeDecisionLogs(user.uid, 'v2')
+            ]);
+
+            const transactionSummary = transactions.slice(-10).map(t => ({
+                date: t.date, desc: t.description, val: t.amount, type: t.type, cat: t.category
+            }));
+
+            const decisionSummary = decisionLogs.slice(0, 10).map(l => ({
+                time: l.timestamp, asset: l.asset, action: l.tradeParams.direction, 
+                conf: l.consensus.bayesianProbability || l.consensus.confidence, 
+                reason: l.context.supervisionReason
+            }));
+
             const systemPrompt = `Você é o Chief Investment Officer (CIO) do Terminal Claritas. 
-            CONTEXTO OPERACIONAL:
-            - Ativo: ${activeSymbol}
-            - Perfil: ${strategicProfile}
-            - P&L Ativo: $${sessionStats.pnl.toFixed(2)}
-            - Win Rate: ${sessionStats.winRate === null ? 'Sem trades' : sessionStats.winRate.toFixed(1) + '%'}
-            - Memória de Trades Recentes: ${JSON.stringify(recentPerformanceSummary)}
+            VOCÊ TEM ACESSO TOTAL AOS REGISTROS DO FIREBASE E AO HISTÓRICO FINANCEIRO DO USUÁRIO.
             
-            Instrução: Responda de forma técnica. Use a memória de trades para explicar por que ganhamos ou perdemos as últimas operações se questionado.`;
+            CONTEXTO OPERACIONAL ATUAL:
+            - Ativo: ${activeSymbol}
+            - Perfil Estratégico: ${strategicProfile}
+            - P&L da Sessão do Terminal: $${sessionStats.pnl.toFixed(2)}
+            - Win Rate Global do Terminal: ${sessionStats.winRate === null ? 'Sem trades registrados' : sessionStats.winRate.toFixed(1) + '%'}
+            
+            HISTÓRICO FINANCEIRO (ÚLTIMAS TRANSAÇÕES NO APP):
+            ${JSON.stringify(transactionSummary, null, 2)}
+            
+            REGISTROS DE AUDITORIA DO TERMINAL (DECISÕES NO FIREBASE):
+            ${JSON.stringify(decisionSummary, null, 2)}
+            
+            Instrução: Responda de forma técnica, analítica e fundamentada. Se o usuário perguntar sobre o desempenho das estratégias ou sobre seus gastos, consulte as listas acima. Seja conciso e use português do Brasil.`;
 
             const history = chatMessages.map(m => ({ role: m.role, content: m.content }));
             

@@ -373,7 +373,7 @@ function TerminalContent() {
                                 <MessageSquare className="h-4 w-4 text-primary" />
                                 Interface de Diálogo com o CIO
                             </CardTitle>
-                            <CardDescription className="text-[10px]">Consulte o modelo local sobre a estratégia atual.</CardDescription>
+                            <CardDescription className="text-[10px]">CIO com acesso total ao histórico financeiro e registros de auditoria no Firebase.</CardDescription>
                         </CardHeader>
                         <CardContent className="flex-1 overflow-hidden p-0 relative bg-muted/5">
                             <ScrollArea className="h-full p-4">
