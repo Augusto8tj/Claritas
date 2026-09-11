@@ -1,4 +1,3 @@
-
 'use client';
 
 import React, { useState, useRef, useEffect, useMemo } from 'react';
@@ -15,7 +14,7 @@ import {
     PauseCircle, Cpu, RefreshCw, MessageSquare, Send, 
     Settings2, Activity, Brain, Wallet, Target, History,
     ArrowUpCircle, ArrowDownCircle, Clock, ShieldAlert,
-    TrendingUp, BarChart3, Binary, Trash2
+    TrendingUp, BarChart3, Binary, Trash2, Microscope
 } from "lucide-react";
 import { DerivApiProviderV2 as DerivApiProvider, useDerivApiV2 as useDerivApi } from "@/features/trading/hooks/use-deriv-api-v2";
 import { AssetSelectorV2 as AssetSelector } from "@/features/trading/components/deriv-trader/asset-selector-v2";
@@ -121,7 +120,7 @@ function TerminalContent() {
                                 <Zap className="h-4 w-4 text-yellow-500" /> Cockpit do Piloto
                             </CardTitle>
                         </CardHeader>
-                        <CardContent className="space-y-4">
+                        <CardContent className="space-y-6">
                             <div className="flex items-center justify-between p-3 rounded-lg bg-muted/30 border border-border">
                                 <span className="text-xs font-medium">Estado do Sistema</span>
                                 <Badge className={cn("font-bold", quant.isAutoMode ? "bg-green-600 hover:bg-green-600" : "bg-blue-600 hover:bg-blue-600")}>
@@ -130,8 +129,8 @@ function TerminalContent() {
                             </div>
 
                             {/* PERFIL ESTRATÉGICO */}
-                            <div className="space-y-2">
-                                <Label className="text-[10px] uppercase font-bold text-muted-foreground">Perfil de Risco</Label>
+                            <div className="space-y-3">
+                                <Label className="text-[10px] uppercase font-bold text-muted-foreground">Perfil de Risco (Lógica IA)</Label>
                                 <ToggleGroup 
                                     type="single" 
                                     value={quant.strategicProfile} 
@@ -143,6 +142,23 @@ function TerminalContent() {
                                     <ToggleGroupItem value="balanced" className="text-[10px] h-7">BALANC</ToggleGroupItem>
                                     <ToggleGroupItem value="aggressive" className="text-[10px] h-7 text-destructive">AGRESS</ToggleGroupItem>
                                 </ToggleGroup>
+                            </div>
+
+                            {/* MANUAL CONFIDENCE SLIDER */}
+                            <div className="space-y-3 p-3 rounded-lg border border-primary/20 bg-primary/5">
+                                <div className="flex justify-between items-center text-xs">
+                                    <span className="text-muted-foreground flex items-center gap-1.5"><Microscope className="h-3.5 w-3.5"/> Gatilho Confiança</span>
+                                    <span className="font-mono text-primary font-bold">{quant.confidenceThreshold}%</span>
+                                </div>
+                                <Slider 
+                                    value={[quant.confidenceThreshold]} 
+                                    min={10} 
+                                    max={95} 
+                                    step={1} 
+                                    onValueChange={(v) => quant.setConfidenceThreshold(v[0])}
+                                    disabled={quant.isAutoMode}
+                                />
+                                <p className="text-[9px] text-muted-foreground italic">Limiar de laboratório para execução automática.</p>
                             </div>
                             
                             {/* AJUSTE DINÂMICO DE TEMPO */}

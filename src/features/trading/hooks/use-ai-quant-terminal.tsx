@@ -1,4 +1,3 @@
-
 'use client';
 
 /**
@@ -61,6 +60,9 @@ export function useAIQuantTerminal(
     const [analysisInterval, setAnalysisInterval] = useState(120); 
     const [timeToNextAnalysis, setTimeToNextAnalysis] = useState(120);
     const [strategicProfile, setStrategicProfile] = useState<StrategicProfile>('balanced');
+    
+    // NOVO: Limiar de confiança manual para laboratório
+    const [confidenceThreshold, setConfidenceThreshold] = useState(65);
     
     // MELHORIA 1: ESTADOS FINANCEIROS E CIRCUIT BREAKER
     const [stakeValue, setStakeValue] = useState(1.0);
@@ -138,6 +140,14 @@ export function useAIQuantTerminal(
         };
         setReasoningLog(prev => [entry, ...prev].slice(0, 50));
     }, []);
+
+    const handleSetStrategicProfile = useCallback((profile: StrategicProfile) => {
+        setStrategicProfile(profile);
+        // Ao mudar o perfil, opcionalmente sincronizamos o threshold padrão
+        const newThreshold = profile === 'conservative' ? 85 : profile === 'balanced' ? 65 : 55;
+        setConfidenceThreshold(newThreshold);
+        addLog(`Perfil estratégico alterado para ${profile.toUpperCase()}. Limiar ajustado para ${newThreshold}%.`);
+    }, [addLog]);
 
     const executeTradeAction = useCallback(async (decision: QuantDecision) => {
         if (!activeSymbol) return;
@@ -307,7 +317,6 @@ export function useAIQuantTerminal(
             // MELHORIA 4: Persistência de decisões do Conselho
             if (user) {
               try {
-                const minConfidenceForExecution = strategicProfile === 'conservative' ? 85 : strategicProfile === 'balanced' ? 65 : 55;
                 saveCouncilDecisionLog(user.uid, {
                   symbol: activeSymbol,
                   action: decision.action,
@@ -316,16 +325,14 @@ export function useAIQuantTerminal(
                   regime: regime?.regime,
                   strategicProfile,
                   timestamp: new Date().toISOString(),
-                  executed: isAutoMode && decision.action !== 'HOLD' && decision.confidence >= minConfidenceForExecution,
+                  executed: isAutoMode && decision.action !== 'HOLD' && decision.confidence >= confidenceThreshold,
                 });
               } catch (logErr) {
                 console.warn("Falha ao persistir log de decisão:", logErr);
               }
             }
 
-            const minConfidence = strategicProfile === 'conservative' ? 85 : strategicProfile === 'balanced' ? 65 : 55;
-
-            if (isAutoMode && decision.action !== 'HOLD' && decision.confidence >= minConfidence) {
+            if (isAutoMode && decision.action !== 'HOLD' && decision.confidence >= confidenceThreshold) {
                 await executeTradeAction(decision);
             }
 
@@ -334,7 +341,7 @@ export function useAIQuantTerminal(
         } finally {
             executionLockRef.current = false;
         }
-    }, [activeSymbol, isConnected, chartData, priceTicks, isAutoMode, ollamaConfig, addLog, sessionStats.pnl, profitTarget, executeTradeAction, toast, strategicProfile, recentPerformanceSummary, maxConsecutiveLosses, maxDailyLoss, user]);
+    }, [activeSymbol, isConnected, chartData, priceTicks, isAutoMode, ollamaConfig, addLog, sessionStats.pnl, profitTarget, executeTradeAction, toast, strategicProfile, confidenceThreshold, recentPerformanceSummary, maxConsecutiveLosses, maxDailyLoss, user]);
 
     const sendMessage = async (content: string) => {
         if (!ollamaConfig || !content.trim() || !user) return;
@@ -435,7 +442,9 @@ export function useAIQuantTerminal(
         analysisInterval,
         setAnalysisInterval,
         strategicProfile,
-        setStrategicProfile,
+        setStrategicProfile: handleSetStrategicProfile,
+        confidenceThreshold,
+        setConfidenceThreshold,
         reasoningLog,
         telemetry,
         sessionStats,
