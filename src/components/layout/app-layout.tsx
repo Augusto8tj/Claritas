@@ -32,6 +32,7 @@ import {
   Zap,
   RefreshCw,
   Terminal,
+  Radar,
 } from "lucide-react";
 import {
   Sidebar,
@@ -68,7 +69,12 @@ const navItems = [
   {
     href: "/ai-quant-terminal",
     icon: Terminal,
-    label: "Terminal Quant IA",
+    label: "Terminal Quant IA (v1)",
+  },
+  {
+    href: "/ai-quant-terminal-v2",
+    icon: Radar,
+    label: "Quant Radar (V2 - Novo)",
   },
   {
     href: "/analysis",
@@ -166,7 +172,6 @@ const navItems = [
 
 function MainNav() {
   const pathname = usePathname();
-  const isTraderSectionActive = pathname.startsWith('/deriv-trader') || pathname.startsWith('/trader');
   
   return (
     <SidebarMenu>
