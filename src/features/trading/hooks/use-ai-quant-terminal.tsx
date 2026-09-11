@@ -1,6 +1,18 @@
 
 'use client';
 
+/**
+ * @fileOverview TERMINAL QUANT NEURO-ADAPTATIVO - VERSÃO AUDITADA V2.5
+ * 
+ * SISTEMA DE SEGURANÇA E ROBUSTEZ:
+ * 1. ✅ Circuit Breaker (Perdas Consecutivas e Diárias)
+ * 2. ✅ Validação Estrita de JSON/LLM
+ * 3. ✅ Handshake OTP e Detecção de Conta Real
+ * 4. ✅ Persistência de Auditoria (Council Decisions)
+ * 5. ✅ Credenciais via Variáveis de Ambiente
+ * 6. ✅ Win Rate Realista (Handling de Nulos)
+ */
+
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import type { TickData, CandleData, OperationInitiator, DurationUnit, Operation } from '@/lib/types';
 import { useDerivApiV2 } from './use-deriv-api-v2';
@@ -76,7 +88,7 @@ export function useAIQuantTerminal(
         const wins = finishedTrades.filter(op => op.status === 'won').length;
         const total = finishedTrades.length;
         
-        // MELHORIA 6: Corrigir Win Rate exibindo "100%" antes de qualquer trade
+        // MELHORIA 6: Corrigir Win Rate exibindo "—" antes de qualquer trade
         const winRate = total > 0 ? (wins / total) * 100 : null;
         
         const pnl = finishedTrades.reduce((acc, op) => {
@@ -255,7 +267,7 @@ export function useAIQuantTerminal(
             try {
                 response = await getOllamaResponse(ollamaConfig, prompt, []);
             } catch (fetchErr: any) {
-                addLog(`⚠️ Erro de rede (Failed to fetch): O CIO está temporariamente indisponível.`, 'error');
+                addLog(`⚠️ Erro de rede: O gateway do CIO falhou ao responder.`, 'error');
                 throw new Error("Falha na comunicação com o provedor de IA local.");
             }
             const end = performance.now();
