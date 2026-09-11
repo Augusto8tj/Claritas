@@ -1,3 +1,4 @@
+// src/app/ai-quant-terminal-v2/page.tsx
 'use client';
 
 import React, { useState, useRef, useEffect, useMemo } from 'react';
@@ -15,7 +16,7 @@ import {
     Activity, Brain, Wallet, Target, History,
     ArrowUpCircle, ArrowDownCircle, Clock, ShieldAlert,
     TrendingUp, Binary, Trash2, Microscope, Radar,
-    TrendingDown, Minus
+    TrendingDown, Minus, Coins
 } from "lucide-react";
 import { DerivApiProviderV2 as DerivApiProvider, useDerivApiV2 as useDerivApi } from "@/features/trading/hooks/use-deriv-api-v2";
 import { AssetSelectorV2 as AssetSelector } from "@/features/trading/components/deriv-trader/asset-selector-v2";
@@ -49,7 +50,7 @@ function TerminalContentV2() {
     const quant = useAIQuantTerminalV2(activeSymbol, priceTicks, botCandleData);
     const { indicators: councilIndicators } = useRobotCouncilV2(activeSymbol, [], botCandleData, dataVersion);
     
-    const { chatMessages, isChatLoading, reasoningLog, telemetry, radarStatus, sessionStats } = quant;
+    const { chatMessages, isChatLoading, reasoningLog, telemetry, radarStatus, sessionStats, globalSessionStats, accountBalance } = quant;
 
     const [chatInput, setChatInput] = useState('');
     const [showRealAccountConfirm, setShowRealAccountConfirm] = useState(false);
@@ -72,7 +73,6 @@ function TerminalContentV2() {
         }
     };
 
-    // HISTÓRICO SEGMENTADO: Filtra apenas as operações do ativo selecionado (Pedido do usuário)
     const filteredTerminalTrades = useMemo(() => {
         return operationsLog.filter(op => op.initiator === 'Conselho' && op.asset === activeSymbol);
     }, [operationsLog, activeSymbol]);
@@ -127,7 +127,12 @@ function TerminalContentV2() {
                     </div>
                     <div>
                         <h1 className="text-2xl font-bold tracking-tight font-headline">Terminal Quant V2 (Radar)</h1>
-                        <p className="text-muted-foreground text-sm font-mono italic">Escalonador de Inferência Ativo</p>
+                        <div className="flex items-center gap-2">
+                             <Badge variant="secondary" className="font-mono text-xs flex items-center gap-1.5">
+                                <Coins className="h-3 w-3"/> Saldo: {accountBalance.loading ? '...' : formatCurrency(accountBalance.balance || 0)}
+                             </Badge>
+                             <p className="text-muted-foreground text-[10px] font-mono italic">Escalonador de Inferência Ativo</p>
+                        </div>
                     </div>
                 </div>
                 <div className="flex flex-wrap items-center gap-4">
@@ -158,7 +163,6 @@ function TerminalContentV2() {
                                 </Badge>
                             </div>
 
-                            {/* PERFIL ESTRATÉGICO */}
                             <div className="space-y-3">
                                 <Label className="text-[10px] uppercase font-bold text-muted-foreground">Perfil Estratégico (Mentalidade IA)</Label>
                                 <ToggleGroup 
@@ -214,7 +218,7 @@ function TerminalContentV2() {
                     <Card className="bg-card/50 border-border shadow-sm">
                         <CardHeader className="pb-3">
                             <CardTitle className="text-sm font-bold uppercase tracking-widest text-muted-foreground flex items-center gap-2">
-                                <Binary className="h-4 w-4" /> Gestão de Risco ({activeSymbol})
+                                <Binary className="h-4 w-4" /> Gestão de Risco & Tesouraria
                             </CardTitle>
                         </CardHeader>
                         <CardContent className="space-y-4">
@@ -228,16 +232,40 @@ function TerminalContentV2() {
                                     <Input type="number" value={quant.profitTarget} onChange={(e) => quant.setProfitTarget(Number(e.target.value))} className="h-8 text-xs font-mono bg-background/50" disabled={quant.isAutoMode} />
                                 </div>
                             </div>
+                            
                             <Separator className="opacity-50" />
+                            
+                            {/* NOVO: TOTALIZADOR GLOBAL */}
+                            <div className="p-3 rounded-lg bg-primary/10 border border-primary/20">
+                                <p className="text-[10px] text-primary uppercase font-bold text-center mb-2">Desempenho Global da Esquadra (Sessão)</p>
+                                <div className="grid grid-cols-2 gap-2 text-center">
+                                    <div>
+                                        <p className="text-[9px] text-muted-foreground uppercase">P&L Acumulado</p>
+                                        <p className={cn("text-base font-bold", globalSessionStats.pnl >= 0 ? "text-green-600" : "text-destructive")}>
+                                            {formatCurrency(globalSessionStats.pnl)}
+                                        </p>
+                                    </div>
+                                    <div>
+                                        <p className="text-[9px] text-muted-foreground uppercase">Win Rate Global</p>
+                                        <p className="text-base font-bold">
+                                            {globalSessionStats.winRate === null ? '—' : `${globalSessionStats.winRate.toFixed(1)}%`}
+                                        </p>
+                                    </div>
+                                </div>
+                                <div className="mt-2 text-center text-[9px] text-muted-foreground font-mono">
+                                    Total de Operações no Radar: {globalSessionStats.total}
+                                </div>
+                            </div>
+
                             <div className="grid grid-cols-2 gap-3">
                                 <div className="p-3 rounded-lg bg-muted/20 border border-border text-center">
-                                    <p className="text-[10px] text-muted-foreground uppercase font-bold">P&L Ativo</p>
+                                    <p className="text-[10px] text-muted-foreground uppercase font-bold">P&L Ativo: {activeSymbol}</p>
                                     <p className={cn("text-lg font-bold", sessionStats.pnl >= 0 ? "text-green-600" : "text-destructive")}>
                                         {formatCurrency(sessionStats.pnl)}
                                     </p>
                                 </div>
                                 <div className="p-3 rounded-lg bg-muted/20 border border-border text-center">
-                                    <p className="text-[10px] text-muted-foreground uppercase font-bold">Win Rate</p>
+                                    <p className="text-[10px] text-muted-foreground uppercase font-bold">WR: {activeSymbol}</p>
                                     <p className="text-lg font-bold">
                                       {sessionStats.winRate === null ? '—' : `${sessionStats.winRate.toFixed(1)}%`}
                                     </p>
@@ -249,7 +277,7 @@ function TerminalContentV2() {
                     <Card className="bg-card/50 border-border shadow-sm flex-1">
                         <CardHeader className="pb-2 flex flex-row items-center justify-between space-y-0">
                             <CardTitle className="text-xs font-bold uppercase tracking-widest text-muted-foreground flex items-center gap-2">
-                                <History className="h-4 w-4 text-primary" /> Histórico: {activeSymbol}
+                                <History className="h-4 w-4 text-primary" /> Histórico Focado: {activeSymbol}
                             </CardTitle>
                         </CardHeader>
                         <CardContent className="p-0">
@@ -325,7 +353,7 @@ function TerminalContentV2() {
                                 <MessageSquare className="h-4 w-4 text-primary" />
                                 Interface de Diálogo com o CIO
                             </CardTitle>
-                            <CardDescription className="text-[10px]">Acesso aos registros financeiros e decisões de todos os ativos do radar.</CardDescription>
+                            <CardDescription className="text-[10px]">Análise expandida baseada em transações reais e decisões de todos os ativos do radar.</CardDescription>
                         </CardHeader>
                         <CardContent className="flex-1 overflow-hidden p-0 relative bg-muted/5">
                             <ScrollArea className="h-full p-4">
@@ -355,7 +383,7 @@ function TerminalContentV2() {
                                 <Input 
                                     value={chatInput}
                                     onChange={(e) => setChatInput(e.target.value)}
-                                    placeholder="Pergunte sobre qualquer ativo do radar..."
+                                    placeholder="Pergunte sobre qualquer ativo ou sobre seu saldo global..."
                                     className="bg-background border-border h-9 text-xs"
                                     disabled={isChatLoading}
                                 />
@@ -420,7 +448,7 @@ function TerminalContentV2() {
                     </Card>
 
                     {/* LOG DE RACIOCÍNIO */}
-                    <Card className="bg-muted/30 border-border font-mono overflow-hidden">
+                    <Card className="bg-muted/30 border-border font-mono overflow-hidden shadow-inner">
                         <div className="bg-card/50 px-4 py-2 flex items-center justify-between border-b border-border">
                             <span className="text-[10px] font-bold text-muted-foreground flex items-center gap-2">
                                 <TerminalIcon className="h-3 w-3" /> REASONING LOG

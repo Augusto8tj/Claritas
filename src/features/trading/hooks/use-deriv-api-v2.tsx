@@ -1,7 +1,5 @@
+// src/features/trading/hooks/use-deriv-api-v2.tsx
 'use client';
-
-// ESTE ARQUIVO É UMA CÓPIA DEDICADA PARA O SISTEMA V2.5
-// ATUALIZADO PARA FLUXO OTP (OPTIONS API) E DIAGNÓSTICOS COMPLETOS
 
 import { createContext, useContext, useState, useEffect, type ReactNode, useCallback, useRef, useMemo } from 'react';
 import type { TradeResult } from '@/lib/types';
@@ -9,16 +7,14 @@ import { useToast } from '@/hooks/use-toast';
 import type { Operation, OperationInitiator, DurationUnit, ChartType, TimePeriod, ChartData, CandleData, TradeAnnotation, TickData, DurationLimits, Asset } from '@/lib/types';
 import { FirebaseErrorListener } from '@/components/FirebaseErrorListener';
 import { useAuth } from '@/features/auth/hooks/use-auth';
-import { savePredictiveTradeLog } from '@/services/financial-data-service';
 import { getDerivWebSocketUrl } from '@/app/actions';
 
 const DERIV_DEMO_TOKEN_KEY = 'derivDemoApiToken';
 const DERIV_REAL_TOKEN_KEY = 'derivRealApiToken';
 const DERIV_ACCOUNT_TYPE_KEY = 'derivAccountType';
 const DERIV_V2_LOG_KEY = 'derivV2OperationsLog_v2.5';
-const DERIV_APP_ID = "34lwuJiPbEzxjgEdnEhbX"; // NOVO APP ID
+const DERIV_APP_ID = "34lwuJiPbEzxjgEdnEhbX"; 
 
-// Account IDs fixos fornecidos
 const ACCOUNT_IDS = {
     demo: 'DOT93059550',
     real: 'ROT91769363'
@@ -71,8 +67,6 @@ export interface DerivApiContextTypeV2 {
   operationsLog: Operation[];
   assetGroups: AssetGroup[];
   isAssetsLoading: boolean;
-  
-  // Data for consumers
   activeSymbol: string | null;
   setActiveSymbol: (symbol: string | null) => void;
   chartData: ChartData[];
@@ -85,7 +79,6 @@ export interface DerivApiContextTypeV2 {
   timePeriod: TimePeriod;
   setTimePeriod: (period: TimePeriod) => void;
   dataVersion: number;
-
   setAccountType: (type: AccountType) => void;
   setTokens: (tokens: { demo?: string; real?: string }) => void;
   disconnect: (type: AccountType) => void;
@@ -105,8 +98,6 @@ export interface DerivApiContextTypeV2 {
   clearActiveContracts: () => void;
   tradeAnnotations: TradeAnnotation[];
   durationLimits: DurationLimits | null;
-
-  // Propriedades de Diagnóstico
   connectionEvents: ConnectionEvent[];
   rawErrorCode: string | null;
   tokenSource: 'local' | 'default';
@@ -144,8 +135,6 @@ const getGranularityForTimePeriod = (timePeriod: TimePeriod): number => {
 
 const MAX_DATA_POINTS = 5000;
 
-const isCandle = (d: ChartData): d is CandleData => d != null && 'close' in d;
-
 const addDataPoint = (prevData: ChartData[], newPoint: ChartData): ChartData[] => {
     let data = [...prevData];
     if (isCandle(newPoint) && data.length > 0 && data[data.length - 1].epoch === newPoint.epoch) {
@@ -172,7 +161,6 @@ const getDurationInSeconds = (duration: number, unit: DurationUnit, symbol?: str
     }
 };
 
-
 export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
   const [demoToken, setDemoToken] = useState<string | null>(null);
   const [realToken, setRealToken] = useState<string | null>(null);
@@ -190,6 +178,8 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
   const [tradeAnnotations, setTradeAnnotations] = useState<TradeAnnotation[]>([]);
 
   const [activeSymbol, setActiveSymbol] = useState<string | null>('1HZ10V');
+  const activeSymbolRef = useRef<string | null>('1HZ10V');
+  
   const [chartData, setChartData] = useState<ChartData[]>([]);
   const [botCandleData, setBotCandleData] = useState<CandleData[]>([]);
   const [priceTicks, setPriceTicks] = useState<TickData[]>([]); 
@@ -202,7 +192,6 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
   const [dataVersion, setDataVersion] = useState(0); 
   const [durationLimits, setDurationLimits] = useState<DurationLimits | null>(null);
 
-  // Estados de Telemetria
   const [connectionEvents, setConnectionEvents] = useState<ConnectionEvent[]>([]);
   const [rawErrorCode, setRawErrorCode] = useState<string | null>(null);
   const [tokenSource, setTokenSource] = useState<'local' | 'default'>('local');
@@ -221,6 +210,10 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
   const recentlyCreatedContractsRef = useRef<Set<number>>(new Set());
   const activeSubscriptionIdRef = useRef<string | null>(null);
   const botSubscriptionIdRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    activeSymbolRef.current = activeSymbol;
+  }, [activeSymbol]);
 
     useEffect(() => {
         operationsLogRef.current = operationsLog;
@@ -269,71 +262,6 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
     timePeriodRef.current = timePeriod;
   }, [timePeriod]);
 
-  useEffect(() => {
-    try {
-      const storedDemoToken = localStorage.getItem(DERIV_DEMO_TOKEN_KEY);
-      const storedRealToken = localStorage.getItem(DERIV_REAL_TOKEN_KEY);
-      const storedAccountType = localStorage.getItem(DERIV_ACCOUNT_TYPE_KEY) as AccountType | null;
-      const storedLog = localStorage.getItem(DERIV_V2_LOG_KEY);
-
-      if (storedDemoToken) setDemoToken(storedDemoToken);
-      if (storedRealToken) setRealToken(storedRealToken);
-      if (storedAccountType) setAccountTypeState(storedAccountType);
-      if (storedLog) {
-        const parsedLog = JSON.parse(storedLog);
-        if(Array.isArray(parsedLog)) {
-            setOperationsLog(parsedLog.filter(op => op && op.id));
-        }
-      }
-    } catch (error) {
-      console.error("Failed to access localStorage:", error);
-    }
-    setIsLoading(false);
-  }, []);
-
-  // Client-side timer to check for expired contracts
-  useEffect(() => {
-    const interval = setInterval(() => {
-      const now = Date.now();
-      const GRACE_MS = 8000; // espera a API confirmar antes de assumir "lost" por timeout
-      let hasChanges = false;
-      
-      const updatedOps = operationsLogRef.current.map(op => {
-        if (op.status === 'pending' && op.expirationTime && now > op.expirationTime + GRACE_MS) {
-          hasChanges = true;
-          const fallbackExitEpoch = Math.floor(now / 1000);
-          // Trigger side effect outside of the map/updater logic
-          setTimeout(() => {
-              updateTradeAnnotation(String(op.id), { 
-                status: 'lost', 
-                profit: -op.stake,
-                exitTime: fallbackExitEpoch,
-                exitPrice: op.entryPrice,
-              });
-          }, 0);
-          return { ...op, status: 'lost' as const, result: -op.stake, exitTimestamp: new Date().toISOString(), resolvedBy: 'timeout' as const };
-        }
-        return op;
-      });
-
-      if (hasChanges) {
-        setAndPersistOperationsLog(updatedOps);
-      }
-    }, 2000);
-
-    return () => clearInterval(interval);
-  }, [updateTradeAnnotation, setAndPersistOperationsLog]);
-  
-  const activeToken = accountType === 'demo' ? demoToken : realToken;
-
-  useEffect(() => {
-    if (toastQueue.length > 0) {
-      toastQueue.forEach(t => toast(t));
-      setToastQueue([]);
-    }
-  }, [toastQueue, toast]);
-
-
   const makeRequest = useCallback(<T,>(request: object, noResponse = false): Promise<T> => {
     return new Promise((resolve) => {
         const ws = wsRef.current;
@@ -374,6 +302,11 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
   }, []); 
 
     const getHistoricalData = useCallback(async (symbol: string, style: 'ticks' | 'candles', count: number, period?: TimePeriod): Promise<ApiHistoricalData[]> => {
+        const ws = wsRef.current;
+        if (!ws || ws.readyState !== WebSocket.OPEN) {
+            return [];
+        }
+
         const request: any = {
             ticks_history: symbol,
             end: "latest",
@@ -390,7 +323,7 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
             const response: any = await makeRequest(request);
             if (response.error) {
               console.warn(`[getHistoricalData] API Error for ${symbol}:`, response.error.message);
-              return []; // Return empty instead of throwing to prevent UI crash
+              return [];
             }
 
             if (response.history) {
@@ -731,7 +664,7 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
                     const promise = promisesRef.current.get(String(reqId));
                     if (promise) {
                         if (response.error) {
-                            promise.resolve(response); // Resolve com erro para o chamador tratar
+                            promise.resolve(response); 
                         } else {
                             promise.resolve(response);
                         }
@@ -766,18 +699,11 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
                                 if (op.status === 'pending' || op.resolvedBy === 'timeout') {
                                     if (isSold) {
                                         const newStatus = contract.profit >= 0 ? 'won' : 'lost';
-                                        
-                                        // ✅ CAPTURA ROBUSTA DE PREÇO E TEMPO DE SAÍDA
                                         const exitPrice = contract.exit_tick_display_value ? parseFloat(contract.exit_tick_display_value) : contract.sell_spot ? parseFloat(contract.sell_spot) : op.exitPrice;
                                         const exitTimeEpoch = contract.sell_time || contract.exit_tick_time;
                                         const sellTimeStr = exitTimeEpoch ? new Date(exitTimeEpoch * 1000).toISOString() : new Date().toISOString();
                                         
-                                        // SIDE EFFECTS OUTSIDE OF UPDATER
                                         setTimeout(() => {
-                                            if (op.initiator === 'Piloto' && user) {
-                                                savePredictiveTradeLog(user.uid, { id: `pred_log_${contract.contract_id}`, result: newStatus, pnl: contract.profit });
-                                            }
-                                            
                                             updateTradeAnnotation(String(contract.contract_id), { 
                                                 status: newStatus, 
                                                 profit: contract.profit, 
@@ -847,7 +773,7 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
                         });
                         break;
                     case 'tick':
-                        if (response.tick?.symbol === activeSymbol) {
+                        if (response.tick?.symbol === activeSymbolRef.current) {
                             const tick = response.tick;
                             const newTick = { epoch: tick.epoch, price: tick.quote };
                             if (chartTypeRef.current === 'Area') setChartData(prev => addDataPoint(prev, newTick));
@@ -861,7 +787,7 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
                     case 'ohlc':
                     case 'candles':
                         const candleData = response.ohlc || (response.candles && response.candles[0]);
-                        if (candleData && candleData.symbol === activeSymbol) {
+                        if (candleData && candleData.symbol === activeSymbolRef.current) {
                             const newCandle: CandleData = {
                                 epoch: candleData.open_time || candleData.epoch,
                                 open: parseFloat(candleData.open), high: parseFloat(candleData.high),

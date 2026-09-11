@@ -1,17 +1,12 @@
+// src/features/trading/hooks/use-ai-quant-terminal-v2.tsx
 'use client';
 
 /**
- * @fileOverview TERMINAL QUANT NEURO-ADAPTATIVO V2 - RADAR MULTI-ATIVO
- * 
- * ARQUITETURA DE RADAR:
- * 1. ✅ Multi-Asset Monitoring (Varredura em Segundo Plano)
- * 2. ✅ Escalonador de Prioridade (Ativo Focado vs Radar)
- * 3. ✅ Filtro de Pré-Qualificação (ADX/ATR/Z-Score)
- * 4. ✅ Execução Automática em Segundo Plano (Radar Execution)
+ * @fileOverview TERMINAL QUANT V2 - RADAR COM GESTÃO DE RISCO E TOTALIZADOR GLOBAL
  */
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import type { TickData, CandleData, OperationInitiator, DurationUnit, Operation, MarketRegime } from '@/lib/types';
+import type { TickData, CandleData, OperationInitiator, DurationUnit, Operation } from '@/lib/types';
 import { useDerivApiV2 } from './use-deriv-api-v2';
 import { getOllamaResponse } from '@/app/actions';
 import { calculateAllIndicators } from '../services/indicator-service';
@@ -58,11 +53,10 @@ export function useAIQuantTerminalV2(
     priceTicks: TickData[],
     chartData: CandleData[]
 ) {
-    const { isConnected, executeTrade, operationsLog, getHistoricalData } = useDerivApiV2();
+    const { isConnected, executeTrade, operationsLog, getHistoricalData, accountBalance } = useDerivApiV2();
     const { user } = useAuth();
     const { toast } = useToast();
 
-    // ESTADOS DE CONTROLE
     const [isAutoMode, setIsAutoMode] = useState(false);
     const [lastDecision, setLastDecision] = useState<QuantDecision | null>(null);
     const [analysisInterval, setAnalysisInterval] = useState(120); 
@@ -70,7 +64,6 @@ export function useAIQuantTerminalV2(
     const [strategicProfile, setStrategicProfile] = useState<StrategicProfile>('balanced');
     const [confidenceThreshold, setConfidenceThreshold] = useState(65);
     
-    // RADAR MULTI-ATIVO
     const [radarStatus, setRadarStatus] = useState<Record<string, RadarAssetStatus>>(
         RADAR_SYMBOLS.reduce((acc, sym) => ({
             ...acc,
@@ -79,7 +72,6 @@ export function useAIQuantTerminalV2(
     );
     const radarPointerRef = useRef(0);
 
-    // GESTÃO FINANCEIRA
     const [stakeValue, setStakeValue] = useState(1.0);
     const [profitTarget, setProfitTarget] = useState(10.0);
     const [maxConsecutiveLosses, setMaxConsecutiveLosses] = useState(3);
@@ -92,7 +84,7 @@ export function useAIQuantTerminalV2(
 
     const executionLockRef = useRef(false);
 
-    // ESTATÍSTICAS DA SESSÃO (Segmentadas por Ativo para atender ao pedido do usuário)
+    // ESTATÍSTICAS DO ATIVO FOCADO
     const sessionStats = useMemo(() => {
         const finishedTrades = operationsLog.filter(op => 
             op.status !== 'pending' && op.initiator === 'Conselho' && op.asset === activeSymbol
@@ -103,6 +95,24 @@ export function useAIQuantTerminalV2(
         const pnl = finishedTrades.reduce((acc, op) => acc + (Number(op.result) || 0), 0);
         return { pnl: Number(pnl) || 0, winRate, total };
     }, [operationsLog, activeSymbol]);
+
+    // TOTALIZADOR GLOBAL DA SESSÃO
+    const globalSessionStats = useMemo(() => {
+        const today = new Date().toDateString();
+        const v2Trades = operationsLog.filter(op => 
+            op.initiator === 'Conselho' && 
+            new Date(op.timestamp).toDateString() === today &&
+            op.status !== 'pending'
+        );
+        const wins = v2Trades.filter(op => op.status === 'won').length;
+        const pnl = v2Trades.reduce((acc, op) => acc + (Number(op.result) || 0), 0);
+        return {
+            total: v2Trades.length,
+            wins,
+            winRate: v2Trades.length > 0 ? (wins / v2Trades.length) * 100 : null,
+            pnl: Number(pnl) || 0
+        };
+    }, [operationsLog]);
 
     const ollamaConfig = useMemo(() => {
         if (typeof window === 'undefined') return null;
@@ -120,7 +130,6 @@ export function useAIQuantTerminalV2(
         setReasoningLog(prev => [{ time: new Date().toLocaleTimeString(), message, type }, ...prev].slice(0, 50));
     }, []);
 
-    // FILTRO TÉCNICO DE PRÉ-QUALIFICAÇÃO
     const preQualifyAsset = useCallback((data: CandleData[]): { qualified: boolean, reason: string } => {
         if (data.length < 30) return { qualified: false, reason: "Dados insuficientes" };
         const indicators = calculateAllIndicators(data, initialCouncilStrategies, '1m', { duration: 15, unit: 's' });
@@ -128,8 +137,6 @@ export function useAIQuantTerminalV2(
 
         const adx = indicators.adx || 0;
         const bbw = indicators.bbw || 0;
-        
-        // Critério: Ativo com tendência forte ou em zona de compressão/rompimento
         const isTrending = adx > 22;
         const isSqueezed = bbw < 0.8;
         const isVolatile = bbw > 2.5;
@@ -147,15 +154,6 @@ export function useAIQuantTerminalV2(
         const start = performance.now();
         
         try {
-            const decisionHistory = user ? await getCouncilDecisionLogs(user.uid, 15) : [];
-            const historyContext = decisionHistory.map(h => ({
-                time: h.timestamp ? new Date(h.timestamp).toLocaleTimeString() : '?',
-                asset: h.symbol,
-                action: h.action,
-                conf: h.confidence,
-                res: h.executed ? "TRADE" : "HOLD"
-            }));
-
             const indicators = calculateAllIndicators(currentData, initialCouncilStrategies, '1m', { duration: 15, unit: 's' });
             const regime = indicators ? detectMarketRegime(currentData, {
                 adx: indicators.adx,
@@ -170,15 +168,22 @@ export function useAIQuantTerminalV2(
             ATIVO ANALISADO: ${symbol} (${isBackground ? 'VARREDURA RADAR' : 'FOCO PRINCIPAL'})
             PERFIL: ${strategicProfile.toUpperCase()}
             
+            CONTEXTO FINANCEIRO (GESTÃO DE RISCO):
+            - Saldo Real Disponível: $${accountBalance.balance?.toFixed(2) || 'N/A'}
+            - P&L Global da Sessão: $${globalSessionStats.pnl.toFixed(2)}
+            - Meta Diária: $${profitTarget.toFixed(2)}
+            
             DADOS TÉCNICOS:
             Regime: ${regime?.regime}
             RSI: ${indicators?.rsi?.toFixed(2)} | ADX: ${indicators?.adx?.toFixed(1)} | BBW: ${indicators?.bbw?.toFixed(3)}
 
+            SUA MISSÃO: Se o P&L global for alto, seja mais conservador. Se o saldo for baixo, rejeite stakes altos.
+            
             RETORNE APENAS JSON:
             {
               "action": "RISE" | "FALL" | "HOLD",
               "confidence": 0-100,
-              "reasoning": "Breve justificativa técnica",
+              "reasoning": "Breve justificativa técnica e financeira",
               "duration": number,
               "unit": "s" | "t"
             }`;
@@ -194,12 +199,6 @@ export function useAIQuantTerminalV2(
             
             const decision: QuantDecision = JSON.parse(jsonMatch[0]);
 
-            // Validação estrita
-            if (!['RISE', 'FALL', 'HOLD'].includes(decision.action)) throw new Error("Ação inválida");
-            
-            const latency = Math.round(end - start);
-            setTelemetry({ latency, tps: Math.round((response.metadata?.eval_count || 0) / (latency / 1000)) });
-
             if (user) {
                 saveCouncilDecisionLog(user.uid, {
                     symbol, action: decision.action, confidence: decision.confidence,
@@ -209,6 +208,9 @@ export function useAIQuantTerminalV2(
                 });
             }
 
+            const latency = Math.round(end - start);
+            setTelemetry({ latency, tps: Math.round((response.metadata?.eval_count || 0) / (latency / 1000)) });
+
             return decision;
 
         } catch (err: any) {
@@ -217,9 +219,8 @@ export function useAIQuantTerminalV2(
         } finally {
             executionLockRef.current = false;
         }
-    }, [ollamaConfig, strategicProfile, user, isAutoMode, confidenceThreshold, addLog]);
+    }, [ollamaConfig, strategicProfile, user, isAutoMode, confidenceThreshold, addLog, accountBalance, globalSessionStats, profitTarget]);
 
-    // ESCALONADOR DO RADAR COM EXECUÇÃO AUTOMÁTICA
     const runRadarScan = useCallback(async () => {
         if (!isConnected || executionLockRef.current) return;
 
@@ -248,7 +249,6 @@ export function useAIQuantTerminalV2(
                         [symbol]: { symbol, lastAction: decision.action, confidence: decision.confidence, timestamp: Date.now(), isQualified: true }
                     }));
 
-                    // EXECUÇÃO AUTOMÁTICA NO RADAR (Melhoria Solicitada)
                     if (isAutoMode && decision.action !== 'HOLD' && decision.confidence >= confidenceThreshold) {
                         const hasOpenTrade = operationsLog.some(op => op.asset === symbol && op.status === 'pending');
                         if (!hasOpenTrade) {
@@ -274,11 +274,10 @@ export function useAIQuantTerminalV2(
         radarPointerRef.current = (radarPointerRef.current + 1) % RADAR_SYMBOLS.length;
     }, [activeSymbol, getHistoricalData, preQualifyAsset, runInference, addLog, isConnected, isAutoMode, confidenceThreshold, operationsLog, stakeValue, executeTrade]);
 
-    // CICLO DE ANÁLISE PRINCIPAL (FOCO NO ATIVO ATUAL)
     const runActiveCycle = useCallback(async () => {
         if (!activeSymbol || !isConnected || chartData.length < 30) return;
         
-        addLog(`CIO: Analisando ativo focado ${activeSymbol}...`, 'info');
+        addLog(`CIO: Analisando focado ${activeSymbol}...`, 'info');
         const decision = await runInference(activeSymbol, chartData, false);
         
         if (decision) {
@@ -302,7 +301,6 @@ export function useAIQuantTerminalV2(
         }
     }, [activeSymbol, isConnected, chartData, runInference, isAutoMode, confidenceThreshold, stakeValue, executeTrade, addLog, operationsLog]);
 
-    // TIMERS
     useEffect(() => {
         const interval = setInterval(() => {
             setTimeToNextAnalysis(prev => {
@@ -310,7 +308,6 @@ export function useAIQuantTerminalV2(
                     runActiveCycle();
                     return analysisInterval;
                 }
-                // Varredura de radar no "tempo morto" (a cada 15s de intervalo ocioso)
                 if (prev % 15 === 0) runRadarScan();
                 return prev - 1;
             });
@@ -322,8 +319,8 @@ export function useAIQuantTerminalV2(
         isAutoMode, toggleAutoMode: () => setIsAutoMode(!isAutoMode),
         lastDecision, timeToNextAnalysis, analysisInterval, setAnalysisInterval,
         strategicProfile, setStrategicProfile, confidenceThreshold, setConfidenceThreshold,
-        radarStatus, reasoningLog, telemetry, sessionStats,
-        stakeValue, setStakeValue, profitTarget, setProfitTarget,
+        radarStatus, reasoningLog, telemetry, sessionStats, globalSessionStats,
+        accountBalance, stakeValue, setStakeValue, profitTarget, setProfitTarget,
         maxConsecutiveLosses, setMaxConsecutiveLosses, maxDailyLoss, setMaxDailyLoss,
         chatMessages, isChatLoading, 
         sendMessage: async (c: string) => {
