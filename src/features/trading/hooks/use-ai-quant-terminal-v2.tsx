@@ -337,7 +337,8 @@ export function useAIQuantTerminalV2(
     return {
         isAutoMode, toggleAutoMode: () => setIsAutoMode(!isAutoMode),
         lastDecision, timeToNextAnalysis, analysisInterval, setAnalysisInterval,
-        strategicProfile, setStrategicProfile, confidenceThreshold, setConfidenceThreshold,
+        strategicProfile, setStrategicProfile: handleSetStrategicProfile, 
+        confidenceThreshold, setConfidenceThreshold,
         radarStatus, reasoningLog, telemetry, sessionStats, globalSessionStats,
         accountBalance, stakeValue, setStakeValue, profitTarget, setProfitTarget,
         maxConsecutiveLosses, setMaxConsecutiveLosses, maxDailyLoss, setMaxDailyLoss,

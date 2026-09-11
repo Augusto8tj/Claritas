@@ -50,7 +50,33 @@ function TerminalContentV2() {
     const quant = useAIQuantTerminalV2(activeSymbol, priceTicks, botCandleData);
     const { indicators: councilIndicators } = useRobotCouncilV2(activeSymbol, [], botCandleData, dataVersion);
     
-    const { chatMessages, isChatLoading, reasoningLog, telemetry, radarStatus, sessionStats, globalSessionStats, accountBalance } = quant;
+    // Destructuring all needed variables to avoid ReferenceErrors
+    const { 
+        lastDecision,
+        timeToNextAnalysis,
+        analysisInterval,
+        setAnalysisInterval,
+        strategicProfile,
+        setStrategicProfile,
+        confidenceThreshold,
+        setConfidenceThreshold,
+        stakeValue,
+        setStakeValue,
+        profitTarget,
+        setProfitTarget,
+        maxConsecutiveLosses,
+        setMaxConsecutiveLosses,
+        maxDailyLoss,
+        setMaxDailyLoss,
+        chatMessages, 
+        isChatLoading, 
+        reasoningLog, 
+        telemetry, 
+        radarStatus, 
+        sessionStats, 
+        globalSessionStats, 
+        accountBalance 
+    } = quant;
 
     const [chatInput, setChatInput] = useState('');
     const [showRealAccountConfirm, setShowRealAccountConfirm] = useState(false);
@@ -79,7 +105,7 @@ function TerminalContentV2() {
 
     return (
         <div className="flex-1 space-y-6 p-4 sm:p-8 pt-6 bg-background min-h-screen text-foreground">
-            {/* NOVO: GLOBAL OPPORTUNITY RADAR */}
+            {/* GLOBAL OPPORTUNITY RADAR */}
             <Card className="bg-primary/5 border-primary/20 shadow-sm overflow-hidden">
                 <CardHeader className="py-3 px-6 bg-primary/10 border-b border-primary/20 flex flex-row items-center justify-between space-y-0">
                     <CardTitle className="text-xs font-bold uppercase tracking-widest flex items-center gap-2 text-primary">
@@ -167,8 +193,8 @@ function TerminalContentV2() {
                                 <Label className="text-[10px] uppercase font-bold text-muted-foreground">Perfil Estratégico (Mentalidade IA)</Label>
                                 <ToggleGroup 
                                     type="single" 
-                                    value={quant.strategicProfile} 
-                                    onValueChange={(v: StrategicProfile) => v && quant.setStrategicProfile(v)}
+                                    value={strategicProfile} 
+                                    onValueChange={(v: StrategicProfile) => v && setStrategicProfile(v)}
                                     className="grid grid-cols-3 gap-1"
                                     disabled={quant.isAutoMode}
                                 >
@@ -181,12 +207,12 @@ function TerminalContentV2() {
                             <div className="space-y-3 p-3 rounded-lg border border-primary/20 bg-primary/5">
                                 <div className="flex justify-between items-center text-xs">
                                     <span className="text-muted-foreground flex items-center gap-1.5"><Microscope className="h-3.5 w-3.5"/> Gatilho Confiança</span>
-                                    <span className="font-mono text-primary font-bold">{quant.confidenceThreshold}%</span>
+                                    <span className="font-mono text-primary font-bold">{confidenceThreshold}%</span>
                                 </div>
                                 <Slider 
-                                    value={[quant.confidenceThreshold]} 
+                                    value={[confidenceThreshold]} 
                                     min={10} max={95} step={1} 
-                                    onValueChange={(v) => quant.setConfidenceThreshold(v[0])}
+                                    onValueChange={(v) => setConfidenceThreshold(v[0])}
                                     disabled={quant.isAutoMode}
                                 />
                             </div>
@@ -194,14 +220,14 @@ function TerminalContentV2() {
                             <div className="space-y-3 p-3 rounded-lg border border-border bg-muted/10">
                                 <div className="flex justify-between items-center text-xs">
                                     <span className="text-muted-foreground flex items-center gap-1.5"><Timer className="h-3.5 w-3.5"/> Ciclo de Análise</span>
-                                    <span className="font-mono text-primary font-bold">{quant.analysisInterval}s</span>
+                                    <span className="font-mono text-primary font-bold">{analysisInterval}s</span>
                                 </div>
                                 <Slider 
-                                    value={[quant.analysisInterval]} 
+                                    value={[analysisInterval]} 
                                     min={30} 
                                     max={3000} 
                                     step={30} 
-                                    onValueChange={(v) => quant.setAnalysisInterval(v[0])}
+                                    onValueChange={(v) => setAnalysisInterval(v[0])}
                                     disabled={quant.isAutoMode}
                                 />
                             </div>
@@ -209,9 +235,9 @@ function TerminalContentV2() {
                             <div className="space-y-2">
                                 <div className="flex justify-between text-xs text-muted-foreground">
                                     <span>Inferência Principal em</span>
-                                    <span className="font-mono">{quant.timeToNextAnalysis}s</span>
+                                    <span className="font-mono">{timeToNextAnalysis}s</span>
                                 </div>
-                                <Progress value={(quant.timeToNextAnalysis / quant.analysisInterval) * 100} className="h-1" />
+                                <Progress value={(timeToNextAnalysis / analysisInterval) * 100} className="h-1" />
                             </div>
 
                             <Button 
@@ -240,17 +266,16 @@ function TerminalContentV2() {
                             <div className="grid grid-cols-2 gap-3">
                                 <div className="space-y-1.5">
                                     <Label className="text-[10px] uppercase font-bold text-muted-foreground">Stake (USD)</Label>
-                                    <Input type="number" value={quant.stakeValue} onChange={(e) => quant.setStakeValue(Number(e.target.value))} className="h-8 text-xs font-mono bg-background/50" disabled={quant.isAutoMode} />
+                                    <Input type="number" value={stakeValue} onChange={(e) => setStakeValue(Number(e.target.value))} className="h-8 text-xs font-mono bg-background/50" disabled={quant.isAutoMode} />
                                 </div>
                                 <div className="space-y-1.5">
                                     <Label className="text-[10px] uppercase font-bold text-muted-foreground">Alvo Lucro</Label>
-                                    <Input type="number" value={quant.profitTarget} onChange={(e) => quant.setProfitTarget(Number(e.target.value))} className="h-8 text-xs font-mono bg-background/50" disabled={quant.isAutoMode} />
+                                    <Input type="number" value={profitTarget} onChange={(e) => setProfitTarget(Number(e.target.value))} className="h-8 text-xs font-mono bg-background/50" disabled={quant.isAutoMode} />
                                 </div>
                             </div>
                             
                             <Separator className="opacity-50" />
                             
-                            {/* NOVO: TOTALIZADOR GLOBAL */}
                             <div className="p-3 rounded-lg bg-primary/10 border border-primary/20">
                                 <p className="text-[10px] text-primary uppercase font-bold text-center mb-2">Desempenho Global da Esquadra (Sessão)</p>
                                 <div className="grid grid-cols-2 gap-2 text-center">
@@ -500,7 +525,7 @@ function TerminalContentV2() {
                         <AlertDialogTitle>Radar: Automação em Conta REAL</AlertDialogTitle>
                         <AlertDialogDescription>
                             Você está ativando a execução automática para o radar multi-ativo em conta REAL. 
-                            O sistema poderá abrir ordens automaticamente sempre que o CIO detectar uma oportunidade superior a {quant.confidenceThreshold}% de confiança.
+                            O sistema poderá abrir ordens automaticamente sempre que o CIO detectar uma oportunidade superior a {confidenceThreshold}% de confiança.
                         </AlertDialogDescription>
                     </AlertDialogHeader>
                     <AlertDialogFooter>
