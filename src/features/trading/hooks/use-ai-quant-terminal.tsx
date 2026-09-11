@@ -1,3 +1,4 @@
+
 'use client';
 
 /**
@@ -21,7 +22,7 @@ import { initialCouncilStrategies } from '../services/council-strategies';
 import { detectMarketRegime } from '../services/advanced-trading-services';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/features/auth/hooks/use-auth';
-import { saveCouncilDecisionLog, getTransactions, getTradeDecisionLogs } from '@/services/financial-data-service';
+import { saveCouncilDecisionLog, getTransactions, getTradeDecisionLogs, getCouncilDecisionLogs } from '@/services/financial-data-service';
 
 interface QuantDecision {
     action: 'RISE' | 'FALL' | 'HOLD';
@@ -143,7 +144,6 @@ export function useAIQuantTerminal(
 
     const handleSetStrategicProfile = useCallback((profile: StrategicProfile) => {
         setStrategicProfile(profile);
-        // Ao mudar o perfil, opcionalmente sincronizamos o threshold padrão
         const newThreshold = profile === 'conservative' ? 85 : profile === 'balanced' ? 65 : 55;
         setConfidenceThreshold(newThreshold);
         addLog(`Perfil estratégico alterado para ${profile.toUpperCase()}. Limiar ajustado para ${newThreshold}%.`);
@@ -186,7 +186,6 @@ export function useAIQuantTerminal(
         if (!activeSymbol || !isConnected || !ollamaConfig || chartData.length < 30) return;
         if (executionLockRef.current) return;
 
-        // MELHORIA 1: Circuit Breaker
         const recentResults = recentPerformanceSummary.map(t => t.res);
         const lastLosses = recentResults.slice(0, maxConsecutiveLosses);
         const hitLossStreak = lastLosses.length === maxConsecutiveLosses && 
@@ -209,7 +208,6 @@ export function useAIQuantTerminal(
             return;
         }
 
-        // Proteção: Meta de Lucro Atingida
         if (sessionStats.pnl >= profitTarget) {
             if (isAutoMode) {
                 addLog(`🎯 Meta de lucro de $${profitTarget} atingida. Pausando Autopilot.`, 'info');
@@ -223,6 +221,17 @@ export function useAIQuantTerminal(
         addLog(`CIO iniciando auditoria estratégica (${strategicProfile}) para ${activeSymbol}...`);
 
         try {
+            // JANELA DE CONTEXTO EXPANDIDA: Buscar últimos 15 registros de auditoria (HOLD ou TRADE)
+            const decisionHistory = user ? await getCouncilDecisionLogs(user.uid, 15) : [];
+            const historyContext = decisionHistory.map(h => ({
+                time: h.timestamp ? new Date(h.timestamp).toLocaleTimeString() : '?',
+                action: h.action,
+                conf: h.confidence,
+                regime: h.regime,
+                executed: h.executed,
+                reason: h.reasoning
+            }));
+
             const indicators = calculateAllIndicators(chartData, initialCouncilStrategies, '1m', { duration: 15, unit: 's' });
             
             const regime = (indicators && chartData.length >= 30) 
@@ -241,7 +250,7 @@ export function useAIQuantTerminal(
                 price: priceTicks[priceTicks.length - 1]?.price,
                 regime: regime?.regime,
                 profile: strategicProfile,
-                recent_performance: recentPerformanceSummary,
+                decision_history_last_15: historyContext, // Injeção da janela expandida
                 indicators: {
                     roi: indicators?.rsi?.toFixed(2),
                     adx: indicators?.adx?.toFixed(1),
@@ -253,17 +262,18 @@ export function useAIQuantTerminal(
             const prompt = `VOCÊ É O CHIEF INVESTMENT OFFICER (CIO) DO TERMINAL CLARITAS.
             Perfil Estratégico Ativo: ${strategicProfile.toUpperCase()}
             
-            MISSÃO: Analise o mercado e o desempenho recente.
-            Se houver falhas recentes, entenda se o mercado mudou de regime.
+            MISSÃO: Analise o mercado e as últimas 15 decisões (HOLDs e Trades) para identificar padrões de acerto ou erro.
+            Se houve muitos HOLDs seguidos, avalie se está sendo conservador demais.
+            Se houve perdas reais, adapte a estratégia para o regime atual.
             
-            DADOS ATUAIS DO MERCADO:
+            DADOS ATUAIS E HISTÓRICO RECENTE:
             ${JSON.stringify(marketContext, null, 2)}
             
             RETORNE APENAS JSON NESTE FORMATO:
             {
               "action": "RISE" | "FALL" | "HOLD",
               "confidence": 0-100,
-              "reasoning": "Breve justificativa técnica",
+              "reasoning": "Breve justificativa técnica considerando os últimos 15 movimentos",
               "duration": número,
               "unit": "s" | "t"
             }
@@ -284,14 +294,12 @@ export function useAIQuantTerminal(
 
             if (response.error) throw new Error(response.error);
 
-            // Parsing resiliente
             const rawContent = (response.success || "").replace(/```json|```/g, "").trim();
             const jsonMatch = rawContent.match(/\{.*\}/s);
             if (!jsonMatch) throw new Error("IA retornou formato inválido.");
             
             const decision: QuantDecision = JSON.parse(jsonMatch[0]);
 
-            // MELHORIA 2: Validação estrita da resposta do LLM antes de operar
             if (!['RISE', 'FALL', 'HOLD'].includes(decision.action)) {
                 throw new Error(`Ação inválida retornada pela IA: ${decision.action}`);
             }
@@ -314,7 +322,6 @@ export function useAIQuantTerminal(
             addLog(`Veredito IA: ${decision.action} (${decision.confidence}%)`, 'decision');
             addLog(`Justificativa: ${decision.reasoning}`);
 
-            // MELHORIA 4: Persistência de decisões do Conselho
             if (user) {
               try {
                 saveCouncilDecisionLog(user.uid, {
@@ -351,20 +358,23 @@ export function useAIQuantTerminal(
         setIsChatLoading(true);
 
         try {
-            // BUSCAR DADOS REAIS DO FIREBASE PARA CONTEXTO
+            // JANELA DE CONTEXTO EXPANDIDA NO CHAT: 15 transações e 15 decisões
             const [transactions, decisionLogs] = await Promise.all([
                 getTransactions(user.uid),
-                getTradeDecisionLogs(user.uid, 'v2')
+                getCouncilDecisionLogs(user.uid, 15)
             ]);
 
-            const transactionSummary = transactions.slice(-10).map(t => ({
+            const transactionSummary = transactions.slice(-15).map(t => ({
                 date: t.date, desc: t.description, val: t.amount, type: t.type, cat: t.category
             }));
 
-            const decisionSummary = decisionLogs.slice(0, 10).map(l => ({
-                time: l.timestamp, asset: l.asset, action: l.tradeParams.direction, 
-                conf: l.consensus.bayesianProbability || l.consensus.confidence, 
-                reason: l.context.supervisionReason
+            const decisionSummary = decisionLogs.map(l => ({
+                time: l.timestamp ? new Date(l.timestamp).toLocaleTimeString() : '?',
+                asset: l.symbol,
+                action: l.action, 
+                conf: l.confidence, 
+                reason: l.reasoning,
+                executed: l.executed
             }));
 
             const systemPrompt = `Você é o Chief Investment Officer (CIO) do Terminal Claritas. 
@@ -376,13 +386,13 @@ export function useAIQuantTerminal(
             - P&L da Sessão do Terminal: $${sessionStats.pnl.toFixed(2)}
             - Win Rate Global do Terminal: ${sessionStats.winRate === null ? 'Sem trades registrados' : sessionStats.winRate.toFixed(1) + '%'}
             
-            HISTÓRICO FINANCEIRO (ÚLTIMAS TRANSAÇÕES NO APP):
+            HISTÓRICO FINANCEIRO (ÚLTIMAS 15 TRANSAÇÕES):
             ${JSON.stringify(transactionSummary, null, 2)}
             
-            REGISTROS DE AUDITORIA DO TERMINAL (DECISÕES NO FIREBASE):
+            REGISTROS DE AUDITORIA DO TERMINAL (ÚLTIMAS 15 DECISÕES):
             ${JSON.stringify(decisionSummary, null, 2)}
             
-            Instrução: Responda de forma técnica, analítica e fundamentada. Se o usuário perguntar sobre o desempenho das estratégias ou sobre seus gastos, consulte as listas acima. Seja conciso e use português do Brasil.`;
+            Instrução: Responda de forma técnica, analítica e fundamentada. Use os últimos 15 movimentos para explicar tendências ou falhas. Seja conciso e use português do Brasil.`;
 
             const history = chatMessages.map(m => ({ role: m.role, content: m.content }));
             

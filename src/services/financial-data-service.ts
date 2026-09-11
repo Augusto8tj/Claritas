@@ -351,6 +351,18 @@ export async function saveCouncilDecisionLog(userId: string, data: any): Promise
     }
 }
 
+export async function getCouncilDecisionLogs(userId: string, limitN: number = 15): Promise<any[]> {
+    if (!userId) return [];
+    const q = query(collection(db, `users/${userId}/council_decisions`), orderBy('timestamp', 'desc'), limit(limitN));
+    try {
+        const snapshot = await getDocs(q);
+        return snapshot.docs.map(d => d.data());
+    } catch (error) {
+        console.error("Falha ao buscar histórico de decisões do conselho:", error);
+        return [];
+    }
+}
+
 // --- Models Persistence ---
 
 export async function savePredictiveModels(userId: string, models: Record<string, any>): Promise<void> {
