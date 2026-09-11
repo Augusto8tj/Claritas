@@ -1,17 +1,18 @@
-// src/features/trading/components/deriv-trader/ApiStatusIndicatorV2.tsx
+
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { useDerivApiV2 } from '@/features/trading/hooks/use-deriv-api-v2';
-import { checkGeminiConnection } from '@/app/actions';
+import { checkGeminiConnection, checkOllamaConnection } from '@/app/actions';
 import { Button } from '@/components/ui/button';
-import { ShieldCheck, ShieldX, Loader2, RefreshCw } from 'lucide-react';
+import { ShieldCheck, ShieldX, Loader2, RefreshCw, Laptop, Cloud } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import type { OllamaConfig } from '@/lib/types';
 
 type Status = 'loading' | 'success' | 'error';
 
-const StatusIcon = ({ status, serviceName, errorMsg }: { status: Status; serviceName: string; errorMsg?: string | null }) => {
+const StatusIcon = ({ status, serviceName, errorMsg, icon: CustomIcon }: { status: Status; serviceName: string; errorMsg?: string | null; icon?: React.ReactNode }) => {
   let icon;
   let tooltipMessage = '';
   let colorClass = '';
@@ -22,7 +23,7 @@ const StatusIcon = ({ status, serviceName, errorMsg }: { status: Status; service
       tooltipMessage = `A verificar status de: ${serviceName}...`;
       break;
     case 'success':
-      icon = <ShieldCheck className="h-4 w-4 text-green-500" />;
+      icon = CustomIcon || <ShieldCheck className="h-4 w-4 text-green-500" />;
       tooltipMessage = `${serviceName}: Conexão bem-sucedida.`;
       colorClass = 'text-green-500';
       break;
@@ -42,8 +43,9 @@ const StatusIcon = ({ status, serviceName, errorMsg }: { status: Status; service
         </div>
       </TooltipTrigger>
       <TooltipContent>
+        <p className="font-bold">{serviceName}</p>
         <p>{tooltipMessage}</p>
-        {status === 'error' && serviceName === 'Corretora' && errorMsg && <p className="text-xs">{errorMsg}</p>}
+        {status === 'error' && errorMsg && <p className="text-xs mt-1 border-t pt-1">{errorMsg}</p>}
       </TooltipContent>
     </Tooltip>
   );
@@ -51,35 +53,81 @@ const StatusIcon = ({ status, serviceName, errorMsg }: { status: Status; service
 
 export function ApiStatusIndicatorV2() {
   const { isConnected, isConnecting, connectionError, reconnect } = useDerivApiV2();
-  const [iaStatus, setIaStatus] = useState<Status>('loading');
+  const [iaCloudStatus, setIaCloudStatus] = useState<Status>('loading');
+  const [iaLocalStatus, setIaLocalStatus] = useState<Status>('loading');
   const [isChecking, setIsChecking] = useState(false);
 
-  const checkIa = useCallback(async () => {
-    setIaStatus('loading');
-    const result = await checkGeminiConnection();
-    setIaStatus(result.success ? 'success' : 'error');
+  const checkIAs = useCallback(async () => {
+    setIaCloudStatus('loading');
+    setIaLocalStatus('loading');
+    
+    // 1. Check Gemini (Cloud)
+    const savedGeminiKey = localStorage.getItem('geminiApiKey');
+    const geminiRes = await checkGeminiConnection(savedGeminiKey || undefined);
+    setIaCloudStatus(geminiRes.success ? 'success' : 'error');
+
+    // 2. Check Ollama (Local)
+    const ollamaConfigRaw = localStorage.getItem('ollamaConfig');
+    if (ollamaConfigRaw) {
+        try {
+            const config = JSON.parse(ollamaConfigRaw) as OllamaConfig;
+            const ollamaRes = await checkOllamaConnection(config);
+            setIaLocalStatus(ollamaRes.success ? 'success' : 'error');
+        } catch (e) {
+            setIaLocalStatus('error');
+        }
+    } else {
+        // Fallback check for process.env (Melhoria 5)
+        const config = {
+            baseUrl: process.env.NEXT_PUBLIC_OLLAMA_BASE_URL || "",
+            apiKey: process.env.NEXT_PUBLIC_OLLAMA_API_KEY || "",
+            model: "llama3",
+            temperature: 0.2,
+            keepAlive: "5m"
+        };
+        const ollamaRes = await checkOllamaConnection(config);
+        setIaLocalStatus(ollamaRes.success ? 'success' : 'error');
+    }
   }, []);
 
   const runAllChecks = useCallback(async () => {
     setIsChecking(true);
     await Promise.all([
       reconnect(),
-      checkIa()
+      checkIAs()
     ]);
     setIsChecking(false);
-  }, [reconnect, checkIa]);
+  }, [reconnect, checkIAs]);
 
   useEffect(() => {
-    checkIa();
-  }, []);
+    checkIAs();
+  }, [checkIAs]);
 
   const derivStatus: Status = isConnecting ? 'loading' : isConnected ? 'success' : 'error';
 
   return (
     <TooltipProvider>
       <div className="flex items-center justify-center gap-4 rounded-lg border bg-card p-2 px-4 shadow-sm">
-        <StatusIcon status={derivStatus} serviceName="Corretora" errorMsg={connectionError} />
-        <StatusIcon status={iaStatus} serviceName="IA" />
+        <StatusIcon 
+            status={derivStatus} 
+            serviceName="Corretora" 
+            errorMsg={connectionError} 
+        />
+        
+        {/* Mostra a saúde da IA Local (Ollama) que é usada no terminal */}
+        <StatusIcon 
+            status={iaLocalStatus} 
+            serviceName="IA Local" 
+            icon={<Laptop className="h-4 w-4" />}
+        />
+
+        {/* Mostra a saúde da IA Cloud (Gemini) que é usada nos chats e insights */}
+        <StatusIcon 
+            status={iaCloudStatus} 
+            serviceName="IA Cloud" 
+            icon={<Cloud className="h-4 w-4" />}
+        />
+
         <Tooltip>
             <TooltipTrigger asChild>
                 <Button variant="ghost" size="icon" className="h-7 w-7" onClick={runAllChecks}>

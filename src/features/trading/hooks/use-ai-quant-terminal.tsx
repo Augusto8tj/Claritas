@@ -50,7 +50,7 @@ export function useAIQuantTerminal(
     const [timeToNextAnalysis, setTimeToNextAnalysis] = useState(120);
     const [strategicProfile, setStrategicProfile] = useState<StrategicProfile>('balanced');
     
-    // ESTADOS FINANCEIROS E CIRCUIT BREAKER (MELHORIA 1)
+    // MELHORIA 1: ESTADOS FINANCEIROS E CIRCUIT BREAKER
     const [stakeValue, setStakeValue] = useState(1.0);
     const [profitTarget, setProfitTarget] = useState(10.0);
     const [maxConsecutiveLosses, setMaxConsecutiveLosses] = useState(3);
@@ -75,7 +75,9 @@ export function useAIQuantTerminal(
         );
         const wins = finishedTrades.filter(op => op.status === 'won').length;
         const total = finishedTrades.length;
-        const winRate = total > 0 ? (wins / total) * 100 : 100;
+        
+        // MELHORIA 6: Corrigir Win Rate exibindo "100%" antes de qualquer trade
+        const winRate = total > 0 ? (wins / total) * 100 : null;
         
         const pnl = finishedTrades.reduce((acc, op) => {
             return acc + (Number(op.result) || 0);
@@ -83,7 +85,7 @@ export function useAIQuantTerminal(
         
         return { 
           pnl: Number(pnl) || 0, 
-          winRate: Number(winRate) || 0, 
+          winRate: winRate, 
           total: Number(total) || 0 
         };
     }, [operationsLog, activeSymbol]);
@@ -103,7 +105,7 @@ export function useAIQuantTerminal(
             }));
     }, [operationsLog, activeSymbol]);
 
-    // CONFIGURAÇÃO DO OLLAMA (MELHORIA 5: Credenciais via env)
+    // MELHORIA 5: Remover credenciais hardcoded do código-fonte
     const ollamaConfig = useMemo(() => {
         if (typeof window === 'undefined') return null;
         const saved = localStorage.getItem('ollamaConfig');
@@ -128,7 +130,6 @@ export function useAIQuantTerminal(
     const executeTradeAction = useCallback(async (decision: QuantDecision) => {
         if (!activeSymbol) return;
 
-        // ✅ SANITIZAÇÃO DE DURAÇÃO (Respeitando limites rígidos da Deriv)
         let finalDuration = decision.duration;
         const finalUnit = (decision.unit || 's') as DurationUnit;
 
@@ -163,7 +164,7 @@ export function useAIQuantTerminal(
         if (!activeSymbol || !isConnected || !ollamaConfig || chartData.length < 30) return;
         if (executionLockRef.current) return;
 
-        // 🛑 CIRCUIT BREAKER (MELHORIA 1)
+        // MELHORIA 1: Circuit Breaker
         const recentResults = recentPerformanceSummary.map(t => t.res);
         const lastLosses = recentResults.slice(0, maxConsecutiveLosses);
         const hitLossStreak = lastLosses.length === maxConsecutiveLosses && 
@@ -268,7 +269,7 @@ export function useAIQuantTerminal(
             
             const decision: QuantDecision = JSON.parse(jsonMatch[0]);
 
-            // 🛡️ Validação estrita da resposta do LLM (MELHORIA 2)
+            // MELHORIA 2: Validação estrita da resposta do LLM antes de operar
             if (!['RISE', 'FALL', 'HOLD'].includes(decision.action)) {
                 throw new Error(`Ação inválida retornada pela IA: ${decision.action}`);
             }
@@ -291,9 +292,10 @@ export function useAIQuantTerminal(
             addLog(`Veredito IA: ${decision.action} (${decision.confidence}%)`, 'decision');
             addLog(`Justificativa: ${decision.reasoning}`);
 
-            // PERSISTÊNCIA DE DECISÃO (MELHORIA 4)
+            // MELHORIA 4: Persistência de decisões do Conselho
             if (user) {
               try {
+                const minConfidenceForExecution = strategicProfile === 'conservative' ? 85 : strategicProfile === 'balanced' ? 65 : 55;
                 saveCouncilDecisionLog(user.uid, {
                   symbol: activeSymbol,
                   action: decision.action,
@@ -302,7 +304,7 @@ export function useAIQuantTerminal(
                   regime: regime?.regime,
                   strategicProfile,
                   timestamp: new Date().toISOString(),
-                  executed: isAutoMode && decision.action !== 'HOLD' && decision.confidence >= (strategicProfile === 'conservative' ? 85 : 65),
+                  executed: isAutoMode && decision.action !== 'HOLD' && decision.confidence >= minConfidenceForExecution,
                 });
               } catch (logErr) {
                 console.warn("Falha ao persistir log de decisão:", logErr);
@@ -335,7 +337,7 @@ export function useAIQuantTerminal(
             - Ativo: ${activeSymbol}
             - Perfil: ${strategicProfile}
             - P&L Ativo: $${sessionStats.pnl.toFixed(2)}
-            - Win Rate: ${sessionStats.winRate.toFixed(1)}%
+            - Win Rate: ${sessionStats.winRate === null ? 'Sem trades' : sessionStats.winRate.toFixed(1) + '%'}
             - Memória de Trades Recentes: ${JSON.stringify(recentPerformanceSummary)}
             
             Instrução: Responda de forma técnica. Use a memória de trades para explicar por que ganhamos ou perdemos as últimas operações se questionado.`;
