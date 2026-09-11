@@ -57,10 +57,11 @@ export function OperationsLogV1({ operations, sellContract, priceTicks }: Operat
         return operations
         .filter(op => op.status !== 'pending' && new Date(op.timestamp).toDateString() === today.toDateString())
         .reduce((sum, op) => {
+            const stakeVal = Number(op.stake) || 0;
             if (op.status === 'lost') {
-                return sum - op.stake; 
+                return sum - stakeVal; 
             }
-            return sum + (op.result || 0);
+            return sum + (Number(op.result) || 0);
         }, 0);
     }, [operations]);
 
@@ -130,7 +131,7 @@ export function OperationsLogV1({ operations, sellContract, priceTicks }: Operat
                                                 <p className="text-sm font-medium leading-none">{op.asset} - {op.direction === "rise" ? "Rise" : "Fall"}</p>
                                             </div>
                                             <div className="text-muted-foreground">
-                                                <p>Entrada: <span className="font-semibold text-foreground">${op.stake.toFixed(2)}</span></p>
+                                                <p>Entrada: <span className="font-semibold text-foreground">${(Number(op.stake) || 0).toFixed(2)}</span></p>
                                                 <p>Duração: <span className="font-semibold text-foreground">{op.duration} {durationUnitLabels[op.durationUnit] || op.durationUnit}</span></p>
                                             </div>
                                             <div className="text-muted-foreground">
@@ -155,9 +156,9 @@ export function OperationsLogV1({ operations, sellContract, priceTicks }: Operat
                                                     currentStatus={currentStatus}
                                                 />
                                             ) : op.status === "won" ? (
-                                                <><ArrowUp className="h-4 w-4" /><span>+${op.result?.toFixed(2)}</span></>
+                                                <><ArrowUp className="h-4 w-4" /><span>+${(Number(op.result) || 0).toFixed(2)}</span></>
                                             ) : (
-                                                <><ArrowDown className="h-4 w-4" /><span>-${op.stake.toFixed(2)}</span></>
+                                                <><ArrowDown className="h-4 w-4" /><span>-${(Number(op.stake) || 0).toFixed(2)}</span></>
                                             )}
                                         </div>
                                     </div>
