@@ -1,3 +1,4 @@
+
 'use client';
 
 import React, { useState, useRef, useEffect, useMemo } from 'react';
@@ -26,19 +27,30 @@ import { cn } from "@/lib/utils";
 import { Separator } from "@/components/ui/separator";
 import { useRobotCouncilV2 } from '@/features/trading/hooks/use-robot-council-v2';
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 function TerminalContent() {
     const { 
         activeSymbol, setActiveSymbol, assetGroups, isAssetsLoading, 
         chartData, botCandleData, isConnected, operationsLog, tradeAnnotations, priceTicks,
         isChartLoading, chartError, chartType, setChartType, timePeriod, setTimePeriod, dataVersion,
-        clearActiveContracts
+        clearActiveContracts, accountType
     } = useDerivApi();
 
     const quant = useAIQuantTerminal(activeSymbol, priceTicks, botCandleData);
     const { indicators: councilIndicators } = useRobotCouncilV2(activeSymbol, [], botCandleData, dataVersion);
     
     const [chatInput, setChatInput] = useState('');
+    const [showRealAccountConfirm, setShowRealAccountConfirm] = useState(false);
     const chatScrollRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
@@ -154,7 +166,13 @@ function TerminalContent() {
                                 <Progress value={(quant.timeToNextAnalysis / quant.analysisInterval) * 100} className="h-1" />
                             </div>
                             <Button 
-                                onClick={quant.toggleAutoMode} 
+                                onClick={() => {
+                                    if (!quant.isAutoMode && accountType === 'real') {
+                                        setShowRealAccountConfirm(true);
+                                    } else {
+                                        quant.toggleAutoMode();
+                                    }
+                                }} 
                                 className={cn("w-full h-12 font-bold shadow-md", quant.isAutoMode ? "bg-destructive text-destructive-foreground hover:bg-destructive/90" : "bg-primary text-primary-foreground hover:bg-primary/90")}
                             >
                                 {quant.isAutoMode ? <PauseCircle className="mr-2 h-5 w-5" /> : <PlayCircle className="mr-2 h-5 w-5" />}
@@ -355,13 +373,13 @@ function TerminalContent() {
                         <CardContent className="flex-1 overflow-hidden p-0 relative bg-muted/5">
                             <ScrollArea className="h-full p-4">
                                 <div className="space-y-4">
-                                    {quant.chatMessages.length === 0 && (
+                                    {chatMessages.length === 0 && (
                                         <div className="text-center py-10 opacity-30">
                                             <Brain className="h-10 w-10 mx-auto mb-2"/>
                                             <p className="text-xs font-mono">Aguardando seu comando estratégico...</p>
                                         </div>
                                     )}
-                                    {quant.chatMessages.map((msg, i) => (
+                                    {chatMessages.map((msg, i) => (
                                         <div key={i} className={cn(
                                             "flex flex-col max-w-[85%] rounded-lg p-3 text-xs leading-relaxed border shadow-sm",
                                             msg.role === 'user' ? "bg-primary/10 ml-auto border-primary/20" : "bg-card mr-auto border-border"
@@ -372,7 +390,7 @@ function TerminalContent() {
                                             <p className="font-mono text-foreground">{msg.content}</p>
                                         </div>
                                     ))}
-                                    {quant.isChatLoading && (
+                                    {isChatLoading && (
                                         <div className="flex items-center gap-2 text-xs text-primary animate-pulse font-mono">
                                             <RefreshCw className="h-3 w-3 animate-spin"/> O CIO está processando a resposta...
                                         </div>
@@ -388,9 +406,9 @@ function TerminalContent() {
                                     onChange={(e) => setChatInput(e.target.value)}
                                     placeholder="Pergunte ao CIO..."
                                     className="bg-background border-border h-9 text-xs"
-                                    disabled={quant.isChatLoading}
+                                    disabled={isChatLoading}
                                 />
-                                <Button type="submit" size="icon" className="h-9 w-9" disabled={quant.isChatLoading || !chatInput.trim()}>
+                                <Button type="submit" size="icon" className="h-9 w-9" disabled={isChatLoading || !chatInput.trim()}>
                                     <Send className="h-4 w-4" />
                                 </Button>
                             </form>
@@ -449,11 +467,11 @@ function TerminalContent() {
                         <CardContent className="space-y-3 text-xs">
                              <div className="flex justify-between">
                                 <span className="text-muted-foreground">Latency (Decision):</span>
-                                <span className="font-mono font-bold">{quant.telemetry.latency}ms</span>
+                                <span className="font-mono font-bold">{telemetry.latency}ms</span>
                             </div>
                             <div className="flex justify-between">
                                 <span className="text-muted-foreground">Tokens/Sec:</span>
-                                <span className="font-mono font-bold">{quant.telemetry.tps}</span>
+                                <span className="font-mono font-bold">{telemetry.tps}</span>
                             </div>
                             <Separator className="bg-border" />
                             <div className="space-y-2">
@@ -476,10 +494,10 @@ function TerminalContent() {
                         </div>
                         <CardContent className="p-0">
                             <ScrollArea className="h-48 p-4 text-[10px] leading-relaxed">
-                                {quant.reasoningLog.length === 0 ? (
+                                {reasoningLog.length === 0 ? (
                                     <p className="animate-pulse text-muted-foreground">Aguardando auditoria...</p>
                                 ) : (
-                                    quant.reasoningLog.map((log, i) => (
+                                    reasoningLog.map((log, i) => (
                                         <div key={i} className="mb-1">
                                             <span className="text-muted-foreground/60">[{log.time}]</span>{' '}
                                             <span className={cn(
@@ -498,6 +516,28 @@ function TerminalContent() {
                     </Card>
                 </div>
             </div>
+
+            {/* DIÁLOGO DE CONFIRMAÇÃO PARA CONTA REAL */}
+            <AlertDialog open={showRealAccountConfirm} onOpenChange={setShowRealAccountConfirm}>
+                <AlertDialogContent>
+                    <AlertDialogHeader>
+                        <AlertDialogTitle>Confirmar Automação em Conta REAL</AlertDialogTitle>
+                        <AlertDialogDescription>
+                            Você está prestes a ativar a execução automática de ordens em sua conta REAL. 
+                            Isso significa que capital real será investido automaticamente pela IA com base nas inferências geradas pelo modelo local.
+                        </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                        <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                        <AlertDialogAction onClick={() => {
+                            quant.toggleAutoMode();
+                            setShowRealAccountConfirm(false);
+                        }}>
+                            Confirmar e Ativar
+                        </AlertDialogAction>
+                    </AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialog>
         </div>
     );
 }
