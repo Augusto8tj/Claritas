@@ -19,7 +19,7 @@ import {
     TrendingUp, Binary, Trash2, Microscope, Radar,
     TrendingDown, Minus, Coins
 } from "lucide-react";
-import { DerivApiProviderV2 as DerivApiProvider, useDerivApiV2 as useDerivApi } from "@/features/trading/hooks/use-deriv-api-v2";
+import { DerivApiProviderV2 as DerivApiProvider, useDerivApiV2 as useDerivApi, type AccountType } from "@/features/trading/hooks/use-deriv-api-v2";
 import { AssetSelectorV2 as AssetSelector } from "@/features/trading/components/deriv-trader/asset-selector-v2";
 import { ApiStatusIndicatorV2 as ApiStatusIndicator } from "@/features/trading/components/deriv-trader/ApiStatusIndicatorV2";
 import { MarketChart } from "@/features/trading/components/deriv-trader/market-chart";
@@ -45,7 +45,7 @@ function TerminalContentV2() {
         activeSymbol, setActiveSymbol, assetGroups, isAssetsLoading, 
         chartData, botCandleData, isConnected, operationsLog, tradeAnnotations, priceTicks,
         isChartLoading, chartError, chartType, setChartType, timePeriod, setTimePeriod, dataVersion,
-        clearActiveContracts, accountType
+        clearActiveContracts, accountType, setAccountType 
     } = useDerivApi();
 
     const quant = useAIQuantTerminalV2(activeSymbol, priceTicks, botCandleData);
@@ -162,6 +162,15 @@ function TerminalContentV2() {
                     </div>
                 </div>
                 <div className="flex flex-wrap items-center gap-4">
+                    <ToggleGroup 
+                        type="single" 
+                        value={accountType} 
+                        onValueChange={(v: AccountType) => v && setAccountType(v)} 
+                        className="bg-muted p-1 rounded-lg border border-border"
+                    >
+                        <ToggleGroupItem value="demo" className="text-[10px] h-7 px-3 data-[state=on]:bg-background data-[state=on]:shadow-sm">Demo</ToggleGroupItem>
+                        <ToggleGroupItem value="real" className="text-[10px] h-7 px-3 data-[state=on]:bg-background data-[state=on]:shadow-sm">Real</ToggleGroupItem>
+                    </ToggleGroup>
                     <AssetSelector 
                         selectedAsset={activeSymbol || ''} 
                         onAssetChange={setActiveSymbol} 
