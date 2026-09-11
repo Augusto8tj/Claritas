@@ -1,4 +1,4 @@
-
+// src/app/ai-quant-terminal/page.tsx
 'use client';
 
 import React, { useState, useRef, useEffect, useMemo } from 'react';
@@ -49,7 +49,6 @@ function TerminalContent() {
     const quant = useAIQuantTerminal(activeSymbol, priceTicks, botCandleData);
     const { indicators: councilIndicators } = useRobotCouncilV2(activeSymbol, [], botCandleData, dataVersion);
     
-    // Desestruturação correta das propriedades de quant para evitar erros de referência
     const { chatMessages, isChatLoading, reasoningLog, telemetry } = quant;
 
     const [chatInput, setChatInput] = useState('');
@@ -73,7 +72,6 @@ function TerminalContent() {
         }
     };
 
-    // Histórico filtrado pelo ativo ativo
     const filteredTerminalTrades = useMemo(() => {
         return operationsLog.filter(op => op.initiator === 'Conselho' && op.asset === activeSymbol);
     }, [operationsLog, activeSymbol]);
@@ -171,7 +169,7 @@ function TerminalContent() {
                                 <Slider 
                                     value={[quant.analysisInterval]} 
                                     min={30} 
-                                    max={600} 
+                                    max={3000} 
                                     step={30} 
                                     onValueChange={(v) => quant.setAnalysisInterval(v[0])}
                                     disabled={quant.isAutoMode}

@@ -191,6 +191,21 @@ function TerminalContentV2() {
                                 />
                             </div>
 
+                            <div className="space-y-3 p-3 rounded-lg border border-border bg-muted/10">
+                                <div className="flex justify-between items-center text-xs">
+                                    <span className="text-muted-foreground flex items-center gap-1.5"><Timer className="h-3.5 w-3.5"/> Ciclo de Análise</span>
+                                    <span className="font-mono text-primary font-bold">{quant.analysisInterval}s</span>
+                                </div>
+                                <Slider 
+                                    value={[quant.analysisInterval]} 
+                                    min={30} 
+                                    max={3000} 
+                                    step={30} 
+                                    onValueChange={(v) => quant.setAnalysisInterval(v[0])}
+                                    disabled={quant.isAutoMode}
+                                />
+                            </div>
+
                             <div className="space-y-2">
                                 <div className="flex justify-between text-xs text-muted-foreground">
                                     <span>Inferência Principal em</span>
@@ -445,7 +460,6 @@ function TerminalContentV2() {
                                 <span className="font-mono font-bold">{telemetry.tps}</span>
                             </div>
                         </CardContent>
-                    </Card>
 
                     {/* LOG DE RACIOCÍNIO */}
                     <Card className="bg-muted/30 border-border font-mono overflow-hidden shadow-inner">
