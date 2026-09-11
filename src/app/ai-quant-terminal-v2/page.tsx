@@ -419,20 +419,20 @@ function TerminalContentV2() {
                             </CardTitle>
                         </CardHeader>
                         <CardContent className="space-y-4">
-                            {quant.lastDecision ? (
+                            {lastDecision ? (
                                 <div className="space-y-4">
                                     <div className={cn(
                                         "p-4 rounded-xl text-center border shadow-inner",
-                                        quant.lastDecision.action === 'RISE' ? "bg-green-500/10 border-green-500/20 text-green-600" :
-                                        quant.lastDecision.action === 'FALL' ? "bg-destructive/10 border-destructive/20 text-destructive" :
+                                        lastDecision.action === 'RISE' ? "bg-green-500/10 border-green-500/20 text-green-600" :
+                                        lastDecision.action === 'FALL' ? "bg-destructive/10 border-destructive/20 text-destructive" :
                                         "bg-muted border-border text-muted-foreground"
                                     )}>
                                         <p className="text-[10px] uppercase font-bold mb-1 opacity-70">Recomendação</p>
-                                        <p className="text-3xl font-black">{quant.lastDecision.action}</p>
-                                        <p className="text-xs mt-2 font-mono font-bold">Confiança: {quant.lastDecision.confidence}%</p>
+                                        <p className="text-3xl font-black">{lastDecision.action}</p>
+                                        <p className="text-xs mt-2 font-mono font-bold">Confiança: {lastDecision.confidence}%</p>
                                     </div>
                                     <div className="text-[11px] text-muted-foreground italic bg-muted/30 p-3 rounded-lg border border-border">
-                                        "{quant.lastDecision.reasoning}"
+                                        "{lastDecision.reasoning}"
                                     </div>
                                 </div>
                             ) : (

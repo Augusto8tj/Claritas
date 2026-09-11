@@ -2,7 +2,8 @@
 'use client';
 
 /**
- * @fileOverview TERMINAL QUANT V2 - RADAR COM GESTÃO DE RISCO E TOTALIZADOR GLOBAL
+ * @fileOverview TERMINAL QUANT V2.5 - RADAR COM GESTÃO DE RISCO E TOTALIZADOR GLOBAL
+ * CORREÇÃO: Contador de análise desacoplado do fluxo de dados para evitar congelamento.
  */
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
@@ -14,7 +15,7 @@ import { initialCouncilStrategies } from '../services/council-strategies';
 import { detectMarketRegime } from '../services/advanced-trading-services';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/features/auth/hooks/use-auth';
-import { saveCouncilDecisionLog, getCouncilDecisionLogs } from '@/services/financial-data-service';
+import { saveCouncilDecisionLog } from '@/services/financial-data-service';
 
 interface QuantDecision {
     action: 'RISE' | 'FALL' | 'HOLD';
@@ -301,19 +302,37 @@ export function useAIQuantTerminalV2(
         }
     }, [activeSymbol, isConnected, chartData, runInference, isAutoMode, confidenceThreshold, stakeValue, executeTrade, addLog, operationsLog]);
 
+    // REFS PARA O INTERVALO (FIX CONTADOR PARADO)
+    const activeCycleRef = useRef(runActiveCycle);
+    const radarScanRef = useRef(runRadarScan);
+    const analysisIntervalRef = useRef(analysisInterval);
+
+    useEffect(() => {
+        activeCycleRef.current = runActiveCycle;
+        radarScanRef.current = runRadarScan;
+        analysisIntervalRef.current = analysisInterval;
+    }, [runActiveCycle, runRadarScan, analysisInterval]);
+
     useEffect(() => {
         const interval = setInterval(() => {
             setTimeToNextAnalysis(prev => {
                 if (prev <= 1) {
-                    runActiveCycle();
-                    return analysisInterval;
+                    activeCycleRef.current();
+                    return analysisIntervalRef.current;
                 }
-                if (prev % 15 === 0) runRadarScan();
+                // Varredura de radar a cada 15 segundos
+                if (prev % 15 === 0) {
+                    radarScanRef.current();
+                }
                 return prev - 1;
             });
         }, 1000);
         return () => clearInterval(interval);
-    }, [runActiveCycle, runRadarScan, analysisInterval]);
+    }, []); // Dependência vazia para o timer não reiniciar com ticks de preço
+
+    useEffect(() => {
+        setTimeToNextAnalysis(analysisInterval);
+    }, [analysisInterval]);
 
     return {
         isAutoMode, toggleAutoMode: () => setIsAutoMode(!isAutoMode),
@@ -324,10 +343,11 @@ export function useAIQuantTerminalV2(
         maxConsecutiveLosses, setMaxConsecutiveLosses, maxDailyLoss, setMaxDailyLoss,
         chatMessages, isChatLoading, 
         sendMessage: async (c: string) => {
+            if(!ollamaConfig) return;
             const msg: ChatMessage = { role: 'user', content: c, time: new Date().toLocaleTimeString() };
             setChatMessages(prev => [...prev, msg]);
             setIsChatLoading(true);
-            const res = await getOllamaResponse(ollamaConfig!, c, chatMessages.map(m => ({ role: m.role, content: m.content })));
+            const res = await getOllamaResponse(ollamaConfig, c, chatMessages.map(m => ({ role: m.role, content: m.content })));
             if (res.success) setChatMessages(prev => [...prev, { role: 'assistant', content: res.success!, time: new Date().toLocaleTimeString() }]);
             setIsChatLoading(false);
         }
