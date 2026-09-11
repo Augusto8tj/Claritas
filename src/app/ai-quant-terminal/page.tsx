@@ -49,6 +49,9 @@ function TerminalContent() {
     const quant = useAIQuantTerminal(activeSymbol, priceTicks, botCandleData);
     const { indicators: councilIndicators } = useRobotCouncilV2(activeSymbol, [], botCandleData, dataVersion);
     
+    // Desestruturação correta das propriedades de quant para evitar erros de referência
+    const { chatMessages, isChatLoading, reasoningLog, telemetry } = quant;
+
     const [chatInput, setChatInput] = useState('');
     const [showRealAccountConfirm, setShowRealAccountConfirm] = useState(false);
     const chatScrollRef = useRef<HTMLDivElement>(null);
@@ -57,7 +60,7 @@ function TerminalContent() {
         if (chatScrollRef.current) {
             chatScrollRef.current.scrollIntoView({ behavior: 'smooth' });
         }
-    }, [quant.chatMessages]);
+    }, [chatMessages]);
 
     const formatCurrency = (val: number) => 
         new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(val);
@@ -258,7 +261,9 @@ function TerminalContent() {
                                 </div>
                                 <div className="p-3 rounded-lg bg-muted/20 border border-border text-center">
                                     <p className="text-[10px] text-muted-foreground uppercase font-bold">Win Rate</p>
-                                    <p className="text-lg font-bold">{Number(quant.sessionStats.winRate).toFixed(1)}%</p>
+                                    <p className="text-lg font-bold">
+                                      {quant.sessionStats.winRate === null ? '—' : `${quant.sessionStats.winRate.toFixed(1)}%`}
+                                    </p>
                                 </div>
                             </div>
                         </CardContent>

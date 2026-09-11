@@ -338,6 +338,19 @@ export const archiveOldLogs = async (userId: string): Promise<number> => {
     }
 };
 
+// --- Council Decision Persistence (NEW) ---
+
+export async function saveCouncilDecisionLog(userId: string, data: any): Promise<void> {
+    if (!userId) return;
+    const docRef = doc(db, 'users', userId, 'council_decisions', `dec_${Date.now()}`);
+    const sanitizedData = sanitizeForFirestore(data);
+    try {
+        await setDoc(docRef, sanitizedData);
+    } catch (error) {
+        console.error("Falha ao salvar log de decisão do conselho:", error);
+    }
+}
+
 // --- Models Persistence ---
 
 export async function savePredictiveModels(userId: string, models: Record<string, any>): Promise<void> {

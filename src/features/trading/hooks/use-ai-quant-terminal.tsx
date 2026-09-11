@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
@@ -8,6 +9,8 @@ import { calculateAllIndicators } from '../services/indicator-service';
 import { initialCouncilStrategies } from '../services/council-strategies';
 import { detectMarketRegime } from '../services/advanced-trading-services';
 import { useToast } from '@/hooks/use-toast';
+import { useAuth } from '@/features/auth/hooks/use-auth';
+import { saveCouncilDecisionLog } from '@/services/financial-data-service';
 
 interface QuantDecision {
     action: 'RISE' | 'FALL' | 'HOLD';
@@ -37,6 +40,7 @@ export function useAIQuantTerminal(
     chartData: CandleData[]
 ) {
     const { isConnected, executeTrade, operationsLog } = useDerivApiV2();
+    const { user } = useAuth();
     const { toast } = useToast();
 
     // ESTADOS DE CONTROLE
@@ -158,7 +162,7 @@ export function useAIQuantTerminal(
         if (!activeSymbol || !isConnected || !ollamaConfig || chartData.length < 30) return;
         if (executionLockRef.current) return;
 
-        // 🛑 MELHORIA 1: Circuit Breaker (Verificação de Perdas)
+        // 🛑 CIRCUIT BREAKER (Verificação de Perdas)
         const recentResults = recentPerformanceSummary.map(t => t.res);
         const lastLosses = recentResults.slice(0, maxConsecutiveLosses);
         const hitLossStreak = lastLosses.length === maxConsecutiveLosses && 
@@ -245,7 +249,13 @@ export function useAIQuantTerminal(
             - Se unit for "s" (segundos), duration DEVE ser entre 15 e 300.`;
 
             const start = performance.now();
-            const response = await getOllamaResponse(ollamaConfig, prompt, []);
+            let response;
+            try {
+                response = await getOllamaResponse(ollamaConfig, prompt, []);
+            } catch (fetchErr: any) {
+                addLog(`⚠️ Erro de rede (Failed to fetch): O CIO está temporariamente indisponível.`, 'error');
+                throw new Error("Falha na comunicação com o provedor de IA local.");
+            }
             const end = performance.now();
 
             if (response.error) throw new Error(response.error);
@@ -257,7 +267,7 @@ export function useAIQuantTerminal(
             
             const decision: QuantDecision = JSON.parse(jsonMatch[0]);
 
-            // 🛡️ MELHORIA 2: Validação estrita da resposta do LLM
+            // 🛡️ Validação estrita da resposta do LLM
             if (!['RISE', 'FALL', 'HOLD'].includes(decision.action)) {
                 throw new Error(`Ação inválida retornada pela IA: ${decision.action}`);
             }
@@ -280,6 +290,24 @@ export function useAIQuantTerminal(
             addLog(`Veredito IA: ${decision.action} (${decision.confidence}%)`, 'decision');
             addLog(`Justificativa: ${decision.reasoning}`);
 
+            // PERSISTÊNCIA DE DECISÃO (MELHORIA 4)
+            if (user) {
+              try {
+                saveCouncilDecisionLog(user.uid, {
+                  symbol: activeSymbol,
+                  action: decision.action,
+                  confidence: decision.confidence,
+                  reasoning: decision.reasoning,
+                  regime: regime?.regime,
+                  strategicProfile,
+                  timestamp: new Date().toISOString(),
+                  executed: isAutoMode && decision.action !== 'HOLD' && decision.confidence >= (strategicProfile === 'conservative' ? 85 : 65),
+                });
+              } catch (logErr) {
+                console.warn("Falha ao persistir log de decisão:", logErr);
+              }
+            }
+
             const minConfidence = strategicProfile === 'conservative' ? 85 : strategicProfile === 'balanced' ? 65 : 55;
 
             if (isAutoMode && decision.action !== 'HOLD' && decision.confidence >= minConfidence) {
@@ -291,7 +319,7 @@ export function useAIQuantTerminal(
         } finally {
             executionLockRef.current = false;
         }
-    }, [activeSymbol, isConnected, chartData, priceTicks, isAutoMode, ollamaConfig, addLog, sessionStats.pnl, profitTarget, executeTradeAction, toast, strategicProfile, recentPerformanceSummary, maxConsecutiveLosses, maxDailyLoss]);
+    }, [activeSymbol, isConnected, chartData, priceTicks, isAutoMode, ollamaConfig, addLog, sessionStats.pnl, profitTarget, executeTradeAction, toast, strategicProfile, recentPerformanceSummary, maxConsecutiveLosses, maxDailyLoss, user]);
 
     const sendMessage = async (content: string) => {
         if (!ollamaConfig || !content.trim()) return;
