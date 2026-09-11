@@ -460,6 +460,7 @@ function TerminalContentV2() {
                                 <span className="font-mono font-bold">{telemetry.tps}</span>
                             </div>
                         </CardContent>
+                    </Card>
 
                     {/* LOG DE RACIOCÍNIO */}
                     <Card className="bg-muted/30 border-border font-mono overflow-hidden shadow-inner">
