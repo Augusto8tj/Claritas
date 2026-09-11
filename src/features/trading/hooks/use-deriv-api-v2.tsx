@@ -2,9 +2,7 @@
 'use client';
 
 import { createContext, useContext, useState, useEffect, type ReactNode, useCallback, useRef, useMemo } from 'react';
-import type { TradeResult } from '@/lib/types';
-import { useToast } from '@/hooks/use-toast';
-import type { Operation, OperationInitiator, DurationUnit, ChartType, TimePeriod, ChartData, CandleData, TradeAnnotation, TickData, DurationLimits, Asset } from '@/lib/types';
+import type { TradeResult, Operation, OperationInitiator, DurationUnit, ChartType, TimePeriod, ChartData, CandleData, TradeAnnotation, TickData, DurationLimits, Asset } from '@/lib/types';
 import { FirebaseErrorListener } from '@/components/FirebaseErrorListener';
 import { useAuth } from '@/features/auth/hooks/use-auth';
 import { getDerivWebSocketUrl } from '@/app/actions';
@@ -163,7 +161,7 @@ const getDurationInSeconds = (duration: number, unit: DurationUnit, symbol?: str
     }
 };
 
-export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
+export function useDerivApiV2State() {
   const [demoToken, setDemoToken] = useState<string | null>(null);
   const [realToken, setRealToken] = useState<string | null>(null);
   const [accountType, setAccountTypeState] = useState<AccountType>('demo');
@@ -258,14 +256,6 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
       ));
   }, []);
   
-  useEffect(() => {
-    chartTypeRef.current = chartType;
-  }, [chartType]);
-  
-  useEffect(() => {
-    timePeriodRef.current = timePeriod;
-  }, [timePeriod]);
-
   const makeRequest = useCallback(<T,>(request: object, noResponse = false): Promise<T> => {
     return new Promise((resolve) => {
         const ws = wsRef.current;
@@ -626,6 +616,18 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
   }, []);
   
   useEffect(() => {
+    try {
+        const storedDemoToken = localStorage.getItem(DERIV_DEMO_TOKEN_KEY);
+        const storedRealToken = localStorage.getItem(DERIV_REAL_TOKEN_KEY);
+        const storedAccountType = localStorage.getItem(DERIV_ACCOUNT_TYPE_KEY) as AccountType | null;
+        if (storedDemoToken) setDemoToken(storedDemoToken);
+        if (storedRealToken) setRealToken(storedRealToken);
+        if (storedAccountType) setAccountTypeState(storedAccountType);
+        setIsLoading(false);
+    } catch (e) {}
+  }, []);
+
+  useEffect(() => {
     if (!activeToken || isLoading) {
       if (wsRef.current) wsRef.current.close();
       return;
@@ -817,6 +819,7 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
               setConnectionError(null);
               addEvent('Conexão estabelecida e autenticada via OTP.', 'success');
               
+              ws.send(JSON.stringify({ "authorize": activeToken }));
               ws.send(JSON.stringify({ "proposal_open_contract": 1, "subscribe": 1 }));
               ws.send(JSON.stringify({ "balance": 1, "subscribe": 1 }));
               
@@ -903,13 +906,18 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
       executeTrade, sellContract, getHistoricalData, tradeAnnotations, durationLimits, connectionEvents, rawErrorCode, tokenSource, maskedToken, setAndPersistOperationsLog, setActiveSymbol
   ]);
 
-  return (
-    <DerivApiContextV2.Provider value={contextValue}>
-      <FirebaseErrorListener />
-      {children}
-    </DerivApiContextV2.Provider>
-  );
+  return contextValue;
 }
+
+export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
+    const contextValue = useDerivApiV2State();
+    return (
+        <DerivApiContextV2.Provider value={contextValue}>
+            <FirebaseErrorListener />
+            {children}
+        </DerivApiContextV2.Provider>
+    );
+};
 
 export function useDerivApiV2() {
   const context = useContext(DerivApiContextV2);
