@@ -187,6 +187,7 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
   const { user } = useAuth();
   
   const [toastQueue, setToastQueue] = useState<any[]>([]);
+  const [tradeAnnotations, setTradeAnnotations] = useState<TradeAnnotation[]>([]);
 
   const [activeSymbol, setActiveSymbol] = useState<string | null>('1HZ10V');
   const [chartData, setChartData] = useState<ChartData[]>([]);
@@ -198,7 +199,6 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
   const chartTypeRef = useRef(chartType);
   const [timePeriod, setTimePeriod] = useState<TimePeriod>('1m');
   const timePeriodRef = useRef(timePeriod);
-  const [tradeAnnotations, setTradeAnnotations] = useState<TradeAnnotation[]>([]);
   const [dataVersion, setDataVersion] = useState(0); 
   const [durationLimits, setDurationLimits] = useState<DurationLimits | null>(null);
 
@@ -388,7 +388,10 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
         
         try {
             const response: any = await makeRequest(request);
-            if (response.error) throw new Error(response.error.message);
+            if (response.error) {
+              console.warn(`[getHistoricalData] API Error for ${symbol}:`, response.error.message);
+              return []; // Return empty instead of throwing to prevent UI crash
+            }
 
             if (response.history) {
                 return response.history.times.map((time: number, index: number) => ({
@@ -412,7 +415,7 @@ export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
             return [];
         } catch (error: any) {
             console.error('[getHistoricalData] Error:', error);
-            throw error;
+            return [];
         }
     }, [makeRequest]);
     

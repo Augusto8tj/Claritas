@@ -223,7 +223,7 @@ export function useAIQuantTerminalV2(
 
     // ESCALONADOR DO RADAR
     const runRadarScan = useCallback(async () => {
-        if (executionLockRef.current) return;
+        if (!isConnected || executionLockRef.current) return;
 
         const symbol = RADAR_SYMBOLS[radarPointerRef.current];
         if (symbol === activeSymbol) {
@@ -235,6 +235,11 @@ export function useAIQuantTerminalV2(
         
         try {
             const history = await getHistoricalData(symbol, 'candles', 50, '1m');
+            if (!history || history.length === 0) {
+              radarPointerRef.current = (radarPointerRef.current + 1) % RADAR_SYMBOLS.length;
+              return;
+            }
+
             const qualification = preQualifyAsset(history as CandleData[]);
             
             if (qualification.qualified) {
@@ -257,7 +262,7 @@ export function useAIQuantTerminalV2(
         }
 
         radarPointerRef.current = (radarPointerRef.current + 1) % RADAR_SYMBOLS.length;
-    }, [activeSymbol, getHistoricalData, preQualifyAsset, runInference, addLog]);
+    }, [activeSymbol, getHistoricalData, preQualifyAsset, runInference, addLog, isConnected]);
 
     // CICLO DE ANÁLISE PRINCIPAL (FOCO NO ATIVO ATUAL)
     const runActiveCycle = useCallback(async () => {
