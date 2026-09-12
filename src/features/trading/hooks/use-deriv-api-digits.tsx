@@ -11,13 +11,12 @@ import { validateAndLogContract } from '@/features/trading/utils/contract-valida
 import { globalLatencyMonitor } from '../utils/latency-monitor';
 import { getDerivWebSocketUrl } from '@/app/actions';
 
-
 // --- CONSTANTS ---
 const DERIV_DEMO_TOKEN_KEY = 'derivDemoApiToken';
 const DERIV_REAL_TOKEN_KEY = 'derivRealApiToken';
 const DERIV_ACCOUNT_TYPE_KEY = 'derivAccountType';
 const DERIV_DIGITS_LOG_KEY = 'derivDigitsOperationsLog_v5';
-const DERIV_APP_ID = "34lwuJiPbEzxjgEdnEhbX"; 
+const DERIV_APP_ID = "34lwuJiPbEzxjgEdnEhbX"; // APP ID Institucional (V2)
 const MAX_TICKS = 1000;
 
 const ACCOUNT_IDS = {
@@ -55,6 +54,12 @@ export interface ApiHistoricalData {
     high?: number;
     low?: number;
     close?: number;
+}
+
+export interface ConnectionEvent {
+    timestamp: string;
+    message: string;
+    type: 'success' | 'error' | 'warning' | 'info';
 }
 
 export interface DerivApiContextTypeDigits {
@@ -101,6 +106,7 @@ export interface DerivApiContextTypeDigits {
   durationLimits: DurationLimits | null;
   clearActiveContracts: () => void;
   getHistoricalData: (symbol: string, style: 'ticks' | 'candles', count: number, period?: TimePeriod) => Promise<ApiHistoricalData[]>;
+  connectionEvents: ConnectionEvent[];
 }
 
 export const DerivApiContextDigits = createContext<DerivApiContextTypeDigits | undefined>(undefined);
@@ -108,10 +114,7 @@ export const DerivApiContextDigits = createContext<DerivApiContextTypeDigits | u
 const getGranularityForTimePeriod = (timePeriod: TimePeriod): number => {
     switch(timePeriod) {
         case '1m': return 60;
-        case '2m': return 120;
-        case '3m': return 180;
         case '5m': return 300;
-        case '10m': return 600;
         case '15m': return 900;
         case '30m': return 1800;
         case '1h': return 3600;
@@ -132,17 +135,18 @@ const addDataPoint = (prevData: ChartData[], newPoint: ChartData): ChartData[] =
 // This is the main state logic hook
 export function useDerivApiDigitsState() {
   const { user } = useAuth();
-  const [demoToken, setDemoToken] = useState<string | null>('pat_d2df2ff2027411214c07f1ce13961948d64554282475ea77b5343b288575d504');
-  const [realToken, setRealToken] = useState<string | null>('pat_d2df2ff2027411214c07f1ce13961948d64554282475ea77b5343b288575d504');
+  const { toast } = useToast();
+  const [demoToken, setDemoToken] = useState<string | null>(null);
+  const [realToken, setRealToken] = useState<string | null>(null);
   const [accountType, setAccountTypeState] = useState<AccountType>('demo');
   const [accountBalance, setAccountBalance] = useState<AccountBalance>({ balance: null, currency: null, loading: true });
   const [isLoading, setIsLoading] = useState(true);
   const [operationsLog, setOperationsLog] = useState<Operation[]>([]);
   const [assetGroups, setAssetGroups] = useState<AssetGroup[]>([]);
   const [isAssetsLoading, setIsAssetsLoading] = useState(true);
-  const { toast } = useToast();
   
   const [activeSymbol, setActiveSymbol] = useState<string | null>('1HZ10V');
+  const activeSymbolRef = useRef<string | null>('1HZ10V');
   const [priceTicks, setPriceTicks] = useState<TickData[]>([]); 
   const [chartData, setChartData] = useState<ChartData[]>([]);
   const [isChartLoading, setIsChartLoading] = useState(true);
@@ -151,11 +155,12 @@ export function useDerivApiDigitsState() {
   const [timePeriod, setTimePeriod] = useState<TimePeriod>('1m');
   const [dataVersion, setDataVersion] = useState(0);
   const [durationLimits, setDurationLimits] = useState<DurationLimits | null>(null);
+  const [tradeAnnotations, setTradeAnnotations] = useState<TradeAnnotation[]>([]);
+  const [connectionEvents, setConnectionEvents] = useState<ConnectionEvent[]>([]);
+  
   const chartTypeRef = useRef(chartType);
   const timePeriodRef = useRef(timePeriod);
   const activeSubscriptionIdRef = useRef<string | null>(null);
-  const [tradeAnnotations, setTradeAnnotations] = useState<TradeAnnotation[]>([]);
-  
   const wsRef = useRef<WebSocket | null>(null);
   const [isConnected, setIsConnected] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
@@ -167,6 +172,10 @@ export function useDerivApiDigitsState() {
   const allowAutoReconnectRef = useRef(true);
   const reconnectInProgressRef = useRef(false);
   const lastTickSaveTimestampRef = useRef<number>(0);
+
+    const addEvent = useCallback((message: string, type: ConnectionEvent['type'] = 'info') => {
+        setConnectionEvents(prev => [{ timestamp: new Date().toLocaleTimeString(), message, type }, ...prev].slice(0, 50));
+    }, []);
 
     const setAndPersistOperationsLog = useCallback((updater: React.SetStateAction<Operation[]>) => {
         setOperationsLog(prevLog => {
@@ -202,7 +211,7 @@ export function useDerivApiDigitsState() {
             const timeoutId = setTimeout(() => {
                 if (promisesRef.current.has(String(req_id))) {
                     const promise = promisesRef.current.get(String(req_id));
-                    promise?.resolve({ error: { message: `O pedido à API expirou (60s).` } } as any);
+                    promise?.resolve({ error: { message: `O pedido à API expirou.` } } as any);
                     promisesRef.current.delete(String(req_id));
                 }
             }, 60000);
@@ -264,13 +273,15 @@ export function useDerivApiDigitsState() {
         }
         const connect = async () => {
             setIsConnecting(true); setConnectionError(null); setIsAssetsLoading(true);
+            addEvent(`Iniciando handshake OTP (Digits)...`, 'info');
             
-            // Handshake OTP
             const accountId = ACCOUNT_IDS[accountType];
             const otpResult = await getDerivWebSocketUrl(activeToken.trim(), accountId);
             
             if (!otpResult.success || !otpResult.url) {
-                setConnectionError(otpResult.error || 'Falha ao obter URL segura (OTP).');
+                const errMsg = otpResult.error || 'Falha ao obter URL OTP.';
+                setConnectionError(errMsg);
+                addEvent(errMsg, 'error');
                 setIsConnecting(false);
                 setIsConnected(false);
                 setIsAssetsLoading(false);
@@ -370,14 +381,16 @@ export function useDerivApiDigitsState() {
                             });
                             break;
                         case 'tick':
-                            if (response.subscription?.id === activeSubscriptionIdRef.current) {
+                            if (response.tick?.symbol === activeSymbolRef.current) {
                                 const tick = response.tick;
                                 const newTick = { epoch: tick.epoch, price: tick.quote };
+
                                 const now = Date.now();
                                 if (user && activeSymbol && (now - lastTickSaveTimestampRef.current > TICK_SAVE_INTERVAL_MS)) {
                                     saveLiveTickForDigits(user.uid, activeSymbol, { timestamp: tick.epoch, price: tick.quote });
                                     lastTickSaveTimestampRef.current = now;
                                 }
+
                                 setPriceTicks(prev => addDataPoint(prev, newTick) as TickData[]);
                                 if (chartTypeRef.current === 'Area') {
                                     setChartData(prev => addDataPoint(prev, newTick));
@@ -386,7 +399,7 @@ export function useDerivApiDigitsState() {
                             }
                             break;
                         case 'ohlc':
-                             if (response.subscription?.id === activeSubscriptionIdRef.current) {
+                             if (response.ohlc?.symbol === activeSymbolRef.current) {
                                 const candle = response.ohlc;
                                 const newCandle: CandleData = { epoch: candle.open_time, open: parseFloat(candle.open), high: parseFloat(candle.high), low: parseFloat(candle.low), close: parseFloat(candle.close) };
                                 setChartData(prev => addDataPoint(prev, newCandle));
@@ -402,18 +415,23 @@ export function useDerivApiDigitsState() {
                 try {
                     reconnectInProgressRef.current = false;
                     if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
-                    const authResponse: any = await makeRequest({ authorize: activeToken });
-                    if (authResponse.error) throw new Error(authResponse.error.message);
+                    
+                    const authRes: any = await makeRequest({ authorize: activeToken });
+                    if (authRes.error) throw new Error(authRes.error.message);
+
                     setIsConnected(true); setIsConnecting(false); setConnectionError(null);
+                    addEvent(`Conexão autorizada com sucesso.`, 'success');
+                    
                     ws.send(JSON.stringify({ "proposal_open_contract": 1, "subscribe": 1 }));
                     ws.send(JSON.stringify({ "balance": 1, "subscribe": 1 }));
                     startConnectionMonitor();
                     
-                    const assetsRes: any = await makeRequest({ active_symbols: 'full' });
+                    const assetsRes: any = await makeRequest({ active_symbols: 'brief', product_type: 'basic' });
                     if (assetsRes.error) throw new Error(assetsRes.error.message);
                     
-                    // Filter for synthetic indices and baskets, which support digits.
-                    const filteredSymbols = assetsRes.active_symbols.filter((s: any) => 
+                    // Suporte aos novos nomes de propriedades (underlying_symbol, underlying_symbol_name)
+                    const symbols = assetsRes.active_symbols || [];
+                    const filteredSymbols = symbols.filter((s: any) => 
                         s.market === 'synthetic_index' || s.submarket === 'basket_index'
                     );
 
@@ -425,14 +443,29 @@ export function useDerivApiDigitsState() {
                         const groupName = marketNameMapping[marketKey] || 'Outros';
 
                         if (!groupedAssets[groupName]) groupedAssets[groupName] = [];
-                        groupedAssets[groupName].push({ value: s.symbol, label: s.display_name, marketIsOpen: s.exchange_is_open === 1, submarket: s.submarket, market: s.market, minDuration: '1t', pip: s.pip });
+                        
+                        groupedAssets[groupName].push({ 
+                            value: s.underlying_symbol || s.symbol, 
+                            label: s.underlying_symbol_name || s.display_name, 
+                            marketIsOpen: s.exchange_is_open === 1, 
+                            submarket: s.submarket, 
+                            market: marketKey, 
+                            minDuration: '1t', 
+                            pip: s.pip_size || s.pip || 2
+                        });
                     });
-                    setAssetGroups(Object.keys(groupedAssets).map(label => ({ label, options: groupedAssets[label] })));
+                    
+                    setAssetGroups(Object.keys(groupedAssets).map(label => ({ 
+                        label, 
+                        options: groupedAssets[label].sort((a,b) => a.label.localeCompare(b.label)) 
+                    })));
                     setIsAssetsLoading(false);
                 } catch (error: any) {
                     reconnectInProgressRef.current = false;
                     if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
-                    setConnectionError(`Falha na autorização: ${error instanceof Error ? error.message : 'Erro desconhecido'}`);
+                    const msg = error instanceof Error ? error.message : 'Erro desconhecido';
+                    setConnectionError(`Falha na autorização: ${msg}`);
+                    addEvent(msg, 'error');
                     setIsConnected(false); setIsConnecting(false); setIsAssetsLoading(false);
                     setAccountBalance({ balance: null, currency: null, loading: false });
                     allowAutoReconnectRef.current = false;
@@ -447,11 +480,9 @@ export function useDerivApiDigitsState() {
                 promisesRef.current.clear();
                 if (!event.wasClean && allowAutoReconnectRef.current) {
                     reconnectInProgressRef.current = true;
-                    setConnectionError(`Conexão perdida. Reconectando...`);
+                    addEvent('Conexão perdida. Tentando reconectar...', 'warning');
                     if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
                     reconnectTimeoutRef.current = setTimeout(() => { reconnectInProgressRef.current = false; setTriggerReconnect(c => c + 1); }, 3000);
-                } else if (!event.wasClean && !allowAutoReconnectRef.current) {
-                    setConnectionError(`Authorization failed. Please check your API token.`);
                 }
                 setIsConnected(false); setIsConnecting(false);
                 setAccountBalance({ balance: null, currency: null, loading: false });
@@ -467,7 +498,7 @@ export function useDerivApiDigitsState() {
             if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
             reconnectInProgressRef.current = false;
         };
-    }, [user, activeToken, isLoading, triggerReconnect, accountType, makeRequest, startConnectionMonitor, setAndPersistOperationsLog]);
+    }, [user, activeToken, isLoading, triggerReconnect, accountType, addEvent, makeRequest, startConnectionMonitor, setAndPersistOperationsLog]);
 
     const executeTrade = useCallback(async (
         contractType: DigitContractType, stake: number, symbol: string,
@@ -630,13 +661,13 @@ export function useDerivApiDigitsState() {
         setActiveSymbol, priceTicks, setAccountType, setTokens,
         disconnect, reconnect, executeTrade, sellContract, clearActiveContracts,
         chartData, isChartLoading, chartError, chartType, setChartType, timePeriod, setTimePeriod, dataVersion, tradeAnnotations,
-        durationLimits, getHistoricalData
+        durationLimits, getHistoricalData, connectionEvents
     }), [
         isConnected, isConnecting, connectionError, demoToken, realToken, activeToken, accountType, 
         accountBalance, operationsLog, assetGroups, isAssetsLoading, activeSymbol, activeAsset,
         priceTicks, setAccountType, setTokens, disconnect, reconnect, executeTrade, sellContract, clearActiveContracts, setActiveSymbol,
         chartData, isChartLoading, chartError, chartType, timePeriod, dataVersion, tradeAnnotations,
-        durationLimits, getHistoricalData
+        durationLimits, getHistoricalData, connectionEvents
   ]);
 
   return contextValue;
@@ -659,11 +690,3 @@ export function useDerivApiDigits() {
   }
   return context;
 }
-
-const getDecimalPlaces = (pipSize: number | undefined): number => {
-    if (pipSize === undefined || pipSize === null || pipSize <= 0) return 2; 
-    if (Math.floor(pipSize) === pipSize && pipSize >= 1) return 0;
-    const pipString = String(pipSize);
-    if (pipString.includes('.')) return pipString.split('.')[1].length;
-    return 0;
-};
