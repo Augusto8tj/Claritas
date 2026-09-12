@@ -1,18 +1,23 @@
-
 // src/features/trading/hooks/use-deriv-api-accumulators.tsx
 'use client';
 
 import { createContext, useContext, useState, useEffect, type ReactNode, useCallback, useRef, useMemo } from 'react';
-import type { TradeResult } from '@/lib/types';
+import type { TradeResult, Operation, OperationInitiator, DurationUnit, ChartType, TimePeriod, ChartData, CandleData, TradeAnnotation, TickData, DurationLimits, Asset } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
-import type { Operation, OperationInitiator, DurationUnit, ChartType, TimePeriod, ChartData, CandleData, TradeAnnotation, TickData, DurationLimits, Asset } from '@/lib/types';
 import { FirebaseErrorListener } from '@/components/FirebaseErrorListener';
+import { useAuth } from '@/features/auth/hooks/use-auth';
+import { getDerivWebSocketUrl } from '@/app/actions';
 
 const DERIV_DEMO_TOKEN_KEY = 'derivDemoApiToken';
 const DERIV_REAL_TOKEN_KEY = 'derivRealApiToken';
 const DERIV_ACCOUNT_TYPE_KEY = 'derivAccountType';
 const DERIV_ACCUMULATORS_LOG_KEY = 'derivAccumulatorsOperationsLog_v4';
-const DERIV_APP_ID = process.env.NEXT_PUBLIC_DERIV_APP_ID || "1089";
+const DERIV_APP_ID = "34lwuJiPbEzxjgEdnEhbX"; 
+
+const ACCOUNT_IDS = {
+    demo: 'DOT93059550',
+    real: 'ROT91769363'
+};
 
 export type AccountType = 'demo' | 'real';
 
@@ -32,15 +37,11 @@ export interface AssetGroup {
   options: Asset[];
 }
 
-export type ApiHistoricalData = {
-    epoch: number;
-    price?: number;
-    open?: number;
-    high?: number;
-    low?: number;
-    close?: number;
-    volume?: number;
-};
+export interface ConnectionEvent {
+    timestamp: string;
+    message: string;
+    type: 'success' | 'error' | 'warning' | 'info';
+}
 
 interface DerivApiAccumulatorsContextType {
   ws: WebSocket | null;
@@ -60,6 +61,7 @@ interface DerivApiAccumulatorsContextType {
   setActiveSymbol: (symbol: string | null) => void;
   chartData: ChartData[];
   botCandleData: CandleData[];
+  priceTicks: TickData[]; 
   isChartLoading: boolean;
   chartError: string | null;
   chartType: ChartType;
@@ -68,7 +70,7 @@ interface DerivApiAccumulatorsContextType {
   setTimePeriod: (period: TimePeriod) => void;
   dataVersion: number;
   tradeAnnotations: TradeAnnotation[];
-  priceTicks: TickData[];
+  connectionEvents: ConnectionEvent[];
 
   setAccountType: (type: AccountType) => void;
   setTokens: (tokens: { demo?: string; real?: string }) => void;
@@ -81,7 +83,7 @@ interface DerivApiAccumulatorsContextType {
     initiator: OperationInitiator,
   ) => Promise<TradeResult>;
   sellContract: (contractId: number) => Promise<TradeResult>;
-  getHistoricalData: (symbol: string, style: 'ticks' | 'candles', count: number, period?: TimePeriod) => Promise<ApiHistoricalData[]>;
+  getHistoricalData: (symbol: string, style: 'ticks' | 'candles', count: number, period?: TimePeriod) => Promise<any[]>;
   clearActiveContracts: () => void;
 }
 
@@ -107,7 +109,7 @@ const getGranularityForTimePeriod = (timePeriod: TimePeriod): number => {
     }
 }
 
-const MAX_DATA_POINTS = 5000;
+const MAX_DATA_POINTS = 1000;
 const isCandle = (d: ChartData): d is CandleData => d != null && 'close' in d;
 
 const addDataPoint = (prevData: ChartData[], newPoint: ChartData): ChartData[] => {
@@ -124,8 +126,11 @@ const addDataPoint = (prevData: ChartData[], newPoint: ChartData): ChartData[] =
 };
 
 export const DerivApiProviderAccumulators = ({ children }: { children: ReactNode }) => {
-  const [demoToken, setDemoToken] = useState<string | null>('pat_d2df2ff2027411214c07f1ce13961948d64554282475ea77b5343b288575d504');
-  const [realToken, setRealToken] = useState<string | null>('pat_d2df2ff2027411214c07f1ce13961948d64554282475ea77b5343b288575d504');
+  const { user } = useAuth();
+  const { toast } = useToast();
+  
+  const [demoToken, setDemoToken] = useState<string | null>(null);
+  const [realToken, setRealToken] = useState<string | null>(null);
   const [accountType, setAccountTypeState] = useState<AccountType>('demo');
   const [accountBalance, setAccountBalance] = useState<AccountBalance>({ balance: null, currency: null, loading: true });
   const [isLoading, setIsLoading] = useState(true);
@@ -134,13 +139,15 @@ export const DerivApiProviderAccumulators = ({ children }: { children: ReactNode
   
   const [assetGroups, setAssetGroups] = useState<AssetGroup[]>([]);
   const [isAssetsLoading, setIsAssetsLoading] = useState(true);
-  const { toast } = useToast();
   const [toastQueue, setToastQueue] = useState<any[]>([]);
-  
+  const [tradeAnnotations, setTradeAnnotations] = useState<TradeAnnotation[]>([]);
+  const [connectionEvents, setConnectionEvents] = useState<ConnectionEvent[]>([]);
+
   const [activeSymbol, setActiveSymbol] = useState<string | null>('1HZ10V');
+  const activeSymbolRef = useRef<string | null>('1HZ10V');
   const [chartData, setChartData] = useState<ChartData[]>([]);
   const [botCandleData, setBotCandleData] = useState<CandleData[]>([]);
-  const [priceTicks, setPriceTicks] = useState<TickData[]>([]); // CORREÇÃO: Variável de estado adicionada
+  const [priceTicks, setPriceTicks] = useState<TickData[]>([]); 
   const [isChartLoading, setIsChartLoading] = useState(true);
   const [chartError, setChartError] = useState<string | null>(null);
   const [chartType, setChartType] = useState<ChartType>('Area');
@@ -149,10 +156,7 @@ export const DerivApiProviderAccumulators = ({ children }: { children: ReactNode
   const timePeriodRef = useRef(timePeriod);
   const [dataVersion, setDataVersion] = useState(0); 
   const activeSubscriptionIdRef = useRef<string | null>(null);
-  const tickSubscriptionIdRef = useRef<string | null>(null);
   const botSubscriptionIdRef = useRef<string | null>(null);
-  
-  const [tradeAnnotations, setTradeAnnotations] = useState<TradeAnnotation[]>([]);
 
   const wsRef = useRef<WebSocket | null>(null);
   const [isConnected, setIsConnected] = useState(false);
@@ -165,31 +169,35 @@ export const DerivApiProviderAccumulators = ({ children }: { children: ReactNode
   const reconnectInProgressRef = useRef(false);
   const allowAutoReconnectRef = useRef(true);
   
-    const setAndPersistOperationsLog = useCallback((updater: React.SetStateAction<Operation[]>) => {
-        setOperationsLog(prevLog => {
-            const newLog = typeof updater === 'function' ? updater(prevLog) : updater;
-            try {
-                localStorage.setItem(DERIV_ACCUMULATORS_LOG_KEY, JSON.stringify(newLog));
-            } catch (error) {
-                console.error("Failed to save accumulators log to localStorage:", error);
-            }
-            return newLog;
-        });
-    }, []);
+  const addEvent = useCallback((message: string, type: ConnectionEvent['type'] = 'info') => {
+      setConnectionEvents(prev => [{ timestamp: new Date().toLocaleTimeString(), message, type }, ...prev].slice(0, 50));
+  }, []);
 
-    const addTradeAnnotation = useCallback((annotation: Omit<TradeAnnotation, 'id'>) => {
-        const newAnnotation: TradeAnnotation = {
-          ...annotation,
-          id: `annotation-${annotation.contractId}`,
-        };
-        setTradeAnnotations(prev => [...prev, newAnnotation]);
-    }, []);
+  const setAndPersistOperationsLog = useCallback((updater: React.SetStateAction<Operation[]>) => {
+      setOperationsLog(prevLog => {
+          const newLog = typeof updater === 'function' ? updater(prevLog) : updater;
+          try {
+              localStorage.setItem(DERIV_ACCUMULATORS_LOG_KEY, JSON.stringify(newLog));
+          } catch (error) {
+              console.error("Failed to save accumulators log to localStorage:", error);
+          }
+          return newLog;
+      });
+  }, []);
 
-    const updateTradeAnnotation = useCallback((contractId: string, updates: Partial<TradeAnnotation>) => {
-        setTradeAnnotations(prev => prev.map(ann => 
-            ann.contractId === contractId ? { ...ann, ...updates } : ann
-        ));
-    }, []);
+  const addTradeAnnotation = useCallback((annotation: Omit<TradeAnnotation, 'id'>) => {
+      const newAnnotation: TradeAnnotation = {
+        ...annotation,
+        id: `annotation-${annotation.contractId}`,
+      };
+      setTradeAnnotations(prev => [...prev, newAnnotation]);
+  }, []);
+
+  const updateTradeAnnotation = useCallback((contractId: string, updates: Partial<TradeAnnotation>) => {
+      setTradeAnnotations(prev => prev.map(ann => 
+          ann.contractId === contractId ? { ...ann, ...updates } : ann
+      ));
+  }, []);
 
   useEffect(() => {
     chartTypeRef.current = chartType;
@@ -198,7 +206,6 @@ export const DerivApiProviderAccumulators = ({ children }: { children: ReactNode
   useEffect(() => {
     timePeriodRef.current = timePeriod;
   }, [timePeriod]);
-
 
   useEffect(() => {
     try {
@@ -235,7 +242,7 @@ export const DerivApiProviderAccumulators = ({ children }: { children: ReactNode
     return new Promise((resolve) => {
         const ws = wsRef.current;
         if (!ws || ws.readyState !== WebSocket.OPEN) {
-            return resolve({ error: { message: "WebSocket não está conectado. Verifique o token e a conexão." } } as any);
+            return resolve({ error: { message: "WebSocket não está conectado." } } as any);
         }
   
         const req_id = Date.now() + Math.floor(Math.random() * 1000000);
@@ -245,7 +252,7 @@ export const DerivApiProviderAccumulators = ({ children }: { children: ReactNode
             const timeoutId = setTimeout(() => {
                 if (promisesRef.current.has(String(req_id))) {
                     const promise = promisesRef.current.get(String(req_id));
-                    promise?.resolve({ error: { message: `O pedido à API expirou (60s). O token pode ser inválido ou a rede está lenta.` } } as any);
+                    promise?.resolve({ error: { message: `O pedido à API expirou.` } } as any);
                     promisesRef.current.delete(String(req_id));
                 }
             }, 60000);
@@ -255,7 +262,7 @@ export const DerivApiProviderAccumulators = ({ children }: { children: ReactNode
                     clearTimeout(timeoutId);
                     resolve(value);
                 },
-                reject: (reason: any) => { // This reject is now for internal/unexpected errors
+                reject: (reason: any) => {
                     clearTimeout(timeoutId);
                     resolve({ error: { message: reason?.message || 'Erro interno na Promise.' } } as any);
                 }
@@ -279,7 +286,7 @@ export const DerivApiProviderAccumulators = ({ children }: { children: ReactNode
     });
   }, []);
   
-  const getHistoricalData = useCallback(async (symbol: string, style: 'ticks' | 'candles', count: number, period?: TimePeriod): Promise<ApiHistoricalData[]> => {
+  const getHistoricalData = useCallback(async (symbol: string, style: 'ticks' | 'candles', count: number, period?: TimePeriod): Promise<any[]> => {
       const request: any = {
           ticks_history: symbol,
           end: "latest",
@@ -349,11 +356,10 @@ export const DerivApiProviderAccumulators = ({ children }: { children: ReactNode
 
       const proposal = proposalResponse.proposal;
       if (!proposal || !proposal.id) {
-          throw new Error("Falha ao obter uma proposta de negociação da API. A resposta não continha um ID.");
+          throw new Error("Falha ao obter uma proposta de negociação da API.");
       }
       
-      const sanitizedAskPrice = parseFloat(proposal.ask_price.toFixed(2));
-      const buyResponse: any = await makeRequest({ "buy": proposal.id, "price": sanitizedAskPrice });
+      const buyResponse: any = await makeRequest({ "buy": proposal.id, "price": sanitizedStake });
       if (buyResponse.error) throw new Error(buyResponse.error.message);
       
       const buyResult = buyResponse.buy;
@@ -363,23 +369,22 @@ export const DerivApiProviderAccumulators = ({ children }: { children: ReactNode
       }
       
       const entryPrice = buyResult.entry_spot_display_value ? parseFloat(buyResult.entry_spot_display_value) : 0;
-      const purchaseTimeMs = (buyResult.purchase_time || Math.floor(Date.now() / 1000)) * 1000;
-      const purchaseTime = purchaseTimeMs / 1000;
+      const purchaseTime = buyResult.purchase_time || Math.floor(Date.now() / 1000);
 
-      const newOperation: any = {
+      const newOperation: Operation = {
           id: contractId,
           asset: symbol,
           direction: 'rise',
           stake: sanitizedStake,
           status: 'pending',
-          timestamp: new Date(purchaseTimeMs).toISOString(),
+          timestamp: new Date(purchaseTime * 1000).toISOString(),
           initiator,
           entryPrice: entryPrice,
           isSellable: true,
           contractType: 'ACCU',
           duration: 0,
           durationUnit: 's',
-          growth_rate: sanitizedGrowthRate,
+          multiplier: 1,
       };
       setAndPersistOperationsLog(prevLog => [newOperation, ...prevLog]);
 
@@ -397,7 +402,7 @@ export const DerivApiProviderAccumulators = ({ children }: { children: ReactNode
 
       return {
         success: true,
-        message: `Contrato Acumulador para ${symbol} comprado.`,
+        message: `Contrato Acumulador comprado.`,
         contractId: contractId,
         entryPrice: entryPrice,
       };
@@ -410,10 +415,10 @@ export const DerivApiProviderAccumulators = ({ children }: { children: ReactNode
 
   const sellContract = useCallback(async (contractId: number): Promise<TradeResult> => {
     if (!wsRef.current || !isConnected) {
-        return { success: false, message: "A conexão com a API da Deriv não está ativa." };
+        return { success: false, message: "Conexão inativa." };
     }
     if (sellingContractsRef.current.has(contractId)) {
-        return { success: false, message: `A venda do contrato #${contractId} já está em andamento.` };
+        return { success: false, message: `Venda já em curso.` };
     }
 
     sellingContractsRef.current.add(contractId);
@@ -422,129 +427,60 @@ export const DerivApiProviderAccumulators = ({ children }: { children: ReactNode
         const sellResponse: any = await makeRequest({ sell: contractId, price: 0 });
 
         if (sellResponse.error) {
-            const message = sellResponse.error.message || `Erro desconhecido da API: ${JSON.stringify(sellResponse.error)}`;
-            
-            if (message.toLowerCase().includes("contract has expired") || message.toLowerCase().includes("contract is already closed")) {
-                console.warn(`[Deriv Hook] Tentativa de vender contrato #${contractId} que já estava fechado.`);
-                sellingContractsRef.current.delete(contractId);
-                setAndPersistOperationsLog(prevLog => prevLog.map(op => 
-                    op.id === contractId && op.status === 'pending'
-                      ? { ...op, status: 'lost', result: -op.stake, exitTimestamp: new Date().toISOString() }
-                      : op
-                ));
-                return { success: true, message: "Contrato já estava fechado no servidor." };
-            }
-            
-            if (message.toLowerCase().includes("cannot be sold at entry tick")) {
-                console.warn(`[Deriv Hook] Tentativa de venda no tick de entrada para #${contractId}. A lógica tentará novamente.`);
-                sellingContractsRef.current.delete(contractId);
-                return { success: false, message: "Aguardando próximo tick para vender." };
-            }
-
-            console.error(`[Deriv Hook] Erro na API de venda para o contrato #${contractId}:`, message, sellResponse.error);
+            const message = sellResponse.error.message || 'Erro de API';
             sellingContractsRef.current.delete(contractId);
             return { success: false, message };
         }
 
-        const sellResult = sellResponse.sell;
-        if (sellResult) {
-            return { success: true, message: `Ordem de venda para o contrato ${contractId} enviada.` };
-        } else {
-            sellingContractsRef.current.delete(contractId);
-            return { success: false, message: "A resposta da API para a venda estava incompleta." };
-        }
+        return { success: true, message: `Venda enviada.` };
     } catch (error: any) {
-        const message = error.message || "Ocorreu um erro de rede ao tentar vender o contrato.";
         sellingContractsRef.current.delete(contractId);
-        console.error("[Deriv Hook] Exceção ao vender o contrato:", error);
-        return { success: false, message };
+        return { success: false, message: error.message || "Erro de rede." };
     }
-  }, [isConnected, makeRequest, setAndPersistOperationsLog]);
+  }, [isConnected, makeRequest]);
   
   const subscribeToStreams = useCallback(async (symbol: string) => {
     if (wsRef.current?.readyState !== WebSocket.OPEN) return;
     
     if (activeSubscriptionIdRef.current) {
-        try { await makeRequest({ forget: activeSubscriptionIdRef.current }, true); } catch (e) { /* silent */ }
+        try { await makeRequest({ forget: activeSubscriptionIdRef.current }, true); } catch (e) {}
     }
     if (botSubscriptionIdRef.current) {
-        try { await makeRequest({ forget: botSubscriptionIdRef.current }, true); } catch (e) { /* silent */ }
-    }
-    if (tickSubscriptionIdRef.current) {
-        try { await makeRequest({ forget: tickSubscriptionIdRef.current }, true); } catch (e) { /* silent */ }
+        try { await makeRequest({ forget: botSubscriptionIdRef.current }, true); } catch (e) {}
     }
 
     activeSubscriptionIdRef.current = null;
     botSubscriptionIdRef.current = null;
-    tickSubscriptionIdRef.current = null;
 
     setIsChartLoading(true);
     setChartError(null);
     setChartData([]);
     setBotCandleData([]);
-    setPriceTicks([]); // CORREÇÃO: Resetar priceTicks
+    setPriceTicks([]);
     
     try {
-        const currentChartType = chartTypeRef.current;
-        const currentTimePeriod = timePeriodRef.current;
-
         const botHistory = await getHistoricalData(symbol, 'candles', 1000, '1m') as CandleData[];
         setBotCandleData(botHistory);
+        
         const botSubRequest = { ticks_history: symbol, style: 'candles', granularity: 60, subscribe: 1, end: "latest", count: 1, adjust_start_time: 1 };
         const botSubResponse: any = await makeRequest(botSubRequest);
-        if (botSubResponse.error) {
-            if (botSubResponse.error.code !== 'AlreadySubscribed') {
-                throw new Error(`Bot Sub: ${botSubResponse.error.message}`);
-            } else {
-                console.warn(`[Accumulators] Bot data already subscribed for ${symbol}.`);
-            }
-        }
-        if (botSubResponse.subscription?.id) {
-            botSubscriptionIdRef.current = botSubResponse.subscription.id;
-        }
+        if(botSubResponse.subscription?.id) botSubscriptionIdRef.current = botSubResponse.subscription.id;
 
-        const tickSubRequest = { ticks: symbol, subscribe: 1 };
-        const tickSubResponse: any = await makeRequest(tickSubRequest);
-        if (tickSubResponse.error) {
-            if (tickSubResponse.error.code !== 'AlreadySubscribed') {
-                throw new Error(`Tick Sub: ${tickSubResponse.error.message}`);
-            } else {
-                console.warn(`[Accumulators] Tick data already subscribed for ${symbol}.`);
-            }
-        }
-        if (tickSubResponse.subscription?.id) {
-            tickSubscriptionIdRef.current = tickSubResponse.subscription.id;
-        }
-        
-        const isUICandle = currentChartType === 'Candle';
-        const isUI1mCandle = isUICandle && currentTimePeriod === '1m';
-        const isUIArea = currentChartType === 'Area';
-        
-        if (isUI1mCandle) {
-            setChartData(botHistory);
-        } else if (isUIArea) {
+        if (chartTypeRef.current === 'Area') {
             const tickHistory = await getHistoricalData(symbol, 'ticks', 1000);
             setChartData(tickHistory as TickData[]);
-            setPriceTicks(tickHistory as TickData[]); // CORREÇÃO: Popular a partir do histórico
-        } else if (isUICandle) {
-            const uiHistory = await getHistoricalData(symbol, 'candles', 1000, currentTimePeriod);
+            setPriceTicks(tickHistory as TickData[]);
+            const tickSubResponse: any = await makeRequest({ ticks: symbol, subscribe: 1 });
+            if(tickSubResponse.subscription?.id) activeSubscriptionIdRef.current = tickSubResponse.subscription.id;
+        } else {
+            const uiHistory = await getHistoricalData(symbol, 'candles', 1000, timePeriodRef.current);
             setChartData(uiHistory as CandleData[]);
-            const uiSubRequest = { ticks_history: symbol, style: 'candles', granularity: getGranularityForTimePeriod(currentTimePeriod), subscribe: 1, end: "latest", count: 1, adjust_start_time: 1 };
+            const uiSubRequest = { ticks_history: symbol, style: 'candles', granularity: getGranularityForTimePeriod(timePeriodRef.current), subscribe: 1, end: "latest", count: 1, adjust_start_time: 1 };
             const uiSubResponse: any = await makeRequest(uiSubRequest);
-            if(uiSubResponse.error) {
-                if (uiSubResponse.error.code !== 'AlreadySubscribed') {
-                    throw new Error(`UI Sub: ${uiSubResponse.error.message}`);
-                } else {
-                    console.warn(`[Accumulators] UI data already subscribed for ${symbol}.`);
-                }
-            }
-            if (uiSubResponse.subscription?.id) {
-                activeSubscriptionIdRef.current = uiSubResponse.subscription.id;
-            }
+            if(uiSubResponse.subscription?.id) activeSubscriptionIdRef.current = uiSubResponse.subscription.id;
         }
     } catch (error: any) {
-        console.error("Error in subscribeToStreams:", error);
-        setChartError(error.message || 'Falha ao subscrever aos dados do mercado.');
+        setChartError(error.message || 'Falha ao carregar dados.');
     } finally {
         setIsChartLoading(false);
     }
@@ -554,67 +490,51 @@ export const DerivApiProviderAccumulators = ({ children }: { children: ReactNode
     if (pingIntervalRef.current) clearInterval(pingIntervalRef.current);
     pingIntervalRef.current = setInterval(() => {
         if (wsRef.current?.readyState === WebSocket.OPEN) {
-            try {
-                wsRef.current.send(JSON.stringify({ ping: 1 }));
-            } catch (error) {
-                console.warn('[Ping] Failed:', error);
-            }
+            try { wsRef.current.send(JSON.stringify({ ping: 1 })); } catch (error) {}
         }
     }, 30000);
   }, []);
   
   useEffect(() => {
-    if (!activeToken || isLoading) {
+    if (!user || !activeToken || isLoading) {
       if (wsRef.current) wsRef.current.close();
-      if (pingIntervalRef.current) clearInterval(pingIntervalRef.current);
       return;
     }
-    const connect = () => {
+    const connect = async () => {
         setIsConnecting(true);
         setConnectionError(null);
         setIsAssetsLoading(true);
+        addEvent(`Iniciando handshake OTP...`, 'info');
+
+        const accountId = ACCOUNT_IDS[accountType];
+        const otpResult = await getDerivWebSocketUrl(activeToken.trim(), accountId);
+        
+        if (!otpResult.success || !otpResult.url) {
+            const msg = otpResult.error || 'Falha no túnel OTP.';
+            setConnectionError(msg);
+            addEvent(msg, 'error');
+            setIsConnecting(false); setIsConnected(false); setIsAssetsLoading(false);
+            return;
+        }
+
         if (wsRef.current) wsRef.current.close();
-        const ws = new WebSocket(`wss://ws.derivws.com/websockets/v3?app_id=${DERIV_APP_ID}`);
+        const ws = new WebSocket(otpResult.url);
         wsRef.current = ws;
+        
         ws.onmessage = (event) => {
             try {
                 const response = JSON.parse(event.data);
-                
-                if (response.msg_type === 'ping' || response.pong) return;
                 const reqId = response.req_id;
                 if (reqId && promisesRef.current.has(String(reqId))) {
                     const promise = promisesRef.current.get(String(reqId));
                     if (promise) {
-                        if (response.error) {
-                            if (response.error.code === 'AlreadySubscribed') {
-                                console.warn(`[Deriv WS] Ignorando erro 'AlreadySubscribed' para req_id ${reqId}. A subscrição provavelmente já existe.`);
-                                promise.resolve(response);
-                            } else if (response.error.code === 'ContractSellNotAvailable' && response.error.message === 'The contract has expired.') {
-                                console.warn(`[Deriv WS] Tentativa de vender contrato expirado (req_id ${reqId}). Resolvendo como falha controlada.`);
-                                setAndPersistOperationsLog(prevLog => prevLog.map(op =>
-                                    op.id === response.echo_req.sell ? { ...op, status: 'lost', result: -op.stake, exitTimestamp: new Date().toISOString() } : op
-                                ));
-                                promise.resolve({ sell: { contract_id: response.echo_req.sell } });
-                            } else if (response.error.code === 'ContractSellNotAvailable' && response.error.message.includes('cannot be sold at entry tick')) {
-                                console.warn(`[Deriv WS] Tentativa de venda no tick de entrada para o contrato #${response.echo_req.sell}. A lógica tentará novamente no próximo tick.`);
-                                promise.resolve({ sell: { status: 'too_early' } }); 
-                            }
-                            else {
-                                promise.reject(new Error(response.error.message));
-                            }
-                        } else {
-                            promise.resolve(response);
-                        }
+                        if (response.error) promise.resolve(response);
+                        else promise.resolve(response);
                         promisesRef.current.delete(String(reqId));
                     }
                     return;
                 }
-                if (response.error && response.error.message) {
-                     if (response.error.code !== 'AlreadySubscribed' && response.error.code !== 'SellNotAvailable' && response.error.code !== 'ContractSellNotAvailable') {
-                      console.error(`[Deriv WS] Error:`, response.error.message);
-                    }
-                     return;
-                }
+                
                 switch (response.msg_type) {
                     case 'balance':
                         setAccountBalance({ balance: response.balance.balance, currency: response.balance.currency, loading: false });
@@ -628,28 +548,14 @@ export const DerivApiProviderAccumulators = ({ children }: { children: ReactNode
                             if (existingOpIndex !== -1) {
                                 const updatedLog = [...prevLog];
                                 const op = updatedLog[existingOpIndex];
-                                const updatedOp: Operation = {
-                                  ...op,
-                                  result: contract.profit,
-                                  entryPrice: (op.entryPrice === 0 || !op.entryPrice) && contract.entry_spot
-                                    ? parseFloat(contract.entry_spot)
-                                    : op.entryPrice,
-                                };
+                                const updatedOp: Operation = { ...op, result: contract.profit };
                                 if (isSold) {
                                     sellingContractsRef.current.delete(contract.contract_id);
                                     const newStatus = contract.profit >= 0 ? 'won' : 'lost';
                                     updatedOp.status = newStatus;
-                                    updatedOp.exitPrice = parseFloat(contract.sell_spot || contract.exit_tick_display_value || '0');
+                                    updatedOp.exitPrice = parseFloat(contract.sell_spot || '0');
                                     updatedOp.exitTimestamp = new Date(contract.sell_time * 1000).toISOString();
-                                    
-                                    updateTradeAnnotation(String(contract.contract_id), { 
-                                        status: newStatus, 
-                                        profit: contract.profit, 
-                                        exitPrice: updatedOp.exitPrice, 
-                                        exitTime: contract.sell_time 
-                                    });
-
-                                    setToastQueue(prev => [...prev, { title: `Posição Fechada (${op.asset})`, description: `Resultado: ${contract.currency} ${contract.profit.toFixed(2)}`, variant: newStatus === 'won' ? 'default' : 'destructive' }]);
+                                    updateTradeAnnotation(String(contract.contract_id), { status: newStatus, profit: contract.profit, exitPrice: updatedOp.exitPrice, exitTime: contract.sell_time });
                                     if (wsRef.current?.readyState === WebSocket.OPEN) wsRef.current.send(JSON.stringify({"balance": 1}));
                                 }
                                 updatedLog[existingOpIndex] = updatedOp;
@@ -659,122 +565,89 @@ export const DerivApiProviderAccumulators = ({ children }: { children: ReactNode
                         });
                         break;
                     case 'tick':
-                        if (response.subscription?.id === tickSubscriptionIdRef.current) {
+                        if (response.tick?.symbol === activeSymbolRef.current) {
                             const newTick = { epoch: response.tick.epoch, price: response.tick.quote };
-                            setPriceTicks(prev => { // CORREÇÃO: Atualizar o estado de ticks
-                                const newTicks = [...prev, newTick];
-                                if (newTicks.length > MAX_DATA_POINTS) return newTicks.slice(1);
-                                return newTicks;
-                            });
-                    
-                            if (chartTypeRef.current === 'Area') {
-                                setChartData(prev => addDataPoint(prev, newTick));
-                            }
-                    
+                            setPriceTicks(prev => [...prev, newTick].slice(-MAX_DATA_POINTS));
+                            if (chartTypeRef.current === 'Area') setChartData(prev => addDataPoint(prev, newTick));
                             setDataVersion(v => v + 1);
                         }
                         break;
                     case 'ohlc':
                     case 'candles':
                         const candleData = response.ohlc || (response.candles && response.candles[0]);
-                        if (candleData && candleData.symbol === activeSymbol) {
+                        if (candleData && candleData.symbol === activeSymbolRef.current) {
                              const newCandle: CandleData = {
                                 epoch: candleData.open_time || candleData.epoch,
-                                open: parseFloat(candleData.open),
-                                high: parseFloat(candleData.high),
-                                low: parseFloat(candleData.low),
-                                close: parseFloat(candleData.close),
+                                open: parseFloat(candleData.open), high: parseFloat(candleData.high),
+                                low: parseFloat(candleData.low), close: parseFloat(candleData.close),
                                 volume: candleData.tick_count || 1
                              };
-                    
                              if(response.subscription?.id === botSubscriptionIdRef.current) {
                                 setBotCandleData(prev => addDataPoint(prev, newCandle) as CandleData[]);
-                                if (chartTypeRef.current === 'Candle' && timePeriodRef.current === '1m') {
-                                    setChartData(prev => addDataPoint(prev, newCandle));
-                                }
                              }
-                             else if (response.subscription?.id === activeSubscriptionIdRef.current) {
+                             if (response.subscription?.id === activeSubscriptionIdRef.current) {
                                 setChartData(prev => addDataPoint(prev, newCandle));
                              }
-                             
-                             // CORREÇÃO: Atualizar ticks a partir da vela
-                             setPriceTicks(prev => {
-                                const newTickFromCandle = { epoch: newCandle.epoch, price: newCandle.close };
-                                const newTicks = [...prev, newTickFromCandle];
-                                if (newTicks.length > MAX_DATA_POINTS) return newTicks.slice(newTicks.length - MAX_DATA_POINTS);
-                                return newTicks;
-                             });
-                    
                              setDataVersion(v => v + 1);
                         }
                         break;
                 }
-            } catch (parseError) {
-                console.error('[Deriv WS] Parse error:', parseError);
-            }
+            } catch (e) { console.error('[Deriv WS] Parse error:', e); }
         };
         ws.onopen = async () => {
             try {
                 reconnectInProgressRef.current = false;
                 if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
-                const authResponse: any = await makeRequest({ authorize: activeToken });
-                if (authResponse.error) throw new Error(authResponse.error.message);
-                setIsConnected(true);
-                setIsConnecting(false);
-                setConnectionError(null);
+                
+                const authRes: any = await makeRequest({ authorize: activeToken });
+                if (authRes.error) throw new Error(authRes.error.message);
+                
+                setIsConnected(true); setIsConnecting(false); setConnectionError(null);
+                addEvent('Conexão OTP v3 estabelecida.', 'success');
                 
                 ws.send(JSON.stringify({ "proposal_open_contract": 1, "subscribe": 1 }));
                 ws.send(JSON.stringify({ "balance": 1, "subscribe": 1 }));
                 
                 startConnectionMonitor();
-                const assetsRes: any = await makeRequest({ active_symbols: 'full', product_type: 'basic' });
+                const assetsRes: any = await makeRequest({ active_symbols: 'full' });
                 if (assetsRes.error) throw new Error(assetsRes.error.message);
 
-                const filteredSymbols = assetsRes.active_symbols.filter((symbol: any) => symbol.market === 'synthetic_index' && symbol.allow_accumulator_contracts === 1);
+                const filtered = assetsRes.active_symbols.filter((s: any) => s.market === 'synthetic_index' && s.allow_accumulator_contracts === 1);
                 const groupedAssets: { [key: string]: Asset[] } = {};
-                filteredSymbols.forEach((symbol: any) => {
-                    const groupName = marketNameMapping[symbol.market] || 'Outros';
+                filtered.forEach((s: any) => {
+                    const groupName = marketNameMapping[s.market] || 'Outros';
                     if (!groupedAssets[groupName]) groupedAssets[groupName] = [];
-                    groupedAssets[groupName].push({ value: symbol.symbol, label: symbol.display_name, marketIsOpen: symbol.exchange_is_open === 1, submarket: symbol.submarket, market: symbol.market, minDuration: 'N/A' });
+                    groupedAssets[groupName].push({ value: s.symbol, label: s.display_name, marketIsOpen: s.exchange_is_open === 1, submarket: s.submarket, market: s.market, minDuration: 'N/A' });
                 });
-                setAssetGroups(Object.keys(groupedAssets)
-                    .map(label => ({ label, options: groupedAssets[label].sort((a, b) => a.label.localeCompare(b.label)) }))
-                    .sort((a, b) => a.label.localeCompare(b.label)));
+                setAssetGroups(Object.keys(groupedAssets).map(label => ({ label, options: groupedAssets[label].sort((a,b)=>a.label.localeCompare(b.label)) })));
                 setIsAssetsLoading(false);
             } catch (error: any) {
-                reconnectInProgressRef.current = false;
-                if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
-                const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
-                setConnectionError(`Falha na autorização: ${errorMessage}`);
+                const msg = error instanceof Error ? error.message : 'Erro desconhecido';
+                setConnectionError(msg);
+                addEvent(msg, 'error');
                 setIsConnected(false); setIsConnecting(false); setIsAssetsLoading(false);
-                setAccountBalance({ balance: null, currency: null, loading: false });
-                allowAutoReconnectRef.current = false; // PREVENT RECONNECT LOOP
+                allowAutoReconnectRef.current = false;
                 if (ws.readyState === WebSocket.OPEN) ws.close();
             }
         };
         ws.onclose = (event) => {
           if (!wsRef.current || reconnectInProgressRef.current) return;
           if (pingIntervalRef.current) clearInterval(pingIntervalRef.current);
-          promisesRef.current.forEach((p) => p.reject(new Error("WebSocket fechado")));
+          promisesRef.current.forEach((p) => p.reject(new Error("WS Closed")));
           promisesRef.current.clear();
           if (!event.wasClean && allowAutoReconnectRef.current) {
             reconnectInProgressRef.current = true;
-            console.warn(`[WS] Fechado inesperadamente. Código: ${event.code}. Tentando reconectar...`);
-            setConnectionError(`Conexão perdida. Reconectando...`);
+            addEvent('Conexão perdida. Reconectando...', 'warning');
             if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
             reconnectTimeoutRef.current = setTimeout(() => {
                 reconnectInProgressRef.current = false;
                 setTriggerReconnect(c => c + 1);
             }, 3000);
-          } else if (!event.wasClean && !allowAutoReconnectRef.current) {
-             console.warn(`[WS] Conexão falhou permanentemente (provavelmente token inválido). Auto-reconexão desativada.`);
-             setConnectionError(`Authorization failed. Please check your API token.`);
           }
           setIsConnected(false); setIsConnecting(false);
           setAccountBalance({ balance: null, currency: null, loading: false });
           wsRef.current = null;
         };
-        ws.onerror = () => { /* Silencioso */ };
     };
     connect();
     return () => {
@@ -784,88 +657,29 @@ export const DerivApiProviderAccumulators = ({ children }: { children: ReactNode
       if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
       reconnectInProgressRef.current = false;
     };
-  }, [activeToken, isLoading, makeRequest, toast, triggerReconnect, setToastQueue, startConnectionMonitor, addTradeAnnotation, updateTradeAnnotation, setAndPersistOperationsLog]);
+  }, [activeToken, isLoading, triggerReconnect, accountType, addEvent, makeRequest, startConnectionMonitor, setAndPersistOperationsLog, updateTradeAnnotation, addTradeAnnotation]);
 
   useEffect(() => {
-    if (isConnected && activeSymbol) {
-        subscribeToStreams(activeSymbol);
-    }
-  }, [isConnected, activeSymbol, subscribeToStreams]);
+    if (isConnected && activeSymbol && !isConnecting) subscribeToStreams(activeSymbol);
+  }, [isConnected, activeSymbol, isConnecting, chartType, timePeriod, subscribeToStreams]);
   
-  const setAccountType = useCallback((type: AccountType) => {
-    try {
-        localStorage.setItem(DERIV_ACCOUNT_TYPE_KEY, type);
-        setAccountTypeState(type);
-        allowAutoReconnectRef.current = true;
-        setTriggerReconnect(c => c + 1);
-    } catch (error) {
-        console.error("Failed to save account type:", error);
-    }
-  }, []);
-
-  const setTokens = useCallback((tokens: { demo?: string; real?: string }) => {
-    try {
-      if (tokens.demo) { localStorage.setItem(DERIV_DEMO_TOKEN_KEY, tokens.demo); setDemoToken(tokens.demo); }
-      if (tokens.real) { localStorage.setItem(DERIV_REAL_TOKEN_KEY, tokens.real); setRealToken(tokens.real); }
-      allowAutoReconnectRef.current = true;
-      setTriggerReconnect(c => c + 1);
-    } catch (error) {
-      console.error("Failed to save token:", error);
-    }
-  }, []);
-
-  const disconnect = useCallback((type: AccountType) => {
-    try {
-      if (type === 'demo') { localStorage.removeItem(DERIV_DEMO_TOKEN_KEY); setDemoToken(null); } 
-      else { localStorage.removeItem(DERIV_REAL_TOKEN_KEY); setRealToken(null); }
-    } catch (error) {
-        console.error("Failed to remove token:", error);
-    }
-  }, []);
-  
-  const isConnectedRef = useRef(isConnected);
-  isConnectedRef.current = isConnected;
-
-  const connectionErrorRef = useRef(connectionError);
-  connectionErrorRef.current = connectionError;
-
-  const reconnect = useCallback(async (): Promise<boolean> => {
-    allowAutoReconnectRef.current = true;
-    setTriggerReconnect(c => c + 1);
-    
-    return new Promise(resolve => {
-        const checkStartTime = Date.now();
-        const checkInterval = setInterval(() => {
-            const isTimeout = Date.now() - checkStartTime > 10000;
-            
-            if (isConnectedRef.current) {
-                clearInterval(checkInterval);
-                resolve(true);
-            } else if (connectionErrorRef.current || isTimeout) {
-                clearInterval(checkInterval);
-                resolve(false);
-            }
-        }, 200);
-    });
-  }, []);
-
-  const clearActiveContracts = useCallback(() => {
-    setAndPersistOperationsLog([]);
-    setTradeAnnotations([]);
-  }, [setAndPersistOperationsLog]);
-
   const contextValue: DerivApiAccumulatorsContextType = useMemo(() => ({
     ws: wsRef.current, isConnected, isConnecting, connectionError, demoToken, realToken, activeToken,
     accountType, accountBalance, operationsLog, assetGroups, isAssetsLoading, activeSymbol, 
-    setActiveSymbol, chartData, botCandleData, isChartLoading, chartError, chartType, setChartType, 
-    timePeriod, setTimePeriod, dataVersion, tradeAnnotations, priceTicks, setAccountType, setTokens,
-    disconnect, reconnect, executeTrade, sellContract, getHistoricalData, clearActiveContracts
+    setActiveSymbol: (s) => { setActiveSymbol(s); activeSymbolRef.current = s; }, 
+    chartData, botCandleData, isChartLoading, chartError, chartType, setChartType, 
+    timePeriod, setTimePeriod, dataVersion, tradeAnnotations, priceTicks, connectionEvents,
+    setAccountType: (t) => { localStorage.setItem(DERIV_ACCOUNT_TYPE_KEY, t); setAccountTypeState(t); setTriggerReconnect(c => c + 1); },
+    setTokens: (t) => { if(t.demo) localStorage.setItem(DERIV_DEMO_TOKEN_KEY, t.demo); if(t.real) localStorage.setItem(DERIV_REAL_TOKEN_KEY, t.real); setTriggerReconnect(c => c + 1); },
+    disconnect: (t) => { if(t === 'demo') localStorage.removeItem(DERIV_DEMO_TOKEN_KEY); else localStorage.removeItem(DERIV_REAL_TOKEN_KEY); setTriggerReconnect(c => c + 1); },
+    reconnect: async () => { setTriggerReconnect(c => c + 1); return true; }, 
+    executeTrade, sellContract, getHistoricalData, 
+    clearActiveContracts: () => { setAndPersistOperationsLog([]); setTradeAnnotations([]); }
   }), [
     isConnected, isConnecting, connectionError, demoToken, realToken, activeToken, accountType, 
-    accountBalance, operationsLog, assetGroups, isAssetsLoading, activeSymbol, setActiveSymbol, 
+    accountBalance, operationsLog, assetGroups, isAssetsLoading, activeSymbol,
     chartData, botCandleData, isChartLoading, chartError, chartType, timePeriod, dataVersion, 
-    tradeAnnotations, priceTicks, setAccountType, setTokens, disconnect, reconnect, executeTrade, 
-    sellContract, getHistoricalData, clearActiveContracts
+    tradeAnnotations, priceTicks, connectionEvents, executeTrade, sellContract, getHistoricalData, clearActiveContracts
   ]);
 
   return (
