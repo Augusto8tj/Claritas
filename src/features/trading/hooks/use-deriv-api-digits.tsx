@@ -9,6 +9,7 @@ import { useAuth } from '@/features/auth/hooks/use-auth';
 import { saveLiveTickForDigits } from '@/services/digits-data-service';
 import { validateAndLogContract } from '@/features/trading/utils/contract-validator';
 import { globalLatencyMonitor } from '../utils/latency-monitor';
+import { getDerivWebSocketUrl } from '@/app/actions';
 
 
 // --- CONSTANTS ---
@@ -16,8 +17,14 @@ const DERIV_DEMO_TOKEN_KEY = 'derivDemoApiToken';
 const DERIV_REAL_TOKEN_KEY = 'derivRealApiToken';
 const DERIV_ACCOUNT_TYPE_KEY = 'derivAccountType';
 const DERIV_DIGITS_LOG_KEY = 'derivDigitsOperationsLog_v5';
-const DERIV_APP_ID = process.env.NEXT_PUBLIC_DERIV_APP_ID || "1089";
+const DERIV_APP_ID = "34lwuJiPbEzxjgEdnEhbX"; 
 const MAX_TICKS = 1000;
+
+const ACCOUNT_IDS = {
+    demo: 'DOT93059550',
+    real: 'ROT91769363'
+};
+
 const marketNameMapping: Record<string, string> = { 
     'synthetic_index': 'Índices Sintéticos',
     'basket_index': 'Índices de Cesta' 
@@ -255,10 +262,23 @@ export function useDerivApiDigitsState() {
             if (wsRef.current) wsRef.current.close();
             return;
         }
-        const connect = () => {
+        const connect = async () => {
             setIsConnecting(true); setConnectionError(null); setIsAssetsLoading(true);
+            
+            // Handshake OTP
+            const accountId = ACCOUNT_IDS[accountType];
+            const otpResult = await getDerivWebSocketUrl(activeToken.trim(), accountId);
+            
+            if (!otpResult.success || !otpResult.url) {
+                setConnectionError(otpResult.error || 'Falha ao obter URL segura (OTP).');
+                setIsConnecting(false);
+                setIsConnected(false);
+                setIsAssetsLoading(false);
+                return;
+            }
+
             if (wsRef.current) { wsRef.current.close(); wsRef.current = null; }
-            const ws = new WebSocket(`wss://ws.derivws.com/websockets/v3?app_id=${DERIV_APP_ID}`);
+            const ws = new WebSocket(otpResult.url);
             wsRef.current = ws;
             
             ws.onmessage = (event) => {
@@ -288,7 +308,6 @@ export function useDerivApiDigitsState() {
                             const contract = response.proposal_open_contract;
                             if (!contract || !contract.contract_type?.startsWith('DIGIT')) return;
                             
-                            // START LATENCY RECORDING
                             if (contract.contract_id) {
                                 globalLatencyMonitor.recordFullCycle(contract.contract_id, contract.sell_time || contract.exit_tick_time);
                             }
@@ -300,7 +319,6 @@ export function useDerivApiDigitsState() {
                                     const op = updatedLog[existingOpIndex]!;
                                     
                                     if (contract.is_sold === 1) {
-                                        // ✅ ROBUST EXIT PRICE LOGIC
                                         let exitPriceStr: string | undefined = undefined;
                                         if (contract.exit_tick_display_value !== undefined && contract.exit_tick_display_value !== null) {
                                             exitPriceStr = String(contract.exit_tick_display_value);
@@ -309,21 +327,17 @@ export function useDerivApiDigitsState() {
                                         }
 
                                         if (exitPriceStr === undefined) {
-                                            console.error(`Divergência: Não foi possível determinar o preço de saída para o contrato #${contract.contract_id}.`, contract);
                                             updatedLog[existingOpIndex] = { ...op, status: 'lost', result: -op.stake, exitTimestamp: new Date().toISOString() };
                                             return updatedLog;
                                         }
                                         
                                         const exitPrice = parseFloat(exitPriceStr);
-
                                         if (isNaN(exitPrice)) {
-                                            console.error(`Divergência: Preço de saída inválido (NaN) para o contrato #${contract.contract_id}. String de origem: '${exitPriceStr}'`, contract);
                                             updatedLog[existingOpIndex] = { ...op, status: 'lost', result: -op.stake, exitTimestamp: new Date().toISOString(), exitPrice: NaN };
                                             return updatedLog;
                                         }
 
                                         const apiStatus = contract.status === 'won' ? 'won' : 'lost';
-                                        
                                         const validationLog = validateAndLogContract(
                                             contract.contract_id,
                                             op.contractType as string,
@@ -335,16 +349,6 @@ export function useDerivApiDigitsState() {
                                         );
                                         
                                         const localStatus = validationLog.localStatus;
-                                        
-                                        if (validationLog.isDivergent) {
-                                            toast({
-                                                title: '⚠️ Resultado Divergente',
-                                                description: `#${contract.contract_id}: API=${apiStatus}, Cálculo=${localStatus}. Dígito: ${validationLog.validation.lastDigit}`,
-                                                variant: 'destructive',
-                                                duration: 10000,
-                                            });
-                                        }
-                                        
                                         const finalResult = localStatus === 'won' ? contract.profit : -op.stake;
                                         
                                         updatedLog[existingOpIndex] = { 
@@ -369,13 +373,11 @@ export function useDerivApiDigitsState() {
                             if (response.subscription?.id === activeSubscriptionIdRef.current) {
                                 const tick = response.tick;
                                 const newTick = { epoch: tick.epoch, price: tick.quote };
-
                                 const now = Date.now();
                                 if (user && activeSymbol && (now - lastTickSaveTimestampRef.current > TICK_SAVE_INTERVAL_MS)) {
                                     saveLiveTickForDigits(user.uid, activeSymbol, { timestamp: tick.epoch, price: tick.quote });
                                     lastTickSaveTimestampRef.current = now;
                                 }
-
                                 setPriceTicks(prev => addDataPoint(prev, newTick) as TickData[]);
                                 if (chartTypeRef.current === 'Area') {
                                     setChartData(prev => addDataPoint(prev, newTick));
@@ -406,13 +408,14 @@ export function useDerivApiDigitsState() {
                     ws.send(JSON.stringify({ "proposal_open_contract": 1, "subscribe": 1 }));
                     ws.send(JSON.stringify({ "balance": 1, "subscribe": 1 }));
                     startConnectionMonitor();
-                    const assetsRes: any = await makeRequest({ active_symbols: 'full', product_type: 'basic' });
+                    
+                    const assetsRes: any = await makeRequest({ active_symbols: 'full' });
                     if (assetsRes.error) throw new Error(assetsRes.error.message);
                     
-                    const filteredSymbols = assetsRes.active_symbols.filter((s: any) => {
-                        if (!s.available_contracts) return false;
-                        return s.available_contracts.some((c: any) => c.contract_category === 'digits');
-                    });
+                    // Filter for synthetic indices and baskets, which support digits.
+                    const filteredSymbols = assetsRes.active_symbols.filter((s: any) => 
+                        s.market === 'synthetic_index' || s.submarket === 'basket_index'
+                    );
 
                     const groupedAssets: { [key: string]: Asset[] } = {};
                     filteredSymbols.forEach((s: any) => {
@@ -422,7 +425,7 @@ export function useDerivApiDigitsState() {
                         const groupName = marketNameMapping[marketKey] || 'Outros';
 
                         if (!groupedAssets[groupName]) groupedAssets[groupName] = [];
-                        groupedAssets[groupName].push({ value: s.symbol, label: s.display_name, marketIsOpen: s.exchange_is_open === 1, submarket: s.submarket, market: s.market, minDuration: '5t', pip: s.pip });
+                        groupedAssets[groupName].push({ value: s.symbol, label: s.display_name, marketIsOpen: s.exchange_is_open === 1, submarket: s.submarket, market: s.market, minDuration: '1t', pip: s.pip });
                     });
                     setAssetGroups(Object.keys(groupedAssets).map(label => ({ label, options: groupedAssets[label] })));
                     setIsAssetsLoading(false);
@@ -448,14 +451,12 @@ export function useDerivApiDigitsState() {
                     if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
                     reconnectTimeoutRef.current = setTimeout(() => { reconnectInProgressRef.current = false; setTriggerReconnect(c => c + 1); }, 3000);
                 } else if (!event.wasClean && !allowAutoReconnectRef.current) {
-                    console.warn(`[WS] Conexão falhou permanentemente (provavelmente token inválido). Auto-reconexão desativada.`);
                     setConnectionError(`Authorization failed. Please check your API token.`);
                 }
                 setIsConnected(false); setIsConnecting(false);
                 setAccountBalance({ balance: null, currency: null, loading: false });
                 wsRef.current = null;
             };
-
             ws.onerror = () => { /* Silencioso */ };
         };
         connect();
@@ -466,7 +467,7 @@ export function useDerivApiDigitsState() {
             if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
             reconnectInProgressRef.current = false;
         };
-    }, [user, activeToken, isLoading, triggerReconnect]);
+    }, [user, activeToken, isLoading, triggerReconnect, accountType, makeRequest, startConnectionMonitor, setAndPersistOperationsLog]);
 
     const executeTrade = useCallback(async (
         contractType: DigitContractType, stake: number, symbol: string,
@@ -500,16 +501,12 @@ export function useDerivApiDigitsState() {
         }
         
         const currentTickEpoch = priceTicks.length > 0 ? priceTicks[priceTicks.length-1].epoch : 0;
-        
         const buyResponse: any = await makeRequest(buyRequest);
-        
         if (buyResponse.error) throw new Error(buyResponse.error.message);
         
         const buyResult = buyResponse.buy;
         const contractId = buyResult.contract_id;
-        if (!contractId) {
-            throw new Error("Falha na compra do contrato, ID não retornado.");
-        }
+        if (!contractId) throw new Error("Falha na compra do contrato, ID não retornado.");
         
         if (initiator === 'Piloto') {
             globalLatencyMonitor.startTrade(contractId, currentTickEpoch);
@@ -531,7 +528,6 @@ export function useDerivApiDigitsState() {
         };
         
         setAndPersistOperationsLog(prevLog => [newOperation, ...prevLog]);
-        
         return { success: true, message: `Ordem executada.`, contractId: buyResult.contract_id };
       } catch (error) {
          console.error(`❌ [Deriv Hook - Digits] Erro:`, error);
@@ -568,15 +564,12 @@ export function useDerivApiDigitsState() {
             if (subResponse.error) {
                 if (subResponse.error.code !== 'AlreadySubscribed') {
                     setChartError(`Falha na subscrição de dados: ${subResponse.error.message}`);
-                } else {
-                    console.warn(`[Digits] Data already subscribed for ${symbol}.`);
                 }
                 activeSubscriptionIdRef.current = null;
             } else {
                 activeSubscriptionIdRef.current = subResponse.subscription?.id || null;
             }
         } catch (error: any) {
-            console.error(`[Market Data - Digits] Error for ${symbol}:`, error);
             setChartError(error.message || 'Falha ao carregar dados do mercado.');
         } finally {
             setIsChartLoading(false);
@@ -666,3 +659,11 @@ export function useDerivApiDigits() {
   }
   return context;
 }
+
+const getDecimalPlaces = (pipSize: number | undefined): number => {
+    if (pipSize === undefined || pipSize === null || pipSize <= 0) return 2; 
+    if (Math.floor(pipSize) === pipSize && pipSize >= 1) return 0;
+    const pipString = String(pipSize);
+    if (pipString.includes('.')) return pipString.split('.')[1].length;
+    return 0;
+};
