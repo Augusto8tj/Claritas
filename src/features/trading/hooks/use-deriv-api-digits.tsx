@@ -16,8 +16,7 @@ const DERIV_DEMO_TOKEN_KEY = 'derivDemoApiToken';
 const DERIV_REAL_TOKEN_KEY = 'derivRealApiToken';
 const DERIV_ACCOUNT_TYPE_KEY = 'derivAccountType';
 const DERIV_DIGITS_LOG_KEY = 'derivDigitsOperationsLog_v5';
-const DERIV_APP_ID = "34lwuJiPbEzxjgEdnEhbX"; // APP ID Institucional (V2)
-const MAX_TICKS = 1000;
+const DERIV_APP_ID = "34lwuJiPbEzxjgEdnEhbX"; // APP ID Institucional compatível com o novo fluxo
 
 const ACCOUNT_IDS = {
     demo: 'DOT93059550',
@@ -132,7 +131,6 @@ const addDataPoint = (prevData: ChartData[], newPoint: ChartData): ChartData[] =
     return data;
 };
 
-// This is the main state logic hook
 export function useDerivApiDigitsState() {
   const { user } = useAuth();
   const { toast } = useToast();
@@ -273,13 +271,13 @@ export function useDerivApiDigitsState() {
         }
         const connect = async () => {
             setIsConnecting(true); setConnectionError(null); setIsAssetsLoading(true);
-            addEvent(`Iniciando handshake OTP (Digits)...`, 'info');
+            addEvent(`Solicitando túnel OTP para conta ${accountType}...`, 'info');
             
             const accountId = ACCOUNT_IDS[accountType];
             const otpResult = await getDerivWebSocketUrl(activeToken.trim(), accountId);
             
             if (!otpResult.success || !otpResult.url) {
-                const errMsg = otpResult.error || 'Falha ao obter URL OTP.';
+                const errMsg = otpResult.error || 'Falha ao obter URL segura para Digits.';
                 setConnectionError(errMsg);
                 addEvent(errMsg, 'error');
                 setIsConnecting(false);
@@ -420,7 +418,7 @@ export function useDerivApiDigitsState() {
                     if (authRes.error) throw new Error(authRes.error.message);
 
                     setIsConnected(true); setIsConnecting(false); setConnectionError(null);
-                    addEvent(`Conexão autorizada com sucesso.`, 'success');
+                    addEvent(`Autenticação via OTP bem-sucedida.`, 'success');
                     
                     ws.send(JSON.stringify({ "proposal_open_contract": 1, "subscribe": 1 }));
                     ws.send(JSON.stringify({ "balance": 1, "subscribe": 1 }));
@@ -429,7 +427,6 @@ export function useDerivApiDigitsState() {
                     const assetsRes: any = await makeRequest({ active_symbols: 'brief', product_type: 'basic' });
                     if (assetsRes.error) throw new Error(assetsRes.error.message);
                     
-                    // Suporte aos novos nomes de propriedades (underlying_symbol, underlying_symbol_name)
                     const symbols = assetsRes.active_symbols || [];
                     const filteredSymbols = symbols.filter((s: any) => 
                         s.market === 'synthetic_index' || s.submarket === 'basket_index'
@@ -463,7 +460,7 @@ export function useDerivApiDigitsState() {
                 } catch (error: any) {
                     reconnectInProgressRef.current = false;
                     if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
-                    const msg = error instanceof Error ? error.message : 'Erro desconhecido';
+                    const msg = error instanceof Error ? error.message : 'Erro na abertura do WebSocket.';
                     setConnectionError(`Falha na autorização: ${msg}`);
                     addEvent(msg, 'error');
                     setIsConnected(false); setIsConnecting(false); setIsAssetsLoading(false);

@@ -26,8 +26,6 @@ export function AssetSelectorDigits({ selectedAsset, onAssetChange, assetGroups,
   const [marketStatusFilter, setMarketStatusFilter] = useState('all');
 
   const filteredAssets = useMemo(() => {
-    // The assetGroups are already pre-filtered for Digits compatibility in the API hook.
-    // We just need to apply the UI filters like market status.
     const newGroups = assetGroups.map(group => ({
       label: group.label,
       options: group.options.filter(asset => {
@@ -55,7 +53,6 @@ export function AssetSelectorDigits({ selectedAsset, onAssetChange, assetGroups,
     const allAssets = assetGroups.flatMap(g => g.options);
     const defaultAsset = allAssets.find(a => a.value === '1HZ10V');
     
-    // If no asset is selected OR the selected asset isn't in the list anymore
     if (!selectedAsset || !allAssets.some(a => a.value === selectedAsset)) {
       if (defaultAsset) {
         onAssetChange('1HZ10V');
