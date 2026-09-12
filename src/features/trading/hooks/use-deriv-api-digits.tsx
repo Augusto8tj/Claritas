@@ -16,7 +16,7 @@ const DERIV_DEMO_TOKEN_KEY = 'derivDemoApiToken';
 const DERIV_REAL_TOKEN_KEY = 'derivRealApiToken';
 const DERIV_ACCOUNT_TYPE_KEY = 'derivAccountType';
 const DERIV_DIGITS_LOG_KEY = 'derivDigitsOperationsLog_v5';
-const DERIV_APP_ID = "34lwuJiPbEzxjgEdnEhbX"; // APP ID Institucional compatível com o novo fluxo
+const DERIV_APP_ID = "34lwuJiPbEzxjgEdnEhbX"; 
 
 const ACCOUNT_IDS = {
     demo: 'DOT93059550',
@@ -25,9 +25,15 @@ const ACCOUNT_IDS = {
 
 const marketNameMapping: Record<string, string> = { 
     'synthetic_index': 'Índices Sintéticos',
-    'basket_index': 'Índices de Cesta' 
+    'forex': 'Forex',
+    'commodities': 'Matérias-Primas',
+    'basket_index': 'Cestas',
+    'stock_index': 'Índices de Ações',
+    'cryptocurrency': 'Criptomoedas'
 };
+
 const TICK_SAVE_INTERVAL_MS = 5000;
+const MAX_TICKS = 1000;
 
 // --- TYPES ---
 type DigitContractType = 'DIGITMATCH' | 'DIGITDIFF' | 'DIGITOVER' | 'DIGITUNDER' | 'DIGITEVEN' | 'DIGITODD';
@@ -44,15 +50,6 @@ export type PromiseCallbacks = {
 export interface AssetGroup {
   label: string;
   options: Asset[];
-}
-
-export interface ApiHistoricalData {
-    epoch: number;
-    price?: number;
-    open?: number;
-    high?: number;
-    low?: number;
-    close?: number;
 }
 
 export interface ConnectionEvent {
@@ -104,7 +101,7 @@ export interface DerivApiContextTypeDigits {
   tradeAnnotations: TradeAnnotation[];
   durationLimits: DurationLimits | null;
   clearActiveContracts: () => void;
-  getHistoricalData: (symbol: string, style: 'ticks' | 'candles', count: number, period?: TimePeriod) => Promise<ApiHistoricalData[]>;
+  getHistoricalData: (symbol: string, style: 'ticks' | 'candles', count: number, period?: TimePeriod) => Promise<any[]>;
   connectionEvents: ConnectionEvent[];
 }
 
@@ -224,7 +221,7 @@ export function useDerivApiDigitsState() {
         });
     }, []);
 
-    const getHistoricalData = useCallback(async (symbol: string, style: 'ticks' | 'candles', count: number, period?: TimePeriod): Promise<ApiHistoricalData[]> => {
+    const getHistoricalData = useCallback(async (symbol: string, style: 'ticks' | 'candles', count: number, period?: TimePeriod): Promise<any[]> => {
       const request: any = { ticks_history: symbol, end: "latest", count, adjust_start_time: 1, style };
       if (style === 'candles' && period) request.granularity = getGranularityForTimePeriod(period);
       try {
@@ -271,18 +268,16 @@ export function useDerivApiDigitsState() {
         }
         const connect = async () => {
             setIsConnecting(true); setConnectionError(null); setIsAssetsLoading(true);
-            addEvent(`Solicitando túnel OTP para conta ${accountType}...`, 'info');
+            addEvent(`Handshake seguro p/ ${accountType}...`, 'info');
             
             const accountId = ACCOUNT_IDS[accountType];
             const otpResult = await getDerivWebSocketUrl(activeToken.trim(), accountId);
             
             if (!otpResult.success || !otpResult.url) {
-                const errMsg = otpResult.error || 'Falha ao obter URL segura para Digits.';
+                const errMsg = otpResult.error || 'Falha ao obter túnel OTP.';
                 setConnectionError(errMsg);
                 addEvent(errMsg, 'error');
-                setIsConnecting(false);
-                setIsConnected(false);
-                setIsAssetsLoading(false);
+                setIsConnecting(false); setIsConnected(false); setIsAssetsLoading(false);
                 return;
             }
 
@@ -389,7 +384,10 @@ export function useDerivApiDigitsState() {
                                     lastTickSaveTimestampRef.current = now;
                                 }
 
-                                setPriceTicks(prev => addDataPoint(prev, newTick) as TickData[]);
+                                setPriceTicks(prev => {
+                                    const data = [...prev, newTick];
+                                    return data.length > MAX_TICKS ? data.slice(-MAX_TICKS) : data;
+                                });
                                 if (chartTypeRef.current === 'Area') {
                                     setChartData(prev => addDataPoint(prev, newTick));
                                 }
@@ -401,7 +399,10 @@ export function useDerivApiDigitsState() {
                                 const candle = response.ohlc;
                                 const newCandle: CandleData = { epoch: candle.open_time, open: parseFloat(candle.open), high: parseFloat(candle.high), low: parseFloat(candle.low), close: parseFloat(candle.close) };
                                 setChartData(prev => addDataPoint(prev, newCandle));
-                                setPriceTicks(prev => addDataPoint(prev, { epoch: newCandle.epoch, price: newCandle.close }) as TickData[]);
+                                setPriceTicks(prev => {
+                                    const data = [...prev, { epoch: newCandle.epoch, price: newCandle.close }];
+                                    return data.length > MAX_TICKS ? data.slice(-MAX_TICKS) : data;
+                                });
                                 setDataVersion(v => v + 1);
                              }
                              break;
@@ -418,22 +419,19 @@ export function useDerivApiDigitsState() {
                     if (authRes.error) throw new Error(authRes.error.message);
 
                     setIsConnected(true); setIsConnecting(false); setConnectionError(null);
-                    addEvent(`Autenticação via OTP bem-sucedida.`, 'success');
+                    addEvent(`Autenticado via OTP v3.`, 'success');
                     
                     ws.send(JSON.stringify({ "proposal_open_contract": 1, "subscribe": 1 }));
                     ws.send(JSON.stringify({ "balance": 1, "subscribe": 1 }));
                     startConnectionMonitor();
                     
-                    const assetsRes: any = await makeRequest({ active_symbols: 'brief', product_type: 'basic' });
+                    const assetsRes: any = await makeRequest({ active_symbols: 'full' });
                     if (assetsRes.error) throw new Error(assetsRes.error.message);
                     
                     const symbols = assetsRes.active_symbols || [];
-                    const filteredSymbols = symbols.filter((s: any) => 
-                        s.market === 'synthetic_index' || s.submarket === 'basket_index'
-                    );
-
                     const groupedAssets: { [key: string]: Asset[] } = {};
-                    filteredSymbols.forEach((s: any) => {
+                    
+                    symbols.forEach((s: any) => {
                         const marketKey = (s.market === 'synthetic_index' && s.submarket === 'basket_index') 
                             ? 'basket_index' 
                             : s.market;
@@ -452,15 +450,17 @@ export function useDerivApiDigitsState() {
                         });
                     });
                     
-                    setAssetGroups(Object.keys(groupedAssets).map(label => ({ 
-                        label, 
-                        options: groupedAssets[label].sort((a,b) => a.label.localeCompare(b.label)) 
-                    })));
+                    setAssetGroups(Object.keys(groupedAssets)
+                        .map(label => ({ 
+                            label, 
+                            options: groupedAssets[label].sort((a,b) => a.label.localeCompare(b.label)) 
+                        }))
+                        .sort((a,b) => a.label.localeCompare(b.label)));
                     setIsAssetsLoading(false);
                 } catch (error: any) {
                     reconnectInProgressRef.current = false;
                     if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
-                    const msg = error instanceof Error ? error.message : 'Erro na abertura do WebSocket.';
+                    const msg = error instanceof Error ? error.message : 'Erro na abertura do túnel.';
                     setConnectionError(`Falha na autorização: ${msg}`);
                     addEvent(msg, 'error');
                     setIsConnected(false); setIsConnecting(false); setIsAssetsLoading(false);
@@ -575,16 +575,22 @@ export function useDerivApiDigitsState() {
         }
         setPriceTicks([]); setChartData([]); setIsChartLoading(true);
         try {
-            const historyStyle = chartTypeRef.current === 'Candle' ? 'candles' : 'ticks';
-            const history = await getHistoricalData(symbol, historyStyle, MAX_TICKS, timePeriodRef.current);
+            const currentChartType = chartTypeRef.current;
+            const currentTimePeriod = timePeriodRef.current;
+            const historyStyle = currentChartType === 'Candle' ? 'candles' : 'ticks';
+            const history = await getHistoricalData(symbol, historyStyle, MAX_TICKS, currentTimePeriod);
+            
             setChartData(history as ChartData[]);
-            if (historyStyle === 'ticks') setPriceTicks(history as TickData[]);
-            else setPriceTicks(history.map(c => ({ epoch: c.epoch, price: c.close || 0 })) as TickData[]);
+            if (historyStyle === 'ticks') {
+                setPriceTicks(history as TickData[]);
+            } else {
+                setPriceTicks(history.map(c => ({ epoch: c.epoch, price: c.close || 0 })) as TickData[]);
+            }
             setDataVersion(v => v + 1);
 
             let subRequest: any;
-            if (chartTypeRef.current === 'Candle') {
-                subRequest = { ticks_history: symbol, style: 'candles', granularity: getGranularityForTimePeriod(timePeriodRef.current), subscribe: 1, end: "latest", count: 1, adjust_start_time: 1 };
+            if (currentChartType === 'Candle') {
+                subRequest = { ticks_history: symbol, style: 'candles', granularity: getGranularityForTimePeriod(currentTimePeriod), subscribe: 1, end: "latest", count: 1, adjust_start_time: 1 };
             } else {
                 subRequest = { ticks: symbol, subscribe: 1 };
             }

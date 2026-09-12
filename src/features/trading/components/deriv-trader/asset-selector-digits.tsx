@@ -11,8 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
-import { useDerivApiDigits } from "../../hooks/use-deriv-api-digits";
-
+import { Badge } from "@/components/ui/badge";
 
 interface AssetSelectorProps {
   selectedAsset: string;
@@ -21,23 +20,45 @@ interface AssetSelectorProps {
   isAssetsLoading: boolean;
 }
 
+const marketFilters = [
+    { label: "Todos", value: "all" },
+    { label: "Sintéticos", value: "synthetic_index" },
+    { label: "Forex", value: "forex" },
+    { label: "Matérias-Primas", value: "commodities" },
+    { label: "Cestas", value: "basket_index" },
+    { label: "Índices", value: "stock_index" },
+    { label: "Cripto", value: "cryptocurrency" },
+];
+
 export function AssetSelectorDigits({ selectedAsset, onAssetChange, assetGroups, isAssetsLoading }: AssetSelectorProps) {
   const [open, setOpen] = useState(false);
+  const [filter, setFilter] = useState('all');
   const [marketStatusFilter, setMarketStatusFilter] = useState('all');
 
   const filteredAssets = useMemo(() => {
-    const newGroups = assetGroups.map(group => ({
-      label: group.label,
-      options: group.options.filter(asset => {
-        if (marketStatusFilter === 'open' && !asset.marketIsOpen) {
-          return false;
-        }
-        return true;
-      }),
-    }));
+    let assets = assetGroups.flatMap(g => g.options);
 
-    return newGroups.filter(group => group.options.length > 0);
-  }, [assetGroups, marketStatusFilter]);
+    if (marketStatusFilter === 'open') {
+      assets = assets.filter(a => a.marketIsOpen);
+    }
+
+    if (filter !== 'all') {
+      assets = assets.filter(a => a.market === filter);
+    }
+
+    const regrouped: { [key: string]: Asset[] } = {};
+    assets.forEach(asset => {
+        const groupLabel = assetGroups.find(g => g.options.some(o => o.value === asset.value))?.label || 'Outros';
+        if (!regrouped[groupLabel]) regrouped[groupLabel] = [];
+        regrouped[groupLabel].push(asset);
+    });
+
+    return Object.keys(regrouped).map(label => ({
+        label,
+        options: regrouped[label],
+    })).filter(group => group.options.length > 0);
+
+  }, [assetGroups, filter, marketStatusFilter]);
   
   const selectedAssetLabel = useMemo(() => {
      for (const group of assetGroups) {
@@ -47,20 +68,26 @@ export function AssetSelectorDigits({ selectedAsset, onAssetChange, assetGroups,
     return "Selecione um ativo";
   }, [assetGroups, selectedAsset]);
 
+  const filterCounts = useMemo(() => {
+    const allAssets = assetGroups.flatMap(g => g.options);
+    const counts: Record<string, number> = { all: allAssets.length };
+    
+    marketFilters.forEach(f => {
+      if (f.value !== 'all') {
+        counts[f.value] = allAssets.filter(a => a.market === f.value).length;
+      }
+    });
+    
+    return counts;
+  }, [assetGroups]);
 
    useEffect(() => {
     if (isAssetsLoading) return;
-    const allAssets = assetGroups.flatMap(g => g.options);
-    const defaultAsset = allAssets.find(a => a.value === '1HZ10V');
-    
-    if (!selectedAsset || !allAssets.some(a => a.value === selectedAsset)) {
-      if (defaultAsset) {
-        onAssetChange('1HZ10V');
-      } else if (allAssets.length > 0) {
-        onAssetChange(allAssets[0].value);
-      }
+    const asset = assetGroups.flatMap(g => g.options).find(a => a.value === selectedAsset);
+    if (asset && asset.market) {
+        setFilter(asset.market);
     }
-  }, [selectedAsset, assetGroups, isAssetsLoading, onAssetChange]);
+  }, [selectedAsset, assetGroups, isAssetsLoading]);
 
 
   if (isAssetsLoading) {
@@ -83,14 +110,36 @@ export function AssetSelectorDigits({ selectedAsset, onAssetChange, assetGroups,
       <PopoverContent className="w-full sm:w-[380px] p-0">
         <Command>
           <CommandInput placeholder="Pesquisar ativo..." />
-           <div className="p-2 border-b">
-                <ToggleGroup type="single" value={marketStatusFilter} onValueChange={(v) => v && setMarketStatusFilter(v)} className="w-full">
-                    <ToggleGroupItem value="all" className="w-full text-xs h-8">Todos</ToggleGroupItem>
-                    <ToggleGroupItem value="open" className="w-full text-xs h-8">Abertos</ToggleGroupItem>
-                </ToggleGroup>
+           <div className="p-2 border-b space-y-2">
+              <div>
+                <p className="text-xs text-muted-foreground px-1 pb-1 font-bold">Mercado:</p>
+                <div className="flex flex-wrap gap-1">
+                  {marketFilters.map(f => (
+                      <Button 
+                          key={f.value}
+                          variant={filter === f.value ? "default" : "outline"}
+                          size="sm"
+                          className="h-7 text-[11px] px-2 rounded-full"
+                          onClick={() => setFilter(f.value)}
+                          disabled={filterCounts[f.value] === 0 && f.value !== 'all'}
+                      >
+                          {f.label} ({filterCounts[f.value] || 0})
+                      </Button>
+                  ))}
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                    <div>
+                        <p className="text-xs text-muted-foreground px-1 pb-1 font-bold">Status:</p>
+                        <ToggleGroup type="single" value={marketStatusFilter} onValueChange={(v) => v && setMarketStatusFilter(v)} className="w-full">
+                            <ToggleGroupItem value="all" className="w-full text-xs h-8">Todos</ToggleGroupItem>
+                            <ToggleGroupItem value="open" className="w-full text-xs h-8">Abertos</ToggleGroupItem>
+                        </ToggleGroup>
+                    </div>
+               </div>
           </div>
           <CommandList>
-            <CommandEmpty>Nenhum ativo encontrado para este filtro.</CommandEmpty>
+            <CommandEmpty>Nenhum ativo encontrado para estes filtros.</CommandEmpty>
             {filteredAssets.map((group) => (
               <CommandGroup key={group.label} heading={group.label}>
                 {group.options.map((option) => (
