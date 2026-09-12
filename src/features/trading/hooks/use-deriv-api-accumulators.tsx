@@ -199,6 +199,11 @@ export const DerivApiProviderAccumulators = ({ children }: { children: ReactNode
       ));
   }, []);
 
+  const clearActiveContracts = useCallback(() => {
+    setAndPersistOperationsLog([]);
+    setTradeAnnotations([]);
+  }, [setAndPersistOperationsLog]);
+
   useEffect(() => {
     chartTypeRef.current = chartType;
   }, [chartType]);
@@ -663,6 +668,11 @@ export const DerivApiProviderAccumulators = ({ children }: { children: ReactNode
     if (isConnected && activeSymbol && !isConnecting) subscribeToStreams(activeSymbol);
   }, [isConnected, activeSymbol, isConnecting, chartType, timePeriod, subscribeToStreams]);
   
+  const reconnect = useCallback(async (): Promise<boolean> => {
+    setTriggerReconnect(c => c + 1);
+    return true;
+  }, []);
+
   const contextValue: DerivApiAccumulatorsContextType = useMemo(() => ({
     ws: wsRef.current, isConnected, isConnecting, connectionError, demoToken, realToken, activeToken,
     accountType, accountBalance, operationsLog, assetGroups, isAssetsLoading, activeSymbol, 
@@ -672,14 +682,14 @@ export const DerivApiProviderAccumulators = ({ children }: { children: ReactNode
     setAccountType: (t) => { localStorage.setItem(DERIV_ACCOUNT_TYPE_KEY, t); setAccountTypeState(t); setTriggerReconnect(c => c + 1); },
     setTokens: (t) => { if(t.demo) localStorage.setItem(DERIV_DEMO_TOKEN_KEY, t.demo); if(t.real) localStorage.setItem(DERIV_REAL_TOKEN_KEY, t.real); setTriggerReconnect(c => c + 1); },
     disconnect: (t) => { if(t === 'demo') localStorage.removeItem(DERIV_DEMO_TOKEN_KEY); else localStorage.removeItem(DERIV_REAL_TOKEN_KEY); setTriggerReconnect(c => c + 1); },
-    reconnect: async () => { setTriggerReconnect(c => c + 1); return true; }, 
+    reconnect, 
     executeTrade, sellContract, getHistoricalData, 
-    clearActiveContracts: () => { setAndPersistOperationsLog([]); setTradeAnnotations([]); }
+    clearActiveContracts
   }), [
     isConnected, isConnecting, connectionError, demoToken, realToken, activeToken, accountType, 
     accountBalance, operationsLog, assetGroups, isAssetsLoading, activeSymbol,
     chartData, botCandleData, isChartLoading, chartError, chartType, timePeriod, dataVersion, 
-    tradeAnnotations, priceTicks, connectionEvents, executeTrade, sellContract, getHistoricalData, clearActiveContracts
+    tradeAnnotations, priceTicks, connectionEvents, executeTrade, sellContract, getHistoricalData, clearActiveContracts, reconnect
   ]);
 
   return (
