@@ -1,5 +1,4 @@
 
-// src/app/ai-quant-terminal-v2/page.tsx
 'use client';
 
 import React, { useState, useRef, useEffect, useMemo } from 'react';
@@ -17,7 +16,7 @@ import {
     Activity, Brain, Wallet, Target, History,
     ArrowUpCircle, ArrowDownCircle, Clock, ShieldAlert,
     TrendingUp, Binary, Trash2, Microscope, Radar,
-    TrendingDown, Minus, Coins, Leaf, Sparkles
+    TrendingDown, Minus, Coins, Leaf, Sparkles, LayoutPanelLeft, Layers
 } from "lucide-react";
 import { DerivApiProviderV2 as DerivApiProvider, useDerivApiV2 as useDerivApi, type AccountType } from "@/features/trading/hooks/use-deriv-api-v2";
 import { AssetSelectorV2 as AssetSelector } from "@/features/trading/components/deriv-trader/asset-selector-v2";
@@ -106,9 +105,7 @@ function TerminalContentV2() {
     // ZEN INSIGHT GENERATOR
     const zenInsight = useMemo(() => {
         if (!lastDecision) return "O CIO está meditando sobre os fluxos de mercado...";
-        if (lastDecision.action === 'HOLD') return "A virtude agora é a paciência. O mercado está turvo e a clareza é nossa única proteção.";
-        if (lastDecision.confidence > 80) return "Uma confluência rara foi detectada. A geometria dos preços alinha-se com nossa tese quântica.";
-        return "Navegando entre as ondas. A confiança é moderada, o risco é calculado.";
+        return lastDecision.zenThought || "A fluidez do mercado exige disciplina e observação constante.";
     }, [lastDecision]);
 
     return (
@@ -144,7 +141,7 @@ function TerminalContentV2() {
                                     <span className="text-sm font-black">{asset.lastAction}</span>
                                 </div>
                                 <div className="mt-1 flex items-center justify-between text-[9px] opacity-60">
-                                    <span>Confiança:</span>
+                                    <span>{asset.recommendedContract || 'Dígitos'}</span>
                                     <span className="font-mono">{asset.confidence.toFixed(0)}%</span>
                                 </div>
                             </div>
@@ -163,7 +160,7 @@ function TerminalContentV2() {
                         <h1 className="text-2xl font-bold tracking-tight font-headline">Terminal Quant V2 (Radar)</h1>
                         <div className="flex items-center gap-2">
                              <Badge variant="secondary" className="font-mono text-xs flex items-center gap-1.5">
-                                <Coins className="h-3 w-3"/> Saldo: {accountBalance.loading ? '...' : formatCurrency(accountBalance.balance || 0)}
+                                <Coins className="h-3 w-3"/> Saldo: {accountBalance.loading ? 'Sincronizando...' : formatCurrency(accountBalance.balance || 0)}
                              </Badge>
                              <p className="text-muted-foreground text-[10px] font-mono italic">Escalonador de Inferência Ativo</p>
                         </div>
@@ -309,9 +306,6 @@ function TerminalContentV2() {
                                         </p>
                                     </div>
                                 </div>
-                                <div className="mt-2 text-center text-[9px] text-muted-foreground font-mono">
-                                    Total de Operações no Radar: {globalSessionStats.total}
-                                </div>
                             </div>
 
                             <div className="grid grid-cols-2 gap-3">
@@ -328,50 +322,6 @@ function TerminalContentV2() {
                                     </p>
                                 </div>
                             </div>
-                        </CardContent>
-                    </Card>
-
-                    <Card className="bg-card/50 border-border shadow-sm flex-1">
-                        <CardHeader className="pb-2 flex flex-row items-center justify-between space-y-0">
-                            <CardTitle className="text-xs font-bold uppercase tracking-widest text-muted-foreground flex items-center gap-2">
-                                <History className="h-4 w-4 text-primary" /> Histórico Focado: {activeSymbol}
-                            </CardTitle>
-                        </CardHeader>
-                        <CardContent className="p-0">
-                            <ScrollArea className="h-64">
-                                <div className="divide-y divide-border">
-                                    {filteredTerminalTrades.length === 0 ? (
-                                        <div className="p-8 text-center text-muted-foreground opacity-40">
-                                            <Activity className="h-8 w-8 mx-auto mb-2" />
-                                            <p className="text-[10px] font-mono">Sem trades em {activeSymbol}</p>
-                                        </div>
-                                    ) : (
-                                        filteredTerminalTrades.map((op) => (
-                                            <div key={op.id} className="p-3 hover:bg-muted/10 transition-colors">
-                                                <div className="flex items-center justify-between mb-1">
-                                                    <div className="flex items-center gap-2">
-                                                        {op.direction === 'rise' ? (
-                                                            <ArrowUpCircle className="h-3.5 w-3.5 text-green-600" />
-                                                        ) : (
-                                                            <ArrowDownCircle className="h-3.5 w-3.5 text-destructive" />
-                                                        )}
-                                                        <span className="text-[11px] font-bold uppercase">{op.direction}</span>
-                                                    </div>
-                                                    <Badge variant={op.status === 'won' ? 'default' : op.status === 'lost' ? 'destructive' : 'outline'} className="text-[9px] h-4 py-0">
-                                                        {op.status.toUpperCase()}
-                                                    </Badge>
-                                                </div>
-                                                <div className="flex justify-between text-[10px] font-mono">
-                                                    <span className={cn((Number(op.result) || 0) >= 0 ? "text-green-600" : "text-destructive")}>
-                                                        Result: {formatCurrency(Number(op.result) || -op.stake)}
-                                                    </span>
-                                                    <span className="text-muted-foreground">{new Date(op.timestamp).toLocaleTimeString()}</span>
-                                                </div>
-                                            </div>
-                                        ))
-                                    )}
-                                </div>
-                            </ScrollArea>
                         </CardContent>
                     </Card>
                 </div>
@@ -454,7 +404,6 @@ function TerminalContentV2() {
 
                 {/* COLUNA DIREITA: INTEGRIDADE E CONFIG */}
                 <div className="lg:col-span-1 space-y-6">
-                    {/* NOVO: ZEN STRATEGY INSIGHT CARD */}
                     <Card className="bg-primary/5 border-primary/20 shadow-md">
                         <CardHeader className="pb-2">
                             <CardTitle className="text-sm flex items-center gap-2 text-primary font-headline">
@@ -492,6 +441,13 @@ function TerminalContentV2() {
                                         <p className="text-[10px] uppercase font-bold mb-1 opacity-70">Recomendação</p>
                                         <p className="text-3xl font-black">{lastDecision.action}</p>
                                         <p className="text-xs mt-2 font-mono font-bold">Confiança: {lastDecision.confidence}%</p>
+                                    </div>
+                                    <div className="bg-muted/30 p-3 rounded-lg border border-border flex items-center gap-3">
+                                        <Layers className="h-4 w-4 text-primary" />
+                                        <div className="flex-1">
+                                            <p className="text-[10px] uppercase font-bold text-muted-foreground">Contrato Ideal</p>
+                                            <p className="text-xs font-bold">{lastDecision.recommendedContract}</p>
+                                        </div>
                                     </div>
                                     <div className="text-[11px] text-muted-foreground italic bg-muted/30 p-3 rounded-lg border border-border">
                                         "{lastDecision.reasoning}"

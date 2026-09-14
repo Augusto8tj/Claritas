@@ -1,11 +1,9 @@
 
-// src/features/trading/hooks/use-ai-quant-terminal-v2.tsx
 'use client';
 
 /**
- * @fileOverview TERMINAL QUANT V2.5 - RADAR COM GESTÃO DE RISCO E TOTALIZADOR GLOBAL
- * CORREÇÃO: Contador de análise desacoplado e funções de perfil estratégico implementadas.
- * CIO agora recebe o Saldo Real e P&L Global para gestão de risco de tesouraria.
+ * @fileOverview TERMINAL QUANT V2.5 - RADAR COM SELETIVIDADE DE CONTRATOS
+ * Incremento: O CIO agora decide qual o MELHOR TIPO DE CONTRATO para o cenário.
  */
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
@@ -19,12 +17,16 @@ import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/features/auth/hooks/use-auth';
 import { saveCouncilDecisionLog } from '@/services/financial-data-service';
 
+export type DerivContractType = 'CALL/PUT' | 'ACCUMULATOR' | 'MULTIPLIER' | 'TOUCH/NOTOUCH';
+
 interface QuantDecision {
     action: 'RISE' | 'FALL' | 'HOLD';
     confidence: number;
     reasoning: string;
     duration: number;
     unit: 't' | 's' | 'm';
+    recommendedContract: DerivContractType;
+    zenThought?: string;
 }
 
 interface RadarAssetStatus {
@@ -33,6 +35,7 @@ interface RadarAssetStatus {
     confidence: number;
     timestamp: number;
     isQualified: boolean;
+    recommendedContract?: DerivContractType;
 }
 
 interface ReasoningLog {
@@ -87,7 +90,6 @@ export function useAIQuantTerminalV2(
 
     const executionLockRef = useRef(false);
 
-    // ESTATÍSTICAS DO ATIVO FOCADO
     const sessionStats = useMemo(() => {
         const finishedTrades = operationsLog.filter(op => 
             op.status !== 'pending' && op.initiator === 'Conselho' && op.asset === activeSymbol
@@ -99,7 +101,6 @@ export function useAIQuantTerminalV2(
         return { pnl: Number(pnl) || 0, winRate, total };
     }, [operationsLog, activeSymbol]);
 
-    // TOTALIZADOR GLOBAL DA SESSÃO
     const globalSessionStats = useMemo(() => {
         const today = new Date().toDateString();
         const v2Trades = operationsLog.filter(op => 
@@ -135,23 +136,6 @@ export function useAIQuantTerminalV2(
         addLog(`Perfil estratégico alterado para ${profile.toUpperCase()}. Limiar ajustado para ${newThreshold}%.`);
     }, [addLog]);
 
-    const preQualifyAsset = useCallback((data: CandleData[]): { qualified: boolean, reason: string } => {
-        if (data.length < 30) return { qualified: false, reason: "Dados insuficientes" };
-        const indicators = calculateAllIndicators(data, initialCouncilStrategies, '1m', { duration: 15, unit: 's' });
-        if (!indicators) return { qualified: false, reason: "Falha nos indicadores" };
-
-        const adx = indicators.adx || 0;
-        const bbw = indicators.bbw || 0;
-        const isTrending = adx > 22;
-        const isSqueezed = bbw < 0.8;
-        const isVolatile = bbw > 2.5;
-
-        if (isTrending || isSqueezed || isVolatile) {
-            return { qualified: true, reason: `ADX: ${adx.toFixed(1)} | BBW: ${bbw.toFixed(2)}` };
-        }
-        return { qualified: false, reason: "Ativo em zona morta" };
-    }, []);
-
     const runInference = useCallback(async (symbol: string, currentData: CandleData[], isBackground: boolean) => {
         if (!ollamaConfig || executionLockRef.current) return null;
         
@@ -169,28 +153,28 @@ export function useAIQuantTerminalV2(
                 atr: indicators.atr
             }, 'ranging') : null;
 
-            const prompt = `VOCÊ É O CIO DO RADAR QUANT CLARITAS.
-            ATIVO ANALISADO: ${symbol} (${isBackground ? 'VARREDURA RADAR' : 'FOCO PRINCIPAL'})
-            PERFIL: ${strategicProfile.toUpperCase()}
+            const prompt = `VOCÊ É O ARQUITETO DE RISCO E CIO DO TERMINAL CLARITAS.
+            Sua missão é selecionar o melhor TIPO DE CONTRATO para o lucro consistente.
             
-            CONTEXTO FINANCEIRO (GESTÃO DE RISCO):
-            - Saldo Real Disponível: $${accountBalance.balance?.toFixed(2) || 'N/A'}
-            - P&L Global da Sessão: $${globalSessionStats.pnl.toFixed(2)}
-            - Meta Diária: $${profitTarget.toFixed(2)}
+            ATIVO: ${symbol} | PERFIL: ${strategicProfile.toUpperCase()}
+            REGIME: ${regime?.regime}
+            DADOS: RSI=${indicators?.rsi?.toFixed(1)} | ADX=${indicators?.adx?.toFixed(1)} | BBW=${indicators?.bbw?.toFixed(3)}
             
-            DADOS TÉCNICOS:
-            Regime: ${regime?.regime}
-            RSI: ${indicators?.rsi?.toFixed(2)} | ADX: ${indicators?.adx?.toFixed(1)} | BBW: ${indicators?.bbw?.toFixed(3)}
+            DIRETRIZES DE INSTRUMENTO:
+            1. Se Regime for 'ranging' e BBW < 0.8: Sugira 'ACCUMULATOR' (estabilidade).
+            2. Se ADX > 30 e RSI em tendência: Sugira 'MULTIPLIER' (tendência explosiva).
+            3. Se Regime for 'breakout': Sugira 'TOUCH/NOTOUCH' (volatilidade direcional).
+            4. Padrão: Sugira 'CALL/PUT'.
 
-            SUA MISSÃO: Se o P&L global for alto, seja mais conservador. Se o saldo for baixo, rejeite stakes altos.
-            
             RETORNE APENAS JSON:
             {
               "action": "RISE" | "FALL" | "HOLD",
+              "recommendedContract": "CALL/PUT" | "ACCUMULATOR" | "MULTIPLIER" | "TOUCH/NOTOUCH",
               "confidence": 0-100,
-              "reasoning": "Breve justificativa técnica e financeira",
+              "reasoning": "Justificativa técnica e escolha do contrato",
               "duration": number,
-              "unit": "s" | "t"
+              "unit": "s" | "t",
+              "zenThought": "Pensamento curto sobre o estado do mercado"
             }`;
 
             const response = await getOllamaResponse(ollamaConfig, prompt, []);
@@ -242,34 +226,18 @@ export function useAIQuantTerminalV2(
               return;
             }
 
-            const qualification = preQualifyAsset(history as CandleData[]);
-            
-            if (qualification.qualified) {
-                addLog(`Radar: ${symbol} QUALIFICADO. Solicitando veredito...`, 'radar');
-                const decision = await runInference(symbol, history as CandleData[], true);
-                
-                if (decision) {
-                    setRadarStatus(prev => ({
-                        ...prev,
-                        [symbol]: { symbol, lastAction: decision.action, confidence: decision.confidence, timestamp: Date.now(), isQualified: true }
-                    }));
-
-                    if (isAutoMode && decision.action !== 'HOLD' && decision.confidence >= confidenceThreshold) {
-                        const hasOpenTrade = operationsLog.some(op => op.asset === symbol && op.status === 'pending');
-                        if (!hasOpenTrade) {
-                            addLog(`Radar: Executando ordem automática em ${symbol}...`, 'execution');
-                            await executeTrade(
-                                decision.action === 'RISE' ? 'CALL' : 'PUT',
-                                stakeValue, symbol, decision.action.toLowerCase() as 'rise' | 'fall',
-                                decision.duration, decision.unit as DurationUnit, 'Conselho'
-                            );
-                        }
-                    }
-                }
-            } else {
+            const decision = await runInference(symbol, history as CandleData[], true);
+            if (decision) {
                 setRadarStatus(prev => ({
                     ...prev,
-                    [symbol]: { ...prev[symbol], isQualified: false, lastAction: 'HOLD' }
+                    [symbol]: { 
+                        symbol, 
+                        lastAction: decision.action, 
+                        confidence: decision.confidence, 
+                        timestamp: Date.now(), 
+                        isQualified: decision.action !== 'HOLD',
+                        recommendedContract: decision.recommendedContract
+                    }
                 }));
             }
         } catch (e) {
@@ -277,7 +245,7 @@ export function useAIQuantTerminalV2(
         }
 
         radarPointerRef.current = (radarPointerRef.current + 1) % RADAR_SYMBOLS.length;
-    }, [activeSymbol, getHistoricalData, preQualifyAsset, runInference, addLog, isConnected, isAutoMode, confidenceThreshold, operationsLog, stakeValue, executeTrade]);
+    }, [activeSymbol, getHistoricalData, runInference, isConnected]);
 
     const runActiveCycle = useCallback(async () => {
         if (!activeSymbol || !isConnected || chartData.length < 30) return;
@@ -289,13 +257,21 @@ export function useAIQuantTerminalV2(
             setLastDecision(decision);
             setRadarStatus(prev => ({
                 ...prev,
-                [activeSymbol]: { symbol: activeSymbol, lastAction: decision.action, confidence: decision.confidence, timestamp: Date.now(), isQualified: true }
+                [activeSymbol]: { 
+                    symbol: activeSymbol, 
+                    lastAction: decision.action, 
+                    confidence: decision.confidence, 
+                    timestamp: Date.now(), 
+                    isQualified: true,
+                    recommendedContract: decision.recommendedContract
+                }
             }));
 
             if (isAutoMode && decision.action !== 'HOLD' && decision.confidence >= confidenceThreshold) {
                 const hasOpenTrade = operationsLog.some(op => op.asset === activeSymbol && op.status === 'pending');
                 if (!hasOpenTrade) {
                     addLog(`Executando ordem automática em ${activeSymbol}...`, 'execution');
+                    // Por enquanto mantemos o CALL/PUT como execução base, mas o log registrará a recomendação
                     await executeTrade(
                         decision.action === 'RISE' ? 'CALL' : 'PUT',
                         stakeValue, activeSymbol, decision.action.toLowerCase() as 'rise' | 'fall',
