@@ -141,7 +141,7 @@ function TerminalContentV2() {
                                 </div>
                                 <div className="mt-1 flex items-center justify-between text-[9px] opacity-60">
                                     <span>{asset.recommendedContract || 'Dígitos'}</span>
-                                    <span className="font-mono">{asset.confidence.toFixed(0)}%</span>
+                                    <span className="font-mono">{(asset.confidence ?? 0).toFixed(0)}%</span>
                                 </div>
                             </div>
                         ))}
@@ -166,7 +166,6 @@ function TerminalContentV2() {
                     </div>
                 </div>
                 <div className="flex flex-wrap items-center gap-4">
-                    {/* CORREÇÃO 5 — Bloquear troca Demo/Real durante o Autopilot */}
                     <ToggleGroup 
                         type="single" 
                         value={accountType} 
@@ -289,7 +288,6 @@ function TerminalContentV2() {
                                 </div>
                             </div>
                             
-                            {/* CORREÇÃO 3 — Circuit Breaker Inputs */}
                             <div className="grid grid-cols-2 gap-3">
                                 <div className="space-y-1.5">
                                     <Label className="text-[10px] uppercase font-bold text-muted-foreground">Máx. Perdas Seguidas</Label>

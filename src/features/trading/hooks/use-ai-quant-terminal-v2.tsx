@@ -193,6 +193,11 @@ export function useAIQuantTerminalV2(
             if (!jsonMatch) throw new Error("JSON malformado");
             
             const decision: QuantDecision = JSON.parse(jsonMatch[0]);
+            
+            // Sanitização robusta da confiança para evitar erros de toFixed(0) na UI
+            decision.confidence = (decision.confidence === null || decision.confidence === undefined || isNaN(Number(decision.confidence))) 
+                ? 0 
+                : Number(decision.confidence);
 
             if (user) {
                 saveCouncilDecisionLog(user.uid, {
@@ -241,7 +246,6 @@ export function useAIQuantTerminalV2(
                         lastAction: decision.action, 
                         confidence: decision.confidence, 
                         timestamp: Date.now(), 
-                        // CORREÇÃO 4 — isQualified deve respeitar o limiar de confiança
                         isQualified: decision.action !== 'HOLD' && decision.confidence >= confidenceThreshold,
                         recommendedContract: decision.recommendedContract
                     }
@@ -257,7 +261,6 @@ export function useAIQuantTerminalV2(
     const runActiveCycle = useCallback(async () => {
         if (!activeSymbol || !isConnected || chartData.length < 30) return;
         
-        // CORREÇÃO 3 — Ativar o Circuit Breaker (perdas consecutivas + perda diária)
         const councilTrades = operationsLog.filter(op => op.initiator === 'Conselho' && op.status !== 'pending');
         const recentLosses = councilTrades.slice(0, maxConsecutiveLosses);
         const hitLossStreak = recentLosses.length === maxConsecutiveLosses && recentLosses.every(op => op.status === 'lost');
@@ -287,7 +290,6 @@ export function useAIQuantTerminalV2(
                     lastAction: decision.action, 
                     confidence: decision.confidence, 
                     timestamp: Date.now(), 
-                    // CORREÇÃO 4 — isQualified deve respeitar o limiar de confiança
                     isQualified: decision.action !== 'HOLD' && decision.confidence >= confidenceThreshold,
                     recommendedContract: decision.recommendedContract
                 }
