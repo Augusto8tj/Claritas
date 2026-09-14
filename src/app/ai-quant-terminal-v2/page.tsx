@@ -1,4 +1,4 @@
-
+// src/app/ai-quant-terminal-v2/page.tsx
 'use client';
 
 import React, { useState, useRef, useEffect, useMemo } from 'react';
@@ -102,7 +102,6 @@ function TerminalContentV2() {
         return operationsLog.filter(op => op.initiator === 'Conselho' && op.asset === activeSymbol);
     }, [operationsLog, activeSymbol]);
 
-    // ZEN INSIGHT GENERATOR
     const zenThought = useMemo(() => {
         if (!lastDecision) return "O CIO está meditando sobre os fluxos de mercado...";
         return lastDecision.zenThought || "A fluidez do mercado exige disciplina e observação constante.";
@@ -162,7 +161,7 @@ function TerminalContentV2() {
                              <Badge variant="secondary" className="font-mono text-xs flex items-center gap-1.5">
                                 <Coins className="h-3 w-3"/> Saldo: {accountBalance.loading ? 'Sincronizando...' : formatCurrency(accountBalance.balance || 0)}
                              </Badge>
-                             <p className="text-muted-foreground text-[10px] font-mono italic">Escalonador de Inferência Ativo</p>
+                             <p className="text-muted-foreground text-[10px] font-mono italic">Auditado por Ollama CIO</p>
                         </div>
                     </div>
                 </div>
@@ -360,7 +359,7 @@ function TerminalContentV2() {
                                 <MessageSquare className="h-4 w-4 text-primary" />
                                 Interface de Diálogo com o CIO
                             </CardTitle>
-                            <CardDescription className="text-[10px]">Análise expandida baseada em transações reais e decisões de todos os ativos do radar.</CardDescription>
+                            <CardDescription className="text-[10px]">Consulte o status do terminal ou solicite execuções táticas via prompt.</CardDescription>
                         </CardHeader>
                         <CardContent className="flex-1 overflow-hidden p-0 relative bg-muted/5">
                             <ScrollArea className="h-full p-4">
@@ -378,7 +377,7 @@ function TerminalContentV2() {
                                     ))}
                                     {isChatLoading && (
                                         <div className="flex items-center gap-2 text-xs text-primary animate-pulse font-mono">
-                                            <RefreshCw className="h-3 w-3 animate-spin"/> O CIO está processando a resposta...
+                                            <RefreshCw className="h-3 w-3 animate-spin"/> O CIO está auditando os fluxos...
                                         </div>
                                     )}
                                     <div ref={chatScrollRef} />
@@ -390,7 +389,7 @@ function TerminalContentV2() {
                                 <Input 
                                     value={chatInput}
                                     onChange={(e) => setChatInput(e.target.value)}
-                                    placeholder="Pergunte sobre qualquer ativo ou sobre seu saldo global..."
+                                    placeholder="Ex: 'Qual o status atual?' ou 'Execute uma ordem RISE'"
                                     className="bg-background border-border h-9 text-xs"
                                     disabled={isChatLoading}
                                 />
@@ -480,11 +479,11 @@ function TerminalContentV2() {
                         </CardContent>
                     </Card>
 
-                    {/* LOG DE RACIOCÍNIO */}
+                    {/* LOG DE RACIOCÍNIO CONSOLIDADO */}
                     <Card className="bg-muted/30 border-border font-mono overflow-hidden shadow-inner">
                         <div className="bg-card/50 px-4 py-2 flex items-center justify-between border-b border-border">
                             <span className="text-[10px] font-bold text-muted-foreground flex items-center gap-2">
-                                <TerminalIcon className="h-3 w-3" /> REASONING LOG
+                                <TerminalIcon className="h-3 w-3" /> CONSOLIDATED REASONING
                             </span>
                         </div>
                         <CardContent className="p-0">
@@ -497,8 +496,8 @@ function TerminalContentV2() {
                                             <span className="text-muted-foreground/60">[{log.time}]</span>{' '}
                                             <span className={cn(
                                                 "font-medium",
-                                                log.type === 'decision' ? "text-primary" : 
-                                                log.type === 'execution' ? "text-green-600" : 
+                                                log.type === 'decision' ? "text-primary font-bold" : 
+                                                log.type === 'execution' ? "text-green-600 font-bold" : 
                                                 log.type === 'radar' ? "text-blue-500" : "text-muted-foreground"
                                             )}>
                                                 {log.message}

@@ -1,16 +1,16 @@
-
+// src/features/trading/hooks/use-ai-quant-terminal-v2.tsx
 'use client';
 
 /**
- * @fileOverview TERMINAL QUANT V2.5 - RADAR COM SELETIVIDADE DE CONTRATOS
- * Incremento: O CIO agora decide qual o MELHOR TIPO DE CONTRATO para o cenário.
+ * @fileOverview TERMINAL QUANT V2.5 - RADAR COM AUDITORIA INTEGRADA E DIÁLOGO CIO
+ * Incremento: O CIO agora tem acesso total ao contexto para auditoria via Chat.
  */
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import type { TickData, CandleData, OperationInitiator, DurationUnit, Operation } from '@/lib/types';
 import { useDerivApiV2 } from './use-deriv-api-v2';
 import { getOllamaResponse } from '@/app/actions';
-import { calculateAllIndicators } from '../services/indicator-service';
+import { calculateAllIndicators, type Indicators } from '../services/indicator-service';
 import { initialCouncilStrategies } from '../services/council-strategies';
 import { detectMarketRegime } from '../services/advanced-trading-services';
 import { useToast } from '@/hooks/use-toast';
@@ -90,6 +90,12 @@ export function useAIQuantTerminalV2(
 
     const executionLockRef = useRef(false);
 
+    // Contexto de Mercado Memoizado para o CIO
+    const currentIndicators = useMemo(() => {
+        if (chartData.length < 30) return null;
+        return calculateAllIndicators(chartData, initialCouncilStrategies, '1m', { duration: 15, unit: 's' });
+    }, [chartData]);
+
     const sessionStats = useMemo(() => {
         const finishedTrades = operationsLog.filter(op => 
             op.status !== 'pending' && op.initiator === 'Conselho' && op.asset === activeSymbol
@@ -128,13 +134,6 @@ export function useAIQuantTerminalV2(
     const addLog = useCallback((message: string, type: ReasoningLog['type'] = 'info') => {
         setReasoningLog(prev => [{ time: new Date().toLocaleTimeString(), message, type }, ...prev].slice(0, 50));
     }, []);
-
-    const handleSetStrategicProfile = useCallback((profile: StrategicProfile) => {
-        setStrategicProfile(profile);
-        const newThreshold = profile === 'conservative' ? 85 : profile === 'balanced' ? 65 : 55;
-        setConfidenceThreshold(newThreshold);
-        addLog(`Perfil estratégico alterado para ${profile.toUpperCase()}. Limiar ajustado para ${newThreshold}%.`);
-    }, [addLog]);
 
     const runInference = useCallback(async (symbol: string, currentData: CandleData[], isBackground: boolean) => {
         if (!ollamaConfig || executionLockRef.current) return null;
@@ -272,7 +271,6 @@ export function useAIQuantTerminalV2(
                 if (!hasOpenTrade) {
                     addLog(`Executando ${decision.recommendedContract} em ${activeSymbol}...`, 'execution');
                     
-                    // ✅ MAPEAMENTO DE CONTRATOS PROFISSIONAL
                     let finalContractType = 'CALL';
                     if (decision.recommendedContract === 'ACCUMULATOR') finalContractType = 'ACCU';
                     else if (decision.recommendedContract === 'MULTIPLIER') finalContractType = decision.action === 'RISE' ? 'MULTUP' : 'MULTDOWN';
@@ -287,6 +285,53 @@ export function useAIQuantTerminalV2(
             }
         }
     }, [activeSymbol, isConnected, chartData, runInference, isAutoMode, confidenceThreshold, stakeValue, executeTrade, addLog, operationsLog]);
+
+    const sendMessage = async (content: string) => {
+        if (!ollamaConfig || !content.trim()) return;
+
+        const userMsg: ChatMessage = { role: 'user', content, time: new Date().toLocaleTimeString() };
+        setChatMessages(prev => [...prev, userMsg]);
+        setIsChatLoading(true);
+
+        const contextInfo = {
+            activeAsset: activeSymbol,
+            balance: accountBalance.balance,
+            pnl: sessionStats.pnl,
+            winRate: sessionStats.winRate,
+            regime: lastDecision?.recommendedContract,
+            indicators: {
+                rsi: currentIndicators?.rsi,
+                adx: currentIndicators?.adx,
+                bbw: currentIndicators?.bbw
+            },
+            profile: strategicProfile
+        };
+
+        const systemPrompt = `Você é o Chief Investment Officer (CIO) do Terminal Claritas V2.
+        CONTEXTO ATUAL DO TERMINAL: ${JSON.stringify(contextInfo)}
+        
+        INSTRUÇÕES:
+        1. Responda de forma analítica, técnica e direta.
+        2. Se o usuário perguntar o status, analise os indicadores e o saldo.
+        3. Se o usuário pedir para executar uma ordem, analise se a confiança é alta e responda "Preparando execução..." caso concorde.
+        4. Use português do Brasil.`;
+
+        try {
+            const response = await getOllamaResponse(ollamaConfig, content, [
+                { role: 'system', content: systemPrompt },
+                ...chatMessages.map(m => ({ role: m.role, content: m.content }))
+            ]);
+            
+            if (response.success) {
+                setChatMessages(prev => [...prev, { role: 'assistant', content: response.success!, time: new Date().toLocaleTimeString() }]);
+                addLog(`Interação com Operador: ${content.substring(0, 30)}...`, 'info');
+            }
+        } catch (e: any) {
+            addLog(`Falha na resposta do CIO: ${e.message}`, 'error');
+        } finally {
+            setIsChatLoading(false);
+        }
+    };
 
     const activeCycleRef = useRef(runActiveCycle);
     const radarScanRef = useRef(runRadarScan);
@@ -326,15 +371,7 @@ export function useAIQuantTerminalV2(
         radarStatus, reasoningLog, telemetry, sessionStats, globalSessionStats,
         accountBalance, stakeValue, setStakeValue, profitTarget, setProfitTarget,
         maxConsecutiveLosses, setMaxConsecutiveLosses, maxDailyLoss, setMaxDailyLoss,
-        chatMessages, isChatLoading, 
-        sendMessage: async (c: string) => {
-            if(!ollamaConfig) return;
-            const msg: ChatMessage = { role: 'user', content: c, time: new Date().toLocaleTimeString() };
-            setChatMessages(prev => [...prev, msg]);
-            setIsChatLoading(true);
-            const res = await getOllamaResponse(ollamaConfig, c, chatMessages.map(m => ({ role: m.role, content: m.content })));
-            if (res.success) setChatMessages(prev => [...prev, { role: 'assistant', content: res.success!, time: new Date().toLocaleTimeString() }]);
-            setIsChatLoading(false);
-        }
+        chatMessages, isChatLoading, sendMessage,
+        executeManualDecision: () => lastDecision && runActiveCycle()
     };
 }

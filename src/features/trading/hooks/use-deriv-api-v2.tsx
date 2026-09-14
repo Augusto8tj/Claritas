@@ -1,4 +1,3 @@
-
 // src/features/trading/hooks/use-deriv-api-v2.tsx
 'use client';
 
@@ -507,16 +506,14 @@ export function useDerivApiV2State() {
               "basis": "stake",
               "contract_type": contractType,
               "currency": "USD",
-              "underlying_symbol": symbol,
+              "underlying_symbol": symbol, // ✅ FIX: Use underlying_symbol
           };
 
-          // ✅ OTIMIZAÇÃO: Suporte Multi-Instrumento (Accumulators, Multipliers, Options)
           if (contractType === 'ACCU') {
-              proposalPayload.growth_rate = 0.03; // Default otimizado
+              proposalPayload.growth_rate = 0.03;
           } else if (contractType.startsWith('MULT')) {
-              proposalPayload.multiplier = 50; // Default conservador
+              proposalPayload.multiplier = 50;
           } else {
-              // Standard Options (CALL/PUT)
               proposalPayload.duration = Math.round(duration);
               proposalPayload.duration_unit = durationUnit;
           }
@@ -834,7 +831,6 @@ export function useDerivApiV2State() {
               reconnectInProgressRef.current = false;
               if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
               
-              // AUTH FIRST
               const authRes: any = await makeRequest({ "authorize": activeToken });
               if (authRes.error) throw new Error(authRes.error.message);
 
@@ -858,7 +854,6 @@ export function useDerivApiV2State() {
                       const groupName = marketNameMapping[marketKey] || 'Outros';
                       if (!groupedAssets[groupName]) groupedAssets[groupName] = [];
                       
-                      // ✅ SINCRONIZAÇÃO COM NOVAS PROPRIEDADES DA API
                       groupedAssets[groupName].push({
                           value: symbol.underlying_symbol || symbol.symbol, 
                           label: symbol.underlying_symbol_name || symbol.display_name, 
