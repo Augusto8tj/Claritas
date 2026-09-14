@@ -16,7 +16,7 @@ import {
     Activity, Brain, Wallet, Target, History,
     ArrowUpCircle, ArrowDownCircle, Clock, ShieldAlert,
     TrendingUp, Binary, Trash2, Microscope, Radar,
-    TrendingDown, Minus, Coins, Leaf, Sparkles, LayoutPanelLeft, Layers
+    TrendingDown, Minus, Coins, Leaf, Sparkles, Layers
 } from "lucide-react";
 import { DerivApiProviderV2 as DerivApiProvider, useDerivApiV2 as useDerivApi, type AccountType } from "@/features/trading/hooks/use-deriv-api-v2";
 import { AssetSelectorV2 as AssetSelector } from "@/features/trading/components/deriv-trader/asset-selector-v2";
@@ -530,6 +530,14 @@ function TerminalContentV2() {
                                     <div className="text-[11px] text-muted-foreground italic bg-muted/30 p-3 rounded-lg border border-border">
                                         "{lastDecision.reasoning}"
                                     </div>
+                                    {!quant.isAutoMode && lastDecision.action !== 'HOLD' && (
+                                        <Button 
+                                            onClick={quant.executeManualDecision} 
+                                            className="w-full bg-foreground text-background hover:bg-foreground/90 font-bold"
+                                        >
+                                            Autorizar Investimento
+                                        </Button>
+                                    )}
                                 </div>
                             ) : (
                                 <div className="text-center py-8 text-muted-foreground">

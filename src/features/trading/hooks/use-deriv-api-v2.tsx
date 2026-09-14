@@ -201,7 +201,6 @@ export function useDerivApiV2State() {
   const [rawErrorCode, setRawErrorCode] = useState<string | null>(null);
   const [tokenSource, setTokenSource] = useState<'local' | 'default'>('local');
 
-  // BLOCO 1 - Múltiplos Ativos
   const WATCHED_SYMBOLS_DEFAULT = ['1HZ10V', '1HZ25V', '1HZ50V', '1HZ75V', '1HZ100V'];
   const [watchedSymbols, setWatchedSymbols] = useState<string[]>(WATCHED_SYMBOLS_DEFAULT);
   const [multiAssetCandles, setMultiAssetCandles] = useState<Record<string, CandleData[]>>({});
@@ -388,11 +387,9 @@ export function useDerivApiV2State() {
         }
     }, [makeRequest]);
 
-    // BLOCO 1 - Assinatura Múltipla
     const subscribeToWatchedSymbols = useCallback(async (symbols: string[]) => {
         if (wsRef.current?.readyState !== WebSocket.OPEN) return;
 
-        // Cancelar assinaturas antigas que não estão mais na lista
         for (const [sym, subId] of Object.entries(multiSubscriptionIdsRef.current)) {
             if (!symbols.includes(sym)) {
                 try { await makeRequest({ forget: subId }, true); } catch (e) {}
@@ -401,7 +398,7 @@ export function useDerivApiV2State() {
         }
 
         for (const symbol of symbols) {
-            if (multiSubscriptionIdsRef.current[symbol]) continue; // já assinado
+            if (multiSubscriptionIdsRef.current[symbol]) continue;
 
             try {
                 const history = await getHistoricalData(symbol, 'candles', 200, '1m');
@@ -578,7 +575,6 @@ export function useDerivApiV2State() {
             return { success: false, message: "A conexão com a API da Deriv não está ativa." };
           }
 
-          // BLOCO 3 - Validação de Dígitos
           if (['DIGITOVER', 'DIGITUNDER', 'DIGITDIFF'].includes(contractType) && durationUnit !== 't') {
             return { success: false, message: `Contratos de Dígitos exigem duração em ticks (unit: 't'). Recebido: ${durationUnit}` };
           }
@@ -911,14 +907,12 @@ export function useDerivApiV2State() {
                                 volume: candleData.tick_count || 1,
                             };
                             
-                            // Lógica de Ativo Único Original
                             if (candleData.symbol === activeSymbolRef.current) {
                                 if (response.subscription?.id === botSubscriptionIdRef.current) setBotCandleData(prev => addDataPoint(prev, newCandle) as CandleData[]);
                                 if (response.subscription?.id === activeSubscriptionIdRef.current && chartTypeRef.current === 'Candle') setChartData(prev => addDataPoint(prev, newCandle));
                                 setDataVersion(v => v + 1);
                             }
 
-                            // BLOCO 1 - Lógica de Multi-Ativo
                             const matchedSymbol = Object.entries(multiSubscriptionIdsRef.current)
                                 .find(([, subId]) => subId === response.subscription?.id)?.[0];
                             if (matchedSymbol) {
@@ -1016,7 +1010,6 @@ export function useDerivApiV2State() {
       if (pingIntervalRef.current) clearInterval(pingIntervalRef.current);
       if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
       reconnectInProgressRef.current = false;
-      // BLOCO 1 - Cleanup
       multiSubscriptionIdsRef.current = {};
     };
   }, [activeToken, isLoading, triggerReconnect, user, addEvent, accountType, makeRequest, startConnectionMonitor, setAndPersistOperationsLog, updateTradeAnnotation, addTradeAnnotation]);
@@ -1026,7 +1019,6 @@ export function useDerivApiV2State() {
     if (isConnected && activeSymbol && !isConnecting) subscribeToStreams(activeSymbol);
   }, [isConnected, isConnecting, activeSymbol, subscribeToStreams]);
 
-  // BLOCO 1 - Monitoramento Multi-Ativo
   useEffect(() => {
     if (isConnected) subscribeToWatchedSymbols(watchedSymbols);
   }, [isConnected, watchedSymbols, subscribeToWatchedSymbols]);
