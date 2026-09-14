@@ -90,7 +90,8 @@ export interface DerivApiContextTypeV2 {
     duration: number,
     durationUnit: DurationUnit,
     initiator: OperationInitiator,
-    strategy?: string
+    strategy?: string,
+    extraParams?: Record<string, any>
   ) => Promise<TradeResult>;
   sellContract: (contractId: number) => Promise<TradeResult>;
   getHistoricalData: (symbol: string, style: 'ticks' | 'candles', count: number, period?: TimePeriod) => Promise<ApiHistoricalData[]>;
@@ -103,6 +104,9 @@ export interface DerivApiContextTypeV2 {
   maskedToken: string | null;
   appId: string;
   hookVersion: string;
+  watchedSymbols: string[];
+  setWatchedSymbols: (symbols: string[]) => void;
+  multiAssetCandles: Record<string, CandleData[]>;
 }
 
 export const DerivApiContextV2 = createContext<DerivApiContextTypeV2 | undefined>(undefined);
@@ -196,6 +200,12 @@ export function useDerivApiV2State() {
   const [connectionEvents, setConnectionEvents] = useState<ConnectionEvent[]>([]);
   const [rawErrorCode, setRawErrorCode] = useState<string | null>(null);
   const [tokenSource, setTokenSource] = useState<'local' | 'default'>('local');
+
+  // BLOCO 1 - Múltiplos Ativos
+  const WATCHED_SYMBOLS_DEFAULT = ['1HZ10V', '1HZ25V', '1HZ50V', '1HZ75V', '1HZ100V'];
+  const [watchedSymbols, setWatchedSymbols] = useState<string[]>(WATCHED_SYMBOLS_DEFAULT);
+  const [multiAssetCandles, setMultiAssetCandles] = useState<Record<string, CandleData[]>>({});
+  const multiSubscriptionIdsRef = useRef<Record<string, string>>({});
 
   const wsRef = useRef<WebSocket | null>(null);
   const [isConnected, setIsConnected] = useState(false);
@@ -377,6 +387,44 @@ export function useDerivApiV2State() {
             return [];
         }
     }, [makeRequest]);
+
+    // BLOCO 1 - Assinatura Múltipla
+    const subscribeToWatchedSymbols = useCallback(async (symbols: string[]) => {
+        if (wsRef.current?.readyState !== WebSocket.OPEN) return;
+
+        // Cancelar assinaturas antigas que não estão mais na lista
+        for (const [sym, subId] of Object.entries(multiSubscriptionIdsRef.current)) {
+            if (!symbols.includes(sym)) {
+                try { await makeRequest({ forget: subId }, true); } catch (e) {}
+                delete multiSubscriptionIdsRef.current[sym];
+            }
+        }
+
+        for (const symbol of symbols) {
+            if (multiSubscriptionIdsRef.current[symbol]) continue; // já assinado
+
+            try {
+                const history = await getHistoricalData(symbol, 'candles', 200, '1m');
+                setMultiAssetCandles(prev => ({ ...prev, [symbol]: history as CandleData[] }));
+
+                const subRequest = {
+                    ticks_history: symbol,
+                    style: 'candles',
+                    granularity: 60,
+                    subscribe: 1,
+                    end: "latest",
+                    count: 1,
+                    adjust_start_time: 1
+                };
+                const subResponse: any = await makeRequest(subRequest);
+                if (subResponse.subscription?.id) {
+                    multiSubscriptionIdsRef.current[symbol] = subResponse.subscription.id;
+                }
+            } catch (e) {
+                console.warn(`[MultiAsset] Falha ao assinar ${symbol}:`, e);
+            }
+        }
+    }, [makeRequest, getHistoricalData]);
     
   const subscribeToStreams = useCallback(async (symbol: string) => {
     try {
@@ -523,10 +571,16 @@ export function useDerivApiV2State() {
         durationUnit: DurationUnit,
         initiator: OperationInitiator,
         strategy?: string,
+        extraParams?: Record<string, any>
       ): Promise<TradeResult> => {
         try {
           if (!wsRef.current || !isConnected) {
             return { success: false, message: "A conexão com a API da Deriv não está ativa." };
+          }
+
+          // BLOCO 3 - Validação de Dígitos
+          if (['DIGITOVER', 'DIGITUNDER', 'DIGITDIFF'].includes(contractType) && durationUnit !== 't') {
+            return { success: false, message: `Contratos de Dígitos exigem duração em ticks (unit: 't'). Recebido: ${durationUnit}` };
           }
 
           const sanitizedStake = parseFloat(stake.toFixed(2));
@@ -538,6 +592,7 @@ export function useDerivApiV2State() {
               "contract_type": contractType,
               "currency": "USD",
               "underlying_symbol": symbol,
+              ...extraParams
           };
 
           if (contractType === 'ACCU') {
@@ -848,16 +903,30 @@ export function useDerivApiV2State() {
                     case 'ohlc':
                     case 'candles':
                         const candleData = response.ohlc || (response.candles && response.candles[0]);
-                        if (candleData && candleData.symbol === activeSymbolRef.current) {
+                        if (candleData) {
                             const newCandle: CandleData = {
                                 epoch: candleData.open_time || candleData.epoch,
                                 open: parseFloat(candleData.open), high: parseFloat(candleData.high),
                                 low: parseFloat(candleData.low), close: parseFloat(candleData.close),
                                 volume: candleData.tick_count || 1,
                             };
-                            if (response.subscription?.id === botSubscriptionIdRef.current) setBotCandleData(prev => addDataPoint(prev, newCandle) as CandleData[]);
-                            if (response.subscription?.id === activeSubscriptionIdRef.current && chartTypeRef.current === 'Candle') setChartData(prev => addDataPoint(prev, newCandle));
-                            setDataVersion(v => v + 1);
+                            
+                            // Lógica de Ativo Único Original
+                            if (candleData.symbol === activeSymbolRef.current) {
+                                if (response.subscription?.id === botSubscriptionIdRef.current) setBotCandleData(prev => addDataPoint(prev, newCandle) as CandleData[]);
+                                if (response.subscription?.id === activeSubscriptionIdRef.current && chartTypeRef.current === 'Candle') setChartData(prev => addDataPoint(prev, newCandle));
+                                setDataVersion(v => v + 1);
+                            }
+
+                            // BLOCO 1 - Lógica de Multi-Ativo
+                            const matchedSymbol = Object.entries(multiSubscriptionIdsRef.current)
+                                .find(([, subId]) => subId === response.subscription?.id)?.[0];
+                            if (matchedSymbol) {
+                                setMultiAssetCandles(prev => ({
+                                    ...prev,
+                                    [matchedSymbol]: addDataPoint(prev[matchedSymbol] || [], newCandle) as CandleData[]
+                                }));
+                            }
                         }
                         break;
                 }
@@ -947,6 +1016,8 @@ export function useDerivApiV2State() {
       if (pingIntervalRef.current) clearInterval(pingIntervalRef.current);
       if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
       reconnectInProgressRef.current = false;
+      // BLOCO 1 - Cleanup
+      multiSubscriptionIdsRef.current = {};
     };
   }, [activeToken, isLoading, triggerReconnect, user, addEvent, accountType, makeRequest, startConnectionMonitor, setAndPersistOperationsLog, updateTradeAnnotation, addTradeAnnotation]);
 
@@ -954,6 +1025,11 @@ export function useDerivApiV2State() {
   useEffect(() => {
     if (isConnected && activeSymbol && !isConnecting) subscribeToStreams(activeSymbol);
   }, [isConnected, isConnecting, activeSymbol, subscribeToStreams]);
+
+  // BLOCO 1 - Monitoramento Multi-Ativo
+  useEffect(() => {
+    if (isConnected) subscribeToWatchedSymbols(watchedSymbols);
+  }, [isConnected, watchedSymbols, subscribeToWatchedSymbols]);
 
   const maskedToken = useMemo(() => activeToken ? `${activeToken.substring(0, 8)}...` : null, [activeToken]);
 
@@ -967,11 +1043,13 @@ export function useDerivApiV2State() {
     chartData, botCandleData, priceTicks, isChartLoading, chartError, chartType, setChartType, 
     timePeriod, setTimePeriod, dataVersion, executeTrade, sellContract, getHistoricalData, 
     clearActiveContracts: () => { setAndPersistOperationsLog([]); setTradeAnnotations([]); }, tradeAnnotations, durationLimits,
-    connectionEvents, rawErrorCode, tokenSource, maskedToken, appId: DERIV_APP_ID, hookVersion: 'v2.5.0-otp'
+    connectionEvents, rawErrorCode, tokenSource, maskedToken, appId: DERIV_APP_ID, hookVersion: 'v2.5.0-otp',
+    watchedSymbols, setWatchedSymbols, multiAssetCandles
   }), [
       isConnected, isConnecting, connectionError, demoToken, realToken, activeToken, accountType, accountBalance, operationsLog, assetGroups, 
       isAssetsLoading, activeSymbol, chartData, botCandleData, priceTicks, isChartLoading, chartError, chartType, timePeriod, dataVersion, 
-      executeTrade, sellContract, getHistoricalData, tradeAnnotations, durationLimits, connectionEvents, rawErrorCode, tokenSource, maskedToken, setAndPersistOperationsLog, setActiveSymbol
+      executeTrade, sellContract, getHistoricalData, tradeAnnotations, durationLimits, connectionEvents, rawErrorCode, tokenSource, maskedToken, setAndPersistOperationsLog, setActiveSymbol,
+      watchedSymbols, multiAssetCandles
   ]);
 
   return contextValue;

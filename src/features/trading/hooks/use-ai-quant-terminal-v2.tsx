@@ -4,6 +4,7 @@
 /**
  * @fileOverview TERMINAL QUANT V2.5 - RADAR COM AUDITORIA INTEGRADA E DIÁLOGO CIO
  * Incremento: O CIO agora tem acesso total ao contexto para auditoria via Chat.
+ * BLOCO 2 & 3: Agendamento Adaptativo e Suporte a Contratos de Dígitos.
  */
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
@@ -17,7 +18,13 @@ import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/features/auth/hooks/use-auth';
 import { saveCouncilDecisionLog, getTransactions, getCouncilDecisionLogs } from '@/services/financial-data-service';
 
-export type DerivContractType = 'CALL/PUT' | 'ACCUMULATOR' | 'MULTIPLIER' | 'TOUCH/NOTOUCH';
+export type DerivContractType = 
+  | 'CALL/PUT' 
+  | 'ACCUMULATOR' 
+  | 'MULTIPLIER' 
+  | 'TOUCH/NOTOUCH'
+  | 'DIGIT_OVER_UNDER'
+  | 'DIGIT_DIFFER';
 
 interface QuantDecision {
     action: 'RISE' | 'FALL' | 'HOLD';
@@ -26,7 +33,9 @@ interface QuantDecision {
     duration: number;
     unit: 't' | 's' | 'm';
     recommendedContract: DerivContractType;
+    digitPrediction?: number; // 0-9, obrigatório para contratos de Dígitos
     zenThought?: string;
+    _detectedRegime?: string;
 }
 
 interface RadarAssetStatus {
@@ -52,14 +61,31 @@ interface ChatMessage {
 
 export type StrategicProfile = 'conservative' | 'balanced' | 'aggressive';
 
-const RADAR_SYMBOLS = ['1HZ10V', '1HZ25V', '1HZ50V', '1HZ75V', '1HZ100V'];
+// BLOCO 2 - Agendamento Adaptativo
+interface SymbolSchedule {
+    nextRunAt: number;
+    intervalSec: number;
+    lastRegime?: string;
+}
+
+function computeAdaptiveInterval(regime: string | undefined, baseIntervalSec: number): number {
+    switch (regime) {
+        case 'breakout':
+        case 'trending':
+            return Math.max(30, Math.round(baseIntervalSec * 0.5));
+        case 'ranging':
+            return Math.round(baseIntervalSec * 1.5);
+        default:
+            return baseIntervalSec;
+    }
+}
 
 export function useAIQuantTerminalV2(
     activeSymbol: string | null,
     priceTicks: TickData[],
     chartData: CandleData[]
 ) {
-    const { isConnected, executeTrade, operationsLog, getHistoricalData, accountBalance } = useDerivApiV2();
+    const { isConnected, executeTrade, operationsLog, getHistoricalData, accountBalance, multiAssetCandles, watchedSymbols } = useDerivApiV2();
     const { user } = useAuth();
     const { toast } = useToast();
 
@@ -70,13 +96,11 @@ export function useAIQuantTerminalV2(
     const [strategicProfile, setStrategicProfile] = useState<StrategicProfile>('balanced');
     const [confidenceThreshold, setConfidenceThreshold] = useState(65);
     
-    const [radarStatus, setRadarStatus] = useState<Record<string, RadarAssetStatus>>(
-        RADAR_SYMBOLS.reduce((acc, sym) => ({
-            ...acc,
-            [sym]: { symbol: sym, lastAction: 'HOLD', confidence: 0, timestamp: Date.now(), isQualified: false }
-        }), {})
-    );
-    const radarPointerRef = useRef(0);
+    const [radarStatus, setRadarStatus] = useState<Record<string, RadarAssetStatus>>({});
+    
+    // BLOCO 2
+    const scheduleRef = useRef<Record<string, SymbolSchedule>>({});
+    const executionLockRef = useRef(false);
 
     const [stakeValue, setStakeValue] = useState(1.0);
     const [profitTarget, setProfitTarget] = useState(10.0);
@@ -87,8 +111,6 @@ export function useAIQuantTerminalV2(
     const [telemetry, setTelemetry] = useState({ latency: 0, tps: 0 });
     const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
     const [isChatLoading, setIsChatLoading] = useState(false);
-
-    const executionLockRef = useRef(false);
 
     // Contexto de Mercado Memoizado para o CIO
     const currentIndicators = useMemo(() => {
@@ -159,6 +181,7 @@ export function useAIQuantTerminalV2(
                 atr: indicators.atr
             }, 'ranging') : null;
 
+            // BLOCO 3 - Prompt com Dígitos
             const prompt = `VOCÊ É O ARQUITETO DE RISCO E CIO DO TERMINAL CLARITAS.
             Sua missão é selecionar o melhor TIPO DE CONTRATO para o lucro consistente.
             
@@ -169,16 +192,18 @@ export function useAIQuantTerminalV2(
             DIRETRIZES DE INSTRUMENTO:
             1. Se Regime for 'ranging' e BBW < 0.8: Sugira 'ACCUMULATOR' (estabilidade).
             2. Se ADX > 30 e RSI em tendência: Sugira 'MULTIPLIER' (tendência explosiva).
-            3. Se Regime for 'breakout': Sugira 'TOUCH/NOTOUCH' (volatilidade direcional).
-            4. Padrão: Sugira 'CALL/PUT'.
+            3. Se Regime for 'breakout': Sugira 'DIGIT_OVER_UNDER', prevendo se o próximo dígito ficará acima (7,8,9) ou abaixo (0,1,2) de 5, com base na volatilidade recente.
+            4. Se os últimos dígitos mostrarem repetição incomum: Sugira 'DIGIT_DIFFER', prevendo um dígito improvável de repetir.
+            5. Padrão: Sugira 'CALL/PUT'.
 
             RETORNE APENAS JSON:
             {
               "action": "RISE" | "FALL" | "HOLD",
-              "recommendedContract": "CALL/PUT" | "ACCUMULATOR" | "MULTIPLIER" | "TOUCH/NOTOUCH",
+              "recommendedContract": "CALL/PUT" | "ACCUMULATOR" | "MULTIPLIER" | "DIGIT_OVER_UNDER" | "DIGIT_DIFFER",
+              "digitPrediction": número de 0 a 9 (OBRIGATÓRIO se recommendedContract for DIGIT_OVER_UNDER ou DIGIT_DIFFER, omitir caso contrário),
               "confidence": 0-100,
               "reasoning": "Justificativa técnica e escolha do contrato",
-              "duration": number,
+              "duration": número,
               "unit": "s" | "t",
               "zenThought": "Pensamento curto sobre o estado do mercado"
             }`;
@@ -194,10 +219,17 @@ export function useAIQuantTerminalV2(
             
             const decision: QuantDecision = JSON.parse(jsonMatch[0]);
             
-            // Sanitização robusta da confiança para evitar erros de toFixed(0) na UI
+            // Sanitização
             decision.confidence = (decision.confidence === null || decision.confidence === undefined || isNaN(Number(decision.confidence))) 
                 ? 0 
                 : Number(decision.confidence);
+
+            // Validação Bloco 3
+            if (['DIGIT_OVER_UNDER', 'DIGIT_DIFFER'].includes(decision.recommendedContract)) {
+                if (typeof decision.digitPrediction !== 'number' || decision.digitPrediction < 0 || decision.digitPrediction > 9) {
+                    throw new Error(`digitPrediction inválido para contrato de dígitos: ${decision.digitPrediction}`);
+                }
+            }
 
             if (user) {
                 saveCouncilDecisionLog(user.uid, {
@@ -211,7 +243,8 @@ export function useAIQuantTerminalV2(
             const latency = Math.round(end - start);
             setTelemetry({ latency, tps: Math.round((response.metadata?.eval_count || 0) / (latency / 1000)) });
 
-            return decision;
+            // Retorno BLOCO 2
+            return { ...decision, _detectedRegime: regime?.regime };
 
         } catch (err: any) {
             addLog(`Erro na inferência (${symbol}): ${err.message}`, 'error');
@@ -221,99 +254,91 @@ export function useAIQuantTerminalV2(
         }
     }, [ollamaConfig, strategicProfile, user, isAutoMode, confidenceThreshold, addLog]);
 
-    const runRadarScan = useCallback(async () => {
+    // BLOCO 2 - Ciclo Multi-Ativo Adaptativo
+    const runWatchedSymbolsCycle = useCallback(async () => {
         if (!isConnected || executionLockRef.current) return;
 
-        const symbol = RADAR_SYMBOLS[radarPointerRef.current];
-        if (symbol === activeSymbol) {
-            radarPointerRef.current = (radarPointerRef.current + 1) % RADAR_SYMBOLS.length;
-            return;
-        }
+        const now = Date.now();
+        const dueSymbol = watchedSymbols.find(sym => {
+            const sched = scheduleRef.current[sym];
+            return !sched || now >= sched.nextRunAt;
+        });
 
-        try {
-            const history = await getHistoricalData(symbol, 'candles', 50, '1m');
-            if (!history || history.length === 0) {
-              radarPointerRef.current = (radarPointerRef.current + 1) % RADAR_SYMBOLS.length;
-              return;
-            }
+        if (!dueSymbol) return;
 
-            const decision = await runInference(symbol, history as CandleData[], true);
-            if (decision) {
-                setRadarStatus(prev => ({
-                    ...prev,
-                    [symbol]: { 
-                        symbol, 
-                        lastAction: decision.action, 
-                        confidence: decision.confidence, 
-                        timestamp: Date.now(), 
-                        isQualified: decision.action !== 'HOLD' && decision.confidence >= confidenceThreshold,
-                        recommendedContract: decision.recommendedContract
-                    }
-                }));
-            }
-        } catch (e) {
-            console.error(`Radar fail for ${symbol}:`, e);
-        }
+        const candles = multiAssetCandles[dueSymbol];
+        if (!candles || candles.length < 30) return;
 
-        radarPointerRef.current = (radarPointerRef.current + 1) % RADAR_SYMBOLS.length;
-    }, [activeSymbol, getHistoricalData, runInference, isConnected, confidenceThreshold]);
+        const isFocused = dueSymbol === activeSymbol;
+        const decision = await runInference(dueSymbol, isFocused ? chartData : candles, !isFocused);
 
-    const runActiveCycle = useCallback(async () => {
-        if (!activeSymbol || !isConnected || chartData.length < 30) return;
-        
-        const councilTrades = operationsLog.filter(op => op.initiator === 'Conselho' && op.status !== 'pending');
-        const recentLosses = councilTrades.slice(0, maxConsecutiveLosses);
-        const hitLossStreak = recentLosses.length === maxConsecutiveLosses && recentLosses.every(op => op.status === 'lost');
-        const hitDailyLimit = globalSessionStats.pnl <= maxDailyLoss;
-
-        if (hitLossStreak || hitDailyLimit) {
-            if (isAutoMode) {
-                const reason = hitLossStreak 
-                  ? `${maxConsecutiveLosses} perdas consecutivas detectadas`
-                  : `Perda máxima diária de $${Math.abs(maxDailyLoss)} atingida`;
-                addLog(`🛑 Circuit breaker: ${reason}. Pausando Autopilot.`, 'error');
-                setIsAutoMode(false);
-                toast({ title: "🛑 Circuit Breaker Acionado", description: reason, variant: 'destructive' });
-            }
-            return;
-        }
-
-        addLog(`CIO: Analisando focado ${activeSymbol}...`, 'info');
-        const decision = await runInference(activeSymbol, chartData, false);
-        
         if (decision) {
-            setLastDecision(decision);
+            const regime = decision._detectedRegime || 'ranging';
+            const adaptiveInterval = computeAdaptiveInterval(regime, analysisInterval);
+            
+            scheduleRef.current[dueSymbol] = {
+                nextRunAt: now + adaptiveInterval * 1000,
+                intervalSec: adaptiveInterval,
+                lastRegime: regime
+            };
+
             setRadarStatus(prev => ({
                 ...prev,
-                [activeSymbol]: { 
-                    symbol: activeSymbol, 
-                    lastAction: decision.action, 
-                    confidence: decision.confidence, 
-                    timestamp: Date.now(), 
+                [dueSymbol]: {
+                    symbol: dueSymbol,
+                    lastAction: decision.action,
+                    confidence: decision.confidence,
+                    timestamp: now,
                     isQualified: decision.action !== 'HOLD' && decision.confidence >= confidenceThreshold,
                     recommendedContract: decision.recommendedContract
                 }
             }));
 
-            if (isAutoMode && decision.action !== 'HOLD' && decision.confidence >= confidenceThreshold) {
-                const hasOpenTrade = operationsLog.some(op => op.asset === activeSymbol && op.status === 'pending');
-                if (!hasOpenTrade) {
-                    addLog(`Executando ${decision.recommendedContract} em ${activeSymbol}...`, 'execution');
-                    
-                    let finalContractType = 'CALL';
-                    if (decision.recommendedContract === 'ACCUMULATOR') finalContractType = 'ACCU';
-                    else if (decision.recommendedContract === 'MULTIPLIER') finalContractType = decision.action === 'RISE' ? 'MULTUP' : 'MULTDOWN';
-                    else finalContractType = decision.action === 'RISE' ? 'CALL' : 'PUT';
+            if (isFocused) {
+                setLastDecision(decision);
+                // BLOCO 3 - Execução Automática Multi-Contrato
+                if (isAutoMode && decision.action !== 'HOLD' && decision.confidence >= confidenceThreshold) {
+                    const hasOpenTrade = operationsLog.some(op => op.asset === dueSymbol && op.status === 'pending');
+                    if (!hasOpenTrade) {
+                        let finalContractType = 'CALL';
+                        let extraProposalParams: Record<string, any> = {};
 
-                    await executeTrade(
-                        finalContractType,
-                        stakeValue, activeSymbol, decision.action.toLowerCase() as 'rise' | 'fall',
-                        decision.duration, decision.unit as DurationUnit, 'Conselho'
-                    );
+                        switch (decision.recommendedContract) {
+                            case 'ACCUMULATOR':
+                                finalContractType = 'ACCU';
+                                break;
+                            case 'MULTIPLIER':
+                                finalContractType = decision.action === 'RISE' ? 'MULTUP' : 'MULTDOWN';
+                                break;
+                            case 'TOUCH/NOTOUCH':
+                                finalContractType = decision.action === 'RISE' ? 'ONETOUCH' : 'NOTOUCH';
+                                addLog(`⚠️ Contrato TOUCH/NOTOUCH ainda requer cálculo de barreira. Pulando execução.`, 'error');
+                                return;
+                            case 'DIGIT_OVER_UNDER':
+                                finalContractType = decision.action === 'RISE' ? 'DIGITOVER' : 'DIGITUNDER';
+                                extraProposalParams = { barrier: String(decision.digitPrediction) };
+                                break;
+                            case 'DIGIT_DIFFER':
+                                finalContractType = 'DIGITDIFF';
+                                extraProposalParams = { barrier: String(decision.digitPrediction) };
+                                break;
+                            default:
+                                finalContractType = decision.action === 'RISE' ? 'CALL' : 'PUT';
+                        }
+
+                        addLog(`Executando ${decision.recommendedContract} em ${dueSymbol}...`, 'execution');
+                        await executeTrade(
+                            finalContractType,
+                            stakeValue, dueSymbol, decision.action.toLowerCase() as 'rise' | 'fall',
+                            decision.duration, decision.unit as DurationUnit, 'Conselho',
+                            undefined,
+                            extraProposalParams
+                        );
+                    }
                 }
             }
         }
-    }, [activeSymbol, isConnected, chartData, runInference, isAutoMode, confidenceThreshold, stakeValue, executeTrade, addLog, operationsLog, globalSessionStats.pnl, maxConsecutiveLosses, maxDailyLoss, toast]);
+    }, [isConnected, watchedSymbols, multiAssetCandles, activeSymbol, chartData, runInference, confidenceThreshold, analysisInterval, isAutoMode, operationsLog, stakeValue, executeTrade, addLog]);
 
     const sendMessage = async (content: string) => {
         if (!ollamaConfig || !content.trim()) return;
@@ -362,30 +387,33 @@ export function useAIQuantTerminalV2(
         }
     };
 
-    const activeCycleRef = useRef(runActiveCycle);
-    const radarScanRef = useRef(runRadarScan);
+    const radarScanRef = useRef(runWatchedSymbolsCycle);
     const analysisIntervalRef = useRef(analysisInterval);
 
     useEffect(() => {
-        activeCycleRef.current = runActiveCycle;
-        radarScanRef.current = runRadarScan;
+        radarScanRef.current = runWatchedSymbolsCycle;
         analysisIntervalRef.current = analysisInterval;
-    }, [runActiveCycle, runRadarScan, analysisInterval]);
+    }, [runWatchedSymbolsCycle, analysisInterval]);
 
     useEffect(() => {
         const interval = setInterval(() => {
             setTimeToNextAnalysis(prev => {
                 if (prev <= 1) {
-                    activeCycleRef.current();
+                    // O ciclo agora é gerenciado pelo radar adaptativo
                     return analysisIntervalRef.current;
-                }
-                if (prev % 15 === 0) {
-                    radarScanRef.current();
                 }
                 return prev - 1;
             });
         }, 1000);
         return () => clearInterval(interval);
+    }, []);
+
+    // Timer de Scan (5s para reduzir overhead)
+    useEffect(() => {
+        const scanInterval = setInterval(() => {
+            radarScanRef.current();
+        }, 5000);
+        return () => clearInterval(scanInterval);
     }, []);
 
     useEffect(() => {
@@ -401,6 +429,6 @@ export function useAIQuantTerminalV2(
         accountBalance, stakeValue, setStakeValue, profitTarget, setProfitTarget,
         maxConsecutiveLosses, setMaxConsecutiveLosses, maxDailyLoss, setMaxDailyLoss,
         chatMessages, isChatLoading, sendMessage,
-        executeManualDecision: () => lastDecision && runActiveCycle()
+        executeManualDecision: () => lastDecision && runWatchedSymbolsCycle()
     };
 }
