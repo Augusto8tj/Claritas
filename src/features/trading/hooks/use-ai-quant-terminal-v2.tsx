@@ -32,7 +32,7 @@ interface QuantDecision {
     unit: 't' | 's' | 'm';
     recommendedContract: DerivContractType;
     digitPrediction?: number; 
-    multiplier?: number; // NOVO: Campo para multiplicador sugerido
+    multiplier?: number; 
     zenThought?: string;
     _detectedRegime?: string;
 }
@@ -201,7 +201,7 @@ export function useAIQuantTerminalV2(
               "action": "RISE" | "FALL" | "HOLD",
               "recommendedContract": "CALL/PUT" | "ACCUMULATOR" | "MULTIPLIER" | "DIGIT_OVER_UNDER" | "DIGIT_DIFFER",
               "digitPrediction": número de 0 a 9 (OBRIGATÓRIO para DIGIT_OVER_UNDER ou DIGIT_DIFFER),
-              "multiplier": número (OBRIGATÓRIO para MULTIPLIER, ex: 100 ou 400),
+              "multiplier": número (OBRIGATÓRIO para MULTIPLIER),
               "confidence": 0-100,
               "reasoning": "Justificativa técnica e escolha do contrato",
               "duration": número,
@@ -261,7 +261,6 @@ export function useAIQuantTerminalV2(
         const decision = await runInference(dueSymbol, isFocused ? chartData : candles, !isFocused);
 
         if (decision) {
-            // CORREÇÃO 3: CIRCUIT BREAKER
             const councilTrades = operationsLog.filter(op => op.initiator === 'Conselho' && op.status !== 'pending');
             const recentLosses = councilTrades.slice(0, maxConsecutiveLosses);
             const hitLossStreak = recentLosses.length === maxConsecutiveLosses && recentLosses.every(op => op.status === 'lost');
@@ -312,7 +311,7 @@ export function useAIQuantTerminalV2(
                             case 'ACCUMULATOR': finalContractType = 'ACCU'; break;
                             case 'MULTIPLIER': 
                                 finalContractType = decision.action === 'RISE' ? 'MULTUP' : 'MULTDOWN'; 
-                                extraProposalParams = { multiplier: decision.multiplier }; // Passa o multiplicador decidido pela IA
+                                extraProposalParams = { multiplier: decision.multiplier }; 
                                 break;
                             case 'DIGIT_OVER_UNDER':
                                 finalContractType = decision.action === 'RISE' ? 'DIGITOVER' : 'DIGITUNDER';
@@ -414,8 +413,6 @@ export function useAIQuantTerminalV2(
         const scanInterval = setInterval(() => radarScanRef.current(), 5000);
         return () => clearInterval(scanInterval);
     }, []);
-
-    useEffect(() => { setTimeToNextAnalysis(analysisInterval); }, [analysisInterval]);
 
     return {
         isAutoMode, toggleAutoMode: () => setIsAutoMode(!isAutoMode),
