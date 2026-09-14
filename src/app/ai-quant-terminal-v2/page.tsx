@@ -103,7 +103,7 @@ function TerminalContentV2() {
     }, [operationsLog, activeSymbol]);
 
     // ZEN INSIGHT GENERATOR
-    const zenInsight = useMemo(() => {
+    const zenThought = useMemo(() => {
         if (!lastDecision) return "O CIO está meditando sobre os fluxos de mercado...";
         return lastDecision.zenThought || "A fluidez do mercado exige disciplina e observação constante.";
     }, [lastDecision]);
@@ -127,7 +127,7 @@ function TerminalContentV2() {
                                 className={cn(
                                     "p-3 rounded-lg border transition-all cursor-pointer group hover:scale-105",
                                     asset.symbol === activeSymbol ? "bg-primary border-primary text-primary-foreground shadow-md" : "bg-card border-border hover:border-primary/50",
-                                    asset.lastAction !== 'HOLD' && asset.symbol !== activeSymbol && "animate-pulse border-green-500 bg-green-500/10"
+                                    asset.lastAction !== 'HOLD' && asset.symbol !== activeSymbol && "animate-pulse border-green-500 bg-green-50/10"
                                 )}
                             >
                                 <div className="flex justify-between items-center mb-1">
@@ -413,7 +413,7 @@ function TerminalContentV2() {
                         <CardContent>
                             <div className="bg-background/80 p-4 rounded-xl border border-primary/10 shadow-inner">
                                 <p className="text-xs italic leading-relaxed text-primary/80 font-medium">
-                                    "{zenInsight}"
+                                    "{zenThought}"
                                 </p>
                                 <div className="mt-3 flex items-center gap-2">
                                     <Sparkles className="h-3 w-3 text-yellow-500" />

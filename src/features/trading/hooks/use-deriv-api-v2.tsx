@@ -500,18 +500,28 @@ export function useDerivApiV2State() {
           }
 
           const sanitizedStake = parseFloat(stake.toFixed(2));
-          const sanitizedDuration = Math.round(duration);
-
-          const proposalResponse: any = await makeRequest({ 
+          
+          let proposalPayload: any = { 
               "proposal": 1,
               "amount": sanitizedStake,
               "basis": "stake",
               "contract_type": contractType,
               "currency": "USD",
-              "duration": sanitizedDuration,
-              "duration_unit": durationUnit,
-              "underlying_symbol": symbol, 
-          });
+              "symbol": symbol,
+          };
+
+          // ✅ OTIMIZAÇÃO: Suporte Multi-Instrumento (Accumulators, Multipliers, Options)
+          if (contractType === 'ACCU') {
+              proposalPayload.growth_rate = 0.03; // Default otimizado
+          } else if (contractType.startsWith('MULT')) {
+              proposalPayload.multiplier = 50; // Default conservador
+          } else {
+              // Standard Options (CALL/PUT)
+              proposalPayload.duration = Math.round(duration);
+              proposalPayload.duration_unit = durationUnit;
+          }
+
+          const proposalResponse: any = await makeRequest(proposalPayload);
           if (proposalResponse.error) throw new Error(proposalResponse.error.message);
 
           const proposal = proposalResponse.proposal;
@@ -538,9 +548,9 @@ export function useDerivApiV2State() {
             ? parseFloat(buyResult.entry_tick_display_value) 
             : (buyResult.entry_spot_display_value ? parseFloat(buyResult.entry_spot_display_value) : latestTick);
 
-          const isSellable = durationUnit !== 't';
+          const isSellable = durationUnit !== 't' || contractType === 'ACCU' || contractType.startsWith('MULT');
           
-          const durationInSeconds = getDurationInSeconds(sanitizedDuration, durationUnit, symbol);
+          const durationInSeconds = getDurationInSeconds(Math.round(duration), durationUnit, symbol);
           const purchaseTimeMs = (buyResult.purchase_time || Math.floor(Date.now() / 1000)) * 1000;
           const expirationTimeMs = purchaseTimeMs + durationInSeconds * 1000;
 
@@ -551,13 +561,14 @@ export function useDerivApiV2State() {
               stake: sanitizedStake,
               status: 'pending',
               timestamp: new Date(purchaseTimeMs).toISOString(),
-              duration: sanitizedDuration,
+              duration: Math.round(duration),
               durationUnit: durationUnit,
               initiator,
               strategy,
               entryPrice: entryPrice,
               isSellable,
-              expirationTime: expirationTimeMs,
+              expirationTime: (contractType === 'ACCU' || contractType.startsWith('MULT')) ? undefined : expirationTimeMs,
+              contractType
           };
           setAndPersistOperationsLog(prevLog => [newOperation, ...prevLog]);
 
@@ -571,8 +582,8 @@ export function useDerivApiV2State() {
               status: 'pending',
               stake: sanitizedStake,
               symbol,
-              expirationTime: expirationTimeMs,
-              contractType: 'option'
+              expirationTime: (contractType === 'ACCU' || contractType.startsWith('MULT')) ? undefined : expirationTimeMs,
+              contractType: contractType === 'ACCU' ? 'accumulator' : (contractType.startsWith('MULT') ? 'multiplier' : 'option')
           });
 
           return {
@@ -701,7 +712,7 @@ export function useDerivApiV2State() {
                         break;
                     case 'proposal_open_contract':
                         const contract = response.proposal_open_contract;
-                        if (!contract || (contract.contract_type || '').startsWith('MULT')) return;
+                        if (!contract) return;
                     
                         setAndPersistOperationsLog(prevLog => {
                             const existingOpIndex = prevLog.findIndex(op => op.id === contract.contract_id);
@@ -745,7 +756,7 @@ export function useDerivApiV2State() {
                             } else {
                                 if (recentlyCreatedContractsRef.current.has(contract.contract_id)) return prevLog;
                                 
-                                const direction = (contract.contract_type || '').includes('CALL') ? 'rise' : 'fall';
+                                const direction = (contract.contract_type || '').includes('CALL') || (contract.contract_type || '').includes('MULTUP') ? 'rise' : 'fall';
                                 const purchaseTime = contract.purchase_time || Math.floor(Date.now() / 1000);
                                 
                                 const newOp: Operation = {
@@ -758,7 +769,8 @@ export function useDerivApiV2State() {
                                     duration: 0, 
                                     durationUnit: 's', 
                                     initiator: 'Manual',
-                                    result: isSold ? contract.profit : undefined
+                                    result: isSold ? contract.profit : undefined,
+                                    contractType: contract.contract_type
                                 };
                                 
                                 if (isSold) {
@@ -777,7 +789,7 @@ export function useDerivApiV2State() {
                                             exitTime: exitEpoch,
                                             exitPrice: exitPrice,
                                             profit: contract.profit,
-                                            contractType: 'option'
+                                            contractType: (contract.contract_type || '').startsWith('ACCU') ? 'accumulator' : ((contract.contract_type || '').startsWith('MULT') ? 'multiplier' : 'option')
                                         });
                                     }, 0);
                                 }

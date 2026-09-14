@@ -208,7 +208,7 @@ export function useAIQuantTerminalV2(
         } finally {
             executionLockRef.current = false;
         }
-    }, [ollamaConfig, strategicProfile, user, isAutoMode, confidenceThreshold, addLog, accountBalance, globalSessionStats, profitTarget]);
+    }, [ollamaConfig, strategicProfile, user, isAutoMode, confidenceThreshold, addLog]);
 
     const runRadarScan = useCallback(async () => {
         if (!isConnected || executionLockRef.current) return;
@@ -270,10 +270,16 @@ export function useAIQuantTerminalV2(
             if (isAutoMode && decision.action !== 'HOLD' && decision.confidence >= confidenceThreshold) {
                 const hasOpenTrade = operationsLog.some(op => op.asset === activeSymbol && op.status === 'pending');
                 if (!hasOpenTrade) {
-                    addLog(`Executando ordem automática em ${activeSymbol}...`, 'execution');
-                    // Por enquanto mantemos o CALL/PUT como execução base, mas o log registrará a recomendação
+                    addLog(`Executando ${decision.recommendedContract} em ${activeSymbol}...`, 'execution');
+                    
+                    // ✅ MAPEAMENTO DE CONTRATOS PROFISSIONAL
+                    let finalContractType = 'CALL';
+                    if (decision.recommendedContract === 'ACCUMULATOR') finalContractType = 'ACCU';
+                    else if (decision.recommendedContract === 'MULTIPLIER') finalContractType = decision.action === 'RISE' ? 'MULTUP' : 'MULTDOWN';
+                    else finalContractType = decision.action === 'RISE' ? 'CALL' : 'PUT';
+
                     await executeTrade(
-                        decision.action === 'RISE' ? 'CALL' : 'PUT',
+                        finalContractType,
                         stakeValue, activeSymbol, decision.action.toLowerCase() as 'rise' | 'fall',
                         decision.duration, decision.unit as DurationUnit, 'Conselho'
                     );
