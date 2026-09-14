@@ -594,7 +594,8 @@ export function useDerivApiV2State() {
           if (contractType === 'ACCU') {
               proposalPayload.growth_rate = 0.03;
           } else if (contractType.startsWith('MULT')) {
-              proposalPayload.multiplier = 50;
+              // CORREÇÃO: Usa o multiplicador enviado ou calcula um fallback inteligente baseado no ativo
+              proposalPayload.multiplier = extraParams?.multiplier || (symbol?.startsWith('frx') ? 400 : 100);
           } else {
               proposalPayload.duration = Math.round(duration);
               proposalPayload.duration_unit = durationUnit;
@@ -725,12 +726,12 @@ export function useDerivApiV2State() {
           if (storedLog) {
               const parsedLog = JSON.parse(storedLog);
               if (Array.isArray(parsedLog)) {
-                  setOperationsLog(parsedLog.filter((op: any) => op && op.id));
+                  setAndPersistOperationsLog(parsedLog.filter((op: any) => op && op.id));
               }
           }
           setIsLoading(false);
       } catch (e) {}
-  }, []);
+  }, [setAndPersistOperationsLog]);
 
   useEffect(() => {
     if (!activeToken || isLoading) {
@@ -999,6 +1000,7 @@ export function useDerivApiV2State() {
           setIsConnected(false); setIsConnecting(false);
           setAccountBalance({ balance: null, currency: null, loading: false });
           wsRef.current = null;
+          multiSubscriptionIdsRef.current = {}; // Limpeza no fechamento
         };
     };
 
@@ -1044,14 +1046,18 @@ export function useDerivApiV2State() {
       watchedSymbols, multiAssetCandles
   ]);
 
-  return contextValue;
+  return (
+    <DerivApiContextV2.Provider value={contextValue}>
+      <FirebaseErrorListener />
+      {children}
+    </DerivApiContextV2.Provider>
+  );
 }
 
 export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
     const contextValue = useDerivApiV2State();
     return (
         <DerivApiContextV2.Provider value={contextValue}>
-            <FirebaseErrorListener />
             {children}
         </DerivApiContextV2.Provider>
     );

@@ -32,6 +32,7 @@ interface QuantDecision {
     unit: 't' | 's' | 'm';
     recommendedContract: DerivContractType;
     digitPrediction?: number; 
+    multiplier?: number; // NOVO: Campo para multiplicador sugerido
     zenThought?: string;
     _detectedRegime?: string;
 }
@@ -175,6 +176,8 @@ export function useAIQuantTerminalV2(
                 atr: indicators.atr
             }, 'ranging') : null;
 
+            const isForex = symbol.startsWith('frx');
+
             const prompt = `VOCÊ É O ARQUITETO DE RISCO E CIO DO TERMINAL CLARITAS.
             Sua missão é selecionar o melhor TIPO DE CONTRATO para o lucro consistente.
             
@@ -189,11 +192,16 @@ export function useAIQuantTerminalV2(
             4. Se os últimos dígitos mostrarem repetição incomum: Sugira 'DIGIT_DIFFER', prevendo um dígito improvável de repetir.
             5. Padrão: Sugira 'CALL/PUT'.
 
+            REGRAS DE MULTIPLIER:
+            - Se sugerir MULTIPLIER para Forex (${isForex ? 'SIM' : 'NÃO'}), use valores como 400, 1000, 2000.
+            - Se sugerir MULTIPLIER para Sintéticos, use 100, 200 ou 500.
+
             RETORNE APENAS JSON:
             {
               "action": "RISE" | "FALL" | "HOLD",
               "recommendedContract": "CALL/PUT" | "ACCUMULATOR" | "MULTIPLIER" | "DIGIT_OVER_UNDER" | "DIGIT_DIFFER",
               "digitPrediction": número de 0 a 9 (OBRIGATÓRIO para DIGIT_OVER_UNDER ou DIGIT_DIFFER),
+              "multiplier": número (OBRIGATÓRIO para MULTIPLIER, ex: 100 ou 400),
               "confidence": 0-100,
               "reasoning": "Justificativa técnica e escolha do contrato",
               "duration": número,
@@ -253,6 +261,24 @@ export function useAIQuantTerminalV2(
         const decision = await runInference(dueSymbol, isFocused ? chartData : candles, !isFocused);
 
         if (decision) {
+            // CORREÇÃO 3: CIRCUIT BREAKER
+            const councilTrades = operationsLog.filter(op => op.initiator === 'Conselho' && op.status !== 'pending');
+            const recentLosses = councilTrades.slice(0, maxConsecutiveLosses);
+            const hitLossStreak = recentLosses.length === maxConsecutiveLosses && recentLosses.every(op => op.status === 'lost');
+            const hitDailyLimit = globalSessionStats.pnl <= maxDailyLoss;
+
+            if (hitLossStreak || hitDailyLimit) {
+                if (isAutoMode) {
+                    const reason = hitLossStreak 
+                      ? `${maxConsecutiveLosses} perdas consecutivas detectadas`
+                      : `Perda máxima diária de $${Math.abs(maxDailyLoss)} atingida`;
+                    addLog(`🛑 Circuit breaker: ${reason}. Pausando Autopilot.`, 'error');
+                    setIsAutoMode(false);
+                    toast({ title: "🛑 Circuit Breaker Acionado", description: reason, variant: 'destructive' });
+                }
+                return;
+            }
+
             const regime = decision._detectedRegime || 'ranging';
             const adaptiveInterval = computeAdaptiveInterval(regime, analysisInterval);
             
@@ -284,7 +310,10 @@ export function useAIQuantTerminalV2(
 
                         switch (decision.recommendedContract) {
                             case 'ACCUMULATOR': finalContractType = 'ACCU'; break;
-                            case 'MULTIPLIER': finalContractType = decision.action === 'RISE' ? 'MULTUP' : 'MULTDOWN'; break;
+                            case 'MULTIPLIER': 
+                                finalContractType = decision.action === 'RISE' ? 'MULTUP' : 'MULTDOWN'; 
+                                extraProposalParams = { multiplier: decision.multiplier }; // Passa o multiplicador decidido pela IA
+                                break;
                             case 'DIGIT_OVER_UNDER':
                                 finalContractType = decision.action === 'RISE' ? 'DIGITOVER' : 'DIGITUNDER';
                                 extraProposalParams = { barrier: String(decision.digitPrediction) };
@@ -305,7 +334,7 @@ export function useAIQuantTerminalV2(
                 }
             }
         }
-    }, [isConnected, watchedSymbols, multiAssetCandles, activeSymbol, chartData, runInference, confidenceThreshold, analysisInterval, isAutoMode, operationsLog, stakeValue, executeTrade, addLog]);
+    }, [isConnected, watchedSymbols, multiAssetCandles, activeSymbol, chartData, runInference, confidenceThreshold, analysisInterval, isAutoMode, operationsLog, stakeValue, executeTrade, addLog, maxConsecutiveLosses, maxDailyLoss, globalSessionStats.pnl, toast]);
 
     const sendMessage = async (content: string) => {
         if (!ollamaConfig || !content.trim()) return;
@@ -337,9 +366,8 @@ export function useAIQuantTerminalV2(
         INSTRUÇÕES:
         1. Responda de forma analítica, técnica e direta sobre os fluxos de mercado.
         2. Se o usuário solicitar execução de ordens, avalie IMEDIATAMENTE os dados técnicos e o risco.
-        3. ALERTE explicitamente sobre o risco: "⚠️ ALERTA DE RISCO: [Justificativa baseada nos indicadores]".
-        4. Se concordar com a execução, finalize com "ARMANDO OPERAÇÃO" para preparar o veredito para confirmação manual.
-        5. Use português do Brasil.`;
+        3. Você NÃO tem capacidade de executar ordens através deste chat. Se o usuário pedir para executar uma ordem, explique que a execução deve ser feita pelo botão "Ativar Automação" ou "Autorizar Investimento" no painel, e NUNCA diga que uma ordem está "sendo preparada" ou "sendo executada" a partir desta conversa.
+        4. Use português do Brasil.`;
 
         try {
             const response = await getOllamaResponse(ollamaConfig, content, [
