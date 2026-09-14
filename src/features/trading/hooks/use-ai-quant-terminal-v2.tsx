@@ -15,7 +15,7 @@ import { initialCouncilStrategies } from '../services/council-strategies';
 import { detectMarketRegime } from '../services/advanced-trading-services';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/features/auth/hooks/use-auth';
-import { saveCouncilDecisionLog } from '@/services/financial-data-service';
+import { saveCouncilDecisionLog, getTransactions, getCouncilDecisionLogs } from '@/services/financial-data-service';
 
 export type DerivContractType = 'CALL/PUT' | 'ACCUMULATOR' | 'MULTIPLIER' | 'TOUCH/NOTOUCH';
 
@@ -134,6 +134,14 @@ export function useAIQuantTerminalV2(
     const addLog = useCallback((message: string, type: ReasoningLog['type'] = 'info') => {
         setReasoningLog(prev => [{ time: new Date().toLocaleTimeString(), message, type }, ...prev].slice(0, 50));
     }, []);
+
+    // FIX: Definição da função que estava faltando
+    const handleSetStrategicProfile = useCallback((profile: StrategicProfile) => {
+        setStrategicProfile(profile);
+        const newThreshold = profile === 'conservative' ? 85 : profile === 'balanced' ? 65 : 55;
+        setConfidenceThreshold(newThreshold);
+        addLog(`Perfil estratégico alterado para ${profile.toUpperCase()}. Limiar ajustado para ${newThreshold}%.`, 'info');
+    }, [addLog]);
 
     const runInference = useCallback(async (symbol: string, currentData: CandleData[], isBackground: boolean) => {
         if (!ollamaConfig || executionLockRef.current) return null;
