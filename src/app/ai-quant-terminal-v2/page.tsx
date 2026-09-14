@@ -126,7 +126,7 @@ function TerminalContentV2() {
                                 className={cn(
                                     "p-3 rounded-lg border transition-all cursor-pointer group hover:scale-105",
                                     asset.symbol === activeSymbol ? "bg-primary border-primary text-primary-foreground shadow-md" : "bg-card border-border hover:border-primary/50",
-                                    asset.lastAction !== 'HOLD' && asset.symbol !== activeSymbol && "animate-pulse border-green-500 bg-green-50/10"
+                                    asset.lastAction !== 'HOLD' && asset.symbol !== activeSymbol && asset.isQualified && "animate-pulse border-green-500 bg-green-50/10"
                                 )}
                             >
                                 <div className="flex justify-between items-center mb-1">
@@ -166,11 +166,13 @@ function TerminalContentV2() {
                     </div>
                 </div>
                 <div className="flex flex-wrap items-center gap-4">
+                    {/* CORREÇÃO 5 — Bloquear troca Demo/Real durante o Autopilot */}
                     <ToggleGroup 
                         type="single" 
                         value={accountType} 
                         onValueChange={(v: AccountType) => v && setAccountType(v)} 
                         className="bg-muted p-1 rounded-lg border border-border"
+                        disabled={quant.isAutoMode}
                     >
                         <ToggleGroupItem value="demo" className="text-[10px] h-7 px-3 data-[state=on]:bg-background data-[state=on]:shadow-sm">Demo</ToggleGroupItem>
                         <ToggleGroupItem value="real" className="text-[10px] h-7 px-3 data-[state=on]:bg-background data-[state=on]:shadow-sm">Real</ToggleGroupItem>
@@ -287,6 +289,18 @@ function TerminalContentV2() {
                                 </div>
                             </div>
                             
+                            {/* CORREÇÃO 3 — Circuit Breaker Inputs */}
+                            <div className="grid grid-cols-2 gap-3">
+                                <div className="space-y-1.5">
+                                    <Label className="text-[10px] uppercase font-bold text-muted-foreground">Máx. Perdas Seguidas</Label>
+                                    <Input type="number" value={maxConsecutiveLosses} onChange={(e) => setMaxConsecutiveLosses(Number(e.target.value))} className="h-8 text-xs font-mono bg-background/50" disabled={quant.isAutoMode} />
+                                </div>
+                                <div className="space-y-1.5">
+                                    <Label className="text-[10px] uppercase font-bold text-muted-foreground">Perda Máx. Diária</Label>
+                                    <Input type="number" value={maxDailyLoss} onChange={(e) => setMaxDailyLoss(Number(e.target.value))} className="h-8 text-xs font-mono bg-background/50" disabled={quant.isAutoMode} />
+                                </div>
+                            </div>
+                            
                             <Separator className="opacity-50" />
                             
                             <div className="p-3 rounded-lg bg-primary/10 border border-primary/20">
@@ -321,6 +335,73 @@ function TerminalContentV2() {
                                     </p>
                                 </div>
                             </div>
+                        </CardContent>
+                    </Card>
+
+                    <Card className="bg-card/50 border-border shadow-sm flex-1">
+                        <CardHeader className="pb-2 flex flex-row items-center justify-between space-y-0">
+                            <CardTitle className="text-xs font-bold uppercase tracking-widest text-muted-foreground flex items-center gap-2">
+                                <History className="h-4 w-4 text-primary" /> Histórico: {activeSymbol}
+                            </CardTitle>
+                            {filteredTerminalTrades.length > 0 && (
+                                <Button 
+                                    variant="ghost" 
+                                    size="icon" 
+                                    className="h-6 w-6 text-muted-foreground hover:text-destructive" 
+                                    onClick={clearActiveContracts}
+                                    title="Limpar Histórico"
+                                >
+                                    <Trash2 className="h-3.5 w-3.5" />
+                                </Button>
+                            )}
+                        </CardHeader>
+                        <CardContent className="p-0">
+                            <ScrollArea className="h-64">
+                                <div className="divide-y divide-border">
+                                    {filteredTerminalTrades.length === 0 ? (
+                                        <div className="p-8 text-center text-muted-foreground opacity-40">
+                                            <Activity className="h-8 w-8 mx-auto mb-2" />
+                                            <p className="text-[10px] font-mono">Sem execuções para este ativo</p>
+                                        </div>
+                                    ) : (
+                                        filteredTerminalTrades.map((op) => (
+                                            <div key={op.id} className="p-3 hover:bg-muted/10 transition-colors">
+                                                <div className="flex items-center justify-between mb-1">
+                                                    <div className="flex items-center gap-2">
+                                                        {op.direction === 'rise' ? (
+                                                            <ArrowUpCircle className="h-3.5 w-3.5 text-green-600" />
+                                                        ) : (
+                                                            <ArrowDownCircle className="h-3.5 w-3.5 text-destructive" />
+                                                        )}
+                                                        <span className="text-[11px] font-bold uppercase">{op.direction}</span>
+                                                    </div>
+                                                    <Badge variant={op.status === 'won' ? 'default' : op.status === 'lost' ? 'destructive' : 'outline'} className="text-[9px] h-4 py-0">
+                                                        {op.status.toUpperCase()}
+                                                    </Badge>
+                                                </div>
+                                                <div className="flex justify-between text-[10px] font-mono">
+                                                    <div className="flex flex-col gap-0.5">
+                                                        <span className="text-muted-foreground">Stake: {formatCurrency(Number(op.stake))}</span>
+                                                        <span className={cn(
+                                                            "font-bold",
+                                                            (Number(op.result) || 0) >= 0 ? "text-green-600" : "text-destructive"
+                                                        )}>
+                                                            PnL: {formatCurrency(Number(op.result) || -Number(op.stake))}
+                                                        </span>
+                                                        <span className="text-muted-foreground italic">
+                                                            Tempo: {op.duration} {op.durationUnit}
+                                                        </span>
+                                                    </div>
+                                                    <div className="text-right text-muted-foreground flex flex-col gap-0.5">
+                                                        <span className="flex items-center justify-end gap-1"><Clock className="h-2.5 w-2.5" /> {new Date(op.timestamp).toLocaleTimeString()}</span>
+                                                        <span>{new Date(op.timestamp).toLocaleDateString()}</span>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        ))
+                                    )}
+                                </div>
+                            </ScrollArea>
                         </CardContent>
                     </Card>
                 </div>

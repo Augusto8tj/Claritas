@@ -256,6 +256,38 @@ export function useDerivApiV2State() {
         ann.contractId === contractId ? { ...ann, ...updates } : ann
       ));
   }, []);
+
+  // CORREÇÃO 1 — Restaurar o fallback de timeout para contratos travados
+  useEffect(() => {
+      const interval = setInterval(() => {
+          const now = Date.now();
+          const GRACE_MS = 8000; // espera a API confirmar antes de assumir 'lost' por timeout
+          let hasChanges = false;
+
+          const updatedOps = operationsLogRef.current.map(op => {
+              if (op.status === 'pending' && op.expirationTime && now > op.expirationTime + GRACE_MS) {
+                  hasChanges = true;
+                  const fallbackExitEpoch = Math.floor(now / 1000);
+                  setTimeout(() => {
+                      updateTradeAnnotation(String(op.id), {
+                          status: 'lost',
+                          profit: -op.stake,
+                          exitTime: fallbackExitEpoch,
+                          exitPrice: op.entryPrice,
+                      });
+                  }, 0);
+                  return { ...op, status: 'lost' as const, result: -op.stake, exitTimestamp: new Date().toISOString(), resolvedBy: 'timeout' as const };
+              }
+              return op;
+          });
+
+          if (hasChanges) {
+              setAndPersistOperationsLog(updatedOps);
+          }
+      }, 2000);
+
+      return () => clearInterval(interval);
+  }, [updateTradeAnnotation, setAndPersistOperationsLog]);
   
   const makeRequest = useCallback(<T,>(request: object, noResponse = false): Promise<T> => {
     return new Promise((resolve) => {
@@ -506,7 +538,7 @@ export function useDerivApiV2State() {
               "basis": "stake",
               "contract_type": contractType,
               "currency": "USD",
-              "underlying_symbol": symbol, // ✅ FIX: Use underlying_symbol
+              "underlying_symbol": symbol,
           };
 
           if (contractType === 'ACCU') {
@@ -631,16 +663,24 @@ export function useDerivApiV2State() {
     }, 30000);
   }, []);
   
+  // CORREÇÃO 2 — Restaurar a leitura do histórico de operações do localStorage
   useEffect(() => {
-    try {
-        const storedDemoToken = localStorage.getItem(DERIV_DEMO_TOKEN_KEY);
-        const storedRealToken = localStorage.getItem(DERIV_REAL_TOKEN_KEY);
-        const storedAccountType = localStorage.getItem(DERIV_ACCOUNT_TYPE_KEY) as AccountType | null;
-        if (storedDemoToken) setDemoToken(storedDemoToken);
-        if (storedRealToken) setRealToken(storedRealToken);
-        if (storedAccountType) setAccountTypeState(storedAccountType);
-        setIsLoading(false);
-    } catch (e) {}
+      try {
+          const storedDemoToken = localStorage.getItem(DERIV_DEMO_TOKEN_KEY);
+          const storedRealToken = localStorage.getItem(DERIV_REAL_TOKEN_KEY);
+          const storedAccountType = localStorage.getItem(DERIV_ACCOUNT_TYPE_KEY) as AccountType | null;
+          const storedLog = localStorage.getItem(DERIV_V2_LOG_KEY);
+          if (storedDemoToken) setDemoToken(storedDemoToken);
+          if (storedRealToken) setRealToken(storedRealToken);
+          if (storedAccountType) setAccountTypeState(storedAccountType);
+          if (storedLog) {
+              const parsedLog = JSON.parse(storedLog);
+              if (Array.isArray(parsedLog)) {
+                  setOperationsLog(parsedLog.filter((op: any) => op && op.id));
+              }
+          }
+          setIsLoading(false);
+      } catch (e) {}
   }, []);
 
   useEffect(() => {
@@ -936,7 +976,12 @@ export function useDerivApiV2State() {
       executeTrade, sellContract, getHistoricalData, tradeAnnotations, durationLimits, connectionEvents, rawErrorCode, tokenSource, maskedToken, setAndPersistOperationsLog, setActiveSymbol
   ]);
 
-  return contextValue;
+  return (
+    <DerivApiContextV2.Provider value={contextValue}>
+      <FirebaseErrorListener />
+      {children}
+    </DerivApiContextV2.Provider>
+  );
 }
 
 export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {

@@ -135,7 +135,6 @@ export function useAIQuantTerminalV2(
         setReasoningLog(prev => [{ time: new Date().toLocaleTimeString(), message, type }, ...prev].slice(0, 50));
     }, []);
 
-    // FIX: Definição da função que estava faltando
     const handleSetStrategicProfile = useCallback((profile: StrategicProfile) => {
         setStrategicProfile(profile);
         const newThreshold = profile === 'conservative' ? 85 : profile === 'balanced' ? 65 : 55;
@@ -242,7 +241,8 @@ export function useAIQuantTerminalV2(
                         lastAction: decision.action, 
                         confidence: decision.confidence, 
                         timestamp: Date.now(), 
-                        isQualified: decision.action !== 'HOLD',
+                        // CORREÇÃO 4 — isQualified deve respeitar o limiar de confiança
+                        isQualified: decision.action !== 'HOLD' && decision.confidence >= confidenceThreshold,
                         recommendedContract: decision.recommendedContract
                     }
                 }));
@@ -252,11 +252,29 @@ export function useAIQuantTerminalV2(
         }
 
         radarPointerRef.current = (radarPointerRef.current + 1) % RADAR_SYMBOLS.length;
-    }, [activeSymbol, getHistoricalData, runInference, isConnected]);
+    }, [activeSymbol, getHistoricalData, runInference, isConnected, confidenceThreshold]);
 
     const runActiveCycle = useCallback(async () => {
         if (!activeSymbol || !isConnected || chartData.length < 30) return;
         
+        // CORREÇÃO 3 — Ativar o Circuit Breaker (perdas consecutivas + perda diária)
+        const councilTrades = operationsLog.filter(op => op.initiator === 'Conselho' && op.status !== 'pending');
+        const recentLosses = councilTrades.slice(0, maxConsecutiveLosses);
+        const hitLossStreak = recentLosses.length === maxConsecutiveLosses && recentLosses.every(op => op.status === 'lost');
+        const hitDailyLimit = globalSessionStats.pnl <= maxDailyLoss;
+
+        if (hitLossStreak || hitDailyLimit) {
+            if (isAutoMode) {
+                const reason = hitLossStreak 
+                  ? `${maxConsecutiveLosses} perdas consecutivas detectadas`
+                  : `Perda máxima diária de $${Math.abs(maxDailyLoss)} atingida`;
+                addLog(`🛑 Circuit breaker: ${reason}. Pausando Autopilot.`, 'error');
+                setIsAutoMode(false);
+                toast({ title: "🛑 Circuit Breaker Acionado", description: reason, variant: 'destructive' });
+            }
+            return;
+        }
+
         addLog(`CIO: Analisando focado ${activeSymbol}...`, 'info');
         const decision = await runInference(activeSymbol, chartData, false);
         
@@ -269,7 +287,8 @@ export function useAIQuantTerminalV2(
                     lastAction: decision.action, 
                     confidence: decision.confidence, 
                     timestamp: Date.now(), 
-                    isQualified: true,
+                    // CORREÇÃO 4 — isQualified deve respeitar o limiar de confiança
+                    isQualified: decision.action !== 'HOLD' && decision.confidence >= confidenceThreshold,
                     recommendedContract: decision.recommendedContract
                 }
             }));
@@ -292,7 +311,7 @@ export function useAIQuantTerminalV2(
                 }
             }
         }
-    }, [activeSymbol, isConnected, chartData, runInference, isAutoMode, confidenceThreshold, stakeValue, executeTrade, addLog, operationsLog]);
+    }, [activeSymbol, isConnected, chartData, runInference, isAutoMode, confidenceThreshold, stakeValue, executeTrade, addLog, operationsLog, globalSessionStats.pnl, maxConsecutiveLosses, maxDailyLoss, toast]);
 
     const sendMessage = async (content: string) => {
         if (!ollamaConfig || !content.trim()) return;
@@ -321,7 +340,7 @@ export function useAIQuantTerminalV2(
         INSTRUÇÕES:
         1. Responda de forma analítica, técnica e direta.
         2. Se o usuário perguntar o status, analise os indicadores e o saldo.
-        3. Se o usuário pedir para executar uma ordem, analise se a confiança é alta e responda "Preparando execução..." caso concorde.
+        3. Você NÃO tem capacidade de executar ordens através deste chat. Se o usuário pedir para executar uma ordem, explique que a execução deve ser feita pelo botão "Ativar Automação" ou "Autorizar Investimento" no painel, e NUNCA diga que uma ordem está "sendo preparada" ou "sendo executada" a partir desta conversa.
         4. Use português do Brasil.`;
 
         try {
