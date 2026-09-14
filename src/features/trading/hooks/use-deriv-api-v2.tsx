@@ -257,11 +257,10 @@ export function useDerivApiV2State() {
       ));
   }, []);
 
-  // CORREÇÃO 1 — Restaurar o fallback de timeout para contratos travados
   useEffect(() => {
       const interval = setInterval(() => {
           const now = Date.now();
-          const GRACE_MS = 8000; // espera a API confirmar antes de assumir 'lost' por timeout
+          const GRACE_MS = 8000; 
           let hasChanges = false;
 
           const updatedOps = operationsLogRef.current.map(op => {
@@ -663,7 +662,6 @@ export function useDerivApiV2State() {
     }, 30000);
   }, []);
   
-  // CORREÇÃO 2 — Restaurar a leitura do histórico de operações do localStorage
   useEffect(() => {
       try {
           const storedDemoToken = localStorage.getItem(DERIV_DEMO_TOKEN_KEY);
@@ -976,12 +974,7 @@ export function useDerivApiV2State() {
       executeTrade, sellContract, getHistoricalData, tradeAnnotations, durationLimits, connectionEvents, rawErrorCode, tokenSource, maskedToken, setAndPersistOperationsLog, setActiveSymbol
   ]);
 
-  return (
-    <DerivApiContextV2.Provider value={contextValue}>
-      <FirebaseErrorListener />
-      {children}
-    </DerivApiContextV2.Provider>
-  );
+  return contextValue;
 }
 
 export const DerivApiProviderV2 = ({ children }: { children: ReactNode }) => {
