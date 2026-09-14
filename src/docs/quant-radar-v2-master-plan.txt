@@ -1,0 +1,88 @@
+
+================================================================================
+CLARITAS COPILOT: QUANT RADAR V2.5 - ARCHITECTURAL BLUEPRINT
+================================================================================
+DATE: 2025-05-22
+TARGET ANALYSIS: Claude 3.5 Sonnet / High-Level Reasoning Models
+STATUS: Operational V2.5 (Radar + Hybrid Execution)
+
+1. OVERVIEW & PHILOSOPHY
+--------------------------------------------------------------------------------
+The Quant Radar (V2 - Novo) is a professional-grade quantitative trading 
+terminal designed for high-frequency volatility markets. Its core philosophy is
+"Instrument Selectivity Based on Regime". Unlike standard bots, it doesn't just
+predict direction; it selects the specific financial instrument (Accumulators, 
+Multipliers, or Options) that offers the highest statistical edge for the 
+current market microstructure.
+
+2. CORE TECHNOLOGIES & STACK
+--------------------------------------------------------------------------------
+- Framework: Next.js 15 (App Router) + React 19.
+- Styling: Tailwind CSS + Shadcn UI (Custom Themes: Ocean, Forest, Desert).
+- Real-time Data: Deriv API (WebSocket) using Institutional AppID (34lwuJiPbEzxjgEdnEhbX).
+- Local Intelligence: Ollama Studio Integration (CIO - Chief Investment Officer).
+- Mathematical Engine: Custom implementation of HMM (Hidden Markov Models), 
+  Geometric Brownian Motion (GBM), and Bayesian Inference.
+- Backend: Firebase Firestore (Persistence) & Auth.
+
+3. KEY INNOVATIONS (THE "QUANT ADVANTAGE")
+--------------------------------------------------------------------------------
+A. MULTI-INSTRUMENT POLYMORPHIC EXECUTION:
+The autopilot is no longer binary (Rise/Fall). It can execute:
+- ACCUMULATORS: Deployed during 'Ranging' regimes with low volatility.
+- MULTIPLIERS: Deployed during 'Breakout' or 'Strong Trending' regimes.
+- CALL/PUT OPTIONS: Deployed for standard directional momentum.
+
+B. STOCHASTIC OPPORTUNITY RADAR:
+A background scanner that cycles through 5 major synthetic indices (1HZ10V to 
+1HZ100V). It runs asynchronous inferences for each asset, marking them as 
+"Qualified" when the local LLM detects a high-confidence anomaly.
+
+C. QUALITATIVE ZEN-INTELLIGENCE:
+The "Inteligência Meditativa" panel. It uses the LLM to generate qualitative 
+insights (ZenThoughts) to balance the trader's psychology, translating raw 
+data into philosophical market perspectives.
+
+4. SYSTEM INTEGRATIONS & DATA FLOW
+--------------------------------------------------------------------------------
+- HOOK [use-deriv-api-v2.tsx]: The "Heart". Handles secure handshaking, 
+  synchronous authorization, and polymorphic order routing using the new 
+  'underlying_symbol' protocol.
+- HOOK [use-ai-quant-terminal-v2.tsx]: The "Brain". Orchestrates the analysis 
+  cycle. It injects a 30-candle snapshot + 15-decision history context into 
+  Ollama to generate the next strategic move.
+- SERVICE [advanced-trading-services.ts]: The "Calculator". Provides 
+  microstructure features like Tick Velocity, Volume Imbalance, and Yang-Zhang 
+  Volatility.
+
+5. ARCHITECTURAL OBJECTIVES
+--------------------------------------------------------------------------------
+- REGIME AWARENESS: Silencing "noise" by matching strategies to market states.
+- RISK DILUTION: Using Fractional Kelly Criterion (0.25) to prevent ruin.
+- LATENCY COMPENSATION: Measuring "Tick-to-Result" delay to adjust predictive 
+  horizons.
+- COGNITIVE AUDIT: Every AI decision is logged (Reasoning Log) for forensic 
+  analysis of the LLM's logic.
+
+6. AMBITIONS & ROADMAP
+--------------------------------------------------------------------------------
+- NEURO-ADAPTIVE DRIFT: Adjusting the GBM 'mu' parameter in real-time based on 
+  prediction errors.
+- PORTFOLIO CORRELATION: Scanning for correlated movements across indices to 
+  hedge positions automatically.
+- VOICE COMMAND CIO: Enabling full terminal control via natural language 
+  processing.
+
+7. PROMPT ENGINEERING FOR CIO (OLLAMA)
+--------------------------------------------------------------------------------
+The system uses a highly structured JSON-Strict prompt that forces the LLM to 
+act as a Senior Quant Analyst. It demands:
+- 'action' (Directional bias)
+- 'recommendedContract' (Instrument choice)
+- 'confidence' (Percentage 0-100)
+- 'reasoning' (Technical justification)
+- 'zenThought' (Qualitative insight)
+
+================================================================================
+END OF DOCUMENT
+================================================================================
