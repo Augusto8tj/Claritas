@@ -17,7 +17,7 @@ import {
     Activity, Brain, Wallet, Target, History,
     ArrowUpCircle, ArrowDownCircle, Clock, ShieldAlert,
     TrendingUp, Binary, Trash2, Microscope, Radar,
-    TrendingDown, Minus, Coins
+    TrendingDown, Minus, Coins, Leaf, Sparkles
 } from "lucide-react";
 import { DerivApiProviderV2 as DerivApiProvider, useDerivApiV2 as useDerivApi, type AccountType } from "@/features/trading/hooks/use-deriv-api-v2";
 import { AssetSelectorV2 as AssetSelector } from "@/features/trading/components/deriv-trader/asset-selector-v2";
@@ -102,6 +102,14 @@ function TerminalContentV2() {
     const filteredTerminalTrades = useMemo(() => {
         return operationsLog.filter(op => op.initiator === 'Conselho' && op.asset === activeSymbol);
     }, [operationsLog, activeSymbol]);
+
+    // ZEN INSIGHT GENERATOR
+    const zenInsight = useMemo(() => {
+        if (!lastDecision) return "O CIO está meditando sobre os fluxos de mercado...";
+        if (lastDecision.action === 'HOLD') return "A virtude agora é a paciência. O mercado está turvo e a clareza é nossa única proteção.";
+        if (lastDecision.confidence > 80) return "Uma confluência rara foi detectada. A geometria dos preços alinha-se com nossa tese quântica.";
+        return "Navegando entre as ondas. A confiança é moderada, o risco é calculado.";
+    }, [lastDecision]);
 
     return (
         <div className="flex-1 space-y-6 p-4 sm:p-8 pt-6 bg-background min-h-screen text-foreground">
@@ -354,8 +362,8 @@ function TerminalContentV2() {
                                                     </Badge>
                                                 </div>
                                                 <div className="flex justify-between text-[10px] font-mono">
-                                                    <span className={cn((op.result || 0) >= 0 ? "text-green-600" : "text-destructive")}>
-                                                        Result: {formatCurrency(op.result || -op.stake)}
+                                                    <span className={cn((Number(op.result) || 0) >= 0 ? "text-green-600" : "text-destructive")}>
+                                                        Result: {formatCurrency(Number(op.result) || -op.stake)}
                                                     </span>
                                                     <span className="text-muted-foreground">{new Date(op.timestamp).toLocaleTimeString()}</span>
                                                 </div>
@@ -446,6 +454,26 @@ function TerminalContentV2() {
 
                 {/* COLUNA DIREITA: INTEGRIDADE E CONFIG */}
                 <div className="lg:col-span-1 space-y-6">
+                    {/* NOVO: ZEN STRATEGY INSIGHT CARD */}
+                    <Card className="bg-primary/5 border-primary/20 shadow-md">
+                        <CardHeader className="pb-2">
+                            <CardTitle className="text-sm flex items-center gap-2 text-primary font-headline">
+                                <Leaf className="h-4 w-4" /> Inteligência Meditativa
+                            </CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                            <div className="bg-background/80 p-4 rounded-xl border border-primary/10 shadow-inner">
+                                <p className="text-xs italic leading-relaxed text-primary/80 font-medium">
+                                    "{zenInsight}"
+                                </p>
+                                <div className="mt-3 flex items-center gap-2">
+                                    <Sparkles className="h-3 w-3 text-yellow-500" />
+                                    <span className="text-[10px] uppercase tracking-widest font-bold text-muted-foreground">Estado Cognitivo Ativo</span>
+                                </div>
+                            </div>
+                        </CardContent>
+                    </Card>
+
                     <Card className="bg-card/50 border-border border-l-4 border-l-primary shadow-sm">
                         <CardHeader>
                             <CardTitle className="text-sm flex items-center gap-2">
