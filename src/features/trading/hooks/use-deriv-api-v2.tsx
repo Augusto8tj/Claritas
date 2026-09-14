@@ -507,7 +507,7 @@ export function useDerivApiV2State() {
               "basis": "stake",
               "contract_type": contractType,
               "currency": "USD",
-              "symbol": symbol,
+              "underlying_symbol": symbol,
           };
 
           // ✅ OTIMIZAÇÃO: Suporte Multi-Instrumento (Accumulators, Multipliers, Options)
@@ -761,7 +761,7 @@ export function useDerivApiV2State() {
                                 
                                 const newOp: Operation = {
                                     id: contract.contract_id, 
-                                    asset: contract.symbol, 
+                                    asset: contract.underlying_symbol || contract.symbol || 'N/A', 
                                     direction, 
                                     stake: contract.buy_price || 0,
                                     status: isSold ? (contract.profit >= 0 ? 'won' : 'lost') : 'pending', 
@@ -785,7 +785,7 @@ export function useDerivApiV2State() {
                                             direction,
                                             status: contract.profit >= 0 ? 'won' : 'lost',
                                             stake: contract.buy_price || 0,
-                                            symbol: contract.symbol,
+                                            symbol: contract.underlying_symbol || contract.symbol || 'N/A',
                                             exitTime: exitEpoch,
                                             exitPrice: exitPrice,
                                             profit: contract.profit,
@@ -857,11 +857,16 @@ export function useDerivApiV2State() {
                       const marketKey = (symbol.market === 'synthetic_index' && symbol.submarket === 'basket_index') ? 'basket_index' : symbol.market;
                       const groupName = marketNameMapping[marketKey] || 'Outros';
                       if (!groupedAssets[groupName]) groupedAssets[groupName] = [];
+                      
+                      // ✅ SINCRONIZAÇÃO COM NOVAS PROPRIEDADES DA API
                       groupedAssets[groupName].push({
-                          value: symbol.symbol, 
-                          label: symbol.display_name, 
+                          value: symbol.underlying_symbol || symbol.symbol, 
+                          label: symbol.underlying_symbol_name || symbol.display_name, 
                           marketIsOpen: symbol.exchange_is_open === 1,
-                          submarket: symbol.submarket, market: marketKey, minDuration: symbol.min_contract_duration ?? '5t', 
+                          submarket: symbol.submarket, 
+                          market: marketKey, 
+                          minDuration: symbol.min_contract_duration ?? '5t', 
+                          pip: symbol.pip_size || symbol.pip || 2
                       });
                   });
                   
