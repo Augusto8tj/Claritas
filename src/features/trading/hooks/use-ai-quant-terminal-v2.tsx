@@ -1,9 +1,9 @@
-// src/features/trading/hooks/use-ai-quant-terminal-v2.tsx
+
 'use client';
 
 /**
  * @fileOverview TERMINAL QUANT V2.5 - RADAR COM EXECUÇÃO GLOBAL E DIÁLOGO CIO
- * CORREÇÃO: Robustez de JSON e Prompt Engineering para Ollama
+ * OTIMIZAÇÃO: Varredura paralela e transparência de execução
  */
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
@@ -256,6 +256,7 @@ export function useAIQuantTerminalV2(
     const runWatchedSymbolsCycle = useCallback(async () => {
         if (!isConnected || executionLockRef.current) return;
 
+        // --- CIRCUIT BREAKER CHECK ---
         const councilTrades = operationsLog.filter(op => op.initiator === 'Conselho' && op.status !== 'pending');
         const recentLosses = councilTrades.slice(0, maxConsecutiveLosses);
         const hitLossStreak = recentLosses.length === maxConsecutiveLosses && recentLosses.every(op => op.status === 'lost');
@@ -274,89 +275,95 @@ export function useAIQuantTerminalV2(
         }
 
         const now = Date.now();
-        const dueSymbol = watchedSymbols.find(sym => {
+        // Otimização: Filtrar todos os símbolos que precisam de análise
+        const dueSymbols = watchedSymbols.filter(sym => {
             const sched = scheduleRef.current[sym];
             return !sched || now >= sched.nextRunAt;
         });
 
-        if (!dueSymbol) return;
+        if (dueSymbols.length === 0) return;
 
-        const candles = multiAssetCandles[dueSymbol];
-        if (!candles || candles.length < 30) return;
+        // Processa os símbolos devidos em sequência para não sobrecarregar o Ollama
+        for (const dueSymbol of dueSymbols) {
+            const candles = multiAssetCandles[dueSymbol];
+            if (!candles || candles.length < 30) continue;
 
-        const isFocused = dueSymbol === activeSymbol;
-        const decision = await runInference(dueSymbol, isFocused ? chartData : candles, !isFocused);
+            const isFocused = dueSymbol === activeSymbol;
+            const decision = await runInference(dueSymbol, isFocused ? chartData : candles, !isFocused);
 
-        if (decision) {
-            const regime = decision._detectedRegime || 'ranging';
-            const adaptiveInterval = computeAdaptiveInterval(regime, analysisInterval);
-            
-            scheduleRef.current[dueSymbol] = {
-                nextRunAt: now + adaptiveInterval * 1000,
-                intervalSec: adaptiveInterval,
-                lastRegime: regime
-            };
-
-            setRadarStatus(prev => ({
-                ...prev,
-                [dueSymbol]: {
-                    symbol: dueSymbol,
-                    lastAction: decision.action,
-                    confidence: decision.confidence,
-                    timestamp: now,
-                    isQualified: decision.action !== 'HOLD' && decision.confidence >= confidenceThreshold,
-                    recommendedContract: decision.recommendedContract
-                }
-            }));
-
-            if (isFocused) {
-                setLastDecision(decision);
-            }
-
-            // AUTO-EXECUÇÃO GLOBAL (Radar Autopilot)
-            if (isAutoMode && decision.action !== 'HOLD' && (decision.confidence ?? 0) >= confidenceThreshold) {
-                const hasOpenTrade = operationsLog.some(op => op.asset === dueSymbol && op.status === 'pending');
+            if (decision) {
+                const regime = decision._detectedRegime || 'ranging';
+                const adaptiveInterval = computeAdaptiveInterval(regime, analysisInterval);
                 
-                if (!hasOpenTrade) {
-                    let finalContractType = 'CALL';
-                    let extraProposalParams: Record<string, any> = {};
+                scheduleRef.current[dueSymbol] = {
+                    nextRunAt: now + adaptiveInterval * 1000,
+                    intervalSec: adaptiveInterval,
+                    lastRegime: regime
+                };
 
-                    switch (decision.recommendedContract) {
-                        case 'ACCUMULATOR': 
-                            finalContractType = 'ACCU'; 
-                            break;
-                        case 'MULTIPLIER': 
-                            finalContractType = decision.action === 'RISE' ? 'MULTUP' : 'MULTDOWN'; 
-                            extraProposalParams = { multiplier: decision.multiplier || 400 }; 
-                            break;
-                        case 'DIGIT_OVER_UNDER':
-                            finalContractType = decision.action === 'RISE' ? 'DIGITOVER' : 'DIGITUNDER';
-                            extraProposalParams = { barrier: String(decision.digitPrediction || 5) };
-                            break;
-                        case 'DIGIT_DIFFER':
-                            finalContractType = 'DIGITDIFF';
-                            extraProposalParams = { barrier: String(decision.digitPrediction || 5) };
-                            break;
-                        default: 
-                            finalContractType = decision.action === 'RISE' ? 'CALL' : 'PUT';
+                setRadarStatus(prev => ({
+                    ...prev,
+                    [dueSymbol]: {
+                        symbol: dueSymbol,
+                        lastAction: decision.action,
+                        confidence: decision.confidence,
+                        timestamp: now,
+                        isQualified: decision.action !== 'HOLD' && decision.confidence >= confidenceThreshold,
+                        recommendedContract: decision.recommendedContract
                     }
+                }));
 
-                    addLog(`[Radar] Executando ${decision.recommendedContract} em ${dueSymbol}...`, 'execution');
+                if (isFocused) {
+                    setLastDecision(decision);
+                }
+
+                // AUTO-EXECUÇÃO GLOBAL (Radar Autopilot)
+                if (isAutoMode && decision.action !== 'HOLD' && (decision.confidence ?? 0) >= confidenceThreshold) {
+                    const hasOpenTrade = operationsLog.some(op => op.asset === dueSymbol && op.status === 'pending');
                     
-                    try {
-                        await executeTrade(
-                            finalContractType, 
-                            stakeValue, 
-                            dueSymbol, 
-                            decision.action.toLowerCase() as 'rise' | 'fall',
-                            decision.duration || 5, 
-                            (decision.unit || 't') as DurationUnit, 
-                            'Conselho', 
-                            `Radar_${decision.recommendedContract}`, 
-                            extraProposalParams
-                        );
-                    } catch (err: any) {
-                        addLog(`Falha na execução Radar (${dueSymbol}): ${err.message}`, 'error');
+                    if (!hasOpenTrade) {
+                        let finalContractType = 'CALL';
+                        let extraProposalParams: Record<string, any> = {};
+
+                        switch (decision.recommendedContract) {
+                            case 'ACCUMULATOR': 
+                                finalContractType = 'ACCU'; 
+                                break;
+                            case 'MULTIPLIER': 
+                                finalContractType = decision.action === 'RISE' ? 'MULTUP' : 'MULTDOWN'; 
+                                extraProposalParams = { multiplier: decision.multiplier || 400 }; 
+                                break;
+                            case 'DIGIT_OVER_UNDER':
+                                finalContractType = decision.action === 'RISE' ? 'DIGITOVER' : 'DIGITUNDER';
+                                extraProposalParams = { barrier: String(decision.digitPrediction || 5) };
+                                break;
+                            case 'DIGIT_DIFFER':
+                                finalContractType = 'DIGITDIFF';
+                                extraProposalParams = { barrier: String(decision.digitPrediction || 5) };
+                                break;
+                            default: 
+                                finalContractType = decision.action === 'RISE' ? 'CALL' : 'PUT';
+                        }
+
+                        addLog(`[Radar] Executando ${decision.recommendedContract} em ${dueSymbol}...`, 'execution');
+                        
+                        try {
+                            await executeTrade(
+                                finalContractType, 
+                                stakeValue, 
+                                dueSymbol, 
+                                decision.action.toLowerCase() as 'rise' | 'fall',
+                                decision.duration || 5, 
+                                (decision.unit || 't') as DurationUnit, 
+                                'Conselho', 
+                                `Radar_${decision.recommendedContract}`, 
+                                extraProposalParams
+                            );
+                        } catch (err: any) {
+                            addLog(`Falha na execução Radar (${dueSymbol}): ${err.message}`, 'error');
+                        }
+                    } else {
+                        addLog(`Sinal para ${dueSymbol} ignorado: Já existe uma posição aberta.`, 'radar');
                     }
                 }
             }
