@@ -1,4 +1,3 @@
-
 // src/features/trading/hooks/use-ai-quant-terminal-v2.tsx
 'use client';
 
@@ -179,7 +178,7 @@ export function useAIQuantTerminalV2(
 
             const isForex = symbol.startsWith('frx');
 
-            const prompt = `VOCÊ É O ARQUITETO DE RISCO E CIO DO TERMINAL CLARITAS.
+            const prompt = `VOCÊ É O ARQUITETO DE RISCO E CIO DO TERMINAL CLARITAS V2.
             Sua missão é selecionar o melhor TIPO DE CONTRATO para o lucro consistente.
             
             ATIVO: ${symbol} | PERFIL: ${strategicProfile.toUpperCase()}
@@ -194,15 +193,16 @@ export function useAIQuantTerminalV2(
             5. Padrão: Sugira 'CALL/PUT'.
 
             REGRAS DE MULTIPLIER:
-            - Se sugerir MULTIPLIER para Forex (${isForex ? 'SIM' : 'NÃO'}), use valores como 400, 1000, 2000.
-            - Se sugerir MULTIPLIER para Sintéticos, use 100, 200 ou 500.
+            - Alguns ativos de Sintéticos aceitam 160, 400, 800, 1200, 1600.
+            - Outros aceitam 100, 200, 400, 500.
+            - O valor 400 é o denominador comum mais seguro (pivot). Use 400 se sugerir MULTIPLIER, a menos que tenha certeza do intervalo.
 
             RETORNE APENAS JSON:
             {
               "action": "RISE" | "FALL" | "HOLD",
               "recommendedContract": "CALL/PUT" | "ACCUMULATOR" | "MULTIPLIER" | "DIGIT_OVER_UNDER" | "DIGIT_DIFFER",
               "digitPrediction": número de 0 a 9 (OBRIGATÓRIO para DIGIT_OVER_UNDER ou DIGIT_DIFFER),
-              "multiplier": número (OBRIGATÓRIO para MULTIPLIER),
+              "multiplier": número (OBRIGATÓRIO para MULTIPLIER, use 400 como padrão seguro),
               "confidence": 0-100,
               "reasoning": "Justificativa técnica e escolha do contrato",
               "duration": número,
@@ -318,7 +318,8 @@ export function useAIQuantTerminalV2(
                             break;
                         case 'MULTIPLIER': 
                             finalContractType = decision.action === 'RISE' ? 'MULTUP' : 'MULTDOWN'; 
-                            extraProposalParams = { multiplier: decision.multiplier || (dueSymbol.startsWith('frx') ? 400 : 100) }; 
+                            // CORREÇÃO: Fallback 400 em vez de 100 para evitar rejeição da corretora
+                            extraProposalParams = { multiplier: decision.multiplier || 400 }; 
                             break;
                         case 'DIGIT_OVER_UNDER':
                             finalContractType = decision.action === 'RISE' ? 'DIGITOVER' : 'DIGITUNDER';

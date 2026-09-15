@@ -266,7 +266,7 @@ export function useDerivApiV2State() {
       ));
   }, []);
 
-  // CORREÇÃO 1 — Fallback de Timeout para contratos travados
+  // FALLBACK DE TIMEOUT PARA CONTRATOS TRAVADOS
   useEffect(() => {
       const interval = setInterval(() => {
           const now = Date.now();
@@ -388,7 +388,6 @@ export function useDerivApiV2State() {
         }
     }, [makeRequest]);
 
-    // BLOCO 1 - Multi Asset Subscriptions
     const subscribeToWatchedSymbols = useCallback(async (symbols: string[]) => {
         if (wsRef.current?.readyState !== WebSocket.OPEN) return;
 
@@ -596,7 +595,8 @@ export function useDerivApiV2State() {
           if (contractType === 'ACCU') {
               proposalPayload.growth_rate = 0.03;
           } else if (contractType.startsWith('MULT')) {
-              proposalPayload.multiplier = extraParams?.multiplier || (symbol?.startsWith('frx') ? 400 : 100);
+              // APLICADA CORREÇÃO DE MULTIPLICADOR: Padrão 400 aceito tanto em Forex quanto Sintéticos
+              proposalPayload.multiplier = extraParams?.multiplier || (symbol?.startsWith('frx') ? 400 : 400);
           } else {
               proposalPayload.duration = Math.round(duration);
               proposalPayload.duration_unit = durationUnit;
@@ -715,7 +715,7 @@ export function useDerivApiV2State() {
     }, 30000);
   }, []);
   
-  // CORREÇÃO 2 — Restaurar a leitura do histórico de operações do localStorage
+  // RESTAURAÇÃO DA LEITURA DO LOCALSTORAGE
   useEffect(() => {
       try {
           const storedDemoToken = localStorage.getItem(DERIV_DEMO_TOKEN_KEY);
@@ -1029,7 +1029,7 @@ export function useDerivApiV2State() {
 
   const maskedToken = useMemo(() => activeToken ? `${activeToken.substring(0, 8)}...` : null, [activeToken]);
 
-  return {
+  const contextValue: DerivApiContextTypeV2 = useMemo(() => ({
     ws: wsRef.current, isConnected, isConnecting, connectionError, demoToken, realToken, activeToken,
     accountType, setAccountType: (type: AccountType) => { localStorage.setItem(DERIV_ACCOUNT_TYPE_KEY, type); setAccountTypeState(type); setTriggerReconnect(c => c + 1); },
     setTokens: (t: { demo?: string; real?: string }) => { if(t.demo) { localStorage.setItem(DERIV_DEMO_TOKEN_KEY, t.demo); setDemoToken(t.demo); } if(t.real) { localStorage.setItem(DERIV_REAL_TOKEN_KEY, t.real); setRealToken(t.real); } setTriggerReconnect(c => c + 1); },
@@ -1041,7 +1041,14 @@ export function useDerivApiV2State() {
     clearActiveContracts: () => { setAndPersistOperationsLog([]); setTradeAnnotations([]); }, tradeAnnotations, durationLimits,
     connectionEvents, rawErrorCode, tokenSource, maskedToken, appId: DERIV_APP_ID, hookVersion: 'v2.5.0-otp',
     watchedSymbols, setWatchedSymbols, multiAssetCandles
-  };
+  }), [isConnected, isConnecting, connectionError, demoToken, realToken, activeToken, accountType, accountBalance, operationsLog, assetGroups, isAssetsLoading, activeSymbol, chartData, botCandleData, priceTicks, isChartLoading, chartError, chartType, timePeriod, dataVersion, executeTrade, sellContract, getHistoricalData, setAndPersistOperationsLog, tradeAnnotations, durationLimits, connectionEvents, rawErrorCode, tokenSource, maskedToken, watchedSymbols, multiAssetCandles]);
+
+  return (
+    <DerivApiContextV2.Provider value={contextValue}>
+      <FirebaseErrorListener />
+      {children}
+    </DerivApiContextV2.Provider>
+  );
 }
 
 export function DerivApiProviderV2({ children }: { children: ReactNode }) {
