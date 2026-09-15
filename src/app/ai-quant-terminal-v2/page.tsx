@@ -28,6 +28,7 @@ import { cn } from "@/lib/utils";
 import { Separator } from "@/components/ui/separator";
 import { useRobotCouncilV2 } from '@/features/trading/hooks/use-robot-council-v2';
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -98,9 +99,21 @@ function TerminalContentV2() {
         }
     };
 
-    const filteredTerminalTrades = useMemo(() => {
-        return operationsLog.filter(op => op.initiator === 'Conselho' && op.asset === activeSymbol);
-    }, [operationsLog, activeSymbol]);
+    // NOVO: Cálculo de histórico separado por ativos na sessão ativa
+    const terminalSessionTrades = useMemo(() => {
+        const today = new Date().toDateString();
+        return operationsLog.filter(op => 
+            op.initiator === 'Conselho' && 
+            new Date(op.timestamp).toDateString() === today
+        );
+    }, [operationsLog]);
+
+    const activeAssetsWithTrades = useMemo(() => {
+        const assets = new Set(terminalSessionTrades.map(op => op.asset));
+        // Garante que o ativo focado esteja na lista se não houver trades ainda
+        if (activeSymbol) assets.add(activeSymbol);
+        return Array.from(assets).sort();
+    }, [terminalSessionTrades, activeSymbol]);
 
     const zenThought = useMemo(() => {
         if (!lastDecision) return "O CIO está meditando sobre os fluxos de mercado...";
@@ -166,6 +179,7 @@ function TerminalContentV2() {
                     </div>
                 </div>
                 <div className="flex flex-wrap items-center gap-4">
+                    {/* CORREÇÃO 5: Bloquear troca de conta durante Autopilot */}
                     <ToggleGroup 
                         type="single" 
                         value={accountType} 
@@ -288,6 +302,7 @@ function TerminalContentV2() {
                                 </div>
                             </div>
                             
+                            {/* CORREÇÃO 3: Inputs de Circuit Breaker */}
                             <div className="grid grid-cols-2 gap-3">
                                 <div className="space-y-1.5">
                                     <Label className="text-[10px] uppercase font-bold text-muted-foreground">Máx. Perdas Seguidas</Label>
@@ -336,12 +351,13 @@ function TerminalContentV2() {
                         </CardContent>
                     </Card>
 
-                    <Card className="bg-card/50 border-border shadow-sm flex-1">
+                    {/* NOVO: Histórico Separado por Ativos Ativos na Sessão */}
+                    <Card className="bg-card/50 border-border shadow-sm flex-1 overflow-hidden flex flex-col">
                         <CardHeader className="pb-2 flex flex-row items-center justify-between space-y-0">
                             <CardTitle className="text-xs font-bold uppercase tracking-widest text-muted-foreground flex items-center gap-2">
-                                <History className="h-4 w-4 text-primary" /> Histórico: {activeSymbol}
+                                <History className="h-4 w-4 text-primary" /> Históricos de Atividade
                             </CardTitle>
-                            {filteredTerminalTrades.length > 0 && (
+                            {terminalSessionTrades.length > 0 && (
                                 <Button 
                                     variant="ghost" 
                                     size="icon" 
@@ -353,53 +369,28 @@ function TerminalContentV2() {
                                 </Button>
                             )}
                         </CardHeader>
-                        <CardContent className="p-0">
-                            <ScrollArea className="h-64">
-                                <div className="divide-y divide-border">
-                                    {filteredTerminalTrades.length === 0 ? (
-                                        <div className="p-8 text-center text-muted-foreground opacity-40">
-                                            <Activity className="h-8 w-8 mx-auto mb-2" />
-                                            <p className="text-[10px] font-mono">Sem execuções para este ativo</p>
-                                        </div>
-                                    ) : (
-                                        filteredTerminalTrades.map((op) => (
-                                            <div key={op.id} className="p-3 hover:bg-muted/10 transition-colors">
-                                                <div className="flex items-center justify-between mb-1">
-                                                    <div className="flex items-center gap-2">
-                                                        {op.direction === 'rise' ? (
-                                                            <ArrowUpCircle className="h-3.5 w-3.5 text-green-600" />
-                                                        ) : (
-                                                            <ArrowDownCircle className="h-3.5 w-3.5 text-destructive" />
-                                                        )}
-                                                        <span className="text-[11px] font-bold uppercase">{op.direction}</span>
-                                                    </div>
-                                                    <Badge variant={op.status === 'won' ? 'default' : op.status === 'lost' ? 'destructive' : 'outline'} className="text-[9px] h-4 py-0">
-                                                        {op.status.toUpperCase()}
-                                                    </Badge>
-                                                </div>
-                                                <div className="flex justify-between text-[10px] font-mono">
-                                                    <div className="flex flex-col gap-0.5">
-                                                        <span className="text-muted-foreground">Stake: {formatCurrency(Number(op.stake))}</span>
-                                                        <span className={cn(
-                                                            "font-bold",
-                                                            (Number(op.result) || 0) >= 0 ? "text-green-600" : "text-destructive"
-                                                        )}>
-                                                            PnL: {formatCurrency(Number(op.result) || -Number(op.stake))}
-                                                        </span>
-                                                        <span className="text-muted-foreground italic">
-                                                            Tempo: {op.duration} {op.durationUnit}
-                                                        </span>
-                                                    </div>
-                                                    <div className="text-right text-muted-foreground flex flex-col gap-0.5">
-                                                        <span className="flex items-center justify-end gap-1"><Clock className="h-2.5 w-2.5" /> {new Date(op.timestamp).toLocaleTimeString()}</span>
-                                                        <span>{new Date(op.timestamp).toLocaleDateString()}</span>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        ))
-                                    )}
+                        <CardContent className="p-0 flex-1 flex flex-col min-h-0">
+                            <Tabs defaultValue={activeSymbol || 'ALL'} className="w-full h-full flex flex-col">
+                                <div className="px-2 border-b bg-muted/20 overflow-x-auto no-scrollbar">
+                                    <TabsList className="h-8 justify-start bg-transparent p-0 flex-nowrap w-max">
+                                        <TabsTrigger value="ALL" className="text-[9px] font-bold h-7 uppercase">Todos</TabsTrigger>
+                                        {activeAssetsWithTrades.map(asset => (
+                                            <TabsTrigger key={asset} value={asset} className="text-[9px] font-bold h-7 uppercase">{asset}</TabsTrigger>
+                                        ))}
+                                    </TabsList>
                                 </div>
-                            </ScrollArea>
+                                
+                                <ScrollArea className="flex-1 h-64">
+                                    <TabsContent value="ALL" className="m-0 border-none">
+                                        {renderTradeList(terminalSessionTrades, formatCurrency)}
+                                    </TabsContent>
+                                    {activeAssetsWithTrades.map(asset => (
+                                        <TabsContent key={asset} value={asset} className="m-0 border-none">
+                                            {renderTradeList(terminalSessionTrades.filter(op => op.asset === asset), formatCurrency)}
+                                        </TabsContent>
+                                    ))}
+                                </ScrollArea>
+                            </Tabs>
                         </CardContent>
                     </Card>
                 </div>
@@ -618,6 +609,54 @@ function TerminalContentV2() {
                     </AlertDialogFooter>
                 </AlertDialogContent>
             </AlertDialog>
+        </div>
+    );
+}
+
+// Função auxiliar para renderizar a lista de trades no histórico
+function renderTradeList(trades: any[], formatCurrency: (v: number) => string) {
+    if (trades.length === 0) {
+        return (
+            <div className="p-8 text-center text-muted-foreground opacity-40">
+                <Activity className="h-8 w-8 mx-auto mb-2" />
+                <p className="text-[10px] font-mono uppercase">Sem atividade registrada</p>
+            </div>
+        );
+    }
+    return (
+        <div className="divide-y divide-border">
+            {trades.map((op) => (
+                <div key={op.id} className="p-3 hover:bg-muted/10 transition-colors">
+                    <div className="flex items-center justify-between mb-1">
+                        <div className="flex items-center gap-2">
+                            {op.direction === 'rise' ? (
+                                <ArrowUpCircle className="h-3.5 w-3.5 text-green-600" />
+                            ) : (
+                                <ArrowDownCircle className="h-3.5 w-3.5 text-destructive" />
+                            )}
+                            <span className="text-[10px] font-black uppercase font-mono">{op.asset}</span>
+                        </div>
+                        <Badge variant={op.status === 'won' ? 'default' : op.status === 'lost' ? 'destructive' : 'outline'} className="text-[8px] h-4 py-0 px-1 font-bold">
+                            {op.status.toUpperCase()}
+                        </Badge>
+                    </div>
+                    <div className="flex justify-between text-[10px] font-mono leading-tight">
+                        <div className="flex flex-col gap-0.5">
+                            <span className="text-muted-foreground">Stake: {formatCurrency(Number(op.stake))}</span>
+                            <span className={cn(
+                                "font-bold",
+                                (Number(op.result) || 0) >= 0 ? "text-green-600" : "text-destructive"
+                            )}>
+                                PnL: {formatCurrency(Number(op.result) || -Number(op.stake))}
+                            </span>
+                        </div>
+                        <div className="text-right text-muted-foreground flex flex-col gap-0.5">
+                            <span className="flex items-center justify-end gap-1 font-bold"><Clock className="h-2.5 w-2.5" /> {new Date(op.timestamp).toLocaleTimeString()}</span>
+                            <span className="italic opacity-70">{op.strategy?.split('_')[0] || 'Auto'}</span>
+                        </div>
+                    </div>
+                </div>
+            ))}
         </div>
     );
 }

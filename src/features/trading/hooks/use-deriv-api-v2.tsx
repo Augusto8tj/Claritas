@@ -266,6 +266,7 @@ export function useDerivApiV2State() {
       ));
   }, []);
 
+  // CORREÇÃO 1: Watchdog Fallback para contratos travados
   useEffect(() => {
       const interval = setInterval(() => {
           const now = Date.now();
@@ -594,7 +595,9 @@ export function useDerivApiV2State() {
           if (contractType === 'ACCU') {
               proposalPayload.growth_rate = 0.03;
           } else if (contractType.startsWith('MULT')) {
-              proposalPayload.multiplier = extraParams?.multiplier || 400;
+              // CORREÇÃO: Fallback dinâmico para evitar erro de range de multiplicador
+              const defaultMult = symbol.startsWith('frx') ? 400 : 100;
+              proposalPayload.multiplier = extraParams?.multiplier || defaultMult;
           } else {
               proposalPayload.duration = Math.round(duration);
               proposalPayload.duration_unit = durationUnit;
@@ -713,6 +716,7 @@ export function useDerivApiV2State() {
     }, 30000);
   }, []);
   
+  // CORREÇÃO 2: Restaurar localStorage e logs
   useEffect(() => {
       try {
           const storedDemoToken = localStorage.getItem(DERIV_DEMO_TOKEN_KEY);

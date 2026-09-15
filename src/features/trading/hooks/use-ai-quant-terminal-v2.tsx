@@ -245,6 +245,24 @@ export function useAIQuantTerminalV2(
     const runWatchedSymbolsCycle = useCallback(async () => {
         if (!isConnected || executionLockRef.current) return;
 
+        // CORREÇÃO 3: Circuit Breaker
+        const councilTrades = operationsLog.filter(op => op.initiator === 'Conselho' && op.status !== 'pending');
+        const recentLosses = councilTrades.slice(0, maxConsecutiveLosses);
+        const hitLossStreak = recentLosses.length === maxConsecutiveLosses && recentLosses.every(op => op.status === 'lost');
+        const hitDailyLimit = globalSessionStats.pnl <= maxDailyLoss;
+
+        if (hitLossStreak || hitDailyLimit) {
+            if (isAutoMode) {
+                const reason = hitLossStreak 
+                  ? `${maxConsecutiveLosses} perdas consecutivas detectadas`
+                  : `Perda máxima diária de $${Math.abs(maxDailyLoss)} atingida`;
+                addLog(`🛑 Circuit breaker: ${reason}. Pausando Autopilot.`, 'error');
+                setIsAutoMode(false);
+                toast({ title: "🛑 Circuit Breaker Acionado", description: reason, variant: 'destructive' });
+            }
+            return;
+        }
+
         const now = Date.now();
         const dueSymbol = watchedSymbols.find(sym => {
             const sched = scheduleRef.current[sym];
@@ -260,23 +278,6 @@ export function useAIQuantTerminalV2(
         const decision = await runInference(dueSymbol, isFocused ? chartData : candles, !isFocused);
 
         if (decision) {
-            const councilTrades = operationsLog.filter(op => op.initiator === 'Conselho' && op.status !== 'pending');
-            const recentLosses = councilTrades.slice(0, maxConsecutiveLosses);
-            const hitLossStreak = recentLosses.length === maxConsecutiveLosses && recentLosses.every(op => op.status === 'lost');
-            const hitDailyLimit = globalSessionStats.pnl <= maxDailyLoss;
-
-            if (hitLossStreak || hitDailyLimit) {
-                if (isAutoMode) {
-                    const reason = hitLossStreak 
-                      ? `${maxConsecutiveLosses} perdas consecutivas detectadas`
-                      : `Perda máxima diária de $${Math.abs(maxDailyLoss)} atingida`;
-                    addLog(`🛑 Circuit breaker: ${reason}. Pausando Autopilot.`, 'error');
-                    setIsAutoMode(false);
-                    toast({ title: "🛑 Circuit Breaker Acionado", description: reason, variant: 'destructive' });
-                }
-                return;
-            }
-
             const regime = decision._detectedRegime || 'ranging';
             const adaptiveInterval = computeAdaptiveInterval(regime, analysisInterval);
             
@@ -293,6 +294,7 @@ export function useAIQuantTerminalV2(
                     lastAction: decision.action,
                     confidence: decision.confidence,
                     timestamp: now,
+                    // CORREÇÃO 4: isQualified respeita limiar
                     isQualified: decision.action !== 'HOLD' && decision.confidence >= confidenceThreshold,
                     recommendedContract: decision.recommendedContract
                 }
@@ -397,6 +399,7 @@ export function useAIQuantTerminalV2(
                 const assistantContent = response.success;
                 setChatMessages(prev => [...prev, { role: 'assistant', content: assistantContent, time: new Date().toLocaleTimeString() }]);
                 
+                // NOVO: Detecção de gatilho para execução tática via chat
                 if (isExecutionRequest && assistantContent.includes('ARMANDO OPERAÇÃO') && activeSymbol && chartData.length >= 30) {
                     addLog(`CIO iniciou protocolo de execução tática para ${activeSymbol}...`, 'decision');
                     const decision = await runInference(activeSymbol, chartData, false);
