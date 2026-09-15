@@ -3,6 +3,7 @@
 
 /**
  * @fileOverview TERMINAL QUANT V2.5 - RADAR COM EXECUÇÃO GLOBAL E DIÁLOGO CIO
+ * CORREÇÃO: Robustez de JSON e Prompt Engineering para Ollama
  */
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
@@ -191,34 +192,44 @@ export function useAIQuantTerminalV2(
             5. Padrão: Sugira 'CALL/PUT'.
 
             REGRAS DE MULTIPLIER:
-            - Alguns ativos de Sintéticos aceitam 160, 400, 800, 1200, 1600.
-            - Outros aceitam 100, 200, 400, 500.
-            - O valor 400 é o denominador comum mais seguro (pivot). Use 400 se sugerir MULTIPLIER, a menos que tenha certeza do intervalo.
+            - Use 400 como denominador comum seguro para multiplicadores.
 
-            RETORNE APENAS JSON:
+            RETORNE APENAS JSON, SEM MARKDOWN, SEM EXPLICAÇÃO:
             {
-              "action": "RISE" | "FALL" | "HOLD",
-              "recommendedContract": "CALL/PUT" | "ACCUMULATOR" | "MULTIPLIER" | "DIGIT_OVER_UNDER" | "DIGIT_DIFFER",
-              "digitPrediction": número de 0 a 9 (OBRIGATÓRIO para DIGIT_OVER_UNDER ou DIGIT_DIFFER),
-              "multiplier": número (OBRIGATÓRIO para MULTIPLIER, use 400 como padrão seguro),
-              "confidence": 0-100,
-              "reasoning": "Justificativa técnica e escolha do contrato",
-              "duration": número,
-              "unit": "s" | "t",
-              "zenThought": "Pensamento curto sobre o estado do mercado"
-            }`;
+              "action": "RISE",
+              "recommendedContract": "CALL/PUT",
+              "digitPrediction": 5,
+              "multiplier": 400,
+              "confidence": 70,
+              "reasoning": "Texto curto",
+              "duration": 5,
+              "unit": "t",
+              "zenThought": "Texto curto"
+            }
+            
+            IMPORTANTE: NÃO retorne variáveis ou placeholders. Retorne valores concretos.`;
 
             const response = await getOllamaResponse(ollamaConfig, prompt, []);
             const end = performance.now();
 
             if (response.error) throw new Error(response.error);
 
-            const rawContent = (response.success || "").replace(/```json|```/g, "").trim();
-            const jsonMatch = rawContent.match(/\{.*\}/s);
-            if (!jsonMatch) throw new Error("JSON malformado");
+            // LIMPEZA ROBUSTA DE JSON
+            const rawContent = (response.success || "").trim();
+            const jsonStartIndex = rawContent.indexOf('{');
+            const jsonEndIndex = rawContent.lastIndexOf('}');
             
-            const decision: QuantDecision = JSON.parse(jsonMatch[0]);
+            if (jsonStartIndex === -1 || jsonEndIndex === -1) {
+                throw new Error("Resposta da IA não contém um objeto JSON válido.");
+            }
+            
+            const cleanJsonString = rawContent.substring(jsonStartIndex, jsonEndIndex + 1);
+            const decision: QuantDecision = JSON.parse(cleanJsonString);
+            
+            // SANITIZAÇÃO DE CAMPOS
             decision.confidence = Number(decision.confidence) || 0;
+            decision.action = (decision.action || 'HOLD').toUpperCase() as any;
+            if (!['RISE', 'FALL', 'HOLD'].includes(decision.action)) decision.action = 'HOLD';
 
             if (user) {
                 saveCouncilDecisionLog(user.uid, {
@@ -245,7 +256,6 @@ export function useAIQuantTerminalV2(
     const runWatchedSymbolsCycle = useCallback(async () => {
         if (!isConnected || executionLockRef.current) return;
 
-        // CORREÇÃO 3: Circuit Breaker
         const councilTrades = operationsLog.filter(op => op.initiator === 'Conselho' && op.status !== 'pending');
         const recentLosses = councilTrades.slice(0, maxConsecutiveLosses);
         const hitLossStreak = recentLosses.length === maxConsecutiveLosses && recentLosses.every(op => op.status === 'lost');
@@ -294,7 +304,6 @@ export function useAIQuantTerminalV2(
                     lastAction: decision.action,
                     confidence: decision.confidence,
                     timestamp: now,
-                    // CORREÇÃO 4: isQualified respeita limiar
                     isQualified: decision.action !== 'HOLD' && decision.confidence >= confidenceThreshold,
                     recommendedContract: decision.recommendedContract
                 }
@@ -305,7 +314,7 @@ export function useAIQuantTerminalV2(
             }
 
             // AUTO-EXECUÇÃO GLOBAL (Radar Autopilot)
-            if (isAutoMode && decision.action !== 'HOLD' && decision.confidence >= confidenceThreshold) {
+            if (isAutoMode && decision.action !== 'HOLD' && (decision.confidence ?? 0) >= confidenceThreshold) {
                 const hasOpenTrade = operationsLog.some(op => op.asset === dueSymbol && op.status === 'pending');
                 
                 if (!hasOpenTrade) {
@@ -322,11 +331,11 @@ export function useAIQuantTerminalV2(
                             break;
                         case 'DIGIT_OVER_UNDER':
                             finalContractType = decision.action === 'RISE' ? 'DIGITOVER' : 'DIGITUNDER';
-                            extraProposalParams = { barrier: String(decision.digitPrediction) };
+                            extraProposalParams = { barrier: String(decision.digitPrediction || 5) };
                             break;
                         case 'DIGIT_DIFFER':
                             finalContractType = 'DIGITDIFF';
-                            extraProposalParams = { barrier: String(decision.digitPrediction) };
+                            extraProposalParams = { barrier: String(decision.digitPrediction || 5) };
                             break;
                         default: 
                             finalContractType = decision.action === 'RISE' ? 'CALL' : 'PUT';
@@ -340,8 +349,8 @@ export function useAIQuantTerminalV2(
                             stakeValue, 
                             dueSymbol, 
                             decision.action.toLowerCase() as 'rise' | 'fall',
-                            decision.duration, 
-                            decision.unit as DurationUnit, 
+                            decision.duration || 5, 
+                            (decision.unit || 't') as DurationUnit, 
                             'Conselho', 
                             `Radar_${decision.recommendedContract}`, 
                             extraProposalParams
@@ -349,8 +358,6 @@ export function useAIQuantTerminalV2(
                     } catch (err: any) {
                         addLog(`Falha na execução Radar (${dueSymbol}): ${err.message}`, 'error');
                     }
-                } else {
-                    addLog(`Sinal detectado para ${dueSymbol}, mas já existe uma posição aberta. Pulando...`, 'radar');
                 }
             }
         }
@@ -385,9 +392,8 @@ export function useAIQuantTerminalV2(
         
         INSTRUÇÕES:
         1. Responda de forma analítica, técnica e direta sobre os fluxos de mercado.
-        2. Se o usuário solicitar execução de ordens, avalie IMEDIATAMENTE os dados técnicos e o risco.
-        3. Você NÃO tem capacidade de executar ordens através deste chat. Se o usuário pedir para executar uma ordem, explique que a execução deve ser feita pelo botão "Ativar Automação" ou "Autorizar Investimento" no painel, e NUNCA diga que uma ordem está "sendo preparada" ou "sendo executada" a partir desta conversa. Caso identifique uma vantagem clara para o pedido, você pode responder OBRIGATORIAMENTE com a frase "ARMANDO OPERAÇÃO" para sinalizar que o veredito será preparado no painel.
-        4. Use português do Brasil.`;
+        2. Você NÃO tem capacidade de executar ordens através deste chat. Se o usuário pedir para executar uma ordem, explique que a execução deve ser feita pelo botão "Ativar Automação" ou "Autorizar Investimento" no painel, e NUNCA diga que uma ordem está "sendo preparada" ou "sendo executada" a partir desta conversa. Caso identifique uma vantagem clara para o pedido, você pode responder OBRIGATORIAMENTE com a frase "ARMANDO OPERAÇÃO" para sinalizar que o veredito será preparado no painel.
+        3. Use português do Brasil.`;
 
         try {
             const response = await getOllamaResponse(ollamaConfig, content, [
@@ -399,7 +405,6 @@ export function useAIQuantTerminalV2(
                 const assistantContent = response.success;
                 setChatMessages(prev => [...prev, { role: 'assistant', content: assistantContent, time: new Date().toLocaleTimeString() }]);
                 
-                // NOVO: Detecção de gatilho para execução tática via chat
                 if (isExecutionRequest && assistantContent.includes('ARMANDO OPERAÇÃO') && activeSymbol && chartData.length >= 30) {
                     addLog(`CIO iniciou protocolo de execução tática para ${activeSymbol}...`, 'decision');
                     const decision = await runInference(activeSymbol, chartData, false);
