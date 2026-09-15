@@ -176,8 +176,6 @@ export function useAIQuantTerminalV2(
                 atr: indicators.atr
             }, 'ranging') : null;
 
-            const isForex = symbol.startsWith('frx');
-
             const prompt = `VOCÊ É O ARQUITETO DE RISCO E CIO DO TERMINAL CLARITAS V2.
             Sua missão é selecionar o melhor TIPO DE CONTRATO para o lucro consistente.
             
@@ -318,7 +316,6 @@ export function useAIQuantTerminalV2(
                             break;
                         case 'MULTIPLIER': 
                             finalContractType = decision.action === 'RISE' ? 'MULTUP' : 'MULTDOWN'; 
-                            // CORREÇÃO: Fallback 400 em vez de 100 para evitar rejeição da corretora
                             extraProposalParams = { multiplier: decision.multiplier || 400 }; 
                             break;
                         case 'DIGIT_OVER_UNDER':
@@ -387,7 +384,7 @@ export function useAIQuantTerminalV2(
         INSTRUÇÕES:
         1. Responda de forma analítica, técnica e direta sobre os fluxos de mercado.
         2. Se o usuário solicitar execução de ordens, avalie IMEDIATAMENTE os dados técnicos e o risco.
-        3. Se você concordar com uma solicitação de execução após analisar o risco, responda confirmando o armamento da ordem e use OBRIGATORIAMENTE a frase "ARMANDO OPERAÇÃO" no seu texto. Alerte sempre sobre os riscos baseados nos indicadores atuais e avise que ele deve autorizar no painel de Veredito.
+        3. Você NÃO tem capacidade de executar ordens através deste chat. Se o usuário pedir para executar uma ordem, explique que a execução deve ser feita pelo botão "Ativar Automação" ou "Autorizar Investimento" no painel, e NUNCA diga que uma ordem está "sendo preparada" ou "sendo executada" a partir desta conversa. Caso identifique uma vantagem clara para o pedido, você pode responder OBRIGATORIAMENTE com a frase "ARMANDO OPERAÇÃO" para sinalizar que o veredito será preparado no painel.
         4. Use português do Brasil.`;
 
         try {

@@ -266,7 +266,6 @@ export function useDerivApiV2State() {
       ));
   }, []);
 
-  // FALLBACK DE TIMEOUT PARA CONTRATOS TRAVADOS
   useEffect(() => {
       const interval = setInterval(() => {
           const now = Date.now();
@@ -595,8 +594,7 @@ export function useDerivApiV2State() {
           if (contractType === 'ACCU') {
               proposalPayload.growth_rate = 0.03;
           } else if (contractType.startsWith('MULT')) {
-              // APLICADA CORREÇÃO DE MULTIPLICADOR: Padrão 400 aceito tanto em Forex quanto Sintéticos
-              proposalPayload.multiplier = extraParams?.multiplier || (symbol?.startsWith('frx') ? 400 : 400);
+              proposalPayload.multiplier = extraParams?.multiplier || 400;
           } else {
               proposalPayload.duration = Math.round(duration);
               proposalPayload.duration_unit = durationUnit;
@@ -715,7 +713,6 @@ export function useDerivApiV2State() {
     }, 30000);
   }, []);
   
-  // RESTAURAÇÃO DA LEITURA DO LOCALSTORAGE
   useEffect(() => {
       try {
           const storedDemoToken = localStorage.getItem(DERIV_DEMO_TOKEN_KEY);
@@ -1035,7 +1032,7 @@ export function useDerivApiV2State() {
     setTokens: (t: { demo?: string; real?: string }) => { if(t.demo) { localStorage.setItem(DERIV_DEMO_TOKEN_KEY, t.demo); setDemoToken(t.demo); } if(t.real) { localStorage.setItem(DERIV_REAL_TOKEN_KEY, t.real); setRealToken(t.real); } setTriggerReconnect(c => c + 1); },
     disconnect: (type: AccountType) => { if(type === 'demo') localStorage.removeItem(DERIV_DEMO_TOKEN_KEY); else localStorage.removeItem(DERIV_REAL_TOKEN_KEY); setTriggerReconnect(c => c + 1); },
     reconnect: async () => { setTriggerReconnect(c => c + 1); return true; },
-    accountBalance, operationsLog, assetGroups, isAssetsLoading, activeSymbol, setActiveSymbol, 
+    accountBalance, operationsLog, assetGroups, isAssetsLoading, activeSymbol, setActiveSymbol: (s) => { setActiveSymbol(s); activeSymbolRef.current = s; }, 
     chartData, botCandleData, priceTicks, isChartLoading, chartError, chartType, setChartType, 
     timePeriod, setTimePeriod, dataVersion, executeTrade, sellContract, getHistoricalData, 
     clearActiveContracts: () => { setAndPersistOperationsLog([]); setTradeAnnotations([]); }, tradeAnnotations, durationLimits,
@@ -1043,12 +1040,7 @@ export function useDerivApiV2State() {
     watchedSymbols, setWatchedSymbols, multiAssetCandles
   }), [isConnected, isConnecting, connectionError, demoToken, realToken, activeToken, accountType, accountBalance, operationsLog, assetGroups, isAssetsLoading, activeSymbol, chartData, botCandleData, priceTicks, isChartLoading, chartError, chartType, timePeriod, dataVersion, executeTrade, sellContract, getHistoricalData, setAndPersistOperationsLog, tradeAnnotations, durationLimits, connectionEvents, rawErrorCode, tokenSource, maskedToken, watchedSymbols, multiAssetCandles]);
 
-  return (
-    <DerivApiContextV2.Provider value={contextValue}>
-      <FirebaseErrorListener />
-      {children}
-    </DerivApiContextV2.Provider>
-  );
+  return contextValue;
 }
 
 export function DerivApiProviderV2({ children }: { children: ReactNode }) {
