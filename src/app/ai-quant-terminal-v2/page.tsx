@@ -16,7 +16,8 @@ import {
     Activity, Brain, Wallet, Target, History,
     ArrowUpCircle, ArrowDownCircle, Clock, ShieldAlert,
     TrendingUp, Binary, Trash2, Microscope, Radar,
-    TrendingDown, Minus, Coins, Leaf, Sparkles, Layers
+    TrendingDown, Minus, Coins, Leaf, Sparkles, Layers,
+    RotateCcw
 } from "lucide-react";
 import { DerivApiProviderV2 as DerivApiProvider, useDerivApiV2 as useDerivApi, type AccountType } from "@/features/trading/hooks/use-deriv-api-v2";
 import { AssetSelectorV2 as AssetSelector } from "@/features/trading/components/deriv-trader/asset-selector-v2";
@@ -75,11 +76,13 @@ function TerminalContentV2() {
         radarStatus, 
         sessionStats, 
         globalSessionStats, 
-        accountBalance 
+        accountBalance,
+        resetSession
     } = quant;
 
     const [chatInput, setChatInput] = useState('');
     const [showRealAccountConfirm, setShowRealAccountConfirm] = useState(false);
+    const [showResetConfirm, setShowResetConfirm] = useState(false);
     const chatScrollRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
@@ -179,7 +182,6 @@ function TerminalContentV2() {
                     </div>
                 </div>
                 <div className="flex flex-wrap items-center gap-4">
-                    {/* CORREÇÃO 5: Bloquear troca de conta durante Autopilot */}
                     <ToggleGroup 
                         type="single" 
                         value={accountType} 
@@ -302,7 +304,6 @@ function TerminalContentV2() {
                                 </div>
                             </div>
                             
-                            {/* CORREÇÃO 3: Inputs de Circuit Breaker */}
                             <div className="grid grid-cols-2 gap-3">
                                 <div className="space-y-1.5">
                                     <Label className="text-[10px] uppercase font-bold text-muted-foreground">Máx. Perdas Seguidas</Label>
@@ -348,26 +349,26 @@ function TerminalContentV2() {
                                     </p>
                                 </div>
                             </div>
+
+                            <Separator className="opacity-50" />
+
+                            <Button 
+                                variant="outline" 
+                                className="w-full h-10 gap-2 text-xs font-bold border-destructive/20 text-destructive hover:bg-destructive/10"
+                                onClick={() => setShowResetConfirm(true)}
+                            >
+                                <RotateCcw className="h-4 w-4" />
+                                Reiniciar Sessão Ativa
+                            </Button>
                         </CardContent>
                     </Card>
 
-                    {/* NOVO: Histórico Separado por Ativos Ativos na Sessão */}
+                    {/* Histórico Separado por Ativos Ativos na Sessão */}
                     <Card className="bg-card/50 border-border shadow-sm flex-1 overflow-hidden flex flex-col">
                         <CardHeader className="pb-2 flex flex-row items-center justify-between space-y-0">
                             <CardTitle className="text-xs font-bold uppercase tracking-widest text-muted-foreground flex items-center gap-2">
                                 <History className="h-4 w-4 text-primary" /> Históricos de Atividade
                             </CardTitle>
-                            {terminalSessionTrades.length > 0 && (
-                                <Button 
-                                    variant="ghost" 
-                                    size="icon" 
-                                    className="h-6 w-6 text-muted-foreground hover:text-destructive" 
-                                    onClick={clearActiveContracts}
-                                    title="Limpar Histórico"
-                                >
-                                    <Trash2 className="h-3.5 w-3.5" />
-                                </Button>
-                            )}
                         </CardHeader>
                         <CardContent className="p-0 flex-1 flex flex-col min-h-0">
                             <Tabs defaultValue={activeSymbol || 'ALL'} className="w-full h-full flex flex-col">
@@ -557,7 +558,7 @@ function TerminalContentV2() {
                         </CardContent>
                     </Card>
 
-                    {/* LOG DE RACIOCÍNIO CONSOLIDADO */}
+                    {/* Log de Raciocínio */}
                     <Card className="bg-muted/30 border-border font-mono overflow-hidden shadow-inner">
                         <div className="bg-card/50 px-4 py-2 flex items-center justify-between border-b border-border">
                             <span className="text-[10px] font-bold text-muted-foreground flex items-center gap-2">
@@ -589,6 +590,7 @@ function TerminalContentV2() {
                 </div>
             </div>
 
+            {/* DIÁLOGOS DE CONFIRMAÇÃO */}
             <AlertDialog open={showRealAccountConfirm} onOpenChange={setShowRealAccountConfirm}>
                 <AlertDialogContent>
                     <AlertDialogHeader>
@@ -605,6 +607,27 @@ function TerminalContentV2() {
                             setShowRealAccountConfirm(false);
                         }}>
                             Confirmar e Ativar Radar
+                        </AlertDialogAction>
+                    </AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialog>
+
+            <AlertDialog open={showResetConfirm} onOpenChange={setShowResetConfirm}>
+                <AlertDialogContent>
+                    <AlertDialogHeader>
+                        <AlertDialogTitle>Reiniciar Sessão de Trading?</AlertDialogTitle>
+                        <AlertDialogDescription>
+                            Esta ação irá limpar o histórico de operações de hoje, resetar o saldo da sessão e limpar o radar. 
+                            Isso também resetará os contadores de segurança (Circuit Breaker).
+                        </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                        <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                        <AlertDialogAction onClick={() => {
+                            resetSession();
+                            setShowResetConfirm(false);
+                        }} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+                            Confirmar Reinicialização
                         </AlertDialogAction>
                     </AlertDialogFooter>
                 </AlertDialogContent>

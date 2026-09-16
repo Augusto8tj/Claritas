@@ -1,4 +1,3 @@
-
 'use client';
 
 /**
@@ -84,7 +83,7 @@ export function useAIQuantTerminalV2(
     priceTicks: TickData[],
     chartData: CandleData[]
 ) {
-    const { isConnected, executeTrade, operationsLog, accountBalance, multiAssetCandles, watchedSymbols } = useDerivApiV2();
+    const { isConnected, executeTrade, operationsLog, accountBalance, multiAssetCandles, watchedSymbols, clearActiveContracts } = useDerivApiV2();
     const { user } = useAuth();
     const { toast } = useToast();
 
@@ -256,16 +255,22 @@ export function useAIQuantTerminalV2(
     const runWatchedSymbolsCycle = useCallback(async () => {
         if (!isConnected || executionLockRef.current) return;
 
-        // --- CIRCUIT BREAKER CHECK ---
-        const councilTrades = operationsLog.filter(op => op.initiator === 'Conselho' && op.status !== 'pending');
-        const recentLosses = councilTrades.slice(0, maxConsecutiveLosses);
+        // --- CIRCUIT BREAKER CHECK (FILTRADO POR HOJE) ---
+        const todayStr = new Date().toDateString();
+        const councilTradesToday = operationsLog.filter(op => 
+            op.initiator === 'Conselho' && 
+            op.status !== 'pending' &&
+            new Date(op.timestamp).toDateString() === todayStr
+        );
+        
+        const recentLosses = councilTradesToday.slice(0, maxConsecutiveLosses);
         const hitLossStreak = recentLosses.length === maxConsecutiveLosses && recentLosses.every(op => op.status === 'lost');
         const hitDailyLimit = globalSessionStats.pnl <= maxDailyLoss;
 
         if (hitLossStreak || hitDailyLimit) {
             if (isAutoMode) {
                 const reason = hitLossStreak 
-                  ? `${maxConsecutiveLosses} perdas consecutivas detectadas`
+                  ? `${maxConsecutiveLosses} perdas consecutivas detectadas HOJE`
                   : `Perda máxima diária de $${Math.abs(maxDailyLoss)} atingida`;
                 addLog(`🛑 Circuit breaker: ${reason}. Pausando Autopilot.`, 'error');
                 setIsAutoMode(false);
@@ -370,6 +375,18 @@ export function useAIQuantTerminalV2(
         }
     }, [isConnected, watchedSymbols, multiAssetCandles, activeSymbol, chartData, runInference, confidenceThreshold, analysisInterval, isAutoMode, operationsLog, stakeValue, executeTrade, addLog, maxConsecutiveLosses, maxDailyLoss, globalSessionStats.pnl, toast]);
 
+    // FUNÇÃO PARA REINICIAR A SESSÃO
+    const resetSession = useCallback(() => {
+        setIsAutoMode(false);
+        clearActiveContracts();
+        setRadarStatus({});
+        setReasoningLog([]);
+        setChatMessages([]);
+        scheduleRef.current = {};
+        setLastDecision(null);
+        toast({ title: "Sessão Reiniciada", description: "O histórico e as travas de segurança foram resetados para o dia de hoje." });
+    }, [clearActiveContracts, toast]);
+
     const sendMessage = async (content: string) => {
         if (!ollamaConfig || !content.trim()) return;
 
@@ -456,7 +473,7 @@ export function useAIQuantTerminalV2(
         radarStatus, reasoningLog, telemetry, sessionStats, globalSessionStats,
         accountBalance, stakeValue, setStakeValue, profitTarget, setProfitTarget,
         maxConsecutiveLosses, setMaxConsecutiveLosses, maxDailyLoss, setMaxDailyLoss,
-        chatMessages, isChatLoading, sendMessage,
+        chatMessages, isChatLoading, sendMessage, resetSession,
         executeManualDecision: () => lastDecision && runWatchedSymbolsCycle()
     };
 }
