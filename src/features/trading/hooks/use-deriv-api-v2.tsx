@@ -266,7 +266,6 @@ export function useDerivApiV2State() {
       ));
   }, []);
 
-  // CORREÇÃO 1: Watchdog Fallback para contratos travados
   useEffect(() => {
       const interval = setInterval(() => {
           const now = Date.now();
@@ -447,6 +446,9 @@ export function useDerivApiV2State() {
 
         const contractsRes: any = await makeRequest({ contracts_for: symbol });
         if (contractsRes.error) throw new Error(contractsRes.error.message);
+        
+        // Guard para troca rápida de ativos
+        if (activeSymbolRef.current !== symbol) return;
 
         const available: any[] = contractsRes.contracts_for?.available || [];
         const newLimits: DurationLimits = { t: null, s: null, m: null, h: null, d: null };
@@ -493,6 +495,7 @@ export function useDerivApiV2State() {
         if (wsRef.current?.readyState !== WebSocket.OPEN) return;
 
         const botHistory = await getHistoricalData(symbol, 'candles', 1000, '1m');
+        if (activeSymbolRef.current !== symbol) return;
         setBotCandleData(botHistory as CandleData[]);
         
         const botSubRequest = { 
@@ -505,8 +508,16 @@ export function useDerivApiV2State() {
             adjust_start_time: 1 
         };
         const botSubResponse: any = await makeRequest(botSubRequest);
-        if (botSubResponse.error && botSubResponse.error.code !== 'AlreadySubscribed') throw new Error(`Bot Sub: ${botSubResponse.error.message}`);
-        if(botSubResponse.subscription?.id) botSubscriptionIdRef.current = botSubResponse.subscription.id;
+        if (botSubResponse.error && botSubResponse.error.code !== 'AlreadySubscribed') {
+            if (botSubResponse.error.code === 'Timeout') {
+                console.warn(`[Bot Sub] Timeout para ${symbol}. Operação pode ficar lenta.`);
+            } else {
+                throw new Error(`Bot Sub: ${botSubResponse.error.message}`);
+            }
+        }
+        if (activeSymbolRef.current === symbol && botSubResponse.subscription?.id) {
+            botSubscriptionIdRef.current = botSubResponse.subscription.id;
+        }
         
         if (wsRef.current?.readyState !== WebSocket.OPEN) return;
 
@@ -514,6 +525,7 @@ export function useDerivApiV2State() {
         const currentTimePeriod = timePeriodRef.current;
         const historyStyle = currentChartType === 'Candle' ? 'candles' : 'ticks';
         const uiHistory = await getHistoricalData(symbol, historyStyle, 1000, currentTimePeriod);
+        if (activeSymbolRef.current !== symbol) return;
         
         const chartHistory = uiHistory.map(h => {
             if(historyStyle === 'candles' && h.open) {
@@ -549,8 +561,16 @@ export function useDerivApiV2State() {
         }
         
         const uiSubResponse: any = await makeRequest(uiSubRequest);
-        if (uiSubResponse.error && uiSubResponse.error.code !== 'AlreadySubscribed') throw new Error(`UI Sub: ${uiSubResponse.error.message}`);
-        if(uiSubResponse.subscription?.id) activeSubscriptionIdRef.current = uiSubResponse.subscription.id;
+        if (uiSubResponse.error && uiSubResponse.error.code !== 'AlreadySubscribed') {
+            if (uiSubResponse.error.code === 'Timeout') {
+                console.warn(`[Market Data] Timeout na subscrição UI para ${symbol}. Mantendo dados estáticos.`);
+            } else {
+                throw new Error(`UI Sub: ${uiSubResponse.error.message}`);
+            }
+        }
+        if (activeSymbolRef.current === symbol && uiSubResponse.subscription?.id) {
+            activeSubscriptionIdRef.current = uiSubResponse.subscription.id;
+        }
 
     } catch (error: any) {
         console.error(`[Market Data] Error for ${symbol}:`, error);
@@ -595,8 +615,7 @@ export function useDerivApiV2State() {
           if (contractType === 'ACCU') {
               proposalPayload.growth_rate = 0.03;
           } else if (contractType.startsWith('MULT')) {
-              // CORREÇÃO: Fallback dinâmico para evitar erro de range de multiplicador
-              const defaultMult = symbol.startsWith('frx') ? 400 : 100;
+              const defaultMult = symbol.startsWith('frx') ? 400 : 400; // Alterado para 400 como pivot seguro
               proposalPayload.multiplier = extraParams?.multiplier || defaultMult;
           } else {
               proposalPayload.duration = Math.round(duration);
@@ -716,7 +735,6 @@ export function useDerivApiV2State() {
     }, 30000);
   }, []);
   
-  // CORREÇÃO 2: Restaurar localStorage e logs
   useEffect(() => {
       try {
           const storedDemoToken = localStorage.getItem(DERIV_DEMO_TOKEN_KEY);
