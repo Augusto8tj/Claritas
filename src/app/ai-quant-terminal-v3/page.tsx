@@ -1,4 +1,4 @@
-
+// src/app/ai-quant-terminal-v3/page.tsx
 'use client';
 
 import React, { useState, useRef, useEffect } from 'react';
@@ -17,7 +17,7 @@ import {
     Database, Activity, History, ArrowUpCircle, ArrowDownCircle,
     TestTube, Scale, Brain, Trash2, Radar, TrendingUp, TrendingDown, 
     Minus, Check, ChevronsUpDown, Settings2, Wallet, Target, Layers,
-    MessageSquare, Send, Gauge, Laptop
+    MessageSquare, Send, Gauge, Laptop, HardDrive
 } from "lucide-react";
 import { DerivApiProviderV2 as DerivApiProvider, useDerivApiV2 as useDerivApi } from "@/features/trading/hooks/use-deriv-api-v2";
 import { AssetSelectorV2 as AssetSelector } from "@/features/trading/components/deriv-trader/asset-selector-v2";
@@ -46,7 +46,8 @@ function TerminalV3Content() {
         radarStatus, watchedSymbols, setWatchedSymbols, resetSession,
         allowedContracts, setAllowedContracts, maxConcurrentTrades, setMaxConcurrentTrades,
         stakeValue, setStakeValue, dailyBalance, setDailyBalance, dailyTarget, setDailyTarget,
-        sessionStats, chatMessages, isChatLoading, sendMessage, telemetry, ollamaConfig
+        sessionStats, chatMessages, isChatLoading, sendMessage, telemetry, ollamaConfig,
+        updateOllamaConfig
     } = v3;
 
     const [isSelectorOpen, setIsSelectorOpen] = useState(false);
@@ -292,6 +293,29 @@ function TerminalV3Content() {
                                         <div key={i} className={cn("h-2 flex-1 rounded-sm", i < (telemetry.inferenceHealth/10) ? "bg-green-500" : "bg-slate-800")} />
                                     ))}
                                 </div>
+                            </div>
+
+                            <div className="space-y-1.5 border-t border-slate-800 pt-3">
+                                <div className="flex justify-between items-center mb-1">
+                                    <span className="opacity-60 text-[9px] uppercase flex items-center gap-1">
+                                        <HardDrive className="h-3 w-3" /> VRAM Keep-Alive
+                                    </span>
+                                </div>
+                                <Select 
+                                    value={ollamaConfig?.keepAlive || "5m"} 
+                                    onValueChange={(val) => updateOllamaConfig({ keepAlive: val })}
+                                >
+                                    <SelectTrigger className="h-7 bg-slate-900 border-slate-700 text-[10px] font-mono hover:bg-slate-800 transition-colors">
+                                        <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent className="bg-slate-950 border-slate-800 text-slate-300">
+                                        <SelectItem value="5m">5 Minutos (Padrão)</SelectItem>
+                                        <SelectItem value="30m">30 Minutos</SelectItem>
+                                        <SelectItem value="1h">1 Hora</SelectItem>
+                                        <SelectItem value="-1">Infinito (Sempre Ativo)</SelectItem>
+                                        <SelectItem value="0">Imediato (Econômico)</SelectItem>
+                                    </SelectContent>
+                                </Select>
                             </div>
                             
                             <p className="text-[9px] text-slate-500 italic mt-2">

@@ -1,4 +1,3 @@
-
 'use client';
 
 /**
@@ -89,15 +88,25 @@ export function useAIQuantTerminalV3(
     const executionLockRef = useRef(false);
     const scheduleRef = useRef<Record<string, number>>({});
 
-    const ollamaConfig = useMemo(() => {
-        if (typeof window === 'undefined') return null;
-        const saved = localStorage.getItem('ollamaConfig');
-        return saved ? JSON.parse(saved) as OllamaConfig : null;
+    const [ollamaConfig, setOllamaConfig] = useState<OllamaConfig | null>(null);
+
+    useEffect(() => {
+        if (typeof window !== 'undefined') {
+            const saved = localStorage.getItem('ollamaConfig');
+            if (saved) setOllamaConfig(JSON.parse(saved) as OllamaConfig);
+        }
     }, []);
 
-    const addLog = useCallback((message: string, type: string = 'info') => {
-        setReasoningLog(prev => [{ time: new Date().toLocaleTimeString(), message, type }, ...prev].slice(0, 50));
-    }, []);
+    const updateOllamaConfig = useCallback((updates: Partial<OllamaConfig>) => {
+        if (typeof window === 'undefined') return;
+        setOllamaConfig(prev => {
+            const current = prev || { baseUrl: '', model: '', temperature: 0.2, keepAlive: '5m' };
+            const next = { ...current, ...updates };
+            localStorage.setItem('ollamaConfig', JSON.stringify(next));
+            return next;
+        });
+        toast({ title: "Configuração Atualizada", description: "As preferências do Ollama foram salvas." });
+    }, [toast]);
 
     const sessionStats = useMemo(() => {
         const finishedTrades = operationsLog.filter(op => 
@@ -352,6 +361,7 @@ export function useAIQuantTerminalV3(
         chatMessages, isChatLoading, sendMessage,
         executeManualDecision: () => lastDecision && runMultiAssetCycle(),
         telemetry,
-        ollamaConfig
+        ollamaConfig,
+        updateOllamaConfig
     };
 }
