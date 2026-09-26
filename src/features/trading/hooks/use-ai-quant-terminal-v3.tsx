@@ -3,6 +3,7 @@
 /**
  * @fileOverview TERMINAL QUANT V3.0 (COUNCIL EDITION) - MONITORAMENTO MULTI-ATIVO
  * Lógica de laboratório com conselho paralelo, memória viva e radar multi-ativo.
+ * V3.2: Controle de ciclo, seletividade de contratos e suporte multi-execução.
  */
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
@@ -26,21 +27,41 @@ export interface RadarAssetStatus {
     opinions: AgentOpinion[];
 }
 
+export type AllowedContractsV3 = {
+    'CALL': boolean;
+    'PUT': boolean;
+    'ACCUMULATORS': boolean;
+    'MULTIPLIERS': boolean;
+};
+
 export function useAIQuantTerminalV3(
     activeSymbol: string | null,
     priceTicks: TickData[],
     chartData: CandleData[]
 ) {
-    const { isConnected, executeTrade, operationsLog, accountBalance, watchedSymbols, setWatchedSymbols, multiAssetCandles } = useDerivApi();
+    const { isConnected, executeTrade, operationsLog, accountBalance, watchedSymbols, setWatchedSymbols, multiAssetCandles, clearActiveContracts } = useDerivApi();
     const { user } = useAuth();
     const { toast } = useToast();
 
+    // ESTADOS DE CONTROLE
     const [isAutoMode, setIsAutoMode] = useState(false);
     const [isShadowMode, setIsShadowMode] = useState(true);
     const [lastDecision, setLastDecision] = useState<CouncilDecision | null>(null);
-    const [analysisInterval, setAnalysisInterval] = useState(60); 
-    const [timeToNextAnalysis, setTimeToNextAnalysis] = useState(60);
+    const [analysisInterval, setAnalysisInterval] = useState(120); 
+    const [timeToNextAnalysis, setTimeToNextAnalysis] = useState(120);
     
+    // GESTÃO DE CONTRATOS E FREQUÊNCIA
+    const [allowedContracts, setAllowedContracts] = useState<AllowedContractsV3>({
+        'CALL': true,
+        'PUT': true,
+        'ACCUMULATORS': true,
+        'MULTIPLIERS': true
+    });
+    const [maxConcurrentTrades, setMaxConcurrentTrades] = useState(5);
+    const [stakeValue, setStakeValue] = useState(1.0);
+    const [dailyBalance, setDailyBalance] = useState(10.0);
+    const [dailyTarget, setDailyTarget] = useState(5.0);
+
     const [radarStatus, setRadarStatus] = useState<Record<string, RadarAssetStatus>>({});
     const [memoryBuffer, setMemoryBuffer] = useState<TradeMemoryBuffer>({ wins: [], losses: [] });
     const [reasoningLog, setReasoningLog] = useState<any[]>([]);
@@ -56,6 +77,16 @@ export function useAIQuantTerminalV3(
     const addLog = useCallback((message: string, type: string = 'info') => {
         setReasoningLog(prev => [{ time: new Date().toLocaleTimeString(), message, type }, ...prev].slice(0, 50));
     }, []);
+
+    // Session Stats
+    const sessionStats = useMemo(() => {
+        const finishedTrades = operationsLog.filter(op => 
+            op.status !== 'pending' && op.initiator === 'Conselho'
+        );
+        const wins = finishedTrades.filter(op => op.status === 'won').length;
+        const pnl = finishedTrades.reduce((acc, op) => acc + (Number(op.result) || 0), 0);
+        return { pnl: Number(pnl) || 0, winRate: finishedTrades.length > 0 ? (wins / finishedTrades.length) * 100 : null, total: finishedTrades.length };
+    }, [operationsLog]);
 
     // Carrega a memória inicial
     useEffect(() => {
@@ -77,7 +108,7 @@ export function useAIQuantTerminalV3(
             TradeMemoryManager.addTrade(user.uid, {
                 id: String(lastFinished.id),
                 timestamp: Date.now(),
-                contract: 'CALL', 
+                contract: (lastFinished.contractType?.startsWith('MULT') ? 'MULTIPLIERS' : (lastFinished.contractType === 'ACCU' ? 'ACCUMULATORS' : (lastFinished.direction === 'rise' ? 'CALL' : 'PUT'))) as any, 
                 result,
                 pnl: lastFinished.result || 0,
                 rsi: 50, 
@@ -93,8 +124,7 @@ export function useAIQuantTerminalV3(
         if (!isConnected || !ollamaConfig || candles.length < 30) return;
         
         const isFocused = symbol === activeSymbol;
-        if (isFocused) addLog(`Conselho V3 analisando ${symbol}...`, 'info');
-
+        
         try {
             const indicators = calculateAllIndicators(candles, [], '1m', { duration: 15, unit: 's' });
             const snapshot = {
@@ -125,20 +155,50 @@ export function useAIQuantTerminalV3(
 
             // Execução do Autopilot
             if (isAutoMode && !isShadowMode && decision.finalAction !== 'HOLD' && decision.consensusConfidence >= 65) {
-                const hasOpenTrade = operationsLog.some(op => op.asset === symbol && op.status === 'pending');
-                if (!hasOpenTrade) {
+                // Check if contract is allowed
+                const isContractAllowed = allowedContracts[decision.recommendedContract as keyof AllowedContractsV3];
+                if (!isContractAllowed) {
+                    if (isFocused) addLog(`Sinal ${decision.finalAction} em ${symbol} ignorado: Contrato ${decision.recommendedContract} desativado.`, 'info');
+                    return;
+                }
+
+                const totalOpenTrades = operationsLog.filter(op => op.status === 'pending').length;
+                if (totalOpenTrades >= maxConcurrentTrades) {
+                    if (isFocused) addLog(`Limite de ${maxConcurrentTrades} ordens simultâneas atingido.`, 'info');
+                    return;
+                }
+
+                const hasSameContractOpen = operationsLog.some(op => 
+                    op.asset === symbol && 
+                    op.status === 'pending' && 
+                    op.contractType === decision.recommendedContract
+                );
+
+                if (!hasSameContractOpen) {
+                    let finalContractType = 'CALL';
+                    let extraProposalParams: Record<string, any> = {};
+
+                    switch (decision.recommendedContract) {
+                        case 'ACCUMULATORS': finalContractType = 'ACCU'; break;
+                        case 'MULTIPLIERS': 
+                            finalContractType = decision.finalAction === 'CALL' ? 'MULTUP' : 'MULTDOWN'; 
+                            extraProposalParams = { multiplier: 400 }; 
+                            break;
+                        default: finalContractType = decision.finalAction === 'CALL' ? 'CALL' : 'PUT';
+                    }
+
                     await executeTrade(
-                        'CALL', 1.0, symbol, decision.finalAction.toLowerCase() as any,
-                        15, 's', 'Conselho', `V3_${decision.executedVia}`
+                        finalContractType, stakeValue, symbol, decision.finalAction.toLowerCase() as any,
+                        15, 's', 'Conselho', `V3_${decision.executedVia}`, extraProposalParams
                     );
-                    if (isFocused) addLog(`Ordem real executada: ${decision.finalAction}`, 'execution');
+                    if (isFocused) addLog(`[EXEC] Ordem real disparada: ${decision.recommendedContract} em ${symbol}`, 'execution');
                 }
             }
 
         } catch (err: any) {
             if (isFocused) addLog(`Erro em ${symbol}: ${err.message}`, 'error');
         }
-    }, [isConnected, ollamaConfig, isShadowMode, user, isAutoMode, operationsLog, activeSymbol, priceTicks, executeTrade, addLog]);
+    }, [isConnected, ollamaConfig, isShadowMode, user, isAutoMode, allowedContracts, maxConcurrentTrades, operationsLog, activeSymbol, priceTicks, executeTrade, addLog, stakeValue]);
 
     const runMultiAssetCycle = useCallback(async () => {
         if (executionLockRef.current) return;
@@ -161,12 +221,16 @@ export function useAIQuantTerminalV3(
         executionLockRef.current = false;
     }, [watchedSymbols, activeSymbol, chartData, multiAssetCandles, analysisInterval, runAnalysisForSymbol]);
 
-    const clearMemory = async () => {
-        if (!user) return;
-        await TradeMemoryManager.clearBuffer(user.uid);
+    const resetSession = async () => {
+        setIsAutoMode(false);
+        clearActiveContracts();
+        setRadarStatus({});
+        setReasoningLog([]);
+        scheduleRef.current = {};
+        setLastDecision(null);
+        if (user) await TradeMemoryManager.clearBuffer(user.uid);
         setMemoryBuffer({ wins: [], losses: [] });
-        toast({ title: "Memória Resetada", description: "O buffer de aprendizado da V3 foi limpo." });
-        addLog("Memória quantitativa resetada pelo operador.");
+        toast({ title: "Laboratório Resetado", description: "Histórico, memória e contadores foram limpos." });
     };
 
     useEffect(() => {
@@ -182,12 +246,23 @@ export function useAIQuantTerminalV3(
         return () => clearInterval(interval);
     }, [runMultiAssetCycle, analysisInterval]);
 
+    useEffect(() => {
+        setTimeToNextAnalysis(analysisInterval);
+    }, [analysisInterval]);
+
     return {
         isAutoMode, toggleAutoMode: () => setIsAutoMode(!isAutoMode),
         isShadowMode, toggleShadowMode: () => setIsShadowMode(!isShadowMode),
         lastDecision, timeToNextAnalysis, analysisInterval, setAnalysisInterval,
-        reasoningLog, memoryBuffer, accountBalance, clearMemory,
+        allowedContracts, setAllowedContracts,
+        maxConcurrentTrades, setMaxConcurrentTrades,
+        stakeValue, setStakeValue,
+        dailyBalance, setDailyBalance,
+        dailyTarget, setDailyTarget,
+        sessionStats,
+        reasoningLog, memoryBuffer, accountBalance,
         radarStatus, watchedSymbols, setWatchedSymbols,
+        resetSession,
         executeManualDecision: () => lastDecision && runMultiAssetCycle()
     };
 }
