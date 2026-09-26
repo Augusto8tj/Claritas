@@ -1,4 +1,3 @@
-
 'use client';
 
 /**
@@ -69,8 +68,9 @@ interface SymbolSchedule {
     lastRegime?: string;
 }
 
-// Configuração de Failover
-const INFERENCE_TIMEOUT_MS = 1500; 
+// Configuração de Failover ajustada para 10s conforme solicitação do usuário
+// para acomodar latência de hardware e reduzir incidência de failover matemático.
+const INFERENCE_TIMEOUT_MS = 10000; 
 
 function computeAdaptiveInterval(regime: string | undefined, baseIntervalSec: number): number {
     switch (regime) {
@@ -235,7 +235,7 @@ export function useAIQuantTerminalV2(
             const prompt = `VOCÊ É O CIO DO TERMINAL CLARITAS V2.6.
             Sua missão é selecionar o melhor CONTRATO e DIREÇÃO.
             
-            CONDIÇÕES ATUAIS: Ativo=${symbol} | Perfil=${strategicProfile} | Regime=${regime?.regime}
+            CONDUÇÕES ATUAIS: Ativo=${symbol} | Perfil=${strategicProfile} | Regime=${regime?.regime}
             DADOS TÉCNICOS: RSI=${indicators?.rsi?.toFixed(1)} | ADX=${indicators?.adx?.toFixed(1)} | BBW=${indicators?.bbw?.toFixed(3)}
             
             HISTÓRICO DE ERROS RECENTES (FEEDBACK LOOP):
