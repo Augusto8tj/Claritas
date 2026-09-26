@@ -97,6 +97,10 @@ export function useAIQuantTerminalV3(
         }
     }, []);
 
+    const addLog = useCallback((message: string, type: string = 'info') => {
+        setReasoningLog(prev => [{ time: new Date().toLocaleTimeString(), message, type }, ...prev].slice(0, 50));
+    }, []);
+
     const updateOllamaConfig = useCallback((updates: Partial<OllamaConfig>) => {
         if (typeof window === 'undefined') return;
         setOllamaConfig(prev => {
@@ -355,7 +359,7 @@ export function useAIQuantTerminalV3(
         dailyBalance, setDailyBalance,
         dailyTarget, setDailyTarget,
         sessionStats,
-        reasoningLog, memoryBuffer, accountBalance,
+        reasoningLog, addLog, memoryBuffer, accountBalance,
         radarStatus, watchedSymbols, setWatchedSymbols,
         resetSession,
         chatMessages, isChatLoading, sendMessage,
