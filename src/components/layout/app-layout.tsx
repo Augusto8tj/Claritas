@@ -77,6 +77,11 @@ const navItems = [
     label: "Quant Radar (V2 - Novo)",
   },
   {
+    href: "/ai-quant-terminal-v3",
+    icon: TestTube,
+    label: "Quant Radar V3 (Laboratório)",
+  },
+  {
     href: "/analysis",
     icon: BarChart3,
     label: "Análise",

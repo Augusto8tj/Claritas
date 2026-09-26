@@ -1,31 +1,19 @@
+
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Esta regra única e poderosa concede a um utilizador autenticado acesso
-    // total a todos os documentos e subcoleções dentro do seu próprio
-    // documento de utilizador.
-    //
-    // O curinga recursivo `{document=**}` corresponde a qualquer documento
-    // em qualquer profundidade. A segurança é mantida porque a regra ainda
-    // impõe que o UID do utilizador autenticado corresponda ao {userId} no caminho.
-    //
-    // Isto cobre, por exemplo:
-    // - /users/{userId}
-    // - /users/{userId}/transactions/{txId}
-    // - /users/{userId}/performance_v1/robot_council
-    // - /users/{userId}/evolution_v2/history
     match /users/{userId}/{document=**} {
-      // Adicionado 'delete' explicitamente para garantir permissão de exclusão.
-      // A permissão 'write' já inclui 'create', 'update', e 'delete'.
       allow read, write, delete: if request.auth.uid == userId;
     }
 
-    // REGRA TEMPORÁRIA: Permite que qualquer utilizador autenticado leia, liste e apague
-    // documentos da coleção 'decision_logs' legada.
-    // REMOVER APÓS A LIMPEZA.
     match /decision_logs/{document=**} {
       allow read, write: if request.auth != null;
+    }
+    
+    // Suporte à memória quantitativa do conselho V3
+    match /users/{userId}/quant_memory/{document=**} {
+      allow read, write: if request.auth.uid == userId;
     }
   }
 }
