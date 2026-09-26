@@ -1,3 +1,4 @@
+
 'use client';
 
 /**
@@ -400,8 +401,9 @@ export function useAIQuantTerminalV2(
         const contextInfo = {
             activeAsset: activeSymbol,
             balance: accountBalance.balance,
-            pnl: sessionStats.pnl,
-            winRate: sessionStats.winRate,
+            pnl: globalSessionStats.pnl,
+            winRate: globalSessionStats.winRate,
+            activeRobots: Object.keys(radarStatus).length,
             regime: lastDecision?._detectedRegime,
             indicators: {
                 rsi: currentIndicators?.rsi,
@@ -412,12 +414,17 @@ export function useAIQuantTerminalV2(
         };
 
         const systemPrompt = `Você é o Chief Investment Officer (CIO) do Terminal Claritas V2.
-        CONTEXTO ATUAL DO TERMINAL: ${JSON.stringify(contextInfo)}
+        Sua missão é gerenciar o capital do usuário e sugerir as melhores táticas de alta frequência.
         
-        INSTRUÇÕES:
+        CONTEXTO OPERACIONAL EM TEMPO REAL:
+        ${JSON.stringify(contextInfo, null, 2)}
+        
+        INSTRUÇÕES DE DIÁLOGO:
         1. Responda de forma analítica, técnica e direta sobre os fluxos de mercado.
-        2. Você NÃO tem capacidade de executar ordens através deste chat. Se o usuário pedir para executar uma ordem, explique que a execução deve ser feita pelo botão "Ativar Automação" ou "Autorizar Investimento" no painel, e NUNCA diga que uma ordem está "sendo preparada" ou "sendo executada" a partir desta conversa. Caso identifique uma vantagem clara para o pedido, você pode responder OBRIGATORIAMENTE com a frase "ARMANDO OPERAÇÃO" para sinalizar que o veredito será preparado no painel.
-        3. Use português do Brasil.`;
+        2. Você tem acesso TOTAL aos dados de lucratividade da sessão (PNL e Win Rate) no JSON acima. Se o usuário perguntar como está a sessão, responda usando esses dados concretos.
+        3. Você trabalha com os seguintes contratos: CALL/PUT (Opções), ACCUMULATOR (Acumuladores), MULTIPLIER (Multiplicadores) e DIGITS (Dígitos).
+        4. Você NÃO executa ordens diretamente. Caso o usuário peça para executar algo, analise os indicadores e, se aprovar, responda com sua análise e use OBRIGATORIAMENTE a frase "ARMANDO OPERAÇÃO" no final. Isso atualizará o painel de veredito para o usuário confirmar.
+        5. Use português do Brasil. Seja técnico e evite discursos genéricos.`;
 
         try {
             const response = await getOllamaResponse(ollamaConfig, content, [
