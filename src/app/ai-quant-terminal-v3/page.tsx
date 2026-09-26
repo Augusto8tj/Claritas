@@ -1,4 +1,3 @@
-
 'use client';
 
 import React, { useState, useRef, useEffect } from 'react';
@@ -295,7 +294,7 @@ function TerminalV3Content() {
                             </div>
                             
                             <p className="text-[9px] text-slate-500 italic mt-2">
-                                [STRICT] Entropy > 0.7 triggers stake penalty.
+                                [STRICT] Entropy &gt; 0.7 triggers stake penalty.
                             </p>
                         </CardContent>
                     </Card>
