@@ -2,20 +2,19 @@ import { TradeMemoryBuffer, AgentOpinion, CouncilDecision, CouncilTelemetry } fr
 import { TradeMemoryManager } from './trade-memory-service';
 import type { OllamaConfig } from '@/lib/types';
 
-// V3.7: Timeouts relaxados para suportar modelos locais mais pesados (ex: Llama3/Llava)
-const OLLAMA_TIMEOUT_MS = 5000; 
-const TOTAL_FAILOVER_TIMEOUT_MS = 8000;
+// V3.8: Timeouts otimizados para evitar failover matemático em hardware com Jitter alto
+const AGENT_TIMEOUT_MS = 7000; 
+const CHAIRMAN_THRESHOLD_MS = 9000;
 
 /**
  * Calcula a Entropia de Shannon para medir a divisão do conselho.
  */
 function calculateConsensusEntropy(opinions: AgentOpinion[]): number {
-  if (opinions.length < 2) return 0.5; // Incerteza base com poucos dados
+  if (opinions.length < 2) return 0.2; // Baixa entropia se houver poucos dados (assumindo quórum)
   const counts = { CALL: 0, PUT: 0, HOLD: 0 };
   opinions.forEach(o => counts[o.action]++);
   
   const probs = Object.values(counts).map(c => c / opinions.length);
-  // Entropia normalizada: 0 (harmonia) a 1 (caos)
   return -probs.reduce((sum, p) => p > 0 ? sum + p * Math.log2(p) : sum, 0) / 1.58; 
 }
 
@@ -30,30 +29,28 @@ export async function runQuantCouncil(
   try {
     const memoryContext = TradeMemoryManager.formatBufferForPrompt(memoryBuffer);
 
-    // Fan-Out: Disparo paralelo dos analistas
-    const agentPromises = [
-      fetchAgentAnalysis('MOMENTUM', marketSnapshot, memoryContext, config),
-      fetchAgentAnalysis('RISK_CRITIC', marketSnapshot, memoryContext, config),
-      fetchAgentAnalysis('ARCHIVIST', marketSnapshot, memoryContext, config),
-    ];
+    // Lista de agentes para o conselho
+    const agents: Array<AgentOpinion['agentName']> = ['MOMENTUM', 'RISK_CRITIC', 'ARCHIVIST'];
 
-    const timeoutPromise = new Promise((_, reject) => 
-      setTimeout(() => reject(new Error('COUNCIL_TIMEOUT')), OLLAMA_TIMEOUT_MS)
-    );
+    // Disparo paralelo com timeout individual por agente (Resiliência)
+    const agentPromises = agents.map(name => fetchAgentWithTimeout(name, marketSnapshot, memoryContext, config));
 
-    const raceResults = await Promise.race([
-        Promise.allSettled(agentPromises),
-        timeoutPromise
-    ]);
+    // Aguarda o assentamento de todas as promessas (allSettled impede que uma falha cancele as outras)
+    const results = await Promise.allSettled(agentPromises);
 
     const opinions: AgentOpinion[] = [];
-    if (Array.isArray(raceResults)) {
-        raceResults.forEach(res => {
-            if (res.status === 'fulfilled') opinions.push(res.value);
-        });
+    results.forEach(res => {
+        if (res.status === 'fulfilled' && res.value) {
+            opinions.push(res.value);
+        }
+    });
+
+    // Diagnóstico de Quórum
+    if (opinions.length < 2) {
+        throw new Error('QUORUM_FAILURE');
     }
 
-    // Atalho de Veto: Se o Crítico identificou perigo iminente
+    // Atalho de Veto Prioritário
     const criticVeto = opinions.find(o => o.agentName === 'RISK_CRITIC' && o.vetoTriggered);
     if (criticVeto && criticVeto.confidence > 75) {
       const endTime = performance.now();
@@ -67,34 +64,58 @@ export async function runQuantCouncil(
         executionMode: isShadowMode ? 'SHADOW' : 'REAL',
         t2tLatencyMs: Math.round(endTime - startTime),
         telemetry: generateTelemetry(opinions, startTime, endTime),
-        zenThought: "Veto estratégico: O Risk Critic identificou semelhança com perdas anteriores."
+        zenThought: "Veto estratégico: Risco detectado pela maioria do quórum."
       };
     }
 
     return synthesizeChairmanDecision(opinions, marketSnapshot, isShadowMode, startTime);
 
-  } catch (error) {
+  } catch (error: any) {
     const endTime = performance.now();
-    return executeMathFallback(marketSnapshot, isShadowMode, Math.round(endTime - startTime));
+    const latency = Math.round(endTime - startTime);
+    
+    // Se o erro for de quórum, tentamos o fallback matemático
+    return executeMathFallback(marketSnapshot, isShadowMode, latency);
   }
+}
+
+async function fetchAgentWithTimeout(
+    agentName: AgentOpinion['agentName'],
+    snapshot: any,
+    memoryContext: string,
+    config: OllamaConfig
+): Promise<AgentOpinion | null> {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), AGENT_TIMEOUT_MS);
+
+    try {
+        const opinion = await fetchAgentAnalysis(agentName, snapshot, memoryContext, config, controller.signal);
+        clearTimeout(timeoutId);
+        return opinion;
+    } catch (e) {
+        console.warn(`[Council] Agente ${agentName} falhou ou excedeu timeout.`);
+        return null;
+    }
 }
 
 async function fetchAgentAnalysis(
   agentName: AgentOpinion['agentName'],
   snapshot: any,
   memoryContext: string,
-  config: OllamaConfig
+  config: OllamaConfig,
+  signal: AbortSignal
 ): Promise<AgentOpinion> {
   const start = performance.now();
   const systemPrompts = {
-    MOMENTUM: "Aja como 'Quant Momentum'. Foco: força e velocidade. Responda apenas JSON ultra-conciso.",
-    RISK_CRITIC: "Aja como 'Risk Critic'. Foco: VETO e erros passados. Responda apenas JSON ultra-conciso.",
-    ARCHIVIST: "Aja como 'Pattern Archivist'. Foco: semelhança com vitórias. Responda apenas JSON ultra-conciso."
+    MOMENTUM: "Analista 'Quant Momentum'. Foco: velocidade de ticks e força atual. Responda JSON.",
+    RISK_CRITIC: "Analista 'Risk Critic'. Foco: buscar motivos para NÃO operar (VETO). Responda JSON.",
+    ARCHIVIST: "Analista 'Pattern Archivist'. Foco: comparar com histórico de vitórias. Responda JSON."
   };
 
   const response = await fetch('/api/ollama/agent', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
+    signal,
     body: JSON.stringify({
       systemPrompt: `${systemPrompts[agentName]}\n${memoryContext}`,
       marketSnapshot: snapshot,
@@ -106,7 +127,6 @@ async function fetchAgentAnalysis(
   const data = await response.json();
   const end = performance.now();
   
-  // V3.7: Agora usamos as métricas REAIS enviadas pelo Ollama através da nossa rota API
   return { 
     ...data.opinion, 
     agentName, 
@@ -139,7 +159,7 @@ function synthesizeChairmanDecision(
   const endTime = performance.now();
   const telemetry = generateTelemetry(opinions, startTime, endTime);
 
-  if (opinions.length === 0) {
+  if (opinions.length < 2) {
     return executeMathFallback(snapshot, isShadowMode, Math.round(endTime - startTime));
   }
 
@@ -151,38 +171,42 @@ function synthesizeChairmanDecision(
     if (op.action === 'PUT') putScore += op.confidence;
   });
 
+  // Ajuste por Jitter (Se a variabilidade for > 1s, o sinal pode estar "velho")
+  const jitterPenalty = telemetry.jitterMs > 1000 ? 0.8 : 1.0;
+  
   // Penalidade por desordem (Entropia)
   const entropyPenalty = telemetry.consensusEntropy > 0.6 ? 0.7 : 1.0;
-  const maxScore = Math.max(callScore, putScore) * entropyPenalty;
   
-  // Exige pelo menos 2 opiniões ou uma opinião muito forte
-  const minRequiredScore = opinions.length > 1 ? 120 : 85;
-  const action = callScore > putScore && maxScore > minRequiredScore ? 'CALL' : putScore > callScore && maxScore > minRequiredScore ? 'PUT' : 'HOLD';
+  const finalPenalty = jitterPenalty * entropyPenalty;
+  const maxScore = Math.max(callScore, putScore) * finalPenalty;
+  
+  const quorumAdjustedMinScore = (opinions.length / 3) * 120;
+  const action = callScore > putScore && maxScore > quorumAdjustedMinScore ? 'CALL' : putScore > callScore && maxScore > quorumAdjustedMinScore ? 'PUT' : 'HOLD';
 
   return {
     finalAction: action,
     recommendedContract: opinions.find(o => o.action === action)?.recommendedContract || 'CALL',
-    stakeRatio: action !== 'HOLD' ? 0.25 : 0,
+    stakeRatio: action !== 'HOLD' ? 0.25 * finalPenalty : 0,
     consensusConfidence: Math.round(maxScore / Math.max(1, opinions.length)),
     opinions,
     executedVia: 'COUNCIL_LLM',
     executionMode: isShadowMode ? 'SHADOW' : 'REAL',
     t2tLatencyMs: Math.round(endTime - startTime),
     telemetry,
-    zenThought: telemetry.consensusEntropy < 0.3 ? "Conselho em harmonia. Execução otimizada." : "Divergência detectada. Reduzindo exposição."
+    zenThought: telemetry.jitterMs > 1000 ? "Hardware sob pressão. Calibrando execução conservadora." : "Conselho operando com latência otimizada."
   };
 }
 
 function executeMathFallback(snapshot: any, isShadowMode: boolean, latency: number): CouncilDecision {
-  const isOverbought = (snapshot.rsi || 50) > 70;
-  const isOversold = (snapshot.rsi || 50) < 30;
+  const isOverbought = (snapshot.rsi || 50) > 75;
+  const isOversold = (snapshot.rsi || 50) < 25;
   const action = isOverbought ? 'PUT' : isOversold ? 'CALL' : 'HOLD';
 
   return {
     finalAction: action,
     recommendedContract: 'CALL',
-    stakeRatio: action !== 'HOLD' ? 0.15 : 0,
-    consensusConfidence: 75,
+    stakeRatio: action !== 'HOLD' ? 0.10 : 0,
+    consensusConfidence: 65,
     opinions: [],
     executedVia: 'MATH_FALLBACK',
     executionMode: isShadowMode ? 'SHADOW' : 'REAL',
@@ -190,10 +214,10 @@ function executeMathFallback(snapshot: any, isShadowMode: boolean, latency: numb
     telemetry: {
         avgTokensPerSec: 0,
         totalTokens: 0,
-        consensusEntropy: 1.0, // Sinaliza incerteza máxima para a telemetria
+        consensusEntropy: 1.0,
         jitterMs: 0,
         inferenceHealth: 0
     },
-    zenThought: "IA silenciada (timeout/erro). Operando via motor estocástico de segurança."
+    zenThought: "Resiliência: IA ocupada ou lenta. Operando via motor de emergência."
   };
 }
