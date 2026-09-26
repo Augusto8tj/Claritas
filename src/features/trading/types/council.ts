@@ -1,4 +1,3 @@
-
 export interface TradePostMortem {
   id: string;
   timestamp: number;
@@ -24,6 +23,7 @@ export interface AgentOpinion {
   reasoning: string;
   vetoTriggered?: boolean;
   tokensPerSec?: number;
+  totalTokens?: number;
   latencyMs?: number;
 }
 
@@ -41,7 +41,7 @@ export interface CouncilDecision {
   stakeRatio: number;
   consensusConfidence: number;
   opinions: AgentOpinion[];
-  executedVia: 'COUNCIL_LLM' | 'MATH_FALLBACK';
+  executedVia: 'COUNCIL_LLM' | 'MATH_FALLBACK' | 'COUNCIL_VETO';
   executionMode: 'REAL' | 'SHADOW';
   t2tLatencyMs: number;
   telemetry: CouncilTelemetry;

@@ -1,4 +1,3 @@
-
 import { NextResponse } from 'next/server';
 
 export async function POST(req: Request) {
@@ -21,6 +20,7 @@ export async function POST(req: Request) {
       REGRAS:
       - Responda APENAS em JSON.
       - Não inclua explicações fora do JSON.
+      - Seja ULTRA-CONCISO para economizar tokens.
     `;
 
     const response = await fetch(url, {
@@ -49,10 +49,23 @@ export async function POST(req: Request) {
     const data = await response.json();
     let content = data.response;
     
-    // Tenta limpar o JSON se vier com markdown
+    // Tenta limpar o JSON se vier com markdown decorativo
     content = content.replace(/```json|```/g, "").trim();
     
-    return NextResponse.json(JSON.parse(content));
+    // Extrai métricas reais do Ollama para a telemetria
+    const evalDurationMs = (data.eval_duration || 0) / 1_000_000;
+    const tokensPerSecond = (data.eval_count && evalDurationMs > 0) 
+        ? (data.eval_count / (evalDurationMs / 1000)) 
+        : 0;
+
+    return NextResponse.json({
+        opinion: JSON.parse(content),
+        metrics: {
+            tokensPerSecond: Math.round(tokensPerSecond),
+            totalTokens: data.eval_count || 0,
+            loadDuration: Math.round((data.load_duration || 0) / 1_000_000)
+        }
+    });
 
   } catch (error: any) {
     console.error('[Agent API Error]:', error);
