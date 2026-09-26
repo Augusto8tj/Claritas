@@ -250,23 +250,35 @@ export function useAIQuantTerminalV3(
             const indicators = calculateAllIndicators(chartData, [], '1m', { duration: 15, unit: 's' });
             
             const agentPrompts: Record<string, string> = {
-                CHAIRMAN: "Você é o Chairman do Conselho V3. Sua visão é macro e estratégica.",
-                MOMENTUM: "Você é o analista 'Quant Momentum'. Seu foco é força e velocidade.",
-                RISK_CRITIC: "Você é o 'Risk Critic'. Seu trabalho é ser cético e evitar prejuízos.",
-                ARCHIVIST: "Você é o 'Pattern Archivist'. Sua memória é o histórico de vitórias."
+                CHAIRMAN: "Você é o Chairman do Conselho V3. Sua visão é macro e estratégica, responsável pela síntese final.",
+                MOMENTUM: "Você é o analista 'Quant Momentum'. Seu foco é força, velocidade de ticks e momentum de curto prazo.",
+                RISK_CRITIC: "Você é o 'Risk Critic'. Seu trabalho é ser cético, buscar padrões de falha e evitar prejuízos.",
+                ARCHIVIST: "Você é o 'Pattern Archivist'. Sua memória é o histórico de vitórias e estruturas de velas vencedoras."
             };
 
-            const systemPrompt = `${agentPrompts[targetAgent] || agentPrompts.CHAIRMAN}
+            const systemPrompt = `VOCÊ FAZ PARTE DO CONSELHO QUANTITATIVO DO LABORATÓRIO V3.0 (COUNCIL EDITION).
             
-            CONTEXTO ATUAL:
-            Ativo: ${activeSymbol}
-            Saldo: $${accountBalance.balance}
-            PnL Sessão: $${sessionStats.pnl.toFixed(2)}
-            Indicadores: RSI=${indicators?.rsi?.toFixed(1)} | ADX=${indicators?.adx?.toFixed(1)}
+            IDENTIDADE DA EQUIPE:
+            - Chairman (Líder): Orquestrador de consenso.
+            - Quant Momentum: Analista de força e micro-tendência.
+            - Risk Critic: Analista defensivo e post-mortem.
+            - Pattern Archivist: Especialista em ressonância de vitórias.
+
+            CONFIGURAÇÃO DA SESSÃO ATUAL:
+            - Versão do Terminal: Claritas Copilot V3.0 (IA Lab).
+            - Ativos sob Monitoramento Simultâneo: ${watchedSymbols.length} ativos (${watchedSymbols.join(', ')}).
+            - Ativo em Foco no Gráfico: ${activeSymbol || 'Nenhum'}.
+            - Saldo da Conta: $${accountBalance.balance?.toFixed(2) || '---'}
+            - Resultado da Sessão (PnL): $${sessionStats.pnl.toFixed(2)}
+            - Taxa de Acerto (Win Rate): ${sessionStats.winRate ? sessionStats.winRate.toFixed(1) + '%' : 'Nenhum trade concluído'}.
+            
+            ESTADO TÉCNICO (Ativo em Foco):
+            - Indicadores: RSI=${indicators?.rsi?.toFixed(1) || 'N/D'} | ADX=${indicators?.adx?.toFixed(1) || 'N/D'} | Volatilidade BBW=${indicators?.bbw?.toFixed(3) || 'N/D'}.
             
             ${memoryContext}
             
-            Instrução: Responda de forma técnica e direta como um profissional quantitativo.`;
+            Sua função agora: ${agentPrompts[targetAgent] || agentPrompts.CHAIRMAN}
+            Instrução: Responda como um profissional quantitativo sênior. Seja direto, técnico e utilize os dados acima para justificar sua análise.`;
 
             const history = chatMessages.map(m => ({ role: m.role, content: m.content }));
             const response = await getOllamaResponse(ollamaConfig, content, [
