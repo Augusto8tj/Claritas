@@ -1,18 +1,18 @@
+
 // src/features/trading/hooks/use-ai-quant-terminal-v3.tsx
 'use client';
 
 /**
  * @fileOverview TERMINAL QUANT V3.0 (COUNCIL EDITION) - MONITORAMENTO MULTI-ATIVO
  * V3.6: Monitor de Telemetria Quant e Injeção de Nerd Stats.
- * FIX: Estabilização do temporizador de ciclo e sincronização de modelos.
- * FIX 3.7: Handshake de autorização para carregamento de modelos.
+ * V3.8: Sincronização de preços reais no radar para o contexto do chat.
  */
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import type { TickData, CandleData, OperationInitiator, DurationUnit, Operation, OllamaConfig } from '@/lib/types';
 import { useDerivApiV2 as useDerivApi } from './use-deriv-api-v2';
 import { calculateAllIndicators } from '../services/indicator-service';
-import { initialCouncilStrategies } from '../strategies/standard-council'; // Assuming this exists or using fallback
+import { initialCouncilStrategies } from '../services/council-strategies';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/features/auth/hooks/use-auth';
 import { TradeMemoryManager } from '../services/trade-memory-service';
@@ -23,6 +23,7 @@ import { getOllamaResponse } from '@/app/actions';
 export interface RadarAssetStatus {
     symbol: string;
     lastAction: 'RISE' | 'FALL' | 'HOLD';
+    lastPrice?: number;
     confidence: number;
     timestamp: number;
     isQualified: boolean;
@@ -133,7 +134,6 @@ export function useAIQuantTerminalV3(
                 'ngrok-skip-browser-warning': 'true' 
             };
             
-            // Correção: Injeção de autorização se existir API Key
             if (ollamaConfig.apiKey) {
                 headers['Authorization'] = `Bearer ${ollamaConfig.apiKey}`;
             }
@@ -145,7 +145,6 @@ export function useAIQuantTerminalV3(
                 setAvailableModels(models);
                 addLog(`Sincronização: ${models.length} modelos encontrados no gateway.`, 'info');
                 
-                // Auto-seleção do primeiro modelo se nenhum estiver ativo
                 if (!ollamaConfig.model && models.length > 0) {
                     updateOllamaConfig({ model: models[0].name });
                 }
@@ -208,13 +207,13 @@ export function useAIQuantTerminalV3(
         if (!isConnected || !ollamaConfig || candles.length < 30) return;
         
         const isFocused = symbol === activeSymbol;
+        const currentPrice = isFocused ? priceTicks[priceTicks.length - 1]?.price : candles[candles.length - 1].close;
         
         try {
-            // Em V3 usamos estratégias padrão como base para os analistas
             const indicators = calculateAllIndicators(candles, [], '1m', { duration: 15, unit: 's' });
             const snapshot = {
                 symbol: symbol,
-                price: isFocused ? priceTicks[priceTicks.length - 1]?.price : candles[candles.length - 1].close,
+                price: currentPrice,
                 rsi: indicators?.rsi,
                 bbw: indicators?.bbw,
                 trend: indicators?.adx! > 25 ? 'Trending' : 'Ranging'
@@ -233,6 +232,7 @@ export function useAIQuantTerminalV3(
                 [symbol]: {
                     symbol,
                     lastAction: decision.finalAction,
+                    lastPrice: currentPrice,
                     confidence: decision.consensusConfidence,
                     timestamp: Date.now(),
                     isQualified: decision.finalAction !== 'HOLD' && decision.consensusConfidence >= 65,
@@ -323,7 +323,6 @@ export function useAIQuantTerminalV3(
 
         try {
             const memoryContext = TradeMemoryManager.formatBufferForPrompt(memoryBuffer);
-            // Uso indicadores do ativo em foco como contexto extra
             const indicators = calculateAllIndicators(chartData, [], '1m', { duration: 15, unit: 's' });
             
             const agentPrompts: Record<string, string> = {
@@ -350,8 +349,11 @@ export function useAIQuantTerminalV3(
             - Resultado da Sessão (PnL): $${sessionStats.pnl.toFixed(2)}
             - Taxa de Acerto (Win Rate): ${sessionStats.winRate ? sessionStats.winRate.toFixed(1) + '%' : 'Nenhum trade concluído'}.
             
-            ESTADO TÉCNICO: RSI=${indicators?.rsi?.toFixed(1) || 'N/D'} | ADX=${indicators?.adx?.toFixed(1) || 'N/D'} | Volatilidade BBW=${indicators?.bbw?.toFixed(3) || 'N/D'}.
+            ESTADO TÉCNICO (Foco): RSI=${indicators?.rsi?.toFixed(1) || 'N/D'} | ADX=${indicators?.adx?.toFixed(1) || 'N/D'} | Volatilidade BBW=${indicators?.bbw?.toFixed(3) || 'N/D'}.
             
+            ESTADO DOS ATIVOS NO RADAR (PREÇOS REAIS):
+            ${Object.values(radarStatus).map(s => `- ${s.symbol}: $${s.lastPrice?.toFixed(2) || 'Aguardando tick...'} (Sinal: ${s.lastAction})`).join('\n')}
+
             ${memoryContext}
             
             Sua função agora: ${agentPrompts[targetAgent] || agentPrompts.CHAIRMAN}
