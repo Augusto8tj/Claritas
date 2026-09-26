@@ -344,6 +344,7 @@ export function useAIQuantTerminalV3(
         resetSession,
         chatMessages, isChatLoading, sendMessage,
         executeManualDecision: () => lastDecision && runMultiAssetCycle(),
-        telemetry
+        telemetry,
+        ollamaConfig
     };
 }

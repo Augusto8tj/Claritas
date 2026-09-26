@@ -1,3 +1,4 @@
+
 'use client';
 
 import React, { useState, useRef, useEffect } from 'react';
@@ -45,7 +46,7 @@ function TerminalV3Content() {
         radarStatus, watchedSymbols, setWatchedSymbols, resetSession,
         allowedContracts, setAllowedContracts, maxConcurrentTrades, setMaxConcurrentTrades,
         stakeValue, setStakeValue, dailyBalance, setDailyBalance, dailyTarget, setDailyTarget,
-        sessionStats, chatMessages, isChatLoading, sendMessage, telemetry
+        sessionStats, chatMessages, isChatLoading, sendMessage, telemetry, ollamaConfig
     } = v3;
 
     const [isSelectorOpen, setIsSelectorOpen] = useState(false);
@@ -254,7 +255,7 @@ function TerminalV3Content() {
                     <Card className="bg-slate-950 text-slate-300 border-slate-800 shadow-xl overflow-hidden font-mono">
                         <CardHeader className="py-3 bg-slate-900 border-b border-slate-800">
                              <CardTitle className="text-[10px] font-bold uppercase tracking-widest flex items-center gap-2 text-cyan-500">
-                                <Gauge className="h-3.5 w-3.5" /> Ollama Telemetry (Nerd Stats)
+                                <Gauge className="h-3.5 w-3.5" /> Telemetria: {ollamaConfig?.model || 'Desconectado'}
                             </CardTitle>
                         </CardHeader>
                         <CardContent className="p-4 space-y-4 text-[11px]">
