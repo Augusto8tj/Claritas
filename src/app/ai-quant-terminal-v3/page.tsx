@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -9,7 +9,7 @@ import {
     BrainCircuit, Zap, ShieldCheck, Terminal as TerminalIcon, 
     Timer, LineChart, PlayCircle, PauseCircle, Cpu, RefreshCw,
     Database, Activity, History, ArrowUpCircle, ArrowDownCircle,
-    TestTube, Scale, Brain, Trash2
+    TestTube, Scale, Brain, Trash2, Radar, TrendingUp, TrendingDown, Minus, Check, ChevronsUpDown
 } from "lucide-react";
 import { DerivApiProviderV2 as DerivApiProvider, useDerivApiV2 as useDerivApi } from "@/features/trading/hooks/use-deriv-api-v2";
 import { AssetSelectorV2 as AssetSelector } from "@/features/trading/components/deriv-trader/asset-selector-v2";
@@ -21,6 +21,8 @@ import { cn } from "@/lib/utils";
 import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 
 function TerminalV3Content() {
     const { 
@@ -30,10 +32,97 @@ function TerminalV3Content() {
     } = useDerivApi();
 
     const v3 = useAIQuantTerminalV3(activeSymbol, priceTicks, chartData as any);
-    const { lastDecision, reasoningLog, memoryBuffer, isAutoMode, isShadowMode, timeToNextAnalysis, analysisInterval, clearMemory } = v3;
+    const { 
+        lastDecision, reasoningLog, memoryBuffer, isAutoMode, isShadowMode, 
+        timeToNextAnalysis, analysisInterval, clearMemory, radarStatus,
+        watchedSymbols, setWatchedSymbols
+    } = v3;
+
+    const [isSelectorOpen, setIsSelectorOpen] = useState(false);
 
     return (
         <div className="flex-1 space-y-6 p-4 sm:p-8 pt-6 bg-background min-h-screen text-foreground">
+            
+            {/* RADAR SUPERIOR */}
+            <Card className="bg-purple-500/5 border-purple-500/20 shadow-sm overflow-hidden">
+                <CardHeader className="py-3 px-6 bg-purple-500/10 border-b border-purple-500/20 flex flex-row items-center justify-between space-y-0">
+                    <CardTitle className="text-xs font-bold uppercase tracking-widest flex items-center gap-2 text-purple-700">
+                        <Radar className="h-4 w-4 animate-spin-slow" /> Radar do Conselho Multi-Persona
+                    </CardTitle>
+                    <div className="flex items-center gap-4">
+                        <Popover open={isSelectorOpen} onOpenChange={setIsSelectorOpen}>
+                            <PopoverTrigger asChild>
+                                <Button variant="outline" size="sm" className="h-7 text-[10px] uppercase font-bold border-purple-200">
+                                    Configurar Monitoramento <ChevronsUpDown className="ml-2 h-3 w-3" />
+                                </Button>
+                            </PopoverTrigger>
+                            <PopoverContent className="w-[300px] p-0" align="end">
+                                <Command>
+                                    <CommandInput placeholder="Filtrar ativos..." />
+                                    <CommandList>
+                                        <CommandEmpty>Nenhum ativo encontrado.</CommandEmpty>
+                                        {assetGroups.map((group) => (
+                                            <CommandGroup key={group.label} heading={group.label}>
+                                                {group.options.map((asset) => (
+                                                    <CommandItem
+                                                        key={asset.value}
+                                                        onSelect={() => {
+                                                            const newSymbols = watchedSymbols.includes(asset.value)
+                                                                ? watchedSymbols.filter(s => s !== asset.value)
+                                                                : [...watchedSymbols, asset.value];
+                                                            setWatchedSymbols(newSymbols);
+                                                        }}
+                                                    >
+                                                        <Check className={cn("mr-2 h-4 w-4", watchedSymbols.includes(asset.value) ? "opacity-100" : "opacity-0")} />
+                                                        {asset.label}
+                                                    </CommandItem>
+                                                ))}
+                                            </CommandGroup>
+                                        ))}
+                                    </CommandList>
+                                </Command>
+                            </PopoverContent>
+                        </Popover>
+                        <Badge variant="outline" className="text-[9px] border-purple-500/30 text-purple-700 uppercase">
+                            {watchedSymbols.length} Ativos em Scan
+                        </Badge>
+                    </div>
+                </CardHeader>
+                <CardContent className="p-4">
+                    <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+                        {watchedSymbols.map((symbol) => {
+                            const status = radarStatus[symbol];
+                            return (
+                                <div 
+                                    key={symbol} 
+                                    onClick={() => setActiveSymbol(symbol)}
+                                    className={cn(
+                                        "p-3 rounded-lg border transition-all cursor-pointer group hover:scale-105",
+                                        symbol === activeSymbol ? "bg-purple-600 border-purple-600 text-white shadow-md" : "bg-card border-border hover:border-purple-400",
+                                        status?.isQualified && symbol !== activeSymbol && "animate-pulse border-green-500 bg-green-50/10"
+                                    )}
+                                >
+                                    <div className="flex justify-between items-center mb-1">
+                                        <span className="text-[10px] font-bold font-mono">{symbol}</span>
+                                        {status?.isQualified && <Zap className="h-3 w-3 text-yellow-500 fill-current" />}
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                        {status?.lastAction === 'RISE' ? <TrendingUp className="h-4 w-4 text-green-500" /> : 
+                                         status?.lastAction === 'FALL' ? <TrendingDown className="h-4 w-4 text-red-500" /> : 
+                                         <Minus className="h-4 w-4 text-muted-foreground" />}
+                                        <span className="text-sm font-black">{status?.lastAction || 'SCAN'}</span>
+                                    </div>
+                                    <div className="mt-1 flex items-center justify-between text-[9px] opacity-60">
+                                        <span className="truncate">{status?.executedVia || 'Monitorando...'}</span>
+                                        <span className="font-mono">{status?.confidence ? `${status.confidence.toFixed(0)}%` : '--'}</span>
+                                    </div>
+                                </div>
+                            );
+                        })}
+                    </div>
+                </CardContent>
+            </Card>
+
             {/* HEADER */}
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b pb-6">
                 <div className="flex items-center gap-3">

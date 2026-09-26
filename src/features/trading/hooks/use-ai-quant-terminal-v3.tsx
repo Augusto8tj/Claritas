@@ -1,39 +1,51 @@
 'use client';
 
 /**
- * @fileOverview TERMINAL QUANT V3.0 (COUNCIL EDITION)
- * Lógica de laboratório com conselho paralelo e memória viva.
+ * @fileOverview TERMINAL QUANT V3.0 (COUNCIL EDITION) - MONITORAMENTO MULTI-ATIVO
+ * Lógica de laboratório com conselho paralelo, memória viva e radar multi-ativo.
  */
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import type { TickData, CandleData, OperationInitiator, DurationUnit, Operation, OllamaConfig } from '@/lib/types';
 import { useDerivApiV2 as useDerivApi } from './use-deriv-api-v2';
 import { calculateAllIndicators } from '../services/indicator-service';
-import { initialCouncilStrategies } from '../strategies/council-strategies';
+import { initialCouncilStrategies } from '../services/council-strategies';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/features/auth/hooks/use-auth';
 import { TradeMemoryManager } from '../services/trade-memory-service';
 import { runQuantCouncil } from '../services/quant-council-engine';
-import { CouncilDecision, TradeMemoryBuffer } from '../types/council';
+import { CouncilDecision, TradeMemoryBuffer, AgentOpinion } from '../types/council';
+
+export interface RadarAssetStatus {
+    symbol: string;
+    lastAction: 'RISE' | 'FALL' | 'HOLD';
+    confidence: number;
+    timestamp: number;
+    isQualified: boolean;
+    executedVia: string;
+    opinions: AgentOpinion[];
+}
 
 export function useAIQuantTerminalV3(
     activeSymbol: string | null,
     priceTicks: TickData[],
     chartData: CandleData[]
 ) {
-    const { isConnected, executeTrade, operationsLog, accountBalance } = useDerivApi();
+    const { isConnected, executeTrade, operationsLog, accountBalance, watchedSymbols, setWatchedSymbols, multiAssetCandles } = useDerivApi();
     const { user } = useAuth();
     const { toast } = useToast();
 
     const [isAutoMode, setIsAutoMode] = useState(false);
     const [isShadowMode, setIsShadowMode] = useState(true);
     const [lastDecision, setLastDecision] = useState<CouncilDecision | null>(null);
-    const [analysisInterval, setAnalysisInterval] = useState(120); 
-    const [timeToNextAnalysis, setTimeToNextAnalysis] = useState(120);
+    const [analysisInterval, setAnalysisInterval] = useState(60); 
+    const [timeToNextAnalysis, setTimeToNextAnalysis] = useState(60);
     
+    const [radarStatus, setRadarStatus] = useState<Record<string, RadarAssetStatus>>({});
     const [memoryBuffer, setMemoryBuffer] = useState<TradeMemoryBuffer>({ wins: [], losses: [] });
     const [reasoningLog, setReasoningLog] = useState<any[]>([]);
     const executionLockRef = useRef(false);
+    const scheduleRef = useRef<Record<string, number>>({});
 
     const ollamaConfig = useMemo(() => {
         if (typeof window === 'undefined') return null;
@@ -52,10 +64,9 @@ export function useAIQuantTerminalV3(
         }
     }, [user]);
 
-    // Monitora fechamento de trades para alimentar a memória (Apenas trades da V3)
+    // Monitora fechamento de trades para alimentar a memória
     useEffect(() => {
         if (!user) return;
-        // Filtra para encontrar trades finalizados que foram iniciados por este bot V3
         const lastFinished = operationsLog.find(op => 
             op.status !== 'pending' && 
             op.strategy?.startsWith('V3_')
@@ -66,10 +77,10 @@ export function useAIQuantTerminalV3(
             TradeMemoryManager.addTrade(user.uid, {
                 id: String(lastFinished.id),
                 timestamp: Date.now(),
-                contract: 'CALL', // Simplificação para o buffer
+                contract: 'CALL', 
                 result,
                 pnl: lastFinished.result || 0,
-                rsi: 50, // Placeholder
+                rsi: 50, 
                 volatilityYangZhang: 0,
                 candlePattern: 'V3_PATTERN'
             }).then(() => {
@@ -78,17 +89,17 @@ export function useAIQuantTerminalV3(
         }
     }, [operationsLog, user]);
 
-    const runAnalysisCycle = useCallback(async () => {
-        if (!activeSymbol || !isConnected || !ollamaConfig || executionLockRef.current || chartData.length < 30) return;
+    const runAnalysisForSymbol = useCallback(async (symbol: string, candles: CandleData[]) => {
+        if (!isConnected || !ollamaConfig || candles.length < 30) return;
         
-        executionLockRef.current = true;
-        addLog(`Conselho V3 iniciando análise paralela em ${activeSymbol}...`, 'info');
+        const isFocused = symbol === activeSymbol;
+        if (isFocused) addLog(`Conselho V3 analisando ${symbol}...`, 'info');
 
         try {
-            const indicators = calculateAllIndicators(chartData, [], '1m', { duration: 15, unit: 's' });
+            const indicators = calculateAllIndicators(candles, [], '1m', { duration: 15, unit: 's' });
             const snapshot = {
-                symbol: activeSymbol,
-                price: priceTicks[priceTicks.length - 1]?.price,
+                symbol: symbol,
+                price: isFocused ? priceTicks[priceTicks.length - 1]?.price : candles[candles.length - 1].close,
                 rsi: indicators?.rsi,
                 bbw: indicators?.bbw,
                 trend: indicators?.adx! > 25 ? 'Trending' : 'Ranging'
@@ -97,23 +108,58 @@ export function useAIQuantTerminalV3(
             const buffer = user ? await TradeMemoryManager.getBuffer(user.uid) : { wins: [], losses: [] };
             const decision = await runQuantCouncil(snapshot, buffer, ollamaConfig, isShadowMode);
             
-            setLastDecision(decision);
-            addLog(`Veredito: ${decision.finalAction} via ${decision.executedVia} (${decision.t2tLatencyMs}ms)`, 'decision');
+            if (isFocused) setLastDecision(decision);
 
+            setRadarStatus(prev => ({
+                ...prev,
+                [symbol]: {
+                    symbol,
+                    lastAction: decision.finalAction,
+                    confidence: decision.consensusConfidence,
+                    timestamp: Date.now(),
+                    isQualified: decision.finalAction !== 'HOLD' && decision.consensusConfidence >= 65,
+                    executedVia: decision.executedVia,
+                    opinions: decision.opinions
+                }
+            }));
+
+            // Execução do Autopilot
             if (isAutoMode && !isShadowMode && decision.finalAction !== 'HOLD' && decision.consensusConfidence >= 65) {
-                await executeTrade(
-                    'CALL', 1.0, activeSymbol, decision.finalAction.toLowerCase() as any,
-                    15, 's', 'Conselho', `V3_${decision.executedVia}`
-                );
-                addLog(`Ordem executada em modo real: ${decision.finalAction}`, 'execution');
+                const hasOpenTrade = operationsLog.some(op => op.asset === symbol && op.status === 'pending');
+                if (!hasOpenTrade) {
+                    await executeTrade(
+                        'CALL', 1.0, symbol, decision.finalAction.toLowerCase() as any,
+                        15, 's', 'Conselho', `V3_${decision.executedVia}`
+                    );
+                    if (isFocused) addLog(`Ordem real executada: ${decision.finalAction}`, 'execution');
+                }
             }
 
         } catch (err: any) {
-            addLog(`Erro no conselho: ${err.message}`, 'error');
-        } finally {
-            executionLockRef.current = false;
+            if (isFocused) addLog(`Erro em ${symbol}: ${err.message}`, 'error');
         }
-    }, [activeSymbol, isConnected, chartData, isAutoMode, isShadowMode, ollamaConfig, user, addLog, executeTrade, priceTicks]);
+    }, [isConnected, ollamaConfig, isShadowMode, user, isAutoMode, operationsLog, activeSymbol, priceTicks, executeTrade, addLog]);
+
+    const runMultiAssetCycle = useCallback(async () => {
+        if (executionLockRef.current) return;
+        executionLockRef.current = true;
+
+        const now = Date.now();
+        const dueSymbols = watchedSymbols.filter(sym => {
+            const nextRun = scheduleRef.current[sym] || 0;
+            return now >= nextRun;
+        });
+
+        for (const symbol of dueSymbols) {
+            const candles = symbol === activeSymbol ? chartData : multiAssetCandles[symbol];
+            if (candles && candles.length >= 30) {
+                await runAnalysisForSymbol(symbol, candles);
+                scheduleRef.current[symbol] = now + (analysisInterval * 1000);
+            }
+        }
+
+        executionLockRef.current = false;
+    }, [watchedSymbols, activeSymbol, chartData, multiAssetCandles, analysisInterval, runAnalysisForSymbol]);
 
     const clearMemory = async () => {
         if (!user) return;
@@ -127,20 +173,21 @@ export function useAIQuantTerminalV3(
         const interval = setInterval(() => {
             setTimeToNextAnalysis(prev => {
                 if (prev <= 1) {
-                    runAnalysisCycle();
+                    runMultiAssetCycle();
                     return analysisInterval;
                 }
                 return prev - 1;
             });
         }, 1000);
         return () => clearInterval(interval);
-    }, [runAnalysisCycle, analysisInterval]);
+    }, [runMultiAssetCycle, analysisInterval]);
 
     return {
         isAutoMode, toggleAutoMode: () => setIsAutoMode(!isAutoMode),
         isShadowMode, toggleShadowMode: () => setIsShadowMode(!isShadowMode),
         lastDecision, timeToNextAnalysis, analysisInterval, setAnalysisInterval,
         reasoningLog, memoryBuffer, accountBalance, clearMemory,
-        executeManualDecision: () => lastDecision && runAnalysisCycle()
+        radarStatus, watchedSymbols, setWatchedSymbols,
+        executeManualDecision: () => lastDecision && runMultiAssetCycle()
     };
 }
