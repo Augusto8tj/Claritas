@@ -242,21 +242,21 @@ export function useAIQuantTerminalV2(
             ${recentFailuresContext || "Nenhuma falha recente registrada."}
 
             DIRETRIZES:
-            - RANGING + BBW < 0.8: 'ACCUMULATOR'.
-            - ADX > 30 + RSI Alinhado: 'MULTIPLIER' (Mult=400).
-            - BREAKOUT iminente: 'DIGIT_OVER_UNDER'.
-            - Padrão: 'CALL/PUT'.
+            - RANGING + BBW < 0.8: Use 'ACCUMULATOR'.
+            - ADX > 30 + RSI Alinhado: Use 'MULTIPLIER' (Mult=400).
+            - BREAKOUT iminente: Use 'DIGIT_OVER_UNDER'.
+            - Padrão: Use 'CALL/PUT'.
 
-            RETORNE APENAS JSON, SEM EXPLICAÇÃO:
+            RETORNE ESTRITAMENTE APENAS O JSON, SEM QUALQUER TEXTO ADICIONAL OU COMENTÁRIOS:
             {
-              "action": "RISE" | "FALL" | "HOLD",
-              "recommendedContract": "CALL/PUT" | "ACCUMULATOR" | "MULTIPLIER" | "DIGIT_OVER_UNDER" | "DIGIT_DIFFER",
+              "action": "RISE",
+              "recommendedContract": "CALL/PUT",
               "digitPrediction": 5,
               "multiplier": 400,
-              "confidence": 0-100,
-              "reasoning": "Texto curto justificando o movimento e considerando os erros passados",
-              "duration": 5-300,
-              "unit": "t" | "s",
+              "confidence": 75,
+              "reasoning": "Justificativa técnica curta",
+              "duration": 15,
+              "unit": "s",
               "zenThought": "Pequeno insight qualitativo"
             }`;
 
@@ -269,13 +269,25 @@ export function useAIQuantTerminalV2(
 
             if (response.error) throw new Error(response.error);
 
-            const rawContent = (response.success || "").trim();
+            // HIGIENIZAÇÃO ROBUSTA DE JSON
+            let rawContent = (response.success || "").trim();
+            
+            // Remove backticks de markdown se houver
+            rawContent = rawContent.replace(/```json|```/g, "").trim();
+            
             const jsonStartIndex = rawContent.indexOf('{');
             const jsonEndIndex = rawContent.lastIndexOf('}');
             
-            if (jsonStartIndex === -1 || jsonEndIndex === -1) throw new Error("JSON Inválido");
+            if (jsonStartIndex === -1 || jsonEndIndex === -1) throw new Error("JSON não encontrado na resposta");
             
-            const cleanJsonString = rawContent.substring(jsonStartIndex, jsonEndIndex + 1);
+            let cleanJsonString = rawContent.substring(jsonStartIndex, jsonEndIndex + 1);
+            
+            // Corrige erros comuns de LLMs em JSON:
+            // 1. Remove vírgulas pendentes antes de fechar objetos ou arrays
+            cleanJsonString = cleanJsonString.replace(/,\s*([\]}])/g, '$1');
+            // 2. Remove símbolos de % em números
+            cleanJsonString = cleanJsonString.replace(/(\d+)%/g, '$1');
+
             const decision: QuantDecision = JSON.parse(cleanJsonString);
             
             decision.confidence = Number(decision.confidence) || 0;
