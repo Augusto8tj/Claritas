@@ -3,86 +3,76 @@
 CLARITAS COPILOT: QUANT RADAR V2.5 - ARCHITECTURAL BLUEPRINT
 ================================================================================
 DATE: 2025-05-22
-TARGET ANALYSIS: Claude 3.5 Sonnet / High-Level Reasoning Models
+TARGET ANALYSIS: Gemini 1.5 Pro / Claude 3.5 Sonnet / High-Level Reasoning Models
 STATUS: Operational V2.5 (Radar + Hybrid Execution)
 
-1. OVERVIEW & PHILOSOPHY
+1. VISÃO GERAL E FILOSOFIA
 --------------------------------------------------------------------------------
-The Quant Radar (V2 - Novo) is a professional-grade quantitative trading 
-terminal designed for high-frequency volatility markets. Its core philosophy is
-"Instrument Selectivity Based on Regime". Unlike standard bots, it doesn't just
-predict direction; it selects the specific financial instrument (Accumulators, 
-Multipliers, or Options) that offers the highest statistical edge for the 
-current market microstructure.
+O Quant Radar (V2 - Novo) é um terminal de trading quantitativo de nível profissional 
+projetado para mercados de volatilidade de alta frequência. Sua filosofia central é 
+a "Seletividade de Instrumento baseada em Regime". Ao contrário de robôs padrão, 
+ele não apenas prevê a direção; ele seleciona o instrumento financeiro específico 
+(Accumulators, Multipliers ou Options) que oferece a maior vantagem estatística 
+para a microestrutura atual do mercado.
 
-2. CORE TECHNOLOGIES & STACK
+2. TECNOLOGIAS E STACK CORE
 --------------------------------------------------------------------------------
 - Framework: Next.js 15 (App Router) + React 19.
-- Styling: Tailwind CSS + Shadcn UI (Custom Themes: Ocean, Forest, Desert).
-- Real-time Data: Deriv API (WebSocket) using Institutional AppID (34lwuJiPbEzxjgEdnEhbX).
-- Local Intelligence: Ollama Studio Integration (CIO - Chief Investment Officer).
-- Mathematical Engine: Custom implementation of HMM (Hidden Markov Models), 
-  Geometric Brownian Motion (GBM), and Bayesian Inference.
-- Backend: Firebase Firestore (Persistence) & Auth.
+- Estilização: Tailwind CSS + Shadcn UI (Temas Customizados: Ocean, Forest, Desert).
+- Dados em Tempo Real: Deriv API (WebSocket) via AppID Institucional.
+- Inteligência Local: Integração com Ollama Studio (CIO - Chief Investment Officer).
+- Motor Matemático: Implementação customizada de HMM (Hidden Markov Models), 
+  Geometric Brownian Motion (GBM) e Inferência Bayesiana.
+- Backend: Firebase Firestore (Persistência) & Auth.
 
-3. KEY INNOVATIONS (THE "QUANT ADVANTAGE")
+3. INOVAÇÕES CHAVE (O "QUANT ADVANTAGE")
 --------------------------------------------------------------------------------
-A. MULTI-INSTRUMENT POLYMORPHIC EXECUTION:
-The autopilot is no longer binary (Rise/Fall). It can execute:
-- ACCUMULATORS: Deployed during 'Ranging' regimes with low volatility.
-- MULTIPLIERS: Deployed during 'Breakout' or 'Strong Trending' regimes.
-- CALL/PUT OPTIONS: Deployed for standard directional momentum.
+A. EXECUÇÃO POLIMÓRFICA MULTI-INSTRUMENTO:
+O autopilot não é mais binário (Sobe/Desce). Ele pode executar:
+- ACCUMULATORS: Ativados durante regimes 'Ranging' (lateral) com baixa volatilidade.
+- MULTIPLIERS: Ativados durante regimes 'Breakout' ou 'Strong Trending'.
+- CALL/PUT OPTIONS: Ativados para momentum direcional padrão.
 
-B. STOCHASTIC OPPORTUNITY RADAR:
-A background scanner that cycles through 5 major synthetic indices (1HZ10V to 
-1HZ100V). It runs asynchronous inferences for each asset, marking them as 
-"Qualified" when the local LLM detects a high-confidence anomaly.
+B. RADAR DE OPORTUNIDADES ESTOCÁSTICAS:
+Um scanner de segundo plano que cicla pelos 5 principais índices sintéticos 
+(1HZ10V a 1HZ100V). Ele executa inferências assíncronas para cada ativo, marcando-os 
+como "Qualificados" quando o LLM local detecta uma anomalia de alta confiança.
 
-C. QUALITATIVE ZEN-INTELLIGENCE:
-The "Inteligência Meditativa" panel. It uses the LLM to generate qualitative 
-insights (ZenThoughts) to balance the trader's psychology, translating raw 
-data into philosophical market perspectives.
+C. INTELIGÊNCIA ZEN QUALITATIVA:
+O painel de "Inteligência Meditativa". Usa o LLM para gerar insights qualitativos 
+(ZenThoughts) para equilibrar o psicológico do operador, traduzindo dados brutos 
+em perspectivas filosóficas de mercado.
 
-4. SYSTEM INTEGRATIONS & DATA FLOW
+4. INTEGRAÇÃO DE SISTEMAS E FLUXO DE DADOS
 --------------------------------------------------------------------------------
-- HOOK [use-deriv-api-v2.tsx]: The "Heart". Handles secure handshaking, 
-  synchronous authorization, and polymorphic order routing using the new 
-  'underlying_symbol' protocol.
-- HOOK [use-ai-quant-terminal-v2.tsx]: The "Brain". Orchestrates the analysis 
-  cycle. It injects a 30-candle snapshot + 15-decision history context into 
-  Ollama to generate the next strategic move.
-- SERVICE [advanced-trading-services.ts]: The "Calculator". Provides 
-  microstructure features like Tick Velocity, Volume Imbalance, and Yang-Zhang 
-  Volatility.
+- HOOK [use-deriv-api-v2.tsx]: O "Coração". Gerencia o handshake seguro, 
+  autorização síncrona e roteamento de ordens polimórficas.
+- HOOK [use-ai-quant-terminal-v2.tsx]: O "Cérebro". Orquestra o ciclo de análise. 
+  Injeta um snapshot de 30 velas + histórico de 15 decisões no Ollama para 
+  gerar o próximo movimento estratégico.
+- SERVICE [advanced-trading-services.ts]: O "Calculador". Fornece features de 
+  microestrutura como Velocidade de Ticks, Desequilíbrio de Volume e Volatilidade 
+  Yang-Zhang.
 
-5. ARCHITECTURAL OBJECTIVES
+5. OBJETIVOS ARQUITETURAIS
 --------------------------------------------------------------------------------
-- REGIME AWARENESS: Silencing "noise" by matching strategies to market states.
-- RISK DILUTION: Using Fractional Kelly Criterion (0.25) to prevent ruin.
-- LATENCY COMPENSATION: Measuring "Tick-to-Result" delay to adjust predictive 
-  horizons.
-- COGNITIVE AUDIT: Every AI decision is logged (Reasoning Log) for forensic 
-  analysis of the LLM's logic.
+- CONSCIÊNCIA DE REGIME: Silenciar o "ruído" combinando estratégias com estados de mercado.
+- DILUIÇÃO DE RISCO: Uso do Critério de Kelly Fracionado (0.25) para prevenir ruína.
+- COMPENSAÇÃO DE LATÊNCIA: Medição do delay "Tick-to-Result" para ajustar 
+  horizontes preditivos.
+- AUDITORIA COGNITIVA: Cada decisão da IA é logada (Reasoning Log) para análise 
+  forense da lógica do LLM.
 
-6. AMBITIONS & ROADMAP
+6. ENGENHARIA DE PROMPT PARA O CIO (OLLAMA)
 --------------------------------------------------------------------------------
-- NEURO-ADAPTIVE DRIFT: Adjusting the GBM 'mu' parameter in real-time based on 
-  prediction errors.
-- PORTFOLIO CORRELATION: Scanning for correlated movements across indices to 
-  hedge positions automatically.
-- VOICE COMMAND CIO: Enabling full terminal control via natural language 
-  processing.
-
-7. PROMPT ENGINEERING FOR CIO (OLLAMA)
---------------------------------------------------------------------------------
-The system uses a highly structured JSON-Strict prompt that forces the LLM to 
-act as a Senior Quant Analyst. It demands:
-- 'action' (Directional bias)
-- 'recommendedContract' (Instrument choice)
-- 'confidence' (Percentage 0-100)
-- 'reasoning' (Technical justification)
-- 'zenThought' (Qualitative insight)
+O sistema usa um prompt JSON-Strict altamente estruturado que força o LLM a 
+agir como um Analista Quant Sênior. Ele exige:
+- 'action' (Viés direcional)
+- 'recommendedContract' (Escolha do instrumento)
+- 'confidence' (Percentual 0-100)
+- 'reasoning' (Justificativa técnica)
+- 'zenThought' (Insight qualitativo)
 
 ================================================================================
-END OF DOCUMENT
+FIM DO DOCUMENTO
 ================================================================================
