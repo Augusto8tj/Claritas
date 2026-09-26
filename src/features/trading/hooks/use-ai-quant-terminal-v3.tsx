@@ -6,6 +6,7 @@
  * @fileOverview TERMINAL QUANT V3.0 (COUNCIL EDITION) - MONITORAMENTO MULTI-ATIVO
  * V3.6: Monitor de Telemetria Quant e Injeção de Nerd Stats.
  * V3.8: Sincronização de preços reais no radar para o contexto do chat.
+ * V3.9: Tabela de Preços de Alta Fidelidade para eliminar alucinações.
  */
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
@@ -91,6 +92,7 @@ export function useAIQuantTerminalV3(
     
     const executionLockRef = useRef(false);
     const scheduleRef = useRef<Record<string, number>>({});
+    const analysisFnRef = useRef<() => void>(() => {});
 
     const [ollamaConfig, setOllamaConfig] = useState<OllamaConfig | null>(null);
 
@@ -301,6 +303,10 @@ export function useAIQuantTerminalV3(
         executionLockRef.current = false;
     }, [watchedSymbols, activeSymbol, chartData, multiAssetCandles, analysisInterval, runAnalysisForSymbol]);
 
+    useEffect(() => {
+        analysisFnRef.current = runMultiAssetCycle;
+    }, [runMultiAssetCycle]);
+
     const resetSession = async () => {
         setIsAutoMode(false);
         clearActiveContracts();
@@ -325,6 +331,19 @@ export function useAIQuantTerminalV3(
             const memoryContext = TradeMemoryManager.formatBufferForPrompt(memoryBuffer);
             const indicators = calculateAllIndicators(chartData, [], '1m', { duration: 15, unit: 's' });
             
+            // CÁLCULO DE PREÇOS REAIS EM TEMPO REAL PARA O CONTEXTO
+            const realTimePrices = watchedSymbols.map(sym => {
+                const isFocused = sym === activeSymbol;
+                const price = isFocused 
+                    ? priceTicks[priceTicks.length - 1]?.price 
+                    : multiAssetCandles[sym]?.[multiAssetCandles[sym].length - 1]?.close;
+                
+                const status = radarStatus[sym]?.lastAction || 'SCAN';
+                const formattedPrice = price ? `$${price.toFixed(2)}` : 'Sincronizando...';
+                
+                return `| ${sym.padEnd(8)} | ${formattedPrice.padEnd(12)} | ${status.padEnd(10)} |`;
+            }).join('\n');
+
             const agentPrompts: Record<string, string> = {
                 CHAIRMAN: "Você é o Chairman do Conselho V3. Sua visão é macro e estratégica, responsável pela síntese final.",
                 MOMENTUM: "Você é o analista 'Quant Momentum'. Seu foco é força, velocidade de ticks e momentum de curto prazo.",
@@ -332,32 +351,28 @@ export function useAIQuantTerminalV3(
                 ARCHIVIST: "Você é o 'Pattern Archivist'. Sua memória é o histórico de vitórias e estruturas de velas vencedoras."
             };
 
-            const systemPrompt = `VOCÊ FAZ PARTE DO CONSELHO QUANTITATIVO DO LABORATÓRIO V3.0 (COUNCIL EDITION).
+            const systemPrompt = `VOCÊ É UM ANALISTA QUANTITATIVO NO LABORATÓRIO V3.0 (COUNCIL EDITION).
             
-            IDENTIDADE DA EQUIPE:
-            - Chairman (Líder): Orquestrador de consenso.
-            - Quant Momentum: Analista de força e micro-tendência.
-            - Risk Critic: Analista defensivo e post-mortem.
-            - Pattern Archivist: Especialista em ressonância de vitórias.
+            CONFIGURAÇÃO DA SESSÃO:
+            - Equipe: 4 Membros (Chairman, Momentum, Risk Critic, Archivist).
+            - Ciclo Operacional: ${analysisInterval} segundos.
+            - Saldo: $${accountBalance.balance?.toFixed(2) || '---'}
+            - PnL Sessão: $${sessionStats.pnl.toFixed(2)}
+            - Ativos sob sua vigia: ${watchedSymbols.length} ativos.
 
-            CONFIGURAÇÃO DA SESSÃO ATUAL:
-            - Versão do Terminal: Claritas Copilot V3.0 (IA Lab).
-            - Ativos sob Monitoramento Simultâneo: ${watchedSymbols.length} ativos (${watchedSymbols.join(', ')}).
-            - Ativo em Foco no Gráfico: ${activeSymbol || 'Nenhum'}.
-            - Ciclo de Análise/Execução Ativo: ${analysisInterval} segundos.
-            - Saldo da Conta: $${accountBalance.balance?.toFixed(2) || '---'}
-            - Resultado da Sessão (PnL): $${sessionStats.pnl.toFixed(2)}
-            - Taxa de Acerto (Win Rate): ${sessionStats.winRate ? sessionStats.winRate.toFixed(1) + '%' : 'Nenhum trade concluído'}.
-            
-            ESTADO TÉCNICO (Foco): RSI=${indicators?.rsi?.toFixed(1) || 'N/D'} | ADX=${indicators?.adx?.toFixed(1) || 'N/D'} | Volatilidade BBW=${indicators?.bbw?.toFixed(3) || 'N/D'}.
-            
-            ESTADO DOS ATIVOS NO RADAR (PREÇOS REAIS):
-            ${Object.values(radarStatus).map(s => `- ${s.symbol}: $${s.lastPrice?.toFixed(2) || 'Aguardando tick...'} (Sinal: ${s.lastAction})`).join('\n')}
+            ### TABELA DE COTAÇÕES REAIS ATUALIZADAS (FONTE: WEBSOCKET)
+            | Ativo    | Preço Atual  | Estado Radar |
+            |----------|--------------|--------------|
+            ${realTimePrices}
 
+            ⚠️ ATENÇÃO: NUNCA arredonde ou estime preços baseados nos nomes dos ativos. Use APENAS os valores da tabela acima.
+
+            INDICADORES (Foco: ${activeSymbol}): RSI=${indicators?.rsi?.toFixed(1) || 'N/D'} | ADX=${indicators?.adx?.toFixed(1) || 'N/D'} | BBW=${indicators?.bbw?.toFixed(3) || 'N/D'}.
+            
             ${memoryContext}
             
-            Sua função agora: ${agentPrompts[targetAgent] || agentPrompts.CHAIRMAN}
-            Instrução: Responda de forma direta e técnica. SEMPRE use o ciclo de ${analysisInterval}s como referência.`;
+            Sua função: ${agentPrompts[targetAgent] || agentPrompts.CHAIRMAN}
+            Responda de forma técnica e analítica em português do Brasil.`;
 
             const history = chatMessages.map(m => ({ role: m.role, content: m.content }));
             const response = await getOllamaResponse(ollamaConfig, content, [
@@ -381,16 +396,11 @@ export function useAIQuantTerminalV3(
         }
     };
 
-    const runMultiAssetCycleRef = useRef(runMultiAssetCycle);
-    useEffect(() => {
-        runMultiAssetCycleRef.current = runMultiAssetCycle;
-    }, [runMultiAssetCycle]);
-
     useEffect(() => {
         const interval = setInterval(() => {
             setTimeToNextAnalysis(prev => {
                 if (prev <= 1) {
-                    runMultiAssetCycleRef.current(); 
+                    analysisFnRef.current(); 
                     return analysisInterval;
                 }
                 return prev - 1;
@@ -417,7 +427,7 @@ export function useAIQuantTerminalV3(
         radarStatus, watchedSymbols, setWatchedSymbols,
         resetSession,
         chatMessages, isChatLoading, sendMessage,
-        executeManualDecision: () => lastDecision && runMultiAssetCycle(),
+        executeManualDecision: () => lastDecision && analysisFnRef.current(),
         telemetry,
         ollamaConfig,
         updateOllamaConfig,
