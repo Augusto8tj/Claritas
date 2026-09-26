@@ -212,7 +212,7 @@ function TerminalV3Content() {
                                 <div className="space-y-1.5 pt-2">
                                     <div className="flex justify-between text-[10px] text-muted-foreground uppercase font-bold">
                                         <span>Execução em</span>
-                                        <span>{timeToNextAnalysis}s</span>
+                                        <span className="font-mono text-primary font-bold">{timeToNextAnalysis}s</span>
                                     </div>
                                     <Progress value={(timeToNextAnalysis / analysisInterval) * 100} className="h-1" />
                                 </div>

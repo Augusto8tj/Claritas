@@ -4,6 +4,7 @@
 /**
  * @fileOverview TERMINAL QUANT V3.0 (COUNCIL EDITION) - MONITORAMENTO MULTI-ATIVO
  * V3.6: Monitor de Telemetria Quant e Injeção de Nerd Stats.
+ * FIX: Estabilização do temporizador de ciclo.
  */
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
@@ -312,18 +313,24 @@ export function useAIQuantTerminalV3(
         }
     };
 
+    // FIX: Temporizador estabilizado com Referência para evitar travamentos por re-renders
+    const runMultiAssetCycleRef = useRef(runMultiAssetCycle);
+    useEffect(() => {
+        runMultiAssetCycleRef.current = runMultiAssetCycle;
+    }, [runMultiAssetCycle]);
+
     useEffect(() => {
         const interval = setInterval(() => {
             setTimeToNextAnalysis(prev => {
                 if (prev <= 1) {
-                    runMultiAssetCycle();
+                    runMultiAssetCycleRef.current(); // Chama via ref para não depender da função no useEffect
                     return analysisInterval;
                 }
                 return prev - 1;
             });
         }, 1000);
         return () => clearInterval(interval);
-    }, [runMultiAssetCycle, analysisInterval]);
+    }, [analysisInterval]); // Reinicia apenas se o intervalo base mudar
 
     useEffect(() => {
         setTimeToNextAnalysis(analysisInterval);
