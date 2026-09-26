@@ -33,6 +33,7 @@ import {
   RefreshCw,
   Terminal,
   Radar,
+  Brain,
 } from "lucide-react";
 import {
   Sidebar,
@@ -65,6 +66,11 @@ const navItems = [
     href: "/",
     icon: LayoutDashboard,
     label: "Painel",
+  },
+  {
+    href: "/copilot",
+    icon: Brain,
+    label: "AI Copilot",
   },
   {
     href: "/ai-quant-terminal",
