@@ -7,6 +7,7 @@
  * V3.6: Monitor de Telemetria Quant e Injeção de Nerd Stats.
  * V3.8: Sincronização de preços reais no radar para o contexto do chat.
  * V3.9: Tabela de Preços de Alta Fidelidade para eliminar alucinações.
+ * V4.0: Injeção de Opiniões Detalhadas dos Agentes por Ativo e Correção de Raciocínio Econômico.
  */
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
@@ -331,21 +332,26 @@ export function useAIQuantTerminalV3(
             const memoryContext = TradeMemoryManager.formatBufferForPrompt(memoryBuffer);
             const indicators = calculateAllIndicators(chartData, [], '1m', { duration: 15, unit: 's' });
             
-            // CÁLCULO DE PREÇOS REAIS EM TEMPO REAL PARA O CONTEXTO
-            const realTimePrices = watchedSymbols.map(sym => {
+            // CÁLCULO DE DETALHES DO RADAR PARA O CONTEXTO
+            const radarDetails = watchedSymbols.map(sym => {
                 const isFocused = sym === activeSymbol;
                 const price = isFocused 
                     ? priceTicks[priceTicks.length - 1]?.price 
                     : multiAssetCandles[sym]?.[multiAssetCandles[sym].length - 1]?.close;
                 
-                const status = radarStatus[sym]?.lastAction || 'SCAN';
+                const status = radarStatus[sym];
                 const formattedPrice = price ? `$${price.toFixed(2)}` : 'Sincronizando...';
                 
-                return `| ${sym.padEnd(8)} | ${formattedPrice.padEnd(12)} | ${status.padEnd(10)} |`;
+                let opinionText = "Aguardando análise técnica...";
+                if (status?.opinions?.length) {
+                    opinionText = status.opinions.map(o => `[${o.agentName}: ${o.action}(${o.confidence}%)]`).join(' ');
+                }
+                
+                return `| ${sym.padEnd(8)} | ${formattedPrice.padEnd(12)} | ${status?.lastAction || 'SCAN'} | ${status?.confidence || 0}% | ${opinionText} |`;
             }).join('\n');
 
             const agentPrompts: Record<string, string> = {
-                CHAIRMAN: "Você é o Chairman do Conselho V3. Sua visão é macro e estratégica, responsável pela síntese final.",
+                CHAIRMAN: "Você é o Chairman do Conselho V3. Sua visão é macro e estratégica, responsável pela síntese final. Proibido recomendar ativos baseado apenas no preço nominal.",
                 MOMENTUM: "Você é o analista 'Quant Momentum'. Seu foco é força, velocidade de ticks e momentum de curto prazo.",
                 RISK_CRITIC: "Você é o 'Risk Critic'. Seu trabalho é ser cético, buscar padrões de falha e evitar prejuízos.",
                 ARCHIVIST: "Você é o 'Pattern Archivist'. Sua memória é o histórico de vitórias e estruturas de velas vencedoras."
@@ -353,19 +359,21 @@ export function useAIQuantTerminalV3(
 
             const systemPrompt = `VOCÊ É UM ANALISTA QUANTITATIVO NO LABORATÓRIO V3.0 (COUNCIL EDITION).
             
+            DIRETRIZES DE RACIOCÍNIO (LEIA COM ATENÇÃO):
+            1. PREÇO NOMINAL NÃO É FAVORABILIDADE: O fato de um ativo custar $10 ou $1.000.000 é irrelevante para a estratégia. Nunca use o preço baixo ou alto como justificativa para operar.
+            2. FOCO EM ESTATÍSTICA: Priorize a Confiança do Consenso e a Opinião dos Agentes da tabela abaixo.
+            3. CRÍTICA: Se o conselho estiver dividido (Entropia alta), recomende cautela (HOLD).
+
             CONFIGURAÇÃO DA SESSÃO:
             - Equipe: 4 Membros (Chairman, Momentum, Risk Critic, Archivist).
-            - Ciclo Operacional: ${analysisInterval} segundos.
-            - Saldo: $${accountBalance.balance?.toFixed(2) || '---'}
-            - PnL Sessão: $${sessionStats.pnl.toFixed(2)}
-            - Ativos sob sua vigia: ${watchedSymbols.length} ativos.
+            - Saldo: $${accountBalance.balance?.toFixed(2) || '---'} | PnL Sessão: $${sessionStats.pnl.toFixed(2)}
 
-            ### TABELA DE COTAÇÕES REAIS ATUALIZADAS (FONTE: WEBSOCKET)
-            | Ativo    | Preço Atual  | Estado Radar |
-            |----------|--------------|--------------|
-            ${realTimePrices}
+            ### RADAR TÁTICO INSTITUCIONAL (DADOS REAIS DO WEBSOCKET)
+            | Ativo    | Preço Atual  | Veredito | Confiança | Opiniões dos Analistas Detalhadas |
+            |----------|--------------|----------|-----------|----------------------------------|
+            ${radarDetails}
 
-            ⚠️ ATENÇÃO: NUNCA arredonde ou estime preços baseados nos nomes dos ativos. Use APENAS os valores da tabela acima.
+            ⚠️ ATENÇÃO: NUNCA alucine sobre a favorabilidade de um ativo baseado em seu preço nominal. Use APENAS a Confiança e as Opiniões Técnicas.
 
             INDICADORES (Foco: ${activeSymbol}): RSI=${indicators?.rsi?.toFixed(1) || 'N/D'} | ADX=${indicators?.adx?.toFixed(1) || 'N/D'} | BBW=${indicators?.bbw?.toFixed(3) || 'N/D'}.
             
