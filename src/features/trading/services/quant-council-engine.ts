@@ -1,8 +1,9 @@
+
 import { TradeMemoryBuffer, AgentOpinion, CouncilDecision, CouncilTelemetry } from '../types/council';
 import { TradeMemoryManager } from './trade-memory-service';
 import type { OllamaConfig } from '@/lib/types';
 
-// V4.0: Timeouts e Personas Institucionais
+// V4.6: Timeouts resilientes para evitar Failed to Fetch
 const AGENT_TIMEOUT_MS = 15000; 
 
 /**
@@ -31,7 +32,7 @@ export async function runQuantCouncil(
     // Lista de agentes para o conselho
     const agents: Array<AgentOpinion['agentName']> = ['MOMENTUM', 'RISK_CRITIC', 'ARCHIVIST'];
 
-    // Disparo paralelo com resiliência
+    // Disparo paralelo com resiliência: colhe o que for possível se houver falhas parciais
     const agentPromises = agents.map(name => fetchAgentWithTimeout(name, marketSnapshot, memoryContext, config));
 
     const results = await Promise.allSettled(agentPromises);
@@ -43,8 +44,8 @@ export async function runQuantCouncil(
     });
 
     // Diagnóstico de Quórum
-    if (opinions.length < 2) {
-        throw new Error('QUORUM_FAILURE');
+    if (opinions.length < 1) {
+        throw new Error('NETWORK_FAILURE_ALL_AGENTS');
     }
 
     // REGRA DE OURO: Veto do Crítico de Risco tem peso dobrado na segurança
@@ -87,6 +88,8 @@ async function fetchAgentWithTimeout(
         clearTimeout(timeoutId);
         return opinion;
     } catch (e) {
+        // Silencia erro de fetch individual para manter a estabilidade do conselho
+        console.warn(`[Agent ${agentName}] Fetch failed:`, e);
         return null;
     }
 }
@@ -120,35 +123,43 @@ async function fetchAgentAnalysis(
     SAÍDA: JSON estrito.`
   };
 
-  const response = await fetch('/api/ollama/agent', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    signal,
-    body: JSON.stringify({
-      systemPrompt: `${systemPrompts[agentName]}\n${memoryContext}`,
-      marketSnapshot: snapshot,
-      config: config
-    })
-  });
+  try {
+    const response = await fetch('/api/ollama/agent', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      signal,
+      body: JSON.stringify({
+        systemPrompt: `${systemPrompts[agentName]}\n${memoryContext}`,
+        marketSnapshot: snapshot,
+        config: config
+      })
+    });
 
-  if (!response.ok) throw new Error(`Agent Offline`);
-  const data = await response.json();
-  const end = performance.now();
-  
-  return { 
-    ...data.opinion, 
-    agentName, 
-    latencyMs: Math.round(end - start),
-    tokensPerSec: data.metrics?.tokensPerSecond || 0,
-    totalTokens: data.metrics?.totalTokens || 0
-  };
+    if (!response.ok) throw new Error(`Agent API responded with ${response.status}`);
+    
+    const data = await response.json();
+    const end = performance.now();
+    
+    return { 
+      ...data.opinion, 
+      agentName, 
+      latencyMs: Math.round(end - start),
+      tokensPerSec: data.metrics?.tokensPerSecond || 0,
+      totalTokens: data.metrics?.totalTokens || 0
+    };
+  } catch (err: any) {
+    if (err.name === 'AbortError') throw new Error('TIMEOUT');
+    throw err;
+  }
 }
 
 function generateTelemetry(opinions: AgentOpinion[], start: number, end: number): CouncilTelemetry {
-  const validOps = opinions.filter(o => o.tokensPerSec !== undefined);
+  const validOps = opinions.filter(o => o.tokensPerSec !== undefined && o.tokensPerSec > 0);
+  const totalTokens = opinions.reduce((sum, o) => sum + (o.totalTokens || 0), 0);
+  
   return {
     avgTokensPerSec: validOps.length ? validOps.reduce((a, b) => a + (b.tokensPerSec || 0), 0) / validOps.length : 0,
-    totalTokens: validOps.reduce((sum, o) => sum + (o.totalTokens || 0), 0),
+    totalTokens,
     consensusEntropy: calculateConsensusEntropy(opinions),
     jitterMs: opinions.length > 1 ? Math.max(...opinions.map(o => o.latencyMs || 0)) - Math.min(...opinions.map(o => o.latencyMs || 0)) : 0,
     inferenceHealth: Math.round((opinions.length / 3) * 100)
@@ -177,7 +188,8 @@ function synthesizeChairmanDecision(
   const entropyPenalty = telemetry.consensusEntropy > 0.6 ? 0.6 : 1.0;
   const maxScore = Math.max(callScore, putScore) * entropyPenalty;
   
-  const threshold = 140; // Exige confiança mínima acumulada
+  // Limiar adaptativo: exige confiança mínima baseada no número de agentes que responderam
+  const threshold = opinions.length >= 2 ? 140 : 85; 
   const action = callScore > putScore && maxScore > threshold ? 'CALL' : putScore > callScore && maxScore > threshold ? 'PUT' : 'HOLD';
 
   return {
@@ -208,6 +220,6 @@ function executeMathFallback(snapshot: any, isShadowMode: boolean, latency: numb
     executionMode: isShadowMode ? 'SHADOW' : 'REAL',
     t2tLatencyMs: latency,
     telemetry: { avgTokensPerSec: 0, totalTokens: 0, consensusEntropy: 1.0, jitterMs: 0, inferenceHealth: 0 },
-    zenThought: "IA Lenta. Operando por motor estocástico de emergência."
+    zenThought: "IA Instável ou Lenta. Operando por motor estocástico de emergência."
   };
 }

@@ -1,9 +1,10 @@
+
 // src/features/trading/hooks/use-ai-quant-terminal-v3.tsx
 'use client';
 
 /**
  * @fileOverview TERMINAL QUANT V3.0 (COUNCIL EDITION) - MONITORAMENTO MULTI-ATIVO
- * V4.5: Auditoria de Especialidade e Alinhamento do Conselho.
+ * V4.6: Ciclo Acelerado (Half-Cycle) e Resiliência de Rede.
  */
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
@@ -120,7 +121,6 @@ export function useAIQuantTerminalV3(
 
     const fetchAvailableModels = useCallback(async () => {
         if (!ollamaConfig?.baseUrl) {
-            addLog("Aguardando configuração de URL do Ollama para carregar modelos.", 'info');
             return;
         }
 
@@ -290,7 +290,8 @@ export function useAIQuantTerminalV3(
             const candles = symbol === activeSymbol ? chartData : (multiAssetCandles[symbol] as CandleData[]);
             if (candles && candles.length >= 30) {
                 await runAnalysisForSymbol(symbol, candles);
-                scheduleRef.current[symbol] = now + (analysisInterval * 1000);
+                // V4.6: Redução do ciclo pela metade para garantir monitoramento ágil
+                scheduleRef.current[symbol] = now + (analysisInterval * 500); 
             }
         }
 
@@ -392,7 +393,7 @@ export function useAIQuantTerminalV3(
         }
     };
 
-    const timerRef = useRef<NodeJS.Timeout>(null);
+    const timerRef = useRef<NodeJS.Timeout | null>(null);
     useEffect(() => {
         timerRef.current = setInterval(() => {
             setTimeToNextAnalysis(prev => {
