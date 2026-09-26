@@ -1,7 +1,7 @@
 
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useForm, type SubmitHandler } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -13,7 +13,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Loader2, CheckCircle, Globe, RefreshCw, Info, Key, Zap, Laptop, ShieldCheck, BarChart3, Medal, BrainCircuit, History, Target, FileText, PlayCircle } from "lucide-react";
+import { Loader2, CheckCircle, Globe, RefreshCw, Info, Key, Zap, Laptop, ShieldCheck, BarChart3, Medal, BrainCircuit, History, Target, FileText, PlayCircle, MessageSquare, Send, User, Bot as BotIcon } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import {
   Form,
@@ -31,13 +31,14 @@ import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { checkOllamaConnection, checkGeminiConnection, runOllamaBenchmark } from "@/app/actions";
+import { checkOllamaConnection, checkGeminiConnection, runOllamaBenchmark, getOllamaResponse } from "@/app/actions";
 import { cn } from "@/lib/utils";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Progress } from "@/components/ui/progress";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { saveOllamaBenchmark, getOllamaBenchmarkHistory } from "@/services/financial-data-service";
 import { useAuth } from "@/features/auth/hooks/use-auth";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 
 const derivSchema = z.object({
   demoToken: z.string().optional(),
@@ -70,6 +71,12 @@ interface BenchmarkResult {
     status: 'pending' | 'success' | 'error';
 }
 
+interface ChatMessage {
+    role: 'user' | 'assistant';
+    content: string;
+    timestamp: string;
+}
+
 const isValidDerivPatFormat = (token: string) => {
     return /^pat_[a-zA-Z0-9]{40,}$/.test(token.trim());
 };
@@ -77,11 +84,16 @@ const isValidDerivPatFormat = (token: string) => {
 export function ApiKeysCard() {
   const { user } = useAuth();
   const { demoToken, realToken, setTokens } = useDerivApi();
-  const [loading, setLoading] = useState<AccountType | 'ollama' | 'fetching_models' | 'gemini' | 'benchmark' | null>(null);
+  const [loading, setLoading] = useState<AccountType | 'ollama' | 'fetching_models' | 'gemini' | 'benchmark' | 'chat' | null>(null);
   const [availableModels, setAvailableModels] = useState<Array<{ name: string; size: number; details: any }>>([]);
   const [benchmarks, setBenchmarks] = useState<Record<string, BenchmarkResult>>({});
   const [benchHistory, setBenchHistory] = useState<any[]>([]);
   const { toast } = useToast();
+
+  // Chat Local State
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  const [chatInput, setChatInput] = useState("");
+  const chatEndRef = useRef<HTMLDivElement>(null);
 
   const derivForm = useForm<DerivFormValues>({
     resolver: zodResolver(derivSchema),
@@ -97,7 +109,7 @@ export function ApiKeysCard() {
       baseUrl: "https://boxlike-barrack-silencer.ngrok-free.dev",
       apiKey: "augusto123",
       model: "",
-      temperature: 0.7,
+      temperature: 0.1,
       keepAlive: "5m",
     },
   });
@@ -122,6 +134,10 @@ export function ApiKeysCard() {
         getOllamaBenchmarkHistory(user.uid).then(setBenchHistory);
     }
   }, [ollamaForm, user]);
+
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [chatMessages, loading]);
 
   const handleDerivSubmit = async (type: AccountType) => {
     setLoading(type);
@@ -178,20 +194,14 @@ export function ApiKeysCard() {
 
       for (const model of availableModels) {
           try {
-              // FASE 1: VELOCIDADE (SPEED)
               const speedRes = await runOllamaBenchmark({ ...configBase, model: model.name }, 'speed');
-              
-              // FASE 2: INTELIGÊNCIA FINANCEIRA (QI)
               const intelRes = await runOllamaBenchmark({ ...configBase, model: model.name }, 'intelligence');
-              
-              // FASE 3: RESILIÊNCIA DE CONTEXTO
               const contextRes = await runOllamaBenchmark({ ...configBase, model: model.name }, 'context');
 
               const tps = speedRes.metrics?.tokensPerSecond || 0;
               const iq = intelRes.metrics?.score || 0;
               const ctx = contextRes.metrics?.score || 0;
               
-              // Power Score Ponderado: 40% IQ, 30% Contexto, 30% Velocidade (normalizada p/ 50 TPS)
               const normalizedSpeed = Math.min(100, (tps / 50) * 100);
               const powerScore = (iq * 0.4) + (ctx * 0.3) + (normalizedSpeed * 0.3);
 
@@ -232,6 +242,38 @@ export function ApiKeysCard() {
     } else {
       toast({ variant: "destructive", title: "Falha na Validação", description: res.error });
     }
+  };
+
+  const handleOllamaChat = async (e?: React.FormEvent) => {
+      e?.preventDefault();
+      if (!chatInput.trim() || loading === 'chat') return;
+
+      const config = ollamaForm.getValues();
+      if (!config.model) {
+          toast({ title: "Erro no Chat", description: "Selecione um modelo primeiro.", variant: "destructive" });
+          return;
+      }
+
+      const userMsg: ChatMessage = { role: 'user', content: chatInput, timestamp: new Date().toLocaleTimeString() };
+      setChatMessages(prev => [...prev, userMsg]);
+      setChatInput("");
+      setLoading('chat');
+
+      try {
+          const history = chatMessages.map(m => ({ role: m.role, content: m.content }));
+          const response = await getOllamaResponse(config, chatInput, history);
+          
+          if (response.success) {
+              const assistantMsg: ChatMessage = { role: 'assistant', content: response.success, timestamp: new Date().toLocaleTimeString() };
+              setChatMessages(prev => [...prev, assistantMsg]);
+          } else {
+              throw new Error(response.error || "Falha na resposta do Ollama.");
+          }
+      } catch (err: any) {
+          toast({ variant: "destructive", title: "Erro no Chat", description: err.message });
+      } finally {
+          setLoading(null);
+      }
   };
 
   const handleGeminiSubmit: SubmitHandler<GeminiFormValues> = async (data) => {
@@ -310,6 +352,7 @@ export function ApiKeysCard() {
             <Tabs defaultValue="config">
                 <TabsList className="bg-muted/50 p-1 mb-4 h-9">
                     <TabsTrigger value="config" className="text-xs">Configuração</TabsTrigger>
+                    <TabsTrigger value="chat" className="text-xs">Chat Interativo</TabsTrigger>
                     <TabsTrigger value="benchmark" className="text-xs">Benchmark Lab</TabsTrigger>
                     <TabsTrigger value="history" className="text-xs">Histórico</TabsTrigger>
                 </TabsList>
@@ -412,6 +455,65 @@ export function ApiKeysCard() {
                         </Button>
                     </form>
                     </Form>
+                </TabsContent>
+
+                <TabsContent value="chat" className="space-y-4">
+                    <Card className="border-none shadow-none bg-muted/20">
+                        <CardHeader className="py-3 px-4 border-b">
+                            <CardTitle className="text-xs font-bold uppercase tracking-wider flex items-center gap-2">
+                                <MessageSquare className="h-3.5 w-3.5 text-primary" />
+                                Diálogo com {ollamaForm.watch('model') || 'Modelo Local'}
+                            </CardTitle>
+                        </CardHeader>
+                        <CardContent className="p-0">
+                            <ScrollArea className="h-64 p-4">
+                                <div className="space-y-4">
+                                    {chatMessages.length === 0 && (
+                                        <p className="text-center text-[11px] text-muted-foreground pt-10">
+                                            Aguardando sua pergunta estratégica...
+                                        </p>
+                                    )}
+                                    {chatMessages.map((msg, i) => (
+                                        <div key={i} className={cn(
+                                            "flex items-start gap-2 max-w-[90%]",
+                                            msg.role === 'user' ? "ml-auto flex-row-reverse" : ""
+                                        )}>
+                                            <Avatar className="h-6 w-6 shrink-0 border">
+                                                <AvatarFallback className="text-[10px] uppercase">
+                                                    {msg.role === 'user' ? <User className="h-3.5 w-3.5"/> : <BotIcon className="h-3.5 w-3.5"/>}
+                                                </AvatarFallback>
+                                            </Avatar>
+                                            <div className={cn(
+                                                "p-2 rounded-lg text-xs",
+                                                msg.role === 'user' ? "bg-primary text-primary-foreground" : "bg-card border"
+                                            )}>
+                                                {msg.content}
+                                                <div className="text-[9px] opacity-50 mt-1 text-right">{msg.timestamp}</div>
+                                            </div>
+                                        </div>
+                                    ))}
+                                    {loading === 'chat' && (
+                                        <div className="flex items-center gap-2 text-[10px] text-primary animate-pulse">
+                                            <Loader2 className="h-3 w-3 animate-spin"/> O modelo está processando...
+                                        </div>
+                                    )}
+                                    <div ref={chatEndRef} />
+                                </div>
+                            </ScrollArea>
+                            <form onSubmit={handleOllamaChat} className="p-3 border-t bg-background flex gap-2">
+                                <Input 
+                                    placeholder="Pergunte ao modelo..." 
+                                    className="h-9 text-xs"
+                                    value={chatInput}
+                                    onChange={(e) => setChatInput(e.target.value)}
+                                    disabled={loading === 'chat'}
+                                />
+                                <Button type="submit" size="icon" className="h-9 w-9 shrink-0" disabled={loading === 'chat' || !chatInput.trim()}>
+                                    <Send className="h-4 w-4" />
+                                </Button>
+                            </form>
+                        </CardContent>
+                    </Card>
                 </TabsContent>
 
                 <TabsContent value="benchmark" className="space-y-4">
