@@ -2,9 +2,9 @@ import { TradeMemoryBuffer, AgentOpinion, CouncilDecision, CouncilTelemetry } fr
 import { TradeMemoryManager } from './trade-memory-service';
 import type { OllamaConfig } from '@/lib/types';
 
-// V3.8: Timeouts otimizados para evitar failover matemático em hardware com Jitter alto
-const AGENT_TIMEOUT_MS = 7000; 
-const CHAIRMAN_THRESHOLD_MS = 9000;
+// V3.9: Timeouts expandidos para 15s para acomodar o hardware do usuário e reduzir failover matemático
+const AGENT_TIMEOUT_MS = 15000; 
+const CHAIRMAN_THRESHOLD_MS = 18000;
 
 /**
  * Calcula a Entropia de Shannon para medir a divisão do conselho.
