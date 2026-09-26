@@ -1,9 +1,10 @@
+// src/features/trading/hooks/use-ai-quant-terminal-v3.tsx
 'use client';
 
 /**
  * @fileOverview TERMINAL QUANT V3.0 (COUNCIL EDITION) - MONITORAMENTO MULTI-ATIVO
  * V3.6: Monitor de Telemetria Quant e Injeção de Nerd Stats.
- * FIX: Estabilização do temporizador de ciclo.
+ * FIX: Estabilização do temporizador de ciclo e sincronização de modelos.
  */
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
@@ -84,11 +85,16 @@ export function useAIQuantTerminalV3(
     const [reasoningLog, setReasoningLog] = useState<any[]>([]);
     const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
     const [isChatLoading, setIsChatLoading] = useState(false);
+    const [availableModels, setAvailableModels] = useState<any[]>([]);
     
     const executionLockRef = useRef(false);
     const scheduleRef = useRef<Record<string, number>>({});
 
     const [ollamaConfig, setOllamaConfig] = useState<OllamaConfig | null>(null);
+
+    const addLog = useCallback((message: string, type: string = 'info') => {
+        setReasoningLog(prev => [{ time: new Date().toLocaleTimeString(), message, type }, ...prev].slice(0, 50));
+    }, []);
 
     useEffect(() => {
         if (typeof window !== 'undefined') {
@@ -97,9 +103,28 @@ export function useAIQuantTerminalV3(
         }
     }, []);
 
-    const addLog = useCallback((message: string, type: string = 'info') => {
-        setReasoningLog(prev => [{ time: new Date().toLocaleTimeString(), message, type }, ...prev].slice(0, 50));
-    }, []);
+    const fetchAvailableModels = useCallback(async () => {
+        if (!ollamaConfig?.baseUrl) return;
+        try {
+            const url = ollamaConfig.baseUrl.replace(/\/+$/, '') + '/api/tags';
+            const response = await fetch(url, {
+                headers: { 'ngrok-skip-browser-warning': 'true' }
+            });
+            if (response.ok) {
+                const data = await response.json();
+                setAvailableModels(data.models || []);
+                addLog(`Sincronização: ${data.models?.length || 0} modelos disponíveis no Ollama.`);
+            }
+        } catch (e) {
+            console.error("Failed to fetch Ollama models:", e);
+        }
+    }, [ollamaConfig?.baseUrl, addLog]);
+
+    useEffect(() => {
+        if (ollamaConfig?.baseUrl) {
+            fetchAvailableModels();
+        }
+    }, [ollamaConfig?.baseUrl, fetchAvailableModels]);
 
     const updateOllamaConfig = useCallback((updates: Partial<OllamaConfig>) => {
         if (typeof window === 'undefined') return;
@@ -187,7 +212,6 @@ export function useAIQuantTerminalV3(
                 }
             }));
 
-            // Execução do Autopilot com Penalidade Nerd aplicada em runQuantCouncil
             if (isAutoMode && !isShadowMode && decision.finalAction !== 'HOLD' && decision.consensusConfidence >= 65) {
                 const isContractAllowed = allowedContracts[decision.recommendedContract as keyof AllowedContractsV3];
                 if (!isContractAllowed) return;
@@ -238,7 +262,7 @@ export function useAIQuantTerminalV3(
         });
 
         for (const symbol of dueSymbols) {
-            const candles = symbol === activeSymbol ? chartData : multiAssetCandles[symbol];
+            const candles = symbol === activeSymbol ? chartData : (multiAssetCandles[symbol] as CandleData[]);
             if (candles && candles.length >= 30) {
                 await runAnalysisForSymbol(symbol, candles);
                 scheduleRef.current[symbol] = now + (analysisInterval * 1000);
@@ -291,18 +315,17 @@ export function useAIQuantTerminalV3(
             - Versão do Terminal: Claritas Copilot V3.0 (IA Lab).
             - Ativos sob Monitoramento Simultâneo: ${watchedSymbols.length} ativos (${watchedSymbols.join(', ')}).
             - Ativo em Foco no Gráfico: ${activeSymbol || 'Nenhum'}.
-            - Ciclo de Análise/Execução Ativo: ${analysisInterval} segundos. (A IA reanalisa o mercado e executa ordens a cada ${analysisInterval}s).
+            - Ciclo de Análise/Execução Ativo: ${analysisInterval} segundos.
             - Saldo da Conta: $${accountBalance.balance?.toFixed(2) || '---'}
             - Resultado da Sessão (PnL): $${sessionStats.pnl.toFixed(2)}
             - Taxa de Acerto (Win Rate): ${sessionStats.winRate ? sessionStats.winRate.toFixed(1) + '%' : 'Nenhum trade concluído'}.
             
-            ESTADO TÉCNICO (Ativo em Foco):
-            - Indicadores: RSI=${indicators?.rsi?.toFixed(1) || 'N/D'} | ADX=${indicators?.adx?.toFixed(1) || 'N/D'} | Volatilidade BBW=${indicators?.bbw?.toFixed(3) || 'N/D'}.
+            ESTADO TÉCNICO: RSI=${indicators?.rsi?.toFixed(1) || 'N/D'} | ADX=${indicators?.adx?.toFixed(1) || 'N/D'} | Volatilidade BBW=${indicators?.bbw?.toFixed(3) || 'N/D'}.
             
             ${memoryContext}
             
             Sua função agora: ${agentPrompts[targetAgent] || agentPrompts.CHAIRMAN}
-            Instrução: Responda como um profissional quantitativo sênior. Seja direto, técnico e utilize os dados acima para justificar sua análise. SEMPRE use o ciclo de ${analysisInterval}s como referência temporal de execução.`;
+            Instrução: Responda de forma direta e técnica. SEMPRE use o ciclo de ${analysisInterval}s como referência.`;
 
             const history = chatMessages.map(m => ({ role: m.role, content: m.content }));
             const response = await getOllamaResponse(ollamaConfig, content, [
@@ -326,7 +349,6 @@ export function useAIQuantTerminalV3(
         }
     };
 
-    // FIX: Temporizador estabilizado com Referência para evitar travamentos por re-renders
     const runMultiAssetCycleRef = useRef(runMultiAssetCycle);
     useEffect(() => {
         runMultiAssetCycleRef.current = runMultiAssetCycle;
@@ -336,14 +358,14 @@ export function useAIQuantTerminalV3(
         const interval = setInterval(() => {
             setTimeToNextAnalysis(prev => {
                 if (prev <= 1) {
-                    runMultiAssetCycleRef.current(); // Chama via ref para não depender da função no useEffect
+                    runMultiAssetCycleRef.current(); 
                     return analysisInterval;
                 }
                 return prev - 1;
             });
         }, 1000);
         return () => clearInterval(interval);
-    }, [analysisInterval]); // Reinicia apenas se o intervalo base mudar
+    }, [analysisInterval]); 
 
     useEffect(() => {
         setTimeToNextAnalysis(analysisInterval);
@@ -366,6 +388,8 @@ export function useAIQuantTerminalV3(
         executeManualDecision: () => lastDecision && runMultiAssetCycle(),
         telemetry,
         ollamaConfig,
-        updateOllamaConfig
+        updateOllamaConfig,
+        availableModels,
+        fetchAvailableModels
     };
 }

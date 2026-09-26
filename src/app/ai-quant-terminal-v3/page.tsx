@@ -255,8 +255,39 @@ function TerminalV3Content() {
                     {/* MONITOR DE TELEMETRIA QUANT (NERD STATS) */}
                     <Card className="bg-slate-950 text-slate-300 border-slate-800 shadow-xl overflow-hidden font-mono">
                         <CardHeader className="py-3 bg-slate-900 border-b border-slate-800">
-                             <CardTitle className="text-[10px] font-bold uppercase tracking-widest flex items-center gap-2 text-cyan-500">
-                                <Gauge className="h-3.5 w-3.5" /> Telemetria: {ollamaConfig?.model || 'Desconectado'}
+                             <CardTitle className="text-[10px] font-bold uppercase tracking-widest flex items-center gap-2 text-cyan-500 w-full">
+                                <Gauge className="h-3.5 w-3.5" />
+                                <span className="shrink-0">Telemetria:</span>
+                                <div className="flex-1 flex items-center gap-2">
+                                    <Select 
+                                        value={ollamaConfig?.model || ""} 
+                                        onValueChange={(val) => updateOllamaConfig({ model: val })}
+                                    >
+                                        <SelectTrigger className="h-6 bg-slate-900 border-slate-700 text-[10px] font-mono hover:bg-slate-800 transition-colors py-0 px-2 flex-1">
+                                            <SelectValue placeholder="Seletor..." />
+                                        </SelectTrigger>
+                                        <SelectContent className="bg-slate-950 border-slate-800 text-slate-300">
+                                            {v3.availableModels && v3.availableModels.length > 0 ? (
+                                                v3.availableModels.map((m: any) => (
+                                                    <SelectItem key={m.name} value={m.name} className="text-[10px] font-mono">
+                                                        {m.name}
+                                                    </SelectItem>
+                                                ))
+                                            ) : (
+                                                <SelectItem value="none" disabled>Nenhum modelo (Clique em 🔄)</SelectItem>
+                                            )}
+                                        </SelectContent>
+                                    </Select>
+                                    <Button 
+                                        variant="ghost" 
+                                        size="icon" 
+                                        className="h-6 w-6 text-cyan-500 hover:text-cyan-400 hover:bg-slate-800" 
+                                        onClick={() => v3.fetchAvailableModels()}
+                                        title="Atualizar Modelos"
+                                    >
+                                        <RefreshCw className="h-3 w-3" />
+                                    </Button>
+                                </div>
                             </CardTitle>
                         </CardHeader>
                         <CardContent className="p-4 space-y-4 text-[11px]">
