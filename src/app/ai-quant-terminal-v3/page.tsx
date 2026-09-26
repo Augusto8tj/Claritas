@@ -1,3 +1,4 @@
+
 'use client';
 
 import React, { useState, useRef, useEffect } from 'react';
@@ -16,7 +17,7 @@ import {
     Database, Activity, History, ArrowUpCircle, ArrowDownCircle,
     TestTube, Scale, Brain, Trash2, Radar, TrendingUp, TrendingDown, 
     Minus, Check, ChevronsUpDown, Settings2, Wallet, Target, Layers,
-    MessageSquare, Send
+    MessageSquare, Send, Gauge, Laptop
 } from "lucide-react";
 import { DerivApiProviderV2 as DerivApiProvider, useDerivApiV2 as useDerivApi } from "@/features/trading/hooks/use-deriv-api-v2";
 import { AssetSelectorV2 as AssetSelector } from "@/features/trading/components/deriv-trader/asset-selector-v2";
@@ -45,7 +46,7 @@ function TerminalV3Content() {
         radarStatus, watchedSymbols, setWatchedSymbols, resetSession,
         allowedContracts, setAllowedContracts, maxConcurrentTrades, setMaxConcurrentTrades,
         stakeValue, setStakeValue, dailyBalance, setDailyBalance, dailyTarget, setDailyTarget,
-        sessionStats, chatMessages, isChatLoading, sendMessage
+        sessionStats, chatMessages, isChatLoading, sendMessage, telemetry
     } = v3;
 
     const [isSelectorOpen, setIsSelectorOpen] = useState(false);
@@ -247,6 +248,55 @@ function TerminalV3Content() {
                                 {isAutoMode ? <PauseCircle className="mr-2 h-5 w-5" /> : <PlayCircle className="mr-2 h-5 w-5" />}
                                 {isAutoMode ? 'Pausar Automação' : 'Ativar Conselho V3'}
                             </Button>
+                        </CardContent>
+                    </Card>
+
+                    {/* MONITOR DE TELEMETRIA QUANT (NERD STATS) */}
+                    <Card className="bg-slate-950 text-slate-300 border-slate-800 shadow-xl overflow-hidden font-mono">
+                        <CardHeader className="py-3 bg-slate-900 border-b border-slate-800">
+                             <CardTitle className="text-[10px] font-bold uppercase tracking-widest flex items-center gap-2 text-cyan-500">
+                                <Gauge className="h-3.5 w-3.5" /> Ollama Telemetry (Nerd Stats)
+                            </CardTitle>
+                        </CardHeader>
+                        <CardContent className="p-4 space-y-4 text-[11px]">
+                             <div className="space-y-2">
+                                <div className="flex justify-between">
+                                    <span className="opacity-60 uppercase">Hardware Pressure:</span>
+                                    <span className={cn("font-bold", telemetry.avgTokensPerSec > 40 ? "text-green-500" : "text-amber-500")}>
+                                        {telemetry.avgTokensPerSec.toFixed(1)} <span className="text-[9px]">TOK/S</span>
+                                    </span>
+                                </div>
+                                <Progress value={telemetry.avgTokensPerSec * 2} className="h-1 bg-slate-800" indicatorClassName="bg-cyan-500" />
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-3 border-t border-slate-800 pt-3">
+                                <div className="space-y-1">
+                                    <p className="opacity-50 uppercase text-[9px]">Entropy H(x):</p>
+                                    <p className={cn("text-xs font-bold", telemetry.consensusEntropy < 0.4 ? "text-green-500" : "text-red-500")}>
+                                        {telemetry.consensusEntropy.toFixed(3)}
+                                    </p>
+                                </div>
+                                <div className="space-y-1">
+                                    <p className="opacity-50 uppercase text-[9px]">V-Jitter:</p>
+                                    <p className="text-xs font-bold text-slate-100">{telemetry.jitterMs}ms</p>
+                                </div>
+                            </div>
+
+                            <div className="space-y-1.5 border-t border-slate-800 pt-3">
+                                <div className="flex justify-between items-center">
+                                    <span className="opacity-60 text-[9px] uppercase">Node Health:</span>
+                                    <span className="font-bold text-green-500">{telemetry.inferenceHealth}%</span>
+                                </div>
+                                <div className="flex gap-0.5">
+                                    {Array.from({ length: 10 }).map((_, i) => (
+                                        <div key={i} className={cn("h-2 flex-1 rounded-sm", i < (telemetry.inferenceHealth/10) ? "bg-green-500" : "bg-slate-800")} />
+                                    ))}
+                                </div>
+                            </div>
+                            
+                            <p className="text-[9px] text-slate-500 italic mt-2">
+                                [STRICT] Entropy > 0.7 triggers stake penalty.
+                            </p>
                         </CardContent>
                     </Card>
 

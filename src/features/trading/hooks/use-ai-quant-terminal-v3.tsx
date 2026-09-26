@@ -3,8 +3,7 @@
 
 /**
  * @fileOverview TERMINAL QUANT V3.0 (COUNCIL EDITION) - MONITORAMENTO MULTI-ATIVO
- * Lógica de laboratório com conselho paralelo, memória viva e radar multi-ativo.
- * V3.5: Chat interativo com suporte a personas e injeção de memória viva.
+ * V3.6: Monitor de Telemetria Quant e Injeção de Nerd Stats.
  */
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
@@ -16,7 +15,7 @@ import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/features/auth/hooks/use-auth';
 import { TradeMemoryManager } from '../services/trade-memory-service';
 import { runQuantCouncil } from '../services/quant-council-engine';
-import { CouncilDecision, TradeMemoryBuffer, AgentOpinion } from '../types/council';
+import { CouncilDecision, TradeMemoryBuffer, AgentOpinion, CouncilTelemetry } from '../types/council';
 import { getOllamaResponse } from '@/app/actions';
 
 export interface RadarAssetStatus {
@@ -59,6 +58,15 @@ export function useAIQuantTerminalV3(
     const [analysisInterval, setAnalysisInterval] = useState(120); 
     const [timeToNextAnalysis, setTimeToNextAnalysis] = useState(120);
     
+    // TELEMETRIA
+    const [telemetry, setTelemetry] = useState<CouncilTelemetry>({
+        avgTokensPerSec: 0,
+        totalTokens: 0,
+        consensusEntropy: 0,
+        jitterMs: 0,
+        inferenceHealth: 100
+    });
+    
     // GESTÃO DE CONTRATOS E FREQUÊNCIA
     const [allowedContracts, setAllowedContracts] = useState<AllowedContractsV3>({
         'CALL': true,
@@ -90,7 +98,6 @@ export function useAIQuantTerminalV3(
         setReasoningLog(prev => [{ time: new Date().toLocaleTimeString(), message, type }, ...prev].slice(0, 50));
     }, []);
 
-    // Session Stats
     const sessionStats = useMemo(() => {
         const finishedTrades = operationsLog.filter(op => 
             op.status !== 'pending' && op.initiator === 'Conselho'
@@ -100,14 +107,12 @@ export function useAIQuantTerminalV3(
         return { pnl: Number(pnl) || 0, winRate: finishedTrades.length > 0 ? (wins / finishedTrades.length) * 100 : null, total: finishedTrades.length };
     }, [operationsLog]);
 
-    // Carrega a memória inicial
     useEffect(() => {
         if (user) {
             TradeMemoryManager.getBuffer(user.uid).then(setMemoryBuffer);
         }
     }, [user]);
 
-    // Monitora fechamento de trades para alimentar a memória
     useEffect(() => {
         if (!user) return;
         const lastFinished = operationsLog.find(op => 
@@ -150,7 +155,10 @@ export function useAIQuantTerminalV3(
             const buffer = user ? await TradeMemoryManager.getBuffer(user.uid) : { wins: [], losses: [] };
             const decision = await runQuantCouncil(snapshot, buffer, ollamaConfig, isShadowMode);
             
-            if (isFocused) setLastDecision(decision);
+            if (isFocused) {
+                setLastDecision(decision);
+                setTelemetry(decision.telemetry);
+            }
 
             setRadarStatus(prev => ({
                 ...prev,
@@ -165,7 +173,7 @@ export function useAIQuantTerminalV3(
                 }
             }));
 
-            // Execução do Autopilot
+            // Execução do Autopilot com Penalidade Nerd aplicada em runQuantCouncil
             if (isAutoMode && !isShadowMode && decision.finalAction !== 'HOLD' && decision.consensusConfidence >= 65) {
                 const isContractAllowed = allowedContracts[decision.recommendedContract as keyof AllowedContractsV3];
                 if (!isContractAllowed) return;
@@ -196,7 +204,7 @@ export function useAIQuantTerminalV3(
                         finalContractType, stakeValue, symbol, decision.finalAction.toLowerCase() as any,
                         15, 's', 'Conselho', `V3_${decision.executedVia}`, extraProposalParams
                     );
-                    if (isFocused) addLog(`[EXEC] Ordem real disparada: ${decision.recommendedContract} em ${symbol}`, 'execution');
+                    if (isFocused) addLog(`[EXEC] Ordem real disparada: ${decision.recommendedContract} em ${symbol} (Entropia: ${decision.telemetry.consensusEntropy.toFixed(2)})`, 'execution');
                 }
             }
 
@@ -335,6 +343,7 @@ export function useAIQuantTerminalV3(
         radarStatus, watchedSymbols, setWatchedSymbols,
         resetSession,
         chatMessages, isChatLoading, sendMessage,
-        executeManualDecision: () => lastDecision && runMultiAssetCycle()
+        executeManualDecision: () => lastDecision && runMultiAssetCycle(),
+        telemetry
     };
 }
