@@ -1,3 +1,4 @@
+
 'use client';
 
 /**
@@ -268,6 +269,7 @@ export function useAIQuantTerminalV3(
             - Versão do Terminal: Claritas Copilot V3.0 (IA Lab).
             - Ativos sob Monitoramento Simultâneo: ${watchedSymbols.length} ativos (${watchedSymbols.join(', ')}).
             - Ativo em Foco no Gráfico: ${activeSymbol || 'Nenhum'}.
+            - Ciclo de Análise/Execução Ativo: ${analysisInterval} segundos. (A IA reanalisa o mercado e executa ordens a cada ${analysisInterval}s).
             - Saldo da Conta: $${accountBalance.balance?.toFixed(2) || '---'}
             - Resultado da Sessão (PnL): $${sessionStats.pnl.toFixed(2)}
             - Taxa de Acerto (Win Rate): ${sessionStats.winRate ? sessionStats.winRate.toFixed(1) + '%' : 'Nenhum trade concluído'}.
@@ -278,7 +280,7 @@ export function useAIQuantTerminalV3(
             ${memoryContext}
             
             Sua função agora: ${agentPrompts[targetAgent] || agentPrompts.CHAIRMAN}
-            Instrução: Responda como um profissional quantitativo sênior. Seja direto, técnico e utilize os dados acima para justificar sua análise.`;
+            Instrução: Responda como um profissional quantitativo sênior. Seja direto, técnico e utilize os dados acima para justificar sua análise. SEMPRE use o ciclo de ${analysisInterval}s como referência temporal de execução.`;
 
             const history = chatMessages.map(m => ({ role: m.role, content: m.content }));
             const response = await getOllamaResponse(ollamaConfig, content, [
