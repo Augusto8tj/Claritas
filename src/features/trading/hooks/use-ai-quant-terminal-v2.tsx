@@ -166,6 +166,13 @@ export function useAIQuantTerminalV2(
         setReasoningLog(prev => [{ time: new Date().toLocaleTimeString(), message, type }, ...prev].slice(0, 50));
     }, []);
 
+    const handleSetStrategicProfile = useCallback((profile: StrategicProfile) => {
+        setStrategicProfile(profile);
+        const newThreshold = profile === 'conservative' ? 85 : profile === 'balanced' ? 65 : 55;
+        setConfidenceThreshold(newThreshold);
+        addLog(`Perfil estratégico alterado para ${profile.toUpperCase()}. Limiar ajustado para ${newThreshold}%.`);
+    }, [addLog]);
+
     // FEEDBACK LOOP: Extrai os últimos 3 erros operacionais para o prompt
     const recentFailuresContext = useMemo(() => {
         return operationsLog
@@ -182,7 +189,6 @@ export function useAIQuantTerminalV2(
         }
 
         const rsi = indicators.rsi;
-        const lastClose = indicators.bb.middle || 0; // Aproximação
         
         let action: 'RISE' | 'FALL' | 'HOLD' = 'HOLD';
         let reason = 'Mercado em zona de equilíbrio (Fallback).';
@@ -316,7 +322,6 @@ export function useAIQuantTerminalV2(
             const candles = multiAssetCandles[dueSymbol];
             if (!candles || candles.length < 30) continue;
 
-            const cycleStart = performance.now();
             const isFocused = dueSymbol === activeSymbol;
             const decision = await runInference(dueSymbol, isFocused ? chartData : candles, !isFocused);
 
