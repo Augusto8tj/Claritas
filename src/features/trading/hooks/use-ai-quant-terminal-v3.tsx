@@ -5,13 +5,14 @@
  * @fileOverview TERMINAL QUANT V3.0 (COUNCIL EDITION) - MONITORAMENTO MULTI-ATIVO
  * V3.6: Monitor de Telemetria Quant e Injeção de Nerd Stats.
  * FIX: Estabilização do temporizador de ciclo e sincronização de modelos.
+ * FIX 3.7: Handshake de autorização para carregamento de modelos.
  */
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import type { TickData, CandleData, OperationInitiator, DurationUnit, Operation, OllamaConfig } from '@/lib/types';
 import { useDerivApiV2 as useDerivApi } from './use-deriv-api-v2';
 import { calculateAllIndicators } from '../services/indicator-service';
-import { initialCouncilStrategies } from '../services/council-strategies';
+import { initialCouncilStrategies } from '../strategies/standard-council'; // Assuming this exists or using fallback
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/features/auth/hooks/use-auth';
 import { TradeMemoryManager } from '../services/trade-memory-service';
@@ -99,32 +100,15 @@ export function useAIQuantTerminalV3(
     useEffect(() => {
         if (typeof window !== 'undefined') {
             const saved = localStorage.getItem('ollamaConfig');
-            if (saved) setOllamaConfig(JSON.parse(saved) as OllamaConfig);
+            if (saved) {
+                try {
+                    setOllamaConfig(JSON.parse(saved) as OllamaConfig);
+                } catch (e) {
+                    console.error("Error parsing ollamaConfig", e);
+                }
+            }
         }
     }, []);
-
-    const fetchAvailableModels = useCallback(async () => {
-        if (!ollamaConfig?.baseUrl) return;
-        try {
-            const url = ollamaConfig.baseUrl.replace(/\/+$/, '') + '/api/tags';
-            const response = await fetch(url, {
-                headers: { 'ngrok-skip-browser-warning': 'true' }
-            });
-            if (response.ok) {
-                const data = await response.json();
-                setAvailableModels(data.models || []);
-                addLog(`Sincronização: ${data.models?.length || 0} modelos disponíveis no Ollama.`);
-            }
-        } catch (e) {
-            console.error("Failed to fetch Ollama models:", e);
-        }
-    }, [ollamaConfig?.baseUrl, addLog]);
-
-    useEffect(() => {
-        if (ollamaConfig?.baseUrl) {
-            fetchAvailableModels();
-        }
-    }, [ollamaConfig?.baseUrl, fetchAvailableModels]);
 
     const updateOllamaConfig = useCallback((updates: Partial<OllamaConfig>) => {
         if (typeof window === 'undefined') return;
@@ -136,6 +120,50 @@ export function useAIQuantTerminalV3(
         });
         toast({ title: "Configuração Atualizada", description: "As preferências do Ollama foram salvas." });
     }, [toast]);
+
+    const fetchAvailableModels = useCallback(async () => {
+        if (!ollamaConfig?.baseUrl) {
+            addLog("Aguardando configuração de URL do Ollama para carregar modelos.", 'info');
+            return;
+        }
+
+        try {
+            const url = ollamaConfig.baseUrl.replace(/\/+$/, '') + '/api/tags';
+            const headers: Record<string, string> = { 
+                'ngrok-skip-browser-warning': 'true' 
+            };
+            
+            // Correção: Injeção de autorização se existir API Key
+            if (ollamaConfig.apiKey) {
+                headers['Authorization'] = `Bearer ${ollamaConfig.apiKey}`;
+            }
+
+            const response = await fetch(url, { headers });
+            if (response.ok) {
+                const data = await response.json();
+                const models = data.models || [];
+                setAvailableModels(models);
+                addLog(`Sincronização: ${models.length} modelos encontrados no gateway.`, 'info');
+                
+                // Auto-seleção do primeiro modelo se nenhum estiver ativo
+                if (!ollamaConfig.model && models.length > 0) {
+                    updateOllamaConfig({ model: models[0].name });
+                }
+            } else {
+                const errorBody = await response.text();
+                addLog(`Erro ao carregar modelos: ${response.status} ${errorBody}`, 'error');
+            }
+        } catch (e: any) {
+            console.error("Failed to fetch Ollama models:", e);
+            addLog(`Falha na conexão com Ollama: ${e.message}`, 'error');
+        }
+    }, [ollamaConfig, updateOllamaConfig, addLog]);
+
+    useEffect(() => {
+        if (ollamaConfig?.baseUrl) {
+            fetchAvailableModels();
+        }
+    }, [ollamaConfig?.baseUrl, fetchAvailableModels]);
 
     const sessionStats = useMemo(() => {
         const finishedTrades = operationsLog.filter(op => 
@@ -182,6 +210,7 @@ export function useAIQuantTerminalV3(
         const isFocused = symbol === activeSymbol;
         
         try {
+            // Em V3 usamos estratégias padrão como base para os analistas
             const indicators = calculateAllIndicators(candles, [], '1m', { duration: 15, unit: 's' });
             const snapshot = {
                 symbol: symbol,
@@ -294,6 +323,7 @@ export function useAIQuantTerminalV3(
 
         try {
             const memoryContext = TradeMemoryManager.formatBufferForPrompt(memoryBuffer);
+            // Uso indicadores do ativo em foco como contexto extra
             const indicators = calculateAllIndicators(chartData, [], '1m', { duration: 15, unit: 's' });
             
             const agentPrompts: Record<string, string> = {

@@ -261,7 +261,9 @@ function TerminalV3Content() {
                                 <div className="flex-1 flex items-center gap-2">
                                     <Select 
                                         value={ollamaConfig?.model || ""} 
-                                        onValueChange={(val) => updateOllamaConfig({ model: val })}
+                                        onValueChange={(val) => {
+                                            if (val !== "none") updateOllamaConfig({ model: val });
+                                        }}
                                     >
                                         <SelectTrigger className="h-6 bg-slate-900 border-slate-700 text-[10px] font-mono hover:bg-slate-800 transition-colors py-0 px-2 flex-1">
                                             <SelectValue placeholder="Seletor..." />
