@@ -1,13 +1,9 @@
-
 // src/features/trading/hooks/use-ai-quant-terminal-v3.tsx
 'use client';
 
 /**
  * @fileOverview TERMINAL QUANT V3.0 (COUNCIL EDITION) - MONITORAMENTO MULTI-ATIVO
- * V3.6: Monitor de Telemetria Quant e Injeção de Nerd Stats.
- * V3.8: Sincronização de preços reais no radar para o contexto do chat.
- * V3.9: Tabela de Preços de Alta Fidelidade para eliminar alucinações.
- * V4.0: Injeção de Opiniões Detalhadas dos Agentes por Ativo e Correção de Raciocínio Econômico.
+ * V4.5: Auditoria de Especialidade e Alinhamento do Conselho.
  */
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
@@ -56,14 +52,12 @@ export function useAIQuantTerminalV3(
     const { user } = useAuth();
     const { toast } = useToast();
 
-    // ESTADOS DE CONTROLE
     const [isAutoMode, setIsAutoMode] = useState(false);
     const [isShadowMode, setIsShadowMode] = useState(true);
     const [lastDecision, setLastDecision] = useState<CouncilDecision | null>(null);
     const [analysisInterval, setAnalysisInterval] = useState(120); 
     const [timeToNextAnalysis, setTimeToNextAnalysis] = useState(120);
     
-    // TELEMETRIA
     const [telemetry, setTelemetry] = useState<CouncilTelemetry>({
         avgTokensPerSec: 0,
         totalTokens: 0,
@@ -72,7 +66,6 @@ export function useAIQuantTerminalV3(
         inferenceHealth: 100
     });
     
-    // GESTÃO DE CONTRATOS E FREQUÊNCIA
     const [allowedContracts, setAllowedContracts] = useState<AllowedContractsV3>({
         'CALL': true,
         'PUT': true,
@@ -332,7 +325,6 @@ export function useAIQuantTerminalV3(
             const memoryContext = TradeMemoryManager.formatBufferForPrompt(memoryBuffer);
             const indicators = calculateAllIndicators(chartData, [], '1m', { duration: 15, unit: 's' });
             
-            // CÁLCULO DE DETALHES DO RADAR PARA O CONTEXTO
             const radarDetails = watchedSymbols.map(sym => {
                 const isFocused = sym === activeSymbol;
                 const price = isFocused 
@@ -351,36 +343,32 @@ export function useAIQuantTerminalV3(
             }).join('\n');
 
             const agentPrompts: Record<string, string> = {
-                CHAIRMAN: "Você é o Chairman do Conselho V3. Sua visão é macro e estratégica, responsável pela síntese final. Proibido recomendar ativos baseado apenas no preço nominal.",
-                MOMENTUM: "Você é o analista 'Quant Momentum'. Seu foco é força, velocidade de ticks e momentum de curto prazo.",
-                RISK_CRITIC: "Você é o 'Risk Critic'. Seu trabalho é ser cético, buscar padrões de falha e evitar prejuízos.",
-                ARCHIVIST: "Você é o 'Pattern Archivist'. Sua memória é o histórico de vitórias e estruturas de velas vencedoras."
+                CHAIRMAN: "Você é o Chairman do Conselho V3. Seu papel é a SÍNTESE ESTRATÉGICA. Você ouve seus 3 analistas (MOMENTUM, RISK, ARCHIVIST) e decide se o alinhamento deles justifica um risco de capital. Ignore o valor nominal do preço.",
+                MOMENTUM: "Você é o analista 'Quant Momentum'. Seu papel é detectar EXPLOSÃO e FORÇA. Se o preço está estagnado, você vota HOLD. Se está acelerando, você busca CALL/PUT.",
+                RISK_CRITIC: "Você é o 'Risk Critic'. Seu papel é o VETO. Você busca instabilidade e ruído. Se detectar anomalia, você barra o trade, mesmo que os outros queiram operar.",
+                ARCHIVIST: "Você é o 'Pattern Archivist'. Seu papel é a MEMÓRIA. Você olha para as vitórias passadas do buffer e diz se o cenário atual 'cheira' a sucesso ou fracasso."
             };
 
-            const systemPrompt = `VOCÊ É UM ANALISTA QUANTITATIVO NO LABORATÓRIO V3.0 (COUNCIL EDITION).
+            const systemPrompt = `VOCÊ É UM ANALISTA NO LABORATÓRIO V3.0 (COUNCIL EDITION).
             
-            DIRETRIZES DE RACIOCÍNIO (LEIA COM ATENÇÃO):
-            1. PREÇO NOMINAL NÃO É FAVORABILIDADE: O fato de um ativo custar $10 ou $1.000.000 é irrelevante para a estratégia. Nunca use o preço baixo ou alto como justificativa para operar.
-            2. FOCO EM ESTATÍSTICA: Priorize a Confiança do Consenso e a Opinião dos Agentes da tabela abaixo.
-            3. CRÍTICA: Se o conselho estiver dividido (Entropia alta), recomende cautela (HOLD).
+            ESTRUTURA DO CONSELHO:
+            1. CHAIRMAN (Você/Líder): Orquestra o quórum e decide o viés.
+            2. MOMENTUM: Analisa velocidade e força (ADX/RSI).
+            3. RISK CRITIC: O 'Guarda-Costas' que veta operações perigosas (BBW).
+            4. ARCHIVIST: O historiador que compara o cenário com vitórias passadas.
 
-            CONFIGURAÇÃO DA SESSÃO:
-            - Equipe: 4 Membros (Chairman, Momentum, Risk Critic, Archivist).
-            - Saldo: $${accountBalance.balance?.toFixed(2) || '---'} | PnL Sessão: $${sessionStats.pnl.toFixed(2)}
-
-            ### RADAR TÁTICO INSTITUCIONAL (DADOS REAIS DO WEBSOCKET)
-            | Ativo    | Preço Atual  | Veredito | Confiança | Opiniões dos Analistas Detalhadas |
-            |----------|--------------|----------|-----------|----------------------------------|
+            ### RADAR TÁTICO INSTITUCIONAL (DADOS REAIS)
+            | Ativo    | Preço Atual  | Veredito | Confiança | Opiniões dos Agentes (Especialidades) |
+            |----------|--------------|----------|-----------|--------------------------------------|
             ${radarDetails}
 
-            ⚠️ ATENÇÃO: NUNCA alucine sobre a favorabilidade de um ativo baseado em seu preço nominal. Use APENAS a Confiança e as Opiniões Técnicas.
-
-            INDICADORES (Foco: ${activeSymbol}): RSI=${indicators?.rsi?.toFixed(1) || 'N/D'} | ADX=${indicators?.adx?.toFixed(1) || 'N/D'} | BBW=${indicators?.bbw?.toFixed(3) || 'N/D'}.
+            REGRA DE RACIOCÍNIO: NUNCA sugira operações baseado no preço nominal ser 'baixo' ou 'alto'. Use a especialidade técnica dos agentes.
+            INDICADORES (${activeSymbol}): RSI=${indicators?.rsi?.toFixed(1) || 'N/D'} | ADX=${indicators?.adx?.toFixed(1) || 'N/D'} | BBW=${indicators?.bbw?.toFixed(3) || 'N/D'}.
             
             ${memoryContext}
             
-            Sua função: ${agentPrompts[targetAgent] || agentPrompts.CHAIRMAN}
-            Responda de forma técnica e analítica em português do Brasil.`;
+            SEU PAPEL ATUAL: ${agentPrompts[targetAgent] || agentPrompts.CHAIRMAN}
+            Responda em português do Brasil de forma técnica, citando seus analistas se necessário.`;
 
             const history = chatMessages.map(m => ({ role: m.role, content: m.content }));
             const response = await getOllamaResponse(ollamaConfig, content, [
@@ -404,18 +392,21 @@ export function useAIQuantTerminalV3(
         }
     };
 
+    const timerRef = useRef<NodeJS.Timeout>(null);
     useEffect(() => {
-        const interval = setInterval(() => {
+        timerRef.current = setInterval(() => {
             setTimeToNextAnalysis(prev => {
                 if (prev <= 1) {
-                    analysisFnRef.current(); 
+                    if (analysisFnRef.current) analysisFnRef.current();
                     return analysisInterval;
                 }
                 return prev - 1;
             });
         }, 1000);
-        return () => clearInterval(interval);
-    }, [analysisInterval]); 
+        return () => {
+            if (timerRef.current) clearInterval(timerRef.current);
+        };
+    }, [analysisInterval]);
 
     useEffect(() => {
         setTimeToNextAnalysis(analysisInterval);
