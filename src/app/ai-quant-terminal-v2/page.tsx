@@ -1,4 +1,4 @@
-// src/app/ai-quant-terminal-v2/page.tsx
+
 'use client';
 
 import React, { useState, useRef, useEffect, useMemo } from 'react';
@@ -9,6 +9,7 @@ import { Progress } from "@/components/ui/progress";
 import { Input } from "@/components/ui/input";
 import { Slider } from "@/components/ui/slider";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import { 
     BrainCircuit, Zap, ShieldCheck, Terminal as TerminalIcon, 
     Timer, LineChart, PlayCircle, 
@@ -17,7 +18,7 @@ import {
     ArrowUpCircle, ArrowDownCircle, Clock, ShieldAlert,
     TrendingUp, Binary, Trash2, Microscope, Radar,
     TrendingDown, Minus, Coins, Leaf, Sparkles, Layers,
-    RotateCcw
+    RotateCcw, Ghost, BarChartHorizontal
 } from "lucide-react";
 import { DerivApiProviderV2 as DerivApiProvider, useDerivApiV2 as useDerivApi, type AccountType } from "@/features/trading/hooks/use-deriv-api-v2";
 import { AssetSelectorV2 as AssetSelector } from "@/features/trading/components/deriv-trader/asset-selector-v2";
@@ -77,7 +78,13 @@ function TerminalContentV2() {
         sessionStats, 
         globalSessionStats, 
         accountBalance,
-        resetSession
+        resetSession,
+        isShadowMode,
+        toggleShadowMode,
+        shadowPnL,
+        shadowTradesCount,
+        isAutoMode,
+        toggleAutoMode
     } = quant;
 
     const [chatInput, setChatInput] = useState('');
@@ -102,7 +109,6 @@ function TerminalContentV2() {
         }
     };
 
-    // NOVO: Cálculo de histórico separado por ativos na sessão ativa
     const terminalSessionTrades = useMemo(() => {
         const today = new Date().toDateString();
         return operationsLog.filter(op => 
@@ -113,7 +119,6 @@ function TerminalContentV2() {
 
     const activeAssetsWithTrades = useMemo(() => {
         const assets = new Set(terminalSessionTrades.map(op => op.asset));
-        // Garante que o ativo focado esteja na lista se não houver trades ainda
         if (activeSymbol) assets.add(activeSymbol);
         return Array.from(assets).sort();
     }, [terminalSessionTrades, activeSymbol]);
@@ -131,7 +136,15 @@ function TerminalContentV2() {
                     <CardTitle className="text-xs font-bold uppercase tracking-widest flex items-center gap-2 text-primary">
                         <Radar className="h-4 w-4 animate-spin-slow" /> Radar de Oportunidades Estocásticas
                     </CardTitle>
-                    <Badge variant="outline" className="text-[9px] border-primary/30 text-primary uppercase">Scan Ativo</Badge>
+                    <div className="flex items-center gap-4">
+                        <div className="flex items-center gap-2">
+                             <Label htmlFor="shadow-mode" className="text-[10px] font-bold uppercase text-muted-foreground flex items-center gap-1">
+                                <Ghost className="h-3 w-3" /> Modo Sombra
+                             </Label>
+                             <Switch id="shadow-mode" checked={isShadowMode} onCheckedChange={toggleShadowMode} className="scale-75" />
+                        </div>
+                        <Badge variant="outline" className="text-[9px] border-primary/30 text-primary uppercase">Scan Ativo</Badge>
+                    </div>
                 </CardHeader>
                 <CardContent className="p-4">
                     <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
@@ -142,11 +155,12 @@ function TerminalContentV2() {
                                 className={cn(
                                     "p-3 rounded-lg border transition-all cursor-pointer group hover:scale-105",
                                     asset.symbol === activeSymbol ? "bg-primary border-primary text-primary-foreground shadow-md" : "bg-card border-border hover:border-primary/50",
-                                    asset.lastAction !== 'HOLD' && asset.symbol !== activeSymbol && asset.isQualified && "animate-pulse border-green-500 bg-green-50/10"
+                                    asset.isQualified && asset.symbol !== activeSymbol && "animate-pulse border-green-500 bg-green-50/10"
                                 )}
                             >
                                 <div className="flex justify-between items-center mb-1">
                                     <span className="text-[10px] font-bold font-mono">{asset.symbol}</span>
+                                    {asset.isFallback && <Badge variant="outline" className="text-[8px] h-3 px-1 border-amber-500 text-amber-600">Fallback</Badge>}
                                     {asset.isQualified && <Zap className="h-3 w-3 text-yellow-500 fill-current" />}
                                 </div>
                                 <div className="flex items-center gap-2">
@@ -172,12 +186,16 @@ function TerminalContentV2() {
                         <BrainCircuit className="h-8 w-8 text-primary animate-pulse" />
                     </div>
                     <div>
-                        <h1 className="text-2xl font-bold tracking-tight font-headline">Terminal Quant V2 (Radar)</h1>
+                        <h1 className="text-2xl font-bold tracking-tight font-headline">Terminal Quant Radar V2.6</h1>
                         <div className="flex items-center gap-2">
                              <Badge variant="secondary" className="font-mono text-xs flex items-center gap-1.5">
-                                <Coins className="h-3 w-3"/> Saldo: {accountBalance.loading ? 'Sincronizando...' : formatCurrency(accountBalance.balance || 0)}
+                                <Coins className="h-3 w-3"/> Saldo: {accountBalance.loading ? '...' : formatCurrency(accountBalance.balance || 0)}
                              </Badge>
-                             <p className="text-muted-foreground text-[10px] font-mono italic">Auditado por Ollama CIO</p>
+                             {isShadowMode && (
+                                 <Badge className="bg-purple-600 font-mono text-xs flex items-center gap-1.5">
+                                    <Ghost className="h-3 w-3"/> Shadow: {formatCurrency(shadowPnL)} ({shadowTradesCount})
+                                 </Badge>
+                             )}
                         </div>
                     </div>
                 </div>
@@ -187,7 +205,7 @@ function TerminalContentV2() {
                         value={accountType} 
                         onValueChange={(v: AccountType) => v && setAccountType(v)} 
                         className="bg-muted p-1 rounded-lg border border-border"
-                        disabled={quant.isAutoMode}
+                        disabled={isAutoMode}
                     >
                         <ToggleGroupItem value="demo" className="text-[10px] h-7 px-3 data-[state=on]:bg-background data-[state=on]:shadow-sm">Demo</ToggleGroupItem>
                         <ToggleGroupItem value="real" className="text-[10px] h-7 px-3 data-[state=on]:bg-background data-[state=on]:shadow-sm">Real</ToggleGroupItem>
@@ -214,19 +232,19 @@ function TerminalContentV2() {
                         <CardContent className="space-y-6">
                             <div className="flex items-center justify-between p-3 rounded-lg bg-muted/30 border border-border">
                                 <span className="text-xs font-medium">Estado do Sistema</span>
-                                <Badge className={cn("font-bold", quant.isAutoMode ? "bg-green-600 hover:bg-green-600" : "bg-blue-600 hover:bg-blue-600")}>
-                                    {quant.isAutoMode ? 'AUTOPILOT' : 'SENTINELA'}
+                                <Badge className={cn("font-bold", isAutoMode ? "bg-green-600" : "bg-blue-600")}>
+                                    {isAutoMode ? 'AUTOPILOT' : 'SENTINELA'}
                                 </Badge>
                             </div>
 
                             <div className="space-y-3">
-                                <Label className="text-[10px] uppercase font-bold text-muted-foreground">Perfil Estratégico (Mentalidade IA)</Label>
+                                <Label className="text-[10px] uppercase font-bold text-muted-foreground">Perfil Estratégico (LLM Context)</Label>
                                 <ToggleGroup 
                                     type="single" 
                                     value={strategicProfile} 
                                     onValueChange={(v: StrategicProfile) => v && setStrategicProfile(v)}
                                     className="grid grid-cols-3 gap-1"
-                                    disabled={quant.isAutoMode}
+                                    disabled={isAutoMode}
                                 >
                                     <ToggleGroupItem value="conservative" className="text-[10px] h-7">CONSER</ToggleGroupItem>
                                     <ToggleGroupItem value="balanced" className="text-[10px] h-7">BALANC</ToggleGroupItem>
@@ -243,22 +261,7 @@ function TerminalContentV2() {
                                     value={[confidenceThreshold]} 
                                     min={10} max={95} step={1} 
                                     onValueChange={(v) => setConfidenceThreshold(v[0])}
-                                    disabled={quant.isAutoMode}
-                                />
-                            </div>
-
-                            <div className="space-y-3 p-3 rounded-lg border border-border bg-muted/10">
-                                <div className="flex justify-between items-center text-xs">
-                                    <span className="text-muted-foreground flex items-center gap-1.5"><Timer className="h-3.5 w-3.5"/> Ciclo de Análise</span>
-                                    <span className="font-mono text-primary font-bold">{analysisInterval}s</span>
-                                </div>
-                                <Slider 
-                                    value={[analysisInterval]} 
-                                    min={30} 
-                                    max={3000} 
-                                    step={30} 
-                                    onValueChange={(v) => setAnalysisInterval(v[0])}
-                                    disabled={quant.isAutoMode}
+                                    disabled={isAutoMode}
                                 />
                             </div>
 
@@ -272,16 +275,13 @@ function TerminalContentV2() {
 
                             <Button 
                                 onClick={() => {
-                                    if (!quant.isAutoMode && accountType === 'real') {
-                                        setShowRealAccountConfirm(true);
-                                    } else {
-                                        quant.toggleAutoMode();
-                                    }
+                                    if (!isAutoMode && accountType === 'real') setShowRealAccountConfirm(true);
+                                    else toggleAutoMode();
                                 }} 
-                                className={cn("w-full h-12 font-bold shadow-md", quant.isAutoMode ? "bg-destructive text-destructive-foreground hover:bg-destructive/90" : "bg-primary text-primary-foreground hover:bg-primary/90")}
+                                className={cn("w-full h-12 font-bold shadow-md", isAutoMode ? "bg-destructive" : "bg-primary")}
                             >
-                                {quant.isAutoMode ? <PauseCircle className="mr-2 h-5 w-5" /> : <PlayCircle className="mr-2 h-5 w-5" />}
-                                {quant.isAutoMode ? 'Pausar Automação' : 'Ativar Automação'}
+                                {isAutoMode ? <PauseCircle className="mr-2 h-5 w-5" /> : <PlayCircle className="mr-2 h-5 w-5" />}
+                                {isAutoMode ? 'Pausar Automação' : 'Ativar Automação'}
                             </Button>
                         </CardContent>
                     </Card>
@@ -289,68 +289,48 @@ function TerminalContentV2() {
                     <Card className="bg-card/50 border-border shadow-sm">
                         <CardHeader className="pb-3">
                             <CardTitle className="text-sm font-bold uppercase tracking-widest text-muted-foreground flex items-center gap-2">
-                                <Binary className="h-4 w-4" /> Gestão de Risco & Tesouraria
+                                <Binary className="h-4 w-4" /> Gestão de Risco & Circuit Breaker
                             </CardTitle>
                         </CardHeader>
                         <CardContent className="space-y-4">
                             <div className="grid grid-cols-2 gap-3">
                                 <div className="space-y-1.5">
                                     <Label className="text-[10px] uppercase font-bold text-muted-foreground">Stake (USD)</Label>
-                                    <Input type="number" value={stakeValue} onChange={(e) => setStakeValue(Number(e.target.value))} className="h-8 text-xs font-mono bg-background/50" disabled={quant.isAutoMode} />
+                                    <Input type="number" value={stakeValue} onChange={(e) => setStakeValue(Number(e.target.value))} className="h-8 text-xs font-mono bg-background/50" disabled={isAutoMode} />
                                 </div>
                                 <div className="space-y-1.5">
                                     <Label className="text-[10px] uppercase font-bold text-muted-foreground">Alvo Lucro</Label>
-                                    <Input type="number" value={profitTarget} onChange={(e) => setProfitTarget(Number(e.target.value))} className="h-8 text-xs font-mono bg-background/50" disabled={quant.isAutoMode} />
+                                    <Input type="number" value={profitTarget} onChange={(e) => setProfitTarget(Number(e.target.value))} className="h-8 text-xs font-mono bg-background/50" disabled={isAutoMode} />
                                 </div>
                             </div>
                             
                             <div className="grid grid-cols-2 gap-3">
                                 <div className="space-y-1.5">
-                                    <Label className="text-[10px] uppercase font-bold text-muted-foreground">Máx. Perdas Seguidas</Label>
-                                    <Input type="number" value={maxConsecutiveLosses} onChange={(e) => setMaxConsecutiveLosses(Number(e.target.value))} className="h-8 text-xs font-mono bg-background/50" disabled={quant.isAutoMode} />
+                                    <Label className="text-[10px] uppercase font-bold text-muted-foreground">Máx. Perdas (Dia)</Label>
+                                    <Input type="number" value={maxConsecutiveLosses} onChange={(e) => setMaxConsecutiveLosses(Number(e.target.value))} className="h-8 text-xs font-mono bg-background/50" disabled={isAutoMode} />
                                 </div>
                                 <div className="space-y-1.5">
-                                    <Label className="text-[10px] uppercase font-bold text-muted-foreground">Perda Máx. Diária</Label>
-                                    <Input type="number" value={maxDailyLoss} onChange={(e) => setMaxDailyLoss(Number(e.target.value))} className="h-8 text-xs font-mono bg-background/50" disabled={quant.isAutoMode} />
+                                    <Label className="text-[10px] uppercase font-bold text-muted-foreground">Stop Loss Dia</Label>
+                                    <Input type="number" value={maxDailyLoss} onChange={(e) => setMaxDailyLoss(Number(e.target.value))} className="h-8 text-xs font-mono bg-background/50" disabled={isAutoMode} />
                                 </div>
                             </div>
                             
                             <Separator className="opacity-50" />
                             
-                            <div className="p-3 rounded-lg bg-primary/10 border border-primary/20">
-                                <p className="text-[10px] text-primary uppercase font-bold text-center mb-2">Desempenho Global da Esquadra (Sessão)</p>
-                                <div className="grid grid-cols-2 gap-2 text-center">
-                                    <div>
-                                        <p className="text-[9px] text-muted-foreground uppercase">P&L Acumulado</p>
-                                        <p className={cn("text-base font-bold", globalSessionStats.pnl >= 0 ? "text-green-600" : "text-destructive")}>
-                                            {formatCurrency(globalSessionStats.pnl)}
-                                        </p>
-                                    </div>
-                                    <div>
-                                        <p className="text-[9px] text-muted-foreground uppercase">Win Rate Global</p>
-                                        <p className="text-base font-bold">
-                                            {globalSessionStats.winRate === null ? '—' : `${globalSessionStats.winRate.toFixed(1)}%`}
-                                        </p>
-                                    </div>
-                                </div>
-                            </div>
-
                             <div className="grid grid-cols-2 gap-3">
                                 <div className="p-3 rounded-lg bg-muted/20 border border-border text-center">
-                                    <p className="text-[10px] text-muted-foreground uppercase font-bold">P&L Ativo: {activeSymbol}</p>
+                                    <p className="text-[10px] text-muted-foreground uppercase font-bold">P&L Sessão</p>
                                     <p className={cn("text-lg font-bold", sessionStats.pnl >= 0 ? "text-green-600" : "text-destructive")}>
                                         {formatCurrency(sessionStats.pnl)}
                                     </p>
                                 </div>
                                 <div className="p-3 rounded-lg bg-muted/20 border border-border text-center">
-                                    <p className="text-[10px] text-muted-foreground uppercase font-bold">WR: {activeSymbol}</p>
+                                    <p className="text-[10px] text-muted-foreground uppercase font-bold">Win Rate</p>
                                     <p className="text-lg font-bold">
                                       {sessionStats.winRate === null ? '—' : `${sessionStats.winRate.toFixed(1)}%`}
                                     </p>
                                 </div>
                             </div>
-
-                            <Separator className="opacity-50" />
 
                             <Button 
                                 variant="outline" 
@@ -363,18 +343,17 @@ function TerminalContentV2() {
                         </CardContent>
                     </Card>
 
-                    {/* Histórico Separado por Ativos Ativos na Sessão */}
                     <Card className="bg-card/50 border-border shadow-sm flex-1 overflow-hidden flex flex-col">
                         <CardHeader className="pb-2 flex flex-row items-center justify-between space-y-0">
                             <CardTitle className="text-xs font-bold uppercase tracking-widest text-muted-foreground flex items-center gap-2">
-                                <History className="h-4 w-4 text-primary" /> Históricos de Atividade
+                                <History className="h-4 w-4 text-primary" /> Históricos Segmentados
                             </CardTitle>
                         </CardHeader>
                         <CardContent className="p-0 flex-1 flex flex-col min-h-0">
-                            <Tabs defaultValue={activeSymbol || 'ALL'} className="w-full h-full flex flex-col">
+                            <Tabs defaultValue="ALL" className="w-full h-full flex flex-col">
                                 <div className="px-2 border-b bg-muted/20 overflow-x-auto no-scrollbar">
                                     <TabsList className="h-8 justify-start bg-transparent p-0 flex-nowrap w-max">
-                                        <TabsTrigger value="ALL" className="text-[9px] font-bold h-7 uppercase">Todos</TabsTrigger>
+                                        <TabsTrigger value="ALL" className="text-[9px] font-bold h-7 uppercase">Global</TabsTrigger>
                                         {activeAssetsWithTrades.map(asset => (
                                             <TabsTrigger key={asset} value={asset} className="text-[9px] font-bold h-7 uppercase">{asset}</TabsTrigger>
                                         ))}
@@ -402,10 +381,10 @@ function TerminalContentV2() {
                         <CardHeader className="flex flex-row items-center justify-between pb-2">
                             <div>
                                 <CardTitle className="flex items-center gap-2 text-lg">
-                                    <LineChart className="h-5 w-5 text-primary" /> Ativo Focado: {activeSymbol}
+                                    <LineChart className="h-5 w-5 text-primary" /> Ativo: {activeSymbol}
                                 </CardTitle>
                             </div>
-                            <Badge variant="outline" className="border-border text-muted-foreground uppercase text-[10px]">{timePeriod} Res.</Badge>
+                            <Badge variant="outline" className="border-border text-muted-foreground uppercase text-[10px] font-mono">T-Interval: {analysisInterval}s</Badge>
                         </CardHeader>
                         <CardContent>
                             <MarketChart 
@@ -428,22 +407,28 @@ function TerminalContentV2() {
                         <CardHeader className="py-3 border-b border-border bg-muted/5">
                             <CardTitle className="text-sm flex items-center gap-2">
                                 <MessageSquare className="h-4 w-4 text-primary" />
-                                Interface de Diálogo com o CIO
+                                Interface CIO (Prompt de Comando)
                             </CardTitle>
-                            <CardDescription className="text-[10px]">Consulte o status do terminal ou solicite execuções táticas via prompt.</CardDescription>
+                            <CardDescription className="text-[10px]">Diga "Compre 30s no 1HZ10V" para que o CIO arme a operação para você.</CardDescription>
                         </CardHeader>
                         <CardContent className="flex-1 overflow-hidden p-0 relative bg-muted/5">
                             <ScrollArea className="h-full p-4">
                                 <div className="space-y-4">
                                     {chatMessages.map((msg, i) => (
                                         <div key={i} className={cn(
-                                            "flex flex-col max-w-[85%] rounded-lg p-3 text-xs leading-relaxed border shadow-sm",
-                                            msg.role === 'user' ? "bg-primary/10 ml-auto border-primary/20" : "bg-card mr-auto border-border"
+                                            "flex items-start gap-2 max-w-[85%]",
+                                            msg.role === 'user' ? "ml-auto flex-row-reverse" : ""
                                         )}>
-                                            <span className="font-bold uppercase text-[9px] mb-1 opacity-50">
-                                                {msg.role === 'user' ? 'OPERADOR' : 'CIO'} • {msg.time}
-                                            </span>
-                                            <p className="font-mono text-foreground">{msg.content}</p>
+                                            <Badge variant="outline" className="h-6 w-6 rounded-full p-0 flex items-center justify-center shrink-0">
+                                                {msg.role === 'user' ? 'U' : 'C'}
+                                            </Badge>
+                                            <div className={cn(
+                                                "rounded-lg p-3 text-xs leading-relaxed border shadow-sm",
+                                                msg.role === 'user' ? "bg-primary/10 border-primary/20" : "bg-card border-border"
+                                            )}>
+                                                <p className="font-mono text-foreground">{msg.content}</p>
+                                                <div className="text-[9px] opacity-40 mt-1 text-right">{msg.time}</div>
+                                            </div>
                                         </div>
                                     ))}
                                     {isChatLoading && (
@@ -460,7 +445,7 @@ function TerminalContentV2() {
                                 <Input 
                                     value={chatInput}
                                     onChange={(e) => setChatInput(e.target.value)}
-                                    placeholder="Ex: 'Qual o status atual?' ou 'Execute uma ordem RISE'"
+                                    placeholder="Ex: 'Execute uma compra' ou 'Qual o P&L hoje?'"
                                     className="bg-background border-border h-9 text-xs"
                                     disabled={isChatLoading}
                                 />
@@ -496,7 +481,7 @@ function TerminalContentV2() {
                     <Card className="bg-card/50 border-border border-l-4 border-l-primary shadow-sm">
                         <CardHeader>
                             <CardTitle className="text-sm flex items-center gap-2">
-                                <ShieldCheck className="h-4 w-4 text-primary" /> Veredito: {activeSymbol}
+                                <ShieldCheck className="h-4 w-4 text-primary" /> Veredito Atual
                             </CardTitle>
                         </CardHeader>
                         <CardContent className="space-y-4">
@@ -508,26 +493,26 @@ function TerminalContentV2() {
                                         lastDecision.action === 'FALL' ? "bg-destructive/10 border-destructive/20 text-destructive" :
                                         "bg-muted border-border text-muted-foreground"
                                     )}>
-                                        <p className="text-[10px] uppercase font-bold mb-1 opacity-70">Recomendação</p>
+                                        <p className="text-[10px] uppercase font-bold mb-1 opacity-70">Recomendação {lastDecision._isFallback ? '(Fallback)' : ''}</p>
                                         <p className="text-3xl font-black">{lastDecision.action}</p>
                                         <p className="text-xs mt-2 font-mono font-bold">Confiança: {lastDecision.confidence}%</p>
                                     </div>
                                     <div className="bg-muted/30 p-3 rounded-lg border border-border flex items-center gap-3">
                                         <Layers className="h-4 w-4 text-primary" />
                                         <div className="flex-1">
-                                            <p className="text-[10px] uppercase font-bold text-muted-foreground">Contrato Ideal</p>
+                                            <p className="text-[10px] uppercase font-bold text-muted-foreground">Instrumento</p>
                                             <p className="text-xs font-bold">{lastDecision.recommendedContract}</p>
                                         </div>
                                     </div>
                                     <div className="text-[11px] text-muted-foreground italic bg-muted/30 p-3 rounded-lg border border-border">
                                         "{lastDecision.reasoning}"
                                     </div>
-                                    {!quant.isAutoMode && lastDecision.action !== 'HOLD' && (
+                                    {(isShadowMode || !isAutoMode) && lastDecision.action !== 'HOLD' && (
                                         <Button 
                                             onClick={quant.executeManualDecision} 
                                             className="w-full bg-foreground text-background hover:bg-foreground/90 font-bold"
                                         >
-                                            Autorizar Investimento
+                                            {isShadowMode ? 'Simular Ordem Sombra' : 'Autorizar Investimento'}
                                         </Button>
                                     )}
                                 </div>
@@ -543,82 +528,58 @@ function TerminalContentV2() {
                     <Card className="bg-card/50 border-border shadow-sm">
                         <CardHeader>
                             <CardTitle className="text-sm flex items-center gap-2 text-muted-foreground">
-                                <Cpu className="h-4 w-4" /> Telemetria de Scan
+                                <Cpu className="h-4 w-4" /> Telemetria Tick-to-Trade
                             </CardTitle>
                         </CardHeader>
                         <CardContent className="space-y-3 text-xs">
                              <div className="flex justify-between">
-                                <span className="text-muted-foreground">Latência Inferência:</span>
+                                <span className="text-muted-foreground">Inference Delay:</span>
                                 <span className="font-mono font-bold">{telemetry.latency}ms</span>
                             </div>
                             <div className="flex justify-between">
                                 <span className="text-muted-foreground">Tokens/Sec:</span>
                                 <span className="font-mono font-bold">{telemetry.tps}</span>
                             </div>
+                            <div className="flex justify-between text-primary font-bold">
+                                <span className="">T2T Confirmed:</span>
+                                <span className="font-mono">{telemetry.t2t}ms</span>
+                            </div>
                         </CardContent>
                     </Card>
 
-                    {/* Log de Raciocínio */}
-                    <Card className="bg-muted/30 border-border font-mono overflow-hidden shadow-inner">
+                    <Card className="bg-muted/30 border-border font-mono overflow-hidden shadow-inner flex-1">
                         <div className="bg-card/50 px-4 py-2 flex items-center justify-between border-b border-border">
                             <span className="text-[10px] font-bold text-muted-foreground flex items-center gap-2">
-                                <TerminalIcon className="h-3 w-3" /> CONSOLIDATED REASONING
+                                <TerminalIcon className="h-3 w-3" /> REASONING LOG
                             </span>
                         </div>
                         <CardContent className="p-0">
-                            <ScrollArea className="h-64 p-4 text-[10px] leading-relaxed">
-                                {reasoningLog.length === 0 ? (
-                                    <p className="animate-pulse text-muted-foreground">Aguardando varredura...</p>
-                                ) : (
-                                    reasoningLog.map((log, i) => (
-                                        <div key={i} className="mb-1">
-                                            <span className="text-muted-foreground/60">[{log.time}]</span>{' '}
-                                            <span className={cn(
-                                                "font-medium",
-                                                log.type === 'decision' ? "text-primary font-bold" : 
-                                                log.type === 'execution' ? "text-green-600 font-bold" : 
-                                                log.type === 'radar' ? "text-blue-500" : "text-muted-foreground"
-                                            )}>
-                                                {log.message}
-                                            </span>
-                                        </div>
-                                    ))
-                                )}
+                            <ScrollArea className="h-48 p-4 text-[10px] leading-relaxed">
+                                {reasoningLog.map((log, i) => (
+                                    <div key={i} className="mb-1 border-l-2 border-border pl-2">
+                                        <span className="text-muted-foreground/60">[{log.time}]</span>{' '}
+                                        <span className={cn(
+                                            "font-medium",
+                                            log.type === 'decision' ? "text-primary font-bold" : 
+                                            log.type === 'execution' ? "text-green-600 font-bold" : 
+                                            log.type === 'radar' ? "text-blue-500" : "text-muted-foreground"
+                                        )}>
+                                            {log.message}
+                                        </span>
+                                    </div>
+                                ))}
                             </ScrollArea>
                         </CardContent>
                     </Card>
                 </div>
             </div>
 
-            {/* DIÁLOGOS DE CONFIRMAÇÃO */}
-            <AlertDialog open={showRealAccountConfirm} onOpenChange={setShowRealAccountConfirm}>
-                <AlertDialogContent>
-                    <AlertDialogHeader>
-                        <AlertDialogTitle>Radar: Automação em Conta REAL</AlertDialogTitle>
-                        <AlertDialogDescription>
-                            Você está ativando a execução automática para o radar multi-ativo em conta REAL. 
-                            O sistema poderá abrir ordens automaticamente sempre que o CIO detectar uma oportunidade superior a {confidenceThreshold}% de confiança.
-                        </AlertDialogDescription>
-                    </AlertDialogHeader>
-                    <AlertDialogFooter>
-                        <AlertDialogCancel>Cancelar</AlertDialogCancel>
-                        <AlertDialogAction onClick={() => {
-                            quant.toggleAutoMode();
-                            setShowRealAccountConfirm(false);
-                        }}>
-                            Confirmar e Ativar Radar
-                        </AlertDialogAction>
-                    </AlertDialogFooter>
-                </AlertDialogContent>
-            </AlertDialog>
-
             <AlertDialog open={showResetConfirm} onOpenChange={setShowResetConfirm}>
                 <AlertDialogContent>
                     <AlertDialogHeader>
-                        <AlertDialogTitle>Reiniciar Sessão de Trading?</AlertDialogTitle>
+                        <AlertDialogTitle>Reiniciar Sessão Operacional?</AlertDialogTitle>
                         <AlertDialogDescription>
-                            Esta ação irá limpar o histórico de operações de hoje, resetar o saldo da sessão e limpar o radar. 
-                            Isso também resetará os contadores de segurança (Circuit Breaker).
+                            Esta ação irá zerar o P&L da sessão, limpar o radar sombra e resetar as travas de circuit breaker. Deseja continuar?
                         </AlertDialogDescription>
                     </AlertDialogHeader>
                     <AlertDialogFooter>
@@ -627,7 +588,7 @@ function TerminalContentV2() {
                             resetSession();
                             setShowResetConfirm(false);
                         }} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
-                            Confirmar Reinicialização
+                            Reiniciar do Zero
                         </AlertDialogAction>
                     </AlertDialogFooter>
                 </AlertDialogContent>
@@ -636,7 +597,6 @@ function TerminalContentV2() {
     );
 }
 
-// Função auxiliar para renderizar a lista de trades no histórico
 function renderTradeList(trades: any[], formatCurrency: (v: number) => string) {
     if (trades.length === 0) {
         return (

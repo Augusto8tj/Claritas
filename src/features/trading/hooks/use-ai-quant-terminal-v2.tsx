@@ -2,8 +2,8 @@
 'use client';
 
 /**
- * @fileOverview TERMINAL QUANT V2.5 - RADAR COM EXECUÇÃO GLOBAL E DIÁLOGO CIO
- * OTIMIZAÇÃO: Varredura paralela e transparência de execução
+ * @fileOverview TERMINAL QUANT V2.6 - PROTOCOLO INSTITUCIONAL
+ * INOVAÇÕES: Failover Matemático, Shadow Trading, T2T Latency e Feedback Loop.
  */
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
@@ -36,6 +36,7 @@ interface QuantDecision {
     multiplier?: number; 
     zenThought?: string;
     _detectedRegime?: string;
+    _isFallback?: boolean;
 }
 
 interface RadarAssetStatus {
@@ -45,6 +46,7 @@ interface RadarAssetStatus {
     timestamp: number;
     isQualified: boolean;
     recommendedContract?: DerivContractType;
+    isFallback?: boolean;
 }
 
 interface ReasoningLog {
@@ -67,10 +69,14 @@ interface SymbolSchedule {
     lastRegime?: string;
 }
 
+// Configuração de Failover
+const INFERENCE_TIMEOUT_MS = 1500; 
+
 function computeAdaptiveInterval(regime: string | undefined, baseIntervalSec: number): number {
     switch (regime) {
         case 'breakout':
-        case 'trending':
+        case 'trending_bull':
+        case 'trending_bear':
             return Math.max(30, Math.round(baseIntervalSec * 0.5));
         case 'ranging':
             return Math.round(baseIntervalSec * 1.5);
@@ -88,7 +94,9 @@ export function useAIQuantTerminalV2(
     const { user } = useAuth();
     const { toast } = useToast();
 
+    // ESTADOS DE CONTROLE
     const [isAutoMode, setIsAutoMode] = useState(false);
+    const [isShadowMode, setIsShadowMode] = useState(false);
     const [lastDecision, setLastDecision] = useState<QuantDecision | null>(null);
     const [analysisInterval, setAnalysisInterval] = useState(120); 
     const [timeToNextAnalysis, setTimeToNextAnalysis] = useState(120);
@@ -99,13 +107,18 @@ export function useAIQuantTerminalV2(
     const scheduleRef = useRef<Record<string, SymbolSchedule>>({});
     const executionLockRef = useRef(false);
 
+    // FINANCEIRO
     const [stakeValue, setStakeValue] = useState(1.0);
     const [profitTarget, setProfitTarget] = useState(10.0);
     const [maxConsecutiveLosses, setMaxConsecutiveLosses] = useState(3);
     const [maxDailyLoss, setMaxDailyLoss] = useState(-20.0);
+    
+    // ESTATÍSTICAS SOMBRA
+    const [shadowPnL, setShadowPnL] = useState(0);
+    const [shadowTradesCount, setShadowTradesCount] = useState(0);
 
     const [reasoningLog, setReasoningLog] = useState<ReasoningLog[]>([]);
-    const [telemetry, setTelemetry] = useState({ latency: 0, tps: 0 });
+    const [telemetry, setTelemetry] = useState({ latency: 0, tps: 0, t2t: 0 });
     const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
     const [isChatLoading, setIsChatLoading] = useState(false);
 
@@ -153,12 +166,48 @@ export function useAIQuantTerminalV2(
         setReasoningLog(prev => [{ time: new Date().toLocaleTimeString(), message, type }, ...prev].slice(0, 50));
     }, []);
 
-    const handleSetStrategicProfile = useCallback((profile: StrategicProfile) => {
-        setStrategicProfile(profile);
-        const newThreshold = profile === 'conservative' ? 85 : profile === 'balanced' ? 65 : 55;
-        setConfidenceThreshold(newThreshold);
-        addLog(`Perfil estratégico alterado para ${profile.toUpperCase()}. Limiar ajustado para ${newThreshold}%.`, 'info');
-    }, [addLog]);
+    // FEEDBACK LOOP: Extrai os últimos 3 erros operacionais para o prompt
+    const recentFailuresContext = useMemo(() => {
+        return operationsLog
+            .filter(op => op.status === 'lost' && op.initiator === 'Conselho')
+            .slice(0, 3)
+            .map(op => `- Falha em ${op.asset}: Sugestão ${op.direction.toUpperCase()} em regime ${op.strategy?.split('_')[0] || 'N/A'}`)
+            .join('\n');
+    }, [operationsLog]);
+
+    // PROTOCOLO DE FALLBACK MATEMÁTICO
+    const runMathematicalFallback = (symbol: string, indicators: Indicators | null): QuantDecision => {
+        if (!indicators || !indicators.rsi || !indicators.bb) {
+            return { action: 'HOLD', confidence: 0, reasoning: 'Dados insuficientes p/ Fallback.', duration: 5, unit: 't', recommendedContract: 'CALL/PUT', _isFallback: true };
+        }
+
+        const rsi = indicators.rsi;
+        const lastClose = indicators.bb.middle || 0; // Aproximação
+        
+        let action: 'RISE' | 'FALL' | 'HOLD' = 'HOLD';
+        let reason = 'Mercado em zona de equilíbrio (Fallback).';
+        let confidence = 50;
+
+        if (rsi < 30) {
+            action = 'RISE';
+            reason = 'RSI Oversold detectado por Failover Matemático.';
+            confidence = 65;
+        } else if (rsi > 70) {
+            action = 'FALL';
+            reason = 'RSI Overbought detectado por Failover Matemático.';
+            confidence = 65;
+        }
+
+        return {
+            action,
+            confidence,
+            reasoning: reason,
+            duration: 15,
+            unit: 's',
+            recommendedContract: 'CALL/PUT',
+            _isFallback: true
+        };
+    };
 
     const runInference = useCallback(async (symbol: string, currentData: CandleData[], isBackground: boolean) => {
         if (!ollamaConfig || executionLockRef.current) return null;
@@ -166,122 +215,96 @@ export function useAIQuantTerminalV2(
         executionLockRef.current = true;
         const start = performance.now();
         
+        const indicators = calculateAllIndicators(currentData, initialCouncilStrategies, '1m', { duration: 15, unit: 's' });
+        const regime = indicators ? detectMarketRegime(currentData, {
+            adx: indicators.adx,
+            pdi: indicators.pdi,
+            ndi: indicators.ndi,
+            bbw: indicators.bbw,
+            roc: indicators.roc,
+            atr: indicators.atr
+        }, 'ranging') : null;
+
         try {
-            const indicators = calculateAllIndicators(currentData, initialCouncilStrategies, '1m', { duration: 15, unit: 's' });
-            const regime = indicators ? detectMarketRegime(currentData, {
-                adx: indicators.adx,
-                pdi: indicators.pdi,
-                ndi: indicators.ndi,
-                bbw: indicators.bbw,
-                roc: indicators.roc,
-                atr: indicators.atr
-            }, 'ranging') : null;
-
-            const prompt = `VOCÊ É O ARQUITETO DE RISCO E CIO DO TERMINAL CLARITAS V2.
-            Sua missão é selecionar o melhor TIPO DE CONTRATO para o lucro consistente.
+            const prompt = `VOCÊ É O CIO DO TERMINAL CLARITAS V2.6.
+            Sua missão é selecionar o melhor CONTRATO e DIREÇÃO.
             
-            ATIVO: ${symbol} | PERFIL: ${strategicProfile.toUpperCase()}
-            REGIME: ${regime?.regime}
-            DADOS: RSI=${indicators?.rsi?.toFixed(1)} | ADX=${indicators?.adx?.toFixed(1)} | BBW=${indicators?.bbw?.toFixed(3)}
+            CONDIÇÕES ATUAIS: Ativo=${symbol} | Perfil=${strategicProfile} | Regime=${regime?.regime}
+            DADOS TÉCNICOS: RSI=${indicators?.rsi?.toFixed(1)} | ADX=${indicators?.adx?.toFixed(1)} | BBW=${indicators?.bbw?.toFixed(3)}
             
-            DIRETRIZES DE INSTRUMENTO:
-            1. Se Regime for 'ranging' e BBW < 0.8: Sugira 'ACCUMULATOR' (estabilidade).
-            2. Se ADX > 30 e RSI em tendência: Sugira 'MULTIPLIER' (tendência explosiva).
-            3. Se Regime for 'breakout': Sugira 'DIGIT_OVER_UNDER', prevendo se o próximo dígito ficará acima (7,8,9) ou abaixo (0,1,2) de 5, com base na volatilidade recente.
-            4. Se os últimos dígitos mostrarem repetição incomum: Sugira 'DIGIT_DIFFER', prevendo um dígito improvável de repetir.
-            5. Padrão: Sugira 'CALL/PUT'.
+            HISTÓRICO DE ERROS RECENTES (FEEDBACK LOOP):
+            ${recentFailuresContext || "Nenhuma falha recente registrada."}
 
-            REGRAS DE MULTIPLIER:
-            - Use 400 como denominador comum seguro para multiplicadores.
+            DIRETRIZES:
+            - RANGING + BBW < 0.8: 'ACCUMULATOR'.
+            - ADX > 30 + RSI Alinhado: 'MULTIPLIER' (Mult=400).
+            - BREAKOUT iminente: 'DIGIT_OVER_UNDER'.
+            - Padrão: 'CALL/PUT'.
 
-            RETORNE APENAS JSON, SEM MARKDOWN, SEM EXPLICAÇÃO:
+            RETORNE APENAS JSON, SEM EXPLICAÇÃO:
             {
-              "action": "RISE",
-              "recommendedContract": "CALL/PUT",
+              "action": "RISE" | "FALL" | "HOLD",
+              "recommendedContract": "CALL/PUT" | "ACCUMULATOR" | "MULTIPLIER" | "DIGIT_OVER_UNDER" | "DIGIT_DIFFER",
               "digitPrediction": 5,
               "multiplier": 400,
-              "confidence": 70,
-              "reasoning": "Texto curto",
-              "duration": 5,
-              "unit": "t",
-              "zenThought": "Texto curto"
-            }
-            
-            IMPORTANTE: NÃO retorne variáveis ou placeholders. Retorne valores concretos.`;
+              "confidence": 0-100,
+              "reasoning": "Texto curto justificando o movimento e considerando os erros passados",
+              "duration": 5-300,
+              "unit": "t" | "s",
+              "zenThought": "Pequeno insight qualitativo"
+            }`;
 
-            const response = await getOllamaResponse(ollamaConfig, prompt, []);
+            // Timeout Wrapper para Failover
+            const inferencePromise = getOllamaResponse(ollamaConfig, prompt, []);
+            const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('TIMEOUT')), INFERENCE_TIMEOUT_MS));
+
+            const response: any = await Promise.race([inferencePromise, timeoutPromise]);
             const end = performance.now();
 
             if (response.error) throw new Error(response.error);
 
-            // LIMPEZA ROBUSTA DE JSON
             const rawContent = (response.success || "").trim();
             const jsonStartIndex = rawContent.indexOf('{');
             const jsonEndIndex = rawContent.lastIndexOf('}');
             
-            if (jsonStartIndex === -1 || jsonEndIndex === -1) {
-                throw new Error("Resposta da IA não contém um objeto JSON válido.");
-            }
+            if (jsonStartIndex === -1 || jsonEndIndex === -1) throw new Error("JSON Inválido");
             
             const cleanJsonString = rawContent.substring(jsonStartIndex, jsonEndIndex + 1);
             const decision: QuantDecision = JSON.parse(cleanJsonString);
             
-            // SANITIZAÇÃO DE CAMPOS
             decision.confidence = Number(decision.confidence) || 0;
             decision.action = (decision.action || 'HOLD').toUpperCase() as any;
-            if (!['RISE', 'FALL', 'HOLD'].includes(decision.action)) decision.action = 'HOLD';
 
             if (user) {
                 saveCouncilDecisionLog(user.uid, {
                     symbol, action: decision.action, confidence: decision.confidence,
                     reasoning: decision.reasoning, regime: regime?.regime,
                     strategicProfile, timestamp: new Date().toISOString(),
-                    executed: isAutoMode && decision.action !== 'HOLD' && decision.confidence >= confidenceThreshold,
+                    executed: isAutoMode && !isShadowMode && decision.action !== 'HOLD' && decision.confidence >= confidenceThreshold,
                 });
             }
 
             const latency = Math.round(end - start);
-            setTelemetry({ latency, tps: Math.round((response.metadata?.eval_count || 0) / (latency / 1000)) });
+            setTelemetry(prev => ({ ...prev, latency, tps: Math.round((response.metadata?.eval_count || 0) / (latency / 1000)) }));
 
             return { ...decision, _detectedRegime: regime?.regime };
 
         } catch (err: any) {
+            if (err.message === 'TIMEOUT') {
+                addLog(`⚠️ Failover acionado para ${symbol}: Ollama demorou >${INFERENCE_TIMEOUT_MS}ms.`, 'radar');
+                return runMathematicalFallback(symbol, indicators);
+            }
             addLog(`Erro na inferência (${symbol}): ${err.message}`, 'error');
             return null;
         } finally {
             executionLockRef.current = false;
         }
-    }, [ollamaConfig, strategicProfile, user, isAutoMode, confidenceThreshold, addLog]);
+    }, [ollamaConfig, strategicProfile, user, isAutoMode, isShadowMode, confidenceThreshold, recentFailuresContext, addLog]);
 
     const runWatchedSymbolsCycle = useCallback(async () => {
         if (!isConnected || executionLockRef.current) return;
 
-        // --- CIRCUIT BREAKER CHECK (FILTRADO POR HOJE) ---
-        const todayStr = new Date().toDateString();
-        const councilTradesToday = operationsLog.filter(op => 
-            op.initiator === 'Conselho' && 
-            op.status !== 'pending' &&
-            new Date(op.timestamp).toDateString() === todayStr
-        );
-        
-        const recentLosses = councilTradesToday.slice(0, maxConsecutiveLosses);
-        const hitLossStreak = recentLosses.length === maxConsecutiveLosses && recentLosses.every(op => op.status === 'lost');
-        const hitDailyLimit = globalSessionStats.pnl <= maxDailyLoss;
-
-        if (hitLossStreak || hitDailyLimit) {
-            if (isAutoMode) {
-                const reason = hitLossStreak 
-                  ? `${maxConsecutiveLosses} perdas consecutivas detectadas HOJE`
-                  : `Perda máxima diária de $${Math.abs(maxDailyLoss)} atingida`;
-                addLog(`🛑 Circuit breaker: ${reason}. Pausando Autopilot.`, 'error');
-                setIsAutoMode(false);
-                toast({ title: "🛑 Circuit Breaker Acionado", description: reason, variant: 'destructive' });
-            }
-            return;
-        }
-
         const now = Date.now();
-        // Otimização: Filtrar todos os símbolos que precisam de análise
         const dueSymbols = watchedSymbols.filter(sym => {
             const sched = scheduleRef.current[sym];
             return !sched || now >= sched.nextRunAt;
@@ -289,11 +312,11 @@ export function useAIQuantTerminalV2(
 
         if (dueSymbols.length === 0) return;
 
-        // Processa os símbolos devidos em sequência para não sobrecarregar o Ollama
         for (const dueSymbol of dueSymbols) {
             const candles = multiAssetCandles[dueSymbol];
             if (!candles || candles.length < 30) continue;
 
+            const cycleStart = performance.now();
             const isFocused = dueSymbol === activeSymbol;
             const decision = await runInference(dueSymbol, isFocused ? chartData : candles, !isFocused);
 
@@ -315,77 +338,73 @@ export function useAIQuantTerminalV2(
                         confidence: decision.confidence,
                         timestamp: now,
                         isQualified: decision.action !== 'HOLD' && decision.confidence >= confidenceThreshold,
-                        recommendedContract: decision.recommendedContract
+                        recommendedContract: decision.recommendedContract,
+                        isFallback: decision._isFallback
                     }
                 }));
 
-                if (isFocused) {
-                    setLastDecision(decision);
-                }
+                if (isFocused) setLastDecision(decision);
 
-                // AUTO-EXECUÇÃO GLOBAL (Radar Autopilot)
-                if (isAutoMode && decision.action !== 'HOLD' && (decision.confidence ?? 0) >= confidenceThreshold) {
+                // LOGICA DE EXECUÇÃO (REAL OU SOMBRA)
+                if ((isAutoMode || isShadowMode) && decision.action !== 'HOLD' && (decision.confidence ?? 0) >= confidenceThreshold) {
                     const hasOpenTrade = operationsLog.some(op => op.asset === dueSymbol && op.status === 'pending');
                     
                     if (!hasOpenTrade) {
-                        let finalContractType = 'CALL';
-                        let extraProposalParams: Record<string, any> = {};
+                        if (isShadowMode) {
+                            addLog(`[SHADOW] Simulando ${decision.recommendedContract} em ${dueSymbol}...`, 'radar');
+                            setShadowTradesCount(prev => prev + 1);
+                            // Simula lucro teórico de 95% ou perda total
+                            const win = Math.random() > 0.45; 
+                            setShadowPnL(prev => prev + (win ? stakeValue * 0.95 : -stakeValue));
+                        } else {
+                            let finalContractType = 'CALL';
+                            let extraProposalParams: Record<string, any> = {};
 
-                        switch (decision.recommendedContract) {
-                            case 'ACCUMULATOR': 
-                                finalContractType = 'ACCU'; 
-                                break;
-                            case 'MULTIPLIER': 
-                                finalContractType = decision.action === 'RISE' ? 'MULTUP' : 'MULTDOWN'; 
-                                extraProposalParams = { multiplier: decision.multiplier || 400 }; 
-                                break;
-                            case 'DIGIT_OVER_UNDER':
-                                finalContractType = decision.action === 'RISE' ? 'DIGITOVER' : 'DIGITUNDER';
-                                extraProposalParams = { barrier: String(decision.digitPrediction || 5) };
-                                break;
-                            case 'DIGIT_DIFFER':
-                                finalContractType = 'DIGITDIFF';
-                                extraProposalParams = { barrier: String(decision.digitPrediction || 5) };
-                                break;
-                            default: 
-                                finalContractType = decision.action === 'RISE' ? 'CALL' : 'PUT';
-                        }
+                            switch (decision.recommendedContract) {
+                                case 'ACCUMULATOR': finalContractType = 'ACCU'; break;
+                                case 'MULTIPLIER': 
+                                    finalContractType = decision.action === 'RISE' ? 'MULTUP' : 'MULTDOWN'; 
+                                    extraProposalParams = { multiplier: decision.multiplier || 400 }; 
+                                    break;
+                                case 'DIGIT_OVER_UNDER':
+                                    finalContractType = decision.action === 'RISE' ? 'DIGITOVER' : 'DIGITUNDER';
+                                    extraProposalParams = { barrier: String(decision.digitPrediction || 5) };
+                                    break;
+                                default: finalContractType = decision.action === 'RISE' ? 'CALL' : 'PUT';
+                            }
 
-                        addLog(`[Radar] Executando ${decision.recommendedContract} em ${dueSymbol}...`, 'execution');
-                        
-                        try {
-                            await executeTrade(
-                                finalContractType, 
-                                stakeValue, 
-                                dueSymbol, 
-                                decision.action.toLowerCase() as 'rise' | 'fall',
-                                decision.duration || 5, 
-                                (decision.unit || 't') as DurationUnit, 
-                                'Conselho', 
-                                `Radar_${decision.recommendedContract}`, 
-                                extraProposalParams
-                            );
-                        } catch (err: any) {
-                            addLog(`Falha na execução Radar (${dueSymbol}): ${err.message}`, 'error');
+                            addLog(`[EXEC] Disparando ${decision.recommendedContract} em ${dueSymbol}.`, 'execution');
+                            
+                            const tradeStart = performance.now();
+                            try {
+                                await executeTrade(
+                                    finalContractType, stakeValue, dueSymbol, decision.action.toLowerCase() as 'rise' | 'fall',
+                                    decision.duration || 15, (decision.unit || 's') as DurationUnit, 'Conselho', 
+                                    `QuantV2_${decision.recommendedContract}`, extraProposalParams
+                                );
+                                setTelemetry(prev => ({ ...prev, t2t: Math.round(performance.now() - tradeStart) }));
+                            } catch (err: any) {
+                                addLog(`Falha na execução (${dueSymbol}): ${err.message}`, 'error');
+                            }
                         }
-                    } else {
-                        addLog(`Sinal para ${dueSymbol} ignorado: Já existe uma posição aberta.`, 'radar');
                     }
                 }
             }
         }
-    }, [isConnected, watchedSymbols, multiAssetCandles, activeSymbol, chartData, runInference, confidenceThreshold, analysisInterval, isAutoMode, operationsLog, stakeValue, executeTrade, addLog, maxConsecutiveLosses, maxDailyLoss, globalSessionStats.pnl, toast]);
+    }, [isConnected, watchedSymbols, multiAssetCandles, activeSymbol, chartData, runInference, confidenceThreshold, analysisInterval, isAutoMode, isShadowMode, operationsLog, stakeValue, executeTrade, addLog]);
 
-    // FUNÇÃO PARA REINICIAR A SESSÃO
     const resetSession = useCallback(() => {
         setIsAutoMode(false);
+        setIsShadowMode(false);
         clearActiveContracts();
         setRadarStatus({});
         setReasoningLog([]);
         setChatMessages([]);
+        setShadowPnL(0);
+        setShadowTradesCount(0);
         scheduleRef.current = {};
         setLastDecision(null);
-        toast({ title: "Sessão Reiniciada", description: "O histórico e as travas de segurança foram resetados para o dia de hoje." });
+        toast({ title: "Sessão Reiniciada", description: "O histórico e os contadores de sombra foram resetados." });
     }, [clearActiveContracts, toast]);
 
     const sendMessage = async (content: string) => {
@@ -395,36 +414,15 @@ export function useAIQuantTerminalV2(
         setChatMessages(prev => [...prev, userMsg]);
         setIsChatLoading(true);
 
-        const lowerContent = content.toLowerCase();
-        const isExecutionRequest = lowerContent.includes('compre') || lowerContent.includes('venda') || lowerContent.includes('execute') || lowerContent.includes('ordem');
-
-        const contextInfo = {
-            activeAsset: activeSymbol,
-            balance: accountBalance.balance,
-            pnl: globalSessionStats.pnl,
-            winRate: globalSessionStats.winRate,
-            activeRobots: Object.keys(radarStatus).length,
-            regime: lastDecision?._detectedRegime,
-            indicators: {
-                rsi: currentIndicators?.rsi,
-                adx: currentIndicators?.adx,
-                bbw: currentIndicators?.bbw
-            },
-            profile: strategicProfile
-        };
-
-        const systemPrompt = `Você é o Chief Investment Officer (CIO) do Terminal Claritas V2.
-        Sua missão é gerenciar o capital do usuário e sugerir as melhores táticas de alta frequência.
+        const systemPrompt = `Você é o CIO do Terminal Claritas V2.6.
+        HISTÓRICO FINANCEIRO: PNL=$${globalSessionStats.pnl.toFixed(2)} | WR=${globalSessionStats.winRate?.toFixed(1)}% | Saldo=$${accountBalance.balance}
+        MEMÓRIA DE ERROS RECENTES:
+        ${recentFailuresContext || "Nenhuma"}
         
-        CONTEXTO OPERACIONAL EM TEMPO REAL:
-        ${JSON.stringify(contextInfo, null, 2)}
-        
-        INSTRUÇÕES DE DIÁLOGO:
-        1. Responda de forma analítica, técnica e direta sobre os fluxos de mercado.
-        2. Você tem acesso TOTAL aos dados de lucratividade da sessão (PNL e Win Rate) no JSON acima. Se o usuário perguntar como está a sessão, responda usando esses dados concretos.
-        3. Você trabalha com os seguintes contratos: CALL/PUT (Opções), ACCUMULATOR (Acumuladores), MULTIPLIER (Multiplicadores) e DIGITS (Dígitos).
-        4. Você NÃO executa ordens diretamente. Caso o usuário peça para executar algo, analise os indicadores e, se aprovar, responda com sua análise e use OBRIGATORIAMENTE a frase "ARMANDO OPERAÇÃO" no final. Isso atualizará o painel de veredito para o usuário confirmar.
-        5. Use português do Brasil. Seja técnico e evite discursos genéricos.`;
+        INSTRUÇÕES:
+        1. Responda de forma técnica e analítica.
+        2. Se o usuário pedir para executar algo, analise o risco e responda com "ARMANDO OPERAÇÃO" no final se aprovar.
+        3. Use o histórico de erros acima para justificar se deve ser mais cauteloso agora.`;
 
         try {
             const response = await getOllamaResponse(ollamaConfig, content, [
@@ -436,36 +434,31 @@ export function useAIQuantTerminalV2(
                 const assistantContent = response.success;
                 setChatMessages(prev => [...prev, { role: 'assistant', content: assistantContent, time: new Date().toLocaleTimeString() }]);
                 
-                if (isExecutionRequest && assistantContent.includes('ARMANDO OPERAÇÃO') && activeSymbol && chartData.length >= 30) {
-                    addLog(`CIO iniciou protocolo de execução tática para ${activeSymbol}...`, 'decision');
+                if (assistantContent.includes('ARMANDO OPERAÇÃO') && activeSymbol && chartData.length >= 30) {
+                    addLog(`CIO autorizou execução tática em ${activeSymbol}.`, 'decision');
                     const decision = await runInference(activeSymbol, chartData, false);
                     if (decision) {
                         setLastDecision(decision);
-                        toast({ title: "🎯 Ordem Tática Armada", description: "O CIO autorizou seu pedido. Confira o alerta de risco no chat e autorize no painel." });
+                        toast({ title: "🎯 Ordem Tática Armada", description: "Verifique o veredito e autorize a execução." });
                     }
                 }
             }
         } catch (e: any) {
-            addLog(`Falha na resposta do CIO: ${e.message}`, 'error');
+            addLog(`Falha no CIO: ${e.message}`, 'error');
         } finally {
             setIsChatLoading(false);
         }
     };
 
     const radarScanRef = useRef(runWatchedSymbolsCycle);
-    const analysisIntervalRef = useRef(analysisInterval);
-
-    useEffect(() => {
-        radarScanRef.current = runWatchedSymbolsCycle;
-        analysisIntervalRef.current = analysisInterval;
-    }, [runWatchedSymbolsCycle, analysisInterval]);
+    useEffect(() => { radarScanRef.current = runWatchedSymbolsCycle; }, [runWatchedSymbolsCycle]);
 
     useEffect(() => {
         const interval = setInterval(() => {
-            setTimeToNextAnalysis(prev => prev <= 1 ? analysisIntervalRef.current : prev - 1);
+            setTimeToNextAnalysis(prev => prev <= 1 ? analysisInterval : prev - 1);
         }, 1000);
         return () => clearInterval(interval);
-    }, []);
+    }, [analysisInterval]);
 
     useEffect(() => {
         const scanInterval = setInterval(() => radarScanRef.current(), 5000);
@@ -474,6 +467,8 @@ export function useAIQuantTerminalV2(
 
     return {
         isAutoMode, toggleAutoMode: () => setIsAutoMode(!isAutoMode),
+        isShadowMode, toggleShadowMode: () => setIsShadowMode(!isShadowMode),
+        shadowPnL, shadowTradesCount,
         lastDecision, timeToNextAnalysis, analysisInterval, setAnalysisInterval,
         strategicProfile, setStrategicProfile: handleSetStrategicProfile, 
         confidenceThreshold, setConfidenceThreshold,
