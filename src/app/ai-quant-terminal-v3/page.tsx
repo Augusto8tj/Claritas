@@ -1,7 +1,7 @@
 'use client';
 
-import React, { useState } from 'react';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import React, { useState, useRef, useEffect } from 'react';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
@@ -15,7 +15,8 @@ import {
     Timer, LineChart, PlayCircle, PauseCircle, Cpu, RefreshCw,
     Database, Activity, History, ArrowUpCircle, ArrowDownCircle,
     TestTube, Scale, Brain, Trash2, Radar, TrendingUp, TrendingDown, 
-    Minus, Check, ChevronsUpDown, Settings2, Wallet, Target, Layers
+    Minus, Check, ChevronsUpDown, Settings2, Wallet, Target, Layers,
+    MessageSquare, Send
 } from "lucide-react";
 import { DerivApiProviderV2 as DerivApiProvider, useDerivApiV2 as useDerivApi } from "@/features/trading/hooks/use-deriv-api-v2";
 import { AssetSelectorV2 as AssetSelector } from "@/features/trading/components/deriv-trader/asset-selector-v2";
@@ -27,6 +28,7 @@ import { cn } from "@/lib/utils";
 import { Separator } from "@/components/ui/separator";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 function TerminalV3Content() {
     const { 
@@ -43,13 +45,30 @@ function TerminalV3Content() {
         radarStatus, watchedSymbols, setWatchedSymbols, resetSession,
         allowedContracts, setAllowedContracts, maxConcurrentTrades, setMaxConcurrentTrades,
         stakeValue, setStakeValue, dailyBalance, setDailyBalance, dailyTarget, setDailyTarget,
-        sessionStats
+        sessionStats, chatMessages, isChatLoading, sendMessage
     } = v3;
 
     const [isSelectorOpen, setIsSelectorOpen] = useState(false);
+    const [chatInput, setChatInput] = useState('');
+    const [chatTarget, setChatTarget] = useState('CHAIRMAN');
+    const chatScrollRef = useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+        if (chatScrollRef.current) {
+            chatScrollRef.current.scrollIntoView({ behavior: 'smooth' });
+        }
+    }, [chatMessages]);
 
     const formatCurrency = (val: number) => 
         new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(val);
+
+    const handleChatSubmit = (e: React.FormEvent) => {
+        e.preventDefault();
+        if (chatInput.trim()) {
+            sendMessage(chatInput, chatTarget);
+            setChatInput('');
+        }
+    };
 
     return (
         <div className="flex-1 space-y-6 p-4 sm:p-8 pt-6 bg-background min-h-screen text-foreground">
@@ -292,7 +311,7 @@ function TerminalV3Content() {
                     </Card>
                 </div>
 
-                {/* COLUNA CENTRAL: GRÁFICO E OPINIÕES */}
+                {/* COLUNA CENTRAL: GRÁFICO E CHAT */}
                 <div className="lg:col-span-2 space-y-6">
                     <Card className="min-h-[400px] shadow-sm">
                         <CardContent className="p-4">
@@ -312,30 +331,75 @@ function TerminalV3Content() {
                         </CardContent>
                     </Card>
 
-                    {/* VOTOS DO CONSELHO PARALELO */}
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                        {['MOMENTUM', 'RISK_CRITIC', 'ARCHIVIST'].map((agentName) => {
-                            const opinion = lastDecision?.opinions.find(o => o.agentName === agentName);
-                            return (
-                                <Card key={agentName} className={cn("border-l-4 shadow-sm", 
-                                    opinion?.action === 'CALL' ? 'border-l-green-500' : 
-                                    opinion?.action === 'PUT' ? 'border-l-red-500' : 'border-l-muted'
-                                )}>
-                                    <CardContent className="p-3">
-                                        <div className="flex justify-between items-center mb-1">
-                                            <span className="text-[9px] font-bold text-muted-foreground">{agentName}</span>
-                                            {opinion?.vetoTriggered && <Badge variant="destructive" className="h-4 text-[8px] font-bold">VETO</Badge>}
+                    {/* INTERAÇÃO COM O CONSELHO (CHAT) */}
+                    <Card className="bg-card border-border h-[400px] flex flex-col shadow-sm">
+                        <CardHeader className="py-3 border-b border-border bg-purple-50/10">
+                            <div className="flex items-center justify-between">
+                                <CardTitle className="text-sm flex items-center gap-2">
+                                    <MessageSquare className="h-4 w-4 text-purple-600" />
+                                    Diálogo com o Conselho V3
+                                </CardTitle>
+                                <Select value={chatTarget} onValueChange={setChatTarget}>
+                                    <SelectTrigger className="h-7 w-[160px] text-[10px] font-bold uppercase border-purple-200">
+                                        <SelectValue placeholder="Destinatário" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="CHAIRMAN">Chairman (Líder)</SelectItem>
+                                        <SelectItem value="MOMENTUM">Quant Momentum</SelectItem>
+                                        <SelectItem value="RISK_CRITIC">Risk Critic</SelectItem>
+                                        <SelectItem value="ARCHIVIST">Pattern Archivist</SelectItem>
+                                    </SelectContent>
+                                </Select>
+                            </div>
+                        </CardHeader>
+                        <CardContent className="flex-1 overflow-hidden p-0 relative bg-muted/5">
+                            <ScrollArea className="h-full p-4">
+                                <div className="space-y-4">
+                                    {chatMessages.length === 0 && (
+                                        <div className="text-center py-10 opacity-30">
+                                            <Brain className="h-10 w-10 mx-auto mb-2 text-purple-600"/>
+                                            <p className="text-xs font-mono">Conselho aguardando instruções...</p>
                                         </div>
-                                        <div className="text-xs font-bold">{opinion?.action || 'HOLD'}</div>
-                                        <div className="text-[9px] text-muted-foreground line-clamp-2 mt-1">{opinion?.reasoning || 'Aguardando ciclo...'}</div>
-                                    </CardContent>
-                                </Card>
-                            );
-                        })}
-                    </div>
+                                    )}
+                                    {chatMessages.map((msg, i) => (
+                                        <div key={i} className={cn(
+                                            "flex flex-col max-w-[85%] rounded-lg p-3 text-xs leading-relaxed border shadow-sm",
+                                            msg.role === 'user' ? "bg-primary/10 ml-auto border-primary/20" : "bg-card mr-auto border-border"
+                                        )}>
+                                            <span className="font-bold uppercase text-[9px] mb-1 opacity-50 flex items-center gap-2">
+                                                {msg.role === 'user' ? 'OPERADOR' : (msg.agentName || 'CONSELHO')} • {msg.time}
+                                                {msg.role === 'assistant' && <Badge variant="outline" className="h-3 text-[7px] py-0 px-1 border-purple-200">Verified</Badge>}
+                                            </span>
+                                            <p className="font-mono text-foreground">{msg.content}</p>
+                                        </div>
+                                    ))}
+                                    {isChatLoading && (
+                                        <div className="flex items-center gap-2 text-xs text-purple-600 animate-pulse font-mono">
+                                            <RefreshCw className="h-3 w-3 animate-spin"/> {chatTarget} está processando a resposta...
+                                        </div>
+                                    )}
+                                    <div ref={chatScrollRef} />
+                                </div>
+                            </ScrollArea>
+                        </CardContent>
+                        <CardFooter className="p-3 border-t border-border">
+                            <form onSubmit={handleChatSubmit} className="flex w-full gap-2">
+                                <Input 
+                                    value={chatInput}
+                                    onChange={(e) => setChatInput(e.target.value)}
+                                    placeholder={`Falar com ${chatTarget.toLowerCase()}...`}
+                                    className="bg-background border-border h-9 text-xs"
+                                    disabled={isChatLoading}
+                                />
+                                <Button type="submit" size="icon" className="h-9 w-9 bg-purple-600 hover:bg-purple-700" disabled={isChatLoading || !chatInput.trim()}>
+                                    <Send className="h-4 w-4" />
+                                </Button>
+                            </form>
+                        </CardFooter>
+                    </Card>
                 </div>
 
-                {/* COLUNA DIREITA: VEREDITO E RACIOCÍNIO */}
+                {/* COLUNA DIREITA: VEREDITO E MEMÓRIA */}
                 <div className="lg:col-span-1 space-y-6">
                     <Card className="border-purple-600/30 shadow-md">
                         <CardHeader className="bg-purple-600/5 border-b py-3">

@@ -3,7 +3,7 @@
 /**
  * @fileOverview TERMINAL QUANT V3.0 (COUNCIL EDITION) - MONITORAMENTO MULTI-ATIVO
  * Lógica de laboratório com conselho paralelo, memória viva e radar multi-ativo.
- * V3.2: Controle de ciclo, seletividade de contratos e suporte multi-execução.
+ * V3.5: Chat interativo com suporte a personas e injeção de memória viva.
  */
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
@@ -16,6 +16,7 @@ import { useAuth } from '@/features/auth/hooks/use-auth';
 import { TradeMemoryManager } from '../services/trade-memory-service';
 import { runQuantCouncil } from '../services/quant-council-engine';
 import { CouncilDecision, TradeMemoryBuffer, AgentOpinion } from '../types/council';
+import { getOllamaResponse } from '@/app/actions';
 
 export interface RadarAssetStatus {
     symbol: string;
@@ -33,6 +34,13 @@ export type AllowedContractsV3 = {
     'ACCUMULATORS': boolean;
     'MULTIPLIERS': boolean;
 };
+
+export interface ChatMessage {
+    role: 'user' | 'assistant';
+    content: string;
+    time: string;
+    agentName?: string;
+}
 
 export function useAIQuantTerminalV3(
     activeSymbol: string | null,
@@ -65,6 +73,9 @@ export function useAIQuantTerminalV3(
     const [radarStatus, setRadarStatus] = useState<Record<string, RadarAssetStatus>>({});
     const [memoryBuffer, setMemoryBuffer] = useState<TradeMemoryBuffer>({ wins: [], losses: [] });
     const [reasoningLog, setReasoningLog] = useState<any[]>([]);
+    const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+    const [isChatLoading, setIsChatLoading] = useState(false);
+    
     const executionLockRef = useRef(false);
     const scheduleRef = useRef<Record<string, number>>({});
 
@@ -155,18 +166,11 @@ export function useAIQuantTerminalV3(
 
             // Execução do Autopilot
             if (isAutoMode && !isShadowMode && decision.finalAction !== 'HOLD' && decision.consensusConfidence >= 65) {
-                // Check if contract is allowed
                 const isContractAllowed = allowedContracts[decision.recommendedContract as keyof AllowedContractsV3];
-                if (!isContractAllowed) {
-                    if (isFocused) addLog(`Sinal ${decision.finalAction} em ${symbol} ignorado: Contrato ${decision.recommendedContract} desativado.`, 'info');
-                    return;
-                }
+                if (!isContractAllowed) return;
 
                 const totalOpenTrades = operationsLog.filter(op => op.status === 'pending').length;
-                if (totalOpenTrades >= maxConcurrentTrades) {
-                    if (isFocused) addLog(`Limite de ${maxConcurrentTrades} ordens simultâneas atingido.`, 'info');
-                    return;
-                }
+                if (totalOpenTrades >= maxConcurrentTrades) return;
 
                 const hasSameContractOpen = operationsLog.some(op => 
                     op.asset === symbol && 
@@ -226,11 +230,64 @@ export function useAIQuantTerminalV3(
         clearActiveContracts();
         setRadarStatus({});
         setReasoningLog([]);
+        setChatMessages([]);
         scheduleRef.current = {};
         setLastDecision(null);
         if (user) await TradeMemoryManager.clearBuffer(user.uid);
         setMemoryBuffer({ wins: [], losses: [] });
         toast({ title: "Laboratório Resetado", description: "Histórico, memória e contadores foram limpos." });
+    };
+
+    const sendMessage = async (content: string, targetAgent: string = 'CHAIRMAN') => {
+        if (!ollamaConfig || !content.trim() || !user) return;
+
+        const userMsg: ChatMessage = { role: 'user', content, time: new Date().toLocaleTimeString() };
+        setChatMessages(prev => [...prev, userMsg]);
+        setIsChatLoading(true);
+
+        try {
+            const memoryContext = TradeMemoryManager.formatBufferForPrompt(memoryBuffer);
+            const indicators = calculateAllIndicators(chartData, [], '1m', { duration: 15, unit: 's' });
+            
+            const agentPrompts: Record<string, string> = {
+                CHAIRMAN: "Você é o Chairman do Conselho V3. Sua visão é macro e estratégica.",
+                MOMENTUM: "Você é o analista 'Quant Momentum'. Seu foco é força e velocidade.",
+                RISK_CRITIC: "Você é o 'Risk Critic'. Seu trabalho é ser cético e evitar prejuízos.",
+                ARCHIVIST: "Você é o 'Pattern Archivist'. Sua memória é o histórico de vitórias."
+            };
+
+            const systemPrompt = `${agentPrompts[targetAgent] || agentPrompts.CHAIRMAN}
+            
+            CONTEXTO ATUAL:
+            Ativo: ${activeSymbol}
+            Saldo: $${accountBalance.balance}
+            PnL Sessão: $${sessionStats.pnl.toFixed(2)}
+            Indicadores: RSI=${indicators?.rsi?.toFixed(1)} | ADX=${indicators?.adx?.toFixed(1)}
+            
+            ${memoryContext}
+            
+            Instrução: Responda de forma técnica e direta como um profissional quantitativo.`;
+
+            const history = chatMessages.map(m => ({ role: m.role, content: m.content }));
+            const response = await getOllamaResponse(ollamaConfig, content, [
+                { role: 'system', content: systemPrompt }, 
+                ...history
+            ]);
+            
+            if (response.success) {
+                const assistantMsg: ChatMessage = { 
+                    role: 'assistant', 
+                    content: response.success, 
+                    time: new Date().toLocaleTimeString(),
+                    agentName: targetAgent
+                };
+                setChatMessages(prev => [...prev, assistantMsg]);
+            }
+        } catch (error: any) {
+            toast({ title: "Erro no Chat", description: error.message, variant: "destructive" });
+        } finally {
+            setIsChatLoading(false);
+        }
     };
 
     useEffect(() => {
@@ -263,6 +320,7 @@ export function useAIQuantTerminalV3(
         reasoningLog, memoryBuffer, accountBalance,
         radarStatus, watchedSymbols, setWatchedSymbols,
         resetSession,
+        chatMessages, isChatLoading, sendMessage,
         executeManualDecision: () => lastDecision && runMultiAssetCycle()
     };
 }
