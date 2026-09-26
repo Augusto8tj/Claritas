@@ -1,13 +1,15 @@
-
 import { db } from '@/lib/firebase';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { doc, getDoc, setDoc, deleteDoc } from 'firebase/firestore';
 import { TradeMemoryBuffer, TradePostMortem } from '../types/council';
 
 export class TradeMemoryManager {
   private static MAX_BUFFER_SIZE = 20;
 
+  /**
+   * Obtém o buffer de memória isolado para a V3.
+   */
   public static async getBuffer(userId: string): Promise<TradeMemoryBuffer> {
-    const docRef = doc(db, 'users', userId, 'quant_memory', 'buffer');
+    const docRef = doc(db, 'users', userId, 'quant_memory_v3', 'buffer');
     const snap = await getDoc(docRef);
     if (snap.exists()) {
       return snap.data() as TradeMemoryBuffer;
@@ -15,10 +17,16 @@ export class TradeMemoryManager {
     return { wins: [], losses: [] };
   }
 
+  /**
+   * Adiciona um trade ao buffer deslizante (FIFO).
+   */
   public static async addTrade(userId: string, trade: TradePostMortem): Promise<void> {
     const buffer = await this.getBuffer(userId);
     const isWin = trade.result === 'WIN';
     const targetArray = isWin ? [...buffer.wins] : [...buffer.losses];
+
+    // Evita duplicatas se o ID já existir
+    if (targetArray.some(t => t.id === trade.id)) return;
 
     targetArray.push(trade);
 
@@ -31,8 +39,16 @@ export class TradeMemoryManager {
       losses: isWin ? buffer.losses : targetArray,
     };
 
-    const docRef = doc(db, 'users', userId, 'quant_memory', 'buffer');
+    const docRef = doc(db, 'users', userId, 'quant_memory_v3', 'buffer');
     await setDoc(docRef, newBuffer);
+  }
+
+  /**
+   * Apaga a memória de curto prazo do laboratório.
+   */
+  public static async clearBuffer(userId: string): Promise<void> {
+    const docRef = doc(db, 'users', userId, 'quant_memory_v3', 'buffer');
+    await deleteDoc(docRef);
   }
 
   public static formatBufferForPrompt(buffer: TradeMemoryBuffer): string {

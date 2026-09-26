@@ -1,4 +1,3 @@
-
 'use client';
 
 /**
@@ -10,7 +9,7 @@ import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import type { TickData, CandleData, OperationInitiator, DurationUnit, Operation, OllamaConfig } from '@/lib/types';
 import { useDerivApiV2 as useDerivApi } from './use-deriv-api-v2';
 import { calculateAllIndicators } from '../services/indicator-service';
-import { initialCouncilStrategies } from '../services/council-strategies';
+import { initialCouncilStrategies } from '../strategies/council-strategies';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/features/auth/hooks/use-auth';
 import { TradeMemoryManager } from '../services/trade-memory-service';
@@ -46,21 +45,33 @@ export function useAIQuantTerminalV3(
         setReasoningLog(prev => [{ time: new Date().toLocaleTimeString(), message, type }, ...prev].slice(0, 50));
     }, []);
 
-    // Monitora fechamento de trades para alimentar a memória
+    // Carrega a memória inicial
+    useEffect(() => {
+        if (user) {
+            TradeMemoryManager.getBuffer(user.uid).then(setMemoryBuffer);
+        }
+    }, [user]);
+
+    // Monitora fechamento de trades para alimentar a memória (Apenas trades da V3)
     useEffect(() => {
         if (!user) return;
-        const lastFinished = operationsLog.find(op => op.status !== 'pending' && op.initiator === 'Conselho');
+        // Filtra para encontrar trades finalizados que foram iniciados por este bot V3
+        const lastFinished = operationsLog.find(op => 
+            op.status !== 'pending' && 
+            op.strategy?.startsWith('V3_')
+        );
+
         if (lastFinished) {
             const result = lastFinished.status === 'won' ? 'WIN' : 'LOSS';
             TradeMemoryManager.addTrade(user.uid, {
                 id: String(lastFinished.id),
                 timestamp: Date.now(),
-                contract: 'CALL',
+                contract: 'CALL', // Simplificação para o buffer
                 result,
                 pnl: lastFinished.result || 0,
                 rsi: 50, // Placeholder
                 volatilityYangZhang: 0,
-                candlePattern: 'V3_TEST'
+                candlePattern: 'V3_PATTERN'
             }).then(() => {
                 TradeMemoryManager.getBuffer(user.uid).then(setMemoryBuffer);
             });
@@ -74,7 +85,7 @@ export function useAIQuantTerminalV3(
         addLog(`Conselho V3 iniciando análise paralela em ${activeSymbol}...`, 'info');
 
         try {
-            const indicators = calculateAllIndicators(chartData, initialCouncilStrategies, '1m', { duration: 15, unit: 's' });
+            const indicators = calculateAllIndicators(chartData, [], '1m', { duration: 15, unit: 's' });
             const snapshot = {
                 symbol: activeSymbol,
                 price: priceTicks[priceTicks.length - 1]?.price,
@@ -104,6 +115,14 @@ export function useAIQuantTerminalV3(
         }
     }, [activeSymbol, isConnected, chartData, isAutoMode, isShadowMode, ollamaConfig, user, addLog, executeTrade, priceTicks]);
 
+    const clearMemory = async () => {
+        if (!user) return;
+        await TradeMemoryManager.clearBuffer(user.uid);
+        setMemoryBuffer({ wins: [], losses: [] });
+        toast({ title: "Memória Resetada", description: "O buffer de aprendizado da V3 foi limpo." });
+        addLog("Memória quantitativa resetada pelo operador.");
+    };
+
     useEffect(() => {
         const interval = setInterval(() => {
             setTimeToNextAnalysis(prev => {
@@ -121,7 +140,7 @@ export function useAIQuantTerminalV3(
         isAutoMode, toggleAutoMode: () => setIsAutoMode(!isAutoMode),
         isShadowMode, toggleShadowMode: () => setIsShadowMode(!isShadowMode),
         lastDecision, timeToNextAnalysis, analysisInterval, setAnalysisInterval,
-        reasoningLog, memoryBuffer, accountBalance,
+        reasoningLog, memoryBuffer, accountBalance, clearMemory,
         executeManualDecision: () => lastDecision && runAnalysisCycle()
     };
 }
