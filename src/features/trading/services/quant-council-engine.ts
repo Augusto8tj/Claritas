@@ -34,10 +34,10 @@ function validateExecutionGate(
     return { allowed: false, reason: `Bloqueado: Limite de posições simultâneas (${portfolio.maxConcurrentPositions}) atingido.` };
   }
 
-  // 5. Exposição Total (Considerando stake fixo de laboratório)
-  const estimatedNewExposure = portfolio.totalExposure + 1.0; // Stake base de teste
+  // 5. Exposição Total
+  const estimatedNewExposure = portfolio.totalExposure + 1.0; // Stake base de laboratório
   if (estimatedNewExposure > portfolio.maxTotalExposure) {
-    return { allowed: false, reason: `Bloqueado: Exposição total ($${estimatedNewExposure}) excederia o limite ($${portfolio.maxTotalExposure}).` };
+    return { allowed: false, reason: `Bloqueado: Exposição total ($${estimatedNewExposure}) excederia o limite diário ($${portfolio.maxTotalExposure}).` };
   }
 
   return { allowed: true };
@@ -107,7 +107,6 @@ export async function runQuantCouncil(
     if (decision.finalAction !== 'HOLD' && portfolio && permissions) {
       const gate = validateExecutionGate(symbol, decision, permissions, portfolio, isFocused);
       if (!gate.allowed) {
-        console.log(`[Council Engine] Execução abortada para ${symbol}: ${gate.reason}`);
         return {
           ...decision,
           finalAction: 'HOLD',
