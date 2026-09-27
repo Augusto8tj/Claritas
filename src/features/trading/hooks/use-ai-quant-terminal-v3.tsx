@@ -46,7 +46,7 @@ export function useAIQuantTerminalV3(
     priceTicks: TickData[],
     chartData: CandleData[]
 ) {
-    const { isConnected, executeTrade, operationsLog, watchedSymbols, setWatchedSymbols, multiAssetCandles, clearActiveContracts } = useDerivApi();
+    const { isConnected, executeTrade, operationsLog, watchedSymbols, setWatchedSymbols, multiAssetCandles, clearActiveContracts, accountBalance } = useDerivApi();
     const { user } = useAuth();
     const { toast } = useToast();
 
@@ -56,13 +56,18 @@ export function useAIQuantTerminalV3(
     const [analysisInterval, setAnalysisInterval] = useState(120); 
     const [timeToNextAnalysis, setTimeToNextAnalysis] = useState(120);
     
-    // GESTÃO DE PORTFÓLIO E PERMISSÕES (REQUISITO 1)
+    // GESTÃO FINANCEIRA (REQUISITOS CORRIGIDOS)
+    const [dailyBalance, setDailyBalance] = useState(10.0);
+    const [dailyTarget, setDailyTarget] = useState(5.0);
+    const [stakeValue, setStakeValue] = useState(1.0);
+
+    // GESTÃO DE PORTFÓLIO E PERMISSÕES
     const [assetPermissions, setAssetPermissions] = useState<Record<string, AssetExecutionPermission>>({});
     const [portfolioRisk, setPortfolioRisk] = useState<PortfolioRiskState>({
         openPositions: 0,
         maxConcurrentPositions: 5,
         totalExposure: 0,
-        maxTotalExposure: 50,
+        maxTotalExposure: 10.0, // Inicializado com dailyBalance padrão
         lockedSymbols: new Set()
     });
 
@@ -81,7 +86,6 @@ export function useAIQuantTerminalV3(
         'MULTIPLIERS': true
     });
     const [maxConcurrentTrades, setMaxConcurrentTrades] = useState(5);
-    const [stakeValue, setStakeValue] = useState(1.0);
 
     const [radarStatus, setRadarStatus] = useState<Record<string, RadarAssetStatus>>({});
     const [memoryBuffer, setMemoryBuffer] = useState<TradeMemoryBuffer>({ wins: [], losses: [] });
@@ -107,16 +111,17 @@ export function useAIQuantTerminalV3(
         }
     }, []);
 
-    // Atualiza o estado do portfólio baseado no log de operações
+    // Atualiza o estado do portfólio baseado no log de operações e limites diários
     useEffect(() => {
         const open = operationsLog.filter(op => op.status === 'pending');
         setPortfolioRisk(prev => ({
             ...prev,
             openPositions: open.length,
             totalExposure: open.reduce((sum, op) => sum + op.stake, 0),
-            maxConcurrentPositions: maxConcurrentTrades
+            maxConcurrentPositions: maxConcurrentTrades,
+            maxTotalExposure: dailyBalance
         }));
-    }, [operationsLog, maxConcurrentTrades]);
+    }, [operationsLog, maxConcurrentTrades, dailyBalance]);
 
     const runAnalysisForSymbol = useCallback(async (symbol: string, candles: CandleData[]) => {
         if (!isConnected || !ollamaConfig || candles.length < 30 || !user) return;
@@ -134,10 +139,10 @@ export function useAIQuantTerminalV3(
                 trend: indicators?.adx! > 25 ? 'Trending' : 'Ranging'
             };
 
-            // Buffer segmentado por ativo (REQUISITO 3)
+            // Buffer segmentado por ativo
             const buffer = await TradeMemoryManager.getBuffer(user.uid, symbol);
             
-            // Permissão específica do ativo (REQUISITO 2)
+            // Permissão específica do ativo
             const permissions: AssetExecutionPermission = assetPermissions[symbol] || {
                 symbol,
                 enabled: true,
@@ -168,7 +173,7 @@ export function useAIQuantTerminalV3(
                 }
             }));
 
-            // EXECUÇÃO POLIMÓRFICA (REQUISITO 5)
+            // EXECUÇÃO POLIMÓRFICA
             if (isAutoMode && !isShadowMode && decision.finalAction !== 'HOLD') {
                 const hasOpenTrade = operationsLog.some(op => op.asset === symbol && op.status === 'pending');
 
@@ -213,7 +218,7 @@ export function useAIQuantTerminalV3(
         const dueSymbols = watchedSymbols.filter(sym => (scheduleRef.current[sym] || 0) <= now);
 
         // Limpa bloqueios do ciclo anterior
-        setPortfolioRisk(p => ({ ...prev, lockedSymbols: new Set() }));
+        setPortfolioRisk(p => ({ ...p, lockedSymbols: new Set() }));
 
         for (const symbol of dueSymbols) {
             const candles = symbol === activeSymbol ? chartData : (multiAssetCandles[symbol] as CandleData[]);
