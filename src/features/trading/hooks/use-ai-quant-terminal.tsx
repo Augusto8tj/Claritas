@@ -113,9 +113,9 @@ export function useAIQuantTerminal(
             .map(op => ({
                 dir: op.direction,
                 res: op.status,
-                pnl: op.result?.toFixed(2),
-                entry: op.entryPrice?.toFixed(4),
-                exit: op.exitPrice?.toFixed(4),
+                pnl: (Number(op.result) || 0).toFixed(2),
+                entry: (Number(op.entryPrice) || 0).toFixed(4),
+                exit: (Number(op.exitPrice) || 0).toFixed(4),
                 reasoning: op.strategy 
             }));
     }, [operationsLog, activeSymbol]);
@@ -262,7 +262,7 @@ export function useAIQuantTerminal(
             const prompt = `VOCÊ É O CHIEF INVESTMENT OFFICER (CIO) DO TERMINAL CLARITAS.
             Perfil Estratégico Ativo: ${strategicProfile.toUpperCase()}
             
-            MISSÃO: Analise o mercado e as últimas 15 decisões (HOLDs e Trades) para identificar padrões de acerto ou erro.
+            MISSÃO: Analise the mercado e as últimas 15 decisões (HOLDs e Trades) para identificar padrões de acerto ou erro.
             Se houve muitos HOLDs seguidos, avalie se está sendo conservador demais.
             Se houve perdas reais, adapte a estratégia para o regime atual.
             
