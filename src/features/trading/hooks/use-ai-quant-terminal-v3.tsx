@@ -2,7 +2,7 @@
 
 /**
  * @fileOverview TERMINAL QUANT V3.0 (COUNCIL EDITION) - MONITORAMENTO MULTI-ATIVO
- * V4.7: Isolamento de estatísticas e correção de cálculo de P&L.
+ * V3.1: Integração do Radar de Background V2.5 com a inteligência multi-persona V3.
  */
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
@@ -26,6 +26,7 @@ export interface RadarAssetStatus {
     isQualified: boolean;
     executedVia: string;
     opinions: AgentOpinion[];
+    recommendedContract?: string;
 }
 
 export type AllowedContractsV3 = {
@@ -51,6 +52,7 @@ export function useAIQuantTerminalV3(
     const { user } = useAuth();
     const { toast } = useToast();
 
+    // ESTADOS DE CONTROLE CANÔNICOS V3
     const [isAutoMode, setIsAutoMode] = useState(false);
     const [isShadowMode, setIsShadowMode] = useState(true);
     const [lastDecision, setLastDecision] = useState<CouncilDecision | null>(null);
@@ -65,6 +67,7 @@ export function useAIQuantTerminalV3(
         inferenceHealth: 100
     });
     
+    // GESTÃO FINANCEIRA E CONTRATOS
     const [allowedContracts, setAllowedContracts] = useState<AllowedContractsV3>({
         'CALL': true,
         'PUT': true,
@@ -76,6 +79,7 @@ export function useAIQuantTerminalV3(
     const [dailyBalance, setDailyBalance] = useState(10.0);
     const [dailyTarget, setDailyTarget] = useState(5.0);
 
+    // RADAR E MEMÓRIA
     const [radarStatus, setRadarStatus] = useState<Record<string, RadarAssetStatus>>({});
     const [memoryBuffer, setMemoryBuffer] = useState<TradeMemoryBuffer>({ wins: [], losses: [] });
     const [reasoningLog, setReasoningLog] = useState<any[]>([]);
@@ -118,31 +122,18 @@ export function useAIQuantTerminalV3(
     }, [toast]);
 
     const fetchAvailableModels = useCallback(async () => {
-        if (!ollamaConfig?.baseUrl) {
-            return;
-        }
-
+        if (!ollamaConfig?.baseUrl) return;
         try {
             const url = ollamaConfig.baseUrl.replace(/\/+$/, '') + '/api/tags';
-            const headers: Record<string, string> = { 
-                'ngrok-skip-browser-warning': 'true' 
-            };
-            
-            if (ollamaConfig.apiKey) {
-                headers['Authorization'] = `Bearer ${ollamaConfig.apiKey}`;
-            }
+            const headers: Record<string, string> = { 'ngrok-skip-browser-warning': 'true' };
+            if (ollamaConfig.apiKey) headers['Authorization'] = `Bearer ${ollamaConfig.apiKey}`;
 
             const response = await fetch(url, { headers });
             if (response.ok) {
                 const data = await response.json();
                 const models = data.models || [];
                 setAvailableModels(models);
-                
-                if (!ollamaConfig.model && models.length > 0) {
-                    updateOllamaConfig({ model: models[0].name });
-                }
-            } else {
-                addLog(`Erro ao carregar modelos: ${response.status}`, 'error');
+                if (!ollamaConfig.model && models.length > 0) updateOllamaConfig({ model: models[0].name });
             }
         } catch (e: any) {
             addLog(`Falha na conexão com Ollama: ${e.message}`, 'error');
@@ -150,22 +141,16 @@ export function useAIQuantTerminalV3(
     }, [ollamaConfig, updateOllamaConfig, addLog]);
 
     useEffect(() => {
-        if (ollamaConfig?.baseUrl) {
-            fetchAvailableModels();
-        }
+        if (ollamaConfig?.baseUrl) fetchAvailableModels();
     }, [ollamaConfig?.baseUrl, fetchAvailableModels]);
 
+    // ESTATÍSTICAS DE SESSÃO V3
     const sessionStats = useMemo(() => {
         const finishedTrades = operationsLog.filter(op => 
-            op.status !== 'pending' && op.initiator === 'Conselho_V3'
+            op.status !== 'pending' && (op.initiator === 'Conselho_V3' || op.strategy?.startsWith('V3_'))
         );
         const wins = finishedTrades.filter(op => op.status === 'won').length;
-        
-        const pnl = finishedTrades.reduce((acc, op) => {
-            const val = Number(op.result);
-            if (isNaN(val)) return acc + (op.status === 'lost' ? -op.stake : 0);
-            return acc + val;
-        }, 0);
+        const pnl = finishedTrades.reduce((acc, op) => acc + (Number(op.result) || (op.status === 'lost' ? -op.stake : 0)), 0);
         
         return { 
             pnl: Number(pnl) || 0, 
@@ -175,37 +160,12 @@ export function useAIQuantTerminalV3(
     }, [operationsLog]);
 
     useEffect(() => {
-        if (user) {
-            TradeMemoryManager.getBuffer(user.uid).then(setMemoryBuffer);
-        }
+        if (user) TradeMemoryManager.getBuffer(user.uid).then(setMemoryBuffer);
     }, [user]);
 
-    useEffect(() => {
-        if (!user) return;
-        const lastFinished = operationsLog.find(op => 
-            op.status !== 'pending' && 
-            op.strategy?.startsWith('V3_')
-        );
-
-        if (lastFinished) {
-            const result = lastFinished.status === 'won' ? 'WIN' : 'LOSS';
-            TradeMemoryManager.addTrade(user.uid, {
-                id: String(lastFinished.id),
-                timestamp: Date.now(),
-                contract: (lastFinished.contractType?.startsWith('MULT') ? 'MULTIPLIERS' : (lastFinished.contractType === 'ACCU' ? 'ACCUMULATORS' : (lastFinished.direction === 'rise' ? 'CALL' : 'PUT'))) as any, 
-                result,
-                pnl: lastFinished.result || 0,
-                rsi: 50, 
-                volatilityYangZhang: 0,
-                candlePattern: 'V3_PATTERN'
-            }).then(() => {
-                TradeMemoryManager.getBuffer(user.uid).then(setMemoryBuffer);
-            });
-        }
-    }, [operationsLog, user]);
-
+    // MONITORAMENTO MULTI-ATIVO (Surgical Port from V2.5)
     const runAnalysisForSymbol = useCallback(async (symbol: string, candles: CandleData[]) => {
-        if (!isConnected || !ollamaConfig || candles.length < 30) return;
+        if (!isConnected || !ollamaConfig || candles.length < 30 || executionLockRef.current) return;
         
         const isFocused = symbol === activeSymbol;
         const currentPrice = isFocused ? priceTicks[priceTicks.length - 1]?.price : candles[candles.length - 1].close;
@@ -228,6 +188,7 @@ export function useAIQuantTerminalV3(
                 setTelemetry(decision.telemetry);
             }
 
+            // Atualiza o radar com os dados identificados
             setRadarStatus(prev => ({
                 ...prev,
                 [symbol]: {
@@ -238,24 +199,21 @@ export function useAIQuantTerminalV3(
                     timestamp: Date.now(),
                     isQualified: decision.finalAction !== 'HOLD' && decision.consensusConfidence >= 65,
                     executedVia: decision.executedVia,
-                    opinions: decision.opinions
+                    opinions: decision.opinions,
+                    recommendedContract: decision.recommendedContract
                 }
             }));
 
+            // Lógica de Execução Multi-Ativo
             if (isAutoMode && !isShadowMode && decision.finalAction !== 'HOLD' && decision.consensusConfidence >= 65) {
                 const isContractAllowed = allowedContracts[decision.recommendedContract as keyof AllowedContractsV3];
                 if (!isContractAllowed) return;
 
-                const totalOpenTrades = operationsLog.filter(op => op.status === 'pending').length;
-                if (totalOpenTrades >= maxConcurrentTrades) return;
-
                 const hasSameContractOpen = operationsLog.some(op => 
-                    op.asset === symbol && 
-                    op.status === 'pending' && 
-                    op.contractType === decision.recommendedContract
+                    op.asset === symbol && op.status === 'pending' && op.contractType === decision.recommendedContract
                 );
 
-                if (!hasSameContractOpen) {
+                if (!hasSameContractOpen && operationsLog.filter(op => op.status === 'pending').length < maxConcurrentTrades) {
                     let finalContractType = 'CALL';
                     let extraProposalParams: Record<string, any> = {};
 
@@ -272,7 +230,7 @@ export function useAIQuantTerminalV3(
                         finalContractType, stakeValue, symbol, decision.finalAction.toLowerCase() as any,
                         15, 's', 'Conselho_V3', `V3_${decision.executedVia}`, extraProposalParams
                     );
-                    if (isFocused) addLog(`[EXEC] Ordem real disparada: ${decision.recommendedContract} em ${symbol}`, 'execution');
+                    if (isFocused) addLog(`[EXEC] Ordem V3 disparada: ${decision.recommendedContract} em ${symbol}`, 'execution');
                 }
             }
 
@@ -286,15 +244,13 @@ export function useAIQuantTerminalV3(
         executionLockRef.current = true;
 
         const now = Date.now();
-        const dueSymbols = watchedSymbols.filter(sym => {
-            const nextRun = scheduleRef.current[sym] || 0;
-            return now >= nextRun;
-        });
+        const dueSymbols = watchedSymbols.filter(sym => (scheduleRef.current[sym] || 0) <= now);
 
         for (const symbol of dueSymbols) {
             const candles = symbol === activeSymbol ? chartData : (multiAssetCandles[symbol] as CandleData[]);
             if (candles && candles.length >= 30) {
                 await runAnalysisForSymbol(symbol, candles);
+                // Define o próximo ciclo para 50% do intervalo definido (Ajuste Half-Cycle)
                 scheduleRef.current[symbol] = now + (analysisInterval * 500); 
             }
         }
@@ -305,13 +261,6 @@ export function useAIQuantTerminalV3(
     useEffect(() => {
         analysisFnRef.current = runMultiAssetCycle;
     }, [runMultiAssetCycle]);
-
-    // Gatilho imediato ao carregar ou mudar de ativo
-    useEffect(() => {
-        if (isConnected && activeSymbol && !executionLockRef.current) {
-            runMultiAssetCycle();
-        }
-    }, [isConnected, activeSymbol]);
 
     const resetSession = async () => {
         setIsAutoMode(false);
@@ -328,74 +277,38 @@ export function useAIQuantTerminalV3(
 
     const sendMessage = async (content: string, targetAgent: string = 'CHAIRMAN') => {
         if (!ollamaConfig || !content.trim() || !user) return;
-
         const userMsg: ChatMessage = { role: 'user', content, time: new Date().toLocaleTimeString() };
         setChatMessages(prev => [...prev, userMsg]);
         setIsChatLoading(true);
 
         try {
             const memoryContext = TradeMemoryManager.formatBufferForPrompt(memoryBuffer);
-            const indicators = calculateAllIndicators(chartData, [], '1m', { duration: 15, unit: 's' });
-            
             const radarDetails = watchedSymbols.map(sym => {
-                const isFocused = sym === activeSymbol;
-                const price = isFocused 
-                    ? priceTicks[priceTicks.length - 1]?.price 
-                    : multiAssetCandles[sym]?.[multiAssetCandles[sym].length - 1]?.close;
-                
+                const price = sym === activeSymbol ? priceTicks[priceTicks.length-1]?.price : multiAssetCandles[sym]?.[multiAssetCandles[sym].length-1]?.close;
                 const status = radarStatus[sym];
-                const formattedPrice = price ? `$${price.toFixed(2)}` : 'Sincronizando...';
-                
-                let opinionText = "Aguardando análise técnica...";
-                if (status?.opinions?.length) {
-                    opinionText = status.opinions.map(o => `[${o.agentName}: ${o.action}(${o.confidence}%)]`).join(' ');
-                }
-                
-                return `| ${sym.padEnd(8)} | ${formattedPrice.padEnd(12)} | ${status?.lastAction || 'SCAN'} | ${status?.confidence || 0}% | ${opinionText} |`;
+                return `| ${sym.padEnd(8)} | ${price ? `$${price.toFixed(2)}` : 'Sinc...'} | ${status?.lastAction || 'SCAN'} | ${status?.confidence || 0}% | ${status?.recommendedContract || 'N/A'} |`;
             }).join('\n');
 
-            const agentPrompts: Record<string, string> = {
-                CHAIRMAN: "Você é o Chairman do Conselho V3. Seu papel é a SÍNTESE ESTRATÉGICA. Você ouve seus 3 analistas (MOMENTUM, RISK, ARCHIVIST) e decide se o alinhamento deles justifica um risco de capital. Ignore o valor nominal do preço.",
-                MOMENTUM: "Você é o analista 'Quant Momentum'. Seu papel é detectar EXPLOSÃO e FORÇA. Se o preço está estagnado, você vota HOLD. Se está acelerando, você busca CALL/PUT.",
-                RISK_CRITIC: "Você é o 'Risk Critic'. Seu papel é o VETO. Você busca instabilidade e ruído. Se detectar anomalia, você barra o trade, mesmo que os outros queiram operar.",
-                ARCHIVIST: "Você é o 'Pattern Archivist'. Seu papel é a MEMÓRIA. Você olha para as vitórias passadas do buffer e diz se o cenário atual 'cheira' a sucesso ou fracasso."
-            };
-
             const systemPrompt = `VOCÊ É UM ANALISTA NO LABORATÓRIO V3.0 (COUNCIL EDITION).
+            ESTRUTURA: CHAIRMAN (Líder), MOMENTUM (Força), RISK CRITIC (Veto), ARCHIVIST (Memória).
             
-            ESTRUTURA DO CONSELHO:
-            1. CHAIRMAN (Você/Líder): Orquestra o quórum e decide o viés.
-            2. MOMENTUM: Analisa velocidade e força (ADX/RSI).
-            3. RISK CRITIC: O 'Guarda-Costas' que veta operações perigosas (BBW).
-            4. ARCHIVIST: O historiador que compara o cenário com vitórias passadas.
-
-            ### RADAR TÁTICO INSTITUCIONAL (DADOS REAIS)
-            | Ativo    | Preço Atual  | Veredito | Confiança | Opiniões dos Agentes (Especialidades) |
-            |----------|--------------|----------|-----------|--------------------------------------|
+            RADAR TÁTICO REAIS:
+            | Ativo    | Preço Atual  | Veredito | Confiança | Contrato Rec. |
+            |----------|--------------|----------|-----------|---------------|
             ${radarDetails}
 
-            REGRA DE RACIOCÍNIO: NUNCA sugira operações baseado no preço nominal ser 'baixo' ou 'alto'. Use a especialidade técnica dos agentes.
-            INDICADORES (${activeSymbol}): RSI=${indicators?.rsi?.toFixed(1) || 'N/D'} | ADX=${indicators?.adx?.toFixed(1) || 'N/D'} | BBW=${indicators?.bbw?.toFixed(3) || 'N/D'}.
-            
+            RACIOCÍNIO: NÃO sugira operações baseado em preço "baixo" ou "alto".
             ${memoryContext}
             
-            SEU PAPEL ATUAL: ${agentPrompts[targetAgent] || agentPrompts.CHAIRMAN}
-            Responda em português do Brasil de forma técnica, citando seus analistas se necessário.`;
+            SEU PAPEL: ${targetAgent}. Responda de forma técnica em PT-BR.`;
 
-            const history = chatMessages.map(m => ({ role: m.role, content: m.content }));
             const response = await getOllamaResponse(ollamaConfig, content, [
                 { role: 'system', content: systemPrompt }, 
-                ...history
+                ...chatMessages.map(m => ({ role: m.role, content: m.content }))
             ]);
             
             if (response.success) {
-                const assistantMsg: ChatMessage = { 
-                    role: 'assistant', 
-                    content: response.success, 
-                    time: new Date().toLocaleTimeString(),
-                    agentName: targetAgent
-                };
-                setChatMessages(prev => [...prev, assistantMsg]);
+                setChatMessages(prev => [...prev, { role: 'assistant', content: response.success!, time: new Date().toLocaleTimeString(), agentName: targetAgent }]);
             }
         } catch (error: any) {
             toast({ title: "Erro no Chat", description: error.message, variant: "destructive" });
@@ -404,9 +317,8 @@ export function useAIQuantTerminalV3(
         }
     };
 
-    const timerRef = useRef<NodeJS.Timeout | null>(null);
     useEffect(() => {
-        timerRef.current = setInterval(() => {
+        const timer = setInterval(() => {
             setTimeToNextAnalysis(prev => {
                 if (prev <= 1) {
                     if (analysisFnRef.current) analysisFnRef.current();
@@ -415,13 +327,7 @@ export function useAIQuantTerminalV3(
                 return prev - 1;
             });
         }, 1000);
-        return () => {
-            if (timerRef.current) clearInterval(timerRef.current);
-        };
-    }, [analysisInterval]);
-
-    useEffect(() => {
-        setTimeToNextAnalysis(analysisInterval);
+        return () => clearInterval(timer);
     }, [analysisInterval]);
 
     return {
