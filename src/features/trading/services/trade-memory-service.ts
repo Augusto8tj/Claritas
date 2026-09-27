@@ -2,30 +2,41 @@ import { db } from '@/lib/firebase';
 import { doc, getDoc, setDoc, deleteDoc } from 'firebase/firestore';
 import { TradeMemoryBuffer, TradePostMortem } from '../types/council';
 
+/**
+ * Gerencia a memória tática do laboratório V3, segmentada por ativo.
+ */
 export class TradeMemoryManager {
   private static MAX_BUFFER_SIZE = 20;
 
   /**
-   * Obtém o buffer de memória isolado para a V3.
+   * Obtém o buffer de memória para um símbolo específico.
    */
-  public static async getBuffer(userId: string): Promise<TradeMemoryBuffer> {
-    const docRef = doc(db, 'users', userId, 'quant_memory_v3', 'buffer');
+  public static async getBuffer(userId: string, symbol: string = 'default'): Promise<TradeMemoryBuffer> {
+    const docRef = doc(db, 'users', userId, 'quant_memory_v3', symbol);
     const snap = await getDoc(docRef);
+    
     if (snap.exists()) {
       return snap.data() as TradeMemoryBuffer;
     }
+
+    // Compatibilidade Retroativa: Tenta migrar do buffer global se for o símbolo padrão
+    if (symbol === 'default') {
+      const globalRef = doc(db, 'users', userId, 'quant_memory_v3', 'buffer');
+      const globalSnap = await getDoc(globalRef);
+      if (globalSnap.exists()) return globalSnap.data() as TradeMemoryBuffer;
+    }
+
     return { wins: [], losses: [] };
   }
 
   /**
-   * Adiciona um trade ao buffer deslizante (FIFO).
+   * Adiciona um trade ao buffer de um ativo específico.
    */
-  public static async addTrade(userId: string, trade: TradePostMortem): Promise<void> {
-    const buffer = await this.getBuffer(userId);
+  public static async addTrade(userId: string, symbol: string, trade: TradePostMortem): Promise<void> {
+    const buffer = await this.getBuffer(userId, symbol);
     const isWin = trade.result === 'WIN';
     const targetArray = isWin ? [...buffer.wins] : [...buffer.losses];
 
-    // Evita duplicatas se o ID já existir
     if (targetArray.some(t => t.id === trade.id)) return;
 
     targetArray.push(trade);
@@ -39,15 +50,15 @@ export class TradeMemoryManager {
       losses: isWin ? buffer.losses : targetArray,
     };
 
-    const docRef = doc(db, 'users', userId, 'quant_memory_v3', 'buffer');
+    const docRef = doc(db, 'users', userId, 'quant_memory_v3', symbol);
     await setDoc(docRef, newBuffer);
   }
 
   /**
-   * Apaga a memória de curto prazo do laboratório.
+   * Limpa a memória de um ativo.
    */
-  public static async clearBuffer(userId: string): Promise<void> {
-    const docRef = doc(db, 'users', userId, 'quant_memory_v3', 'buffer');
+  public static async clearBuffer(userId: string, symbol: string = 'default'): Promise<void> {
+    const docRef = doc(db, 'users', userId, 'quant_memory_v3', symbol);
     await deleteDoc(docRef);
   }
 

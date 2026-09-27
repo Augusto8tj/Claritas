@@ -46,4 +46,26 @@ export interface CouncilDecision {
   t2tLatencyMs: number;
   telemetry: CouncilTelemetry;
   zenThought?: string;
+  holdReason?: string; // Motivo detalhado se a decisão for HOLD
+}
+
+/**
+ * Permissões granulares de execução por ativo.
+ */
+export interface AssetExecutionPermission {
+  symbol: string;
+  allowedContracts: ('ACCUMULATORS' | 'MULTIPLIERS' | 'CALL' | 'PUT')[];
+  maxStake: number;
+  enabled: boolean;
+}
+
+/**
+ * Estado global de risco do portfólio V3.
+ */
+export interface PortfolioRiskState {
+  openPositions: number;
+  maxConcurrentPositions: number;
+  totalExposure: number;
+  maxTotalExposure: number;
+  lockedSymbols: Set<string>; // Ativos já processados neste ciclo
 }

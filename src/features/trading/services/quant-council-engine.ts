@@ -1,13 +1,48 @@
-import { TradeMemoryBuffer, AgentOpinion, CouncilDecision, CouncilTelemetry } from '../types/council';
+import { TradeMemoryBuffer, AgentOpinion, CouncilDecision, CouncilTelemetry, AssetExecutionPermission, PortfolioRiskState } from '../types/council';
 import { TradeMemoryManager } from './trade-memory-service';
 import type { OllamaConfig } from '@/lib/types';
 
-// V4.6: Timeouts resilientes para evitar Failed to Fetch
 const AGENT_TIMEOUT_MS = 15000; 
 
 /**
- * Calcula a Entropia de Shannon para medir a divisão do conselho.
+ * Valida se a execução é permitida pelos filtros de segurança institucional.
  */
+function validateExecutionGate(
+  symbol: string,
+  decision: CouncilDecision,
+  permissions: AssetExecutionPermission | undefined,
+  portfolio: PortfolioRiskState,
+  isFocused: boolean
+): { allowed: boolean; reason?: string } {
+  // 1. Bloqueio de Ciclo (Evitar duplicatas no mesmo tick)
+  if (portfolio.lockedSymbols.has(symbol)) {
+    return { allowed: false, reason: "Bloqueado: Ativo já processado neste ciclo." };
+  }
+
+  // 2. Permissão do Ativo
+  if (!permissions || !permissions.enabled) {
+    return { allowed: false, reason: "Bloqueado: Execução desativada para este ativo." };
+  }
+
+  // 3. Contrato Permitido
+  if (!permissions.allowedContracts.includes(decision.recommendedContract)) {
+    return { allowed: false, reason: `Bloqueado: Contrato ${decision.recommendedContract} não permitido para ${symbol}.` };
+  }
+
+  // 4. Limites de Portfólio
+  if (portfolio.openPositions >= portfolio.maxConcurrentPositions) {
+    return { allowed: false, reason: `Bloqueado: Limite de posições simultâneas (${portfolio.maxConcurrentPositions}) atingido.` };
+  }
+
+  // 5. Exposição Total (Considerando stake fixo de laboratório)
+  const estimatedNewExposure = portfolio.totalExposure + 1.0; // Stake base de teste
+  if (estimatedNewExposure > portfolio.maxTotalExposure) {
+    return { allowed: false, reason: `Bloqueado: Exposição total ($${estimatedNewExposure}) excederia o limite ($${portfolio.maxTotalExposure}).` };
+  }
+
+  return { allowed: true };
+}
+
 function calculateConsensusEntropy(opinions: AgentOpinion[]): number {
   if (opinions.length < 2) return 0.2; 
   const counts = { CALL: 0, PUT: 0, HOLD: 0 };
@@ -17,24 +52,28 @@ function calculateConsensusEntropy(opinions: AgentOpinion[]): number {
   return -probs.reduce((sum, p) => p > 0 ? sum + p * Math.log2(p) : sum, 0) / 1.58; 
 }
 
+/**
+ * Executa o Conselho V3 com Governança Multi-Ativo.
+ */
 export async function runQuantCouncil(
   marketSnapshot: any,
   memoryBuffer: TradeMemoryBuffer,
   config: OllamaConfig,
-  isShadowMode: boolean
+  isShadowMode: boolean,
+  isFocused: boolean,
+  permissions?: AssetExecutionPermission,
+  portfolio?: PortfolioRiskState
 ): Promise<CouncilDecision> {
   const startTime = performance.now();
+  const symbol = marketSnapshot.symbol;
 
   try {
     const memoryContext = TradeMemoryManager.formatBufferForPrompt(memoryBuffer);
-
-    // Lista de agentes para o conselho
     const agents: Array<AgentOpinion['agentName']> = ['MOMENTUM', 'RISK_CRITIC', 'ARCHIVIST'];
 
-    // Disparo paralelo com resiliência: colhe o que for possível se houver falhas parciais
     const agentPromises = agents.map(name => fetchAgentWithTimeout(name, marketSnapshot, memoryContext, config));
-
     const results = await Promise.allSettled(agentPromises);
+    
     const opinions: AgentOpinion[] = [];
     results.forEach(res => {
         if (res.status === 'fulfilled' && res.value) {
@@ -42,12 +81,8 @@ export async function runQuantCouncil(
         }
     });
 
-    // Diagnóstico de Quórum
-    if (opinions.length < 1) {
-        throw new Error('NETWORK_FAILURE_ALL_AGENTS');
-    }
+    if (opinions.length < 1) throw new Error('NETWORK_FAILURE_ALL_AGENTS');
 
-    // REGRA DE OURO: Veto do Crítico de Risco tem peso dobrado na segurança
     const critic = opinions.find(o => o.agentName === 'RISK_CRITIC');
     if (critic?.vetoTriggered && critic.confidence > 70) {
       const endTime = performance.now();
@@ -57,19 +92,50 @@ export async function runQuantCouncil(
         stakeRatio: 0,
         consensusConfidence: critic.confidence,
         opinions,
-        executedVia: 'RISK_VETO',
+        executedVia: 'COUNCIL_VETO',
         executionMode: isShadowMode ? 'SHADOW' : 'REAL',
         t2tLatencyMs: Math.round(endTime - startTime),
         telemetry: generateTelemetry(opinions, startTime, endTime),
-        zenThought: `Veto Soberano do Risco: ${critic.reasoning}`
+        zenThought: `Veto Soberano do Risco: ${critic.reasoning}`,
+        holdReason: `VETO_RISK: ${critic.reasoning}`
       };
     }
 
-    return synthesizeChairmanDecision(opinions, marketSnapshot, isShadowMode, startTime);
+    const decision = synthesizeChairmanDecision(opinions, marketSnapshot, isShadowMode, startTime);
+
+    // GOVERNANÇA: Se houver intenção de execução, passamos pelo GATE institucional
+    if (decision.finalAction !== 'HOLD' && portfolio && permissions) {
+      const gate = validateExecutionGate(symbol, decision, permissions, portfolio, isFocused);
+      if (!gate.allowed) {
+        console.log(`[Council Engine] Execução abortada para ${symbol}: ${gate.reason}`);
+        return {
+          ...decision,
+          finalAction: 'HOLD',
+          holdReason: gate.reason
+        };
+      }
+    }
+
+    return decision;
 
   } catch (error: any) {
     const endTime = performance.now();
-    return executeMathFallback(marketSnapshot, isShadowMode, Math.round(endTime - startTime));
+    // SEGURANÇA: Fallback matemático RESTRITO ao ativo em foco
+    if (isFocused) {
+      return executeMathFallback(marketSnapshot, isShadowMode, Math.round(endTime - startTime));
+    }
+    return {
+      finalAction: 'HOLD',
+      recommendedContract: 'CALL',
+      stakeRatio: 0,
+      consensusConfidence: 0,
+      opinions: [],
+      executedVia: 'MATH_FALLBACK',
+      executionMode: 'SHADOW',
+      t2tLatencyMs: Math.round(endTime - startTime),
+      telemetry: { avgTokensPerSec: 0, totalTokens: 0, consensusEntropy: 1, jitterMs: 0, inferenceHealth: 0 },
+      holdReason: "Failover bloqueado para background asset."
+    };
   }
 }
 
@@ -87,7 +153,6 @@ async function fetchAgentWithTimeout(
         clearTimeout(timeoutId);
         return opinion;
     } catch (e) {
-        // Silencia erro de fetch individual para manter a estabilidade do conselho
         console.warn(`[Agent ${agentName}] Fetch failed:`, e);
         return null;
     }
@@ -103,32 +168,15 @@ async function fetchAgentAnalysis(
   const start = performance.now();
   
   const systemPrompts = {
-    MOMENTUM: `Você é o analista 'Quant Momentum'. 
-    MISSÃO: Identificar força de explosão e velocidade de ticks. 
-    FOCO: RSI, ADX e inclinação de preços. 
-    COMPORTAMENTO: Você é agressivo e busca lucro rápido. 
-    SAÍDA: JSON estrito.`,
-    
-    RISK_CRITIC: `Você é o analista 'Risk Critic'. 
-    MISSÃO: Encontrar motivos para o trade FALHAR. 
-    FOCO: Volatilidade (BBW), reversões bruscas e incerteza. 
-    COMPORTAMENTO: Você é cético e pessimista. Use 'vetoTriggered: true' se o risco for alto. 
-    SAÍDA: JSON estrito.`,
-    
-    ARCHIVIST: `Você é o analista 'Pattern Archivist'. 
-    MISSÃO: Comparar o estado atual com o histórico de vitórias/derrotas. 
-    FOCO: Memória de curto prazo e recorrência de padrões de velas. 
-    COMPORTAMENTO: Você é metódico e conservador. 
-    SAÍDA: JSON estrito.`
+    MOMENTUM: `Você é o analista 'Quant Momentum'. MISSÃO: Identificar força de explosão e velocidade de ticks.`,
+    RISK_CRITIC: `Você é o analista 'Risk Critic'. MISSÃO: Encontrar motivos para o trade FALHAR.`,
+    ARCHIVIST: `Você é o analista 'Pattern Archivist'. MISSÃO: Comparar o estado atual com o histórico de vitórias/derrotas.`
   };
 
   try {
     const response = await fetch('/api/ollama/agent', {
       method: 'POST',
-      headers: { 
-        'Content-Type': 'application/json',
-        'Authorization': config.apiKey ? `Bearer ${config.apiKey}` : '' 
-      },
+      headers: { 'Content-Type': 'application/json' },
       signal,
       body: JSON.stringify({
         systemPrompt: `${systemPrompts[agentName]}\n${memoryContext}`,
@@ -137,13 +185,12 @@ async function fetchAgentAnalysis(
       })
     });
 
-    if (!response.ok) throw new Error(`Agent API responded with ${response.status}`);
+    if (!response.ok) throw new Error(`Agent API Error: ${response.status}`);
     
     const data = await response.json();
     const end = performance.now();
-    
-    // Sanitização de saída do LLM
     const opinion = data.opinion || {};
+
     return { 
       agentName,
       action: (opinion.action || 'HOLD').toUpperCase() as any,
@@ -187,7 +234,6 @@ function synthesizeChairmanDecision(
   let putScore = 0;
 
   opinions.forEach(op => {
-    // Pesos: Momentum(1.0), Archivist(1.2), Risk_Critic(0.8 p/ ação, 2.0 p/ veto)
     const weight = op.agentName === 'ARCHIVIST' ? 1.2 : 1.0;
     if (op.action === 'CALL') callScore += op.confidence * weight;
     if (op.action === 'PUT') putScore += op.confidence * weight;
@@ -196,7 +242,6 @@ function synthesizeChairmanDecision(
   const entropyPenalty = telemetry.consensusEntropy > 0.6 ? 0.6 : 1.0;
   const maxScore = Math.max(callScore, putScore) * entropyPenalty;
   
-  // Limiar adaptativo: exige confiança mínima baseada no número de agentes que responderam
   const threshold = opinions.length >= 2 ? 140 : 85; 
   const action = callScore > putScore && maxScore > threshold ? 'CALL' : putScore > callScore && maxScore > threshold ? 'PUT' : 'HOLD';
 
@@ -206,7 +251,7 @@ function synthesizeChairmanDecision(
     stakeRatio: action !== 'HOLD' ? 0.25 * entropyPenalty : 0,
     consensusConfidence: Math.round(maxScore / Math.max(1, opinions.length)),
     opinions,
-    executedVia: 'CHAIRMAN_SYNTHESIS',
+    executedVia: 'COUNCIL_LLM',
     executionMode: isShadowMode ? 'SHADOW' : 'REAL',
     t2tLatencyMs: Math.round(endTime - startTime),
     telemetry,
@@ -228,6 +273,6 @@ function executeMathFallback(snapshot: any, isShadowMode: boolean, latency: numb
     executionMode: isShadowMode ? 'SHADOW' : 'REAL',
     t2tLatencyMs: latency,
     telemetry: { avgTokensPerSec: 0, totalTokens: 0, consensusEntropy: 1.0, jitterMs: 0, inferenceHealth: 0 },
-    zenThought: "IA Instável ou Lenta. Operando por motor estocástico de emergência."
+    zenThought: "IA Instável. Operando por motor estocástico de emergência."
   };
 }
