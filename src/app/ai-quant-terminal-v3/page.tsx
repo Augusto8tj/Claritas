@@ -319,7 +319,7 @@ function TerminalV3Content() {
                             </div>
                             
                             <p className="text-[9px] text-slate-500 italic mt-2">
-                                [STRICT] High entropy (>0.7) prevents autopilot entry.
+                                [STRICT] High entropy (&gt;0.7) prevents autopilot entry.
                             </p>
                         </CardContent>
                     </Card>
