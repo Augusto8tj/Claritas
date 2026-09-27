@@ -1,4 +1,3 @@
-
 import { TradeMemoryBuffer, AgentOpinion, CouncilDecision, CouncilTelemetry } from '../types/council';
 import { TradeMemoryManager } from './trade-memory-service';
 import type { OllamaConfig } from '@/lib/types';
@@ -126,7 +125,10 @@ async function fetchAgentAnalysis(
   try {
     const response = await fetch('/api/ollama/agent', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 
+        'Content-Type': 'application/json',
+        'Authorization': config.apiKey ? `Bearer ${config.apiKey}` : '' 
+      },
       signal,
       body: JSON.stringify({
         systemPrompt: `${systemPrompts[agentName]}\n${memoryContext}`,
@@ -140,9 +142,15 @@ async function fetchAgentAnalysis(
     const data = await response.json();
     const end = performance.now();
     
+    // Sanitização de saída do LLM
+    const opinion = data.opinion || {};
     return { 
-      ...data.opinion, 
-      agentName, 
+      agentName,
+      action: (opinion.action || 'HOLD').toUpperCase() as any,
+      recommendedContract: (opinion.recommendedContract || 'CALL').toUpperCase() as any,
+      confidence: Number(opinion.confidence) || 0,
+      reasoning: opinion.reasoning || 'Sem justificativa.',
+      vetoTriggered: !!opinion.vetoTriggered,
       latencyMs: Math.round(end - start),
       tokensPerSec: data.metrics?.tokensPerSecond || 0,
       totalTokens: data.metrics?.totalTokens || 0

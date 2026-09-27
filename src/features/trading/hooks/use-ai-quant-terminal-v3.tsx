@@ -1,17 +1,15 @@
-
-// src/features/trading/hooks/use-ai-quant-terminal-v3.tsx
 'use client';
 
 /**
  * @fileOverview TERMINAL QUANT V3.0 (COUNCIL EDITION) - MONITORAMENTO MULTI-ATIVO
- * V4.6: Ciclo Acelerado (Half-Cycle) e Resiliência de Rede.
+ * V4.7: Isolamento de estatísticas e correção de cálculo de P&L.
  */
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import type { TickData, CandleData, OperationInitiator, DurationUnit, Operation, OllamaConfig } from '@/lib/types';
 import { useDerivApiV2 as useDerivApi } from './use-deriv-api-v2';
 import { calculateAllIndicators } from '../services/indicator-service';
-import { initialCouncilStrategies } from '../services/council-strategies';
+import { initialCouncilStrategies } from '../strategies/council-strategies';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/features/auth/hooks/use-auth';
 import { TradeMemoryManager } from '../services/trade-memory-service';
@@ -139,17 +137,14 @@ export function useAIQuantTerminalV3(
                 const data = await response.json();
                 const models = data.models || [];
                 setAvailableModels(models);
-                addLog(`Sincronização: ${models.length} modelos encontrados no gateway.`, 'info');
                 
                 if (!ollamaConfig.model && models.length > 0) {
                     updateOllamaConfig({ model: models[0].name });
                 }
             } else {
-                const errorBody = await response.text();
-                addLog(`Erro ao carregar modelos: ${response.status} ${errorBody}`, 'error');
+                addLog(`Erro ao carregar modelos: ${response.status}`, 'error');
             }
         } catch (e: any) {
-            console.error("Failed to fetch Ollama models:", e);
             addLog(`Falha na conexão com Ollama: ${e.message}`, 'error');
         }
     }, [ollamaConfig, updateOllamaConfig, addLog]);
@@ -162,11 +157,21 @@ export function useAIQuantTerminalV3(
 
     const sessionStats = useMemo(() => {
         const finishedTrades = operationsLog.filter(op => 
-            op.status !== 'pending' && op.initiator === 'Conselho'
+            op.status !== 'pending' && op.initiator === 'Conselho_V3'
         );
         const wins = finishedTrades.filter(op => op.status === 'won').length;
-        const pnl = finishedTrades.reduce((acc, op) => acc + (Number(op.result) || 0), 0);
-        return { pnl: Number(pnl) || 0, winRate: finishedTrades.length > 0 ? (wins / finishedTrades.length) * 100 : null, total: finishedTrades.length };
+        
+        const pnl = finishedTrades.reduce((acc, op) => {
+            const val = Number(op.result);
+            if (isNaN(val)) return acc + (op.status === 'lost' ? -op.stake : 0);
+            return acc + val;
+        }, 0);
+        
+        return { 
+            pnl: Number(pnl) || 0, 
+            winRate: finishedTrades.length > 0 ? (wins / finishedTrades.length) * 100 : null, 
+            total: finishedTrades.length 
+        };
     }, [operationsLog]);
 
     useEffect(() => {
@@ -265,9 +270,9 @@ export function useAIQuantTerminalV3(
 
                     await executeTrade(
                         finalContractType, stakeValue, symbol, decision.finalAction.toLowerCase() as any,
-                        15, 's', 'Conselho', `V3_${decision.executedVia}`, extraProposalParams
+                        15, 's', 'Conselho_V3', `V3_${decision.executedVia}`, extraProposalParams
                     );
-                    if (isFocused) addLog(`[EXEC] Ordem real disparada: ${decision.recommendedContract} em ${symbol} (Entropia: ${decision.telemetry.consensusEntropy.toFixed(2)})`, 'execution');
+                    if (isFocused) addLog(`[EXEC] Ordem real disparada: ${decision.recommendedContract} em ${symbol}`, 'execution');
                 }
             }
 
@@ -290,7 +295,6 @@ export function useAIQuantTerminalV3(
             const candles = symbol === activeSymbol ? chartData : (multiAssetCandles[symbol] as CandleData[]);
             if (candles && candles.length >= 30) {
                 await runAnalysisForSymbol(symbol, candles);
-                // V4.6: Redução do ciclo pela metade para garantir monitoramento ágil
                 scheduleRef.current[symbol] = now + (analysisInterval * 500); 
             }
         }
@@ -301,6 +305,13 @@ export function useAIQuantTerminalV3(
     useEffect(() => {
         analysisFnRef.current = runMultiAssetCycle;
     }, [runMultiAssetCycle]);
+
+    // Gatilho imediato ao carregar ou mudar de ativo
+    useEffect(() => {
+        if (isConnected && activeSymbol && !executionLockRef.current) {
+            runMultiAssetCycle();
+        }
+    }, [isConnected, activeSymbol]);
 
     const resetSession = async () => {
         setIsAutoMode(false);
