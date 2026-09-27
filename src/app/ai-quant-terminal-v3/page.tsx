@@ -17,9 +17,9 @@ import {
     Database, Activity, History, ArrowUpCircle, ArrowDownCircle,
     TestTube, Scale, Brain, Trash2, Radar, TrendingUp, TrendingDown, 
     Minus, Check, ChevronsUpDown, Settings2, Wallet, Target, Layers,
-    MessageSquare, Send, Gauge, Laptop, HardDrive
+    MessageSquare, Send, Gauge, Laptop, HardDrive, Coins
 } from "lucide-react";
-import { DerivApiProviderV2 as DerivApiProvider, useDerivApiV2 as useDerivApi } from "@/features/trading/hooks/use-deriv-api-v2";
+import { DerivApiProviderV2 as DerivApiProvider, useDerivApiV2 as useDerivApi, type AccountType } from "@/features/trading/hooks/use-deriv-api-v2";
 import { AssetSelectorV2 as AssetSelector } from "@/features/trading/components/deriv-trader/asset-selector-v2";
 import { ApiStatusIndicatorV2 as ApiStatusIndicator } from "@/features/trading/components/deriv-trader/ApiStatusIndicatorV2";
 import { MarketChart } from "@/features/trading/components/deriv-trader/market-chart";
@@ -30,13 +30,14 @@ import { Separator } from "@/components/ui/separator";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 
 function TerminalV3Content() {
     const { 
         activeSymbol, setActiveSymbol, assetGroups, isAssetsLoading, 
         chartData, isConnected, operationsLog, tradeAnnotations, priceTicks,
         isChartLoading, chartError, chartType, setChartType, timePeriod, setTimePeriod,
-        accountType, accountBalance
+        accountType, accountBalance, setAccountType
     } = useDerivApi();
 
     const v3 = useAIQuantTerminalV3(activeSymbol, priceTicks, chartData as any);
@@ -165,6 +166,9 @@ function TerminalV3Content() {
                         <h1 className="text-2xl font-bold tracking-tight font-headline text-purple-700">Quant Lab V3.0</h1>
                         <div className="flex items-center gap-2">
                              <Badge variant="secondary" className="font-mono text-xs flex items-center gap-1.5">
+                                <Coins className="h-3 w-3"/> Saldo: {accountBalance.loading ? '...' : formatCurrency(accountBalance.balance || 0)}
+                             </Badge>
+                             <Badge variant="outline" className="font-mono text-xs flex items-center gap-1.5">
                                 <Wallet className="h-3 w-3"/> P&L: {formatCurrency(sessionStats.pnl)}
                              </Badge>
                              <Badge className={cn("text-[10px] font-bold", isAutoMode ? "bg-green-600" : "bg-blue-600")}>
@@ -174,6 +178,16 @@ function TerminalV3Content() {
                     </div>
                 </div>
                 <div className="flex flex-wrap items-center gap-4">
+                    <ToggleGroup 
+                        type="single" 
+                        value={accountType} 
+                        onValueChange={(v: AccountType) => v && setAccountType(v)} 
+                        className="bg-muted p-1 rounded-lg border border-border"
+                        disabled={isAutoMode}
+                    >
+                        <ToggleGroupItem value="demo" className="text-[10px] h-7 px-3 data-[state=on]:bg-background data-[state=on]:shadow-sm font-bold uppercase">Demo</ToggleGroupItem>
+                        <ToggleGroupItem value="real" className="text-[10px] h-7 px-3 data-[state=on]:bg-background data-[state=on]:shadow-sm font-bold uppercase">Real</ToggleGroupItem>
+                    </ToggleGroup>
                     <AssetSelector 
                         selectedAsset={activeSymbol || ''} 
                         onAssetChange={setActiveSymbol} 
