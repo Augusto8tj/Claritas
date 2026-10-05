@@ -1,4 +1,3 @@
-
 // src/app/ai-quant-terminal-v3/page.tsx
 'use client';
 
@@ -18,7 +17,7 @@ import {
     Database, Activity, History, ArrowUpCircle, ArrowDownCircle,
     TestTube, Scale, Brain, Trash2, Radar, TrendingUp, TrendingDown, 
     Minus, Check, ChevronsUpDown, Settings2, Wallet, Target, Layers,
-    MessageSquare, Send, Gauge, Laptop, HardDrive, Coins
+    MessageSquare, Send, Gauge, Laptop, HardDrive, Coins, AlertCircle, ChevronDown
 } from "lucide-react";
 import { DerivApiProviderV2 as DerivApiProvider, useDerivApiV2 as useDerivApi, type AccountType } from "@/features/trading/hooks/use-deriv-api-v2";
 import { AssetSelectorV2 as AssetSelector } from "@/features/trading/components/deriv-trader/asset-selector-v2";
@@ -32,6 +31,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 
 function TerminalV3Content() {
     const { 
@@ -66,6 +66,37 @@ function TerminalV3Content() {
             sendMessage(chatInput, chatTarget);
             setChatInput('');
         }
+    };
+
+    // Renderizador de mensagens com suporte a Deep Think (think tags)
+    const renderMessageContent = (content: string) => {
+        const thinkRegex = /<think>([\s\S]*?)<\/think>/i;
+        const match = content.match(thinkRegex);
+
+        if (match) {
+            const thinkText = match[1].trim();
+            const mainContent = content.replace(thinkRegex, '').trim();
+            
+            return (
+                <div className="space-y-2">
+                    <Accordion type="single" collapsible className="w-full">
+                        <AccordionItem value="think" className="border-none">
+                            <AccordionTrigger className="py-1 px-2 text-[10px] bg-purple-500/5 hover:bg-purple-500/10 rounded-md hover:no-underline text-purple-600 font-bold uppercase tracking-widest">
+                                <div className="flex items-center gap-2">
+                                    <Brain className="h-3 w-3" /> Raciocínio Interno
+                                </div>
+                            </AccordionTrigger>
+                            <AccordionContent className="pt-2 px-2 text-[11px] font-mono text-muted-foreground border-l-2 border-purple-500/30 whitespace-pre-wrap leading-relaxed">
+                                {thinkText}
+                            </AccordionContent>
+                        </AccordionItem>
+                    </Accordion>
+                    <p className="font-mono">{mainContent}</p>
+                </div>
+            );
+        }
+
+        return <p className="font-mono whitespace-pre-wrap">{content}</p>;
     };
 
     return (
@@ -442,13 +473,15 @@ function TerminalV3Content() {
                                     {chatMessages.map((msg, i) => (
                                         <div key={i} className={cn(
                                             "flex flex-col max-w-[85%] rounded-lg p-3 text-xs leading-relaxed border shadow-sm",
-                                            msg.role === 'user' ? "bg-primary/10 ml-auto border-primary/20" : "bg-card mr-auto border-border"
+                                            msg.role === 'user' ? "bg-primary/10 ml-auto border-primary/20" : 
+                                            msg.isError ? "bg-red-50 border-red-200 text-red-700 mr-auto" : "bg-card mr-auto border-border"
                                         )}>
                                             <span className="font-bold uppercase text-[9px] mb-1 opacity-50 flex items-center gap-2">
                                                 {msg.role === 'user' ? 'COMANDO' : (msg.agentName || 'CONSELHO')} • {msg.time}
-                                                {msg.role === 'assistant' && <Badge variant="outline" className="h-3 text-[7px] py-0 px-1 border-purple-200">Verified</Badge>}
+                                                {msg.role === 'assistant' && !msg.isError && <Badge variant="outline" className="h-3 text-[7px] py-0 px-1 border-purple-200">Verified</Badge>}
+                                                {msg.isError && <AlertCircle className="h-3 w-3 text-red-500" />}
                                             </span>
-                                            <p className="font-mono text-foreground">{msg.content}</p>
+                                            {msg.role === 'assistant' && !msg.isError ? renderMessageContent(msg.content) : <p className="font-mono">{msg.content}</p>}
                                         </div>
                                     ))}
                                     {isChatLoading && (
