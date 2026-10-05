@@ -49,7 +49,7 @@ export function useAIQuantTerminalV3(
     priceTicks: TickData[],
     chartData: CandleData[]
 ) {
-    const { isConnected, executeTrade, operationsLog, accountBalance, watchedSymbols, setWatchedSymbols, multiAssetCandles, clearActiveContracts } = useDerivApi();
+    const { isConnected, executeTrade, operationsLog, accountBalance, watchedSymbols, setWatchedSymbols, multiAssetCandles, clearActiveContracts, setAccountType, accountType } = useDerivApi();
     const { user } = useAuth();
     const { toast } = useToast();
 
@@ -294,13 +294,15 @@ export function useAIQuantTerminalV3(
             }).join('\n');
 
             const systemPrompt = `VOCÊ É UM ANALISTA NO LABORATÓRIO V3.0 (COUNCIL EDITION).
-            ESTRUTURA: CHAIRMAN, MOMENTUM, RISK CRITIC, ARCHIVIST.
+            ESTRUTURA: CHAIRMAN (Líder), MOMENTUM, RISK CRITIC, ARCHIVIST.
             
             RADAR TÁTICO:
-            | Ativo    | Veredito | Confiança | Contrato Rec. |
-            |----------|----------|-----------|---------------|
             ${radarDetails}
 
+            INSTRUÇÃO DE EXECUÇÃO:
+            - Se o usuário der uma ordem direta de compra/venda, você DEVE responder confirmando e incluir exatamente esta tag no final da resposta: [SOLICITAR_EXECUCAO:ATIVO] (substitua ATIVO pelo símbolo correto, ex: 1HZ10V).
+            - Nunca simule a execução apenas com texto sem usar a tag.
+            
             ${memoryContext}
             SEU PAPEL: ${targetAgent}. Responda de forma técnica em PT-BR.`;
 
@@ -310,7 +312,22 @@ export function useAIQuantTerminalV3(
             ]);
             
             if (response.success) {
-                setChatMessages(prev => [...prev, { role: 'assistant', content: response.success!, time: new Date().toLocaleTimeString(), agentName: targetAgent }]);
+                const assistantContent = response.success;
+                setChatMessages(prev => [...prev, { role: 'assistant', content: assistantContent, time: new Date().toLocaleTimeString(), agentName: targetAgent }]);
+
+                // PROTOCÓLO DE ATIVAÇÃO TÁTICA VIA CHAT
+                const executionTag = assistantContent.match(/\[SOLICITAR_EXECUCAO:(.*?)\]/);
+                if (executionTag && executionTag[1]) {
+                    const requestedSymbol = executionTag[1].trim();
+                    const targetCandles = requestedSymbol === activeSymbol ? chartData : multiAssetCandles[requestedSymbol];
+                    
+                    if (targetCandles && targetCandles.length >= 30) {
+                        addLog(`Chat autorizou execução tática em ${requestedSymbol}. Disparando motor...`, 'decision');
+                        await runAnalysisForSymbol(requestedSymbol, targetCandles as CandleData[]);
+                    } else {
+                        addLog(`Falha ao armar ordem via Chat: Ativo ${requestedSymbol} sem dados suficientes.`, 'error');
+                    }
+                }
             }
         } catch (error: any) {
             toast({ title: "Erro no Chat", description: error.message, variant: "destructive" });
@@ -338,6 +355,8 @@ export function useAIQuantTerminalV3(
         ollamaConfig,
         availableModels,
         updateOllamaConfig: (cfg: any) => setOllamaConfig(c => ({...c, ...cfg})),
-        fetchAvailableModels: () => {}
+        fetchAvailableModels: () => {},
+        setAccountType,
+        accountType
     };
 }
