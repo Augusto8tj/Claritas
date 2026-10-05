@@ -1,9 +1,9 @@
-
 'use client';
 
 /**
  * @fileOverview TERMINAL QUANT V3.6 (COUNCIL EDITION) - MONITORAMENTO MULTI-ATIVO
- * V3.6: Resiliência de Chat, Configuração Síncrona e Execução Tática via NLP.
+ * V3.6: Fila Sequencial de Inferência (Hardware-Safe), Agendamento Half-Cycle
+ * e Estabilidade via Refs para evitar over-rendering.
  */
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
@@ -79,6 +79,25 @@ export function useAIQuantTerminalV3(
     const [dailyBalance, setDailyBalance] = useState(10.0);
     const [dailyTarget, setDailyTarget] = useState(5.0);
 
+    // REFS PARA ESTABILIDADE (CORREÇÃO CRÍTICA: ITEM 1 & 4)
+    const chartDataRef = useRef(chartData);
+    const multiAssetCandlesRef = useRef(multiAssetCandles);
+    const watchedSymbolsRef = useRef(watchedSymbols);
+    const activeSymbolRef = useRef(activeSymbol);
+    const analysisIntervalRef = useRef(analysisInterval);
+    const priceTicksRef = useRef(priceTicks);
+    const operationsLogRef = useRef(operationsLog);
+    const scheduleRef = useRef<Record<string, number>>({});
+    const executionLockRef = useRef(false);
+
+    useEffect(() => { chartDataRef.current = chartData; }, [chartData]);
+    useEffect(() => { multiAssetCandlesRef.current = multiAssetCandles; }, [multiAssetCandles]);
+    useEffect(() => { watchedSymbolsRef.current = watchedSymbols; }, [watchedSymbols]);
+    useEffect(() => { activeSymbolRef.current = activeSymbol; }, [activeSymbol]);
+    useEffect(() => { analysisIntervalRef.current = analysisInterval; }, [analysisInterval]);
+    useEffect(() => { priceTicksRef.current = priceTicks; }, [priceTicks]);
+    useEffect(() => { operationsLogRef.current = operationsLog; }, [operationsLog]);
+
     // RADAR E MEMÓRIA
     const [radarStatus, setRadarStatus] = useState<Record<string, RadarAssetStatus>>({});
     const [memoryBuffer, setMemoryBuffer] = useState<TradeMemoryBuffer>({ wins: [], losses: [] });
@@ -86,16 +105,8 @@ export function useAIQuantTerminalV3(
     const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
     const [isChatLoading, setIsChatLoading] = useState(false);
     const [availableModels, setAvailableModels] = useState<any[]>([]);
-    
-    const executionLockRef = useRef(false);
-    const scheduleRef = useRef<Record<string, number>>({});
-    const priceTicksRef = useRef(priceTicks);
-    const operationsLogRef = useRef(operationsLog);
 
-    useEffect(() => { priceTicksRef.current = priceTicks; }, [priceTicks]);
-    useEffect(() => { operationsLogRef.current = operationsLog; }, [operationsLog]);
-
-    // OLLAMA CONFIG - Carregamento Síncrono Robusto
+    // OLLAMA CONFIG
     const ollamaConfig = useMemo(() => {
         if (typeof window === 'undefined') return null;
         const saved = localStorage.getItem('ollamaConfig');
@@ -143,24 +154,11 @@ export function useAIQuantTerminalV3(
         }
     }, [ollamaConfig, addLog, toast]);
 
-    const sessionStats = useMemo(() => {
-        const finishedTrades = operationsLog.filter(op => 
-            op.status !== 'pending' && (op.initiator === 'Conselho_V3' || op.strategy?.startsWith('V3_'))
-        );
-        const wins = finishedTrades.filter(op => op.status === 'won').length;
-        const pnl = finishedTrades.reduce((acc, op) => acc + (Number(op.result) || (op.status === 'lost' ? -op.stake : 0)), 0);
-        return { pnl: Number(pnl) || 0, winRate: finishedTrades.length > 0 ? (wins / finishedTrades.length) * 100 : null, total: finishedTrades.length };
-    }, [operationsLog]);
-
-    useEffect(() => {
-        if (user && activeSymbol) TradeMemoryManager.getBuffer(user.uid, activeSymbol).then(setMemoryBuffer);
-    }, [user, activeSymbol]);
-
     // ANÁLISE POR SÍMBOLO (ESTÁVEL)
     const runAnalysisForSymbol = useCallback(async (symbol: string, candles: CandleData[], isManualTrigger: boolean = false) => {
         if (!isConnected || !ollamaConfig || candles.length < 30 || !user) return;
         
-        const isFocused = symbol === activeSymbol;
+        const isFocused = symbol === activeSymbolRef.current;
         const currentPrice = isFocused ? priceTicksRef.current[priceTicksRef.current.length - 1]?.price : candles[candles.length - 1].close;
         
         try {
@@ -223,42 +221,72 @@ export function useAIQuantTerminalV3(
             }
         } catch (err: any) {
             if (isFocused) addLog(`Erro em ${symbol}: ${err.message}`, 'error');
+            throw err;
         }
-    }, [isConnected, ollamaConfig, isShadowMode, user, isAutoMode, allowedContracts, maxConcurrentTrades, dailyBalance, activeSymbol, executeTrade, addLog, stakeValue]);
+    }, [isConnected, ollamaConfig, isShadowMode, user, isAutoMode, allowedContracts, maxConcurrentTrades, dailyBalance, executeTrade, addLog, stakeValue]);
 
+    // CORREÇÃO CRÍTICA: FILA SEQUENCIAL E SCHEDULING (ITEM 1, 2, 3, 5)
     const runMultiAssetCycle = useCallback(async () => {
         if (executionLockRef.current || !isConnected || !ollamaConfig) return;
         executionLockRef.current = true;
 
+        const startTime = Date.now();
         try {
-            const now = Date.now();
-            const dueSymbols = watchedSymbols.filter(sym => (scheduleRef.current[sym] || 0) <= now);
+            const currentActive = activeSymbolRef.current;
+            const currentInterval = analysisIntervalRef.current;
+            
+            // 1. Identifica ativos que precisam de varredura (V3.6 Logic)
+            const dueSymbols = watchedSymbolsRef.current.filter(sym => (scheduleRef.current[sym] || 0) <= startTime);
             if (dueSymbols.length === 0) return;
 
-            if (dueSymbols.includes(activeSymbol!)) {
-                await runAnalysisForSymbol(activeSymbol!, chartData);
-                scheduleRef.current[activeSymbol!] = now + (analysisInterval * 1000);
-            }
+            // 2. Priorização: Ativo em foco sempre primeiro
+            dueSymbols.sort((a, b) => (a === currentActive ? -1 : (b === currentActive ? 1 : 0)));
 
-            const backgroundSymbols = dueSymbols.filter(s => s !== activeSymbol);
-            if (backgroundSymbols.length > 0) {
-                await Promise.all(backgroundSymbols.map(async (symbol) => {
-                    const candles = multiAssetCandles[symbol];
-                    if (candles && candles.length >= 30) {
-                        await runAnalysisForSymbol(symbol, candles);
-                        scheduleRef.current[symbol] = now + 5000; 
+            // 3. Processamento SEQUENCIAL (Concurrency 1 - Hardware Safe)
+            for (const symbol of dueSymbols) {
+                const isFocused = symbol === currentActive;
+                const candles = isFocused ? chartDataRef.current : multiAssetCandlesRef.current[symbol];
+                
+                if (candles && candles.length >= 30) {
+                    const callStart = Date.now();
+                    addLog(`[HARDWARE] >>> INÍCIO INFERÊNCIA: ${symbol} (${isFocused ? 'FOCO' : 'BACKGROUND'})`, 'info');
+                    
+                    try {
+                        await runAnalysisForSymbol(symbol, candles as CandleData[]);
+                    } catch (e: any) {
+                        addLog(`Falha na análise de ${symbol}: ${e.message}`, 'error');
                     }
-                }));
+
+                    const callEnd = Date.now();
+                    const durationSec = ((callEnd - callStart) / 1000).toFixed(2);
+                    
+                    // 4. Agendamento Half-Cycle (Respeitando a config do usuário)
+                    const nextInterval = isFocused ? currentInterval : Math.max(currentInterval * 0.5, 10);
+                    scheduleRef.current[symbol] = callEnd + (nextInterval * 1000);
+                    
+                    addLog(`[HARDWARE] <<< FIM INFERÊNCIA: ${symbol} (T=${durationSec}s). Próxima análise em ${nextInterval}s.`, 'info');
+                }
             }
         } finally {
             executionLockRef.current = false;
         }
-    }, [watchedSymbols, activeSymbol, chartData, multiAssetCandles, analysisInterval, runAnalysisForSymbol, isConnected, ollamaConfig]);
+    }, [isConnected, ollamaConfig, runAnalysisForSymbol, addLog]);
 
+    // Scanner fixo de 5s para verificar a fila de ativos "due"
     useEffect(() => {
         const scanner = setInterval(runMultiAssetCycle, 5000);
         return () => clearInterval(scanner);
     }, [runMultiAssetCycle]);
+
+    // Gatilho imediato para ativo focado (Unificado)
+    useEffect(() => {
+        if (activeSymbol && chartData.length >= 30 && !executionLockRef.current) {
+            const nextRun = scheduleRef.current[activeSymbol] || 0;
+            if (Date.now() >= nextRun - 2000) { // Pequena folga para agilidade
+                runMultiAssetCycle();
+            }
+        }
+    }, [activeSymbol, chartData.length, runMultiAssetCycle]);
 
     const resetSession = async () => {
         setIsAutoMode(false);
@@ -280,30 +308,29 @@ export function useAIQuantTerminalV3(
         setIsChatLoading(true);
 
         try {
+            // Aguarda o hardware liberar se estiver em análise de radar
+            while (executionLockRef.current) {
+                await new Promise(r => setTimeout(r, 500));
+            }
+            executionLockRef.current = true;
+
             const memoryContext = TradeMemoryManager.formatBufferForPrompt(memoryBuffer);
-            const radarDetails = watchedSymbols.map(sym => {
+            const radarDetails = watchedSymbolsRef.current.map(sym => {
                 const status = radarStatus[sym];
                 return `- Ativo: ${sym} | Status: ${status?.lastAction || 'AGUARDANDO PRIMEIRA VARREDURA'} | Confiança: ${status?.confidence || 0}% | Contrato Sugerido: ${status?.recommendedContract || 'Análise Pendente'}`;
             }).join('\n');
 
             const systemPrompt = `VOCÊ É O CONSELHO TÁTICO DO LABORATÓRIO V3.0 (COUNCIL EDITION).
-            ATUAÇÃO: Você monitora diversos ativos simultaneamente a cada 5 segundos.
+            ATUAÇÃO: Você monitora diversos ativos simultaneamente em fila sequencial.
             
-            ATIVOS SENDO MONITORADOS NESTA SESSÃO:
-            ${watchedSymbols.join(', ')}
-
             ESTADO ATUAL DO RADAR (DADOS EM TEMPO REAL):
             ${radarDetails}
             
             ${memoryContext}
             
             SUA MISSÃO:
-            1. Responda às perguntas do usuário de forma clara, técnica e fundamentada em português do Brasil.
-            2. Você TEM acesso aos ativos monitorados listados acima. Se o usuário perguntar quais são, cite-os.
-            3. EXECUÇÃO TÁTICA: Se o usuário der uma ordem clara de execução (ex: "compre agora", "faça a compra no 1HZ10V"), você deve responder confirmando a intenção e OBRIGATORIAMENTE incluir a tag EXATA: [SOLICITAR_EXECUCAO:SYMBOL] ao final da sua resposta.
-            4. NÃO use tags se o usuário estiver apenas conversando ou fazendo perguntas.
-            
-            SEU PAPEL NESTE MOMENTO: ${targetAgent}.`;
+            1. Responda de forma clara, técnica e fundamentada em português.
+            2. EXECUÇÃO TÁTICA: Se o usuário der ordem clara, inclua obrigatoriamente no final: [SOLICITAR_EXECUCAO:SYMBOL]`;
 
             const response = await getOllamaResponse(ollamaConfig, content, [
                 { role: 'system', content: systemPrompt }, 
@@ -317,19 +344,17 @@ export function useAIQuantTerminalV3(
                 const executionTag = assistantContent.match(/\[SOLICITAR_EXECUCAO:(.*?)\]/);
                 if (executionTag && executionTag[1]) {
                     const requestedSymbol = executionTag[1].trim();
-                    const targetCandles = requestedSymbol === activeSymbol ? chartData : multiAssetCandles[requestedSymbol];
+                    const targetCandles = requestedSymbol === activeSymbolRef.current ? chartDataRef.current : multiAssetCandlesRef.current[requestedSymbol];
                     if (targetCandles && targetCandles.length >= 30) {
                         addLog(`Chat autorizou execução tática em ${requestedSymbol}.`, 'decision');
                         await runAnalysisForSymbol(requestedSymbol, targetCandles as CandleData[], true);
                     }
                 }
-            } else {
-                throw new Error(response.error || "Ollama retornou resposta vazia.");
             }
         } catch (error: any) {
-            const errorMsg = `⚠️ Erro de Conexão: ${error.message}. Verifique se o Ollama e o Ngrok estão ativos.`;
-            setChatMessages(prev => [...prev, { role: 'assistant', content: errorMsg, time: new Date().toLocaleTimeString(), agentName: 'SYSTEM', isError: true }]);
+            addLog(`Falha no chat: ${error.message}`, 'error');
         } finally {
+            executionLockRef.current = false;
             setIsChatLoading(false);
         }
     };
@@ -349,7 +374,7 @@ export function useAIQuantTerminalV3(
         stakeValue, setStakeValue, dailyBalance, setDailyBalance, dailyTarget, setDailyTarget,
         sessionStats, reasoningLog, memoryBuffer, accountBalance, radarStatus, 
         watchedSymbols, setWatchedSymbols, resetSession, chatMessages, isChatLoading, sendMessage,
-        executeManualDecision: () => lastDecision && runAnalysisForSymbol(activeSymbol!, chartData, true),
+        executeManualDecision: () => lastDecision && runAnalysisForSymbol(activeSymbolRef.current!, chartDataRef.current, true),
         telemetry, ollamaConfig, availableModels, updateOllamaConfig, fetchAvailableModels,
         setAccountType, accountType
     };

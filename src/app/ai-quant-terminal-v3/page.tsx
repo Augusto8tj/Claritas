@@ -55,7 +55,6 @@ function TerminalV3Content() {
     const [isSelectorOpen, setIsSelectorOpen] = useState(false);
     const [chatInput, setChatInput] = useState('');
     const [chatTarget, setChatTarget] = useState('CHAIRMAN');
-    const chatScrollRef = useRef<HTMLDivElement>(null);
 
     const formatCurrency = (val: number) => 
         new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(val);
