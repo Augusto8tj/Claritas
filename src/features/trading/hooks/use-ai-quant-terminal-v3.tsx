@@ -126,18 +126,19 @@ export function useAIQuantTerminalV3(
         return { pnl: Number(pnl) || 0, winRate, total };
     }, [operationsLog, activeSymbol]);
 
-    // OLLAMA CONFIG
-    const ollamaConfig = useMemo(() => {
-        if (typeof window === 'undefined') return null;
+    // CORREÇÃO 4 — Corrigir corrida de hidratação do ollamaConfig
+    const [ollamaConfig, setOllamaConfigState] = useState<OllamaConfig | null>(null);
+    useEffect(() => {
         const saved = localStorage.getItem('ollamaConfig');
         if (saved) {
             try {
-                return JSON.parse(saved) as OllamaConfig;
+                setOllamaConfigState(JSON.parse(saved) as OllamaConfig);
             } catch (e) {
-                return null;
+                setReasoningLog(prev => [{ time: new Date().toLocaleTimeString(), message: `Erro ao parsear ollamaConfig do localStorage: ${e}`, type: 'error' }, ...prev]);
             }
+        } else {
+            setReasoningLog(prev => [{ time: new Date().toLocaleTimeString(), message: `[INIT] Nenhuma configuração Ollama encontrada no localStorage.`, type: 'warning' }, ...prev]);
         }
-        return null;
     }, []);
 
     const addLog = useCallback((message: string, type: string = 'info') => {
@@ -149,6 +150,7 @@ export function useAIQuantTerminalV3(
         const current = ollamaConfig || { baseUrl: '', model: '', temperature: 0.2, keepAlive: '5m' };
         const next = { ...current, ...updates };
         localStorage.setItem('ollamaConfig', JSON.stringify(next));
+        setOllamaConfigState(next);
         toast({ title: "Configuração Salva", description: "Reiniciando workspace para aplicar mudanças." });
         window.location.reload();
     }, [ollamaConfig, toast]);
@@ -176,7 +178,11 @@ export function useAIQuantTerminalV3(
 
     // ANÁLISE POR SÍMBOLO (ESTÁVEL)
     const runAnalysisForSymbol = useCallback(async (symbol: string, candles: CandleData[], isManualTrigger: boolean = false) => {
-        if (!isConnected || !ollamaConfig || candles.length < 30 || !user) return;
+        // CORREÇÃO 2 — Logar explicitamente cada condição do guard em runAnalysisForSymbol
+        if (!isConnected) { addLog(`[SKIP] ${symbol}: WebSocket desconectado (isConnected=false).`, 'warning'); return; }
+        if (!ollamaConfig) { addLog(`[SKIP] ${symbol}: ollamaConfig é null. Verifique localStorage/configuração.`, 'warning'); return; }
+        if (candles.length < 30) { addLog(`[SKIP] ${symbol}: candles insuficientes (${candles.length}/30).`, 'warning'); return; }
+        if (!user) { addLog(`[SKIP] ${symbol}: usuário não autenticado (user=null).`, 'warning'); return; }
         
         const isFocused = symbol === activeSymbolRef.current;
         const currentPrice = isFocused ? priceTicksRef.current[priceTicksRef.current.length - 1]?.price : candles[candles.length - 1].close;
@@ -205,6 +211,9 @@ export function useAIQuantTerminalV3(
 
             const decision = await runQuantCouncil(snapshot, buffer, ollamaConfig, isShadowMode, isFocused, assetPermissions, portfolioState);
             
+            // CORREÇÃO 3 — Logar o resultado crú da decisão, incluindo executedVia
+            addLog(`[DECISION] ${symbol}: action=${decision.finalAction}, confidence=${decision.consensusConfidence}%, via=${decision.executedVia}, contract=${decision.recommendedContract}`, 'decision');
+
             if (isFocused) {
                 setLastDecision(decision);
                 setTelemetry(decision.telemetry);
@@ -260,7 +269,12 @@ export function useAIQuantTerminalV3(
             const currentActive = activeSymbolRef.current;
             const currentInterval = analysisIntervalRef.current;
             
-            const dueSymbols = watchedSymbolsRef.current.filter(sym => (scheduleRef.current[sym] || 0) <= startTime);
+            // CORREÇÃO 1 — Garantir análise do ativo em foco mesmo fora da watchlist
+            const watchListDue = watchedSymbolsRef.current.filter(sym => (scheduleRef.current[sym] || 0) <= startTime);
+            const focusIsDue = currentActive && !watchListDue.includes(currentActive) && (scheduleRef.current[currentActive] || 0) <= startTime;
+            const dueSymbols = focusIsDue ? [currentActive, ...watchListDue] : watchListDue;
+            
+            addLog(`[SCAN] Verificando ciclo. Watchlist: [${watchedSymbolsRef.current.join(', ')}]. Foco: ${currentActive}. Due: [${dueSymbols.join(', ')}]`, 'info');
             if (dueSymbols.length === 0) return;
 
             dueSymbols.sort((a, b) => (a === currentActive ? -1 : (b === currentActive ? 1 : 0)));
