@@ -1,3 +1,4 @@
+
 'use client';
 
 /**
@@ -72,7 +73,7 @@ export function useAIQuantTerminalV3(
         inferenceHealth: 100
     });
     
-    // GESTÃO FINANCEIRA (CORREÇÃO 3 - Separação Ações/Contratos)
+    // GESTÃO FINANCEIRA
     const [allowedActions, setAllowedActions] = useState<AllowedActionsV3>({
         'CALL': true,
         'PUT': true
@@ -189,9 +190,8 @@ export function useAIQuantTerminalV3(
         
         try {
             const buffer = await TradeMemoryManager.getBuffer(user.uid, symbol);
-            
-            // CORREÇÃO 4 - Diagnóstico de Indicadores
             const indicators = calculateAllIndicators(candles, [], '1m', { duration: 15, unit: 's' });
+            
             if (isFocused) {
                 addLog(`[INDICATORS] ${symbol} (FOCO): rsi=${indicators?.rsi}, bbw=${indicators?.bbw}, adx=${indicators?.adx}, candles=${candles.length}`, 'info');
             }
@@ -209,7 +209,6 @@ export function useAIQuantTerminalV3(
                 lockedSymbols: new Set()
             };
 
-            // CORREÇÃO 3 - Populando apenas categorias e ações separadamente
             const assetPermissions: AssetExecutionPermission = {
                 symbol, 
                 enabled: true, 
@@ -250,14 +249,23 @@ export function useAIQuantTerminalV3(
                     if (isShadowMode) {
                         addLog(`[SHADOW] ${symbol}: ${decision.finalAction} via ${decision.recommendedContract}`, 'radar');
                     } else {
+                        // CORREÇÃO 2: Mapeamento explícito de direção
+                        const tradeDirection: 'rise' | 'fall' = decision.finalAction === 'CALL' ? 'rise' : 'fall';
+                        
                         let finalContractType = 'CALL';
                         switch (decision.recommendedContract) {
                             case 'ACCUMULATORS': finalContractType = 'ACCU'; break;
                             case 'MULTIPLIERS': finalContractType = decision.finalAction === 'CALL' ? 'MULTUP' : 'MULTDOWN'; break;
                             default: finalContractType = decision.finalAction === 'CALL' ? 'CALL' : 'PUT';
                         }
-                        await executeTrade(finalContractType, stakeValue, symbol, decision.finalAction.toLowerCase() as any, 15, 's', 'Conselho_V3', `V3_${decision.executedVia}`);
-                        addLog(`[EXEC] ${symbol} ${decision.finalAction}`, 'execution');
+
+                        // CORREÇÃO 3: Duração adaptativa baseada em ADX apenas para OPTIONS
+                        const adxValue = indicators?.adx || 20;
+                        const optionsDuration = adxValue > 40 ? 10 : adxValue > 25 ? 15 : 30;
+                        const finalDuration = decision.recommendedContract === 'OPTIONS' ? optionsDuration : 15;
+
+                        await executeTrade(finalContractType, stakeValue, symbol, tradeDirection, finalDuration, 's', 'Conselho_V3', `V3_${decision.executedVia}`);
+                        addLog(`[EXEC] ${symbol} ${decision.finalAction} via ${decision.recommendedContract} (Dur: ${finalDuration}s)`, 'execution');
                     }
                 }
             }
@@ -304,6 +312,7 @@ export function useAIQuantTerminalV3(
                     const callEnd = Date.now();
                     const durationSec = ((callEnd - callStart) / 1000).toFixed(2);
                     
+                    // Half-Cycle Scheduling: Background analisa a cada 50% do intervalo, foco no intervalo cheio
                     const nextInterval = isFocused ? currentInterval : Math.max(currentInterval * 0.5, 10);
                     scheduleRef.current[symbol] = callEnd + (nextInterval * 1000);
                     
