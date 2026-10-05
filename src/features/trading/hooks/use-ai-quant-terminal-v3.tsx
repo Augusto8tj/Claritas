@@ -1,3 +1,4 @@
+
 'use client';
 
 /**
@@ -282,16 +283,27 @@ export function useAIQuantTerminalV3(
             const memoryContext = TradeMemoryManager.formatBufferForPrompt(memoryBuffer);
             const radarDetails = watchedSymbols.map(sym => {
                 const status = radarStatus[sym];
-                return `| ${sym.padEnd(8)} | ${status?.lastAction || 'SCAN'} | ${status?.confidence || 0}% | ${status?.recommendedContract || 'N/A'} |`;
+                return `- Ativo: ${sym} | Status: ${status?.lastAction || 'AGUARDANDO PRIMEIRA VARREDURA'} | Confiança: ${status?.confidence || 0}% | Contrato Sugerido: ${status?.recommendedContract || 'Análise Pendente'}`;
             }).join('\n');
 
-            const systemPrompt = `VOCÊ É UM ANALISTA NO LABORATÓRIO V3.0 (COUNCIL EDITION).
-            AGORA O RADAR OPERA A CADA 5 SEGUNDOS EM TODOS OS ATIVOS.
-            INSTRUÇÃO: Se pedir para executar (ex: "compre no 1HZ10V"), inclua a tag: [SOLICITAR_EXECUCAO:SYMBOL]
-            ${memoryContext}
-            RADAR ATUAL:
+            const systemPrompt = `VOCÊ É O CONSELHO TÁTICO DO LABORATÓRIO V3.0 (COUNCIL EDITION).
+            ATUAÇÃO: Você monitora diversos ativos simultaneamente a cada 5 segundos.
+            
+            ATIVOS SENDO MONITORADOS NESTA SESSÃO:
+            ${watchedSymbols.join(', ')}
+
+            ESTADO ATUAL DO RADAR (DADOS EM TEMPO REAL):
             ${radarDetails}
-            SEU PAPEL: ${targetAgent}. Responda de forma técnica em PT-BR.`;
+            
+            ${memoryContext}
+            
+            SUA MISSÃO:
+            1. Responda às perguntas do usuário de forma clara, técnica e fundamentada em português do Brasil.
+            2. Você TEM acesso aos ativos monitorados listados acima. Se o usuário perguntar quais são, cite-os.
+            3. EXECUÇÃO TÁTICA: Se o usuário der uma ordem clara de execução (ex: "compre agora", "faça a compra no 1HZ10V"), você deve responder confirmando a intenção e OBRIGATORIAMENTE incluir a tag EXATA: [SOLICITAR_EXECUCAO:SYMBOL] ao final da sua resposta.
+            4. NÃO use tags se o usuário estiver apenas conversando ou fazendo perguntas.
+            
+            SEU PAPEL NESTE MOMENTO: ${targetAgent}.`;
 
             const response = await getOllamaResponse(ollamaConfig, content, [
                 { role: 'system', content: systemPrompt }, 
