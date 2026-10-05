@@ -3,12 +3,12 @@
 
 /**
  * @fileOverview TERMINAL QUANT V3.5 (COUNCIL EDITION) - MONITORAMENTO MULTI-ATIVO
- * Restauração completa de recursos e estabilização do acesso à IA Local (Ollama).
+ * V3.5: Scanner Tático de 5 segundos (Round-Robin) para todos os ativos monitorados.
  */
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import type { TickData, CandleData, OperationInitiator, DurationUnit, Operation, OllamaConfig } from '@/lib/types';
-import { useDerivApiV2 as useDerivApi } from './use-deriv-api-v2';
+import { useDerivApiV2 as useDerivApi, type AccountType } from './use-deriv-api-v2';
 import { calculateAllIndicators } from '../services/indicator-service';
 import { initialCouncilStrategies } from '../services/council-strategies';
 import { useToast } from '@/hooks/use-toast';
@@ -96,20 +96,19 @@ export function useAIQuantTerminalV3(
     useEffect(() => { priceTicksRef.current = priceTicks; }, [priceTicks]);
     useEffect(() => { operationsLogRef.current = operationsLog; }, [operationsLog]);
 
-    // OLLAMA CONFIG - Restauração do estado reativo
-    const [ollamaConfig, setOllamaConfig] = useState<OllamaConfig | null>(null);
-
-    useEffect(() => {
-        if (typeof window !== 'undefined') {
-            const saved = localStorage.getItem('ollamaConfig');
-            if (saved) {
-                try {
-                    setOllamaConfig(JSON.parse(saved) as OllamaConfig);
-                } catch (e) {
-                    console.error("Error parsing ollamaConfig", e);
-                }
+    // OLLAMA CONFIG - Carregamento Síncrono via useMemo para evitar falha no radar inicial
+    const ollamaConfig = useMemo(() => {
+        if (typeof window === 'undefined') return null;
+        const saved = localStorage.getItem('ollamaConfig');
+        if (saved) {
+            try {
+                return JSON.parse(saved) as OllamaConfig;
+            } catch (e) {
+                console.error("Error parsing ollamaConfig", e);
+                return null;
             }
         }
+        return null;
     }, []);
 
     const addLog = useCallback((message: string, type: string = 'info') => {
@@ -118,20 +117,19 @@ export function useAIQuantTerminalV3(
 
     const updateOllamaConfig = useCallback((updates: Partial<OllamaConfig>) => {
         if (typeof window === 'undefined') return;
-        setOllamaConfig(prev => {
-            const current = prev || { baseUrl: '', model: '', temperature: 0.2, keepAlive: '5m' };
-            const next = { ...current, ...updates };
-            localStorage.setItem('ollamaConfig', JSON.stringify(next));
-            return next;
-        });
-        toast({ title: "Configuração Atualizada", description: "As preferências do Ollama foram salvas." });
-    }, [toast]);
+        const current = ollamaConfig || { baseUrl: '', model: '', temperature: 0.2, keepAlive: '5m' };
+        const next = { ...current, ...updates };
+        localStorage.setItem('ollamaConfig', JSON.stringify(next));
+        toast({ title: "Configuração Salva", description: "As preferências do Ollama foram atualizadas." });
+        // Força recarregamento da página para sincronizar useMemo (simplificado para robustez)
+        window.location.reload();
+    }, [ollamaConfig, toast]);
 
     const fetchAvailableModels = useCallback(async () => {
         if (!ollamaConfig?.baseUrl) {
             toast({ 
                 title: "Gateway não configurado", 
-                description: "Vá para as Configurações e insira a URL do Ollama.",
+                description: "Informe a URL do servidor local nas Configurações.",
                 variant: "destructive"
             });
             return;
@@ -146,20 +144,15 @@ export function useAIQuantTerminalV3(
                 const data = await response.json();
                 const models = data.models || [];
                 setAvailableModels(models);
-                if (!ollamaConfig.model && models.length > 0) updateOllamaConfig({ model: models[0].name });
-                toast({ title: "Modelos Carregados", description: `${models.length} modelos detectados na VRAM.` });
+                toast({ title: "Hardware Sincronizado", description: `${models.length} modelos detectados.` });
             } else {
                 throw new Error(`Status ${response.status}`);
             }
         } catch (e: any) {
             addLog(`Falha na conexão com Ollama: ${e.message}`, 'error');
-            toast({ title: "Erro na IA Local", description: "Verifique se o Ollama está rodando e se a URL está correta.", variant: "destructive" });
+            toast({ title: "Erro na IA Local", description: "O servidor Ollama parece estar offline.", variant: "destructive" });
         }
-    }, [ollamaConfig, updateOllamaConfig, addLog, toast]);
-
-    useEffect(() => {
-        if (ollamaConfig?.baseUrl && availableModels.length === 0) fetchAvailableModels();
-    }, [ollamaConfig?.baseUrl, fetchAvailableModels, availableModels.length]);
+    }, [ollamaConfig, addLog, toast]);
 
     // ESTATÍSTICAS DE SESSÃO V3
     const sessionStats = useMemo(() => {
@@ -180,7 +173,7 @@ export function useAIQuantTerminalV3(
         if (user && activeSymbol) TradeMemoryManager.getBuffer(user.uid, activeSymbol).then(setMemoryBuffer);
     }, [user, activeSymbol]);
 
-    // ANÁLISE POR SÍMBOLO (Monitoramento Ativo)
+    // ANÁLISE POR SÍMBOLO (O Coração do Radar de 5 segundos)
     const runAnalysisForSymbol = useCallback(async (symbol: string, candles: CandleData[], isManualTrigger: boolean = false) => {
         if (!isConnected || !ollamaConfig || candles.length < 30 || !user) return;
         
@@ -190,6 +183,7 @@ export function useAIQuantTerminalV3(
         try {
             const buffer = await TradeMemoryManager.getBuffer(user.uid, symbol);
             const indicators = calculateAllIndicators(candles, [], '1m', { duration: 15, unit: 's' });
+            
             const snapshot = {
                 symbol, price: currentPrice, rsi: indicators?.rsi, bbw: indicators?.bbw,
                 trend: (indicators?.adx || 0) > 25 ? 'Trending' : 'Ranging'
@@ -208,6 +202,7 @@ export function useAIQuantTerminalV3(
                 allowedContracts: Object.keys(allowedContracts).filter(k => allowedContracts[k as keyof AllowedContractsV3]) as any[]
             };
 
+            // Invocação do Conselho Multi-Agente
             const decision = await runQuantCouncil(snapshot, buffer, ollamaConfig, isShadowMode, isFocused, assetPermissions, portfolioState);
             
             if (isFocused) {
@@ -216,6 +211,7 @@ export function useAIQuantTerminalV3(
                 addLog(`[DECISÃO] ${symbol}: ${decision.finalAction} (${decision.consensusConfidence}%)`, 'decision');
             }
 
+            // Atualização Crucial do Radar (Dados em Tempo Real)
             setRadarStatus(prev => ({
                 ...prev,
                 [symbol]: {
@@ -226,6 +222,7 @@ export function useAIQuantTerminalV3(
                 }
             }));
 
+            // Lógica de Execução Tática
             const shouldExecute = isManualTrigger || (isAutoMode && decision.finalAction !== 'HOLD' && decision.consensusConfidence >= 65);
 
             if (shouldExecute && decision.finalAction !== 'HOLD') {
@@ -236,7 +233,6 @@ export function useAIQuantTerminalV3(
                 if (!hasSameContractOpen) {
                     if (isShadowMode) {
                         addLog(`[SHADOW] ${symbol}: ${decision.finalAction} via ${decision.recommendedContract}`, 'radar');
-                        toast({ title: `🧪 Simulação V3 (${symbol})`, description: `${decision.finalAction} via ${decision.recommendedContract}` });
                     } else {
                         let finalContractType = 'CALL';
                         switch (decision.recommendedContract) {
@@ -256,46 +252,50 @@ export function useAIQuantTerminalV3(
         }
     }, [isConnected, ollamaConfig, isShadowMode, user, isAutoMode, allowedContracts, maxConcurrentTrades, dailyBalance, activeSymbol, executeTrade, addLog, stakeValue, toast]);
 
+    // SCANNER TÁTICO: Processa a fila de ativos a cada 5 segundos
     const runMultiAssetCycle = useCallback(async () => {
-        if (executionLockRef.current) return;
+        if (executionLockRef.current || !isConnected || !ollamaConfig) return;
         executionLockRef.current = true;
 
         try {
             const now = Date.now();
+            
+            // FILA: Identifica ativos que precisam de análise (venceram o cooldown de 5s)
             const dueSymbols = watchedSymbols.filter(sym => (scheduleRef.current[sym] || 0) <= now);
             
             if (dueSymbols.length === 0) return;
 
-            // Ativo em foco tem prioridade
+            // 1. Prioridade absoluta para o Ativo em Foco
             if (dueSymbols.includes(activeSymbol!)) {
                 await runAnalysisForSymbol(activeSymbol!, chartData);
-                scheduleRef.current[activeSymbol!] = Date.now() + (analysisInterval * 1000);
+                // O foco respeita o analysisInterval definido pelo usuário
+                scheduleRef.current[activeSymbol!] = now + (analysisInterval * 1000);
             }
 
-            // Ativos em background
+            // 2. Processamento em fila para ativos de background (a cada 5s)
             const backgroundSymbols = dueSymbols.filter(s => s !== activeSymbol);
             if (backgroundSymbols.length > 0) {
                 await Promise.all(backgroundSymbols.map(async (symbol) => {
                     const candles = multiAssetCandles[symbol];
                     if (candles && candles.length >= 30) {
                         await runAnalysisForSymbol(symbol, candles);
-                        scheduleRef.current[symbol] = Date.now() + (analysisInterval * 500); // Background roda no Half-Cycle
+                        // Background analisa agressivamente a cada 5 segundos
+                        scheduleRef.current[symbol] = now + 5000; 
                     }
                 }));
             }
         } finally {
             executionLockRef.current = false;
         }
-    }, [watchedSymbols, activeSymbol, chartData, multiAssetCandles, analysisInterval, runAnalysisForSymbol]);
+    }, [watchedSymbols, activeSymbol, chartData, multiAssetCandles, analysisInterval, runAnalysisForSymbol, isConnected, ollamaConfig]);
 
-    // SCANNER DE INTERVALO ESTÁVEL
+    // REGISTRO DO SCANNER TÁTICO
     useEffect(() => {
-        if (!isAutoMode && !isShadowMode) return;
         const scanner = setInterval(runMultiAssetCycle, 5000);
         return () => clearInterval(scanner);
-    }, [isAutoMode, isShadowMode, runMultiAssetCycle]);
+    }, [runMultiAssetCycle]);
 
-    // TRIGGER IMEDIATO AO MUDAR ATIVO
+    // TRIGGER IMEDIATO AO ENTRAR OU MUDAR ATIVO
     useEffect(() => {
         if (isConnected && activeSymbol && chartData.length >= 30 && !executionLockRef.current) {
             runAnalysisForSymbol(activeSymbol, chartData);
@@ -329,11 +329,11 @@ export function useAIQuantTerminalV3(
             }).join('\n');
 
             const systemPrompt = `VOCÊ É UM ANALISTA NO LABORATÓRIO V3.0 (COUNCIL EDITION).
-            ESTRUTURA: CHAIRMAN (Líder), MOMENTUM, RISK CRITIC, ARCHIVIST.
-            RADAR:
-            ${radarDetails}
+            AGORA O RADAR OPERA A CADA 5 SEGUNDOS EM TODOS OS ATIVOS.
             INSTRUÇÃO: Se pedir para executar (ex: "compre no 1HZ10V"), inclua a tag: [SOLICITAR_EXECUCAO:SYMBOL]
             ${memoryContext}
+            RADAR ATUAL:
+            ${radarDetails}
             SEU PAPEL: ${targetAgent}. Responda de forma técnica em PT-BR.`;
 
             const response = await getOllamaResponse(ollamaConfig, content, [

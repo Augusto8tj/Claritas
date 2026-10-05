@@ -1,3 +1,4 @@
+
 import { TradeMemoryBuffer, AgentOpinion, CouncilDecision, CouncilTelemetry, AssetExecutionPermission, PortfolioRiskState } from '../types/council';
 import { TradeMemoryManager } from './trade-memory-service';
 import type { OllamaConfig } from '@/lib/types';
@@ -25,7 +26,7 @@ function validateExecutionGate(
   }
 
   // 3. Contrato Permitido
-  if (!permissions.allowedContracts.includes(decision.recommendedContract)) {
+  if (!permissions.allowedContracts.includes(decision.recommendedContract as any)) {
     return { allowed: false, reason: `Bloqueado: Contrato ${decision.recommendedContract} não permitido para ${symbol}.` };
   }
 
@@ -46,7 +47,10 @@ function validateExecutionGate(
 function calculateConsensusEntropy(opinions: AgentOpinion[]): number {
   if (opinions.length < 2) return 0.2; 
   const counts = { CALL: 0, PUT: 0, HOLD: 0 };
-  opinions.forEach(o => counts[o.action]++);
+  opinions.forEach(o => {
+      const action = o.action as 'CALL' | 'PUT' | 'HOLD';
+      counts[action]++;
+  });
   
   const probs = Object.values(counts).map(c => c / opinions.length);
   return -probs.reduce((sum, p) => p > 0 ? sum + p * Math.log2(p) : sum, 0) / 1.58; 
